@@ -19,11 +19,11 @@ rad0037/rad0038 (VTP43) added the bf16_fp8 and bf16_i8 KV caches for one geometr
 
 ## Steps
 
-1. rad0039 (refactor only, no new geometry): a KV-layout descriptor table in abi/rad_builder.h (name, exact storage rules: K/V element kinds, offsets, scale placement, group, row bytes as an integral-checked function of head_dim, alignment) read by the core, both arch plugins, probe, bringup, streaming refusal and the serving enum generator; per-plugin name and row-size lists and the `gqa == 6` guards removed; row declarations for the existing gqa6 rows generated from an explicit list of (op, layout, head_dim, gqa, block, tuning) tuples. Behaviour byte-identical: row-table dump diff, option-bit diff, selftests, 27B KLD equal.
-2. rad0040: gqa12 rows (prefill, decode, scratch) and the attn_paged_gate_quant rows for b16f8/b16i8 as new tuples with their own tuning, qwen4exp_fp8 plumbing, libr3 rewrites at gqa12 and block-4 as per-template rules with count checks plus a post-rewrite instantiation inventory.
+1. Patch A, the refactor (no new geometry; its rad id is taken from the next free one when created, since rad0039 is the heat observer, #942): a KV-layout descriptor table in abi/rad_builder.h (name, exact storage rules: K/V element kinds, offsets, scale placement, group, row bytes as an integral-checked function of head_dim, alignment) read by the core, both arch plugins, probe, bringup, streaming refusal and the serving enum generator; per-plugin name and row-size lists and the `gqa == 6` guards removed; row declarations for the existing gqa6 rows generated from an explicit list of (op, layout, head_dim, gqa, block, tuning) tuples. Behaviour byte-identical: row-table dump diff, option-bit diff, selftests, 27B KLD equal.
+2. Patch B: gqa12 rows (prefill, decode, scratch) and the attn_paged_gate_quant rows for b16f8/b16i8 as new tuples with their own tuning, qwen4exp_fp8 plumbing, libr3 rewrites at gqa12 and block-4 as per-template rules with count checks plus a post-rewrite instantiation inventory.
 3. libr3: replace per-geometry rewrite blocks with per-template rules where the build allows, else keep exact-count blocks; add an inventory check that expected and produced gfx1100 instantiations match.
-4. Flash-Next validation: flashnext-tp2xtx-r9700 (two 7900 XTX TP2, R9700 remote-MoE helper) with kv_cache_dtype bf16_i8 / bf16_fp8 vs its bf16 reference; KLD, speed A/B, identity check (default cache identical with and without rad0037-40).
-5. Lightweight promotion (QFP18 tier, profile evidence) of rad0037/38 (and rad0039/40 if they stand alone) with Qwen3.8-27B and Flash-Next as the two named models.
+4. Flash-Next validation: flashnext-tp2xtx-r9700 (two 7900 XTX TP2, R9700 remote-MoE helper) with kv_cache_dtype bf16_i8 / bf16_fp8 vs its bf16 reference; KLD, speed A/B, identity check (default cache identical with and without rad0037/38 and patches A and B).
+5. Lightweight promotion (QFP18 tier, profile evidence) of rad0037/38 (and patches A and B if they stand alone) with Qwen3.8-27B and Flash-Next as the two named models.
 
 ## Detailed Solution & Technical Design
 
@@ -39,7 +39,7 @@ GPT design review 1 (docs/evidence/2026-11-16-vtp44-generic-kv-layouts/design-re
 
 ## Validation
 
-Refactor (rad0039): row-table dump identical before/after; instantiation inventory identical; r4d_selftest (gfx1201) and r3_selftest (gfx1100) pass with the same case counts; 27B long and short KLD equal to the VTP43 numbers (bf16_i8 mean 0.00269) from a same-build reference; no new spills. New geometry (rad0040): selftest numeric, split, mixed, store and fused-store cases at gqa12 and block 4 against an independent oracle with negative controls; spill counts per instantiation; Flash-Next KLD and speed on flashnext-tp2xtx-r9700; refusal tests for an unlisted tuple naming layout, tuple, op and arch; model-constant guard allowlist shrinks.
+Refactor (patch A): row-table dump identical before/after; instantiation inventory identical; r4d_selftest (gfx1201) and r3_selftest (gfx1100) pass with the same case counts; 27B long and short KLD equal to the VTP43 numbers (bf16_i8 mean 0.00269) from a same-build reference; no new spills. New geometry (patch B): selftest numeric, split, mixed, store and fused-store cases at gqa12 and block 4 against an independent oracle with negative controls; spill counts per instantiation; Flash-Next KLD and speed on flashnext-tp2xtx-r9700; refusal tests for an unlisted tuple naming layout, tuple, op and arch; model-constant guard allowlist shrinks.
 
 ## Effort & Risk
 
