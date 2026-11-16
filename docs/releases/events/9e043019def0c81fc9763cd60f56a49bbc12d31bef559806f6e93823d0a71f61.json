@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261116_124908_diagnostic-patches-now-have-th_5599",
+  "files": [
+    "tools/bigcherry/patch/registry.py",
+    "tools/bigcherry/patch/gates.py",
+    "tools/bigcherry/patch/source_policy.py",
+    "tools/bigcherry/core/engines.py",
+    "engines/radiance/engine.toml",
+    "engines/llamacpp/engine.toml",
+    "engines/radiance/recipes.toml"
+  ],
+  "plan-item-ids": [
+    "PRQ05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PRQ05: new diagnostic patch state, source classes (production: validated only; diagnostic: validated and diagnostic), where-it-builds rule, patch-promote --diagnostic, per-engine promotion.source-states enforcement in patch-lint; rad0004 and rad0010 migrated to diagnostic, rad0006 superseded, rad0039 (untested) moved to an experiment.",
+  "timestamp-utc": "2026-11-16T12:49:08.673971Z",
+  "user-summary-candidate": "Diagnostic patches now have their own lifecycle state and can no longer enter production builds."
+}

@@ -1,0 +1,18 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "rad0030_int8_pipelined_prefill",
+  "pinned": "v1.17.0",
+  "subject-digest": "aa98f5be17b4701a312dbf097b3478a3cd88d84df942b8d8a39471649a516375",
+  "default-on": false,
+  "models": [
+    "Qwen3.8-27B w8a8 int8 (.rad), qwen27b-tp3-int8 (TP3 over two RX 7900 XTX and an R9700)",
+    "Qwen3.8-27B int8 (.rad), qwen27b-tp3-int8-556-long-bf16 (TP3 over two RX 7900 XTX and an R9700, bf16 KV cache, 262,144-token context)"
+  ],
+  "checks": {
+    "ab": "2x ABBA against the build without it: one-prompt time to first token -17% to -21%, four 4096-token prompts -16%, 4/6/8 streams +7.4% / +7.8% / +8.4% (VTP37.md).",
+    "activation": "`--pipelined-prefill on` (the layout's setting) against `off` selects the pipelined step; VTP37.md shows the serial note gone and the pipelined path taken in the on arms.",
+    "identity": "not bit-identical to the serial step at every prompt length, as on every pipelined step (rad0020 at MXFP4 too): greedy text identical at 300, 508, 4016, 6027 and 6090 tokens and different at 1092, 2023 and 2955 near ties; first-token log-probabilities bit-identical under 1024 tokens and within 0.001 on the top token above (VTP37.md). Owner reordering quality gate (VTP37.md, 2026-11-13) instead of bit identity: KLD against the same VTP36 BF16 reference, 42,761 positions, build main 4942dad1, layout 6,6,4: serial 0.00315 mean / 0.01057 p99 / 0.0893 p99.9 / 96.86% top-1 / PPL +0.040% (repeat identical to every digit), pipelined 0.00337 / 0.01019 / 0.0838 / 96.84% / +0.014%: mean +7.1%, p99.9 -6.2%, top-1 -0.02 points, PPL -0.026% (relative gate of +10% / -0.2 points / +0.1% passes; prq-rad0030, 2026-11-16). Limit: serial at 1024-token chunks scores lower still (0.00244 mean, 0.0715 p99.9), so reordering noise is the size of the difference; VTP37 recorded the serial-reference noise-floor check as passed (0.00125 / 0.021 / 99.31% against floor 0.00197 / 0.059 / 97.81%). The original gate's absolute BF16 values (VTP14 N6 reference) could not be rerun, the reference no longer being on disk.",
+    "mechanics": "tools/tests/patch/test_vtp37_int8_pipelined_prefill.py passes and patch-lint is clean on the promotion PR; the lane builds carrying it build and serve."
+  }
+}

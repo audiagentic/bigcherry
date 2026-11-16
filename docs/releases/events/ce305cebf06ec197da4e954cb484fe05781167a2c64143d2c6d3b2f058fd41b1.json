@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261114_195353_long-prompts-on-the-tp3-2x-79_9298",
+  "files": [
+    "engines/radiance/components/libr3/native/r4d_attn_paged_h256_gqa6.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_attn_prefill_h256_gqa6.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw",
+    "engines/radiance/components/libr3/README.md",
+    "docs/evidence/2026-11-15-rad52-native-split-store/README.md"
+  ],
+  "plan-item-ids": [
+    "RAD52"
+  ],
+  "status": "unreleased",
+  "technical-summary": "libr3 gfx1100 native prefill attention serves KV-split launches (converts the native accumulator before the partial store); selftest covers the one-KV-head TP3 rank geometry.",
+  "timestamp-utc": "2026-11-14T19:53:53.463350Z",
+  "user-summary-candidate": "Long prompts on the TP3 (2x 7900 XTX + R9700) layout reach the first token about 18% sooner at 100k tokens; short prompts and decode are unchanged."
+}

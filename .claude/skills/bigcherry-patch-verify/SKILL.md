@@ -321,6 +321,15 @@ PYTHONPATH=tools python -m bigcherry --engine llamacpp patch-rebase-check --all 
 
 Do not invent a single-patch patch-rebase-check selector; current CLI selection is --source or --all.
 
+Radiance patches (`engines/radiance/patches/radNNNN_*`). Touching a patch directory turns on CI's `offline-patch` job,
+which runs suites main's own CI skips; run them locally first. Some tests compile C++ against the engine's vendored
+JSON header and execute from TMPDIR, so point both at usable places (a noexec /tmp fails them):
+TMPDIR=<exec dir> BC_NLOHMANN_INCLUDE=<radiance source>/vendor PYTHONPATH=tools python -m pytest -q tools/tests/patch tools/tests/release
+PYTHONPATH=tools python -m bigcherry --engine radiance patch-gates --intent build --source radiance <patch-id>
+python tools/tests/test_docs_catalog.py       # patch counts and ENHANCEMENTS.md follow patch state and recipe membership
+A new patch in a recipe patch-set at `required-state = "untested"` needs no hardware evidence to merge; changing a
+patch that already has evidence stops the lane build at gate G4 until it is requalified.
+
 Stop conditions
 
 Stop and report failure when:

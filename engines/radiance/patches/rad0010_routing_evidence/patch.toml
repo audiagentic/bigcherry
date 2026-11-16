@@ -1,8 +1,8 @@
 schema = 1
 id = "rad0010_routing_evidence"
 order = 10
-state = "untested"
-kind = "enhancement"
+state = "diagnostic"
+kind = "diagnostic"
 origin = "local"
 backend = "agnostic"
 plan-item = "RHP01"

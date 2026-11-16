@@ -5,11 +5,7 @@ with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), a
 """
 from __future__ import annotations
 
-import importlib.util
-import os
-import subprocess
 import sys
-import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -17,18 +13,15 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bigcherry.patcher import apply_all
-from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
+from _vtp_promotion_support import assert_promoted_recipe, load_patch_files, patched_pinned_source
+from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PATCHES = REPO / "engines/radiance/patches"
 PKG = PATCHES / "rad0020_vtp14_tp3_pipelined_prefill"
 
 
 def load(package: Path):
-    spec = importlib.util.spec_from_file_location(package.name, package / "patch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.PATCHES)
+    return load_patch_files(package.name)
 
 
 class Tp3PipelinedPrefillTests(unittest.TestCase):
@@ -37,19 +30,10 @@ class Tp3PipelinedPrefillTests(unittest.TestCase):
             meta = tomllib.load(f)
         with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
             recipe = tomllib.load(f)
-        self.assertEqual((meta["order"], meta["state"]), (20, "untested"))
+        self.assertEqual((meta["order"], meta["state"]), (20, "validated"))
         self.assertEqual(meta["requires"], ["rad0019_vtp14_n2_tp_ownership_fp8"])
         # one patch set in the main build, inert until its options are given; the as-released source stays unpatched
-        self.assertEqual(recipe["patch-set"]["vtp14-mixed-tp"]["patches"],
-                         ["rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous", "rad0018_vtp14_n2_tp_ownership",
-                          "rad0019_vtp14_n2_tp_ownership_fp8", "rad0020_vtp14_tp3_pipelined_prefill",
-                          "rad0021_vtp14_weighted_twoshot_3rank", "rad0022_tune_pin", "rad0023_ar_timeline",
-                          "rad0024_ts3_decode", "rad0025_multiseq_pipelined_prefill",
-                          "rad0026_mixed_pipelined_prefill", "rad0027_mixed_one_pipelined_prefill",
-                          "rad0028_rank_consistent_block_drafts",
-                          "rad0029_rank_own_split", "rad0030_int8_pipelined_prefill"])
-        self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
-        self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
+        assert_promoted_recipe(self, PKG.name)
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
 
     def test_mode_and_rows_are_configuration(self):
@@ -71,23 +55,7 @@ class Tp3PipelinedPrefillTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no pinned radiance checkout; set RADIANCE_SRC")
-        files = []
-        for name in ("rad0018_vtp14_n2_tp_ownership", "rad0019_vtp14_n2_tp_ownership_fp8",
-                     "rad0020_vtp14_tp3_pipelined_prefill"):
-            files += load(PATCHES / name)
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
-            root = Path(d)
-            for path in {f.path for f in files if not f.create}:
-                blob = subprocess.run(["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{path}"],
-                                      capture_output=True, check=True).stdout
-                dest = root / path
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(blob)
-            for f in files:
-                result = apply_all([f], root)
-                self.assertTrue(all(r.ok for r in result), result)
-            again = apply_all(load(PKG), root)
-            self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
+        with patched_pinned_source(checkout, PKG.name) as root:
             qwen = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
             for guard in ("BC_VTP14_PIPE_MODE", "BC_VTP14_PIPE_ON", "BC_VTP14_PIPE_READY", "BC_VTP14_PIPE_NOTE_ROWS"):
                 self.assertIn(guard, qwen)

@@ -1,6 +1,6 @@
 # rad0023_ar_timeline
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP31
 
 Scope: a diagnostic timeline for libr4d's exact one-shot all-reduce at three, four and eight ranks, on only while

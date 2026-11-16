@@ -58,7 +58,7 @@ VALIDATION_FRAMEWORK_VERSION = "2"
 # sessions with recorded results) but has not passed qualification, so it is
 # not "untested". It composes exactly like "untested" (experiments may select
 # it, qualification may still promote it; recipes requiring "validated" do not).
-STATES: tuple[str, ...] = ("validated", "rejected", "untested", "evaluated", "superseded")
+STATES: tuple[str, ...] = ("validated", "diagnostic", "rejected", "untested", "evaluated", "superseded")
 # Both are terminal/excluded from discovery (patch-rebase-check --all,
 # disposition coverage, composition prerequisites): "rejected" means the
 # patch failed our own validation as a candidate; "superseded" means it
@@ -66,6 +66,27 @@ STATES: tuple[str, ...] = ("validated", "rejected", "untested", "evaluated", "su
 # Kept distinct so a lifecycle/registry reader can tell "we rejected this"
 # from "this became unnecessary" instead of collapsing both into one code.
 RETIRED_STATES: tuple[str, ...] = ("rejected", "superseded")
+
+
+SOURCE_ALLOWED_STATES = {
+    "production": frozenset(("validated",)),
+    "diagnostic": frozenset(("validated", "diagnostic")),
+}
+EXPERIMENT_ALLOWED_STATES = frozenset(("validated", "diagnostic", "untested", "evaluated"))
+
+
+def where_it_builds(state: str) -> str:
+    """One lifecycle rule for source policy and reporting (before PRQ04 waivers)."""
+    if state not in STATES:
+        raise KeyError(state)
+    permitted = [
+        name for name, accepted in SOURCE_ALLOWED_STATES.items()
+        if state in accepted
+    ]
+    if state in EXPERIMENT_ALLOWED_STATES:
+        permitted.append("experiments")
+    return ", ".join(permitted) if permitted else "nowhere (retired)"
+
 PATCH_KINDS: tuple[str, ...] = ("framework", "diagnostic", "upstream-backport", "enhancement")
 PATCH_ORIGINS: tuple[str, ...] = ("local", "upstream-commit", "upstream-pr", "external-fork")
 PATCH_BACKENDS: tuple[str, ...] = ("hip", "vulkan", "agnostic")
@@ -118,7 +139,7 @@ _PATCH_TOML_STRING_LIST_KEYS = frozenset({
 })
 _PATCH_TOML_KNOWN_KEYS = _PATCH_TOML_REQUIRED_KEYS | _PATCH_TOML_STRING_LIST_KEYS | frozenset({
     "kind", "origin", "backend", "upstream", "upstream-ref", "retirement",
-    "plan-item", "external-source", "experiment-contract", "diagnostic-build",
+    "plan-item", "external-source", "experiment-contract",
 })
 
 
@@ -337,10 +358,6 @@ class PatchDescriptor:
     plan_item: str | None = None
     backends: tuple[str, ...] = ()
     tags: tuple[str, ...] = ()
-    #: The compile-time macro that enables this patch's code ("BC_MOE_REMOTE_DIAG"); None for an ordinary patch.
-    #: A patch that names one is for a diagnostic build only: its code is compiled out otherwise, and no
-    #: production source, patch set or experiment may include it (patch-lint, gates.diagnostic_build_problems).
-    diagnostic_build: str | None = None
 
     @property
     def experiment_contract(self) -> str | None:
@@ -505,12 +522,6 @@ def _parse_patch_toml(
         value = raw.get(key)
         if value is not None and (not isinstance(value, str) or not value):
             raise PatchRegistryError(f"{where}: {key} must be a non-empty string when present")
-    diagnostic_build = raw.get("diagnostic-build")
-    if diagnostic_build is not None and not re.fullmatch(r"[A-Z][A-Z0-9_]*", str(diagnostic_build)):
-        raise PatchRegistryError(
-            f"{where}: diagnostic-build must be the upper-case preprocessor macro that enables the patch, "
-            f"got {diagnostic_build!r}"
-        )
     upstream = raw.get("upstream")
     if upstream is not None and not re.match(r"^[0-9a-fA-F]{7,40}$", upstream):
         raise PatchRegistryError(f"{where}: upstream {upstream!r} is not a commit SHA")
@@ -723,7 +734,6 @@ def _packaged_descriptor(
         plan_ids=record["plan-ids"],
         backends=record["backends"],
         tags=record["tags"],
-        diagnostic_build=record.get("diagnostic-build"),
         requires=record["requires"],
         conflicts=record["conflicts"],
         requires_options=record["requires-options"],

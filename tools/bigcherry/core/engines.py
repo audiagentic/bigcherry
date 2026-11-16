@@ -148,6 +148,9 @@ class EngineLayout:
     promotion_patch_set: str = field(default="", kw_only=True)
     #: [promotion] source: the production source the promotion gates and rebase checks compose the patch over
     promotion_source: str = field(default="", kw_only=True)
+    #: [promotion] source-states: "enforced" when patch-lint checks every source's patch states against its class
+    #: (PRQ05), "exempt" while the engine's sources have not been migrated to source classes
+    promotion_source_states: str = field(default="", kw_only=True)
 
     @property
     def upstream_name(self) -> str:
@@ -425,16 +428,24 @@ def load(repo_root: Path, name: str) -> EngineLayout:
 def _promotion(table: object, name: str) -> dict[str, str]:
     """[promotion]: where `patch-promote` puts a validated patch. Optional; an engine without it cannot promote."""
     if table is None:
-        return {"promotion_patch_set": "", "promotion_source": ""}
+        return {"promotion_patch_set": "", "promotion_source": "", "promotion_source_states": ""}
     if not isinstance(table, dict):
         raise EngineError(f"engine {name!r}: [promotion] must be a table")
-    unknown = sorted(set(table) - {"patch-set", "source"})
+    unknown = sorted(set(table) - {"patch-set", "source", "source-states"})
     if unknown:
         raise EngineError(f"engine {name!r}: unknown promotion key(s): {', '.join(unknown)}")
     return {
         "promotion_patch_set": _text(table, "patch-set", "promotion", name),
         "promotion_source": _text(table, "source", "promotion", name),
+        "promotion_source_states": _source_states(table, name),
     }
+
+
+def _source_states(table: dict, name: str) -> str:
+    value = table.get("source-states")
+    if value not in ("enforced", "exempt"):
+        raise EngineError(f"engine {name!r}: [promotion] source-states must be \"enforced\" or \"exempt\"")
+    return value
 
 
 VERSION_SOURCES = ("build-tag", "pinned-version")

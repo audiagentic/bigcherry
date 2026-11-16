@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261115_055926_optional-limit-on-how-many-ver_9044",
+  "files": [
+    "engines/radiance/patches/rad0034_prefill_concurrency/patch.py",
+    "engines/radiance/patches/rad0034_prefill_concurrency/README.md",
+    "engines/radiance/patches/rad0034_prefill_concurrency/SUMMARY.md",
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/components/serving/generated/v2",
+    "docs/design/serving-manifest-v2"
+  ],
+  "plan-item-ids": [
+    "VTP39"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0034 --max-prefill-seqs N (opt-in, default 0): cap concurrent long prefills; prompts whose remainder fits one shared step bypass at any share. Hardware on -long-bf16: eight 100k prompts mean TTFT 434 -> 208 s (cap 1), no preemptions, short requests 3.6-4.5 s (was 321-338 s).",
+  "timestamp-utc": "2026-11-15T05:59:26.097512Z",
+  "user-summary-candidate": "Optional limit on how many very long prompts are processed at once: with eight 100,000-token prompts arriving together, they start answering in half the time on average, and short questions sent alongside get an answer in seconds instead of minutes."
+}

@@ -5,11 +5,7 @@ Card-free. The pinned-source test applies rad0023 to radiance v1.17.0 when a che
 """
 from __future__ import annotations
 
-import importlib.util
-import os
-import subprocess
 import sys
-import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -17,27 +13,25 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bigcherry.patcher import apply_all
-from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
+from _vtp_promotion_support import assert_promoted_recipe, load_patch_files, patched_pinned_source
+from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PKG = REPO / "engines/radiance/patches/rad0023_ar_timeline"
 
 
 def load():
-    spec = importlib.util.spec_from_file_location(PKG.name, PKG / "patch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.PATCHES)
+    return load_patch_files(PKG.name)
 
 
 class ArTimelineTests(unittest.TestCase):
     def test_metadata_and_recipe(self):
+        assert_promoted_recipe(self, PKG.name)
         with (PKG / "patch.toml").open("rb") as f:
             meta = tomllib.load(f)
         with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
             recipe = tomllib.load(f)
-        self.assertEqual((meta["order"], meta["state"], meta["kind"]), (23, "untested", "diagnostic"))
-        self.assertIn("rad0023_ar_timeline", recipe["patch-set"]["vtp14-mixed-tp"]["patches"])
+        self.assertEqual((meta["order"], meta["state"], meta["kind"]), (23, "validated", "diagnostic"))
+        self.assertIn("rad0023_ar_timeline", recipe["patch-set"]["serving-core"]["patches"])
 
     def test_inert_without_the_variable(self):
         edits = {e.id: e.text for f in load() for e in f.edits}
@@ -53,18 +47,8 @@ class ArTimelineTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no pinned radiance checkout; set RADIANCE_SRC")
-        files = load()
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
-            root = Path(d)
-            for f in files:
-                blob = subprocess.run(["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{f.path}"],
-                                      capture_output=True, check=True).stdout
-                (root / f.path).parent.mkdir(parents=True, exist_ok=True)
-                (root / f.path).write_bytes(blob)
-            first = apply_all(files, root)
-            self.assertTrue(all(r.ok for r in first), first)
-            again = apply_all(files, root)
-            self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
+        with patched_pinned_source(checkout, PKG.name) as root:
+            self.assertTrue(root.is_dir())
 
 
 if __name__ == "__main__":

@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261116_124908_builds-now-refuse-to-run-again_7254",
+  "files": [
+    "tools/bigcherry/source/workspace.py",
+    "tools/bigcherry/patch/rebase.py",
+    "tools/bigcherry/campaign/build.py"
+  ],
+  "plan-item-ids": [
+    "PRQ04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PRQ04: vendor-pin guard. A production build or rebase check refuses when the vendor checkout is at a different commit than the recipes pin, and a production source may contain only validated patches; this stops vendor drift from blocking promotions.",
+  "timestamp-utc": "2026-11-16T12:49:08.667310Z",
+  "user-summary-candidate": "Builds now refuse to run against a source checkout that does not match the pinned release."
+}

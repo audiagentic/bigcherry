@@ -160,6 +160,11 @@ if(BUILD_TESTING)
   target_include_directories(r3_moe_settings_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR} ${RADIANCE_SRC}/libr4d)
   set_target_properties(r3_moe_settings_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   add_test(NAME r3_moe_settings_test COMMAND r3_moe_settings_test)
+  # Direct E4M3 to f16 conversion (r3_e4m3_f16.h) against an independent exact host reference. Card-free.
+  add_executable(r3_e4m3_f16_test EXCLUDE_FROM_ALL ${CMAKE_CURRENT_SOURCE_DIR}/r3_e4m3_f16_test.cpp)
+  target_include_directories(r3_e4m3_f16_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  set_target_properties(r3_e4m3_f16_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_e4m3_f16_test COMMAND r3_e4m3_f16_test)
   add_test(NAME r3_helper_config_exports
     COMMAND ${CMAKE_COMMAND} -DNM=${R3_NM} -DLIBRARY=$<TARGET_FILE:libr3>
       -P ${CMAKE_CURRENT_SOURCE_DIR}/helper_config_exports_test.cmake)

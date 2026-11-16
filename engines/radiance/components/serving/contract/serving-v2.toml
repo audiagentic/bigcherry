@@ -1606,7 +1606,7 @@ path = "/spec/processes/engine/execution/kv_cache_dtype"
 radiance_option = "--kv-cache-dtype"
 radiance_config = "native dtype"
 kind = "enum"
-values = ["bf16", "fp8", "fp8_v4", "k6_v4"]
+values = ["bf16", "fp8", "fp8_v4", "k6_v4", "bf16_fp8", "bf16_i8"]
 cpp_type = "KvCacheDtype"
 doc = "KV cache data type (`--kv-cache-dtype`)."
 
@@ -2331,6 +2331,15 @@ radiance_config = "Config.p2p"
 kind = "string"
 min_length = 1
 doc = "Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE)."
+
+[[field]]
+path = "/spec/processes/engine/tuning/prefill_governor"
+optional = true
+radiance_option = "--prefill-governor"
+radiance_config = "Config.prefill_governor"
+kind = "string"
+min_length = 1
+doc = "Prefill admission and order policy, `kind=arrival|cap|budget;key=value;...` (rad0036, VTP42). `cap`: `max_seqs` prefills with more than `long_tokens` left at once; `budget`: prompt left in flight within `factor` x the largest request; common `order=arrival|remaining` and `age_ms`. Unset is arrival, the engine's own order; the engine rejects an invalid spec at start."
 
 [[field]]
 path = "/spec/processes/engine/tuning/prefill_interleave"

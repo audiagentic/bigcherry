@@ -15,13 +15,34 @@ patches = [
   "rad0011_plan_memory",
   "rad0013_mtp_pass_replay",
   "rad0009_serving_manifest",
+  "rad0016_vtp14_rank_code_selection",
+  "rad0017_vtp14_n3_shared_rendezvous",
+  "rad0018_vtp14_n2_tp_ownership",
+  "rad0019_vtp14_n2_tp_ownership_fp8",
+  "rad0020_vtp14_tp3_pipelined_prefill",
+  "rad0025_multiseq_pipelined_prefill",
+  "rad0026_mixed_pipelined_prefill",
+  "rad0027_mixed_one_pipelined_prefill",
+  "rad0021_vtp14_weighted_twoshot_3rank",
+  "rad0022_tune_pin",
+  "rad0024_ts3_decode",
+  "rad0031_ts_timeline",
+  "rad0032_ts3_duplex",
+  "rad0033_ts3_once",
+  "rad0028_rank_consistent_block_drafts",
+  "rad0029_rank_own_split",
+  "rad0012_helper_kernel_config",
+  "rad0023_ar_timeline",
+  "rad0030_int8_pipelined_prefill",
+  "rad0036_prefill_governor",
+  "rad0005_mp4_ffmpeg6_writer",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
 # their own; promoted to validated by a passing bump (compile, plugin ABI, component tests, cpu-smoke) and then moved to
 # serving-core.
 [patch-set.host-compat]
-patches = ["rad0005_mp4_ffmpeg6_writer"]
+patches = []
 required-state = "untested"
 
 # Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
@@ -30,20 +51,19 @@ required-state = "untested"
 patches = []
 required-state = "untested"
 
-# Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core. Patch-lint fails
-# if a patch declaring `diagnostic-build` (rad0004) enters any recipe not named *-diag.
+# Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core.
+# State-based source admission restricts this patch to diagnostic-class sources.
 [patch-set.moe-remote-diag]
 patches = [
   "rad0004_moe_remote_diagnostics",
-  "rad0006_heat_freeze_diagnostic",
 ]
-required-state = "untested"
+required-state = "diagnostic"
 
 
 # RHP01: isolated opt-in read-only histogram evidence, never part of production sources.
 [patch-set.routing-evidence]
 patches = ["rad0010_routing_evidence"]
-required-state = "untested"
+required-state = "diagnostic"
 
 # Required by the helper and kernel ports; engine behavior remains unchanged until RSC07.
 # MTP draft/verify recorded-pass replay restored on the v1.17 pin (rad0013): v1.17's qwen4exp pass_key refuses every draft and
@@ -54,7 +74,7 @@ patches = []
 required-state = "untested"
 
 [patch-set.helper-config]
-patches = ["rad0012_helper_kernel_config"]
+patches = []
 required-state = "untested"
 
 # Mixed-architecture tensor parallelism (VTP14), each patch inert until its option is given: per-rank kernel code
@@ -63,40 +83,29 @@ required-state = "untested"
 # step as options (rad0020), and link-weighted shards for the three-rank exact two-shot (rad0021). One build serves every split and topology: the layout and the manifest choose them.
 [patch-set.vtp14-mixed-tp]
 patches = [
-  "rad0016_vtp14_rank_code_selection",
-  "rad0017_vtp14_n3_shared_rendezvous",
-  "rad0018_vtp14_n2_tp_ownership",
-  "rad0019_vtp14_n2_tp_ownership_fp8",
-  "rad0020_vtp14_tp3_pipelined_prefill",
-  "rad0021_vtp14_weighted_twoshot_3rank",
-  "rad0022_tune_pin",
-  "rad0023_ar_timeline",
-  "rad0024_ts3_decode",
-  "rad0025_multiseq_pipelined_prefill",
-  "rad0026_mixed_pipelined_prefill",
-  "rad0027_mixed_one_pipelined_prefill",
-  "rad0028_rank_consistent_block_drafts",
-  "rad0029_rank_own_split",
-  "rad0030_int8_pipelined_prefill",
 ]
 required-state = "untested"
 
 [source.radiance-native]
+class = "production"
 description = "radiance 1.14.0 as released: no overlay, no patches."
 overlay = false
 patch-sets = []
 
 [source.radiance]
+class = "production"
 description = "radiance 1.14.0 with BigCherry's validated engine patch sets."
 overlay = false
 patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
 
 [source.radiance-diag]
+class = "diagnostic"
 description = "radiance 1.14.0 with the validated engine patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
 
 [source.radiance-routing-evidence]
+class = "diagnostic"
 description = "Production Radiance plus RHP01 opt-in host histogram coverage diagnostics; not a production source."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
@@ -116,6 +125,18 @@ needs = []
 # Experiments contain only unpromoted patches; promotion retires their memberships.
 [experiment.mtp-full-head-switch]
 patches = ["rad0003_mtp_full_head_switch"]
+
+# RHP02 slice A: the inactive read-only credit observer ABI. Nothing registers it yet, so there is no activation to show;
+# untested, therefore experiment-only until a consumer (RHP02 B) exercises it.
+[experiment.moe-heat-observer]
+patches = ["rad0039_moe_heat_observer"]
+
+# VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
+# bf16_i8 requires bf16_fp8; rad0040 (VTP44) makes the packed layouts one table and requires bf16_i8; rad0041 (VTP44 B) adds
+# Flash-Next's geometry (gqa 12, and gqa 6 with 4-token pages) and requires rad0040.
+# Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
+[experiment.kv-bf16-packed]
+patches = ["rad0037_bf16_fp8_kv", "rad0038_bf16_i8_kv", "rad0040_kv_layout_table", "rad0041_kv_b16_flashnext"]
 
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the

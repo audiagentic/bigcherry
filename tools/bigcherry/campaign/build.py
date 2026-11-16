@@ -45,6 +45,7 @@ from ..source.identity import (
 )
 from ..source.workspace import (
     SourcePlan, UpstreamRepository, materialize, require_clean_bigcherry,
+    require_production_vendor_pin,
 )
 
 Runner = Callable[[list[str], Path], None]
@@ -496,6 +497,9 @@ def materialize_source(
     # Cheap fail-fast before even computing identity/waiting on the lock --
     # the authoritative check is the one repeated inside the lock below.
     require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
+    # Gate cache hits as well as fresh materialisations; the upstream mirror's
+    # HEAD need not equal the pin, but the vendor working checkout must.
+    require_production_vendor_pin(context)
 
     plan = campaign_source.resolve_materialization_inputs(context.engine, context, plan)
     identity = campaign_source.resolve_materialization_identity(context, plan)
@@ -513,6 +517,7 @@ def materialize_source(
         # decision or fresh materialisation, so the property this check
         # exists to guarantee is still true at the moment it's relied on.
         require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
+        require_production_vendor_pin(context)
         return _materialize_source_locked(
             context, plan, identity, plan_id,
             allow_dirty_bigcherry=allow_dirty_bigcherry, verify_strict=verify_strict,
