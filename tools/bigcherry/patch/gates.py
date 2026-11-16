@@ -375,7 +375,7 @@ def evaluate_repository_lint_gates(
             if scoped_result.result.status is GateStatus.BLOCKED:
                 problems.extend(scoped_result.result.detail)
 
-    if engine == "radiance":
+    if engines.load(paths.REPO_ROOT, engine).promotion_source_states == "enforced":
         # PRQ05: one source-class/state authority, including inherited patch sets.
         recipes = recipes_config.load(engines.load(paths.REPO_ROOT, engine).recipes_path(paths.REPO_ROOT))
         records = {}
