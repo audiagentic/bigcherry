@@ -19,7 +19,10 @@ kernel's own lines with a native gfx11 form (see native/). A block is
     @@ end
 
 and must occur exactly <count> times in that source, or the configure step fails: the kernel changed upstream and
-the native form has to be looked at again. Lines outside blocks are comments.
+the native form has to be looked at again. Lines outside blocks are comments. A header `@@ find <count> or 0` also
+accepts no occurrence: used in pairs, one block for the text of the production source and one for the text an
+experiment patch (kv-bf16-packed) leaves, so a build with or without the patch passes and an upstream change still
+fails the pair (check: at least one of a pair's blocks must match, see the unpaired rule below).
 
 Usage: r3_rewrite.py --source <libr4d dir> --rules <rewrites.txt> [--native <native dir>] (--out <out dir> | --check)
 
@@ -48,17 +51,21 @@ def rules(path: Path) -> list[tuple[str, str]]:
     return out
 
 
-def blocks(path: Path) -> list[tuple[int, str, str]]:
-    out, state, count, find, replace = [], "", 0, [], []
+def blocks(path: Path) -> list[tuple[int, str, str, bool]]:
+    out, state, count, find, replace, opt = [], "", 0, [], [], False
     for number, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
         if line.startswith("@@ find "):
             if state:
                 raise SystemExit(f"{path}:{number}: '@@ find' inside a block")
-            state, count, find, replace = "find", int(line.split()[2]), [], []
+            words = line.split()
+            opt = words[3:] == ["or", "0"]
+            if words[3:] and not opt:
+                raise SystemExit(f"{path}:{number}: expected '@@ find <count>' or '@@ find <count> or 0'")
+            state, count, find, replace = "find", int(words[2]), [], []
         elif line.strip() == "@@ replace" and state == "find":
             state = "replace"
         elif line.strip() == "@@ end" and state == "replace":
-            out.append((count, "\n".join(find) + "\n", "\n".join(replace) + "\n"))
+            out.append((count, "\n".join(find) + "\n", "\n".join(replace) + "\n", opt))
             state = ""
         elif line.startswith("@@"):
             raise SystemExit(f"{path}:{number}: unexpected {line.strip()!r}")
@@ -94,13 +101,30 @@ def rewrite(source: Path, rule_file: Path, native: Path | None) -> tuple[dict[st
             if count:
                 hits[find] += count
                 text = text.replace(find, replace)
-        for index, (count, find, replace) in enumerate(native_rules.get(path.name, []), 1):
+        run: list[tuple[int, str, bool]] = []   # the consecutive `or 0` blocks so far: (index, find line, matched)
+
+        def close_run() -> None:
+            if run and not any(matched for _, _, matched in run):
+                failures.setdefault(f"native/{path.name}.rw", []).append(
+                    "none of the paired `or 0` blocks " + ", ".join(str(i) for i, _, _ in run)
+                    + f" occurs: {run[0][1]!r}")
+            run.clear()
+
+        for index, (count, find, replace, opt) in enumerate(native_rules.get(path.name, []), 1):
             found = text.count(find)
+            if not opt:
+                close_run()
+            elif found == 0:
+                run.append((index, find.splitlines()[0].strip(), False))
+                continue
             if found != count:
                 failures.setdefault(f"native/{path.name}.rw", []).append(
                     f"block {index} expected {count} time(s) occurs {found} time(s): {find.splitlines()[0].strip()!r}")
                 continue
+            if opt:
+                run.append((index, find.splitlines()[0].strip(), True))
             text = text.replace(find, replace)
+        close_run()
         if path.name in native_rules:
             report.append(f"r3_rewrite: native form of {path.name}: {len(native_rules[path.name])} block(s)")
         texts[path.name] = text

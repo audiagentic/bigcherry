@@ -57,6 +57,12 @@ gfx1201 (r4d_selftest) and gfx1100 (r3_selftest through the libr3 rewrite): nume
 independent oracle with negative controls, split-KV and mixed steps, byte-exact stores, fused qk_norm_rope_gate store
 byte-identical to the unfused pair. Spills (gfx1201): bf16_i8 prefill 0 (bf16_fp8 5), decode 22/0/0/0 (60/16/3/0).
 
+## How to use it
+
+Both patches are `untested` and carried by the `kv-bf16-packed` experiment in `engines/radiance/recipes.toml`; build the
+radiance source with that experiment and start with `--kv-cache-dtype bf16_i8` (or `bf16_fp8`) on the qwen27b -long argv.
+Promotion to the production source needs the hardware qualification (patch-promote) first.
+
 ## Not done
 
 No VTP42 mixed-workload run on these caches; streaming (host-tier) caches warn, as for the other packed layouts;

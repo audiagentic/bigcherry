@@ -1881,7 +1881,7 @@ void converted_layout_parity(Fixture& t) {
     const Json layouts = sv::load_layouts(lo).at("layout");
     const auto set = sv::load_configs(sv::config_sources({configs}));
     // one config for every layout; a config that is no layout is a named variant, listed here
-    const std::set<std::string> variants = {"qwen27b-tp3-int8-556", "qwen27b-tp3-int8-556-long", "qwen27b-tp3-int8-556-long-bf16", "qwen27b-tp3-int8-556-long-bf16i8"};
+    const std::set<std::string> variants = {"qwen27b-tp3-int8-556", "qwen27b-tp3-int8-556-long", "qwen27b-tp3-int8-556-long-bf16"};
     for (auto it = layouts.begin(); it != layouts.end(); ++it)
         if (!set.config.contains(it.key())) throw std::runtime_error("layout " + it.key() + " has no config");
     for (auto it = set.config.begin(); it != set.config.end(); ++it)

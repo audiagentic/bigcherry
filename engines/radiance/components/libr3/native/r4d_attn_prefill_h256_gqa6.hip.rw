@@ -53,7 +53,71 @@
                 qf[t] = D::mk(make_uint2(r4d_qcvt<D, FOLDQ, F16>(l0.x, mul),
 @@ end
 
-@@ find 1
+@@ find 1 or 0
+    auto fetchV = [&](int k0, const int* blks) {
+        #pragma unroll
+        for (int r = 0; r < VREGS; ++r) {
+            const int idx = warp + r * NWARPS;
+            if (NTR % NWARPS == 0 || idx < NTR) {
+                constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                const int kg = idx / DG, dg = idx - kg * DG;
+                const int kk = min(k0 + kg * 8 + vj, ctx - 1);
+                const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                const size_t o = (size_t)blk * a.kv_block_stride
+                               + (size_t)kvh * a.kv_head_stride
+                               + (size_t)(kk % BS) * ROWB + HEAD_DIM + d0;
+                const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
+                                    : (const void*)((const uint8_t*)a.kv + o);
+                vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
+            }
+        }
+    };
+@@ replace
+    auto fetchV = [&](int k0, const int* blks) {
+        if constexpr (R3N) {
+            // hipfire PR #762's useful gfx11 lesson is to keep the WMMA row native. For
+            // Radiance's paged KV, direct contiguous loads plus an LDS scatter are cheaper
+            // than emulating gfx12 global_load_tr_b128 (8 global reads + lane exchanges).
+            constexpr int VE = KVP ? 8 : 16;
+            constexpr int NITEM = TILE * (HEAD_DIM / VE);
+            #pragma unroll
+            for (int r = 0; r < VREGS; ++r) {
+                const int item = tid + r * NTHR;
+                if (item < NITEM) {
+                    const int key = item / (HEAD_DIM / VE);
+                    const int dg  = item - key * (HEAD_DIM / VE);
+                    const int kk  = min(k0 + key, ctx - 1);
+                    const int d0  = dg * VE;
+                    const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                    const size_t o = (size_t)blk * a.kv_block_stride
+                                   + (size_t)kvh * a.kv_head_stride
+                                   + (size_t)(kk % BS) * ROWB + HEAD_DIM + d0;
+                    vreg[r] = KVP ? *(const uint4*)((const uint16_t*)a.kv + o)
+                                  : *(const uint4*)((const uint8_t*)a.kv + o);
+                }
+            }
+        } else {
+            for (int r = 0; r < VREGS; ++r) {
+                const int idx = warp + r * NWARPS;
+                if (NTR % NWARPS == 0 || idx < NTR) {
+                    constexpr int DG = HEAD_DIM / (KVP ? 32 : 64);
+                    const int kg = idx / DG, dg = idx - kg * DG;
+                    const int kk = min(k0 + kg * 8 + vj, ctx - 1);
+                    const int d0 = dg * (KVP ? 32 : 64) + vg * (KVP ? 8 : 16);
+                    const int blk = BTS ? blks[(kk - k0) / BS] : bt[kk / BS];
+                    const size_t o = (size_t)blk * a.kv_block_stride
+                                   + (size_t)kvh * a.kv_head_stride
+                                   + (size_t)(kk % BS) * ROWB + HEAD_DIM + d0;
+                    const void* p = KVP ? (const void*)((const uint16_t*)a.kv + o)
+                                        : (const void*)((const uint8_t*)a.kv + o);
+                    vreg[r] = __builtin_bit_cast(uint4, load_tr_b128(p));
+                }
+            }
+        }
+    };
+@@ end
+@@ find 1 or 0
     auto fetchV = [&](int k0, const int* blks) {
         #pragma unroll
         for (int r = 0; r < VREGS; ++r) {

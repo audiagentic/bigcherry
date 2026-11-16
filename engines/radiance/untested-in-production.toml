@@ -1,14 +1,2 @@
 # Exceptions for patches physically included in source.radiance while PRQ03 qualification is pending.
 # An entry must be removed as soon as its patch state becomes validated or it leaves production.
-
-[[exception]]
-patch-id = "rad0037_bf16_fp8_kv"
-reason-type = "qualification-pending"
-reason = "opt-in KV cache type (--kv-cache-dtype bf16_fp8), inert unless selected; evidence in docs/evidence/2026-11-16-vtp43-bf16-fp8-kv"
-plan-id = "VTP43"
-
-[[exception]]
-patch-id = "rad0038_bf16_i8_kv"
-reason-type = "qualification-pending"
-reason = "opt-in KV cache type (--kv-cache-dtype bf16_i8), inert unless selected; evidence in docs/evidence/2026-11-16-vtp43-bf16-fp8-kv"
-plan-id = "VTP43"
