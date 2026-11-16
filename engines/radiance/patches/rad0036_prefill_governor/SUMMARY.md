@@ -1,6 +1,6 @@
 # rad0036_prefill_governor
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP42
 
 Scope: one generic, swappable Radiance prefill policy behind a single option; replaces rad0034 and rad0035.
