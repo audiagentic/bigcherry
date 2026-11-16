@@ -36,12 +36,13 @@ def resolve_vendor_checkout_revision(engine: str, root: Path, recipes_path: Path
     import tomllib
 
     actual = _git(root, "rev-parse", "HEAD")
-    if engine != "radiance":
-        return actual
     try:
-        pin = tomllib.loads(recipes_path.read_text(encoding="utf-8"))["pinned"]
-    except (OSError, ValueError, KeyError) as exc:
+        document = tomllib.loads(recipes_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
         raise WorkspaceError(f"cannot read pinned revision from {recipes_path}: {exc}") from exc
+    if "pinned" not in document:
+        return actual
+    pin = document["pinned"]
     if not isinstance(pin, str) or not pin:
         raise WorkspaceError(f"{recipes_path}: pinned must be a nonempty tag")
     try:
@@ -56,8 +57,9 @@ def resolve_vendor_checkout_revision(engine: str, root: Path, recipes_path: Path
 
 
 def require_production_vendor_pin(context: ProjectContext) -> None:
-    """Guard canonical Radiance builds, not isolated synthetic fixture projects."""
-    if context.engine == "radiance" and context.project_root.resolve() == paths.REPO_ROOT.resolve():
+    """Guard canonical builds that have a vendor working checkout, not synthetic fixture projects or CI,
+    which builds from the bare upstream cache at the pin."""
+    if context.project_root.resolve() == paths.REPO_ROOT.resolve() and (context.vendor_root / ".git").exists():
         resolve_vendor_checkout_revision(context.engine, context.vendor_root, context.config_path)
 
 
