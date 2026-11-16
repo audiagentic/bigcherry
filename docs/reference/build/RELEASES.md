@@ -46,14 +46,37 @@ older tag family, and extra repository paths owned by the engine). The package p
    runs stages 2 to 4 as resumable phases (`gate`, `record`, `notes`, `main`, `release`, `unpin`, `sync`) and writes the
    gate output and hardware evidence into the pin's release record. `--dry-run` prints the concrete actions and writes
    nothing. See [PIN_BUMP.md](PIN_BUMP.md) for the bump that precedes it.
-6. **Runtime bundle (radiance).** CI attaches a verified runtime bundle to every published `bc-radiance-*` release
-   ([How a release gets its bundle](#how-a-release-gets-its-bundle)); `patch-promote` therefore releases without waiting
-   for a lab-staged bundle, and a lab `pin-release` bundle is needed only when a release must be bundled from the lab.
+6. **Runtime bundle (radiance).** CI attaches a verified engine-only bundle to new `bc-radiance-*`
+   releases ([How a release gets its bundle](#how-a-release-gets-its-bundle)).
+   New `payload_scope: engine-runtime` receipts list the exact selected paths
+   (`file_names`) and bind per-file digests through `manifest_sha256` for the engine
+   binary, matching `radiance_home/bin/bc-serve`, plugins, kernel catalogs,
+   helpers and runtime shared libraries. Diagnostic `rad-*` binaries and
+   `r4d_selftest` stay out. Only explicitly recorded published legacy
+   unscoped assets retain their historical verification allowance.
 
 ## Installing a release
 
-`release-install <tag|latest>` (Radiance) installs a release's runtime bundle into a clean detached worktree at the
-tag; see the [Radiance runbook](../engines/radiance/RUNBOOK.md) for paths and launch.
+`release-install <tag|latest>` (Radiance) verifies and unpacks the
+engine alongside a clean detached source worktree at its tag; see the
+[Radiance runbook](../engines/radiance/RUNBOOK.md). **RSP01 phase 1** changes
+the bundle payload and strengthens installed-tree integrity checks. It does
+not change the `release-install` interface or the tagged-worktree installation
+architecture. The engine bundle now contains the three required launch binaries:
+`bin/radiance`, `radiance_home/bin/bc-serve`, and
+`radiance_home/helpers/r3_moe_worker`, along with build metadata and
+the runtime plugins/catalogs. The existing lab launcher can again run
+this installed engine; its required build-side binaries are present.
+
+The archive alone is **not** a self-contained launch environment. The
+tagged worktree supplies `tools/lab/radiance/launch-flashnext-best.sh`,
+its shell libraries, Python `bigcherry` layout/resource commands, and
+layouts/configuration. A compatible ROCm SDK, model, hardware and
+layout-specific inputs (for example helper-route heat) are also required.
+**Phase 2 (design only)** will record the engine and platform (launcher
+and layouts/configuration) as a compatible pinned pair, without requiring
+a whole-repository worktree for the engine. `bc-serve` stays in the
+engine release, not the platform release.
 
 - A `runtime_assets[<tag>]` entry in a pin record committed at the tag is the source of truth and takes precedence
   (receipt `source: "record"`).

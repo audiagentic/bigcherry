@@ -242,6 +242,8 @@ def _install(
         raise ReleaseInstallError(
             f"{tag}: unsupported or missing runtime asset receipt"
         )
+    if asset.get("payload_scope") is None:
+        runtime_assets.require_published_legacy_asset(asset, tag)
     # Fail *before* creating source/build directories when the selected SDK differs.
     actual_sdk = runtime_assets.sdk_version(sdk)
     if asset.get("rocm_version") != actual_sdk:
@@ -293,17 +295,19 @@ def _install(
                 raise ReleaseInstallError(
                     f"{tag}: existing build binary SHA-256 mismatch; refusing to reuse {target}"
                 )
-            if not (target / "radiance_home/helpers/r3_moe_worker").is_file():
+            try:
+                runtime_assets.verify_installed_tree(target, asset, sdk)
+            except (runtime_assets.BundleError, OSError, KeyError, ValueError) as exc:
                 raise ReleaseInstallError(
-                    f"{tag}: existing build is missing the helper binary"
-                )
+                    f"{tag}: existing build integrity verification failed: {exc}"
+                ) from exc
         else:
             try:
                 if record is not None:
                     restored = runtime_assets.fetch(record, src, work_root, sdk, tag)
                 else:
                     restored = runtime_assets.restore(
-                        ci[1], ci[2], asset, src, work_root, sdk
+                        ci[1], ci[2], asset, src, work_root, sdk, tag=tag
                     )
             except (
                 runtime_assets.BundleError,
