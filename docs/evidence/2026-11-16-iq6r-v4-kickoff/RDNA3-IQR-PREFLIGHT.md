@@ -34,3 +34,19 @@ After the full IQ6R artifact is sealed and checksum-verified, run in the order b
 | D4 | Mixed gfx1100 + gfx1100 + gfx1201 TP3, exact rank/manifest agreement, host collective, quality, memory, concurrency and matched W8A8 ABBA throughput | No promotion until all independent Q0–Q9 gates pass |
 
 **Not done:** any GPU numeric selftest for the current managed plugin, full-model IQ6R on either XTX, TP3 load, quality or throughput. Production W8A8 remains unchanged.
+
+## Compiled ABI registry inspection (additional card-free gate)
+
+A second, stronger preflight compiled `tools/lab/radiance/iq6r_v4_rdna3_registry.cpp` against the pinned `abi/rad_abi.h` and used `dlopen`/`rad_kernel_count`/`rad_kernel_at` on the exact managed `libr3.so`, **without** calling `rad_plugin_open`, any HIP runtime functions or device kernels. Result: **587 live rows**, with all **7/7 required IQR rows** present, each with non-null launch, layout and relayout hooks. The rows and priorities were:
+
+| Row | Op | Priority |
+| --- | --- | ---: |
+| `embed_lookup_iqr` | `embed_lookup` | 50 |
+| `logits_gemm_vocab_iqr` | `logits_gemm_vocab` | 60 |
+| `logits_gemm_iqr` | `logits_gemm` | 60 |
+| `gemm_iqr_nt_m64` | `gemm_nt_q` | 60 |
+| `gemm_iqr_gated` | `gemm_nt_q_gated` | 50 |
+| `gemm_iqr_tiled` | `gemm_nt_q` | 40 |
+| `logit_rerank_iqr` | `logit_rerank` | 50 |
+
+Output receipt: `${BC_WORK_ROOT}/iq6r-v4-qualification/rdna3-registry-audit.json`. This closes the uncertainty about *live compiled registry entries*; it does not prove a selector chooses them for a particular model shape, GPU numerical correctness or model inference. Device tests D0–D4 remain mandatory.
