@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261116_192226_the-radiance-release-is-now-th_3441",
+  "files": [
+    "tools/bigcherry/release/runtime_assets.py",
+    "tools/bigcherry/release/ci_bundle.py",
+    "tools/bigcherry/release/install.py",
+    ".github/workflows/radiance-release-bundle.yml",
+    "docs/reference/build/RELEASES.md"
+  ],
+  "plan-item-ids": [
+    "RSP01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The bc-radiance runtime bundle packs an explicit engine-runtime manifest (bin/radiance, radiance_home plugins and helpers, bc-serve, runtime libraries) instead of the whole build bin/; rad-* tools and r4d_selftest are not release payload. Installed-asset reuse verifies every manifest file digest, mode and the source-tree marker, the reuse key covers the compile inputs and the run manifest, symlinked ancestors are refused, and unscoped legacy assets are limited to the one published release by digest. Merged as #1016.",
+  "timestamp-utc": "2026-11-16T19:22:26.017023Z",
+  "user-summary-candidate": "The radiance release is now the engine runtime only, and installing it checks every file."
+}
