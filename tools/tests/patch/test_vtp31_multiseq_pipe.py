@@ -1,15 +1,11 @@
 """VTP31 (rad0025): the pipelined prefill over a step of several whole sequences, cut between them.
 
-Card-free. The pinned-source test applies the vtp14-mixed-tp chain up to rad0024 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0024 to radiance v1.17.0 when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
 
-import importlib.util
-import os
-import subprocess
 import sys
-import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -18,30 +14,27 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patcher import apply_all
-from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
+from _vtp_promotion_support import assert_promoted_recipe, serving_chain_to, load_patch_files, patched_pinned_source
+from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PATCHES = REPO / "engines/radiance/patches"
 PKG = PATCHES / "rad0025_multiseq_pipelined_prefill"
 
 
 def load(pkg: Path):
-    spec = importlib.util.spec_from_file_location(pkg.name, pkg / "patch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.PATCHES)
+    return load_patch_files(pkg.name)
 
 
 def chain():
-    with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
-        names = tomllib.load(f)["patch-set"]["vtp14-mixed-tp"]["patches"]
-    return names[: names.index(PKG.name) + 1]
+    return serving_chain_to(PKG.name)
 
 
 class MultiseqPipeTests(unittest.TestCase):
     def test_metadata_and_recipe(self):
+        assert_promoted_recipe(self, PKG.name)
         with (PKG / "patch.toml").open("rb") as f:
             meta = tomllib.load(f)
-        self.assertEqual((meta["order"], meta["state"], meta["kind"]), (25, "untested", "enhancement"))
+        self.assertEqual((meta["order"], meta["state"], meta["kind"]), (25, "validated", "enhancement"))
         self.assertIn("rad0020_vtp14_tp3_pipelined_prefill", meta["requires"])
         names = chain()
         self.assertLess(names.index("rad0020_vtp14_tp3_pipelined_prefill"), names.index(PKG.name))
@@ -63,17 +56,7 @@ class MultiseqPipeTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no pinned radiance checkout; set RADIANCE_SRC")
-        files = [f for name in chain() for f in load(PATCHES / name)]
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
-            root = Path(d)
-            for path in {f.path for f in files if not f.create}:
-                blob = subprocess.run(["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{path}"],
-                                      capture_output=True, check=True).stdout
-                (root / path).parent.mkdir(parents=True, exist_ok=True)
-                (root / path).write_bytes(blob)
-            for f in files:
-                result = apply_all([f], root)
-                self.assertTrue(all(r.ok for r in result), result)
+        with patched_pinned_source(checkout, PKG.name) as root:
             plugin = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
             # no piece size is recomputed from T once the cut is chosen
             self.assertEqual(plugin.count("pipe_rows(h.T)"), 0)
