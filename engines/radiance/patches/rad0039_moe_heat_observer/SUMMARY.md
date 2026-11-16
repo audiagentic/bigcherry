@@ -1,6 +1,9 @@
 # rad0039_moe_heat_observer
 
-**State:** untested; inactive diagnostic-only patch set (RHP02 slice A).
+**Status:** untested
+**Plan item:** RHP02
+
+Inactive diagnostic-only patch set (RHP02 slice A).
 
 Adds a versioned, explicit **read-only C observer** to Radiance's existing CPU route-bank credit path. No new GPU counter, device transfer, wait, remote helper integration, shared-memory transport, owner change or default runtime behaviour. The package registers one process-wide callback with exact V1/struct-size checks and synchronous unregister that waits for callbacks already in flight. Callbacks run on the engine's CPU rank threads and can overlap across ranks; they must copy borrowed counts before returning, must not block or call GPUs, and may not retain the pointer. Errors never veto heat credit. Registration is opt-in (no caller registers it in slice A).
 
