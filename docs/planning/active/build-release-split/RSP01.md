@@ -96,7 +96,6 @@ standalone distribution.
 
 release-please-config.json; .release-please-manifest.json; tools/bigcherry/release/install.py; tools/bigcherry/release/ci_bundle.py; .github/workflows/radiance-release-bundle.yml; tools/bigcherry/ package layout; docs/reference describing releases.
 
-
 ## Validation
 
 - **Phase 1:** offline bundle manifest test requires `bc-serve` and the
@@ -118,7 +117,6 @@ release-please-config.json; .release-please-manifest.json; tools/bigcherry/relea
 
 Large blast radius: release-please wiring, install path and CI bundle reuse all change; shared modules may need splitting. Risk: breaking installs from older tags; keep the previous install path for already published tags only if named as an explicit exception, otherwise migrate.
 
-
 ## Standards
 
 
@@ -129,6 +127,9 @@ Large blast radius: release-please wiring, install path and CI bundle reuse all 
 
 ## Notes
 
+Progress (2026-11-17): phase 1 merged in #1016: the radiance bundle is the engine runtime only (bin/radiance, radiance_home plugins and helpers, bc-serve which is engine-coupled, runtime libraries); rad-* tools and r4d_selftest are not payload; install verification, reuse key, symlink and legacy-asset guards; three independent reviews. Remaining: phase 2 (the install composes the engine release with a platform release as a compatible pair, no whole-repo worktree for the engine) and the end-to-end launch smoke.
+
 ## Change Log
 
 - 2026-11-16T06:37:56.515652+00:00 (created-by): Created by claude
+- 2026-11-16T19:22:34.283744+00:00 (updated-by): Updated: section:notes

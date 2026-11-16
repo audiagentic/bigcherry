@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261116_192226_a-guarded-cleanup-for-old-buil_7674",
+  "files": [
+    "tools/bigcherry/core/build_gc.py",
+    "tools/bigcherry/core/retention.py",
+    "tools/bigcherry/cli/workspace_cmds.py",
+    "docs/reference/build/BUILD_CACHE_GC.md"
+  ],
+  "plan-item-ids": [
+    "WSL09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bigcherry clean --builds [--apply]: build cache GC with a finite policy, protection of builds referenced by processes, run manifests, build-plan locks and installed release receipts, fail-closed on any uninspectable input, and deletion by atomic rename into a private quarantine followed by fd-relative removal that refuses mounts, symlinks and identity changes. apply never touches quarantine leftovers. Merged as #1017; the read-only run on the real work root protects all 145 builds (runner lease or unclassified entries block cleanup, 57 builds have untrusted metadata).",
+  "timestamp-utc": "2026-11-16T19:22:26.027931Z",
+  "user-summary-candidate": "A guarded cleanup for old build caches is available; it deletes nothing it cannot prove unused."
+}
