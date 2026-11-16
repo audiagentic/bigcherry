@@ -64,3 +64,14 @@ patch-status shows no untested radiance patch without a decision recorded in thi
 ## Change Log
 
 - 2026-11-15T22:57:03.917108+00:00 (created-by): Created by agent
+
+
+## Status 2026-11-16: patches still untested and the decision for each
+
+- rad0030_int8_pipelined_prefill: IN PRODUCTION (qwen27b-tp3-int8 turns it on), so it cannot be dropped without breaking that layout. Not bit-identical to serial at 3 of 7 prompt lengths (VTP37). Needs the owner's reordering quality gate (VTP37.md: noise floor vs a serial run at 1024-token chunks, and no loss vs BF16 on the 42,761-position KLD corpus), "not yet run, held 2026-11-13". Test: KLD of int8 TP3 with and without rad0030. Then promote, or demote with the layout updated.
+- rad0036_prefill_governor: IN PRODUCTION (-long configs use `kind=budget`). Hardware A/B exists (docs/evidence/2026-11-16-vtp42-prefill-governor/README.md: 100k mean 299 -> 227 s, mid-size first-token times held, no preemptions) but no hardware greedy-text identity of budget against cap arms, and decode beside the mix and fp8 -long are not measured. Test: one-stream text sha under both specs, a decode-beside-mix arm, fp8 -long. Then promote.
+- rad0005_mp4_ffmpeg6_writer: host-compat (build enabler), in production, never run on an FFmpeg 6 host. Test: compile and mp4 write on an FFmpeg 6 host or declare it host-compat by the bump's compile/ABI/cpu-smoke gate (set comment says so).
+- rad0004, rad0006, rad0010: diagnostics in diagnostic-only sources (moe-remote-diag, routing-evidence); remain untested by design, tracked here. rad0006's result is already recorded (mover ruled out, RAD14); rad0010's RHP01 measurements are in its SUMMARY.
+- rad0003_mtp_full_head_switch (experiment only): no acceptance gain (0.63-0.65 vs 0.62-0.64). Decision: reject; needs a reviewed transition record.
+- rad0007_hc_pf2_fp8_down: still about 1.9x slower than the bf16 path after tuning (999.6 vs 530.7 us at M=2048). Decision: reject unless a new kernel shape; needs a reviewed transition record.
+- rad0001, rad0034, rad0035: superseded; state only.
