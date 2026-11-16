@@ -96,14 +96,17 @@ card changes the work being measured.
 
 ## Running the unit tests in the agent container
 
-The container mounts `/tmp` with `noexec`. Fifteen tests in `tools/tests/patch` (`test_0910_feature_sets`, `test_coverage_*`,
-`test_mmq_forced_j_validation_adapter`) compile and run a small program from the temporary directory and fail there with
-`PermissionError: [Errno 13]` on `main` as well as on a branch. They pass (1,460 passed, 2 skipped) with a temporary directory that
-allows execution:
+The container mounts `/tmp` with `noexec`. Some offline tests compile and run binaries or load shared objects in temporary directories, so they need an executable temp filesystem.
 
-    mkdir -p "$BC_WORK_ROOT/tmp" && TMPDIR="$BC_WORK_ROOT/tmp" PYTHONPATH=tools python3 -m pytest tools/tests/patch
+The pytest session hook in `tools/tests/conftest.py` checks this automatically when `BC_WORK_ROOT` is configured. If the configured system temp directory does not allow execution, the hook creates one private `$BC_WORK_ROOT/test-tmp/pin-bump-tests-*` directory, records a `.bigcherry-pytest-session.json` marker containing PID/host/start time, and redirects the session's `TMPDIR` and `tempfile.tempdir`. On normal pytest completion **or a normal test failure**, teardown restores the original settings and deletes only that session's owned directory. Replaced paths and unsafe mount conditions are refused instead of recursively deleted.
 
-CI runners do not have the restriction.
+A hard process termination such as `SIGKILL` cannot execute pytest teardown; such directories remain identifiable through the marker for **manual, report-only orphan review**. Do not delete unmatched directories by age or wildcard.
+
+For deterministic offline runs in a new worktree, use the version-controlled environment example and an executable, task-owned temp directory. For example, with `BC_WORK_ROOT` configured:
+
+    mkdir -p "$BC_WORK_ROOT/tmp/test-run" && BIGCHERRY_ENVIRONMENT=config/environment.example.toml TMPDIR="$BC_WORK_ROOT/tmp/test-run" PYTHONPATH=tools python3 -m pytest tools/tests/core tools/tests/release tools/tests/patch
+
+Alternatively, omit the explicit `TMPDIR` and allow the pytest fallback to detect a non-executable system temp. The explicit directory must exist on an executable filesystem. CI runners may not have the `noexec` restriction.
 
 ## Not the same as `[[trees]]`
 
