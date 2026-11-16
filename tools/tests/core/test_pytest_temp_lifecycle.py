@@ -174,4 +174,8 @@ class PytestTempLifecycleTests(unittest.TestCase):
         ):
             plugin.pytest_configure(config)
             os.environ["TMPDIR"] = "changed-by-another-plugin"
-            tempfile.tempdir = "also
+            tempfile.tempdir = "also-changed"
+            plugin.pytest_unconfigure(config)
+            self.assertEqual(os.environ["TMPDIR"], "changed-by-another-plugin")
+            self.assertEqual(tempfile.tempdir, "also-changed")
+            self.assertFalse(scratch.exists())
