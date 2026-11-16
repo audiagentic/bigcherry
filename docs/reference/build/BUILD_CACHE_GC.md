@@ -6,6 +6,17 @@ The work root's build cache consists of
 showing path, size in bytes, age in days, metadata status, and reasons.
 This is a **dry run** unless `--apply` is explicitly supplied.
 
+A managed build must use lowercase 32-character hexadecimal IDs for
+**both** the source-slice recipe directory and its build-plan directory.
+Noncanonical recipe/build names and non-directory entries (including logs
+and symlinks) at the cache recipe/build listing levels are reported as
+protected **unclassified** entries, never as candidates, even with zero
+minimum age and newest-K retention. Symlinks or special entries *inside*
+a content-addressed build instead protect that entire build.
+A partial build lacking a metadata sidecar is eligible only at a valid
+content-addressed path. An inventory of unclassified files should not be
+interpreted as a count of actual builds.
+
 A build is eligible only if all of the following hold:
 
 - It is a real directory under a real recipe directory, containing no nested

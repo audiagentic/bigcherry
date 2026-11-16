@@ -31,6 +31,11 @@ class CacheInventory(unittest.TestCase):
         self.proc = patch.object(build_gc, "_proc_references", return_value=([], []))
         self.proc.start()
         self.addCleanup(self.proc.stop)
+        # Historical race fixtures use symbolic names (recipe/old); test
+        # content-addressed ID validation separately with actual 32-hex IDs.
+        self.ids = patch.object(build_gc, "_cache_id", return_value=True)
+        self.ids.start()
+        self.addCleanup(self.ids.stop)
 
     def build(self, name, *, recipe="recipe", age=30, metadata=True):
         b = self.root / "builds" / recipe / name

@@ -30,6 +30,11 @@ class BuildGCError(RuntimeError):
 _QUARANTINE = ".gc-quarantine"
 
 
+def _cache_id(name: str) -> bool:
+    # The build cache only owns content-addressed source slices and plans.
+    return re.fullmatch(r"[0-9a-f]{32}", name) is not None
+
+
 def _reject_quarantine_mounts(directory: Path, mounts: set[Path]) -> None:
     # Quarantine is immediately under builds/, unlike a four-component build.
     builds = directory.parent
@@ -340,12 +345,19 @@ def inspect(root: Path, *, policy, now: float | None = None,
                 if recipe.name == _QUARANTINE:
                     continue
                 if recipe.is_symlink() or not recipe.is_dir():
-                    record(recipe, "build", "untrusted", ["unclassified build recipe or symlink"])
+                    record(recipe, "unclassified", "untrusted", ["unclassified build recipe or symlink"])
                     continue
-                builds_by_recipe[recipe] = []
+                managed_recipe = _cache_id(recipe.name)
+                if managed_recipe:
+                    builds_by_recipe[recipe] = []
                 for build in sorted(recipe.iterdir()):
-                    if build.is_symlink() or not build.is_dir():
-                        record(build, "build", "untrusted", ["unclassified build entry or symlink"])
+                    if not managed_recipe:
+                        record(build, "unclassified", "untrusted",
+                               [f"non-content-addressed recipe: {recipe.name}"])
+                        continue
+                    if build.is_symlink() or not build.is_dir() or not _cache_id(build.name):
+                        record(build, "unclassified", "untrusted",
+                               ["non-build entry, symlink or invalid build-plan ID"])
                         continue
                     age, metadata, errors = _age(build, now)
                     builds_by_recipe[recipe].append((build, age))
