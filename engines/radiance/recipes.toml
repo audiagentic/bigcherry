@@ -117,6 +117,7 @@ overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
 
 [source.radiance-heat-observer]
+class = "diagnostic"
 description = "Production Radiance plus the inactive, read-only RHP02 credit observer ABI."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "heat-observer", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
