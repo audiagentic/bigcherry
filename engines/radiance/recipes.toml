@@ -32,6 +32,7 @@ patches = [
   "rad0028_rank_consistent_block_drafts",
   "rad0029_rank_own_split",
   "rad0012_helper_kernel_config",
+  "rad0023_ar_timeline",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
@@ -80,7 +81,6 @@ required-state = "untested"
 # step as options (rad0020), and link-weighted shards for the three-rank exact two-shot (rad0021). One build serves every split and topology: the layout and the manifest choose them.
 [patch-set.vtp14-mixed-tp]
 patches = [
-  "rad0023_ar_timeline",
   "rad0030_int8_pipelined_prefill",
   "rad0036_prefill_governor",
 ]
