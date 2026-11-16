@@ -41,6 +41,7 @@ rocm-paths = { RAD_HIPCC = "bin/hipcc", CMAKE_HIP_COMPILER = "lib/llvm/bin/clang
 [promotion]
 patch-set = "serving-core"
 source = "radiance"
+source-states = "enforced"
 
 # How this engine's release versions are numbered (docs/reference/build/RELEASES.md): the pin is a commit, so the major
 # of <major>.<minor>.<patch> is the recipes' pinned-version with its dots removed (1.3.0 -> 130).

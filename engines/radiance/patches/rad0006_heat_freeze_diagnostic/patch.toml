@@ -1,7 +1,8 @@
 schema = 1
 id = "rad0006_heat_freeze_diagnostic"
 order = 6
-state = "untested"
+state = "superseded"
+retirement = "superseded after RAD14: freeze after 400 steps did not restore MTP acceptance; prefix cache, not the mover, was the cause; no replacement patch needed"
 kind = "diagnostic"
 origin = "local"
 backend = "agnostic"
@@ -9,5 +10,4 @@ plan-item = "RAD14"
 plan-ids = ["RAD14"]
 requires = []
 conflicts = []
-diagnostic-build = "BC_MOE_REMOTE_DIAG"
 tags = ["moe-routing"]

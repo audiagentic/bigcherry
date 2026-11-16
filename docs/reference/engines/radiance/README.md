@@ -22,37 +22,37 @@ Patches modify upstream Radiance source.
 | [rad0001_drain_mover_before_arena_free](../../../../engines/radiance/patches/rad0001_drain_mover_before_arena_free/SUMMARY.md) | Drain GPU transfers before freeing memory | `superseded` |
 | [rad0002_moe_remote_handoff](../../../../engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md) | Send expert work to helper GPUs | `validated` |
 | [rad0003_mtp_full_head_switch](../../../../engines/radiance/patches/rad0003_mtp_full_head_switch/SUMMARY.md) | Optionally draft with the full model head | `untested` |
-| [rad0004_moe_remote_diagnostics](../../../../engines/radiance/patches/rad0004_moe_remote_diagnostics/SUMMARY.md) | Diagnose remote expert routing | `untested` |
-| [rad0005_mp4_ffmpeg6_writer](../../../../engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/SUMMARY.md) | Support FFmpeg 6 builds | `untested` |
-| [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `untested` |
+| [rad0004_moe_remote_diagnostics](../../../../engines/radiance/patches/rad0004_moe_remote_diagnostics/SUMMARY.md) | Diagnose remote expert routing | `diagnostic` |
+| [rad0005_mp4_ffmpeg6_writer](../../../../engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/SUMMARY.md) | Support FFmpeg 6 builds | `validated` |
+| [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `superseded` |
 | [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/rad0007_hc_pf2_fp8_down/SUMMARY.md) | Unused experimental FP8 HyperConn kernels | `untested` |
 | [rad0008_hc_upmix_rt_sweep](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) | Tune HyperConn launch size | `validated` |
 | [rad0009_serving_manifest](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md) | Start engine from a serving manifest | `validated` |
-| [rad0010_routing_evidence](../../../../engines/radiance/patches/rad0010_routing_evidence/SUMMARY.md) | Record expert-routing counters | `untested` |
+| [rad0010_routing_evidence](../../../../engines/radiance/patches/rad0010_routing_evidence/SUMMARY.md) | Record expert-routing counters | `diagnostic` |
 | [rad0011_plan_memory](../../../../engines/radiance/patches/rad0011_plan_memory/SUMMARY.md) | Expose engine memory plan | `validated` |
-| [rad0012_helper_kernel_config](../../../../engines/radiance/patches/rad0012_helper_kernel_config/SUMMARY.md) | Pass settings to helper kernels | `untested` |
+| [rad0012_helper_kernel_config](../../../../engines/radiance/patches/rad0012_helper_kernel_config/SUMMARY.md) | Pass settings to helper kernels | `validated` |
 | [rad0013_mtp_pass_replay](../../../../engines/radiance/patches/rad0013_mtp_pass_replay/SUMMARY.md) | Replay speculative draft and verify passes | `validated` |
-| [rad0016_vtp14_rank_code_selection](../../../../engines/radiance/patches/rad0016_vtp14_rank_code_selection/SUMMARY.md) | Select GPU-specific kernels per TP rank | `untested` |
-| [rad0017_vtp14_n3_shared_rendezvous](../../../../engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/SUMMARY.md) | Synchronise mixed-GPU ranks | `untested` |
-| [rad0018_vtp14_n2_tp_ownership](../../../../engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/SUMMARY.md) | Split model weights unevenly across GPUs | `untested` |
-| [rad0019_vtp14_n2_tp_ownership_fp8](../../../../engines/radiance/patches/rad0019_vtp14_n2_tp_ownership_fp8/SUMMARY.md) | Uneven FP8 weight splits | `untested` |
-| [rad0020_vtp14_tp3_pipelined_prefill](../../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/SUMMARY.md) | Overlap computation and communication in prefill | `untested` |
-| [rad0021_vtp14_weighted_twoshot_3rank](../../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/SUMMARY.md) | Reduce traffic on slow PCIe links | `untested` |
-| [rad0022_tune_pin](../../../../engines/radiance/patches/rad0022_tune_pin/SUMMARY.md) | Validate and pin kernel tuning | `untested` |
-| [rad0023_ar_timeline](../../../../engines/radiance/patches/rad0023_ar_timeline/SUMMARY.md) | Trace one-shot reduction timings | `untested` |
-| [rad0024_ts3_decode](../../../../engines/radiance/patches/rad0024_ts3_decode/SUMMARY.md) | Link-aware three-GPU decode reductions | `untested` |
-| [rad0025_multiseq_pipelined_prefill](../../../../engines/radiance/patches/rad0025_multiseq_pipelined_prefill/SUMMARY.md) | Pipeline multi-prompt prefill | `untested` |
-| [rad0026_mixed_pipelined_prefill](../../../../engines/radiance/patches/rad0026_mixed_pipelined_prefill/SUMMARY.md) | Pipeline mixed decode and multi-prompt prefill | `untested` |
-| [rad0027_mixed_one_pipelined_prefill](../../../../engines/radiance/patches/rad0027_mixed_one_pipelined_prefill/SUMMARY.md) | Pipeline decode alongside one prefill | `untested` |
-| [rad0028_rank_consistent_block_drafts](../../../../engines/radiance/patches/rad0028_rank_consistent_block_drafts/SUMMARY.md) | Keep draft decisions consistent across ranks | `untested` |
-| [rad0029_rank_own_split](../../../../engines/radiance/patches/rad0029_rank_own_split/SUMMARY.md) | Per-GPU weight and KV memory budgets | `untested` |
-| [rad0030_int8_pipelined_prefill](../../../../engines/radiance/patches/rad0030_int8_pipelined_prefill/SUMMARY.md) | Pipeline prefill for rotated INT8 | `untested` |
-| [rad0031_ts_timeline](../../../../engines/radiance/patches/rad0031_ts_timeline/SUMMARY.md) | Trace two-shot reduction timings | `untested` |
-| [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | Use both link directions in reductions | `untested` |
-| [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | Avoid duplicate reduction writes | `untested` |
+| [rad0016_vtp14_rank_code_selection](../../../../engines/radiance/patches/rad0016_vtp14_rank_code_selection/SUMMARY.md) | Select GPU-specific kernels per TP rank | `validated` |
+| [rad0017_vtp14_n3_shared_rendezvous](../../../../engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/SUMMARY.md) | Synchronise mixed-GPU ranks | `validated` |
+| [rad0018_vtp14_n2_tp_ownership](../../../../engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/SUMMARY.md) | Split model weights unevenly across GPUs | `validated` |
+| [rad0019_vtp14_n2_tp_ownership_fp8](../../../../engines/radiance/patches/rad0019_vtp14_n2_tp_ownership_fp8/SUMMARY.md) | Uneven FP8 weight splits | `validated` |
+| [rad0020_vtp14_tp3_pipelined_prefill](../../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/SUMMARY.md) | Overlap computation and communication in prefill | `validated` |
+| [rad0021_vtp14_weighted_twoshot_3rank](../../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/SUMMARY.md) | Reduce traffic on slow PCIe links | `validated` |
+| [rad0022_tune_pin](../../../../engines/radiance/patches/rad0022_tune_pin/SUMMARY.md) | Validate and pin kernel tuning | `validated` |
+| [rad0023_ar_timeline](../../../../engines/radiance/patches/rad0023_ar_timeline/SUMMARY.md) | Trace one-shot reduction timings | `validated` |
+| [rad0024_ts3_decode](../../../../engines/radiance/patches/rad0024_ts3_decode/SUMMARY.md) | Link-aware three-GPU decode reductions | `validated` |
+| [rad0025_multiseq_pipelined_prefill](../../../../engines/radiance/patches/rad0025_multiseq_pipelined_prefill/SUMMARY.md) | Pipeline multi-prompt prefill | `validated` |
+| [rad0026_mixed_pipelined_prefill](../../../../engines/radiance/patches/rad0026_mixed_pipelined_prefill/SUMMARY.md) | Pipeline mixed decode and multi-prompt prefill | `validated` |
+| [rad0027_mixed_one_pipelined_prefill](../../../../engines/radiance/patches/rad0027_mixed_one_pipelined_prefill/SUMMARY.md) | Pipeline decode alongside one prefill | `validated` |
+| [rad0028_rank_consistent_block_drafts](../../../../engines/radiance/patches/rad0028_rank_consistent_block_drafts/SUMMARY.md) | Keep draft decisions consistent across ranks | `validated` |
+| [rad0029_rank_own_split](../../../../engines/radiance/patches/rad0029_rank_own_split/SUMMARY.md) | Per-GPU weight and KV memory budgets | `validated` |
+| [rad0030_int8_pipelined_prefill](../../../../engines/radiance/patches/rad0030_int8_pipelined_prefill/SUMMARY.md) | Pipeline prefill for rotated INT8 | `validated` |
+| [rad0031_ts_timeline](../../../../engines/radiance/patches/rad0031_ts_timeline/SUMMARY.md) | Trace two-shot reduction timings | `validated` |
+| [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | Use both link directions in reductions | `validated` |
+| [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | Avoid duplicate reduction writes | `validated` |
 | [rad0034_prefill_concurrency](../../../../engines/radiance/patches/rad0034_prefill_concurrency/SUMMARY.md) | Earlier long-prefill concurrency limit | `superseded` |
 | [rad0035_prefill_order](../../../../engines/radiance/patches/rad0035_prefill_order/SUMMARY.md) | Earlier prefill ordering and ageing controls | `superseded` |
-| [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | Unified prefill admission and ordering | `untested` |
+| [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | Unified prefill admission and ordering | `validated` |
 
 ### Components (extensions)
 
