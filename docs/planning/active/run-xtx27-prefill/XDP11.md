@@ -49,12 +49,22 @@ Do not modify a pinned engine source, production model, running server or other 
 - [x] Prior precision-policy plans merged to main (#996)
 - [x] Independent experiment worktree created from merged main
 - [x] Card-free source/recipe inventory started
-- [ ] Full source/calibration manifest and independent file-hash checks (recipe/vhead hashes done; BF16 18-payload recheck pending)
+- [x] Full BF16 18-shard SHA-256 recheck versus VTP06 (18/18 match)
+- [x] All 257 upstream Hessians SHA-256-verified, with all 64 layer sites and RADGRAM2 headers validated
 - [ ] Exclusive-lease BF16 calibration qualification
-- [ ] Representative 64-layer Hessians
+- [x] Representative upstream 10,259,331-token BF16 Hessians imported (not locally recollected)
 - [x] BF16-derived vocabulary-head staging checkpoint produced and SHA-256 pinned
-- [ ] Converter plan and immutable IQ6R-V4 artifact
+- [x] Both gfx1100/libr3 and gfx1201/libr4d candidate converter layout preflights pass
+- [ ] Immutable IQ6R-V4 model artifact
 - [ ] BF16-relative quality acceptance
 - [ ] TP3 admission, VRAM, throughput and long-context acceptance
 
 Never claim completion from plan-only, a kernel microbenchmark, a smoke corpus or upstream published KL numbers.
+
+## 2026-11-16 upstream Hessian option and qualification
+
+The public `StillDeadcode/qwen3.8-27b-quant-challenge` dataset includes 257 BF16 Hessians for the `calib` split (4,789 documents, 10,259,331 tokens; 15 categories), plus a disjoint `public` scoring split (596 documents, 1,694,621 tokens). Pin dataset revision `2dcf0061cb683152742b904e2965ce7cd92b2da6`, not moving `main`. The Hessians and tools are **CC BY 4.0**; the corpus has separate mixed-source licences. Attribute the publisher in retained evidence.
+
+Using these Hessians avoids duplicate GPU calibration collection but does not waive provenance or independent quality qualification. Require all 257 LFS SHA-256 checks, exact 64-layer input sites, consistent shapes and 10,259,331 rows, original BF16 shard hashes, and disjoint held-out prompts. Missing/altered inputs stop conversion. Keep the Q6 result experimental until numeric kernel and TP3 validation.
+
+A historical converter build failed to join IQR weight planes. A more complete installed build passed both gfx1100 `libr3,libref` and gfx1201 `libr4d,libref` layout preflights (1,032 weights; 293 quantized, 739 retained; ~21.02 GiB predicted). Pilot calibration paths were supplied for plan-only name resolution; no model data was written. Current managed-pin identity and complete calibration remain separate gates.

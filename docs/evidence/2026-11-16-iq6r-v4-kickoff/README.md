@@ -31,3 +31,19 @@ No GPU measurement, full conversion, production change, or performance claim has
 ## Vocabulary-head staging completed
 
 The pinned `tools/vhead.py` completed CPU-only preparation using isolated NumPy 2.5.5 (in the task work root, not system Python). Its output `${BC_WORK_ROOT}/iq6r-v4-qualification/vhead-5.0/vhead.safetensors` is approximately 2.4 GiB; SHA-256 `1dd39da8c0a5205fd1f53e2052807bafe0a1c2fb291a0a88908df427423e5f90`. The tool reported classes k4:130560, k5:33280, k6:38400, k7:46080 (mean 5.000 bits). The staging checkpoint has a rewritten tensor index and links to unchanged original BF16 shards. This **does not** mean a quantized model exists: IQ6R trellis codes and Hessian-derived weights have not been generated yet.
+
+## Full BF16 source identity and public calibration (2026-11-16)
+
+All 18 original BF16 weight shards were reread end to end. Each SHA-256 matches the prior VTP06 full-payload audit. Full receipt (not committed due to local-path metadata): `${BC_WORK_ROOT}/iq6r-v4-qualification/source-sha256-recheck.json` (18/18 matching; 87.69 s). The output-head staging remains SHA-256 verified.
+
+Radiance dataset: `https://huggingface.co/datasets/StillDeadcode/qwen3.8-27b-quant-challenge`, immutable revision `2dcf0061cb683152742b904e2965ce7cd92b2da6`. The dataset publisher releases **Hessians under CC BY 4.0**; its corpus has mixed upstream source licences and is retained locally rather than copied into this repository. `calib`: 4,789 documents, 10,259,331 tokens, 66 source identities, 15 categories. `public` (disjoint): 596 documents, 1,694,621 tokens, 57 source identities, 15 categories. Exact prompt overlap is zero.
+
+SHA-256 of pinned corpus files: calibration `ea0569b94cb8a86dc33fc7920dcdc199e91ee39f4fa4fe7283839a83ad3e8e53`; public `144243ceba1e6bde89f2a94fda39991a6e027847c797590fc1da5aa6d0ecb93e`. Manifest is preserved as `${BC_WORK_ROOT}/iq6r-v4-qualification/upstream-corpus-manifest.json`. The 257 Hessians total 46.928 GiB and are being downloaded independently against LFS SHA-256; do not treat a partial set as complete.
+
+Two **exclusive-leased** converter `--plan-only` probes were run using an installed candidate build: gfx1100/libr3 and gfx1201/libr4d both exit zero, each 1,032 planned weights (293 quantized, 739 retained), estimated 21.02 GiB. The earlier candidate build failed on IQR weight-plane joins; full error log is preserved separately. This is not a proof of quantizer execution or TP3 admission. All experiments use scratch paths under `${BC_WORK_ROOT}`; production and vendor source trees remain unmodified.
+
+## 2026-11-16 managed-release correction
+
+The first GPU conversion attempt used a historical experimental build and returned SIGSEGV (-11). Its stderr also reported missing GPTQ inputs (`no calibration for ...; rounding it to nearest`), because its `CALIB` directory contained packed safetensors rather than `gram.r<rank>.<stem>.bin` RADGRAM2 matrices. It produced an incomplete 8,404,795,392-byte RAD file, now **deleted**; the original stderr and receipt remain under the isolated work root for diagnosis. The failed artifact was never loaded or promoted.
+
+Managed release `bc-radiance-1170.26.0` is selected from its installed `install.json`, not a historical build path. Release manifest pins CI source, source slice, plan/build identities and a runtime-binary SHA-256. The experiment runner verifies the runtime against that SHA before using the adjacent converter, libr3 and libr4d plugins. The corrected calibrated input adapter expands each pinned packed F32 upper-triangle Hessian to a domain-0 RADGRAM2 full row-major matrix and aliases shared projection input sites using hardlinks. It checks name coverage before conversion and rejects any logged missing-calibration fallback. This changes neither the original BF16 checkpoint nor production deployment. Retain only the complete, independently fingerprinted experimental RAD output.
