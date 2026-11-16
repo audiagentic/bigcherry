@@ -52,9 +52,12 @@ are made. Copies survive independent deletion of central logs.
 Retention follows the current work-root cleaner's conservative policy:
 `bigcherry clean --verbose` inventories each `build-logs/<run-id>` as protected
 diagnostics, retained indefinitely until explicitly removed. Automatic
-age-based deletion is not implemented; the cleaner remains read-only.
+age-based deletion of central logs is not implemented; run cleanup remains read-only.
 Copies in build directories follow those directories' retention. The
 build-run-cleanup group currently provides no destructive log GC.
+
+Build cache candidates and explicit deletion are documented in
+[Build cache GC](BUILD_CACHE_GC.md); materialised sources remain read-only.
 
 ## Start here: production end-to-end comparisons
 
