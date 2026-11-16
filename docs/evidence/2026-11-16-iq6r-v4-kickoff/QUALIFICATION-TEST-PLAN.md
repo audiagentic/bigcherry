@@ -48,3 +48,17 @@ This plan qualifies a **new experimental** BF16-derived calibrated RAD2. It does
 - `tp3-admission.json`, `tp3-vram.json`, `tp3-abba.json`: runtime, memory and matched performance (Q5-Q7).
 
 No unexecuted step in this plan is evidence of a passing result.
+
+## 2026-11-16 bounded staged-conversion contingency
+
+The valid R9700 full-recipe run completed 32 of 292 GPTQ tensors over 2,747.87 seconds before a controlled stop, without calibration fallback or HIP errors. Its projected duration exceeded the hard 14,400-second wrapper timeout. The interrupted partial RAD was discarded; logs and its conversion-status-managed-timeout-preempted.json receipt are retained. This was an operator stop, NOT SIGSEGV or a quality failure.
+
+The replacement workflow writes complete RAD2 checkpoints using 15 cumulative recipe prefixes of 20 GPTQ rules. It validates each stage with managed rad-info, exact encoding counts, SHA-256 and a sealed receipt. The next stage uses rad-convert --reuse of the prior checkpoint, requiring exact quantizer, options, shape and encoding equality. The final recipe is SHA-identical to pinned IQ6R-V4. Old checkpoints may be retired after a newer sealed stage to bound scratch space. Intermediate RADs remain UNQUALIFIED and must never be served. Stage 1 and subsequent reuse must be tested before the approach is considered proven.
+
+The held-out quality preflight verified the public corpus SHA-256, 596 documents, 1,694,621 tokens, 15 categories, 1,694,025 scored rows and all golden binary file sizes. The result is quality-public-layout-audit.json, explicitly marked PUBLIC_GOLDEN_LAYOUT_PASS_NOT_BF16_QUALIFIED. It does not prove the reference matches the original BF16 checkpoint or tokenizer, and is not model-quality evidence.
+
+## Corrected executable stage contract
+
+The initial staged headless preflight failed because the qwen35 vocabulary adapter requires all four output.k4..k7 trellis planes. Adding those four rules exposed a second prerequisite: qwen35_w8a8 also requires its trunk inputs to have rotated INT8 or trellis encodings, not BF16. Both invalid partial recipes failed during plan-only, before allocating a model output. Their receipts and stderr are preserved under separate missing-head and missing-int8-trunk names.
+
+The corrected 16-stage design always includes the four GPTQ vocabulary-head rules and the pinned W8A8 128-wide Hadamard rotated-INT8 wildcard rules for trunk weights not yet IQ6R. Exact explicit IQ6R rules precede the wildcards (first-match precedence). Stage 1 establishes the head plus INT8-compatible trunk; stages 2-16 add at most 20 trunk GPTQ rules each, with a fully pinned final recipe identical to the original. Both recipe SHA-256 hashes are enforced. Stage 1 passed its managed gfx1201 plan-only check (25.57 GiB estimated) and began the first actual checkpoint conversion under a new exclusive lease. Success and reuse remain unverified until completed RAD2 checkpoints and stage-2 evidence exist.
