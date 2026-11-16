@@ -27,7 +27,7 @@ def sha256(path: Path) -> str:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--mode", choices=("single", "dual", "r9700", "cpu"), required=True)
+    parser.add_argument("--mode", choices=("single", "xtx2", "dual", "r9700", "cpu"), required=True)
     parser.add_argument("--max-seconds", type=int, default=900)
     args = parser.parse_args()
     if not 60 <= args.max_seconds <= 3600:
@@ -83,7 +83,7 @@ def main() -> int:
     env["CALIB"] = str(root / "calib-radgram2")
     if args.mode != "cpu":
         env["HIP_VISIBLE_DEVICES"] = {
-            "dual": "0,1", "single": "0", "r9700": "2"
+            "dual": "0,1", "single": "0", "xtx2": "1", "r9700": "2"
         }[args.mode]
         # --gpus uses ordinals within HIP_VISIBLE_DEVICES, not host IDs.
         cmd += ["--gpus", "0,1" if args.mode == "dual" else "0"]
