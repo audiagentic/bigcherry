@@ -15,11 +15,54 @@ from ..patch.apply import PatchError, resolve_contained_target
 from ..patch import patchset
 from ..patch import registry as patch_registry
 from ..core.context import ProjectContext
+from ..core import paths
 from .identity import describe
 
 
 class WorkspaceError(RuntimeError):
     pass
+
+
+class VendorPinMismatchError(WorkspaceError):
+    """The vendor checkout differs from the pinned engine source revision."""
+
+
+def resolve_vendor_checkout_revision(engine: str, root: Path, recipes_path: Path) -> str:
+    """Resolve HEAD and the recipes pin in the same checkout, refusing drift.
+
+    The vendor working tree differs from the build's bare upstream cache: the
+    latter may have an unrelated default HEAD, and must not be checked here.
+    """
+    import tomllib
+
+    actual = _git(root, "rev-parse", "HEAD")
+    try:
+        document = tomllib.loads(recipes_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise WorkspaceError(f"cannot read pinned revision from {recipes_path}: {exc}") from exc
+    if "pinned" not in document:
+        return actual
+    pin = document["pinned"]
+    if not isinstance(pin, str) or not pin:
+        raise WorkspaceError(f"{recipes_path}: pinned must be a nonempty tag")
+    try:
+        expected = _git(root, "rev-parse", f"{pin}^{{commit}}")
+    except WorkspaceError:
+        # A pin that is not a tag of this checkout (a fixture, or an engine pinning by something else) says nothing
+        # about drift; only a tag that resolves to another commit than HEAD does.
+        return actual
+    if actual != expected:
+        raise VendorPinMismatchError(
+            f"vendor HEAD {actual} != recipes pinned tag {pin!r} ({expected})"
+        )
+    return actual
+
+
+def require_production_vendor_pin(context: ProjectContext) -> None:
+    """Guard canonical builds that have a vendor working checkout, not synthetic fixture projects or CI,
+    which builds from the bare upstream cache at the pin."""
+    if context.project_root.resolve() == paths.REPO_ROOT.resolve() and (context.vendor_root / ".git").exists():
+        resolve_vendor_checkout_revision(context.engine, context.vendor_root, context.config_path)
 
 
 def _git(root: Path, *args: str) -> str:
@@ -177,6 +220,7 @@ def materialize(
 ) -> dict[str, object]:
     """Materialise one source plan and return external identity metadata."""
     require_clean_bigcherry(context, allow_dirty_bigcherry=allow_dirty_bigcherry)
+    require_production_vendor_pin(context)
     repository = UpstreamRepository(context.upstream_repo)
     repository.add_detached_worktree(plan.upstream_revision, destination)
     allowed_untracked: set[str] = set()
