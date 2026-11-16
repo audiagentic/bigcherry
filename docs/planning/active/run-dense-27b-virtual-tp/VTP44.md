@@ -42,10 +42,12 @@ GPT code review of patch A (code-review-a.md): no blocking finding. The tuple li
 
 Proof used for patch A: `libr4d/r4d_rows.cpp` compiles on the host alone in about a second, so the before and after objects are compared with `objdump -s` (all section bytes) and `objdump -r` (all relocations): identical. The device baseline waits for the corrected pinned selftest run (BASELINE-STATUS.md in the evidence folder): an unpinned `r4d_selftest` picks a gfx1100 card for gfx1201-only code and segfaults inside ROCm 7.2.4, on every row.
 
+Patch B as built, rad0041_kv_b16_flashnext (2026-11-16): `RAD_KV_GEOMETRIES(X)` (`X(id, head_dim, gqa)`) and `rad_kvq_geometry_ok` in `abi/rad_builder.h`; the gqa8-body units (gqa12, gqa6 with 4-token pages) gain `b16f8` / `b16i8` prefill, decode and fused gate+quantiser entry points behind `R4D_ATTN_B16`; a second tuple list `R4D_B16_QSA_TUPLES` in `r4d_rows.cpp` generates their twelve rows (decode causal or not, the fused row its own op kind), with `static_assert`s that a tuple's kv name is the table's and its geometry is listed; the qwen4exp_fp8 plugin reads the layout and geometry tables and its probe offers every layout the table lists for the model's geometry. Deviations: the Qwen3.5 plugin keeps its own `gqa 6` check (one geometry; the shared list would admit untested ones); libr3 needed no rewrite change (the gqa8 body includes the gqa6 templates whose rad0037/38 rewrites exist), and the gfx1100 compile plus `r3_rewrite.py --check` stand in for the planned instantiation inventory; the selftest cases for the new rows are not written yet. gfx1201 resource usage is in `device-compile-b.md`: `bf16_i8` spills at most 22 VGPRs (existing worst case 25), `bf16_fp8` single-wave decode spills 45 (existing single-wave variants at most 20), so Flash-Next decode needs a speed A/B.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
-- `engines/radiance/patches/rad0040_kv_layout_table/`, `engines/radiance/recipes.toml` (experiment `kv-bf16-packed`).
+- `engines/radiance/patches/rad0040_kv_layout_table/`, `engines/radiance/patches/rad0041_kv_b16_flashnext/` (also `arch/qwen4exp_fp8/qwen4exp_fp8.cpp`, `libr4d/r4d_attn_paged_gqa8.hip` and its two wrappers, `libr4d/r4d_plugin.h`, `tests/arch_test.cpp`), `engines/radiance/recipes.toml` (experiment `kv-bf16-packed`).
 - `docs/evidence/2026-11-16-vtp44-generic-kv-layouts/` (design review, baseline catalogues, BASELINE-STATUS.md).
 
 ## Validation
@@ -62,7 +64,7 @@ L. Risks: option bits and tile shapes at gqa12 differ (spills near the 256-VGPR 
 
 ## Acceptance Criteria
 
-- [ ] GPT design review 1 findings resolved in this plan before implementation.
+- [x] GPT design review 1 findings resolved in this plan before implementation.
 - [ ] A single KV-layout descriptor table drives names, row sizes, probe, bringup, streaming refusal and the serving enum; no per-plugin lists remain.
 - [ ] The refactor of the gqa6 rows is proven unchanged (row-table dump, selftests, 27B KLD).
 - [ ] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache.
