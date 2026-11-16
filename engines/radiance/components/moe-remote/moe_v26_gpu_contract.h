@@ -3,7 +3,7 @@
 // RCS14 gate D: counted, host-testable GPU wire and scratch arithmetic.
 // The final launch sites must consume the same descriptors in the coordinated
 // engine+helper cutover. No GPU can safely read an unvalidated v26 mapping.
-#include "moe_remote_topology_v26.h"
+#include "moe_remote_shm.h"
 
 namespace r3::moe_shm::v26::gpu {
 
@@ -107,7 +107,7 @@ inline bool request_identity_valid(const Request& q, const Layout& layout,
         return false;
 
     const uint64_t slot_activation =
-        element_offset(layout, Region::Activations, q.slot);
+        element_offset(layout, Region::Activations, q.consumer);
     const uint64_t rows_hidden = uint64_t(shape.max_rows) * shape.hidden;
     const uint64_t scale_stride =
         uint64_t(shape.hidden / shape.act_group) * sizeof(float);
@@ -162,7 +162,7 @@ inline bool populate_request(Request* q, const Layout& layout,
     r.route_count = route_count;
     r.generation_slot = generation_slot;
     r.route_offset = element_offset(layout, Region::Routes, slot);
-    r.activation_offset = element_offset(layout, Region::Activations, slot);
+    r.activation_offset = element_offset(layout, Region::Activations, layer % t.ranks);
     const uint64_t rows_hidden = uint64_t(shape.max_rows) * shape.hidden;
     r.activation_q_offset = r.activation_offset + rows_hidden * sizeof(uint16_t);
     r.activation_s_offset = r.activation_q_offset + rows_hidden;

@@ -17,6 +17,7 @@
 #include <sys/eventfd.h>
 #include <sys/syscall.h>
 #include <thread>
+#include <vector>
 #include <unistd.h>
 
 class HelperWatch {
@@ -28,7 +29,9 @@ public:
 
     /* False (logged) when the watch cannot run: the caller must not use the helpers then. */
     bool start(r3::moe_shm::Header* h) {
+        if (!h || !r3::moe_shm::slots_fit(h->helper_count, h->rank_count)) return false;
         h_ = h;
+        watched_.assign(h->helper_count, 0);
         wake_ = ::eventfd(0, EFD_CLOEXEC | EFD_NONBLOCK);
         if (wake_ < 0) return fail("eventfd");
         try {
@@ -53,12 +56,12 @@ public:
     }
 
     /* True once helper i's process is held by a validated pidfd. */
-    bool watching(uint32_t i) const { return __atomic_load_n(&watched_[i], __ATOMIC_ACQUIRE) != 0; }
+    bool watching(uint32_t i) const { return i < watched_.size() && __atomic_load_n(&watched_[i], __ATOMIC_ACQUIRE) != 0; }
 
     /* A helper has published a pid the thread is not watching yet: wake it to open a pidfd. */
     void notice() {
         if (wake_ < 0) return;
-        for (uint32_t i = 0; i < r3::moe_shm::kMaxHelpers; ++i)
+        for (uint32_t i = 0; i < h_->helper_count; ++i)
             if (__atomic_load_n(&h_->helper_pid[i], __ATOMIC_ACQUIRE) > 0 &&
                 __atomic_load_n(&watched_[i], __ATOMIC_ACQUIRE) == 0) {
                 signal();
@@ -78,8 +81,7 @@ private:
     }
 
     void run() {
-        int pidfd[r3::moe_shm::kMaxHelpers];
-        for (auto& f : pidfd) f = -1;
+        std::vector<int> pidfd(h_->helper_count, -1);
         while (watch_once(pidfd)) {}
         for (int f : pidfd)
             if (f >= 0) ::close(f);
@@ -87,12 +89,12 @@ private:
 
     /* One wait. False when the watch ends: stop(), or a helper is gone or cannot be watched (helper_fault raised).
      * Fails closed: the engine never keeps serving with a helper it cannot watch. */
-    bool watch_once(int* pidfd) {
+    bool watch_once(std::vector<int>& pidfd) {
         using namespace r3::moe_shm;
         /* Pick up helpers that have published since the last pass. The pidfd names the process only if its start
          * time still matches the helper's own record: a helper that died before we opened it (ESRCH, or its pid
          * already reused by another process) is a dead helper. */
-        for (uint32_t i = 0; i < kMaxHelpers; ++i) {
+        for (uint32_t i = 0; i < h_->helper_count; ++i) {
             const int32_t pid = __atomic_load_n(&h_->helper_pid[i], __ATOMIC_ACQUIRE);
             if (pid <= 0 || pidfd[i] >= 0) continue;
             pidfd[i] = (int)::syscall(SYS_pidfd_open, pid, 0);
@@ -103,14 +105,14 @@ private:
             __atomic_store_n(&watched_[i], 1u, __ATOMIC_RELEASE);
             notify(h_);   /* the engine's registration barrier waits for every helper to be watched */
         }
-        pollfd fds[kMaxHelpers + 1];
-        uint32_t who[kMaxHelpers + 1];
+        std::vector<pollfd> fds(h_->helper_count + 1);
+        std::vector<uint32_t> who(h_->helper_count + 1);
         nfds_t n = 0;
         fds[n] = {wake_, POLLIN, 0};
         who[n++] = UINT32_MAX;
-        for (uint32_t i = 0; i < kMaxHelpers; ++i)
+        for (uint32_t i = 0; i < h_->helper_count; ++i)
             if (pidfd[i] >= 0) { fds[n] = {pidfd[i], POLLIN, 0}; who[n++] = i; }
-        if (::poll(fds, n, -1) < 0) {
+        if (::poll(fds.data(), n, -1) < 0) {
             if (errno == EINTR) return true;
             return fault(UINT32_MAX, 0, std::strerror(errno));
         }
@@ -143,6 +145,6 @@ private:
     r3::moe_shm::Header* h_ = nullptr;
     int wake_ = -1;
     uint32_t quit_ = 0;
-    uint32_t watched_[r3::moe_shm::kMaxHelpers] = {};
+    std::vector<uint32_t> watched_;
     std::thread thread_;
 };

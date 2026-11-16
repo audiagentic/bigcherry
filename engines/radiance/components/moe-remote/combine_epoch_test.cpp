@@ -31,10 +31,10 @@ static void publisher_shaped_combine(uint32_t helpers, uint32_t world, uint32_t 
     const LayoutShape shape{128, 2, 3, rows, 128, 64};
     Layout layout{};
     check(slots_fit(helpers, world) && consumer < world, "publisher shape");
-    check(layout_for(shape, 2, slots_for(helpers, world), &layout), "publisher layout");
+    check(v26::layout_for(shape,2,{helpers,world},&layout) == Refusal::None, "publisher layout");
     void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    check(map != MAP_FAILED && init(map, 2, shape, helpers, world), "publisher init");
+    check(map != MAP_FAILED && v26::init(map,layout.bytes,shape,2,{helpers,world},0xC0B10E17ULL) == Refusal::None, "publisher init");
     auto* h = static_cast<Header*>(map);
     h->helper_count = helpers;
     auto* ctrl = placement_control(map);
@@ -62,10 +62,10 @@ static void publisher_shaped_combine(uint32_t helpers, uint32_t world, uint32_t 
     cs.request = generation;
     cs.rows = rows;
     std::vector<uint8_t> expected(rows, 0);
-    Request* q[kCombineHelpers] = {};
+    Request* q[kCombineMaskBits] = {};
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = slot_of(k, consumer, world);
-        const uint32_t lane = lane_of(slot, kSmallClasses);
+        const uint32_t lane = lane_of(slot, kSmallClasses,h->slot_count);
         cs.lane[k] = lane;
         const uint32_t seq = k + 5; // independent producer lane counters
         if (empty_tail && k == helpers - 1) {
@@ -109,11 +109,11 @@ static void publisher_shaped_combine(uint32_t helpers, uint32_t world, uint32_t 
     check(expected[0] == 1 && expected[1] == (empty_tail || helpers == 2 ? 3 : 7) &&
           expected[3] == 0 && expected[256] == 3 &&
           expected[512] == (empty_tail || helpers == 2 ? 3 : 7), "route mask geometry");
-    auto* out = ptr<uint16_t>(map, h->result_offset[combine_index(consumer)]);
+    auto* out = ptr<uint16_t>(map, h->result_offset[combine_index(consumer,h->slot_count)]);
     std::fill_n(out, (size_t)rows * h->hidden, fp16[0]);
     /* The combine plane is never a result plane of any slot (RAD49). */
     for (uint32_t s = 0; s < h->slot_count; ++s)
-        check(combine_index(consumer) != result_index(s, slot_consumer(s, world)), "combine plane is free");
+        check(combine_index(consumer,h->slot_count) != result_index(s, slot_consumer(s, world)), "combine plane is free");
     /* The other consumer's combine state stays untouched. */
     if (world > 1) {
         h->combine[1u - consumer].request = 0;
@@ -130,7 +130,7 @@ static void publisher_shaped_combine(uint32_t helpers, uint32_t world, uint32_t 
         const uint32_t original = field;
         field = wrong;
         cs.done = 0;
-        for (auto& done : ch.done) done = 0;
+        for(uint32_t c=0;c<ch.done.count;++c) ch.done[c]=0;
         check(!run() && !cs.done && !ch.done[0], why);
         field = original;
     };
@@ -182,7 +182,7 @@ static void publisher_shaped_combine(uint32_t helpers, uint32_t world, uint32_t 
                   "combined fp16 output matches actual route masks");
     if (empty_tail)
         check(cs.seq[helpers - 1] == 0 &&
-              h->lane[lane_of(slot_of(helpers - 1, consumer, world), kSmallClasses)].done_sequence == 0,
+              h->lane[lane_of(slot_of(helpers-1,consumer,world),kSmallClasses,h->slot_count)].done_sequence == 0,
               "empty tail never publishes a request or completion");
     check(munmap(map, layout.bytes) == 0, "publisher unmap");
 }
@@ -197,9 +197,9 @@ static void tp2_combine_transitions() {
     constexpr uint32_t world = 2, helpers = 2, max_rows = 2 * kCombineChunkRows + 64;
     const LayoutShape shape{128, 2, 3, max_rows, 128, 64};
     Layout layout{};
-    check(layout_for(shape, 2, slots_for(helpers, world), &layout), "tp2 transitions layout");
+    check(v26::layout_for(shape,2,{helpers,world},&layout) == Refusal::None, "tp2 transitions layout");
     void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    check(map != MAP_FAILED && init(map, 2, shape, helpers, world), "tp2 transitions init");
+    check(map != MAP_FAILED && v26::init(map,layout.bytes,shape,2,{helpers,world},0xC0B10E17ULL) == Refusal::None, "tp2 transitions init");
     auto* h = static_cast<Header*>(map);
     h->helper_count = helpers;
     h->small_class_count = 2; h->small_class_rows[0] = 16; h->small_class_rows[1] = 32;
@@ -238,7 +238,7 @@ static void tp2_combine_transitions() {
         expected->assign(rows, 0);
         Request* q0 = nullptr;
         for (uint32_t k = 0; k < helpers; ++k) {
-            const uint32_t slot = slot_of(k, consumer, world), lane = lane_of(slot, kSmallClasses);
+            const uint32_t slot = slot_of(k, consumer, world), lane = lane_of(slot, kSmallClasses,h->slot_count);
             const uint32_t seq = seq_base + k;
             cs.lane[k] = lane;
             if (!(part & (1u << k))) { cs.seq[k] = 0; continue; }
@@ -271,7 +271,7 @@ static void tp2_combine_transitions() {
         if (gen) cs.request = gen;
         return q0;
     };
-    auto out_of = [&](uint32_t consumer) { return ptr<uint16_t>(map, h->result_offset[combine_index(consumer)]); };
+    auto out_of = [&](uint32_t consumer) { return ptr<uint16_t>(map, h->result_offset[combine_index(consumer,h->slot_count)]); };
     for (uint32_t c = 0; c < world; ++c) std::fill_n(out_of(c), (size_t)max_rows * h->hidden, f16_for[0]);
     const uint32_t gen_of[2] = {7, 3}, seq_of[2] = {5, 41};   /* distinct per consumer */
     for (uint32_t rows : {255u, 256u, 257u}) {
@@ -350,10 +350,10 @@ int main() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(2, 1),&layout),"layout");
+    check(v26::layout_for(shape,2,{2,1},&layout) == Refusal::None,"layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,2, 1),"init");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,2,{2,1},0xC0B10E17ULL) == Refusal::None,"init");
     auto* h=static_cast<Header*>(map);
     auto* ctrl=placement_control(map);
     h->helper_count=2;
@@ -363,7 +363,7 @@ int main() {
     r3::epoch::SharedTransport bootstrap(map);
     check(bootstrap.seal_bootstrap(),"bootstrap sealed");
 
-    const uint32_t lane0=lane_of(0,kSmallClasses),lane1=lane_of(1,kSmallClasses);
+    const uint32_t lane0=lane_of(0,kSmallClasses,h->slot_count),lane1=lane_of(1,kSmallClasses,h->slot_count);
     Request* q0=lane_request(map,lane0,1);
     Request* q1=lane_request(map,lane1,1);
     for(Request* q : {q0,q1}) {
@@ -407,7 +407,7 @@ int main() {
     q1->world=2;
     check(!run() && !cs.done,"wrong helper participant shape rejected");
     q1->world=1;
-    cs.lane[1]=lane_of(1,0);
+    cs.lane[1]=lane_of(1,0,h->slot_count);
     check(!run() && !cs.done,"wrong helper lane class rejected");
     cs.lane[1]=lane1;
     cs.request=2;
@@ -429,7 +429,7 @@ int main() {
     // Fake non-power-saving small lane: all kLaneSlots waits remain queued
     // after a burst. The production drain predicate must refuse to ACK until
     // their release+stream synchronization and the consumed parent proof.
-    constexpr uint32_t small=lane_of(0,0);
+    const uint32_t small=lane_of(0,0,h->slot_count);
     auto& signal=h->lane[small];
     const uint64_t closure=99;
     signal.drain_request=closure;

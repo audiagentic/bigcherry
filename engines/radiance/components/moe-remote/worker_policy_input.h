@@ -26,8 +26,8 @@ inline bool capture_owners(const void* map, OwnerSnapshot* out) {
     if (!map || !out) return false;
     const Header* h = static_cast<const Header*>(map);
     if (!h->layer_count || h->layer_count > kMaxLayers ||
-        !h->expert_count || h->layer_map_slot_bytes != uint64_t(kMaxLayers) * h->expert_count * sizeof(int32_t) ||
-        !h->helper_count || h->helper_count > kMaxHelpers ||
+        !h->expert_count || h->layer_map_slot_bytes != uint64_t(h->layer_count) * h->expert_count * sizeof(int32_t) ||
+        !slots_fit(h->helper_count, h->rank_count) ||
         h->owner_map_bytes != uint64_t(h->layer_count) * h->expert_count)
         return false;
     PlacementControl a{}, b{};
@@ -146,7 +146,7 @@ inline bool build_input(const OwnerSnapshot& owners,
     };
     const size_t n = size_t(owners.layers) * owners.experts;
     if (!result || !controls_valid(controls) || !owners.layers ||
-        !owners.experts || !owners.helpers || owners.helpers > moe_shm::kMaxHelpers ||
+        !owners.experts || !owners.helpers || !moe_shm::slots_fit(owners.helpers, 1) ||
         !owners.epoch || !owners.digest || !now_ns ||
         n != owners.owner.size() || n != owners.runtime.size() ||
         n != experts.size() || ledgers.size() != owners.helpers ||

@@ -1,4 +1,4 @@
-#include "moe_remote_topology_v26.h"
+#include "moe_remote_shm.h"
 #include <cstdio>
 #include <cstdlib>
 #include <sys/mman.h>
@@ -20,7 +20,9 @@ static size_t alignment(v::Region r) {
     case v::Region::ResultPlanes: return r3::moe_shm::kPage;
     case v::Region::ChunkSequences:
     case v::Region::ChunkCompletions:
-    case v::Region::LayerMap: return alignof(uint32_t);
+    case v::Region::LayerMap:
+    case v::Region::LayerMapReady:
+    case v::Region::LayerMapConsumed: return alignof(uint32_t);
     default: return 64;
     }
 }
@@ -62,6 +64,8 @@ static void geometry(LayoutShape shape, uint32_t layers, v::Topology t) {
     check(l.regions[v::index(v::Region::Lanes)].offset >= sizeof(v::Header), "metadata outside header");
     check(l.regions[v::index(v::Region::ResultPlanes)].count == counts.slots + t.ranks,
           "dedicated combined plane counted");
+    check(l.regions[v::index(v::Region::Activations)].count == t.ranks,
+          "one staged activation buffer per consumer, not per helper");
 
     std::vector<bool> seen_slot(counts.slots), seen_lane(counts.lanes), seen_ring(counts.ring_entries);
     for (uint32_t helper = 0; helper < t.helpers; ++helper) {
@@ -133,14 +137,56 @@ static void geometry(LayoutShape shape, uint32_t layers, v::Topology t) {
           "consumer checks mapped length, topology, manifest and layers");
     auto* h = static_cast<v::Header*>(p);
     check(h->version == 26 && h->header_bytes == r3::moe_shm::kPage, "v26 page header");
+    const auto* control = v::element<r3::moe_shm::PlacementControl>(p, l, v::Region::Placement, 0);
+    check(control && control->active_slot == 0 && control->pending_slot == UINT32_MAX &&
+          control->active_epoch == 1 && control->expected_helpers == ((1u << t.helpers) - 1u) &&
+          control->state == uint32_t(r3::moe_shm::PlacementState::ACTIVE) &&
+          h->next_sequence == 1 && h->small_class_count == 1,
+          "v26 bootstrap control and request allocator match production baseline");
+    for (uint32_t layer = 0; layer < layers; ++layer) {
+        check(*v::element<uint32_t>(p, l, v::Region::LayerMapReady, layer) == 0 &&
+              *v::element<uint32_t>(p, l, v::Region::LayerMapConsumed, layer) == 0,
+              "per-layer publication and consumption begin unissued");
+        const int32_t* owners = v::element<int32_t>(p, l, v::Region::LayerMap, layer);
+        for (uint32_t expert = 0; expert < shape.experts; ++expert)
+            check(owners[expert] == -1, "unpublished regular layer map never routes to helper zero");
+    }
+    check(&h->lane[0] == v::element<r3::moe_shm::LaneSignal>(p, l, v::Region::Lanes, 0),
+          "lane indexed view addresses its validated region");
     for (uint32_t slot = 0; slot < counts.slots; ++slot) {
         auto* d = v::element<v::SlotDescriptor>(p, l, v::Region::Slots, slot);
         check(d && d->helper == slot / t.ranks && d->consumer == slot % t.ranks &&
-              d->result == v::element_offset(l, v::Region::ResultPlanes, slot), "producer slot identity");
+              d->result == v::element_offset(l, v::Region::ResultPlanes, slot) &&
+              d->activation == v::element_offset(l, v::Region::Activations, slot % t.ranks),
+              "producer slot identity and shared activation");
+    }
+    for (uint32_t rank = 0; rank < t.ranks; ++rank) {
+        auto* c = v::element<v::CombineDescriptor>(p, l, v::Region::CombineSignals, rank);
+        auto* d = v::element<v::ChunkDescriptor>(p, l, v::Region::ChunkDescriptors, rank);
+        check(&h->combine[rank] == c && &h->chunks[rank] == d,
+              "combine and chunk descriptors use counted views");
+        for (uint32_t helper = 0; helper < t.helpers; ++helper) {
+            const uint32_t ix = rank * t.helpers + helper;
+            auto* i = v::element<v::CombineInput>(p, l, v::Region::CombineInputs, ix);
+            check(&c->lane[helper] == &i->lane && &c->seq[helper] == &i->sequence,
+                  "combine helper view addresses rank's exact contributor words");
+            for (uint32_t chunk = 0; chunk < l.counts.chunks; ++chunk)
+                check(&d->seq[helper][chunk] == v::element<uint32_t>(p, l, v::Region::ChunkSequences,
+                            ix * l.counts.chunks + chunk) &&
+                      &d->done[chunk] == v::element<uint32_t>(p, l, v::Region::ChunkCompletions,
+                            rank * l.counts.chunks + chunk),
+                      "dynamic combine sequence and completion views never alias");
+        }
     }
     for (uint32_t gen = 0; gen < v::kGenerationSlots; ++gen) {
         auto* g = v::element<r3::moe_shm::GenerationHeader>(p, l, v::Region::Generations, gen);
-        check(g && g->map_bytes == l.owner_map_bytes, "owner map correctly sized");
+        check(g && g->map_bytes == l.owner_map_bytes &&
+              g->state == uint32_t(gen == 0 ? r3::moe_shm::GenerationState::ACTIVE :
+                                              r3::moe_shm::GenerationState::EMPTY),
+              "owner map correctly sized and active generation identified");
+        if (gen == 0)
+            check(g->epoch == 1 && g->digest == control->active_digest && g->digest != 0,
+                  "generation digest agrees with active placement control");
         auto* bytes = reinterpret_cast<const uint8_t*>(g) + sizeof(*g);
         for (uint32_t i = 0; i < l.owner_map_bytes; ++i)
             check(bytes[i] == r3::moe_shm::kOwnerLocal, "generation starts local");
@@ -183,6 +229,21 @@ static void corruptions() {
     corrupt(h->manifest_digest, p, l, s, layers, t);
     corrupt(h->identity_hash, p, l, s, layers, t);
     corrupt(h->published_helpers, p, l, s, layers, t);
+    corrupt(h->rank_count, p, l, s, layers, t);
+    corrupt(h->slot_count, p, l, s, layers, t);
+    corrupt(h->route_offset.relative, p, l, s, layers, t);
+    corrupt(h->activation_offset.stride, p, l, s, layers, t);
+    corrupt(h->result_offset.start, p, l, s, layers, t);
+    corrupt(h->lane.count, p, l, s, layers, t);
+    corrupt(h->combine.relative, p, l, s, layers, t);
+    corrupt(h->chunks.count, p, l, s, layers, t);
+    corrupt(h->layer_map_ready.relative, p, l, s, layers, t);
+    corrupt(h->helper_pid.field, p, l, s, layers, t);
+    corrupt(h->small_class_count, p, l, s, layers, t);
+    corrupt(h->small_class_rows[0], p, l, s, layers, t);
+    auto* control = v::element<r3::moe_shm::PlacementControl>(p, l, v::Region::Placement, 0);
+    corrupt(control->expected_helpers, p, l, s, layers, t);
+    corrupt(control->active_slot, p, l, s, layers, t);
     for (auto& field : h->reserved) corrupt(field, p, l, s, layers, t);
     auto* counts = &h->counts.slots;
     for (size_t i = 0; i < sizeof(v::Counts) / sizeof(uint32_t); ++i)
@@ -216,6 +277,11 @@ static void corruptions() {
         corrupt(c->inputs, p, l, s, layers, t);
         corrupt(c->chunk_sequences, p, l, s, layers, t);
         corrupt(c->chunk_completions, p, l, s, layers, t);
+        corrupt(c->lane.relative, p, l, s, layers, t);
+        corrupt(c->seq.stride, p, l, s, layers, t);
+        auto* d = v::element<v::ChunkDescriptor>(p, l, v::Region::ChunkDescriptors, rank);
+        corrupt(d->seq.relative, p, l, s, layers, t);
+        corrupt(d->done.count, p, l, s, layers, t);
         for (uint32_t helper = 0; helper < t.helpers; ++helper) {
             auto* input = v::element<v::CombineInput>(p, l, v::Region::CombineInputs, rank*t.helpers+helper);
             corrupt(input->helper, p, l, s, layers, t);
@@ -280,9 +346,9 @@ int main() {
     // Freeze the v25 four supported outcomes without editing its active ABI.
     check(r3::moe_shm::slots_fit(1,1) && r3::moe_shm::slots_fit(2,1) &&
           r3::moe_shm::slots_fit(1,2) && r3::moe_shm::slots_fit(2,2) &&
-          !r3::moe_shm::slots_fit(1,3) && !r3::moe_shm::slots_fit(2,3),
+          r3::moe_shm::slots_fit(1,3) && r3::moe_shm::slots_fit(2,3),
           "v25 baseline and old TP3 refusals");
-    check(r3::moe_shm::kVersion == 25 && v::kVersion == 26,
+    check(r3::moe_shm::kVersion == 26 && v::kVersion == 26,
           "old active and new staged versions distinguishable");
     hostile();
     const v::Topology topologies[] = {{1,1},{2,1},{1,2},{2,2},{1,3},{2,3},{3,2},{4,1}};

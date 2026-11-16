@@ -1,519 +1,391 @@
 #include "moe_remote_shm.h"
+#include <algorithm>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <fcntl.h>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <limits>
 #include <string>
 #include <sys/mman.h>
 #include <thread>
-#include <vector>
 #include <unistd.h>
-#include <cstdlib>
-
-// Release builds define NDEBUG, which removes assert() and any call inside it; these checks always run.
-static void check(bool ok, const char* what) {
-    if (!ok) { std::fprintf(stderr, "r3_moe_shm_test: FAILED %s\n", what); std::exit(1); }
-}
+#include <vector>
 
 using namespace r3::moe_shm;
-static void V23Layout_ExactOffsetsAndBounds() {
-    LayoutShape shape{128, 2, 3, 8, 128, 64};
-    Layout l{};
-    check(layout_for(shape, 2, 2, &l), "V23Layout layout");
-    check(l.ring == 4096 && l.placement == 24576 &&
-          l.generation[0] == 28672 && l.owner_map_bytes == 6 &&
-          l.generation_slot_bytes == 4096 && l.generation[1] == 32768 &&
-          l.layer_map == 36864, "V23Layout exact offsets");
-    check(l.service == l.ack + (kMaxHelpers + kMaxEngineRanks)*sizeof(PlacementAck) &&
-          l.service + kMaxHelpers*sizeof(PublishedServiceSlot) <= l.generation[0],
-          "V23Layout control/journal/ACK bounds");
-    check(sizeof(Header) == kPage && sizeof(Request) == 256 &&
-          sizeof(LaneSignal) == 64 && sizeof(CombineSignal) == 128,
-          "V23Layout ABI sizes");
-    // Unfused selector reads Request lines [0,1]; fused additionally writes
-    // trace[3] in line 2. Generation +204 would require line 3 in both.
-    check(offsetof(Request, generation_slot) == 36 &&
-          offsetof(Request, generation_slot) / 64 == offsetof(Request, slot) / 64 &&
-          offsetof(Request, activation_s_stride) / 64 == 1 &&
-          (offsetof(Request, trace) + 3 * sizeof(uint64_t)) / 64 == 2 &&
-          offsetof(Request, row_base) == 204 &&
-          offsetof(Request, placement_epoch) / 64 == 3,
-          "v23 helper selector generation stays on the already-read first cache line");
-    std::puts("V23Layout_ExactOffsetsAndBounds: PASS");
+namespace wire = r3::moe_shm::v26;
+
+static void check(bool ok, const char* what) {
+    if (!ok) {
+        std::fprintf(stderr, "r3_moe_shm_test: FAILED %s\n", what);
+        std::exit(1);
+    }
+}
+constexpr uint64_t kManifest = 0x13572680ae691d31ull;
+constexpr LayoutShape kShape{128, 2, 3, 8, 128, 64};
+
+struct Segment {
+    Layout layout{};
+    Topology topology{};
+    uint32_t layers = 2;
+    void* data = nullptr;
+    explicit Segment(Topology t, LayoutShape s = kShape, uint32_t n_layers = 2)
+        : topology(t), layers(n_layers) {
+        check(wire::layout_for(s, layers, t, &layout) == Refusal::None, "counted layout");
+        data = mmap(nullptr, size_t(layout.bytes), PROT_READ | PROT_WRITE,
+                    MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+        check(data != MAP_FAILED, "map host shm");
+        check(wire::init(data, size_t(layout.bytes), s, layers, t, kManifest) == Refusal::None,
+              "v26 segment init");
+        check(valid_self(header(), size_t(layout.bytes)), "v26 live self-validation");
+        check(wire::valid(data, size_t(layout.bytes), s, layers, t, kManifest) ==
+                  Refusal::None, "external contract validation");
+    }
+    ~Segment() { if (data && data != MAP_FAILED) munmap(data, size_t(layout.bytes)); }
+    Segment(const Segment&) = delete;
+    Segment& operator=(const Segment&) = delete;
+    Header* header() const { return static_cast<Header*>(data); }
+};
+
+static void Geometry_RuntimeCountsAndABI() {
+    check(kVersion == 26 && sizeof(Header) == kPage && alignof(Header) == kPage &&
+          sizeof(Request) == 256 && sizeof(LaneSignal) == 64 &&
+          sizeof(CombineSignal) == 128 && sizeof(CombineChunks) == 64,
+          "one v26 wire ABI and no inline fixed topology arrays");
+    check(offsetof(Request, layer) == 12 && offsetof(Request, slot) == 16 &&
+          offsetof(Request, world) == 20 &&
+          offsetof(Request, generation_slot) == 36 &&
+          offsetof(Request, route_offset) == 40 &&
+          offsetof(Request, activation_offset) == 48 &&
+          offsetof(Request, activation_q_offset) == 56,
+          "the GPU Request first cache line identity is unchanged");
+    const Topology cases[] = {{1,1}, {2,1}, {1,2}, {2,2}, {1,3}, {2,3}, {3,2}, {4,1}};
+    for (const Topology t : cases) {
+        wire::Counts c{};
+        check(wire::counts_for(t, &c) == Refusal::None && slots_fit(t.helpers,t.ranks),
+              "legal topology is counted and accepted");
+        check(c.slots == t.helpers * t.ranks && c.lanes == c.slots * kClasses &&
+              c.ring_entries == c.lanes * kLaneSlots && c.acks == t.helpers + t.ranks &&
+              c.results == c.slots + t.ranks, "exact topology-derived capacities");
+        Segment s(t);
+        Header* h = s.header();
+        check(h->counts.slots == c.slots && h->rank_count == t.ranks &&
+              h->helper_count == t.helpers && h->placement_ack_count == c.acks,
+              "native layout published the same counts");
+        check(h->regions[wire::index(Region::Requests)].count == c.ring_entries &&
+              h->regions[wire::index(Region::ResultPlanes)].count == c.results &&
+              h->regions[wire::index(Region::Activations)].count == t.ranks,
+              "ring and distinct slot/combine planes, shared activation by consumer");
+        for (uint32_t helper = 0; helper < t.helpers; ++helper) {
+            check(h->helper_pid[helper] == 0 && h->helper_start[helper] == 0,
+                  "helper descriptor is initialized");
+            for (uint32_t rank = 0; rank < t.ranks; ++rank) {
+                uint32_t slot = slot_of(helper,rank,t.ranks);
+                uint32_t lane = lane_of(slot,kSmallClasses,c.slots);
+                check(lane < c.lanes && lane_class(lane,c.slots) == kSmallClasses &&
+                      slot_helper(slot,t.ranks) == helper &&
+                      slot_consumer(slot,t.ranks) == rank,
+                      "rank/slot/lane are inverses");
+                check(h->route_offset[slot] == wire::element_offset(s.layout,Region::Routes,slot) &&
+                      h->activation_offset[slot] ==
+                          wire::element_offset(s.layout,Region::Activations,rank) &&
+                      h->result_offset[result_index(slot,rank)] ==
+                          wire::element_offset(s.layout,Region::ResultPlanes,slot),
+                      "all view offsets derive from counted regions");
+                check(h->combine[rank].consumer == rank &&
+                      h->combine[rank].lane[helper] == 0 &&
+                      h->chunks[rank].done[0] == 0, "rank combine and contributor views");
+            }
+        }
+        for (uint32_t rank = 0; rank < t.ranks; ++rank) {
+            const uint32_t combined = combine_index(rank,c.slots);
+            check(combined >= c.slots && combined < c.results &&
+                  h->result_offset[combined] ==
+                      wire::element_offset(s.layout,Region::ResultPlanes,combined),
+                  "dedicated rank combine never aliases a helper result");
+        }
+        check(placement_ack(s.data,c.acks) == nullptr &&
+              placement_ack(s.data,c.acks-1) != nullptr &&
+              published_service(s.data,t.helpers) == nullptr &&
+              published_service(s.data,t.helpers-1) != nullptr,
+              "ACKs, services are bounded by actual participants");
+    }
+    wire::Counts count{};
+    check(wire::counts_for({9,1},&count) == Refusal::CombineMask &&
+          wire::counts_for({1,32},&count) == Refusal::ParticipantMask &&
+          !slots_fit(9,1) && !slots_fit(1,32) && slots_fit(2,3),
+          "only typed mask representation bounds refuse otherwise-countable topologies");
 }
 
-static void V23Map_LocalProtectedAndDisjoint() {
-    const LayoutShape shape{128, 2, 3, 8, 128, 64};
-    Layout l{};
-    check(layout_for(shape, 2, 2, &l), "V23Map layout");
-    void* base = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    check(base != MAP_FAILED && init(base, 2, shape, 2, 1), "V23Map init");
-    auto* h = static_cast<Header*>(base);
-    h->helper_count = 2;
-    check(valid_self(h, l.bytes), "V23Map initial validation");
+static void Descriptors_MutationAndDigest() {
+    Segment s({2,3});
+    Header* h = s.header();
+    const auto l = s.layout;
+    check(placement_control(s.data)->active_slot == 0 &&
+          placement_control(s.data)->active_epoch == 1 &&
+          placement_control(s.data)->pending_slot == UINT32_MAX &&
+          generation_header(s.data,0)->state == uint32_t(GenerationState::ACTIVE) &&
+          generation_header(s.data,1)->state == uint32_t(GenerationState::EMPTY),
+          "initial generation, placement state, and slots");
+    for (uint32_t layer = 0; layer < s.layers; ++layer) {
+        check(h->layer_map_ready[layer] == 0 && h->layer_map_consumed[layer] == 0,
+              "all layer publication words begin clear");
+        for (uint32_t expert = 0; expert < kShape.experts; ++expert)
+            check(layer_slot(s.data,layer,expert) == -1,
+                  "unpublished layer owner is never helper zero");
+    }
+    for (uint32_t g = 0; g < wire::kGenerationSlots; ++g)
+        for (uint32_t layer = 0; layer < s.layers; ++layer)
+            for (uint32_t e = 0; e < kShape.experts; ++e)
+                check(owner_at(s.data,g,layer,e) == kOwnerLocal, "initial ownership local");
+
+    auto* c = placement_control(s.data);
     PlacementControl snapshot{};
-    check(placement_snapshot(base, &snapshot) && snapshot.active_epoch == 1,
-          "V23Layout atomic initial snapshot");
-    placement_control(base)->seq = 1;
-    check(!placement_snapshot(base, &snapshot), "V23Layout odd sequence is not stable");
-    placement_control(base)->seq = 2;
-    check(placement_snapshot(base, &snapshot) && snapshot.seq == 2,
-          "V23Layout even sequence snapshot");
-    check(placement_control(base)->active_slot == 0 && placement_control(base)->active_epoch == 1 &&
-          placement_control(base)->pending_slot == UINT32_MAX &&
-          generation_header(base, 0)->state == (uint32_t)GenerationState::ACTIVE &&
-          generation_header(base, 1)->state == (uint32_t)GenerationState::EMPTY,
-          "V23Map initial active epoch");
-    for (uint32_t slot = 0; slot < 2; ++slot)
-        for (uint32_t layer = 0; layer < 2; ++layer)
-            for (uint32_t expert = 0; expert < 3; ++expert)
-                check(owner_at(base, slot, layer, expert) == kOwnerLocal, "V23Map all entries local");
-    uint8_t* map = generation_map(base, 0);
-    map[0] = 0; map[1] = 1;
-    check(owner_at(base, 0, 0, 0) == 0 && owner_at(base, 0, 0, 1) == 1 &&
-          owner_at(base, 0, 0, 2) == kOwnerLocal &&
-          owner_at(base, 1, 0, 0) == kOwnerLocal &&
-          owner_at(base, 2, 0, 0) == kOwnerLocal &&
-          owner_at(base, 0, 2, 0) == kOwnerLocal &&
-          placement_ack(base, 0) != nullptr &&
-          placement_ack(base, kMaxHelpers + kMaxEngineRanks) == nullptr &&
-          published_service(base, 1) != nullptr && published_service(base, 2) == nullptr,
-          "V23Map one owner, protected/local, accessor bounds");
-    const uint64_t digest = generation_digest(base, 0);
-    generation_header(base, 0)->digest = digest;
-    placement_control(base)->active_digest = digest;
-    generation_header(base, 0)->ready_helpers = placement_control(base)->expected_helpers;
-    check(valid_self(h, l.bytes), "V23Map sealed and valid");
-    map[2] = 1;
-    check(!valid_self(h, l.bytes), "V23Map corrupt owner bytes fail sealed digest");
-    map[2] = kOwnerLocal;
-    check(valid_self(h, l.bytes), "V23Map restored digest valid");
-    map[2] = 7;
-    check(!valid_self(h, l.bytes), "V23Map invalid helper index fails closed");
-    map[2] = kOwnerLocal;
-    ++h->owner_map_bytes;
-    check(!valid_self(h, l.bytes), "V23Map malformed map bytes rejected");
-    --h->owner_map_bytes;
-    ++generation_header(base, 0)->map_bytes;
-    check(!valid_self(h, l.bytes), "V23Map malformed generation length rejected");
-    --generation_header(base, 0)->map_bytes;
-    ++generation_header(base, 0)->epoch;
-    check(!valid_self(h, l.bytes), "V23Map epoch mismatch rejected");
-    --generation_header(base, 0)->epoch;
-    h->version = 23;
-    check(!valid_self(h, l.bytes), "v24 rejects stale v23");
-    h->version = kVersion;
-    check(valid_self(h, l.bytes), "V23Map restored descriptors validate");
-    munmap(base, l.bytes);
-    std::puts("V23Map_LocalProtectedAndDisjoint: PASS");
+    check(placement_snapshot(s.data,&snapshot) && snapshot.active_epoch == 1,
+          "initial seqlock snapshot");
+    c->seq = 1;
+    check(!placement_snapshot(s.data,&snapshot), "odd seqlock cannot be read");
+    c->seq = 2;
+    check(placement_snapshot(s.data,&snapshot) && snapshot.seq == 2,
+          "even seqlock snapshot");
+
+    auto* g = generation_header(s.data,0);
+    uint8_t* owners = generation_map(s.data,0);
+    owners[0] = 0; owners[1] = 1;
+    g->digest = generation_digest(s.data,0);
+    c->active_digest = g->digest;
+    g->ready_helpers = c->expected_helpers;
+    store(&h->bootstrap_filtered_helpers,c->expected_helpers);
+    check(bootstrap_generation_sealed(s.data) &&
+          valid_self(h,size_t(l.bytes)), "sealed valid ownership");
+    owners[2] = 1;
+    check(!valid_self(h,size_t(l.bytes)), "sealed digest mutation is rejected");
+    owners[2] = kOwnerLocal;
+    owners[2] = 9;
+    check(!valid_self(h,size_t(l.bytes)), "invalid owner id rejected");
+    owners[2] = kOwnerLocal;
+    check(valid_self(h,size_t(l.bytes)), "restored owners validated");
+
+    const Header keep = *h;
+    ++h->route_offset.relative;
+    check(!valid_self(h,size_t(l.bytes)), "misdirected route view refused"); *h = keep;
+    ++h->result_offset.start;
+    check(!valid_self(h,size_t(l.bytes)), "misdirected result view refused"); *h = keep;
+    ++h->lane.count;
+    check(!valid_self(h,size_t(l.bytes)), "misreported lane count refused"); *h = keep;
+    ++h->helper_count;
+    check(!valid_self(h,size_t(l.bytes)), "helper count mismatch refused"); *h = keep;
+    h->version = 25;
+    check(!valid_self(h,size_t(l.bytes)), "retired v25 header refused"); *h = keep;
+    check(wire::valid(s.data,l.bytes-1,kShape,s.layers,s.topology,kManifest) ==
+              Refusal::BadMapping, "short mapping fails closed");
+    check(wire::valid(s.data,l.bytes,kShape,s.layers,s.topology,kManifest+1) ==
+              Refusal::WrongIdentity, "foreign placement digest rejected");
 }
 
-static void V23Digest_ExactAndImmutable() {
-    const uint8_t map[] = {0, 0xff, 1, 0xff, 1, 0};
-    const uint64_t a = placement_digest(0x0102030405060708ull, 2, 3, 2, map);
-    const uint64_t b = placement_digest(0x0102030405060708ull, 2, 3, 2, map);
-    check(a == 0x5e0154deaf149dd6ull && a == b &&
-          a != placement_digest(0x0102030405060709ull, 2, 3, 2, map) &&
-          a != placement_digest(0x0102030405060708ull, 2, 3, 1, map),
-          "V23Digest deterministic domain separation");
-    uint8_t changed[6];
-    std::memcpy(changed, map, sizeof(changed));
-    changed[1] = 0;
-    check(a != placement_digest(0x0102030405060708ull, 2, 3, 2, changed),
-          "V23Digest every owner byte participates");
-    std::puts("V23Digest_ExactAndImmutable: PASS");
+static void Digest_DeterministicAndSeparated() {
+    const uint8_t owners[] = {0,0xff,1,0xff,1,0};
+    const uint64_t a = placement_digest(0x0102030405060708ull,2,3,2,owners);
+    check(a == 0x5e0154deaf149dd6ull &&
+          a != placement_digest(0x0102030405060709ull,2,3,2,owners) &&
+          a != placement_digest(0x0102030405060708ull,2,3,1,owners),
+          "digest input domains are immutable");
+    uint8_t changed[6]; std::memcpy(changed, owners, sizeof(changed)); changed[1]=0;
+    check(a != placement_digest(0x0102030405060708ull,2,3,2,changed),
+          "every owner byte affects placement digest");
 }
 
-/* RAD42: every combined chunk has exactly one poller (its first block) whatever that token's routing, and every routed
- * block of the chunk waits on the mirror the poller writes, so no waiter is left without a writer. */
 static void CombineChunkWait_FirstBlockAlwaysPolls() {
-    for (uint32_t pattern = 0; pattern < 16; ++pattern) {   /* routing of a chunk's tokens 0..3, plus a far token */
-        for (uint32_t chunk = 0; chunk < kCombineChunks; ++chunk) {
-            const uint32_t first = chunk * kCombineChunkRows;
-            uint32_t pollers = 0, waiters = 0;
-            for (uint32_t t = 0; t < kCombineChunkRows; ++t) {
-                const bool routed = t < 4 ? ((pattern >> t) & 1u) != 0u : (t == kCombineChunkRows - 1u);
-                const CombineChunkWait w = combine_chunk_wait(true, first + t, routed);
-                pollers += w == CombineChunkWait::Poll;
-                waiters += w == CombineChunkWait::Mirror;
-                if (!routed && t != 0) check(w == CombineChunkWait::None, "CombineChunkWait unrouted non-first block waits");
+    constexpr uint32_t chunks = (kMaxRows + kCombineChunkRows-1)/kCombineChunkRows;
+    for (uint32_t pattern=0;pattern<16;++pattern)
+        for (uint32_t chunk=0;chunk<chunks;++chunk) {
+            const uint32_t first=chunk*kCombineChunkRows;
+            uint32_t pollers=0;
+            for (uint32_t t=0;t<kCombineChunkRows;++t) {
+                const bool routed = t<4 ? (pattern>>t)&1u : t==kCombineChunkRows-1;
+                const auto w=combine_chunk_wait(true,first+t,routed);
+                pollers += w==CombineChunkWait::Poll;
+                if (!routed && t)
+                    check(w==CombineChunkWait::None,"unrouted non-first block does not wait");
             }
-            check(pollers == 1, "CombineChunkWait exactly one poller per chunk");
-            check(waiters == 0 || pollers == 1, "CombineChunkWait waiter without a writer");
+            check(pollers==1,"every chunk has exactly one poller");
         }
-    }
-    /* The hang's shape: first token engine-local, a later token remote. */
-    check(combine_chunk_wait(true, 0, false) == CombineChunkWait::Poll, "CombineChunkWait local first token still polls");
-    check(combine_chunk_wait(true, 1, true) == CombineChunkWait::Mirror, "CombineChunkWait routed later token waits");
-    check(combine_chunk_wait(false, 0, true) == CombineChunkWait::None, "CombineChunkWait uncombined step never waits");
+    check(combine_chunk_wait(true,0,false)==CombineChunkWait::Poll &&
+          combine_chunk_wait(true,1,true)==CombineChunkWait::Mirror &&
+          combine_chunk_wait(false,0,true)==CombineChunkWait::None,
+          "chunk mirror wait follows initial publication");
 }
 
-/* RHP11 slice C drain proof: the helper refuses to ACK, and the engine refuses quiescence, when the lane's last
- * request no longer carries the identity both sides recorded. */
-static void DrainIdentity_RefusesCorruptLastRequest() {
-    const LayoutShape shape{128, 2, 3, 8, 128, 64};
+static void Lane_DrainAndRequestIdentity() {
+    Segment s({2,2});
+    Header* h=s.header();
+    const uint32_t slot=slot_of(1,1,2);
+    const uint32_t lane=lane_of(slot,kSmallClasses,h->counts.slots);
+    LaneSignal& ls=h->lane[lane];
+    const uint64_t closure=27;
+    ls.drain_request=closure;
+    check(!acknowledge_lane_drain(ls,closure,[&] { return false; }) &&
+          ls.drain_ack==0, "failed drain cannot certify");
+    check(acknowledge_lane_drain(ls,closure,[&] { return true; }) &&
+          ls.drain_ack==closure, "successful drain certifies exact closure");
+    check(!acknowledge_lane_drain(ls,closure+1,[&] { return true; }),
+          "stale closure cannot certify a newer drain");
+    check(request_slot_valid(slot,2,1,1,slot,2,h->counts.slots) &&
+          !request_slot_valid(slot,2,1,0,slot,2,h->counts.slots) &&
+          !request_slot_valid(slot,1,0,1,slot,2,h->counts.slots) &&
+          !request_slot_valid(h->counts.slots,2,0,0,h->counts.slots,2,h->counts.slots),
+          "slot, consumer, layer, width and live count all checked");
+    Request* q=lane_request(s.data,lane,1);
+    check(q && q==wire::element<Request>(s.data,s.layout,Region::Requests,lane*kLaneSlots),
+          "metadata ring indexed by counted lane");
+    store(&ls.done_sequence,1);
+    check(!publish_done_identity(s.data,lane),"unpublished request cannot certify last-done identity");
+    q->sequence=1; q->generation_slot=1; q->placement_epoch=17;
+    check(publish_done_identity(s.data,lane) && ls.done_epoch==17 && ls.done_slot==1,
+          "done identity follows only the completed ring entry");
+    q->generation_slot=wire::kGenerationSlots;
+    check(!publish_done_identity(s.data,lane),"out-of-range generation never certifies");
+    q->generation_slot=1;
+    ls.request_sequence=1; ls.consumed_sequence=1; ls.done_sequence=1;
+    ls.consumed_epoch=17; ls.consumed_slot=1;
+    check(lane_quiesced(h,lane,closure,true), "exact done and consumed identity is quiescent");
+    ls.consumed_epoch=16;
+    check(!lane_quiesced(h,lane,closure,true), "stale consumption identity not quiescent");
+}
+
+static void SharedMapping_ReleaseAcquire() {
+    const Topology t{1,2};
     Layout l{};
-    check(layout_for(shape, 2, 2, &l), "drain identity layout");
-    void* base = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-    check(base != MAP_FAILED && init(base, 2, shape, 2, 1), "drain identity init");
-    auto* h = static_cast<Header*>(base);
-    const uint32_t lane = 0, seq = 3;
-    const uint64_t closure = 9;
-    LaneSignal& s = h->lane[lane];
-    Request* q = lane_request(base, lane, seq);
-    auto reset = [&] {
-        s.request_sequence = s.done_sequence = s.consumed_sequence = seq;
-        s.done_epoch = 0; s.done_slot = 0;
-        s.consumed_epoch = 5; s.consumed_slot = 1;     /* the engine's sealed consumed identity */
-        s.drain_request = closure; s.drain_ack = 0;
-        q->sequence = seq; q->placement_epoch = 5; q->generation_slot = 1;
-    };
-    auto ack = [&] { return acknowledge_lane_drain(s, closure, [&] { return publish_done_identity(base, lane); }); };
-    reset();
-    check(ack() && s.done_epoch == 5 && s.done_slot == 1 && lane_quiesced(h, lane, closure, true),
-          "an intact last request is acknowledged and quiesces");
-    reset(); q->sequence = seq + kLaneSlots;   /* the ring slot was reused by a newer request */
-    check(!ack() && s.drain_ack == 0 && !lane_quiesced(h, lane, closure, true), "a reused ring slot refuses the ACK");
-    reset(); q->placement_epoch = 0;
-    check(!ack() && s.drain_ack == 0, "an invalid epoch refuses the ACK");
-    reset(); q->generation_slot = 2;
-    check(!ack() && s.drain_ack == 0, "an invalid generation slot refuses the ACK");
-    reset(); q->placement_epoch = 6;            /* the helper served another epoch than the engine consumed */
-    check(ack() && !lane_quiesced(h, lane, closure, true), "a mismatched epoch fails engine quiescence");
-    reset(); q->generation_slot = 0;
-    check(ack() && !lane_quiesced(h, lane, closure, true), "a mismatched slot fails engine quiescence");
-    reset();
-    check(ack(), "re-acknowledged");
-    s.consumed_sequence = seq - 1;
-    check(!lane_quiesced(h, lane, closure, true), "an unconsumed request fails engine quiescence");
-    s.consumed_sequence = seq;
-    check(!lane_quiesced(h, lane, closure + 1, true), "a stale closure ACK fails engine quiescence");
-    munmap(base, l.bytes);
-    std::puts("DrainIdentity_RefusesCorruptLastRequest: PASS");
+    check(wire::layout_for(legacy_shape(),48,t,&l)==Refusal::None,"mapped model layout");
+    const std::string name="/r3-moe-shm-v26-test-"+std::to_string((long long)getpid());
+    const int fd=shm_open(name.c_str(),O_CREAT|O_EXCL|O_RDWR,0600);
+    check(fd>=0 && ftruncate(fd,off_t(l.bytes))==0, "shared memory create");
+    void* base=mmap(nullptr,size_t(l.bytes),PROT_READ|PROT_WRITE,MAP_SHARED,fd,0);
+    check(base!=MAP_FAILED &&
+          wire::init(base,size_t(l.bytes),legacy_shape(),48,t,kManifest)==Refusal::None,
+          "shared memory init");
+    Header* h=static_cast<Header*>(base);
+    const uint32_t slot=slot_of(0,1,t.ranks);
+    const uint32_t lane=lane_of(slot,kSmallClasses,h->counts.slots);
+    Request* q=lane_request(base,lane,1);
+    Route* routes=ptr<Route>(base,h->route_offset[slot]);
+    routes[0]={0,23,0x3f80,7};
+    std::thread helper([&] {
+        while (load(&h->lane[lane].request_sequence)!=1) {
+            uint32_t seen=load(&h->publish_sequence);
+            if (seen<1) futex_wait(&h->publish_sequence,seen);
+        }
+        check(q->slot==slot && q->consumer==1 && q->layer==7 &&
+              q->route_count==1 && q->result_offset==h->result_offset[slot] &&
+              request_slot_valid(q->slot,q->world,q->consumer,q->layer,
+                                 slot,t.ranks,h->counts.slots),
+              "helper reads exact live request identity");
+        const Route* r=ptr<Route>(base,q->route_offset);
+        check(r[0].expert==23 && r[0].weight_bf16==0x3f80 && r[0].slot==7,
+              "published route is visible before request");
+        ptr<uint16_t>(base,q->result_offset)[0]=0x4000;
+        q->status=0;
+        store(&q->completion_sequence,1);
+        futex_wake(&q->completion_sequence);
+    });
+    const uint32_t seq=fetch_add(&h->next_sequence,1);
+    check(seq==1,"first sequence is nonzero");
+    q->layer=7; q->slot=slot; q->world=t.ranks; q->consumer=1; q->rows=1;
+    q->hidden=h->hidden; q->route_count=1;
+    q->route_offset=h->route_offset[slot];
+    q->activation_offset=h->activation_offset[slot];
+    q->result_offset=h->result_offset[slot];
+    q->activation_stride=h->hidden*2;
+    q->result_stride=h->hidden*2;
+    store(&q->sequence,seq);
+    store(&h->lane[lane].request_sequence,seq);
+    store(&h->publish_sequence,seq);
+    futex_wake(&h->publish_sequence);
+    check(wait_until(&q->completion_sequence,seq,&h->helper_fault) &&
+          ptr<uint16_t>(base,q->result_offset)[0]==0x4000,
+          "helper result becomes visible through done release");
+    helper.join();
+    munmap(base,size_t(l.bytes)); close(fd); shm_unlink(name.c_str());
 }
 
-/* RAD49: N helpers behind M engine ranks. A slot is one (helper, consumer rank); the consumer of a layer alternates over the
- * ranks; the combine plane of a consumer is never a result plane of any slot; a request names a slot, an engine width and a
- * consumer that all agree with its lane and its layer. */
-static void Rad49Slots_HelperConsumerAxes() {
-    for (uint32_t world = 1; world <= kMaxEngineRanks; ++world)
-        for (uint32_t helpers = 1; helpers <= kMaxHelpers; ++helpers) {
-            if (!slots_fit(helpers, world)) {
-                check(helpers * world > kMaxSlots, "only the slot bound refuses a helper count");
-                continue;
-            }
-            uint32_t seen = 0;
-            for (uint32_t k = 0; k < helpers; ++k)
-                for (uint32_t r = 0; r < world; ++r) {
-                    const uint32_t s = slot_of(k, r, world);
-                    check(s < slots_for(helpers, world) && slot_helper(s, world) == k && slot_consumer(s, world) == r,
-                          "slot_of is inverted by slot_helper / slot_consumer");
-                    check(!(seen & (1u << s)), "every (helper, rank) has its own slot");
-                    seen |= 1u << s;
-                }
-            check(seen == (1u << slots_for(helpers, world)) - 1u, "the slots are dense");
-            for (uint32_t c = 0; c < world; ++c) {
-                const uint32_t plane = combine_index(c);
-                check(plane < kResultPlanes, "combine plane inside the plane bound");
-                for (uint32_t s = 0; s < slots_for(helpers, world); ++s)
-                    check(plane != result_index(s, slot_consumer(s, world)), "a combine plane is never a slot's result plane");
-                for (uint32_t c2 = 0; c2 < world; ++c2)
-                    check(c == c2 || plane != combine_index(c2), "each consumer has its own combine plane");
-            }
-        }
-    check(slots_fit(2, 2) && !slots_fit(3, 2) && !slots_fit(1, 3) && !slots_fit(0, 1) && !slots_fit(5, 1),
-          "two helpers fit behind TP2; three do not (four slots)");
-    for (uint32_t layer = 0; layer < 48; ++layer) {
-        check(consumer_of(layer, 1) == 0, "a one-rank engine consumes every layer");
-        check(consumer_of(layer, 2) == (layer & 1u), "behind TP2 the consumer alternates by layer");
-    }
-    check(combine_index(0) == result_index(0, 1) && combine_index(1) == result_index(1, 0),
-          "combine planes: [0][1] (one rank and rank 0), [1][0] (rank 1)");
-    check(request_slot_valid(3, 2, 1, 5, 3, 2), "helper 1's slot for rank 1, odd layer");
-    check(!request_slot_valid(3, 2, 1, 4, 3, 2), "an even layer is rank 0's");
-    check(!request_slot_valid(3, 2, 0, 4, 3, 2), "a consumer that is not its slot's");
-    check(!request_slot_valid(2, 2, 0, 4, 3, 2), "a request in another lane's slot");
-    check(request_slot_valid(1, 1, 0, 0, 1, 1) && slot_consumer(1, 1) == 0, "a one-rank slot is consumer 0");
-    check(!request_slot_valid(0, 3, 0, 0, 0, 3) && !request_slot_valid(0, 0, 0, 0, 0, 0), "engine width outside the bound");
-    check(!request_slot_valid(kMaxSlots, 1, 0, 0, kMaxSlots, 1), "slot outside the bound");
-    {   /* Lane boundary (PR #771 review): a TP2 segment refuses a self-consistent TP1 request, and a TP1 segment a TP2 one. */
-        const LayoutShape shape{128, 2, 3, 8, 128, 64};
-        Layout l{};
-        check(layout_for(shape, 2, slots_for(2, 2), &l), "TP2 two-helper layout");
-        std::vector<uint8_t> seg((size_t)l.bytes);
-        check(init(seg.data(), 2, shape, 2, 2), "TP2 two-helper segment");
-        const auto* h = reinterpret_cast<const Header*>(seg.data());
-        check(h->rank_count == 2, "the segment records its engine width");
-        check(request_slot_valid(0, 1, 0, 0, 0, 1), "slot 0 / world 1 / consumer 0 / layer 0 agrees with itself");
-        check(!request_slot_valid(0, 1, 0, 0, 0, h->rank_count), "but a TP2 segment refuses it");
-        check(!request_slot_valid(1, 1, 0, 0, 1, h->rank_count), "and helper 1's TP1-shaped request too");
-        check(request_slot_valid(0, 2, 0, 0, 0, h->rank_count) && request_slot_valid(3, 2, 1, 1, 3, h->rank_count),
-              "the segment's own width is accepted for both consumers");
-        check(!request_slot_valid(1, 2, 1, 1, 1, 1), "a TP1 segment refuses a TP2 request");
-    }
-    std::puts("Rad49Slots_HelperConsumerAxes: PASS");
+static void DeferredPublication_ManifestIdentity() {
+    const std::string m1 = "sha256:0123456789abcdef" + std::string(48, '1');
+    const std::string m2 = "sha256:0123456789abcdef" + std::string(47, '1') + "2";
+    const uint64_t d1 = wire::manifest_identity(m1);
+    const uint64_t d2 = wire::manifest_identity(m2);
+    check(d1 && d2 && d1 != d2 && wire::manifest_identity("sha256:" + std::string(64, '0')) != 0 &&
+          wire::manifest_identity("sha256:bad") == 0 &&
+          wire::manifest_identity("sha256:" + std::string(64, 'G')) == 0,
+          "all SHA-256 bytes contribute to nonzero strict manifest identity");
+    constexpr Topology t{2,3};
+    Layout l{};
+    check(wire::layout_for(kShape, 2, t, &l) == Refusal::None, "deferred v26 layout");
+    void* base = mmap(nullptr, size_t(l.bytes), PROT_READ | PROT_WRITE,
+                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    check(base != MAP_FAILED, "deferred v26 map");
+    check(wire::init(base, size_t(l.bytes), kShape, 2, t, d1, true) == Refusal::None,
+          "deferred init succeeds without allowing attachment");
+    auto* h = static_cast<Header*>(base);
+    check(h->published_helpers == 0 &&
+          wire::valid(base, size_t(l.bytes), kShape, 2, t, d1) == Refusal::Unpublished,
+          "attacher cannot validate a half-configured shared-memory segment");
+    h->small_class_count = 2;
+    h->small_class_rows[0] = 2;
+    h->small_class_rows[1] = 8;
+    wire::publish(h);
+    check(wire::valid(base, size_t(l.bytes), kShape, 2, t, d1) == Refusal::None &&
+          wire::valid(base, size_t(l.bytes), kShape, 2, t, d2) == Refusal::WrongIdentity,
+          "published segment refuses a foreign manifest even with same shape and topology");
+    munmap(base, size_t(l.bytes));
+}
+
+static void Schema_RepresentationParity() {
+    // One versioned schema for the Python layout resolver, checked against
+    // *native* v26::counts_for representation types on every card-free run.
+    const auto path = std::filesystem::path(__FILE__).parent_path() / "topology-v26.schema.json";
+    std::ifstream in(path);
+    check(bool(in), "v26 topology schema accessible");
+    const std::string doc{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+    const auto field = [&](const char* name) -> uint32_t {
+        const std::string key = std::string("\"") + name + "\"";
+        size_t pos = doc.find(key);
+        check(pos != std::string::npos, "v26 topology schema field exists");
+        pos = doc.find(':', pos + key.size());
+        check(pos != std::string::npos, "v26 topology schema field has numeric value");
+        char* end = nullptr;
+        const auto value = std::strtoul(doc.c_str() + pos + 1, &end, 10);
+        check(end != doc.c_str() + pos + 1 && value <= UINT32_MAX,
+              "v26 topology schema field is a uint32");
+        return uint32_t(value);
+    };
+    check(field("wire_version") == kVersion &&
+          field("owner_id_bits") == std::numeric_limits<uint8_t>::digits &&
+          field("combine_mask_bits") == kCombineMaskBits &&
+          field("participant_mask_bits") == std::numeric_limits<uint32_t>::digits &&
+          field("count_bits") == std::numeric_limits<uint32_t>::digits &&
+          field("lane_classes") == kClasses &&
+          field("ring_slots") == kLaneSlots,
+          "native/Python v26 representation schema parity");
+    v26::Counts c{};
+    check(v26::counts_for({8,24},&c)==Refusal::None && c.slots==192,
+          "typed v26 mask boundary accepted");
+    check(v26::counts_for({9,1},&c)==Refusal::CombineMask,
+          "typed contributor mask boundary refused");
+    check(v26::counts_for({8,25},&c)==Refusal::ParticipantMask,
+          "typed participant mask boundary refused");
 }
 
 int main() {
-    V23Layout_ExactOffsetsAndBounds();
-    DrainIdentity_RefusesCorruptLastRequest();
-    Rad49Slots_HelperConsumerAxes();
-    V23Map_LocalProtectedAndDisjoint();
-    V23Digest_ExactAndImmutable();
+    DeferredPublication_ManifestIdentity();
+    Schema_RepresentationParity();
+    Geometry_RuntimeCountsAndABI();
+    Descriptors_MutationAndDigest();
+    Digest_DeterministicAndSeparated();
     CombineChunkWait_FirstBlockAlwaysPolls();
-    const std::string name = "/r3-moe-shm-test-" + std::to_string((long long)getpid());
-    Layout l{};
-    check(layout_for(legacy_shape(), 48, slots_for(1, 2), &l), "V23Layout_ExactOffsetsAndBounds initial layout");
-    int fd = shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR, 0600);
-    check(fd >= 0, "shm_open");
-    check(ftruncate(fd, (off_t)l.bytes) == 0, "ftruncate");
-    void* m = mmap(nullptr, l.bytes, PROT_READ | PROT_WRITE, MAP_SHARED, fd, 0);
-    check(m != MAP_FAILED, "mmap"); check(init(m, 48, legacy_shape(), 1, 2), "init");
-    ((Header*)m)->helper_count = 1;
-    check(valid((Header*)m, l.bytes, legacy_shape()), "header valid");
-    {   /* the shape-derived activation offsets are the legacy constants for the legacy shape, and follow another shape's own hidden width */
-        const Header* hh = (const Header*)m;
-        check(seg_activation_q_off(hh) == kActivationBf16Bytes, "seg_activation_q_off matches the legacy constant");
-        check(seg_activation_scale_off(hh) == kActivationBf16Bytes + kActivationQBytes, "seg_activation_scale_off matches the legacy constants");
-        check(seg_max_routes(hh) == kMaxRoutes, "seg_max_routes matches the legacy constant");
-        Header other = *hh; other.hidden = 4096; other.top_k = 8;
-        check(seg_activation_q_off(&other) == uint64_t(kMaxRows) * 4096 * 2 && seg_max_routes(&other) == kMaxRows * 8u, "offsets follow the segment's own shape");
-    }
-    {   // a segment of another protocol version (an engine and a helper from different builds) is rejected
-        Header* hv = (Header*)m;
-        const uint32_t ver = hv->version;
-        hv->version = ver - 1;
-        check(!valid(hv, l.bytes, legacy_shape()), "an older protocol version is rejected");
-        hv->version = ver + 1;
-        check(!valid(hv, l.bytes, legacy_shape()), "a newer protocol version is rejected");
-        hv->version = ver;
-        check(valid(hv, l.bytes, legacy_shape()), "the current protocol version is accepted");
-    }
-    auto* h = (Header*)m;
-    {   // RAD12: ten lanes (four small sizes and the large lane for each rank), a class table the helper sets and the engine validates
-        /* RAD23 stage 2: helpers and slots are bounds (4), the engine ranks stay 2, and a segment is laid out for the slots it was made with. */
-        check(kMaxEngineRanks == 2 && kMaxHelpers == 4 && kMaxSlots == 4 && kResultPlanes == 8, "the axes and their bounds");
-        check(slots_for(1, 2) == 2 && slots_for(2, 1) == 2 && slots_for(3, 1) == 3 && slots_for(4, 1) == 4 &&
-              slots_for(2, 2) == 4 && slots_for(1, 1) == 1, "a slot for every (helper, engine rank)");
-        check(sizeof(Header) == 4096 && sizeof(Request) == 256 && sizeof(CombineSignal) == 128, "header, request and combine signal sizes");
-        check(offsetof(Header, slot_count) == 2520 && offsetof(Header, helper_pid) == 2692 &&
-              offsetof(Header, combine) == 2816 && offsetof(Header, chunks) == 3072 &&
-              offsetof(Header, chunks) + kMaxEngineRanks * sizeof(CombineChunks) == 3712 &&
-              offsetof(Header, placement_offset) == 3712 &&
-              offsetof(Header, owner_map_bytes) == 3752 &&
-              offsetof(Header, result_offset) == 2600 && offsetof(Header, owner_offset) == 128,
-              "V23Layout_ExactOffsetsAndBounds header fields");
-        check(l.ring == 4096 && l.placement == 24576 && l.journal == 24832 &&
-              l.ack == 25088 && l.generation[0] == 28672 && l.generation[1] == 57344 &&
-              l.layer_map == 86016 && l.route[0] == 348160,
-              "V23Layout_ExactOffsetsAndBounds region bases");
-        check(l.owner_map_bytes == 48u * 512u && l.generation_slot_bytes == 28672 &&
-              l.route[0] % kPage == 0 && l.bytes % kPage == 0, "V23Layout_ExactOffsetsAndBounds bounds");
-        Layout l3{}, l4{};
-        check(layout_for(legacy_shape(), 48, 3, &l3) &&
-              layout_for(legacy_shape(), 48, 4, &l4) &&
-              l3.bytes > l.bytes && l4.bytes > l3.bytes &&
-              l4.bytes - l3.bytes == l3.bytes - l.bytes,
-              "each additional slot has identical route/activation/result capacity");
-        check(lane_of(0, 0) == 0 && lane_of(3, 0) == 3 && lane_of(0, 1) == 4 && lane_of(1, kSmallClasses) == 17 && lane_class(17) == 4, "lane numbering (stride kMaxSlots)");
-        check(kLanes == kMaxSlots * (kSmallClasses + 1) && kRingSlots == kLanes * kLaneSlots, "lane count and ring size");
-        check(lane_class(lane_of(1, 3)) == 3 && lane_is_small(lane_of(1, 3)) && !lane_is_small(lane_of(0, kSmallClasses)),
-              "lane class and size");
-        check(lane_request(m, kLanes, 1) == nullptr && lane_request(m, 0, 0) == nullptr, "lane bounds");
-        check(lane_request(m, 1, 1) == lane_request(m, 0, 1) + kLaneSlots &&
-              lane_request(m, 1, kLaneSlots + 1) == lane_request(m, 1, 1), "lane rings are private and wrap");
-        h->small_class_count = 4;
-        h->small_class_rows[0] = 4; h->small_class_rows[1] = 8; h->small_class_rows[2] = 16; h->small_class_rows[3] = 24;
-        check(valid(h, l.bytes, legacy_shape()), "a four-class table is accepted");
-        check(step_class(h, 1) == 0 && step_class(h, 4) == 0 && step_class(h, 5) == 1 && step_class(h, 8) == 1 &&
-              step_class(h, 9) == 2 && step_class(h, 16) == 2 && step_class(h, 17) == 3 && step_class(h, 24) == 3 &&
-              step_class(h, 25) == kSmallClasses && step_class(h, kMaxRows) == kSmallClasses,
-              "a step takes the first class that fits, else the large lane");
-        h->small_class_count = 2;
-        check(step_class(h, 9) == kSmallClasses && step_class(h, 8) == 1, "classes past the count are not used");
-        h->small_class_rows[1] = 4;
-        check(!valid(h, l.bytes, legacy_shape()), "a non-ascending class table is rejected");
-        h->small_class_rows[1] = 8;
-        h->small_class_count = 0;
-        check(!valid(h, l.bytes, legacy_shape()), "an empty class table is rejected");
-        h->small_class_count = kSmallClasses + 1;
-        check(!valid(h, l.bytes, legacy_shape()), "too many classes are rejected");
-        h->small_class_count = 1;
-        h->small_class_rows[0] = 8;
-        check(valid(h, l.bytes, legacy_shape()), "the one-class table of the production configuration is accepted");
-    }
-    check(layer_slot(m, 7, 23) == -1, "layer map starts unpublished");
-    int32_t* slots = layer_slots(m, 7);
-    check(slots != nullptr, "layer map pointer");
-    for (uint32_t e = 0; e < kExperts; ++e) slots[e] = (int32_t)e;
-    slots[3] = -1;
-    slots[23] = 22;
-    store(&h->layer_map_ready[7], 1);
-    check(layer_slot(m, 7, 3) == -1 && layer_slot(m, 7, 23) == 22,
-          "runtime map preserves protection and compact slots");
-    check(owner_at(m, 0, 7, 23) == kOwnerLocal, "V23Map owner starts local");
-    uint8_t* owners = generation_map(m, 0);
-    owners[(size_t)7 * h->expert_count + 23] = 0;
-    check(owner_at(m, 0, 7, 23) == 0 && owner_at(m, 1, 7, 23) == kOwnerLocal,
-          "V23Map canonical owner, independent generations");
-    owners[(size_t)7 * h->expert_count + 23] = kOwnerLocal;
-    check(owner_at(m, 0, 7, 23) == kOwnerLocal, "V23Map protection restores local owner");
-    owners[(size_t)7 * h->expert_count + 23] = 0;
-    check(h->result_offset[0] != h->result_offset[result_index(1, 0)] &&
-          h->result_offset[1] != h->result_offset[result_index(1, 1)],
-          "slots have isolated result planes");
-
-    std::thread helper([&] {
-        Request* q = request(m, 1);
-        while (load(&q->sequence) != 1) {
-            uint32_t seen = load(&h->publish_sequence);
-            if (seen < 1) futex_wait(&h->publish_sequence, seen);
-        }
-        check(q->layer == 7 && q->slot == 1 && q->consumer == 1 && q->rows == 1 && q->route_count == 1 &&
-              request_slot_valid(q->slot, q->world, q->consumer, q->layer, 1, h->rank_count), "q->layer == 7, slot 1 for consumer 1");
-        const Route* r = ptr<Route>(m, q->route_offset);
-        check(r[0].token == 0 && r[0].expert == 23 && r[0].weight_bf16 == 0x3f80 && r[0].slot == 7,
-              "route payload preserves token/expert/weight/top-k slot");
-        uint16_t* out = ptr<uint16_t>(m, q->result_offset[q->consumer]); out[0] = 0x4000;
-        q->status = 0; store(&q->completion_sequence, 1); futex_wake(&q->completion_sequence);
-    });
-
-    uint32_t seq = fetch_add(&h->next_sequence, 1); check(seq == 1, "first sequence");
-    Request* q = request(m, seq);
-    /* Layer 7 behind TP2: rank 1 consumes it (consumer_of), from helper 0's slot for rank 1. */
-    Route* r = ptr<Route>(m, h->route_offset[1]); r[0] = {0, 23, 0x3f80, 7};
-    q->layer = 7; q->slot = slot_of(0, consumer_of(7, 2), 2); q->world = 2; q->consumer = consumer_of(7, 2);
-    q->rows = 1; q->hidden = kHidden;
-    q->route_count = 1; q->route_offset = h->route_offset[1]; q->activation_offset = h->activation_offset[1];
-    q->activation_stride = kHidden * 2; q->result_offset[1] = h->result_offset[result_index(1, 1)]; q->result_stride[1] = kHidden * 2;
-    store(&q->sequence, seq); store(&h->publish_sequence, seq); futex_wake(&h->publish_sequence);
-    check(wait_until(&q->completion_sequence, seq, &h->helper_fault), "completion arrives without a fault");
-    check(q->status == 0 && ptr<uint16_t>(m, q->result_offset[1])[0] == 0x4000, "the consumer's plane holds the helper row");
-
-    helper.join(); munmap(m, l.bytes); close(fd); shm_unlink(name.c_str());
-
-    {   // RCS09-02: the runtime layout reproduces the compile-time one byte for byte for the legacy shape
-        Layout rt{};
-        check(layout_for(legacy_shape(), 48, 2, &rt), "layout_for(legacy_shape()) succeeds");
-        check(rt.ring == l.ring && rt.placement == l.placement && rt.generation[0] == l.generation[0] && rt.layer_map == l.layer_map && rt.bytes == l.bytes,
-              "runtime layout matches the compile-time ring, owner, layer map and total");
-        for (uint32_t r = 0; r < kMaxSlots; ++r) {
-            check(rt.route[r] == l.route[r] && rt.activation[r] == l.activation[r], "route and activation offsets match");
-            for (uint32_t o = 0; o < kMaxEngineRanks; ++o) check(rt.result[result_index(r, o)] == l.result[result_index(r, o)], "result offsets match");
-        }
-        // another model's shape (Qwen3.6-35B-A3B: hidden 2048, 256 experts, top-k 8): valid, page aligned, in order
-        Layout q{};
-        check(layout_for(LayoutShape{2048, 8, 256, 4096, 128, 512}, 41, 2, &q), "a second shape lays out");
-        check(q.bytes % kPage == 0 && q.ring == kPage && q.placement > q.ring && q.layer_map > q.generation[1] && q.route[0] > q.layer_map,
-              "regions are page aligned and in order");
-        check(q.route[1] > q.result[kMaxEngineRanks - 1] && q.bytes > q.result[kResultPlanes - 1], "per-rank regions follow in order");
-        check(q.bytes < l.bytes, "a smaller hidden width and expert count take less memory");
-        // refusals: nothing is written on failure
-        Layout keep{}; keep.bytes = 77;
-        check(!layout_for(LayoutShape{0, 8, 256, 4096, 128, 512}, 48, 2, &keep) && keep.bytes == 77, "zero hidden is refused");
-        check(!layout_for(LayoutShape{2048, 0, 256, 4096, 128, 512}, 48, 2, &keep), "zero top-k is refused");
-        check(!layout_for(LayoutShape{2048, 8, 256, 0, 128, 512}, 48, 2, &keep), "zero row capacity is refused");
-        check(!layout_for(LayoutShape{2048, 8, 256, 4096, 0, 512}, 48, 2, &keep), "a zero activation group is refused");
-        check(!layout_for(LayoutShape{2048, 300, 256, 4096, 128, 512}, 48, 2, &keep), "top-k above the expert count is refused");
-        check(!layout_for(LayoutShape{2000, 8, 256, 4096, 128, 512}, 48, 2, &keep), "a hidden width that is not whole groups is refused");
-        check(!layout_for(LayoutShape{UINT32_MAX - 127, 8, 256, UINT32_MAX, 128, 512}, 48, 2, &keep) && keep.bytes == 77,
-              "an overflowing shape is refused");
-        check(!layout_for(LayoutShape{65536, 8, 256, 65536, 128, 512}, 48, 2, &keep), "a slot that does not fit 32 bits is refused");
-        check(!layout_for(legacy_shape(), 48, 2, nullptr), "a null output is refused");
-    }
-    {   // RCS09-03: a v14 segment records its shape and is accepted only by a side that expects the same shape
-        const LayoutShape qs{2048, 8, 256, 4096, 128, 512};
-        Layout ql{};
-        check(layout_for(qs, 41, 2, &ql), "second shape lays out");
-        std::vector<uint8_t> seg((size_t)ql.bytes);
-        check(init(seg.data(), 41, qs, 2, 1), "init for the second shape");
-        auto* h = reinterpret_cast<Header*>(seg.data());
-        h->helper_count = 2;
-        check(h->version == kVersion && h->hidden == 2048 && h->expert_count == 256 && h->top_k == 8 && h->intermediate == 512 &&
-              h->activation_group == 128 && h->shape_hash == shape_hash(qs), "the header records the shape");
-        check(valid(h, seg.size(), qs), "the same shape is accepted");
-        check(!valid(h, seg.size(), legacy_shape()), "a side expecting another shape refuses the segment");
-        LayoutShape other = qs; other.intermediate = 640;
-        check(!valid(h, seg.size(), other), "a different expert width is refused");
-        other = qs; other.act_group = 64;
-        check(!valid(h, seg.size(), other), "a different activation group is refused");
-        check(!valid(h, seg.size() - 1, qs), "a mapping shorter than the segment is refused");
-        {   // a corrupt header cannot move a region: each field is checked against the layout rebuilt from the shape
-            Header keep = *h;
-            h->route_offset[0] += kPage; check(!valid(h, seg.size(), qs), "a moved route region is refused"); *h = keep;
-            h->result_offset[1] += kPage; check(!valid(h, seg.size(), qs), "a moved result region is refused"); *h = keep;
-            h->generation_offset[0] += kPage; check(!valid(h, seg.size(), qs), "a moved generation region is refused"); *h = keep;
-            h->segment_bytes += kPage; check(!valid(h, seg.size(), qs), "a wrong segment length is refused"); *h = keep;
-            h->shape_hash ^= 1; check(!valid(h, seg.size(), qs), "a wrong shape hash is refused"); *h = keep;
-            h->hidden = 2560; check(!valid(h, seg.size(), qs), "edited shape fields are refused"); *h = keep;
-            h->version = 14; check(!valid(h, seg.size(), qs), "a stale v14 segment is refused"); *h = keep;
-            h->small_class_rows[0] = h->max_rows + 1; check(!valid(h, seg.size(), qs), "a class above the row capacity is refused"); *h = keep;
-            for (uint32_t c = 0; c < kMaxEngineRanks; ++c)
-                check(h->combine[c].enabled == 0 && h->combine[c].request == 0 && h->combine[c].done == 0,
-                      "a new segment starts with R3_MOE_WORKER_COMBINE off and no generation, for every consumer");
-            h->rank_count = 2; check(!valid(h, seg.size(), qs), "an engine width that disagrees with the slot count is refused"); *h = keep;
-            h->rank_count = 0; check(!valid(h, seg.size(), qs), "a zero engine width is refused"); *h = keep;
-            check(valid(h, seg.size(), qs), "and the restored header is accepted again");
-        }
-        check(!init(seg.data(), 41, LayoutShape{2048, 8, 256, 4096, 100, 512}, 2, 1), "init refuses a shape that does not lay out");
-        check(!init(seg.data(), 0, qs, 2, 1) && !init(seg.data(), kMaxLayers + 1, qs, 2, 1), "init refuses a layer count outside the protocol bound");
-        check(!init(seg.data(), 41, qs, 3, 2) && !init(seg.data(), 41, qs, 1, 3) && !init(seg.data(), 41, qs, 1, 0),
-              "init refuses helpers x ranks beyond the slot bound, and engine widths outside 1..kMaxEngineRanks");
-    }
-    /* Layouts vary by configured helper count and engine width (RAD49): one slot a (helper, rank). */
-    for (uint32_t world = 1; world <= kMaxEngineRanks; ++world)
-    for (uint32_t helpers = 1; helpers <= kMaxHelpers; ++helpers) {
-        if (!slots_fit(helpers, world)) continue;
-        const uint32_t slots = slots_for(helpers, world);
-        Layout sl{};
-        check(layout_for(legacy_shape(), 48, slots, &sl), "layout for helper count");
-        void* seg = mmap(nullptr, sl.bytes, PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
-        check(seg != MAP_FAILED, "anonymous map for a multi-slot segment");
-        check(init(seg, 48, legacy_shape(), helpers, world), "init for each helper count");
-        Header* hh = static_cast<Header*>(seg);
-        hh->helper_count = helpers;
-        check(hh->slot_count == slots && hh->rank_count == world && hh->version == kVersion,
-              "the header records its slot count, engine width and version");
-        check(valid(hh, sl.bytes, legacy_shape()) && valid_self(hh, sl.bytes), "a segment for each helper count validates");
-        for (uint32_t r = 0; r < slots; ++r)   /* every helper's slot for a rank stages from helper 0's slot for it */
-            check(hh->activation_offset[r] == sl.activation[slot_of(0, slot_consumer(r, world), world)],
-                  "activation staging is shared per consumer rank");
-        if (helpers > 1) {
-            const uint64_t saved_act = hh->activation_offset[slots - 1];
-            hh->activation_offset[slots - 1] = sl.activation[slots - 1];
-            check(!valid(hh, sl.bytes, legacy_shape()), "an unaliased helper slot activation region is refused");
-            hh->activation_offset[slots - 1] = saved_act;
-        }
-        for (uint32_t r = 0; r < kMaxSlots; ++r) {
-            check((hh->route_offset[r] != 0) == (r < slots) && (hh->activation_offset[r] != 0) == (r < slots),
-                  "only the slots in use have offsets");
-            for (uint32_t o = 0; o < kMaxEngineRanks; ++o)
-                check((hh->result_offset[result_index(r, o)] != 0) == (r < slots),
-                      "only the slots in use have result planes");
-        }
-        const uint32_t saved = hh->slot_count;
-        hh->slot_count = 0; check(!valid(hh, sl.bytes, legacy_shape()), "zero slots are refused");
-        hh->slot_count = kMaxSlots + 1; check(!valid(hh, sl.bytes, legacy_shape()), "more slots than the bound are refused");
-        hh->slot_count = saved == kMaxSlots ? saved - 1 : saved + 1;
-        check(!valid(hh, sl.bytes, legacy_shape()), "a slot count that disagrees with the layout is refused");
-        hh->slot_count = saved;
-        if (slots < kMaxSlots) {
-            hh->route_offset[slots] = sl.bytes - kPage;
-            check(!valid(hh, sl.bytes, legacy_shape()), "an offset handed out for an unused slot is refused");
-            hh->route_offset[slots] = 0;
-            hh->result_offset[result_index(slots, 0)] = sl.bytes - kPage;
-            check(!valid(hh, sl.bytes, legacy_shape()), "a result plane handed out for an unused slot is refused");
-            hh->result_offset[result_index(slots, 0)] = 0;
-        }
-        check(valid(hh, sl.bytes, legacy_shape()), "and the restored header validates again");
-        check(!valid(hh, sl.bytes - kPage, legacy_shape()), "a mapping shorter than the layout is refused");
-        munmap(seg, sl.bytes);
-    }
-    Layout bounds{};
-    check(!layout_for(legacy_shape(), 48, 0, &bounds) &&
-          !layout_for(legacy_shape(), 48, kMaxSlots + 1, &bounds) &&
-          !layout_for(legacy_shape(), 0, 2, &bounds) &&
-          !layout_for(legacy_shape(), kMaxLayers + 1, 2, &bounds),
-          "V23Layout_ExactOffsetsAndBounds zero/excess layers and slots refused");
-    std::printf("r3_moe_shm_test: PASS\n");
-    std::puts("r3_moe_shm_test: ok");
+    Lane_DrainAndRequestIdentity();
+    SharedMapping_ReleaseAcquire();
+    std::puts("r3_moe_shm_test: PASS");
     return 0;
 }

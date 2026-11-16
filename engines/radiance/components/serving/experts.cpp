@@ -126,7 +126,7 @@ int64_t laid_out_bytes(const Container& f, bool device_layout, uint32_t l, uint3
     return r3::moe_backend::expert_bytes(d);
 }
 
-static_assert(r3::moe_shm::kMaxHelpers <= r3::worker_share::kMaxHelperShares,
+static_assert(r3::moe_shm::kCombineMaskBits <= r3::worker_share::kMaxHelperShares,
               "the planner's helper bound is the runtime protocol's, which the share arithmetic must cover");
 
 bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& arch, bool device_layout,
@@ -139,9 +139,9 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
     }
     if (!backend_accepts(f, arch.c_str(), p.formats.c_str(), false)) return false;
     if (layout_check && !layout_check()) return false;
-    if (helpers == 0 || helpers > r3::moe_shm::kMaxHelpers || helper >= helpers) {
+    if (helpers == 0 || !r3::moe_shm::slots_fit(helpers,1) || helper >= helpers) {
         std::fprintf(stderr, "r3_moe_worker: helper %u of %u is outside the protocol's 1..%u helpers\n", helper, helpers,
-                     (unsigned)r3::moe_shm::kMaxHelpers);
+                     (unsigned)r3::moe_shm::kCombineMaskBits);
         return false;
     }
     std::vector<const RadFileProfile*> order;
@@ -363,18 +363,18 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
 bool plan_owners(const Container& f, const std::vector<OwnerPolicy>& policies, const std::vector<std::string>& archs,
                  const std::vector<uint64_t>& budgets, OwnerMap* out, std::string* why) {
     const size_t n = policies.size();
-    if (!out || n == 0 || archs.size() != n || budgets.size() != n || n > r3::moe_shm::kMaxHelpers) {
+    if (!out || n == 0 || archs.size() != n || budgets.size() != n || !r3::moe_shm::slots_fit(uint32_t(n),1)) {
         if (why) *why = "plan_owners: one policy, card and budget per helper, at most " +
-                        std::to_string(r3::moe_shm::kMaxHelpers);
+                        std::to_string(r3::moe_shm::kCombineMaskBits);
         return false;
     }
     *out = OwnerMap{};
-    uint64_t b[r3::moe_shm::kMaxHelpers] = {};
+    std::vector<uint64_t> b(budgets.begin(), budgets.end());
     for (size_t i = 0; i < n; ++i) b[i] = budgets[i];
     std::vector<uint8_t> owned((size_t)f.layers * f.experts, 0);
     for (uint32_t h = 0; h < n; ++h) {
         Owned o;
-        if (!select_owned(f, policies[h], archs[h], true, {}, b, h, (uint32_t)n, &o)) {
+        if (!select_owned(f, policies[h], archs[h], true, {}, b.data(), h, (uint32_t)n, &o)) {
             if (why) *why = "helper " + std::to_string(h) + " (" + archs[h] + "): owned-expert selection refused";
             return false;
         }

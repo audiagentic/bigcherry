@@ -17,9 +17,7 @@
 
 namespace r3::worker_footprint {
 
-using r3::moe_shm::kLanes;
-using r3::moe_shm::kMaxSlots;
-using r3::moe_shm::kSmallClasses;
+ using r3::moe_shm::kSmallClasses;
 
 /* The model shape the buffers are sized from. */
 struct Shape {
@@ -29,20 +27,24 @@ struct Shape {
 struct Lanes {
     std::array<uint32_t, kSmallClasses> small_rows{};
     uint32_t small_count = 0, large_rows = 0;
-    std::array<bool, kLanes> open{};
+    std::vector<bool> open;
 };
 
 /* Lanes this helper serves: its own slots, slot_of(helper_index, r, world) for every engine rank r; a small class beyond `classes`
  * has none. With power save off the worker opens every protocol lane (r3_moe_worker.cpp lanes_open). */
-inline std::array<bool, kLanes> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t world, uint32_t classes,
-                                             bool power_save = true) {
+inline std::vector<bool> served_lanes(uint32_t helper_count, uint32_t helper_index, uint32_t world, uint32_t classes,
+                                      bool power_save = true) {
     using namespace r3::moe_shm;
-    std::array<bool, kLanes> s{};
-    for (uint32_t lane = 0; lane < kLanes; ++lane) {
-        const uint32_t slot = lane % kMaxSlots;
-        const bool mine = !power_save ||
-                          (world && slot < slots_for(helper_count, world) && slot_helper(slot, world) == helper_index);
-        s[lane] = mine && !(lane_is_small(lane) && lane_class(lane) >= classes);
+    v26::Counts count{};
+    if (helper_index >= helper_count || classes > kSmallClasses ||
+        v26::counts_for({helper_count, world}, &count) != v26::Refusal::None)
+        return {};
+    std::vector<bool> s(count.lanes);
+    for (uint32_t lane = 0; lane < count.lanes; ++lane) {
+        const uint32_t slot = lane % count.slots;
+        const bool mine = !power_save || slot_helper(slot, world) == helper_index;
+        s[lane] = mine && !(lane_is_small(lane, count.slots) &&
+                            lane_class(lane, count.slots) >= classes);
     }
     return s;
 }
@@ -92,7 +94,7 @@ inline uint64_t lane_bytes(const Shape& s, uint64_t rows, uint64_t routes, bool 
     n += tr * H * 2;                              /* down rows */
     n += tr * 2 * I * 2;                          /* the GEMV debug comparison buffer (allocated with the lane) */
     n += 3 * sizeof(uint64_t) + sizeof(uint32_t); /* stats, publish limit */
-    if (large) n += r3::moe_shm::kCombineChunks * sizeof(uint32_t);
+    if (large) n += ((rows + r3::moe_shm::kCombineChunkRows - 1) / r3::moe_shm::kCombineChunkRows) * sizeof(uint32_t);
     n += 8 * (E / 2) * sizeof(void*);             /* gate/up and down code/scale tables, two parities */
     return n;
 }
@@ -101,9 +103,11 @@ inline uint64_t lane_bytes(const Shape& s, uint64_t rows, uint64_t routes, bool 
 inline uint64_t lanes_bytes(const Shape& s, const Lanes& l) {
     using namespace r3::moe_shm;
     uint64_t n = 0;
-    for (uint32_t lane = 0; lane < kLanes; ++lane) {
+    const uint32_t slots = uint32_t(l.open.size() / kClasses);
+    if (!slots || l.open.size() != size_t(slots) * kClasses) return UINT64_MAX;
+    for (uint32_t lane = 0; lane < l.open.size(); ++lane) {
         if (!l.open[lane]) continue;
-        const uint32_t cls = lane_class(lane);
+        const uint32_t cls = lane_class(lane, slots);
         if (cls < kSmallClasses && cls >= l.small_count) continue;
         const uint64_t cap = cls < kSmallClasses ? l.small_rows[cls] : l.large_rows;
         n += lane_bytes(s, cap, cap * s.top_k, cls == kSmallClasses);

@@ -52,7 +52,7 @@ int main(int argc, char** argv) {
     const std::string shm_name = "/bc-receipts-live-" + std::to_string(::getpid());
     shm::Layout layout{};
     const shm::LayoutShape shape{16, 1, 2, 16, 8, 16};
-    assert(shm::layout_for(shape, 1, shm::slots_for(1, 1), &layout));
+    assert(shm::v26::layout_for(shape, 1, shm::v26::Topology{1, 1}, &layout) == shm::Refusal::None);
     const int fd = ::shm_open(shm_name.c_str(),
                               O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
     assert(fd >= 0);
@@ -60,7 +60,21 @@ int main(int argc, char** argv) {
     void* map = ::mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                        MAP_SHARED, fd, 0);
     assert(map != MAP_FAILED);
-    assert(shm::init(map, 1, shape, 1, 1));
+    struct stat observation{};
+    assert(::fstat(fd, &observation) == 0);
+    const std::string dev = std::to_string(static_cast<uint64_t>(observation.st_dev));
+    const std::string ino = std::to_string(static_cast<uint64_t>(observation.st_ino));
+
+    std::ifstream template_file(std::string(BC_CONTRACT_V2_DOCS_DIR) +
+                                "/example.flashnext-4gpu.json");
+    assert(template_file);
+    Json manifest = Json::parse(template_file);
+    manifest["spec"]["handoff"]["transport"]["shm"] = shm_name;
+    std::string digest, why;
+    assert(bc::serving::manifest_content_digest(manifest, &digest, &why));
+    manifest["metadata"]["content_digest"] = digest;
+    assert(shm::v26::init(map, layout.bytes, shape, 1, shm::v26::Topology{1, 1},
+                          shm::v26::manifest_identity(digest)) == shm::Refusal::None);
     auto* header = static_cast<shm::Header*>(map);
     header->helper_count = 1;
     auto* control = shm::placement_control(map);
@@ -77,19 +91,6 @@ int main(int argc, char** argv) {
     journal->entry[0].before_digest = control->active_digest;
     assert(shm::valid_self(header, layout.bytes));
 
-    struct stat observation{};
-    assert(::fstat(fd, &observation) == 0);
-    const std::string dev = std::to_string(static_cast<uint64_t>(observation.st_dev));
-    const std::string ino = std::to_string(static_cast<uint64_t>(observation.st_ino));
-
-    std::ifstream template_file(std::string(BC_CONTRACT_V2_DOCS_DIR) +
-                                "/example.flashnext-4gpu.json");
-    assert(template_file);
-    Json manifest = Json::parse(template_file);
-    manifest["spec"]["handoff"]["transport"]["shm"] = shm_name;
-    std::string digest, why;
-    assert(bc::serving::manifest_content_digest(manifest, &digest, &why));
-    manifest["metadata"]["content_digest"] = digest;
     { std::ofstream output(manifest_path);
       assert(output);
       output << manifest.dump();

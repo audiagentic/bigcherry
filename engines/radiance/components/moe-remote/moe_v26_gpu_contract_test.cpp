@@ -2,6 +2,11 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
+#include <filesystem>
+#include <fstream>
+#include <iterator>
+#include <string>
 #include <vector>
 
 namespace v = r3::moe_shm::v26;
@@ -72,6 +77,7 @@ static void exercise(const LayoutShape& shape, uint32_t layers, v::Topology t) {
                   "producer encodes a complete single-result v26 request");
             check(r.slot == slot && r.consumer == rank && r.helper == helper &&
                   r.world == t.ranks &&
+                  r.activation_offset == v::element_offset(l, v::Region::Activations, rank) &&
                   r.result_offset == v::element_offset(l, v::Region::ResultPlanes, slot) &&
                   r.result_stride == shape.hidden * sizeof(uint16_t) &&
                   gpu::request_identity_valid(r, l, shape, t, layers, lane),
@@ -124,7 +130,61 @@ static void exercise(const LayoutShape& shape, uint32_t layers, v::Topology t) {
         }
     }
 }
+static std::string source(const char* file) {
+    std::ifstream in(std::filesystem::path(__FILE__).parent_path() / file);
+    check(bool(in), "live HIP/host consumer source exists");
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
+}
+static bool has(const std::string& text, const char* token) {
+    return text.find(token) != std::string::npos;
+}
+static bool live_contract(const std::string& hip, const std::string& host) {
+    for (const auto* bad : {"kMaxSlots", "kMaxHelpers", "kMaxEngineRanks",
+                             "kLanes", "kResultPlanes", "kRingSlots", "ConsumedRecords"})
+        if (has(hip, bad) || has(host, bad)) return false;
+    // Deliberately match the *live* GPU path, not only the offline geometry.
+    for (const auto* required : {
+            "q->result_offset = h->result_offset[slot]",
+            "combine_index(rank, h->slot_count)",
+            "rec[lanes].sequence = cg", "rec[lane]",
+            "h->lane[lane].consumed_sequence",
+            "h->combine[rank].result_consumed_generation",
+            "published_ticket_offset(h->slot_count, h->max_rows)",
+            "published[h->slot_count]",
+            "mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads)"})
+        if (!has(hip, required)) return false;
+    for (const auto* required : {
+            "scratch.sequence_bytes", "scratch.published_bytes",
+            "scratch.consumed_bytes", "gpu::scratch_for",
+            "gpu::finish_launch", "s.dev.finish_threads = finish.threads"})
+        if (!has(host, required)) return false;
+    return true;
+}
+static void live_contract_mutation_guards() {
+    const std::string hip = source("moe_mailbox_ops.hip");
+    const std::string host = source("moe_remote_hook.cpp");
+    check(live_contract(hip, host), "real live v26 HIP/host paths are counted");
+    auto change = [&](const std::string& src, const char* from, const char* to) {
+        auto mutated = src;
+        const auto at = mutated.find(from);
+        check(at != std::string::npos, "expected live contract anchor");
+        mutated.replace(at, std::strlen(from), to);
+        return mutated;
+    };
+    check(!live_contract(change(hip, "published[h->slot_count]", "published[kMaxSlots]"), host),
+          "mutation: old compiled slot ceiling is caught");
+    check(!live_contract(change(hip, "rec[lanes].sequence = cg", "rec->combine_sequence = cg"), host),
+          "mutation: old ACK record base is caught");
+    check(!live_contract(change(hip, "q->result_offset = h->result_offset[slot]",
+                                "q->result_offset = h->result_offset[result_index(slot, rank)]"), host),
+          "mutation: old result plane index is caught");
+    check(!live_contract(hip, change(host, "scratch.published_bytes",
+                                     "(kMaxSlots + 1u) * sizeof(uint32_t)")),
+          "mutation: old fixed GPU scratch allocation is caught");
+}
+
 int main() {
+    live_contract_mutation_guards();
     const v::Topology topologies[] = {
         {1,1}, {2,1}, {1,2}, {2,2}, {1,3}, {2,3}, {3,2}, {4,1}
     };

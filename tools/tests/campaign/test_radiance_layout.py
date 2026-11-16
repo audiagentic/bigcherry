@@ -42,10 +42,16 @@ class RepoDataTests(unittest.TestCase):
                 self.assertEqual(bool(r.helpers), bool(lay.get("helper")))
                 self.assertFalse(set(r.engine_indices) & {h.index for h in r.helpers}, "a card plays one part")
 
-    def test_the_protocol_bound_is_read_from_the_header(self):
-        header = (paths.REPO_ROOT / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
-        self.assertEqual(rl.max_helpers(), int(re.search(r"kMaxHelpers\s*=\s*(\d+)", header).group(1)))
-        self.assertEqual(rl.max_slots(), int(re.search(r"kMaxSlots\s*=\s*(\d+)", header).group(1)))
+    def test_the_versioned_native_representation_schema(self):
+        schema = rl._wire_schema(None)
+        self.assertEqual(schema["wire_version"], 26)
+        self.assertEqual(rl.max_helpers(), 8)
+        self.assertIsNone(rl.topology_refusal(1, 3))
+        self.assertIsNone(rl.topology_refusal(2, 3))
+        self.assertIsNone(rl.topology_refusal(8, 24))
+        self.assertEqual(rl.topology_refusal(9, 1), "CombineMask")
+        self.assertEqual(rl.topology_refusal(8, 25), "ParticipantMask")
+        self.assertEqual(rl.topology_refusal(0, 1), "ZeroTopology")
 
     def test_archs_name_a_plugin_that_a_component_builds(self):
         # every plugin file in archs.toml is the output of a declared radiance component, or the engine's own libr4d
@@ -107,9 +113,6 @@ class ResolveTests(unittest.TestCase):
             ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--p2p", "on"]', "server-args"),
             ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\nserver-args = ["--tp", "1"]', "server-args"),
             ('engine = { arch = "gfx1100", count = 2 }\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100', "requires tp-wire"),
-            # the fixture header bounds the request slots at 2: two helpers behind two ranks need 4
-            ('engine = { arch = "gfx1100", count = 2 }\ntp-wire = "wht6"\n[[layout.t.helper]]\narch = "gfx1201"\nbudget-mib = 100\n'
-             '[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\nplacement = "tail"', "need 4 request slots; the mailbox protocol has 2"),
         ]
         for recipe, expected in cases:
             with self.subTest(recipe=recipe):
@@ -185,8 +188,8 @@ class ResolveTests(unittest.TestCase):
         lines = "\n".join(_env_lines(r))
         for want in ("LAYOUT_ENGINE_DEVICES=0,1", "LAYOUT_ENGINE_RANKS=2", "LAYOUT_TP_WIRE=exact", "LAYOUT_HELPER_COUNT=2"):
             self.assertIn(want, lines)
-        # the slot bound is the protocol's: helpers x ranks
-        self.assertLessEqual(len(r.helpers) * len(r.engine_indices), rl.max_slots())
+        # The runtime topology is validated by the native v26 count predicates.
+        self.assertIsNone(rl.topology_refusal(len(r.helpers), len(r.engine_indices)))
 
     def test_two_xtx(self):
         r = rl.resolve("flashnext-2xtx", host(*XTX2))
@@ -239,9 +242,11 @@ class FileRuleTests(unittest.TestCase):
         (root / "engines/radiance/archs.toml").write_text(archs, encoding="utf-8")
         (root / "engines/radiance/layouts").mkdir()
         (root / "engines/radiance/layouts/test.toml").write_text(layouts, encoding="utf-8")
-        hdr = root / "engines/radiance/components/moe-remote"
-        hdr.mkdir(parents=True)
-        (hdr / "moe_remote_shm.h").write_text("constexpr uint32_t kMaxHelpers = 2;\nconstexpr uint32_t kMaxSlots = 2;\n", encoding="utf-8")
+        schema = root / "engines/radiance/components/moe-remote"
+        schema.mkdir(parents=True)
+        (schema / "topology-v26.schema.json").write_text(
+            (paths.REPO_ROOT / "engines/radiance/components/moe-remote/topology-v26.schema.json"
+            ).read_text(encoding="utf-8"), encoding="utf-8")
         return root
 
     ARCHS = '''schema = 1
@@ -278,7 +283,7 @@ roles = ["helper"]
 
     def test_rules(self):
         bad = {
-            "the protocol bound": self.HEAD + '[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\nplacement = "tail"\n',
+
             "a tail group must be": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\nplacement = "tail"\n',
             "a tail group is one card": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\narch = "gfx1030"\nbudget-mib = 100\n[[layout.t.helper]]\narch = "gfx1100"\nbudget-mib = 100\nplacement = "tail"\n',
             "already used": self.HEAD + '[[layout.t.helper]]\ndevices = [0]\nbudget-mib = 100\n',
@@ -296,7 +301,7 @@ roles = ["helper"]
             "device 9 is not": '[layout.t]\nengine = { arch = "gfx1201" }\n[[layout.t.helper]]\ndevices = [9]\nbudget-mib = 100\n',
         }
         for why, text in bad.items():
-            with self.subTest(why=why), self.assertRaisesRegex(rl.LayoutError, why if why != "the protocol bound" else "exceed"):
+            with self.subTest(why=why), self.assertRaisesRegex(rl.LayoutError, why):
                 self.resolve(text)
 
     def test_an_absent_budget_is_the_card_less_its_reserve(self):
@@ -308,9 +313,10 @@ roles = ["helper"]
         self.assertEqual(r.common_env["R3_MOE_WORKER_COMBINE"], "1")
         self.assertEqual(len(r.helpers), 2)
 
-    def test_the_combine_bound_is_the_headers(self):
-        text = (rl._root(None) / "engines/radiance/components/moe-remote/moe_remote_shm.h").read_text(encoding="utf-8")
-        self.assertIn("kCombineHelpers = kMaxHelpers;", text)   # the combine is bounded by the helper bound the resolver checks
+    def test_the_mask_is_a_typed_v26_refusal(self):
+        self.assertIsNone(rl.topology_refusal(8, 1, self.roots(self.ARCHS, "schema = 1\n")))
+        self.assertEqual(rl.topology_refusal(9, 1), "CombineMask")
+        self.assertEqual(rl.topology_refusal(1, 32), "ParticipantMask")
 
     def test_shares_are_emitted_only_when_a_head_differs(self):
         r = self.resolve(self.HEAD.replace("budget-mib = 1000\n", "budget-mib = 1000\nshare = 2\n"))

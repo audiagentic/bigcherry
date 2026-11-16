@@ -185,6 +185,10 @@ Result<Json> publish_live_runtime_receipt(
   if (!mapping || mapped_bytes < sizeof(shm::Header) ||
       !shm::valid_self(static_cast<const shm::Header*>(mapping), mapped_bytes))
     return fail("transport", "invalid worker shared-memory layout");
+  const uint64_t expected_manifest = shm::v26::manifest_identity(manifest_content_digest);
+  if (!expected_manifest ||
+      static_cast<const shm::Header*>(mapping)->manifest_digest != expected_manifest)
+    return fail("transport", "live worker segment belongs to a different manifest");
   for (unsigned attempt = 0; attempt < 64; ++attempt) {
     PC before{}, after{};
     PJ journal{};

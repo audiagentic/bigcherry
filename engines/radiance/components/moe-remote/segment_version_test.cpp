@@ -1,4 +1,4 @@
-// RHP11 F: Segment::open refuses a non-v24 shared mailbox before
+// RHP11 F: Segment::open refuses a non-v26 shared mailbox before
 // registration. HIP functions are stubs: this test uses NO GPU.
 #include "moe_remote_shm.h"
 #include <atomic>
@@ -29,14 +29,14 @@ int main() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(2, 1),&layout),"layout");
-    const std::string name="/bc-v24-"+std::to_string(getpid());
+    check(v26::layout_for(shape,2,{2,1},&layout) == Refusal::None,"layout");
+    const std::string name="/bc-v26-"+std::to_string(getpid());
     Segment creator;
     check(creator.open(name.c_str(),layout.bytes,true,1),"create");
-    check(init(creator.host(),2,shape,2, 1),"valid v24 init");
+    check(v26::init(creator.host(),layout.bytes,shape,2,{2,1},0x5E6E1757ULL) == Refusal::None,"valid v26 init");
     auto* h=creator.header();
     h->helper_count=2;
-    h->version=23;
+    h->version=25;
     {
         Segment legacy;
         check(!legacy.open(name.c_str(),layout.bytes,false,1),
@@ -47,20 +47,20 @@ int main() {
     {
         Segment attached;
         check(attached.open(name.c_str(),layout.bytes,false,1),
-              "v24 accepted by actual Segment::open");
+              "v26 accepted by actual Segment::open");
         check(attached.register_gpu() && registers==1,
-              "validated v24 passed to fake register");
+              "validated v26 passed to fake register");
         auto* g=generation_header(creator.host(),0);
         const uint64_t saved=g->digest;
         g->digest^=1;
         check(!creator.register_gpu() && registers==1,
-              "bad v24 generation never registered");
+              "bad v26 generation never registered");
         g->digest=saved;
     }
     // A creator unlinks only the segment it made. Its name can be taken over by a later start's segment before it is destroyed
     // (a late exit): destroying the old creator must leave the new one in place, and the new one still removes its own.
     {
-        const std::string own = "/bc-v24-own-" + std::to_string(getpid());
+        const std::string own = "/bc-v26-own-" + std::to_string(getpid());
         auto exists = [&] {
             const int fd = shm_open(own.c_str(), O_RDONLY | O_CLOEXEC, 0);
             if (fd >= 0) ::close(fd);
@@ -86,7 +86,7 @@ int main() {
     }
     // The name can exist before ftruncate: an attacher must not mmap and
     // read a zero-length object (SIGBUS), even when shm_open succeeds.
-    const std::string delayed_name = "/bc-v24-sizing-" + std::to_string(getpid());
+    const std::string delayed_name = "/bc-v26-sizing-" + std::to_string(getpid());
     const int delayed_fd = shm_open(delayed_name.c_str(),
                                    O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
     check(delayed_fd >= 0, "open unsized mailbox");
@@ -107,15 +107,15 @@ int main() {
     void* delayed_map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                              MAP_SHARED, delayed_fd, 0);
     check(delayed_map != MAP_FAILED, "map sized creator segment");
-    check(init(delayed_map, 2, shape, 2, 1), "initialize late-sized v24");
+    check(v26::init(delayed_map,layout.bytes,shape,2,{2,1},0x5E6E1757ULL) == Refusal::None, "initialize late-sized v26");
     static_cast<Header*>(delayed_map)->helper_count = 2;
     attacher.join();
-    check(accepted.load(std::memory_order_acquire), "attacher waits for sizing and v24");
+    check(accepted.load(std::memory_order_acquire), "attacher waits for sizing and v26");
     check(munmap(delayed_map, layout.bytes) == 0, "unmap late segment");
     check(::close(delayed_fd) == 0 && shm_unlink(delayed_name.c_str()) == 0,
           "remove late segment");
 
-    const std::string short_name = "/bc-v24-short-" + std::to_string(getpid());
+    const std::string short_name = "/bc-v26-short-" + std::to_string(getpid());
     const int short_fd = shm_open(short_name.c_str(),
                                   O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
     check(short_fd >= 0 && ftruncate(short_fd, (off_t)layout.bytes - 1) == 0,
