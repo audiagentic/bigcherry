@@ -21,6 +21,16 @@ What stays per geometry, on purpose: the kernel instantiation a tuple names (til
 plugin's check is not a reason to widen the ABI now. The hand-written `fp8_v4` and `k6_v4` rows and the upstream rows are
 untouched.
 
+## Review findings (GPT code review, `docs/evidence/2026-11-16-vtp44-generic-kv-layouts/code-review-a.md`)
+
+- Tuple fields that are macros: names and text are built with `R4D_XSTR` (expand, then stringify) and `R4D_TUPLE_CAT4`
+  (expand, then paste), so a named head_dim or geometry gives its value, never the macro's name. Checked on the real file: a copy
+  whose first tuple uses macros for head_dim, gqa, block, q_len and geometry compiles to the identical object.
+- The tuple list is for the `attn_paged` prefill and decode pair only. The fused gate+quantiser decode
+  (`attn_paged_gate_quant`) is another op kind with its own constraints and entry points: patch B gives it its own tuple
+  list and generator, not extra fields here. A geometry exists only when its tuple and kernel instantiation do.
+- The C++ standard is 17 or 20 across the build (`compile_commands.json`: gnu++17 and gnu++20), so the constexpr loop is valid.
+
 ## Proof of no change
 
 `libr4d/r4d_rows.cpp` compiled on the host (`g++ -c`, no device code) before and after: `objdump -s` (every section's

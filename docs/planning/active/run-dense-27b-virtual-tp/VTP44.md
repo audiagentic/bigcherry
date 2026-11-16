@@ -38,6 +38,8 @@ Deviations from step 1 above, decided while building it:
 - The `head_dim 256, gqa 6` check in the qwen35_fp8 plugin stays. Patch B adds the second plugin (qwen4exp_fp8) that needs the same check; the shared helper is written then, from two real uses, not one.
 - The descriptor holds sizes and names only (id, name, row bytes per 16 dims, scale group). K/V element kinds and offsets stay documented in the ABI header comment and in the kernels: no kernel or plugin reads them as data yet, so a field would be speculative.
 
+GPT code review of patch A (code-review-a.md): no blocking finding. The tuple list is for the `attn_paged` prefill and decode pair; patch B models the fused gate+quantiser as its own op kind with its own tuple list. Macro-valued tuple fields expand before stringify and paste.
+
 Proof used for patch A: `libr4d/r4d_rows.cpp` compiles on the host alone in about a second, so the before and after objects are compared with `objdump -s` (all section bytes) and `objdump -r` (all relocations): identical. The device baseline waits for the corrected pinned selftest run (BASELINE-STATUS.md in the evidence folder): an unpinned `r4d_selftest` picks a gfx1100 card for gfx1201-only code and segfaults inside ROCm 7.2.4, on every row.
 
 ## Files
