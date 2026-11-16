@@ -92,6 +92,71 @@ engine release, not the platform release.
   archive with its `.sha256` and receipt. A bundle that then fails verification refuses; it does not fall back to an
   older tag.
 
+### RSP01 phase 2: paired platform and engine releases (proposal, not installed today)
+
+Phase 2 is a **design only**, described in
+[the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-compatible-platform-and-engine-release-pair-design-only).
+No `bc-platform` runtime archive, compatibility-pair `install.json`, or
+worktree-free `release-install` is available yet. The supported behavior
+above remains: `release-install <tag|latest>` selects **one Radiance tag**,
+creates or checks a detached **whole-repository** source worktree at
+`$BC_WORK_ROOT/releases/<tag>/src` and verifies the restored runtime.
+`launch-flashnext-best.sh --release` re-execs that tag's source launcher
+with its `--build` directory. Do not treat a `bc-platform-*` tag as a
+currently installable artifact.
+
+**Release lines are separate:** release-please owns
+`bc-radiance-<version>` (component `engines/radiance`) and
+`bc-platform-<version>` (component `.`), using independent manifest
+versions and tags. Equal numbers do not imply compatibility; the
+platform component excludes `engines/` paths in its current release-please
+config, although its launch-time layouts, `archs.toml` and topology data
+currently live there. The ownership/bump rule for those files must be
+fixed before platform packaging, not assumed.
+
+The proposed platform archive contains a digest-verified, immutable
+subset of the repository: `tools/lab/radiance/launch-flashnext-best.sh`,
+its `lib/sdk-check.sh` and `lib/plan-check.sh`, `lab-env.sh`, an
+importable `tools/bigcherry` package, versioned
+`engines/radiance/layouts/*.toml`, `archs.toml`, the topology schema,
+and runtime recipe/engine metadata. The launcher currently invokes
+`layout env`, `resources derive-launch`, `host-check`,
+`gpu-power` and `gfxoff`; its eager Python imports require an
+extracted-prefix dependency-closure test. Optional calibration tooling
+is an explicit packaging choice. Host-specific
+`BIGCHERRY_ENVIRONMENT`, `BC_WORK_ROOT`, `BC_MODEL_ROOT`, models,
+route heat, SDK and hardware stay external. **`bc-serve` stays exclusively
+in the engine bundle**, alongside `bin/radiance`, the MoE helper,
+plugins, catalogs and runtime libraries.
+
+A future pair would require two verified tag/asset identities, per-file
+digests, matching ROCm SDK, engine plugin ABI, matching serving-manifest
+contract and topology version, compatible layout/architecture inputs
+and a fully verified two-prefix install before publication. Do not
+confuse the engine *archive* schema
+`bigcherry-radiance-runtime-v1` with the native serving manifest's
+`apiVersion=bigcherry/v2` and `contract_version=2`; the generated
+serving contract fingerprint and actual plugin ABI must be checked.
+The proposed `install.json` **v2** records both tags/tag commits,
+archive and manifest digests, prefixes, engine build and `bc-serve`
+digests, build-provenance trees, SDK version, compatibility contract,
+selected launcher and a canonical pair ID. The engine tag's
+`config_tree` is its **build input**, not the independent platform
+config tree. Tags/asset provenance must be authenticated; a checksum
+alone does not establish publisher identity.
+
+Staging and active-pair selection would be atomic. A failed upgrade
+must leave the old pair active, and rollback re-verifies the retained
+pair. Existing v1 receipts with `worktree`/`build_dir` are not silently
+rewritten; migration must be explicit. The only previously published
+unscoped engine archive (`bc-radiance-1170.0.0`) retains its existing
+pinned-digest **v1 exception** and is **not** eligible as a new scoped
+v2 pair. No new `--engine-tag`/`--platform-tag` syntax or `latest`
+pair-selection policy is implemented; both remain design decisions.
+The first planned implementation is a hermetic platform
+archive pack/verify plus extracted-prefix tests, **without changing
+the current installer**.
+
 ## Bump gates per engine
 
 `pin-bump` runs the gates the engine declares through its adapter: llama.cpp the ggml-cuda contract compile and the ggml
