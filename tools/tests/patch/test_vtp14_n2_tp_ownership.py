@@ -5,9 +5,7 @@ to the pinned radiance v1.17.0 source when a checkout carrying that tag is reach
 """
 from __future__ import annotations
 
-import importlib.util
 import os
-import re
 import shutil
 import subprocess
 import sys
@@ -19,8 +17,8 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from bigcherry.patcher import apply_all
-from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
+from _vtp_promotion_support import assert_promoted_recipe, load_patch_files, patched_pinned_source
+from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PATCHES = REPO / "engines/radiance/patches"
 N1, N3, N2, N2F = (PATCHES / n for n in ("rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous",
@@ -28,10 +26,7 @@ N1, N3, N2, N2F = (PATCHES / n for n in ("rad0016_vtp14_rank_code_selection", "r
 
 
 def load(package: Path):
-    spec = importlib.util.spec_from_file_location(package.name, package / "patch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.PATCHES)
+    return load_patch_files(package.name)
 
 
 def edit_text(package: Path, edit_id: str) -> str:
@@ -123,34 +118,16 @@ class TpOwnershipTests(unittest.TestCase):
             meta = tomllib.load(f)
         with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
             recipe = tomllib.load(f)
-        self.assertEqual((meta["order"], meta["state"]), (18, "untested"))
+        self.assertEqual((meta["order"], meta["state"]), (18, "validated"))
         # one patch set in the main build, inert until its options are given; the as-released source stays unpatched
-        self.assertEqual(recipe["patch-set"]["vtp14-mixed-tp"]["patches"],
-                         ["rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous", "rad0018_vtp14_n2_tp_ownership",
-                          "rad0019_vtp14_n2_tp_ownership_fp8", "rad0020_vtp14_tp3_pipelined_prefill",
-                          "rad0021_vtp14_weighted_twoshot_3rank", "rad0022_tune_pin", "rad0023_ar_timeline",
-                          "rad0024_ts3_decode", "rad0025_multiseq_pipelined_prefill",
-                          "rad0026_mixed_pipelined_prefill", "rad0027_mixed_one_pipelined_prefill",
-                          "rad0028_rank_consistent_block_drafts",
-                          "rad0029_rank_own_split", "rad0030_int8_pipelined_prefill", "rad0031_ts_timeline",
-                          "rad0032_ts3_duplex", "rad0033_ts3_once", "rad0036_prefill_governor"])
-        self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
-        self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
+        assert_promoted_recipe(self, N1.name, N3.name, N2.name, N2F.name)
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
 
     def test_applies_after_n1_and_n3_to_pinned_source(self):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no radiance checkout with the pinned v1.17.0 commit; set RADIANCE_SRC")
-        files = load(N1) + load(N3) + load(N2) + load(N2F)
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d) / "radiance"
-            root.mkdir()
-            subprocess.run(f"git -C {checkout} archive {PIN_COMMIT} | tar -x -C {root}", shell=True, check=True)
-            first = apply_all(files, root)
-            self.assertTrue(all(f.ok for f in first), first)
-            again = apply_all(files, root)
-            self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
+        with patched_pinned_source(checkout, N2F.name, full_checkout=True) as root:
             arch = (root / "arch/common/rad_arch.h").read_text()
             self.assertIn("if (!g.tp_owned_ok)", arch)
             self.assertIn("c->calib_dir && *c->calib_dir", arch)

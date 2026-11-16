@@ -1,16 +1,12 @@
 """VTP36 (rad0031-rad0033): the exact two-shot's timeline; the three-rank two-shot's pieces, fused step and duplex
 weights; its second hop written once through the host mailbox.
 
-Card-free. The pinned-source test applies the vtp14-mixed-tp chain up to rad0033 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0033 to radiance v1.17.0 when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
 
-import importlib.util
-import os
-import subprocess
 import sys
-import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -19,7 +15,8 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patcher import apply_all
-from test_vtp14_n1_rank_code_selection import PIN_COMMIT, radiance_checkout
+from _vtp_promotion_support import assert_promoted_recipe, serving_chain_to, load_patch_files, patched_pinned_source
+from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PATCHES = REPO / "engines/radiance/patches"
 TL = PATCHES / "rad0031_ts_timeline"
@@ -28,16 +25,11 @@ ONCE = PATCHES / "rad0033_ts3_once"
 
 
 def load(pkg: Path):
-    spec = importlib.util.spec_from_file_location(pkg.name, pkg / "patch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.PATCHES)
+    return load_patch_files(pkg.name)
 
 
 def chain(last: Path = ONCE):
-    with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
-        names = tomllib.load(f)["patch-set"]["vtp14-mixed-tp"]["patches"]
-    return names[: names.index(last.name) + 1]
+    return serving_chain_to(last.name)
 
 
 def texts(pkg: Path):
@@ -46,13 +38,14 @@ def texts(pkg: Path):
 
 class Ts3AllReduceTests(unittest.TestCase):
     def test_metadata_and_recipe(self):
+        assert_promoted_recipe(self, TL.name, DX.name, ONCE.name)
         for pkg, order, kind, requires in (
                 (TL, 31, "diagnostic", ["rad0021_vtp14_weighted_twoshot_3rank"]),
                 (DX, 32, "enhancement", ["rad0024_ts3_decode", "rad0031_ts_timeline"]),
                 (ONCE, 33, "enhancement", ["rad0032_ts3_duplex"])):
             with (pkg / "patch.toml").open("rb") as f:
                 meta = tomllib.load(f)
-            self.assertEqual((meta["order"], meta["state"], meta["kind"]), (order, "untested", kind))
+            self.assertEqual((meta["order"], meta["state"], meta["kind"]), (order, "validated", kind))
             self.assertEqual(meta["plan-ids"], ["VTP36"])
             self.assertEqual(meta["requires"], requires)
             self.assertIn("**Plan item:** VTP36", (pkg / "SUMMARY.md").read_text())
@@ -133,7 +126,7 @@ class Ts3AllReduceTests(unittest.TestCase):
         for a in mine:
             for b in mine:
                 self.assertFalse(a != b and b.startswith(a), (a, b))
-        others = [e.guard for name in chain(TL)[:-1] for f in load(PATCHES / name) for e in f.edits]
+        others = [e.guard for name in chain(ONCE) if name not in (TL.name, DX.name, ONCE.name) for f in load(PATCHES / name) for e in f.edits]
         for a in mine:
             for b in others:
                 self.assertFalse(a == b or a.startswith(b) or b.startswith(a), (a, b))
@@ -142,17 +135,7 @@ class Ts3AllReduceTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest("no pinned radiance checkout; set RADIANCE_SRC")
-        files = [f for name in chain() for f in load(PATCHES / name)]
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as d:
-            root = Path(d)
-            for path in {f.path for f in files if not f.create}:
-                blob = subprocess.run(["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{path}"],
-                                      capture_output=True, check=True).stdout
-                (root / path).parent.mkdir(parents=True, exist_ok=True)
-                (root / path).write_bytes(blob)
-            for f in files:
-                result = apply_all([f], root)
-                self.assertTrue(all(r.ok for r in result), result)
+        with patched_pinned_source(checkout, ONCE.name) as root:
             for f in load(ONCE):
                 text = (root / f.path).read_text()
                 for e in f.edits:

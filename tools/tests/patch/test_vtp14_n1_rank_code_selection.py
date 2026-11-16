@@ -8,7 +8,6 @@ which the patch adds to radiance's own suite.
 """
 from __future__ import annotations
 
-import importlib.util
 import os
 import re
 import subprocess
@@ -20,7 +19,9 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patcher import apply_all
+from _vtp_promotion_support import assert_focal_guards_unique, assert_promoted_recipe, load_patch_files, patched_pinned_source
 
 PACKAGE = REPO / "engines/radiance/patches/rad0016_vtp14_rank_code_selection"
 PIN = "v1.17.0"
@@ -28,10 +29,7 @@ PIN_COMMIT = "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d"
 
 
 def patch_files():
-    spec = importlib.util.spec_from_file_location("vtp14_n1_patch", PACKAGE / "patch.py")
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return list(module.PATCHES)
+    return load_patch_files(PACKAGE.name)
 
 
 def original_literal(edit):
@@ -67,26 +65,17 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
             meta = tomllib.load(f)
         with (REPO / "engines/radiance/recipes.toml").open("rb") as f:
             recipe = tomllib.load(f)
-        self.assertEqual(meta["state"], "untested")
+        self.assertEqual(meta["state"], "validated")
         self.assertEqual(meta["order"], 16)
         self.assertEqual(meta["plan-ids"], ["VTP14"])
         self.assertEqual(meta["tags"], ["tensor-parallel", "dispatch"])
         # one patch set in the main build, inert until its options are given; the as-released source stays unpatched
-        self.assertEqual(recipe["patch-set"]["vtp14-mixed-tp"]["patches"],
-                         ["rad0016_vtp14_rank_code_selection", "rad0017_vtp14_n3_shared_rendezvous", "rad0018_vtp14_n2_tp_ownership",
-                          "rad0019_vtp14_n2_tp_ownership_fp8", "rad0020_vtp14_tp3_pipelined_prefill",
-                          "rad0021_vtp14_weighted_twoshot_3rank", "rad0022_tune_pin", "rad0023_ar_timeline",
-                          "rad0024_ts3_decode", "rad0025_multiseq_pipelined_prefill",
-                          "rad0026_mixed_pipelined_prefill", "rad0027_mixed_one_pipelined_prefill",
-                          "rad0028_rank_consistent_block_drafts",
-                          "rad0029_rank_own_split", "rad0030_int8_pipelined_prefill", "rad0031_ts_timeline",
-                          "rad0032_ts3_duplex", "rad0033_ts3_once", "rad0036_prefill_governor"])
-        self.assertEqual(recipe["source"]["radiance"]["patch-sets"][-1], "vtp14-mixed-tp")
-        self.assertNotIn("vtp14-mixed-tp", recipe["source"]["radiance-native"]["patch-sets"])
+        assert_promoted_recipe(self, PACKAGE.name)
         self.assertNotIn("radiance-vtp14-rank-code-selection", recipe["source"])
         self.assertTrue((REPO / "docs/planning/completed/run-dense-27b-virtual-tp/VTP14.md").exists())
 
     def test_shape_guards_unique_and_created_files_from_src(self):
+        assert_focal_guards_unique(self, PACKAGE.name)
         files = patch_files()
         paths = [f.path for f in files]
         self.assertEqual(len(paths), len(set(paths)))
@@ -139,22 +128,7 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
         checkout = radiance_checkout()
         if checkout is None:
             self.skipTest(f"no radiance checkout with {PIN} ({PIN_COMMIT[:8]}); set RADIANCE_SRC")
-        files = patch_files()
-        with tempfile.TemporaryDirectory() as d:
-            root = Path(d)
-            for f in files:
-                if f.create:
-                    continue
-                blob = subprocess.run(["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{f.path}"],
-                                      capture_output=True, check=True).stdout
-                dest = root / f.path
-                dest.parent.mkdir(parents=True, exist_ok=True)
-                dest.write_bytes(blob)
-            first = apply_all(files, root)
-            self.assertTrue(all(f.ok for f in first), first)
-            self.assertTrue(all(e.status == "applied" for f in first for e in f.results))
-            again = apply_all(files, root)
-            self.assertTrue(all(e.status == "already-applied" for f in again for e in f.results))
+        with patched_pinned_source(checkout, PACKAGE.name) as root:
             engine = (root / "core/engine_bringup.cpp").read_text()
             loader = (root / "core/plugin/loader.cpp").read_text()
             select = (root / "core/plugin/select.cpp").read_text()

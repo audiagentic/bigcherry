@@ -126,6 +126,11 @@ needs = []
 [experiment.mtp-full-head-switch]
 patches = ["rad0003_mtp_full_head_switch"]
 
+# VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
+# bf16_i8 requires bf16_fp8. Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
+[experiment.kv-bf16-packed]
+patches = ["rad0037_bf16_fp8_kv", "rad0038_bf16_i8_kv"]
+
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the
 # component's, never restated here.
