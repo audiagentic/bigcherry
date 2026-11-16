@@ -136,86 +136,19 @@ def inspect_workspace(root: Path, *, measure: bool = True) -> Inventory:
         for path in sorted(logs.iterdir()):
             inv.build_logs.append(Entry(path, "build-log", path.name,
                                         size_bytes=dir_size(path) if measure else 0))
-    known = set(("build-logs", "runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", ".locks"))
+    known = {"build-logs", "runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", "cleanup-records", ".locks"}
     if root.is_dir():
         inv.unknown += [p for p in sorted(root.iterdir()) if p.name not in known and not p.name.startswith(".")]
     return inv
 
 
-def inspect_cache_roots(root: Path, *, measure: bool = True) -> list[dict]:
-    """WSL04 read-only build/source inventory; NEVER emits a deletion candidate.
+def inspect_cache_roots(root: Path, *, policy: Policy | None = None, now: float | None = None,
+                        measure: bool = True, blocked: str | None = None) -> list[dict]:
+    """WSL09 build candidate decisions and read-only source inventory."""
+    from . import build_gc
 
-    Layout recognition and a metadata sidecar only establish that the entry can
-    be *described*. They do not prove cache ownership, provenance, references,
-    rebuildability, or absence of a live consumer. A later GC design must
-    establish all of those separately before considering a candidate.
-    """
-    root = Path(root)
-    records: list[dict] = []
-
-    def record(path: Path, kind: str, metadata: str, reason: str) -> None:
-        records.append({
-            "kind": kind, "path": str(path),
-            "size_bytes": dir_size(path) if measure and path.is_dir() and not path.is_symlink() else None,
-            "metadata": metadata,
-            "action": "protected",
-            "reasons": [reason, "no cache GC/rebuildability authorization is implemented"],
-        })
-
-    for kind in ("build", "source"):
-        base = root / (kind + "s")
-        if base.is_symlink():
-            record(base, kind, "untrusted", "cache root is a symlink")
-            continue
-        if not base.exists():
-            continue
-        if not base.is_dir():
-            record(base, kind, "untrusted", "cache root is not a directory")
-            continue
-        try:
-            roots = sorted(base.iterdir())
-            for entry in roots:
-                if entry.is_symlink() or not entry.is_dir():
-                    if kind == "source" and entry.is_file() and entry.name.endswith(".metadata.json") and not entry.is_symlink():
-                        # Paired source metadata is attached to its directory;
-                        # orphan sidecars are still reported as protected.
-                        if (base / entry.name[:-len(".metadata.json")]).is_dir():
-                            continue
-                    record(entry, kind, "untrusted", "unclassified cache entry or symlink")
-                    continue
-                if kind == "source":
-                    sidecar = base / (entry.name + ".metadata.json")
-                    if sidecar.is_file() and not sidecar.is_symlink():
-                        try:
-                            import json
-                            valid = isinstance(json.loads(sidecar.read_text(encoding="utf-8")), dict)
-                        except (OSError, ValueError):
-                            valid = False
-                        metadata = "present-unverified" if valid else "invalid"
-                    else:
-                        metadata = "missing"
-                    record(entry, kind, metadata, "source provenance and consumers not independently verified")
-                    continue
-                # Builds are grouped under a source/recipe key. Unknown children
-                # (including reference-ladder caches) remain visible/protected.
-                for child in sorted(entry.iterdir()):
-                    if child.is_symlink() or not child.is_dir():
-                        record(child, kind, "untrusted", "unclassified build entry or symlink")
-                        continue
-                    metadata_files = list(child.glob("bigcherry-build-metadata-*.json"))
-                    valid = len(metadata_files) == 1 and metadata_files[0].is_file() and not metadata_files[0].is_symlink()
-                    if valid:
-                        try:
-                            import json
-                            valid = isinstance(json.loads(metadata_files[0].read_text(encoding="utf-8")), dict)
-                        except (OSError, ValueError):
-                            valid = False
-                    record(child, kind, "present-unverified" if valid else "missing-or-invalid",
-                           "build recipe, source pin, live claims and rebuildability not verified")
-        except OSError as exc:
-            record(base, kind, "untrusted", f"cache listing incomplete: {exc}")
-    return records
-
+    return build_gc.inspect(root, policy=policy or Policy(), now=now,
+                            measure=measure, blocked=blocked)
 
 def _epoch(stamp: str) -> float:
     return calendar.timegm(time.strptime(stamp, "%Y-%m-%dT%H:%M:%SZ"))
@@ -299,8 +232,8 @@ def render(plan: CleanupPlan, root: Path, *, verbose: bool = False) -> str:
         return f"{n / 1e9:.2f} GB"
     t = plan.totals()
     lines = [f"work root {root}",
-             f"runs: {len(plan.decisions)}  candidates {t['candidate']['runs']} ({gb(t['candidate']['bytes'])})  "
-             f"protected {t['protected']['runs']} ({gb(t['protected']['bytes'])})"]
+             (f"runs: {len(plan.decisions)}  candidates {t['candidate']['runs']} ({gb(t['candidate']['bytes'])})  "
+              f"protected {t['protected']['runs']} ({gb(t['protected']['bytes'])})")]
     if plan.blocked:
         lines.append(f"BLOCKED: {plan.blocked}")
     reasons: dict[str, int] = {}
