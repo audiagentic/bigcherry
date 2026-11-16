@@ -67,3 +67,7 @@ Every patch with run evidence is validated or has a recorded reason in PRQ03.
 ## Progress 2026-11-16
 
 Promoted through the lightweight tier and merged: rad0016-0019 (#983), rad0020 and rad0025-0027 (#984), rad0021, rad0022, rad0024, rad0031, rad0032, rad0033 (#985), rad0028 and rad0029 (#986), rad0012 (#987, evidence in this folder's e5 via the rsc08-s3-gate and flashnext identity runs), rad0023 (#988). All are in serving-core. Diagnostics rad0004, rad0006 and rad0010 stay untested by design (diagnostic-only sources; promoting them would put them in production); recorded in PRQ03.
+
+## Outcome 2026-11-16
+
+All lightweight promotions are merged: rad0012, rad0016-rad0029, rad0023, rad0031-rad0033 (profile-evidence tier), then rad0030, rad0036 (#992) and rad0005 (#993). Production source applies cleanly (26 of 26). Evidence carries across pin bumps by rule; no per-bump re-validation.
