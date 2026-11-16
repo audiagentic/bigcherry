@@ -147,4 +147,4 @@ collective, GDN/attention, BF16 quality or real service speed
 has been proved. **Defer loader implementation/promotion until
 optimised all-INT8 dispatch and cross-device numerical/transport
 are measured.** Preserve the static XDP10 artifact plan as a
-separate eventual option. See VTP12 hardware receipt matrix.
+separate eventua
