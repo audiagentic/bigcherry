@@ -73,10 +73,11 @@ tagged worktree supplies `tools/lab/radiance/launch-flashnext-best.sh`,
 its shell libraries, Python `bigcherry` layout/resource commands, and
 layouts/configuration. A compatible ROCm SDK, model, hardware and
 layout-specific inputs (for example helper-route heat) are also required.
-**Phase 2 (design only)** will record the engine and platform (launcher
-and layouts/configuration) as a compatible pinned pair, without requiring
-a whole-repository worktree for the engine. `bc-serve` stays in the
-engine release, not the platform release.
+**Phase 2 (design only)** replaces the repository worktree and lab
+launcher with a **single Python-free engine asset** that contains the
+readable RSC12 configs and starts via native `bc-serve`. The separate
+`bc-platform` release remains for development/build/release tooling, not
+a runtime companion or compatibility pair. This is not installed yet.
 
 - A `runtime_assets[<tag>]` entry in a pin record committed at the tag is the source of truth and takes precedence
   (receipt `source: "record"`).
@@ -92,70 +93,18 @@ engine release, not the platform release.
   archive with its `.sha256` and receipt. A bundle that then fails verification refuses; it does not fall back to an
   older tag.
 
-### RSP01 phase 2: paired platform and engine releases (proposal, not installed today)
+### RSP01 phase 2: single Python-free engine release (design only)
 
-Phase 2 is a **design only**, described in
-[the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-compatible-platform-and-engine-release-pair-design-only).
-No `bc-platform` runtime archive, compatibility-pair `install.json`, or
-worktree-free `release-install` is available yet. The supported behavior
-above remains: `release-install <tag|latest>` selects **one Radiance tag**,
-creates or checks a detached **whole-repository** source worktree at
-`$BC_WORK_ROOT/releases/<tag>/src` and verifies the restored runtime.
-`launch-flashnext-best.sh --release` re-execs that tag's source launcher
-with its `--build` directory. Do not treat a `bc-platform-*` tag as a
-currently installable artifact.
+See [the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-single-python-free-engine-release-design-only) for the bundle contract, exact RSC02/RSC12/RSC04 dependency table, unported functions and refusal tests. **No phase-2 standalone installer is available today.** The current `release-install <tag|latest>` still installs a scoped runtime beside a clean detached whole-repository source worktree in `$BC_WORK_ROOT/releases/<tag>/src`, and `launch-flashnext-best.sh --release` re-execs that tag's shell launcher. This is a **development** launch path, not an asset intended to ship with the future engine.
 
-**Release lines are separate:** release-please owns
-`bc-radiance-<version>` (component `engines/radiance`) and
-`bc-platform-<version>` (component `.`), using independent manifest
-versions and tags. Equal numbers do not imply compatibility; the
-platform component excludes `engines/` paths in its current release-please
-config, although its launch-time layouts, `archs.toml` and topology data
-currently live there. The ownership/bump rule for those files must be
-fixed before platform packaging, not assumed.
+The final release contains only engine **binaries and data**: `bin/radiance`, matching engine-built `radiance_home/bin/bc-serve`, MoE helper, kernel/architecture/quantizer plugins and catalogs, required runtime libraries and metadata, plus `engines/radiance/configs/` per-model readable RSC12 configs and their tested data dependencies. `engines/radiance/archs.toml` is an **engine build input compiled into `bc-serve`** (`components/serving/CMakeLists.txt`); the current `engines/radiance/layouts/*.toml` become RSC12 configs in the bundle, not a platform-supplied layout overlay. Exclude Python, the Python supervisor, shell launcher, build/patch/campaign tools, `rad-*` diagnostics, `r4d_selftest`, tests and mutable/private host files. The independent `bc-platform-*` release is never selected or installed to run this asset.
 
-The proposed platform archive contains a digest-verified, immutable
-subset of the repository: `tools/lab/radiance/launch-flashnext-best.sh`,
-its `lib/sdk-check.sh` and `lib/plan-check.sh`, `lab-env.sh`, an
-importable `tools/bigcherry` package, versioned
-`engines/radiance/layouts/*.toml`, `archs.toml`, the topology schema,
-and runtime recipe/engine metadata. The launcher currently invokes
-`layout env`, `resources derive-launch`, `host-check`,
-`gpu-power` and `gfxoff`; its eager Python imports require an
-extracted-prefix dependency-closure test. Optional calibration tooling
-is an explicit packaging choice. Host-specific
-`BIGCHERRY_ENVIRONMENT`, `BC_WORK_ROOT`, `BC_MODEL_ROOT`, models,
-route heat, SDK and hardware stay external. **`bc-serve` stays exclusively
-in the engine bundle**, alongside `bin/radiance`, the MoE helper,
-plugins, catalogs and runtime libraries.
+Native `bc-serve start CONFIG` / `serve CONFIG` / `stop` / `status` and `start --manifest FILE` (RSC02 and RSC12) must own config resolution, the memory plan, ordered helpers, host checks, power/gfxoff, calibration and heat placement with no fallback to Python. Current `components/serving/session.cpp` provides **dense engine-only** ownership, not helper/power/lab modes; `tools/lab/radiance/launch-flashnext-best.sh` and `tools/bigcherry` remain **repository-only** until those functions are ported, RSC12 configs/manifest parity is accepted, hardware parity is proved and RSC04 retires the old callers. Host ROCm SDK, hardware, models, site configuration and selected heat/policy/calibration inputs remain external.
 
-A future pair would require two verified tag/asset identities, per-file
-digests, matching ROCm SDK, engine plugin ABI, matching serving-manifest
-contract and topology version, compatible layout/architecture inputs
-and a fully verified two-prefix install before publication. Do not
-confuse the engine *archive* schema
-`bigcherry-radiance-runtime-v1` with the native serving manifest's
-`apiVersion=bigcherry/v2` and `contract_version=2`; the generated
-serving contract fingerprint and actual plugin ABI must be checked.
-The proposed `install.json` **v2** records both tags/tag commits,
-archive and manifest digests, prefixes, engine build and `bc-serve`
-digests, build-provenance trees, SDK version, compatibility contract,
-selected launcher and a canonical pair ID. The engine tag's
-`config_tree` is its **build input**, not the independent platform
-config tree. Tags/asset provenance must be authenticated; a checksum
-alone does not establish publisher identity.
+The proposed installer takes **one exact engine tag** from the caller; the release record for **that tag** binds the asset name and SHA-256. The installer checks the downloaded archive against that **tag-bound digest**, then verifies its manifest and exact per-file hashes/modes, scoped product, provenance, matched `radiance`/`bc-serve` and selected SDK before atomically publishing a new install. No signatures, pinned index, second tag, compatibility matrix or pair receipt. The future **single-engine** `install.json` records `tag`, `asset_name`, `archive_sha256`, `manifest_sha256`, binary hashes, engine source/build identity, `rocm_version`, verified install prefix and installation time; there are no platform fields, `pair_id` or launcher re-exec fields. A checksum tied to the tag record is an integrity assertion, not an independent publisher-signature claim.
 
-Staging and active-pair selection would be atomic. A failed upgrade
-must leave the old pair active, and rollback re-verifies the retained
-pair. Existing v1 receipts with `worktree`/`build_dir` are not silently
-rewritten; migration must be explicit. The only previously published
-unscoped engine archive (`bc-radiance-1170.0.0`) retains its existing
-pinned-digest **v1 exception** and is **not** eligible as a new scoped
-v2 pair. No new `--engine-tag`/`--platform-tag` syntax or `latest`
-pair-selection policy is implemented; both remain design decisions.
-The first planned implementation is a hermetic platform
-archive pack/verify plus extracted-prefix tests, **without changing
-the current installer**.
+Rollback retains the **current and previous** verified engine release, with the previous reverified on rollback. **Existing installs are never converted** or their v1 receipts rewritten; a fresh reinstall from a tag replaces other older installs under the two-release retention policy. The one previously published unscoped `bc-radiance-1170.0.0` archive keeps exactly its phase-1 SHA-pinned `PUBLISHED_LEGACY_ASSETS` exception, not eligibility for the new standalone format. Unsafe or partial upgrades never displace the active verified release. None of these phase-2 installer/retention changes is currently implemented.
+
 
 ## Bump gates per engine
 
