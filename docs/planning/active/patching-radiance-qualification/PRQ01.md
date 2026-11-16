@@ -62,3 +62,10 @@ The production source applies cleanly and a check keeps it that way (PRQ04).
 ## Change Log
 
 - 2026-11-15T22:56:49.601626+00:00 (created-by): Created by agent
+
+
+## Progress 2026-11-16
+
+Cause found: patch-rebase-check takes its pristine source from vendor/radiance HEAD, which had been left on upstream 451b136 (58 commits past the v1.17.0 pin 19d4e8f) with 25 leftover patched files since Nov 8. Restored to the pin (the leftovers are backed up outside the repo); `patch-rebase-check --source radiance` now reports 26 total, 26 clean. No patch needed re-anchoring.
+
+Remaining: a guard so the vendor checkout cannot sit off the pin unnoticed (patch-rebase-check and build should refuse or warn when vendor HEAD is not the recipes pin).
