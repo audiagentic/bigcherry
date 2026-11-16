@@ -2,7 +2,7 @@
 // RCS14 gate C: counted CPU-side access, epoch proofs, and resource admission.
 // Not yet the live worker: v25 GPU Request/Result/Combine and the producer must
 // switch with gate D before this becomes the production coordinator.
-#include "moe_remote_topology_v26.h"
+#include "moe_remote_shm.h"
 #include "worker_footprint.h"
 #include <cstdint>
 #include <cstring>
@@ -80,6 +80,35 @@ public:
     }
     Request* request(uint32_t id) const {
         return base_ ? element<Request>(base_, layout_, Region::Requests, id) : nullptr;
+    }
+    CombineDescriptor* combine(uint32_t rank) const {
+        return base_ ? element<CombineDescriptor>(base_, layout_, Region::CombineSignals, rank) : nullptr;
+    }
+    CombineInput* combine_input(uint32_t rank, uint32_t helper) const {
+        return base_ && rank < topology_.ranks && helper < topology_.helpers
+            ? element<CombineInput>(base_, layout_, Region::CombineInputs,
+                                    rank * topology_.helpers + helper) : nullptr;
+    }
+    uint32_t* chunk_sequence(uint32_t rank, uint32_t helper, uint32_t chunk) const {
+        return base_ && rank < topology_.ranks && helper < topology_.helpers &&
+               chunk < layout_.counts.chunks
+            ? element<uint32_t>(base_, layout_, Region::ChunkSequences,
+                                (rank * topology_.helpers + helper) * layout_.counts.chunks + chunk)
+            : nullptr;
+    }
+    uint32_t* chunk_completion(uint32_t rank, uint32_t chunk) const {
+        return base_ && rank < topology_.ranks && chunk < layout_.counts.chunks
+            ? element<uint32_t>(base_, layout_, Region::ChunkCompletions,
+                                rank * layout_.counts.chunks + chunk) : nullptr;
+    }
+    int32_t* layer_map(uint32_t layer) const {
+        return base_ ? element<int32_t>(base_, layout_, Region::LayerMap, layer) : nullptr;
+    }
+    uint32_t* layer_ready(uint32_t layer) const {
+        return base_ ? element<uint32_t>(base_, layout_, Region::LayerMapReady, layer) : nullptr;
+    }
+    uint32_t* layer_consumed(uint32_t layer) const {
+        return base_ ? element<uint32_t>(base_, layout_, Region::LayerMapConsumed, layer) : nullptr;
     }
     SlotDescriptor* slot(uint32_t id) const {
         return base_ ? element<SlotDescriptor>(base_, layout_, Region::Slots, id) : nullptr;

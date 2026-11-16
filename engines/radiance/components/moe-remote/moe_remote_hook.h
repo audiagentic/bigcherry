@@ -92,7 +92,7 @@ R3_MOE_OWNER_HD inline bool r3_moe_owner_has(const uint8_t* bits,
     return (bits[bit>>3] & uint8_t(1u<<(bit&7u))) != 0;
 }
 #undef R3_MOE_OWNER_HD
-namespace r3 { namespace moe_shm { struct ConsumedRecords; } }
+namespace r3 { namespace moe_shm { struct ConsumedRecord; } }
 struct R3MoeMailboxDevice {
     void* mailbox = nullptr;
     const uint8_t* owner[2]{};  /* fixed pointers, indexed by this pass's ticket */
@@ -100,12 +100,12 @@ struct R3MoeMailboxDevice {
     StepTicket* ticket = nullptr;  /* fixed device address, independent per engine rank */
     ConsumptionStamp* consumed = nullptr;  /* mapped coherent rank-local completion ring (seal kernel writes) */
     ConsumptionStamp* stamps = nullptr;    /* device-memory counting ring, same index */
-    r3::moe_shm::ConsumedRecords* consumed_rec = nullptr;  /* device memory: last consumed request a lane, last combine */
+    r3::moe_shm::ConsumedRecord* consumed_rec = nullptr;  /* device memory: last consumed request a lane, last combine */
     uint32_t consumed_capacity = 0;
-    uint32_t* sequence = nullptr;   /* [kLanes] request counters; this rank uses only its own slots' lanes */
-    uint32_t* published = nullptr;  /* [kMaxSlots slots]: 0, or 1 + the lane class of this step's request; then [kMaxSlots]:
+    uint32_t* sequence = nullptr;   /* [lanes] request counters; this rank uses only its own slots' lanes */
+    uint32_t* published = nullptr;  /* [slots]: 0, or 1 + the lane class of this step's request; then [slots]:
                                        the step's R3_MOE_WORKER_COMBINE generation, 0 when the step merges two rows; then
-                                       [kCombineChunks]: the generation whose chunk c the engine has seen combined (RAD42, device
+                                       [ceil(max_rows/kCombineChunkRows)]: the generation whose chunk c the engine has seen combined (RAD42, device
                                        mirror of Header::chunks.done, so only one block a chunk polls host memory) */
     uint16_t* mask_ref = nullptr;
     int32_t* inv = nullptr;     /* [max_rows * top_k] engine sorted row of each locally computed slot, else -1. */
@@ -113,6 +113,8 @@ struct R3MoeMailboxDevice {
     uint32_t* inject_next = nullptr;  /* moe_mailbox_inject: the next spare sorted row (device memory, one word) */
     R3MoeShadowLayerStats* shadow_stats = nullptr;
     R3MoeShadowFirst* shadow_first = nullptr;
+    uint32_t layer_count = 0;
+    uint32_t finish_threads = 0; /* validated against the physical device limit */
     uint32_t max_rows = 0;
     uint32_t hidden = 0;    /* the segment's model shape: every launch is checked against it */
     uint32_t top_k = 0;
@@ -120,6 +122,9 @@ struct R3MoeMailboxDevice {
     uint32_t rank = 0;
     uint32_t world = 0;   /* engine TP ranks; the helper always computes full expert width, and a layer's consumer
                              rank (consumer_of(layer, world)) is the one that publishes and adds it (RAD49) */
+    uint32_t slots = 0;     /* total validated helper/rank slots */
+    uint32_t lanes = 0;     /* count of lane sequences and consumed records */
+    uint32_t published_words = 0;
     uint32_t helpers = 1; /* helper h is served from this rank's slot slot_of(h, rank, world) */
     uint32_t* heat = nullptr;   /* [kMaxLayers][kExperts] route counts (R3_MOE_WORKER_HISTOGRAM) */
     uint32_t shadow = 0;

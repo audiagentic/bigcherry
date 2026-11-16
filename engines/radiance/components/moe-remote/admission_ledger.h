@@ -272,7 +272,7 @@ private:
         if (fault_) return Result::Fault;
         if (closed_) return Result::Closed;
         if (!capacity_ || !out || !epoch || slot > 1 || ranks == 0 ||
-            ranks > r3::moe_shm::kMaxEngineRanks ||
+            !r3::moe_shm::slots_fit(1, ranks) ||
             (active_epoch_ && epoch != active_epoch_)) return Result::Invalid;
         if (last_id_ == UINT64_MAX) return Result::Fault;
         if (count_ >= capacity_) return Result::Full;

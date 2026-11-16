@@ -190,7 +190,7 @@ static void production_layout_parity() {
     }
     flush(); check(!layouts.empty(),"production layouts present");
     for(const auto& [name,helpers]:layouts) {
-        check(!helpers.empty() && helpers.size()<=r3::moe_shm::kMaxHelpers,
+        check(!helpers.empty() && r3::moe_shm::slots_fit(uint32_t(helpers.size()),1),
               "production layout helper count");
         std::vector<uint64_t> budgets;
         std::vector<std::string> archs;

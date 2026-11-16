@@ -94,8 +94,10 @@ int main(int argc, char** argv) {
      * lane gets one (lanes_open): the extra queues keep MES and the command processor awake, which dispatches ~0.3%
      * faster in decode at ~95 W per GPU at idle. The environment is only peeked here; it is validated below. */
     auto lanes_open = [](bool save, uint32_t count, uint32_t index, uint32_t world, uint32_t classes) {
-        std::array<bool, kLanes> all;
-        all.fill(true);
+        std::vector<bool> all;
+        v26::Counts counts{};
+        if (v26::counts_for({count, world}, &counts) != Refusal::None) return all;
+        all.assign(counts.lanes, true);
         return save ? served_lanes(count, index, world, classes) : all;
     };
     {
@@ -258,15 +260,17 @@ int main(int argc, char** argv) {
      * its share of the candidates and serves its own slots, slot_of(index, r, M) for every engine rank r. The helper
      * computes every expert at full width; a layer's consumer rank adds it once. */
     const uint32_t helper_index = cfg.helper_index, helper_count = cfg.helper_count, engine_ranks = cfg.engine_ranks;
-    if (helper_index >= helper_count || !slots_fit(helper_count, engine_ranks)) {
-        std::fprintf(stderr, "r3_moe_worker: helper %u of %u behind %u engine rank(s): want index < count <= %u, ranks <= %u "
-                     "and count * ranks <= %u request slots\n",
-                     helper_index, helper_count, engine_ranks, kMaxHelpers, kMaxEngineRanks, kMaxSlots);
+    v26::Counts topology_counts{};
+    const auto refusal = v26::counts_for({helper_count, engine_ranks}, &topology_counts);
+    if (helper_index >= helper_count || refusal != Refusal::None) {
+        std::fprintf(stderr, "r3_moe_worker: helper %u of %u behind %u engine ranks: "
+                     "invalid v26 topology or index (typed refusal %u; combine mask %u bits)\n",
+                     helper_index, helper_count, engine_ranks, unsigned(refusal), kCombineMaskBits);
         return 2;
     }
     /* Every lane checks each request's world against the segment's (RAD49); compare mode serves a one-rank segment and
      * sets its own (worker_harness.h). */
-    if (gpu && !gpu->set_engine_world(engine_ranks)) return 2;
+    if (gpu && !gpu->set_engine_world(engine_ranks, helper_count)) return 2;
     uint64_t budgets[r3::worker_share::kMaxHelperShares] = {};
     for (uint32_t i = 0; i < cfg.helper_count; ++i)
         budgets[i] = settings.budgets_mib.at(i) * 1024ull * 1024ull;
@@ -343,6 +347,9 @@ int main(int argc, char** argv) {
     std::fprintf(stderr, "r3_moe_worker: selected %zu expert candidates, %.3f GiB; host RSS %.1f MiB\n",
                  owned.expert.size(), (double)owned.bytes / (1024.0 * 1024.0 * 1024.0), rss_mib);
 
+    // Compare uses the actual manifest when provided; anonymous offline captures
+    // retain a local shape identity because they have no serving manifest.
+    const uint64_t compare_manifest = v26::manifest_identity(settings.content_sha256);
     if (compare && !sweep_replays.empty()) {
         int rc = 0, run = 0;
         for (size_t c = 0; c < sweep_replays.size(); ++c) {
@@ -356,7 +363,7 @@ int main(int argc, char** argv) {
                             v.c_str(), settings.content_sha256.c_str());
                 std::fflush(stdout);
                 rc |= compare_mode(model, *gpu, owned, g_replay->hd.layer, g_replay->hd.rows, lane_classes,
-                                   lane_large_rows, false);
+                                   lane_large_rows, false, compare_manifest);
                 if (!gpu->release_compare_lanes()) {
                     std::fprintf(stderr, "r3_moe_worker: --compare release lanes failed\n");
                     return 1;
@@ -369,7 +376,7 @@ int main(int argc, char** argv) {
     if (compare) {
         if (compare_one_layer)
             return compare_mode(model, *gpu, owned, compare_layer, compare_rows, lane_classes,
-                                lane_large_rows, synthetic_protect);
+                                lane_large_rows, synthetic_protect, compare_manifest);
         int rc = 0;
         for (uint32_t layer : {0u, 20u, 34u, 47u}) {
             if (layer >= model.layers) {
@@ -380,7 +387,7 @@ int main(int argc, char** argv) {
             }
             std::printf("layer %u\n", layer);
             rc |= compare_mode(model, *gpu, owned, layer, compare_rows, lane_classes,
-                               lane_large_rows, synthetic_protect);
+                               lane_large_rows, synthetic_protect, compare_manifest);
         }
         return rc;
     }
@@ -401,6 +408,11 @@ int main(int argc, char** argv) {
     report_sa.sa_handler=[](int) { g_force_report_requested=1; };
     sigemptyset(&report_sa.sa_mask);
     sigaction(SIGUSR1,&report_sa,nullptr);
+    const uint64_t manifest_digest = v26::manifest_identity(settings.content_sha256);
+    if (!manifest_digest) {
+        std::fprintf(stderr, "r3_moe_worker: invalid strict manifest content digest for v26\n");
+        return 2;
+    }
     Segment seg;
     if (!seg.open(shm_name(), lay.bytes, helper_index == 0, kStartupWaitSeconds)) return 1;
     void* const map = seg.host();
@@ -408,20 +420,20 @@ int main(int argc, char** argv) {
     const char* const name = seg.name();
     if (helper_index == 0) {
         /* init aliases every helper's slot for a rank to helper 0's activation staging for it (one staging a step). */
-        if (!init(map, model.layers, shape, helper_count, engine_ranks)) return 1;
+        if (v26::init(map, lay.bytes, shape, model.layers, {helper_count, engine_ranks}, manifest_digest, true) != Refusal::None) return 1;
         h->small_class_count = lane_classes.count;
         for (uint32_t c = 0; c < lane_classes.count; ++c) h->small_class_rows[c] = lane_classes.rows[c];
-        store(&h->helper_count, helper_count);   /* last: an attaching helper waits for it */
-        (void)futex_wake(&h->helper_count);
+        v26::publish(h);  /* release the fully configured header last */
+        (void)futex_wake(&h->published_helpers);
     } else {
         /* Woken by helper 0's publication; the one-second bound keeps a signal-driven stop prompt. */
         for (int i = 0; i < kStartupWaitSeconds && !stopping(); ++i) {
-            const uint32_t seen = load(&h->helper_count);
+            const uint32_t seen = load(&h->published_helpers);
             if (seen == helper_count) break;
             struct timespec ts{1, 0};
-            (void)::syscall(SYS_futex, &h->helper_count, FUTEX_WAIT, seen, &ts, nullptr, 0);
+            (void)::syscall(SYS_futex, &h->published_helpers, FUTEX_WAIT, seen, &ts, nullptr, 0);
         }
-        bool same_lanes = load(&h->helper_count) == helper_count && valid(h, lay.bytes, shape) && h->rank_count == engine_ranks &&
+        bool same_lanes = load(&h->published_helpers) == helper_count && v26::valid(h, lay.bytes, shape, model.layers, {helper_count, engine_ranks}, manifest_digest) == Refusal::None && h->rank_count == engine_ranks &&
                           h->small_class_count == lane_classes.count;
         for (uint32_t c = 0; same_lanes && c < lane_classes.count; ++c)
             same_lanes = h->small_class_rows[c] == lane_classes.rows[c];
@@ -542,12 +554,12 @@ int main(int argc, char** argv) {
             if (++seq == 0) break;
         }
     } else {
-        /* R3_MOE_WORKER_COMBINE=1 (default off), two to kCombineHelpers helpers: helper 0 adds every helper's rows for the
+        /* R3_MOE_WORKER_COMBINE=1 (default off), two to kCombineMaskBits helpers: helper 0 adds every helper's rows for the
          * engine's large lane on its large-lane thread after its stream sync (worker_combine.h); each other helper wakes it
          * after its own sync.
          * The engine asks only once combine.enabled is set. */
         Combine combine;
-        if (cfg.combine && helper_count >= 2 && helper_count <= kCombineHelpers) {
+        if (cfg.combine && helper_count >= 2 && helper_count <= kCombineMaskBits) {
             if (!combine_cpu_supported()) {
                 std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_COMBINE needs a CPU with AVX2 and F16C\n");
                 return 1;
@@ -571,7 +583,7 @@ int main(int argc, char** argv) {
          * the lanes, so it is destroyed after they have published the stop. */
         QueueWarm warm;
         if (!warm.start(h, cfg.power_save && cfg.queue_warm)) return 1;
-        r3::policy::LaneServiceSource lane_service_signal; // process-private sampled service data for this helper
+        r3::policy::LaneServiceSource lane_service_signal(h->slot_count); // process-private sampled service data for this helper
         Lanes lanes(h, map, dev_map, *gpu, lane_classes, cfg, lanes_served, combine);
         if(cfg.policy.enabled)
             lanes.set_service_signal(&lane_service_signal);

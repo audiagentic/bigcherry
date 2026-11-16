@@ -42,10 +42,10 @@ static void test_postread_peer_clock() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,2,&layout),"clock layout");
+    check(v26::layout_for(shape,2,{2,1},&layout)==Refusal::None,"clock layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,2, 1),"clock map");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,2,{2,1},0x8013EFFEULL)==Refusal::None,"clock map");
     static_cast<Header*>(map)->helper_count=2;
     uint64_t now=1000;
     SharedTailServiceSource source(map,1,1000,[&]{return now+=2;},2);
@@ -73,10 +73,10 @@ static void test_published_tail_signal() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,2,&layout),"shared tail test layout");
+    check(v26::layout_for(shape,2,{2,1},&layout)==Refusal::None,"shared tail test layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,2, 1),"shared tail test init");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,2,{2,1},0x8013EFFEULL)==Refusal::None,"shared tail test init");
     static_cast<Header*>(map)->helper_count=2;
     auto* coordinator_slot=published_service(map,0);
     auto* tail_slot=published_service(map,1);
@@ -166,10 +166,10 @@ static void test_relative_shift_from_all_published_helpers() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,3,2,&layout),"relative shared layout");
+    check(v26::layout_for(shape,3,{2,1},&layout)==Refusal::None,"relative shared layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,3,shape,2, 1),"relative shared init");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,3,{2,1},0x8013EFFEULL)==Refusal::None,"relative shared init");
     static_cast<Header*>(map)->helper_count=3;
     uint64_t now=1000;
     SharedTailServiceSource source(map,2,1000,[&]{return now;},3);
@@ -263,10 +263,10 @@ static void test_sparse_peer_and_unavailable_diagnostics() {
     using namespace r3::moe_shm;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,3,2,&layout),"sparse peer layout");
+    check(v26::layout_for(shape,3,{2,1},&layout)==Refusal::None,"sparse peer layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,3,shape,2, 1),"sparse peer init");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,3,{2,1},0x8013EFFEULL)==Refusal::None,"sparse peer init");
     static_cast<Header*>(map)->helper_count=3;
     uint64_t now=1000;
     std::vector<std::string> diagnostics;
@@ -403,11 +403,11 @@ int main() {
     test_relative_shift_from_all_published_helpers();
     test_postread_peer_clock();
     test_published_tail_signal();
-    LaneServiceSource source;
+    LaneServiceSource source(2);
     ServiceSnapshot observed{};
     check(source.snapshot(&observed),"empty snapshot");
     source.record(0,25,100);
-    source.record(r3::moe_shm::lane_of(0,r3::moe_shm::kSmallClasses),50,200);
+    source.record(r3::moe_shm::lane_of(0,r3::moe_shm::kSmallClasses,2),50,200);
     check(source.snapshot(&observed),"stable source snapshot");
     check(observed.lane[0].samples==1&&observed.lane[0].rows==25&&
           observed.lane[1].samples==1&&observed.lane[1].rows==50,

@@ -149,7 +149,7 @@ __global__ void mailbox_stage_kernel(
 /* Four words beyond the chunk-mirror region. The publish op copies the
  * ticket here exactly once; later ops read the per-pass copy, not the
  * overwritable rank cell (AQL tape arguments are immutable across plays). */
-using r3::mailbox_completion::kPublishedTicketOffset;
+using r3::mailbox_completion::published_ticket_offset;
 
 __global__ void mailbox_publish_kernel(
     uint8_t* base, const uint8_t* owner0, const uint8_t* owner1, const R3MoeOwnerBinding* bindings,
@@ -163,10 +163,15 @@ __global__ void mailbox_publish_kernel(
     const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine) {
     __shared__ uint32_t nr;
     __shared__ const uint8_t* selected_owner;
-    __shared__ uint32_t step_nr[kMaxSlots], step_seq[kMaxSlots], gen;
+    // Counted producer scratch, ahead of the optional per-expert heat table.
+    extern __shared__ uint32_t step_scratch[];
+    uint32_t* step_nr = step_scratch;
+    uint32_t* step_seq = step_nr + helpers;
+    uint32_t* step_heat = step_seq + helpers;
+    __shared__ uint32_t gen;
     /* R3_MOE_WORKER_HISTOGRAM (RHP02): this step's routes are counted in LDS and added to the histogram (pinned host memory)
      * once an expert. This kernel is one block and a rank's steps run in order, so the adds are plain loads and stores. */
-    extern __shared__ uint32_t step_heat[];   /* [h->expert_count]: dynamic LDS sized by the launch from the container's expert count */
+    /* step_heat is the optional per-expert tail of the counted LDS allocation. */
 
     Header* h = reinterpret_cast<Header*>(base);
     /* Every published request takes its immutable epoch/slot from this play's
@@ -184,15 +189,16 @@ __global__ void mailbox_publish_kernel(
                                    ticket.generation_slot)) __builtin_trap();
         selected_owner=r3_moe_select_owner_bitmap(ticket,bindings,owner0,owner1);
         if (!selected_owner) __builtin_trap();
-        published[kPublishedTicketOffset+0] = (uint32_t)ticket.ticket_id;
-        published[kPublishedTicketOffset+1] = (uint32_t)(ticket.ticket_id >> 32);
-        published[kPublishedTicketOffset+2] = ticket.placement_epoch;
-        published[kPublishedTicketOffset+3] = ticket.generation_slot;
+        published[published_ticket_offset(h->slot_count, h->max_rows)+0] = (uint32_t)ticket.ticket_id;
+        published[published_ticket_offset(h->slot_count, h->max_rows)+1] = (uint32_t)(ticket.ticket_id >> 32);
+        published[published_ticket_offset(h->slot_count, h->max_rows)+2] = ticket.placement_epoch;
+        published[published_ticket_offset(h->slot_count, h->max_rows)+3] = ticket.generation_slot;
     }
-    if (threadIdx.x <= kMaxSlots) published[threadIdx.x] = 0;   /* [kMaxSlots]: the combine generation */
+    if (threadIdx.x < h->slot_count) published[threadIdx.x] = 0;
+    if (threadIdx.x == 0) published[h->slot_count] = 0;   /* [slots]: the combine generation */
     __syncthreads();
     const uint8_t* owner=selected_owner;
-    if (rows == 0 || rows > max_rows || rows > kMaxRows ||
+    if (rows == 0 || rows > max_rows || rows > h->max_rows ||
         layer >= h->layer_count || !load_sys_acq(&h->layer_map_ready[layer])) return;
     /* FULL WIDTH ONCE (RAD49): only the layer's consumer stages, writes routes and publishes; every rank masks the
      * helper-owned routes out of its own GEMMs (the same owner bitmap, the same ids), so the helper rows enter the
@@ -200,7 +206,7 @@ __global__ void mailbox_publish_kernel(
     const bool consume = consumer_of(layer, world) == rank;
 
     const int32_t* slot_map = reinterpret_cast<const int32_t*>(
-        base + h->layer_map_offset) + (uint64_t)layer * h->expert_count;
+        base + h->regions[v26::index(Region::LayerMap)].offset) + (uint64_t)layer * h->expert_count;
     uint32_t cls = kSmallClasses;                    /* the large lane unless a small class fits the step */
     for (uint32_t c = 0; c < h->small_class_count && c < kSmallClasses; ++c)
         if (rows <= h->small_class_rows[c]) { cls = c; break; }
@@ -274,7 +280,7 @@ __global__ void mailbox_publish_kernel(
         for (uint32_t k = 0; k < helpers; ++k) {
             step_seq[k] = 0;
             if (!step_nr[k]) continue;
-            const uint32_t s = atomicAdd(sequence + lane_of(slot_of(k, rank, world), cls), 1u) + 1u;
+            const uint32_t s = atomicAdd(sequence + lane_of(slot_of(k, rank, world), cls, h->slot_count), 1u) + 1u;
             if (s == 0) __builtin_trap();
             step_seq[k] = s;
         }
@@ -292,9 +298,9 @@ __global__ void mailbox_publish_kernel(
             load_sys_acq(&cs.enabled) && rows >= cs.min_rows) {
             uint32_t g = cs.request + 1u;
             if (g == 0) g = 1;
-            for (uint32_t k = 0; k < kCombineHelpers; ++k) {
-                cs.lane[k] = k < helpers ? lane_of(slot_of(k, rank, world), cls) : 0u;
-                cs.seq[k] = k < helpers ? step_seq[k] : 0u;
+            for (uint32_t k = 0; k < helpers; ++k) {
+                cs.lane[k] = lane_of(slot_of(k, rank, world), cls, h->slot_count);
+                cs.seq[k] = step_seq[k];
             }
             cs.rows = rows;
             cs.request = g;
@@ -307,9 +313,9 @@ __global__ void mailbox_publish_kernel(
         if (!step_nr[k]) continue;
         const uint32_t slot = slot_of(k, rank, world);
 
-        const uint32_t lane = lane_of(slot, cls);
+        const uint32_t lane = lane_of(slot, cls, h->slot_count);
         const uint32_t seq = step_seq[k];
-        Request* ring = reinterpret_cast<Request*>(base + h->ring_offset);
+        Request* ring = reinterpret_cast<Request*>(base + h->regions[v26::index(Region::Requests)].offset);
         Request* q = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
         if (threadIdx.x == 0) {
             q->completion_sequence = 0;
@@ -334,10 +340,12 @@ __global__ void mailbox_publish_kernel(
             q->activation_stride = hidden * (uint32_t)sizeof(uint16_t);
             q->activation_q_stride = hidden;
             q->activation_s_stride = scale_cols * (uint32_t)sizeof(float);
-            for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
-                q->result_offset[r] = h->result_offset[result_index(slot, r)];
-                q->result_stride[r] = hidden * (uint32_t)sizeof(uint16_t);
-            }
+            q->result_offset = h->result_offset[slot];
+            q->result_stride = hidden * (uint32_t)sizeof(uint16_t);
+            q->helper = k;
+            q->lane = lane;
+            q->lane_slot = (seq - 1u) % kLaneSlots;
+            q->reserved = 0;
             q->sequence = seq;
             q->trace[0] = wall_clock64();
             q->trace[1] = 0;
@@ -356,7 +364,7 @@ __global__ void mailbox_publish_kernel(
         __syncthreads();
     }
 
-    if (threadIdx.x == 0 && gen) published[kMaxSlots] = gen;   /* the merge of this step waits for combine.done */
+    if (threadIdx.x == 0 && gen) published[h->slot_count] = gen;   /* the merge of this step waits for combine.done */
 }
 
 __device__ __forceinline__ float bf16_to_f32(uint16_t v) {
@@ -379,21 +387,21 @@ __device__ __forceinline__ const Request* slot_request(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t slot) {
     if (!published[slot]) return nullptr;
     Header* h = reinterpret_cast<Header*>(base);
-    const uint32_t lane = lane_of(slot, published[slot] - 1u);
+    const uint32_t lane = lane_of(slot, published[slot] - 1u, h->slot_count);
     const uint32_t seq = sequence[lane];
-    const Request* ring = reinterpret_cast<const Request*>(base + h->ring_offset);
+    const Request* ring = reinterpret_cast<const Request*>(base + h->regions[v26::index(Region::Requests)].offset);
     return ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
 }
 
 /* Wait for this step's helpers (exactly their published sequences) and, on a combined step, for combine.done; stamp the
  * R3_MOE_WORKER_TRACE completion times. One thread. */
 __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
-                                     uint32_t world, uint32_t helpers) {
+                                     uint32_t world, uint32_t helpers, Request** traced, uint64_t* seen_at) {
     Header* h = reinterpret_cast<Header*>(base);
     const uint64_t entered = wall_clock64();   /* R3_MOE_WORKER_TRACE: engine clock */
     /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after every combined helper's done word, so the loop below then
      * finds them already there. */
-    if (const uint32_t g = published[kMaxSlots]) {
+    if (const uint32_t g = published[h->slot_count]) {
         unsigned long long spins = 0;
         while (load_sys_acq(&h->combine[rank].done) != g) {
             if (load_sys_acq(&h->helper_fault)) __builtin_trap();
@@ -401,12 +409,13 @@ __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, co
             if (++spins > 4000000000ULL) __builtin_trap();
         }
     }
-    Request* traced[kMaxSlots] = {};
-    uint64_t seen_at[kMaxSlots] = {};
-    for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) {
+    // Scratch is per-launch LDS sized for the validated helper count.
+    // Thread zero owns it; no extra global-memory trace writes inside the wait.
+    for (uint32_t k = 0; k < helpers; ++k) { traced[k] = nullptr; seen_at[k] = 0; }
+    for (uint32_t k = 0; k < helpers && k < helpers; ++k) {
         const uint32_t slot = slot_of(k, rank, world);
         if (!published[slot]) continue;
-        const uint32_t lane = lane_of(slot, published[slot] - 1u);
+        const uint32_t lane = lane_of(slot, published[slot] - 1u, h->slot_count);
         const uint32_t seq = sequence[lane];
         unsigned long long spins = 0;
         /* Exactly this request's generation: one request is in flight a lane, so the helper's done word
@@ -419,14 +428,14 @@ __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, co
         /* Keep the completion time in a register: a store to mapped host memory inside the loop would be counted in the
          * second helper's wait. Both are written once the last wait is over. */
         seen_at[k] = wall_clock64();
-        traced[k] = reinterpret_cast<Request*>(base + h->ring_offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
+        traced[k] = reinterpret_cast<Request*>(base + h->regions[v26::index(Region::Requests)].offset) + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
         /* The existing system acquire proves exactly this helper sequence.
          * Request epoch/slot/sequence are the engine's own words; route-mark
          * has already validated them on the ordered stream before any add or
          * shadow result read. Do not reread them in this hot wait. */
         if (traced[k]->status != 0) __builtin_trap();
     }
-    for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) {
+    for (uint32_t k = 0; k < helpers && k < helpers; ++k) {
         if (!traced[k]) continue;
         traced[k]->trace[1] = entered;
         traced[k]->trace[2] = seen_at[k];
@@ -437,16 +446,24 @@ __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, co
  * full wait follows the add (mailbox_add_tail_wait_kernel). */
 __global__ void mailbox_add_wait_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t world, uint32_t helpers) {
-    if (blockIdx.x || threadIdx.x || published[kMaxSlots]) return;
-    mailbox_wait_helpers(base, sequence, published, rank, world, helpers);
+    if (blockIdx.x || threadIdx.x) return;
+    auto* h = reinterpret_cast<Header*>(base);
+    if (published[h->slot_count]) return;
+    extern __shared__ uint64_t scratch[];
+    auto** traced = reinterpret_cast<Request**>(scratch + helpers);
+    mailbox_wait_helpers(base, sequence, published, rank, world, helpers, traced, scratch);
 }
 
 /* A combined step's full wait: combine.done and every helper's done word, after the add (so no request slot is reused
  * early) or before the shadow comparison (which reads every helper's own plane). */
 __global__ void mailbox_add_tail_wait_kernel(
     uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t world, uint32_t helpers) {
-    if (blockIdx.x || threadIdx.x || !published[kMaxSlots]) return;
-    mailbox_wait_helpers(base, sequence, published, rank, world, helpers);
+    if (blockIdx.x || threadIdx.x) return;
+    auto* h = reinterpret_cast<Header*>(base);
+    if (!published[h->slot_count]) return;
+    extern __shared__ uint64_t scratch[];
+    auto** traced = reinterpret_cast<Request**>(scratch + helpers);
+    mailbox_wait_helpers(base, sequence, published, rank, world, helpers, traced, scratch);
 }
 
 __global__ void mailbox_mask_ref_kernel(
@@ -477,16 +494,16 @@ __global__ void mailbox_route_mark_kernel(
      * independent threads can decode them. No per-block LDS exchange/barrier.
      * This is the only Request identity gate before all add/shadow reads. */
     StepTicket ticket{};
-    if (!r3::mailbox_completion::pass_ticket(published, &ticket)) __builtin_trap();
+    if (!r3::mailbox_completion::pass_ticket(published, published_ticket_offset(h->slot_count, h->max_rows), &ticket)) __builtin_trap();
     for (uint32_t k = 0; k < helpers; ++k) {
         const uint32_t slot = slot_of(k, rank, world);
         const Request* q = slot_request(base, sequence, published, slot);
         if (!q) continue;
-        const uint32_t lane = lane_of(slot, published[slot] - 1u);
+        const uint32_t lane = lane_of(slot, published[slot] - 1u, h->slot_count);
         /* The routes are the engine's own, so marking them needs no helper to be done. Outside a combined step the wait
          * kernel has seen every helper finish, which is checked here; a combined step's helpers may still be writing
          * (RAD42), and its tail wait checks them after the add. */
-        const bool chunked = published[kMaxSlots] != 0u;
+        const bool chunked = published[h->slot_count] != 0u;
         if (!chunked && (load_sys_acq(&h->lane[lane].done_sequence) != sequence[lane] || q->status != 0))
             __builtin_trap();
         /* publish wrote rank/rows/hidden/layer, with the layer already
@@ -530,17 +547,17 @@ __global__ void mailbox_add_rows_kernel(
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
     Header* h = reinterpret_cast<Header*>(base);
-    const uint32_t combined = published[kMaxSlots];   /* R3_MOE_WORKER_COMBINE generation, 0 when not combined */
+    const uint32_t combined = published[h->slot_count];   /* R3_MOE_WORKER_COMBINE generation, 0 when not combined */
     __shared__ int32_t local_index[kMaxTopK];
     __shared__ uint8_t remote_slot[kMaxTopK];
-    __shared__ uint32_t from[kMaxHelpers];
+    extern __shared__ uint32_t from[];
     __shared__ uint32_t use_combined;
-    const uint16_t* combined_row = reinterpret_cast<const uint16_t*>(base + h->result_offset[combine_index(rank)]) +
+    const uint16_t* combined_row = reinterpret_cast<const uint16_t*>(base + h->result_offset[combine_index(rank, h->slot_count)]) +
                                    (uint64_t)token * hidden;
     if (threadIdx.x == 0) {
         bool live = false;
         for (uint32_t k = 0; k < helpers; ++k) live |= published[slot_of(k, rank, world)] != 0u;
-        for (uint32_t k = 0; k < kMaxHelpers; ++k) from[k] = 0;
+        for (uint32_t k = 0; k < helpers; ++k) from[k] = 0;
         for (uint32_t slot = 0; slot < top_k; ++slot) {
             const uint32_t flat = token * top_k + slot;
             local_index[slot] = inv[flat];
@@ -552,14 +569,14 @@ __global__ void mailbox_add_rows_kernel(
         /* R3_MOE_WORKER_COMBINE: the combined row is fp16; a row the combiner could not hold in fp16 range carries
          * kCombineFallback in its first element and is read from the helpers' own planes instead (worker_combine.h). */
         bool any = false;
-        for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) any |= from[k] != 0u;
+        for (uint32_t k = 0; k < helpers && k < helpers; ++k) any |= from[k] != 0u;
         const CombineChunkWait wait = combine_chunk_wait(combined != 0u, token, any);
         if (wait != CombineChunkWait::None) {   /* RAD42: this token's chunk is combined (so every helper's rows of it are written too) */
             /* Only a chunk's first block polls the host word (over the engine's link, gently), whatever its own token's
              * routing, and mirrors it into device memory, where the chunk's routed blocks wait (combine_chunk_wait). A
              * chunk's first block has the lowest index of the chunk, so it is dispatched before any of them. */
             const uint32_t c = token / kCombineChunkRows;
-            uint32_t* mirror = const_cast<uint32_t*>(published) + kMaxSlots + 1u + c;
+            uint32_t* mirror = const_cast<uint32_t*>(published) + h->slot_count + 1u + c;
             unsigned long long spins = 0;
             if (wait == CombineChunkWait::Poll) {
                 while (load_sys_acq(&h->chunks[rank].done[c]) != combined) {
@@ -605,7 +622,7 @@ __global__ void mailbox_add_rows_kernel(
                 if (!from[k]) continue;
                 const uint32_t slot = slot_of(k, rank, world);
                 const uint16_t* result = reinterpret_cast<const uint16_t*>(
-                    base + h->result_offset[result_index(slot, rank)]) + (uint64_t)token * hidden;
+                    base + h->result_offset[slot]) + (uint64_t)token * hidden;
                 acc += bf16_to_f32(__builtin_nontemporal_load(result + col));
             }
         const uint16_t gathered = f32_to_bf16_rn(acc);
@@ -622,13 +639,13 @@ __global__ void mailbox_add_rows_kernel(
 
 /* RAD49 fused gather. The first spare sorted row: the scatter's live count, eoff[n_expert] (every row past it is -1). */
 __global__ void mailbox_inject_init_kernel(uint32_t* next, const int32_t* eoff, uint32_t n_expert,
-                                           const uint32_t* published) {
+                                           const uint32_t* published, uint32_t slots) {
     if (blockIdx.x || threadIdx.x) return;
     const int32_t live = eoff[n_expert];
     if (live < 0) __builtin_trap();
     /* The fused step's publish never asks for the combine (its `fused` param), so no combine generation is live and the
      * add's wait has seen every helper finish; a generation here means the publish and the merge disagree. */
-    if (published[kMaxSlots] != 0u) __builtin_trap();
+    if (published[slots] != 0u) __builtin_trap();
     *next = (uint32_t)live;
 }
 
@@ -646,16 +663,16 @@ __global__ void mailbox_inject_kernel(
     const uint32_t token = blockIdx.x;
     if (token >= rows) return;
     Header* h = reinterpret_cast<Header*>(base);
-    __shared__ uint32_t row_of[kMaxHelpers];
+    extern __shared__ uint32_t row_of[];
     __shared__ uint32_t any;
     if (threadIdx.x == 0) {
         any = 0;
         bool live = false;
         for (uint32_t k = 0; k < helpers; ++k) live |= published[slot_of(k, rank, world)] != 0u;
         if (live && consumer != rank) __builtin_trap();
-        for (uint32_t k = 0; k < kMaxHelpers; ++k) row_of[k] = UINT32_MAX;
+        for (uint32_t k = 0; k < helpers; ++k) row_of[k] = UINT32_MAX;
         const uint32_t cap = rows * top_k;
-        for (uint32_t k = 0; live && k < helpers && k < kMaxHelpers; ++k) {
+        for (uint32_t k = 0; live && k < helpers && k < helpers; ++k) {
             const int32_t s = inject_slot(rmask + (uint64_t)token * top_k, top_k, k);
             if (s < 0) continue;
             const uint32_t p = atomicAdd(next, 1u);
@@ -669,10 +686,10 @@ __global__ void mailbox_inject_kernel(
     }
     __syncthreads();
     if (!any) return;
-    for (uint32_t k = 0; k < helpers && k < kMaxHelpers; ++k) {
+    for (uint32_t k = 0; k < helpers && k < helpers; ++k) {
         if (row_of[k] == UINT32_MAX) continue;
         const uint16_t* src = reinterpret_cast<const uint16_t*>(
-            base + h->result_offset[result_index(slot_of(k, rank, world), rank)]) + (uint64_t)token * hidden;
+            base + h->result_offset[slot_of(k, rank, world)]) + (uint64_t)token * hidden;
         uint16_t* dst = down + (uint64_t)row_of[k] * hidden;
         for (uint32_t col = threadIdx.x; col < hidden; col += blockDim.x)   /* host-mapped, rewritten every request */
             dst[col] = __builtin_nontemporal_load(src + col);
@@ -691,13 +708,13 @@ __global__ void mailbox_shadow_rows_kernel(
     Header* h = reinterpret_cast<Header*>(base);
     const Request* q = nullptr;
     for (uint32_t k = 0; k < helpers && !q; ++k) q = slot_request(base, sequence, published, slot_of(k, rank, world));
-    if (!q || q->layer >= kMaxLayers) return;
+    if (!q || q->layer >= h->layer_count) return;
     __shared__ uint32_t any;
     __shared__ uint32_t missing;
-    __shared__ uint32_t from[kMaxHelpers];
+    extern __shared__ uint32_t from[];
     if (threadIdx.x == 0) {
         any = 0; missing = 0;
-        for (uint32_t k = 0; k < kMaxHelpers; ++k) from[k] = 0;
+        for (uint32_t k = 0; k < helpers; ++k) from[k] = 0;
         for (uint32_t slot = 0; slot < top_k; ++slot) {
             const uint32_t flat = token * top_k + slot;
             if (!rmask[flat]) continue;
@@ -732,7 +749,7 @@ __global__ void mailbox_shadow_rows_kernel(
             if (!from[k]) continue;
             const uint32_t slot = slot_of(k, rank, world);
             hv += bf16_to_f32(reinterpret_cast<const uint16_t*>(
-                base + h->result_offset[result_index(slot, rank)])[(uint64_t)token * hidden + col]);
+                base + h->result_offset[slot])[(uint64_t)token * hidden + col]);
         }
         if (col < 4) { lref[col] = ref; lhelp[col] = hv; }
         const float d = ref - hv;
@@ -779,35 +796,37 @@ __global__ void mailbox_shadow_rows_kernel(
  * only host-visible ACK; no per-request system-scope publication is added. */
 __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* published,
                                           ConsumptionStamp* stamps, uint32_t capacity,
-                                          ConsumedRecords* rec) {
-    if (blockIdx.x || threadIdx.x >= kMaxSlots + 1u) return;
+                                          ConsumedRecord* rec, uint32_t slots,
+                                          uint32_t lanes, uint32_t ticket_begin) {
+    if (blockIdx.x || threadIdx.x >= slots + 1u) return;
     const uint32_t idx = threadIdx.x;
     StepTicket pass{};
-    if (!r3::mailbox_completion::pass_ticket(published, &pass) ||
+    if (!r3::mailbox_completion::pass_ticket(published, ticket_begin, &pass) ||
         !sequence || !stamps || !capacity || !rec) __builtin_trap();
     /* publish validated stamp identity; finish is on that same stream.
      * seal_ready validates it again after the last result consumer. */
     ConsumptionStamp* out = stamps + pass.ticket_id % capacity;
     uint32_t consumed = 0;
-    if (idx < kMaxSlots && published[idx]) {
+    if (idx < slots && published[idx]) {
         const uint32_t klass = published[idx] - 1u;
         /* publish selected the legal lane class and wrote this word. */
-        const uint32_t lane = lane_of(idx, klass);
-        ConsumedRecord& r = rec->lane[lane];
+        const uint32_t lane = lane_of(idx, klass, slots);
+        if (lane >= lanes) __builtin_trap();
+        ConsumedRecord& r = rec[lane];
         r.slot = pass.generation_slot;
         r.epoch = pass.placement_epoch;
         r.sequence = sequence[lane];
         consumed = 1;
     }
     if (idx == 0)
-        if (const uint32_t cg = published[kMaxSlots]) {
-            rec->combine.slot = pass.generation_slot;
-            rec->combine.epoch = pass.placement_epoch;
-            rec->combine.sequence = cg;
+        if (const uint32_t cg = published[slots]) {
+            rec[lanes].slot = pass.generation_slot;
+            rec[lanes].epoch = pass.placement_epoch;
+            rec[lanes].sequence = cg;
         }
-    const uint32_t lanes = (uint32_t)__syncthreads_count(consumed);
-    if (idx == 0 && lanes)
-        (void)__hip_atomic_fetch_add(&out->consumed_count, lanes, __ATOMIC_RELAXED,
+    const uint32_t consumed_lanes = (uint32_t)__syncthreads_count(consumed);
+    if (idx == 0 && consumed_lanes)
+        (void)__hip_atomic_fetch_add(&out->consumed_count, consumed_lanes, __ATOMIC_RELAXED,
                                      __HIP_MEMORY_SCOPE_AGENT);
     published[idx] = 0;
 }
@@ -816,30 +835,31 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
  * One thread; posted stores to host-mapped memory, records first and the stamp's ticket_id last with a system-scope
  * release. Only changed lane/combine records are copied. */
 __global__ void mailbox_seal_kernel(uint8_t* base, uint32_t rank, const ConsumptionStamp* stamps, ConsumptionStamp* host,
-                                    uint32_t capacity, ConsumedRecords* rec, StepTicket pass) {
+                                    uint32_t capacity, ConsumedRecord* rec, StepTicket pass) {
     if (blockIdx.x || threadIdx.x) return;
-    if (!base || !stamps || !host || !capacity || !rec || rank >= kMaxEngineRanks) __builtin_trap();
+    if (!base || !stamps || !host || !capacity || !rec) __builtin_trap();
     Header* h = reinterpret_cast<Header*>(base);
+    if (rank >= h->rank_count) __builtin_trap();
     const ConsumptionStamp s = stamps[pass.ticket_id % capacity];
     /* Exact per-parent consumed ACK: it cannot precede the last result-plane
      * reader, because finish runs after add/tail and seal is behind all passes
      * on this rank's stream. Reject a mismatched or incomplete stamp instead
      * of publishing an optimistic lifetime proof. The rank event follows. */
     if (!r3::consumption::seal_ready(s, pass)) __builtin_trap();
-    for (uint32_t lane = 0; lane < kLanes; ++lane) {
-        ConsumedRecord& r = rec->lane[lane];
+    for (uint32_t lane = 0; lane < h->counts.lanes; ++lane) {
+        ConsumedRecord& r = rec[lane];
         if (r.sequence == r.flushed) continue;
         __hip_atomic_store(&h->lane[lane].consumed_slot, r.slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
         __hip_atomic_store(&h->lane[lane].consumed_epoch, r.epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
         __hip_atomic_store(&h->lane[lane].consumed_sequence, r.sequence, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
         r.flushed = r.sequence;
     }
-    if (rec->combine.sequence != rec->combine.flushed) {
-        __hip_atomic_store(&h->combine[rank].result_consumed_slot, rec->combine.slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-        __hip_atomic_store(&h->combine[rank].result_consumed_epoch, rec->combine.epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-        __hip_atomic_store(&h->combine[rank].result_consumed_generation, rec->combine.sequence, __ATOMIC_RELAXED,
+    if (rec[h->counts.lanes].sequence != rec[h->counts.lanes].flushed) {
+        __hip_atomic_store(&h->combine[rank].result_consumed_slot, rec[h->counts.lanes].slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        __hip_atomic_store(&h->combine[rank].result_consumed_epoch, rec[h->counts.lanes].epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+        __hip_atomic_store(&h->combine[rank].result_consumed_generation, rec[h->counts.lanes].sequence, __ATOMIC_RELAXED,
                            __HIP_MEMORY_SCOPE_SYSTEM);
-        rec->combine.flushed = rec->combine.sequence;
+        rec[h->counts.lanes].flushed = rec[h->counts.lanes].sequence;
     }
     ConsumptionStamp* o = host + pass.ticket_id % capacity;
     __hip_atomic_store(&o->placement_epoch, s.placement_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
@@ -881,9 +901,9 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                          why, layer, hidden, top_k, n_expert, rows, d->hidden, d->top_k, d->experts);
         return RAD_E_SHAPE;
     };
-    if (layer < 0 || layer >= (long long)kMaxLayers) return reject("layer outside the protocol bound");
+    if (layer < 0 || layer >= (long long)d->layer_count) return reject("layer outside the protocol bound");
     if (fused != 0 && fused != 1) return reject("fused is neither 0 nor 1");
-    if (rows <= 0 || rows > (long long)kMaxRows) return reject("rows outside the protocol bound");
+    if (rows <= 0 || rows > (long long)d->max_rows) return reject("rows outside the protocol bound");
     if (hidden != (long long)d->hidden) return reject("hidden differs from the segment's");
     if (top_k != (long long)d->top_k) return reject("top_k differs from the segment's");
     if (expert_base < 0 || n_expert <= 0 || n_expert > (long long)d->experts) return reject("expert range outside the segment's");
@@ -927,8 +947,8 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        d->cpu_ref);
     /* The route-count scratch is one LDS word per expert of the container, only when the histogram is on. */
     const size_t heat_lds = d->heat ? size_t(d->experts) * sizeof(uint32_t) : 0;
-    if (heat_lds > r3::moe_shm::kMaxHeatLdsBytes) return reject("the route histogram of this expert count does not fit LDS");   /* refuse, never truncate */
-    hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), heat_lds, (hipStream_t)stream,
+    if (heat_lds + 2u * sizeof(uint32_t) * d->helpers > r3::moe_shm::kMaxHeatLdsBytes) return reject("the route histogram of this expert count does not fit LDS");   /* refuse, never truncate */
+    hipLaunchKernelGGL(mailbox_publish_kernel, dim3(1), dim3(256), heat_lds + 2u * sizeof(uint32_t) * d->helpers, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->owner[0], d->owner[1], d->owner_binding,
                        d->ticket, d->stamps, d->consumed_capacity,
                        d->sequence, d->published, d->rank,
@@ -978,7 +998,7 @@ int mask_ref_launch(const RadArgs* a, RadStream stream) {
 int launch_maps(R3MoeMailboxDevice* d, RadStream stream, const int32_t* sorted, const uint16_t* ew,
                 uint32_t rows, uint32_t hidden, uint32_t top_k) {
     const uint32_t slots = rows * top_k;
-    hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
     if (hipMemsetAsync(d->rmask, 0, (size_t)slots * sizeof(uint32_t), (hipStream_t)stream) != hipSuccess ||
         hipMemsetAsync(d->inv, 0xff, (size_t)slots * sizeof(int32_t), (hipStream_t)stream) != hipSuccess)
@@ -1024,7 +1044,7 @@ int add_launch(const RadArgs* a, RadStream stream) {
                     static_cast<const uint16_t*>(a->t[2].data),
                     (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k) != RAD_OK)
         return RAD_E_DEVICE;
-    hipLaunchKernelGGL(mailbox_add_rows_kernel, dim3((uint32_t)rows), dim3(256), 0,
+    hipLaunchKernelGGL(mailbox_add_rows_kernel, dim3((uint32_t)rows), dim3(256), sizeof(uint32_t) * d->helpers,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
                        d->published, d->rank, d->world, d->helpers, d->inv, d->rmask,
                        static_cast<const uint16_t*>(a->t[1].data),
@@ -1034,14 +1054,15 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        static_cast<uint16_t*>(a->t[5].data),
                        d->mask_ref, d->mask_only,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
-    hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
     /* This is after every true output-plane reader and (for combined steps)
      * the full helper tail wait. The parent seal, not this kernel, posts the
      * host-visible result-consumed ACK once per parent/rank. */
-    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxSlots + 1), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
-                       d->consumed_capacity, d->consumed_rec);
+                       d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
+                       published_ticket_offset(d->slots, d->max_rows));
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -1081,7 +1102,7 @@ int inject_launch(const RadArgs* a, RadStream stream) {
     /* the helpers' completion and the requests' identity, as the add checks them (the route-mark reads the router weights
      * before the inject overwrites the injected slots' weights). A fused step has no combine (inject_init checks), so the
      * wait sees every helper done and there is no combine tail to wait for. */
-    hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
     if (hipMemsetAsync(d->rmask, 0, (size_t)slots * sizeof(uint32_t), (hipStream_t)stream) != hipSuccess)
         return RAD_E_DEVICE;
@@ -1091,16 +1112,17 @@ int inject_launch(const RadArgs* a, RadStream stream) {
                        static_cast<const uint16_t*>(a->t[2].data), d->rmask, (uint32_t)rows, (uint32_t)hidden,
                        (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_inject_init_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
-                       d->inject_next, static_cast<const int32_t*>(a->t[3].data), (uint32_t)n_expert, d->published);
-    hipLaunchKernelGGL(mailbox_inject_kernel, dim3((uint32_t)rows), dim3(256), 0, (hipStream_t)stream,
+                       d->inject_next, static_cast<const int32_t*>(a->t[3].data), (uint32_t)n_expert, d->published, d->slots);
+    hipLaunchKernelGGL(mailbox_inject_kernel, dim3((uint32_t)rows), dim3(256), sizeof(uint32_t) * d->helpers, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->published, d->rank, d->world, d->helpers, consumer,
                        d->rmask, static_cast<int32_t*>(a->t[0].data), static_cast<uint16_t*>(a->t[1].data),
                        static_cast<uint16_t*>(a->t[2].data), d->inject_next,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     /* after every reader of the helper planes: the consumption records, as the add's */
-    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxSlots + 1), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
-                       d->consumed_capacity, d->consumed_rec);
+                       d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
+                       published_ticket_offset(d->slots, d->max_rows));
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -1126,9 +1148,9 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
                     static_cast<const uint16_t*>(a->t[2].data), rows, (uint32_t)hidden,
                     (uint32_t)top_k) != RAD_OK)
         return RAD_E_DEVICE;
-    hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
                        static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
-    hipLaunchKernelGGL(mailbox_shadow_rows_kernel, dim3(rows), dim3(256), 0,
+    hipLaunchKernelGGL(mailbox_shadow_rows_kernel, dim3(rows), dim3(256), sizeof(uint32_t) * d->helpers,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
                        d->sequence, d->published, d->rank, d->world, d->helpers, d->inv, d->rmask,
                        static_cast<const uint16_t*>(a->t[1].data),
@@ -1138,9 +1160,10 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
     /* This is after every true output-plane reader and (for combined steps)
      * the full helper tail wait. The parent seal, not this kernel, posts the
      * host-visible result-consumed ACK once per parent/rank. */
-    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(kMaxSlots + 1), 0, (hipStream_t)stream,
+    hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
-                       d->consumed_capacity, d->consumed_rec);
+                       d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
+                       published_ticket_offset(d->slots, d->max_rows));
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 

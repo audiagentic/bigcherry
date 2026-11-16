@@ -92,58 +92,58 @@ reason = "descriptive shape string of a declared op"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
-anchor = "constexpr uint32_t kHidden = 2560;"
+anchor = "constexpr uint32_t kHidden = 2560, kTopK = 10, kExperts = 512;"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t kMaxRoutes = kMaxRows * kTopK;"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t kActivationBf16Bytes = kMaxRows * kHidden * sizeof(uint16_t);"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t kActivationQBytes = kMaxRows * kHidden;"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "kMaxRows * (kHidden / kActGroup) * sizeof(float);"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t route_slot_bytes() { return kMaxRoutes * sizeof(Route); }"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t activation_slot_bytes() { return kActivationBf16Bytes + kActivationQBytes + kActi"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * sizeof(uint16_t); }"
 category = "C"
-reason = "segment constants fixed at Flash-Next hidden 2560 / top-k 10 (audit MC-001..011)"
+reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
 
 [[allow]]

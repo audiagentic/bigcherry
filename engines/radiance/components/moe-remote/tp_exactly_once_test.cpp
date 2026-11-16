@@ -100,7 +100,8 @@ struct Mutation {
 /* One layer on one rank: its partial output and the routes it sent to each slot. */
 struct RankOut {
     std::array<Row, kT> partial{};
-    std::array<std::vector<std::pair<uint32_t, uint32_t>>, kMaxSlots> sent;   /* (token, top-k slot) */
+    std::vector<std::vector<std::pair<uint32_t, uint32_t>>> sent =
+        std::vector<std::vector<std::pair<uint32_t, uint32_t>>>(slots_for(kHelpers, kWorld));   /* (token, top-k slot) */
     std::array<uint32_t, kE> heat{};
 };
 
@@ -119,7 +120,7 @@ void take_roles(const Model& m, uint32_t l, uint32_t rank, Mutation mut,
             const bool consumer = consumer_of(l, kWorld) == rank;
             if (role.mask_local && !(mut.skip_mask_on_non_consumer && !consumer)) ids[t][s] = -1;
         }
-    for (uint32_t slot = 0; slot < kMaxSlots; ++slot)
+    for (uint32_t slot = 0; slot < r.sent.size(); ++slot)
         for (auto [t, s] : r.sent[slot]) {
             check(slot_consumer(slot, kWorld) == rank, "a rank only sends to its own slots");
             check(m.owner_of(l, uint32_t(m.ids[l][t][s])) == int(slot_helper(slot, kWorld)),
@@ -138,7 +139,7 @@ RankOut run_rank(const Model& m, uint32_t l, uint32_t rank, Mutation mut) {
         add(r.partial[t], expert(l, kShared, m.in[l][t], int(rank)), 1.0f);
     }
     /* the helpers: each computes its slot's routes at full width; the rank that published adds the rows */
-    for (uint32_t slot = 0; slot < kMaxSlots; ++slot)
+    for (uint32_t slot = 0; slot < r.sent.size(); ++slot)
         for (auto [t, s] : r.sent[slot])
             add(r.partial[t], expert(l, uint32_t(m.ids[l][t][s]), m.in[l][t], -1), m.w[l][t][s]);
     return r;

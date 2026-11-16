@@ -132,10 +132,11 @@ patches = ["rad0003_mtp_full_head_switch"]
 patches = ["rad0039_moe_heat_observer"]
 
 # VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
-# bf16_i8 requires bf16_fp8; rad0040 (VTP44) makes the packed layouts one table and requires bf16_i8.
+# bf16_i8 requires bf16_fp8; rad0040 (VTP44) makes the packed layouts one table and requires bf16_i8; rad0041 (VTP44 B) adds
+# Flash-Next's geometry (gqa 12, and gqa 6 with 4-token pages) and requires rad0040; rad0042 adds their selftest cases.
 # Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
 [experiment.kv-bf16-packed]
-patches = ["rad0037_bf16_fp8_kv", "rad0038_bf16_i8_kv", "rad0040_kv_layout_table"]
+patches = ["rad0037_bf16_fp8_kv", "rad0038_bf16_i8_kv", "rad0040_kv_layout_table", "rad0041_kv_b16_flashnext", "rad0042_kv_b16_selftest"]
 
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the

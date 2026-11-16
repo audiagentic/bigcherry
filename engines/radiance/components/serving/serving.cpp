@@ -603,14 +603,16 @@ LayoutRecipe recipe_for(const std::string& name, const Options& options) {
     r.tail = !r.groups.empty() && r.groups.back().tail;
     if (r.engine_count > 1 && !r.tp_wire)
         throw std::runtime_error(where + "an engine of " + std::to_string(r.engine_count) + " cards needs tp-wire");
-    // RAD49: one request slot a (helper, engine rank), at most r3::moe_shm::kMaxSlots of them. A fixed helper count that
-    // cannot fit is refused here, before any card; a group of count "all" is bounded once the cards are known (resolve).
+    // v26: typed representation checks, never a fixed helper/rank slot ceiling.
     size_t fixed = 0;
     for (const auto& g : r.groups) fixed += g.count < 0 ? 1 : size_t(g.count);
-    if (!r.groups.empty() && !r3::moe_shm::slots_fit(uint32_t(fixed), uint32_t(r.engine_count)))
-        throw std::runtime_error(where + std::to_string(fixed) + " remote-MoE helper(s) behind an engine of " +
-                                 std::to_string(r.engine_count) + " rank(s) need more than the protocol's " +
-                                 std::to_string(r3::moe_shm::kMaxSlots) + " request slots (one a helper and rank)");
+    r3::moe_shm::v26::Counts counts{};
+    if (!r.groups.empty() &&
+        (fixed > UINT32_MAX || r.engine_count > UINT32_MAX ||
+         r3::moe_shm::v26::counts_for({uint32_t(fixed), uint32_t(r.engine_count)}, &counts)
+             != r3::moe_shm::v26::Refusal::None))
+        throw std::runtime_error(where + "remote-MoE helper/rank topology cannot be represented by protocol v26 "
+                                 "(combine-owner and participant-mask widths, or checked count arithmetic)");
     return r;
 }
 
@@ -1320,10 +1322,13 @@ Resolved resolve(const Options& options, const Json& facts) {
         throw std::runtime_error("helper.index must be below helper.count");
     if (hcount != cards.size())
         throw std::runtime_error("helper.count must match selected layout helper cards");
-    if (!engine_only && !r3::moe_shm::slots_fit(uint32_t(hcount), uint32_t(engine_cards.size())))
-        throw std::runtime_error("layout " + name + ": " + std::to_string(hcount) + " helper(s) behind " +
-                                 std::to_string(engine_cards.size()) + " engine rank(s) exceed the protocol's " +
-                                 std::to_string(r3::moe_shm::kMaxSlots) + " request slots");
+    r3::moe_shm::v26::Counts topology{};
+    if (!engine_only &&
+        (hcount > UINT32_MAX || engine_cards.size() > UINT32_MAX ||
+         r3::moe_shm::v26::counts_for({uint32_t(hcount), uint32_t(engine_cards.size())}, &topology)
+             != r3::moe_shm::v26::Refusal::None))
+        throw std::runtime_error("layout " + name + ": helper/engine topology is not representable by v26 "
+                                 "(typed combine, owner and participant masks or arithmetic overflow)");
     if (value_at(values, "helper.engine_ranks").get<size_t>() !=
         value_at(values, "engine.tp").get<size_t>())
         throw std::runtime_error("helper.engine_ranks must equal engine.tp");

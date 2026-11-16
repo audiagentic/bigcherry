@@ -80,12 +80,39 @@ static void actor_and_resource_geometry(Fixture& f) {
         check(f.segment.helper(helper)->pid == helper + 100, "PID stored per actual helper");
     }
     for (uint32_t rank = 0; rank < f.topology.ranks; ++rank) {
+        check(f.segment.combine(rank) != nullptr &&
+              f.segment.combine(rank)->consumer == rank,
+              "rank-owned combine descriptor is counted");
+        for (uint32_t helper = 0; helper < f.topology.helpers; ++helper) {
+            auto* input = f.segment.combine_input(rank, helper);
+            check(input && input->helper == helper && input->consumer == rank,
+                  "per-helper combine ticket mapped by exact rank/helper");
+            for (uint32_t chunk = 0; chunk < f.layout.counts.chunks; ++chunk)
+                check(f.segment.chunk_sequence(rank, helper, chunk) &&
+                      f.segment.chunk_completion(rank, chunk),
+                      "per-helper sequence and rank completion chunk within counted regions");
+        }
+        check(!f.segment.combine_input(rank, f.topology.helpers) &&
+              !f.segment.chunk_sequence(rank, 0, f.layout.counts.chunks) &&
+              !f.segment.chunk_completion(rank, f.layout.counts.chunks),
+              "invalid combine input/chunk indices refused");
         uint32_t actor = UINT32_MAX;
         check(f.segment.actor(false, rank, &actor) &&
               actor == f.topology.helpers + rank &&
               f.segment.rank_ack(rank) == f.segment.ack(actor),
               "rank ACK index follows actual number of helper ACKs");
     }
+    check(!f.segment.combine(f.topology.ranks) &&
+          !f.segment.combine_input(f.topology.ranks, 0) &&
+          !f.segment.chunk_sequence(f.topology.ranks, 0, 0) &&
+          !f.segment.chunk_completion(f.topology.ranks, 0),
+          "invalid rank cannot address combine or chunk tables");
+    for (uint32_t layer = 0; layer < f.layers; ++layer)
+        check(f.segment.layer_map(layer) && f.segment.layer_ready(layer) &&
+              f.segment.layer_consumed(layer),
+              "layer mapping, ready and consumed tables share counted layer shape");
+    check(!f.segment.layer_map(f.layers) && !f.segment.layer_ready(f.layers) &&
+          !f.segment.layer_consumed(f.layers), "invalid layer access refused");
     uint32_t actor = 0;
     check(!f.segment.actor(true, f.topology.helpers, &actor) &&
           !f.segment.actor(false, f.topology.ranks, &actor) &&
@@ -114,7 +141,7 @@ static void actor_and_resource_geometry(Fixture& f) {
           "changed live helper count / manifest / truncated map refused");
     auto* header = static_cast<v::Header*>(f.base);
     const auto version = header->version;
-    header->version = r3::moe_shm::kVersion;
+    header->version = 25u;  // retired v25 wire format (negative test only)
     check(foreign.attach(f.base, f.layout.bytes, f.shape, f.layers,
                          f.topology, manifest_digest) == cpu::Refusal::InvalidSegment,
           "no v25 fallback");
@@ -255,12 +282,12 @@ static void missing_and_mismatched(Fixture& f) {
         }
     }
     // Deliberately publish rank's ACK at the old compiled base: never pass.
-    if (f.topology.helpers != r3::moe_shm::kMaxHelpers) {
+    if (f.topology.helpers != 4u /* old ACK base: corruption fixture, never a live capacity */) {
         cpu::Epoch e(f.segment, 30);
         check(e.begin(31), "old-base mutation setup");
         ack_phase(f, e, AckPhase::RESERVED);
         *f.segment.rank_ack(0) = {};
-        auto* wrong = f.segment.ack(r3::moe_shm::kMaxHelpers);
+        auto* wrong = f.segment.ack(4u /* old ACK base: corruption fixture, never a live capacity */);
         if (wrong) {
             wrong->phase = uint32_t(AckPhase::RESERVED);
             wrong->transaction_id = e.control().transaction_id - 1u;

@@ -55,7 +55,7 @@ static CreditedHeatRow row(uint64_t seq, uint32_t experts = 4,
 }
 static CreditedBoundary boundary() {
     CreditedBoundary b;
-    b.rank = 0; b.layers = 2; b.experts = 4;
+    b.rank = 0; b.engine_ranks = 1; b.layers = 2; b.experts = 4;
     b.run_generation = 11; b.owner_epoch = 29;
     b.next_credit_sequence = 1; b.max_age_ns = 2000;
     return b;

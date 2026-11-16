@@ -16,16 +16,21 @@
 
 namespace r3 { namespace mailbox_completion {
 using namespace moe_shm;
-constexpr uint32_t kPublishedTicketOffset = kMaxSlots + 1u + kCombineChunks;
+// Published scratch consists of one flag per live helper/rank slot, one
+// combine-generation word, a mirror per actual chunk, and four ticket words.
+// Derive this from validated runtime geometry, not a compiled maximum.
+R3_MAILBOX_HD constexpr uint32_t published_ticket_offset(uint32_t slots, uint32_t max_rows) {
+    return slots + 1u + (max_rows + kCombineChunkRows - 1u) / kCombineChunkRows;
+}
 
 /* The pass copy, not the rank's mutable ticket cell. Reject a 32-bit slot
  * before narrowing to the wire ticket's uint8_t generation_slot. */
-R3_MAILBOX_HD inline bool pass_ticket(const uint32_t* published, StepTicket* out) {
+R3_MAILBOX_HD inline bool pass_ticket(const uint32_t* published, uint32_t ticket_offset, StepTicket* out) {
     if (!published || !out) return false;
-    const uint32_t slot = published[kPublishedTicketOffset + 3];
-    const uint64_t id = (uint64_t)published[kPublishedTicketOffset] |
-                        ((uint64_t)published[kPublishedTicketOffset + 1] << 32);
-    const uint32_t epoch = published[kPublishedTicketOffset + 2];
+    const uint32_t slot = published[ticket_offset + 3];
+    const uint64_t id = (uint64_t)published[ticket_offset] |
+                        ((uint64_t)published[ticket_offset + 1] << 32);
+    const uint32_t epoch = published[ticket_offset + 2];
     if (!id || !epoch || slot > 1) return false;
     StepTicket t{};
     t.ticket_id = id;

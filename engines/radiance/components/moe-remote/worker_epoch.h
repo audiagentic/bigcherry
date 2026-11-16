@@ -8,6 +8,7 @@
 #include <chrono>
 #include <cstring>
 #include <memory>
+#include <vector>
 #include <array>
 #include <limits>
 #include <functional>
@@ -62,7 +63,8 @@ class Controller {
     struct HelperMeasurements {
         uint64_t transaction=0, service_ns=0, service_wall_ns=0, service_rows=0, copy_bytes=0, copy_ns=0;
     };
-    std::array<HelperMeasurements,kMaxHelpers> helper_measurements_{};
+    std::vector<HelperMeasurements> helper_measurements_;
+    uint32_t helper_count_=0, rank_count_=0;
     bool failed_closed_ = false;
     bool deterministic_ = false;
     bool quiesced_ = false;
@@ -90,15 +92,15 @@ class Controller {
     }
     uint32_t missing_cleanup_actor() const {
         if (cleanup_committed_) {
-            if (!close_ack(kMaxHelpers,AckPhase::REOPENED))
+            if (!close_ack(helper_count_,AckPhase::REOPENED))
                 return actor_id(ActorKind::ENGINE_RANK,0);
         } else {
-            for (uint32_t i=0; i<kMaxEngineRanks; ++i)
+            for (uint32_t i=0; i<rank_count_; ++i)
                 if ((c_.expected_ranks & (1u<<i)) &&
-                    !close_ack(kMaxHelpers+i,AckPhase::CLEANED))
+                    !close_ack(helper_count_+i,AckPhase::CLEANED))
                     return actor_id(ActorKind::ENGINE_RANK,uint16_t(i));
         }
-        for (uint32_t i=0; i<kMaxHelpers; ++i)
+        for (uint32_t i=0; i<helper_count_; ++i)
             if ((c_.expected_helpers & (1u<<i)) &&
                 !close_ack(i,AckPhase::CLEANED))
                 return actor_id(ActorKind::HELPER,uint16_t(i));
@@ -109,13 +111,13 @@ class Controller {
     bool previous_closed() const {
         if (!awaiting_cleanup_) return true;
         if (cleanup_committed_) {
-            if (!close_ack(kMaxHelpers,AckPhase::REOPENED)) return false;
+            if (!close_ack(helper_count_,AckPhase::REOPENED)) return false;
         } else {
-            for (uint32_t i=0;i<kMaxEngineRanks;++i)
+            for (uint32_t i=0;i<rank_count_;++i)
                 if ((c_.expected_ranks & (1u<<i)) &&
-                    !close_ack(kMaxHelpers+i,AckPhase::CLEANED)) return false;
+                    !close_ack(helper_count_+i,AckPhase::CLEANED)) return false;
         }
-        for (uint32_t i=0;i<kMaxHelpers;++i)
+        for (uint32_t i=0;i<helper_count_;++i)
             if ((c_.expected_helpers & (1u<<i)) &&
                 !close_ack(i,AckPhase::CLEANED)) return false;
         return true;
@@ -170,9 +172,9 @@ class Controller {
     }
     bool collect(AckPhase phase, uint32_t& hm, uint32_t& rm) {
         hm = rm = 0;
-        for (uint32_t i = 0; i < kMaxHelpers + kMaxEngineRanks; ++i) {
-            const bool helper = i < kMaxHelpers;
-            const uint32_t idx = helper ? i : i - kMaxHelpers;
+        for (uint32_t i = 0; i < helper_count_ + rank_count_; ++i) {
+            const bool helper = i < helper_count_;
+            const uint32_t idx = helper ? i : i - helper_count_;
             const uint32_t bit = uint32_t(1) << idx;
             if (!(helper ? (c_.expected_helpers & bit) : (c_.expected_ranks & bit))) continue;
             const PlacementAck a = transport_.read_ack(i);
@@ -199,9 +201,9 @@ class Controller {
     // Only a current-transaction, expected-phase ACK can signal a fatal fault.
     // A delayed old transaction or previous phase is ignored, never counted.
     bool check_phase_faults(AckPhase phase) {
-        for (uint32_t i=0; i<kMaxHelpers+kMaxEngineRanks; ++i) {
-            const bool helper=i<kMaxHelpers;
-            const uint32_t bit=1u<<(helper ? i : i-kMaxHelpers);
+        for (uint32_t i=0; i<helper_count_+rank_count_; ++i) {
+            const bool helper=i<helper_count_;
+            const uint32_t bit=1u<<(helper ? i : i-helper_count_);
             if (!(helper ? c_.expected_helpers & bit : c_.expected_ranks & bit)) continue;
             const PlacementAck a=transport_.read_ack(i);
             if (a.transaction_id != c_.transaction_id || a.phase != uint32_t(phase)) continue;
@@ -209,19 +211,19 @@ class Controller {
                 fail(a.fault_code <= uint32_t(FaultCode::RANK_DEAD) ?
                     FaultCode(a.fault_code) : FaultCode::DEVICE,
                     actor_id(helper?ActorKind::HELPER:ActorKind::ENGINE_RANK,
-                             uint16_t(helper?i:i-kMaxHelpers)));
+                             uint16_t(helper?i:i-helper_count_)));
                 return false;
             }
             if (a.epoch != c_.pending_epoch || a.generation_slot != c_.pending_slot) {
                 fail(FaultCode::EPOCH_MISMATCH,
                      actor_id(helper?ActorKind::HELPER:ActorKind::ENGINE_RANK,
-                              uint16_t(helper?i:i-kMaxHelpers)));
+                              uint16_t(helper?i:i-helper_count_)));
                 return false;
             }
             if (a.digest != c_.pending_digest) {
                 fail(FaultCode::CHECKSUM,
                      actor_id(helper?ActorKind::HELPER:ActorKind::ENGINE_RANK,
-                              uint16_t(helper?i:i-kMaxHelpers)));
+                              uint16_t(helper?i:i-helper_count_)));
                 return false;
             }
         }
@@ -241,13 +243,14 @@ public:
                uint32_t helper_count, uint32_t actual_rank_count, Deadlines d = {}, Bootstrap seed = {}, bool deterministic = false)
         : transport_(t), clock_(clock), deadlines_(d), deterministic_(deterministic) {
         // Bad configuration is a terminal local fault, not a partially published map.
-        if (!helper_count || helper_count > kMaxHelpers ||
-            !actual_rank_count || actual_rank_count > kMaxEngineRanks || !initial_digest ||
+        if (!slots_fit(helper_count, actual_rank_count) || !initial_digest ||
             !seed.epoch || seed.slot > 1 || (seed.sequence & 1u)) {
             c_.fault_code = uint32_t(FaultCode::INCOMPATIBLE_LAYOUT);
             failed_closed_ = true;
             return;
         }
+        helper_count_=helper_count; rank_count_=actual_rank_count;
+        helper_measurements_.resize(helper_count);
         c_.state = uint32_t(PlacementState::ACTIVE);
         c_.seq = seed.sequence; c_.transaction_id = seed.transaction_id;
         c_.active_epoch = seed.epoch; c_.active_slot = seed.slot;
@@ -262,10 +265,10 @@ public:
     const PlacementControl& control() const { return c_; }
     const PlacementJournal& journal() const { return journal_; }
     HelperMeasurements helper_measurement(uint32_t helper) const {
-        return helper<kMaxHelpers ? helper_measurements_[helper] : HelperMeasurements{};
+        return helper<helper_count_ ? helper_measurements_[helper] : HelperMeasurements{};
     }
     PlacementAck helper_ack(uint32_t helper) const {
-        return helper < kMaxHelpers ? transport_.read_ack(helper) : PlacementAck{};
+        return helper < helper_count_ ? transport_.read_ack(helper) : PlacementAck{};
     }
     bool failed_closed() const { return failed_closed_; }
     bool can_propose() const {
@@ -477,11 +480,11 @@ public:
             return true;
         };
         if (!cleanup_committed_)
-            for (uint32_t i=0;i<kMaxEngineRanks;++i)
+            for (uint32_t i=0;i<rank_count_;++i)
                 if ((c_.expected_ranks & (1u<<i)) &&
-                    !check_fault(kMaxHelpers+i,actor_id(ActorKind::ENGINE_RANK,uint16_t(i)),
+                    !check_fault(helper_count_+i,actor_id(ActorKind::ENGINE_RANK,uint16_t(i)),
                                  AckPhase::CLEANED)) return false;
-        for (uint32_t i=0;i<kMaxHelpers;++i)
+        for (uint32_t i=0;i<helper_count_;++i)
             if ((c_.expected_helpers & (1u<<i)) &&
                 !check_fault(i,actor_id(ActorKind::HELPER,uint16_t(i)),
                              AckPhase::CLEANED)) return false;
@@ -677,7 +680,7 @@ inline bool rank_reservation_ready(const void* map,const PlacementControl& c,
                                    uint32_t rank,uint32_t actual_rank_mask,
                                    bool registered,bool active_event_ready) {
     if (!map || c.state != uint32_t(PlacementState::RESERVING) ||
-        c.fault_code || rank >= kMaxEngineRanks || !actual_rank_mask ||
+        c.fault_code || rank >= static_cast<const Header*>(map)->rank_count || !actual_rank_mask ||
         (actual_rank_mask & (actual_rank_mask + 1u)) ||
         c.expected_ranks != actual_rank_mask ||
         !(actual_rank_mask & (1u<<rank)) || !registered ||
@@ -696,7 +699,7 @@ inline bool rank_upload_prepared(const PlacementControl& c,uint32_t rank,
                                 bool uploaded,bool event_ready,
                                 uint64_t epoch,uint64_t digest,uint32_t slot) {
     return c.state == uint32_t(PlacementState::COPYING) &&
-           rank < kMaxEngineRanks && (c.expected_ranks & (1u<<rank)) &&
+           rank < std::numeric_limits<uint32_t>::digits && (c.expected_ranks & (1u<<rank)) &&
            placement_epoch_valid(c) && uploaded && event_ready &&
            epoch == c.pending_epoch && digest == c.pending_digest &&
            slot == c.pending_slot;
@@ -833,7 +836,7 @@ inline bool service_rank_reservation(void* map,const PlacementControl& c,
                                      bool registered,bool active_event_ready) {
     if (!rank_reservation_ready(map,c,rank,actual_rank_mask,registered,active_event_ready))
         return false;
-    publish_ack(map,kMaxHelpers+rank,c,AckPhase::RESERVED);
+    publish_ack(map,static_cast<Header*>(map)->helper_count+rank,c,AckPhase::RESERVED);
     return true;
 }
 
@@ -844,7 +847,7 @@ inline void publish_reopen_ack(void* map,const PlacementControl& c) {
     if (!map || c.state != uint32_t(PlacementState::ACTIVE) ||
         !c.transaction_id || !c.active_epoch || c.active_slot > 1 ||
         !c.active_digest) return;
-    auto* a = placement_ack(map,kMaxHelpers);
+    auto* a = placement_ack(map,static_cast<Header*>(map)->helper_count);
     if (!a) return;
     __atomic_store_n(&a->phase,uint32_t(AckPhase::NONE),__ATOMIC_SEQ_CST);
     __atomic_store_n(&a->transaction_id,c.transaction_id,__ATOMIC_RELAXED);
@@ -859,7 +862,7 @@ inline bool reopened_exactly(const void* map,const PlacementControl& c,
                              uint64_t transaction) {
     if (!map || !transaction || c.state != uint32_t(PlacementState::ACTIVE) ||
         c.transaction_id != transaction || c.fault_code) return false;
-    const PlacementAck a = read_shared_ack(map,kMaxHelpers);
+    const PlacementAck a = read_shared_ack(map,static_cast<const Header*>(map)->helper_count);
     return a.phase == uint32_t(AckPhase::REOPENED) &&
            a.transaction_id == transaction && !a.fault_code &&
            a.epoch == c.active_epoch && a.digest == c.active_digest &&
@@ -870,7 +873,7 @@ inline bool reopened_exactly(const void* map,const PlacementControl& c,
  * per lane. Timeout does not authorize reopening. */
 inline WaitResult wait_parks_until(Header* h,const timespec* deadline) {
     if (!h) return WaitResult::Error;
-    for (uint32_t lane=0;lane<kLanes;++lane) {
+    for (uint32_t lane=0;lane<h->counts.lanes;++lane) {
         const auto r=wait_for(h,deadline,[&] {
             return __atomic_load_n(&h->lane[lane].park,__ATOMIC_SEQ_CST) != kParkDraining;
         });
@@ -930,7 +933,7 @@ public:
         if (c.active_slot != 0) return reject("control.active_slot != 0");
         if (c.active_epoch != 1) return reject("control.active_epoch != 1");
         if (c.fault_code) return reject("control.fault_code != 0");
-        if (!h->helper_count || h->helper_count > kMaxHelpers) return reject("header.helper_count");
+        if (!slots_fit(h->helper_count,h->rank_count)) return reject("header.helper_count");
         if (c.expected_helpers != ((1u << h->helper_count) - 1u))
             return reject("control.expected_helpers");
         if (__atomic_load_n(&h->bootstrap_filtered_helpers, __ATOMIC_ACQUIRE) != c.expected_helpers)
@@ -1055,7 +1058,7 @@ public:
         }
         if (helper_ == 0 && !controller_) {
             if (c.state != uint32_t(PlacementState::ACTIVE) || c.fault_code ||
-                c.expected_ranks >= (1u << kMaxEngineRanks) ||
+                c.expected_ranks != ((uint32_t{1} << h->rank_count)-1u) ||
                 (c.expected_ranks & (c.expected_ranks + 1u))) return false;
             uint32_t ranks = 0;
             for (uint32_t mask = c.expected_ranks; mask; mask >>= 1) ++ranks;
@@ -1122,12 +1125,12 @@ public:
             // at the closure ACK, not as per-request helper GPU stores.
             uint64_t closure = 0;
             bool drained = true;
-            for (uint32_t lane = 0; lane < kLanes; ++lane) {
-                const uint32_t slot=lane % kMaxSlots;
+            for (uint32_t lane = 0; lane < h->counts.lanes; ++lane) {
+                const uint32_t slot=lane % h->slot_count;
                 const bool served=slot < h->slot_count && h->rank_count &&
                     slot_helper(slot,h->rank_count) == helper_;   /* this helper's slots, one an engine rank (RAD49) */
                 if (!served ||
-                    (lane_is_small(lane) && lane_class(lane) >= h->small_class_count)) continue;
+                    (lane_is_small(lane,h->slot_count) && lane_class(lane,h->slot_count) >= h->small_class_count)) continue;
                 const auto& signal = h->lane[lane];
                 const uint64_t requested = __atomic_load_n(&signal.drain_request, __ATOMIC_ACQUIRE);
                 const uint64_t ack = __atomic_load_n(&signal.drain_ack, __ATOMIC_ACQUIRE);

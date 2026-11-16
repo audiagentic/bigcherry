@@ -223,13 +223,13 @@ int main() {
     using namespace r3::moe_shm;
     const LayoutShape shape{16, 1, 2, 16, 8, 16};
     Layout layout{};
-    assert(layout_for(shape, 1, slots_for(1, 1), &layout));
-    void* mem = std::aligned_alloc(64, (layout.bytes + 63u) & ~uint64_t(63u));
+    assert(v26::layout_for(shape, 1, v26::Topology{1, 1}, &layout) == Refusal::None);
+    void* mem = std::aligned_alloc(kPage, align_page(layout.bytes));
     assert(mem);
     std::unique_ptr<void, decltype(&std::free)> owned(mem, &std::free);
-    assert(init(mem, 1, shape, 1, 1));
+    assert(v26::init(mem, layout.bytes, shape, 1, v26::Topology{1, 1},
+                     v26::manifest_identity(digest)) == Refusal::None);
     auto* hdr = static_cast<Header*>(mem);
-    hdr->helper_count = 1;
     auto* control = placement_control(mem);
     auto* generation = generation_header(mem, 0);
     auto* journal = placement_journal(mem);
@@ -249,6 +249,9 @@ int main() {
     };
     auto good = live();
     assert(good);
+    assert(!publish_live_runtime_receipt("test-run", make_startup(),
+                                         "sha256:" + std::string(64, 'b'),
+                                         mem, layout.bytes));
     assert(good.value().at("run_id") == "test-run");
     assert(good.value().at("runtime_status") == "active");
 

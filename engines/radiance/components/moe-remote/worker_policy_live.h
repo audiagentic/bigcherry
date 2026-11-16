@@ -29,7 +29,7 @@ inline bool derive_active_ledgers(const OwnerSnapshot& owners,
     std::vector<LedgerView>* out, std::string* why = nullptr) {
     auto reject = [&](const char* s) { if (why) *why=s; return false; };
     if (!out || !owners.layers || !owners.experts ||
-        !owners.helpers || owners.helpers > moe_shm::kMaxHelpers ||
+        !owners.helpers || !moe_shm::slots_fit(owners.helpers, 1) ||
         !owners.epoch || !owners.digest || !stride ||
         size_t(owners.layers)*owners.experts != owners.owner.size() ||
         physical_bytes.size() != owners.owner.size() ||

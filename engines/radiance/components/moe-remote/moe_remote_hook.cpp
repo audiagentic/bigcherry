@@ -8,6 +8,7 @@
 #include "engine_admission_gate.h"
 #include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
+#include "moe_v26_gpu_contract.h"
 #include "rad_abi.h"
 #include "rad_device.h"   /* engine streams take only radiance events (rad_event_*), never raw HIP events */
 
@@ -31,6 +32,7 @@
 #include <thread>
 #include <string>
 #include <vector>
+#include <deque>
 #include <sys/mman.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -52,7 +54,7 @@ struct RankState {
     StepTicket* ticket = nullptr;
     ConsumptionStamp* consumed_host = nullptr;
     ConsumptionStamp* stamps = nullptr;          /* device-memory counting ring */
-    ConsumedRecords* consumed_rec = nullptr;     /* device-memory consumed lane/combine records */
+    ConsumedRecord* consumed_rec = nullptr;     /* device-memory consumed lane/combine records */
     uint32_t* sequence = nullptr;
     uint32_t* published = nullptr;
     uint16_t* mask_ref = nullptr;
@@ -101,7 +103,7 @@ struct HookState {
     bool pinned = false;
     RegisterFn engine_register = nullptr;
     r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
-    RankCompletion completion[kMaxEngineRanks];
+    std::deque<RankCompletion> completion;
     R3MoeDrainSnapshot closed_snapshot{};
     uint64_t closure_id = 0;
     std::atomic<uint32_t> engine_ranks{0}; /* scheduler-owned; published once before controller starts */
@@ -123,7 +125,7 @@ struct HookState {
     std::mutex mu;
     std::thread snapshotter;          /* R3_MOE_WORKER_HISTOGRAM_PERIOD_S: writes the live route histogram */
     std::atomic<bool> snapshot_stop{false};
-    RankState rank[kMaxEngineRanks];
+    std::deque<RankState> rank;
     HelperWatch watch;   /* RAD20: fails the engine's helper waits when a helper process dies */
 };
 HookState g;
@@ -175,9 +177,10 @@ void poll_tickets();
 int admit_ticket(StepTicket* out, int try_only, int world_size) {
     if (!out) return RAD_E_INVAL;
     *out = StepTicket{};
-    if (world_size < 1 || world_size > (int)kMaxEngineRanks) return RAD_E_INVAL;
+    if (world_size < 1 || !g.hdr || world_size != (int)g.hdr->rank_count) return RAD_E_INVAL;
     const uint32_t ranks = (uint32_t)world_size;
-    const uint32_t mask = (1u << ranks) - 1u;
+    uint32_t mask = 0, helper_mask = 0;
+    if (!v26::role_masks(g.hdr->topology, &helper_mask, &mask)) return RAD_E_INVAL;
     // When engine policy declares no mailbox ops, admission is a no-op.
     // No ticket/seal is possible (and none is needed for local-only steps).
     const auto bootstrap = r3::epoch::admission_bootstrap(
@@ -234,7 +237,7 @@ int host_done_ticket(StepTicket ticket) {
  * including the pass issued ahead before that parent's host commit. */
 int before_pass(int rank, StepTicket value, void* stream) {
     if (!value.ticket_id && !g.remote_possible) return RAD_OK;
-    if (rank < 0 || rank >= (int)kMaxEngineRanks || !stream ||
+    if (rank < 0 || rank >= (int)g.rank.size() || !stream ||
         !g.ledger.valid(value, (uint32_t)rank)) return RAD_E_STATE;
     const R3MoeMailboxDevice* dev = nullptr;
     {
@@ -252,7 +255,7 @@ int before_pass(int rank, StepTicket value, void* stream) {
  * orders against close_mailbox; the ranks are parked here. */
 int rank_done_ticket(int rank, StepTicket ticket, void* stream) {
     if (!ticket.ticket_id) return RAD_OK;
-    if (!stream || rank < 0 || rank >= (int)kMaxEngineRanks ||
+    if (!stream || rank < 0 || rank >= (int)g.rank.size() ||
         !g.ledger.valid(ticket, (uint32_t)rank)) return RAD_E_STATE;
     std::lock_guard<std::mutex> lock(g.mu);
     /* The seal copies the parent's device counts to the host-mapped stamp; the event recorded behind it is the proof
@@ -286,8 +289,8 @@ void poll_tickets() {
 }
 
 bool served_lane(uint32_t lane) {
-    return lane % kMaxSlots < g.hdr->slot_count &&
-           (!lane_is_small(lane) || lane_class(lane) < g.hdr->small_class_count);
+    return lane < g.hdr->counts.lanes &&
+           (!lane_is_small(lane, g.hdr->slot_count) || lane_class(lane, g.hdr->slot_count) < g.hdr->small_class_count);
 }
 void hold_burst_for_drain(Header* h);
 
@@ -296,7 +299,7 @@ void hold_burst_for_drain(Header* h);
  * returns) then sees its drain request. An idle word moves by 2, so it stays even and still wakes sleepers. */
 void request_helper_drain(uint64_t closure) {
     Header* h = g.hdr;
-    for (uint32_t lane = 0; lane < kLanes; ++lane)
+    for (uint32_t lane = 0; lane < h->counts.lanes; ++lane)
         if (served_lane(lane))
             __atomic_store_n(&h->lane[lane].drain_request, closure, __ATOMIC_RELEASE);
     {
@@ -310,9 +313,9 @@ void request_helper_drain(uint64_t closure) {
 bool helper_drained(uint64_t closure) {
     if (!g.hdr || load(&g.hdr->helper_fault)) return false;
     const Header* h = g.hdr;
-    for (uint32_t lane = 0; lane < kLanes; ++lane)
+    for (uint32_t lane = 0; lane < h->counts.lanes; ++lane)
         if (!lane_quiesced(h, lane, closure, served_lane(lane))) return false;
-    for (uint32_t r = 0; r < h->rank_count && r < kMaxEngineRanks; ++r)
+    for (uint32_t r = 0; r < h->rank_count; ++r)
         if (!combine_quiesced(h->combine[r])) return false;
     return true;
 }
@@ -579,6 +582,8 @@ void register_mailbox() {
         return;
     }
     g.hdr = static_cast<Header*>(g.map);
+    g.rank.resize(g.hdr->rank_count);
+    g.completion.resize(g.hdr->rank_count);
     if (!hip_ok(hipHostRegister(g.map, g.bytes, hipHostRegisterPortable | hipHostRegisterMapped),
                 "could not pin/map shared segment")) {
         g.hdr = nullptr;
@@ -622,7 +627,7 @@ void register_mailbox() {
         const WaitResult r = wait_for(g.hdr, &deadline, [] {
             g.watch.notice();
             const uint32_t n = load(&g.hdr->helper_count);
-            for (uint32_t i = 0; i < n && i < kMaxHelpers; ++i)
+            for (uint32_t i = 0; i < n; ++i)
                 if (!g.watch.watching(i)) return false;
             return n > 0;
         });
@@ -721,7 +726,7 @@ struct LiveRankOperations final : r3::epoch::RankOperations {
     r3::epoch::RankResult abort_upload_done(uint32_t rank,uint32_t slot,
                                               uint64_t epoch,uint64_t digest) override {
         std::lock_guard<std::mutex> lock(g.mu);
-        if (rank>=r3::moe_shm::kMaxEngineRanks || slot>1) return r3::epoch::RankResult::DeviceError;
+        if (rank>=g.rank.size() || slot>1) return r3::epoch::RankResult::DeviceError;
         const RankState& s=g.rank[rank];
         if (!s.ready || !s.owner_queued[slot] ||
             s.owner_expected[slot].epoch!=epoch || s.owner_expected[slot].digest!=digest)
@@ -859,7 +864,7 @@ void snapshot_loop(double period_s) {
         if (std::chrono::steady_clock::now() < next) continue;
         next += std::chrono::duration<double>(period_s);
         std::lock_guard<std::mutex> lock(g.mu);
-        for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
+        for (uint32_t r = 0; r < g.rank.size(); ++r) {
             RankState& s = g.rank[r];
             if (!s.ready || !s.heat_host) continue;
             write_heat(r, s, false);
@@ -879,7 +884,7 @@ void close_mailbox() {
                      g.ledger.high_water(), g.ledger.capacity(), g.ledger.outstanding());
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
     for (RankCompletion& c : g.completion) c.release();   /* after interrupt(): no poll can query them */
-    for (uint32_t r = 0; r < kMaxEngineRanks; ++r) {
+    for (uint32_t r = 0; r < g.rank.size(); ++r) {
         RankState& s = g.rank[r];
         if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
@@ -906,6 +911,8 @@ void close_mailbox() {
     if (g.map != MAP_FAILED) ::munmap(g.map, g.bytes);
     if (g.fd >= 0) ::close(g.fd);
     g.hdr = nullptr;
+    g.rank.clear();
+    g.completion.clear();
     g.map = MAP_FAILED;
     g.fd = -1;
     g.pinned = false;
@@ -1021,7 +1028,7 @@ extern "C" int r3_moe_reopen_admission(uint32_t epoch, uint32_t slot) {
         return RAD_E_STATE;
     /* Helpers leave their closure wait, then the burst word returns to radiance's state (with its park wait), and
      * only then may the scheduler publish: the ledger reopens last. */
-    for (uint32_t lane = 0; lane < kLanes; ++lane)
+    for (uint32_t lane = 0; lane < g.hdr->counts.lanes; ++lane)
         __atomic_store_n(&g.hdr->lane[lane].drain_request, uint64_t(0), __ATOMIC_RELEASE);
     notify(g.hdr);
     /* Fail closed: a park wait that did not see every lane return, or a helper fault since the commit, keeps
@@ -1055,7 +1062,7 @@ extern "C" int r3_moe_mailbox_enabled(void) {
 }
 
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out) {
-    if (!out || !g.hdr || !g.pinned || world_size < 1 || world_size > (int)kMaxEngineRanks ||
+    if (!out || !g.hdr || !g.pinned || world_size < 1 || !g.hdr || world_size != (int)g.hdr->rank_count ||
         rank < 0 || rank >= world_size)
         return RAD_E_INVAL;
 
@@ -1085,7 +1092,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!slots_fit(helpers, (uint32_t)world_size) || g.hdr->rank_count != (uint32_t)world_size ||
         g.hdr->slot_count != slots_for(helpers, (uint32_t)world_size)) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER segment is for %u helper(s) behind %u engine rank(s) (%u slots, at most %u), "
-                     "this engine has %d rank(s)\n", helpers, g.hdr->rank_count, g.hdr->slot_count, kMaxSlots, world_size);
+                     "this engine has %d rank(s)\n", helpers, g.hdr->rank_count, g.hdr->slot_count, g.hdr->counts.slots, world_size);
         return RAD_E_STATE;
     }
     /* The shadow compare and mask-only control compare a helper row with the engine's own rows for the same slots. Behind
@@ -1123,12 +1130,21 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         free_owner_generations(s);
         return RAD_E_DEVICE;
     }
-    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), kLanes * sizeof(uint32_t)),
+    r3::moe_shm::v26::gpu::Scratch scratch{};
+    r3::moe_shm::v26::gpu::FinishLaunch finish{};
+    int max_threads = 0;
+    if (!hip_ok(hipDeviceGetAttribute(&max_threads, hipDeviceAttributeMaxThreadsPerBlock, device),
+                "GPU max threads per block") || max_threads <= 0 ||
+        r3::moe_shm::v26::gpu::finish_launch({helpers, (uint32_t)world_size}, (uint32_t)max_threads, &finish) !=
+            r3::moe_shm::v26::gpu::Refusal::None) return RAD_E_STATE;
+    if (r3::moe_shm::v26::gpu::scratch_for({helpers, (uint32_t)world_size}, g.hdr->max_rows, &scratch) !=
+        r3::moe_shm::v26::gpu::Refusal::None) return RAD_E_STATE;
+    if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.sequence), scratch.sequence_bytes),
                 "hipMalloc lane sequence counters") ||
-        !hip_ok(hipMemset(s.sequence, 0, kLanes * sizeof(uint32_t)), "zero lane sequence counters") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)),
+        !hip_ok(hipMemset(s.sequence, 0, scratch.sequence_bytes), "zero lane sequence counters") ||
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.published), scratch.published_bytes),
                 "hipMalloc published flags") ||
-        !hip_ok(hipMemset(s.published, 0, (kMaxSlots + 1 + kCombineChunks + 4) * sizeof(uint32_t)), "zero published flags") ||
+        !hip_ok(hipMemset(s.published, 0, scratch.published_bytes), "zero published flags") ||
         !hip_ok(hipMalloc(&s.maps, (size_t)max_rows() * g.hdr->top_k * (sizeof(int32_t) + sizeof(uint32_t)) +
                                    sizeof(uint32_t)),
                 "hipMalloc merge slot maps") ||
@@ -1206,9 +1222,9 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                                        s.consumed_host, 0), "map consumption ring") ||
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.stamps), consume_bytes), "device counting ring") ||
         !hip_ok(hipMemset(s.stamps, 0, consume_bytes), "zero device counting ring") ||
-        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.consumed_rec), sizeof(ConsumedRecords)),
+        !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.consumed_rec), scratch.consumed_bytes),
                 "device consumed records") ||
-        !hip_ok(hipMemset(s.consumed_rec, 0, sizeof(ConsumedRecords)), "zero device consumed records") ||
+        !hip_ok(hipMemset(s.consumed_rec, 0, scratch.consumed_bytes), "zero device consumed records") ||
         !rank_completion_ok(g.completion[rank].prepare(g.ledger.capacity(), s.consumed_host))) {
         if (s.consumed_host) (void)hipHostFree(s.consumed_host);
         if (s.stamps) (void)hipFree(s.stamps);
@@ -1266,14 +1282,19 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         }
     }
     s.dev.helpers = helpers;
+    s.dev.finish_threads = finish.threads;
+    s.dev.layer_count = g.hdr->layer_count;
+    s.dev.slots = g.hdr->slot_count;
+    s.dev.lanes = g.hdr->counts.lanes;
+    s.dev.published_words = scratch.published_words;
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
     s.dev.mask_only = !mask_only ? 0u : bc_engine_settings_snapshot().mask_only;
     s.dev.cpu_ref = cpu_ref_env() ? 1u : 0u;
-    /* R3_MOE_WORKER_COMBINE=1 (default off): two to kCombineHelpers helpers, no shadow/mask-only, and helper 0 started its combiner
+    /* R3_MOE_WORKER_COMBINE=1 (default off): two to kCombineMaskBits helpers, no shadow/mask-only, and helper 0 started its combiner
      * (Header::combine.enabled, checked again by the publish kernel each step). */
     {
-        s.dev.combine = (bc_engine_settings_snapshot().combine && helpers >= 2 && helpers <= kCombineHelpers && !shadow && !mask_only) ? 1u : 0u;
+        s.dev.combine = (bc_engine_settings_snapshot().combine && helpers >= 2 && helpers <= kCombineMaskBits && !shadow && !mask_only) ? 1u : 0u;
         if (s.dev.combine)
             std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
     }
@@ -1299,7 +1320,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
  * admission/completion ledger has retired EVERY ticket for this slot. */
 extern "C" int r3_moe_owner_generation_upload(int rank, uint32_t slot,
                                                uint64_t epoch, uint64_t digest) {
-    if (rank < 0 || rank >= (int)r3::moe_shm::kMaxEngineRanks) return RAD_E_INVAL;
+    if (rank < 0 || rank >= (int)g.rank.size()) return RAD_E_INVAL;
     std::lock_guard<std::mutex> lock(g.mu);
     if (!g.hdr || !g.pinned || !g.rank[rank].ready || load(&g.hdr->helper_fault) ||
         !r3::owner_generation::may_upload(g.ledger, slot)) return RAD_E_STATE;
@@ -1314,7 +1335,7 @@ extern "C" int r3_moe_owner_generation_upload(int rank, uint32_t slot,
 
 extern "C" int r3_moe_owner_generation_ready(int rank, uint32_t slot,
                                               uint64_t epoch, uint64_t digest) {
-    if (rank < 0 || rank >= (int)r3::moe_shm::kMaxEngineRanks || slot > 1 ||
+    if (rank < 0 || rank >= (int)g.rank.size() || slot > 1 ||
         !epoch || !digest) return RAD_E_INVAL;
     std::lock_guard<std::mutex> lock(g.mu);
     const RankState& s = g.rank[rank];

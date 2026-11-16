@@ -1829,7 +1829,7 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     assert(spec.at("processes").at("helpers")[0].at("vram_budget_mib") == head &&
            spec.at("processes").at("helpers")[1].at("vram_budget_mib") == tail);
     assert(bc::serving::v2::read_manifest(built.text, "tp-two-helper", bc::serving::v2::PlanUse::measuring).ok());
-    // a helper count other than the cards the layout selects is refused (the slot bound, helpers x ranks <= kMaxSlots, is
+    // a helper count other than the cards the layout selects is refused (the typed v26 representation of helpers x ranks is
     // checked on the same path; moe_remote_shm_test covers slots_fit)
     Options three = opts;
     three.sets = {"layout.name=\"flashnext-tp2xtx\"", "helper.count=3"};

@@ -50,7 +50,7 @@ public:
 };
 
 struct CreditedBoundary {
-    uint32_t rank = 0, layers = 0, experts = 0;
+    uint32_t rank = 0, engine_ranks = 0, layers = 0, experts = 0;  // engine_ranks: the topology count (v26), never a compiled bound
     uint64_t run_generation = 0, owner_epoch = 0;
     uint64_t next_credit_sequence = 0;
     uint64_t observation_count = 0;
@@ -107,7 +107,7 @@ class CreditedEngineSource final : public HeatSource {
     static bool valid(const CreditedBoundary& b) {
         return b.layers && b.layers <= moe_shm::kMaxLayers &&
                b.experts && uint64_t(b.experts) * sizeof(int32_t) <= moe_shm::kMaxHeatLdsBytes &&
-               b.rank < moe_shm::kMaxEngineRanks &&
+               b.engine_ranks && b.rank < b.engine_ranks &&
                b.run_generation && b.owner_epoch && b.next_credit_sequence &&
                b.max_age_ns && b.issued_watermark >= b.completed_watermark &&
                b.completed_watermark >= b.next_credit_sequence - 1;

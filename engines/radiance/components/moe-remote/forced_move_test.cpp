@@ -101,10 +101,10 @@ static void full_budget_swaps(bool production_budgets) {
               "production four-GPU helper budget slots");
     const LayoutShape shape{128,layers,experts,8,128,64};
     Layout layout{};
-    check(layout_for(shape,layers,slots_for(helpers,1),&layout),"swap layout");
+    check(v26::layout_for(shape,layers,{helpers,1},&layout) == Refusal::None,"swap layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,layers,shape,helpers,1),"swap init");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,layers,{helpers,1},0xF0475AB1ULL) == Refusal::None,"swap init");
     auto* h=static_cast<Header*>(map);
     h->helper_count=helpers;
     placement_control(map)->expected_ranks=1;
@@ -182,7 +182,7 @@ static void full_budget_swaps(bool production_budgets) {
               placement_journal(map)->entry[c.journal_index].fault==uint32_t(wanted),
               "invalid swap never modifies active map");
         for(uint32_t i=0;i<helpers;++i)publish_cleanup_ack(map,i,c);
-        publish_cleanup_ack(map,kMaxHelpers,c);
+        publish_cleanup_ack(map,static_cast<const Header*>(map)->helper_count,c);
         check(controller.can_propose(),"swap rejection cleaned before retry");
     };
     invalid(Step{Move{0,0,1}},budgets,source,FaultCode::CAPACITY);
@@ -235,7 +235,7 @@ static void full_budget_swaps(bool production_budgets) {
         check(!engine_serving(map),"publish_sequence alone is not the serving signal");
         check(idle.submit(map,controller,clock.now_ns()) && idle.attempted()==0 && controller.can_propose(),
               "no forced proposal while the engine has published nothing");
-        store(&static_cast<Header*>(map)->lane[kLanes-1].done_sequence,1u);
+        store(&static_cast<Header*>(map)->lane[static_cast<const Header*>(map)->counts.lanes-1].done_sequence,1u);
         check(engine_serving(map),"a completed request on any lane opens the gate");
     }
     Driver driver(schedule,budgets,stride,source);
@@ -287,7 +287,7 @@ static void full_budget_swaps(bool production_budgets) {
                   "real participant admits full-budget one-in/one-out");
             publish_ack(map,i,controller.control(),AckPhase::RESERVED);
         }
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::RESERVED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::RESERVED);
         check(controller.poll()==Poll::ADVANCED,"full reserved ACKs");
         clock.step(); driver.observe(controller,clock.now_ns());
         bool all_ready=false;
@@ -303,7 +303,7 @@ static void full_budget_swaps(bool production_budgets) {
             if(all_ready)break;
         }
         check(all_ready,"all copy participants ready");
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::READY);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::READY);
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::PREPARED),
               "full prepared");
@@ -315,7 +315,7 @@ static void full_budget_swaps(bool production_budgets) {
         check(controller.begin_quiesce(),"full drain began");
         for(uint32_t i=0;i<helpers;++i)
             publish_ack(map,i,controller.control(),AckPhase::QUIESCED);
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::QUIESCED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::QUIESCED);
         check(controller.poll()==Poll::ADVANCED && controller.commit(),
               "full quiescence and commit");
         pending->state=uint32_t(GenerationState::ACTIVE);
@@ -324,7 +324,7 @@ static void full_budget_swaps(bool production_budgets) {
             check(participant[i]->commit(controller.control()),"full bank commit");
             publish_ack(map,i,controller.control(),AckPhase::COMMITTED);
         }
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::COMMITTED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::COMMITTED);
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::RETIRING),
               "full retiring after commit ACKs");
@@ -341,7 +341,7 @@ static void full_budget_swaps(bool production_budgets) {
         clock.step(); driver.observe(controller,clock.now_ns());
         for(uint32_t i=0;i<helpers;++i)
             publish_ack(map,i,controller.control(),AckPhase::RETIRED);
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::RETIRED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::RETIRED);
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::ACTIVE),
               "full retirement reached ACTIVE");
@@ -381,10 +381,10 @@ int main() {
     using namespace r3::forced;
     const LayoutShape shape{128,2,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(3, 1),&layout),"layout");
+    check(v26::layout_for(shape,2,{3,1},&layout) == Refusal::None,"layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,3, 1),"init");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,2,{3,1},0xF0475AB1ULL) == Refusal::None,"init");
     Header* h=static_cast<Header*>(map);
     h->helper_count=3;
     placement_control(map)->expected_ranks=1;
@@ -454,7 +454,7 @@ int main() {
               placement_journal(map)->entry[c.journal_index].fault==uint32_t(wanted),
               "illegal target never changes ownership");
         for(uint32_t i=0;i<3;++i)publish_cleanup_ack(map,i,c);
-        publish_cleanup_ack(map,kMaxHelpers,c);
+        publish_cleanup_ack(map,static_cast<const Header*>(map)->helper_count,c);
         check(controller.can_propose(),"illegal transaction cleaned before retry");
     };
     illegal(Move{0,0,0},budgets,source,FaultCode::INVALID_MAP);
@@ -476,7 +476,7 @@ int main() {
 
     // The 1000-transaction move/return schedule as the manifest types it (spec.experiment.placement.forced).
     bc::serving::HelperSettings typed_settings;
-    typed_settings.helper.count=kMaxHelpers;
+    typed_settings.helper.count=static_cast<Header*>(map)->helper_count;
     {
         using bc::serving::v2::ForcedKind;
         using bc::serving::v2::ForcedStep;
@@ -527,7 +527,7 @@ int main() {
         check(!engine_serving(map),"publish_sequence alone is not the serving signal");
         check(idle.submit(map,controller,clock.now_ns()) && idle.attempted()==0 && controller.can_propose(),
               "no forced proposal while the engine has published nothing");
-        store(&static_cast<Header*>(map)->lane[kLanes-1].done_sequence,1u);
+        store(&static_cast<Header*>(map)->lane[static_cast<const Header*>(map)->counts.lanes-1].done_sequence,1u);
         check(engine_serving(map),"a completed request on any lane opens the gate");
     }
     uint32_t active_slot=0;
@@ -550,7 +550,7 @@ int main() {
                   "real participant reserves legal transient physical slot");
             publish_ack(map,i,controller.control(),AckPhase::RESERVED);
         }
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::RESERVED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::RESERVED);
         check(controller.poll()==Poll::ADVANCED,"all reserving ACKs -> copying");
         clock.step(); d.observe(controller,clock.now_ns());
         // The already-admitted old request keeps its old bank throughout
@@ -569,7 +569,7 @@ int main() {
             }
             if(ready)break;
         }
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::READY);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::READY);
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::PREPARED),
               "all physical uploads and rank READY before prepare");
@@ -584,7 +584,7 @@ int main() {
         // Four prequeued waits from the N bank cannot be counted as retired.
         // A missing helper QUIESCED ACK keeps the controller in QUIESCING.
         std::array<bool,4> prequeued{{true,true,true,true}};
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::QUIESCED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::QUIESCED);
         check(controller.poll()==Poll::WAITING && !controller.commit(),
               "queued old-generation references bar COMMIT");
         prequeued.fill(false);
@@ -600,7 +600,7 @@ int main() {
             check(participant[i]->commit(controller.control()),"real participant bank commit");
             publish_ack(map,i,controller.control(),AckPhase::COMMITTED);
         }
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::COMMITTED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::COMMITTED);
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::RETIRING),
               "committed ACKs advance to retiring");
@@ -614,7 +614,7 @@ int main() {
         }
         for(uint32_t i=0;i<3;++i)
             publish_ack(map,i,controller.control(),AckPhase::RETIRED);
-        publish_ack(map,kMaxHelpers,controller.control(),AckPhase::RETIRED);
+        publish_ack(map,static_cast<const Header*>(map)->helper_count,controller.control(),AckPhase::RETIRED);
         check(controller.poll()==Poll::ADVANCED &&
               controller.control().state==uint32_t(PlacementState::ACTIVE),
               "retired phase returns to active without freeing old slots");
@@ -671,16 +671,16 @@ int main() {
         auto complete=[&](uint32_t lane,uint32_t n) {
             store(&hh->lane[lane].done_sequence,load(&hh->lane[lane].done_sequence)+n);
         };
-        for(uint32_t lane=0;lane<kLanes;++lane) store(&hh->lane[lane].done_sequence,0u);
+        for(uint32_t lane=0;lane<hh->counts.lanes;++lane) store(&hh->lane[lane].done_sequence,0u);
         check(completed_requests(map)==0 && !engine_serving(map),"lanes reset: the gate is closed");
         Driver paced(paced_config.force_schedule,budgets,stride,source);
         clock.step();
         check(paced.submit(map,controller,clock.now_ns()) && paced.attempted()==0 && controller.can_propose(),
               "paced: the serving gate still holds the first proposal");
-        complete(kLanes-1,1);
+        complete(static_cast<const Header*>(map)->counts.lanes-1,1);
         check(paced.submit(map,controller,clock.now_ns()) && paced.attempted()==0,
               "paced: the gate opening is not the pace");
-        complete(0,2); complete(kLanes-1,pace-3);   // the count sums every lane
+        complete(0,2); complete(static_cast<const Header*>(map)->counts.lanes-1,pace-3);   // the count sums every lane
         check(completed_requests(map)==pace && paced.submit(map,controller,clock.now_ns()) && paced.attempted()==0,
               "paced: no proposal before pace requests completed after the gate opened");
         complete(1,1);
