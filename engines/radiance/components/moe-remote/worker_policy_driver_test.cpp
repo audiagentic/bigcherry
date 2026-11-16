@@ -27,16 +27,18 @@ struct ClockTest : Clock {
 };
 struct Bridge : Transport {
     void* map;
-    std::array<PlacementAck,kMaxHelpers+kMaxEngineRanks> ack{};
-    explicit Bridge(void* p):map(p){}
+    std::vector<PlacementAck> ack;
+    uint32_t helper_count;
+    explicit Bridge(void* p):map(p),ack(static_cast<Header*>(p)->counts.acks),
+                             helper_count(static_cast<Header*>(p)->helper_count){}
     PlacementAck read_ack(uint32_t a) const override {return ack.at(a);}
     void publish(const PlacementControl& c,const PlacementJournal& j) override {
         SharedTransport(map).publish(c,j);
     }
     void all(const PlacementControl& c,AckPhase phase) {
-        for(uint32_t a=0;a<kMaxHelpers+kMaxEngineRanks;++a) {
-            const bool helper=a<kMaxHelpers;
-            const uint32_t bit=1u<<(helper?a:a-kMaxHelpers);
+        for(uint32_t a=0;a<ack.size();++a) {
+            const bool helper=a<helper_count;
+            const uint32_t bit=1u<<(helper?a:a-helper_count);
             if(!(helper?c.expected_helpers:c.expected_ranks)&bit)continue;
             auto& v=ack[a];
             const auto previous=v;
@@ -66,9 +68,9 @@ struct Bridge : Transport {
         }
     }
     void close(const PlacementControl& c,bool commit) {
-        for(uint32_t a=0;a<kMaxHelpers+kMaxEngineRanks;++a) {
-            const bool helper=a<kMaxHelpers;
-            const uint32_t bit=1u<<(helper?a:a-kMaxHelpers);
+        for(uint32_t a=0;a<ack.size();++a) {
+            const bool helper=a<helper_count;
+            const uint32_t bit=1u<<(helper?a:a-helper_count);
             if(!(helper?c.expected_helpers:c.expected_ranks)&bit)continue;
             auto& v=ack[a];const auto previous=v;v={};
             v.reserved[0]=2500; // sampled QUIESCED-to-REOPEN unavailable time
@@ -76,7 +78,7 @@ struct Bridge : Transport {
             v.transaction_id=c.transaction_id;
             v.epoch=c.active_epoch;v.digest=c.active_digest;
             v.generation_slot=c.active_slot;
-            v.phase=uint32_t(!helper && commit && a==kMaxHelpers?
+            v.phase=uint32_t(!helper && commit && a==helper_count?
                               AckPhase::REOPENED:AckPhase::CLEANED);
         }
     }
@@ -181,9 +183,9 @@ struct Fixture {
     Bridge* bridge=nullptr;
     std::unique_ptr<Controller> controller;
     Fixture() {
-        check(layout_for(shape,2,slots_for(2, 1),&layout),"layout");
+        check(v26::layout_for(shape,1,{2,1},&layout) == Refusal::None,"layout");
         map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-        check(map!=MAP_FAILED && init(map,1,shape,2, 1),"init");
+        check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,1,{2,1},0x9011C6A7ULL) == Refusal::None,"init");
         auto* h=static_cast<Header*>(map);
         store(&h->helper_count,2u);
         for(uint32_t e=0;e<4;++e)layer_slots(map,0)[e]=int32_t(e);

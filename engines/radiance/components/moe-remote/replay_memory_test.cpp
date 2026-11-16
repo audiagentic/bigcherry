@@ -27,20 +27,20 @@ int main() {
     check(lane_plan(classes, 1, 2048, 143, 10, &plan), "capture plan");
     check(plan.large_rows == 2048 && plan.dense_routes == 2048 * 10,
           "capture 2048 rows use dense route capacity, not 4096 rows x top-k");
-    for (uint32_t lane = 0; lane < kLanes; ++lane)
-        check(plan.open[lane] == (lane == lane_of(0, kSmallClasses)),
+    for (uint32_t lane = 0; lane < plan.open.size(); ++lane)
+        check(plan.open[lane] == (lane == lane_of(0,kSmallClasses,1)),
               "only the live large lane of one engine rank is allocated");
     check(lane_plan(classes, 1, 8, 4, 10, &plan), "small class plan");
     check(plan.large_rows == 8 && plan.dense_routes == 8 * 10, "small request dense capacity");
-    for (uint32_t lane = 0; lane < kLanes; ++lane)
-        check(plan.open[lane] == (lane == lane_of(0, 0)),
+    for (uint32_t lane = 0; lane < plan.open.size(); ++lane)
+        check(plan.open[lane] == (lane == lane_of(0,0,1)),
               "a small replay prepares only its one full-width lane (RAD49: no TP slice requests)");
     check(lane_plan(classes, 1, 1024, 90, 10, &plan) &&
           plan.large_rows == 1024 && plan.dense_routes == 1024 * 10,
           "a later smaller capture gets a smaller plan, not the prior maximum");
     classes = {4, 8, 16, 24};
     check(lane_plan(classes, 4, 12, 9, 10, &plan) &&
-          plan.large_rows == 24 && plan.dense_routes == 16 * 10 && plan.open[lane_of(0, 2)],
+          plan.large_rows == 24 && plan.dense_routes == 16 * 10 && plan.open[lane_of(0,2,1)],
           "middle class retains its fixed 16 rows while satisfying 24-row validation");
     check(!lane_plan(classes, 4, 12, 121, 10, &plan), "route count bounded by rows x top-k");
     check(!lane_plan(classes, 4, 4097, 1, 10, &plan), "row protocol bound");

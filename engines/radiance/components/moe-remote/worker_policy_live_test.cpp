@@ -18,10 +18,10 @@ struct Fixture {
     void* map=nullptr;
     OwnerSnapshot owner{};
     Fixture() {
-        check(layout_for(shape,2,slots_for(2, 1),&layout),"layout");
+        check(v26::layout_for(shape,1,{2,1},&layout)==Refusal::None,"layout");
         map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                  MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-        check(map!=MAP_FAILED && init(map,1,shape,2, 1),"map");
+        check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,1,{2,1},0x4015F11CULL)==Refusal::None,"map");
         auto* h=static_cast<Header*>(map);
         store(&h->helper_count,2u);
         for (uint32_t e=0;e<5;++e)

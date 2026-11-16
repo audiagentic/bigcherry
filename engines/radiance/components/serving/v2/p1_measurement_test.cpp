@@ -65,7 +65,7 @@ int main() {
   h.lanes.small_rows[0] = 2;
   h.lanes.small_count = 1;
   h.lanes.large_rows = 4;
-  h.lanes.open[0] = true;
+  h.lanes.open = r3::worker_footprint::served_lanes(1, 0, 1, h.lanes.small_count);
   h.largest_expert_device_bytes = 512;
   m.helpers.push_back(h);
   published = publish_p1_measurement(m);

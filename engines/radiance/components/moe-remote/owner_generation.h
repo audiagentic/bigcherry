@@ -48,7 +48,7 @@ inline bool build_bitmap(const void* map, uint32_t slot, uint64_t epoch,
         return false;
     const auto* h = static_cast<const Header*>(map);
     if (!h->layer_count || !h->expert_count || !h->helper_count ||
-        h->helper_count > kMaxHelpers || h->slot_count < h->helper_count ||
+        !slots_fit(h->helper_count,h->rank_count) || h->slot_count != slots_for(h->helper_count,h->rank_count) ||
         h->owner_map_bytes != (uint64_t)h->layer_count * h->expert_count)
         return false;
     PlacementControl control{};

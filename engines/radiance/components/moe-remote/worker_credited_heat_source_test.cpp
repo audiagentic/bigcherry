@@ -32,7 +32,7 @@ struct Queue final : CreditedRowReader {
 
 static CreditedBoundary boundary(uint64_t previous = 0) {
     CreditedBoundary b;
-    b.rank = 0; b.layers = 2; b.experts = 4;
+    b.rank = 0; b.engine_ranks = 1; b.layers = 2; b.experts = 4;
     b.run_generation = 11; b.owner_epoch = 29;
     b.next_credit_sequence = 1; b.observation_count = previous;
     b.max_age_ns = 2000;

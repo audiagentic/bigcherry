@@ -88,7 +88,7 @@ bool bootstrap_runtime_layer(void* map, const Selected& owned, uint32_t helper,
 /* Compare and replay use the same single-helper production bootstrap.
  * Runner::allocate has already prepared the expert pool before this call. */
 template<class Selected, class Loader>
-bool prepare_compare_bootstrap(void* map, uint32_t layers,
+bool prepare_compare_bootstrap(void* map, size_t mapped, uint64_t manifest_digest, uint32_t layers,
                                const LayoutShape& shape, const Selected& owned,
                                uint32_t layer, const int32_t* runtime_slots,
                                uint32_t class_count, const uint32_t* class_rows,
@@ -98,12 +98,10 @@ bool prepare_compare_bootstrap(void* map, uint32_t layers,
     if (!map || !active || !runtime_slots || !class_rows ||
         !class_count || class_count > kSmallClasses || layer >= layers)
         return fail("invalid compare bootstrap arguments");
-    if (!init(map, layers, shape, 1, 1)) return fail("compare segment init failed");
+    if (v26::init(map, mapped, shape, layers, {1,1}, manifest_digest, true) != Refusal::None) return fail("compare segment init failed");
     auto* h = static_cast<Header*>(map);
     h->small_class_count = class_count;
     for (uint32_t c = 0; c < class_count; ++c) h->small_class_rows[c] = class_rows[c];
-    /* init leaves helper_count zero; serving publishes it before ownership. */
-    store(&h->helper_count, 1);
     if (!publish_owned(map, owned, 0)) return fail("compare owner publication failed");
     std::memcpy(layer_slots(map, layer), runtime_slots, size_t(shape.experts) * sizeof(int32_t));
     store(&h->layer_map_ready[layer], 1);
@@ -118,6 +116,7 @@ bool prepare_compare_bootstrap(void* map, uint32_t layers,
     if (!bootstrap_generation_sealed(map) || !placement_snapshot(map, active) ||
         active->state != uint32_t(PlacementState::ACTIVE) || active->active_slot >= r3::worker_tables::kGenerations)
         return fail("compare active generation is not sealed");
+    v26::publish(h); // private compare segment only becomes attachable once sealed
     return true;
 }
 

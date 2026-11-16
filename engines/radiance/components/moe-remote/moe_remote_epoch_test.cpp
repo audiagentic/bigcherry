@@ -21,6 +21,9 @@
 
 using namespace r3::epoch;
 using namespace r3::moe_shm;
+static uint32_t rank_ack(const PlacementControl& c, uint32_t rank=0) {
+    return __builtin_popcount(c.expected_helpers) + rank;
+}
 static void check(bool ok, const char* what) {
     if (!ok) { std::fprintf(stderr,"r3_moe_epoch_test: FAILED %s\n",what); std::exit(1); }
 }
@@ -30,13 +33,15 @@ struct FakeClock : Clock {
     void elapse(uint64_t ns) { t+=ns; }
 };
 struct FakeTransport : Transport {
-    std::array<PlacementAck,kMaxHelpers+kMaxEngineRanks> a{};
+    std::vector<PlacementAck> a;
     PlacementControl snapshot{};
     PlacementJournal log{};
     uint32_t publications=0;
-    PlacementAck read_ack(uint32_t actor) const override { return a.at(actor); }
+    PlacementAck read_ack(uint32_t actor) const override { return actor < a.size() ? a[actor] : PlacementAck{}; }
     void publish(const PlacementControl& c,const PlacementJournal& j) override {
         snapshot=c;log=j;++publications;
+        const size_t n = __builtin_popcount(c.expected_helpers) + __builtin_popcount(c.expected_ranks);
+        if (a.size() != n) a.resize(n);
     }
     void ack(const PlacementControl& c,AckPhase p,uint32_t actor) {
         a.at(actor)={};
@@ -46,10 +51,10 @@ struct FakeTransport : Transport {
         x.phase=uint32_t(p);
     }
     void all(const PlacementControl& c,AckPhase p) {
-        for (uint32_t i=0;i<kMaxHelpers;++i)
+        for (uint32_t i=0;i<__builtin_popcount(c.expected_helpers);++i)
             if (c.expected_helpers & (1u<<i)) ack(c,p,i);
-        for (uint32_t i=0;i<kMaxEngineRanks;++i)
-            if (c.expected_ranks & (1u<<i)) ack(c,p,kMaxHelpers+i);
+        for (uint32_t i=0;i<__builtin_popcount(c.expected_ranks);++i)
+            if (c.expected_ranks & (1u<<i)) ack(c,p,__builtin_popcount(c.expected_helpers)+i);
     }
     void close_actor(const PlacementControl& c,uint32_t actor,AckPhase phase) {
         auto& x=a.at(actor);
@@ -58,11 +63,11 @@ struct FakeTransport : Transport {
         x.phase=uint32_t(phase);
     }
     void close(const PlacementControl& c,bool committed) {
-        for (uint32_t i=0;i<kMaxHelpers;++i)
+        for (uint32_t i=0;i<__builtin_popcount(c.expected_helpers);++i)
             if (c.expected_helpers & (1u<<i)) close_actor(c,i,AckPhase::CLEANED);
-        for (uint32_t i=0;i<kMaxEngineRanks;++i)
+        for (uint32_t i=0;i<__builtin_popcount(c.expected_ranks);++i)
             if (c.expected_ranks & (1u<<i))
-                close_actor(c,kMaxHelpers+i,
+                close_actor(c,__builtin_popcount(c.expected_helpers)+i,
                             committed && i==0 ? AckPhase::REOPENED : AckPhase::CLEANED);
     }
 };
@@ -104,7 +109,7 @@ static void V23Cleanup_DeadlineAndExactAcks() {
                       "cleanup test abort before committed generation");
                 transport.close(c.control(),false);
             }
-            const uint32_t actor=missing_rank ? kMaxHelpers+1 : 2;
+            const uint32_t actor=missing_rank ? rank_ack(c.control(),1) : 2;
             const uint32_t expected_actor=missing_rank ?
                 actor_id(ActorKind::ENGINE_RANK,1) :
                 actor_id(ActorKind::HELPER,2);
@@ -214,7 +219,7 @@ static void V23Ack_OldTxnDelayedDuplicateLost() {
     check(c.propose(22) && c.start_reserving(),"propose -> reserve");
     auto a=c.control();
     tr.ack(a,AckPhase::RESERVED,0);
-    tr.ack(a,AckPhase::RESERVED,kMaxHelpers);
+    tr.ack(a,AckPhase::RESERVED,rank_ack(a));
     tr.a[0].transaction_id--;
     check(c.poll()==Poll::WAITING && c.control().ready_helpers==0,"old txn rejected");
     tr.ack(a,AckPhase::READY,0);
@@ -451,11 +456,11 @@ struct FakeRankOperations final : RankOperations {
     }
     bool lanes_quiesced() const {
         const auto* h=static_cast<Header*>(map);
-        for (uint32_t lane=0; lane<kLanes; ++lane) {
-            const uint32_t slot=lane%kMaxSlots;
-            const bool served=(h->helper_count > 1 ? slot<h->helper_count :
-                                  (1u<<slot & ((1u<<rank_count)-1u)) != 0) &&
-                               (!lane_is_small(lane) || lane_class(lane)<h->small_class_count);
+        for (uint32_t lane=0; lane<h->counts.lanes; ++lane) {
+            const uint32_t slot=lane%h->slot_count;
+            const bool served=slot<h->slot_count &&
+                (!lane_is_small(lane,h->slot_count) ||
+                  lane_class(lane,h->slot_count)<h->small_class_count);
             if (!lane_quiesced(h,lane,closure,served)) return false;
         }
         return true;
@@ -490,7 +495,7 @@ struct FakeRankOperations final : RankOperations {
             return false;
         // Simulated engine drain-word clearing after all ranks and helper lanes.
         auto* h=static_cast<Header*>(map);
-        for (auto& lane:h->lane) lane.drain_request=0;
+        for (uint32_t lane=0;lane<h->counts.lanes;++lane) h->lane[lane].drain_request=0;
         closed=false;
         return true;
     }
@@ -515,7 +520,7 @@ static void V23Cycle_UnreadyAndAbortPreserveOldGeneration() {
               "upload-not-ready blocks PREPARED per rank");
     tr.ack(c.control(),AckPhase::READY,0);
     tr.ack(c.control(),AckPhase::READY,1);
-    tr.ack(c.control(),AckPhase::READY,kMaxHelpers);
+    tr.ack(c.control(),AckPhase::READY,rank_ack(c.control()));
     check(c.poll()==Poll::WAITING &&
           c.control().state==uint32_t(PlacementState::COPYING),
           "missing second rank READY prevents PREPARED");
@@ -542,10 +547,10 @@ static void V23Cycle_UnreadyAndAbortPreserveOldGeneration() {
 static void V23Cycle_PrecommitAbortDuringLiveServing() {
     const LayoutShape shape{128,3,5,8,128,64};
     Layout layout{};
-    check(layout_for(shape,3,slots_for(3, 1),&layout),"abort segment layout");
+    check(v26::layout_for(shape,3,{3,1},&layout)==Refusal::None,"abort segment layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,3,shape,3,1),
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,3,{3,1},0xE0C41E90ULL)==Refusal::None,
           "abort segment created");
     auto* h=static_cast<Header*>(map);
     h->helper_count=3;
@@ -594,7 +599,7 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
           "reservation begins without closing serving");
     PlacementControl snapshot{};
     check(placement_snapshot(map,&snapshot),"abort cycle snapshot");
-    publish_fault_ack(map,kMaxHelpers,snapshot,AckPhase::RESERVED,FaultCode::SOURCE);
+    publish_fault_ack(map,rank_ack(snapshot),snapshot,AckPhase::RESERVED,FaultCode::SOURCE);
     check(leader.tick() && c->state==uint32_t(PlacementState::ACTIVE) &&
           c->active_epoch==1 && c->active_slot==0 &&
           c->active_digest==digest && c->fault_code==0,
@@ -618,7 +623,7 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
               return r3::admission::Ledger::Proof::Proven;
           }),"next parent consumption and completion");
     check(!leader.proposal_controller()->can_propose(),"manual rank fault needs cleanup");
-    publish_cleanup_ack(map,kMaxHelpers,*c);
+    publish_cleanup_ack(map,rank_ack(*c),*c);
     check(leader.proposal_controller()->can_propose(),"rank abort cleanup gates retry");
     // Candidate-only metadata corruption must not turn into a helper exit.
     // The active generation and the admission ledger remain valid.
@@ -635,7 +640,7 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
           !ledger.stopped(),
           "bad inactive candidate journals abort without helper exit or trap");
     inactive->map_bytes=map_bytes;
-    publish_cleanup_ack(map,kMaxHelpers,*c);
+    publish_cleanup_ack(map,rank_ack(*c),*c);
     clock.elapse(100);
     check(leader.tick() && c->transaction_id==snapshot.transaction_id+2 &&
           c->state==uint32_t(PlacementState::PROPOSED) &&
@@ -652,7 +657,7 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
           stuck.attempts==1 && !peer2.placement_halted() &&
           !leader.proposal_controller()->can_propose() && !h->helper_fault,
           "incomplete abort retries without faking CLEANED or killing helper");
-    publish_cleanup_ack(map,kMaxHelpers,*c);
+    publish_cleanup_ack(map,rank_ack(*c),*c);
     clock.elapse(Deadlines{}.copy_ns-1u);
     check(peer2.tick() && leader.tick() && stuck.attempts>=2 &&
           !peer2.placement_halted() && !h->helper_fault,
@@ -683,10 +688,10 @@ static void V23Cycle_PrecommitAbortDuringLiveServing() {
 static void V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed() {
     const LayoutShape shape{128,1,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(2, 1),&layout),"park layout");
+    check(v26::layout_for(shape,2,{2,1},&layout)==Refusal::None,"park layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,2,1),"park segment");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,2,{2,1},0xE0C41E90ULL)==Refusal::None,"park segment");
     auto* h=static_cast<Header*>(map);
     h->lane[0].park=kParkDraining;
     r3::admission::Ledger ledger(2);
@@ -711,9 +716,9 @@ static void V23Cycle_StalledParkFaultsAndKeepsAdmissionClosed() {
 static void V23Bootstrap_UnsealedTickReportsInvalidMap() {
     const LayoutShape shape{128,3,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(3, 1),&layout),"bootstrap negative layout");
+    check(v26::layout_for(shape,2,{3,1},&layout)==Refusal::None,"bootstrap negative layout");
     void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(base!=MAP_FAILED && init(base,2,shape,3, 1),"bootstrap negative init");
+    check(base!=MAP_FAILED && v26::init(base,layout.bytes,shape,2,{3,1},0xE0C41E90ULL)==Refusal::None,"bootstrap negative init");
     auto* h=static_cast<Header*>(base);
     h->helper_count=3;
     placement_control(base)->expected_ranks=1;
@@ -753,9 +758,9 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
           (helper_count==3 && rank_count==1),"only supported production shapes");
     const LayoutShape shape{128,helper_count,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(helper_count,rank_count),&layout), "cycle layout");
+    check(v26::layout_for(shape,2,{helper_count,rank_count},&layout)==Refusal::None, "cycle layout");
     void* base=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(base!=MAP_FAILED && init(base,2,shape,helper_count,rank_count), "cycle segment");
+    check(base!=MAP_FAILED && v26::init(base,layout.bytes,shape,2,{helper_count,rank_count},0xE0C41E90ULL)==Refusal::None, "cycle segment");
     auto* h=static_cast<Header*>(base);
     h->helper_count=helper_count;
     auto* control=placement_control(base);
@@ -885,7 +890,7 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         check(coordinator.step(base,snapshot,rank_ops),
               "production coordinator dispatches RESERVED for every rank");
         for (uint32_t rank=0;rank<rank_count;++rank)
-            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::RESERVED),
+            check(read_shared_ack(base,rank_ack(*control,rank)).phase==uint32_t(AckPhase::RESERVED),
                   "engine rank RESERVED publication comes from coordinator");
         check(helper0.tick() && control->state==uint32_t(PlacementState::COPYING),
               "actual rank reservation reaches COPYING");
@@ -902,7 +907,7 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         gpu[0].complete(new_slot);
         check(gpu[0].prepared(*control,0) &&
               coordinator.step(base,snapshot,rank_ops), "rank 0 exact event ready through coordinator");
-        check(read_shared_ack(base,kMaxHelpers).phase==uint32_t(AckPhase::READY),
+        check(read_shared_ack(base,rank_ack(*control)).phase==uint32_t(AckPhase::READY),
               "coordinator publishes rank 0 READY");
         if (rank_count==2) {
             check(helper0.tick() && control->state==uint32_t(PlacementState::COPYING),
@@ -910,7 +915,7 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
             gpu[1].complete(new_slot);
             check(gpu[1].prepared(*control,1) &&
                   coordinator.step(base,snapshot,rank_ops), "rank 1 exact event ready through coordinator");
-            check(read_shared_ack(base,kMaxHelpers+1).phase==uint32_t(AckPhase::READY),
+            check(read_shared_ack(base,rank_ack(*control,1)).phase==uint32_t(AckPhase::READY),
                   "coordinator publishes rank 1 READY");
         }
         check(helper0.tick() && control->state==uint32_t(PlacementState::PREPARED),
@@ -936,22 +941,22 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
               return r3::admission::Ledger::Proof::Proven;
               }) && ledger.all_ranks_consumed((uint32_t)cycle,cutoff.latest_ticket),
               "every rank and ticket in closed epoch consumed");
-        for (uint32_t lane=0;lane<kLanes;++lane) {
-            const uint32_t slot_id=lane%kMaxSlots;
+        for (uint32_t lane=0;lane<h->counts.lanes;++lane) {
+            const uint32_t slot_id=lane%h->slot_count;
             if (slot_id>=slots_for(helper_count,rank_count) ||   /* RAD49: one slot a (helper, rank) */
-                (lane_is_small(lane) && lane_class(lane)>=h->small_class_count)) continue;
+                (lane_is_small(lane,h->slot_count) && lane_class(lane,h->slot_count)>=h->small_class_count)) continue;
             h->lane[lane].drain_request=cycle;
             h->lane[lane].drain_ack=cycle-1;
         }
         check(helper0.tick() && peer_ticks() &&
               control->state==uint32_t(PlacementState::QUIESCING),
               "stale helper drain ACK cannot commit");
-        for (auto& lane:h->lane) lane.drain_ack=lane.drain_request;
+        for (uint32_t lane=0;lane<h->counts.lanes;++lane) h->lane[lane].drain_ack=h->lane[lane].drain_request;
         check(placement_snapshot(base,&snapshot), "quiesce snapshot");
         check(coordinator.step(base,snapshot,rank_ops),
               "coordinator closes admission and waits for fake event/lane drain");
         for (uint32_t rank=0;rank<rank_count;++rank)
-            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::QUIESCED),
+            check(read_shared_ack(base,rank_ack(*control,rank)).phase==uint32_t(AckPhase::QUIESCED),
                   "production coordinator publishes QUIESCED after real proofs");
         check(peer_ticks() && helper0.tick() &&
               control->state==uint32_t(PlacementState::COMMIT) &&
@@ -965,7 +970,7 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         check(coordinator.step(base,snapshot,rank_ops),
               "production coordinator observes helper ACTIVE header then publishes COMMITTED");
         for (uint32_t rank=0;rank<rank_count;++rank)
-            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::COMMITTED),
+            check(read_shared_ack(base,rank_ack(*control,rank)).phase==uint32_t(AckPhase::COMMITTED),
                   "engine rank COMMITTED ACK originates in coordinator");
         check(peer_ticks(),"other helpers acknowledge commit");
         check(helper0.tick() && control->state==uint32_t(PlacementState::RETIRING),
@@ -983,7 +988,7 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         check(coordinator.step(base,snapshot,rank_ops),
               "production coordinator proves retired rank identities and consumed cutoff");
         for (uint32_t rank=0;rank<rank_count;++rank)
-            check(read_shared_ack(base,kMaxHelpers+rank).phase==uint32_t(AckPhase::RETIRED),
+            check(read_shared_ack(base,rank_ack(*control,rank)).phase==uint32_t(AckPhase::RETIRED),
                   "production coordinator publishes RETIRED");
         check(helper0.tick() && control->state==uint32_t(PlacementState::ACTIVE) &&
               generation_header(base,old_slot)->state==uint32_t(GenerationState::RETIRED),
@@ -1003,10 +1008,10 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
         check(placement_snapshot(base,&snapshot) &&
               coordinator.step(base,snapshot,rank_ops) &&
               ledger.can_replace_generation(old_slot) &&
-              read_shared_ack(base,kMaxHelpers).phase==uint32_t(AckPhase::REOPENED),
+              read_shared_ack(base,rank_ack(*control)).phase==uint32_t(AckPhase::REOPENED),
               "coordinator reopens guarded ledger and release-publishes REOPENED");
         if (lose_reopen_ack) {
-            auto* ack=placement_ack(base,kMaxHelpers);
+            auto* ack=placement_ack(base,rank_ack(*control));
             __atomic_store_n(&ack->phase,uint32_t(AckPhase::NONE),__ATOMIC_RELEASE);
             clock.elapse(Deadlines{}.retire_ns-1u);
             check(helper0.tick() && peer_ticks() && helper0.completed()==cycle-1,
@@ -1049,7 +1054,7 @@ static void V23Cycle_SamePlacementAndSharedProtocol(
             return;
         }
         if (cycle<=2) {
-            PlacementAck* ack=placement_ack(base,kMaxHelpers);
+            PlacementAck* ack=placement_ack(base,rank_ack(*control));
             const uint64_t correct_txn=ack->transaction_id;
             __atomic_store_n(&ack->transaction_id,correct_txn-1u,__ATOMIC_RELAXED);
             check(helper0.tick() && helper0.completed()==cycle-1,
@@ -1209,10 +1214,10 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
           "single-helper negative and multi-helper migration shapes");
     const LayoutShape shape{128,helpers,3,8,128,64};
     Layout layout{};
-    check(layout_for(shape,2,slots_for(helpers,ranks),&layout),"move layout");
+    check(v26::layout_for(shape,2,{helpers,ranks},&layout)==Refusal::None,"move layout");
     void* map=mmap(nullptr,layout.bytes,PROT_READ|PROT_WRITE,
                    MAP_PRIVATE|MAP_ANONYMOUS,-1,0);
-    check(map!=MAP_FAILED && init(map,2,shape,helpers,ranks),"move segment");
+    check(map!=MAP_FAILED && v26::init(map,layout.bytes,shape,2,{helpers,ranks},0xE0C41E90ULL)==Refusal::None,"move segment");
     auto* h=static_cast<Header*>(map);
     h->helper_count=helpers;
     auto* control=placement_control(map);
@@ -1317,7 +1322,7 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               coordinator.step(map,snapshot,rank_ops),
               "engine rank coordinator publishes invalid-map fault");
         for (uint32_t rank=0;rank<ranks;++rank)
-            check(read_shared_ack(map,kMaxHelpers+rank).fault_code==
+            check(read_shared_ack(map,rank_ack(*placement_control(map),rank)).fault_code==
                       uint32_t(FaultCode::CHECKSUM),
                   "both engine rank reservations reject local classification");
         check(participants[0]->tick() &&
@@ -1435,12 +1440,12 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
         check(placement_snapshot(map,&snapshot) &&
               coordinator.step(map,snapshot,rank_ops) &&
               !controller->can_propose() &&
-              read_shared_ack(map,kMaxHelpers).phase!=uint32_t(AckPhase::CLEANED),
+              read_shared_ack(map,rank_ack(*placement_control(map))).phase!=uint32_t(AckPhase::CLEANED),
               "rank must not acknowledge abort while bitmap DMA is pending");
         for (uint32_t rank=0;rank<ranks;++rank) gpu[rank].complete(1);
         check(coordinator.step(map,snapshot,rank_ops) &&
-              read_shared_ack(map,kMaxHelpers).phase==uint32_t(AckPhase::CLEANED) &&
-              read_shared_ack(map,kMaxHelpers+ranks-1).phase==uint32_t(AckPhase::CLEANED) &&
+              read_shared_ack(map,rank_ack(*placement_control(map))).phase==uint32_t(AckPhase::CLEANED) &&
+              read_shared_ack(map,rank_ack(*placement_control(map),ranks-1)).phase==uint32_t(AckPhase::CLEANED) &&
               controller->can_propose(),
               "rank event completion publishes abort cleanup and unblocks proposal");
     }
@@ -1568,10 +1573,10 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
               }) &&
               ledger.all_ranks_consumed(uint32_t(cycle),close.latest_ticket),
               "move all ranks consumed");
-        for (uint32_t lane=0;lane<kLanes;++lane) {
-            const uint32_t lane_slot=lane%kMaxSlots;
+        for (uint32_t lane=0;lane<h->counts.lanes;++lane) {
+            const uint32_t lane_slot=lane%h->slot_count;
             const bool served=lane_slot<slots_for(helpers,ranks) &&   /* RAD49 */
-                (!lane_is_small(lane)||lane_class(lane)<h->small_class_count);
+                (!lane_is_small(lane,h->slot_count)||lane_class(lane,h->slot_count)<h->small_class_count);
             if (!served) continue;
             h->lane[lane].drain_request=transaction;
             h->lane[lane].drain_ack=transaction;
@@ -1682,8 +1687,8 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
         rank_ops.abort_event_error_rank=0;
         check(placement_snapshot(map,&aborted) &&
               coordinator.step(map,aborted,rank_ops) &&
-              read_shared_ack(map,kMaxHelpers).phase==uint32_t(AckPhase::CLEANED) &&
-              read_shared_ack(map,kMaxHelpers).fault_code==uint32_t(FaultCode::DEVICE),
+              read_shared_ack(map,rank_ack(*placement_control(map))).phase==uint32_t(AckPhase::CLEANED) &&
+              read_shared_ack(map,rank_ack(*placement_control(map))).fault_code==uint32_t(FaultCode::DEVICE),
               "production rank coordinator publishes abort HIP event error");
         check(participants[0]->tick() && participants[0]->placement_halted() &&
               !controller->can_propose() && controller->failed_closed() &&
@@ -1700,7 +1705,7 @@ static void V23Move_ChangedMapThroughProduction(uint32_t helpers,uint32_t ranks)
         rank_ops.abort_event_error_rank=-1;
         gpu[0].complete(inactive_slot);
         check(coordinator.step(map,aborted,rank_ops) &&
-              read_shared_ack(map,kMaxHelpers).fault_code==uint32_t(FaultCode::DEVICE) &&
+              read_shared_ack(map,rank_ack(*placement_control(map))).fault_code==uint32_t(FaultCode::DEVICE) &&
               !controller->can_propose(),
               "aborted event failure remains sticky after eventual completion");
         StepTicket still_serving{};

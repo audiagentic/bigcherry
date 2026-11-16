@@ -85,7 +85,7 @@ struct FakeRunner {
 static void run(bool bad_load) {
     const LayoutShape shape{128, 2, 4, 8, 128, 64};
     Layout layout{};
-    check(layout_for(shape, 2, slots_for(1, 1), &layout), "layout");
+    check(v26::layout_for(shape, 2, {1,1}, &layout) == Refusal::None, "layout");
     void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     check(map != MAP_FAILED, "mmap");
@@ -99,12 +99,19 @@ static void run(bool bad_load) {
     device.fail_load = bad_load;
     PlacementControl control{};
     const char* why = nullptr;
+    bool saw_unpublished_during_load = false;
     const bool ok = r3::epoch::prepare_compare_bootstrap(
-        map, 2, shape, selected, 0, runtime_slots, 1, small_rows,
+        map, layout.bytes, 0x7EC0F11CULL, 2, shape, selected, 0, runtime_slots, 1, small_rows,
         [&](uint32_t layer, const int32_t* slots) {
+            saw_unpublished_during_load |= v26::valid(map, layout.bytes, shape, 2, {1,1},
+                                                     0x7EC0F11CULL) == Refusal::Unpublished;
             return device.load_layer(layer, slots);
         }, &control, &why);
     check(ok == !bad_load, bad_load ? "failed upload refuses seal" : "full replay bootstrap");
+    check(saw_unpublished_during_load, "compare loader sees unpublished in-progress wire");
+    check(v26::valid(map, layout.bytes, shape, 2, {1,1}, 0x7EC0F11CULL) ==
+              (bad_load ? Refusal::Unpublished : Refusal::None),
+          "failed compare never publishes; successful compare publishes after sealing");
     if (!bad_load) {
         const Header* h = static_cast<const Header*>(map);
         check(load(&h->helper_count) == 1 && load(&h->layer_map_consumed[0]) == 1,
@@ -142,7 +149,7 @@ static void run(bool bad_load) {
                       return device.resident(l, e, local + 1);
                   }),
               "mismatched runtime local slot fails closed");
-        Request* q = lane_request(map, lane_of(0, 0), 1);
+        Request* q = lane_request(map, lane_of(0, 0, 1), 1);
         check(r3::epoch::bind_compare_request(map, q, control) &&
               q->placement_epoch == control.active_epoch &&
               q->generation_slot == control.active_slot,
@@ -153,7 +160,7 @@ static void run(bool bad_load) {
     } else {
         check(!bootstrap_generation_sealed(map) &&
               !load(&static_cast<Header*>(map)->layer_map_consumed[0]) &&
-              !r3::epoch::bind_compare_request(map, lane_request(map, lane_of(0,0), 1), control),
+              !r3::epoch::bind_compare_request(map, lane_request(map, lane_of(0,0,1), 1), control),
               "failed device load never admits a request");
     }
     munmap(map, layout.bytes);
@@ -188,7 +195,7 @@ static void run_capture(const char* path) {
           selected.expert.size() == 23, "expected req-18-7 fixture");
     LayoutShape shape{128, hd[7], hd[6], hd[3], 128, 640};
     Layout layout{};
-    check(layout_for(shape, hd[2] + 1, slots_for(1, 1), &layout), "capture layout");
+    check(v26::layout_for(shape, hd[2] + 1, {1,1}, &layout) == Refusal::None, "capture layout");
     void* map = mmap(nullptr, layout.bytes, PROT_READ | PROT_WRITE,
                      MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
     check(map != MAP_FAILED, "capture mmap");
@@ -198,7 +205,7 @@ static void run_capture(const char* path) {
     const uint32_t small_rows[]{8};
     const char* why = nullptr;
     check(r3::epoch::prepare_compare_bootstrap(
-              map, hd[2] + 1, shape, selected, hd[2], runtime_slots.data(),
+              map, layout.bytes, 0x7EC0F11CULL, hd[2] + 1, shape, selected, hd[2], runtime_slots.data(),
               1, small_rows,
               [&](uint32_t layer, const int32_t* slots) {
                   return device.load_layer(layer, slots);
@@ -212,7 +219,7 @@ static void run_capture(const char* path) {
           why ? why : "all captured routes bound to loaded physical residents");
     check(device.before_launch(map, hd[2], uint32_t(routes[0].expert)),
           "both pointer table generations selected");
-    Request* q = lane_request(map, lane_of(0, 0), 1);
+    Request* q = lane_request(map, lane_of(0, 0, 1), 1);
     check(r3::epoch::bind_compare_request(map, q, control),
           "actual capture binds sealed request generation");
     check(!r3::epoch::validate_compare_routes(

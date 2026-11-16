@@ -10,6 +10,7 @@ code: the helper, the launcher and the harness adapter get them from here.
 from __future__ import annotations
 
 import os
+import json
 import re
 import tomllib
 from dataclasses import dataclass, field
@@ -21,7 +22,7 @@ SCHEMA = 1
 WEIGHT_FORMATS = ("w4nl64", "fp8_e4m3_block")   # the names moe_backend.h knows (parse_formats)
 ROLES = ("engine", "helper")
 PLACEMENTS = ("head", "tail")
-_HEADER = Path("engines/radiance/components/moe-remote/moe_remote_shm.h")
+_SCHEMA = Path("engines/radiance/components/moe-remote/topology-v26.schema.json")
 
 
 class LayoutError(ValueError):
@@ -90,22 +91,53 @@ def _root(repo_root: Path | None) -> Path:
 
 
 
-def _protocol_bound(name: str, repo_root: Path | None) -> int:
-    text = (_root(repo_root) / _HEADER).read_text(encoding="utf-8")
-    m = re.search(r"constexpr\s+uint32_t\s+" + name + r"\s*=\s*(\d+)\s*;", text)
-    if not m:
-        raise LayoutError(f"{_HEADER}: {name} not found")
-    return int(m.group(1))
+
+def _wire_schema(repo_root: Path | None) -> dict[str, int]:
+    """Versioned native v26 representation schema, parity-checked by r3_moe_shm_test."""
+    path = _root(repo_root) / _SCHEMA
+    try:
+        schema = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        raise LayoutError(f"{path}: {exc}") from exc
+    required = {"wire_version", "owner_id_bits", "combine_mask_bits",
+                "participant_mask_bits", "count_bits", "lane_classes", "ring_slots"}
+    if not isinstance(schema, dict) or set(schema) != required or schema.get("wire_version") != 26 or any(
+        type(v) is not int or v <= 0 or v > 64 for v in schema.values()
+    ):
+        raise LayoutError(f"{path}: invalid v26 topology representation schema")
+    return schema
+
+
+def topology_refusal(helpers: int, ranks: int, repo_root: Path | None = None) -> str | None:
+    """Mirror the native v26::counts_for *typed representation predicates*, not a slot ceiling."""
+    sc = _wire_schema(repo_root)
+    if not helpers or not ranks:
+        return "ZeroTopology"
+    u32 = (1 << sc["count_bits"]) - 1
+    slots = helpers * ranks
+    if slots > u32:
+        return "SlotOverflow"
+    lanes = slots * sc["lane_classes"]
+    if lanes > u32:
+        return "LaneOverflow"
+    if lanes * sc["ring_slots"] > u32:
+        return "RingOverflow"
+    if helpers + ranks > u32:
+        return "AckOverflow"
+    if slots + ranks > u32:
+        return "ResultOverflow"
+    if helpers > (1 << sc["owner_id_bits"]) - 1:
+        return "OwnerId"
+    if helpers > sc["combine_mask_bits"]:
+        return "CombineMask"
+    if helpers + ranks > sc["participant_mask_bits"]:
+        return "ParticipantMask"
+    return None
 
 
 def max_helpers(repo_root: Path | None = None) -> int:
-    """The protocol's helper bound, read from the header that defines it (kMaxHelpers), so the two cannot drift."""
-    return _protocol_bound("kMaxHelpers", repo_root)
-
-
-def max_slots(repo_root: Path | None = None) -> int:
-    """The protocol's request-slot bound (kMaxSlots): one slot a (helper, engine rank) pair (RAD49)."""
-    return _protocol_bound("kMaxSlots", repo_root)
+    """Number of contributors representable in the native uint8 combine mask."""
+    return _wire_schema(repo_root)["combine_mask_bits"]
 
 
 def _load(path: Path) -> dict:
@@ -346,14 +378,12 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     unused = set(budgets) - used_overrides
     if unused:
         raise LayoutError(f"{where}: a budget override names {sorted(unused)}, which no helper group uses")
-    if len(helpers) > max_helpers(repo_root):
-        raise LayoutError(f"{where}: {len(helpers)} helpers exceed the protocol's {max_helpers(repo_root)}")
+    refusal = topology_refusal(len(helpers), len(engine), repo_root) if helpers else None
+    if refusal:
+        raise LayoutError(f"{where}: topology {len(helpers)} helpers x {len(engine)} ranks refused by "
+                          f"v26 representation ({refusal})")
     if not any(h.placement == "head" and h.share > 0 for h in helpers):
         raise LayoutError(f"{where}: no head helper with a share")
-    if helpers and len(helpers) * len(engine) > max_slots(repo_root):
-        # moe_remote_shm.h slots_for: one request slot a (helper, engine rank); the hook and the helpers refuse more at start
-        raise LayoutError(f"{where}: {len(helpers)} helpers behind a {len(engine)}-rank engine need {len(helpers) * len(engine)} "
-                          f"request slots; the mailbox protocol has {max_slots(repo_root)}")
     common = {
         "R3_MOE_WORKER_COUNT": str(len(helpers)),
         "R3_MOE_WORKER_ENGINE_RANKS": str(len(engine)),
@@ -369,7 +399,7 @@ def resolve(name: str, host: environment.Host, *, budgets: dict[str, int] | None
     if combine:
         common["R3_MOE_WORKER_COMBINE"] = "1"
     if common.get("R3_MOE_WORKER_COMBINE") == "1" and len(helpers) < 2:
-        # the combine adds the rows of two to kCombineHelpers (= kMaxHelpers, the bound checked above) helpers; one has nothing to add
+        # the combine needs two or more contributors, bounded by the uint8 mask in v26 counts_for.
         raise LayoutError(f"{where}: the helper-row combine needs at least two helpers; {len(helpers)} would run with it silently off")
     return Resolved(name, tuple(d.index for d in engine), _engine_archs(engine), _engine_plugins(engine, archs),
                     model, tp_wire, tuple(server_args), tuple(helpers), {k: v for k, v in common.items() if v != ""})

@@ -55,9 +55,9 @@ public:
     static constexpr uint32_t kQueueDepth = 4;
 
     Lanes(r3::moe_shm::Header* h, void* map, void* dev_map, r3_moe_gpu::Runner& gpu, const SmallClasses& classes,
-          const WorkerConfig& cfg, const std::array<bool, r3::moe_shm::kLanes>& served, Combine& combine)
+          const WorkerConfig& cfg, const std::vector<bool>& served, Combine& combine)
         : h_(h), map_(map), dev_map_(dev_map), gpu_(gpu), classes_(classes), cfg_(cfg), served_(served),
-          combine_(combine) {}
+          combine_(combine), threads_(h->counts.lanes), stats_(h->counts.lanes) {}
     Lanes(const Lanes&) = delete;
     Lanes& operator=(const Lanes&) = delete;
     /* Any path out of the serving scope stops the lanes first: a plain join could wait on a lane still serving. */
@@ -71,7 +71,7 @@ public:
     /* One thread per served lane. A thread that cannot start stops and joins the ones that did. */
     bool start() {
         try {
-            for (uint32_t lane = 0; lane < r3::moe_shm::kLanes; ++lane)
+            for (uint32_t lane = 0; lane < h_->counts.lanes; ++lane)
                 if (served_[lane]) threads_[lane] = std::thread([this, lane] { run(lane); });
         } catch (const std::exception& e) {
             std::fprintf(stderr, "r3_moe_worker: lane thread: %s\n", e.what());
@@ -88,7 +88,7 @@ public:
         request_stop();
         (void)__atomic_fetch_or(&h_->burst, kBurstStop, __ATOMIC_ACQ_REL);
         (void)futex_wake(&h_->burst);
-        for (uint32_t lane = 0; lane < kLanes; ++lane)
+        for (uint32_t lane = 0; lane < h_->counts.lanes; ++lane)
             if (served_[lane]) store(&h_->lane[lane].park, 0u);
         raise_fault(h_);   /* after the park flags; wakes every engine CPU wait (Header::notify) */
         join();
@@ -99,7 +99,7 @@ public:
         using namespace r3::moe_shm;
         uint64_t samples = 0;
         double sampled_us = 0.0;
-        for (uint32_t lane = 0; lane < kLanes; ++lane) {
+        for (uint32_t lane = 0; lane < h_->counts.lanes; ++lane) {
             *req += stats_[lane].req;
             *rows += stats_[lane].rows;
             *routes += stats_[lane].routes;
@@ -109,12 +109,12 @@ public:
         }
         for (uint32_t c = 0; c < classes_.count; ++c) {
             uint64_t r = 0, n = 0;
-            for (uint32_t k = 0; k < kMaxSlots; ++k) { r += stats_[lane_of(k, c)].req; n += stats_[lane_of(k, c)].rows; }
+            for (uint32_t k = 0; k < h_->slot_count; ++k) { r += stats_[lane_of(k, c, h_->slot_count)].req; n += stats_[lane_of(k, c, h_->slot_count)].rows; }
             std::fprintf(stderr, "r3_moe_worker: small lane class %u (rows <= %u): requests %llu (%llu rows)\n", c,
                          classes_.rows[c], (unsigned long long)r, (unsigned long long)n);
         }
         uint64_t lr = 0, ln = 0;
-        for (uint32_t k = 0; k < kMaxSlots; ++k) { lr += stats_[lane_of(k, kSmallClasses)].req; ln += stats_[lane_of(k, kSmallClasses)].rows; }
+        for (uint32_t k = 0; k < h_->slot_count; ++k) { lr += stats_[lane_of(k, kSmallClasses, h_->slot_count)].req; ln += stats_[lane_of(k, kSmallClasses, h_->slot_count)].rows; }
         std::fprintf(stderr, "r3_moe_worker: large-lane requests %llu (%llu rows)\n", (unsigned long long)lr,
                      (unsigned long long)ln);
         if (samples && *req) *us = (sampled_us / (double)samples) * (double)*req;
@@ -131,7 +131,7 @@ private:
     /* A lane thread's entry: nothing escapes it; any failure stops the helper. */
     void run(uint32_t lane) noexcept {
         try {
-            r3::moe_shm::lane_is_small(lane) ? run_small(lane) : run_large(lane);
+            r3::moe_shm::lane_is_small(lane, h_->slot_count) ? run_small(lane) : run_large(lane);
         } catch (const std::exception& e) {
             std::fprintf(stderr, "r3_moe_worker: lane %u: %s\n", lane, e.what());
             request_stop();
@@ -151,7 +151,7 @@ private:
         // hold a later request, so they are excluded from live verdicts until
         // a per-sample tagged row-count snapshot exists.
         if(ok && service_signal_ && routed_rows &&
-           !r3::moe_shm::lane_is_small(lane))
+           !r3::moe_shm::lane_is_small(lane, h_->slot_count))
             service_signal_->record(lane,routed_rows,stage_us);
         return ok;
     }
@@ -245,7 +245,7 @@ private:
     void run_small(uint32_t lane) {
         worker_cpu::place_this_thread(cfg_.cpu_set_auto);   /* PWR03: small lanes only (worker_cpu.h) */
         using namespace r3::moe_shm;
-        const uint32_t rows = classes_.rows[lane_class(lane)];
+        const uint32_t rows = classes_.rows[lane_class(lane, h_->slot_count)];
         uint32_t next = 1, done_seen = 0;
         auto queue_one = [&]() -> bool {
             if (next == 0) {
@@ -346,9 +346,9 @@ private:
     r3_moe_gpu::Runner& gpu_;
     const SmallClasses& classes_;
     const WorkerConfig& cfg_;
-    const std::array<bool, r3::moe_shm::kLanes>& served_;
+    const std::vector<bool>& served_;
     Combine& combine_;
     r3::policy::LaneServiceSource* service_signal_=nullptr;
-    std::array<std::thread, r3::moe_shm::kLanes> threads_;
-    std::array<Stats, r3::moe_shm::kLanes> stats_{};
+    std::vector<std::thread> threads_;
+    std::vector<Stats> stats_;
 };

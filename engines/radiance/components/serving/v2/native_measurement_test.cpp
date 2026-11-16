@@ -84,7 +84,7 @@ int main() {
   h.lanes.small_rows[0] = 2;
   h.lanes.small_count = 1;
   h.lanes.large_rows = 4;
-  h.lanes.open[0] = true;
+  h.lanes.open = r3::worker_footprint::served_lanes(1, 0, 1, h.lanes.small_count);
   h.incoming_stride_bytes = r3::worker_footprint::stride_bound(512);
   h.footprint_evidence = "footprint";
   in.helpers.push_back(h);

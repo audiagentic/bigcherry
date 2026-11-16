@@ -2,6 +2,7 @@
  * the once-per-parent result-consumed seal, and the existing event ledger's
  * all-rank closed-epoch query. No HIP context is created or used. */
 #include "mailbox_completion.h"
+#include "moe_v26_gpu_contract.h"
 #include "consumption_ring.h"
 #include "admission_ledger.h"
 #include "admission_completion.h"
@@ -19,20 +20,27 @@ static void check(bool good, const char* name) {
     if (!good) { std::fprintf(stderr, "r3_mailbox_completion_test: FAIL %s\n", name); std::exit(1); }
 }
 
-static std::array<uint32_t, kPublishedTicketOffset+4> published_ticket(const StepTicket& t) {
-    std::array<uint32_t, kPublishedTicketOffset+4> out{};
-    out[kPublishedTicketOffset] = uint32_t(t.ticket_id);
-    out[kPublishedTicketOffset+1] = uint32_t(t.ticket_id >> 32);
-    out[kPublishedTicketOffset+2] = t.placement_epoch;
-    out[kPublishedTicketOffset+3] = t.generation_slot;
+static std::vector<uint32_t> published_ticket(const StepTicket& t, uint32_t slots, uint32_t rows) {
+    const auto words = published_ticket_offset(slots, rows) + 4u;
+    std::vector<uint32_t> out(words);
+    out[published_ticket_offset(6, 513)] = uint32_t(t.ticket_id);
+    out[published_ticket_offset(6, 513)+1] = uint32_t(t.ticket_id >> 32);
+    out[published_ticket_offset(6, 513)+2] = t.placement_epoch;
+    out[published_ticket_offset(6, 513)+3] = t.generation_slot;
     return out;
 }
 
 static void V23RouteMark_StaleCompletionIdentityRejected() {
     const StepTicket expected{7, 1, {0,0,0}, (uint64_t(1)<<32)+91};
-    auto data = published_ticket(expected);
+    r3::moe_shm::v26::gpu::Scratch scratch{};
+    check(r3::moe_shm::v26::gpu::scratch_for({2,3},513,&scratch) ==
+                  r3::moe_shm::v26::gpu::Refusal::None &&
+          published_ticket_offset(6, 513) == scratch.ticket_begin &&
+          scratch.published_words == scratch.ticket_begin + 4,
+          "GPU scratch and immutable ticket agree on runtime geometry");
+    auto data = published_ticket(expected,6,513);
     StepTicket pass{};
-    check(pass_ticket(data.data(), &pass) && pass.ticket_id == expected.ticket_id &&
+    check(pass_ticket(data.data(), scratch.ticket_begin, &pass) && pass.ticket_id == expected.ticket_id &&
           pass.placement_epoch == expected.placement_epoch &&
           pass.generation_slot == expected.generation_slot, "full parent ticket decoded from immutable pass copy");
     r3::moe_shm::Request q{};
@@ -56,15 +64,15 @@ static void V23RouteMark_StaleCompletionIdentityRejected() {
     /* Wait checks status after the existing done_sequence acquire. The
      * route-mark identity guard must not add a mapped status read to
      * combined chunks before the helper has completed. */
-    data[kPublishedTicketOffset+3] = 257u; /* must reject before narrowing to uint8_t */
-    check(!pass_ticket(data.data(), &pass), "invalid wide slot rejected");
-    data[kPublishedTicketOffset+3] = expected.generation_slot;
-    data[kPublishedTicketOffset+2] = 0u;
-    check(!pass_ticket(data.data(), &pass), "zero epoch rejected");
-    data[kPublishedTicketOffset+2] = expected.placement_epoch;
-    data[kPublishedTicketOffset] = 0u;
-    data[kPublishedTicketOffset+1] = 0u;
-    check(!pass_ticket(data.data(), &pass), "zero ticket id rejected");
+    data[published_ticket_offset(6, 513)+3] = 257u; /* must reject before narrowing to uint8_t */
+    check(!pass_ticket(data.data(), scratch.ticket_begin, &pass), "invalid wide slot rejected");
+    data[published_ticket_offset(6, 513)+3] = expected.generation_slot;
+    data[published_ticket_offset(6, 513)+2] = 0u;
+    check(!pass_ticket(data.data(), scratch.ticket_begin, &pass), "zero epoch rejected");
+    data[published_ticket_offset(6, 513)+2] = expected.placement_epoch;
+    data[published_ticket_offset(6, 513)] = 0u;
+    data[published_ticket_offset(6, 513)+1] = 0u;
+    check(!pass_ticket(data.data(), scratch.ticket_begin, &pass), "zero ticket id rejected");
     std::puts("V23RouteMark_StaleCompletionIdentityRejected: PASS");
 }
 
