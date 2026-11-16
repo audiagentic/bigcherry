@@ -1,6 +1,6 @@
 # rad0005_mp4_ffmpeg6_writer
 
-**Status:** untested
+**Status:** validated
 **Plan item:** MEN12
 
 ## Summary

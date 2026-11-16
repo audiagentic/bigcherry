@@ -35,13 +35,14 @@ patches = [
   "rad0023_ar_timeline",
   "rad0030_int8_pipelined_prefill",
   "rad0036_prefill_governor",
+  "rad0005_mp4_ffmpeg6_writer",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
 # their own; promoted to validated by a passing bump (compile, plugin ABI, component tests, cpu-smoke) and then moved to
 # serving-core.
 [patch-set.host-compat]
-patches = ["rad0005_mp4_ffmpeg6_writer"]
+patches = []
 required-state = "untested"
 
 # Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
