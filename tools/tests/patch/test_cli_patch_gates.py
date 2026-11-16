@@ -30,6 +30,7 @@ def _args(**overrides: object) -> argparse.Namespace:
         "rebase_report": None,
         "all_report": None,
         "no_legacy_grandfather": False,
+        "diagnostic": False,
         "json": True,
         "llama_root": None,
         "engine": "llamacpp",

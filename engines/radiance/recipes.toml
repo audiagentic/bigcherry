@@ -51,20 +51,19 @@ required-state = "untested"
 patches = []
 required-state = "untested"
 
-# Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core. Patch-lint fails
-# if a patch declaring `diagnostic-build` (rad0004) enters any recipe not named *-diag.
+# Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core.
+# State-based source admission restricts this patch to diagnostic-class sources.
 [patch-set.moe-remote-diag]
 patches = [
   "rad0004_moe_remote_diagnostics",
-  "rad0006_heat_freeze_diagnostic",
 ]
-required-state = "untested"
+required-state = "diagnostic"
 
 
 # RHP01: isolated opt-in read-only histogram evidence, never part of production sources.
 [patch-set.routing-evidence]
 patches = ["rad0010_routing_evidence"]
-required-state = "untested"
+required-state = "diagnostic"
 
 # RHP02 slice A: read-only CPU credit observer ABI; inactive until explicit registration.
 [patch-set.heat-observer]
@@ -137,6 +136,11 @@ needs = []
 # Experiments contain only unpromoted patches; promotion retires their memberships.
 [experiment.mtp-full-head-switch]
 patches = ["rad0003_mtp_full_head_switch"]
+
+# VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
+# bf16_i8 requires bf16_fp8. Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
+[experiment.kv-bf16-packed]
+patches = ["rad0037_bf16_fp8_kv", "rad0038_bf16_i8_kv"]
 
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the

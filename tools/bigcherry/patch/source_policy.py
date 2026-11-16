@@ -1,6 +1,6 @@
 """State-based source admission for patch recipes.
 
-The source class is explicit recipe metadata. Patch kinds, diagnostic-build
+The source class is explicit recipe metadata. Patch kinds, compile-time
 macros and recipe names never determine lifecycle admission.
 """
 from __future__ import annotations
@@ -12,14 +12,9 @@ def source_state_problems(
     recipes: config.Config,
     states: Mapping[str, str],
     *,
-    production_exceptions: frozenset[str] = frozenset(),
     diagnostic_records: Mapping[str, profile_evidence.ProfileEvidence] | None = None,
 ) -> tuple[str, ...]:
-    """Check every source/experiment without selecting by names or kinds.
-
-    production_exceptions is a temporary PRQ04/PRQ03 waiver, checked for
-    scope and staleness by its separate guard. It also covers inheritance.
-    """
+    """Check every source/experiment by declared class and lifecycle state."""
     records = diagnostic_records or {}
     problems: list[str] = []
     for name, source in sorted(recipes.sources.items()):
@@ -41,8 +36,6 @@ def source_state_problems(
                         if record.patch_id != patch_id or record.tier != profile_evidence.DIAGNOSTIC_TIER:
                             issues += ("record identity or tier mismatch",)
                         problems.extend(f"source {name}: {patch_id}: {issue}" for issue in issues)
-                continue
-            if state in ("untested", "evaluated") and patch_id in production_exceptions:
                 continue
             problems.append(f"source {name} ({source.source_class}): {patch_id} state {state!r} not allowed")
     for name, experiment in sorted(recipes.experiments.items()):

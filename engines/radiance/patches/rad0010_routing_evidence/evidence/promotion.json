@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "tier": "diagnostic",
+  "patch-id": "rad0010_routing_evidence",
+  "pinned": "v1.17.0",
+  "subject-digest": "080f96a5634dd363cc92956dad53c361c95265edeb6c02919b0728df85005fc9",
+  "default-on": false,
+  "models": [],
+  "checks": {
+    "activation": "RHP01 2026-11-04 v1.16.0 run with RAD_ROUTING_EVIDENCE=1: rank-0 teardown RHP01 phase counters included prefill issued=3696/credited=3696, decode issued=26736/credited=26640/pending=96; overwritten=0. Sources: docs/planning/active/patching-radiance-heat-placement/RHP01.md ## Notes, package SUMMARY.md ## Outcome. Recorded on v1.16.0; NOT a v1.17 hardware reproduction.",
+    "mechanics": "Radiance patch-package fixtures, rad0010 patch and independent synthetic oracle tests, and repository patch-lint, card-free; these are mechanics only."
+  }
+}

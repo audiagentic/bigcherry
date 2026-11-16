@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:fe758c1ecfb394cbe9369ea02bb1db4135c772d5a57a366c13dc150909a8311f";
+inline constexpr std::string_view kFingerprint = "sha256:d439cbd13de35ccb7509691fb07fed93e44cdc15b0948556d1b2cf4e29e265c8";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:e52e534c9de998672eb510774206eac461d9e6f45f91fad251bd68cdee658ba2";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:d955b696c1508d799aaff6d539a9d68c2af36b6d1b7662323eee79a0e930106b";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -106,8 +106,15 @@ enum class NgramPlacement : uint8_t { kRam, kDisk, kVram, kAuto };
 inline constexpr std::array<std::string_view, 4> kNgramPlacementNames = {"ram", "disk", "vram", "auto"};
 
 // KvCacheDtype: KV cache data type (`--kv-cache-dtype`).
-enum class KvCacheDtype : uint8_t { kBf16, kFp8, kFp8V4, kK6V4 };
-inline constexpr std::array<std::string_view, 4> kKvCacheDtypeNames = {"bf16", "fp8", "fp8_v4", "k6_v4"};
+enum class KvCacheDtype : uint8_t { kBf16, kFp8, kFp8V4, kK6V4, kBf16Fp8, kBf16I8 };
+inline constexpr std::array<std::string_view, 6> kKvCacheDtypeNames = {
+    "bf16",
+    "fp8",
+    "fp8_v4",
+    "k6_v4",
+    "bf16_fp8",
+    "bf16_i8",
+};
 
 // PrefixResume: Prefix resume policy (`--prefix-resume`).
 enum class PrefixResume : uint8_t { kNearest, kExact };

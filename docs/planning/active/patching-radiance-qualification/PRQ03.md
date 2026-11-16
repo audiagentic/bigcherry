@@ -75,3 +75,12 @@ patch-status shows no untested radiance patch without a decision recorded in thi
 - rad0003_mtp_full_head_switch (experiment only): no acceptance gain (0.63-0.65 vs 0.62-0.64). Decision: reject; needs a reviewed transition record.
 - rad0007_hc_pf2_fp8_down: still about 1.9x slower than the bf16 path after tuning (999.6 vs 530.7 us at M=2048). Decision: reject unless a new kernel shape; needs a reviewed transition record.
 - rad0001, rad0034, rad0035: superseded; state only.
+
+## Outcome 2026-11-16
+
+- rad0030_int8_pipelined_prefill: validated (#992) on a relative KLD gate against the VTP36 BF16 reference, per owner approval; the VTP14 BF16 reference was not on disk.
+- rad0036_prefill_governor: validated (#992); the optimization tag was dropped (#991) because no llama.cpp native arm applies.
+- rad0005_mp4_ffmpeg6_writer: compiled and exercised against FFmpeg 6; validated (#993).
+- rad0003_mtp_full_head_switch and rad0007_hc_pf2_fp8_down: remain in progress, no rejection recorded (owner decision).
+- rad0004, rad0010 (diagnostic) and rad0006 (superseded): handled by PRQ05.
+- The production exception list (untested-in-production.toml) is empty; PRQ05 replaces it with source classes.
