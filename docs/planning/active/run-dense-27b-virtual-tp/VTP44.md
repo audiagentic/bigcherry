@@ -48,6 +48,8 @@ Patch B2, rad0042_kv_b16_selftest (2026-11-17): the device cases for rad0041's r
 
 Device result (2026-11-16, DEVICE-AB.md): r4d_selftest on the R9700 with rad0040/41/42 applied: 0 failures, 248 skipped (baseline 246, the two extra are the gqa6 block-4 fused rows with no smoke case, as for fp8v4 / k6v4); every baseline `ok` line still `ok`; 274 new `ok` lines for the new rows including the gqa12 fused byte-identity cases. Not yet: 27B KLD equality for patch A, libr3 gfx1100 device run, Flash-Next KLD / speed / identity.
 
+Flash-Next KLD (2026-11-17, FLASHNEXT-KLD.md): short corpus bf16_i8 0.0446, bf16_fp8 0.0495, fp8 0.0539 against a bit-identical bf16 repeat; but re-chunking the plain bf16 cache alone gives 0.037 on the same documents, the band RAD39 recorded. Placement was ruled out (pinned run identical). The 27B bar does not apply to this model.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
@@ -71,7 +73,7 @@ L. Risks: option bits and tile shapes at gqa12 differ (spills near the 256-VGPR 
 - [x] GPT design review 1 findings resolved in this plan before implementation.
 - [ ] A single KV-layout descriptor table drives names, row sizes, probe, bringup, streaming refusal and the serving enum; no per-plugin lists remain.
 - [ ] The refactor of the gqa6 rows is proven unchanged (row-table dump, selftests, 27B KLD).
-- [ ] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache.
+- [ ] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache. KLD done 2026-11-17 (FLASHNEXT-KLD.md): it sits inside Flash-Next's arithmetic-noise band, so it cannot judge KV error; a noise-immune probe and the speed A/B remain.
 - [ ] An unsupported (layout, head_dim, gqa, block, op) refuses at startup naming the tuple.
 - [ ] libr3 rewrites are per template with counts and an instantiation inventory check; model-constant allowlist entries added by VTP43 are removed or reduced.
 - [ ] rad0037/38 promoted through the lightweight tier with two named models, or the gap recorded.
