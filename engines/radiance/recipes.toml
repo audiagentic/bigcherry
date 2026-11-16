@@ -31,6 +31,7 @@ patches = [
   "rad0033_ts3_once",
   "rad0028_rank_consistent_block_drafts",
   "rad0029_rank_own_split",
+  "rad0012_helper_kernel_config",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
@@ -70,7 +71,7 @@ patches = []
 required-state = "untested"
 
 [patch-set.helper-config]
-patches = ["rad0012_helper_kernel_config"]
+patches = []
 required-state = "untested"
 
 # Mixed-architecture tensor parallelism (VTP14), each patch inert until its option is given: per-rank kernel code
