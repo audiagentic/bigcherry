@@ -227,7 +227,11 @@ if(BUILD_TESTING)
   get_property(_bc_tests DIRECTORY PROPERTY TESTS)
   foreach(_bc_test IN LISTS _bc_tests)
     if(TARGET ${_bc_test})
-      target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+      get_target_property(_bc_test_type ${_bc_test} TYPE)
+      # Script guards are utility targets: nothing to compile.
+      if(NOT _bc_test_type STREQUAL "UTILITY")
+        target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+      endif()
     endif()
     # The tests resolve the repository's example layouts; the binaries have no built-in layouts (BIGCHERRY_LAYOUTS).
     set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT
