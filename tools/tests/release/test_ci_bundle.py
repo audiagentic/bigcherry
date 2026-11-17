@@ -12,6 +12,7 @@ from bigcherry.release import ci_bundle as cb
 from bigcherry.release import runtime_assets as assets
 
 ACTUAL_BUILD_INPUTS_TREE = cb.build_inputs_tree
+ACTUAL_TAGGED_BUILD_INPUTS_TREE = cb.tagged_build_inputs_tree
 
 ROOT = Path(__file__).resolve().parents[2]
 TAG = "bc-radiance-1170.12.0"
@@ -54,6 +55,9 @@ class CiBundleTests(unittest.TestCase):
             patch = mock.patch.object(target, name, return_value=value)
             patch.start()
             self.addCleanup(patch.stop)
+        tagged_key = mock.patch.object(cb, "tagged_build_inputs_tree", return_value="e" * 64)
+        tagged_key.start()
+        self.addCleanup(tagged_key.stop)
         self.addCleanup(self.temp.cleanup)
 
     def test_image_rocm_version_is_read_from_the_dockerfile(self):
@@ -96,6 +100,88 @@ class CiBundleTests(unittest.TestCase):
         (self.build / assets.BUILD_METADATA).unlink()
         with self.assertRaisesRegex(assets.BundleError, "missing runtime requirement"):
             cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
+
+    def verify_staged(self, release_tag: str, stage: Path) -> dict:
+        with mock.patch.object(assets, "tag_identity", return_value=TREE_ID), \
+             mock.patch.object(cb, "tagged_config",
+                               side_effect=lambda root, tag, name:
+                               (self.root / "engines/radiance/configs" / name).read_bytes()):
+            return cb.verify_publish_candidate(release_tag, stage, root=self.root)
+
+    def test_final_upload_gate_verifies_actual_asset_without_sdk(self):
+        receipt = cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
+        stage = self.work / "release-assets" / TAG
+        self.assertEqual(self.verify_staged(TAG, stage), receipt)
+        self.assertTrue((stage / receipt["name"]).is_file())
+
+    def test_final_upload_gate_refuses_script_files_checksum_and_tag_confusion(self):
+        receipt = cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
+        stage = self.work / "release-assets" / TAG
+        record = stage / (receipt["name"][:-len(".tar.gz")] + assets.CI_RECEIPT_SUFFIX)
+        archive = stage / receipt["name"]
+        checksum = stage / receipt["checksum_name"]
+        extra = stage / "setup.py"
+        extra.write_text("print('unreviewed')")
+        with self.assertRaisesRegex(cb.CiBundleError, "unexpected release files"):
+            self.verify_staged(TAG, stage)
+        extra.unlink()
+        original_receipt = record.read_bytes()
+        try:
+            record.write_text(json.dumps({**receipt, "release_tag": "bc-radiance-1170.91.0"}))
+            with self.assertRaisesRegex(cb.CiBundleError, "schema, scope, tag"):
+                self.verify_staged(TAG, stage)
+            record.write_bytes(original_receipt)
+            record.write_text(json.dumps({**receipt, "runtime_key": {**receipt["runtime_key"],
+                                                                    "payload_contract": "0" * 64}}))
+            with self.assertRaisesRegex(cb.CiBundleError, "runtime key"):
+                self.verify_staged(TAG, stage)
+            record.write_text(json.dumps({**receipt, "runtime_key": {**receipt["runtime_key"],
+                                                                    "build_inputs": "0" * 64}}))
+            with self.assertRaisesRegex(cb.CiBundleError, "runtime key"):
+                self.verify_staged(TAG, stage)
+            record.write_text(json.dumps({**receipt, "engine_tree": "0" * 40}))
+            with self.assertRaisesRegex(cb.CiBundleError, "runtime key"):
+                self.verify_staged(TAG, stage)
+        finally:
+            record.write_bytes(original_receipt)
+        original_checksum = checksum.read_bytes()
+        try:
+            checksum.write_text("0" * 64 + "  " + archive.name + "\n")
+            with self.assertRaisesRegex(cb.CiBundleError, "checksum differs"):
+                self.verify_staged(TAG, stage)
+        finally:
+            checksum.write_bytes(original_checksum)
+        with archive.open("ab") as stream:
+            stream.write(b"tampered")
+        with self.assertRaisesRegex(cb.CiBundleError, "tag-bound digest"):
+            self.verify_staged(TAG, stage)
+
+    def test_final_upload_gate_accepts_only_verified_same_tree_reuse(self):
+        source = "bc-radiance-1170.10.0"
+        receipt = cb.pack_and_verify(source, root=self.root, work_root=self.work, sdk=self.sdk)
+        stage = self.work / "release-assets" / source
+        new = {**receipt, "release_tag": TAG, "reused_from": source}
+        record = stage / (receipt["name"][:-len(".tar.gz")] + assets.CI_RECEIPT_SUFFIX)
+        record.write_text(json.dumps(new))
+        self.assertEqual(self.verify_staged(TAG, stage), new)
+        original = assets.tag_identity
+        def different_tree(root, tag):
+            return TREE_ID if tag == TAG else {"engine_tree": "a" * 40, "config_tree": "c" * 40}
+        with mock.patch.object(assets, "tag_identity", side_effect=different_tree), \
+             mock.patch.object(cb, "tagged_config",
+                               side_effect=lambda root, tag, name:
+                               (self.root / "engines/radiance/configs" / name).read_bytes()), \
+             self.assertRaisesRegex(cb.CiBundleError, "source trees"):
+            cb.verify_publish_candidate(TAG, stage, root=self.root)
+        self.assertIs(assets.tag_identity, original)
+
+    def test_final_upload_gate_rechecks_tagged_rsc12_bytes(self):
+        cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
+        stage = self.work / "release-assets" / TAG
+        with mock.patch.object(assets, "tag_identity", return_value=TREE_ID), \
+             mock.patch.object(cb, "tagged_config", return_value=b"altered tagged config"), \
+             self.assertRaisesRegex(cb.CiBundleError, "config differs from tagged source"):
+            cb.verify_publish_candidate(TAG, stage, root=self.root)
 
     def test_a_tampered_archive_is_not_kept_silently(self):
         original = assets.restore
@@ -228,7 +314,9 @@ class CiBundleTests(unittest.TestCase):
         change(platform_file, "platform-v1")
         git("add", ".")
         git("commit", "-qm", "fixture")
+        git("tag", TAG)
         before = ACTUAL_BUILD_INPUTS_TREE(repo)
+        self.assertEqual(ACTUAL_TAGGED_BUILD_INPUTS_TREE(repo, TAG), before)
         change(platform_file, "platform-v2")
         git("add", ".")
         git("commit", "-qm", "platform only")
@@ -237,6 +325,7 @@ class CiBundleTests(unittest.TestCase):
         git("add", ".")
         git("commit", "-qm", "engine build change")
         self.assertNotEqual(ACTUAL_BUILD_INPUTS_TREE(repo), before)
+        self.assertEqual(ACTUAL_TAGGED_BUILD_INPUTS_TREE(repo, TAG), before)
         after = ACTUAL_BUILD_INPUTS_TREE(repo)
         change(".github/docker/radiance-build/fixture", "image v2")
         git("add", ".")

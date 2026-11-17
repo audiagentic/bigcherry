@@ -1,12 +1,12 @@
 name: Radiance release bundle
 
 # Produces a bc-radiance-* engine bundle from the tagged source with ROCm 7.2.4;
-# card-free component tests precede packaging. The verified engine runtime includes
-# bin/radiance, radiance_home/bin/bc-serve, helpers and plugins, but excludes rad-*
-# tools, r4d_selftest and launcher/layout/platform sources. Archive, checksum and
-# receipt are published together. A tagged release-install build can be launched
-# with tools/lab/radiance/launch-flashnext-best.sh and its platform tooling/layouts,
-# model and host SDK; the archive alone is not a self-contained launch environment.
+# card-free component tests precede packaging. The single engine asset contains
+# binaries/data: radiance, bc-serve, bc-release, helpers/plugins, and committed
+# RSC12 configs. It has no Python, shell launcher or platform package. Archive,
+# checksum and tag-bound receipt are published together after the exact offline
+# file/byte/interpreter/source gate. This does not declare RSC02 step 6 production
+# startup/health parity complete; the older Python launcher remains another lane.
 #
 # Most radiance releases change only documentation or platform tooling, so the runtime is keyed on engine/config trees,
 # compile-affecting build/source/patch inputs, payload manifest and ROCm image version (tools/bigcherry/release/ci_bundle.py). A release whose key equals an earlier release's
@@ -61,6 +61,7 @@ jobs:
           path: src
       - uses: actions/checkout@v4
         with:
+          ref: main
           path: tooling
       - name: Is the runtime already bundled?
         id: plan
@@ -97,6 +98,18 @@ jobs:
         with:
           name: radiance-release-bundle
           path: bundle
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: tooling
+          fetch-depth: 0
+      - name: Reject Python, shell, identity or digest drift before release upload
+        env:
+          TAG: ${{ needs.plan.outputs.tag }}
+          PYTHONPATH: tooling/tools
+        run: |
+          set -eu
+          python3 -m bigcherry --engine radiance release-bundle "$TAG" --root tooling --verify-publish-dir bundle
       - name: Attach the bundle to the release
         env:
           GH_TOKEN: ${{ github.token }}
@@ -115,6 +128,11 @@ jobs:
     permissions:
       contents: write
     steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+          path: tooling
+          fetch-depth: 0
       - name: Attach the earlier bundle of the same runtime
         env:
           GH_TOKEN: ${{ github.token }}
@@ -134,6 +152,10 @@ jobs:
           receipt["reused_from"] = source          # ... and the release whose archive it is (bundle.json names that one)
           json.dump(receipt, open(path, "w"), sort_keys=True, indent=1)
           PY
+          # Reuse must pass the same archive/file/source/no-interpreter gate
+          # after binding the old archive to this newly selected exact tag.
+          PYTHONPATH="$GITHUB_WORKSPACE/tooling/tools" python3 -m bigcherry --engine radiance release-bundle "$TAG" \
+            --root "$GITHUB_WORKSPACE/tooling" --verify-publish-dir .
           gh release upload "$TAG" bigcherryrad-*.tar.gz bigcherryrad-*.tar.gz.sha256 bigcherryrad-*.receipt.json --repo "$GITHUB_REPOSITORY"
 
   # Retention (owner decision): keep the bundles of the newest 10 distinct runtimes (a reused bundle counts once), always the

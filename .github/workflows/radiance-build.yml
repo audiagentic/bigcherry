@@ -216,6 +216,8 @@ jobs:
         if: inputs.bundle_tag != ''
         uses: actions/checkout@v4
         with:
+          ref: main
+          fetch-depth: 0  # final gate reads refs/tags/<selected engine tag>
           path: tooling
 
       - name: Pack and verify the runtime bundle
@@ -230,6 +232,16 @@ jobs:
             git config --global --add safe.directory /src/tooling
             PYTHONPATH=/src/tooling/tools python3 -m bigcherry --engine radiance release-bundle "$BUNDLE_TAG" --root /src --work /src/work --sdk /opt/rocm-7.2.4
           '
+
+      - name: Enforce exact tag-bound Python-free archive before upload artifact
+        if: inputs.bundle_tag != ''
+        env:
+          BUNDLE_TAG: ${{ inputs.bundle_tag }}
+          PYTHONPATH: tooling/tools
+        run: |
+          set -eu
+          python3 -m bigcherry --engine radiance release-bundle "$BUNDLE_TAG" --root . \
+            --verify-publish-dir "work/release-assets/$BUNDLE_TAG"
 
       - name: Hand on the runtime bundle
         if: inputs.bundle_tag != ''
