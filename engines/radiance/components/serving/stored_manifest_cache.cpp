@@ -10,8 +10,10 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <stdexcept>
 #include <string>
+#include <sys/stat.h>
 #include <system_error>
 #include <utility>
 
@@ -39,15 +41,89 @@ void check_filename(const std::string& filename) {
         filename.rfind("manifest-", 0) != 0 || path.extension() != ".json")
         throw std::runtime_error("stored manifest index has unsafe filename");
 }
+
+int64_t nanoseconds(const timespec& timestamp) {
+    constexpr int64_t kBillion = 1000000000LL;
+    if (timestamp.tv_nsec < 0 || timestamp.tv_nsec >= kBillion)
+        throw std::runtime_error("file metadata has an invalid nanosecond timestamp");
+    const int64_t sec = static_cast<int64_t>(timestamp.tv_sec);
+    if (sec > (INT64_MAX - timestamp.tv_nsec) / kBillion || sec < (INT64_MIN + timestamp.tv_nsec) / kBillion)
+        throw std::runtime_error("file metadata timestamp is out of range");
+    return sec * kBillion + timestamp.tv_nsec;
+}
+
+FileStamp file_stamp(const std::filesystem::path& path) {
+    struct stat metadata{};
+    if (::stat(path.c_str(), &metadata) != 0 || !S_ISREG(metadata.st_mode) || metadata.st_size < 0)
+        throw std::runtime_error("model artifact must be a stat-able ordinary file " + path.string());
+    return FileStamp{static_cast<uint64_t>(metadata.st_dev), static_cast<uint64_t>(metadata.st_ino),
+                     static_cast<uint64_t>(metadata.st_size), nanoseconds(metadata.st_mtim),
+                     nanoseconds(metadata.st_ctim)};
+}
+
+uint64_t unsigned_field(const Json& input, const char* key) {
+    if (!input.contains(key) || !input.at(key).is_string())
+        throw std::runtime_error(std::string("stored model stat lacks ") + key);
+    const std::string text = input.at(key).get<std::string>();
+    size_t end = 0;
+    uint64_t result = 0;
+    try {
+        result = std::stoull(text, &end);
+    } catch (const std::exception&) {
+        throw std::runtime_error(std::string("stored model stat has invalid ") + key);
+    }
+    if (end != text.size() || std::to_string(result) != text)
+        throw std::runtime_error(std::string("stored model stat has noncanonical ") + key);
+    return result;
+}
+
+int64_t signed_field(const Json& input, const char* key) {
+    if (!input.contains(key) || !input.at(key).is_string())
+        throw std::runtime_error(std::string("stored model stat lacks ") + key);
+    const std::string text = input.at(key).get<std::string>();
+    size_t end = 0;
+    int64_t result = 0;
+    try {
+        result = std::stoll(text, &end);
+    } catch (const std::exception&) {
+        throw std::runtime_error(std::string("stored model stat has invalid ") + key);
+    }
+    if (end != text.size() || std::to_string(result) != text)
+        throw std::runtime_error(std::string("stored model stat has noncanonical ") + key);
+    return result;
+}
+
+FileStamp parse_stamp(const Json& record) {
+    if (!record.is_object() || record.size() != 5)
+        throw std::runtime_error("stored model stat must have five identity fields");
+    return FileStamp{unsigned_field(record, "device"), unsigned_field(record, "inode"),
+                     unsigned_field(record, "size"), signed_field(record, "mtime_ns"),
+                     signed_field(record, "ctime_ns")};
+}
+
+Json write_stamp(const FileStamp& stamp) {
+    return {{"device", std::to_string(stamp.device)},
+            {"inode", std::to_string(stamp.inode)},
+            {"size", std::to_string(stamp.size)},
+            {"mtime_ns", std::to_string(stamp.mtime_ns)},
+            {"ctime_ns", std::to_string(stamp.ctime_ns)}};
+}
+
 } // namespace
 
 std::string complete_file_identity(const std::filesystem::path& path) {
+    // The historical v1 chunked-file digest is kept BYTE FOR BYTE: only the
+    // accumulator implementation changes. Hashing its 93-byte records as
+    // produced avoids O(model size / MiB) retention of chunk hashes.
+    const FileStamp before = file_stamp(path);
     std::ifstream in(path, std::ios::binary);
     if (!in)
         throw std::runtime_error("cannot open static input file " + path.string());
-    std::string accumulator = "bigcherry/rsc12/chunked-file-v1\n";
+    Sha256 accumulator;
+    accumulator.update("bytes=" + std::to_string(before.size) + "\n");
+    accumulator.update("bigcherry/rsc12/chunked-file-v1\n");
     std::string chunk(1024ULL * 1024ULL, '\0');
-    uint64_t size = 0;
+    uint64_t read_bytes = 0;
     for (;;) {
         in.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
         const std::streamsize count = in.gcount();
@@ -55,17 +131,40 @@ std::string complete_file_identity(const std::filesystem::path& path) {
             throw std::runtime_error("cannot read static input file " + path.string());
         if (count == 0)
             break;
-        if (size > UINT64_MAX - static_cast<uint64_t>(count))
+        if (read_bytes > UINT64_MAX - static_cast<uint64_t>(count))
             throw std::runtime_error("static input file size overflows");
-        size += static_cast<uint64_t>(count);
-        accumulator += std::to_string(static_cast<uint64_t>(count)) + ":" +
-                       sha256_hex(chunk.substr(0, static_cast<size_t>(count))) + "\n";
+        read_bytes += static_cast<uint64_t>(count);
+        accumulator.update(std::to_string(static_cast<uint64_t>(count)));
+        accumulator.update(":");
+        accumulator.update(sha256_hex(std::string(chunk.data(), static_cast<size_t>(count))));
+        accumulator.update("\n");
         if (in.eof())
             break;
     }
-    if (!in.eof() && in.fail())
-        throw std::runtime_error("cannot finish static input file " + path.string());
-    return sha256_hex("bytes=" + std::to_string(size) + "\n" + accumulator);
+    if ((!in.eof() && in.fail()) || read_bytes != before.size || !(file_stamp(path) == before))
+        throw std::runtime_error("static input file changed during full fingerprint " + path.string());
+    return accumulator.hex_digest();
+}
+
+ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
+                                    FullFileReader full_reader) {
+    // ctime_ns cannot be restored by normal in-place writes: even a same-size
+    // write followed by a manual mtime reset changes this identity. An actor
+    // capable of forging kernel inode/ctime fields is outside the threat model.
+    const FileStamp before = file_stamp(model);
+    if (std::filesystem::exists(index)) {
+        if (!std::filesystem::is_regular_file(index) || std::filesystem::is_symlink(index))
+            throw std::runtime_error("stored model identity index is not an ordinary file");
+        const StoredManifestIndex recorded = read_stored_index(index);
+        if (recorded.model_stamp && recorded.model_stamp.value() == before && !recorded.model_digest.empty())
+            return {recorded.model_digest, before};
+    }
+    const std::string digest = full_reader ? full_reader.require("stored.model.full_fingerprint", model)
+                                           : complete_file_identity(model);
+    check_digest(digest, "full model identity");
+    if (!(file_stamp(model) == before))
+        throw std::runtime_error("model artifact changed while calculating full identity");
+    return {digest, before};
 }
 
 std::string static_resolution_key(const StaticResolutionInputs& in) {
@@ -84,8 +183,21 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
     }
     for (const auto* s : {&in.producer_digest, &in.engine_digest, &in.helper_digest, &in.model_digest})
         check_digest(*s, "static resolution key");
-    Json inputs = {{"version", 1},
-                   {"effective_values", in.effective_values},
+    // One projection for BOTH the new writer and stored replay. The owner
+    // supplies original resolved operator/config/variant values; S8's derived
+    // host pool/KV and the per-start POSIX transport never enter static
+    // identity. Explicit CLI memory overrides remain in operator_sets, and
+    // changed site/config bytes remain in file_digests.
+    Json static_values = in.effective_values;
+    if (static_values.contains("handoff") && static_values["handoff"].is_object())
+        static_values["handoff"].erase("shm");
+    if (static_values.contains("memory") && static_values["memory"].is_object()) {
+        static_values["memory"].erase("host_pool_mib");
+        static_values["memory"].erase("host_kv_mib");
+    }
+    Json inputs = {{"version", 2},
+                   {"effective_values", std::move(static_values)},
+                   {"operator_sets", in.operator_sets},
                    {"ordered_devices", in.ordered_devices},
                    {"producer", in.producer_digest},
                    {"engine", in.engine_digest},
@@ -114,22 +226,36 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
     std::ifstream in(index, std::ios::binary);
     if (!in)
         throw std::runtime_error("cannot open stored manifest index " + index.string());
-    std::string bytes{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-    if (!in.eof() && in.fail())
+    // Read at most one byte beyond the protocol bound. An untrusted sparse
+    // or corrupt index must never determine our allocation size.
+    std::string bytes(8193U, '\0');
+    in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    const auto consumed = in.gcount();
+    if (in.bad())
         throw std::runtime_error("cannot read stored manifest index " + index.string());
-    if (bytes.size() > 8192)
+    if (consumed > 8192)
         throw std::runtime_error("stored manifest index exceeds 8 KiB");
+    bytes.resize(static_cast<size_t>(consumed));
     const auto parsed = v2::parse_strict_json(bytes, index.string());
     if (!parsed)
         throw std::runtime_error("stored manifest index is invalid: " + parsed.error().message);
     const auto& j = parsed.value();
-    if (!j.is_object() || (j.size() != 4 && j.size() != 5) || j.value("version", 0) != 1 ||
-        !j.contains("key") || !j.at("key").is_string() || !j.contains("manifest") ||
-        !j.at("manifest").is_string() || !j.contains("digest") || !j.at("digest").is_string() ||
-        (j.size() == 5 && (!j.contains("model_digest") || !j.at("model_digest").is_string())))
+    if (!j.is_object() || j.value("version", 0) != 1 || !j.contains("key") || !j.at("key").is_string() ||
+        !j.contains("manifest") || !j.at("manifest").is_string() || !j.contains("digest") ||
+        !j.at("digest").is_string() ||
+        j.size() != 4U + size_t(j.contains("model_digest")) + size_t(j.contains("model_stat")) +
+                        size_t(j.contains("s8_digest")) ||
+        (j.contains("model_digest") && !j.at("model_digest").is_string()) ||
+        (j.contains("s8_digest") && !j.at("s8_digest").is_string()) ||
+        (j.contains("model_stat") && !j.contains("model_digest")))
         throw std::runtime_error("stored manifest index has an unknown or missing field");
     StoredManifestIndex result{j.at("key").get<std::string>(), j.at("manifest").get<std::string>(),
                                j.at("digest").get<std::string>(), j.value("model_digest", std::string())};
+    if (j.contains("model_stat"))
+        result.model_stamp = parse_stamp(j.at("model_stat"));
+    result.s8_digest = j.value("s8_digest", std::string());
+    if (!result.s8_digest.empty())
+        check_digest(result.s8_digest, "stored S8 writer evidence");
     check_digest(result.key, "stored key");
     check_digest(result.digest, "stored digest");
     if (!result.model_digest.empty())
@@ -148,6 +274,15 @@ void write_stored_index(const std::filesystem::path& index, const StoredManifest
         {"version", 1}, {"key", entry.key}, {"manifest", entry.manifest_filename}, {"digest", entry.digest}};
     if (!entry.model_digest.empty())
         record["model_digest"] = entry.model_digest;
+    if (entry.model_stamp) {
+        if (entry.model_digest.empty())
+            throw std::runtime_error("model stat requires the full model digest");
+        record["model_stat"] = write_stamp(*entry.model_stamp);
+    }
+    if (!entry.s8_digest.empty()) {
+        check_digest(entry.s8_digest, "stored S8 writer evidence");
+        record["s8_digest"] = entry.s8_digest;
+    }
     const std::string bytes = record.dump(2) + "\n";
     const std::filesystem::path temp = index.string() + ".tmp." + std::to_string(::getpid());
     const int fd = ::open(temp.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0600);
