@@ -6,16 +6,22 @@
 #include "v2/p1_live_room.h"
 
 #include <cstdint>
+#include <nlohmann/json.hpp>
 #include <string>
 #include <string_view>
 #include <variant>
-#include <nlohmann/json.hpp>
 
 namespace bc::serving::session {
 
 enum class ReplayRefusal : uint8_t {
-    bytes_or_digest, build, model, devices, calibration, execution_projection,
-    live_admission, missing_gate
+    bytes_or_digest,
+    build,
+    model,
+    devices,
+    calibration,
+    execution_projection,
+    live_admission,
+    missing_gate
 };
 
 struct ReplayError {
@@ -45,13 +51,12 @@ nlohmann::json execution_projection(const nlohmann::json& spec);
 // the original bytes and digest, then the owner verifies the current build,
 // model, selected-device identity, calibration, and RSC12 execution projection.
 ReplayResult authenticate_replay(std::string_view bytes, std::string_view source,
-                                  const ReplayEvidence& evidence);
+                                 const ReplayEvidence& evidence);
 
 // A separate live admission on EVERY replay. Called even when the stored
 // manifest's original facts and identity still match. It covers host RAM,
 // cgroup, pinned and memlock room and all selected engine/helper GPU cards.
-v2::Status check_replay_live_room(const v2::Manifest& manifest,
-                                  const nlohmann::json& fresh_facts,
+v2::Status check_replay_live_room(const v2::Manifest& manifest, const nlohmann::json& fresh_facts,
                                   const v2::P1LiveRoom& room);
 
 } // namespace bc::serving::session

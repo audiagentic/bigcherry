@@ -1,8 +1,8 @@
 // RSC02 S5: real session::serve -> replay_stored_manifest -> live admission
 // -> durable owner power admission -> helper/engine -> verified stop.
 // Only host facts and process binaries are injected. No fake planner and no GPUs.
-#include "session.h"
 #include "jcs.h"
+#include "session.h"
 
 #include <chrono>
 #include <csignal>
@@ -36,7 +36,8 @@ using namespace std::chrono_literals;
 
 namespace {
 void check(bool ok, const std::string& why) {
-    if (!ok) throw std::runtime_error(why);
+    if (!ok)
+        throw std::runtime_error(why);
 }
 struct Temp {
     fs::path root;
@@ -45,7 +46,8 @@ struct Temp {
         std::vector<char> chars(templ.begin(), templ.end());
         chars.push_back('\0');
         const char* p = ::mkdtemp(chars.data());
-        if (!p) throw std::runtime_error("mkdtemp failed");
+        if (!p)
+            throw std::runtime_error("mkdtemp failed");
         root = p;
     }
     ~Temp() {
@@ -55,7 +57,8 @@ struct Temp {
 };
 std::string read(const fs::path& path) {
     std::ifstream in(path, std::ios::binary);
-    if (!in) throw std::runtime_error("cannot read " + path.string());
+    if (!in)
+        throw std::runtime_error("cannot read " + path.string());
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 int port() {
@@ -80,7 +83,8 @@ Json fixture(int selected_port, const std::string& shm) {
     check(bc::serving::manifest_content_digest(document, &digest, &why), "digest: " + why);
     document["metadata"]["content_digest"] = digest;
     const auto parsed = v2::read_manifest(document.dump(2), path.string(), v2::PlanUse::serving);
-    if (!parsed) throw std::runtime_error(v2::render_human("fixture", parsed.error()));
+    if (!parsed)
+        throw std::runtime_error(v2::render_human("fixture", parsed.error()));
     return document;
 }
 ss::ReplayEvidence evidence(const Json& doc) {
@@ -91,7 +95,9 @@ ss::ReplayEvidence evidence(const Json& doc) {
     result.effective_spec = doc["spec"];
     Json gpus = Json::array();
     for (const auto& g : doc["spec"]["facts"]["gpus"])
-        gpus.push_back({{"bdf", g["bdf"]}, {"arch", g["arch"]}, {"hip_ordinal", g["hip_ordinal"]},
+        gpus.push_back({{"bdf", g["bdf"]},
+                        {"arch", g["arch"]},
+                        {"hip_ordinal", g["hip_ordinal"]},
                         {"vram_total_mib", g["vram"]["total_mib"]},
                         {"vram_available_mib", g["vram"]["total_mib"]}});
     result.fresh_facts = {{"gpus", gpus}, {"host", {{"memlock", {{"limit_mib", nullptr}}}}}};
@@ -110,8 +116,8 @@ struct Case {
 
     explicit Case(int case_id, bool bad_build = false, bool bad_room = false, bool refuse_power = false) {
         fs::create_directories(run);
-        original = fixture(port(), "/r3-serve-cardfree-" + std::to_string(::getpid()) +
-                                       "-" + std::to_string(case_id));
+        original =
+            fixture(port(), "/r3-serve-cardfree-" + std::to_string(::getpid()) + "-" + std::to_string(case_id));
         bytes = original.dump(2) + "\n";
         std::ofstream(stored, std::ios::binary) << bytes;
         const ss::ReplayEvidence facts = evidence(original);
@@ -121,7 +127,8 @@ struct Case {
         inputs.self = "/tmp/cardfree-bc-serve";
         inputs.replay_evidence = [facts, bad_build](const v2::Manifest&) {
             auto snapshot = facts;
-            if (bad_build) snapshot.producer_sha256 = std::string(64, 'd');
+            if (bad_build)
+                snapshot.producer_sha256 = std::string(64, 'd');
             return snapshot;
         };
         inputs.replay_live_room = [bad_room](const v2::Manifest&, const Json&) {
@@ -145,28 +152,28 @@ struct Case {
         // Real owner hooks: read the same strict-v2 manifest, make admission
         // durable in the session record, then allow the GPU child gate.
         session.power_hook.begin_manifest = [this, refuse_power](const fs::path& m,
-                                                                  v2::PlanUse use) -> v2::Status {
+                                                                 v2::PlanUse use) -> v2::Status {
             std::ofstream(trace, std::ios::app) << "begin\n";
             const auto checked = v2::load_manifest(m, use);
-            if (!checked) return checked.error();
+            if (!checked)
+                return checked.error();
             if (refuse_power)
-                return v2::make_error(v2::ConfigErrorCode::admission_refused,
-                                      "session.power", "injected power preflight refusal");
+                return v2::make_error(v2::ConfigErrorCode::admission_refused, "session.power",
+                                      "injected power preflight refusal");
             return std::nullopt;
         };
         session.power_hook.verify_serving = [this](const fs::path& m) -> v2::Status {
             std::ofstream(trace, std::ios::app) << "verify\n";
             const auto checked = v2::load_manifest(m, v2::PlanUse::serving);
-            if (!checked) return checked.error();
+            if (!checked)
+                return checked.error();
             return std::nullopt;
         };
         session.power_hook.gfxoff_window = [this](bool loaded) -> v2::Status {
             std::ofstream(trace, std::ios::app) << (loaded ? "idle\n" : "floor\n");
             return std::nullopt;
         };
-        session.power_hook.verified_exit = [this] {
-            std::ofstream(trace, std::ios::app) << "verified_exit\n";
-        };
+        session.power_hook.verified_exit = [this] { std::ofstream(trace, std::ios::app) << "verified_exit\n"; };
         session.power_hook.restore = [this]() -> v2::Status {
             std::ofstream(trace, std::ios::app) << "restore\n";
             return std::nullopt;
@@ -178,8 +185,11 @@ struct Case {
         check(pid >= 0, "fork");
         if (pid == 0) {
             int result = 1;
-            try { result = ss::serve(session); }
-            catch (const std::exception& e) { std::cerr << "owner: " << e.what() << '\n'; }
+            try {
+                result = ss::serve(session);
+            } catch (const std::exception& e) {
+                std::cerr << "owner: " << e.what() << '\n';
+            }
             std::_Exit(result);
         }
         bool reached = false;
@@ -213,20 +223,33 @@ struct Case {
         check(read(stored) == bytes, "stored manifest changed after replay attempt");
         const auto final = ss::read_record(run).value();
         if (succeed) {
-            check(final.at("power_admission").at("manifest") == stored.string(), "power bound to a different file");
+            check(final.at("power_admission").at("manifest") == stored.string(),
+                  "power bound to a different file");
             check(final.at("selection").at("replay") == true, "run record must distinguish replay");
             const auto& events = final.at("events");
             size_t admitted = events.size(), first_child = events.size();
             for (size_t i = 0; i < events.size(); ++i) {
                 const auto kind = events[i].at("kind").get<std::string>();
-                if (kind == "power_applied") admitted = i;
-                if (kind == "process_started" || kind == "helper_started" || kind == "engine_started")
+                if (kind == "power_applied")
+                    admitted = i;
+                if (kind == "started")
                     first_child = std::min(first_child, i);
             }
-            check(admitted < first_child, "durable power admission must precede every child");
+            check(first_child < events.size() && admitted < first_child,
+                  "durable power admission must precede every recorded child");
+            bool has_engine = false, has_helper0 = false, has_helper1 = false;
+            for (const auto& process : final.at("processes")) {
+                const std::string role = process.at("role").get<std::string>();
+                has_engine = has_engine || role == "engine";
+                has_helper0 = has_helper0 || role == "helper0";
+                has_helper1 = has_helper1 || role == "helper1";
+                check(role != "manifest writer" && process.value("exited", false),
+                      "replay never writes a manifest and reaps every child");
+            }
+            check(has_engine && has_helper0 && has_helper1,
+                  "actual replay must launch all helper and engine roles");
             const auto log = read(trace);
-            check(log.find("begin\n") < log.find("verify\n") &&
-                  log.find("verify\n") < log.find("restore\n"),
+            check(log.find("begin\n") < log.find("verify\n") && log.find("verify\n") < log.find("restore\n"),
                   "power admission, verification and restoration must be ordered");
             check(log.find("verified_exit\n") < log.find("restore\n"),
                   "restore must follow verified child exit");
@@ -234,8 +257,7 @@ struct Case {
             check(!final.contains("selection") || final.at("selection").is_null(),
                   "pre-start refusal cannot claim a serving selection");
             if (final.contains("processes"))
-                check(final.at("processes").empty(),
-                      "no child may start after static, live or power refusal");
+                check(final.at("processes").empty(), "no child may start after static, live or power refusal");
         }
         return WEXITSTATUS(status);
     }
@@ -252,7 +274,18 @@ int main() {
         no_room.run_owner(false);
         Case power_refused(4, false, false, true);
         power_refused.run_owner(false);
-        std::cout << "production owner replay: success, static, live and power refusals passed\n";
+        Case missing_power_hook(5);
+        missing_power_hook.session.power_hook.begin_manifest = {};
+        missing_power_hook.session.power_hook.verify_serving = {};
+        missing_power_hook.session.power_hook.verified_exit = {};
+        missing_power_hook.session.power_hook.restore = {};
+        missing_power_hook.run_owner(false);
+        Case altered_bytes(6);
+        altered_bytes.bytes = Json({{"bad", "tampered replacement"}}).dump() + "\n";
+        std::ofstream(altered_bytes.stored, std::ios::trunc) << altered_bytes.bytes;
+        altered_bytes.run_owner(false);
+        std::cout
+            << "production owner replay: success, static/live/power/missing-gate/tamper refusals passed\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "RSC02 S5 owner integration: " << e.what() << '\n';

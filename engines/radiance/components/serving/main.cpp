@@ -103,7 +103,8 @@ void usage() {
            "No process is started by these commands.\n"
            "\n"
            "Serving sessions (RSC02; engine-only configs for now):\n"
-           "  serve  --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root DIR] "
+           "  serve CONFIG --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root "
+           "DIR] "
            "[--set k=v]\n"
            "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
            "         --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B\n"
@@ -117,9 +118,13 @@ void usage() {
            "signal or a\n"
            "         child's exit; every child stopped and verified gone before it returns. Select the config "
            "with\n"
-           "         --set layout.name='\"NAME\"' (or the site/profile). Exit 0 stopped, 96 canary, 97 plan, "
-           "98 busy\n"
-           "  start  (serve's options)   serve detached; returns once the session runs (0) or has failed (1)\n"
+           "         positional CONFIG selects the RSC12 named config. Unchanged static inputs reuse an "
+           "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
+           "96 canary, 97 plan, 98 busy\n"
+           "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
+           "  start  --manifest FILE --run-dir DIR [--configs FILE|DIR]   replay exact strict-v2 bytes "
+           "after current static/live/power checks; refuses changed build/model/devices, missing "
+           "attestation or gates; never rewrites FILE\n"
            "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
@@ -131,6 +136,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     fs::path run_dir, engine_binary, stored_manifest;
     std::string config_name;
     std::string power_profile = "stock";
+    bool explicit_power_profile = false;
     fs::path live_policy_file, prompts_a, prompts_b, calibration_store;
     bool calibration_run = false;
     bool allow_power_apply = false;
@@ -158,14 +164,16 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         else if (arg == "--model-root") opts.model_root = need();
         else if (arg == "--calibration") opts.calibration_cache = need();
         else if (arg == "--set") opts.sets.push_back(need());
-        else if (arg == "--manifest") stored_manifest = need();
+        else if (arg == "--manifest")
+            stored_manifest = need();
         else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
-        }
-        else if (arg == "--engine-binary") engine_binary = need();
+        } else if (arg == "--engine-binary")
+            engine_binary = need();
         else if (arg == "--power-profile") {
             power_profile = need();
+            explicit_power_profile = true;
         } else if (arg == "--calibration-run") {
             calibration_run = true;
             passed.push_back(arg);
@@ -190,7 +198,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (run_dir.empty()) throw std::runtime_error(cmd + ": --run-dir DIR is required (the session's lock, socket, record, logs)");
     if (!config_name.empty() && !stored_manifest.empty())
         throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
-    if (!config_name.empty()) opts.sets.push_back("layout.name=" + Json(config_name).dump());
+    if (!config_name.empty())
+        opts.sets.push_back("layout.name=" + Json(config_name).dump());
     if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
         throw std::runtime_error("--manifest must name an existing regular file");
     run_dir = fs::absolute(run_dir);
@@ -272,6 +281,12 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     ss::EnginePlanInputs inputs;
     inputs.options = opts;
     inputs.stored_manifest = stored_manifest;
+    inputs.named_config = config_name;
+    inputs.explicit_power_profile = explicit_power_profile;
+    inputs.calibration_prompts_a = prompts_a;
+    inputs.calibration_prompts_b = prompts_b;
+    inputs.calibration_store = calibration_store;
+
     inputs.self = self;
     inputs.engine_binary = engine_binary;
     inputs.power_profile = power_profile;

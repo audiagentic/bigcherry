@@ -23,16 +23,17 @@ using Json = nlohmann::json;
 namespace {
 std::string load(const fs::path& name) {
     std::ifstream in(name, std::ios::binary);
-    if (!in) throw std::runtime_error("cannot read fixture");
+    if (!in)
+        throw std::runtime_error("cannot read fixture");
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 void require(bool ok, const std::string& why) {
-    if (!ok) throw std::runtime_error(why);
+    if (!ok)
+        throw std::runtime_error(why);
 }
 void refused(const ss::ReplayResult& result, ss::ReplayRefusal kind, v2::ConfigErrorCode code) {
     const auto* e = std::get_if<ss::ReplayError>(&result);
-    require(e && e->reason == kind && e->detail.code == code,
-            "unexpected replay result/typed refusal");
+    require(e && e->reason == kind && e->detail.code == code, "unexpected replay result/typed refusal");
 }
 ss::ReplayEvidence fresh(const Json& stored) {
     ss::ReplayEvidence e;
@@ -43,7 +44,8 @@ ss::ReplayEvidence fresh(const Json& stored) {
     e.effective_spec = stored.at("spec");
     Json gpus = Json::array();
     for (const auto& g : stored.at("spec").at("facts").at("gpus"))
-        gpus.push_back({{"bdf", g.at("bdf")}, {"arch", g.at("arch")},
+        gpus.push_back({{"bdf", g.at("bdf")},
+                        {"arch", g.at("arch")},
                         {"hip_ordinal", g.at("hip_ordinal")},
                         {"vram_total_mib", g.at("vram").at("total_mib")},
                         {"vram_available_mib", g.at("vram").at("total_mib")}});
@@ -98,10 +100,10 @@ int main() {
                 v2::ConfigErrorCode::calibration_invalid);
         e = evidence;
         e.effective_spec["processes"]["engine"]["server"]["port"] = 9999;
-        refused(ss::authenticate_replay(bytes, path.string(), e),
-                ss::ReplayRefusal::execution_projection, v2::ConfigErrorCode::plan_mismatch);
-        refused(ss::authenticate_replay(bytes, path.string(), {}),
-                ss::ReplayRefusal::missing_gate, v2::ConfigErrorCode::invalid_state);
+        refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
+                v2::ConfigErrorCode::plan_mismatch);
+        refused(ss::authenticate_replay(bytes, path.string(), {}), ss::ReplayRefusal::missing_gate,
+                v2::ConfigErrorCode::invalid_state);
 
         const auto& manifest = std::get<v2::Manifest>(accepted);
         v2::P1LiveRoom room{};

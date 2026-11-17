@@ -29,8 +29,8 @@
 
 #include "callback_boundary.h"
 #include "serving.h"
-#include "v2/manifest.h"
 #include "stored_manifest.h"
+#include "v2/manifest.h"
 
 namespace bc::serving::power {
 class SessionPower;
@@ -158,6 +158,10 @@ struct Hooks {
 struct PlanFailed : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
+struct ReplayFailed : PlanFailed {
+    ReplayRefusal reason;
+    ReplayFailed(ReplayRefusal why, std::string detail) : PlanFailed(std::move(detail)), reason(why) {}
+};
 
 /* Step 4 power transaction boundary. Step 2 never writes device settings.
  * Both operations are optional as a pair: apply before measuring and restore only AFTER every child exited,
@@ -236,6 +240,10 @@ struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
     std::filesystem::path self; // this bc-serve (writes the manifests)
     std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)
+    std::string named_config;              // explicitly selected new RSC12 config; enables static-key reuse
+    bool explicit_power_profile = false;   // only an explicit override may conflict with a stored profile
+    std::filesystem::path calibration_prompts_a, calibration_prompts_b, calibration_store;
+
     // OS/dependency seams: only the production default calls the real detector,
     // compiled-in resolver, model/build identity and live P1 probe. Tests supply
     // card-free facts but still call replay_stored_manifest through Session::plan.
