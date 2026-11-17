@@ -1,6 +1,8 @@
 #include "runtime_guards.h"
+#include "experts.h"
 #include "v2/runtime_receipt.h"
 
+#include <array>
 #include <cerrno>
 #include <charconv>
 #include <cstring>
@@ -90,28 +92,65 @@ class ReadMapping final {
 } // namespace
 
 HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::system_clock::time_point now,
-                                   std::chrono::nanoseconds max_age) {
+                                   std::chrono::nanoseconds max_age, const HistogramExpectation& expected,
+                                   HistogramIdentity* observed) {
+    // Do not trust the file's own length as its shape: that makes partial
+    // histograms and a prior run's unrelated counters look like observations.
+    constexpr uint64_t max_bytes = 64ULL * 1024 * 1024;
+    if (expected.layers == 0 || expected.experts == 0 ||
+        expected.layers > max_bytes / sizeof(uint32_t) / expected.experts ||
+        expected.launched_at.time_since_epoch().count() <= 0 || max_age.count() <= 0)
+        return HistogramVerdict::unsafe;
+    const uint64_t required = expected.layers * expected.experts * sizeof(uint32_t);
     const Descriptor fd(::open(rank_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
     if (fd.get() < 0)
         return errno == ENOENT ? HistogramVerdict::missing : HistogramVerdict::unsafe;
     struct stat before{}, after{};
-    if (::fstat(fd.get(), &before) != 0 || !S_ISREG(before.st_mode) || before.st_size <= 0 ||
-        before.st_size > static_cast<off_t>(64) * 1024 * 1024 ||
-        before.st_size % static_cast<off_t>(sizeof(uint32_t)) != 0 || before.st_mtim.tv_sec < 0 ||
-        before.st_mtim.tv_nsec < 0 || before.st_mtim.tv_nsec >= 1000000000L || max_age.count() <= 0)
+    if (::fstat(fd.get(), &before) != 0 || !S_ISREG(before.st_mode) ||
+        before.st_size != static_cast<off_t>(required) || before.st_mtim.tv_sec < 0 ||
+        before.st_mtim.tv_nsec < 0 || before.st_mtim.tv_nsec >= 1000000000L ||
+        before.st_mtim.tv_sec > std::numeric_limits<int64_t>::max() / 1000000000LL)
         return HistogramVerdict::unsafe;
-    if (::fstat(fd.get(), &after) != 0 || before.st_ino != after.st_ino || before.st_dev != after.st_dev ||
-        before.st_size != after.st_size || before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
-        before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
-        return HistogramVerdict::unsafe;
-    const auto age = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch());
-    if (before.st_mtim.tv_sec > std::numeric_limits<int64_t>::max() / 1000000000LL)
+    const HistogramIdentity identity{static_cast<uint64_t>(before.st_dev),
+                                     static_cast<uint64_t>(before.st_ino)};
+    if (expected.identity &&
+        (expected.identity->inode != identity.inode || expected.identity->device != identity.device))
         return HistogramVerdict::unsafe;
     const int64_t modified = (static_cast<int64_t>(before.st_mtim.tv_sec) * 1000000000LL) +
                              static_cast<int64_t>(before.st_mtim.tv_nsec);
-    if (modified > age.count())
+    const auto launch_ns =
+        std::chrono::duration_cast<std::chrono::nanoseconds>(expected.launched_at.time_since_epoch()).count();
+    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+    if (modified <= launch_ns)
+        return HistogramVerdict::unsafe; // previous run, even if it is otherwise still fresh
+    if (modified > now_ns)
         return HistogramVerdict::future;
-    return age.count() - modified > max_age.count() ? HistogramVerdict::stale : HistogramVerdict::fresh;
+    if (now_ns - modified > max_age.count())
+        return HistogramVerdict::stale;
+
+    // Read the *whole* fixed-size producer record before declaring evidence.
+    // Check metadata after reading, so truncated/in-flight writes fail closed.
+    std::array<uint32_t, 1024> counts{};
+    uint64_t bytes_read = 0;
+    bool observed_demand = false;
+    while (bytes_read < required) {
+        const size_t requested = static_cast<size_t>(std::min<uint64_t>(required - bytes_read, sizeof(counts)));
+        const ssize_t n = ::pread(fd.get(), counts.data(), requested, static_cast<off_t>(bytes_read));
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0 || static_cast<size_t>(n) % sizeof(uint32_t) != 0)
+            return HistogramVerdict::unsafe;
+        for (size_t i = 0; i < static_cast<size_t>(n) / sizeof(uint32_t); ++i)
+            observed_demand = observed_demand || counts[i] != 0;
+        bytes_read += static_cast<uint64_t>(n);
+    }
+    if (!observed_demand || ::fstat(fd.get(), &after) != 0 || before.st_ino != after.st_ino ||
+        before.st_dev != after.st_dev || before.st_size != after.st_size ||
+        before.st_mtim.tv_sec != after.st_mtim.tv_sec || before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
+        return HistogramVerdict::unsafe;
+    if (observed)
+        *observed = identity;
+    return HistogramVerdict::fresh;
 }
 
 ReplayVerdict replay_verdict(int64_t manifest_depth, bool profiled, std::string_view log) {
@@ -167,6 +206,14 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
             if (handoff.telemetry.histogram_file->empty())
                 return refuse("heat", "declared histogram file is empty");
             histogram_ = fs::path(*handoff.telemetry.histogram_file + ".rank0");
+            // The real engine records raw counts indexed by the authenticated
+            // model's routed layer and expert dimensions, not a generic blob.
+            bc::experts::Container model;
+            if (!model.open(manifest.spec.intent.model.c_str()))
+                return refuse("heat", "cannot derive histogram shape from authenticated model container");
+            heat_expectation_ = HistogramExpectation{model.layers, model.experts, plan.engine_launched_at, {}};
+            if (heat_expectation_.launched_at.time_since_epoch().count() <= 0)
+                return refuse("heat", "owner did not bind heat publication to this engine launch");
             // Startup heat age is bounded by the policy and the engine's
             // publication cadence; a temporarily idle engine gets a short
             // scheduling margin without turning an old file into evidence.
@@ -190,14 +237,18 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
     return poll();
 }
 
-v2::Status RuntimeGuards::inspect_heat() const {
+v2::Status RuntimeGuards::inspect_heat() {
     if (!histogram_)
         return std::nullopt;
-    const auto evidence = histogram_verdict(*histogram_, std::chrono::system_clock::now(), heat_age_budget_);
+    HistogramIdentity identity{};
+    const auto evidence = histogram_verdict(*histogram_, std::chrono::system_clock::now(), heat_age_budget_,
+                                            heat_expectation_, &identity);
     if (evidence != HistogramVerdict::fresh)
         return refuse(
             "heat", "manifest-declared engine rank0 heat histogram is absent, unsafe, stale or future-dated: " +
                         std::to_string(static_cast<int>(evidence)));
+    if (!heat_expectation_.identity)
+        heat_expectation_.identity = identity;
     return std::nullopt;
 }
 
