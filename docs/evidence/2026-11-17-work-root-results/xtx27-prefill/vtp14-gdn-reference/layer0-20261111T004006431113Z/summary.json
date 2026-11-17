@@ -1,0 +1,76 @@
+{
+  "status": "CARD_FREE_QWEN_GDN_MATH_AND_SHARD_CONTINUITY_PASS_NOT_GPU",
+  "source_sha256": "2e6f85f89f08e4791ac896cc55871534d4c553558631cdf622393369f24e0347",
+  "schema": "vtp14-gdn-partial-real-bf16-math-v1",
+  "reference_coefficients": {
+    "file": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/original-gdn-parameters.f32",
+    "sha256": "ca9d7adde7623c2dd0ce4ce3fab399469292f4c8df6092d959dab4bf2a88204f",
+    "format": "[48 A_log,48 dt_bias,128 norm_gain] FP32 little-endian"
+  },
+  "layer": 0,
+  "rows": 4,
+  "source": "original BF16 conv1d, A_log, dt_bias, norm; synthetic projected QKV/a/b/z",
+  "checkpoint_source_sha256": "803a2591c4f5e7b1c2a7bdbbad78bbd0b68acdd0deab9552933ee7c337489dad",
+  "parameter_hashes": {
+    "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+    "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+    "A_log": {
+      "source": "model.language_model.layers.0.linear_attn.A_log",
+      "sha256": "429d53cd15ec0ea1a2d638100c3bbdf8d53505e69110fb17ee09d055c1fdbd34",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        48
+      ]
+    },
+    "dt_bias": {
+      "source": "model.language_model.layers.0.linear_attn.dt_bias",
+      "sha256": "969ce6b2149d20f0c365373fd89613167e373905c15f0e1cf5af62adf52228de",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        48
+      ]
+    },
+    "norm": {
+      "source": "model.language_model.layers.0.linear_attn.norm.weight",
+      "sha256": "70d11f294923a94aac97bedd27e596dbf496746c6b9e3b2b7c38798a0d2522cc",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        128
+      ]
+    }
+  },
+  "global_vs_shard_bf16_conv_max_abs": 0.0,
+  "global_vs_shard_output_max_abs": 5.204170427930421e-18,
+  "global_vs_shard_state_max_abs": 8.673617379884035e-19,
+  "rank_results": {
+    "xtx0": {
+      "heads": 12,
+      "state_elements": 196608,
+      "output_sha256": "cbb4a0069ce3e40f2ce314203ed1be89b7da1f1730b305199986859ee2062a5e",
+      "layout": "[value_head, token, 128] FP32 little-endian",
+      "oracle_file": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-xtx0.f32"
+    },
+    "xtx1": {
+      "heads": 12,
+      "state_elements": 196608,
+      "output_sha256": "2f026b93edcb9ad52d1bc50d94fcb4a6eceb346632df89c49590782ef67768ac",
+      "layout": "[value_head, token, 128] FP32 little-endian",
+      "oracle_file": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-xtx1.f32"
+    },
+    "r9700": {
+      "heads": 24,
+      "state_elements": 393216,
+      "output_sha256": "2bd3f205800223e82ff102dac2ebda9a2da88b96519c23a4dfd8eaccc1370ca4",
+      "layout": "[value_head, token, 128] FP32 little-endian",
+      "oracle_file": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-r9700.f32"
+    }
+  },
+  "not_run": [
+    "GPU",
+    "actual QKV/a/b/z GEMMs",
+    "prefill KKT",
+    "speculative rollback",
+    "out projection",
+    "full model generation"
+  ]
+}

@@ -1,0 +1,91 @@
+{
+  "_comment": "RAD49: KL of the TP2 XTX layouts (PR #771 at bc88f4356: full-width-once helper rows, N helpers behind TP, engine native MoE) vs the R9700 alone, against the rad116 BF16 reference. Live policy off. Exact TP wire. Try 2: TP arms only, engine topology the XTX pair (absolute KL compared by hand with the R9700-alone control of runs/int4-kld: mean 0.06376, top-1 88.62%).",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "quality_only": true,
+  "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "server_args": [],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0,1",
+    "ROCR_VISIBLE_DEVICES": "0,1"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1100",
+      "gfx1100"
+    ],
+    "locators": [
+      "0000:03:00.0",
+      "0000:06:00.0"
+    ]
+  },
+  "quality": {
+    "reference_dir": "<work-root>/runs/rad116-kld/reference",
+    "control": "tp2xtx-r9700",
+    "timeout_s": 5400,
+    "args": [],
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    }
+  },
+  "arms": [
+    {
+      "name": "tp2xtx-r9700",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-tp2xtx-r9700",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk"
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null"
+      }
+    },
+    {
+      "name": "tp2xtx",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-tp2xtx",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk"
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null"
+      }
+    }
+  ]
+}

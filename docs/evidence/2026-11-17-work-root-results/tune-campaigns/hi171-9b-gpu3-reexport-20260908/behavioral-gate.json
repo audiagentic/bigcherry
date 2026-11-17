@@ -1,0 +1,92 @@
+{
+  "behavioral_gate_contract_version": "hi143-v1",
+  "corpus_content_digest": "45e88870533191789d0e1753a703620924933ae78ad5bc97b5e03316d8ac56f1",
+  "corpus_edition_id": "single-card-dense-v1",
+  "corpus_schema_version": 1,
+  "hard_fail": true,
+  "needs_throughput_adjudication": false,
+  "runtime_profile_digest": "8e0d6cf0c9e76d91ec9742d994d920e81a1a024f8a083933337550b8ce879b58",
+  "runtime_profile_name": "production-safe-single",
+  "selected_vectors": [
+    {
+      "applies_to": [
+        "dense-decode"
+      ],
+      "candidate_draft": [
+        0,
+        0
+      ],
+      "candidate_token_digest": "891bd10eaeedd072eb65a3500033d8a55db52c30da9d461d3b44986a8e312790",
+      "content_digest": "675b8f3dce4e5f82f101fa74aa0554c2df9f22f3a2085380f0e32e8bc7636cdb",
+      "first_output_divergence": 1,
+      "id": "single-card-dense-128-v1",
+      "n_predict": 128,
+      "native_draft": [
+        0,
+        0
+      ],
+      "native_token_digest": "173fc03af74dc63a2bbba05d654727cee05e20b241865967b6265b325c6227c6",
+      "prompt_sha256": "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f",
+      "provenance": "GP11 2026-09-06: production-safe-single had no behavioural gate; three Q6_K caches were promoted ungated",
+      "requirements": [],
+      "scenario": "long-prefill-dense",
+      "seed": 42,
+      "token_count": 128,
+      "verdict": "hard_fail"
+    },
+    {
+      "applies_to": [
+        "dense-decode"
+      ],
+      "candidate_draft": [
+        0,
+        0
+      ],
+      "candidate_token_digest": "a88430c3da5fc12f576120d2c915c3321ecaee995c24dd0ba8934e2aa4206974",
+      "content_digest": "b536ddc5e3a42cb104a63a859a0c33cb37551bd66a936232208176e9e288a565",
+      "first_output_divergence": 1,
+      "id": "single-card-dense-512-v1",
+      "n_predict": 512,
+      "native_draft": [
+        0,
+        0
+      ],
+      "native_token_digest": "8108c50f37af039ea0eb4691c7095db06d4c3e1414eb9883a9aef8f2af202ccd",
+      "prompt_sha256": "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f",
+      "provenance": "GP11 2026-09-06: generation-length coverage, mirroring qwen38-production-v2",
+      "requirements": [],
+      "scenario": "long-prefill-dense-tg512",
+      "seed": 42,
+      "token_count": 512,
+      "verdict": "hard_fail"
+    }
+  ],
+  "vectors": [
+    {
+      "candidate_draft": [
+        0,
+        0
+      ],
+      "first_output_divergence": 1,
+      "name": "single-card-dense-128-v1",
+      "native_draft": [
+        0,
+        0
+      ],
+      "verdict": "hard_fail"
+    },
+    {
+      "candidate_draft": [
+        0,
+        0
+      ],
+      "first_output_divergence": 1,
+      "name": "single-card-dense-512-v1",
+      "native_draft": [
+        0,
+        0
+      ],
+      "verdict": "hard_fail"
+    }
+  ]
+}

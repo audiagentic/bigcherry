@@ -1,0 +1,125 @@
+== before 1793893798
+MemFree:        82518292 kB
+MemAvailable:   86657636 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            111284 kB
+== t1 1793893803
+MemFree:        81145180 kB
+MemAvailable:   85675000 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 884368 kB RssAnon:	 414136 kB RssFile:	 252452 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 884500 kB RssAnon:	 414136 kB RssFile:	 252584 kB RssShmem:	 217780 kB 
+== t2 1793893808
+MemFree:        76899996 kB
+MemAvailable:   85491660 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 564108 kB RssAnon:	 290048 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t3 1793893813
+MemFree:        70751596 kB
+MemAvailable:   85546868 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565708 kB RssAnon:	 291648 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t4 1793893818
+MemFree:        64632796 kB
+MemAvailable:   85582796 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565708 kB RssAnon:	 291648 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t5 1793893823
+MemFree:        58406616 kB
+MemAvailable:   85553876 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565708 kB RssAnon:	 291648 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t6 1793893828
+MemFree:        52500804 kB
+MemAvailable:   85511372 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565708 kB RssAnon:	 291648 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t7 1793893833
+MemFree:        46857164 kB
+MemAvailable:   85466248 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565708 kB RssAnon:	 291648 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t8 1793893838
+MemFree:        40621852 kB
+MemAvailable:   85426640 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565708 kB RssAnon:	 291648 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t9 1793893843
+MemFree:        79470484 kB
+MemAvailable:   85438964 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565800 kB RssAnon:	 291740 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t10 1793893848
+MemFree:        75034056 kB
+MemAvailable:   85412800 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565800 kB RssAnon:	 291740 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t11 1793893853
+MemFree:        71488336 kB
+MemAvailable:   85423176 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 892688 kB RssAnon:	 422328 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892820 kB RssAnon:	 422328 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565800 kB RssAnon:	 291740 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t12 1793893858
+MemFree:        80678452 kB
+MemAvailable:   85292108 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            329060 kB
+helper 2148029 VmRSS:	 893060 kB RssAnon:	 422700 kB RssFile:	 252580 kB RssShmem:	 217780 kB 
+helper 2148470 VmRSS:	 892912 kB RssAnon:	 422420 kB RssFile:	 252712 kB RssShmem:	 217780 kB 
+helper 2148715 VmRSS:	 565800 kB RssAnon:	 291740 kB RssFile:	 56280 kB RssShmem:	 217780 kB 
+== t13 1793893864
+MemFree:        81615288 kB
+MemAvailable:   86230100 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            111280 kB
+== after 1793893864
+MemFree:        81616176 kB
+MemAvailable:   86230988 kB
+Unevictable:       27292 kB
+Mlocked:           27292 kB
+Shmem:            111280 kB

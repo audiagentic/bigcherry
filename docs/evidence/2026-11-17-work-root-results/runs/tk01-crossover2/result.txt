@@ -1,0 +1,44 @@
+new output_lane 3435 dn 862 n=5
+new output_lane 3435 gu 1179 n=5
+new output_lane 3439 dn 655 n=5
+new output_lane 3439 gu 1120 n=5
+new output_lane L104 dn 24996 n=5
+new output_lane L104 gu 84962 n=5
+new output_lane L117 dn 81602 n=5
+new output_lane L117 gu 213622 n=5
+new output_lane L130 dn 25575 n=5
+new output_lane L130 gu 90610 n=5
+new quad 3435 dn 1124 n=5
+new quad 3435 gu 1940 n=5
+new quad 3439 dn 577 n=5
+new quad 3439 gu 1154 n=5
+new quad L104 dn 14813 n=5
+new quad L104 gu 38822 n=5
+new quad L117 dn 52155 n=5
+new quad L117 gu 110327 n=5
+new quad L130 dn 14416 n=5
+new quad L130 gu 33932 n=5
+old output_lane 3435 dn 851 n=5
+old output_lane 3435 gu 1213 n=5
+old output_lane 3439 dn 682 n=5
+old output_lane 3439 gu 1208 n=5
+old output_lane L104 dn 26873 n=5
+old output_lane L104 gu 89109 n=5
+old output_lane L117 dn 83473 n=5
+old output_lane L117 gu 217012 n=5
+old output_lane L130 dn 26242 n=5
+old output_lane L130 gu 88480 n=5
+old quad 3435 dn 1196 n=5
+old quad 3435 gu 2070 n=5
+old quad 3439 dn 618 n=5
+old quad 3439 gu 1192 n=5
+old quad L104 dn 16021 n=5
+old quad L104 gu 40903 n=5
+old quad L117 dn 57005 n=5
+old quad L117 gu 123517 n=5
+old quad L130 dn 15708 n=5
+old quad L130 gu 37715 n=5
+old gu small 420 large -64155 crossover 76
+old dn small 141 large -15951 crossover 81
+new gu small 398 large -68704 crossover 75
+new dn small 92 large -16930 crossover 74

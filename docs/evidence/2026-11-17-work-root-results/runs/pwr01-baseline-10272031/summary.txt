@@ -1,0 +1,14 @@
+commit 3705ef5e8defb53a6631d9f684301bc593e2f638 lab(radiance): pwr02 sweep also sets the XTX voltage offset; pwr01 hashes decode text for identity across settings
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/67a435be11abe6053872355915df70a4/e315c3373c1f397eb16273556a7509ab
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+cpu_pkg             8.5         76.2         82.2          8.8
+gpu0                8.0        162.0        200.5          9.0
+gpu1                9.0        161.0        198.0         10.0
+gpu2               20.0        214.0        222.5         22.0
+gpu3               10.0         10.0         10.0         10.0
+total              55.5        623.2        713.2         59.8
+decode: 4096 tokens in 45.9 s = 89.2 tok/s, 6.984 J/token (all devices + CPU package)
+prefill: 136471 tokens in 41.3 s = 3304.4 tok/s, 0.216 J/token (all devices + CPU package)
+decode text: 2 distinct of 4 responses, reference fa9d2bb97dbb307f

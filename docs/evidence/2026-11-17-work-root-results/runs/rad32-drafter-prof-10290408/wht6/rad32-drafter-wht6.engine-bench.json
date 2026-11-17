@@ -1,0 +1,72 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "rad32-drafter-wht6",
+ "binary": "<work-root>/builds/b7f1b308faaed570146893553eef94cd/f3f192e291c9973fba5dbe33cb6eb3d0/bin/radiance",
+ "model": "<models-root>/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "extra_args": [
+  "--radiance-home",
+  "<work-root>/builds/b7f1b308faaed570146893553eef94cd/f3f192e291c9973fba5dbe33cb6eb3d0/radiance_home",
+  "--tp",
+  "2",
+  "--tp-wire",
+  "wht6",
+  "--kv-cache-dtype",
+  "fp8",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--profile-ops"
+ ],
+ "env": {},
+ "depths": [
+  2300
+ ],
+ "reps": 2,
+ "decode": 256,
+ "rows": [
+  {
+   "depth": 2300,
+   "rep": 0,
+   "prompt_tokens": 2577,
+   "completion_tokens": 256,
+   "ttft_s": 1.2046992778778076,
+   "prefill_tps": 2139.123055290305,
+   "decode_tps": 69.12365313424193,
+   "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Context\n\nThis document is a **real-hardware validation log** for a dual-GPU LLM i",
+   "error": null
+  },
+  {
+   "depth": 2300,
+   "rep": 1,
+   "prompt_tokens": 2576,
+   "completion_tokens": 256,
+   "ttft_s": 1.117722511291504,
+   "prefill_tps": 2304.6865156392782,
+   "decode_tps": 59.382252141330476,
+   "text_head": "\n\n# Summary of the Provided Technical Documentation\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Model Context\n- **Hardware**: Dual AMD RX 7900 X",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 1085,
+  "accepted": 362
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 10451218432",
+  "GPU[1] : VRAM Total Used Memory (B): 10451193856",
+  "GPU[2] : VRAM Total Used Memory (B): 59969536",
+  "GPU[3] : VRAM Total Used Memory (B): 16753586176"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

@@ -1,0 +1,126 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "exact-b2048",
+ "binary": "<work-root>/builds/f17f21fda44979e9abe84f13e96b8896/08b5dd81b4874390bf0cbf489db0d7df/bin/radiance",
+ "model": "<models-root>/radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8.rad",
+ "extra_args": [
+  "--embedding-placement",
+  "ram",
+  "--tp",
+  "2",
+  "--tp-wire",
+  "exact",
+  "--p2p",
+  "off",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--max-num-batched-tokens",
+  "2048",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "0"
+ ],
+ "env": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "depths": [
+  512,
+  2048,
+  6144
+ ],
+ "reps": 2,
+ "decode": 64,
+ "rows": [
+  {
+   "depth": 512,
+   "rep": 0,
+   "prompt_tokens": 703,
+   "completion_tokens": 64,
+   "ttft_s": 0.516167163848877,
+   "prefill_tps": 1361.9618783147232,
+   "decode_tps": 36.62345928575418,
+   "text_head": "\n\nHere is a detailed summary of the **Dual-XTX production-parity bench log**, broken down by context, methodology, and results.\n\n### 1. Context & Hardware\n*   *",
+   "error": null
+  },
+  {
+   "depth": 512,
+   "rep": 1,
+   "prompt_tokens": 707,
+   "completion_tokens": 64,
+   "ttft_s": 0.4964144229888916,
+   "prefill_tps": 1424.21325259484,
+   "decode_tps": 36.60003349171025,
+   "text_head": "\n\nHere is a detailed summary of the **Dual-XTX production-parity bench log**, broken down by context, methodology, and results.\n\n### 1. Context & Hardware\n*   *",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 0,
+   "prompt_tokens": 2307,
+   "completion_tokens": 64,
+   "ttft_s": 1.635282039642334,
+   "prefill_tps": 1410.765815360256,
+   "decode_tps": 35.83638369825962,
+   "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 1,
+   "prompt_tokens": 2303,
+   "completion_tokens": 64,
+   "ttft_s": 1.5906226634979248,
+   "prefill_tps": 1447.860672961551,
+   "decode_tps": 35.83057678380211,
+   "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 0,
+   "prompt_tokens": 6681,
+   "completion_tokens": 64,
+   "ttft_s": 4.77350640296936,
+   "prefill_tps": 1399.600091841101,
+   "decode_tps": 33.99862019522617,
+   "text_head": "\n\n# Detailed Summary: Dual-XTX Production Bench Log & BigCherry Build Campaign Handover\n\n## 1. Dual-XTX Production Bench Log (2026-08-19 \u2192 2026-08-27)\n\n### Hard",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 1,
+   "prompt_tokens": 6677,
+   "completion_tokens": 64,
+   "ttft_s": 4.753473520278931,
+   "prefill_tps": 1404.657030593535,
+   "decode_tps": 33.950150644785374,
+   "text_head": "\n\n# Summary: Dual-XTX Production Bench Log & BigCherry Build Campaign Handover\n\n## 1. Dual-XTX Production Bench Log (2026-08-19 \u2192 2026-08-27)\n\n### Hardware & Co",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 0,
+  "accepted": 0
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 15123619840",
+  "GPU[1] : VRAM Total Used Memory (B): 15123632128",
+  "GPU[2] : VRAM Total Used Memory (B): 59969536",
+  "GPU[3] : VRAM Total Used Memory (B): 17227776"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

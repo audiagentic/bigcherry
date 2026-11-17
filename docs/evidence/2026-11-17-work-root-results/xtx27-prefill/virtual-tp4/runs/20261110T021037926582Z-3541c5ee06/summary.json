@@ -1,0 +1,43 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP04_THREE_PHYSICAL_GPU_MICROBENCH",
+  "checkout": "0b0e74e195b3735be1dc6055cd70c93f2f163866",
+  "source_digest": "3541c5ee0656e1272b8150ae6f80a6f16926df97f7fce1abc992de93a7e6313e",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "local-64mib-32768lanes",
+      "kind": "local",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/3541c5ee0656e127/vtp04-local",
+        "--mib-per-shard",
+        "64",
+        "--lanes",
+        "32768",
+        "--iterations",
+        "5",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "local-64mib-32768lanes.stdout",
+      "stderr": "local-64mib-32768lanes.stderr"
+    },
+    {
+      "label": "host-f32-64rows",
+      "kind": "host_collective",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/3541c5ee0656e127/vtp04-host_collective",
+        "--rows",
+        "64",
+        "--iterations",
+        "5",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "host-f32-64rows.stdout",
+      "stderr": "host-f32-64rows.stderr"
+    }
+  ]
+}

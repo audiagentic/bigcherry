@@ -1,0 +1,86 @@
+{
+  "status": "ORIGINAL_BF16_QWEN_GDN_CORE_CPU_GLOBAL_SHARD_PASS_NOT_GPU",
+  "writer_sha256": "f8b829cda5c34e0f6a4ed70d457a2511f7cad7db1c1d68a0d706aed41473e781",
+  "schema": "vtp15-qwen38-27b-original-bf16-GDN-core-CPU-global-shard-v1",
+  "rows": 4,
+  "layer": 0,
+  "weight_pack_sha256": "1a80f63890070f1c8ea546c115e7185319a7ddc852d87f06c9d9677ef70cb274",
+  "projected_input_ref_sha256": "4c7001763b5e0a189c2b8913b056da0a4ad5bdfe29f8891190e711a29b4adba3",
+  "conv_pack_sha256": "d6665780592084bcb375e9257140118c7e8535d80a3ce6d5caebd9941994c4cb",
+  "parameter_hashes": {
+    "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+    "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+    "A_log": {
+      "source": "model.language_model.layers.0.linear_attn.A_log",
+      "sha256": "429d53cd15ec0ea1a2d638100c3bbdf8d53505e69110fb17ee09d055c1fdbd34",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        48
+      ]
+    },
+    "dt_bias": {
+      "source": "model.language_model.layers.0.linear_attn.dt_bias",
+      "sha256": "969ce6b2149d20f0c365373fd89613167e373905c15f0e1cf5af62adf52228de",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        48
+      ]
+    },
+    "norm": {
+      "source": "model.language_model.layers.0.linear_attn.norm.weight",
+      "sha256": "70d11f294923a94aac97bedd27e596dbf496746c6b9e3b2b7c38798a0d2522cc",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        128
+      ]
+    }
+  },
+  "global_rank_bf16_conv_max_abs": 0.0,
+  "global_rank_recurrent_output_max_abs": 2.220446049250313e-15,
+  "global_rank_recurrent_state_max_abs": 4.163336342344337e-17,
+  "original_checkpoint_projection_weights": true,
+  "original_checkpoint_conv_decay_norm": true,
+  "rank_outputs": {
+    "xtx0": {
+      "heads": 12,
+      "shape": [
+        12,
+        4,
+        128
+      ],
+      "bytes": 24576,
+      "sha256": "ab9216e5662a117e622bc5733af6c50846113a61bd5370f166e1d74199f73187",
+      "output": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T012015196547Z/gdn-core-xtx0.f32"
+    },
+    "xtx1": {
+      "heads": 12,
+      "shape": [
+        12,
+        4,
+        128
+      ],
+      "bytes": 24576,
+      "sha256": "06d602fe8b0be12e933680f14e242177e771263883345b26cd201d197a6b27fd",
+      "output": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T012015196547Z/gdn-core-xtx1.f32"
+    },
+    "r9700": {
+      "heads": 24,
+      "shape": [
+        24,
+        4,
+        128
+      ],
+      "bytes": 49152,
+      "sha256": "3b165eda9988c0a5e0915762d3c1e9d71f22cee8a8f87af2d4f9c94d9b518287",
+      "output": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T012015196547Z/gdn-core-r9700.f32"
+    }
+  },
+  "limitations": [
+    "synthetic initial hidden",
+    "no GPU core execution with real projections yet",
+    "no output projection",
+    "no multi-step cache continuation",
+    "no long-context prefill KKT",
+    "no full-model serving"
+  ]
+}

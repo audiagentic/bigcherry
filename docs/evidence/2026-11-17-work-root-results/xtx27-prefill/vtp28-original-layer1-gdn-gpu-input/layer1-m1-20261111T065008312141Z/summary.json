@@ -1,0 +1,350 @@
+{
+  "schema": "vtp15-qwen38-gdn-original-bf16-projection-package-v1",
+  "status": "VTP28_ACTUAL_GPU_LAYER0_BF16_TO_ORIGINAL_GDN_LAYER1_PACK_NO_GPU",
+  "created_utc": "2026-11-11T06:50:08.750558+00:00",
+  "writer_sha256": "56a8f2c7b8bb2dee1ec446b4be7d21468f7fa91e0014e3d6f99c8b4fb21cbf70",
+  "layer": 1,
+  "checkpoint": "<models-root>/qwen3.8-27b/Qwen3.8-27B",
+  "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+  "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+  "source_descriptors": {
+    "a": {
+      "name": "model.language_model.layers.1.linear_attn.in_proj_a.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 766684120,
+      "bytes": 491520,
+      "shape": [
+        48,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "b": {
+      "name": "model.language_model.layers.1.linear_attn.in_proj_b.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 767175640,
+      "bytes": 491520,
+      "shape": [
+        48,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "z": {
+      "name": "model.language_model.layers.1.linear_attn.in_proj_z.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 872524760,
+      "bytes": 62914560,
+      "shape": [
+        6144,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "norm": {
+      "name": "model.language_model.layers.1.input_layernorm.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 766591768,
+      "bytes": 10240,
+      "shape": [
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    }
+  },
+  "qkv_source": {
+    "source": "model.language_model.layers.1.linear_attn.in_proj_qkv.weight",
+    "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+    "file_basename": "model-00001-of-00018.safetensors",
+    "offset": 767667160,
+    "bytes": 104857600,
+    "shape": [
+      10240,
+      5120
+    ],
+    "row_width": 5120,
+    "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+  },
+  "qkv_pack_receipt": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/summary.json",
+  "ownership": {
+    "xtx0": {
+      "a": [
+        0,
+        12
+      ],
+      "b": [
+        0,
+        12
+      ],
+      "z": [
+        0,
+        1536
+      ]
+    },
+    "xtx1": {
+      "a": [
+        12,
+        12
+      ],
+      "b": [
+        12,
+        12
+      ],
+      "z": [
+        1536,
+        1536
+      ]
+    },
+    "r9700": {
+      "a": [
+        24,
+        24
+      ],
+      "b": [
+        24,
+        24
+      ],
+      "z": [
+        3072,
+        3072
+      ]
+    }
+  },
+  "upstream_GPU_layer0": {
+    "parent_receipt": "<work-root>/xtx27-prefill/vtp27-layer0-gpu-gdn-ffn-bridge/runs/20261111T064222931275Z-864e59e3e5/summary.json",
+    "parent_receipt_sha256": "10741527e45865ce7322daeb16fa7c2f244a151115ec245f4f157a2468894fb6",
+    "hidden_file": "<work-root>/xtx27-prefill/vtp27-layer0-gpu-gdn-ffn-bridge/handoffs/20261111T064222611374Z-864e59e3e5/gpu-after-layer0-FFN.bf16",
+    "hidden_sha256": "f66f9496f32a4b482ab9f5ca4b174aa9bb4659bbe0904e263ad3612cc23ae7bd",
+    "checkpoint": "<models-root>/qwen3.8-27b/Qwen3.8-27B",
+    "rows": 1,
+    "layer0_reference_exact": false,
+    "actual_GPU_layer0_output": true
+  },
+  "rank_packs": {
+    "xtx0": {
+      "a": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/a-xtx0.bf16",
+        "sha256": "22f9b34892f35be1fb55d307eefd6389ad47dc13e3554b8f344ecbb79aa5c7fb",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          0,
+          12
+        ]
+      },
+      "b": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/b-xtx0.bf16",
+        "sha256": "ef991034d79af0540f086f7b1dcad8bbd317e41630b9ddd89497472cd1d82663",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          0,
+          12
+        ]
+      },
+      "z": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/z-xtx0.bf16",
+        "sha256": "fa34bd796d325999d77463a85f812b133d8fc553dddaa969c18e74880e6d6c73",
+        "bytes": 15728640,
+        "shape": [
+          1536,
+          5120
+        ],
+        "source_rows": [
+          0,
+          1536
+        ]
+      },
+      "qkv": {
+        "file": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/in_proj_qkv-xtx0.bf16",
+        "sha256": "d3d6d115ab7b8c9f1602e3a8e8ddad351ce8624285447da79ffd061baae33d53",
+        "bytes": 26214400,
+        "shape": [
+          2560,
+          5120
+        ],
+        "packed_segments": [
+          [
+            0,
+            512
+          ],
+          [
+            2048,
+            512
+          ],
+          [
+            4096,
+            1536
+          ]
+        ]
+      }
+    },
+    "xtx1": {
+      "a": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/a-xtx1.bf16",
+        "sha256": "0df594088bba7cc68864de74f398ffd76c781a881be6a85a7f276b196ae635ea",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          12,
+          24
+        ]
+      },
+      "b": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/b-xtx1.bf16",
+        "sha256": "8126cf15d59967f6147038d1d12a2bbfb1efabd5fdeed621723d56f6024e9157",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          12,
+          24
+        ]
+      },
+      "z": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/z-xtx1.bf16",
+        "sha256": "036956bd3569de45c4c85cac294fd1814bb7c36414e973c7e9c0bb0a97fadef9",
+        "bytes": 15728640,
+        "shape": [
+          1536,
+          5120
+        ],
+        "source_rows": [
+          1536,
+          3072
+        ]
+      },
+      "qkv": {
+        "file": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/in_proj_qkv-xtx1.bf16",
+        "sha256": "46488828335466fe9a59fffa7a32b3fd337be95f8f8c56ac6b8d0b167d1293bf",
+        "bytes": 26214400,
+        "shape": [
+          2560,
+          5120
+        ],
+        "packed_segments": [
+          [
+            512,
+            512
+          ],
+          [
+            2560,
+            512
+          ],
+          [
+            5632,
+            1536
+          ]
+        ]
+      }
+    },
+    "r9700": {
+      "a": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/a-r9700.bf16",
+        "sha256": "b39db2c2f7d7a4104562af00d1e4c6ba5ecef322452c4347eedc5649597b9f68",
+        "bytes": 245760,
+        "shape": [
+          24,
+          5120
+        ],
+        "source_rows": [
+          24,
+          48
+        ]
+      },
+      "b": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/b-r9700.bf16",
+        "sha256": "337325cd6eca97d73c381ddd16ce1864935e78ca4f81ca9eb9066f23fbac8180",
+        "bytes": 245760,
+        "shape": [
+          24,
+          5120
+        ],
+        "source_rows": [
+          24,
+          48
+        ]
+      },
+      "z": {
+        "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/z-r9700.bf16",
+        "sha256": "298085567e35b4509ec4021399698cf816e0422eeecc85847b7265ffcff6ae44",
+        "bytes": 31457280,
+        "shape": [
+          3072,
+          5120
+        ],
+        "source_rows": [
+          3072,
+          6144
+        ]
+      },
+      "qkv": {
+        "file": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/in_proj_qkv-r9700.bf16",
+        "sha256": "b29101fc031e373348f408a24e0fb8a65aedc8dab8247114afb36db0e163de03",
+        "bytes": 52428800,
+        "shape": [
+          5120,
+          5120
+        ],
+        "packed_segments": [
+          [
+            1024,
+            1024
+          ],
+          [
+            3072,
+            1024
+          ],
+          [
+            7168,
+            3072
+          ]
+        ]
+      }
+    }
+  },
+  "source_sha256": {
+    "a": "a88f63a36240c5021a860cc07a89b2431bd134c7691e7130034837a6ce1efebd",
+    "b": "4347a0a2072b375862a8661178e7177b51b8f503656e00d835ffe76bcff13713",
+    "z": "55fbc1fcc7f7bf5344ad3f6e841765eaf8bec5f563714f6e786dc41cd46790ae",
+    "norm": "97e3a70202400c8f895d55c02467271facf1aba2e990222a835932b8da8a0340"
+  },
+  "inputs": {
+    "hidden_input.bf16": {
+      "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/hidden_input.bf16",
+      "bytes": 10240,
+      "shape": [
+        1,
+        5120
+      ],
+      "sha256": "f66f9496f32a4b482ab9f5ca4b174aa9bb4659bbe0904e263ad3612cc23ae7bd"
+    },
+    "normed_input.bf16": {
+      "file": "<work-root>/xtx27-prefill/vtp28-original-layer1-gdn-gpu-input/layer1-m1-20261111T065008312141Z/normed_input.bf16",
+      "bytes": 10240,
+      "shape": [
+        1,
+        5120
+      ],
+      "sha256": "3780fd27bb431c1624cc732bb660c79c7a4f48ff1870b1a0e55f90b19fe257f8"
+    }
+  },
+  "original_hidden_is_actual_GPU_layer0": true,
+  "layer1_not_yet_executed": true,
+  "full_model": false
+}

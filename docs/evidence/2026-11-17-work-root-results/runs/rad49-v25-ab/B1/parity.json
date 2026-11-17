@@ -1,0 +1,328 @@
+{
+ "build": "<work-root>/builds/ccb649ea788a5272eead885012a9a915/b10895523afb213b391c44f6cf06e366",
+ "build_identity": {
+  "binary_hash": "df7d79b2542856f052f72925e25c59d9bb9ebba61cfbcf2cbd69b21bd49defcd",
+  "build_id": "69a8678707d3059c589ae9373db28811",
+  "build_plan_id": "b10895523afb213b391c44f6cf06e366",
+  "runtime_bundle_hash": "89e289d96f9ab815016a0ff7911595fd",
+  "source_slice_id": "ccb649ea788a5272eead885012a9a915"
+ },
+ "date": "2026-11-08T16:42:51+00:00",
+ "kind": "flashnext-parity",
+ "launches": [
+  {
+   "detail": {
+    "cold_ttft_s": [
+     8.58836,
+     7.83245,
+     7.84936,
+     7.65371,
+     7.7331,
+     7.7005799999999995,
+     7.77623,
+     7.74375
+    ],
+    "decode1_tokens_per_step": [
+     3.0854,
+     3.0723
+    ],
+    "decode1_ttft_s": [
+     0.29811,
+     0.29622000000000004
+    ],
+    "decode6_tokens_per_step": [
+     17.0667,
+     16.0104
+    ],
+    "decode6_ttft_s": [
+     1.53438,
+     1.5508199999999999
+    ],
+    "doc_prefill_tps": [
+     3311.103487462475,
+     3641.4068637001624,
+     3614.1487053883225,
+     3609.583377308716,
+     3612.1302092050087,
+     3559.8528577382576
+    ],
+    "long7_prompt_tokens": [
+     253675,
+     253675
+    ],
+    "long8_prompt_tokens": [
+     253773,
+     253773
+    ],
+    "policy_bytes_moved": 4541644800,
+    "sess8_ms_per_step_rounds": [
+     30.757,
+     27.3333
+    ],
+    "sess8_ttft_p50_s": [
+     21.00954,
+     12.938
+    ]
+   },
+   "launch": "launch-1",
+   "policy": true,
+   "warmup_s": 451.1846341
+  }
+ ],
+ "metrics": {
+  "cold_ttft_s": {
+   "direction": "lower",
+   "gated": true,
+   "launches": [
+    7.8596924999999995
+   ],
+   "median": 7.8596924999999995,
+   "repeats": [
+    []
+   ]
+  },
+  "decode1_acceptance": {
+   "direction": "higher",
+   "gated": false,
+   "launches": [
+    0.69295
+   ],
+   "median": 0.69295,
+   "repeats": [
+    [
+     [
+      0.6951,
+      0.6908
+     ]
+    ]
+   ]
+  },
+  "decode1_ms_per_step": {
+   "direction": "lower",
+   "gated": true,
+   "launches": [
+    24.932299999999998
+   ],
+   "median": 24.932299999999998,
+   "repeats": [
+    [
+     [
+      24.9759,
+      24.8887
+     ]
+    ]
+   ]
+  },
+  "decode6_acceptance": {
+   "direction": "higher",
+   "gated": false,
+   "launches": [
+    0.6509
+   ],
+   "median": 0.6509,
+   "repeats": [
+    [
+     [
+      0.6968,
+      0.605
+     ]
+    ]
+   ]
+  },
+  "decode6_ms_per_step": {
+   "direction": "lower",
+   "gated": true,
+   "launches": [
+    48.151250000000005
+   ],
+   "median": 48.151250000000005,
+   "repeats": [
+    [
+     [
+      47.85,
+      48.4525
+     ]
+    ]
+   ]
+  },
+  "doc_prefill_tps": {
+   "direction": "higher",
+   "gated": true,
+   "launches": [
+    3558.037583467157
+   ],
+   "median": 3558.037583467157,
+   "repeats": [
+    []
+   ]
+  },
+  "long7_acceptance": {
+   "direction": "higher",
+   "gated": false,
+   "launches": [
+    0.6071500000000001
+   ],
+   "median": 0.6071500000000001,
+   "repeats": [
+    [
+     [
+      0.618,
+      0.5963
+     ]
+    ]
+   ]
+  },
+  "long7_ms_per_step": {
+   "direction": "lower",
+   "gated": false,
+   "launches": [
+    28.4189
+   ],
+   "median": 28.4189,
+   "note": "informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one launch, 28 in the other). The greedy text differs between launches, and with it where the live policy moves experts; in the slow mode the text routes to experts that are not resident. Long-context decode is gated on long8_ms_per_step.",
+   "repeats": [
+    [
+     [
+      28.1831,
+      28.6547
+     ]
+    ]
+   ]
+  },
+  "long7_prefill_tps": {
+   "direction": "higher",
+   "gated": true,
+   "launches": [
+    2869.724410299491
+   ],
+   "median": 2869.724410299491,
+   "repeats": [
+    []
+   ]
+  },
+  "long8_acceptance": {
+   "direction": "higher",
+   "gated": false,
+   "launches": [
+    0.7839499999999999
+   ],
+   "median": 0.7839499999999999,
+   "repeats": [
+    [
+     [
+      0.7706,
+      0.7973
+     ]
+    ]
+   ]
+  },
+  "long8_ms_per_step": {
+   "direction": "lower",
+   "gated": true,
+   "launches": [
+    28.146549999999998
+   ],
+   "median": 28.146549999999998,
+   "repeats": [
+    [
+     [
+      27.7376,
+      28.5555
+     ]
+    ]
+   ]
+  },
+  "long8_prefill_tps": {
+   "direction": "higher",
+   "gated": true,
+   "launches": [
+    2853.6906261245053
+   ],
+   "median": 2853.6906261245053,
+   "repeats": [
+    []
+   ]
+  },
+  "policy_transactions": {
+   "direction": "higher",
+   "gated": false,
+   "launches": [
+    7
+   ],
+   "median": 7,
+   "repeats": [
+    []
+   ]
+  },
+  "sess8_ms_per_step": {
+   "direction": "lower",
+   "gated": true,
+   "launches": [
+    30.757
+   ],
+   "median": 30.757,
+   "repeats": [
+    []
+   ]
+  },
+  "sess8_ttft_s": {
+   "direction": "lower",
+   "gated": true,
+   "launches": [
+    21.00954
+   ],
+   "median": 21.00954,
+   "repeats": [
+    []
+   ]
+  },
+  "sess8_warm_ms_per_step": {
+   "direction": "lower",
+   "gated": false,
+   "launches": [
+    27.3333
+   ],
+   "median": 27.3333,
+   "repeats": [
+    []
+   ]
+  }
+ },
+ "policy": true,
+ "radiance_pin": {
+  "pinned": "v1.17.0",
+  "pinned_version": "1.17.0"
+ },
+ "revision": "9bbfa19a5e109226f487ff7f2a4c07effb40db48",
+ "schema": 1,
+ "warmup_s": [
+  451.1846341
+ ],
+ "workload": {
+  "COLD_FILLS": 8,
+  "COLD_MAX_TOKENS": 8,
+  "COLD_PROMPT_TOKENS": 27000,
+  "COLD_SEED0": 501,
+  "DECODE_MAX_TOKENS": 256,
+  "DECODE_PROMPT_TOKENS": 900,
+  "DECODE_REPS": 2,
+  "DECODE_SEED": 7,
+  "DECODE_STREAMS": "1 6",
+  "DOC_FILLS": 6,
+  "DOC_PROMPT_TOKENS": 44000,
+  "LONG_MAX_TOKENS": 256,
+  "LONG_PROMPT_TOKENS": 256000,
+  "LONG_REPS": 2,
+  "LONG_SEEDS": "7 8",
+  "LONG_SEEDS_COUNT": 2,
+  "RECORD_PERIOD": 1,
+  "SESS_MAX_TOKENS": 32,
+  "SESS_PROMPT_TOKENS": 13600,
+  "SESS_REPS": 2,
+  "SESS_SEED": 11,
+  "SESS_STREAMS": 8,
+  "WARMUP_MAX_TOKENS": 8,
+  "WARMUP_PROMPT_TOKENS": 27000,
+  "WARMUP_SEED0": 900
+ }
+}

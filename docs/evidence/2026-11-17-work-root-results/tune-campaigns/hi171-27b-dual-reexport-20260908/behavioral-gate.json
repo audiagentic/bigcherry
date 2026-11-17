@@ -1,0 +1,137 @@
+{
+  "behavioral_gate_contract_version": "hi143-v1",
+  "corpus_content_digest": "99e76800780bfea36d730a58bb1a3fe53058d36cfc0388f40541a62ee6e6c289",
+  "corpus_edition_id": "qwen38-production-v2",
+  "corpus_schema_version": 1,
+  "hard_fail": true,
+  "needs_throughput_adjudication": false,
+  "runtime_profile_digest": "f09781b002cfd7009c82361f403c408e27d5c0645057298cfbe6613208024078",
+  "runtime_profile_name": "production-dual-xtx",
+  "selected_vectors": [
+    {
+      "applies_to": [
+        "mtp-speculative"
+      ],
+      "candidate_draft": [
+        145,
+        90
+      ],
+      "candidate_token_digest": "9c67966c7f850b872b9106f6e45d8ebcdda2824bf05b30cc73466c7939c2ebb3",
+      "content_digest": "12e85e189e4dd8c905b7342a98b256b4a1a63a6a06d43ce927a5fa7d929191b4",
+      "first_output_divergence": 1,
+      "id": "hi141-mtp-4096-v1",
+      "n_predict": 128,
+      "native_draft": [
+        107,
+        100
+      ],
+      "native_token_digest": "d027acd17c2966f17ff428519afddbba5bb521e69bf4e68a3f8b82d7dc513ad7",
+      "prompt_sha256": "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f",
+      "provenance": "HI141",
+      "requirements": [
+        "mtp-telemetry"
+      ],
+      "scenario": "long-prefill-mtp",
+      "seed": 42,
+      "token_count": 128,
+      "verdict": "hard_fail"
+    },
+    {
+      "applies_to": [
+        "mtp-speculative"
+      ],
+      "candidate_draft": [
+        524,
+        379
+      ],
+      "candidate_token_digest": "7fd6a5991723d3c00bd6c5035e655c7ad62dda9d6e60cbf4f9413871777481e3",
+      "content_digest": "a2b5cc5f9f41bf16ecb4423f18bc6651638d1cc5aa987a0421bc173ada6a4d0f",
+      "first_output_divergence": 1,
+      "id": "hi141-mtp-4096-tg512-v1",
+      "n_predict": 512,
+      "native_draft": [
+        414,
+        407
+      ],
+      "native_token_digest": "e4c43b66c4c3552c4610912590dc89d63a1b2ce63556fae865a8dcefc2171193",
+      "prompt_sha256": "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f",
+      "provenance": "GP11 2026-09-06: acceptance regression measured at tg512 (-8.98%, complete separation) that v1's 128-token vector could not see",
+      "requirements": [
+        "mtp-telemetry"
+      ],
+      "scenario": "long-prefill-mtp-tg512",
+      "seed": 42,
+      "token_count": 512,
+      "verdict": "hard_fail"
+    },
+    {
+      "applies_to": [
+        "mtp-speculative"
+      ],
+      "candidate_draft": [
+        1832,
+        1589
+      ],
+      "candidate_token_digest": "f75b56e99aba6c33a5958a1f92e3885d775bcd55e319619b4bcf23fabf54b31d",
+      "content_digest": "31f1f595a6de2dae01bb852e3217c5578211f66ba5233ac019ab4a24705a50cf",
+      "first_output_divergence": 1,
+      "id": "hi141-mtp-4096-tg2048-v1",
+      "n_predict": 2048,
+      "native_draft": [
+        1643,
+        1636
+      ],
+      "native_token_digest": "3abf1754de12b1fc983357c1dffc3f8acf9986345f086b5bc5bfbe04730e9e47",
+      "prompt_sha256": "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f",
+      "provenance": "GP11 2026-09-06: acceptance regression measured at tg2048 (-5.54%, complete separation) that v1's 128-token vector could not see",
+      "requirements": [
+        "mtp-telemetry"
+      ],
+      "scenario": "long-prefill-mtp-tg2048",
+      "seed": 42,
+      "token_count": 2048,
+      "verdict": "hard_fail"
+    }
+  ],
+  "vectors": [
+    {
+      "candidate_draft": [
+        145,
+        90
+      ],
+      "first_output_divergence": 1,
+      "name": "hi141-mtp-4096-v1",
+      "native_draft": [
+        107,
+        100
+      ],
+      "verdict": "hard_fail"
+    },
+    {
+      "candidate_draft": [
+        524,
+        379
+      ],
+      "first_output_divergence": 1,
+      "name": "hi141-mtp-4096-tg512-v1",
+      "native_draft": [
+        414,
+        407
+      ],
+      "verdict": "hard_fail"
+    },
+    {
+      "candidate_draft": [
+        1832,
+        1589
+      ],
+      "first_output_divergence": 1,
+      "name": "hi141-mtp-4096-tg2048-v1",
+      "native_draft": [
+        1643,
+        1636
+      ],
+      "verdict": "hard_fail"
+    }
+  ]
+}

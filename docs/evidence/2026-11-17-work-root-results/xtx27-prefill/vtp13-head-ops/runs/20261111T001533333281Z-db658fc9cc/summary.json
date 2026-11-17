@@ -1,0 +1,87 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP13_HEAD_LOCAL_GQA_AND_SIMPLIFIED_GDN_NUMERICAL_PROOF",
+  "checkout": "16f7d3275e64caf10e8bd79b077085e610629ba0",
+  "source_digest": "db658fc9cc0711ff7fb198950b8f0b99208c1b340dbfd6b19749dbb1748cf425",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "attention-1rows-256context",
+      "kind": "head_local",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp13-head-ops/build/db658fc9cc0711ff/vtp04-head_local",
+        "--rows",
+        "1",
+        "--context",
+        "256",
+        "--iterations",
+        "3"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "attention-1rows-256context.stdout",
+      "stderr": "attention-1rows-256context.stderr"
+    },
+    {
+      "label": "attention-4rows-256context",
+      "kind": "head_local",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp13-head-ops/build/db658fc9cc0711ff/vtp04-head_local",
+        "--rows",
+        "4",
+        "--context",
+        "256",
+        "--iterations",
+        "3"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "attention-4rows-256context.stdout",
+      "stderr": "attention-4rows-256context.stderr"
+    },
+    {
+      "label": "gdn-1rows-256context",
+      "kind": "head_local",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp13-head-ops/build/db658fc9cc0711ff/vtp04-head_local",
+        "--rows",
+        "1",
+        "--context",
+        "256",
+        "--iterations",
+        "3",
+        "--gdn"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "gdn-1rows-256context.stdout",
+      "stderr": "gdn-1rows-256context.stderr"
+    },
+    {
+      "label": "gdn-4rows-256context",
+      "kind": "head_local",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp13-head-ops/build/db658fc9cc0711ff/vtp04-head_local",
+        "--rows",
+        "4",
+        "--context",
+        "256",
+        "--iterations",
+        "3",
+        "--gdn"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "gdn-4rows-256context.stdout",
+      "stderr": "gdn-4rows-256context.stderr"
+    }
+  ],
+  "schema": "vtp13-head-local-proof-v1",
+  "driver_hashes": {
+    "driver_sha256": "39e409999d89ca128649536ec9fe575760612a36fd7ace07c38b387c3679aeb4",
+    "shared_driver_sha256": "554a534e6bffba1513704d9e7b893c638fdfbbda8df3feda813683dd8d42d376"
+  },
+  "checkpoint_payloads": false,
+  "gdn_is_simplified": true,
+  "not_full_model": true
+}

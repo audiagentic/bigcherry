@@ -1,0 +1,9 @@
+commit 046dc1603e130ce0b28f5a44e14618516ca6ece2 fix(radiance): helper liveness review fixes - watch before registration, fail closed, no lost wake-ups
+build 4afbf45388f12cb3eb2553817615c3c1
+h1 idle     PASS                 0.2 s  watcher 1  engine_alive yes  "message":"the engine failed this request: the engine stopped on an error and is not serving (out of memory)
+h1 decode   PASS                 5.4 s  watcher 1  engine_alive yes  "message":"the engine failed this request: the engine stopped on an error and is not serving (device error)
+h1 prefill  PASS                 0.2 s  watcher 1  engine_alive yes  "message":"the engine failed this request: the engine stopped on an error and is not serving (device error)
+h0 idle     PASS                 0.2 s  watcher 1  engine_alive yes  "message":"the engine failed this request: the engine stopped on an error and is not serving (out of memory)
+h0 decode   PASS                 5.4 s  watcher 1  engine_alive yes  "message":"the engine failed this request: the engine stopped on an error and is not serving (device error)
+h0 prefill  PASS                 0.2 s  watcher 1  engine_alive yes  "message":"the engine failed this request: the engine stopped on an error and is not serving (shape this kernel does not serve)
+KILL_TEST PASS

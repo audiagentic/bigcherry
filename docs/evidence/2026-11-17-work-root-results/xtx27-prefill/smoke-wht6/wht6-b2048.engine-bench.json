@@ -1,0 +1,91 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "wht6-b2048",
+ "binary": "<work-root>/builds/ccb649ea788a5272eead885012a9a915/033c06a5d41152c9a1876acc2956a8eb/bin/radiance",
+ "model": "<models-root>/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "extra_args": [
+  "--tp",
+  "2",
+  "--tp-wire",
+  "wht6",
+  "--p2p",
+  "off",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--max-num-batched-tokens",
+  "2048",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "0"
+ ],
+ "env": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "depths": [
+  512,
+  2048,
+  6144
+ ],
+ "reps": 1,
+ "decode": 32,
+ "rows": [
+  {
+   "depth": 512,
+   "rep": 0,
+   "prompt_tokens": 704,
+   "completion_tokens": 32,
+   "ttft_s": 0.33769655227661133,
+   "prefill_tps": 2084.711837458575,
+   "decode_tps": 49.846031878078634,
+   "text_head": "\n\n[85edde059ee54b7d946d973156bd2659]\n",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 0,
+   "prompt_tokens": 2305,
+   "completion_tokens": 32,
+   "ttft_s": 0.8931059837341309,
+   "prefill_tps": 2580.8807039480957,
+   "decode_tps": 48.41914788714562,
+   "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Context\n\nThis document is a **real-hardware",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 0,
+   "prompt_tokens": 6679,
+   "completion_tokens": 32,
+   "ttft_s": 2.635758399963379,
+   "prefill_tps": 2533.995528608691,
+   "decode_tps": 44.85951633592759,
+   "text_head": "\n\n[Request interrupted by user]\n\n[1b780b4637614bcc8ae72bb5923",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 0,
+  "accepted": 0
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 9207554048",
+  "GPU[1] : VRAM Total Used Memory (B): 9207562240",
+  "GPU[2] : VRAM Total Used Memory (B): 59965440",
+  "GPU[3] : VRAM Total Used Memory (B): 17227776"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

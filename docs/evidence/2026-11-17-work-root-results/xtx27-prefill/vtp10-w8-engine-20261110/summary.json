@@ -1,0 +1,245 @@
+{
+  "provenance": {
+    "utc": "2026-11-10T10:25:43.245453+00:00",
+    "checkout_commit": "a68d399194d405803b58cdf6310d2a5930bdc0c7",
+    "build": "<work-root>/builds/f17f21fda44979e9abe84f13e96b8896/08b5dd81b4874390bf0cbf489db0d7df",
+    "engine_sha256": "df7d79b2542856f052f72925e25c59d9bb9ebba61cfbcf2cbd69b21bd49defcd",
+    "build_metadata": {
+      "binary_hash": "df7d79b2542856f052f72925e25c59d9bb9ebba61cfbcf2cbd69b21bd49defcd",
+      "build_id": "fcc4ef3a45848387622588733273ab8a",
+      "build_plan_id": "08b5dd81b4874390bf0cbf489db0d7df",
+      "effective_configure": {
+        "CMAKE_BUILD_TYPE": "Release",
+        "CMAKE_CXX_COMPILER": "/usr/bin/g++-14",
+        "CMAKE_CXX_COMPILER-ADVANCED": "1",
+        "CMAKE_CXX_COMPILER_AR": "/usr/bin/gcc-ar-14",
+        "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "<repo>/worktrees/perf/tk04-packed-e4m3-staging/tools/bigcherry/bin/bc-ccache",
+        "CMAKE_CXX_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+        "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+        "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
+        "CMAKE_C_COMPILER-ADVANCED": "1",
+        "CMAKE_C_COMPILER_AR": "/usr/bin/gcc-ar-14",
+        "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+        "CMAKE_C_COMPILER_LAUNCHER": "<repo>/worktrees/perf/tk04-packed-e4m3-staging/tools/bigcherry/bin/bc-ccache",
+        "CMAKE_C_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+        "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+        "CMAKE_EXE_LINKER_FLAGS": "",
+        "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+        "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+        "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+        "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+        "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+        "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+        "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+        "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+        "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+        "CMAKE_MODULE_LINKER_FLAGS": "",
+        "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+        "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+        "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+        "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+        "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+        "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+        "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+        "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+        "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+        "CMAKE_SHARED_LINKER_FLAGS": "",
+        "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+        "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+        "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+        "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+        "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+        "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+        "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+        "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+        "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+      },
+      "generated_compile_inputs_hash": null,
+      "generated_inputs_verification": null,
+      "runtime_artifacts": {
+        "radiance": "df7d79b2542856f052f72925e25c59d9bb9ebba61cfbcf2cbd69b21bd49defcd"
+      },
+      "runtime_bundle_hash": "89e289d96f9ab815016a0ff7911595fd",
+      "source_slice_id": "f17f21fda44979e9abe84f13e96b8896",
+      "toolchain": [
+        [
+          "CMAKE_CXX_COMPILER",
+          "/usr/bin/g++-14"
+        ],
+        [
+          "CMAKE_C_COMPILER",
+          "/usr/bin/gcc-14"
+        ],
+        [
+          "CMAKE_GENERATOR",
+          "Ninja"
+        ],
+        [
+          "c_compiler_realpath",
+          "/usr/bin/x86_64-linux-gnu-gcc-14"
+        ],
+        [
+          "c_compiler_version",
+          "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"
+        ],
+        [
+          "cmake_version",
+          "cmake version 4.4.4"
+        ],
+        [
+          "cxx_compiler_realpath",
+          "/usr/bin/x86_64-linux-gnu-g++-14"
+        ],
+        [
+          "cxx_compiler_version",
+          "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0"
+        ],
+        [
+          "ninja_version",
+          "1.13.2.git.kitware.jobserver-pipe-1"
+        ],
+        [
+          "rocm_digest",
+          "b811dea988c46e94df2fdecfb1d4fbfe0b23cc3d83ebe05c51b676855ab9d062"
+        ],
+        [
+          "rocm_root",
+          "/opt/rocm-7.2.4"
+        ],
+        [
+          "rocm_stack",
+          "rocm-7-2"
+        ],
+        [
+          "rocm_version",
+          "7.2.4"
+        ]
+      ]
+    },
+    "model": "<models-root>/radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8.rad",
+    "model_size_bytes": 29524840448,
+    "corpus_sha256": "066bc97b2a7a1c3aaa40955c9bd8509f9b6ecb8de9229191f8a06a4080aeab20",
+    "gpu_inventory_indices": [
+      0,
+      1
+    ],
+    "arms": [
+      {
+        "wire": "exact",
+        "batch": 2048
+      },
+      {
+        "wire": "wht6",
+        "batch": 2048
+      }
+    ],
+    "depths": [
+      512,
+      2048,
+      6144
+    ],
+    "context": 8192,
+    "decode": 64,
+    "reps": 2,
+    "profile_ops": false,
+    "metric": "MEN03 prompt_tokens / HTTP time-to-first-text-token; not kernel-only prefill",
+    "limitations": [
+      "Measurements include tokenization, scheduling, graph/cold-start and HTTP.",
+      "Unique prompt nonces avoid prefix hits, but exact token counts can differ by request.",
+      "wht6 may be lossy; these timings do not establish output quality.",
+      "Strata Flash-Next MoE is not a matched dense-27B comparison."
+    ]
+  },
+  "results": {
+    "exact-b2048": {
+      "512": {
+        "prefill_tps_median": 1393.09,
+        "prefill_tps_range": [
+          1361.96,
+          1424.21
+        ],
+        "ttft_s_median": 0.5063,
+        "prompt_tokens_range": [
+          703,
+          707
+        ],
+        "decode_tps_median": 36.61,
+        "requests": 2
+      },
+      "2048": {
+        "prefill_tps_median": 1429.31,
+        "prefill_tps_range": [
+          1410.77,
+          1447.86
+        ],
+        "ttft_s_median": 1.613,
+        "prompt_tokens_range": [
+          2303,
+          2307
+        ],
+        "decode_tps_median": 35.83,
+        "requests": 2
+      },
+      "6144": {
+        "prefill_tps_median": 1402.13,
+        "prefill_tps_range": [
+          1399.6,
+          1404.66
+        ],
+        "ttft_s_median": 4.7635,
+        "prompt_tokens_range": [
+          6677,
+          6681
+        ],
+        "decode_tps_median": 33.97,
+        "requests": 2
+      }
+    },
+    "wht6-b2048": {
+      "512": {
+        "prefill_tps_median": 1774.64,
+        "prefill_tps_range": [
+          1709.22,
+          1840.07
+        ],
+        "ttft_s_median": 0.3955,
+        "prompt_tokens_range": [
+          701,
+          701
+        ],
+        "decode_tps_median": 36.41,
+        "requests": 2
+      },
+      "2048": {
+        "prefill_tps_median": 1856.73,
+        "prefill_tps_range": [
+          1849.13,
+          1864.33
+        ],
+        "ttft_s_median": 1.2417,
+        "prompt_tokens_range": [
+          2305,
+          2306
+        ],
+        "decode_tps_median": 35.7,
+        "requests": 2
+      },
+      "6144": {
+        "prefill_tps_median": 1843.65,
+        "prefill_tps_range": [
+          1842.44,
+          1844.85
+        ],
+        "ttft_s_median": 3.6227,
+        "prompt_tokens_range": [
+          6676,
+          6682
+        ],
+        "decode_tps_median": 33.74,
+        "requests": 2
+      }
+    }
+  },
+  "failures": []
+}

@@ -1,0 +1,67 @@
+{
+  "utc": "2026-11-13T15:57:24.633548+00:00",
+  "binary_sha256": "e1e349b2686dfa1d7d2192da523290fc97502cfa1c7874bcfa784f0aa93af92c",
+  "method": "dmabuf-live-parallel",
+  "consumer_armed_before_write": true,
+  "dma_buf_sync": true,
+  "devices": [
+    0,
+    1,
+    2
+  ],
+  "iterations": 100,
+  "rows": 768,
+  "results": [
+    {
+      "device": 0,
+      "returncode": 0,
+      "summary_fields": [
+        "0",
+        "768",
+        "3932160",
+        "100",
+        "100",
+        "464.10",
+        "547.10",
+        "814.14",
+        "1487.89",
+        "0"
+      ],
+      "passed": true
+    },
+    {
+      "device": 1,
+      "returncode": 0,
+      "summary_fields": [
+        "1",
+        "768",
+        "3932160",
+        "100",
+        "100",
+        "462.26",
+        "543.32",
+        "804.46",
+        "1525.35",
+        "0"
+      ],
+      "passed": true
+    },
+    {
+      "device": 2,
+      "returncode": 0,
+      "summary_fields": [
+        "2",
+        "768",
+        "3932160",
+        "100",
+        "100",
+        "819.45",
+        "919.18",
+        "1210.54",
+        "1586.11",
+        "0"
+      ],
+      "passed": true
+    }
+  ]
+}

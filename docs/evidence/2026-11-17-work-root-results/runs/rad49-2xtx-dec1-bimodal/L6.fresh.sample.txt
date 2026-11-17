@@ -1,0 +1,158 @@
+## engine pid 637491
+    TID PSR %CPU STAT COMMAND
+ 637491  18 58.6 Ssl  radiance
+ 685430  10 25.5 Rsl  radiance
+ 685436   2  1.2 Ssl  radiance
+## helper0 pid 637106
+    TID PSR %CPU STAT COMMAND
+ 637106  16 11.2 Ssl  r3_moe_worker
+ 649916  19  1.4 Rsl  r3_moe_worker
+ 649919   8  1.4 Rsl  r3_moe_worker
+## helper1 pid 637282
+    TID PSR %CPU STAT COMMAND
+ 637282   6 11.2 Ssl  r3_moe_worker
+ 649917  17  1.5 Rsl  r3_moe_worker
+ 649918   1  1.5 Rsl  r3_moe_worker
+GPU[0]		: dcefclk clock level: 0: (145Mhz)
+GPU[0]		: fclk clock level: 4: (2000Mhz)
+GPU[0]		: mclk clock level: 3: (1249Mhz)
+GPU[0]		: sclk clock level: 1: (3129Mhz)
+GPU[1]		: dcefclk clock level: 0: (145Mhz)
+GPU[1]		: fclk clock level: 4: (2000Mhz)
+GPU[1]		: mclk clock level: 3: (1249Mhz)
+GPU[1]		: sclk clock level: 1: (3050Mhz)
+GPU[2]		: dcefclk clock level: 1: (219Mhz)
+GPU[2]		: fclk clock level: 1: (2016Mhz)
+GPU[2]		: mclk clock level: 5: (1258Mhz)
+GPU[2]		: sclk clock level: 1: (3365Mhz)
+GPU[3]		: dcefclk clock level: 0: (417Mhz)
+GPU[3]		: fclk clock level: 1: (1227Mhz)
+GPU[3]		: mclk clock level: 0: (96Mhz)
+GPU[3]		: sclk clock level: S: (0Mhz)
+
+## engine pid 637491
+    TID PSR %CPU STAT COMMAND
+ 637491  16 58.0 Ssl  radiance
+ 685430  10 47.4 Rsl  radiance
+ 685436  14  1.3 Ssl  radiance
+## helper0 pid 637106
+    TID PSR %CPU STAT COMMAND
+ 637106  16 11.0 Ssl  r3_moe_worker
+ 649916  19  2.9 Rsl  r3_moe_worker
+ 649919   2  2.9 Rsl  r3_moe_worker
+## helper1 pid 637282
+    TID PSR %CPU STAT COMMAND
+ 637282  12 11.1 Ssl  r3_moe_worker
+ 649917  17  2.9 Rsl  r3_moe_worker
+ 649918   1  2.9 Rsl  r3_moe_worker
+GPU[0]		: dcefclk clock level: 0: (145Mhz)
+GPU[0]		: fclk clock level: 4: (2000Mhz)
+GPU[0]		: mclk clock level: 3: (1249Mhz)
+GPU[0]		: sclk clock level: 1: (3137Mhz)
+GPU[1]		: dcefclk clock level: 0: (145Mhz)
+GPU[1]		: fclk clock level: 4: (2000Mhz)
+GPU[1]		: mclk clock level: 3: (1249Mhz)
+GPU[1]		: sclk clock level: 1: (3052Mhz)
+GPU[2]		: dcefclk clock level: 1: (219Mhz)
+GPU[2]		: fclk clock level: 1: (2016Mhz)
+GPU[2]		: mclk clock level: 5: (1258Mhz)
+GPU[2]		: sclk clock level: 1: (3416Mhz)
+GPU[3]		: dcefclk clock level: 0: (417Mhz)
+GPU[3]		: fclk clock level: 1: (1227Mhz)
+GPU[3]		: mclk clock level: 0: (96Mhz)
+GPU[3]		: sclk clock level: S: (0Mhz)
+
+## engine pid 637491
+    TID PSR %CPU STAT COMMAND
+ 637491   8 57.3 Ssl  radiance
+ 685430  11 52.8 Ssl  radiance
+ 685436   6  1.2 Ssl  radiance
+## helper0 pid 637106
+    TID PSR %CPU STAT COMMAND
+ 637106   4 10.9 Ssl  r3_moe_worker
+ 649916  19  3.9 Ssl  r3_moe_worker
+ 649919   3  3.9 Ssl  r3_moe_worker
+## helper1 pid 637282
+    TID PSR %CPU STAT COMMAND
+ 637282  12 11.0 Ssl  r3_moe_worker
+ 649917  17  3.9 Ssl  r3_moe_worker
+ 649918   1  3.9 Ssl  r3_moe_worker
+GPU[0]		: dcefclk clock level: 0: (145Mhz)
+GPU[0]		: fclk clock level: 2: (1200Mhz)
+GPU[0]		: mclk clock level: 2: (772Mhz)
+GPU[0]		: sclk clock level: S: (0Mhz)
+GPU[1]		: dcefclk clock level: 0: (145Mhz)
+GPU[1]		: fclk clock level: 2: (1200Mhz)
+GPU[1]		: mclk clock level: 2: (772Mhz)
+GPU[1]		: sclk clock level: S: (0Mhz)
+GPU[2]		: dcefclk clock level: 1: (219Mhz)
+GPU[2]		: fclk clock level: 1: (582Mhz)
+GPU[2]		: mclk clock level: 0: (96Mhz)
+GPU[2]		: sclk clock level: S: (41Mhz)
+GPU[3]		: dcefclk clock level: 0: (417Mhz)
+GPU[3]		: fclk clock level: 1: (1227Mhz)
+GPU[3]		: mclk clock level: 0: (96Mhz)
+GPU[3]		: sclk clock level: S: (0Mhz)
+
+## engine pid 637491
+    TID PSR %CPU STAT COMMAND
+ 637491   8 56.7 Ssl  radiance
+ 685430  11 42.9 Ssl  radiance
+## helper0 pid 637106
+    TID PSR %CPU STAT COMMAND
+ 637106   6 10.8 Ssl  r3_moe_worker
+ 649916  19  3.8 Ssl  r3_moe_worker
+ 649919   3  3.8 Ssl  r3_moe_worker
+## helper1 pid 637282
+    TID PSR %CPU STAT COMMAND
+ 637282  19 10.8 Ssl  r3_moe_worker
+ 649917  17  3.8 Ssl  r3_moe_worker
+ 649918   1  3.8 Ssl  r3_moe_worker
+GPU[0]		: dcefclk clock level: 0: (145Mhz)
+GPU[0]		: fclk clock level: 0: (601Mhz)
+GPU[0]		: mclk clock level: 0: (96Mhz)
+GPU[0]		: sclk clock level: S: (0Mhz)
+GPU[1]		: dcefclk clock level: 0: (145Mhz)
+GPU[1]		: fclk clock level: 0: (601Mhz)
+GPU[1]		: mclk clock level: 0: (96Mhz)
+GPU[1]		: sclk clock level: S: (0Mhz)
+GPU[2]		: dcefclk clock level: 1: (219Mhz)
+GPU[2]		: fclk clock level: 1: (582Mhz)
+GPU[2]		: mclk clock level: 0: (96Mhz)
+GPU[2]		: sclk clock level: S: (87Mhz)
+GPU[3]		: dcefclk clock level: 0: (417Mhz)
+GPU[3]		: fclk clock level: 1: (1227Mhz)
+GPU[3]		: mclk clock level: 0: (96Mhz)
+GPU[3]		: sclk clock level: S: (0Mhz)
+
+## engine pid 637491
+    TID PSR %CPU STAT COMMAND
+ 637491   8 56.1 Ssl  radiance
+ 685430  11 36.1 Ssl  radiance
+## helper0 pid 637106
+    TID PSR %CPU STAT COMMAND
+ 637106  18 10.7 Ssl  r3_moe_worker
+ 649916  19  3.8 Ssl  r3_moe_worker
+ 649919   3  3.8 Ssl  r3_moe_worker
+## helper1 pid 637282
+    TID PSR %CPU STAT COMMAND
+ 637282   3 10.7 Ssl  r3_moe_worker
+ 649917  17  3.8 Ssl  r3_moe_worker
+ 649918   1  3.8 Ssl  r3_moe_worker
+GPU[0]		: dcefclk clock level: 0: (145Mhz)
+GPU[0]		: fclk clock level: 0: (601Mhz)
+GPU[0]		: mclk clock level: 0: (96Mhz)
+GPU[0]		: sclk clock level: S: (0Mhz)
+GPU[1]		: dcefclk clock level: 0: (145Mhz)
+GPU[1]		: fclk clock level: 0: (601Mhz)
+GPU[1]		: mclk clock level: 0: (96Mhz)
+GPU[1]		: sclk clock level: S: (0Mhz)
+GPU[2]		: dcefclk clock level: 1: (219Mhz)
+GPU[2]		: fclk clock level: 1: (582Mhz)
+GPU[2]		: mclk clock level: 0: (96Mhz)
+GPU[2]		: sclk clock level: S: (41Mhz)
+GPU[3]		: dcefclk clock level: 0: (417Mhz)
+GPU[3]		: fclk clock level: 1: (1227Mhz)
+GPU[3]		: mclk clock level: 0: (96Mhz)
+GPU[3]		: sclk clock level: S: (0Mhz)
+

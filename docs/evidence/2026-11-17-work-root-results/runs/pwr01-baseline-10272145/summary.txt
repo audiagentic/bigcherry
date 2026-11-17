@@ -1,0 +1,14 @@
+commit 84f719316e75419967f8569c5acf935b00490eba lab(radiance): pwr02 sweep takes the lab host from BIGCHERRY_LAB_HOST, devices from the inventory (no host names in code)
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/67a435be11abe6053872355915df70a4/e315c3373c1f397eb16273556a7509ab
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+cpu_pkg             8.5         78.2         82.3          8.8
+gpu0                8.0        141.0        178.5          8.5
+gpu1                9.0        144.0        181.0         10.0
+gpu2               20.0        214.0        223.0         22.0
+gpu3               10.0         10.0         10.0         10.0
+total              55.5        587.2        674.9         59.2
+decode: 4096 tokens in 45.7 s = 89.6 tok/s, 6.552 J/token (all devices + CPU package)
+prefill: 136468 tokens in 40.9 s = 3336.6 tok/s, 0.202 J/token (all devices + CPU package)
+decode text: 2 distinct of 4 responses, reference fa9d2bb97dbb307f

@@ -1,0 +1,228 @@
+{
+  "schema": "vtp22-qwen38-original-bf16-full-attention-cpu-reference-v1",
+  "status": "ORIGINAL_BF16_FULL_ATTENTION_CAUSAL_GATED_CPU_ORACLE_PASS_NOT_GPU",
+  "created_utc": "2026-11-11T04:12:47.903570+00:00",
+  "writer_sha256": "01c3a4680657cfedc20a3c654cb30a20c2ee56dcaac6b4311661284ba259335f",
+  "cpu_source_sha256": "f4dfcbd362509f4163ad02676ff46fc760a1bc708b3b4f4c6bd04d196bac7d25",
+  "cpu_binary_sha256": "e96d84bb4cf7d9e1d8a7954887b292b4a14b1274929f7ba62fa07173d799a40c",
+  "original_packet": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T041210935826Z/summary.json",
+  "original_packet_sha256": "f09f79eabb98fc36265d4f223537a90e48877d753117bafad5c3917561d0069c",
+  "layer": 3,
+  "rows": 4,
+  "outputs": {
+    "q-gate-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/q-gate-xtx0.bf16",
+      "shape": [
+        4,
+        3072
+      ],
+      "bytes": 24576,
+      "sha256": "04ce75438729664942106e7b39b4bc901ce392de8f9e97ba5b8befcaa2a8f0e4"
+    },
+    "k-raw-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/k-raw-xtx0.bf16",
+      "shape": [
+        4,
+        256
+      ],
+      "bytes": 2048,
+      "sha256": "efe47e22ac07bbfc9a00c3cc69e40dd24b53fe7b1ec4c5c61df729caa72992d1"
+    },
+    "v-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/v-xtx0.bf16",
+      "shape": [
+        4,
+        256
+      ],
+      "bytes": 2048,
+      "sha256": "f9861756aa0f552b1bb93ea4d7121ba05b27ae100fd0aeb51f606f80d6ca2f77"
+    },
+    "q-rope-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/q-rope-xtx0.bf16",
+      "shape": [
+        4,
+        3072
+      ],
+      "bytes": 24576,
+      "sha256": "a938f310ef1b6d8ea79982ca6919873d50128d5fb99ac021631a0f3e669b18a7"
+    },
+    "k-rope-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/k-rope-xtx0.bf16",
+      "shape": [
+        4,
+        256
+      ],
+      "bytes": 2048,
+      "sha256": "1ac750d3dc592e1c259cbe7b8649f1a5bb689c8116ca539668fed2552a3c1e67"
+    },
+    "attended-gated-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/attended-gated-xtx0.bf16",
+      "shape": [
+        4,
+        1536
+      ],
+      "bytes": 12288,
+      "sha256": "23d74dd5294fd8027a9c39f6bb73b2dbd525f32ea981b781c9d953414c5ca6c3"
+    },
+    "partial-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/partial-xtx0.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "b2e4c122a450c996802a4a697d6d7273f8423dd8a2a776f5151cd03062e645e4"
+    },
+    "q-gate-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/q-gate-xtx1.bf16",
+      "shape": [
+        4,
+        3072
+      ],
+      "bytes": 24576,
+      "sha256": "2517c236d162fad201ba637e4d86a1c4ece0d264aa1938330ba03f9aa2785914"
+    },
+    "k-raw-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/k-raw-xtx1.bf16",
+      "shape": [
+        4,
+        256
+      ],
+      "bytes": 2048,
+      "sha256": "60958bafd8e004de130fe6c79b290b0fed73eb50b9545e7a71245cd4988d6583"
+    },
+    "v-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/v-xtx1.bf16",
+      "shape": [
+        4,
+        256
+      ],
+      "bytes": 2048,
+      "sha256": "c9cf7a586fb4c7cd2893ecfa8a5a5849ead240571293235d9414ce1c190124a5"
+    },
+    "q-rope-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/q-rope-xtx1.bf16",
+      "shape": [
+        4,
+        3072
+      ],
+      "bytes": 24576,
+      "sha256": "87ca031dad4082c261a241d12b74916681e4ba86e19524b44a67003b165d77e2"
+    },
+    "k-rope-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/k-rope-xtx1.bf16",
+      "shape": [
+        4,
+        256
+      ],
+      "bytes": 2048,
+      "sha256": "9d740dc227b67ffaeb2f46da82faa90aedfd568301aa05a3a9a3cb5808d42a5f"
+    },
+    "attended-gated-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/attended-gated-xtx1.bf16",
+      "shape": [
+        4,
+        1536
+      ],
+      "bytes": 12288,
+      "sha256": "b86bef36a6018cd5b22ba407bde9339a9517236e41beb69e08d26b10ab12eb91"
+    },
+    "partial-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/partial-xtx1.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "f5b84864569fc6087cf89de08a7227c9ee31f0597724e606397e698d2af4b433"
+    },
+    "q-gate-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/q-gate-r9700.bf16",
+      "shape": [
+        4,
+        6144
+      ],
+      "bytes": 49152,
+      "sha256": "80716c52c92cf37dabf5509f63275ba83ef06825bba56f15cb5f0c7bb06309d0"
+    },
+    "k-raw-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/k-raw-r9700.bf16",
+      "shape": [
+        4,
+        512
+      ],
+      "bytes": 4096,
+      "sha256": "31ab58a5c3d6c5b7f676a7574c809f2c948e4e6fb4563871f64947dba7c58d23"
+    },
+    "v-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/v-r9700.bf16",
+      "shape": [
+        4,
+        512
+      ],
+      "bytes": 4096,
+      "sha256": "ae066239100a076c98eea0c6e3c6d2a8375319d126f6d02a688b179c5ecad3fc"
+    },
+    "q-rope-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/q-rope-r9700.bf16",
+      "shape": [
+        4,
+        6144
+      ],
+      "bytes": 49152,
+      "sha256": "ac434c32fde809e3349cd72ddd3c52584e6646128688065ebe00d3d5d7858e9a"
+    },
+    "k-rope-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/k-rope-r9700.bf16",
+      "shape": [
+        4,
+        512
+      ],
+      "bytes": 4096,
+      "sha256": "9f6bff0c7e2b37663c53e94a42d7fffa45d824f70d47b03772bd4e691fd16d3a"
+    },
+    "attended-gated-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/attended-gated-r9700.bf16",
+      "shape": [
+        4,
+        3072
+      ],
+      "bytes": 24576,
+      "sha256": "a0f9470f4376d70636e2d15704696f9596d260608631c34cb7e7d4f61ffe1aea"
+    },
+    "partial-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/partial-r9700.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "2036831867842b8b301b808372f6ae16ca1677e0b9d93752c6b85082d3805f1c"
+    },
+    "original-attention-reduced.f32": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/original-attention-reduced.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "aa6ed4a31f353b0e3853b753e36da30833af0500d4b62758d3f75d1781b4aa7b"
+    },
+    "original-attention-post-residual.bf16": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m4-20261111T041247681924Z/original-attention-post-residual.bf16",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 40960,
+      "sha256": "18521db609655f66c7c43fbe52d4f93fe63f11bf657bd170df17db745209cb07"
+    }
+  },
+  "not_gpu": true,
+  "not_model_serving": true,
+  "text_only_mrope": true,
+  "text_rope_partial_dim": 64,
+  "softmax_causal": true,
+  "gated_output_projection": true,
+  "oracle_stdout": "status=ORIGINAL_BF16_FULL_ATTENTION_CPU_LAYER3_REFERENCE_PASS; rows=4; q_heads=6/6/12; kv_heads=1/1/2; o_cols=1536/1536/3072; RoPE_partial_dim=64; mRoPE_text_only=YES; causal_softmax=YES; q_gate_sigmoid=YES; original_BF16_weights=YES; original_layer_input_norm=YES; max_abs_output_f32=31.8464413; max_abs_softmax_logit=16.5049256; unchanged_residual_bf16=7/20480; full_model=NO; GPU=NO"
+}

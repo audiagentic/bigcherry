@@ -1,0 +1,7 @@
+phase                         n  W mean   min   max  busy%  vddgfx mV
+1_no_process                180    15.0  15.0  15.0    0.0         29
+2_hip_context_idle          180    15.0  15.0  16.0    0.0         29
+3_model_loaded_idle          60    15.1  15.0  16.0    0.0         30
+4_after_request_idle         60    15.0  15.0  15.0    0.0         30
+5_exited                    180    15.0  15.0  15.0    0.0         29
+5b_model_stopped             45    15.0  15.0  15.0    0.0         30

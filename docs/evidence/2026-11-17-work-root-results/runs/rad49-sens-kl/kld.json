@@ -1,0 +1,63 @@
+{
+  "_comment": "Sensitivity check: the R9700 alone with 128-token (the model needs >= 64) steps (another valid rounding of the same model) against the same reference. A spike at doc-00 pos 117 too means that token is hypersensitive, not a helper defect.",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "quality_only": true,
+  "server_args": [],
+  "quality": {
+    "reference_dir": "<work-root>/runs/rad116-kld/reference",
+    "control": "helper-off",
+    "timeout_s": 5400,
+    "args": [],
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    }
+  },
+  "arms": [
+    {
+      "name": "helper-off",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-r9700",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "engine.ngram_placement": "disk",
+          "engine.num_speculative_tokens": 0
+        }
+      }
+    },
+    {
+      "name": "chunk128",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-r9700",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 128,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "engine.ngram_placement": "disk",
+          "engine.num_speculative_tokens": 0
+        }
+      }
+    }
+  ]
+}
