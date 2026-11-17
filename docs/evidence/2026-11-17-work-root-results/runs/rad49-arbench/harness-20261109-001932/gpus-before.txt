@@ -1,0 +1,17 @@
+
+
+============================ ROCm System Management Interface ============================
+===================================== KFD Processes ======================================
+No KFD PIDs currently running
+==========================================================================================
+================================== Memory Usage (Bytes) ==================================
+GPU[0]		: VRAM Total Memory (B): 25753026560
+GPU[0]		: VRAM Total Used Memory (B): 27947008
+GPU[1]		: VRAM Total Memory (B): 25753026560
+GPU[1]		: VRAM Total Used Memory (B): 27971584
+GPU[2]		: VRAM Total Memory (B): 34208743424
+GPU[2]		: VRAM Total Used Memory (B): 59936768
+GPU[3]		: VRAM Total Memory (B): 17163091968
+GPU[3]		: VRAM Total Used Memory (B): 17199104
+==========================================================================================
+================================== End of ROCm SMI Log ===================================

@@ -1,0 +1,30 @@
+GPU[0]		: Average Graphics Package Power (W): 5.0
+GPU[1]		: Average Graphics Package Power (W): 5.0
+GPU[2]		: Average Graphics Package Power (W): 20.0
+GPU[3]		: Average Graphics Package Power (W): 6.0
+--
+GPU[0]		: Average Graphics Package Power (W): 6.0
+GPU[1]		: Average Graphics Package Power (W): 5.0
+GPU[2]		: Average Graphics Package Power (W): 20.0
+GPU[3]		: Average Graphics Package Power (W): 6.0
+--
+GPU[0]		: Average Graphics Package Power (W): 6.0
+GPU[1]		: Average Graphics Package Power (W): 5.0
+GPU[2]		: Average Graphics Package Power (W): 20.0
+GPU[3]		: Average Graphics Package Power (W): 6.0
+--
+GPU[0]		: Average Graphics Package Power (W): 4.0
+GPU[1]		: Average Graphics Package Power (W): 4.0
+GPU[2]		: Average Graphics Package Power (W): 21.0
+GPU[3]		: Average Graphics Package Power (W): 6.0
+--
+GPU[0]		: Average Graphics Package Power (W): 5.0
+GPU[1]		: Average Graphics Package Power (W): 5.0
+GPU[2]		: Average Graphics Package Power (W): 20.0
+GPU[3]		: Average Graphics Package Power (W): 6.0
+--
+GPU[0]		: Average Graphics Package Power (W): 5.0
+GPU[1]		: Average Graphics Package Power (W): 5.0
+GPU[2]		: Average Graphics Package Power (W): 20.0
+GPU[3]		: Average Graphics Package Power (W): 6.0
+--

@@ -1,0 +1,4 @@
+phase                         n  W mean   min   max  busy%  vddgfx mV
+1_no_process                180    16.0  16.0  17.0    0.0         35
+2_hip_context_idle          180    20.6  20.0  21.0    3.0        612
+5_exited                    180    15.8  15.0  16.0    0.0         35

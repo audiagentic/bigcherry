@@ -1,18 +1,19 @@
 """`bigcherry run new|status` and `bigcherry clean`: the managed work root (WSL01, WSL03 skeleton).
 
-Both are platform commands (no --engine): the work root is shared by every engine. `clean` is a dry run only in this slice; it
-reads the manifests and says what it would do and why, and refuses to delete.
+Both are platform commands (no --engine): the work root is shared by every engine. run cleanup stays dry-run only; `clean --builds --apply` removes eligible build caches.
 """
 
 from __future__ import annotations
 
 import json
+import math
 import os
 import sys
 from argparse import Namespace
 from pathlib import Path
 
-from ..core import paths, retention, run_manifest as rm, workspace
+from ..core import paths, retention, workspace
+from ..core import run_manifest as rm
 
 
 def work_root(override: str | None) -> Path:
@@ -48,7 +49,11 @@ def cmd_run_new(args: Namespace) -> int:
 
 
 def _find(root: Path, run_id: str):
-    hits = [p for k in rm.RUN_KINDS for p in (root / "runs" / k).glob(run_id + "*") if p.is_dir()]
+    # Diagnostic lookup must still resolve corrupt nested manifests so status
+    # can report their actual error. Include adopted flat runs, not unadopted.
+    hits = [e.path for e in retention.inspect_workspace(root, measure=False).runs
+            if e.run_id.startswith(run_id) and
+            (e.kind != "legacy" or e.manifest is not None)]
     return hits
 
 
@@ -129,18 +134,66 @@ def _cmd_quarantine_family(args: Namespace) -> int:
 
 
 def cmd_clean(args: Namespace) -> int:
-    if args.apply:
-        print("clean: --apply is not available yet: deletion needs harvest (WSL02) and quarantine first; this is a dry run only",
-              file=sys.stderr)
-        return 2
     root = work_root(args.work_root)
     if not root.is_dir():
         print(f"clean: {root} does not exist", file=sys.stderr)
         return 2
-    if getattr(args, "legacy", False):
-        if getattr(args, "builds", False):
-            print("clean: choose --legacy or --builds", file=sys.stderr)
+    if getattr(args, "legacy", False) and getattr(args, "builds", False):
+        print("clean: choose --legacy or --builds", file=sys.stderr)
+        return 2
+    if getattr(args, "builds", False):
+        from ..core import build_gc
+
+        if not math.isfinite(args.min_age_days) or args.min_age_days < 0 or args.keep_newest < 0:
+            print("clean: retention policy must be finite and non-negative", file=sys.stderr)
             return 2
+        if args.apply and args.no_size:
+            print("clean: --apply requires measured sizes (omit --no-size)", file=sys.stderr)
+            return 2
+        policy = retention.Policy(min_age_days=args.min_age_days, newest_k=args.keep_newest)
+        blocker = _blocked(root)
+        entries = retention.inspect_cache_roots(root, policy=policy, measure=not args.no_size, blocked=blocker)
+        outcome = None
+        if args.apply:
+            if blocker:
+                print(f"clean --builds: refused: {blocker}", file=sys.stderr)
+                return 3
+            try:
+                outcome = build_gc.apply(root, policy=policy, blocked_check=lambda: _blocked(root))
+            except (build_gc.BuildGCError, OSError) as exc:
+                print(f"clean --builds: refused: {exc}", file=sys.stderr)
+                return 3
+        if args.json:
+            report = {"root": str(root), "read_only": not args.apply, "entries": entries}
+            if outcome is not None:
+                report["apply"] = outcome
+            json.dump(report, sys.stdout, indent=1, sort_keys=True)
+            print()
+        else:
+            for entry in entries:
+                size = entry["size_bytes"]
+                age = entry["age_days"]
+                size_display = "unknown" if size is None else str(size)
+                age_display = "unknown" if age is None else f"{age:.1f}d"
+                print(f'{entry["kind"]:6} {entry["action"]:9} {size_display:>12} {age_display:>9} '
+                      f'{entry["metadata"]:20} {entry["path"]}: {"; ".join(entry["reasons"])}')
+            if outcome is None:
+                print("dry run: no cache entries changed")
+            else:
+                print(f'build GC applied: {len(outcome["removed"])} removed, '
+                      f'{len(outcome["skipped"])} skipped; record {outcome["record"]}')
+                for removed in outcome["removed"]:
+                    if removed.get("warning"):
+                        print(f'  warning {removed["path"]}: {removed["warning"]}')
+                for skipped in outcome["skipped"]:
+                    print(f'  skipped {skipped["path"]}: {skipped["reason"]}')
+                    if skipped.get("quarantine_path"):
+                        print(f'  quarantine leftover: {skipped["quarantine_path"]}')
+        return 0 if outcome is None or not outcome["skipped"] else 3
+    if args.apply:
+        print("clean: --apply requires --builds (run cleanup remains dry-run only)", file=sys.stderr)
+        return 2
+    if getattr(args, "legacy", False):
         from ..core.legacy_inventory import inventory_legacy
         report = inventory_legacy(root, measure=not args.no_size)
         if args.json:
@@ -148,22 +201,9 @@ def cmd_clean(args: Namespace) -> int:
             print()
         else:
             for item in report["entries"]:
-                print(f"{item[category]:24} protected {item[path]}")
-            print(f"read-only: {report[totals][entries]} protected items; "
-                  f"{report[totals][unmeasured_entries]} unmeasured or incomplete")
-        return 0
-    if getattr(args, "builds", False):
-        entries = retention.inspect_cache_roots(root, measure=not args.no_size)
-        if args.json:
-            json.dump({"root": str(root), "read_only": True, "entries": entries},
-                      sys.stdout, indent=1, sort_keys=True)
-            print()
-        else:
-            for entry in entries:
-                size = entry["size_bytes"]
-                display_size = "unknown" if size is None else str(size)
-                print(f'{entry["kind"]:6} protected {display_size:>12} {entry["metadata"]:20} {entry["path"]}')
-            print("read-only: every cache entry is protected; no GC candidates")
+                print(f'{item["category"]:24} protected {item["path"]}')
+            print(f'read-only: {report["totals"]["entries"]} protected items; '
+                  f'{report["totals"]["unmeasured_entries"]} unmeasured or incomplete')
         return 0
     policy = retention.Policy(min_age_days=args.min_age_days, newest_k=args.keep_newest)
     plan = retention.plan_cleanup(retention.inspect_workspace(root, measure=not args.no_size), policy=policy, blocked=_blocked(root))
@@ -171,7 +211,7 @@ def cmd_clean(args: Namespace) -> int:
         json.dump({"root": str(root), "blocked": plan.blocked, "totals": plan.totals(),
                    "unknown": [str(p) for p in plan.unknown],
                    "decisions": [{"path": str(d.path), "kind": d.kind, "run_id": d.run_id, "action": d.action,
-                                  "size_bytes": d.size_bytes, "reasons": d.reasons} for d in plan.decisions]},
+                                 "size_bytes": d.size_bytes, "reasons": d.reasons} for d in plan.decisions]},
                   sys.stdout, indent=1, sort_keys=True)
         print()
     else:
@@ -179,11 +219,35 @@ def cmd_clean(args: Namespace) -> int:
     return 0
 
 
+def cmd_legacy_runs(args: Namespace) -> int:
+    from ..core import legacy_runs
+
+    root = work_root(args.work_root)
+    report = legacy_runs.migrate(root, apply=args.apply)
+    if args.json:
+        json.dump(report, sys.stdout, indent=1, sort_keys=True)
+        print()
+    else:
+        for row in report["runs"]:
+            pins = ", ".join(ref["id"] for ref in row["references"]) or "-"
+            print(f'{row["status"]:12} {row["path"]}  build refs: {pins}'
+                  + (f'  ERROR: {row["error"]}' if row.get("error") else ""))
+        for row in report["loose_files"]:
+            pins = ", ".join(ref["id"] for ref in row.get("references", [])) or "-"
+            print(f'loose {row["status"]:7} {row["path"]}  build refs: {pins}'
+                  + (f'  ERROR: {row["error"]}' if row.get("error") else ""))
+        print(f'legacy runs: {json.dumps(report["totals"], sort_keys=True)}'
+              + (" (dry run: no files changed)" if not args.apply else ""))
+        if report.get("error"):
+            print(report["error"], file=sys.stderr)
+    return 3 if report["totals"]["errors"] else 0
+
+
 def register(sub) -> None:
     run = sub.add_parser("run", help="create and inspect managed runs under the work root (run new | status | harvest | quarantine | restore | purge)")
     rsub = run.add_subparsers(dest="run_action", required=True)
     new = rsub.add_parser("new", help="create runs/<kind>/<run-id>/ with its manifest and print the path")
-    new.add_argument("kind", choices=sorted(rm.RUN_KINDS))
+    new.add_argument("kind", choices=sorted(rm.NESTED_RUN_KINDS))
     new.add_argument("topic", help="short description; becomes part of the run id")
     new.add_argument("--plan", help="plan item this run belongs to (e.g. RAD12)")
     new.add_argument("--run-engine", dest="run_engine", help="engine the run is about (informational)")
@@ -215,13 +279,21 @@ def register(sub) -> None:
     pg.add_argument("--work-root")
     pg.set_defaults(func=_cmd_quarantine_family)
 
+    legacy = sub.add_parser("legacy-runs", help="inspect/adopt flat historical runs (dry-run by default)")
+    legacy_sub = legacy.add_subparsers(dest="legacy_action", required=True)
+    migrate = legacy_sub.add_parser("migrate", help="scan every file; write missing v1 manifests only with --apply")
+    migrate.add_argument("--work-root", help="the work root (default: BC_WORK_ROOT)")
+    migrate.add_argument("--apply", action="store_true", help="write manifests using the run manifest lock")
+    migrate.add_argument("--json", action="store_true", help="detailed per-run report")
+    migrate.set_defaults(func=cmd_legacy_runs)
+
     cl = sub.add_parser("clean", help="dry-run report of what cleanup would reclaim and why everything else is protected")
     cl.add_argument("--work-root")
-    cl.add_argument("--apply", action="store_true", help="not available yet")
+    cl.add_argument("--apply", action="store_true", help="delete eligible builds when --builds is selected")
     cl.add_argument("--min-age-days", type=float, default=7.0)
-    cl.add_argument("--keep-newest", type=int, default=3, help="newest K runs of each kind are always kept")
+    cl.add_argument("--keep-newest", type=int, default=3, help="newest K runs of each kind or builds per recipe are kept")
     cl.add_argument("--legacy", action="store_true", help="read-only protected legacy work-root inventory")
-    cl.add_argument("--builds", action="store_true", help="read-only build/source cache inventory (all entries protected)")
+    cl.add_argument("--builds", action="store_true", help="build GC candidates and protected reasons; sources remain read-only")
     cl.add_argument("--no-size", action="store_true", help="skip measuring directory sizes (fast)")
     cl.add_argument("--verbose", action="store_true")
     cl.add_argument("--json", action="store_true")

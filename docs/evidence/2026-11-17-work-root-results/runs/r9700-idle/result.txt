@@ -1,0 +1,5 @@
+A no GPU process             R9700  15.0 W (min 15.0 max 15.0) busy   0.0% fclk ['1: 582Mhz *']  others {'03': 6.0, '06': 6.0, '17': 5.0}
+C engine loaded, idle        R9700  19.0 W (min 19.0 max 19.0) busy   3.0% fclk ['1: 582Mhz *']  others {'03': 5.0, '06': 4.0, '17': 5.0}
+D after 1 request (+5s)      R9700  19.0 W (min 19.0 max 20.0) busy   3.0% fclk ['1: 582Mhz *']  others {'03': 6.0, '06': 5.0, '17': 5.0}
+D2 after 1 request (+65s)    R9700  19.0 W (min 19.0 max 19.0) busy   3.0% fclk ['1: 582Mhz *']  others {'03': 7.0, '06': 5.0, '17': 5.0}
+E engine stopped             R9700  15.0 W (min 15.0 max 15.0) busy   0.0% fclk ['1: 582Mhz *']  others {'03': 5.0, '06': 5.0, '17': 5.0}

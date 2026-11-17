@@ -1,0 +1,1 @@
+commit 214450ee1b897925f63b9bc7fe5db113c203efa1 perf(radiance): libr3 GEMV stages the activation in K slabs, so 2-8 rows stay native

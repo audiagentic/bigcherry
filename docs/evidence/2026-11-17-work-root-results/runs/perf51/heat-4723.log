@@ -1,0 +1,32 @@
+== helper 0 of 2: HIP device 0 (XTX), full expert width
+== helper 1 of 2: HIP device 1 (XTX), full expert width
+r3_moe_helper: selected 8473 expert candidates, 19.999 GiB; host RSS 599.0 MiB
+r3_moe_helper: waiting for engine runtime expert maps
+r3_moe_helper: selected 8473 expert candidates, 19.999 GiB; host RSS 598.7 MiB
+r3_moe_helper: waiting for engine runtime expert maps
+== radiance: HIP device 2 (R9700), tp 1: --placement expert_tiered --ngram-placement ram --max-num-seqs 6 --max-num-batched-tokens 4096 --checkpoint-interval 4096 --kv-cache-dtype fp8 --num-speculative-tokens 3 --tp 1 --host-pool-mib 30720
+== prefill/decode
+prefill 2638.6 tok/s (7306 tokens)
+decode 59.8 tok/s (256 tokens)
+libr3: R3_MOE_HELPER GPU mailbox ready, 16946 owned experts, decode rows <= 4096
+libr3: R3_MOE_HELPER first layer map: layer 0 n_expert 512
+libr3: R3_MOE_HELPER layer 34 has protected experts; kept local
+libr3: R3_MOE_HELPER layer 44 has protected experts; kept local
+libr3: R3_MOE_HELPER layer 46 has protected experts; kept local
+libr3: R3_MOE_HELPER layer 47 has protected experts; kept local
+libr3: R3_MOE_HELPER layer 34 runtime slot map changed across ranks
+libr3: R3_MOE_HELPER layer 34 runtime slot map changed across ranks
+libr3: R3_MOE_HELPER layer 44 runtime slot map changed across ranks
+libr3: R3_MOE_HELPER layer 46 runtime slot map changed across ranks
+libr3: R3_MOE_HELPER layer 47 runtime slot map changed across ranks
+libr3: R3_MOE_HELPER layer 44 runtime slot map changed across ranks
+libr3: R3_MOE_HELPER layer 46 runtime slot map changed across ranks
+libr3: R3_MOE_HELPER layer 47 runtime slot map changed across ranks
+I placement: token embedding (1.18 GiB a rank) ram (default): pinned in host memory and read over the link in place, so its VRAM goes to the KV cache and the experts
+I placement: 'token_embd.weight' (1.18 GiB) in the pinned host pool, read in place (--embedding-placement ram, the default)
+I sampling defaults for requests that send none: temperature 1.00, top_k 20, top_p 0.95, min_p 0.00 (from the container)
+helper 0: r3_moe_helper: large-lane requests 221 (321474 rows)
+helper 0: r3_moe_helper: served 5268 requests, 340966 rows, 362736 routes, compute 2136.1 ms (405.5 us a request)
+helper 1: r3_moe_helper: large-lane requests 220 (321464 rows)
+helper 1: r3_moe_helper: served 5276 requests, 340992 rows, 366109 routes, compute 2121.6 ms (402.1 us a request)
+FN_R9700_ENGINE_DONE

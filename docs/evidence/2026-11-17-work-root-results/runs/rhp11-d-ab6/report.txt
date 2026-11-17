@@ -1,0 +1,16 @@
+DECODE (engine): median step ms / engine tok/s
+  main  1-stream step    24.65 (n=3, 24.54-24.94)  tok/s   139.50 (n=3, 138.16-140.41) | 6-stream step    48.47 (n=2, 48.24-48.69)  tok/s   331.39 (n=2, 329.20-333.58)
+  off   1-stream step    24.50 (n=3, 24.50-24.80)  tok/s   140.63 (n=3, 138.67-140.65) | 6-stream step    48.53 (n=2, 47.86-49.20)  tok/s   332.18 (n=2, 330.67-333.69)
+  cyc   1-stream step    24.58 (n=3, 24.57-24.88)  tok/s   140.21 (n=3, 138.21-140.25) | 6-stream step    49.32 (n=2, 49.00-49.63)  tok/s   331.50 (n=2, 330.79-332.20)
+PREFILL: median TTFT ms (1-stream 512 prompt, 6-stream 2048 prompt)
+  main    389.12 (n=3, 382.32-484.22) |  5705.34 (n=2, 5652.87-5757.82)
+  off     383.35 (n=3, 382.42-410.71) |  5709.27 (n=2, 5654.48-5764.06)
+  cyc     384.55 (n=3, 383.47-390.16) |  5723.30 (n=2, 5657.81-5788.79)
+  delta off vs main d1: -0.58%
+  delta off vs main d6: +0.13%
+  delta cyc vs main d1: -0.29%
+  delta cyc vs main d6: +1.75%
+text sha (1-stream): {'cyc': ['d3c04164'], 'main': ['d3c04164'], 'off': ['d3c04164']} | benchmarks ran: True
+TEXT IDENTITY: PASS (every arm a single hash equal to main's)
+cyc3.cycles.txt transaction=27 placement_fault=0 journal_fault=0
+r3_moe_worker: placement epoch cycles completed 27 (every 2 s of burst)

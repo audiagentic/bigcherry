@@ -27,7 +27,7 @@ from . import stream_bench
 
 CATALOG = Path(__file__).with_name("workloads.toml")
 DEFAULT_INDEX = resolve_work_root() / "results/index.jsonl"
-DEFAULT_RUNS = resolve_work_root() / "runs/workloads"
+DEFAULT_RUNS = resolve_work_root() / "results/workloads"
 SCHEMA = "bigcherry.workload-result.v1"
 
 

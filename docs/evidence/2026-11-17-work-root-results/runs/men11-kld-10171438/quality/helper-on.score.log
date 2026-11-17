@@ -1,0 +1,112 @@
+I device: AQL backend, 1 device(s) [0:gfx1201]
+I model: qwen4exp  arch=qwen4exp  quant=bf16  48 layers  262144 ctx
+I vocab: end-of-generation also on <|endoftext|>=248044 (a control token the container declares neither as eos nor eot; without this a turn ending on it runs on)
+I vocab: 248077 tokens, bos=-1 eos=248046
+I gbnf: vocabulary index built in 55 ms, 26.11 MiB
+libr3: R3_MOE_HELPER GPU mailbox ready, 18640 owned experts, decode rows <= 64
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libavx, libr3
+libr3: R3_MOE_HELPER first layer map: layer 0 n_expert 512
+libr3: R3_MOE_HELPER layer 34 has protected experts; kept local
+libr3: R3_MOE_HELPER layer 44 has protected experts; kept local
+libr3: R3_MOE_HELPER layer 46 has protected experts; kept local
+libr3: R3_MOE_HELPER layer 47 has protected experts; kept local
+I sampler: 248320-token vocabulary (248320 this rank), 1 rows, 7760 mask words (30.31 KiB per row)
+I host-site execution: 16 of 1767 declared ops have no host kernel (quant_act_i8g, router_topk_scatter, gated_had_quant_fp8, router_gemm_topk_scatter, moe_mailbox_publish, moe_mailbox_add, moe_mailbox_shadow, moe_mailbox_mask_ref, qk_norm_rope_gate, qk_norm_rope_gate_kv_store, gate_quant_fp8, attn_paged_gate_quant, qsa_work, qsa_tail_store, qsa_score, qsa_select). Their weights may still be tiered to host or SSD -- only the arithmetic is pinned to the device. --debug-graph lists the bands.
+I declare: 1767 ops, 99452 weights, 91 buffers, 8 KV groups
+I placement: token embedding (1.18 GiB a rank) ram (default): pinned in host memory and read over the link in place, so its VRAM goes to the KV cache and the experts
+I placement: n-gram table (47.68 GiB) ram (auto): with it the fixed weights want 51.99 GiB of a card that has 31.30 GiB to give; the memory and the cgroups allow a pinned copy the card reads
+I kv: the pool backs 100% of the worst case (1 sequences all at 8192 tokens), 1.0 full-length sessions. That is concurrency at length before the scheduler preempts, not a bound on any one request. WITH PREFIX CACHING a finished sequence's blocks stay held so the next turn can reuse them, so the demand is live SESSIONS and not running requests -- when they do not all fit, the cache evicts prefixes the next turn wanted and that turn re-prefills its whole context. --host-pool-mib moves it: the experts the host pool cannot hold are the part of the card the cache cannot have.
+I VRAM budget, per card:
+  card total          31.86 GiB
+  already held       262.38 MiB   measured: driver context, code objects, anything else resident
+  driver drift        16.00 MiB   what that moves by after it is read: kept free
+  activation arena    96.10 MiB   computed from the buffer plan
+  step staging        60.75 KiB   the step batch's block tables and media staging, and the
+                                  KV tiers' copy staging
+  hardware queues    100.04 MiB   3 a card at 33.35 MiB each, measured: the engine's streams
+  --gpu-headroom-mib  96.00 MiB   left unclaimed on purpose
+  ------------------------------
+  claimable           31.30 GiB
+  static weights       4.31 GiB   off the top: every rank's own shard, and not a share of anything
+  ------------------------------
+  elastic             26.99 GiB   the experts keep what the host pool cannot hold; the cache takes the rest
+                                  and lends what no live request holds to the expert slab
+    experts           18.92 GiB   70% of it -- the whole expert plane is resident, so more would do nothing
+    kv cache         212.31 MiB   1% of it -- backs 1 sequences all at 8192 tokens at once, which is the worst case and
+                                  more would be unusable
+    unusable           7.86 GiB   neither side could take it: both are at their ceiling
+  ==============================
+  vram_weights        23.23 GiB   static + experts
+  vram_kv            211.00 MiB   the cache's share
+  unclaimed            7.96 GiB   the headroom, the unusable above, and what MiB rounding
+                                  could not place
+
+I pools:
+vram_weights    23.23 GiB budget,        0 B used,  23.23 GiB free
+vram_kv        211.00 MiB budget,        0 B used, 211.00 MiB free
+host_pool       31.18 GiB budget,        0 B used,  31.18 GiB free
+
+I placement: 'token_embd.weight' (1.18 GiB) in the pinned host pool, read in place (--embedding-placement ram, the default)
+I mover: 8014 slab slots (32 shadow), 33 pinned pool slots, 4.31 GiB static vram
+I load: rank 0, mover took 23.23 GiB, weights pool 588.00 KiB free of 23.23 GiB
+I heat engine: 8014 movable units, 8 moves a dispatch, decay 0.980 hysteresis 1.25 min-gain 1.50
+I placement: n-gram table copied into pinned memory the cards read, 47.68 GiB in 72.4 s
+I placement: n-gram table copied into pinned memory the cards read, 2 B in 0.0 s
+I load: 8.01 GiB of 24.41 GiB read, 2.0 GB/s, at container offset 70560716096
+I load: 16.02 GiB of 24.41 GiB read, 1.9 GB/s, at container offset 94858224960
+I load: 24.05 GiB of 24.41 GiB read, 2.0 GB/s, at container offset 115346296832
+I load: one pass over the container, 27.13 GiB read in 13.7 s (2.1 GB/s) for 1 rank(s); 12.9 s of that was the disk (2.3 GB/s)
+I load: 32939 weight(s), 22.89 GiB of planes, rearranged for their kernels by 16 worker(s) behind the read, 1.19 GiB held at most; done 14.5 s after the read began
+I load: 33242 weights, 24.41 GiB placed from 27.13 GiB of container read
+I chunk geometry: quantum 64 (attn block 4, state chunk 64), checkpoint interval 2048, max_tok 64 -> prefill chunks of at most 64
+I kv: KV layer bundles 12/36/36/12/1/1/12 (110 real layers)
+    vLLM stock    size  1 -> 110 groups, 110 slots (0 padding)
+    least-waste   size  1 -> 110 groups, 110 slots (0 padding)
+    radiance      per state kind, own pool ->  7 groups, 110 slots (0 padding)
+    (none)         ?        0 layers  state      0 B        0 slots =       0 B
+    kv_attn        full    12 layers  block    4 tok  page 48.00 KiB     2021 blocks = 94.73 MiB  (8084 tokens)
+    kv_gdn_state   linear  36 layers  state 108.00 MiB        1 slots = 108.00 MiB
+    kv_gdn_conv    conv    36 layers  state 2.11 MiB        1 slots =  2.11 MiB
+    kv_qsa_tail    linear  12 layers  state 12.00 KiB        1 slots = 12.00 KiB
+    kv_ple_tok     conv     1 layers  state      8 B        1 slots =       8 B
+    kv_ple_conv    conv     1 layers  state 180.00 KiB        1 slots = 180.00 KiB
+    kv_qsa_bkey    full    12 layers  block    4 tok  page 3.00 KiB     2021 blocks =  5.92 MiB  (8084 tokens)
+    pool at 0x75e12cc00000, 211.00 MiB; groups at +0..+221203456
+
+I prefix cache: disabled by --no-prefix-cache
+
+W kv group 'kv_attn' holds 8084 tokens but the context limit is 8192: ONE request longer than 8084 tokens is accepted by the API and then refused as too large to ever fit -- this is a hard limit, not a backing ratio. Give the cache more (about 1 MiB for the whole context: a larger --host-pool-mib takes experts off the card), halve the cost a token with --kv-cache-dtype fp8, or lower --max-model-len to 8084.
+W kv group 'kv_qsa_bkey' holds 8084 tokens but the context limit is 8192: ONE request longer than 8084 tokens is accepted by the API and then refused as too large to ever fit -- this is a hard limit, not a backing ratio. Give the cache more (about 0 MiB for the whole context: a larger --host-pool-mib takes experts off the card), halve the cost a token with --kv-cache-dtype fp8, or lower --max-model-len to 8084.
+I arena: 65.63 MiB device + 2 x 15.23 MiB scratch = 96.10 MiB, charged to the VRAM budget before it was split
+I mover: 32 slots can be lent out of the KV cache (77.38 MiB), filled as it lends them
+I kv: the cache can grow to 210.95 MiB a card -- 8084 tokens of context, 1.0 sessions at 8192 -- with every block it lends the experts taken back; 110.30 MiB of that is per-sequence state, and up to 77.38 MiB is lent to the experts while no request holds it
+I device allocations: 395 totalling 23.33 GiB, of which 23.44 GiB is the two pools -- the rest is the activation arena and the step staging. Anything on the card past this is the driver or a kernel plugin's own hipMalloc, which this cannot see.
+I card 0 settled at 7.95 GiB free against 129.41 MiB (the 96.00 MiB --gpu-headroom-mib and 33.41 MiB kept for the step staging and for what is built on first use). The split accounted for it: neither pool could address another byte, which is the `unusable` line of the VRAM budget above.
+I draft floor: 2 paged group(s), 0 prefix-cached -> a hit LEAVES a hole in a drafter's own KV
+I step batch: 183.84 KiB pinned staging ring + 60.75 KiB device slab a rank, 8 KV group(s), 0 derived buffer(s); of the slab, 50.00 KiB is block tables carved for the worst step and only the filled rows cross
+I kld: scoring 8240 positions over 4 documents against <work-root>/kld-ref/fn-xtx2-exact-1017 (<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad)
+I recorded pass: draft pass 0 at 64 token(s) -- 1792 records, 246 of the 1789 dispatches unordered behind the one before; 0 host op(s), 392 table refresh point(s) and 48 routing report(s) between the played stretches
+I kld: 7829 / 8240 positions, 3 / 4 documents, 15 s
+I kld: 4 documents in 16 s
+I kld: <models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad against <models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad, 8240 positions over 4 documents
+I kld: KLD mean 0.064174  median 0.015336  p99 0.68438  p99.9 1.9330  p99.99 5.4471  max 7.6356
+I kld: top-1 agreement 88.726%   PPL 9.1538 vs reference 9.1034 (x1.0055)
+I kld:   kld-docs-00                1950 pos  mean 0.02704  median 0.009368  p99 0.2406  p99.9 0.6819  top-1 91.64%
+I kld:   kld-docs-01                2211 pos  mean 0.07408  median 0.023983  p99 0.6384  p99.9 1.8099  top-1 89.28%
+I kld:   kld-docs-02                2132 pos  mean 0.09160  median 0.021108  p99 1.0457  p99.9 2.5610  top-1 86.49%
+I kld:   kld-docs-03                1947 pos  mean 0.06008  median 0.015125  p99 0.5651  p99.9 1.3987  top-1 87.62%
+I kld: report in <work-root>/runs/men11-kld-10171438/quality/helper-on.kld.json, every position in <work-root>/runs/men11-kld-10171438/quality/helper-on.kld.json.rows
+I heat engine: 6240 dispatches, 23 swaps proposed, 85 promotions, 63 demotions
+  97 dispatches declined on hysteresis, 34 found no candidate at one end
+  47 distinct units promoted, 53 readmits (62% of promotions were of something already demoted)
+  resident units a layer: min 98 max 509 mean 167.8 sd 103.2
+  per layer:
+   L0     131  143  140  112  131  131  148  150  147  129  156  147
+   L12    148  157  142   98  131  142  141  136  151  137  140  127
+   L24    148  130  150  149  138  142  138  117  133  139  507  141
+   L36    147  133  132  127  120  140  137  120  508  124  509  508
+
+I   routing evidence: 6240 layer-histograms credited, 48 layer-sweeps found nothing new, 0 dropped by a ring shallower than the run-ahead
+I mover: 131 dispatches, 85 promotions, 63 demotions, 0 staged (0.20 GiB h2d, 0.04 GiB d2h)
+  0 found no free move record, 0 starved of a slab slot, 7 of a pool slot; 129 slots quarantined
+

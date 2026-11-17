@@ -1,0 +1,4 @@
+{
+  "status": "FAIL",
+  "reason": "command exited 97: ['bash', '<repo>/tools/lab/radiance/launch-flashnext-best.sh', 'start', '--build', '<work-root>/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3', '--layout', 'flashnext-2xtx-rdna2-tail', '--port', '18410', '--experiment', '<repo>/tools/lab/radiance/rhp20/tail.experiment.json', '--record-period', '1']; see <work-root>/runs/rhp20-tail-forced-1000/start.log"
+}

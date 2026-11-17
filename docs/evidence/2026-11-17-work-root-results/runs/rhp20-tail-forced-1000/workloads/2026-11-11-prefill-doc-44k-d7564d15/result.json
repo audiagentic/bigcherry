@@ -1,0 +1,142 @@
+{
+  "build_commit": null,
+  "build_id": "b9e017fcffbd10fec20d16bdcbb88ef1",
+  "build_path": "<work-root>/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3",
+  "build_source_slice_id": "daf793f13be8d5762deecb73e3372641",
+  "details": {
+    "completed_reps": 10,
+    "corpus": "checkout docs/**/*.md sorted by path",
+    "corpus_sha256": "d39aeb260876488af5835060517eba30ac2da74a9ec16394d6e44ebaed5a78e5",
+    "power_state_changed_during_run": false,
+    "runner_commit": "7147cbc2b18ed4c0b3db82ade09251f02d34b1be",
+    "url": "http://127.0.0.1:18410",
+    "workload_config": {
+      "chars_per_token": 3.9,
+      "description": "One /v1/completions request per document slice, 44k target characters-to-token estimate (~44-50k measured prompt tokens); no parallelism.",
+      "kind": "doc",
+      "max_tokens": 1,
+      "reps": 10,
+      "target_tokens": 44000,
+      "version": 1
+    }
+  },
+  "kernel": "7.0.13-gfxoff",
+  "layout": "flashnext-2xtx-rdna2-tail",
+  "manifest": "<work-root>/flashnext/manifest-1111-185928-2010857.json",
+  "manifest_digest": "sha256:922ed8e1c9e59bd8ecbba72d53b0a38a252eb32d2c31c86671e8505c79a07b1f",
+  "metrics": {
+    "prefill_tps": {
+      "median": 2806.163,
+      "per_rep": [
+        {
+          "prefill_tps": 2211.96,
+          "prompt_tokens": 51372,
+          "seconds": 23.22465,
+          "slice": 1
+        },
+        {
+          "prefill_tps": 2806.805,
+          "prompt_tokens": 53222,
+          "seconds": 18.96177,
+          "slice": 2
+        },
+        {
+          "prefill_tps": 2835.715,
+          "prompt_tokens": 50145,
+          "seconds": 17.68337,
+          "slice": 3
+        },
+        {
+          "prefill_tps": 2798.707,
+          "prompt_tokens": 51277,
+          "seconds": 18.32168,
+          "slice": 4
+        },
+        {
+          "prefill_tps": 2805.521,
+          "prompt_tokens": 52626,
+          "seconds": 18.75802,
+          "slice": 5
+        },
+        {
+          "prefill_tps": 2831.729,
+          "prompt_tokens": 48643,
+          "seconds": 17.17784,
+          "slice": 6
+        },
+        {
+          "prefill_tps": 2784.445,
+          "prompt_tokens": 55253,
+          "seconds": 19.84345,
+          "slice": 7
+        },
+        {
+          "prefill_tps": 2782.575,
+          "prompt_tokens": 50395,
+          "seconds": 18.11092,
+          "slice": 8
+        },
+        {
+          "prefill_tps": 2832.318,
+          "prompt_tokens": 49830,
+          "seconds": 17.59336,
+          "slice": 9
+        },
+        {
+          "prefill_tps": 2839.142,
+          "prompt_tokens": 48018,
+          "seconds": 16.91286,
+          "slice": 10
+        }
+      ],
+      "unit": "tok/s"
+    }
+  },
+  "model": "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "options": {
+    "chunk": 2048,
+    "host_kv_mib": 0,
+    "host_pool_mib": 1033,
+    "kv_dtype": "fp8",
+    "max_sessions": 8,
+    "spec_depth": 3
+  },
+  "policy": {
+    "calibration_key": null,
+    "state": "off"
+  },
+  "power_state": {
+    "0000:03:00.0": {
+      "od_sclk_max_mhz": null,
+      "perf_level": "auto",
+      "power1_cap_uw": 0,
+      "vddgfx_offset_mv": 0
+    },
+    "0000:06:00.0": {
+      "od_sclk_max_mhz": null,
+      "perf_level": "auto",
+      "power1_cap_uw": 0,
+      "vddgfx_offset_mv": 0
+    },
+    "0000:09:00.0": {
+      "od_sclk_max_mhz": null,
+      "perf_level": "auto",
+      "power1_cap_uw": 300000000,
+      "vddgfx_offset_mv": 0
+    },
+    "0000:17:00.0": {
+      "od_sclk_max_mhz": null,
+      "perf_level": "auto",
+      "power1_cap_uw": 303000000,
+      "vddgfx_offset_mv": 0
+    }
+  },
+  "row_id": "da49acb949fb4911",
+  "run_folder": "<work-root>/runs/rhp20-tail-forced-1000/workloads/2026-11-11-prefill-doc-44k-d7564d15",
+  "runner_commit": "7147cbc2b18ed4c0b3db82ade09251f02d34b1be",
+  "schema": "bigcherry.workload-result.v1",
+  "source": "measured",
+  "timestamp": "2026-11-11T08:04:18+00:00",
+  "workload_id": "prefill-doc-44k",
+  "workload_version": 1
+}

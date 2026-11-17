@@ -1,11 +1,11 @@
 schema = 1
 id = "rad0038_bf16_i8_kv"
 order = 38
-state = "untested"
+state = "validated"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"
 plan-ids = ["VTP43"]
 requires = ["rad0037_bf16_fp8_kv"]
 conflicts = []
-tags = ["optimization", "kv-cache"]
+tags = ["kv-cache"]

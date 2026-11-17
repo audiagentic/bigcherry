@@ -1,0 +1,11 @@
+rad-kbench <work-root>/builds/e0968731eb6da813f90edbf4f08a1fbc/6d933f0c5d28de8dc1274f959b047470/radiance_home/kernels.rkb
+  fixture      <work-root>/builds/e0968731eb6da813f90edbf4f08a1fbc/6d933f0c5d28de8dc1274f959b047470/radiance_home/kernels.rkb: 741 case(s), version 6, recorded 2026-10-16 from qwen3.8-27b-fp8.rad
+  reference    libref, 1024 sampled position(s) an operand plus the full norm
+  libraries    libr3@0.0.1 libref@0.1.0 (under test: libr3 libref)
+  cache        <work-root>/builds/e0968731eb6da813f90edbf4f08a1fbc/6d933f0c5d28de8dc1274f959b047470/radiance_home/cache/kbench/e2c4518ed2ad8000
+
+
+108 checked, 108 passed, 0 failed, 0 skipped, 0 diverged, 0 capped. worst rel_l2 = 6.400e-05
+memory: 54 case(s) ran inside guarded allocations, 0 wrote outside one
+4 of 770 declared kernel row(s) ran; not reached: libr3 538, libref 228 (--report names them)
+time: load 0.58 s, draw 0.16 s, hash 0.02 s, upload 0.13 s, launch 0.09 s (libr3 0.01 s, libref 0.09 s), readback 0.07 s, compare 3.16 s, cache 0.00 s; 4.25 s wall

@@ -1,0 +1,44 @@
+new output_lane 14 dn 1054 n=5
+new output_lane 14 gu 2284 n=5
+new output_lane 21 dn 861 n=5
+new output_lane 21 gu 2128 n=5
+new output_lane 3435 dn 596 n=5
+new output_lane 3435 gu 919 n=5
+new output_lane 3439 dn 704 n=5
+new output_lane 3439 gu 1218 n=5
+new output_lane 7 dn 376 n=5
+new output_lane 7 gu 900 n=5
+new quad 14 dn 942 n=5
+new quad 14 gu 1868 n=5
+new quad 21 dn 777 n=5
+new quad 21 gu 1514 n=5
+new quad 3435 dn 1105 n=5
+new quad 3435 gu 1923 n=5
+new quad 3439 dn 782 n=5
+new quad 3439 gu 1340 n=5
+new quad 7 dn 776 n=5
+new quad 7 gu 1288 n=5
+old output_lane 14 dn 1070 n=5
+old output_lane 14 gu 2212 n=5
+old output_lane 21 dn 818 n=5
+old output_lane 21 gu 2223 n=5
+old output_lane 3435 dn 847 n=5
+old output_lane 3435 gu 1216 n=5
+old output_lane 3439 dn 385 n=5
+old output_lane 3439 gu 910 n=5
+old output_lane 7 dn 670 n=5
+old output_lane 7 gu 1186 n=5
+old quad 14 dn 1019 n=5
+old quad 14 gu 2031 n=5
+old quad 21 dn 1012 n=5
+old quad 21 gu 1736 n=5
+old quad 3435 dn 1184 n=5
+old quad 3435 gu 2066 n=5
+old quad 3439 dn 794 n=5
+old quad 3439 gu 1392 n=5
+old quad 7 dn 805 n=5
+old quad 7 gu 1369 n=5
+old gu small 666 large -162 crossover 1660
+old dn small 373 large 92 crossover 2701
+new gu small 563 large -214 crossover 1501
+new dn small 294 large 68 crossover 2643

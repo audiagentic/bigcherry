@@ -1,0 +1,258 @@
+{
+  "schema": "vtp12-ffn-abba-replay-v1",
+  "kind": "CARD_FREE_REPLAY_OF_EXISTING_SYNTHETIC_WARM_RUN_NOT_SERVING",
+  "source_campaign": "<work-root>/xtx27-prefill/vtp12-abba-43-m1-20261111/campaign.json",
+  "source_campaign_sha256": "a2a05b180940a0a76daf5fbdd3593bf86a80da08d2fe305c147a7589c6407169",
+  "source_original_summary_sha256": "334b8114bf9fa3c2008f3f75e6980c6480136edc0854767a2b1ef87fdc6789f4",
+  "cases_validated": 24,
+  "m": 1,
+  "challenger": "r9700-43",
+  "original_summary_warning": "V1 uses the intended narrow INT8 row for M<=16.",
+  "policies": {
+    "vtp05_declared_i8_dispatch": {
+      "status": "SYNTHETIC_WARM_ONLY_NUMERICAL_UNCHECKED",
+      "per_card": {
+        "xtx0": {
+          "gate_up": {
+            "control_i8_us": 81.0,
+            "challenger_i8_us": 80.65,
+            "challenger_fp8_us": 466.3
+          },
+          "down": {
+            "control_i8_us": 53.9,
+            "challenger_i8_us": 93.05,
+            "challenger_fp8_us": 275.2
+          }
+        },
+        "xtx1": {
+          "gate_up": {
+            "control_i8_us": 83.45,
+            "challenger_i8_us": 84.45,
+            "challenger_fp8_us": 496.8
+          },
+          "down": {
+            "control_i8_us": 55.55,
+            "challenger_i8_us": 95.35,
+            "challenger_fp8_us": 282.6
+          }
+        },
+        "r9700": {
+          "gate_up": {
+            "control_i8_us": 67.5,
+            "challenger_i8_us": 86.05,
+            "challenger_fp8_us": 83.55
+          },
+          "down": {
+            "control_i8_us": 34.75,
+            "challenger_i8_us": 34.2,
+            "challenger_fp8_us": 32.3
+          }
+        }
+      },
+      "stage_estimates": {
+        "control_i8_us": {
+          "ideal_ffn_stage_barriers_us": 139.0,
+          "phases": [
+            {
+              "projection": "gate_up",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 83.45,
+              "per_gpu_us": {
+                "xtx0": 81.0,
+                "xtx1": 83.45,
+                "r9700": 67.5
+              }
+            },
+            {
+              "projection": "down",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 55.55,
+              "per_gpu_us": {
+                "xtx0": 53.9,
+                "xtx1": 55.55,
+                "r9700": 34.75
+              }
+            }
+          ]
+        },
+        "challenger_i8_us": {
+          "ideal_ffn_stage_barriers_us": 181.4,
+          "phases": [
+            {
+              "projection": "gate_up",
+              "slowest": "r9700",
+              "ideal_barrier_us": 86.05,
+              "per_gpu_us": {
+                "xtx0": 80.65,
+                "xtx1": 84.45,
+                "r9700": 86.05
+              }
+            },
+            {
+              "projection": "down",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 95.35,
+              "per_gpu_us": {
+                "xtx0": 93.05,
+                "xtx1": 95.35,
+                "r9700": 34.2
+              }
+            }
+          ]
+        },
+        "challenger_fp8_us": {
+          "ideal_ffn_stage_barriers_us": 179.8,
+          "phases": [
+            {
+              "projection": "gate_up",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 84.45,
+              "per_gpu_us": {
+                "xtx0": 80.65,
+                "xtx1": 84.45,
+                "r9700": 83.55
+              }
+            },
+            {
+              "projection": "down",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 95.35,
+              "per_gpu_us": {
+                "xtx0": 93.05,
+                "xtx1": 95.35,
+                "r9700": 32.3
+              }
+            }
+          ]
+        }
+      },
+      "warning": "Not simultaneous three-GPU execution; FP8-selected row is provisional, no activation preparation/collective/attention/GDN or real-model quality"
+    },
+    "optimistic_best_observed_i8": {
+      "status": "SYNTHETIC_WARM_ONLY_NUMERICAL_UNCHECKED",
+      "per_card": {
+        "xtx0": {
+          "gate_up": {
+            "control_i8_us": 81.0,
+            "challenger_i8_us": 80.65,
+            "challenger_fp8_us": 466.3
+          },
+          "down": {
+            "control_i8_us": 53.9,
+            "challenger_i8_us": 93.05,
+            "challenger_fp8_us": 275.2
+          }
+        },
+        "xtx1": {
+          "gate_up": {
+            "control_i8_us": 83.45,
+            "challenger_i8_us": 84.45,
+            "challenger_fp8_us": 496.8
+          },
+          "down": {
+            "control_i8_us": 55.55,
+            "challenger_i8_us": 95.35,
+            "challenger_fp8_us": 282.6
+          }
+        },
+        "r9700": {
+          "gate_up": {
+            "control_i8_us": 67.5,
+            "challenger_i8_us": 86.05,
+            "challenger_fp8_us": 83.55
+          },
+          "down": {
+            "control_i8_us": 34.75,
+            "challenger_i8_us": 34.2,
+            "challenger_fp8_us": 32.3
+          }
+        }
+      },
+      "stage_estimates": {
+        "control_i8_us": {
+          "ideal_ffn_stage_barriers_us": 139.0,
+          "phases": [
+            {
+              "projection": "gate_up",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 83.45,
+              "per_gpu_us": {
+                "xtx0": 81.0,
+                "xtx1": 83.45,
+                "r9700": 67.5
+              }
+            },
+            {
+              "projection": "down",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 55.55,
+              "per_gpu_us": {
+                "xtx0": 53.9,
+                "xtx1": 55.55,
+                "r9700": 34.75
+              }
+            }
+          ]
+        },
+        "challenger_i8_us": {
+          "ideal_ffn_stage_barriers_us": 181.4,
+          "phases": [
+            {
+              "projection": "gate_up",
+              "slowest": "r9700",
+              "ideal_barrier_us": 86.05,
+              "per_gpu_us": {
+                "xtx0": 80.65,
+                "xtx1": 84.45,
+                "r9700": 86.05
+              }
+            },
+            {
+              "projection": "down",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 95.35,
+              "per_gpu_us": {
+                "xtx0": 93.05,
+                "xtx1": 95.35,
+                "r9700": 34.2
+              }
+            }
+          ]
+        },
+        "challenger_fp8_us": {
+          "ideal_ffn_stage_barriers_us": 179.8,
+          "phases": [
+            {
+              "projection": "gate_up",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 84.45,
+              "per_gpu_us": {
+                "xtx0": 80.65,
+                "xtx1": 84.45,
+                "r9700": 83.55
+              }
+            },
+            {
+              "projection": "down",
+              "slowest": "xtx1",
+              "ideal_barrier_us": 95.35,
+              "per_gpu_us": {
+                "xtx0": 93.05,
+                "xtx1": 95.35,
+                "r9700": 32.3
+              }
+            }
+          ]
+        }
+      },
+      "warning": "Not simultaneous three-GPU execution; FP8-selected row is provisional, no activation preparation/collective/attention/GDN or real-model quality"
+    }
+  },
+  "limitations": [
+    "No proof runtime selects optimal kernel for each physical GPU",
+    "No resident model tensors or attention/GDN layers",
+    "No simultaneous three-GPU dispatch, transport or reduction",
+    "No activation quantization, held-out quality or speculative decoding",
+    "Single nine-iteration selftest per source invocation and two ABBA points per arm"
+  ]
+}

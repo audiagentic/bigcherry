@@ -1,0 +1,124 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "exact-b2048",
+ "binary": "<work-root>/builds/ccb649ea788a5272eead885012a9a915/033c06a5d41152c9a1876acc2956a8eb/bin/radiance",
+ "model": "<models-root>/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "extra_args": [
+  "--tp",
+  "2",
+  "--tp-wire",
+  "exact",
+  "--p2p",
+  "off",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--max-num-batched-tokens",
+  "2048",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "0"
+ ],
+ "env": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "depths": [
+  512,
+  2048,
+  6144
+ ],
+ "reps": 2,
+ "decode": 64,
+ "rows": [
+  {
+   "depth": 512,
+   "rep": 0,
+   "prompt_tokens": 702,
+   "completion_tokens": 64,
+   "ttft_s": 0.4507415294647217,
+   "prefill_tps": 1557.4335935578433,
+   "decode_tps": 49.992716427466135,
+   "text_head": "\n\n[05c3a2acbb5e44db80d3c358fb26adec]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU ",
+   "error": null
+  },
+  {
+   "depth": 512,
+   "rep": 1,
+   "prompt_tokens": 706,
+   "completion_tokens": 64,
+   "ttft_s": 0.4366567134857178,
+   "prefill_tps": 1616.8307464327854,
+   "decode_tps": 49.837619543564536,
+   "text_head": "\n\n[9ffa6e3c81c84b02b4127e371e92070d]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 0,
+   "prompt_tokens": 2305,
+   "completion_tokens": 64,
+   "ttft_s": 1.0806422233581543,
+   "prefill_tps": 2132.990873553957,
+   "decode_tps": 48.56875930740928,
+   "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Context\n\nThis document is a **real-hardware validation log** for a dual-GPU LLM i",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 1,
+   "prompt_tokens": 2306,
+   "completion_tokens": 64,
+   "ttft_s": 1.0776689052581787,
+   "prefill_tps": 2139.8037827281914,
+   "decode_tps": 48.546496240253404,
+   "text_head": "\n\n- **Dual-XTX production-parity bench log** (2026-08-19 baseline; 2026-08-26/27 re-measurement)\n- **BigCherry build campaign & RDNA planning handover** (2026",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 0,
+   "prompt_tokens": 6678,
+   "completion_tokens": 64,
+   "ttft_s": 3.155604839324951,
+   "prefill_tps": 2116.234554079516,
+   "decode_tps": 45.222906678359124,
+   "text_head": "\n\n[68ce46efeef8453495628652071f66cb]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 1,
+   "prompt_tokens": 6680,
+   "completion_tokens": 64,
+   "ttft_s": 3.1616058349609375,
+   "prefill_tps": 2112.850351594361,
+   "decode_tps": 45.258071621305454,
+   "text_head": "\n\n[06e46746a86049eba7b456de671b4642]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 0,
+  "accepted": 0
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 9207562240",
+  "GPU[1] : VRAM Total Used Memory (B): 9207586816",
+  "GPU[2] : VRAM Total Used Memory (B): 59965440",
+  "GPU[3] : VRAM Total Used Memory (B): 17227776"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

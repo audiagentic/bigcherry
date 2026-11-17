@@ -1,0 +1,1 @@
+stream-bench:  1 streams       2.77 tok/s aggregate  ttft max   5686.1 ms  event gap p95   24.78 ms  step  24.58 ms   4.00 tok/step

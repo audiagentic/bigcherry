@@ -1,0 +1,70 @@
+{
+  "schema": "VTP11_TP1_R9700_VS_TP2_2XTX_HESSIAN_COMPARISON",
+  "status": "MEASURED",
+  "source": "same original BF16 checkpoint, same 2-document 185-token corpus",
+  "reference": "R9700 TP1, NOT independent numerical oracle",
+  "candidate": "gfx1100 dual XTX TP2",
+  "records": [
+    {
+      "name": "model.language_model.layers.0.input.safetensors",
+      "k": 5120,
+      "stats": {
+        "elements": 13109760,
+        "nonfinite": 0,
+        "exact_equal": 5524138,
+        "relative_l2": 1.01329144052e-07,
+        "cosine": 1,
+        "mean_abs_diff": 1.03137504946e-06,
+        "max_abs_diff": 0.0078125,
+        "over_0_1pct": 1,
+        "over_1pct": 0
+      }
+    },
+    {
+      "name": "model.language_model.layers.0.linear_attn.out_proj.input.safetensors",
+      "k": 6144,
+      "stats": {
+        "elements": 18877440,
+        "nonfinite": 0,
+        "exact_equal": 925030,
+        "relative_l2": 3.01706870555e-05,
+        "cosine": 0.999999999545,
+        "mean_abs_diff": 9.45362285335e-07,
+        "max_abs_diff": 0.0154113769531,
+        "over_0_1pct": 88395,
+        "over_1pct": 5985
+      }
+    },
+    {
+      "name": "model.language_model.layers.0.mlp.down_proj.input.safetensors",
+      "k": 17408,
+      "stats": {
+        "elements": 151527936,
+        "nonfinite": 0,
+        "exact_equal": 816,
+        "relative_l2": 0.00340944707331,
+        "cosine": 0.999994188953,
+        "mean_abs_diff": 2.36532936846e-06,
+        "max_abs_diff": 0.0460143089294,
+        "over_0_1pct": 3317267,
+        "over_1pct": 815886
+      }
+    },
+    {
+      "name": "model.language_model.layers.0.post_attention.input.safetensors",
+      "k": 5120,
+      "stats": {
+        "elements": 13109760,
+        "nonfinite": 0,
+        "exact_equal": 168,
+        "relative_l2": 0.00223027751351,
+        "cosine": 0.999997545719,
+        "mean_abs_diff": 0.000453466860436,
+        "max_abs_diff": 0.3388671875,
+        "over_0_1pct": 10123516,
+        "over_1pct": 2257104
+      }
+    }
+  ],
+  "qualification": "cross-backend consistency only; GDN GPU-vs-CPU oracle unqualified"
+}

@@ -1,0 +1,123 @@
+{
+  "schema": "vtp16-qwen38-original-bf16-gdn-output-column-package-v1",
+  "status": "ORIGINAL_BF16_GDN_OUTPUT_COL_SHARDS_AND_RESIDUAL_INPUT_PASS_NO_GPU",
+  "created_utc": "2026-11-11T01:44:52.214854+00:00",
+  "writer_sha256": "54c493eb9b4e3ac08a46f145c3c0bd65669176a5de186a40b5da69efc4e6aeeb",
+  "layer": 0,
+  "rows": 1,
+  "weight_input_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/summary.json",
+  "weight_input_sha256": "a77162fb7af0283eb65f0e0770f779ee9594892c2d473b7e5d7fd61259ea6aa3",
+  "core_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z/summary.json",
+  "core_sha256": "35768a18dda04ec93cd799513ce79acbade5ba7435dddb952f9a464ec3140ac2",
+  "output_source": {
+    "name": "model.language_model.layers.0.linear_attn.out_proj.weight",
+    "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+    "file_basename": "model-00001-of-00018.safetensors",
+    "offset": 168893208,
+    "bytes": 62914560,
+    "shape": [
+      5120,
+      6144
+    ],
+    "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+  },
+  "original_weights_sha256": "87b442961543b1d794219563100c9728529f75bc513f01cbbbaeab6ca89b33fe",
+  "rank_weights": {
+    "xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/out-xtx0.bf16",
+      "sha256": "523f12fbbd56b93f6fef7bf8175d00c47842b04f2b494dc1eb759ba0f8b6b38e",
+      "bytes": 15728640,
+      "shape": [
+        5120,
+        1536
+      ],
+      "source_columns": [
+        0,
+        1536
+      ]
+    },
+    "xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/out-xtx1.bf16",
+      "sha256": "6fa26e79aff8bb84c78fa5c67fe5164f9fc7ebc786b5bb687f38573ebedf3db1",
+      "bytes": 15728640,
+      "shape": [
+        5120,
+        1536
+      ],
+      "source_columns": [
+        1536,
+        1536
+      ]
+    },
+    "r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/out-r9700.bf16",
+      "sha256": "c6fc20422b0bc268f3a8963dc3c88762cb75f4012258d4323098a35a21d164a9",
+      "bytes": 31457280,
+      "shape": [
+        5120,
+        3072
+      ],
+      "source_columns": [
+        3072,
+        3072
+      ]
+    }
+  },
+  "rank_inputs": {
+    "xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/gdn-xtx0.bf16",
+      "sha256": "6aad2773b0d869f306383c3eb8ac528c1ee9dc06a1e5dd3ea0271c90f40eb625",
+      "bytes": 3072,
+      "shape": [
+        1,
+        1536
+      ],
+      "heads": 12
+    },
+    "xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/gdn-xtx1.bf16",
+      "sha256": "fa68cc1627f9ea694c8f9deb72cf3ed90d3ae280023548182526d63477f58fd9",
+      "bytes": 3072,
+      "shape": [
+        1,
+        1536
+      ],
+      "heads": 12
+    },
+    "r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/gdn-r9700.bf16",
+      "sha256": "b8b3440426084880255fae39d483cc58e9bfa92d3f2f37c63e9931299ad9b206",
+      "bytes": 6144,
+      "shape": [
+        1,
+        3072
+      ],
+      "heads": 24
+    }
+  },
+  "global_input": {
+    "file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/gdn-original.bf16",
+    "sha256": "d9837fbd10825e80d47bc4042a8c4ea07dc3d74599a639901795429d2d8935b7",
+    "bytes": 12288,
+    "shape": [
+      1,
+      6144
+    ]
+  },
+  "residual": {
+    "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16",
+    "sha256": "779ca0b5c8e22b9bc037971dbfdf293c843a6e56abb1d763a44648110abd2a6f",
+    "bytes": 10240,
+    "shape": [
+      1,
+      5120
+    ]
+  },
+  "limitations": [
+    "card-free only; no three-GPU output projection run",
+    "GDN core FP32 output is converted to BF16 once for output GEMV",
+    "synthetic first-layer incoming hidden, not a real sequence",
+    "no native quantisation, engine dispatch or model quality claim"
+  ],
+  "original_weights_file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/out-original.bf16"
+}

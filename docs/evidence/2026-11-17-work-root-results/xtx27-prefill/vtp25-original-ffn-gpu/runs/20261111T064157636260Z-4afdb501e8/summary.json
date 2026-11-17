@@ -1,0 +1,56 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP25_ORIGINAL_BF16_LAYER0_FFN_THREE_GPU_CPU_ORACLE",
+  "checkout": "9c3c76d605eff70bcc155d11a197bd0822d0b242",
+  "source_digest": "4afdb501e8cf267a9db8fbc3bf26a68014ea105bb86f84c4bc2a52eeec2ef83b",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "original-BF16-Qwen-layer0-FFN-three-GPU-m4",
+      "kind": "original_ffn",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp25-original-ffn-gpu/build/4afdb501e8cf267a/vtp04-original_ffn",
+        "--rows",
+        "4",
+        "--iterations",
+        "5",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061946347706Z",
+        "--cpu-dir",
+        "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "original-BF16-Qwen-layer0-FFN-three-GPU-m4.stdout",
+      "stderr": "original-BF16-Qwen-layer0-FFN-three-GPU-m4.stderr"
+    }
+  ],
+  "schema": "vtp25-qwen38-original-bf16-layer0-ffn-3physical-gpu-v1",
+  "source_sha256": "97d0eb42735f7137338975e1b12897d2c9c8fdb2508c162f4d16be8ff382b651",
+  "driver_sha256": "2a13cafa792a60c70bb08cbd1d31883ec653f2129ae39cfc1e3f7b4d251f0cb3",
+  "pack_reader_sha256": "5f26dd860c8464baa036a66d111ef35cd7bd497f0d08d0dc7e4983faa29a1b3c",
+  "cpu_oracle_source_sha256": "24835c83ca756c4b90554162bc0af3f8401678eae7999819cf68a40ec8180c0f",
+  "cpu_oracle_driver_sha256": "3b89e6e0de81b2a253bfc9d1420a3a32b464c280048f17fbc94a969fb7b0645a",
+  "input": {
+    "rows": 4,
+    "layer": 0,
+    "packet": "<work-root>/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061946347706Z/summary.json",
+    "packet_sha256": "a22fbab3ce1c1f69cbb112bccae3fc679e857fb90e6d194300ce4578837fc0c0",
+    "cpu_oracle": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/summary.json",
+    "cpu_oracle_sha256": "f367167c2ddd71fece4daead3d601642d75dc6ddea6ede2833fa38b20b1972b2",
+    "pack_directory": "<work-root>/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061946347706Z",
+    "cpu_directory": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z",
+    "original_weights": true,
+    "ffn_widths": [
+      5120,
+      4864,
+      7424
+    ],
+    "upstream_GDN_is_cpu_reference": true,
+    "not_full_model": true
+  },
+  "full_model": false,
+  "model_generation": false,
+  "native_radiance": false,
+  "GPU_FFN_layer0": true
+}

@@ -1,6 +1,6 @@
 # rad0037_bf16_fp8_kv
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP43
 
 Scope: one new `--kv-cache-dtype` value, `bf16_fp8`: bf16 keys and E4M3 values in a paged cache.

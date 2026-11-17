@@ -1,0 +1,8 @@
+checkout 6f7de471ae874d5339648aca02c9e53ebf732e5a feat(radiance): a tensor-parallel engine with its remote-MoE helper (flashnext-tp2xtx-r9700) (#770)
+build <work-root>/builds/ccb649ea788a5272eead885012a9a915/d7394b87161cd4e8d588a2ae9259e8a2
+model <models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad n_embd=2560 hc_count=4
+XTX ranks 0,1, R9700 puller 2
+== R9700 idle
+rc=130
+== R9700 pulling from host memory
+rc=130

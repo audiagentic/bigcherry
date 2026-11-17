@@ -1,0 +1,33 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP13_CONCURRENT_INT8_FFN_AND_PHYSICAL_TP3_COLLECTIVE",
+  "checkout": "28b116e3e0fb101d7eab2690fecb5f34692588c5",
+  "source_digest": "c4a9d96253e3c824cf0bdf812fc2243acd32950d6fd18be0012a0a2c951b7106",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "ffn-int8-synthetic-bf16-1rows",
+      "kind": "ffn_chain",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp13-ffn-chain/build/c4a9d96253e3c824/vtp04-ffn_chain",
+        "--rows",
+        "1",
+        "--iterations",
+        "3"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "ffn-int8-synthetic-bf16-1rows.stdout",
+      "stderr": "ffn-int8-synthetic-bf16-1rows.stderr"
+    }
+  ],
+  "schema": "vtp13-concurrent-ffn-proof-v1",
+  "runner_hashes": {
+    "driver_sha256": "7bdaa1ac5149f71c9872680cb75e5e9f487e991cffd43a6ec457d13610f527d3",
+    "shared_runner_sha256": "554a534e6bffba1513704d9e7b893c638fdfbbda8df3feda813683dd8d42d376"
+  },
+  "checkpoint_payload": false,
+  "bf16_source": "synthetic_bf16_exact",
+  "not_native_radiance_gemm": true,
+  "not_a_model_or_serving_benchmark": true
+}

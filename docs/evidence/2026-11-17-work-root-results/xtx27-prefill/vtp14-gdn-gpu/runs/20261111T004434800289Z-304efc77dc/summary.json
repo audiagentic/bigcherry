@@ -1,0 +1,72 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP14_THREE_GPU_QWEN_GDN_REAL_CONV_LEARNED_DECAY_ORACLE",
+  "checkout": "888bef0410f56b4a53744baffe1c359748c49373",
+  "source_digest": "304efc77dce14da13914c039eacd2a6927983bbfbdce9bed01127971da9a634c",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "qwen-gdn-original-bf16-conv-m4",
+      "kind": "gdn_exact",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp14-gdn-gpu/build/304efc77dce14da1/vtp04-gdn_exact",
+        "--rows",
+        "4",
+        "--coefficients",
+        "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/original-gdn-parameters.f32",
+        "--conv-xtx0",
+        "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/conv1d-xtx0.bf16",
+        "--oracle-xtx0",
+        "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-xtx0.f32",
+        "--conv-xtx1",
+        "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/conv1d-xtx1.bf16",
+        "--oracle-xtx1",
+        "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-xtx1.f32",
+        "--conv-r9700",
+        "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/conv1d-r9700.bf16",
+        "--oracle-r9700",
+        "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-r9700.f32",
+        "--iterations",
+        "3"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "qwen-gdn-original-bf16-conv-m4.stdout",
+      "stderr": "qwen-gdn-original-bf16-conv-m4.stderr"
+    }
+  ],
+  "schema": "vtp14-real-conv-gdn-GPU-oracle-v1",
+  "source_receipts": {
+    "args": [
+      "--rows",
+      "4",
+      "--coefficients",
+      "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/original-gdn-parameters.f32",
+      "--conv-xtx0",
+      "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/conv1d-xtx0.bf16",
+      "--oracle-xtx0",
+      "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-xtx0.f32",
+      "--conv-xtx1",
+      "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/conv1d-xtx1.bf16",
+      "--oracle-xtx1",
+      "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-xtx1.f32",
+      "--conv-r9700",
+      "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/conv1d-r9700.bf16",
+      "--oracle-r9700",
+      "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/oracle-r9700.f32"
+    ],
+    "rows": 4,
+    "reference_sha256": "232b8d92e9f7c0fb957e03acd6b0b7d507ee7b530a25598f5450a7d838c792a6",
+    "pack_sha256": "d6665780592084bcb375e9257140118c7e8535d80a3ce6d5caebd9941994c4cb",
+    "reference_file": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T004006431113Z/summary.json",
+    "pack_file": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/summary.json"
+  },
+  "code_hashes": {
+    "driver_sha256": "2b72db9317a334122aa734438a5f1f6392cb645592d1ec959c7c90b840a58cb3",
+    "source_sha256": "29ff60c88059da8c3693caf35e7c12d45a19791f7b05f6e636c544d6490584b2",
+    "shared_driver_sha256": "554a534e6bffba1513704d9e7b893c638fdfbbda8df3feda813683dd8d42d376"
+  },
+  "not_full_qwen_gdn": true,
+  "not_model_benchmark": true,
+  "original_checkpoint_qkv_projection": false
+}

@@ -1,0 +1,122 @@
+[
+ {
+  "depth": 2048,
+  "rep": 0,
+  "prompt_tokens": 2307,
+  "completion_tokens": 512,
+  "ttft_s": 1.4189891815185547,
+  "prefill_tps": 1625.8052070073754,
+  "decode_tps": 76.25984208907391,
+  "text_head": "\n\nThis is a detailed summary of the two distinct technical documents provided: a **Dual-XTX Production Bench Log** and a **BigCherry Build Campaign & RDNA Plann"
+ },
+ {
+  "depth": 2048,
+  "rep": 1,
+  "prompt_tokens": 2307,
+  "completion_tokens": 512,
+  "ttft_s": 0.7322697639465332,
+  "prefill_tps": 3150.4782985528896,
+  "decode_tps": 78.98140579862674,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Hardware & Model Context\n\n- **Hardware**: <host>, a dual-GPU machine with two AMD RX 7900 XTX"
+ },
+ {
+  "depth": 8192,
+  "rep": 0,
+  "prompt_tokens": 9087,
+  "completion_tokens": 512,
+  "ttft_s": 3.08365797996521,
+  "prefill_tps": 2946.824861589391,
+  "decode_tps": 56.868859884467525,
+  "text_head": "\n\n- What is the project?\n- What is the production baseline?\n-\n\nBased on the detailed logs and handover documents provided, here is a comprehensive summary of th"
+ },
+ {
+  "depth": 8192,
+  "rep": 1,
+  "prompt_tokens": 9090,
+  "completion_tokens": 512,
+  "ttft_s": 2.6755545139312744,
+  "prefill_tps": 3397.4265718263327,
+  "decode_tps": 68.5839400016659,
+  "text_head": "\n\n# Summary: BigCherry Dual-XTX Bench Log, Build Campaign Handover, and Pin Rebase Review\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Configurat"
+ },
+ {
+  "depth": 24576,
+  "rep": 0,
+  "prompt_tokens": 34886,
+  "completion_tokens": 512,
+  "ttft_s": 11.275975704193115,
+  "prefill_tps": 3093.834264561886,
+  "decode_tps": 63.556077760668025,
+  "text_head": "\n\n<think>\nThe user wants me to summarize the extensive documentation they've provided. Let me organize this into a coherent, detailed summary covering all the m"
+ },
+ {
+  "depth": 24576,
+  "rep": 1,
+  "prompt_tokens": 34884,
+  "completion_tokens": 512,
+  "ttft_s": 11.02782654762268,
+  "prefill_tps": 3163.2706453403644,
+  "decode_tps": 75.03773328271741,
+  "text_head": "\n\n<think>\nThe user wants me to summarize the extensive documentation they've provided. This is a large collection of technical documents covering:\n\n1. A dual-XT"
+ },
+ {
+  "depth": 98304,
+  "rep": 0,
+  "prompt_tokens": 110865,
+  "completion_tokens": 512,
+  "ttft_s": 45.058958530426025,
+  "prefill_tps": 2460.4430198966647,
+  "decode_tps": 50.44600306702303,
+  "text_head": "\n\n- What is the project?\n- What is its current state?\n- **What is the next action?**\n\nBased on the extensive documentation provided, here is a detailed summary "
+ },
+ {
+  "depth": 98304,
+  "rep": 1,
+  "prompt_tokens": 110870,
+  "completion_tokens": 512,
+  "ttft_s": 44.509185791015625,
+  "prefill_tps": 2490.9464873289053,
+  "decode_tps": 49.222307422707125,
+  "text_head": "\n\n- **What is the project?**\n- **What is the current state?**\n- **What are the open items?**\n- **What are the measured results?**\n\n# BigCherry \u2014 detailed summar"
+ },
+ {
+  "depth": 512,
+  "rep": 0,
+  "prompt_tokens": 702,
+  "completion_tokens": 512,
+  "ttft_s": 0.23839402198791504,
+  "prefill_tps": 2944.7047125853965,
+  "decode_tps": 117.18277410670449,
+  "text_head": "\n\n[981602ef32264ebeb52fa821f4dbe0c7]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU 0/1, `HIP"
+ },
+ {
+  "depth": 512,
+  "rep": 1,
+  "prompt_tokens": 705,
+  "completion_tokens": 512,
+  "ttft_s": 0.2341015338897705,
+  "prefill_tps": 3011.513800383545,
+  "decode_tps": 133.4246788637587,
+  "text_head": "\n\n[570820c2ca4f44d5b732d2fa984e8ef7]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU 0/1, `HIP"
+ },
+ {
+  "depth": 2,
+  "rep": 0,
+  "prompt_tokens": 44,
+  "completion_tokens": 303,
+  "ttft_s": 0.12925457954406738,
+  "prefill_tps": 340.41347049524745,
+  "decode_tps": 77.56149484024446,
+  "text_head": "\n\nThe string `[0703051466d74f8f9875e9efe3670ad5]` is a **32-character hexadecimal string**, which is commonly used as a **hash identifier** or **unique ID** in "
+ },
+ {
+  "depth": 2,
+  "rep": 1,
+  "prompt_tokens": 43,
+  "completion_tokens": 267,
+  "ttft_s": 0.05892467498779297,
+  "prefill_tps": 729.7452214867205,
+  "decode_tps": 82.33970930448386,
+  "text_head": "\n\nThe text you provided, `[ecab6846c39a4ec188ba9f0717470726]`, is a **32-character hexadecimal string**.\n\n### Detailed Breakdown:\n\n1.  **Format Identification**"
+ }
+]

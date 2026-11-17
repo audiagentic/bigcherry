@@ -1,0 +1,14 @@
+commit 3609903a6b69bb2c1ce10d77f62c362c1419e683 feat(rsc11): structured pre-weight engine admission refusals (S5) (#844)
+CPU package energy not readable (/sys/class/powercap/intel-rapl:0/energy_uj): CPU package power left out
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+gpu0               11.0        121.0        164.5         12.0
+gpu1               14.0        120.0        169.0         16.0
+gpu2               18.0        207.0        196.5         19.0
+gpu3               13.0         97.0        164.5         14.0
+total              56.0        545.0        694.5         61.0
+decode: 16384 tokens in 188.2 s = 87.1 tok/s, 6.260 J/token (all devices)
+prefill: 473679 tokens in 181.5 s = 2609.8 tok/s, 0.266 J/token (all devices)
+decode text: 1 distinct of 16 responses, reference a139da6cc550e289

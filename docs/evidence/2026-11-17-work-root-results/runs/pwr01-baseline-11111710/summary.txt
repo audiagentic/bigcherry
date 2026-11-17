@@ -1,0 +1,14 @@
+commit e240d587a239b08cf1aa53d7481c0560c64fcd7f release:  bc-radiance 1170.15.0 (#780)
+CPU package energy not readable (/sys/class/powercap/intel-rapl:0/energy_uj): CPU package power left out
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+gpu0               11.0        122.0        165.0         12.0
+gpu1               13.5        122.0        169.0         14.0
+gpu2               18.0        207.0        198.0         19.0
+gpu3               12.0         97.0        165.0         14.0
+total              54.5        548.0        697.0         59.0
+decode: 16384 tokens in 189.7 s = 86.4 tok/s, 6.345 J/token (all devices)
+prefill: 465646 tokens in 180.1 s = 2585.5 tok/s, 0.270 J/token (all devices)
+decode text: 1 distinct of 16 responses, reference a139da6cc550e289

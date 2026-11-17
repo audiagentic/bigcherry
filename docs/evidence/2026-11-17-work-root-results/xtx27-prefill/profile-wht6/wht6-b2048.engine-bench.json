@@ -1,0 +1,68 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "wht6-b2048",
+ "binary": "<work-root>/builds/ccb649ea788a5272eead885012a9a915/033c06a5d41152c9a1876acc2956a8eb/bin/radiance",
+ "model": "<models-root>/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "extra_args": [
+  "--tp",
+  "2",
+  "--tp-wire",
+  "wht6",
+  "--p2p",
+  "off",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--max-num-batched-tokens",
+  "2048",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "0",
+  "--profile-ops"
+ ],
+ "env": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "depths": [
+  6144
+ ],
+ "reps": 1,
+ "decode": 32,
+ "rows": [
+  {
+   "depth": 6144,
+   "rep": 0,
+   "prompt_tokens": 6677,
+   "completion_tokens": 32,
+   "ttft_s": 2.7261996269226074,
+   "prefill_tps": 2449.197019198899,
+   "decode_tps": 40.08457678466776,
+   "text_head": "\n\n# Summary: BigCherry Dual-XTX Bench Log & Build Campaign Handover\n\n## 1. Dual-XTX Production-Parity Bench",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 0,
+  "accepted": 0
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 9207570432",
+  "GPU[1] : VRAM Total Used Memory (B): 9207566336",
+  "GPU[2] : VRAM Total Used Memory (B): 59969536",
+  "GPU[3] : VRAM Total Used Memory (B): 17231872"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

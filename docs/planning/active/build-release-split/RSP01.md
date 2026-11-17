@@ -11,39 +11,25 @@ work: L
 priority: P1
 ---
 
-# The radiance release is the engine runtime only; the platform release carries the rest
+# The radiance release is one Python-free engine runtime
 
 ## Description
 
-Owner direction (2026-11-17; supersedes the earlier `bc-serve` exclusion):
-`bc-radiance` owns the complete, version-matched engine runtime, including
-`bin/radiance`, `radiance_home/bin/bc-serve` (built from the Radiance
-serving component), `r3_moe_worker`, plugins and catalogs. `bc-serve`
-shares engine ABI/manifest and expert ownership; it must not be a platform
-binary. Platform owns launcher, layouts and their configuration plus
-build/patch/campaign/slice/release tooling. `rad-*` and `r4d_selftest`
-remain development products, excluded from engine runtime bundles.
+Owner decision (2026-11-17): the `bc-radiance` release is **one engine runtime asset** consisting of matched `bin/radiance` and `radiance_home/bin/bc-serve`, helpers, plugins, runtime libraries and RSC12 per-model configs. `bc-serve` owns start/stop, tuning, guards, power, host preflight, resources, calibration and heat placement in C++. The engine's `archs.toml` is compiled into it. **No Python and no shell launcher** are shipped in the engine release.
 
-The former bundle copied whole build directories containing diagnostics and
-tests as well as engine programs. The scoped manifest packages only required
-runtime files. Phase 1 still installs using a detached tag worktree;
-phase 2 will bind compatible platform and engine releases without such a
-whole-repository engine install.
-
-Goal: immutable, verified engine runtime bundle including `bc-serve`, with
-platform tooling and layouts released separately and paired at install time.
+The `bc-platform` release is separate, for repository-side build, patch, campaign, slice and release tooling. It is not installed, paired or required to run an engine. Phase 1 scopes the binary bundle but still relies on a detached tag worktree and repository-side launcher; phase 2 designs a verified, repository-free engine install after the RSC02/RSC12/RSC04 cutovers. `rad-*` and `r4d_selftest` are development outputs, not engine payload.
 
 ## Steps
 
 1. Audit: list the contents of a current radiance bundle and classify each file as engine runtime, engine helper, tool/test binary or platform binary.
 2. Explicit run-side manifest for the bundle (replace the RUN_DIRS directory copy with a named list of what the engine needs: radiance, plugin libraries and kernels, helpers such as r3_moe_worker, matching bc-serve, runtime libraries). One test fails on any extra file (tool/test/platform binaries).
 3. Reuse key: BUILD_INPUTS limited to what shapes the engine binary (engine patches and components, recipes, build image, the adapter and source materialiser); the test pins this list.
-4. Install: compose the platform release (launcher, serving config) with the engine bundle; no git worktree of a whole-repo tag as the engine's installed form. Design note first, implementation after review.
+4. Install: verify one tag-bound engine asset and run it through native `bc-serve` with no repository worktree, Python or shell launcher. Design note first; implement after RSC02/RSC12/RSC04 acceptance.
 5. Consolidate while here: one place that names the run-side manifest and its consumers (bundle pack, restore verify, install verify); remove duplicated lists and legacy archive names that no release uses (migrate, no shims).
 
 ## Detailed Solution & Technical Design
 
-Boundary: engine = the Radiance runtime and tightly coupled serving binary (`bc-serve`), helpers, plugins and catalogs. Platform = launchers, layouts, configuration, build, patch, campaign, slice, jobs and release tooling. Tool binaries (rad-*, r4d_selftest) stay available as build outputs for development; they are not release payload.
+Boundary: engine = `bin/radiance`, matching `bc-serve`, helpers, runtime plugins/libraries/catalogs, compiled architecture defaults and packaged RSC12 configs. Platform = **repository-side** build, patch, campaign, slice and release tooling, not a paired runtime. The existing shell/Python launcher is interim development tooling and is never packaged. `rad-*` and `r4d_selftest` are excluded.
 
 ### Phase 1: scoped runtime (implemented)
 
@@ -71,22 +57,57 @@ hardware are external prerequisites. Thus phase 1 can launch via the
 existing platform checkout but the archive is not a self-contained
 standalone distribution.
 
-### Phase 2: compatible release-pair install (design ONLY; do not implement yet)
+### Phase 2: single Python-free engine release (design only)
 
-1. **Pin compatible engine and platform releases.** The engine release
-   supplies `bin/radiance`, its matching `bc-serve`, helpers and all runtime
-   libraries. The platform release supplies launcher, layouts and configuration.
-   Verify each release's identity, archive, file digests, SDK and compatibility;
-   record both tags, digests, version/ABI constraints and selected launcher/build
-   paths in one atomic receipt. Reject a mismatched or conflicting pair.
-2. **Remove the whole-repository engine worktree dependency.** Read tagged
-   records/identities via git objects and download/install verified engine and
-   platform assets into separate immutable prefixes. The platform launcher
-   targets the engine via `--build`, deriving `BC_SERVE_BINARY` and
-   `RADIANCE_HOME` from the engine prefix; it never carries another
-   `bc-serve`. Existing published-tag worktree installs remain until verified
-   migration. Validate with synthetic pair/install/upgrade/reject tests and
-   a no-GPU install smoke; actual GPU launch acceptance remains separate.
+**Status: not implemented.** Phase 1 delivers an engine-scoped archive, but `release-install <tag|latest>` currently creates a detached whole-repository worktree and the lab launcher still uses shell and Python to start that engine. RSC02 step 1 is an **engine-only** C++ session owner, not yet the fully autonomous helper/tuning launch path. This section is a future contract, not an existing installer interface.
+
+#### One release asset and the engine boundary
+
+Publish exactly **one** `bc-radiance-<version>` engine asset for the caller's selected engine tag, with **binaries and data only**. No Python package, Python executable/script, shell launcher or shell library belongs to this asset. The separately tagged `bc-platform-*` release remains the platform's build, patch, campaign, slice and release tooling; it is **not needed to launch or tune an installed engine**. There is **no** platform runtime archive, compatibility pair/matrix, two-tag selector or paired receipt.
+
+| Future engine asset contents | Reason and ownership |
+|---|---|
+| `bin/radiance` and `radiance_home/bin/bc-serve` | Exactly matching engine and native C++ serving/session-owner binaries, always from the same build. |
+| `radiance_home/helpers/r3_moe_worker`, helper `.so` files, kernel/architecture/quantizer plugins, `kernels.rkb`, optional `kernels_moe.rkb`, vectors | Engine-coupled helper, plugin, kernel and catalog files required by the supported models. Exclude `rad-*` diagnostics and `r4d_selftest`. |
+| `runtime-prefix/lib*/` shared libraries and `bigcherry-build-metadata-radiance.json` | Runtime dependencies and build/SDK metadata, not build trees, tests, lab tools or caches. |
+| Versioned `configs/flashnext.toml`, `configs/qwen27b.toml` and their complete required data closure | Readable RSC12 per-model configs/variants, shipped **with the engine**, not with the platform. Local site/model/power/heat inputs remain external. Replace the old `engines/radiance/layouts/*.toml` at cutover; do not ship both spellings. |
+| Architecture and native defaults **embedded in `bc-serve`** | `engines/radiance/archs.toml` is an **engine build input** compiled into the C++ executable by `engines/radiance/components/serving/CMakeLists.txt` (`archs_seed.inc`). `helper_profile.toml` and `calibration.toml` are also embedded there. Do not independently package a mutable `archs.toml` or let a platform version override it. |
+
+`tools/bigcherry/release/runtime_assets.py:RUN_MANIFEST` currently covers the phase-1 binaries, runtime libraries, catalogs and build metadata, **not** RSC12 configs; its authoritative allowlist, per-file hashes, restored-file verification and CI reuse identity must be expanded/tested when configs become release inputs. Changes to the compiled `archs.toml`, engine sources, native defaults or bundle payload contract must invalidate inappropriate reuse. Verify config discovery and all runtime dependencies in an extracted prefix with **no** repository checkout or Python/shell import path.
+
+RSC02 defines `bc-serve start CONFIG` (detached), `bc-serve serve CONFIG` (foreground owner), `bc-serve stop`, `bc-serve status` and `bc-serve start --manifest FILE` (stored manifest with fresh admission). On leased lab hosts the GPU lease wraps **foreground `serve` for the entire session**, not `start` alone. Today's `engines/radiance/components/serving/main.cpp` exposes `serve/start --run-dir ... [--configs ...]`, not the final named-config or stored-manifest UX. The Python supervisor and shell launcher are behavioral references only and will be retired (RSC02/RSC04), never shipped.
+
+The host, not the release, supplies GPUs, ROCm SDK/driver, models, site paths/settings, optional route heat, calibration and live-policy data. These are mutable **inputs** to resolve, fingerprint and preflight, not private assets to copy. Anything needed to run and optimally tune a released engine—config resolution, memory/host resource planning, host checks, power/gfxoff, calibration and heat placement—must ultimately run in C++ inside `bc-serve`. Until a behavior has been ported, it is a **repo-side lab tool only** and the affected standalone mode is unsupported rather than silently invoking Python.
+
+#### RSC02, RSC12 and RSC04 dependency gates
+
+Compare [RSC02](../run-serving-configuration/RSC02.md), [RSC12](../run-serving-configuration/RSC12.md) and [RSC04](../run-serving-configuration/RSC04.md). A C++ parser/probe already existing does **not** imply its full start-time workflow has been ported.
+
+| Gate | Verified implementation and remaining work |
+|---|---|
+| RSC02 **step 1: native session owner** | `engines/radiance/components/serving/main.cpp`, `session.cpp` and `session.h` implement dense/engine-only measured start, child ownership, health, canary, control socket, stop and native SDK refusal. `session.h` explicitly defers helper/power/lab paths. `tools/bigcherry/serving/supervisor.py` is the behavior reference, **not** payload. Complete the intended named-config interface and acceptance. |
+| RSC02 **step 2: helpers and resources derive-launch** | **Not yet in the C++ session owner:** helper-first spawn/readiness, helper memory residency, measuring with helpers up, host-pool/resource derivation and failure cleanup. Current production helper runs use `tools/lab/radiance/launch-flashnext-best.sh` and `python3 -m bigcherry resources derive-launch`. Port this before shipping helper-layout startup. |
+| RSC12 **config variants and stored manifests**; RSC02 step 5 | `engines/radiance/configs/flashnext.toml`, `qwen27b.toml` and `components/serving/config_loader.cpp` exist, but strict variant/parity acceptance, named-config launch, shipped config closure and `start --manifest FILE` with static-key verification plus fresh live admission are **not yet the release path**. Finish RSC12 steps 4–6 and RSC02 step 5 before retiring layouts. |
+| RSC02 **step 3: guards and lab modes** | **Not in the native session lifecycle:** MTP replay guard, live placement/heat recording, lab calibration workflow and its watchdog/ABBA prompts. `components/serving/calibration.cpp` and live-policy code are native building blocks, not full launch orchestration. The current scripts remain `tools/lab/radiance/launch-flashnext-best.sh` and `tools/lab/radiance/calibration_watchdog.py`. |
+| RSC02 **step 4: power and gfxoff** | **Not in the native owner:** all-or-nothing `gpu-power apply/restore`, gfxoff floor/check and restore only after verified child exit. Current dependencies: `tools/bigcherry/cli/power_cmds.py` and launcher commands `bigcherry gpu-power` / `bigcherry gfxoff`. Meet PWR09 requirements in C++, no shipped Python fallback. |
+| Host preflight and heat-placement utilities | `components/serving/sdk_check.cpp` already handles native SDK checks; the remaining host warnings/checks from `tools/bigcherry/cli/host_check.py` and launcher `lib/sdk-check.sh` must be included in native admission. `tools/lab/radiance/heat-placement/heat-watch.py` is a **repo-only** tuning watcher, not a released utility. Native config/heat control must cover any required optimizations. |
+| RSC02 **step 6** and RSC04 **retirement** | Hardware parity and RHP12 on dense and helper configurations, caller/installer migration and deletion of the shell launcher and `lib/plan-check.sh` follow the native conversion. `tools/bigcherry/release/install.py` still makes a tagged source worktree; it is not yet the standalone installer. |
+
+**Interim:** tuned helper layouts launch through the **repository** `tools/lab/radiance/launch-flashnext-best.sh`, the Python `bigcherry` CLI and development layout files. This is a development toolchain **never shipped in an engine asset**. Missing C++ functionality must refuse/declare the corresponding standalone feature unsupported until its gate lands.
+
+#### One tag, one verified install receipt, retained rollback
+
+The caller supplies **one exact Radiance tag**. The release record at **that tag** supplies the permitted asset name and **archive SHA-256**. The installer verifies downloaded bytes against that **tag-bound digest**, then checks product, scope, manifest digest, all file digests/modes, provenance, matched `radiance`/`bc-serve` and host SDK. No signing, signed attestation, pinned index, second tag or compatibility matrix is required. The digest is integrity relative to the selected tag's release record, not an independent publisher-identity assertion.
+
+A proposed **single-engine** install receipt stores `tag`, `asset_name`, `archive_sha256` (from this tag's release record), `manifest_sha256`, engine/`bc-serve` hashes, source/build identity, `rocm_version`, installed prefix and timestamp. It has **no** platform object, compatibility data, pair ID or launcher re-exec field. Verify into a safely staged immutable engine prefix, publish the receipt **last** atomically and reverify installed files/receipt on launch or rollback; invalid paths, mixed assets, changed digests and interrupted installs refuse. Engine source identity may use the selected tag's Git objects rather than a detached whole-repository checkout.
+
+Retain the **current** and **immediately previous** verified engine release for rollback and verify the previous candidate again before switching. **Never convert existing installs**, and never rewrite legacy v1 receipts. A fresh reinstall from a tag can replace **other older** installs according to the current/previous policy, but must not destroy an active or unverified rollback target. The sole previously published unscoped asset (`bc-radiance-1170.0.0`, `radiance-e5c7cb3dcc920259656edb17ec57ffc0.tar.gz`) keeps only the phase-1 immutable SHA-pinned `PUBLISHED_LEGACY_ASSETS` exception, never automatic promotion to the new scoped standalone format.
+
+#### Implementation slices and refusal gates
+
+1. Add RSC12 configs/data to the **engine** manifest, not a platform packer. Assert that the exact extracted runtime file set contains no Python/shell launcher or development tools and independently resolves configs from outside the checkout; test missing/extra/tampered files, metadata, embedded architecture and reuse invalidation.
+2. Finish RSC02 steps 2–5 and RSC12 parity/stored-manifest checks. Port helper resources, live/power/gfxoff/host-check/calibration/heat behavior to C++, with synthetic partial-start, stale-key, host/SDK failure, helper death, power-restore refusal and tag-digest mismatch tests.
+3. Complete RSC02 step 6/RSC04 acceptance on dense **and** helper hardware, migrate callers, retire shell/Python start surfaces, then implement the one-tag worktree-free installer and current/previous rollback. Test existing v1 and pinned unscoped legacy installs **unchanged**, interrupted staging, unsafe paths and rollback. Run card-free component, release, core and patch suites; use a separate leased GPU acceptance gate.
 
 ## Code Samples & Guidance
 
@@ -95,7 +116,6 @@ standalone distribution.
 ## Files
 
 release-please-config.json; .release-please-manifest.json; tools/bigcherry/release/install.py; tools/bigcherry/release/ci_bundle.py; .github/workflows/radiance-release-bundle.yml; tools/bigcherry/ package layout; docs/reference describing releases.
-
 
 ## Validation
 
@@ -110,14 +130,14 @@ release-please-config.json; .release-please-manifest.json; tools/bigcherry/relea
   `radiance_home/helpers/r3_moe_worker`, build metadata and layout-selected
   plugins are all engine-bundle files. The platform launcher, shell libraries,
   Python commands, layout inputs, models and SDK remain external.
-- **Phase 2 validation gate (not phase 1):** install and verify an engine
-  and platform release as a compatible pair, then perform launch smoke.
+- **Phase 2 validation gate (not phase 1):** install one tag-bound Python-free
+  engine asset with packaged RSC12 configs and run native `bc-serve` from an
+  extracted prefix, both for dense and helper configurations.
 - Full patch/release/core suites and `tools/tests/test_*.py` pass.
 
 ## Effort & Risk
 
-Large blast radius: release-please wiring, install path and CI bundle reuse all change; shared modules may need splitting. Risk: breaking installs from older tags; keep the previous install path for already published tags only if named as an explicit exception, otherwise migrate.
-
+Large blast radius: native launch behavior, engine config closure, install path and CI bundle reuse. Preserve old installs without conversion, retain current/previous rollback and keep the one explicit published unscoped archive exception.
 
 ## Standards
 
@@ -125,10 +145,18 @@ Large blast radius: release-please wiring, install path and CI bundle reuse all 
 
 ## Acceptance Criteria
 
-
+- The future engine payload contains no Python or shell launcher, includes engine binaries/data and RSC12 configs, and compiles `archs.toml` into `bc-serve`.
+- One exact tag-bound archive digest and single-engine receipt suffice; no platform runtime, compatibility pair, signing or migration is assumed.
+- Explicit RSC02/RSC12/RSC04 gaps, current/previous rollback, legacy allowance and refusal-oriented tests gate implementation; phase 2 is not claimed as shipped.
 
 ## Notes
+
+Progress (2026-11-17): phase 1 merged in #1016 with engine-scoped binary payload, matched `bc-serve`, integrity checks and a pinned legacy allowance. Owner revised phase 2: one Python-free engine release with RSC12 configs, native RSC02 startup/tuning and no platform pair; old installs are not converted. Standalone installer/launch still pending RSC02/RSC12/RSC04 gates.
+
+Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replaces the pair design of #1019): one Python-free engine asset of binaries and data, start-up through bc-serve, tag-bound digest trust, current and previous release kept, gate table mapping each remaining Python or shell behaviour to its RSC02 step. Rewrite lanes for RSC02 step 2 (helpers and resource derivation) and step 4 (power transaction) are in review in C++ (a rewrite from requirements, the Python only a golden oracle); step 3, step 5 and the step 6 hardware A/B and retirement follow. Phase 2 build work is blocked until those merge.
 
 ## Change Log
 
 - 2026-11-16T06:37:56.515652+00:00 (created-by): Created by claude
+- 2026-11-16T19:22:34.283744+00:00 (updated-by): Updated: section:notes
+- 2026-11-17T03:19:19.707415+00:00 (updated-by): Updated: section:notes

@@ -1,0 +1,12 @@
+real: expected = live3, live = live4                 pass (as expected)
+expected n-gram table 1 byte smaller                 refuse (as expected)
+    host consumer ngram_table: live 51200249856 bytes exceed the planned 51200249855 bytes (engine plan (rad0011: weight_footprint, resolve_table_placement)); set engine.ngram_placement = "disk"
+expected embedding 1 byte smaller                    refuse (as expected)
+    host consumer embedding: live 1271398400 bytes exceed the planned 1271398399 bytes (engine plan (rad0011: weight_footprint, resolve_table_placement)); measure the plan again (bc-serve --plan-memory) and resolve a new manifest
+expected checkpoint slot 1 byte smaller              refuse (as expected)
+    checkpoint slot: live 117938964 bytes exceed the planned 117938963 bytes (engine plan (rad0011: KVManager::checkpoint_bytes, chunk_geometry_resolve, checkpoint_slots_want)); measure the plan again (bc-serve --plan-memory) and resolve a new manifest
+expected one-session KV 1 byte smaller               refuse (as expected)
+    one full-length session's KV: live 5557452800 bytes exceed the planned 5557452799 bytes (engine plan (rad0011: VramFacts::kv_one)); measure the plan again (bc-serve --plan-memory) and resolve a new manifest
+live claimable 1 byte short of the planned split     refuse (as expected)
+    claimable VRAM (for the planned split: statics + kv + experts + stage): live 31198234615 bytes fall short of the planned 31198234616 bytes (engine plan (rad0011: vram_budget_resolve)); free the engine card or measure the plan again (bc-serve --plan-memory)
+live claimable exactly the planned split             pass (as expected)

@@ -1,0 +1,74 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "rad32-drafter-wht6",
+ "binary": "<work-root>/builds/b7f1b308faaed570146893553eef94cd/f3f192e291c9973fba5dbe33cb6eb3d0/bin/radiance",
+ "model": "<models-root>/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "extra_args": [
+  "--radiance-home",
+  "<work-root>/builds/b7f1b308faaed570146893553eef94cd/f3f192e291c9973fba5dbe33cb6eb3d0/radiance_home",
+  "--tp",
+  "2",
+  "--tp-wire",
+  "wht6",
+  "--kv-cache-dtype",
+  "fp8",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--profile-ops",
+  "--num-speculative-tokens",
+  "0"
+ ],
+ "env": {},
+ "depths": [
+  2300
+ ],
+ "reps": 2,
+ "decode": 256,
+ "rows": [
+  {
+   "depth": 2300,
+   "rep": 0,
+   "prompt_tokens": 2575,
+   "completion_tokens": 256,
+   "ttft_s": 1.1154255867004395,
+   "prefill_tps": 2308.535890428293,
+   "decode_tps": 40.031702052507654,
+   "text_head": "\n\nBased on the provided logs and handover documents, here is a detailed summary of the **BigCherry** project's status, covering the dual-GPU production benchmar",
+   "error": null
+  },
+  {
+   "depth": 2300,
+   "rep": 1,
+   "prompt_tokens": 2575,
+   "completion_tokens": 256,
+   "ttft_s": 1.0749800205230713,
+   "prefill_tps": 2395.3933569361025,
+   "decode_tps": 40.1765133692443,
+   "text_head": "\n\n# Summary of the Dual-XTX Production-Parity Bench Log and BigCherry Build Campaign Handover\n\n## Part 1: Dual-XTX Production-Parity Bench Log\n\n### Hardware & M",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 0,
+  "accepted": 0
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 9163558912",
+  "GPU[1] : VRAM Total Used Memory (B): 9163546624",
+  "GPU[2] : VRAM Total Used Memory (B): 59965440",
+  "GPU[3] : VRAM Total Used Memory (B): 16753582080"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

@@ -1,0 +1,9 @@
+main build <work-root>/builds/c6938079bf56add212fe8c2d27813118/ef423f0ddd8c45a6fa0ee1214d8a07a4
+patch build <work-root>/builds/99dfd791d7354db01496dcc84047307a/1ed6c34e92300f7fb2e9a1e8bf7860ac
+main1 recorded_draft=1 26.1524 ms/step 26.046 ms/step 25.363 ms/step 25.7835 ms/step 25.3598 ms/step 
+patch1 recorded_draft=4 25.6784 ms/step 25.5094 ms/step 25.0001 ms/step 28.9172 ms/step 24.879 ms/step 
+main2 recorded_draft=1 26.6286 ms/step 26.037 ms/step 25.4855 ms/step 25.777 ms/step 25.3588 ms/step 
+patch2 recorded_draft=4 25.6609 ms/step 25.509 ms/step 24.9976 ms/step 25.1959 ms/step 24.8739 ms/step 
+guard on main1 engine log: rc=0
+guard on patch1 engine log: rc=0
+identity: text IDENTICAL | accepted IDENTICAL

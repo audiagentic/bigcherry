@@ -1,0 +1,84 @@
+{
+ "_comment": "Quality gate for live expert movement on the current build (main with #801/#802; same arms as runs/rhp16-kld/churn): policy-off static placement vs forced-churn (1,000,000 repeats of three cross-helper swaps) scored by radiance KL mode against the rad116 BF16 reference, 8,240 rows.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "quality_only": true,
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [],
+ "environment": {},
+ "quality": {
+  "reference_dir": "<work-root>/runs/rad116-kld/reference",
+  "control": "policy-off",
+  "timeout_s": 5400,
+  "args": [],
+  "thresholds": {
+   "max_kld_mean_increase": 0.02,
+   "max_kld_median_increase": 0.01,
+   "max_kld_p99_increase": 0.2,
+   "max_kld_p999_increase": 0.5,
+   "max_top1_drop_points": 1.0,
+   "max_ppl_ratio_increase": 0.05
+  }
+ },
+ "arms": [
+  {
+   "name": "policy-off",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "environment": {
+    "R3_MOE_WORKER_SKIP_OWNED": "1",
+    "R3_MOE_WORKER": "1"
+   },
+   "settings": {},
+   "serving": {
+    "layout": "flashnext-4gpu",
+    "set": {
+     "service.max_context": 8192,
+     "service.max_sessions": 1,
+     "engine.max_num_batched_tokens": 64,
+     "engine.kv_cache_dtype": "fp8",
+     "memory.host_pool_mib": 45056,
+     "handoff.max_rows": 64,
+     "handoff.small_rows": 8,
+     "handoff.histogram_period_s": 1,
+     "engine.ngram_placement": "disk",
+     "engine.num_speculative_tokens": 0
+    },
+    "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+    "histogram": "/dev/null"
+   }
+  },
+  {
+   "name": "forced-churn",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "environment": {
+    "R3_MOE_WORKER_SKIP_OWNED": "1",
+    "R3_MOE_WORKER": "1"
+   },
+   "settings": {},
+   "serving": {
+    "layout": "flashnext-4gpu",
+    "set": {
+     "service.max_context": 8192,
+     "service.max_sessions": 1,
+     "engine.max_num_batched_tokens": 64,
+     "engine.kv_cache_dtype": "fp8",
+     "memory.host_pool_mib": 45056,
+     "handoff.max_rows": 64,
+     "handoff.small_rows": 8,
+     "handoff.histogram_period_s": 1,
+     "engine.ngram_placement": "disk",
+     "engine.num_speculative_tokens": 0
+    },
+    "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+    "histogram": "/dev/null",
+    "experiment": "<work-root>/runs/policy-kld/experiment.json"
+   }
+  }
+ ]
+}

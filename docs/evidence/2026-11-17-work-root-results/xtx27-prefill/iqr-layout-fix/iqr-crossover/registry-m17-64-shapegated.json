@@ -1,0 +1,166 @@
+{
+  "status": "GFX11_IQR_M17_64_TILED_OVERLAYS_PRESENT_EXACT_AND_SHAPE_SAFE",
+  "tested_bands": 29,
+  "new_rows": [
+    "gemm_iqr_tiled_m17_63_gfx11",
+    "gemm_iqr_tiled_m64_gfx11"
+  ],
+  "narrow_fallback_remains": true,
+  "device_kernels_executed": false,
+  "plugin_sha256": "387309a3c54f453d30a0020a05c485e82ab0b3613ba2ee7440dff823852093a8",
+  "plugin": "<work-root>/xtx27-prefill/iqr-layout-fix/gfx11-full/radiance_home/kernels/libr3.so",
+  "kernel_rows": {
+    "gemm_iqr_nt_m64": {
+      "priority": 60,
+      "constraints": [
+        [
+          "M",
+          1,
+          64,
+          null
+        ],
+        [
+          "K",
+          3,
+          256,
+          null
+        ],
+        [
+          "N",
+          3,
+          16,
+          null
+        ],
+        [
+          "group",
+          0,
+          128,
+          null
+        ],
+        [
+          "dtype",
+          4,
+          0,
+          "i8a8 i8a8h"
+        ]
+      ]
+    },
+    "gemm_iqr_tiled": {
+      "priority": 40,
+      "constraints": [
+        [
+          "K",
+          3,
+          256,
+          null
+        ],
+        [
+          "N",
+          3,
+          128,
+          null
+        ],
+        [
+          "group",
+          0,
+          128,
+          null
+        ],
+        [
+          "dtype",
+          4,
+          0,
+          "i8a8 i8a8h"
+        ]
+      ]
+    },
+    "gemm_iqr_tiled_m64_gfx11": {
+      "priority": 61,
+      "constraints": [
+        [
+          "K",
+          3,
+          256,
+          null
+        ],
+        [
+          "N",
+          3,
+          128,
+          null
+        ],
+        [
+          "group",
+          0,
+          128,
+          null
+        ],
+        [
+          "dtype",
+          4,
+          0,
+          "i8a8 i8a8h"
+        ],
+        [
+          "M",
+          0,
+          64,
+          null
+        ]
+      ]
+    },
+    "gemm_iqr_tiled_m17_63_gfx11": {
+      "priority": 61,
+      "constraints": [
+        [
+          "K",
+          3,
+          256,
+          null
+        ],
+        [
+          "N",
+          3,
+          128,
+          null
+        ],
+        [
+          "group",
+          0,
+          128,
+          null
+        ],
+        [
+          "dtype",
+          4,
+          0,
+          "i8a8 i8a8h"
+        ],
+        [
+          "M",
+          2,
+          17,
+          null
+        ],
+        [
+          "M",
+          1,
+          63,
+          null
+        ],
+        [
+          "K",
+          0,
+          5120,
+          null
+        ],
+        [
+          "N",
+          4,
+          0,
+          "5120 10240"
+        ]
+      ]
+    }
+  }
+}

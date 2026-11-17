@@ -1,0 +1,14 @@
+commit 25e19de091c91c47bab8761353c991b3afb4564c docs(power): XTX -125 mV does not reproduce its October saving on the current build (#832)
+CPU package energy not readable (/sys/class/powercap/intel-rapl:0/energy_uj): CPU package power left out
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/daf793f13be8d5762deecb73e3372641/41f15405cc38031fe6591674f460b8f1
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+gpu0               11.0        125.5        165.0         12.0
+gpu1               14.0        126.0        168.0         14.0
+gpu2               18.0        199.0        196.0         20.0
+gpu3               13.0         96.0        165.0         13.0
+total              56.0        546.5        694.0         59.0
+decode: 6144 tokens in 70.3 s = 87.4 tok/s, 6.253 J/token (all devices)
+prefill: 160554 tokens in 61.5 s = 2610.6 tok/s, 0.266 J/token (all devices)
+decode text: 1 distinct of 6 responses, reference a139da6cc550e289

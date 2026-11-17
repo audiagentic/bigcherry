@@ -1,6 +1,6 @@
 # rad0038_bf16_i8_kv
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP43
 
 Scope: one new `--kv-cache-dtype` value, `bf16_i8`: bf16 keys and int8 values with one f16 scale per 32 value dims.

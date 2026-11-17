@@ -1,0 +1,96 @@
+{
+  "_comment": "RHP06/RHP16 transaction-correctness gate: the static flashnext-4gpu placement (policy-off, control) against the same layout with forced churn during scoring: auto_swap between the tail and each XTX and between the XTXs (gfx1030<->gfx1100 and gfx1100<->gfx1100 copies), issued back to back for the whole run (repeat is the schema maximum: the schedule never runs out before the engine stops). A bad copy, a stale owner map or a lost route shows as KLD/top-1 change; same-numerics swaps are otherwise neutral and tail swaps change kernels for a few experts. The live policy cannot move inside a KL run (15 s of scoring vs a derived 7.4 min heat gate). R3_MOE_WORKER=1 by env until #714; n-gram on disk and no drafts as before.",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "quality_only": true,
+  "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "server_args": [],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "2"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1201"
+    ],
+    "locators": [
+      "${R9700_BDF}"
+    ]
+  },
+  "quality": {
+    "reference_dir": "<work-root>/runs/rad116-kld/reference",
+    "control": "policy-off",
+    "timeout_s": 5400,
+    "args": [],
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    }
+  },
+  "arms": [
+    {
+      "name": "policy-off",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1",
+        "R3_MOE_WORKER": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-4gpu",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk",
+          "engine.num_speculative_tokens": 0
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null"
+      }
+    },
+    {
+      "name": "forced-churn",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1",
+        "R3_MOE_WORKER": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-4gpu",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk",
+          "engine.num_speculative_tokens": 0
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null",
+        "experiment": "<work-root>/runs/rhp16-kld/churn/experiment.json"
+      }
+    }
+  ]
+}

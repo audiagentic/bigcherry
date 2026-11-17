@@ -13,12 +13,15 @@ import json
 import os
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Self
 
 SCHEMA_VERSION = 1
 MANIFEST_NAME = "run.manifest.json"
 
-RUN_KINDS = frozenset({"ab", "accept", "stream", "replay", "capture", "kl", "profile", "build", "bump", "release"})
+# "legacy" is a reader-only kind for adopted flat runs/<name>/ directories.
+# New producers still create only nested run kinds.
+NESTED_RUN_KINDS = frozenset({"ab", "accept", "stream", "replay", "capture", "kl", "profile", "build", "bump", "release"})
+RUN_KINDS = NESTED_RUN_KINDS | {"legacy"}
 
 RUN_STATES = ("created", "running", "completed", "failed", "cancelled", "interrupted")
 TERMINAL_STATES = frozenset({"completed", "failed", "cancelled"})
@@ -155,17 +158,25 @@ def read_manifest(run_dir: Path) -> dict[str, Any]:
 class _Lock:
     """A short-lived exclusive lock file around one manifest update."""
 
-    def __init__(self, run_dir: Path, timeout: float = 10.0):
-        self.path = run_dir / (MANIFEST_NAME + ".lock")
+    def __init__(self, run_dir: Path, timeout: float = 10.0, *, dir_fd: int | None = None):
+        self.name = MANIFEST_NAME + ".lock"
+        self.path = run_dir / self.name
+        self.dir_fd = dir_fd
         self.timeout = timeout
 
-    def __enter__(self) -> "_Lock":
+    def _target(self) -> str:
+        return self.name if self.dir_fd is not None else str(self.path)
+
+    def __enter__(self) -> Self:
         deadline = time.monotonic() + self.timeout
         while True:
             try:
-                fd = os.open(str(self.path), os.O_CREAT | os.O_EXCL | os.O_WRONLY)
-                os.write(fd, str(os.getpid()).encode())
-                os.close(fd)
+                fd = os.open(self._target(), os.O_CREAT | os.O_EXCL | os.O_WRONLY | os.O_NOFOLLOW,
+                             0o600, dir_fd=self.dir_fd)
+                try:
+                    os.write(fd, str(os.getpid()).encode())
+                finally:
+                    os.close(fd)
                 return self
             except FileExistsError:
                 if time.monotonic() > deadline:
@@ -174,7 +185,7 @@ class _Lock:
 
     def __exit__(self, *exc: object) -> None:
         try:
-            os.unlink(self.path)
+            os.unlink(self._target(), dir_fd=self.dir_fd)
         except OSError:
             pass
 

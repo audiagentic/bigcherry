@@ -1,0 +1,68 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP23_ORIGINAL_BF16_FULL_ATTENTION_CONNECTED_GPU_TP3",
+  "checkout": "86267b0564406377251f840f633723bb5f061980",
+  "source_digest": "bf8430b1407dec2e0efd264b157270ac9a2aa30fd2440daef4bd9872ec832189",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "original-BF16-full-attention-layer3-m1",
+      "kind": "original_attention",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp23-original-attention-gpu/build/bf8430b1407dec2e/vtp04-original_attention",
+        "--rows",
+        "1",
+        "--iterations",
+        "5",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m1-20261111T041209305980Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m1-20261111T041245628121Z"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "original-BF16-full-attention-layer3-m1.stdout",
+      "stderr": "original-BF16-full-attention-layer3-m1.stderr"
+    }
+  ],
+  "schema": "vtp23-qwen38-original-BF16-full-attention-3physical-gpu-v1",
+  "runner_sha256": "952f1f37fa6e9f0b846368d289005eb1e1340ebf6730fe1d7e7adf28d2e12119",
+  "source_sha256": "8976b9ae9b483a0a4b4cc60ec4242ef8f1c1a785ec687b7433e5c3a130bea6eb",
+  "checkpoint_reader_sha256": "22f2567517f71ffb6fa830a3bee0ace74c77e91dc2bd0dc7582bd6499c0b3ef6",
+  "cpu_writer_sha256": "01c3a4680657cfedc20a3c654cb30a20c2ee56dcaac6b4311661284ba259335f",
+  "cpu_cpp_sha256": "f4dfcbd362509f4163ad02676ff46fc760a1bc708b3b4f4c6bd04d196bac7d25",
+  "source_receipts": {
+    "layer": 3,
+    "rows": 1,
+    "checkpoint_packet": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m1-20261111T041209305980Z/summary.json",
+    "checkpoint_packet_sha256": "f87b3cf5513e387f749fb488045491fa2e0d2759aa02e0f119a5c46916c14c7e",
+    "cpu_reference": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m1-20261111T041245628121Z/summary.json",
+    "cpu_reference_sha256": "c21ca880b0a53e75812c722035e00639948912e8642d36ee738447006d0d9efa",
+    "pack_directory": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m1-20261111T041209305980Z",
+    "reference_directory": "<work-root>/xtx27-prefill/vtp22-original-full-attention-cpu/layer3-m1-20261111T041245628121Z",
+    "original_BF16_payloads_verified": true,
+    "mrope_position_mode": "text-only-sequential",
+    "full_attention_gate": "per-head sigmoid",
+    "query_heads": [
+      6,
+      6,
+      12
+    ],
+    "kv_heads": [
+      1,
+      1,
+      2
+    ],
+    "output_column_width": [
+      1536,
+      1536,
+      3072
+    ],
+    "not_full_model": true
+  },
+  "full_model_generation": false,
+  "cache_continuation": false,
+  "native_radiance": false,
+  "quality_qualified": false,
+  "gpu_full_attention_stage": true
+}

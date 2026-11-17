@@ -1,0 +1,71 @@
+RSC03 derived resource ledger: {"helpers": [{"arch": "gfx1100", "bdf": "0000:03:00.0", "expert_budget_mib": 23074, "reserve_mib": 1024, "slack_bytes": 0, "vram_mib": 24560, "worker_footprint_mib": 462}, {"arch": "gfx1100", "bdf": "0000:06:00.0", "expert_budget_mib": 23074, "reserve_mib": 1024, "slack_bytes": 0, "vram_mib": 24560, "worker_footprint_mib": 462}, {"arch": "gfx1030", "bdf": "0000:17:00.0", "expert_budget_mib": 14882, "reserve_mib": 1024, "slack_bytes": 0, "vram_mib": 16368, "worker_footprint_mib": 462}], "host": {"available_bytes": 86636494848, "committed_bytes": 70101876992, "components": [{"bytes": 6763520, "name": "embedding", "source": "engine plan"}, {"bytes": 0, "name": "unowned_experts", "source": "published owner map"}, {"bytes": 2535424, "name": "staging", "source": "engine plan"}, {"bytes": 1073741824, "name": "pool_margin", "source": "calibrated margin"}, {"bytes": 51200246016, "name": "ngram_ram", "source": "engine plan"}, {"bytes": 0, "name": "checkpoints", "source": "engine plan"}, {"bytes": 0, "name": "other_engine", "source": "engine plan"}, {"bytes": 12884901888, "name": "retained_kv", "source": "target * bytes per token"}, {"bytes": 4933550080, "name": "host_reserve", "source": "host reserve policy"}], "pin_available_bytes": 95508496384, "pin_committed_bytes": 13968080896, "remaining_bytes": 16534617856}, "host_kv_mib": 12288, "host_pool_mib": 1033, "owner_map_digest": "28f43e45923dd6e0f78e9ad6e631c87af8675acf0a46b11223201a4bb09c1f4d"}
+RSC03 resolved host pool 1033 MiB, host KV 12288 MiB
+layout flashnext-4gpu: engine cards 2; helper0: card 0 gfx1100 23074 MiB head; helper1: card 1 gfx1100 23074 MiB head; helper2: card 3 gfx1030 14882 MiB tail
+recording the route histogram to <work-root>/flashnext/heat.live.rank0 every 1s
+live placement: ON -- cadence 5.0 s, margin 5000 ppm, min samples 3, effect gate True, heat period 1 s
+helper0 (pid 4095095, log <work-root>/flashnext/helper0-1111-113704.log): waiting for ready...
+helper1 (pid 4095228, log <work-root>/flashnext/helper1-1111-113704.log): waiting for ready...
+helper2 (pid 4095360, log <work-root>/flashnext/helper2-1111-113704.log): waiting for ready...
+engine TP=1 cards 2 (pid 4095590, log <work-root>/flashnext/engine-1111-113704.log): waiting for /health...
+start canary: ok (answered ' Paris. The capital of Germany is Berlin. The capital of Ita')
+calibration: finite workload-and-drift bound 14640 s (policy-only no-feed bound 240 s); waiting report period 10 s
+calibration: running A->B then B->A until convergence
+calibration: new measured drift horizon; fixed-workload-capped bound 15280 s
+calibration: COLLECTING elapsed=12 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon), txn_p50_ns (no positive committed transaction wall time), tail_share_gain_ppm (no committed plan with positive predicted tail-share saving), copy_bytes_per_s (no committed transaction with complete per-receiver READY ACK timings), tail_lane_service_ns_per_s (no positive sampled tail-lane service per second), tail_lane_row_ns (no positive tail-lane service per routed row), lane_lost_ns (no tail quiesce/reopen interval yet)
+calibration: COLLECTING elapsed=25 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=36 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=46 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=56 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=68 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=79 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=90 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=102 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=113 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=123 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=135 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=146 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=157 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=168 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=179 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=190 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=201 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=211 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=221 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=232 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=243 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=254 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=266 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=278 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=290 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: COLLECTING elapsed=302 bound=15280; missing:
+drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+calibration: once-only complete planner record validated
+calibration: "<work-root>/live-policy-calibration.toml"
+calibration: recorded in <work-root>/live-policy-calibration.toml
+RADIANCE_EXIT=0 calibration=<work-root>/live-policy-calibration.toml

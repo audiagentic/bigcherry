@@ -1,0 +1,91 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_tokens": 512,
+  "reps": 1,
+  "seed": 1,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18415"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 112.517,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 27.649,
+    "event_gap_ms_p50": 24.609,
+    "event_gap_ms_p95": 25.14,
+    "event_gap_ms_p99": 27.649,
+    "mean_stream_decode_tps_est": 137.785,
+    "tokens": 256,
+    "ttft_ms_max": 424.38,
+    "ttft_ms_p50": 424.38,
+    "ttft_ms_p95": 424.38
+   },
+   "engine": {
+    "decode_ms_per_step": 24.6269,
+    "decode_tokens_per_step": 3.4324,
+    "decode_tokens_total": 254.0,
+    "decode_tps_engine": 139.378,
+    "draft_acceptance": 0.8108,
+    "draft_accepted_total": 180.0,
+    "draft_tokens_total": 222.0,
+    "engine_step_seconds_decode_total": 1.822388,
+    "engine_steps_decode_total": 74.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 906.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.727,
+    "requests_waiting_max": 0.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 137.785,
+     "error": "",
+     "events": 76,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 906,
+     "response_tail_ms": 0.13,
+     "stream": 0,
+     "text_head": "We need answer user's request. Need continue list of words with a short story. User provided long list of words, likely wants continuation? \"Continue this list of words with a short story.\" Could mean take the list and continue it by writing a short story using those words? Need infer. They gave a sequence of words: quartz valley kestrel quartz fjord quartz fjord onyx summit ember nectar ember bas",
+     "text_sha256": "5691231c9b179cf4000c602b22fcca91a5950fb759cbd0f0417326b317798ad1",
+     "tokens": 256,
+     "ttft_ms": 424.38,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.37,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1793786571945691365,
+   "wall_s": 2.2752,
+   "wall_start_ns": 1793786569669259146
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 112.517,
+   "decode_ms_per_step_median": 24.6269,
+   "decode_tokens_per_step_median": 3.4324,
+   "decode_tps_engine_median": 139.378,
+   "draft_acceptance_median": 0.8108,
+   "event_gap_ms_p95_median": 25.14,
+   "reps_ok": 1,
+   "requests_running_mean_median": 0.727,
+   "ttft_ms_max_median": 424.38
+  }
+ }
+}
