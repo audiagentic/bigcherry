@@ -1,0 +1,129 @@
+{
+  "kind": "VTP09_M17_TO_M31_K6_COLD_GFX11_ABBA",
+  "updated_utc": "2026-11-10T09:33:05.610316+00:00",
+  "qualified_cases": 20,
+  "required_cases": 20,
+  "results": {
+    "M17_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092918005495Z-xtx0-down/receipt.json",
+      "original_us": 420.79999999999995,
+      "tiled_us": 283.9,
+      "speedup": 1.4822120464952449
+    },
+    "M17_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092907116494Z-xtx0-gate_up/receipt.json",
+      "original_us": 747.7,
+      "tiled_us": 426.45000000000005,
+      "speedup": 1.753312228866221
+    },
+    "M17_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092942051811Z-xtx1-down/receipt.json",
+      "original_us": 428.9,
+      "tiled_us": 291.79999999999995,
+      "speedup": 1.469842357779301
+    },
+    "M17_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092929504521Z-xtx1-gate_up/receipt.json",
+      "original_us": 746.5,
+      "tiled_us": 431.79999999999995,
+      "speedup": 1.7288096340898567
+    },
+    "M20_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093006119649Z-xtx0-down/receipt.json",
+      "original_us": 420.85,
+      "tiled_us": 293.75,
+      "speedup": 1.4326808510638298
+    },
+    "M20_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092953595207Z-xtx0-gate_up/receipt.json",
+      "original_us": 728.2,
+      "tiled_us": 428.0,
+      "speedup": 1.7014018691588786
+    },
+    "M20_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093030120372Z-xtx1-down/receipt.json",
+      "original_us": 426.0,
+      "tiled_us": 302.75,
+      "speedup": 1.40710156895128
+    },
+    "M20_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093017646727Z-xtx1-gate_up/receipt.json",
+      "original_us": 764.95,
+      "tiled_us": 434.0,
+      "speedup": 1.762557603686636
+    },
+    "M24_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093054092678Z-xtx0-down/receipt.json",
+      "original_us": 404.85,
+      "tiled_us": 285.05,
+      "speedup": 1.4202771443606386
+    },
+    "M24_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093041653767Z-xtx0-gate_up/receipt.json",
+      "original_us": 736.0999999999999,
+      "tiled_us": 424.70000000000005,
+      "speedup": 1.7332234518483631
+    },
+    "M24_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093118182303Z-xtx1-down/receipt.json",
+      "original_us": 427.15,
+      "tiled_us": 302.45,
+      "speedup": 1.4122995536452305
+    },
+    "M24_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093105641521Z-xtx1-gate_up/receipt.json",
+      "original_us": 759.5,
+      "tiled_us": 433.0,
+      "speedup": 1.754041570438799
+    },
+    "M28_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093142232344Z-xtx0-down/receipt.json",
+      "original_us": 419.85,
+      "tiled_us": 284.75,
+      "speedup": 1.4744512730465322
+    },
+    "M28_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093129705003Z-xtx0-gate_up/receipt.json",
+      "original_us": 738.8499999999999,
+      "tiled_us": 434.5,
+      "speedup": 1.7004602991944762
+    },
+    "M28_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093206327469Z-xtx1-down/receipt.json",
+      "original_us": 433.25,
+      "tiled_us": 295.45000000000005,
+      "speedup": 1.4664071754950074
+    },
+    "M28_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093153764502Z-xtx1-gate_up/receipt.json",
+      "original_us": 742.9,
+      "tiled_us": 433.1,
+      "speedup": 1.715308242900023
+    },
+    "M31_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093230377708Z-xtx0-down/receipt.json",
+      "original_us": 431.5,
+      "tiled_us": 282.0,
+      "speedup": 1.5301418439716312
+    },
+    "M31_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093217829468Z-xtx0-gate_up/receipt.json",
+      "original_us": 741.85,
+      "tiled_us": 423.8,
+      "speedup": 1.7504719207173196
+    },
+    "M31_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093254367510Z-xtx1-down/receipt.json",
+      "original_us": 444.35,
+      "tiled_us": 288.25,
+      "speedup": 1.5415437987857763
+    },
+    "M31_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T093241885019Z-xtx1-gate_up/receipt.json",
+      "original_us": 762.65,
+      "tiled_us": 433.6,
+      "speedup": 1.7588791512915127
+    }
+  },
+  "failed_or_partial": []
+}

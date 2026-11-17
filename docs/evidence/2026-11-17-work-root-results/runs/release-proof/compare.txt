@@ -1,0 +1,18 @@
+baseline v1.17.0 (pin v1.17.0, rev 23d0ef44c89a) -> now (pin v1.17.0, rev 1e1953270aa3)
+metric                     baseline          now  change %  allowance  verdict
+cold_ttft_s                   7.951        7.862     -1.12      ±0.32  better
+decode1_acceptance           0.6164       0.6387     +3.63          -  info
+decode1_ms_per_step           24.99        24.91     -0.33      ±0.76  better
+decode6_acceptance           0.6517       0.6836     +4.90          -  info
+decode6_ms_per_step           47.04        47.12     +0.15      ±3.30  ok
+doc_prefill_tps                3591         3596     +0.14      ±0.96  better
+long7_acceptance             0.6293       0.6436     +2.28          -  info
+long7_ms_per_step             35.54        28.37    -20.17          -  info
+long7_prefill_tps              2914         2928     +0.46      ±1.22  better
+long8_acceptance              0.641       0.6745     +5.23          -  info
+long8_ms_per_step             27.82        27.88     +0.22      ±6.17  ok
+long8_prefill_tps              2901         2942     +1.42      ±0.30  better
+policy_transactions               7          7.5     +7.14          -  info
+sess8_ms_per_step             28.89         31.4     +8.67      ±2.86  REGRESSION
+sess8_ttft_s                  20.93        20.74     -0.91      ±0.67  better
+FAIL: a gated metric regressed beyond its allowance (investigate; do not waive)

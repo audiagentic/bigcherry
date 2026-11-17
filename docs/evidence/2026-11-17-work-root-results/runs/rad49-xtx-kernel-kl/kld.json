@@ -1,0 +1,96 @@
+{
+  "_comment": "flashnext-2xtx KL: which XTX helper kernel path makes the p99.9 outliers (doc-00 worst token 5.79 vs 2.34 R9700 alone)? fp16 WMMA MoE GEMM off / half activation staging off.",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "quality_only": true,
+  "server_args": [],
+  "quality": {
+    "reference_dir": "<work-root>/runs/rad116-kld/reference",
+    "control": "helper-off",
+    "timeout_s": 5400,
+    "args": [],
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    }
+  },
+  "arms": [
+    {
+      "name": "helper-off",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-r9700",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "engine.ngram_placement": "disk",
+          "engine.num_speculative_tokens": 0
+        }
+      }
+    },
+    {
+      "name": "fp16off",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-2xtx",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk"
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null",
+        "experiment": "<work-root>/runs/rad49-xtx-kernel-kl/exp-fp16off.json"
+      }
+    },
+    {
+      "name": "ahalfoff",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-2xtx",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk"
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null",
+        "experiment": "<work-root>/runs/rad49-xtx-kernel-kl/exp-ahalfoff.json"
+      }
+    }
+  ]
+}

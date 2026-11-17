@@ -1,0 +1,16 @@
+== correctness / latency
+== idle: label, board W, GFX activity %, gfx clock
+idle: 1 queue(s) holding a BARRIER_AND from 28846
+idle: held for 30 s: yes; released by signal store: all markers completed (to 28876)
+idle: 2 queue(s) holding a BARRIER_AND from 28876
+idle: held for 30 s: yes; released by signal store: all markers completed (to 28906)
+idle: 4 queue(s) holding a BARRIER_AND from 28906
+idle: held for 30 s: yes; released by signal store: all markers completed (to 28936)
+idle: 8 queue(s) holding a BARRIER_AND from 28936
+idle: held for 30 s: yes; released by signal store: all markers completed (to 28966)
+base0: 10.7 W, GFX 0.4 % (20 samples)
+base1: 14.8 W, GFX 4.8 % (20 samples)
+q1: 94.1 W, GFX 100.0 % (20 samples)
+q2: 99.2 W, GFX 100.0 % (20 samples)
+q4: 99.6 W, GFX 100.0 % (20 samples)
+q8: 100.7 W, GFX 100.0 % (20 samples)

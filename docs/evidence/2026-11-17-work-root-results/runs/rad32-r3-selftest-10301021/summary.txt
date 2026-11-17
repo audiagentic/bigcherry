@@ -1,0 +1,37 @@
+commit 7486067bd92469963365ddf7b610a2fc42dae149 fix(radiance): rad0002 follows v1.14.0's op_combine gather guard (RAD37)
+build <work-root>/builds/3a4f76bf9f7cf4039f9e52607bb02d59/44fc3a2cfe1eea3cc04e33fb478f6630, selftest <work-root>/runs/rad32-r3-selftest-10301021/libr3/r3_selftest, device 0
+  ok    MLA M=1 heads=64 blocks=17 pinned form 3 split/unsplit, max error 0.00048828125
+  ok    MLA M=1 heads=64 blocks=513 pinned form 3 split/unsplit, max error 0.00012207031
+  ok    MLA M=2 heads=64 blocks=17 pinned form 3 split/unsplit, max error 0.0009765625
+  ok    MLA M=2 heads=64 blocks=513 pinned form 3 split/unsplit, max error 0.00012207031
+  ok    MLA M=7 heads=64 blocks=17 pinned form 3 split/unsplit, max error 0.0009765625
+  ok    MLA M=7 heads=64 blocks=513 pinned form 3 split/unsplit, max error 0.00024414062
+  ok    MLA M=33 heads=64 blocks=17 split/unsplit, max error 0.0009765625
+  ok    MLA M=33 heads=64 blocks=513 split/unsplit, max error 0.00024414062
+  ok    MLA M=7 heads=64 blocks=513 pinned form 3 split/unsplit, max error 0.00024414062
+  ok    MLA M=2 heads=64 blocks=513 pinned form 3 split/unsplit, max error 0.00012207031
+  ok    MLA M=33 heads=64 blocks=513 split/unsplit, max error 0.00024414062
+  ok    MLA M=33 heads=64 blocks=65 topk:0 split/unsplit, max error 0.00048828125
+  ok    MLA M=33 heads=64 blocks=65 topk:4 split/unsplit, max error 0.00048828125
+  ok    MLA M=33 heads=64 blocks=65 topk:16 split/unsplit, max error 0.00048828125
+  ok    MLA M=33 heads=64 blocks=65 topk:64 split/unsplit, max error 0.00048828125
+  ok    MLA M=7 heads=64 blocks=513 pinned form 1 split/unsplit, max error 0.00012207031
+  ok    MLA M=33 heads=64 blocks=65 topk:16 pinned form 2 split/unsplit, max error 0.00048828125
+  ok    MLA M=7 heads=64 blocks=65 topk:4 split/unsplit, max error 0.00048828125
+  ok    MLA M=7 heads=32 blocks=65 pinned form 3 split/unsplit, max error 0.00048828125
+  ok    MLA M=7 heads=16 blocks=17 split/unsplit, max error 0.00048828125
+  ok    MLA M=33 heads=16 blocks=17 split/unsplit, max error 0.0009765625
+  ok    MLA M=1 heads=16 blocks=513 split/unsplit, max error 3.0517578e-05
+  ok    MLA M=2 heads=16 blocks=513 split/unsplit, max error 6.1035156e-05
+  ok    MLA M=4 heads=16 blocks=513 split/unsplit, max error 0.00024414062
+  ok    MLA M=1 heads=64 blocks=17 split/unsplit, max error 0.00048828125
+  ok    MLA M=1 heads=8 blocks=513 split/unsplit, max error 0.00012207031
+  ok    MLA M=1 heads=16 blocks=513 split/unsplit, max error 0.00012207031
+  ok    MLA M=2 heads=8 blocks=513 split/unsplit, max error 0.00012207031
+  ok    MLA M=2 heads=16 blocks=513 split/unsplit, max error 0.00024414062
+  ok    MLA M=4 heads=8 blocks=513 split/unsplit, max error 0.00012207031
+  skip  ar_gather_hc_write_host -- needs 2 gfx1201 cards
+  ar_gather_hc_write_4rank_host
+  skip  ar_gather_hc_write_4rank_host -- needs 4 gfx1201 cards
+
+0 failure(s), 191 skipped

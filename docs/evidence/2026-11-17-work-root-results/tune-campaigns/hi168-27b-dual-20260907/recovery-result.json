@@ -1,0 +1,20 @@
+{
+  "evaluations_used": 13,
+  "final_overrides": {
+    "cd3b5f5bd371babe46338f367530f68f": "mmvq:native:v1"
+  },
+  "published": true,
+  "retune_recommendations": [
+    {
+      "current_assignment": "native",
+      "exhausted_candidates": [
+        "mmvq:q8_0:w4:nw6:rpb1:sk0:v1",
+        "mmvq:q8_0:w4:nw4:rpb1:sk0:v1",
+        "mmvq:q8_0:w4:nw8:rpb2:sk0:v1"
+      ],
+      "reason": "alternatives_exhausted",
+      "signature_dispatch": "cd3b5f5bd371babe46338f367530f68f"
+    }
+  ],
+  "stop_reason": "full-corpus validation passed"
+}

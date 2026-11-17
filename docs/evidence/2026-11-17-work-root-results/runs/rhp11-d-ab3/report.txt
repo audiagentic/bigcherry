@@ -1,0 +1,15 @@
+DECODE (engine): median step ms / engine tok/s
+  main  1-stream step    24.45 (n=9, 24.40-26.26)  tok/s   145.43 (n=9, 135.17-145.71) | 6-stream step    48.29 (n=6, 46.59-49.35)  tok/s   327.05 (n=6, 317.13-337.35)
+  off   1-stream step      n/a  tok/s      n/a | 6-stream step      n/a  tok/s      n/a
+  cyc   1-stream step      n/a  tok/s      n/a | 6-stream step      n/a  tok/s      n/a
+PREFILL: median TTFT ms (1-stream 512 prompt, 6-stream 2048 prompt)
+  main    384.62 (n=9, 382.51-404.96) |  5595.52 (n=6, 5546.77-5883.74)
+  off        n/a |      n/a
+  cyc        n/a |      n/a
+Traceback (most recent call last):
+  File "<work-root>/runs/rhp11-d-ab3/analyse.py", line 34, in <module>
+    m = st.median([x for x in rows["main"][k] if x]); c = st.median([x for x in rows[a][k] if x])
+                                                          ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/python/cpython-3.14.10-linux-x86_64-gnu/lib/python3.14/statistics.py", line 343, in median
+    raise StatisticsError("no median for empty data")
+statistics.StatisticsError: no median for empty data

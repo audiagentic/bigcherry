@@ -1,0 +1,396 @@
+{
+  "schema": "vtp22-qwen38-original-BF16-full-attention-physical-TP3-weight-pack-v1",
+  "status": "ORIGINAL_BF16_FULL_ATTENTION_TP3_BYTE_EXACT_PACK_PASS_NO_GPU",
+  "layer": 3,
+  "rows": 4,
+  "created_utc": "2026-11-11T04:04:43.527093+00:00",
+  "writer_sha256": "2f814c869e47df3b8ff1bb0651a30fbc294138596dd6d89e9095e090a9db3c1a",
+  "checkpoint": "<models-root>/qwen3.8-27b/Qwen3.8-27B",
+  "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+  "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+  "sources": {
+    "q": {
+      "name": "model.language_model.layers.3.self_attn.q_proj.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 2907880088,
+      "bytes": 125829120,
+      "shape": [
+        12288,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "k": {
+      "name": "model.language_model.layers.3.self_attn.k_proj.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 2834479256,
+      "bytes": 10485760,
+      "shape": [
+        1024,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "v": {
+      "name": "model.language_model.layers.3.self_attn.v_proj.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 3033709208,
+      "bytes": 10485760,
+      "shape": [
+        1024,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "o": {
+      "name": "model.language_model.layers.3.self_attn.o_proj.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 2844965016,
+      "bytes": 62914560,
+      "shape": [
+        5120,
+        6144
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "q_norm": {
+      "name": "model.language_model.layers.3.self_attn.q_norm.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 2907879576,
+      "bytes": 512,
+      "shape": [
+        256
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "k_norm": {
+      "name": "model.language_model.layers.3.self_attn.k_norm.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 2834478744,
+      "bytes": 512,
+      "shape": [
+        256
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "input_norm": {
+      "name": "model.language_model.layers.3.input_layernorm.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 2299684504,
+      "bytes": 10240,
+      "shape": [
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    }
+  },
+  "ownership": {
+    "xtx0": {
+      "q": [
+        0,
+        3072
+      ],
+      "k": [
+        0,
+        256
+      ],
+      "v": [
+        0,
+        256
+      ],
+      "o": [
+        0,
+        1536
+      ],
+      "query_heads": 6,
+      "kv_heads": 1,
+      "query_gate_interleaved": true
+    },
+    "xtx1": {
+      "q": [
+        3072,
+        3072
+      ],
+      "k": [
+        256,
+        256
+      ],
+      "v": [
+        256,
+        256
+      ],
+      "o": [
+        1536,
+        1536
+      ],
+      "query_heads": 6,
+      "kv_heads": 1,
+      "query_gate_interleaved": true
+    },
+    "r9700": {
+      "q": [
+        6144,
+        6144
+      ],
+      "k": [
+        512,
+        512
+      ],
+      "v": [
+        512,
+        512
+      ],
+      "o": [
+        3072,
+        3072
+      ],
+      "query_heads": 12,
+      "kv_heads": 2,
+      "query_gate_interleaved": true
+    }
+  },
+  "original_tensor_sha256": {
+    "q": "f8d48811339ea0405ce9a2782e918d9cf936b7067e97579cd057def90fac1bc6",
+    "k": "e51b2206a8fbc35c980a3e4d2173c4a0050cd79944593e664a5b24aa21e91101",
+    "v": "ed51ec966e2d4deeaabf444d14d121859a58f9713c42ef689d86625f2cfb7ce9",
+    "o": "4342b3f4ed9275d5e58729fcf6bf8ced70119a5d01f5503f1b873f3ad0a27ca5",
+    "q_norm": "4dfb9b152ad10548a134f39448e62a0c3ddea4d7c79a71ec129ce1603c0cff71",
+    "k_norm": "b46080bc2f1217b8db5df05cc9c6cab7bfa1b6fc7afb492e69a9e8ec2c65c0df",
+    "input_norm": "10c2d40a86413c652482c5c8e20629309bf37a722a48c3fca4348d86e9d28e8d"
+  },
+  "rank_weights": {
+    "xtx0": {
+      "q": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/q-xtx0.bf16",
+        "shape": [
+          3072,
+          5120
+        ],
+        "bytes": 31457280,
+        "sha256": "0ad03c299bc3bbad3caca269a9951ab6d2ac149d9434c8a283a833dcdb185163",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 0,
+          "length": 3072
+        }
+      },
+      "k": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/k-xtx0.bf16",
+        "shape": [
+          256,
+          5120
+        ],
+        "bytes": 2621440,
+        "sha256": "e39d5961a2c19f0a58c80cc443377749f379b9c518ef49c8015a2dd3a8b4a3e7",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 0,
+          "length": 256
+        }
+      },
+      "v": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/v-xtx0.bf16",
+        "shape": [
+          256,
+          5120
+        ],
+        "bytes": 2621440,
+        "sha256": "cf9e72bc357b654dfad70256755bf42714c381b86cfdba7193583aa4c0eae666",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 0,
+          "length": 256
+        }
+      },
+      "o": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/o-xtx0.bf16",
+        "shape": [
+          5120,
+          1536
+        ],
+        "bytes": 15728640,
+        "sha256": "6347e6a44ac1f264624ec717748729e50eb4c2f0518cc75d8c40b3ac69929875",
+        "source": {
+          "row_or_col": "input_columns",
+          "offset": 0,
+          "length": 1536
+        }
+      }
+    },
+    "xtx1": {
+      "q": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/q-xtx1.bf16",
+        "shape": [
+          3072,
+          5120
+        ],
+        "bytes": 31457280,
+        "sha256": "9806ab7b92c374f63a9806082f5b1d1de790765dfa5b0f307915a33e91f6152a",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 3072,
+          "length": 3072
+        }
+      },
+      "k": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/k-xtx1.bf16",
+        "shape": [
+          256,
+          5120
+        ],
+        "bytes": 2621440,
+        "sha256": "9ec1667e237df65b4ea5c2792a8158acf531e822cc510dfcc858c566c2251f4f",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 256,
+          "length": 256
+        }
+      },
+      "v": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/v-xtx1.bf16",
+        "shape": [
+          256,
+          5120
+        ],
+        "bytes": 2621440,
+        "sha256": "72a0dc72f8a190f0f8bd9f717a76b55b24405611ace8ac1be4a31b029591f069",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 256,
+          "length": 256
+        }
+      },
+      "o": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/o-xtx1.bf16",
+        "shape": [
+          5120,
+          1536
+        ],
+        "bytes": 15728640,
+        "sha256": "f1c8a107c7e3eefe8e25df197eef579b8aec1052b7eab4305bf434282f5289c4",
+        "source": {
+          "row_or_col": "input_columns",
+          "offset": 1536,
+          "length": 1536
+        }
+      }
+    },
+    "r9700": {
+      "q": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/q-r9700.bf16",
+        "shape": [
+          6144,
+          5120
+        ],
+        "bytes": 62914560,
+        "sha256": "160660fb86f3976498f9f9c85348af283987acf7c6345b43c583fb09c637caa1",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 6144,
+          "length": 6144
+        }
+      },
+      "k": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/k-r9700.bf16",
+        "shape": [
+          512,
+          5120
+        ],
+        "bytes": 5242880,
+        "sha256": "7b794f9d86196a7e492816a3d9abf1aebc00042428822523c959eddf238846d8",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 512,
+          "length": 512
+        }
+      },
+      "v": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/v-r9700.bf16",
+        "shape": [
+          512,
+          5120
+        ],
+        "bytes": 5242880,
+        "sha256": "1a9c91a529e4724e2999d32b63029300f98ce216524682e6e966d0ff8590a95d",
+        "source": {
+          "row_or_col": "output_rows",
+          "offset": 512,
+          "length": 512
+        }
+      },
+      "o": {
+        "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/o-r9700.bf16",
+        "shape": [
+          5120,
+          3072
+        ],
+        "bytes": 31457280,
+        "sha256": "83996971d87b75f647b6098c21dfe4ab1449852b8161ee64a9d818b0519b2e5f",
+        "source": {
+          "row_or_col": "input_columns",
+          "offset": 3072,
+          "length": 3072
+        }
+      }
+    }
+  },
+  "replicated_norms": {
+    "q_norm": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/q_norm.bf16",
+      "shape": [
+        256
+      ],
+      "bytes": 512,
+      "sha256": "4dfb9b152ad10548a134f39448e62a0c3ddea4d7c79a71ec129ce1603c0cff71"
+    },
+    "k_norm": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/k_norm.bf16",
+      "shape": [
+        256
+      ],
+      "bytes": 512,
+      "sha256": "b46080bc2f1217b8db5df05cc9c6cab7bfa1b6fc7afb492e69a9e8ec2c65c0df"
+    },
+    "input_norm": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/input_norm.bf16",
+      "shape": [
+        5120
+      ],
+      "bytes": 10240,
+      "sha256": "10c2d40a86413c652482c5c8e20629309bf37a722a48c3fca4348d86e9d28e8d"
+    }
+  },
+  "hidden_input": {
+    "hidden_input": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/hidden_input.bf16",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 40960,
+      "sha256": "892afe2cd7948c8e093cf169a572f57b24ab1e6191e734b5c88165e963a6b5f0"
+    },
+    "normed_input": {
+      "file": "<work-root>/xtx27-prefill/vtp22-original-full-attention/layer3-m4-20261111T040443525330Z/normed_input.bf16",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 40960,
+      "sha256": "f951f1d860ae87e05d25f8485254f98cd7498777b61e3ccfc2558ffaf2ee9ab0"
+    }
+  },
+  "limitations": [
+    "actual original BF16 checkpoint payloads but synthetic hidden input",
+    "interleaved full-attention output gate is not executed",
+    "no RoPE, causal softmax or KV cache yet",
+    "not a GPU kernel, native engine or full 27B inference"
+  ]
+}

@@ -1,0 +1,10 @@
+DECODE (engine): median step ms / engine tok/s
+  main  1-stream step    24.62 (n=9, 24.39-25.05)  tok/s   144.40 (n=9, 141.93-145.76) | 6-stream step    48.24 (n=6, 47.20-48.76)  tok/s   328.15 (n=6, 316.07-344.87)
+  off   1-stream step    24.99 (n=9, 24.86-25.06)  tok/s   142.05 (n=9, 141.88-143.05) | 6-stream step    48.27 (n=6, 47.03-50.47)  tok/s   315.96 (n=6, 312.87-333.69)
+  cyc   1-stream step      n/a  tok/s      n/a | 6-stream step      n/a  tok/s      n/a
+PREFILL: median TTFT ms (1-stream 512 prompt, 6-stream 2048 prompt)
+  main    385.43 (n=9, 383.28-503.56) |  5680.66 (n=6, 5622.18-5785.88)
+  off     386.24 (n=9, 384.11-397.67) |  5635.17 (n=6, 5580.20-5788.30)
+  cyc     389.46 (n=1, 389.46-389.46) |      n/a
+  delta off vs main d1: +1.50%
+  delta off vs main d6: +0.07%

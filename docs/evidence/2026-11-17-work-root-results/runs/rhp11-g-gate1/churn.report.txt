@@ -1,0 +1,1 @@
+forced placement helper=0 attempted=113 committed=112 aborted=0 inflight=1 bytes_planned=572774400 local_bytes_staged=192614400 active_epoch=113 active_digest=3556b0eba58f9983 active_slot=0 pending_epoch=114 pending_digest=0e70d36d993de50b ledger_charged=21925094400

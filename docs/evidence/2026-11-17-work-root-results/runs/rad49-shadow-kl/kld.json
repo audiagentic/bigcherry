@@ -1,0 +1,71 @@
+{
+  "_comment": "flashnext-2xtx KL with the engine's shadow compare (R3_MOE_WORKER_SHADOW): which layer/expert's helper rows diverge for doc-00 position 117 (KL 0.14 -> 5.7 with helpers).",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "quality_only": true,
+  "server_args": [],
+  "quality": {
+    "reference_dir": "<work-root>/runs/rad116-kld/reference",
+    "control": "helper-off",
+    "timeout_s": 5400,
+    "args": [],
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    }
+  },
+  "arms": [
+    {
+      "name": "helper-off",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-r9700",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "engine.ngram_placement": "disk",
+          "engine.num_speculative_tokens": 0
+        }
+      }
+    },
+    {
+      "name": "shadow",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "0",
+        "R3_MOE_WORKER_SHADOW": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-2xtx",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk",
+          "memory.host_pool_mib": 45056
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null"
+      }
+    }
+  ]
+}

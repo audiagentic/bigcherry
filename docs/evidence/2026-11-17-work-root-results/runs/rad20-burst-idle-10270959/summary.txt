@@ -1,0 +1,5 @@
+idle_loaded  gpu 0: median    6.0 W  GFX 0.0 %  (30 samples)
+idle_loaded  gpu 1: median    8.0 W  GFX 1.0 %  (30 samples)
+idle_after   gpu 0: median    6.0 W  GFX 0.0 %  (30 samples)
+idle_after   gpu 1: median    7.0 W  GFX 1.0 %  (30 samples)
+IDLE_GATE PASS

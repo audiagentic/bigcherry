@@ -1,0 +1,96 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP13_CONCURRENT_INT8_FFN_AND_PHYSICAL_TP3_COLLECTIVE",
+  "checkout": "16f7d3275e64caf10e8bd79b077085e610629ba0",
+  "source_digest": "ecca30e67888c1400d8a92f7d5e5a558efcb27c914adcc9c2b4a084038c4fdef",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "ffn-int8-checkpoint-bf16-layer0-1rows",
+      "kind": "ffn_chain",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp13-ffn-chain/build/ecca30e67888c140/vtp04-ffn_chain",
+        "--rows",
+        "1",
+        "--iterations",
+        "3",
+        "--gate-file",
+        "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+        "--gate-byte",
+        "410065688",
+        "--up-file",
+        "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+        "--up-byte",
+        "588323608",
+        "--down-file",
+        "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+        "--down-byte",
+        "231807768"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "ffn-int8-checkpoint-bf16-layer0-1rows.stdout",
+      "stderr": "ffn-int8-checkpoint-bf16-layer0-1rows.stderr"
+    }
+  ],
+  "schema": "vtp13-concurrent-ffn-proof-v1",
+  "runner_hashes": {
+    "driver_sha256": "c4a364204069d090577f7a84d9b750ec194a42ececf383c6b26e23a8003bc3d2",
+    "shared_runner_sha256": "554a534e6bffba1513704d9e7b893c638fdfbbda8df3feda813683dd8d42d376",
+    "checkpoint_reader_sha256": "5a12ac5bf911d890cacd54266304210ab7ee357e2c757460904f1d8ba1c79a67"
+  },
+  "checkpoint_payload": true,
+  "checkpoint_descriptor": {
+    "schema": "vtp13-checkpoint-bf16-ffn-sources-v1",
+    "checkpoint": "<models-root>/qwen3.8-27b/Qwen3.8-27B",
+    "layer": 0,
+    "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+    "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+    "payloads_fingerprinted": true,
+    "tensors": {
+      "gate": {
+        "name": "model.language_model.layers.0.mlp.gate_proj.weight",
+        "shape": [
+          17408,
+          5120
+        ],
+        "file": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+        "file_basename": "model-00001-of-00018.safetensors",
+        "offset": 410065688,
+        "bytes": 178257920,
+        "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+        "selected_payload_sha256": "33f8e7677f361290d5f6a415c00cb56149a8fdbea20122bc13f0e1004b469565"
+      },
+      "up": {
+        "name": "model.language_model.layers.0.mlp.up_proj.weight",
+        "shape": [
+          17408,
+          5120
+        ],
+        "file": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+        "file_basename": "model-00001-of-00018.safetensors",
+        "offset": 588323608,
+        "bytes": 178257920,
+        "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+        "selected_payload_sha256": "4f923e4b0b2d8b428c156f758dd67e94ee4bb0fbde8e823ac2c4d168753ec5f5"
+      },
+      "down": {
+        "name": "model.language_model.layers.0.mlp.down_proj.weight",
+        "shape": [
+          5120,
+          17408
+        ],
+        "file": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+        "file_basename": "model-00001-of-00018.safetensors",
+        "offset": 231807768,
+        "bytes": 178257920,
+        "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+        "selected_payload_sha256": "dec9dc95995a34a6478bfcb8e080059bf311dcde959030eb8a55fa77603e4783"
+      }
+    },
+    "limitations": "Three original BF16 FFN weight tensors only; fixed synthetic BF16 input; not actual model inference."
+  },
+  "bf16_source": "original_bf16_weights_synthetic_bf16_input",
+  "not_native_radiance_gemm": true,
+  "not_a_model_or_serving_benchmark": true
+}

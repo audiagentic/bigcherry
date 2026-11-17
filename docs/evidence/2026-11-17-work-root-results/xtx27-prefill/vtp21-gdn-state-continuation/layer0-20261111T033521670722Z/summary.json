@@ -1,0 +1,368 @@
+{
+  "schema": "vtp21-original-bf16-qwen-gdn-conv-recurrence-chunk-continuation-v1",
+  "status": "VTP21_ORIGINAL_BF16_GDN_PARTITION_CONTINUATION_CPU_PASS_NOT_GPU",
+  "writer_sha256": "7685d37c44b27dd1808aaec00b045bd4f803b5ddc9381116ba5930b6706812b3",
+  "rows": 4,
+  "layer": 0,
+  "input_sources": {
+    "projection_receipt_sha256": "4c7001763b5e0a189c2b8913b056da0a4ad5bdfe29f8891190e711a29b4adba3",
+    "core_receipt_sha256": "0ec999305e627f548cfe6df55369c721fea8cf18ad4c2ec334af0f76d555bba4",
+    "weight_pack_receipt_sha256": "1a80f63890070f1c8ea546c115e7185319a7ddc852d87f06c9d9677ef70cb274",
+    "learned_receipt_sha256": "ba4abe7980b5a3b56d1e0decb89fca69da936978f13fe26b9c6bede5f6d94055",
+    "source_checkpoint": "<models-root>/qwen3.8-27b/Qwen3.8-27B",
+    "validated_input": {
+      "rows": 4,
+      "weight_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/summary.json",
+      "weight_receipt_sha256": "1a80f63890070f1c8ea546c115e7185319a7ddc852d87f06c9d9677ef70cb274",
+      "reference_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T011953188932Z/summary.json",
+      "reference_receipt_sha256": "4c7001763b5e0a189c2b8913b056da0a4ad5bdfe29f8891190e711a29b4adba3",
+      "pack_directory": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z",
+      "qkv_directory": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z",
+      "reference_directory": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T011953188932Z",
+      "input_layernorm_sha256": "853b5989bfb677b1761540ee97c09bbf8d90fd825c9ae6ca74ef5853cba3c075",
+      "real_checkpoint_payload": true,
+      "synthetic_hidden": true,
+      "cpu_double_accumulation_oracle": true,
+      "core_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T012015196547Z/summary.json",
+      "core_receipt_sha256": "0ec999305e627f548cfe6df55369c721fea8cf18ad4c2ec334af0f76d555bba4",
+      "core_directory": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T012015196547Z",
+      "learned_receipt": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/summary.json",
+      "learned_receipt_sha256": "ba4abe7980b5a3b56d1e0decb89fca69da936978f13fe26b9c6bede5f6d94055",
+      "coefficients": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/original-gdn-parameters.f32",
+      "real_QKV_A_B_Z_BF16_weights": true,
+      "real_GDN_conv_decay_norm_BF16": true,
+      "input_hidden_is_synthetic": true,
+      "complete_model_layer": false
+    }
+  },
+  "partitions": [
+    [
+      4
+    ],
+    [
+      1,
+      3
+    ],
+    [
+      2,
+      2
+    ],
+    [
+      3,
+      1
+    ],
+    [
+      1,
+      1,
+      1,
+      1
+    ]
+  ],
+  "rank_results": {
+    "xtx0": {
+      "final_state_sha256": "51c60ce354f8e15203bfc6ca857dd26c750e3fcf1cadd585a0c1ac6253b053f5",
+      "final_conv_history_sha256": "9dbdf213d67e973918b5d4a08cfdb712da94d1d171f667405000ad325b035efd",
+      "max_gdn_output_abs": 7.719041184017783e-08
+    },
+    "xtx1": {
+      "final_state_sha256": "517483ef00fc3f951b577ccc1fa1a8a926b77d61b33ec7e90cfc44566c17620c",
+      "final_conv_history_sha256": "b628612b652f402926afae05331f179379f05da9316cba86aded4d9dfc7f8fd6",
+      "max_gdn_output_abs": 8.741296131375975e-08
+    },
+    "r9700": {
+      "final_state_sha256": "cbb4b071c1cfa958edad95832669906147c62fa6b13ec8ca3b25b4c4e9990d3f",
+      "final_conv_history_sha256": "9f70ca33ac2affd33db71c90cf4d7f3ff0e69db936564eed5e91bb2ad14faa31",
+      "max_gdn_output_abs": 5.240050793275941e-08
+    }
+  },
+  "per_partition_checks": [
+    {
+      "role": "xtx0",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        4
+      ],
+      "conv_history_sha256": [
+        "9dbdf213d67e973918b5d4a08cfdb712da94d1d171f667405000ad325b035efd"
+      ],
+      "final_state_sha256": "51c60ce354f8e15203bfc6ca857dd26c750e3fcf1cadd585a0c1ac6253b053f5",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 7.719041184017783e-08,
+      "nonzero_continued_state_max_abs": 0.2570336936203785
+    },
+    {
+      "role": "xtx1",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        4
+      ],
+      "conv_history_sha256": [
+        "b628612b652f402926afae05331f179379f05da9316cba86aded4d9dfc7f8fd6"
+      ],
+      "final_state_sha256": "517483ef00fc3f951b577ccc1fa1a8a926b77d61b33ec7e90cfc44566c17620c",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 8.741296131375975e-08,
+      "nonzero_continued_state_max_abs": 0.15673089053326505
+    },
+    {
+      "role": "r9700",
+      "rows": 4,
+      "keys": 8,
+      "values": 24,
+      "partition": [
+        4
+      ],
+      "conv_history_sha256": [
+        "9f70ca33ac2affd33db71c90cf4d7f3ff0e69db936564eed5e91bb2ad14faa31"
+      ],
+      "final_state_sha256": "cbb4b071c1cfa958edad95832669906147c62fa6b13ec8ca3b25b4c4e9990d3f",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 5.240050793275941e-08,
+      "nonzero_continued_state_max_abs": 0.22426282204578832
+    },
+    {
+      "role": "xtx0",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        1,
+        3
+      ],
+      "conv_history_sha256": [
+        "5a27878a616d02275430d5cda2f8374850a37cc6f4b340c0cd85a5b97ec39cc6",
+        "9dbdf213d67e973918b5d4a08cfdb712da94d1d171f667405000ad325b035efd"
+      ],
+      "final_state_sha256": "51c60ce354f8e15203bfc6ca857dd26c750e3fcf1cadd585a0c1ac6253b053f5",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 7.719041184017783e-08,
+      "nonzero_continued_state_max_abs": 0.2570336936203785
+    },
+    {
+      "role": "xtx1",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        1,
+        3
+      ],
+      "conv_history_sha256": [
+        "abc304c88cebad132275aa5c1350d7eaa519da66c4c06e8726b0850b9aaacf17",
+        "b628612b652f402926afae05331f179379f05da9316cba86aded4d9dfc7f8fd6"
+      ],
+      "final_state_sha256": "517483ef00fc3f951b577ccc1fa1a8a926b77d61b33ec7e90cfc44566c17620c",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 8.741296131375975e-08,
+      "nonzero_continued_state_max_abs": 0.15673089053326505
+    },
+    {
+      "role": "r9700",
+      "rows": 4,
+      "keys": 8,
+      "values": 24,
+      "partition": [
+        1,
+        3
+      ],
+      "conv_history_sha256": [
+        "b154e7ad8e428093073d226c2939f6b475678d145c604d5c1a9397ec1c746e82",
+        "9f70ca33ac2affd33db71c90cf4d7f3ff0e69db936564eed5e91bb2ad14faa31"
+      ],
+      "final_state_sha256": "cbb4b071c1cfa958edad95832669906147c62fa6b13ec8ca3b25b4c4e9990d3f",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 5.240050793275941e-08,
+      "nonzero_continued_state_max_abs": 0.22426282204578832
+    },
+    {
+      "role": "xtx0",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        2,
+        2
+      ],
+      "conv_history_sha256": [
+        "c121eb64b0e911829b0eaac82632e1c83dec9e7d66f37f98df0631a28db09bfb",
+        "9dbdf213d67e973918b5d4a08cfdb712da94d1d171f667405000ad325b035efd"
+      ],
+      "final_state_sha256": "51c60ce354f8e15203bfc6ca857dd26c750e3fcf1cadd585a0c1ac6253b053f5",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 7.719041184017783e-08,
+      "nonzero_continued_state_max_abs": 0.2570336936203785
+    },
+    {
+      "role": "xtx1",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        2,
+        2
+      ],
+      "conv_history_sha256": [
+        "6aaa8285f43f0536a3699cf0a3b43c6372112cbbb346f4c73f1fb501fdcab673",
+        "b628612b652f402926afae05331f179379f05da9316cba86aded4d9dfc7f8fd6"
+      ],
+      "final_state_sha256": "517483ef00fc3f951b577ccc1fa1a8a926b77d61b33ec7e90cfc44566c17620c",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 8.741296131375975e-08,
+      "nonzero_continued_state_max_abs": 0.15673089053326505
+    },
+    {
+      "role": "r9700",
+      "rows": 4,
+      "keys": 8,
+      "values": 24,
+      "partition": [
+        2,
+        2
+      ],
+      "conv_history_sha256": [
+        "e2b30437e2397158e61a13571a95b5a5c013d1598d6bbd3b066659feb20a118c",
+        "9f70ca33ac2affd33db71c90cf4d7f3ff0e69db936564eed5e91bb2ad14faa31"
+      ],
+      "final_state_sha256": "cbb4b071c1cfa958edad95832669906147c62fa6b13ec8ca3b25b4c4e9990d3f",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 5.240050793275941e-08,
+      "nonzero_continued_state_max_abs": 0.22426282204578832
+    },
+    {
+      "role": "xtx0",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        3,
+        1
+      ],
+      "conv_history_sha256": [
+        "bb481960d737d7bc64a38b75ba7035b69ef71455d1506825e03824f11e05bc06",
+        "9dbdf213d67e973918b5d4a08cfdb712da94d1d171f667405000ad325b035efd"
+      ],
+      "final_state_sha256": "51c60ce354f8e15203bfc6ca857dd26c750e3fcf1cadd585a0c1ac6253b053f5",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 7.719041184017783e-08,
+      "nonzero_continued_state_max_abs": 0.2570336936203785
+    },
+    {
+      "role": "xtx1",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        3,
+        1
+      ],
+      "conv_history_sha256": [
+        "49ca34cf049b5dbb0c15458e7c8a1a4f51fa743a2a2e5a6b1fb0a13a64082f8f",
+        "b628612b652f402926afae05331f179379f05da9316cba86aded4d9dfc7f8fd6"
+      ],
+      "final_state_sha256": "517483ef00fc3f951b577ccc1fa1a8a926b77d61b33ec7e90cfc44566c17620c",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 8.741296131375975e-08,
+      "nonzero_continued_state_max_abs": 0.15673089053326505
+    },
+    {
+      "role": "r9700",
+      "rows": 4,
+      "keys": 8,
+      "values": 24,
+      "partition": [
+        3,
+        1
+      ],
+      "conv_history_sha256": [
+        "53afa12b96d57820a4b22169dd72c73c05707303776567587f1fd5ea8a85c02f",
+        "9f70ca33ac2affd33db71c90cf4d7f3ff0e69db936564eed5e91bb2ad14faa31"
+      ],
+      "final_state_sha256": "cbb4b071c1cfa958edad95832669906147c62fa6b13ec8ca3b25b4c4e9990d3f",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 5.240050793275941e-08,
+      "nonzero_continued_state_max_abs": 0.22426282204578832
+    },
+    {
+      "role": "xtx0",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "conv_history_sha256": [
+        "5a27878a616d02275430d5cda2f8374850a37cc6f4b340c0cd85a5b97ec39cc6",
+        "c121eb64b0e911829b0eaac82632e1c83dec9e7d66f37f98df0631a28db09bfb",
+        "bb481960d737d7bc64a38b75ba7035b69ef71455d1506825e03824f11e05bc06",
+        "9dbdf213d67e973918b5d4a08cfdb712da94d1d171f667405000ad325b035efd"
+      ],
+      "final_state_sha256": "51c60ce354f8e15203bfc6ca857dd26c750e3fcf1cadd585a0c1ac6253b053f5",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 7.719041184017783e-08,
+      "nonzero_continued_state_max_abs": 0.2570336936203785
+    },
+    {
+      "role": "xtx1",
+      "rows": 4,
+      "keys": 4,
+      "values": 12,
+      "partition": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "conv_history_sha256": [
+        "abc304c88cebad132275aa5c1350d7eaa519da66c4c06e8726b0850b9aaacf17",
+        "6aaa8285f43f0536a3699cf0a3b43c6372112cbbb346f4c73f1fb501fdcab673",
+        "49ca34cf049b5dbb0c15458e7c8a1a4f51fa743a2a2e5a6b1fb0a13a64082f8f",
+        "b628612b652f402926afae05331f179379f05da9316cba86aded4d9dfc7f8fd6"
+      ],
+      "final_state_sha256": "517483ef00fc3f951b577ccc1fa1a8a926b77d61b33ec7e90cfc44566c17620c",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 8.741296131375975e-08,
+      "nonzero_continued_state_max_abs": 0.15673089053326505
+    },
+    {
+      "role": "r9700",
+      "rows": 4,
+      "keys": 8,
+      "values": 24,
+      "partition": [
+        1,
+        1,
+        1,
+        1
+      ],
+      "conv_history_sha256": [
+        "b154e7ad8e428093073d226c2939f6b475678d145c604d5c1a9397ec1c746e82",
+        "e2b30437e2397158e61a13571a95b5a5c013d1598d6bbd3b066659feb20a118c",
+        "53afa12b96d57820a4b22169dd72c73c05707303776567587f1fd5ea8a85c02f",
+        "9f70ca33ac2affd33db71c90cf4d7f3ff0e69db936564eed5e91bb2ad14faa31"
+      ],
+      "final_state_sha256": "cbb4b071c1cfa958edad95832669906147c62fa6b13ec8ca3b25b4c4e9990d3f",
+      "max_conv_abs": 0.0,
+      "max_original_cpu_oracle_output_abs": 5.240050793275941e-08,
+      "nonzero_continued_state_max_abs": 0.22426282204578832
+    }
+  ],
+  "guarantees": [
+    "original BF16 checkpoint projection+conv+learned GDN CPU",
+    "three original TP3 rank head allocations 4/4/8 and 12/12/24",
+    "exact BF16 causal three-row convolution history boundary",
+    "serialised F64 CPU recurrence state [key_dim,value_dim] per head",
+    "matches original M4 monolithic independent CPU oracle"
+  ],
+  "limitations": [
+    "synthetic incoming hidden activations",
+    "GPU FP32 recurrent checkpoint ABI and native precision remain open",
+    "no full-model generation, attention, KKT prefill or long-context"
+  ]
+}

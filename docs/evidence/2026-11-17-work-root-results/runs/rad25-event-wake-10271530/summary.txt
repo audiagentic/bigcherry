@@ -1,0 +1,7 @@
+commit 2dd94c49c1de4390bd01098f6abdf68ca6d6f0c5 lab(radiance): RAD25 harness - yield vs blocking-event small-lane completion, no model load
+period  100 us yield: starved       0  starve_total         0 us  p99     0.0 us  wall/ideal 1.0000  lane CPU 100.0 %
+period  100 us block: starved       2  starve_total       284 us  p99    78.8 us  wall/ideal 1.0000  lane CPU  99.9 %
+period  150 us yield: starved       0  starve_total         0 us  p99     0.0 us  wall/ideal 1.0000  lane CPU 100.0 %
+period  150 us block: starved       0  starve_total         0 us  p99     0.0 us  wall/ideal 1.0000  lane CPU 100.0 %
+period  300 us yield: starved       0  starve_total         0 us  p99     0.0 us  wall/ideal 1.0000  lane CPU 100.0 %
+period  300 us block: starved       0  starve_total         0 us  p99     0.0 us  wall/ideal 1.0000  lane CPU 100.0 %

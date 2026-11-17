@@ -1,0 +1,29 @@
+1994 layer-steps: 1971 paired, 23 single-helper (idle partner when the stride is 1)
+large lane (prefill): 1099 steps, 1099 paired, 0 single; rows a step p50 2048  p95 2048  max 2048
+  [paired]
+   publish->wait min  p50   5745.7  p95  14275.2  mean   6493.5  sum      7136308  n 1099
+   publish->wait max  p50   5752.6  p95  14282.2  mean   6500.5  sum      7144048  n 1099
+   exposed wait_us    p50      7.4  p95    744.6  mean    106.1  sum       116641  n 1099
+   helper_gpu_us      p50   4339.7  p95  13488.2  mean   5468.6  sum      6010031  n 1099
+   waits under 10 us: 87.0%
+  layers by TOTAL exposed wait (paired): L12 sum 3374 us (n 25, p50 7, p95 830); L7 sum 3326 us (n 25, p50 7, p95 829); L5 sum 3320 us (n 25, p50 7, p95 810); L14 sum 3279 us (n 25, p50 7, p95 745); L13 sum 3251 us (n 25, p50 7, p95 813); L8 sum 3247 us (n 25, p50 7, p95 796); L15 sum 3187 us (n 25, p50 7, p95 743); L17 sum 3074 us (n 25, p50 7, p95 720)
+small lane (decode): 895 steps, 872 paired, 23 single; rows a step p50 4  p95 4  max 4
+  [paired]
+   publish->wait min  p50     44.4  p95    112.2  mean     51.2  sum        44673  n 872
+   publish->wait max  p50     50.7  p95    139.3  mean     58.0  sum        50617  n 872
+   exposed wait_us    p50    137.5  p95    157.3  mean    135.3  sum       117965  n 872
+   helper_gpu_us      p50    175.4  p95    191.6  mean    175.6  sum       153091  n 872
+   waits under 10 us: 0.2%
+  [single]
+   publish->wait min  p50     34.4  p95     47.6  mean     36.8  sum          847  n 23
+   publish->wait max  p50     34.4  p95     47.6  mean     36.8  sum          847  n 23
+   exposed wait_us    p50    146.5  p95    155.6  mean    146.8  sum         3377  n 23
+   helper_gpu_us      p50    170.4  p95    179.4  mean    170.2  sum         3914  n 23
+   waits under 10 us: 0.0%
+  layers by TOTAL exposed wait (paired): L48 sum 5096 us (n 37, p50 141, p95 191); L0 sum 2824 us (n 19, p50 148, p95 350); L45 sum 2809 us (n 18, p50 148, p95 191); L33 sum 2799 us (n 19, p50 137, p95 217); L22 sum 2707 us (n 19, p50 139, p95 166); L43 sum 2678 us (n 19, p50 139, p95 172); L35 sum 2669 us (n 19, p50 143, p95 159); L40 sum 2657 us (n 19, p50 139, p95 164)
+stage split, large lane (1099 layer-steps), p50 / p95 us:
+  lane 16  act   440.0 /   444.5  gemm  2599.8 /  3059.8  write   761.2 /   768.1  total  3801.1 /  4267.3  last on 19.2% of steps
+  lane 17  act   642.6 /   646.3  gemm  2616.5 /  3101.3  write   757.9 /   764.8  total  4016.0 /  4507.6  last on 42.9% of steps
+  lane 18  act   312.2 /  1330.4  gemm  1324.9 /  9743.5  write   504.3 /  2404.2  total  2145.4 / 13487.9  last on 37.9% of steps
+  combine (helper 0, 968 steps): wait for the other helpers  4057.0 / 13337.0, combine   602.0 /   676.0
+Note: sum(exposed wait) is time on the critical path, not a share of the run; divide it by the run's wall time for that.

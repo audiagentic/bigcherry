@@ -1,0 +1,213 @@
+{
+  "schema": "vtp13-gdn-qkv-conv-bf16-rank-pack-v1",
+  "layer": 1,
+  "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+  "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+  "layout": {
+    "xtx0": [
+      [
+        0,
+        512
+      ],
+      [
+        2048,
+        512
+      ],
+      [
+        4096,
+        1536
+      ]
+    ],
+    "xtx1": [
+      [
+        512,
+        512
+      ],
+      [
+        2560,
+        512
+      ],
+      [
+        5632,
+        1536
+      ]
+    ],
+    "r9700": [
+      [
+        1024,
+        1024
+      ],
+      [
+        3072,
+        1024
+      ],
+      [
+        7168,
+        3072
+      ]
+    ]
+  },
+  "sources": {
+    "in_proj_qkv": {
+      "source": "model.language_model.layers.1.linear_attn.in_proj_qkv.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 767667160,
+      "bytes": 104857600,
+      "shape": [
+        10240,
+        5120
+      ],
+      "row_width": 5120,
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "conv1d": {
+      "source": "model.language_model.layers.1.linear_attn.conv1d.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 766602104,
+      "bytes": 81920,
+      "shape": [
+        10240,
+        1,
+        4
+      ],
+      "row_width": 4,
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    }
+  },
+  "status": "EXACT_ORIGINAL_BF16_GDN_QKV_CONV_PACK_PASS_NOT_RUNTIME",
+  "created_utc": "2026-11-11T06:46:51.932849+00:00",
+  "writer_sha256": "f0bd5bf4e4a6fe5ad9296144b9ec80827d2533b50d87148c53a6b9d8a9ab2954",
+  "outputs": {
+    "in_proj_qkv": {
+      "source_payload_sha256": "5b7147c1913e25e6ce44aafda0e140ba654f55840120617945ca99ba4bd40acd",
+      "reassembled_source_sha256": "5b7147c1913e25e6ce44aafda0e140ba654f55840120617945ca99ba4bd40acd",
+      "complete_byte_equivalence": true,
+      "ranks": {
+        "xtx0": {
+          "path": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/in_proj_qkv-xtx0.bf16",
+          "bytes": 26214400,
+          "sha256": "d3d6d115ab7b8c9f1602e3a8e8ddad351ce8624285447da79ffd061baae33d53",
+          "packed_segments": [
+            [
+              0,
+              512
+            ],
+            [
+              2048,
+              512
+            ],
+            [
+              4096,
+              1536
+            ]
+          ]
+        },
+        "xtx1": {
+          "path": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/in_proj_qkv-xtx1.bf16",
+          "bytes": 26214400,
+          "sha256": "46488828335466fe9a59fffa7a32b3fd337be95f8f8c56ac6b8d0b167d1293bf",
+          "packed_segments": [
+            [
+              512,
+              512
+            ],
+            [
+              2560,
+              512
+            ],
+            [
+              5632,
+              1536
+            ]
+          ]
+        },
+        "r9700": {
+          "path": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/in_proj_qkv-r9700.bf16",
+          "bytes": 52428800,
+          "sha256": "b29101fc031e373348f408a24e0fb8a65aedc8dab8247114afb36db0e163de03",
+          "packed_segments": [
+            [
+              1024,
+              1024
+            ],
+            [
+              3072,
+              1024
+            ],
+            [
+              7168,
+              3072
+            ]
+          ]
+        }
+      }
+    },
+    "conv1d": {
+      "source_payload_sha256": "26c76606ee24313c45d8dad462f8483f8f1e57fa263e4ab6c0537fb901e72281",
+      "reassembled_source_sha256": "26c76606ee24313c45d8dad462f8483f8f1e57fa263e4ab6c0537fb901e72281",
+      "complete_byte_equivalence": true,
+      "ranks": {
+        "xtx0": {
+          "path": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/conv1d-xtx0.bf16",
+          "bytes": 20480,
+          "sha256": "0c77b05116cb3fd15ee341065d4b84e9da66fc16602a462a6c7e3e1fed540f10",
+          "packed_segments": [
+            [
+              0,
+              512
+            ],
+            [
+              2048,
+              512
+            ],
+            [
+              4096,
+              1536
+            ]
+          ]
+        },
+        "xtx1": {
+          "path": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/conv1d-xtx1.bf16",
+          "bytes": 20480,
+          "sha256": "73fa0e716d5c010ff6076bf3705ea16cdb14e0274af910e3424540593d6cf8bd",
+          "packed_segments": [
+            [
+              512,
+              512
+            ],
+            [
+              2560,
+              512
+            ],
+            [
+              5632,
+              1536
+            ]
+          ]
+        },
+        "r9700": {
+          "path": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer1-20261111T064651932618Z/conv1d-r9700.bf16",
+          "bytes": 40960,
+          "sha256": "7cd2e2a5e66918b26eaaea1e2c9cef52b4e4a9c6a0d7baee28bac95a85136fb2",
+          "packed_segments": [
+            [
+              1024,
+              1024
+            ],
+            [
+              3072,
+              1024
+            ],
+            [
+              7168,
+              3072
+            ]
+          ]
+        }
+      }
+    }
+  },
+  "proof": "Original source recovered exactly from rank Q|K|V repack, no quantisation"
+}

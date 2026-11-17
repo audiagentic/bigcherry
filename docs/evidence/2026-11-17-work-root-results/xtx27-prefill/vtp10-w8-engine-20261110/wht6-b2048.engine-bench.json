@@ -1,0 +1,126 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "wht6-b2048",
+ "binary": "<work-root>/builds/f17f21fda44979e9abe84f13e96b8896/08b5dd81b4874390bf0cbf489db0d7df/bin/radiance",
+ "model": "<models-root>/radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8.rad",
+ "extra_args": [
+  "--embedding-placement",
+  "ram",
+  "--tp",
+  "2",
+  "--tp-wire",
+  "wht6",
+  "--p2p",
+  "off",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--max-num-batched-tokens",
+  "2048",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "0"
+ ],
+ "env": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "depths": [
+  512,
+  2048,
+  6144
+ ],
+ "reps": 2,
+ "decode": 64,
+ "rows": [
+  {
+   "depth": 512,
+   "rep": 0,
+   "prompt_tokens": 701,
+   "completion_tokens": 64,
+   "ttft_s": 0.4101278781890869,
+   "prefill_tps": 1709.2229942896208,
+   "decode_tps": 36.388522627464624,
+   "text_head": "\n\nHere is a detailed summary of the **Dual-XTX production-parity bench log**, broken down by context, methodology, and results.\n\n### 1. Context & Hardware\n*   *",
+   "error": null
+  },
+  {
+   "depth": 512,
+   "rep": 1,
+   "prompt_tokens": 701,
+   "completion_tokens": 64,
+   "ttft_s": 0.3809645175933838,
+   "prefill_tps": 1840.0663779092436,
+   "decode_tps": 36.42754535743132,
+   "text_head": "\n\n[ca7e26eeba9c42f69e6698de2ece98ae]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU 0",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 0,
+   "prompt_tokens": 2306,
+   "completion_tokens": 64,
+   "ttft_s": 1.2369062900543213,
+   "prefill_tps": 1864.3287842757493,
+   "decode_tps": 35.70805146563993,
+   "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Hardware & Model Context\n\n| Item | Detail |\n|---|---|\n| **Host** | <host> |\n| **GPUs** | Dual",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 1,
+   "prompt_tokens": 2305,
+   "completion_tokens": 64,
+   "ttft_s": 1.2465298175811768,
+   "prefill_tps": 1849.1334643504372,
+   "decode_tps": 35.691874460889444,
+   "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 0,
+   "prompt_tokens": 6676,
+   "completion_tokens": 64,
+   "ttft_s": 3.6234610080718994,
+   "prefill_tps": 1842.4373782767445,
+   "decode_tps": 33.74754509519042,
+   "text_head": "\n\n# Detailed Summary: Dual-XTX Production Bench Log & BigCherry Build Campaign Handover\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Configuratio",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 1,
+   "prompt_tokens": 6682,
+   "completion_tokens": 64,
+   "ttft_s": 3.6219658851623535,
+   "prefill_tps": 1844.8544828578586,
+   "decode_tps": 33.72887560310334,
+   "text_head": "\n\nBased on the provided logs and handover documents, here is a detailed summary of the **BigCherry** project's current state, covering production performance va",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 0,
+  "accepted": 0
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 15123652608",
+  "GPU[1] : VRAM Total Used Memory (B): 15123656704",
+  "GPU[2] : VRAM Total Used Memory (B): 59969536",
+  "GPU[3] : VRAM Total Used Memory (B): 17231872"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

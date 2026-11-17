@@ -1,0 +1,93 @@
+{
+  "_comment": "RHP16 quality gate, long corpus, pure manifest (main after #714: the engine takes R3_MOE_WORKER*, the histogram file and period from the manifest; quality_only defaults speculative tokens to 0). Arms: policy-off (the static flashnext-4gpu placement, control) and policy-on (the exact production-derived live policy, explicit, with --calibration-run). The 4-document corpus scores in ~4 min, shorter than the policy's derived gate (89 x 5 s heat windows), so it cannot judge moved experts; the 24-document corpus (fn-helper-kld18 reference, 42,761 rows, ~21 min) is scored mostly after the first moves. engine.ngram_placement=disk: KL mode never drafts and the pinned table does not fit beside the 45 GiB host pool. Thresholds as helper-kld.json, gated policy-on vs policy-off.",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "quality_only": true,
+  "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "server_args": [],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "2"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1201"
+    ],
+    "locators": [
+      "${R9700_BDF}"
+    ]
+  },
+  "quality": {
+    "reference_dir": "<work-root>/runs/fn-helper-kld18/reference",
+    "control": "policy-off",
+    "timeout_s": 5400,
+    "args": [],
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    }
+  },
+  "arms": [
+    {
+      "name": "policy-off",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-4gpu",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk"
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "/dev/null"
+      }
+    },
+    {
+      "name": "policy-on",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD_BIN}",
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {},
+      "serving": {
+        "layout": "flashnext-4gpu",
+        "set": {
+          "service.max_context": 8192,
+          "service.max_sessions": 1,
+          "engine.max_num_batched_tokens": 64,
+          "engine.kv_cache_dtype": "fp8",
+          "memory.host_pool_mib": 45056,
+          "handoff.max_rows": 64,
+          "handoff.small_rows": 8,
+          "handoff.histogram_period_s": 1,
+          "engine.ngram_placement": "disk"
+        },
+        "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "histogram": "<work-root>/runs/rhp16-kld/heat.live",
+        "live_policy": "<work-root>/runs/rhp16-kld/policy-derived.json",
+        "calibration_run": true
+      }
+    }
+  ]
+}

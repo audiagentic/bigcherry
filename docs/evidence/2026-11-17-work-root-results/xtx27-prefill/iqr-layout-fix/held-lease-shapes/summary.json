@@ -1,0 +1,224 @@
+{
+  "kind": "VTP09_CANONICAL_NATIVE_QUANT_SHAPE_SWEEP_TIMING_ONLY",
+  "progress_utc": "2026-11-10T08:26:00.299705+00:00",
+  "completed": {
+    "w8a8|r9700|down|8": {
+      "device_us": 35.4,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082529395883Z-w8a8-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "warm_or_resident",
+      "N": 5120,
+      "K": 7168
+    },
+    "iq6r|xtx1|gate_up|64": {
+      "device_us": 2045.3,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082534537461Z-iq6r-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 10240,
+      "K": 5120
+    },
+    "w8a8|xtx0|gate_up|64": {
+      "device_us": 184.9,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082546791347Z-w8a8-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 10240,
+      "K": 5120
+    },
+    "iq6r|xtx1|down|64": {
+      "device_us": 1317.6,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082537759148Z-iq6r-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 5120,
+      "K": 5120
+    },
+    "iq6r|xtx0|gate_up|8": {
+      "device_us": 147.0,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082501180701Z-iq6r-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 10240,
+      "K": 5120
+    },
+    "iq6r|xtx1|down|8": {
+      "device_us": 88.7,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082508821724Z-iq6r-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 5120,
+      "K": 5120
+    },
+    "iq6r|xtx0|down|64": {
+      "device_us": 1222.7,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082531640304Z-iq6r-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 5120,
+      "K": 5120
+    },
+    "w8a8|r9700|gate_up|8": {
+      "device_us": 74.5,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082527226148Z-w8a8-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "warm_or_resident",
+      "N": 14336,
+      "K": 5120
+    },
+    "w8a8|xtx0|gate_up|8": {
+      "device_us": 80.9,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082517866324Z-w8a8-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 10240,
+      "K": 5120
+    },
+    "w8a8|xtx1|gate_up|8": {
+      "device_us": 83.2,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082522534517Z-w8a8-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 10240,
+      "K": 5120
+    },
+    "iq6r|r9700|gate_up|8": {
+      "device_us": 99.0,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082511699374Z-iq6r-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "cold_quant_iqr",
+      "N": 14336,
+      "K": 5120
+    },
+    "iq6r|xtx0|gate_up|64": {
+      "device_us": 1934.9,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082400984480Z-iq6r-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 10240,
+      "K": 5120
+    },
+    "w8a8|xtx1|down|8": {
+      "device_us": 55.2,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082524871859Z-w8a8-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 5120,
+      "K": 5120
+    },
+    "w8a8|r9700|down|64": {
+      "device_us": 81.4,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082558453796Z-w8a8-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "warm_or_resident",
+      "N": 5120,
+      "K": 7168
+    },
+    "iq6r|r9700|down|64": {
+      "device_us": 167.3,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082543953158Z-iq6r-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "cold_quant_iqr",
+      "N": 5120,
+      "K": 7168
+    },
+    "w8a8|xtx1|gate_up|64": {
+      "device_us": 190.0,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082551486081Z-w8a8-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 10240,
+      "K": 5120
+    },
+    "iq6r|r9700|down|8": {
+      "device_us": 54.3,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082514998761Z-iq6r-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "cold_quant_iqr",
+      "N": 5120,
+      "K": 7168
+    },
+    "iq6r|xtx1|gate_up|8": {
+      "device_us": 152.6,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082505691782Z-iq6r-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 10240,
+      "K": 5120
+    },
+    "w8a8|xtx0|down|64": {
+      "device_us": 122.9,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082549130272Z-w8a8-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 5120,
+      "K": 5120
+    },
+    "w8a8|xtx1|down|64": {
+      "device_us": 123.7,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082553863786Z-w8a8-xtx1/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 5120,
+      "K": 5120
+    },
+    "iq6r|r9700|gate_up|64": {
+      "device_us": 237.2,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082540696619Z-iq6r-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "cold_quant_iqr",
+      "N": 14336,
+      "K": 5120
+    },
+    "w8a8|r9700|gate_up|64": {
+      "device_us": 116.3,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082556208867Z-w8a8-r9700/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "8122f6a4024dc30bcad9f47517dc28fcb1d172abf520ac3735ff80f9615898c8",
+      "cache_mode": "warm_or_resident",
+      "N": 14336,
+      "K": 5120
+    },
+    "w8a8|xtx0|down|8": {
+      "device_us": 53.9,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082520198072Z-w8a8-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "warm_or_resident",
+      "N": 5120,
+      "K": 5120
+    },
+    "iq6r|xtx0|down|8": {
+      "device_us": 85.3,
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/held-lease-shapes/runs/20261110T082502864097Z-iq6r-xtx0/receipt.json",
+      "binary_sha256": "35a87bd6075ea75a711351a76567af5c88789df7884ec2912575b7400eea4db9",
+      "plugin_sha256": "d5715493f70bc08c8f37ec0aa1e005b1bfdb6c91e86e28e46664f36a0a1a75f2",
+      "cache_mode": "cold_quant_iqr",
+      "N": 5120,
+      "K": 5120
+    }
+  },
+  "failed": {},
+  "required_cases": 24
+}

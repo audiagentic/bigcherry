@@ -1,0 +1,2 @@
+"Name","Calls","TotalDurationNs","AverageNs","Percentage","MinNs","MaxNs","StdDev"
+"KERNEL_DISPATCH",64356,80524263554,1251231.642022,100.00,1840,11387108716,1114751.222184

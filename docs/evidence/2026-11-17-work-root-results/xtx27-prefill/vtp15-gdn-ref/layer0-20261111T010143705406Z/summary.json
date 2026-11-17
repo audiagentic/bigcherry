@@ -1,0 +1,180 @@
+{
+  "schema": "vtp15-original-bf16-GDN-projection-CPU-oracle-v1",
+  "status": "ORIGINAL_BF16_QWEN_GDN_INPUT_PROJECTIONS_CPU_PASS_NOT_GPU",
+  "created_utc": "2026-11-11T01:01:44.117200+00:00",
+  "weight_pack_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/summary.json",
+  "weight_pack_sha256": "a77162fb7af0283eb65f0e0770f779ee9594892c2d473b7e5d7fd61259ea6aa3",
+  "writer_sha256": "39be1c8ec557358153358c4e9163a047c6d8b3df8de27e1a2145d61ae8bbfc1b",
+  "oracle_cpp_sha256": "b99cebb238c23dc3a49f4d92be355ad6ee7ad2df48f8b15b22a31f0d9e0d2f53",
+  "oracle_binary_sha256": "0d31018b9fa4d8e89c0fa9224a93e98467441c6662d64716acf4d577d5793e20",
+  "rows": 1,
+  "rank_results": {
+    "xtx0": {
+      "qkv": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/qkv-xtx0.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/qkv-xtx0.f32",
+        "bf16_sha256": "874b5043bbd6549bcd674a19ba9349fa068e104a97ba85fa373f24da6de2074c",
+        "fp32_sha256": "265667c8c30cfbcdb7edc3eb5f5436f18db8fd3718284601835e86e8314338e6",
+        "bf16_bytes": 5120,
+        "fp32_bytes": 10240,
+        "shape": [
+          1,
+          2560
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=2560 k=5120 max_abs_f32=5.0370765 output_elems=2560"
+      },
+      "a": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/a-xtx0.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/a-xtx0.f32",
+        "bf16_sha256": "6a19fa102761798c15864def4e79edf8fd694015d55b6597886f04650b1e7293",
+        "fp32_sha256": "00fee160c4db26e12b0cae18bc3fc0b6fb6318fefce1375953e0216052920679",
+        "bf16_bytes": 24,
+        "fp32_bytes": 48,
+        "shape": [
+          1,
+          12
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=12 k=5120 max_abs_f32=6.6546645 output_elems=12"
+      },
+      "b": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/b-xtx0.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/b-xtx0.f32",
+        "bf16_sha256": "2945b12deaad5396903a3c5215085e7d96ea984dbee032a60cdf7a5b1dec047a",
+        "fp32_sha256": "ea06e849f1b1500874624341fbee58d493e94f2121235e0dd7e730a6f8d9103b",
+        "bf16_bytes": 24,
+        "fp32_bytes": 48,
+        "shape": [
+          1,
+          12
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=12 k=5120 max_abs_f32=1.4441959 output_elems=12"
+      },
+      "z": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/z-xtx0.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/z-xtx0.f32",
+        "bf16_sha256": "0be8bd54a2234342ce3c3057d4d1e251873a3fd0ab9ff40ba1efdad04898fb8a",
+        "fp32_sha256": "50d9be317f95d48bd05cf5f92d1fac95df0beddd8bc1b1e620f91ecef5db14a9",
+        "bf16_bytes": 3072,
+        "fp32_bytes": 6144,
+        "shape": [
+          1,
+          1536
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=1536 k=5120 max_abs_f32=3.8004906 output_elems=1536"
+      }
+    },
+    "xtx1": {
+      "qkv": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/qkv-xtx1.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/qkv-xtx1.f32",
+        "bf16_sha256": "149b3a77da20199690872f5217ee9370532d395434bff090c8b9428f5cf39c4d",
+        "fp32_sha256": "30fe4247c10bfe375c0ea4643d65370ba40dcd9cf709d2e9fb6cf1df898b15c1",
+        "bf16_bytes": 5120,
+        "fp32_bytes": 10240,
+        "shape": [
+          1,
+          2560
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=2560 k=5120 max_abs_f32=5.0455561 output_elems=2560"
+      },
+      "a": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/a-xtx1.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/a-xtx1.f32",
+        "bf16_sha256": "83965810cc0a1c3cbfad1ee6642e64177b3ae62166f8c4a3653a30d1959c761a",
+        "fp32_sha256": "f3c0526d72fce5591d65d90357cbb5774f2a4f3a8439dbdf3fbe3c4c6e54c775",
+        "bf16_bytes": 24,
+        "fp32_bytes": 48,
+        "shape": [
+          1,
+          12
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=12 k=5120 max_abs_f32=2.694571 output_elems=12"
+      },
+      "b": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/b-xtx1.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/b-xtx1.f32",
+        "bf16_sha256": "68eb217ec4f4f392a8bdfa2e28e031b75158a39856622c01127c9de225a458f2",
+        "fp32_sha256": "015c9f8927ba19e4aab0077975b9503df90cbcbe703025403291da1371930329",
+        "bf16_bytes": 24,
+        "fp32_bytes": 48,
+        "shape": [
+          1,
+          12
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=12 k=5120 max_abs_f32=1.4126546 output_elems=12"
+      },
+      "z": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/z-xtx1.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/z-xtx1.f32",
+        "bf16_sha256": "06eb6e4d4fa1cea707934014400c9e39258e588809466f915aef5e3788f5b50d",
+        "fp32_sha256": "3d14cb75d2529557bf12578fec9bca0dcadb2fd1f908555a6a2abe82bbbca2c9",
+        "bf16_bytes": 3072,
+        "fp32_bytes": 6144,
+        "shape": [
+          1,
+          1536
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=1536 k=5120 max_abs_f32=4.2200279 output_elems=1536"
+      }
+    },
+    "r9700": {
+      "qkv": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/qkv-r9700.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/qkv-r9700.f32",
+        "bf16_sha256": "d84ae2783a6d884f8f6f47d4f33fe833a1204d5d6dcb5e4f200f8a503d7eaa4d",
+        "fp32_sha256": "7eac77db0b9efd1a42bc1ed2400da1b4db2883a346a50648791cac15cde12ff2",
+        "bf16_bytes": 10240,
+        "fp32_bytes": 20480,
+        "shape": [
+          1,
+          5120
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=5120 k=5120 max_abs_f32=5.0697203 output_elems=5120"
+      },
+      "a": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/a-r9700.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/a-r9700.f32",
+        "bf16_sha256": "9032c8a2170c1f479aa27ad9f183bb83dc8ea85ce9c121c780f3d6a48eae76d4",
+        "fp32_sha256": "190af9ee6c9ebb30024d73949069b6bb821c2dcf8d600fa9af92ad5da86e1cc2",
+        "bf16_bytes": 48,
+        "fp32_bytes": 96,
+        "shape": [
+          1,
+          24
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=24 k=5120 max_abs_f32=2.3311236 output_elems=24"
+      },
+      "b": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/b-r9700.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/b-r9700.f32",
+        "bf16_sha256": "521d2ddda58108f645fe6f10abdf9be4b9db7128176af055ffa30f853ec2b98c",
+        "fp32_sha256": "b7acf98869953fcdbca2adddf3875c11e1c9a829f8121482722b411f326fca66",
+        "bf16_bytes": 48,
+        "fp32_bytes": 96,
+        "shape": [
+          1,
+          24
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=24 k=5120 max_abs_f32=1.3988321 output_elems=24"
+      },
+      "z": {
+        "bf16": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/z-r9700.bf16",
+        "fp32": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/z-r9700.f32",
+        "bf16_sha256": "11ba3ff6e568f54125918c486dffaede078163969da8a0a9cde6f1713f4008e8",
+        "fp32_sha256": "87ba838495a19c8438cd172b32d8a4560a62da930a615f7710d6616f592d6f45",
+        "bf16_bytes": 6144,
+        "fp32_bytes": 12288,
+        "shape": [
+          1,
+          3072
+        ],
+        "stdout": "VTP15 original BF16 projection CPU PASS m=1 n=3072 k=5120 max_abs_f32=4.2809639 output_elems=3072"
+      }
+    }
+  },
+  "limitations": [
+    "No GPU",
+    "Not an engine GEMM",
+    "Not real model generation"
+  ]
+}

@@ -1,0 +1,11 @@
+DECODE (engine): median step ms / engine tok/s
+  main  1-stream step    24.71 (n=12, 24.54-27.38)  tok/s   138.91 (n=12, 125.63-140.19) | 6-stream step    48.82 (n=8, 47.99-51.30)  tok/s   322.65 (n=8, 305.36-338.67)
+  off   1-stream step    25.13 (n=12, 25.06-25.38)  tok/s   136.89 (n=12, 135.24-137.27) | 6-stream step    49.10 (n=8, 48.04-50.31)  tok/s   321.07 (n=8, 302.76-327.74)
+PREFILL: median TTFT ms (1-stream 512 prompt, 6-stream 2048 prompt)
+  main    425.94 (n=12, 412.99-448.13) |  5746.27 (n=8, 5643.40-6086.50)
+  off     427.78 (n=12, 414.25-447.97) |  5693.58 (n=8, 5657.00-5993.21)
+  delta off vs main d1: +1.70%
+  delta off vs main d6: +0.57%
+text sha (1-stream): {'main': ['5691231c'], 'off': ['5691231c']}
+TEXT IDENTITY: PASS (every arm one hash, equal to main's)
+benchmarks ran ok: True

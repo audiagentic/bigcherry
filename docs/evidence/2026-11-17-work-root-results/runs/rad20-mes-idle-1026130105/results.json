@@ -1,0 +1,40 @@
+{
+ "baseline": {
+  "samples": 20,
+  "watts_median": 11.0,
+  "watts_p95": 12.0,
+  "gfx_pct_median": 0.0
+ },
+ "empty": {
+  "samples": 54,
+  "watts_median": 9.0,
+  "watts_p95": 12.0,
+  "gfx_pct_median": 0.0
+ },
+ "drained": {
+  "samples": 54,
+  "watts_median": 12.0,
+  "watts_p95": 13.0,
+  "gfx_pct_median": 0.0
+ },
+ "pending": {
+  "samples": 54,
+  "watts_median": 95.0,
+  "watts_p95": 98.0,
+  "gfx_pct_median": 100.0
+ },
+ "released": {
+  "samples": 4,
+  "watts_median": 12.5,
+  "watts_p95": 13.0,
+  "gfx_pct_median": 0.0
+ },
+ "baseline_end": {
+  "samples": 20,
+  "watts_median": 12.0,
+  "watts_p95": 13.0,
+  "gfx_pct_median": 0.0
+ },
+ "errors_in_kernel_log": 0,
+ "harness_failed": false
+}

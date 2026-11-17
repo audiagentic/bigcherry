@@ -1,0 +1,12 @@
+{
+ "env": [
+  "GGML_CUDA_ALLREDUCE=internal",
+  "GGML_CUDA_AR_WIRE=q8_0"
+ ],
+ "kind": "kld",
+ "mean_kld": 0.001535,
+ "p99_kld": 0.010503,
+ "ppl_ratio": 0.99943,
+ "run": "kld-27b-host-q8",
+ "same_top_pct": 98.68
+}

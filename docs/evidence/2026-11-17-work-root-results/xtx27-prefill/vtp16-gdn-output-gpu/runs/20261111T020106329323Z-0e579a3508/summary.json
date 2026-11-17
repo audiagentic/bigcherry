@@ -1,0 +1,55 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP16_ORIGINAL_BF16_GDN_OUT_PROJ_THREE_GPU_HOST_REDUCE",
+  "checkout": "beb3db5bc1d12a8080e40cb45e94c50447223e71",
+  "source_digest": "0e579a3508054a90e45502d59b4d8d1518cae1a8cf6784b4ebef93048d4bade8",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "original-BF16-GDN-output-host-partial-m1",
+      "kind": "gdn_output",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-gpu/build/0e579a3508054a90/vtp04-gdn_output",
+        "--rows",
+        "1",
+        "--iterations",
+        "7",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "original-BF16-GDN-output-host-partial-m1.stdout",
+      "stderr": "original-BF16-GDN-output-host-partial-m1.stderr"
+    }
+  ],
+  "schema": "vtp16-original-BF16-GDN-output-3GPU-collective-v1",
+  "sources": {
+    "packet_file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/summary.json",
+    "packet_sha256": "7cee1e576405704f5d00e8dcb2bb99a0b2199484b5e1d1721b9ccb47ef2bb47c",
+    "packet_directory": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+    "reference_file": "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z/summary.json",
+    "reference_sha256": "52c01870421eb004932622223616b2fb000d5796c15e15f652ac3b8d97a48207",
+    "reference_directory": "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+    "residual_file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16",
+    "rows": 1,
+    "layer": 0,
+    "not_model_serving": true,
+    "not_optimized_gemm": true
+  },
+  "code_hashes": {
+    "source_sha256": "6b247e435c05ae537e811c38b6e1124a4f73571089e9f2fbc6b4e5190cd1bc94",
+    "driver_sha256": "635bf580d993550ee6285e0dedbd7bb314e543c587acd7aa1dd067ecb9ba85ca",
+    "reference_cpp_sha256": "d5a001e97479109989c0e92f7069ec6db987c4956c61318b7ac2f8b59cbdd20f",
+    "reference_writer_sha256": "e7e4b67d73af55ed974b6712c4f04bc6fad7e3d6fddb11c16b7246a070c2e2fd",
+    "shared_driver_sha256": "554a534e6bffba1513704d9e7b893c638fdfbbda8df3feda813683dd8d42d376"
+  },
+  "full_model": false,
+  "integrated_gdn_chain": false,
+  "native_optimized_dispatch": false,
+  "p2p_required": false
+}

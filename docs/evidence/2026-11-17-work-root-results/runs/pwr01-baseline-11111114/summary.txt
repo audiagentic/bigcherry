@@ -1,0 +1,4 @@
+commit 25e19de091c91c47bab8761353c991b3afb4564c docs(power): XTX -125 mV does not reproduce its October saving on the current build (#832)
+CPU package energy not readable (/sys/class/powercap/intel-rapl:0/energy_uj): CPU package power left out
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/67a435be11abe6053872355915df70a4/e315c3373c1f397eb16273556a7509ab

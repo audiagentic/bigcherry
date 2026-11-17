@@ -1,0 +1,14 @@
+commit da094bdb87fb8d5f91891f730612d3cb364b36d5 lab(radiance): rad26 graph mode - publish + wake callback captured in a HIP graph, replayed; reports any replay whose wake never arrives
+gap   300 us spin    : round trip p50     6.4 p90     7.6 p99     7.8 us  helper CPU  99.8 %
+gap   300 us hostfunc: round trip p50    31.0 p90    38.6 p99   102.0 us  helper CPU   2.5 %
+gap   300 us sidefunc: round trip p50    32.6 p90    48.4 p99   120.0 us  helper CPU   2.2 %
+gap  1000 us spin    : round trip p50     7.5 p90     7.7 p99     7.9 us  helper CPU  99.9 %
+gap  1000 us hostfunc: round trip p50    35.1 p90    61.5 p99   116.0 us  helper CPU   0.9 %
+gap  1000 us sidefunc: round trip p50    38.9 p90    48.5 p99   114.2 us  helper CPU   0.9 %
+gap  3000 us spin    : round trip p50     7.5 p90     7.7 p99     8.0 us  helper CPU  99.9 %
+gap  3000 us hostfunc: round trip p50   109.6 p90   202.3 p99   229.9 us  helper CPU   0.6 %
+gap  3000 us sidefunc: round trip p50   113.6 p90   187.7 p99   231.9 us  helper CPU   0.8 %
+graph replay: woken 2000/2000, stuck at 0, launch->ack p50 48.1 us p99 144.3 us
+graph replay: woken 2000/2000, stuck at 0, launch->ack p50 49.8 us p99 137.7 us
+graph replay: woken 2000/2000, stuck at 0, launch->ack p50 32.5 us p99 129.2 us
+engine stream: 106.92 us per host callback, 4.45 us on a side stream (work 52.4 us/iter alone, 159.3 with a callback)
