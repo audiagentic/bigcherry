@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.46.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.45.0...bc-platform-1.46.0) (2026-11-17)
+
+
+### New and changed
+
+* **release:** add native verified engine installation and rollback ([#1079](https://github.com/audiagentic/bigcherry/issues/1079)) ([3b61388](https://github.com/audiagentic/bigcherry/commit/3b613883c7eccdc1cbbbbbde879de361774a5e34))
+
 ## [1.45.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.44.0...bc-platform-1.45.0) (2026-11-17)
 
 
