@@ -665,6 +665,8 @@ class Owner {
             std::error_code ec;
             fs::remove(s_.run_dir / "session.sock", ec);
         }
+        if (handoff_lock_ >= 0)
+            ::close(handoff_lock_);
         if (lock_ >= 0)
             ::close(lock_);
     }
@@ -772,8 +774,39 @@ class Owner {
                 };
             }
             hooks.selected_segment = [this](const std::string& name) {
-                if (name.rfind("/r3-serve-", 0) != 0)
-                    throw PlanFailed("refusing to own a shared segment without a unique session name");
+                if (name.rfind("/r3-serve-", 0) != 0 || name.size() > 220U)
+                    throw PlanFailed("refusing an unqualified shared-memory transport name");
+                if (handoff_lock_ >= 0)
+                    throw PlanFailed("a session cannot select shared-memory transport twice");
+                // The lock resides on the same kernel-backed shared-memory mount
+                // as POSIX shm, not under a per-run-dir session root. It stays
+                // locked until all children are verified dead and the owner has
+                // unlinked its segment. No stored manifest bytes are changed.
+                const std::string lock_path = "/dev/shm/.bigcherry-transport-" + sha256_hex(name) + ".lock";
+                const int descriptor =
+                    ::open(lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+                if (descriptor < 0)
+                    throw PlanFailed("cannot lock shared-memory transport " + name + ": " + errno_text());
+                if (::flock(descriptor, LOCK_EX | LOCK_NB) != 0) {
+                    ::close(descriptor);
+                    throw PlanFailed("shared-memory transport " + name + " already owned by another session");
+                }
+                // A crashed prior owner can leave the transport allocated even
+                // after its flock is released. Do not reuse or unlink its
+                // unknown contents until an operator has verified cleanup.
+                const int existing = ::shm_open(name.c_str(), O_RDONLY | O_CLOEXEC, 0);
+                if (existing >= 0) {
+                    ::close(existing);
+                    ::close(descriptor);
+                    throw PlanFailed("shared-memory transport " + name +
+                                     " still exists after an unverified stop");
+                }
+                if (errno != ENOENT) {
+                    const std::string problem = errno_text();
+                    ::close(descriptor);
+                    throw PlanFailed("cannot inspect shared-memory transport " + name + ": " + problem);
+                }
+                handoff_lock_ = descriptor;
                 handoff_shm_ = name;
                 record_["handoff_shm"] = name; // journal name even if the planner fails after helpers start
                 event("segment_selected");
@@ -954,7 +987,7 @@ class Owner {
     };
 
     const Session& s_;
-    int lock_ = -1, listen_ = -1;
+    int lock_ = -1, listen_ = -1, handoff_lock_ = -1;
     bool stop_ = false;
     bool power_attempted_ = false;
     bool power_admitted_ = false;

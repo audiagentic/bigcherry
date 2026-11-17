@@ -342,6 +342,54 @@ int main(int argc, char** argv) {
         altered_bytes.run_owner(false);
         Case detached(7);
         detached.run_detached();
+        // RED P1-3: the same immutable helper manifest must never grant
+        // transport ownership to two distinct run directories at once.
+        Case first_transport(8);
+        const pid_t running_owner = ::fork();
+        check(running_owner >= 0, "fork transport owner");
+        if (running_owner == 0)
+            std::_Exit(ss::serve(first_transport.session));
+        struct StopOnFailure {
+            pid_t pid;
+            ~StopOnFailure() {
+                if (pid > 0) {
+                    ::kill(pid, SIGTERM);
+                    (void)::waitpid(pid, nullptr, 0);
+                }
+            }
+        } stop_guard{running_owner};
+        bool first_running = false;
+        const auto deadline = std::chrono::steady_clock::now() + 15s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            const auto rec = ss::read_record(first_transport.run);
+            if (rec && rec->value("state", std::string()) == "running") {
+                first_running = true;
+                break;
+            }
+            if (rec && rec->value("state", std::string()) == "failed")
+                break;
+            std::this_thread::sleep_for(25ms);
+        }
+        check(first_running, "first owner must be running before cross-root transport collision");
+        Case second_transport(9, false, false, false, first_transport.stored,
+                              first_transport.tmp.root / "other-run", first_transport.tmp.root / "other-trace");
+        second_transport.run_owner(false);
+        const Json second_record = ss::read_record(second_transport.run).value();
+        check(second_record.at("processes").empty(),
+              "cross-root transport collision must refuse before any child starts");
+        bool transport_refusal = false;
+        for (const auto& error : second_record.value("errors", Json::array()))
+            if (error.is_string() &&
+                error.get<std::string>().find("shared-memory transport") != std::string::npos)
+                transport_refusal = true;
+        check(transport_refusal, "cross-root refusal must name the shared-memory transport");
+        const auto stop_first = ss::control(first_transport.run, "stop", 10s);
+        check(stop_first && stop_first->value("ok", false), "first owner must stop cleanly");
+        int first_status = 0;
+        check(::waitpid(running_owner, &first_status, 0) == running_owner && WIFEXITED(first_status) &&
+                  WEXITSTATUS(first_status) == 0,
+              "first owner must keep transport while running and exit cleanly");
+        stop_guard.pid = 0;
         std::cout << "production and detached owner replay: success, static/live/power/missing-gate/tamper "
                      "refusals passed\n";
         return 0;
