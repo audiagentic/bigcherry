@@ -89,8 +89,28 @@ target_link_libraries(bc-serve PRIVATE bc_serving_v2_p1_producer)
 set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
+# RSP01: standalone native release verification/installation. The binary is
+# a run-side tool; only the build needs a C++ compiler and zlib headers.
+# No Python, shell, Git or GPU service is linked into this executable.
+find_package(ZLIB REQUIRED)
+add_library(bc_release_core STATIC release_install.cpp release_archive.cpp sha256.cpp)
+target_compile_features(bc_release_core PUBLIC cxx_std_20)
+target_link_libraries(bc_release_core PUBLIC ZLIB::ZLIB)
+target_include_directories(bc_release_core PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+add_executable(bc-release release_cli.cpp)
+target_link_libraries(bc-release PRIVATE bc_release_core)
+set_target_properties(bc-release PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
+install(TARGETS bc-release RUNTIME DESTINATION radiance_home/bin)
+
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(bc_release_install_test EXCLUDE_FROM_ALL release_install_test.cpp)
+  target_link_libraries(bc_release_install_test PRIVATE bc_release_core)
+  target_compile_definitions(bc_release_install_test PRIVATE
+    BC_RELEASE_TEST_ROOT="${CMAKE_CURRENT_BINARY_DIR}"
+    BC_RELEASE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/release_testdata")
+  add_test(NAME bc_release_install_test COMMAND bc_release_install_test)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   # A build target so the component test gate can declare it; building it runs the tripwire.
   add_custom_target(bc_callback_boundary_guard

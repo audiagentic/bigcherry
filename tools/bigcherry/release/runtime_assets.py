@@ -68,6 +68,7 @@ SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
 RUN_MANIFEST = (
     ("bin/radiance", True),
     ("radiance_home/bin/bc-serve", True),
+    ("radiance_home/bin/bc-release", True),
     (BUILD_METADATA, True),
     *((f"configs/{name}", True) for name in SHIPPED_CONFIGS),
     ("radiance_home/helpers/r3_moe_worker", True),

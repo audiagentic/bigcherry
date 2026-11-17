@@ -88,6 +88,7 @@ class ReleaseInstallTests(unittest.TestCase):
         for name, value in (
             ("bin/radiance", b"tiny-radiance"),
             ("radiance_home/bin/bc-serve", b"tiny-bc-serve"),
+            ("radiance_home/bin/bc-release", b"tiny-bc-release"),
             ("radiance_home/helpers/r3_moe_worker", b"tiny-helper"),
             ("radiance_home/kernels/libp.so", b"tiny-plugin"),
             ("radiance_home/architectures/arch.so", b"tiny-arch"),
