@@ -130,11 +130,9 @@ if(BUILD_TESTING)
   target_link_libraries(bc_session_guards_test PRIVATE bc_serving)
   target_compile_definitions(bc_session_guards_test PRIVATE
     BC_RSC02_CALIBRATION_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_calibration_deadlines.json")
+  # The declared build target runs all four heat producer contract cases by
+  # default; do not register extra CTest aliases without real build targets.
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
-  add_test(NAME bc_heat_layers_contract COMMAND bc_session_guards_test layers)
-  add_test(NAME bc_heat_rename_contract COMMAND bc_session_guards_test rename)
-  add_test(NAME bc_heat_reset_contract COMMAND bc_session_guards_test reset)
-  add_test(NAME bc_heat_foreign_contract COMMAND bc_session_guards_test foreign)
   add_executable(bc_session_stored_test EXCLUDE_FROM_ALL session_stored_test.cpp)
   target_link_libraries(bc_session_stored_test PRIVATE bc_serving)
   add_dependencies(bc_session_stored_test bc_fake_engine)
