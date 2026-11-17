@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0043_expert_stats_protected"
+order = 43
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP44"]
+requires = []
+conflicts = []
+tags = ["moe-routing"]
