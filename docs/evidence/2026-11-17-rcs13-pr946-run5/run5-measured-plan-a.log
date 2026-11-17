@@ -1,0 +1,10 @@
+RCS13_RUN5_MEASURE_FAIL LaunchResourceError LaunchResourceError('bc-serve cannot publish owner map (2): r3_moe_worker: R3_MOE_WORKER_HEAT ${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first: want 65536 counts, read 0\nbc-serve: the declared placement cannot be planned for this model: helper 0 (gfx1201): owned-expert selection refused')
+Traceback (most recent call last):
+  File "${RCS13_RUN_ROOT}/run5_plan.py", line 44, in main
+    plan = _collect(opts)
+  File "${ARM_A_SOURCE_ROOT}/tools/bigcherry/engine_adapters/radiance_launch.py", line 118, in _collect
+    raise LaunchResourceError(
+        f"bc-serve cannot publish owner map ({run.returncode}): {run.stderr.strip()}"
+    )
+bigcherry.engine_adapters.radiance_launch.LaunchResourceError: bc-serve cannot publish owner map (2): r3_moe_worker: R3_MOE_WORKER_HEAT ${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first: want 65536 counts, read 0
+bc-serve: the declared placement cannot be planned for this model: helper 0 (gfx1201): owned-expert selection refused

@@ -1,0 +1,339 @@
+{
+  "arm": "b",
+  "build_dir": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd",
+  "build_plan_id": "d225ef62f99dc617f89c973e235bc9bd",
+  "effective_configure": {
+    "CMAKE_BUILD_TYPE": "Release",
+    "CMAKE_CXX_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+    "CMAKE_CXX_COMPILER-ADVANCED": "1",
+    "CMAKE_CXX_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+    "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+    "CMAKE_CXX_COMPILER_LAUNCHER": "${ARM_B_SOURCE_ROOT}/tools/bigcherry/bin/bc-ccache",
+    "CMAKE_CXX_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+    "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+    "CMAKE_C_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+    "CMAKE_C_COMPILER-ADVANCED": "1",
+    "CMAKE_C_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+    "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+    "CMAKE_C_COMPILER_LAUNCHER": "${ARM_B_SOURCE_ROOT}/tools/bigcherry/bin/bc-ccache",
+    "CMAKE_C_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+    "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+    "CMAKE_EXE_LINKER_FLAGS": "",
+    "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+    "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+    "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+    "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+    "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+    "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+    "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+    "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+    "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+    "CMAKE_MODULE_LINKER_FLAGS": "",
+    "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+    "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+    "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+    "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+    "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+    "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+    "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+    "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+    "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+    "CMAKE_SHARED_LINKER_FLAGS": "",
+    "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+    "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+    "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+    "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+    "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+    "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+    "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+    "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+    "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+  },
+  "files": {
+    "engine": {
+      "bytes": 18917624,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/bin/radiance",
+      "sha256": "a5704dea94b8b7397ae0360a00bcfc48f311ae5c596a1abf3c62a77c8886a4ec"
+    },
+    "gfx12": {
+      "bytes": 595504,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libbcgfx12.so",
+      "sha256": "7226dfb3187af6f9ed5fe990e416270505069d1a460bc4319e34aff1de5eda5d"
+    },
+    "helper": {
+      "bytes": 43858856,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/helpers/r3_moe_worker",
+      "sha256": "893594f3d0765d0d56277b3579d12f76beadec1a2c6e00d77bf9c8239ef6e95f"
+    },
+    "libavx.so": {
+      "bytes": 9355144,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libavx.so",
+      "sha256": "37ab74ec9a906df93b602cefa3352e7cdbe9a7ed1f6f43ed76e10c9aea9f33c7"
+    },
+    "libr2.so": {
+      "bytes": 9595680,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libr2.so",
+      "sha256": "c5d955c570c99865da31616eefee63199a7b0325060f3426c53ed61a9bd8a5d7"
+    },
+    "libref.so": {
+      "bytes": 2853456,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libref.so",
+      "sha256": "786bea0bb342367acc74105bfc028494023d046cb5485a4f61d7889d503da6f7"
+    },
+    "r3": {
+      "bytes": 215923312,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libr3.so",
+      "sha256": "5f8270da2c3cdabdcb05d2e8e318b77f76cb9c2b9de23c998039d00e84c43500"
+    },
+    "r3moe": {
+      "bytes": 1822456,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libr3moe.so",
+      "sha256": "6734a9cf179320b4164416d8b53d61ee41b3e40e595529f536ea9a95463a721c"
+    },
+    "r3ngram": {
+      "bytes": 734472,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libr3ngram.so",
+      "sha256": "f4996cdf69fe7c7d2f5958b811a88750d3e075ccbdb8b5d91c8a0319898377ee"
+    },
+    "r4d": {
+      "bytes": 95165968,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/libr4d.so",
+      "sha256": "e8d357890afbe221537cbc04f713f730d3d970e002cb2a93f2e26edc0114f726"
+    },
+    "serving": {
+      "bytes": 78824128,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/bin/bc-serve",
+      "sha256": "1c53c22e7be8eeefb9cb297a3ebea70536e41648bbff4d976f73119168f8d31e"
+    },
+    "spechub.so": {
+      "bytes": 105392,
+      "path": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd/radiance_home/kernels/spechub.so",
+      "sha256": "555b888e3655fb0321df71ed4d3f21f731e391dca43be1a1e4ba381fe15030dc"
+    }
+  },
+  "installed_header_abi": 35,
+  "libr4d_exported_abi": 35,
+  "patch_gate": {
+    "failures": [],
+    "first_five_patch_ids": [],
+    "message": "",
+    "mode": "enforced",
+    "notes": [
+      {
+        "note": "evidence recorded at pin v1.9.0 (now v1.17.0)",
+        "patch": "rad0008_hc_upmix_rt_sweep"
+      },
+      {
+        "note": "evidence recorded at pin v1.14.0 (now v1.17.0)",
+        "patch": "rad0002_moe_remote_handoff"
+      },
+      {
+        "note": "evidence recorded at patch digest 663b0856fbc4 (now 499f97976156)",
+        "patch": "rad0002_moe_remote_handoff"
+      },
+      {
+        "note": "evidence recorded at patch digest e596bc827e08 (now 5b186196c3cf)",
+        "patch": "rad0011_plan_memory"
+      },
+      {
+        "note": "evidence recorded at patch digest 7b7bbd25e7f4 (now 904f7e4c5e84)",
+        "patch": "rad0009_serving_manifest"
+      }
+    ],
+    "pending_count": 0,
+    "pin": "v1.17.0",
+    "result": "passed",
+    "skipped_sets": [
+      {
+        "required_state": "untested",
+        "set": "serving-manifest"
+      },
+      {
+        "required_state": "untested",
+        "set": "host-compat"
+      },
+      {
+        "required_state": "untested",
+        "set": "helper-config"
+      },
+      {
+        "required_state": "untested",
+        "set": "mtp-pass-replay"
+      },
+      {
+        "required_state": "untested",
+        "set": "vtp14-mixed-tp"
+      }
+    ],
+    "validated_count": 30
+  },
+  "runtime_bundle_record": {
+    "effective_build_id": "4f95ddd275f86e2de56949d256c973a7",
+    "effective_configure": {
+      "CMAKE_BUILD_TYPE": "Release",
+      "CMAKE_CXX_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+      "CMAKE_CXX_COMPILER-ADVANCED": "1",
+      "CMAKE_CXX_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+      "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+      "CMAKE_CXX_COMPILER_LAUNCHER": "${ARM_B_SOURCE_ROOT}/tools/bigcherry/bin/bc-ccache",
+      "CMAKE_CXX_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+      "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+      "CMAKE_C_COMPILER": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+      "CMAKE_C_COMPILER-ADVANCED": "1",
+      "CMAKE_C_COMPILER_AR": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+      "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+      "CMAKE_C_COMPILER_LAUNCHER": "${ARM_B_SOURCE_ROOT}/tools/bigcherry/bin/bc-ccache",
+      "CMAKE_C_COMPILER_RANLIB": "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+      "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+      "CMAKE_EXE_LINKER_FLAGS": "",
+      "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+      "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+      "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+      "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+      "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+      "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+      "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+      "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+      "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+      "CMAKE_MODULE_LINKER_FLAGS": "",
+      "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+      "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+      "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+      "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+      "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+      "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+      "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+      "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+      "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+      "CMAKE_SHARED_LINKER_FLAGS": "",
+      "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+      "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+      "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+      "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+      "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+      "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+      "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+      "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+      "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+    },
+    "entrypoint": "radiance",
+    "generated_compile_inputs_hash": null,
+    "generated_inputs_verification": null,
+    "members": {
+      "radiance": "a5704dea94b8b7397ae0360a00bcfc48f311ae5c596a1abf3c62a77c8886a4ec"
+    },
+    "runtime_bundle_hash": "32b6effd4e68346122ff9d1662e2c721",
+    "toolchain": [
+      [
+        "CMAKE_CXX_COMPILER",
+        "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+      ],
+      [
+        "CMAKE_C_COMPILER",
+        "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+      ],
+      [
+        "CMAKE_GENERATOR",
+        "Ninja"
+      ],
+      [
+        "c_compiler_realpath",
+        "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+      ],
+      [
+        "c_compiler_version",
+        "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+      ],
+      [
+        "cmake_version",
+        "cmake version 4.4.4"
+      ],
+      [
+        "cxx_compiler_realpath",
+        "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+      ],
+      [
+        "cxx_compiler_version",
+        "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+      ],
+      [
+        "ninja_version",
+        "1.13.2.git.kitware.jobserver-pipe-1"
+      ],
+      [
+        "rocm_digest",
+        "b811dea988c46e94df2fdecfb1d4fbfe0b23cc3d83ebe05c51b676855ab9d062"
+      ],
+      [
+        "rocm_root",
+        "/opt/rocm-7.2.4"
+      ],
+      [
+        "rocm_stack",
+        "rocm-7-2"
+      ],
+      [
+        "rocm_version",
+        "7.2.4"
+      ]
+    ]
+  },
+  "source_root": "${ARM_B_SOURCE_ROOT}",
+  "source_sha": "5cfefdd19525bbbec04831961702ac24b55e91c7",
+  "source_slice_id": "833e240cd588a59e91ba7960fcbbda9f",
+  "status": "succeeded",
+  "toolchain": [
+    [
+      "CMAKE_CXX_COMPILER",
+      "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+    ],
+    [
+      "CMAKE_C_COMPILER",
+      "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+    ],
+    [
+      "CMAKE_GENERATOR",
+      "Ninja"
+    ],
+    [
+      "c_compiler_realpath",
+      "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+    ],
+    [
+      "c_compiler_version",
+      "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+    ],
+    [
+      "cmake_version",
+      "cmake version 4.4.4"
+    ],
+    [
+      "cxx_compiler_realpath",
+      "${BC_WORK_ROOT}/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+    ],
+    [
+      "cxx_compiler_version",
+      "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+    ],
+    [
+      "ninja_version",
+      "1.13.2.git.kitware.jobserver-pipe-1"
+    ],
+    [
+      "rocm_digest",
+      "b811dea988c46e94df2fdecfb1d4fbfe0b23cc3d83ebe05c51b676855ab9d062"
+    ],
+    [
+      "rocm_root",
+      "/opt/rocm-7.2.4"
+    ],
+    [
+      "rocm_stack",
+      "rocm-7-2"
+    ],
+    [
+      "rocm_version",
+      "7.2.4"
+    ]
+  ]
+}

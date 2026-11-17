@@ -1,0 +1,27 @@
+{
+  "arm": "a",
+  "started": "2026-11-17T08:46:34.112300+00:00",
+  "cmd": [
+    "timeout",
+    "20m",
+    "agent-lease",
+    "acquire",
+    "gpu",
+    "--ttl",
+    "30m",
+    "--est",
+    "20m",
+    "--purpose",
+    "RCS13 run5 strict-v2 measured plan arm A",
+    "--wait",
+    "--",
+    "/opt/python/cpython-3.14.10-linux-x86_64-gnu/bin/python3.14",
+    "${RCS13_RUN_ROOT}/run5_plan.py",
+    "a",
+    "--build",
+    "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/1729da15df800a9cad2fe9891ccf8fb0"
+  ],
+  "pid": 3776976,
+  "log": "${RCS13_RUN_ROOT}/run5-measured-plan-a.log",
+  "lease_before": "gpu: free"
+}

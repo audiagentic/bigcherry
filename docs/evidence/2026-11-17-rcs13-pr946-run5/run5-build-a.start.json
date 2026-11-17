@@ -1,0 +1,20 @@
+{
+  "arm": "a",
+  "cmd": [
+    "nohup",
+    "/opt/python/cpython-3.14.10-linux-x86_64-gnu/bin/python3.14",
+    "-m",
+    "bigcherry",
+    "build",
+    "--lane",
+    "radiance:stock:linux-radiance",
+    "--run-id",
+    "rcs13-run5-a"
+  ],
+  "commit": "5c3c77f31498ab5f01ac132d22af27b32c69869a",
+  "lease_preflight": "gpu: free",
+  "log": "${RCS13_RUN_ROOT}/run5-build-a.log",
+  "pid": 3245071,
+  "source": "${ARM_A_SOURCE_ROOT}",
+  "started_at": "2026-11-17T08:06:16.907893+00:00"
+}

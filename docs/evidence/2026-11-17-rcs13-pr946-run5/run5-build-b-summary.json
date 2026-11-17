@@ -1,0 +1,91 @@
+{
+  "run_id": "rcs13-run5-b",
+  "status": "succeeded",
+  "duration_seconds": 1140.1355098950007,
+  "build_log": "${BC_WORK_ROOT}/build-logs/rcs13-run5-b/build.log",
+  "summary_log": "${BC_WORK_ROOT}/build-logs/rcs13-run5-b/summary.json",
+  "lanes": {
+    "radiance:stock:linux-radiance": {
+      "status": "succeeded",
+      "duration_seconds": 1140.1058130149977,
+      "build_plan_id": "d225ef62f99dc617f89c973e235bc9bd",
+      "build_dir": "${BC_WORK_ROOT}/builds/833e240cd588a59e91ba7960fcbbda9f/d225ef62f99dc617f89c973e235bc9bd",
+      "log_dir": "${BC_WORK_ROOT}/build-logs/rcs13-run5-b/radiance_stock_linux-radiance-8ae9eba2",
+      "stages": {
+        "materialize": {
+          "status": "succeeded",
+          "duration_seconds": 0.25163938700279687,
+          "log_path": "${BC_WORK_ROOT}/build-logs/rcs13-run5-b/radiance_stock_linux-radiance-8ae9eba2/materialize.log",
+          "first_error": null
+        },
+        "build": {
+          "status": "succeeded",
+          "duration_seconds": 1139.166546581997,
+          "log_path": "${BC_WORK_ROOT}/build-logs/rcs13-run5-b/radiance_stock_linux-radiance-8ae9eba2/build.log",
+          "first_error": null
+        },
+        "configure": {
+          "status": "succeeded",
+          "duration_seconds": 1.5350711859937292,
+          "log_path": "${BC_WORK_ROOT}/build-logs/rcs13-run5-b/radiance_stock_linux-radiance-8ae9eba2/configure.log",
+          "first_error": null
+        }
+      },
+      "evidence_gate": {
+        "mode": "enforced",
+        "result": "passed",
+        "pin": "v1.17.0",
+        "validated_count": 30,
+        "pending_count": 0,
+        "message": "",
+        "first_five_patch_ids": [],
+        "failures": [],
+        "notes": [
+          {
+            "patch": "rad0008_hc_upmix_rt_sweep",
+            "note": "evidence recorded at pin v1.9.0 (now v1.17.0)"
+          },
+          {
+            "patch": "rad0002_moe_remote_handoff",
+            "note": "evidence recorded at pin v1.14.0 (now v1.17.0)"
+          },
+          {
+            "patch": "rad0002_moe_remote_handoff",
+            "note": "evidence recorded at patch digest 663b0856fbc4 (now 499f97976156)"
+          },
+          {
+            "patch": "rad0011_plan_memory",
+            "note": "evidence recorded at patch digest e596bc827e08 (now 5b186196c3cf)"
+          },
+          {
+            "patch": "rad0009_serving_manifest",
+            "note": "evidence recorded at patch digest 7b7bbd25e7f4 (now 904f7e4c5e84)"
+          }
+        ],
+        "skipped_sets": [
+          {
+            "set": "serving-manifest",
+            "required_state": "untested"
+          },
+          {
+            "set": "host-compat",
+            "required_state": "untested"
+          },
+          {
+            "set": "helper-config",
+            "required_state": "untested"
+          },
+          {
+            "set": "mtp-pass-replay",
+            "required_state": "untested"
+          },
+          {
+            "set": "vtp14-mixed-tp",
+            "required_state": "untested"
+          }
+        ]
+      }
+    }
+  },
+  "advisories": "${BC_WORK_ROOT}/build-advisories/rcs13-run5-b/advisories.json"
+}
