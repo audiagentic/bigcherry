@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_080230_the-serving-component-gains-a_1515",
+  "files": [
+    "engines/radiance/components/serving/power_transaction.h",
+    "engines/radiance/components/serving/power_transaction.cpp",
+    "engines/radiance/components/serving/power_linux.cpp",
+    "engines/radiance/components/serving/power_diagnostics.cpp",
+    "engines/radiance/components/serving/callback_boundary.h",
+    "engines/radiance/components/serving/callback_guard.py",
+    "engines/radiance/components/serving/component.toml"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC02 step 4: C++ rewrite of the session power transaction (all-or-nothing apply with rollback and an unresolved journal on a failed restore, injected Hardware and Records interfaces, Linux sysfs/RAPL sensor and host diagnostics). Every externally supplied callable goes through one sealed C++17 Callback boundary that converts any exception, including non-std types, into a typed failure; a CTest tripwire guards against new injection points, documented as best-effort (AST inventory planned). No hardware writes.",
+  "timestamp-utc": "2026-11-17T08:02:30.857590Z",
+  "user-summary-candidate": "The serving component gains a C++ power transaction that applies a session's power plan all-or-nothing and restores it after the engine exits."
+}
