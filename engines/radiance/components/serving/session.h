@@ -104,6 +104,7 @@ struct HelperStart {
 /* What the plan step hands the owner: one manifest and all of its children. */
 struct EngineStart {
     std::filesystem::path manifest;
+    std::string stored_sha256; // original bytes for a second read immediately before serving GPU children
     std::vector<std::string> argv;    // the engine binary, --manifest M, --role engine; nothing else
     std::vector<HelperStart> helpers; // ordered, prior to the engine
     std::string handoff_shm;          // unique to this owner; non-empty only with helpers
@@ -233,6 +234,7 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
 struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
     std::filesystem::path self; // this bc-serve (writes the manifests)
+    std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
@@ -244,6 +246,9 @@ struct EnginePlanInputs {
 /* Resolve a config then publish its measured manifest. On cache miss (exit 10) bring helpers up sequentially
  * against the unmeasured manifest, measure with --plan-memory and record helper RSS. On exit 11 adjust the
  * derived pool (bounded retries). Python and the launcher remain reference only until RSC11 S16. */
+EngineStart replay_stored_manifest(const EnginePlanInputs& given, const std::filesystem::path& run_dir,
+                                   const Hooks& hooks);
+
 EngineStart plan_engine_only(const EnginePlanInputs& given, const std::filesystem::path& run_dir,
                              const Hooks& hooks);
 

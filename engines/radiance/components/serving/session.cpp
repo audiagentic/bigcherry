@@ -6,6 +6,8 @@
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
 #include "resources.h"
+#include "stored_manifest.h"
+#include "sha256.h"
 
 #include <algorithm>
 #include <cerrno>
@@ -793,6 +795,9 @@ class Owner {
             if (s_.power_hook.gfxoff_window)
                 require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.floor", false),
                                  "gfxoff floor receipt");
+            if (!plan_.stored_sha256.empty() &&
+                sha256_hex(read_file(plan_.manifest)) != plan_.stored_sha256)
+                throw PlanFailed("replay: stored manifest bytes changed after authentication");
             start_helpers();
             start_engine();
             if (!wait_health())
@@ -1949,5 +1954,169 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     }
     throw PlanFailed("plan: no measured manifest after 5 rounds");
 }
+
+EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path&,
+                                   const Hooks& hooks) {
+    if (!hooks.admit_power || !hooks.wait)
+        throw PlanFailed("replay: missing required durable power admission or owner stop gate");
+    if (given.stored_manifest.empty())
+        throw PlanFailed("replay: no stored manifest file");
+    const fs::path stored = fs::absolute(given.stored_manifest);
+    if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16U * 1024U * 1024U)
+        throw PlanFailed("replay: manifest must be an existing bounded regular file");
+    const std::string bytes = read_file(stored);
+    const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);
+    if (!verified)
+        throw PlanFailed(v2::render_human("bc-serve replay", verified.error()));
+    const auto& m = verified.value();
+    const Json source = Json::parse(bytes);
+    const fs::path home = m.spec.processes.engine.runtime.radiance_home;
+    const fs::path engine = given.engine_binary.empty() ? home.parent_path() / "bin" / "radiance"
+                                                         : given.engine_binary;
+    const fs::path helper_binary = given.helper_binary.empty() ? home / "helpers" / "r3_moe_worker"
+                                                               : given.helper_binary;
+    if (::access(engine.c_str(), X_OK) != 0 ||
+        (!m.spec.processes.helpers.empty() && ::access(helper_binary.c_str(), X_OK) != 0))
+        throw PlanFailed("replay: matching engine/helper binaries must be executable");
+    const fs::path own_home = given.self.parent_path().parent_path();
+    const fs::path own_engine = own_home.parent_path() / "bin" / "radiance";
+    if (given.self.parent_path().filename() == "bin" && own_home.filename() == "radiance_home" &&
+        fs::exists(own_engine) &&
+        (fs::weakly_canonical(home) != fs::weakly_canonical(own_home) ||
+         fs::weakly_canonical(engine) != fs::weakly_canonical(own_engine) ||
+         (!m.spec.processes.helpers.empty() &&
+          fs::weakly_canonical(helper_binary) != fs::weakly_canonical(own_home / "helpers" / "r3_moe_worker"))))
+        throw PlanFailed("replay: the engine, helper and runtime home must belong to this bc-serve build");
+
+    EnginePlanInputs in = given;
+    in.options.configs = config_sources(given.options.configs);
+    if (in.options.configs.empty())
+        throw PlanFailed("replay: static RSC12 configuration cannot be checked without --configs or BIGCHERRY_CONFIGS");
+    in.options.layouts = given.options.layouts;
+    const std::string name = m.spec.intent.layout;
+    const auto has_set = [&](const std::string& key) {
+        return std::any_of(in.options.sets.begin(), in.options.sets.end(), [&](const std::string& setting) {
+            return setting.starts_with(key + "=");
+        });
+    };
+    if (!has_set("layout.name"))
+        in.options.sets.push_back("layout.name=" + Json(name).dump());
+    if (m.spec.handoff) {
+        const std::string shm = m.spec.handoff->transport.shm;
+        if (shm.rfind("/r3-serve-", 0) != 0 || shm.size() > 220U)
+            throw PlanFailed("replay: stored helper shared-memory name is not owner-scoped");
+        if (!has_set("handoff.shm"))
+            in.options.sets.push_back("handoff.shm=" + shm);
+    }
+    // These are the stored measured allocations, not new operator settings.
+    // Re-resolve with them for the static settings comparison; live room is
+    // independently sampled below and can refuse their reuse.
+    if (!has_set("memory.host_pool_mib"))
+        in.options.sets.push_back("memory.host_pool_mib=" +
+                                  std::to_string(m.spec.resources.host.pool_mib));
+    if (!has_set("memory.host_kv_mib"))
+        in.options.sets.push_back("memory.host_kv_mib=" +
+                                  std::to_string(m.spec.resources.host.kv_mib));
+    const Json facts = detect(in.options.sys_root);
+    const Resolved resolved = resolve(in.options, facts);
+    const Json definitions = load_layouts(in.options);
+    if (definitions.at("kind").value(name, "") != "config")
+        throw PlanFailed("replay: only a current RSC12 named config is eligible for stored-manifest replay");
+
+    const std::string expected_profile = in.calibration_run ? "lab" : "production";
+    const std::string stored_profile =
+        source.at("spec").at("intent").at("service").at("profile").get<std::string>();
+    if (expected_profile != stored_profile)
+        throw PlanFailed("replay: a lab manifest requires the explicitly gated foreground calibration run");
+    ManifestInputs draft;
+    draft.resolved = resolved;
+    draft.profile = expected_profile;
+    draft.instance_id = new_instance_id();
+    draft.producer_sha256 = file_sha256(given.self);
+    draft.calibration_cache = in.options.calibration_cache;
+    draft.s10.power_profile = m.spec.intent.power.profile;
+    draft.s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
+    draft.s10.calibration_records = Json::array();
+    if (in.calibration_run && !in.live_policy_file.empty()) {
+        draft.live_policy = Json::parse(read_file(in.live_policy_file));
+        draft.live_policy_from = in.live_policy_file.string();
+    }
+    if (source.at("spec").contains("experiment"))
+        throw PlanFailed("replay: lab experiment requires RSC12 static input-key verification, not available here");
+    const BuiltManifest current = build_manifest(draft);
+
+    ReplayEvidence evidence;
+    evidence.producer_sha256 = draft.producer_sha256;
+    evidence.model_identity = container_identity(m.spec.intent.model);
+    evidence.engine_identity = engine_identity(engine, home);
+    evidence.fresh_facts = facts;
+    evidence.effective_spec = current.document.at("spec");
+    const ReplayResult checked = authenticate_replay(bytes, stored.string(), evidence);
+    if (const auto* error = std::get_if<ReplayError>(&checked))
+        throw PlanFailed(v2::render_human("bc-serve replay", error->detail));
+    const auto& accepted = std::get<v2::Manifest>(checked);
+
+    std::vector<std::string> ordered = accepted.spec.processes.engine.device.gpus;
+    for (const auto& h : accepted.spec.processes.helpers)
+        ordered.push_back(h.gpu);
+    const auto room = v2::measure_live_room(facts, in.options.sys_root, ordered);
+    if (!room)
+        throw PlanFailed(v2::render_human("bc-serve replay room", room.error()));
+    if (const auto error = check_replay_live_room(accepted, facts, room.value()))
+        throw PlanFailed(v2::render_human("bc-serve replay room", *error));
+
+    EngineStart out;
+    out.manifest = stored;
+    out.stored_sha256 = sha256_hex(bytes);
+    out.port = int(accepted.spec.processes.engine.server.port);
+    out.argv = {engine.string(), "--manifest", stored.string(), "--role", "engine"};
+    std::string ordinals, hip_ordinals;
+    for (size_t i = 0; i < accepted.spec.processes.engine.device.gpus.size(); ++i) {
+        const std::string& bdf = accepted.spec.processes.engine.device.gpus[i];
+        const Json* gpu = nullptr;
+        for (const auto& g : facts.at("gpus"))
+            if (g.at("bdf") == bdf)
+                gpu = &g;
+        if (!gpu)
+            throw PlanFailed("replay: engine BDF vanished after live admission: " + bdf);
+        ordinals += (i ? "," : "") + std::to_string(gpu->at("hip_ordinal").get<int>());
+        hip_ordinals += (i ? "," : "") + std::to_string(i);
+    }
+    out.runtime = {{"RADIANCE_HOME", home.string()}, {"ROCR_VISIBLE_DEVICES", ordinals},
+                   {"HIP_VISIBLE_DEVICES", hip_ordinals}};
+    for (const auto& h : accepted.spec.processes.helpers) {
+        const Json* gpu = nullptr;
+        for (const auto& g : facts.at("gpus"))
+            if (g.at("bdf") == h.gpu)
+                gpu = &g;
+        if (!gpu)
+            throw PlanFailed("replay: helper BDF vanished after live admission: " + h.gpu);
+        HelperStart helper;
+        helper.role = h.role;
+        helper.argv = {helper_binary.string(), "--manifest", stored.string(), "--role", h.role};
+        helper.runtime = {{"RADIANCE_HOME", home.string()},
+                          {"ROCR_VISIBLE_DEVICES", std::to_string(gpu->at("hip_ordinal").get<int>())},
+                          {"HIP_VISIBLE_DEVICES", "0"}};
+        out.helpers.push_back(std::move(helper));
+    }
+    if (accepted.spec.handoff) {
+        out.handoff_shm = accepted.spec.handoff->transport.shm;
+        if (hooks.selected_segment)
+            require_callback(hooks.selected_segment.invoke("session.hooks.selected_segment", out.handoff_shm),
+                             "replay handoff namespace");
+    }
+    out.summary = {{"config", name}, {"source", definitions.at("source").value(name, "")},
+                   {"model", accepted.spec.intent.model}, {"engine", engine.string()},
+                   {"engine_cards", accepted.spec.processes.engine.device.gpus},
+                   {"helper_cards", source.at("spec").at("processes").at("helpers")},
+                   {"manifest_digest", accepted.metadata.content_digest},
+                   {"replay", true}};
+    // No writer or measuring child was started. Admission still passes through
+    // the real owner's durable event before ANY GPU child can be forked.
+    require_callback(hooks.admit_power.invoke("session.hooks.admit_power", stored, v2::PlanUse::serving),
+                     "stored manifest power admission");
+    return out;
+}
+
 
 } // namespace bc::serving::session

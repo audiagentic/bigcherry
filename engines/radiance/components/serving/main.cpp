@@ -128,7 +128,8 @@ void usage() {
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary;
+    fs::path run_dir, engine_binary, stored_manifest;
+    std::string config_name;
     std::string power_profile = "stock";
     fs::path live_policy_file, prompts_a, prompts_b, calibration_store;
     bool calibration_run = false;
@@ -157,6 +158,11 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         else if (arg == "--model-root") opts.model_root = need();
         else if (arg == "--calibration") opts.calibration_cache = need();
         else if (arg == "--set") opts.sets.push_back(need());
+        else if (arg == "--manifest") stored_manifest = need();
+        else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
+            config_name = arg;
+            passed.push_back(arg);
+        }
         else if (arg == "--engine-binary") engine_binary = need();
         else if (arg == "--power-profile") {
             power_profile = need();
@@ -182,6 +188,11 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         }
     }
     if (run_dir.empty()) throw std::runtime_error(cmd + ": --run-dir DIR is required (the session's lock, socket, record, logs)");
+    if (!config_name.empty() && !stored_manifest.empty())
+        throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
+    if (!config_name.empty()) opts.sets.push_back("layout.name=" + Json(config_name).dump());
+    if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
+        throw std::runtime_error("--manifest must name an existing regular file");
     run_dir = fs::absolute(run_dir);
     if (calibration_run) {
         if (cmd != "serve" || live_policy_file.empty() || prompts_a.empty() || prompts_b.empty() ||
@@ -260,6 +271,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     }
     ss::EnginePlanInputs inputs;
     inputs.options = opts;
+    inputs.stored_manifest = stored_manifest;
     inputs.self = self;
     inputs.engine_binary = engine_binary;
     inputs.power_profile = power_profile;
@@ -302,7 +314,10 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     session.run_dir = run_dir;
     if (calibration_run)
         session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
-    session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) { return ss::plan_engine_only(inputs, rd, hooks); };
+    session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
+        return inputs.stored_manifest.empty() ? ss::plan_engine_only(inputs, rd, hooks)
+                                              : ss::replay_stored_manifest(inputs, rd, hooks);
+    };
     return ss::serve(session);
 }
 
