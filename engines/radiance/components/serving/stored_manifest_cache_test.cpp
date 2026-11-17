@@ -73,7 +73,7 @@ int main() {
         const fs::path index = ss::stored_index_path(t.root, "fixture");
         // More than one block: changing weights past any header/table must
         // invalidate a complete artifact identity, without loading it all.
-        std::string contents(2U * 1024U * 1024U + 5U, 'm');
+        std::string contents((2U * 1024U * 1024U) + 5U, 'm');
         write(model, contents);
         const std::string first = ss::complete_file_identity(model);
         contents.back() = 'x';

@@ -4,6 +4,7 @@
 #include "sha256.h"
 #include "v2/strict_json.h"
 
+#include <algorithm>
 #include <cerrno>
 #include <cstdint>
 #include <cstring>
@@ -24,10 +25,8 @@ using Json = nlohmann::json;
 bool hex_digest(const std::string& value) {
     if (value.size() != 64)
         return false;
-    for (char c : value)
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
-            return false;
-    return true;
+    return std::all_of(value.begin(), value.end(),
+                       [](char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
 }
 void check_digest(const std::string& digest, const char* where) {
     if (!hex_digest(digest))
@@ -47,7 +46,7 @@ std::string complete_file_identity(const std::filesystem::path& path) {
     if (!in)
         throw std::runtime_error("cannot open static input file " + path.string());
     std::string accumulator = "bigcherry/rsc12/chunked-file-v1\n";
-    std::string chunk(1024U * 1024U, '\0');
+    std::string chunk(1024ULL * 1024ULL, '\0');
     uint64_t size = 0;
     for (;;) {
         in.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
@@ -205,7 +204,7 @@ std::optional<std::filesystem::path> stored_manifest_for(const std::filesystem::
     const auto entry = read_stored_index(index);
     if (entry.key != static_key)
         return std::nullopt;
-    const auto saved = run_dir / entry.manifest_filename;
+    auto saved = run_dir / entry.manifest_filename;
     if (!std::filesystem::is_regular_file(saved) || std::filesystem::is_symlink(saved) ||
         complete_file_identity(saved) != entry.digest)
         throw std::runtime_error("stored manifest cache: matching index refers to missing or tampered bytes");

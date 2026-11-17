@@ -133,9 +133,9 @@ struct Case {
         };
         inputs.replay_live_room = [bad_room](const v2::Manifest&, const Json&) {
             v2::P1LiveRoom room{};
-            room.mem_available_bytes = bad_room ? 1 : (1LL << 48);
-            room.cgroup_headroom_bytes = 1LL << 48;
-            room.pin_available_bytes = 1LL << 48;
+            room.mem_available_bytes = bad_room ? 1 : (281474976710656LL);
+            room.cgroup_headroom_bytes = 281474976710656LL;
+            room.pin_available_bytes = 281474976710656LL;
             return room;
         };
         session.run_dir = run;
@@ -180,7 +180,7 @@ struct Case {
         };
     }
 
-    int run_owner(bool succeed) {
+    int run_owner(bool succeed) const {
         const pid_t pid = ::fork();
         check(pid >= 0, "fork");
         if (pid == 0) {
@@ -209,7 +209,9 @@ struct Case {
             ::waitpid(pid, nullptr, 0);
             throw std::runtime_error("owner session timed out in state " + state);
         }
-        const auto record = ss::read_record(run).value();
+        const auto observed = ss::read_record(run);
+        check(observed.has_value(), "owner must have a durable record");
+        const Json record = observed.value_or(Json::object());
         if (succeed) {
             check(state == "running", "replay failed before running: " + record.dump(2));
             auto reply = ss::control(run, "stop", 10s);
@@ -221,7 +223,9 @@ struct Case {
         check(::waitpid(pid, &status, 0) == pid, "waitpid");
         check(WIFEXITED(status) && (WEXITSTATUS(status) == 0) == succeed, "owner return code");
         check(read(stored) == bytes, "stored manifest changed after replay attempt");
-        const auto final = ss::read_record(run).value();
+        const auto final_record = ss::read_record(run);
+        check(final_record.has_value(), "owner must persist terminal record");
+        const Json final = final_record.value_or(Json::object());
         if (succeed) {
             check(final.at("power_admission").at("manifest") == stored.string(),
                   "power bound to a different file");

@@ -10,7 +10,7 @@ namespace bc::serving::session {
 namespace {
 using Json = nlohmann::json;
 using Code = v2::ConfigErrorCode;
-constexpr int64_t MiB = 1024 * 1024;
+constexpr int64_t MiB = 1024LL * 1024LL;
 constexpr int64_t MaxBytes = std::numeric_limits<int64_t>::max() / 2;
 
 ReplayError refuse(ReplayRefusal reason, Code code, std::string path, std::string message) {

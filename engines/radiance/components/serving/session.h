@@ -160,7 +160,7 @@ struct PlanFailed : std::runtime_error {
 };
 struct ReplayFailed : PlanFailed {
     ReplayRefusal reason;
-    ReplayFailed(ReplayRefusal why, std::string detail) : PlanFailed(std::move(detail)), reason(why) {}
+    ReplayFailed(ReplayRefusal why, const std::string& detail) : PlanFailed(detail), reason(why) {}
 };
 
 /* Step 4 power transaction boundary. Step 2 never writes device settings.

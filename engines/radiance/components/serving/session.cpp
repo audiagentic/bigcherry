@@ -2040,13 +2040,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     throw PlanFailed("plan: no measured manifest after 5 rounds");
 }
 
-EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path&, const Hooks& hooks) {
+EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& /*run_dir*/,
+                                   const Hooks& hooks) {
     if (!hooks.admit_power || !hooks.wait)
         throw PlanFailed("replay: missing required durable power admission or owner stop gate");
     if (given.stored_manifest.empty())
         throw PlanFailed("replay: no stored manifest file");
     const fs::path stored = fs::absolute(given.stored_manifest);
-    if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16U * 1024U * 1024U)
+    if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16ULL * 1024ULL * 1024ULL)
         throw PlanFailed("replay: manifest must be an existing bounded regular file");
     const std::string bytes = read_file(stored);
     const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);

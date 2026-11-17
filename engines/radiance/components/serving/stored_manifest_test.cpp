@@ -107,23 +107,23 @@ int main() {
 
         const auto& manifest = std::get<v2::Manifest>(accepted);
         v2::P1LiveRoom room{};
-        room.mem_available_bytes = 1LL << 48;
-        room.cgroup_headroom_bytes = 1LL << 48;
-        room.pin_available_bytes = 1LL << 48;
+        room.mem_available_bytes = 281474976710656LL;
+        room.cgroup_headroom_bytes = 281474976710656LL;
+        room.pin_available_bytes = 281474976710656LL;
         require(!ss::check_replay_live_room(manifest, evidence.fresh_facts, room),
                 "fresh ample room must admit the stored plan");
         room.mem_available_bytes = 1;
         require(ss::check_replay_live_room(manifest, evidence.fresh_facts, room).has_value(),
                 "stored manifest cannot skip current MemAvailable");
-        room.mem_available_bytes = 1LL << 48;
+        room.mem_available_bytes = 281474976710656LL;
         room.cgroup_headroom_bytes = 1;
         require(ss::check_replay_live_room(manifest, evidence.fresh_facts, room).has_value(),
                 "stored manifest cannot skip cgroup");
-        room.cgroup_headroom_bytes = 1LL << 48;
+        room.cgroup_headroom_bytes = 281474976710656LL;
         room.pin_available_bytes = 1;
         require(ss::check_replay_live_room(manifest, evidence.fresh_facts, room).has_value(),
                 "stored manifest cannot skip pin room");
-        room.pin_available_bytes = 1LL << 48;
+        room.pin_available_bytes = 281474976710656LL;
         e = evidence;
         e.fresh_facts["host"]["memlock"]["limit_mib"] = 0;
         require(ss::check_replay_live_room(manifest, e.fresh_facts, room).has_value(),

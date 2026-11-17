@@ -164,14 +164,14 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         else if (arg == "--model-root") opts.model_root = need();
         else if (arg == "--calibration") opts.calibration_cache = need();
         else if (arg == "--set") opts.sets.push_back(need());
-        else if (arg == "--manifest")
+        else if (arg == "--manifest") {
             stored_manifest = need();
-        else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
+        } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
-        } else if (arg == "--engine-binary")
+        } else if (arg == "--engine-binary") {
             engine_binary = need();
-        else if (arg == "--power-profile") {
+        } else if (arg == "--power-profile") {
             power_profile = need();
             explicit_power_profile = true;
         } else if (arg == "--calibration-run") {
@@ -280,7 +280,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     }
     ss::EnginePlanInputs inputs;
     inputs.options = opts;
-    inputs.stored_manifest = stored_manifest;
+    inputs.stored_manifest = std::move(stored_manifest);
     inputs.named_config = config_name;
     inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_prompts_a = prompts_a;
