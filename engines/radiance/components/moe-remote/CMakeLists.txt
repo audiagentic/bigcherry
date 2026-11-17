@@ -47,13 +47,13 @@ target_compile_definitions(r3_moe_worker PRIVATE __HIP_PLATFORM_AMD__)
 if(NOT RAD_HSA_RUNTIME)
   find_library(RAD_HSA_RUNTIME hsa-runtime64 HINTS /opt/rocm/lib ENV ROCM_PATH PATH_SUFFIXES lib REQUIRED)
 endif()
-# Expert ownership and the container reader are bc_experts, the one implementation (the serving component builds and tests
-# it; bc-serve's planning will use it in a later slice).
-include("${CMAKE_CURRENT_SOURCE_DIR}/../serving/bc_experts.cmake")
 # The helper reads its manifest section through the shared strict v1 reader (bc_serving_v2, the one the engine and bc-serve
 # link): no second parser, no environment settings.
 set(BC_SERVING_V2_NLOHMANN_INCLUDE "${RADIANCE_SRC}/vendor")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../serving/bc_serving_v2.cmake")
+# Expert ownership and the container reader are bc_experts, the one implementation (the serving component builds and tests
+# it; bc-serve's planning will use it in a later slice).
+include("${CMAKE_CURRENT_SOURCE_DIR}/../serving/bc_experts.cmake")
 target_link_libraries(r3_moe_worker PRIVATE radiance::abi bc_experts bc_serving_v2 ${CMAKE_DL_LIBS} ${RAD_HIP_RUNTIME} ${RAD_HSA_RUNTIME} Threads::Threads)
 set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQUIRED ON
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)

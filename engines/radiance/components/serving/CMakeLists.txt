@@ -46,9 +46,17 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
      "R\"bchp(${bc_helper_profile_seed})bchp\"\n")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml")
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+# One read-only worker telemetry producer also used by the v2 S13 receipt tests.
+# The runtime guard consumes the same typed publisher, not a second SHM parser.
+add_library(bc_serving_v2_runtime_receipt STATIC v2/runtime_receipt.cpp)
+target_link_libraries(bc_serving_v2_runtime_receipt PUBLIC bc_serving_v2)
+target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
+target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
-target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+
+target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
 target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
 target_link_libraries(bc_serving PUBLIC radiance::abi)
@@ -82,6 +90,21 @@ install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
 include(CTest)
 if(BUILD_TESTING)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  # A build target so the component test gate can declare it; building it runs the tripwire.
+  add_custom_target(bc_callback_boundary_guard
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py"
+    VERBATIM)
+  add_test(NAME bc_callback_boundary_guard
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py")
+  # The shared header must compile at the HIP remote-MoE worker standard.
+  add_executable(bc_callback_boundary_cpp17_test EXCLUDE_FROM_ALL callback_boundary_cpp17_test.cpp)
+  set_target_properties(bc_callback_boundary_cpp17_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+  add_test(NAME bc_callback_boundary_cpp17_test COMMAND bc_callback_boundary_cpp17_test)
+  add_executable(bc_callback_boundary_abi_test EXCLUDE_FROM_ALL callback_boundary_abi_test.cpp)
+  target_link_libraries(bc_callback_boundary_abi_test PRIVATE ${CMAKE_DL_LIBS})
+  target_link_options(bc_callback_boundary_abi_test PRIVATE -rdynamic)
+  add_test(NAME bc_callback_boundary_abi_test COMMAND bc_callback_boundary_abi_test)
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
@@ -98,11 +121,34 @@ if(BUILD_TESTING)
   add_dependencies(bc_serving_test bc_fake_engine)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
+  add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
+  target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
+  add_test(NAME bc_power_transaction_test COMMAND bc_power_transaction_test)
+  # Step 3: independently built card-free guards and real v2 power bridge.
+  add_executable(bc_session_guards_test EXCLUDE_FROM_ALL session_guards_test.cpp)
+  target_link_libraries(bc_session_guards_test PRIVATE bc_serving)
+  add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
+  add_executable(bc_manifest_power_test EXCLUDE_FROM_ALL manifest_power_test.cpp)
+  target_link_libraries(bc_manifest_power_test PRIVATE bc_serving)
+  target_compile_definitions(bc_manifest_power_test PRIVATE
+    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+  add_test(NAME bc_manifest_power_test COMMAND bc_manifest_power_test)
   add_executable(bc_session_test EXCLUDE_FROM_ALL session_test.cpp)
   target_link_libraries(bc_session_test PRIVATE bc_serving)
   add_dependencies(bc_session_test bc_fake_engine)
   target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_session_test COMMAND bc_session_test)
+  # A build target so the component test gate can declare it; building it runs the tripwire.
+  add_custom_target(bc_session_callback_guard
+    COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake"
+    VERBATIM)
+  add_test(NAME bc_session_callback_guard COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake")
+  # RSC02 step 2: Python-oracle fixture comparison is compiled and exercised by the C++ component suite.
+  add_executable(bc_resources_parity_test EXCLUDE_FROM_ALL resources_parity_test.cpp)
+  target_link_libraries(bc_resources_parity_test PRIVATE bc_serving)
+  target_compile_definitions(bc_resources_parity_test PRIVATE
+    BC_RSC02_PARITY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_resource_parity.json")
+  add_test(NAME bc_resources_parity_test COMMAND bc_resources_parity_test)
   add_executable(bc_jcs_test EXCLUDE_FROM_ALL jcs_test.cpp)
   target_link_libraries(bc_jcs_test PRIVATE bc_serving)
   target_compile_definitions(bc_jcs_test PRIVATE
@@ -156,12 +202,7 @@ if(BUILD_TESTING)
   add_executable(bc_v2_native_measurement_test EXCLUDE_FROM_ALL v2/native_measurement_test.cpp)
   target_link_libraries(bc_v2_native_measurement_test PRIVATE bc_serving_v2_native_measurement)
   add_test(NAME bc_v2_native_measurement_test COMMAND bc_v2_native_measurement_test)
-  # S13b: inactive runtime receipts, no production linkage and no v2 activation.
-  add_library(bc_serving_v2_runtime_receipt STATIC EXCLUDE_FROM_ALL v2/runtime_receipt.cpp)
-  target_link_libraries(bc_serving_v2_runtime_receipt PUBLIC bc_serving_v2)
-  target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
-  target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
+  # S13b: the same typed read-only publisher is tested independently.
   # Explicit v2-only collector reads the actual worker shared-memory transport.
   # Not installed, not built by default and never linked into v1 production.
   add_executable(bc_v2_runtime_receipt_live EXCLUDE_FROM_ALL v2/runtime_receipt_live.cpp)
@@ -209,7 +250,11 @@ if(BUILD_TESTING)
   get_property(_bc_tests DIRECTORY PROPERTY TESTS)
   foreach(_bc_test IN LISTS _bc_tests)
     if(TARGET ${_bc_test})
-      target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+      get_target_property(_bc_test_type ${_bc_test} TYPE)
+      # Script guards are utility targets: nothing to compile.
+      if(NOT _bc_test_type STREQUAL "UTILITY")
+        target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+      endif()
     endif()
     # The tests resolve the repository's example layouts; the binaries have no built-in layouts (BIGCHERRY_LAYOUTS).
     set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT

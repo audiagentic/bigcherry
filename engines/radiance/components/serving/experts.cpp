@@ -129,19 +129,30 @@ int64_t laid_out_bytes(const Container& f, bool device_layout, uint32_t l, uint3
 static_assert(r3::moe_shm::kCombineMaskBits <= r3::worker_share::kMaxHelperShares,
               "the planner's helper bound is the runtime protocol's, which the share arithmetic must cover");
 
-bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& arch, bool device_layout,
-                  const std::function<bool()>& layout_check, const uint64_t* budgets, uint32_t helper, uint32_t helpers,
-                  Owned* out) {
-    const uint64_t budget = budgets && helper < helpers ? budgets[helper] : 0;   /* this helper's; the others' matter to the tail placement */
+bool select_owned(const Container& f, const OwnerPolicy& policy, const std::string& arch, bool device_layout,
+                  const bc::serving::callback::Guarded<bool()>& layout_check, const uint64_t* budgets,
+                  uint32_t helper, uint32_t helpers, Owned* out) {
+    const uint64_t budget = budgets && helper < helpers
+                                ? budgets[helper]
+                                : 0; /* this helper's; the others' matter to the tail placement */
     if (!out || !budget) {
         std::fprintf(stderr, "r3_moe_worker: no helper budget\n");
         return false;
     }
-    if (!backend_accepts(f, arch.c_str(), p.formats.c_str(), false)) return false;
-    if (layout_check && !layout_check()) return false;
-    if (helpers == 0 || !r3::moe_shm::slots_fit(helpers,1) || helper >= helpers) {
-        std::fprintf(stderr, "r3_moe_worker: helper %u of %u is outside the protocol's 1..%u helpers\n", helper, helpers,
-                     (unsigned)r3::moe_shm::kCombineMaskBits);
+    if (!backend_accepts(f, arch.c_str(), policy.formats.c_str(), false))
+        return false;
+    if (layout_check) {
+        const auto checked = layout_check.invoke("experts.layout_check");
+        if (!checked || !checked.value()) {
+            if (!checked)
+                std::fprintf(stderr, "r3_moe_worker: layout callback failed: %s\n",
+                             checked.error().message.c_str());
+            return false;
+        }
+    }
+    if (helpers == 0 || !r3::moe_shm::slots_fit(helpers, 1) || helper >= helpers) {
+        std::fprintf(stderr, "r3_moe_worker: helper %u of %u is outside the protocol's 1..%u helpers\n", helper,
+                     helpers, (unsigned)r3::moe_shm::kCombineMaskBits);
         return false;
     }
     std::vector<const RadFileProfile*> order;
@@ -150,7 +161,7 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
     std::vector<RadFileProfile> flat;
     /* R3_MOE_WORKER_HEAT: route counts a profiling run wrote (R3_MOE_WORKER_HISTOGRAM). Coldest first, so the
      * engine keeps the experts most tokens route to and a decode step hands off as little as possible. */
-    if (const char* hp = p.heat.c_str(); hp && *hp) {
+    if (const char* hp = policy.heat.c_str(); hp && *hp) {
         std::vector<uint32_t> heat((size_t)kMaxLayers * f.experts, 0);
         FILE* hf = std::fopen(hp, "rb");
         const size_t got = hf ? std::fread(heat.data(), sizeof(uint32_t), heat.size(), hf) : 0;
@@ -198,13 +209,16 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
      * (a fixed weight-tile part when the expert is active plus a part a routed row, and the same for a decode step).
      * The heat file holds max + 1 - count (so the hottest sort first); the counts are max - value.
      * R3_MOE_WORKER_BALANCE_SPEED="s0,s1" scales a helper's cost by 1/s (a slower card takes less). */
-    if (p.balance) {
+    if (policy.balance) {
         if (helpers != 2 || flat.empty() || budgets[0] != budgets[1]) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE needs R3_MOE_WORKER_HEAT, two helpers and one budget for both\n");
             return false;
         }
-        if (const char* pv = p.placement.c_str(); pv && *pv && std::strcmp(pv, "roundrobin") != 0) {
-            std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE splits the experts of two equal helpers; it does not combine with R3_MOE_WORKER_PLACEMENT=%s\n", pv);
+        if (const char* pv = policy.placement.c_str(); pv && *pv && std::strcmp(pv, "roundrobin") != 0) {
+            std::fprintf(stderr,
+                         "r3_moe_worker: R3_MOE_WORKER_BALANCE splits the experts of two equal helpers; it "
+                         "does not combine with R3_MOE_WORKER_PLACEMENT=%s\n",
+                         pv);
             return false;
         }
         struct Pick { uint32_t l, e; int64_t bytes; double cost; };
@@ -218,11 +232,12 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
             const double lam = tokens * (double)kTopK * share, lam_d = decode * (double)kTopK * share;
             return (1.0 - std::exp(-lam)) * c0 + c1 * lam + (1.0 - std::exp(-lam_d)) * d0;
         };
-        if (p.balance_speeds.size() != 2 || !(p.balance_speeds[0] > 0.0) || !(p.balance_speeds[1] > 0.0)) {
+        if (policy.balance_speeds.size() != 2 || !(policy.balance_speeds[0] > 0.0) ||
+            !(policy.balance_speeds[1] > 0.0)) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_BALANCE needs two positive balance speeds\n");
             return false;
         }
-        double speed[2] = {p.balance_speeds[0], p.balance_speeds[1]};
+        double speed[2] = {policy.balance_speeds[0], policy.balance_speeds[1]};
         /* The jointly owned set: exactly the alternation's picks (both helpers' budgets filled in turn). */
         std::vector<Pick> joint;
         {
@@ -286,15 +301,19 @@ bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& a
     /* R3_MOE_WORKER_SHARES="w0,w1,..": the helpers' parts of the ranking (default equal). A slower card takes a smaller part; a part of 0
      * is a helper that owns nothing. Every helper reads the same list and takes the same decision (worker_share.h). */
     uint32_t shares[r3::worker_share::kMaxHelperShares] = {};
-    if (!r3::worker_share::parse_shares(p.shares.c_str(), helpers, shares)) {
-        std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_SHARES must list one non-negative weight for each of the %u helpers, not all 0\n", helpers);
+    if (!r3::worker_share::parse_shares(policy.shares.c_str(), helpers, shares)) {
+        std::fprintf(stderr,
+                     "r3_moe_worker: R3_MOE_WORKER_SHARES must list one non-negative weight for each of the %u "
+                     "helpers, not all 0\n",
+                     helpers);
         return false;
     }
     /* R3_MOE_WORKER_PLACEMENT: "roundrobin" (default) deals the ranking out by the shares; "tail" deals it to the head helpers 0..H-2 by their
      * shares, each up to its own budget, and gives the LAST helper what no head helper had room for (RAD23: the cold tail on a small card). */
     bool tail = false;
-    if (const char* pv = p.placement.c_str(); pv && *pv) {
-        if (std::strcmp(pv, "tail") == 0) tail = true;
+    if (const char* pv = policy.placement.c_str(); pv && *pv) {
+        if (std::strcmp(pv, "tail") == 0)
+            tail = true;
         else if (std::strcmp(pv, "roundrobin") != 0) {
             std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_PLACEMENT is roundrobin or tail, not %s\n", pv);
             return false;

@@ -1,0 +1,50 @@
+{
+ "300": {
+  "prompt_tokens": 302,
+  "prompt_sha": "60e9e47bdc95c069",
+  "text_sha": "fbcea52d6cc84eb5483de9334fea169253916bd153cf3dddc23cdf9e68afc151",
+  "usage": {
+   "prompt_tokens": 302,
+   "completion_tokens": 128,
+   "total_tokens": 430,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "finish": "length",
+  "text": "DX: integration, validation, and finalisation.\n\n<think>\nThe user is asking me to summarise a request (ident300) that describes a code review/audit task for a llama.cpp fork. Let me break down what's being described and provide a clear, concise summary.\n\nThe request is about:\n- An external snapshot review of a llama.cpp fork (stew675/llama.cpp) on branch `rdna-boosts`\n- The fork is ahead of a pinned baseline (BigCherry's llama.cpp)\n- It needs semantic auditing rather than wholesale import\n- The work",
+  "secs": 1.492037296295166
+ },
+ "1092": {
+  "prompt_tokens": 1085,
+  "prompt_sha": "b1a72c20ea4e4cf2",
+  "text_sha": "0864ad9c4a5590fa4bd06336732d1ae242bf4670a7149481359acd59caf9f266",
+  "usage": {
+   "prompt_tokens": 1085,
+   "completion_tokens": 128,
+   "total_tokens": 1213,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "finish": "length",
+  "text": " apply to the current vendor tree.\n- The fix is a 2-line re-anchor: anchor on the *next* surviving line\n  (`set(CMAKE_HIP_FLAGS \"${CMAKE_HIP_FLAGS} -fno-fast-math\")`) and insert the\n  opt-in block before it. Verified: 1002 then applies cleanly.\n- **Decision needed:** re-anchor 1002 (recommended) vs. drop it (upstream\n  already removed the flag; the opt-in gate is now a no-op unless we want to\n  *re-add* unsafe math as opt-in).",
+  "secs": 2.011705160140991
+ },
+ "4016": {
+  "prompt_tokens": 4019,
+  "prompt_sha": "6d2fde627f75c811",
+  "text_sha": "ce534cc15eeb4e9cdbb8bc165b81946a1b1f37f5e30b07af7daaca3352ac2353",
+  "usage": {
+   "prompt_tokens": 4019,
+   "completion_tokens": 128,
+   "total_tokens": 4147,
+   "prompt_tokens_details": {
+    "cached_tokens": 0
+   }
+  },
+  "finish": "length",
+  "text": "\n|\n\nHere is a summary of the provided technical notes and candidate reference report:\n\n### 1. Action List Status (Rebase & Maintenance)\nThe project is currently executing a rebase from an older pin to **b10502**. The status of key actions is as follows:\n\n*   **Completed:**\n    *   **A1 (Patch Adaptation):** Patch 1002 was adapted to anchor against `GGML_HIP_EXPORT_METRICS` rather than the removed anchor.\n    *   **A2 (Documentation):** The latent bug regarding 1207 struct anchors was",
+  "secs": 2.9485526084899902
+ }
+}

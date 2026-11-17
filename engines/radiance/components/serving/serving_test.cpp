@@ -1,22 +1,23 @@
 #ifdef NDEBUG
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
-#include "serving.h"
 #include "calibration.h"
 #include "config_loader.h"
-#include "ledger.h"
-#include "live_policy_ingest.h"
 #include "experts.h"
+#include "ledger.h"
 #include "live_policy.h"
+#include "live_policy_ingest.h"
 #include "manifest_writer.h"
-#include "v2/manifest.h"
 #include "plan_cache.h"
+#include "resources.h"
 #include "sdk_check.h"
-#include "test_rad_fixture.h"
-#include "worker_footprint.h"
-#include "v2/helper_settings.h"
-#include "sha256.h"
+#include "serving.h"
 #include "session.h"
+#include "sha256.h"
+#include "test_rad_fixture.h"
+#include "v2/helper_settings.h"
+#include "v2/manifest.h"
+#include "worker_footprint.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <sys/stat.h>
@@ -930,6 +931,24 @@ void manifest_writer_step(Fixture& t) {
     // The container, its heat ranking and the measured plan this configuration's manifest is built from.
     const auto model = t.root / "writer-model.rad";
     bc::test::write_rad(model, 4, 16, 128, 128, {});
+    // The original minimal planner fixture has no string table. RSC03's real RAD v2
+    // resource reader (Python and now C++) requires valid name offsets even for experts.
+    // Attach an expert-only name table without touching tensor payloads or model geometry.
+    {
+        std::fstream file(model, std::ios::binary | std::ios::in | std::ios::out);
+        RadFileHeader header{};
+        file.read(reinterpret_cast<char*>(&header), sizeof(header));
+        assert(file && header.str_bytes == 0);
+        constexpr char label[] = "expert";
+        header.str_off = header.file_bytes;
+        header.str_bytes = sizeof(label);
+        header.file_bytes += sizeof(label);
+        file.seekp(std::streamoff(header.str_off));
+        file.write(label, sizeof(label));
+        file.seekp(0);
+        file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+        assert(file);
+    }
     const auto heat = t.root / "writer.hot-first";
     {
         std::vector<uint32_t> counts(128 * 16, 0);
@@ -961,6 +980,36 @@ void manifest_writer_step(Fixture& t) {
     {
         // The unmeasured manifest of the same configuration has the owner map the P1 record is measured against.
         const auto unmeasured = sv::build_manifest(in);
+        // RSC02 step 2: exercise real RAD directory, the exact published owner map and this
+        // synthetic KFD/cgroup/pin detector fixture. The standalone parity test checks the pure
+        // arithmetic against Python, this test proves the wiring into native manifest inputs.
+        const auto ledger = sv::resources::derive_launch(
+            {r.values, r.manifest.at("process_helpers"), t.facts, unmeasured.document});
+        assert(ledger.ok());
+        assert(ledger.value().helpers.size() == r.manifest.at("process_helpers").size());
+        assert(ledger.value().owner_map_digest == unmeasured.document.at("spec")
+                                                      .at("plan")
+                                                      .at("owner_map")
+                                                      .at("owner_map_sha256")
+                                                      .get<std::string>());
+        assert(ledger.value().host_pool_mib > 0 && ledger.value().host_kv_mib > 0);
+        {
+            auto altered = r.manifest.at("process_helpers");
+            altered[0]["bdf"] = "0000:fe:00.0";
+            assert(!sv::resources::derive_launch({r.values, altered, t.facts, unmeasured.document}));
+        }
+        {
+            auto altered = unmeasured.document;
+            altered["spec"]["plan"]["owner_map"]["owner_map_sha256"] = "forged";
+            assert(
+                !sv::resources::derive_launch({r.values, r.manifest.at("process_helpers"), t.facts, altered}));
+        }
+        {
+            auto constrained = t.facts;
+            constrained["host"]["mem_available_mib"] = 1;
+            assert(!sv::resources::derive_launch(
+                {r.values, r.manifest.at("process_helpers"), constrained, unmeasured.document}));
+        }
         in.s10.p1_record = p1_record_for(unmeasured.document, 9216, 1024,
                                          r.values.at("memory").at("host_reserve_mib").get<int64_t>());
     }
@@ -2364,6 +2413,26 @@ void session_engine_plan(Fixture& t) {
         refused = std::string(e.what()).find("exit 2") != std::string::npos;
     }
     assert(refused && calls.size() == 1);
+    // An injected manifest runner must never leak any thrown type through the
+    // v2 boundary. Failures at this stage cannot launch measuring children.
+    for (int kind = 0; kind < 3; ++kind) {
+        const size_t original_starts = started.size();
+        in.runner = [kind](const std::vector<std::string>&) -> ss::ManifestRun {
+            if (kind == 0)
+                throw std::runtime_error("injected runner");
+            if (kind == 1)
+                throw 29; // NOLINT(bugprone-std-exception-baseclass)
+            struct UnusualRunnerException {};
+            throw UnusualRunnerException{}; // NOLINT(bugprone-std-exception-baseclass)
+        };
+        bool typed_refusal = false;
+        try {
+            (void)ss::plan_engine_only(in, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            typed_refusal = std::string(e.what()).find("callback threw") != std::string::npos;
+        }
+        assert(typed_refusal && started.size() == original_starts);
+    }
     ss::EnginePlanInputs layout = in;
     layout.options.configs.clear();
     layout.options.layouts = {fs::path(std::getenv("BIGCHERRY_LAYOUTS"))};

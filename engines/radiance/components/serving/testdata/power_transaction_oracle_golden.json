@@ -1,0 +1,429 @@
+{
+  "cases": [
+    {
+      "applied_events": [
+        "applied",
+        "applied"
+      ],
+      "applied_state": "applied",
+      "applied_values": {
+        "0000:03:00.0": {
+          "mclk_max_mhz": 1400,
+          "power_cap_w": 280000000,
+          "sclk_max_mhz": 2700,
+          "vddgfx_offset_mv": -125
+        },
+        "0000:06:00.0": {
+          "mclk_max_mhz": 1200,
+          "power_cap_w": 250000000,
+          "sclk_max_mhz": 2800,
+          "vddgfx_offset_mv": -90
+        }
+      },
+      "apply": [
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "s 1 2700"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "m 1 1400"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "vo -125"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "c"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/hwmon/hwmon2/power1_cap",
+          "value": "280000000"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "s 1 2800"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "vo -90"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "c"
+        }
+      ],
+      "exit_and_recovery": {
+        "recovered_events": [
+          "applied",
+          "applied",
+          "restore_refused",
+          "restored",
+          "restored"
+        ],
+        "recovered_state": "restored",
+        "refused_events": [
+          "applied",
+          "applied",
+          "restore_refused"
+        ],
+        "refused_state": "applied"
+      },
+      "faults": [
+        {
+          "events": [
+            "apply_failed",
+            "restored"
+          ],
+          "index": 0,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0"
+          ]
+        },
+        {
+          "events": [
+            "apply_failed",
+            "restored"
+          ],
+          "index": 1,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0"
+          ]
+        },
+        {
+          "events": [
+            "apply_failed",
+            "restored"
+          ],
+          "index": 2,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0"
+          ]
+        },
+        {
+          "events": [
+            "apply_failed",
+            "restored"
+          ],
+          "index": 3,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0"
+          ]
+        },
+        {
+          "events": [
+            "apply_failed",
+            "restored"
+          ],
+          "index": 4,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0"
+          ]
+        },
+        {
+          "events": [
+            "applied",
+            "apply_failed",
+            "restored",
+            "restored"
+          ],
+          "index": 5,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0",
+            "0000:06:00.0"
+          ]
+        },
+        {
+          "events": [
+            "applied",
+            "apply_failed",
+            "restored",
+            "restored"
+          ],
+          "index": 6,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0",
+            "0000:06:00.0"
+          ]
+        },
+        {
+          "events": [
+            "applied",
+            "apply_failed",
+            "restored",
+            "restored"
+          ],
+          "index": 7,
+          "state": "rolled_back",
+          "touched": [
+            "0000:03:00.0",
+            "0000:06:00.0"
+          ]
+        }
+      ],
+      "name": "qualified_two_device",
+      "prepared_state": "prepared",
+      "refusals": [
+        {
+          "kind": "lease",
+          "reason": "the gpu lease is not verified as held by this run",
+          "writes": 0
+        },
+        {
+          "kind": "range",
+          "reason": "0000:03:00.0: sclk_max_mhz=99999 outside the device range 500..3200",
+          "writes": 0
+        },
+        {
+          "kind": "stale",
+          "reason": "unresolved power journal(s): golden.json (recover first)",
+          "writes": 0
+        }
+      ],
+      "restore": [
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "s 1 2700"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "vo -90"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "c"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "s 1 2600"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "m 1 1300"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "vo -100"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "c"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/hwmon/hwmon2/power1_cap",
+          "value": "300000000"
+        }
+      ],
+      "restored_events": [
+        "applied",
+        "applied",
+        "restored",
+        "restored"
+      ],
+      "restored_state": "restored",
+      "touched": [
+        "0000:03:00.0",
+        "0000:06:00.0"
+      ]
+    },
+    {
+      "applied_events": [
+        "applied"
+      ],
+      "applied_state": "applied",
+      "applied_values": {
+        "0000:03:00.0": {
+          "mclk_max_mhz": 1350,
+          "power_cap_w": 300000000,
+          "sclk_max_mhz": 2600,
+          "vddgfx_offset_mv": -100
+        }
+      },
+      "apply": [
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "m 1 1350"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "vo -100"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "c"
+        }
+      ],
+      "name": "memory_ceiling_only",
+      "prepared_state": "prepared",
+      "restore": [
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "m 1 1300"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "vo -100"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "c"
+        }
+      ],
+      "restored_events": [
+        "applied",
+        "restored"
+      ],
+      "restored_state": "restored",
+      "touched": [
+        "0000:03:00.0"
+      ]
+    },
+    {
+      "applied_events": [
+        "applied"
+      ],
+      "applied_state": "applied",
+      "applied_values": {
+        "0000:06:00.0": {
+          "mclk_max_mhz": 1200,
+          "power_cap_w": 240000000,
+          "sclk_max_mhz": 2700,
+          "vddgfx_offset_mv": -90
+        }
+      },
+      "apply": [
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/hwmon/hwmon2/power1_cap",
+          "value": "240000000"
+        }
+      ],
+      "name": "cap_only",
+      "prepared_state": "prepared",
+      "restore": [
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/hwmon/hwmon2/power1_cap",
+          "value": "250000000"
+        }
+      ],
+      "restored_events": [
+        "applied",
+        "restored"
+      ],
+      "restored_state": "restored",
+      "touched": [
+        "0000:06:00.0"
+      ]
+    },
+    {
+      "applied_events": [
+        "applied",
+        "applied"
+      ],
+      "applied_state": "applied",
+      "applied_values": {
+        "0000:03:00.0": {
+          "mclk_max_mhz": 1400,
+          "power_cap_w": 280000000,
+          "sclk_max_mhz": 2700,
+          "vddgfx_offset_mv": -125
+        },
+        "0000:06:00.0": {
+          "mclk_max_mhz": 1200,
+          "power_cap_w": 250000000,
+          "sclk_max_mhz": 2800,
+          "vddgfx_offset_mv": -90
+        }
+      },
+      "apply": [
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "s 1 2700"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "m 1 1400"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "vo -125"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "c"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/hwmon/hwmon2/power1_cap",
+          "value": "280000000"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "s 1 2800"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "vo -90"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "c"
+        }
+      ],
+      "name": "reversed_selection_bdf",
+      "prepared_state": "prepared",
+      "restore": [
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "s 1 2700"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "vo -90"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:06:00.0/pp_od_clk_voltage",
+          "value": "c"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "s 1 2600"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "m 1 1300"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "vo -100"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/pp_od_clk_voltage",
+          "value": "c"
+        },
+        {
+          "path": "/sys/bus/pci/devices/0000:03:00.0/hwmon/hwmon2/power1_cap",
+          "value": "300000000"
+        }
+      ],
+      "restored_events": [
+        "applied",
+        "applied",
+        "restored",
+        "restored"
+      ],
+      "restored_state": "restored",
+      "touched": [
+        "0000:03:00.0",
+        "0000:06:00.0"
+      ]
+    }
+  ],
+  "schema": 1
+}

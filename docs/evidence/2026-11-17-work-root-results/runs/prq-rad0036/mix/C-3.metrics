@@ -1,0 +1,9 @@
+radiance:engine_steps_total{model_name="qwen35",engine="0"} 1773
+radiance:engine_steps_prefill_total{model_name="qwen35",engine="0"} 1
+radiance:engine_steps_mixed_total{model_name="qwen35",engine="0"} 460
+radiance:engine_steps_decode_total{model_name="qwen35",engine="0"} 1312
+radiance:engine_steps_ahead_total{model_name="qwen35",engine="0"} 510
+radiance:engine_prefill_chunks_capped_total{model_name="qwen35",engine="0"} 299
+radiance:engine_steps_held_total{model_name="qwen35",engine="0"} 916
+radiance:engine_step_seconds_total{model_name="qwen35",engine="0"} 550.19399422800007
+radiance:engine_step_seconds_decode_total{model_name="qwen35",engine="0"} 47.952333119000002

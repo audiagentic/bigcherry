@@ -115,8 +115,10 @@ int main(int argc, char** argv) {
                 else if (key == "SHARES") p.shares = v;
                 else if (key == "BALANCE") p.balance = !v.empty() && v != "0";
                 else if (key == "BALANCE_SPEED") {
-                    double a = 0.0, b = 0.0;
-                    if (std::sscanf(v.c_str(), "%lf,%lf", &a, &b) == 2 && a > 0.0 && b > 0.0) p.balance_speeds = {a, b};
+                    double speed_a = 0.0, speed_b = 0.0;
+                    if (std::sscanf(v.c_str(), "%lf,%lf", &speed_a, &speed_b) == 2 && speed_a > 0.0 &&
+                        speed_b > 0.0)
+                        p.balance_speeds = {speed_a, speed_b};
                 }
             }
             std::vector<uint64_t> budgets;
@@ -125,7 +127,9 @@ int main(int argc, char** argv) {
                 bc::experts::Owned o;
                 const bool ok = bc::experts::select_owned(c.embedded_profile ? fp : f, p, "host", false, {}, budgets.data(), i, c.helpers, &o);
                 got += std::string(c.name) + " " + std::to_string(i) + (ok ? " ok " : " refused ") + std::to_string(ok ? o.bytes : 0);
-                if (ok) for (auto [l, e] : o.expert) got += " " + std::to_string(l) + ":" + std::to_string(e);
+                if (ok)
+                    for (auto [l, expert_id] : o.expert)
+                        got += " " + std::to_string(l) + ":" + std::to_string(expert_id);
                 got += "\n";
             }
         }
@@ -166,6 +170,16 @@ int main(int argc, char** argv) {
         plain.shares = "0,0";
         assert(!bc::experts::select_owned(f, plain, "gfx1100", true, layout, none, 0, 2, &own) && !layout_called);
         assert(!bc::experts::select_owned(f, plain, "gfx1100", true, layout, two, 0, 2, &own) && layout_called);
+        for (bool foreign : {false, true}) {
+            assert(!bc::experts::select_owned(
+                f, plain, "gfx1100", true,
+                [foreign]() -> bool {
+                    if (foreign)
+                        throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
+                    throw std::runtime_error("layout callback failed");
+                },
+                two, 0, 2, &own));
+        }
         // more helpers than the uint8 combine contributor mask holds
         std::vector<bc::experts::OwnerPolicy> many(r3::moe_shm::kCombineMaskBits + 1, policy("w4nl64"));
         assert(!bc::experts::plan_owners(f, many, std::vector<std::string>(many.size(), "gfx1100"),

@@ -17,3 +17,6 @@ Absolute paths inside the files were replaced by placeholders: `<work-root>`, `<
 
 Selection rule: a run or file is kept when it holds a scored result or source that the repository does not already
 carry, or when a plan item's acceptance names the file (for example the engine logs named by RHP01 and RHP19).
+
+Added later: the qualification runs `prq-rad0030` (patch rad0030; four scored arms with per-token rows) and
+`prq-rad0036` (patch rad0036; the mixed-traffic cells), under `runs/`. Process-id files are not kept.
