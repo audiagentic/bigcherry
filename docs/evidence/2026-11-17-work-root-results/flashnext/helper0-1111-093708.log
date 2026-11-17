@@ -1,0 +1,54 @@
+r3_moe_worker: manifest sha256 sha256:cdbc3e118f0ab49fddc3480c0ff9dd10b21113c2479c5c6c7e61f876523d9543, role helper0
+r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM
+r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging
+r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O
+r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count
+r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy
+r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end
+r3_moe_worker: large-lane requests up to 32 rows take the GEMV
+r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE=1 applied
+r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: selected 9320 expert candidates, 21.998 GiB; host RSS 598.2 MiB
+r3_moe_worker: waiting for engine runtime expert maps
+r3_moe_worker: R3_MOE_WORKER_POWER_SAVE on
+r3_moe_worker: runtime map owns 8650 experts, 20.417 GiB
+r3_moe_worker: ready shm=/r3-moe-helper layers=49 bytes=223006720 (gfx1100, small lane rows <= 8, large <= 4096)
+r3_moe_worker: R3_MOE_WORKER_COMBINE on - 8 CPU thread(s), large-lane steps of 256+ rows
+r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes on 4 efficiency core(s)
+calibration waiting: heat_watermarked (no accepted heat deltas), drift_window (retained observation-spaced window not full), heat_gap_max_ns (not enough consecutive accepted heat delta gaps), marginal_error_ppm (marginal relative error absent or zero), marginal_observations (no positive accepted source observation count), observation_rate_per_s (no two accepted counter/time points establish a positive rate), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon), txn_p50_ns (no positive committed transaction wall time), tail_share_gain_ppm (no committed plan with positive predicted tail-share saving), copy_bytes_per_s (no committed transaction with complete per-receiver READY ACK timings), tail_lane_service_ns_per_s (no positive sampled tail-lane service per second), tail_lane_row_ns (no positive tail-lane service per routed row), lane_lost_ns (no tail quiesce/reopen interval yet)
+policy no_live_feed=1 window_ns=15000000000 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15000000000 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy relative service unavailable helper=1 condition=torn
+policy no_live_feed=1 window_ns=15000000000 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15000000000 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy relative service unavailable helper=0 condition=zero rows lane=1
+policy relative service unavailable helper=1 condition=zero rows lane=1
+policy relative service unavailable helper=2 condition=zero reference rows lane=1
+calibration waiting: drift_window (retained observation-spaced window not full), heat_gap_max_ns (not enough consecutive accepted heat delta gaps), observation_rate_per_s (no two accepted counter/time points establish a positive rate), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon), txn_p50_ns (no positive committed transaction wall time), tail_share_gain_ppm (no committed plan with positive predicted tail-share saving), copy_bytes_per_s (no committed transaction with complete per-receiver READY ACK timings), tail_lane_service_ns_per_s (no positive sampled tail-lane service per second), tail_lane_row_ns (no positive tail-lane service per routed row), lane_lost_ns (no tail quiesce/reopen interval yet)
+policy relative service unavailable helper=2 condition=torn
+calibration waiting: drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon), txn_p50_ns (no positive committed transaction wall time), tail_share_gain_ppm (no committed plan with positive predicted tail-share saving), copy_bytes_per_s (no committed transaction with complete per-receiver READY ACK timings), tail_lane_service_ns_per_s (no positive sampled tail-lane service per second), tail_lane_row_ns (no positive tail-lane service per routed row), lane_lost_ns (no tail quiesce/reopen interval yet)
+calibration waiting: drift_window (retained observation-spaced window not full), drift_half_life_observations (half-overlap crossing not observed in retained drift horizon)
+RHP16_CALIBRATION_JSON {"absent":{"abort_quiescent_ns":"none observed"},"evidence":"accepted heat, closed journals, per-helper READY/RESERVED/CLEANED ACK timing, sampled lane service and committed planner gains","layout":"flashnext-4gpu","measurements":{"copy_bytes_per_s":286219148,"drift_half_life_observations":11839449,"effect_noise_max_ns":62098,"effect_row_noise_ns":30437,"effect_rows_per_s":190761,"effect_window_noise_ladder":[[10745,295080],[21490,211784],[42980,130607],[85960,94698],[171920,61439],[343840,72760],[687680,40298],[1375360,66508]],"heat_gap_max_ns":5035931069,"heat_watermarked":0,"hot_set_k":5931,"lane_lost_ns":12864690,"marginal_error_ppm":29073,"marginal_observations":109154880,"observation_rate_per_s":1381865,"tail_lane_row_ns":3728,"tail_lane_service_ns_per_s":426660037,"tail_share_gain_ppm":136415,"txn_p50_ns":1684036264,"txn_p95_ns":1958028316},"objective":"balanced","plan_cache_key":"8449c6a778509323595d76c6921a33767c371f1e7bd3ec0213643bc40cea80da","seeded":"2026-11-10"}
+r3_moe_worker: epoch participant 0 exiting phase=0 transaction=4 fault=0
+r3_moe_worker: helper 0 stopping phase=0 transaction=4 placement_fault=0 journal_fault=0
+policy effect_gate=1 effect_window_samples=32 effect_min_quiet_windows=3 effect_noise_multiplier=3.000000 effect_revert_ttl_ns=600000000000 windows_judged=1 kept=0 reverted=0 undecided=4 noise_floor=0.242779544 last_signal_ratio=0.929930672 revert_attempts=0 revert_aborts=0 revert_blocked=0
+policy placement helper=0 evaluated=48 no_change=50 proposed=4 committed=4 aborted=0 learned_ineligible=0 cache_active=0 inflight=0 bytes_moved=1297612800 predicted_saving=0.084602 transition_samples=4 transition_ns_total=6174251984 transition_ns_max=1958028316 unwatermarked_heat=1 no_live_feed=0 active_epoch=5 active_digest=a99d2688786b8efb
+policy measure transactions=4 txn_p50_ns=1684036264 txn_p95_ns=1958028316 txn_max_ns=1958028316 copy_bytes_per_ns=0.210165 aborts=0 abort_p95_ns=0 delta_gaps=47 delta_gap_p99_ns=5035931069 delta_gap_max_ns=5035931069 hot_set_k=5931 drift_half_life_observations=295584706 drift_horizon_observations=336121830 marginal_relative_error=0.022628
+policy no_change_reason=effect_not_calibrated count=4
+policy no_change_reason=effect_post_signal_invalid count=3
+policy no_change_reason=effect_signal_unavailable count=1
+policy no_change_reason=heat_baseline count=1
+policy no_change_reason=heat_unchanged count=1
+policy no_change_reason=no_improvement_or_margin count=40
+policy cache_details=0 cache_detail_limit=3
+r3_moe_worker: placement epoch cycles completed 4 (every 0 s of burst)
+r3_moe_worker: combine steps 16896, CPU 9049.8 ms (535.6 us a step)
+r3_moe_worker: lane 0 stages (us/request): routes 21.8 gate_up 49.9 quant 9.8 down 34.0 reduce 10.7
+r3_moe_worker: lane 16 stages (us/request): routes 367.5 gate_up 1430.8 quant 46.3 down 839.6 reduce 562.1
+r3_moe_worker: lane 16 experts a request by rows: 1 13.0, 2 8.1, 3-4 10.8, 5-8 13.5, 9-16 16.5, 17-32 19.9, 33-64 22.0, 65+ 30.2
+r3_moe_worker: small lane class 0 (rows <= 8): requests 44523 (173205 rows)
+r3_moe_worker: large-lane requests 20680 (31127976 rows)
+r3_moe_worker: GPU timing samples=21375 sampled=67220.8 ms avg=3144.8 us
+r3_moe_worker: served 65203 requests, 31301181 rows, 148790697 routes, compute 205052.6 ms (3144.8 us a request)
