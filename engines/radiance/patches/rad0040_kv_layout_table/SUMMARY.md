@@ -1,6 +1,6 @@
 # rad0040_kv_layout_table
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP44
 
 Scope: the packed KV layouts as one table, with no change in behaviour.
