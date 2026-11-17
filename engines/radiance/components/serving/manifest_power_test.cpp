@@ -115,6 +115,18 @@ int main() {
         expect(sensor.floor == 1 && sensor.idle == 1, "captures exactly paired floor and idle per engine BDF");
         expect(!bridge.finish(), "observe finish has no restoration writes");
         expect(hardware.writes == 0, "no write path can be reached by an observe manifest");
+        // RED P0-2: a second owner execution of the same original bytes
+        // must not overwrite the first execution's durable power receipt.
+        ss::ManifestPower replay(hardware, records, sensor, [] { return false; }, false);
+        expect(!replay.begin(original, v2::PlanUse::serving),
+               "second owner must admit identical immutable bytes");
+        expect(!replay.verify_serving(original), "second owner has the same authenticated power policy");
+        expect(!replay.finish(), "second owner finish");
+        size_t receipts = 0;
+        for (const auto& entry : fs::directory_iterator(t.root / "receipts"))
+            if (entry.is_regular_file())
+                ++receipts;
+        expect(receipts == 2U, "two observe owner executions require separate durable receipts");
         expect(bridge.begin(original, v2::PlanUse::serving).has_value(),
                "power admission must never be repeated for a run");
 

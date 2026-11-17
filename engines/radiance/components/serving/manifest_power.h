@@ -7,9 +7,16 @@
 #include <filesystem>
 #include <memory>
 #include <optional>
+#include <string>
 #include <vector>
 
 namespace bc::serving::session {
+
+// The power run is an execution identity, not the immutable manifest origin.
+struct PowerExecution {
+    std::string run_id;
+    std::string manifest_origin_instance_id;
+};
 
 class ManifestPower final {
   public:
@@ -20,6 +27,9 @@ class ManifestPower final {
     v2::Status capture(power::WindowPhase phase);
     void children_verified() noexcept;
     v2::Status finish();
+    const std::optional<PowerExecution>& execution() const noexcept {
+        return execution_;
+    }
 
   private:
     power::Hardware& hardware_;
@@ -28,6 +38,7 @@ class ManifestPower final {
     power::SessionPower::Predicate lease_;
     bool allow_apply_, verified_exit_ = false;
     std::unique_ptr<power::SessionPower> transaction_;
+    std::optional<PowerExecution> execution_;
     std::optional<power::PowerPlan> bound_;
     std::vector<power::PciAddress> engine_;
     std::vector<std::optional<power::Window>> floor_;
