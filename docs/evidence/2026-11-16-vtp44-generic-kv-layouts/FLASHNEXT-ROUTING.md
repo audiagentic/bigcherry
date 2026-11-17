@@ -41,10 +41,15 @@ counts, a lower bound on selections that changed expert (flips that cancel insid
   KLD that follows is 0.037 to 0.040 whether the change is a chunk size or a cache type, and the cache types are not
   ordered by it (bf16_i8 0.0382, bf16_fp8 0.0380, fp8 0.0402 are inside one band).
 - Completeness: every run observed all 4,163 tokens in all 48 layers with no dropped histograms. Four layers (34, 44,
-  46, 47) map 508 to 510 of the 512 experts, so 378 to 446 selections each land on experts the tally does not hold
-  (identically in every run, control included). Leaving those layers out, the runs move 19,488 to 20,109 selections,
-  about 1.07% of the rest: the same size, so the conclusion does not depend on them. Which experts are unmapped was
-  not looked at.
+  46, 47) map 508 to 510 of the 512 experts, so 378 to 446 selections each (1,672 in all, the tally's own `unmapped`
+  count) land on experts the tally does not hold, identically in every run, control included. These are the model's
+  protected experts, the ones the container recipe keeps in bf16 outside the quantised table: two each in layers 34,
+  44 and 46 and four in layer 47, the same layers and counts (this match is from the recipe and the counts; the
+  expert ids in the tally were not compared). So the router is not choosing missing experts; `--expert-stats` does
+  not count the protected ones, which are the model's highest-energy experts and about 1% of the selections in
+  those layers. Leaving those layers out, the runs move 19,488 to 20,109 selections, about 1.07% of the rest, the
+  same size, so the conclusion does not depend on them; but flips onto or off a protected expert are not seen at all,
+  and those are the experts that matter most.
 - Limits: one document pair, one run per arm, prefill only; tallies, not per-token ids, so causation from routing to
   KLD is inferred. The 27B model has no routing and is not affected.
 - What would make KLD usable on Flash-Next: record each step's chosen expert ids in the reference run and replay them in
