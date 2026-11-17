@@ -8,4 +8,4 @@ backend = "agnostic"
 plan-ids = ["VTP43"]
 requires = ["rad0037_bf16_fp8_kv"]
 conflicts = []
-tags = ["optimization", "kv-cache"]
+tags = ["kv-cache"]
