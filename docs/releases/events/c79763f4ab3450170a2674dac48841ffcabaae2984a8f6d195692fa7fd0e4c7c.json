@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261117_132212_flash-next-tp2-helpers-start-a_3615",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_footprint.h",
+    "engines/radiance/components/moe-remote/moe_remote_gpu.h",
+    "tools/bigcherry/engine_adapters/radiance_plan.py",
+    "engines/radiance/components/serving/v2/s10_resolver.cpp"
+  ],
+  "plan-item-ids": [
+    "RCS13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Found by RCS13 A/B runs 6 and 7. Lane buffer allocation and worker_footprint.h now share one sizing helper (60 B per lane drift made the TP2 helper refuse to start, #1056). The Python planner honours the C++ exit-11 host-pool remeasure contract, and the S10 resolver no longer rewrites the helper VRAM budget after the engine measured the owner map, failing closed instead (#1058).",
+  "timestamp-utc": "2026-11-17T13:22:12.879133Z",
+  "user-summary-candidate": "Flash-Next TP2 helpers start again and the measured-manifest planner remeasures the host pool as the serving contract requires."
+}
