@@ -1,0 +1,57 @@
+{
+  "MTP_accepted_drafts": null,
+  "decode_ms_per_step": null,
+  "file_line_references": {
+    "footprint_formula": "engines/radiance/components/moe-remote/worker_footprint.h:84-113",
+    "helper_allocation": "engines/radiance/components/moe-remote/moe_remote_gpu.h:482-518",
+    "helper_world": "engines/radiance/components/moe-remote/r3_moe_worker.cpp:282-302",
+    "measuring": "tools/bigcherry/engine_adapters/radiance_plan.py:108-146",
+    "preflight": "tools/bigcherry/engine_adapters/radiance_launch.py:103-166",
+    "protocol_constants": "engines/radiance/components/moe-remote/moe_remote_shm.h:36-41"
+  },
+  "heat_file_repo_relative": "tools/lab/radiance/heat/perf51.rank0.hot-first",
+  "heat_sha256": "cbf8e17ad4e0e57470da2c000904d863621d5affcf8876c9b87960b9472ba06e",
+  "helper_failure": "GPU lane preparation failed; helper0 exit 1 before ready",
+  "helper_footprint": {
+    "combine_chunk_rows": 256,
+    "large_rows_requested": 64,
+    "max_rows_protocol": 4096,
+    "observed_excess_bytes": 120,
+    "per_lane_planner_chunk_bytes": 4,
+    "per_lane_runtime_chunk_bytes": 64,
+    "planner_prepared_bytes": 16923992,
+    "predicted_excess_bytes": 120,
+    "rank_slots": 2,
+    "runtime_prepared_bytes": 16924112
+  },
+  "host_kv_mib_derived": 0,
+  "host_pool_mib_derived": 32005,
+  "layout": "flashnext-tp2xtx-r9700",
+  "live_W4H2_kernel_trace": false,
+  "measured_manifest": false,
+  "model": "qwen3.8-next-flash-hcbf16.rad",
+  "output_hashes_equal": null,
+  "owner_map": {
+    "measuring_counts": [
+      12641
+    ],
+    "measuring_sha256": "744477bc8f39f18bdc68f472b4f83d6cbb2b576c0095439fe463cd84427ca391",
+    "only_in_measuring_count": [
+      372
+    ],
+    "only_in_preflight_count": [
+      0
+    ],
+    "preflight_counts": [
+      12269
+    ],
+    "preflight_sha256": "c89150871acd9404cf96255644df017842ddc80143f9e2b0819daf69a1b96c71"
+  },
+  "prefill_TTFT_ms": null,
+  "schema": "rcs13.run6.admission-failure.v1",
+  "source_arms": {
+    "a": "5c3c77f31498ab5f01ac132d22af27b32c69869a",
+    "b": "5cfefdd19525bbbec04831961702ac24b55e91c7"
+  },
+  "valid_A_B_B_A_cells": 0
+}
