@@ -1,0 +1,57 @@
+{
+  "artifact_lifecycle": {
+    "run10_preflight_utc": "2026-11-17T14:26:10.969713+00:00",
+    "run9_cleanup": "Run 9's own successful cleanup after evidence PR #1063 deleted the exact candidate build and artifact-store entries, as explicitly recorded in out/RCS13-identity-gate.md",
+    "run9_cleanup_utc": "2026-11-17T14:24:36.143956+00:00"
+  },
+  "candidate_source": "17a16f5d7132efaa1c07dc858e111dfb7645ad10",
+  "heat_sha256": "cbf8e17ad4e0e57470da2c000904d863621d5affcf8876c9b87960b9472ba06e",
+  "main_source": "7c0273976627c339fa8f50c54543da2c1419ac2f",
+  "measurement": {
+    "decode_ms_per_step": null,
+    "executed_dynamic_lds_kernel": null,
+    "mtp_counts": null,
+    "output_hash_parity": null,
+    "prefill_ttft_ms": null,
+    "production_cells": 0,
+    "verdict": "NOT CLEARED"
+  },
+  "missing_build": {
+    "artifact_store_directory_exists": false,
+    "build_directory_exists": false,
+    "build_log_directory_exists": false,
+    "build_plan_id": "a0a99806f887aaecce91ac4369d4b17c",
+    "candidate_members_total": 12,
+    "candidate_members_verified": 0,
+    "candidate_source": "17a16f5d7132efaa1c07dc858e111dfb7645ad10"
+  },
+  "previous_candidate_strict_v2": {
+    "arm": "b",
+    "build_plan_id": "a0a99806f887aaecce91ac4369d4b17c",
+    "host_pool_mib": 32301,
+    "manifest_sha256": "37cadb185ea22578cf5fea526acebd48b49c59e133c2385d1e3d2c7d787deb02",
+    "owner_count": 12641,
+    "owner_map_digest": "744477bc8f39f18bdc68f472b4f83d6cbb2b576c0095439fe463cd84427ca391",
+    "preflight_host_pool_mib": 32005,
+    "producer_sha256": "46d6d6817e2c8bd7f5fa6aff5900f33e54b2056803a810231ba429c2cf8aea1b",
+    "state": "measured",
+    "strict_v2": true
+  },
+  "run10_baseline_campaign": {
+    "build_plan_id": "2f3a19bc78d0dcd2fcb881c6c1aa4358",
+    "outcome": "terminated before completion after candidate-retention gate failed",
+    "run_id": "rcs13-run10-a",
+    "source": "7c0273976627c339fa8f50c54543da2c1419ac2f"
+  },
+  "source_difference_count": 7,
+  "source_difference_files": [
+    "engines/radiance/components/bc-gfx12/bc_gfx12_plugin.cpp",
+    "engines/radiance/components/bc-gfx12/bc_moe_gemv.hip",
+    "engines/radiance/components/moe-remote/gemv_geometry.h",
+    "engines/radiance/components/moe-remote/gemv_geometry_test.cpp",
+    "engines/radiance/components/moe-remote/moe_lane_gemm.h",
+    "engines/radiance/components/moe-remote/moe_remote_gpu.h",
+    "engines/radiance/model_constant_guard.toml"
+  ],
+  "timestamp_utc": "2026-11-17T14:31:07.532294+00:00"
+}
