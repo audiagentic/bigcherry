@@ -40,7 +40,7 @@ for spec in $ARMS; do
     kill $CL 2>/dev/null
     python3 -c "import json,sys;r=json.load(open('$OUT/$name-reply.json'));n=r['usage']['completion_tokens'];print('$name', n, 'tokens', round(n/($t1-$t0),1), 'tok/s (incl prefill)')" | tee -a $OUT/summary.txt
     bash $L stop > /dev/null 2>&1
-    cp $W/flashnext/helper0-*.log $OUT/ 2>/dev/null; rm -f $W/flashnext/helper*-*.log $W/flashnext/engine-*.log
+    cp $W/flashnext/helper0-*.log $OUT/ 2>/dev/null
 done
 for name in $NAMES; do
     s=$(find $OUT/$name-prof -name '*kernel_stats.csv' | head -1)

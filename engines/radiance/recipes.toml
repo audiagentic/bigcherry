@@ -36,6 +36,10 @@ patches = [
   "rad0030_int8_pipelined_prefill",
   "rad0036_prefill_governor",
   "rad0005_mp4_ffmpeg6_writer",
+  "rad0037_bf16_fp8_kv",
+  "rad0038_bf16_i8_kv",
+  "rad0040_kv_layout_table",
+  "rad0041_kv_b16_flashnext",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
@@ -136,7 +140,12 @@ patches = ["rad0039_moe_heat_observer"]
 # Flash-Next's geometry (gqa 12, and gqa 6 with 4-token pages) and requires rad0040; rad0042 adds their selftest cases.
 # Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
 [experiment.kv-bf16-packed]
-patches = ["rad0037_bf16_fp8_kv", "rad0038_bf16_i8_kv", "rad0040_kv_layout_table", "rad0041_kv_b16_flashnext", "rad0042_kv_b16_selftest"]
+patches = ["rad0042_kv_b16_selftest"]
+
+# VTP44: --expert-stats also counts a layer's protected (bf16) experts, so the routing tallies of Flash-Next are complete.
+# Untested, therefore experiment-only.
+[experiment.expert-stats-protected]
+patches = ["rad0043_expert_stats_protected"]
 
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the

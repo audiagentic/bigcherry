@@ -1,0 +1,8 @@
+rows 393 old gu: quad 1572 us, output_lane 2479 us, winner quad (36.6%)
+rows 393 old dn: quad 700 us, output_lane 852 us, winner quad (17.8%)
+rows 393 new gu: quad 1436 us, output_lane 2474 us, winner quad (41.9%)
+rows 393 new dn: quad 642 us, output_lane 856 us, winner quad (25.0%)
+rows 1728 old gu: quad 3426 us, output_lane 7420 us, winner quad (53.8%)
+rows 1728 old dn: quad 1427 us, output_lane 2365 us, winner quad (39.7%)
+rows 1728 new gu: quad 3182 us, output_lane 7292 us, winner quad (56.4%)
+rows 1728 new dn: quad 1312 us, output_lane 2285 us, winner quad (42.6%)

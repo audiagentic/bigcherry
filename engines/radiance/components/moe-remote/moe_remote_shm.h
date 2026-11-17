@@ -711,7 +711,8 @@ inline void bind_combine_views(void* base, const Layout& l, Topology t, uint32_t
     auto* c = element<CombineDescriptor>(base, l, Region::CombineSignals, rank);
     auto* d = element<ChunkDescriptor>(base, l, Region::ChunkDescriptors, rank);
     const Span& inputs = l.regions[index(Region::CombineInputs)];
-    const Span& sequences = l.regions[index(Region::ChunkSequences)];
+    [[maybe_unused]] const Span &sequences =
+        l.regions[index(Region::ChunkSequences)];
     const Span& completions = l.regions[index(Region::ChunkCompletions)];
     auto absolute = [&](const void* p, uint64_t region_offset) {
         return region_offset - uint64_t(reinterpret_cast<const uint8_t*>(p) -

@@ -1,0 +1,11 @@
+{
+ "env": [
+  "GGML_CUDA_ALLREDUCE=internal"
+ ],
+ "kind": "kld",
+ "mean_kld": 2e-05,
+ "p99_kld": 0.000166,
+ "ppl_ratio": 1.000104,
+ "run": "kldd-host-bf16",
+ "same_top_pct": 99.743
+}

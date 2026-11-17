@@ -1,0 +1,106 @@
+{
+  "_comment": "RAD46: compare the original and candidate helpers with the production three-card tail layout; decode and prefill are reported separately.",
+  "schema_version": 1,
+  "engine": "radiance",
+  "evidence_role": "diagnostic",
+  "execution_evidence": "observe",
+  "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "server_args": [
+    "--kernels",
+    "libr4d,libr3moe,libref",
+    "--placement",
+    "expert_tiered",
+    "--ngram-placement",
+    "ram",
+    "--max-num-seqs",
+    "6",
+    "--max-num-batched-tokens",
+    "4096",
+    "--checkpoint-interval",
+    "4096",
+    "--kv-cache-dtype",
+    "fp8",
+    "--num-speculative-tokens",
+    "3",
+    "--tp",
+    "1",
+    "--host-pool-mib",
+    "22528",
+    "--max-model-len",
+    "32768"
+  ],
+  "environment": {
+    "HIP_VISIBLE_DEVICES": "0",
+    "ROCR_VISIBLE_DEVICES": "2",
+    "R3_MOE_WORKER_SKIP_OWNED": "1"
+  },
+  "expected_execution": {
+    "backend": "ROCm",
+    "architectures": [
+      "gfx1201"
+    ],
+    "locators": [
+      "${R9700_BDF}"
+    ]
+  },
+  "bench_configs": "mtp-dual",
+  "required_metrics": [
+    "pp1024_tps",
+    "tg512_tps"
+  ],
+  "repetitions": 1,
+  "health_timeout_s": 900,
+  "arms": [
+    {
+      "name": "baseline",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD46_BASE_BIN}",
+      "server_args": [
+        "--radiance-home",
+        "${RAD46_BASE_HOME}"
+      ],
+      "environment": {
+        "RADIANCE_HOME": "${RAD46_BASE_HOME}"
+      },
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail"
+      }
+    },
+    {
+      "name": "candidate",
+      "mode": "stock",
+      "shutdown_method": "sigint",
+      "binary": "${RAD46_CAND_BIN}",
+      "server_args": [
+        "--radiance-home",
+        "${RAD46_CAND_HOME}"
+      ],
+      "environment": {
+        "RADIANCE_HOME": "${RAD46_CAND_HOME}"
+      },
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1 3",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "4096",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
+        "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+        "R3_MOE_WORKER_PLACEMENT": "tail"
+      }
+    }
+  ],
+  "runner_root": "${RAD46_RUNNER_ROOT}"
+}

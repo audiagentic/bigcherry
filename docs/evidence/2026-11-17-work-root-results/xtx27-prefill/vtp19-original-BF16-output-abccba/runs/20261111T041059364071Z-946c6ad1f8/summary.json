@@ -1,0 +1,604 @@
+{
+  "status": "VTP19_ALL_ARMS_ORACLE_PASS_3GPU_ABCCBA_NOT_MODEL",
+  "type": "VTP19_ORIGINAL_BF16_GDN_OUT_PROJ_PAGEABLE_PINNED_ROWREUSE_ABCCBA",
+  "checkout": "14507402cd36ee834de277b261e64a4d1c8dfece",
+  "source_digest": "946c6ad1f88fd5d6b10d9248f180ba15dca4f30c65ba12336cc3f34cb9d249b7",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "m1-arm01-pageable",
+      "kind": "pageable",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pageable",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m1-arm01-pageable.stdout",
+      "stderr": "m1-arm01-pageable.stderr"
+    },
+    {
+      "label": "m1-arm02-pinned",
+      "kind": "pinned",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pinned",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m1-arm02-pinned.stdout",
+      "stderr": "m1-arm02-pinned.stderr"
+    },
+    {
+      "label": "m1-arm03-rowreuse",
+      "kind": "rowreuse",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-rowreuse",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m1-arm03-rowreuse.stdout",
+      "stderr": "m1-arm03-rowreuse.stderr"
+    },
+    {
+      "label": "m1-arm04-rowreuse",
+      "kind": "rowreuse",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-rowreuse",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m1-arm04-rowreuse.stdout",
+      "stderr": "m1-arm04-rowreuse.stderr"
+    },
+    {
+      "label": "m1-arm05-pinned",
+      "kind": "pinned",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pinned",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m1-arm05-pinned.stdout",
+      "stderr": "m1-arm05-pinned.stderr"
+    },
+    {
+      "label": "m1-arm06-pageable",
+      "kind": "pageable",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pageable",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m1-arm06-pageable.stdout",
+      "stderr": "m1-arm06-pageable.stderr"
+    },
+    {
+      "label": "m4-arm01-pageable",
+      "kind": "pageable",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pageable",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m4-arm01-pageable.stdout",
+      "stderr": "m4-arm01-pageable.stderr"
+    },
+    {
+      "label": "m4-arm02-pinned",
+      "kind": "pinned",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pinned",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m4-arm02-pinned.stdout",
+      "stderr": "m4-arm02-pinned.stderr"
+    },
+    {
+      "label": "m4-arm03-rowreuse",
+      "kind": "rowreuse",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-rowreuse",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m4-arm03-rowreuse.stdout",
+      "stderr": "m4-arm03-rowreuse.stderr"
+    },
+    {
+      "label": "m4-arm04-rowreuse",
+      "kind": "rowreuse",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-rowreuse",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m4-arm04-rowreuse.stdout",
+      "stderr": "m4-arm04-rowreuse.stderr"
+    },
+    {
+      "label": "m4-arm05-pinned",
+      "kind": "pinned",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pinned",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m4-arm05-pinned.stdout",
+      "stderr": "m4-arm05-pinned.stderr"
+    },
+    {
+      "label": "m4-arm06-pageable",
+      "kind": "pageable",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp19-original-BF16-output-abccba/build/946c6ad1f88fd5d6/vtp04-pageable",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z",
+        "--residual",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "m4-arm06-pageable.stdout",
+      "stderr": "m4-arm06-pageable.stderr"
+    }
+  ],
+  "schema": "vtp19-original-bf16-gdn-output-three-physical-abccba-v1",
+  "input_pairs": [
+    {
+      "packet_file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z/summary.json",
+      "packet_sha256": "7cee1e576405704f5d00e8dcb2bb99a0b2199484b5e1d1721b9ccb47ef2bb47c",
+      "packet_directory": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014452115048Z",
+      "reference_file": "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z/summary.json",
+      "reference_sha256": "52c01870421eb004932622223616b2fb000d5796c15e15f652ac3b8d97a48207",
+      "reference_directory": "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T015557796594Z",
+      "residual_file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/hidden_input.bf16",
+      "rows": 1,
+      "layer": 0,
+      "not_model_serving": true,
+      "not_optimized_gemm": true
+    },
+    {
+      "packet_file": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z/summary.json",
+      "packet_sha256": "31b70f9ef7f32ba32b4023f3dccbb5e196466dcdebe83452e61921f1e9c4cc19",
+      "packet_directory": "<work-root>/xtx27-prefill/vtp16-gdn-output/layer0-20261111T014909377366Z",
+      "reference_file": "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z/summary.json",
+      "reference_sha256": "106d524d07907290379ca312bc6f7345c377ac0450241c44d936c82f057cb9a5",
+      "reference_directory": "<work-root>/xtx27-prefill/vtp16-gdn-output-ref/layer0-20261111T014923805172Z",
+      "residual_file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16",
+      "rows": 4,
+      "layer": 0,
+      "not_model_serving": true,
+      "not_optimized_gemm": true
+    }
+  ],
+  "schedule": [
+    "m1-arm01-pageable",
+    "m1-arm02-pinned",
+    "m1-arm03-rowreuse",
+    "m1-arm04-rowreuse",
+    "m1-arm05-pinned",
+    "m1-arm06-pageable",
+    "m4-arm01-pageable",
+    "m4-arm02-pinned",
+    "m4-arm03-rowreuse",
+    "m4-arm04-rowreuse",
+    "m4-arm05-pinned",
+    "m4-arm06-pageable"
+  ],
+  "variants": {
+    "pageable": {
+      "source": "<work-root>/wt-xtx27-prefill/tools/lab/radiance/xtx27_vtp16_gdn_output.hip",
+      "sha256": "6b247e435c05ae537e811c38b6e1124a4f73571089e9f2fbc6b4e5190cd1bc94"
+    },
+    "pinned": {
+      "source": "<work-root>/wt-xtx27-prefill/tools/lab/radiance/xtx27_vtp17_gdn_output_pinned.hip",
+      "sha256": "ab98e5a0f692c68f064326856f05ea426be01794dbf0962edcb6812c1f529a38"
+    },
+    "rowreuse": {
+      "source": "<work-root>/wt-xtx27-prefill/tools/lab/radiance/xtx27_vtp18_gdn_output_rowreuse.hip",
+      "sha256": "00f44df005b6940b79c20fb3151603a343b225db6d448e07ac6b20ac79ea0480"
+    }
+  },
+  "not_full_model": true,
+  "not_native_kernel": true,
+  "power_and_temperature_not_enforced": true,
+  "numerical_oracle_required_on_every_arm": true,
+  "runner_source_sha256": "f9aa50cd20de0c59b588b918db554c57784b5b3e1fa65fc3e65ea6e825126cd9",
+  "read_only_clock_power_thermal_telemetry": true,
+  "balanced_abccba": {
+    "1": {
+      "arms": [
+        {
+          "variant": "pageable",
+          "case": "m1-arm01-pageable",
+          "wall_us_p50": 251.12,
+          "wall_us_p95": 254.78,
+          "xtx0_kernel_us_p50": 66.8,
+          "xtx1_kernel_us_p50": 66.64,
+          "r9700_kernel_us_p50": 73.72,
+          "max_partial_abs": 1.1920929e-07,
+          "max_reduce_abs": 5.9604645e-08,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 5120,
+          "total": 5120,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "pinned",
+          "case": "m1-arm02-pinned",
+          "wall_us_p50": 188.28,
+          "wall_us_p95": 192.21,
+          "xtx0_kernel_us_p50": 67.36,
+          "xtx1_kernel_us_p50": 66.4,
+          "r9700_kernel_us_p50": 37.92,
+          "max_partial_abs": 1.1920929e-07,
+          "max_reduce_abs": 5.9604645e-08,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 5120,
+          "total": 5120,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "rowreuse",
+          "case": "m1-arm03-rowreuse",
+          "wall_us_p50": 187.64,
+          "wall_us_p95": 486.96,
+          "xtx0_kernel_us_p50": 66.64,
+          "xtx1_kernel_us_p50": 66.8,
+          "r9700_kernel_us_p50": 38.44,
+          "max_partial_abs": 1.1920929e-07,
+          "max_reduce_abs": 5.9604645e-08,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 5120,
+          "total": 5120,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "rowreuse",
+          "case": "m1-arm04-rowreuse",
+          "wall_us_p50": 190.28,
+          "wall_us_p95": 193.14,
+          "xtx0_kernel_us_p50": 66.44,
+          "xtx1_kernel_us_p50": 67.16,
+          "r9700_kernel_us_p50": 37.92,
+          "max_partial_abs": 1.1920929e-07,
+          "max_reduce_abs": 5.9604645e-08,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 5120,
+          "total": 5120,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "pinned",
+          "case": "m1-arm05-pinned",
+          "wall_us_p50": 189.21,
+          "wall_us_p95": 193.25,
+          "xtx0_kernel_us_p50": 67.08,
+          "xtx1_kernel_us_p50": 66.6,
+          "r9700_kernel_us_p50": 37.96,
+          "max_partial_abs": 1.1920929e-07,
+          "max_reduce_abs": 5.9604645e-08,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 5120,
+          "total": 5120,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "pageable",
+          "case": "m1-arm06-pageable",
+          "wall_us_p50": 215.56,
+          "wall_us_p95": 217.04,
+          "xtx0_kernel_us_p50": 67.24,
+          "xtx1_kernel_us_p50": 67.2,
+          "r9700_kernel_us_p50": 38.08,
+          "max_partial_abs": 1.1920929e-07,
+          "max_reduce_abs": 5.9604645e-08,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 5120,
+          "total": 5120,
+          "oracle": "PASS"
+        }
+      ],
+      "variants": {
+        "pageable": {
+          "arms": [
+            "m1-arm01-pageable",
+            "m1-arm06-pageable"
+          ],
+          "wall_p50_median_of_arms_us": 233.34,
+          "wall_p95_median_of_arms_us": 235.91
+        },
+        "pinned": {
+          "arms": [
+            "m1-arm02-pinned",
+            "m1-arm05-pinned"
+          ],
+          "wall_p50_median_of_arms_us": 188.745,
+          "wall_p95_median_of_arms_us": 192.73000000000002,
+          "indicative_reduction_percent_vs_pageable": 19.11
+        },
+        "rowreuse": {
+          "arms": [
+            "m1-arm03-rowreuse",
+            "m1-arm04-rowreuse"
+          ],
+          "wall_p50_median_of_arms_us": 188.95999999999998,
+          "wall_p95_median_of_arms_us": 340.04999999999995,
+          "indicative_reduction_percent_vs_pageable": 19.02,
+          "indicative_reduction_percent_vs_pinned": -0.11
+        }
+      }
+    },
+    "4": {
+      "arms": [
+        {
+          "variant": "pageable",
+          "case": "m4-arm01-pageable",
+          "wall_us_p50": 315.88,
+          "wall_us_p95": 349.82,
+          "xtx0_kernel_us_p50": 176.08,
+          "xtx1_kernel_us_p50": 176.96,
+          "r9700_kernel_us_p50": 113.6,
+          "max_partial_abs": 4.7683716e-07,
+          "max_reduce_abs": 9.5367432e-07,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 20480,
+          "total": 20480,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "pinned",
+          "case": "m4-arm02-pinned",
+          "wall_us_p50": 240.97,
+          "wall_us_p95": 261.52,
+          "xtx0_kernel_us_p50": 172.12,
+          "xtx1_kernel_us_p50": 172.36,
+          "r9700_kernel_us_p50": 113.32,
+          "max_partial_abs": 4.7683716e-07,
+          "max_reduce_abs": 9.5367432e-07,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 20480,
+          "total": 20480,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "rowreuse",
+          "case": "m4-arm03-rowreuse",
+          "wall_us_p50": 144.78,
+          "wall_us_p95": 150.12,
+          "xtx0_kernel_us_p50": 77.4,
+          "xtx1_kernel_us_p50": 77.12,
+          "r9700_kernel_us_p50": 55.52,
+          "max_partial_abs": 4.7683716e-07,
+          "max_reduce_abs": 9.5367432e-07,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 20480,
+          "total": 20480,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "rowreuse",
+          "case": "m4-arm04-rowreuse",
+          "wall_us_p50": 148.22,
+          "wall_us_p95": 160.97,
+          "xtx0_kernel_us_p50": 76.28,
+          "xtx1_kernel_us_p50": 76.72,
+          "r9700_kernel_us_p50": 55.84,
+          "max_partial_abs": 4.7683716e-07,
+          "max_reduce_abs": 9.5367432e-07,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 20480,
+          "total": 20480,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "pinned",
+          "case": "m4-arm05-pinned",
+          "wall_us_p50": 243.19,
+          "wall_us_p95": 271.31,
+          "xtx0_kernel_us_p50": 173.56,
+          "xtx1_kernel_us_p50": 172.48,
+          "r9700_kernel_us_p50": 113.16,
+          "max_partial_abs": 4.7683716e-07,
+          "max_reduce_abs": 9.5367432e-07,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 20480,
+          "total": 20480,
+          "oracle": "PASS"
+        },
+        {
+          "variant": "pageable",
+          "case": "m4-arm06-pageable",
+          "wall_us_p50": 305.46,
+          "wall_us_p95": 344.27,
+          "xtx0_kernel_us_p50": 176.56,
+          "xtx1_kernel_us_p50": 175.72,
+          "r9700_kernel_us_p50": 113.4,
+          "max_partial_abs": 4.7683716e-07,
+          "max_reduce_abs": 9.5367432e-07,
+          "max_final_bf16_abs": 0.0,
+          "bf16_exact": 20480,
+          "total": 20480,
+          "oracle": "PASS"
+        }
+      ],
+      "variants": {
+        "pageable": {
+          "arms": [
+            "m4-arm01-pageable",
+            "m4-arm06-pageable"
+          ],
+          "wall_p50_median_of_arms_us": 310.66999999999996,
+          "wall_p95_median_of_arms_us": 347.04499999999996
+        },
+        "pinned": {
+          "arms": [
+            "m4-arm02-pinned",
+            "m4-arm05-pinned"
+          ],
+          "wall_p50_median_of_arms_us": 242.07999999999998,
+          "wall_p95_median_of_arms_us": 266.41499999999996,
+          "indicative_reduction_percent_vs_pageable": 22.08
+        },
+        "rowreuse": {
+          "arms": [
+            "m4-arm03-rowreuse",
+            "m4-arm04-rowreuse"
+          ],
+          "wall_p50_median_of_arms_us": 146.5,
+          "wall_p95_median_of_arms_us": 155.54500000000002,
+          "indicative_reduction_percent_vs_pageable": 52.84,
+          "indicative_reduction_percent_vs_pinned": 39.48
+        }
+      }
+    }
+  },
+  "gpu_environment_observations": {
+    "before": {
+      "captured_utc": "2026-11-11T04:10:58.876922+00:00",
+      "command": [
+        "rocm-smi",
+        "--showclocks",
+        "--showpower",
+        "--showtemp"
+      ],
+      "returncode": 0,
+      "stdout": "\n\n============================ ROCm System Management Interface ============================\n====================================== Temperature =======================================\nGPU[0]\t\t: Temperature (Sensor edge) (C): 45.0\nGPU[0]\t\t: Temperature (Sensor junction) (C): 49.0\nGPU[0]\t\t: Temperature (Sensor memory) (C): 46.0\nGPU[1]\t\t: Temperature (Sensor edge) (C): 40.0\nGPU[1]\t\t: Temperature (Sensor junction) (C): 48.0\nGPU[1]\t\t: Temperature (Sensor memory) (C): 56.0\nGPU[2]\t\t: Temperature (Sensor edge) (C): 43.0\nGPU[2]\t\t: Temperature (Sensor junction) (C): 44.0\nGPU[2]\t\t: Temperature (Sensor memory) (C): 48.0\nGPU[3]\t\t: Temperature (Sensor edge) (C): 37.0\nGPU[3]\t\t: Temperature (Sensor junction) (C): 38.0\nGPU[3]\t\t: Temperature (Sensor memory) (C): 40.0\n==========================================================================================\n=============================== Current clock frequencies ================================\nGPU[0]\t\t: dcefclk clock level: 0: (145Mhz)\nGPU[0]\t\t: fclk clock level: 1: (1000Mhz)\nGPU[0]\t\t: mclk clock level: 0: (96Mhz)\nGPU[0]\t\t: sclk clock level: S: (0Mhz)\nGPU[0]\t\t: socclk clock level: 1: (600Mhz)\nGPU[0]\t\t: pcie clock level: 0 (16.0GT/s x8)\nGPU[1]\t\t: dcefclk clock level: 0: (145Mhz)\nGPU[1]\t\t: fclk clock level: 1: (1000Mhz)\nGPU[1]\t\t: mclk clock level: 0: (96Mhz)\nGPU[1]\t\t: sclk clock level: S: (0Mhz)\nGPU[1]\t\t: socclk clock level: 1: (600Mhz)\nGPU[1]\t\t: pcie clock level: 0 (16.0GT/s x8)\nGPU[2]\t\t: dcefclk clock level: 1: (219Mhz)\nGPU[2]\t\t: fclk clock level: 1: (582Mhz)\nGPU[2]\t\t: mclk clock level: 0: (96Mhz)\nGPU[2]\t\t: sclk clock level: S: (0Mhz)\nGPU[2]\t\t: socclk clock level: 0: (417Mhz)\nGPU[2]\t\t: pcie clock level: 0 (16.0GT/s x4)\nGPU[3]\t\t: dcefclk clock level: 0: (417Mhz)\nGPU[3]\t\t: fclk clock level: 1: (1227Mhz)\nGPU[3]\t\t: mclk clock level: 0: (96Mhz)\nGPU[3]\t\t: sclk clock level: S: (0Mhz)\nGPU[3]\t\t: socclk clock level: 1: (738Mhz)\nGPU[3]\t\t: pcie clock level: 0 (8.0GT/s x4)\n==========================================================================================\n=================================== Power Consumption ====================================\nGPU[0]\t\t: Average Graphics Package Power (W): 14.0\nGPU[1]\t\t: Average Graphics Package Power (W): 11.0\nGPU[2]\t\t: Average Graphics Package Power (W): 16.0\nGPU[3]\t\t: Average Graphics Package Power (W): 6.0\n==========================================================================================\n================================== End of ROCm SMI Log ===================================\n",
+      "stderr": ""
+    },
+    "after": {
+      "captured_utc": "2026-11-11T04:11:01.632562+00:00",
+      "command": [
+        "rocm-smi",
+        "--showclocks",
+        "--showpower",
+        "--showtemp"
+      ],
+      "returncode": 0,
+      "stdout": "\n\n============================ ROCm System Management Interface ============================\n====================================== Temperature =======================================\nGPU[0]\t\t: Temperature (Sensor edge) (C): 45.0\nGPU[0]\t\t: Temperature (Sensor junction) (C): 49.0\nGPU[0]\t\t: Temperature (Sensor memory) (C): 46.0\nGPU[1]\t\t: Temperature (Sensor edge) (C): 40.0\nGPU[1]\t\t: Temperature (Sensor junction) (C): 48.0\nGPU[1]\t\t: Temperature (Sensor memory) (C): 56.0\nGPU[2]\t\t: Temperature (Sensor edge) (C): 43.0\nGPU[2]\t\t: Temperature (Sensor junction) (C): 44.0\nGPU[2]\t\t: Temperature (Sensor memory) (C): 49.0\nGPU[3]\t\t: Temperature (Sensor edge) (C): 37.0\nGPU[3]\t\t: Temperature (Sensor junction) (C): 37.0\nGPU[3]\t\t: Temperature (Sensor memory) (C): 40.0\n==========================================================================================\n=============================== Current clock frequencies ================================\nGPU[0]\t\t: dcefclk clock level: 0: (145Mhz)\nGPU[0]\t\t: fclk clock level: 1: (1000Mhz)\nGPU[0]\t\t: mclk clock level: 0: (96Mhz)\nGPU[0]\t\t: sclk clock level: S: (0Mhz)\nGPU[0]\t\t: socclk clock level: 1: (600Mhz)\nGPU[0]\t\t: pcie clock level: 0 (16.0GT/s x8)\nGPU[1]\t\t: dcefclk clock level: 0: (145Mhz)\nGPU[1]\t\t: fclk clock level: 1: (1000Mhz)\nGPU[1]\t\t: mclk clock level: 0: (96Mhz)\nGPU[1]\t\t: sclk clock level: S: (0Mhz)\nGPU[1]\t\t: socclk clock level: 1: (600Mhz)\nGPU[1]\t\t: pcie clock level: 0 (16.0GT/s x8)\nGPU[2]\t\t: dcefclk clock level: 1: (219Mhz)\nGPU[2]\t\t: fclk clock level: 1: (582Mhz)\nGPU[2]\t\t: mclk clock level: 0: (96Mhz)\nGPU[2]\t\t: sclk clock level: S: (0Mhz)\nGPU[2]\t\t: socclk clock level: 0: (417Mhz)\nGPU[2]\t\t: pcie clock level: 0 (16.0GT/s x4)\nGPU[3]\t\t: dcefclk clock level: 0: (417Mhz)\nGPU[3]\t\t: fclk clock level: 1: (1227Mhz)\nGPU[3]\t\t: mclk clock level: 0: (96Mhz)\nGPU[3]\t\t: sclk clock level: S: (0Mhz)\nGPU[3]\t\t: socclk clock level: 1: (738Mhz)\nGPU[3]\t\t: pcie clock level: 0 (8.0GT/s x4)\n==========================================================================================\n=================================== Power Consumption ====================================\nGPU[0]\t\t: Average Graphics Package Power (W): 13.0\nGPU[1]\t\t: Average Graphics Package Power (W): 14.0\nGPU[2]\t\t: Average Graphics Package Power (W): 16.0\nGPU[3]\t\t: Average Graphics Package Power (W): 9.0\n==========================================================================================\n================================== End of ROCm SMI Log ===================================\n",
+      "stderr": ""
+    }
+  },
+  "fairness_limits": [
+    "same GPU lease, compiler and original-weight workload",
+    "distinct process starts within lease; clocks/power not enforced",
+    "different kernel architecture; not real TP2/TP3 serving",
+    "per-case kernel timing includes warmups but ignores process startup"
+  ]
+}

@@ -1,0 +1,55 @@
+{
+  "behavioral_gate_contract_version": "hi143-v1",
+  "corpus_content_digest": "4bca38c182e51acbee5ce12d50805daa92ccb024e47ab66df738c1f24fce52ca",
+  "corpus_edition_id": "qwen38-production-v1",
+  "corpus_schema_version": 1,
+  "hard_fail": true,
+  "needs_throughput_adjudication": false,
+  "runtime_profile_digest": "91ea2613278204ee8fa2e9b472c1c2ed627ed15080b9d962e9c49bcf2337b059",
+  "runtime_profile_name": "production-dual-xtx",
+  "selected_vectors": [
+    {
+      "applies_to": [
+        "mtp-speculative"
+      ],
+      "candidate_draft": [
+        145,
+        90
+      ],
+      "candidate_token_digest": "9c67966c7f850b872b9106f6e45d8ebcdda2824bf05b30cc73466c7939c2ebb3",
+      "content_digest": "12e85e189e4dd8c905b7342a98b256b4a1a63a6a06d43ce927a5fa7d929191b4",
+      "first_output_divergence": 1,
+      "id": "hi141-mtp-4096-v1",
+      "n_predict": 128,
+      "native_draft": [
+        107,
+        100
+      ],
+      "native_token_digest": "d027acd17c2966f17ff428519afddbba5bb521e69bf4e68a3f8b82d7dc513ad7",
+      "prompt_sha256": "9bf6c5b39d644ce6f41ee997e3870ae89112ba973b712d4abc724466ca3c9f5f",
+      "provenance": "HI141",
+      "requirements": [
+        "mtp-telemetry"
+      ],
+      "scenario": "long-prefill-mtp",
+      "seed": 42,
+      "token_count": 128,
+      "verdict": "hard_fail"
+    }
+  ],
+  "vectors": [
+    {
+      "candidate_draft": [
+        145,
+        90
+      ],
+      "first_output_divergence": 1,
+      "name": "hi141-mtp-4096-v1",
+      "native_draft": [
+        107,
+        100
+      ],
+      "verdict": "hard_fail"
+    }
+  ]
+}

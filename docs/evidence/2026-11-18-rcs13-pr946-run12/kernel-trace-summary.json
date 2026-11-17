@@ -1,0 +1,54 @@
+{
+  "kernel_source": "engines/radiance/components/moe-remote/moe_lane_gemm.h:383-395 uses aligned extern __shared__",
+  "mode": "separate non-scored seed17, one- and two-stream decode after full A/B/B/A; helper only",
+  "normal_launcher_stop_rc": 0,
+  "profiler": "rocprofv3 --kernel-trace --stats --output-format csv; no perf timings used in A/B/B/A",
+  "schema": "RCS13_Run12_rocprofv3_helper_kernel_trace_v1",
+  "scored_performance_excluded": true,
+  "source_artifacts": [
+    "run12-serving/cell-01-b-smoke-no-power-profile/rocprof-kernels/{machine}/1137954_kernel_trace.csv",
+    "run12-serving/cell-01-b-smoke-no-power-profile/rocprof-kernels/{machine}/1137954_kernel_stats.csv"
+  ],
+  "source_branch": "17a16f5d7132efaa1c07dc858e111dfb7645ad10",
+  "source_launch": "engines/radiance/components/moe-remote/moe_remote_gpu.h:103-108 uses selected.dynamic_lds as HIP launch sharedBytes",
+  "trace": {
+    "gemv_w4h2": {
+      "false": {
+        "dispatch_count": 3244,
+        "kernel": "r3_moe_gpu::lane_moe_gemv_w4h2<false>",
+        "lds_block_size_reported_histogram": {
+          "512": 3244
+        },
+        "max_duration_ns": 530286,
+        "min_duration_ns": 3240,
+        "workgroup_x_histogram": {
+          "256": 3244
+        }
+      },
+      "true": {
+        "dispatch_count": 3244,
+        "kernel": "r3_moe_gpu::lane_moe_gemv_w4h2<true>",
+        "lds_block_size_reported_histogram": {
+          "512": 3244
+        },
+        "max_duration_ns": 1258853,
+        "min_duration_ns": 2280,
+        "workgroup_x_histogram": {
+          "256": 3244
+        }
+      }
+    },
+    "stats_agree": {
+      "false": {
+        "calls": 3244,
+        "total_duration_ns": 192164209
+      },
+      "true": {
+        "calls": 3244,
+        "total_duration_ns": 293934006
+      }
+    }
+  },
+  "trace_field_note": "LDS_Block_Size is recorded verbatim from ROCprofV3 and is NOT equated with requested dynamic shared bytes; no inferred K or allocation size from that field.",
+  "valid_kernel_activation": true
+}

@@ -1,0 +1,28 @@
+blit: build 9c6bc631c0921e69211ee6a188b84b5f env [R3_MOE_WORKER_SMALL_LANES=8,16]
+blit 512 tokens 87.9 tok/s (incl prefill)
+cp: build 9c6bc631c0921e69211ee6a188b84b5f env [R3_MOE_WORKER_SMALL_LANES=8,16 GPU_STREAMOPS_CP_WAIT=1]
+== blit: top kernels (calls, total ms, avg us)
+   10646   44724.7 ms   4201.1 us  __amd_rocclr_streamOpsWait
+   10558    1421.8 ms    134.7 us  void r3_moe_gpu::lane_moe_gemv<true, false>(unsigned char const*, float const*, int const*
+   10558     497.6 ms     47.1 us  void r3_moe_gpu::lane_moe_gemv<false, false>(unsigned char const*, float const*, int const
+   10558     180.6 ms     17.1 us  void r3_moe_gpu::lane_front_small<512u>(r3::moe_shm::Route const*, r3::moe_shm::Request*, 
+   10646      56.1 ms      5.3 us  r3_moe_gpu::lane_reduce_tokens_v(unsigned short const*, int const*, unsigned short const*,
+   10646      27.5 ms      2.6 us  void (anonymous namespace)::gated_quant_fp8_kernel<0, true, false>(unsigned short const*, 
+   10646      26.8 ms      2.5 us  r3_moe_gpu::lane_publish_done(r3::moe_shm::Request*, unsigned int*, unsigned int)
+      88      20.8 ms    236.2 us  void (anonymous namespace)::moe_down_dec_kernel<2>(unsigned char const*, float const*, (an
+      88      12.2 ms    138.9 us  void (anonymous namespace)::moe_gemm_q_kernel<1u, 4u, 1u, 4u, 2, true, false, false, 128u,
+     742       2.4 ms      3.3 us  __amd_rocclr_copyBuffer
+-- XTX 0 clock levels during the decode (10 ms samples: count, mclk, sclk)
+     64 mclk 2: 772Mhz * sclk 1: 3124Mhz *
+     61 mclk 2: 772Mhz * sclk 1: 3123Mhz *
+     48 mclk 2: 772Mhz * sclk 1: 3122Mhz *
+     46 mclk 2: 772Mhz * sclk 1: 3121Mhz *
+     44 mclk 2: 772Mhz * sclk 1: 3125Mhz *
+     26 mclk 2: 772Mhz * sclk 1: 3120Mhz *
+     16 mclk 3: 1249Mhz * sclk 1: 3124Mhz *
+     16 mclk 3: 1249Mhz * sclk 1: 3120Mhz *
+== cp: top kernels (calls, total ms, avg us)
+     493       1.7 ms      3.5 us  __amd_rocclr_copyBuffer
+      15       0.1 ms      3.7 us  __amd_rocclr_fillBufferAligned
+-- XTX 0 clock levels during the decode (10 ms samples: count, mclk, sclk)
+      1 mclk 0: 96Mhz * sclk S: 0Mhz *

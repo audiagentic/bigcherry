@@ -1,0 +1,339 @@
+{
+  "schema": "vtp15-qwen38-gdn-original-bf16-projection-package-v1",
+  "layer": 0,
+  "checkpoint": "<models-root>/qwen3.8-27b/Qwen3.8-27B",
+  "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+  "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+  "source_descriptors": {
+    "a": {
+      "name": "model.language_model.layers.0.linear_attn.in_proj_a.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 137752,
+      "bytes": 491520,
+      "shape": [
+        48,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "b": {
+      "name": "model.language_model.layers.0.linear_attn.in_proj_b.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 629272,
+      "bytes": 491520,
+      "shape": [
+        48,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "z": {
+      "name": "model.language_model.layers.0.linear_attn.in_proj_z.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 105978392,
+      "bytes": 62914560,
+      "shape": [
+        6144,
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    },
+    "norm": {
+      "name": "model.language_model.layers.0.input_layernorm.weight",
+      "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+      "file_basename": "model-00001-of-00018.safetensors",
+      "offset": 45400,
+      "bytes": 10240,
+      "shape": [
+        5120
+      ],
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+    }
+  },
+  "qkv_source": {
+    "source": "model.language_model.layers.0.linear_attn.in_proj_qkv.weight",
+    "path": "<models-root>/qwen3.8-27b/Qwen3.8-27B/model-00001-of-00018.safetensors",
+    "file_basename": "model-00001-of-00018.safetensors",
+    "offset": 1120792,
+    "bytes": 104857600,
+    "shape": [
+      10240,
+      5120
+    ],
+    "row_width": 5120,
+    "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05"
+  },
+  "qkv_pack_receipt": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/summary.json",
+  "ownership": {
+    "xtx0": {
+      "a": [
+        0,
+        12
+      ],
+      "b": [
+        0,
+        12
+      ],
+      "z": [
+        0,
+        1536
+      ]
+    },
+    "xtx1": {
+      "a": [
+        12,
+        12
+      ],
+      "b": [
+        12,
+        12
+      ],
+      "z": [
+        1536,
+        1536
+      ]
+    },
+    "r9700": {
+      "a": [
+        24,
+        24
+      ],
+      "b": [
+        24,
+        24
+      ],
+      "z": [
+        3072,
+        3072
+      ]
+    }
+  },
+  "status": "EXACT_ORIGINAL_BF16_GDN_INPUT_PROJECTION_PACK_PASS_NOT_GPU",
+  "rows": 4,
+  "created_utc": "2026-11-11T01:19:38.134787+00:00",
+  "writer_sha256": "149c1d11a4e16a2c991f72c6c24886aa3dbf35f3d35161afed6d6a5a82d1a37e",
+  "rank_packs": {
+    "xtx0": {
+      "a": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/a-xtx0.bf16",
+        "sha256": "47432010ce603acd58eaddd7c75392b4027b0338368849885bce788f327b83fb",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          0,
+          12
+        ]
+      },
+      "b": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/b-xtx0.bf16",
+        "sha256": "9b5d4daee38523f92dbaab1cea98db8c1505d093a22447fd58e27730799fd0aa",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          0,
+          12
+        ]
+      },
+      "z": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/z-xtx0.bf16",
+        "sha256": "39beb87af64d11a5b0b836dc72abc4e354c02d8942e057ad8bbd77d569fd4bd1",
+        "bytes": 15728640,
+        "shape": [
+          1536,
+          5120
+        ],
+        "source_rows": [
+          0,
+          1536
+        ]
+      },
+      "qkv": {
+        "file": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/in_proj_qkv-xtx0.bf16",
+        "sha256": "b8cbb0fcc6bceb2634e0198234c680be3c1e63760d358de4ae6fcce2fe9f3d01",
+        "bytes": 26214400,
+        "shape": [
+          2560,
+          5120
+        ],
+        "source_segments": [
+          [
+            0,
+            512
+          ],
+          [
+            2048,
+            512
+          ],
+          [
+            4096,
+            1536
+          ]
+        ]
+      }
+    },
+    "xtx1": {
+      "a": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/a-xtx1.bf16",
+        "sha256": "84171b21d9a812474618ffdd10a4ee7daa20631e653e84c5e0b2cc3cfd8995e1",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          12,
+          24
+        ]
+      },
+      "b": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/b-xtx1.bf16",
+        "sha256": "93e10ae9626f1eff2911293bd9a90ba8447730015fa988967e0db382d1c8dfc3",
+        "bytes": 122880,
+        "shape": [
+          12,
+          5120
+        ],
+        "source_rows": [
+          12,
+          24
+        ]
+      },
+      "z": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/z-xtx1.bf16",
+        "sha256": "57e2045c690622ab5c9648df4a8a42144809efc3c05e4790140ae922474ded05",
+        "bytes": 15728640,
+        "shape": [
+          1536,
+          5120
+        ],
+        "source_rows": [
+          1536,
+          3072
+        ]
+      },
+      "qkv": {
+        "file": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/in_proj_qkv-xtx1.bf16",
+        "sha256": "d5ce1541cfa397df527460cd8a1066a83529259b7b8f635235d4e88e448c2379",
+        "bytes": 26214400,
+        "shape": [
+          2560,
+          5120
+        ],
+        "source_segments": [
+          [
+            512,
+            512
+          ],
+          [
+            2560,
+            512
+          ],
+          [
+            5632,
+            1536
+          ]
+        ]
+      }
+    },
+    "r9700": {
+      "a": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/a-r9700.bf16",
+        "sha256": "6a9167ee888e4a369ad132a94349ce36ffc9e97bdc88a9bb935de993e17bc584",
+        "bytes": 245760,
+        "shape": [
+          24,
+          5120
+        ],
+        "source_rows": [
+          24,
+          48
+        ]
+      },
+      "b": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/b-r9700.bf16",
+        "sha256": "3831fdf609c692bee235fdaa062c976586c06591a475ca15684cad14f39c88bf",
+        "bytes": 245760,
+        "shape": [
+          24,
+          5120
+        ],
+        "source_rows": [
+          24,
+          48
+        ]
+      },
+      "z": {
+        "file": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/z-r9700.bf16",
+        "sha256": "afb81769bab2205da136086af861d0357bdba2fa522fc2b9dcfa664e2b0ad1f6",
+        "bytes": 31457280,
+        "shape": [
+          3072,
+          5120
+        ],
+        "source_rows": [
+          3072,
+          6144
+        ]
+      },
+      "qkv": {
+        "file": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z/in_proj_qkv-r9700.bf16",
+        "sha256": "0da5a929a7f313fb7ca7e8d6d4ac27cc33daf78ceeb0c2acd6ddb8cef50ef064",
+        "bytes": 52428800,
+        "shape": [
+          5120,
+          5120
+        ],
+        "source_segments": [
+          [
+            1024,
+            1024
+          ],
+          [
+            3072,
+            1024
+          ],
+          [
+            7168,
+            3072
+          ]
+        ]
+      }
+    }
+  },
+  "source_sha256": {
+    "a": "ff9e6d0a05fc85c2a61e5f73200d6778c84d76df3df2ce6c80e1e9a4c99c0ce1",
+    "b": "9694f11c0393c563dcbc8c1ba120c2eaebc36b200d6d19bf8761034acde4ac33",
+    "z": "2b98edf85caa94f5bf81b46865b24202d4fc80117c406a3a814f83adbda56b53",
+    "norm": "853b5989bfb677b1761540ee97c09bbf8d90fd825c9ae6ca74ef5853cba3c075"
+  },
+  "inputs": {
+    "hidden_input.bf16": {
+      "path": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/hidden_input.bf16",
+      "sha256": "892afe2cd7948c8e093cf169a572f57b24ab1e6191e734b5c88165e963a6b5f0",
+      "bytes": 40960,
+      "shape": [
+        4,
+        5120
+      ]
+    },
+    "normed_input.bf16": {
+      "path": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T011938129228Z/normed_input.bf16",
+      "sha256": "7ce11b12efb14d1169bae09fea7cc765acee3b59d86ee71f78972d5993138980",
+      "bytes": 40960,
+      "shape": [
+        4,
+        5120
+      ]
+    }
+  },
+  "limitations": "real BF16 weight sharding and real original pre-RMSNorm; not actual projection GEMM or model serving"
+}

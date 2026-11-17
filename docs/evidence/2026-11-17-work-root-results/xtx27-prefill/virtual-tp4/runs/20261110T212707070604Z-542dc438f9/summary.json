@@ -1,0 +1,126 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP04_THREE_PHYSICAL_GPU_MICROBENCH",
+  "checkout": "3473067917195349281a559e38d76b8ed3a31379",
+  "source_digest": "542dc438f977b2ea6725aadae8fb515377348f83dad246b600708a14f560de45",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "local-4mib-32768lanes",
+      "kind": "local",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/542dc438f977b2ea/vtp04-local",
+        "--mib-per-shard",
+        "4",
+        "--lanes",
+        "32768",
+        "--iterations",
+        "9",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "local-4mib-32768lanes.stdout",
+      "stderr": "local-4mib-32768lanes.stderr"
+    },
+    {
+      "label": "host-f32-1rows",
+      "kind": "host_collective",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/542dc438f977b2ea/vtp04-host_collective",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "host-f32-1rows.stdout",
+      "stderr": "host-f32-1rows.stderr"
+    },
+    {
+      "label": "host-f32-4rows",
+      "kind": "host_collective",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/542dc438f977b2ea/vtp04-host_collective",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "host-f32-4rows.stdout",
+      "stderr": "host-f32-4rows.stderr"
+    },
+    {
+      "label": "host-f32-64rows",
+      "kind": "host_collective",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/542dc438f977b2ea/vtp04-host_collective",
+        "--rows",
+        "64",
+        "--iterations",
+        "9",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "host-f32-64rows.stdout",
+      "stderr": "host-f32-64rows.stderr"
+    },
+    {
+      "label": "host-f32-physical-tp3-1rows",
+      "kind": "host_collective",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/542dc438f977b2ea/vtp04-host_collective",
+        "--rows",
+        "1",
+        "--iterations",
+        "9",
+        "--single-r9700",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "host-f32-physical-tp3-1rows.stdout",
+      "stderr": "host-f32-physical-tp3-1rows.stderr"
+    },
+    {
+      "label": "host-f32-physical-tp3-4rows",
+      "kind": "host_collective",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/542dc438f977b2ea/vtp04-host_collective",
+        "--rows",
+        "4",
+        "--iterations",
+        "9",
+        "--single-r9700",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "host-f32-physical-tp3-4rows.stdout",
+      "stderr": "host-f32-physical-tp3-4rows.stderr"
+    },
+    {
+      "label": "host-f32-physical-tp3-64rows",
+      "kind": "host_collective",
+      "argv": [
+        "<work-root>/xtx27-prefill/virtual-tp4/build/542dc438f977b2ea/vtp04-host_collective",
+        "--rows",
+        "64",
+        "--iterations",
+        "9",
+        "--single-r9700",
+        "--reverse"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "host-f32-physical-tp3-64rows.stdout",
+      "stderr": "host-f32-physical-tp3-64rows.stderr"
+    }
+  ]
+}

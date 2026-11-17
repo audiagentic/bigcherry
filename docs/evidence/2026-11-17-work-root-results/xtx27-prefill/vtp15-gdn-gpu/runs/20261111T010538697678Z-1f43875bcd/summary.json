@@ -1,0 +1,56 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP15_ORIGINAL_BF16_GDN_QKV_A_B_Z_GPU_GEMM_THREE_PHYSICAL",
+  "checkout": "09888b4941045a51668ce12adafc8606bac6acaa",
+  "source_digest": "1f43875bcdbceb8ca372a9c616f4db3f0ec18d76744dc274c0b0bd02c90274d3",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "original-BF16-GDN-all-input-projections-m1",
+      "kind": "original_gdn_proj",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp15-gdn-gpu/build/1f43875bcdbceb8c/vtp04-original_gdn_proj",
+        "--rows",
+        "1",
+        "--iterations",
+        "3",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z",
+        "--qkv-dir",
+        "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "original-BF16-GDN-all-input-projections-m1.stdout",
+      "stderr": "original-BF16-GDN-all-input-projections-m1.stderr"
+    }
+  ],
+  "schema": "vtp15-original-bf16-GDN-physical-tp3-GEMV-v1",
+  "sources": {
+    "rows": 1,
+    "weight_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/summary.json",
+    "weight_receipt_sha256": "a77162fb7af0283eb65f0e0770f779ee9594892c2d473b7e5d7fd61259ea6aa3",
+    "reference_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/summary.json",
+    "reference_receipt_sha256": "72179bddee0f84684e5ef391a3f2bc319fecf3bb866406d40e6faf6554c60e04",
+    "pack_directory": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z",
+    "qkv_directory": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z",
+    "reference_directory": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z",
+    "input_layernorm_sha256": "853b5989bfb677b1761540ee97c09bbf8d90fd825c9ae6ca74ef5853cba3c075",
+    "real_checkpoint_payload": true,
+    "synthetic_hidden": true,
+    "cpu_double_accumulation_oracle": true
+  },
+  "source_hashes": {
+    "source_sha256": "a3ea1853c259be6b07ea657d0e975052b8321bb01e685aad8fbf519bf483290e",
+    "gpu_driver_sha256": "e736d9c16f08fa950c601407227174da5d1b5d3ee7ce6c99623ac345fce8182b",
+    "cpu_oracle_sha256": "b99cebb238c23dc3a49f4d92be355ad6ee7ad2df48f8b15b22a31f0d9e0d2f53",
+    "cpu_driver_sha256": "39be1c8ec557358153358c4e9163a047c6d8b3df8de27e1a2145d61ae8bbfc1b",
+    "shared_driver_sha256": "554a534e6bffba1513704d9e7b893c638fdfbbda8df3feda813683dd8d42d376"
+  },
+  "real_checkpoint_payload": true,
+  "not_native_optimized_gemm": true,
+  "not_full_model": true,
+  "recurrence_attached": false
+}

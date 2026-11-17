@@ -1,0 +1,52 @@
+{
+  "checkpoints": {
+    "floor_slots": 3,
+    "from": "engine plan (rad0011: KVManager::checkpoint_bytes, chunk_geometry_resolve, checkpoint_slots_want)",
+    "slot_bytes": 115654664,
+    "want_slots": 3
+  },
+  "host": [
+    {
+      "bytes": 1271398400,
+      "from": "engine plan (rad0011: weight_footprint, resolve_table_placement)",
+      "name": "embedding",
+      "remedy": "",
+      "residence": "pinned"
+    },
+    {
+      "bytes": 339968,
+      "from": "engine plan (rad0011: arena_host_bytes)",
+      "name": "host_arenas",
+      "remedy": "",
+      "residence": "pinned"
+    }
+  ],
+  "host_pool_mib": 45056,
+  "kv_one_session": {
+    "bytes": 223346688,
+    "from": "engine plan (rad0011: VramFacts::kv_one)"
+  },
+  "plan_version": 1,
+  "producer": "radiance --plan-memory (rad0011)",
+  "vram": {
+    "cards": [
+      {
+        "capacity": 34208743424,
+        "engine_expert_plane": 6348701696,
+        "expert_unit_max": 2535424,
+        "free": 33937584128
+      }
+    ],
+    "claimable": 33194673656,
+    "elastic": 27669198328,
+    "expert_ceiling": 6348701696,
+    "expert_floor": 0,
+    "experts": 6348701696,
+    "from": "engine plan (rad0011: vram_budget_resolve)",
+    "kv": 222621696,
+    "kv_ceiling": 222621696,
+    "kv_resolved": 223346688,
+    "stage": 0,
+    "statics": 5525475328
+  }
+}

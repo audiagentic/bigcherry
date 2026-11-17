@@ -1,0 +1,8 @@
+01–s08 review request `req_0088210110014401` on `ses_096881010ffe1001` was interrupted by a provider stream timeout after approximately 15 minutes. The final review was not received. Do not claim that this request completed.
+
+## Required next actions
+
+1. Decide whether to spend real GPU time on a fresh or extended tune run whose correctness checking covers the full replay-full candidate set (101 candidates; the existing tune artifact only covers 76 — the 25-gap is all `mmq` tile/geometry variants, see "Replay identity" above). This is the only remaining blocker for RE09's replay-full generation; the export/load path itself is already proven end to end.
+2. Re-run balanced stock/control/native/tuned/replay server-bench comparisons using explicit `--rig hip` (see "Server-bench comparison" above for the root cause and fix).
+3. Continue RE14/RE15 only after the replay and server-bench gates are closed.
+4. Do not start RD implementation without a separate implementation run sheet and explicit user authorization

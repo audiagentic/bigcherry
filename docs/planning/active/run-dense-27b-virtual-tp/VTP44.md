@@ -52,6 +52,16 @@ Flash-Next KLD (2026-11-17, FLASHNEXT-KLD.md): short corpus bf16_i8 0.0446, bf16
 
 Flash-Next speed and capacity (2026-11-17, FLASHNEXT-AB.md, two XTX, no helper, no speculation): decode and TTFT within about 1% of bf16 for bf16_i8, bf16_fp8 +6.7% on one-stream decode and 5.9% slower 48K TTFT; capacity 1.283x (bf16_i8) and 1.307x (bf16_fp8) against bf16, below 1.3x for bf16_i8 because the QSA block-key group is not quantised; needle probe 8 to 9 of 9 for the packed caches. Open: per-token expert-id dump (generic engine option, own patch) to confirm routing flips as the KLD floor; the helper arm; a quantised QSA block-key layout if 1.3x matters for bf16_i8.
 
+Default-cache identity (2026-11-17, IDENTITY.md): Flash-Next default bf16 and fp8 caches match the stock build at the KLD float floor (mean 6.4e-11 and 3.3e-11, max 2.2e-8, top-1 100%, 4,161 positions, placement pinned). Not bit-exact by construction (two binaries); greedy-stream comparison and the 27B default caches are not run.
+
+27B equality (2026-11-17, EQUALITY-27B.md): default bf16 and fp8 caches match the stock build at the float floor (short and long); packed caches on a same-build reference: long bf16_i8 0.002685 (bar 0.0027 met), bf16_fp8 0.003228, fp8 0.004947, reproducing VTP43; short bf16_i8 0.00141, bf16_fp8 0.00192, fp8 0.00224 (VTP43's short packed figures used an older build's reference and were too low). The libr3 gfx1100 selftest for patch B was not run by decision; Flash-Next serving on the two 7900 XTX exercised those rows.
+
+Status 2026-11-17 (end of this slice): rad0037/38/40/41 are validated in serving-core (#1033); `experiment.kv-bf16-packed` now lists only rad0042. Open, in order of value:
+- Routing changes under any perturbation (FLASHNEXT-ROUTING.md, 2026-11-17, from the existing `--expert-stats` tallies): about 1.1% of Flash-Next's routed selections move whenever the arithmetic changes, equally for a chunk-size change, bf16_i8, bf16_fp8 and fp8, and every arm differs from every other by the same ~22,000; the control pair is exact. This fits the KLD floor and shows KLD cannot rank KV caches on this model, but causation is still inferred. To make KLD usable on Flash-Next: record each step's chosen expert ids in the reference run and replay them in the measured runs (a per-token expert-id record plus a replay option, two manifest fields, an engine patch of its own). Until then Flash-Next quality for the packed caches rests on the needle probe only.
+- Repeat the Flash-Next helper A/B (FLASHNEXT-HELPER-AB.md) for the reference bf16 arm and bf16_i8 one-stream decode, with the n-gram table in RAM once the host has the memory (it needs 89.7 GB; about 82 GB was available), and a heat file kept in the task folder (the run folder holding it was deleted by a workspace cleanup mid-run).
+- A quantised QSA block-key layout: the unquantised block-key group holds bf16_i8 to 1.283x bf16 on Flash-Next, under the 1.3x bar.
+- A greedy-token stream comparison across builds (IDENTITY.md checks KLD only); the libr3 gfx1100 device selftest for patch B's rows (not run by decision; Flash-Next serving exercised them); the allowlist reduction and the GPT code review of patch B.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
@@ -73,12 +83,12 @@ L. Risks: option bits and tile shapes at gqa12 differ (spills near the 256-VGPR 
 ## Acceptance Criteria
 
 - [x] GPT design review 1 findings resolved in this plan before implementation.
-- [ ] A single KV-layout descriptor table drives names, row sizes, probe, bringup, streaming refusal and the serving enum; no per-plugin lists remain.
-- [ ] The refactor of the gqa6 rows is proven unchanged (row-table dump, selftests, 27B KLD).
-- [ ] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache. KLD done 2026-11-17 (FLASHNEXT-KLD.md): it sits inside Flash-Next's arithmetic-noise band, so it cannot judge KV error. Speed, capacity and a 9-question 48K needle probe done on the two XTX without the helper (FLASHNEXT-AB.md); the helper arm remains.
-- [ ] An unsupported (layout, head_dim, gqa, block, op) refuses at startup naming the tuple.
+- [x] A single KV-layout descriptor table drives names, row sizes, probe, bringup, streaming refusal and the serving enum; no per-plugin lists remain. DONE: rad0040 (#1012); `RAD_KV_LAYOUTS` and `RAD_KV_GEOMETRIES` in `abi/rad_builder.h`.
+- [x] The refactor of the gqa6 rows is proven unchanged (row-table dump, selftests, 27B KLD). DONE: row-table dump and instantiation inventory identical, r4d_selftest (gfx1201) 0 failures with every baseline row still passing, 27B default caches identical to the stock build and the packed caches reproducing VTP43 (EQUALITY-27B.md).
+- [x] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache. KLD done 2026-11-17 (FLASHNEXT-KLD.md): it sits inside Flash-Next's arithmetic-noise band, so it cannot judge KV error. Speed, capacity and a 9-question 48K needle probe done on the two XTX without the helper (FLASHNEXT-AB.md); the helper arm is done too (FLASHNEXT-HELPER-AB.md, 2026-11-17): production layout with the R9700 helper, n-gram table on disk because host RAM was short; capacity per token 1.283x and 1.308x bf16, no loss beyond a run-to-run spread that was large (one bf16_fp8 outlier repeated). bf16_i8's one-stream decode (19% under bf16) was run once and is not resolved.
+- [x] An unsupported (layout, head_dim, gqa, block, op) refuses at startup naming the tuple. DONE for (layout, head_dim, gqa): the plugin refuses naming them (`rad_kvq_geometry_ok`, arch_test); (block, op) mismatches are caught by row resolution.
 - [ ] libr3 rewrites are per template with counts and an instantiation inventory check; model-constant allowlist entries added by VTP43 are removed or reduced.
-- [ ] rad0037/38 promoted through the lightweight tier with two named models, or the gap recorded.
+- [x] rad0037/38 promoted through the lightweight tier with two named models, or the gap recorded. DONE 2026-11-17: rad0037, 38, 40 and 41 validated in #1033 (tag fix #1032) with 27B and Flash-Next as the named models; rad0042 stays an experiment overlay (it only edits the selftest).
 - [ ] GPT code review done and findings resolved; PR(s) merged with evidence.
 
 ## Notes

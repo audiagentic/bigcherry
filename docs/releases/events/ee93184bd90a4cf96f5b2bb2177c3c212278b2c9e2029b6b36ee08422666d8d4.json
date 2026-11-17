@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_025659_radiance-can-serve-qwen38-27b_8071",
+  "files": [
+    "engines/radiance/patches/rad0037_bf16_fp8_kv/patch.toml",
+    "engines/radiance/patches/rad0038_bf16_i8_kv/patch.toml",
+    "engines/radiance/patches/rad0040_kv_layout_table/patch.toml",
+    "engines/radiance/patches/rad0041_kv_b16_flashnext/patch.toml",
+    "engines/radiance/recipes.toml"
+  ],
+  "plan-item-ids": [
+    "VTP43",
+    "VTP44"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Promote rad0037 (bf16_fp8 KV), rad0038 (bf16_i8 KV), rad0040 (one KV layout table) and rad0041 (Flash-Next b16 rows) into serving-core through the lightweight profile-evidence tier, with Qwen3.8-27B and Flash-Next as the named models. The layouts are opt-in --kv-cache-dtype values; default caches are unchanged (identity at the KLD float floor on both models).",
+  "timestamp-utc": "2026-11-17T02:56:59.315735Z",
+  "user-summary-candidate": "Radiance can serve Qwen3.8-27B and Flash-Next with two new KV cache types, bf16_i8 and bf16_fp8, that hold about 1.3x more tokens than bf16 at lower error than fp8 on 27B. They are opt-in via --kv-cache-dtype; the default caches are unchanged. On Flash-Next, KLD cannot separate cache error from the model's own numeric noise, so quality there is shown by a retrieval probe only."
+}

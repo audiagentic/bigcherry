@@ -1,0 +1,6 @@
+[engine]
+model = "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+radiance_home = "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home"
+[handoff]
+heat = "<work-root>/heat/flashnext-mixed.hot-first"
+histogram = "/dev/null"

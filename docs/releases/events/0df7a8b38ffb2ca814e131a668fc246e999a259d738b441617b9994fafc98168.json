@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_190203_the-c-serving-launcher-can-r_7330",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest.h",
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.h",
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/main.cpp"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC02 step 5 (#1066): bc-serve start --manifest replays a stored manifest immutably (digest, build, model and device identity checked, typed refusals) and still applies the calibration, power (durable admission before the first GPU child) and lease gates. Named-config starts reuse the measured manifest by a canonical static key (JCS content identity, chunked file fingerprints, atomic per-config index); a changed key measures a fresh manifest and a replaced or missing manifest refuses instead of silently remeasuring. RSC12's power mapping and lab-experiment key projection are not on main and stay refused or deferred.",
+  "timestamp-utc": "2026-11-17T19:02:03.695168Z",
+  "user-summary-candidate": "The C++ serving launcher can restart from a stored manifest and reuse a config's measured manifest when nothing that affects it has changed."
+}

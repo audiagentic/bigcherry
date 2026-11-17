@@ -1,0 +1,105 @@
+{
+  "kind": "VTP09_M16_TO_M63_K6_COLD_GFX11_ABBA",
+  "updated_utc": "2026-11-10T09:28:46.002790+00:00",
+  "qualified_cases": 16,
+  "required_cases": 16,
+  "results": {
+    "M16_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092558406615Z-xtx0-down/receipt.json",
+      "original_us": 87.35,
+      "tiled_us": 283.4,
+      "speedup": 0.30822159491884266
+    },
+    "M16_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092547651410Z-xtx0-gate_up/receipt.json",
+      "original_us": 139.25,
+      "tiled_us": 424.75,
+      "speedup": 0.32783990582695705
+    },
+    "M16_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092622277576Z-xtx1-down/receipt.json",
+      "original_us": 88.4,
+      "tiled_us": 280.05,
+      "speedup": 0.3156579182288877
+    },
+    "M16_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092609885848Z-xtx1-gate_up/receipt.json",
+      "original_us": 144.6,
+      "tiled_us": 434.04999999999995,
+      "speedup": 0.3331413431632301
+    },
+    "M32_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092633771563Z-xtx0-down/receipt.json",
+      "original_us": 429.1,
+      "tiled_us": 273.70000000000005,
+      "speedup": 1.5677749360613809
+    },
+    "M32_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092458272967Z-xtx0-gate_up/receipt.json",
+      "original_us": 739.25,
+      "tiled_us": 426.15,
+      "speedup": 1.7347178223630177
+    },
+    "M32_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092657744960Z-xtx1-down/receipt.json",
+      "original_us": 429.9,
+      "tiled_us": 290.45,
+      "speedup": 1.480117059734894
+    },
+    "M32_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092645279236Z-xtx1-gate_up/receipt.json",
+      "original_us": 742.95,
+      "tiled_us": 434.65,
+      "speedup": 1.7093063384332223
+    },
+    "M48_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092721857400Z-xtx0-down/receipt.json",
+      "original_us": 920.6500000000001,
+      "tiled_us": 291.1,
+      "speedup": 3.162658880109928
+    },
+    "M48_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092709299831Z-xtx0-gate_up/receipt.json",
+      "original_us": 1508.45,
+      "tiled_us": 427.70000000000005,
+      "speedup": 3.5268880056114096
+    },
+    "M48_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092745912866Z-xtx1-down/receipt.json",
+      "original_us": 943.2,
+      "tiled_us": 289.5,
+      "speedup": 3.2580310880829018
+    },
+    "M48_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092733368200Z-xtx1-gate_up/receipt.json",
+      "original_us": 1562.9,
+      "tiled_us": 427.7,
+      "speedup": 3.654196866962825
+    },
+    "M63_xtx0_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092810215850Z-xtx0-down/receipt.json",
+      "original_us": 1189.6,
+      "tiled_us": 284.65,
+      "speedup": 4.179167398559635
+    },
+    "M63_xtx0_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092757501662Z-xtx0-gate_up/receipt.json",
+      "original_us": 1922.15,
+      "tiled_us": 426.25,
+      "speedup": 4.509442815249267
+    },
+    "M63_xtx1_down": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092834601628Z-xtx1-down/receipt.json",
+      "original_us": 1350.5500000000002,
+      "tiled_us": 272.95000000000005,
+      "speedup": 4.947975819747207
+    },
+    "M63_xtx1_gate_up": {
+      "receipt": "<work-root>/xtx27-prefill/iqr-layout-fix/iqr-crossover/measurements/20261110T092821843470Z-xtx1-gate_up/receipt.json",
+      "original_us": 1976.9,
+      "tiled_us": 431.0,
+      "speedup": 4.58677494199536
+    }
+  },
+  "failed_or_partial": []
+}

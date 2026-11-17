@@ -31,7 +31,7 @@
    "settings": {
     "R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0 1", "R3_MOE_WORKER_MOE_DOWN_TILE": "1", "R3_MOE_WORKER_ENGINE_RANKS": "1",
     "R3_MOE_WORKER_MAX_ROWS": "4096", "R3_MOE_WORKER_SMALL_ROWS": "8",
-    "R3_MOE_WORKER_MIB": "22528", "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_MIB": "22528", "R3_MOE_WORKER_HEAT": "${BC_REPO_ROOT}/tools/lab/radiance/heat/perf51.rank0.hot-first",
     "R3_MOE_WORKER_ROWS": "0"
    }
   },
@@ -40,7 +40,7 @@
    "settings": {
     "R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0 1", "R3_MOE_WORKER_MOE_DOWN_TILE": "1", "R3_MOE_WORKER_ENGINE_RANKS": "1",
     "R3_MOE_WORKER_MAX_ROWS": "4096", "R3_MOE_WORKER_SMALL_ROWS": "8",
-    "R3_MOE_WORKER_MIB": "22528", "R3_MOE_WORKER_HEAT": "${BC_WORK_ROOT}/runs/perf51/heat.rank0.hot-first",
+    "R3_MOE_WORKER_MIB": "22528", "R3_MOE_WORKER_HEAT": "${BC_REPO_ROOT}/tools/lab/radiance/heat/perf51.rank0.hot-first",
     "R3_MOE_WORKER_ROWS": "1"
    }
   }

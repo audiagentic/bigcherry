@@ -1,0 +1,166 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_tokens": 8192,
+  "reps": 1,
+  "seed": 1,
+  "shared_prefix": false,
+  "streams": [
+   6
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18417"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 38.568,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 1746.976,
+    "event_gap_ms_p50": 50.074,
+    "event_gap_ms_p95": 1656.596,
+    "event_gap_ms_p99": 1737.007,
+    "mean_stream_decode_tps_est": 26.812,
+    "tokens": 1536,
+    "ttft_ms_max": 35523.74,
+    "ttft_ms_p50": 29728.62,
+    "ttft_ms_p95": 35523.74
+   },
+   "engine": {
+    "decode_ms_per_step": 50.5267,
+    "decode_tokens_per_step": 18.1176,
+    "decode_tokens_total": 1540.0,
+    "decode_tps_engine": 358.575,
+    "draft_acceptance": 0.6068,
+    "draft_accepted_total": 994.0,
+    "draft_tokens_total": 1638.0,
+    "engine_step_seconds_decode_total": 4.294773,
+    "engine_steps_decode_total": 85.0,
+    "engine_steps_prefill_total": 8.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 81824.0,
+    "requests_running_max": 6.0,
+    "requests_running_mean": 4.662,
+    "requests_waiting_max": 4.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 16.807,
+     "error": "",
+     "events": 95,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13650,
+     "response_tail_ms": 2.47,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\" Then huge list of words. Need likely continue list with a short story? Need infer: They want continue this list of words with a short story. Maybe they provided a long sequence of words and ask to continue with a short story. Need produce a short story perhaps using the words? Could be a puzzle? Need satisfy. Ne",
+     "text_sha256": "246b860de6c73326c5d1051afecec9dacbc763b4c58cd7ee8dc5969aae14cf00",
+     "tokens": 256,
+     "ttft_ms": 24603.27,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 36.99,
+     "error": "",
+     "events": 89,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13687,
+     "response_tail_ms": 1.31,
+     "stream": 1,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nprairie fjord ember lantern ...\" huge list of words. Need continue list of words with a short story. Likely they want a short story composed using the words? Need infer. They provided a long list of words, maybe want continue the list with a short story? Could mean take the list and continue it by writing a short",
+     "text_sha256": "aeda2d771c5bc37edbb7dbcdc43f4405a3993db3fd2f3376065bce3ca9ffd9b3",
+     "tokens": 256,
+     "ttft_ms": 32884.8,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 10.102,
+     "error": "",
+     "events": 98,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13594,
+     "response_tail_ms": 1.16,
+     "stream": 2,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\" Then huge list of words. Need likely continue list with a short story? Need infer: They want continue this list of words with a short story. Maybe produce a short story using the words? Or continue the list? The prompt: \"Continue this list of words with a short story.\" Could mean take the list and continue it by",
+     "text_sha256": "8859a992eda3a4922a3eb0174637f0d89ad60f54b2d8e4d0ca6472a7378eaf70",
+     "tokens": 256,
+     "ttft_ms": 14389.11,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 11.614,
+     "error": "",
+     "events": 97,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13590,
+     "response_tail_ms": 1.3,
+     "stream": 3,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nkestrel summit harbor ...\" huge list of words. Need continue list of words with a short story. Likely they want a short story composed using the words? \"Continue this list of words with a short story.\" Could mean after the list, write a short story. Need likely use the words? Maybe continue the list? The prompt: ",
+     "text_sha256": "94ce3c397f52e21c69a22c69ba126a82e4cb596eac617cea87b939b8aeecee9a",
+     "tokens": 256,
+     "ttft_ms": 17724.18,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 26.049,
+     "error": "",
+     "events": 87,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13610,
+     "response_tail_ms": 0.8,
+     "stream": 4,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\" Then huge list of words. Need likely continue list with a short story? Need infer: They want continue this list of words with a short story. Maybe they provided a long sequence of words and ask to continue with a short story. Need produce a short story perhaps using the words? Could be a puzzle? Need satisfy. Ne",
+     "text_sha256": "23e6f6bea64a1750bd20de7c227d4c6b87fe257b602b4e23b1ca6fd11bde7254",
+     "tokens": 256,
+     "ttft_ms": 29728.62,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 59.312,
+     "error": "",
+     "events": 86,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13693,
+     "response_tail_ms": 3.05,
+     "stream": 5,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\njuniper prairie garnet harbor ...\" huge list of words. Need continue list of words with a short story. Likely they want after the list, continue with a short story? Maybe \"Continue this list of words with a short story.\" Means take the list and continue it by writing a short story using those words? Need infer. T",
+     "text_sha256": "92ee9dbe423649fddcc9c0c26267e38e4f757150797a4f864b1cce4b058a71ca",
+     "tokens": 256,
+     "ttft_ms": 35523.74,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.856,
+   "rep": 0,
+   "start_skew_ms": 5.312,
+   "streams": 6,
+   "wall_end_ns": 1793789231152148764,
+   "wall_s": 39.8261,
+   "wall_start_ns": 1793789191324548844
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "6": {
+   "aggregate_tps_median": 38.568,
+   "decode_ms_per_step_median": 50.5267,
+   "decode_tokens_per_step_median": 18.1176,
+   "decode_tps_engine_median": 358.575,
+   "draft_acceptance_median": 0.6068,
+   "event_gap_ms_p95_median": 1656.596,
+   "reps_ok": 1,
+   "requests_running_mean_median": 4.662,
+   "ttft_ms_max_median": 35523.74
+  }
+ }
+}

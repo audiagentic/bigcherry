@@ -1,27 +1,33 @@
 #ifdef NDEBUG
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
-#include "serving.h"
 #include "calibration.h"
 #include "config_loader.h"
-#include "ledger.h"
-#include "live_policy_ingest.h"
 #include "experts.h"
+#include "ledger.h"
 #include "live_policy.h"
+#include "live_policy_ingest.h"
 #include "manifest_writer.h"
-#include "v2/manifest.h"
 #include "plan_cache.h"
+#include "resources.h"
 #include "sdk_check.h"
-#include "test_rad_fixture.h"
-#include "worker_footprint.h"
-#include "v2/helper_settings.h"
-#include "sha256.h"
+#include "serving.h"
 #include "session.h"
+#include "sha256.h"
+#include "test_rad_fixture.h"
+#include "v2/helper_settings.h"
+#include "v2/manifest.h"
+#include "worker_footprint.h"
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
-#include <sys/stat.h>
-#include <unistd.h>
+#include <arpa/inet.h>
+#include <csignal>
 #include <cstdio>
+#include <netinet/in.h>
+#include <sys/socket.h>
+#include <sys/stat.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <atomic>
 #include <cassert>
@@ -930,6 +936,24 @@ void manifest_writer_step(Fixture& t) {
     // The container, its heat ranking and the measured plan this configuration's manifest is built from.
     const auto model = t.root / "writer-model.rad";
     bc::test::write_rad(model, 4, 16, 128, 128, {});
+    // The original minimal planner fixture has no string table. RSC03's real RAD v2
+    // resource reader (Python and now C++) requires valid name offsets even for experts.
+    // Attach an expert-only name table without touching tensor payloads or model geometry.
+    {
+        std::fstream file(model, std::ios::binary | std::ios::in | std::ios::out);
+        RadFileHeader header{};
+        file.read(reinterpret_cast<char*>(&header), sizeof(header));
+        assert(file && header.str_bytes == 0);
+        constexpr char label[] = "expert";
+        header.str_off = header.file_bytes;
+        header.str_bytes = sizeof(label);
+        header.file_bytes += sizeof(label);
+        file.seekp(std::streamoff(header.str_off));
+        file.write(label, sizeof(label));
+        file.seekp(0);
+        file.write(reinterpret_cast<const char*>(&header), sizeof(header));
+        assert(file);
+    }
     const auto heat = t.root / "writer.hot-first";
     {
         std::vector<uint32_t> counts(128 * 16, 0);
@@ -961,6 +985,36 @@ void manifest_writer_step(Fixture& t) {
     {
         // The unmeasured manifest of the same configuration has the owner map the P1 record is measured against.
         const auto unmeasured = sv::build_manifest(in);
+        // RSC02 step 2: exercise real RAD directory, the exact published owner map and this
+        // synthetic KFD/cgroup/pin detector fixture. The standalone parity test checks the pure
+        // arithmetic against Python, this test proves the wiring into native manifest inputs.
+        const auto ledger = sv::resources::derive_launch(
+            {r.values, r.manifest.at("process_helpers"), t.facts, unmeasured.document});
+        assert(ledger.ok());
+        assert(ledger.value().helpers.size() == r.manifest.at("process_helpers").size());
+        assert(ledger.value().owner_map_digest == unmeasured.document.at("spec")
+                                                      .at("plan")
+                                                      .at("owner_map")
+                                                      .at("owner_map_sha256")
+                                                      .get<std::string>());
+        assert(ledger.value().host_pool_mib > 0 && ledger.value().host_kv_mib > 0);
+        {
+            auto altered = r.manifest.at("process_helpers");
+            altered[0]["bdf"] = "0000:fe:00.0";
+            assert(!sv::resources::derive_launch({r.values, altered, t.facts, unmeasured.document}));
+        }
+        {
+            auto altered = unmeasured.document;
+            altered["spec"]["plan"]["owner_map"]["owner_map_sha256"] = "forged";
+            assert(
+                !sv::resources::derive_launch({r.values, r.manifest.at("process_helpers"), t.facts, altered}));
+        }
+        {
+            auto constrained = t.facts;
+            constrained["host"]["mem_available_mib"] = 1;
+            assert(!sv::resources::derive_launch(
+                {r.values, r.manifest.at("process_helpers"), constrained, unmeasured.document}));
+        }
         in.s10.p1_record = p1_record_for(unmeasured.document, 9216, 1024,
                                          r.values.at("memory").at("host_reserve_mib").get<int64_t>());
     }
@@ -2300,7 +2354,9 @@ void session_engine_plan(Fixture& t) {
     std::vector<pid_t> ended;
     ss::Hooks wait;
     wait.wait = [](std::chrono::milliseconds) { return true; };
-    wait.started = [&](const std::string& role, pid_t pid, const fs::path&) { started.push_back(role + " " + std::to_string(pid)); };
+    wait.started = [&](ss::ChildKind, const std::string& role, pid_t pid, const fs::path&) {
+        started.push_back(role + " " + std::to_string(pid));
+    };
     wait.ended = [&](pid_t pid) { ended.push_back(pid); };
     const ss::EngineStart s = ss::plan_engine_only(in, run, wait);
     assert(calls.size() == 4);
@@ -2364,6 +2420,26 @@ void session_engine_plan(Fixture& t) {
         refused = std::string(e.what()).find("exit 2") != std::string::npos;
     }
     assert(refused && calls.size() == 1);
+    // An injected manifest runner must never leak any thrown type through the
+    // v2 boundary. Failures at this stage cannot launch measuring children.
+    for (int kind = 0; kind < 3; ++kind) {
+        const size_t original_starts = started.size();
+        in.runner = [kind](const std::vector<std::string>&) -> ss::ManifestRun {
+            if (kind == 0)
+                throw std::runtime_error("injected runner");
+            if (kind == 1)
+                throw 29; // NOLINT(bugprone-std-exception-baseclass)
+            struct UnusualRunnerException {};
+            throw UnusualRunnerException{}; // NOLINT(bugprone-std-exception-baseclass)
+        };
+        bool typed_refusal = false;
+        try {
+            (void)ss::plan_engine_only(in, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            typed_refusal = std::string(e.what()).find("callback threw") != std::string::npos;
+        }
+        assert(typed_refusal && started.size() == original_starts);
+    }
     ss::EnginePlanInputs layout = in;
     layout.options.configs.clear();
     layout.options.layouts = {fs::path(std::getenv("BIGCHERRY_LAYOUTS"))};
@@ -2406,6 +2482,186 @@ void session_engine_plan(Fixture& t) {
     assert(refused);
 }
 
+// Real plan_engine_only + real session owner, with the fake KFD/proc tree,
+// a child-gated CPU manifest writer and a fake engine. Both manifest cache
+// branches must preserve writer -> durable power admission -> first GPU child.
+// The injected writer response and power transaction never touch hardware.
+void session_owner_real_planner_admission(Fixture& t) {
+    namespace ss = bc::serving::session;
+    namespace v2 = bc::serving::v2;
+    const fs::path config_dir = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path model = t.root / "owner-plan-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const fs::path home = t.root / "owner-plan-home" / "radiance_home";
+    fs::create_directories(home);
+    auto select_free_port = [] {
+        const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+        assert(sock >= 0);
+        sockaddr_in addr{};
+        addr.sin_family = AF_INET;
+        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+        assert(::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
+        socklen_t len = sizeof addr;
+        assert(::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
+        ::close(sock);
+        return int(ntohs(addr.sin_port));
+    };
+
+    for (const std::string mode : {"miss", "hit", "partial"}) {
+        const fs::path run = t.root / ("owner-plan-" + mode);
+        fs::create_directories(run);
+        const int port = select_free_port();
+        const fs::path site = t.file(("owner-plan-" + mode + ".toml").c_str(),
+                                     "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" +
+                                         home.string() + "\"\nport = " + std::to_string(port) + "\n");
+        ss::EnginePlanInputs in;
+        in.options.sys_root = t.root;
+        in.options.site = site;
+        in.options.configs = {config_dir};
+        in.options.model_root = t.root / "model-root";
+        in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+        in.self = "/build/radiance_home/bin/bc-serve";
+        in.engine_binary = BC_FAKE_ENGINE;
+
+        const fs::path trace = run / "power.trace";
+        ss::Session session;
+        session.run_dir = run;
+        session.timing.health_timeout = std::chrono::seconds(6);
+        session.timing.health_interval = std::chrono::milliseconds(40);
+        session.timing.canary_timeout = std::chrono::seconds(5);
+        session.timing.stop_grace = std::chrono::seconds(1);
+        session.timing.poll = std::chrono::milliseconds(20);
+        session.plan = [in, mode, port](const fs::path& dir, const ss::Hooks& hooks) -> ss::EngineStart {
+            ss::EnginePlanInputs actual = in;
+            unsigned call = 0;
+            actual.runner = [mode, port, &hooks,
+                             &call](const std::vector<std::string>& argv) mutable -> ss::ManifestRun {
+                // One real fork + start-gate + registration + verified reap for
+                // *each* writer attempt. Only its output is synthetic.
+                const auto child = ss::run_to_completion({"/bin/true"}, {}, hooks);
+                assert(child.exit == 0);
+                ss::ManifestRun result;
+                const unsigned turn = ++call;
+                if (mode != "hit" && turn == 1) {
+                    result.exit = 10; // planner cache miss
+                } else {
+                    const auto output = fs::path(argv.at(2));
+                    std::ofstream(output) << Json({{"port", port}}).dump();
+                }
+                return result;
+            };
+            return ss::plan_engine_only(actual, dir, hooks);
+        };
+        session.power_hook.begin_manifest = [mode, trace](const fs::path&, v2::PlanUse use) -> v2::Status {
+            // Partial begin models a hardware write after durable journalling,
+            // followed by a returned error. The owner must still finish/reap.
+            std::ofstream(trace, std::ios::app) << "begin\n";
+            if (mode == "partial")
+                return v2::make_error(v2::ConfigErrorCode::admission_refused, "test.power",
+                                      "partial admission refused");
+            assert(use == (mode == "hit" ? v2::PlanUse::serving : v2::PlanUse::measuring));
+            return std::nullopt;
+        };
+        session.power_hook.verify_serving = [](const fs::path&) -> v2::Status { return std::nullopt; };
+        session.power_hook.verified_exit = [trace] {
+            std::ofstream(trace, std::ios::app) << "verified_exit\n";
+        };
+        session.power_hook.restore = [trace]() -> v2::Status {
+            std::ofstream(trace, std::ios::app) << "restore\n";
+            return std::nullopt;
+        };
+
+        std::cout.flush();
+        const pid_t owner = ::fork();
+        assert(owner >= 0);
+        if (owner == 0) {
+            try {
+                std::_Exit(ss::serve(session));
+            } catch (const std::exception& e) {
+                std::cerr << "real planner owner failed: " << e.what() << '\n';
+                std::_Exit(98);
+            }
+        }
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(18);
+        Json terminal;
+        bool observed_running = false;
+        for (;;) {
+            terminal = ss::read_record(run).value_or(Json::object());
+            const auto state = terminal.value("state", std::string());
+            if (mode != "partial" && state == "running") {
+                observed_running = true;
+                break;
+            }
+            if (state == "failed" || state == "stopped" || std::chrono::steady_clock::now() > deadline)
+                break;
+            std::this_thread::sleep_for(std::chrono::milliseconds(30));
+        }
+        if (observed_running) {
+            const auto reply = ss::control(run, "stop", std::chrono::seconds(5));
+            assert(reply && reply->value("ok", false));
+        }
+        int status = 0;
+        bool reaped = false;
+        for (int n = 0; n < 200; ++n) {
+            if (::waitpid(owner, &status, WNOHANG) == owner) {
+                reaped = true;
+                break;
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(25));
+        }
+        if (!reaped) {
+            ::kill(owner, SIGTERM);
+            ::waitpid(owner, &status, 0);
+        }
+        assert(reaped && WIFEXITED(status));
+        assert((WEXITSTATUS(status) == 0) == (mode != "partial"));
+        assert(observed_running == (mode != "partial"));
+        const auto completed = ss::read_record(run);
+        if (!completed)
+            throw std::runtime_error("real planner owner failed to persist its terminal record");
+        terminal = *completed;
+        assert(terminal.value("state", std::string()) == (mode == "partial" ? "failed" : "stopped"));
+
+        size_t first_writer = SIZE_MAX, admit = SIZE_MAX, first_gpu = SIZE_MAX;
+        size_t writer_count = 0, gpu_count = 0;
+        const auto& events = terminal.at("events");
+        for (size_t i = 0; i < events.size(); ++i) {
+            const auto& item = events.at(i);
+            const std::string kind = item.value("kind", std::string());
+            const std::string role = item.value("role", std::string());
+            if (kind == "started" && role == "manifest writer") {
+                first_writer = std::min(first_writer, i);
+                ++writer_count;
+            }
+            if (kind == "power_applied")
+                admit = i;
+            if (kind == "started" && (role == "measuring engine" || role == "engine")) {
+                first_gpu = std::min(first_gpu, i);
+                ++gpu_count;
+            }
+        }
+        assert(writer_count == (mode == "hit" ? 1U : mode == "miss" ? 3U : 2U));
+        assert(first_writer != SIZE_MAX);
+        if (mode == "partial") {
+            assert(admit == SIZE_MAX && gpu_count == 0);
+        } else {
+            assert(first_writer < admit && admit < first_gpu);
+            assert(gpu_count == (mode == "miss" ? 2U : 1U));
+        }
+        for (const auto& child : terminal.at("processes")) {
+            assert(child.value("exited", false));
+            assert(child.value("pid", 0) > 0);
+        }
+        const auto evidence = [&] {
+            std::stringstream out;
+            out << std::ifstream(trace).rdbuf();
+            return out.str();
+        }();
+        assert(evidence.find("begin\n") == 0 && evidence.find("verified_exit\n") != std::string::npos &&
+               evidence.find("restore\n") > evidence.find("verified_exit\n"));
+    }
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -2437,6 +2693,7 @@ int main(int argc, char** argv) {
         config_files(t);
         converted_layout_parity(t);
         session_engine_plan(t);
+        session_owner_real_planner_admission(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
         std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "

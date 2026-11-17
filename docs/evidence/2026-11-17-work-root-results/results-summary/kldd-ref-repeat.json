@@ -1,0 +1,12 @@
+{
+ "env": [
+  "GGML_CUDA_ALLREDUCE=internal",
+  "GGML_CUDA_AR_WIRE=f32"
+ ],
+ "kind": "kld",
+ "mean_kld": -0.0,
+ "p99_kld": 3.5e-05,
+ "ppl_ratio": 1.000031,
+ "run": "kldd-ref-repeat",
+ "same_top_pct": 99.988
+}

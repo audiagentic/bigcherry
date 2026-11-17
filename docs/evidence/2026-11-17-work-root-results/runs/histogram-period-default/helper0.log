@@ -1,0 +1,62 @@
+r3_moe_worker: manifest sha256 sha256:962858f0af4b21b7cc64623412ee206d307d440debc3bf823d460efccfcf911d, role helper0
+r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM
+r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging
+r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O
+r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count
+r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy
+r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end
+r3_moe_worker: large-lane requests up to 32 rows take the GEMV
+r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE=1 applied
+r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: selected 9320 expert candidates, 21.998 GiB; host RSS 600.7 MiB
+r3_moe_worker: waiting for engine runtime expert maps
+r3_moe_worker: R3_MOE_WORKER_POWER_SAVE on
+r3_moe_worker: runtime map owns 8650 experts, 20.417 GiB
+r3_moe_worker: ready shm=/r3-moe-helper layers=49 bytes=223006720 (gfx1100, small lane rows <= 8, large <= 4096)
+r3_moe_worker: R3_MOE_WORKER_COMBINE on - 8 CPU thread(s), large-lane steps of 256+ rows
+r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes on 4 efficiency core(s)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+policy no_live_feed=1 window_ns=15006154470 (engine needs R3_MOE_WORKER_HISTOGRAM_PERIOD_S)
+r3_moe_worker: epoch participant 0 exiting phase=0 transaction=0 fault=0
+r3_moe_worker: helper 0 stopping phase=0 transaction=0 placement_fault=0 journal_fault=0
+policy effect_gate=0 effect_window_samples=1 effect_min_quiet_windows=1 effect_noise_multiplier=2.576000 effect_revert_ttl_ns=441928073671 windows_judged=0 kept=0 reverted=0 undecided=0 noise_floor=0.000000000 last_signal_ratio=0.000000000 revert_attempts=0 revert_aborts=0 revert_blocked=0
+policy placement helper=0 evaluated=6 no_change=65 proposed=0 committed=0 aborted=0 learned_ineligible=0 cache_active=0 inflight=0 bytes_moved=0 predicted_saving=0.000000 transition_samples=0 transition_ns_total=0 transition_ns_max=0 unwatermarked_heat=1 no_live_feed=0 active_epoch=1 active_digest=cfaeafc2169d7497
+policy measure transactions=0 txn_p50_ns=0 txn_p95_ns=0 txn_max_ns=0 copy_bytes_per_ns=0.000000 aborts=0 abort_p95_ns=0 delta_gaps=5 delta_gap_p99_ns=60038865550 delta_gap_max_ns=60038865550 hot_set_k=5931 drift_half_life_observations=0 drift_horizon_observations=400761120 marginal_relative_error=0.007162
+policy no_change_reason=heat_baseline count=1
+policy no_change_reason=heat_unchanged count=58
+policy no_change_reason=no_improvement_or_margin count=6
+policy cache_details=0 cache_detail_limit=3
+r3_moe_worker: placement epoch cycles completed 0 (every 0 s of burst)
+r3_moe_worker: combine steps 20856, CPU 12835.1 ms (615.4 us a step)
+r3_moe_worker: lane 0 stages (us/request): routes 22.3 gate_up 50.5 quant 9.9 down 32.0 reduce 10.6
+r3_moe_worker: lane 16 stages (us/request): routes 439.1 gate_up 1692.4 quant 56.6 down 931.4 reduce 688.9
+r3_moe_worker: lane 16 experts a request by rows: 1 11.3, 2 7.4, 3-4 10.3, 5-8 13.5, 9-16 17.0, 17-32 21.6, 33-64 25.5, 65+ 36.4
+r3_moe_worker: small lane class 0 (rows <= 8): requests 1534 (6066 rows)
+r3_moe_worker: large-lane requests 22132 (41326736 rows)
+r3_moe_worker: GPU timing samples=22155 sampled=84290.4 ms avg=3804.6 us
+r3_moe_worker: served 23666 requests, 41332802 rows, 186507586 routes, compute 90039.2 ms (3804.6 us a request)

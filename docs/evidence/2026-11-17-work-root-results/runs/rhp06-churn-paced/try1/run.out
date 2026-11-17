@@ -1,0 +1,6 @@
+agent-lease: gpu is in use by processes no lease started: 789630 r3_moe_worker, 789852 radiance, 789408 r3_moe_worker, 789773 r3_moe_worker
+agent-lease: gpu is in use by processes no lease started: 789630 r3_moe_worker, 789852 radiance, 789408 r3_moe_worker, 789773 r3_moe_worker
+agent-lease: gpu is in use by processes no lease started: 789630 r3_moe_worker, 789852 radiance, 789408 r3_moe_worker, 789773 r3_moe_worker
+agent-lease: gpu is in use by processes no lease started: 789630 r3_moe_worker, 789852 radiance, 789408 r3_moe_worker, 789773 r3_moe_worker
+acquired gpu
+released gpu

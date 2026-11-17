@@ -1,0 +1,50 @@
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:14:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   14 |   void* dh; hipHostGetDevicePointer(&dh, h, 0); unsigned* o; hipMalloc(&o, 4);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:14:62: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   14 |   void* dh; hipHostGetDevicePointer(&dh, h, 0); unsigned* o; hipMalloc(&o, 4);
+      |                                                              ^~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:15:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   15 |   hipEvent_t a, b; hipEventCreate(&a); hipEventCreate(&b); double gb = 0, ms_all = 0; long k = 0;
+      |                    ^~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:15:40: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   15 |   hipEvent_t a, b; hipEventCreate(&a); hipEventCreate(&b); double gb = 0, ms_all = 0; long k = 0;
+      |                                        ^~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:17:5: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   17 |     hipEventRecord(a); for (int i = 0; i < 8; ++i) rd<<<1024, 256>>>((const uint4*)dh, n, o); hipEventRecord(b);
+      |     ^~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:17:95: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   17 |     hipEventRecord(a); for (int i = 0; i < 8; ++i) rd<<<1024, 256>>>((const uint4*)dh, n, o); hipEventRecord(b);
+      |                                                                                               ^~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:18:5: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   18 |     hipEventSynchronize(b); float ms; hipEventElapsedTime(&ms, a, b); gb += 8.0 * bytes / 1e9; ms_all += ms; ++k;
+      |     ^~~~~~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:18:39: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   18 |     hipEventSynchronize(b); float ms; hipEventElapsedTime(&ms, a, b); gb += 8.0 * bytes / 1e9; ms_all += ms; ++k;
+      |                                       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+8 warnings generated when compiling for gfx1201.
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:14:13: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   14 |   void* dh; hipHostGetDevicePointer(&dh, h, 0); unsigned* o; hipMalloc(&o, 4);
+      |             ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:14:62: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   14 |   void* dh; hipHostGetDevicePointer(&dh, h, 0); unsigned* o; hipMalloc(&o, 4);
+      |                                                              ^~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:15:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   15 |   hipEvent_t a, b; hipEventCreate(&a); hipEventCreate(&b); double gb = 0, ms_all = 0; long k = 0;
+      |                    ^~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:15:40: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   15 |   hipEvent_t a, b; hipEventCreate(&a); hipEventCreate(&b); double gb = 0, ms_all = 0; long k = 0;
+      |                                        ^~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:17:5: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   17 |     hipEventRecord(a); for (int i = 0; i < 8; ++i) rd<<<1024, 256>>>((const uint4*)dh, n, o); hipEventRecord(b);
+      |     ^~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:17:95: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   17 |     hipEventRecord(a); for (int i = 0; i < 8; ++i) rd<<<1024, 256>>>((const uint4*)dh, n, o); hipEventRecord(b);
+      |                                                                                               ^~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:18:5: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   18 |     hipEventSynchronize(b); float ms; hipEventElapsedTime(&ms, a, b); gb += 8.0 * bytes / 1e9; ms_all += ms; ++k;
+      |     ^~~~~~~~~~~~~~~~~~~~~~
+<work-root>/runs/rad49-arbench/20261109-082341/bin/host-pull.hip:18:39: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   18 |     hipEventSynchronize(b); float ms; hipEventElapsedTime(&ms, a, b); gb += 8.0 * bytes / 1e9; ms_all += ms; ++k;
+      |                                       ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+8 warnings generated when compiling for host.

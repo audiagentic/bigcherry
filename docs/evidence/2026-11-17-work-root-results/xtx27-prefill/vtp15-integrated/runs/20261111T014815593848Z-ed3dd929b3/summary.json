@@ -1,0 +1,68 @@
+{
+  "status": "microbench_finished_oracle_passed_NOT_27B_QUALIFIED",
+  "type": "VTP15_ORIGINAL_BF16_GDN_PROJECTION_TO_RECURRENCE_GPU_CHAIN",
+  "checkout": "010da2470b47a28ef7a0c0056bf722d707a2f189",
+  "source_digest": "ed3dd929b34571fcc08dd413e88972dac07d5b27f1aff1646e49d5d8b6dce8fb",
+  "not_a_model_benchmark": true,
+  "cases": [
+    {
+      "label": "original-BF16-GDN-projections-to-core-m1",
+      "kind": "gdn_integrated",
+      "argv": [
+        "<work-root>/xtx27-prefill/vtp15-integrated/build/ed3dd929b34571fc/vtp04-gdn_integrated",
+        "--rows",
+        "1",
+        "--iterations",
+        "3",
+        "--conv-dir",
+        "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z",
+        "--pack-dir",
+        "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z",
+        "--reference-dir",
+        "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z",
+        "--core-dir",
+        "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z",
+        "--coefficients",
+        "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/original-gdn-parameters.f32"
+      ],
+      "rc": 0,
+      "oracle_pass": true,
+      "stdout": "original-BF16-GDN-projections-to-core-m1.stdout",
+      "stderr": "original-BF16-GDN-projections-to-core-m1.stderr"
+    }
+  ],
+  "schema": "vtp15-integrated-original-BF16-GDN-core-GPU-chain-v1",
+  "sources": {
+    "rows": 1,
+    "weight_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z/summary.json",
+    "weight_receipt_sha256": "a77162fb7af0283eb65f0e0770f779ee9594892c2d473b7e5d7fd61259ea6aa3",
+    "reference_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z/summary.json",
+    "reference_receipt_sha256": "72179bddee0f84684e5ef391a3f2bc319fecf3bb866406d40e6faf6554c60e04",
+    "pack_directory": "<work-root>/xtx27-prefill/vtp15-gdn-projection/layer0-20261111T005819109215Z",
+    "qkv_directory": "<work-root>/xtx27-prefill/vtp13-gdn-pack/layer0-20261111T000916481127Z",
+    "reference_directory": "<work-root>/xtx27-prefill/vtp15-gdn-ref/layer0-20261111T010143705406Z",
+    "input_layernorm_sha256": "853b5989bfb677b1761540ee97c09bbf8d90fd825c9ae6ca74ef5853cba3c075",
+    "real_checkpoint_payload": true,
+    "synthetic_hidden": true,
+    "cpu_double_accumulation_oracle": true,
+    "core_receipt": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z/summary.json",
+    "core_receipt_sha256": "35768a18dda04ec93cd799513ce79acbade5ba7435dddb952f9a464ec3140ac2",
+    "core_directory": "<work-root>/xtx27-prefill/vtp15-gdn-core/layer0-20261111T011811618321Z",
+    "learned_receipt": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/summary.json",
+    "learned_receipt_sha256": "ba4abe7980b5a3b56d1e0decb89fca69da936978f13fe26b9c6bede5f6d94055",
+    "coefficients": "<work-root>/xtx27-prefill/vtp14-gdn-reference/layer0-20261111T003313797426Z/original-gdn-parameters.f32",
+    "real_QKV_A_B_Z_BF16_weights": true,
+    "real_GDN_conv_decay_norm_BF16": true,
+    "input_hidden_is_synthetic": true,
+    "complete_model_layer": false
+  },
+  "code_hashes": {
+    "source_sha256": "7b2830785fadae1c916b62a70694821beff9ab12b7039645bb79e6428097fee4",
+    "gpu_driver_sha256": "79f66a3c8d592bf86e2cdf3c8391d33803b9b5f5d7fa130db3e1b08f740aeda9",
+    "shared_driver_sha256": "554a534e6bffba1513704d9e7b893c638fdfbbda8df3feda813683dd8d42d376",
+    "core_oracle_writer_sha256": "f8b829cda5c34e0f6a4ed70d457a2511f7cad7db1c1d68a0d706aed41473e781"
+  },
+  "full_model_layer": false,
+  "native_optimized_gemm": false,
+  "real_checkpoint_weights": true
+}

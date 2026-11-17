@@ -1,0 +1,2 @@
+phase                         n  W mean   min   max  busy%  vddgfx mV
+D_24GiB_alloc_idle          360    15.1  15.0  16.0    0.0         29

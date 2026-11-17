@@ -1,6 +1,6 @@
 # rad0041_kv_b16_flashnext
 
-**Status:** untested
+**Status:** validated
 **Plan item:** VTP44
 
 Scope: the `bf16_fp8` and `bf16_i8` KV layouts on Flash-Next's attention geometry (head_dim 256; gqa 12, and gqa 6 with 4-token pages).

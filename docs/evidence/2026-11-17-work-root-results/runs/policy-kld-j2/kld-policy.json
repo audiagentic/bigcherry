@@ -1,0 +1,128 @@
+{
+ "_comment": "RHP slice J churn gate: engine-only control, round-robin static helper layout, and the same layout with the live target-map policy moving experts aggressively during scoring (gate off, 1 s cadence). Same build, same reference.",
+ "schema_version": 1,
+ "engine": "radiance",
+ "evidence_role": "diagnostic",
+ "execution_evidence": "observe",
+ "quality_only": true,
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "server_args": [],
+ "environment": {
+  "HIP_VISIBLE_DEVICES": "0",
+  "ROCR_VISIBLE_DEVICES": "2",
+  "RADIANCE_HOME": "${RAD_HOME}"
+ },
+ "expected_execution": {
+  "backend": "ROCm",
+  "architectures": [
+   "gfx1201"
+  ],
+  "locators": [
+   "${R9700_BDF}"
+  ]
+ },
+ "quality": {
+  "reference_dir": "${KLD_REF_DIR}",
+  "control": "helper-off",
+  "timeout_s": 5400,
+  "args": [
+   "--radiance-home",
+   "${RAD_HOME}",
+   "--kernels",
+   "libr4d,libr3moe,libref",
+   "--placement",
+   "expert_tiered",
+   "--tp",
+   "1",
+   "--host-pool-mib",
+   "45056",
+   "--kv-cache-dtype",
+   "fp8",
+   "--max-model-len",
+   "8192",
+   "--max-num-seqs",
+   "1",
+   "--max-num-batched-tokens",
+   "64"
+  ],
+  "thresholds": {
+   "max_kld_mean_increase": 0.02,
+   "max_kld_median_increase": 0.01,
+   "max_kld_p99_increase": 0.2,
+   "max_kld_p999_increase": 0.5,
+   "max_top1_drop_points": 1.0,
+   "max_ppl_ratio_increase": 0.05
+  }
+ },
+ "arms": [
+  {
+   "name": "helper-off",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "settings": {}
+  },
+  {
+   "name": "helper-on-rr",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "environment": {
+    "R3_MOE_WORKER_SKIP_OWNED": "1"
+   },
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1 3",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "64",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "<work-root>/heat/flashnext-mixed.hot-first",
+    "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+    "R3_MOE_WORKER_PLACEMENT": "roundrobin"
+   }
+  },
+  {
+   "name": "helper-on-rr-policy",
+   "mode": "stock",
+   "shutdown_method": "sigint",
+   "binary": "${RAD_BIN}",
+   "environment": {
+    "R3_MOE_WORKER_SKIP_OWNED": "1",
+    "R3_MOE_WORKER_HISTOGRAM": "<work-root>/runs/policy-kld-j2/hist",
+    "R3_MOE_WORKER_HISTOGRAM_PERIOD_S": "1",
+    "R3_MOE_POLICY_ENABLE": "1",
+    "R3_MOE_POLICY_ACCEPT_UNWATERMARKED_HEAT": "1",
+    "R3_MOE_POLICY_CADENCE_NS": "1000000000",
+    "R3_MOE_POLICY_MARGIN": "0.001",
+    "R3_MOE_POLICY_MAX_MOVES": "128",
+    "R3_MOE_POLICY_MAX_MOVED_BYTES": "2147483648",
+    "R3_MOE_POLICY_MIN_RESIDENCY_NS": "1000000000",
+    "R3_MOE_POLICY_HEAT_HALF_LIFE_OBSERVATIONS": "20000000",
+    "R3_MOE_POLICY_MAX_HEAT_AGE_NS": "10000000000",
+    "R3_MOE_POLICY_MIN_SAMPLES": "1",
+    "R3_MOE_POLICY_ABORT_COOLDOWN_NS": "5000000000",
+    "R3_MOE_POLICY_LEARNED_ELIGIBILITY_TTL_NS": "600000000000",
+    "R3_MOE_POLICY_PROTECTED_LAYERS": "48",
+    "R3_MOE_POLICY_EFFECT_GATE": "0",
+    "R3_MOE_POLICY_EFFECT_WINDOW_SAMPLES": "32",
+    "R3_MOE_POLICY_EFFECT_MIN_QUIET_WINDOWS": "3",
+    "R3_MOE_POLICY_EFFECT_NOISE_MULTIPLIER": "3.0",
+    "R3_MOE_POLICY_EFFECT_REVERT_TTL_NS": "600000000000"
+   },
+   "settings": {
+    "R3_MOE_WORKER": "1",
+    "R3_MOE_WORKER_DEVICES": "0 1 3",
+    "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+    "R3_MOE_WORKER_ENGINE_RANKS": "1",
+    "R3_MOE_WORKER_MAX_ROWS": "64",
+    "R3_MOE_WORKER_SMALL_ROWS": "8",
+    "R3_MOE_WORKER_MIB": "22528",
+    "R3_MOE_WORKER_HEAT": "<work-root>/heat/flashnext-mixed.hot-first",
+    "R3_MOE_WORKER_MIBS": "22528,22528,14336",
+    "R3_MOE_WORKER_PLACEMENT": "roundrobin"
+   }
+  }
+ ]
+}

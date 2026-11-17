@@ -6,5 +6,10 @@ if(NOT TARGET bc_experts)
   add_library(bc_experts STATIC "${CMAKE_CURRENT_LIST_DIR}/experts.cpp")
   target_compile_features(bc_experts PUBLIC cxx_std_20)
   target_include_directories(bc_experts PUBLIC "${CMAKE_CURRENT_LIST_DIR}" "${CMAKE_CURRENT_LIST_DIR}/../moe-remote")
-  target_link_libraries(bc_experts PUBLIC radiance::abi)
+  # The guarded expert-layout hook creates v2::ConfigError values in experts.cpp.
+  # This is a library dependency, not an optional obligation of each consumer.
+  if(NOT TARGET bc_serving_v2)
+    message(FATAL_ERROR "bc_experts: include bc_serving_v2.cmake first")
+  endif()
+  target_link_libraries(bc_experts PUBLIC radiance::abi bc_serving_v2)
 endif()

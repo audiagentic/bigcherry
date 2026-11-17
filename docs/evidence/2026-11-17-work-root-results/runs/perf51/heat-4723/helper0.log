@@ -1,0 +1,8 @@
+r3_moe_helper: owning the coldest experts of <work-root>/runs/perf51/heat.rank0 first
+r3_moe_helper: selected 8473 expert candidates, 19.999 GiB; host RSS 599.0 MiB
+r3_moe_helper: waiting for engine runtime expert maps
+r3_moe_helper: runtime map owns 7744 experts, 18.279 GiB
+r3_moe_helper: ready shm=/r3-moe-helper layers=49 bytes=148725760 (gfx1100, small lane rows <= 8, large <= 4096)
+r3_moe_helper: large-lane requests 221 (321474 rows)
+r3_moe_helper: GPU timing samples=78 sampled=31.6 ms avg=405.5 us
+r3_moe_helper: served 5268 requests, 340966 rows, 362736 routes, compute 2136.1 ms (405.5 us a request)

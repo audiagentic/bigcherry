@@ -166,7 +166,7 @@ class Harvest(unittest.TestCase):
             self.assertTrue(harvest.verify_bundle(out), bad)
 
     def test_every_run_kind_has_a_recipe(self):
-        self.assertEqual(set(harvest.DEFAULT_RECIPE), set(rm.RUN_KINDS))
+        self.assertEqual(set(harvest.DEFAULT_RECIPE), set(rm.NESTED_RUN_KINDS))
         for rid in harvest.DEFAULT_RECIPE.values():
             self.assertIn(rid, harvest.RECIPES)
 

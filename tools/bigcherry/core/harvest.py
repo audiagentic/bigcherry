@@ -154,9 +154,12 @@ def harvest(root: Path, run_dir: Path, *, now: float | None = None) -> dict:
         raise HarvestError(f"run {m['run_id']} is {m['state']}; only a finished run can be harvested")
     if m["harvest"]["state"] == "verified":
         raise HarvestError(f"run {m['run_id']} is already harvested (bundle {m['harvest']['bundle_id']})")
-    recipe = RECIPES.get(m["harvest"].get("recipe") or DEFAULT_RECIPE[m["kind"]])
+    recipe_id = m["harvest"].get("recipe") or DEFAULT_RECIPE.get(m["kind"])
+    if recipe_id is None:
+        raise HarvestError(f"no default harvest recipe for run kind {m['kind']!r}; explicit evidence review required")
+    recipe = RECIPES.get(recipe_id)
     if recipe is None:
-        raise HarvestError(f"unknown harvest recipe {m['harvest'].get('recipe')!r}")
+        raise HarvestError(f"unknown harvest recipe {recipe_id!r}")
     gen = m["generation"]
     if m["harvest"]["state"] in ("pending", "failed"):
         m = rm.update_manifest(run_dir, expected_generation=gen, harvest_state="harvesting", patch={"harvest": {"recipe": recipe.id}}, now=now)

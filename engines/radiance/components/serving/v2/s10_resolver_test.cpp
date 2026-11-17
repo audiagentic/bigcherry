@@ -125,7 +125,14 @@ int main() {
     assert(!d.settings.sclk_max_mhz && !d.settings.vddgfx_offset_mv);
   assert(out.spec.resources.host.pool_mib == 13);
   assert(out.spec.resources.host.kv_mib == 1);
-  assert(out.spec.processes.helpers[0].vram_budget_mib == 23548);
+  // The engine measured the declared owner map; live VRAM must not change its expert budget.
+  assert(out.spec.processes.helpers[0].vram_budget_mib == m.spec.processes.helpers[0].vram_budget_mib);
+  assert(out.spec.processes.helpers[0].vram_budget_mib != s8.value().helpers[0].expert_budget_mib);
+  auto insufficient = in;
+  insufficient.measured.helpers[0].live_claimable_bytes = 2000 * MiB;
+  const auto refused = v2::resolve_s10(m, insufficient);
+  assert(!refused && refused.error().code == v2::ConfigErrorCode::admission_refused);
+
   // No calibration record is no reason to stop the policy; only a stale heat feed is.
   assert(out.spec.handoff->placement.live_policy_state.reason_code ==
          "stale_heat_feed");

@@ -45,6 +45,11 @@ Offline tests for layout, id uniqueness, manifest round trip and schema versioni
 
 ## Notes
 
+The v1 schema now also accepts reader-only `legacy` manifests at
+`runs/<name>/run.manifest.json` to adopt historical flat runs without moving
+contents. See `docs/reference/build/RUNS_LAYOUT.md`; this does not change
+the production nested run kinds or imply a legacy run was completed/harvested.
+
 Foundation for WSL02 to WSL06. Existing llama.cpp tuning outputs (artifacts/, tune journals) keep their own schemas but gain a manifest.
 
 ## Design review (GPT, 2026-10-19) - adopted

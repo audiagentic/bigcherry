@@ -1,0 +1,22 @@
+checkout 6f7de471ae874d5339648aca02c9e53ebf732e5a feat(radiance): a tensor-parallel engine with its remote-MoE helper (flashnext-tp2xtx-r9700) (#770)
+build <work-root>/builds/ccb649ea788a5272eead885012a9a915/d7394b87161cd4e8d588a2ae9259e8a2
+XTX ranks 0,1, R9700 puller 2
+== arm exact:prefill:0
+arm exact:prefill:0: load 20.8 s
+== arm exact:d1:0
+arm exact:d1:0: load 9.3 s
+== arm exact:d6:0
+arm exact:d6:0: load 12.5 s
+arm	op	calls_r0	us_call_r0	calls_r1	us_call_r1	us_call_min
+exact-d1-pull0	ar_hc_write	4794	64.1	4794	20.3	20.3
+exact-d1-pull0	ar_gather_hc_write	4794	140.7	4794	56.4	56.4
+exact-d1-pull0	all_reduce	376	40.0	376	33.5	33.5
+exact-d1-pull0	all_gather	282	80.8	282	26.9	26.9
+exact-d6-pull0	ar_hc_write	4386	53.5	4386	60.6	53.5
+exact-d6-pull0	ar_gather_hc_write	4386	372.3	4386	50.2	50.2
+exact-d6-pull0	all_reduce	344	63.8	344	55.4	55.4
+exact-d6-pull0	all_gather	258	71.0	258	28.0	28.0
+exact-prefill-pull0	ar_hc_write	291	2181.5	291	2227.2	2181.5
+exact-prefill-pull0	ar_gather_hc_write	291	7454.8	291	2259.4	2259.4
+exact-prefill-pull0	all_reduce	14	5996.2	14	2476.7	2476.7
+exact-prefill-pull0	all_gather	3	14.0	3	13.7	13.7

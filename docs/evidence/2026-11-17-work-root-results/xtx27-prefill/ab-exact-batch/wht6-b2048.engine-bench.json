@@ -1,0 +1,124 @@
+{
+ "schema": 1,
+ "engine": "radiance",
+ "label": "wht6-b2048",
+ "binary": "<work-root>/builds/ccb649ea788a5272eead885012a9a915/033c06a5d41152c9a1876acc2956a8eb/bin/radiance",
+ "model": "<models-root>/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "extra_args": [
+  "--tp",
+  "2",
+  "--tp-wire",
+  "wht6",
+  "--p2p",
+  "off",
+  "--max-model-len",
+  "8192",
+  "--max-num-seqs",
+  "1",
+  "--max-num-batched-tokens",
+  "2048",
+  "--kv-cache-dtype",
+  "fp8",
+  "--num-speculative-tokens",
+  "0"
+ ],
+ "env": {
+  "HIP_VISIBLE_DEVICES": "0,1",
+  "ROCR_VISIBLE_DEVICES": "0,1"
+ },
+ "depths": [
+  512,
+  2048,
+  6144
+ ],
+ "reps": 2,
+ "decode": 64,
+ "rows": [
+  {
+   "depth": 512,
+   "rep": 0,
+   "prompt_tokens": 704,
+   "completion_tokens": 64,
+   "ttft_s": 0.3484508991241455,
+   "prefill_tps": 2020.3707373680218,
+   "decode_tps": 49.60536871023225,
+   "text_head": "\n\n- **What changed**: the pin-rebase (`tuning-code-rebase` branch,\n  `b10502` pin) landed on top of the HI71 fix. The 2026-08-19 baseline\n  predates it.\n- **Met",
+   "error": null
+  },
+  {
+   "depth": 512,
+   "rep": 1,
+   "prompt_tokens": 704,
+   "completion_tokens": 64,
+   "ttft_s": 0.3207364082336426,
+   "prefill_tps": 2194.948817557271,
+   "decode_tps": 49.56125835981534,
+   "text_head": "\n\n- **What changed**: the pin-rebase (see `dual-xtx-pin-rebase` memory)\n  re-landed the `--spec-type draft-mtp` / `--spec-draft-n-max 4` MTP\n  spec-decoding fla",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 0,
+   "prompt_tokens": 2307,
+   "completion_tokens": 64,
+   "ttft_s": 0.900728702545166,
+   "prefill_tps": 2561.2595596000983,
+   "decode_tps": 48.203662871356215,
+   "text_head": "\n\n# Summary of the Dual-XTX Production-Parity Bench Log and BigCherry Build Campaign Handover\n\n## Part 1: Dual-XTX Production-Parity Bench Log\n\n### Hardware and",
+   "error": null
+  },
+  {
+   "depth": 2048,
+   "rep": 1,
+   "prompt_tokens": 2305,
+   "completion_tokens": 64,
+   "ttft_s": 0.9014527797698975,
+   "prefill_tps": 2556.983628791259,
+   "decode_tps": 48.29430005828408,
+   "text_head": "\n\n- **2026-08-19 baseline**: pp4096 ~1249 t/s, tg2048 ~102 t/s, tg512 ~81 t/s (5-rep `mtp-dual`/`server-bench",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 0,
+   "prompt_tokens": 6681,
+   "completion_tokens": 64,
+   "ttft_s": 2.6570658683776855,
+   "prefill_tps": 2514.4276924076376,
+   "decode_tps": 44.842727343694314,
+   "text_head": "\n\n# Summary: BigCherry Dual-XTX Bench Log & Build Campaign Handover\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Configuration\n- **Hardware**: Br",
+   "error": null
+  },
+  {
+   "depth": 6144,
+   "rep": 1,
+   "prompt_tokens": 6680,
+   "completion_tokens": 64,
+   "ttft_s": 2.661733627319336,
+   "prefill_tps": 2509.6425620649006,
+   "decode_tps": 44.78624120600971,
+   "text_head": "\n\n[2bc3cf0823774a048609733be098e497]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n",
+   "error": null
+  }
+ ],
+ "draft": {
+  "drafted": 0,
+  "accepted": 0
+ },
+ "vram": [
+  "GPU[0] : VRAM Total Used Memory (B): 9207578624",
+  "GPU[1] : VRAM Total Used Memory (B): 9207582720",
+  "GPU[2] : VRAM Total Used Memory (B): 59969536",
+  "GPU[3] : VRAM Total Used Memory (B): 17231872"
+ ],
+ "server_error": null,
+ "shutdown": {
+  "method": "sigint",
+  "clean": true,
+  "requested": true,
+  "forced": false,
+  "returncode": 0,
+  "error": null
+ },
+ "served_model": "qwen35"
+}

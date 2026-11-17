@@ -1,0 +1,144 @@
+{
+  "schema": "vtp24-qwen38-original-BF16-layer0-ffn-residual-cpu-oracle-v1",
+  "status": "ORIGINAL_BF16_LAYER0_FFN_RESIDUAL_CPU_ORACLE_PASS_NOT_GPU",
+  "created_utc": "2026-11-11T06:20:28.855123+00:00",
+  "writer_sha256": "3b89e6e0de81b2a253bfc9d1420a3a32b464c280048f17fbc94a969fb7b0645a",
+  "original_checkpoint_packet": "<work-root>/xtx27-prefill/vtp24-original-ffn/layer0-20261111T061946347706Z/summary.json",
+  "original_checkpoint_packet_sha256": "a22fbab3ce1c1f69cbb112bccae3fc679e857fb90e6d194300ce4578837fc0c0",
+  "source_sha256": "24835c83ca756c4b90554162bc0af3f8401678eae7999819cf68a40ec8180c0f",
+  "compiled_binary_sha256": "357b7c92eef264a3172d9ce31013f0f715cd0c2ec1c372a0fe102a5ccfa5b506",
+  "layer": 0,
+  "rows": 4,
+  "outputs": {
+    "gate-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/gate-xtx0.bf16",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 40960,
+      "sha256": "dc83a2f1a8096bd702cac7fb17e4beb42f1400b40e431cc84ba0d6a7d8c09006"
+    },
+    "up-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/up-xtx0.bf16",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 40960,
+      "sha256": "cf3d6cd6cc69f4c21e225528a7e315801f08fd8fd328b82e4b3cb5cb20174a3f"
+    },
+    "mid-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/mid-xtx0.bf16",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 40960,
+      "sha256": "6951e2fadabb2b3f7ac0258d60c239e5009d08dfc6ab0fea634cde58300917da"
+    },
+    "partial-xtx0": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/partial-xtx0.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "b2ffb6ed9c1c92adc7e1b4e72bba4f5e4fa8d3f9898f385ae5cc0e1d8f270217"
+    },
+    "gate-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/gate-xtx1.bf16",
+      "shape": [
+        4,
+        4864
+      ],
+      "bytes": 38912,
+      "sha256": "a77853c3e09e8d64675e3dd5829b5b65a6001b8e95bf783b7eed99f858838b77"
+    },
+    "up-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/up-xtx1.bf16",
+      "shape": [
+        4,
+        4864
+      ],
+      "bytes": 38912,
+      "sha256": "637322f8fc393453bdef5cdacea2a0deb2fe79eae838d58a95ea43a0a21633a8"
+    },
+    "mid-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/mid-xtx1.bf16",
+      "shape": [
+        4,
+        4864
+      ],
+      "bytes": 38912,
+      "sha256": "fb5a02fac8bc4b2b6da0bbcf8a102703cd236bf2130b688a080246044845be38"
+    },
+    "partial-xtx1": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/partial-xtx1.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "d3d42b4286834005f046fb937aefda84e8a9df53da569d4ba78ade1796a3d157"
+    },
+    "gate-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/gate-r9700.bf16",
+      "shape": [
+        4,
+        7424
+      ],
+      "bytes": 59392,
+      "sha256": "e814c10c3b7e00ba23eb68b3cf17ea57b0898bda481f8717b0b68ab8acb4d893"
+    },
+    "up-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/up-r9700.bf16",
+      "shape": [
+        4,
+        7424
+      ],
+      "bytes": 59392,
+      "sha256": "7f83ec63636d995673e69413dc37e129a1175f4c259c004477c074bd4ca97553"
+    },
+    "mid-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/mid-r9700.bf16",
+      "shape": [
+        4,
+        7424
+      ],
+      "bytes": 59392,
+      "sha256": "2846fd7993973bc7a410ab4dc8c4a009878d8d39483b71f320aeb64256e4e219"
+    },
+    "partial-r9700": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/partial-r9700.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "5c0b097aaca22d145f12e240050a37625ea9434308c266b3b11f7b426b0b7578"
+    },
+    "original-ffn-reduced.f32": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/original-ffn-reduced.f32",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 81920,
+      "sha256": "8f497f3ee5901305d67ca93efc5a300a996af8daa19799c9b59cbcf57a0bd89d"
+    },
+    "original-layer0-post-ffn.bf16": {
+      "file": "<work-root>/xtx27-prefill/vtp24-original-ffn-cpu/layer0-m4-20261111T062028159412Z/original-layer0-post-ffn.bf16",
+      "shape": [
+        4,
+        5120
+      ],
+      "bytes": 40960,
+      "sha256": "7abd6cacaa16f86fb0895be76e593ea60ed3210b0b2da0b715c0f975ef45d8a4"
+    }
+  },
+  "upstream_GDN_output_is_CPU_reference": true,
+  "not_GPU": true,
+  "not_full_model": true,
+  "stdout": "status=ORIGINAL_BF16_QWEN3_8_LAYER0_FULL_FFN_CPU_ORACLE_PASS; M=4; BF16_gate_up_down=YES; physical_FFN_5120_4864_7424=YES; original_post_attention_layernorm=YES; original_GDN_output_residual_input=YES; ordered_F32_reduce=YES; BF16_residual=YES; max_abs_ffn_output=82.1734238; next_layer_input_produced=YES; GPU=NO; model64=NO"
+}

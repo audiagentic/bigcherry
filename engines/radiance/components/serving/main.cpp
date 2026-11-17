@@ -1,21 +1,24 @@
 #include "serving.h"
 
-#include <ctime>
-#include "manifest_writer.h"
+#include "generated/v2/serving_codec.h"
 #include "live_policy_ingest.h"
-#include "v2/manifest.h"
+#include "manifest_power.h"
+#include "manifest_writer.h"
 #include "plan_cache.h"
+#include "runtime_guards.h"
 #include "sdk_check.h"
 #include "session.h"
+#include "v2/manifest.h"
 #include "v2/p1_live_room.h"
 #include "v2/p1_producer.h"
 #include "v2/s8_rules.h"
-#include "generated/v2/serving_codec.h"
+#include <ctime>
 
 #include <filesystem>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <memory>
 #include <optional>
 #include <sstream>
 #include <stdexcept>
@@ -28,68 +31,115 @@ using bc::serving::Options;
 namespace fs = std::filesystem;
 
 void usage() {
-    std::cout << "bc-serve (RSC01 read-only)\n"
-                 "  --detect [--json] [--sys-root DIR]\n"
-                 "  --publish-v2-live-room [--site FILE] [--profile FILE] [--sys-root DIR]\n"
-                 "  --publish-v2-p1 FILE [--site FILE] [--profile FILE] [--sys-root DIR]\n"
-                 "      native P1-b producer: measuring-start paths, ownership, verified pin room; v2 inactive\n"
-                 "      publishes live host/cgroup/AMD pin bytes; v2 still inactive\n"
-                 "  --schema\n"
-                 "  --validate <site.toml> [profile.toml] [--set key=value]\n"
-                 "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
-                 "  --layouts FILE|DIR  layout definitions (repeatable; a directory gives its *.toml); default BIGCHERRY_LAYOUTS,\n"
-                 "                     a ':'-separated list. Layouts are run-time data: none is compiled in\n"
-                 "  --configs FILE|DIR  RSC12 configs (repeatable; default BIGCHERRY_CONFIGS): one file per model, named configs and\n"
-                 "                     variants (base = ...); their names select as layout.name. Given configs, layout files are\n"
-                 "                     read only from --layouts\n"
-                 "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
-                 "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
-                 "  calibration-ingest --from-log FILE --calibration FILE --manifest LAB_MANIFEST\n"
-                 "      validates one settled helper record against the strict lab manifest and atomically appends it\n"
+    std::cout
+        << "bc-serve (RSC01 read-only)\n"
+           "  --detect [--json] [--sys-root DIR]\n"
+           "  --publish-v2-live-room [--site FILE] [--profile FILE] [--sys-root DIR]\n"
+           "  --publish-v2-p1 FILE [--site FILE] [--profile FILE] [--sys-root DIR]\n"
+           "      native P1-b producer: measuring-start paths, ownership, verified pin room; v2 inactive\n"
+           "      publishes live host/cgroup/AMD pin bytes; v2 still inactive\n"
+           "  --schema\n"
+           "  --validate <site.toml> [profile.toml] [--set key=value]\n"
+           "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
+           "  --layouts FILE|DIR  layout definitions (repeatable; a directory gives its *.toml); default "
+           "BIGCHERRY_LAYOUTS,\n"
+           "                     a ':'-separated list. Layouts are run-time data: none is compiled in\n"
+           "  --configs FILE|DIR  RSC12 configs (repeatable; default BIGCHERRY_CONFIGS): one file per model, "
+           "named configs and\n"
+           "                     variants (base = ...); their names select as layout.name. Given configs, "
+           "layout files are\n"
+           "                     read only from --layouts\n"
+           "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
+           "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
+           "  calibration-ingest --from-log FILE --calibration FILE --manifest LAB_MANIFEST\n"
+           "      validates one settled helper record against the strict lab manifest and atomically appends "
+           "it\n"
 
-                 "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] [site/profile/set]\n"
-                 "      writes the v1 serving manifest for this configuration to OUT (an existing OUT is refused) from its\n"
-                 "      measured plan and the planner's owner map, and reads it back through the shared strict reader before it\n"
-                 "      stays; a miss in the plan cache exits 10. Starts no process. The engine admits the plan the manifest\n"
-                 "      carries (expected plan and kv_backing_floor): there is no other way to hand it one.\n"
-                 "      --measured-plan FILE --helpers-resident-mib N --engine-resident-mib M   the plan a measuring start produced\n"
-                 "                     (radiance --plan-memory FILE, helpers up) and the host memory the helpers and the engine held\n"
-                 "                     there (resident, MiB): the plan is checked against this configuration (host pool, host\n"
-                 "                     consumers) and stored in the plan cache with the two figures under this configuration's key,\n"
-                 "                     and the manifest is written from it. The host ledger counts both figures against MemAvailable\n"
-                 "                     as read now.\n"
-                 "      --unmeasured   (with --write-manifest; no --plan-cache or --engine-binary) writes the unmeasured manifest\n"
-                 "                     of the measuring start instead: owner map and settings, plan.state unmeasured, no plan. Only\n"
-                 "                     a measuring start (radiance --plan-memory, r3_moe_worker --measuring) accepts it; every\n"
-                 "                     serving start refuses it.\n"
-                 "      --live-policy FILE   lab-only JSON override of every spec.handoff.placement.live_policy member; present means\n"
-                 "                     the helper runs the live placement policy. Nothing is defaulted.\n"
-                 "      --calibration-run    the lab calibration start: lab profile with the explicit --live-policy and no\n"
-                 "                     experiment, so the measured plan is the production plan (launcher --calibrate).\n"
-                 "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then written with\n"
-                 "                     profile lab; a production manifest never carries one).\n"
-                 "  --plan-extra TEXT   (with --write-manifest) engine arguments the launcher passes through verbatim; part of the key\n"
-                 "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the cards\n"
-                 "  --rank-demand FILE     (with --measured-plan) the engine's --plan-memory-ranks record of the same start\n"
-                 "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they match\n"
-                 "No process is started by these commands.\n"
-                 "\n"
-                 "Serving sessions (RSC02; engine-only configs for now):\n"
-                 "  serve  --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root DIR] [--set k=v]\n"
-                 "         [--engine-binary PATH]   own one session in the foreground: measured manifest (measuring first on a\n"
-                 "         plan-cache miss), engine from it, /health, start canary, then serve until `stop`, a signal or a\n"
-                 "         child's exit; every child stopped and verified gone before it returns. Select the config with\n"
-                 "         --set layout.name='\"NAME\"' (or the site/profile). Exit 0 stopped, 96 canary, 97 plan, 98 busy\n"
-                 "  start  (serve's options)   serve detached; returns once the session runs (0) or has failed (1)\n"
-                 "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
-                 "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
+           "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] "
+           "[site/profile/set]\n"
+           "      writes the v1 serving manifest for this configuration to OUT (an existing OUT is refused) "
+           "from its\n"
+           "      measured plan and the planner's owner map, and reads it back through the shared strict "
+           "reader before it\n"
+           "      stays; a miss in the plan cache exits 10. Starts no process. The engine admits the plan the "
+           "manifest\n"
+           "      carries (expected plan and kv_backing_floor): there is no other way to hand it one.\n"
+           "      --measured-plan FILE --helpers-resident-mib N --engine-resident-mib M   the plan a measuring "
+           "start produced\n"
+           "                     (radiance --plan-memory FILE, helpers up) and the host memory the helpers and "
+           "the engine held\n"
+           "                     there (resident, MiB): the plan is checked against this configuration (host "
+           "pool, host\n"
+           "                     consumers) and stored in the plan cache with the two figures under this "
+           "configuration's key,\n"
+           "                     and the manifest is written from it. The host ledger counts both figures "
+           "against MemAvailable\n"
+           "                     as read now.\n"
+           "      --unmeasured   (with --write-manifest; no --plan-cache or --engine-binary) writes the "
+           "unmeasured manifest\n"
+           "                     of the measuring start instead: owner map and settings, plan.state "
+           "unmeasured, no plan. Only\n"
+           "                     a measuring start (radiance --plan-memory, r3_moe_worker --measuring) accepts "
+           "it; every\n"
+           "                     serving start refuses it.\n"
+           "      --live-policy FILE   lab-only JSON override of every spec.handoff.placement.live_policy "
+           "member; present means\n"
+           "                     the helper runs the live placement policy. Nothing is defaulted.\n"
+           "      --calibration-run    the lab calibration start: lab profile with the explicit --live-policy "
+           "and no\n"
+           "                     experiment, so the measured plan is the production plan (launcher "
+           "--calibrate).\n"
+           "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then "
+           "written with\n"
+           "                     profile lab; a production manifest never carries one).\n"
+           "  --plan-extra TEXT   (with --write-manifest) engine arguments the launcher passes through "
+           "verbatim; part of the key\n"
+           "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the "
+           "cards\n"
+           "  --rank-demand FILE     (with --measured-plan) the engine's --plan-memory-ranks record of the "
+           "same start\n"
+           "  --calibration-records FILE   (with --write-manifest) JSON array of P2 records; used where they "
+           "match\n"
+           "No process is started by these commands.\n"
+           "\n"
+           "Serving sessions (RSC02; engine-only configs for now):\n"
+           "  serve CONFIG --run-dir DIR [--configs FILE|DIR] [--site FILE] [--profile FILE] [--model-root "
+           "DIR] "
+           "[--set k=v]\n"
+           "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
+           "         --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B\n"
+           "             --calibration-store FILE   foreground finite ABBA workload, strict measured-drift "
+           "gate\n"
+           "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
+           "and verified\n"
+           "         owner GPU lease; own one session in the foreground: measured manifest (measuring first on "
+           "a\n"
+           "         plan-cache miss), engine from it, /health, start canary, then serve until `stop`, a "
+           "signal or a\n"
+           "         child's exit; every child stopped and verified gone before it returns. Select the config "
+           "with\n"
+           "         positional CONFIG selects the RSC12 named config. Unchanged static inputs reuse an "
+           "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
+           "96 canary, 97 plan, 98 busy\n"
+           "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
+           "  start  --manifest FILE --run-dir DIR [--configs FILE|DIR]   replay exact strict-v2 bytes "
+           "after current static/live/power checks; refuses changed build/model/devices, missing "
+           "attestation or gates; never rewrites FILE\n"
+           "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
+           "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
 
 // RSC02: serve | start | stop | status
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary;
+    fs::path run_dir, engine_binary, stored_manifest;
+    std::string config_name;
+    std::string power_profile = "stock";
+    bool explicit_power_profile = false;
+    fs::path live_policy_file, prompts_a, prompts_b, calibration_store;
+    bool calibration_run = false;
+    bool allow_power_apply = false;
     bool json = false;
     std::vector<std::string> passed;   // the options as given, for `start` to hand to its detached `serve`
     for (int i = 2; i < argc; ++i) {
@@ -114,11 +164,55 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         else if (arg == "--model-root") opts.model_root = need();
         else if (arg == "--calibration") opts.calibration_cache = need();
         else if (arg == "--set") opts.sets.push_back(need());
-        else if (arg == "--engine-binary") engine_binary = need();
-        else throw std::runtime_error(cmd + ": unknown option " + arg);
+        else if (arg == "--manifest") {
+            stored_manifest = need();
+        } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
+            config_name = arg;
+            passed.push_back(arg);
+        } else if (arg == "--engine-binary") {
+            engine_binary = need();
+        } else if (arg == "--power-profile") {
+            power_profile = need();
+            explicit_power_profile = true;
+        } else if (arg == "--calibration-run") {
+            calibration_run = true;
+            passed.push_back(arg);
+        } else if (arg == "--live-policy") {
+            live_policy_file = need();
+        } else if (arg == "--calibration-prompts-a") {
+            prompts_a = need();
+        } else if (arg == "--calibration-prompts-b") {
+            prompts_b = need();
+        } else if (arg == "--calibration-store") {
+            calibration_store = need();
+        } else if (arg == "--allow-power-apply") {
+            allow_power_apply = true;
+            passed.push_back(arg);
+        } else {
+            std::string message = cmd;
+            message += ": unknown option ";
+            message += arg;
+            throw std::runtime_error(message);
+        }
     }
     if (run_dir.empty()) throw std::runtime_error(cmd + ": --run-dir DIR is required (the session's lock, socket, record, logs)");
+    if (!config_name.empty() && !stored_manifest.empty())
+        throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
+    if (!config_name.empty())
+        opts.sets.push_back("layout.name=" + Json(config_name).dump());
+    if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
+        throw std::runtime_error("--manifest must name an existing regular file");
     run_dir = fs::absolute(run_dir);
+    if (calibration_run) {
+        if (cmd != "serve" || live_policy_file.empty() || prompts_a.empty() || prompts_b.empty() ||
+            calibration_store.empty())
+            throw std::runtime_error(
+                "lab calibration needs foreground serve --calibration-run "
+                "--live-policy, --calibration-prompts-a, --calibration-prompts-b and --calibration-store");
+    } else if (!live_policy_file.empty() || !prompts_a.empty() || !prompts_b.empty() ||
+               !calibration_store.empty()) {
+        throw std::runtime_error("lab policy/workload options require --calibration-run");
+    }
     if (cmd == "stop") {
         const auto reply = ss::control(run_dir, "stop", std::chrono::minutes(10));
         if (!reply) {
@@ -186,11 +280,59 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     }
     ss::EnginePlanInputs inputs;
     inputs.options = opts;
+    inputs.stored_manifest = std::move(stored_manifest);
+    inputs.named_config = config_name;
+    inputs.explicit_power_profile = explicit_power_profile;
+    inputs.calibration_prompts_a = prompts_a;
+    inputs.calibration_prompts_b = prompts_b;
+    inputs.calibration_store = calibration_store;
+
     inputs.self = self;
     inputs.engine_binary = engine_binary;
+    inputs.power_profile = power_profile;
+    inputs.live_policy_file = std::move(live_policy_file);
+    inputs.calibration_run = calibration_run;
+    // Hardware and durable records live through the entire foreground owner.
+    // A real write needs BOTH an explicit opt-in and a live ancestor-bound lease.
+    bc::serving::power::LinuxHardware hardware(opts.sys_root);
+    bc::serving::power::DiskRecords records(run_dir / "power-journals", run_dir / "power-receipts");
+    bc::serving::power::LinuxSensor sensor(opts.sys_root / "sys");
+    auto power = std::make_shared<ss::ManifestPower>(
+        hardware, records, sensor, [] { return ss::owner_has_gpu_lease(); }, allow_power_apply);
     ss::Session session;
+    session.power_hook.begin_manifest = [power](const fs::path& path, bc::serving::v2::PlanUse use) {
+        return power->begin(path, use);
+    };
+    session.power_hook.verify_serving = [power](const fs::path& path) { return power->verify_serving(path); };
+    session.power_hook.gfxoff_window = [power](bool idle) {
+        return power->capture(idle ? bc::serving::power::WindowPhase::engine_loaded_idle
+                                   : bc::serving::power::WindowPhase::no_process);
+    };
+    session.power_hook.verified_exit = [power] { power->children_verified(); };
+    session.power_hook.restore = [power] { return power->finish(); };
+    auto guards = std::make_shared<ss::RuntimeGuards>(calibration_run);
+    const ss::Canary canary = session.canary;
+    const auto timeout = session.timing.canary_timeout;
+    session.runtime_guard = [guards, canary, timeout](const ss::EngineStart& plan,
+                                                      const fs::path& engine_log) -> bc::serving::v2::Status {
+        ss::RuntimeGuards::Retry retry = [port = plan.port, canary, timeout]() -> bc::serving::v2::Status {
+            if (const auto why = ss::canary(port, canary.prompt, canary.expect, timeout))
+                return bc::serving::v2::make_error(bc::serving::v2::ConfigErrorCode::admission_refused,
+                                                   "session.runtime.mtp.retry", *why);
+            return std::nullopt;
+        };
+        return guards->startup(plan, engine_log, retry);
+    };
+    session.runtime_watch = [guards] { return guards->poll(); };
+    if (calibration_run)
+        session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
-    session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) { return ss::plan_engine_only(inputs, rd, hooks); };
+    if (calibration_run)
+        session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
+    session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
+        return inputs.stored_manifest.empty() ? ss::plan_engine_only(inputs, rd, hooks)
+                                              : ss::replay_stored_manifest(inputs, rd, hooks);
+    };
     return ss::serve(session);
 }
 

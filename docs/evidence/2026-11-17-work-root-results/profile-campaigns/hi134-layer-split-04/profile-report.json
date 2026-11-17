@@ -1,0 +1,1282 @@
+{
+  "controls": [
+    {
+      "label": "A",
+      "reps": 10,
+      "tg_tps_mean": 36.69064858565652,
+      "tg_tps_stddev": 6.527481455691987,
+      "tg_tps_values": [
+        34.507437251534604,
+        32.46379006278362,
+        43.461587544400096,
+        49.352629731986305,
+        36.60865819617449,
+        39.025339606721026,
+        29.354146913328265,
+        32.66953792833841,
+        28.750801941080553,
+        40.71255668021779
+      ]
+    },
+    {
+      "label": "B",
+      "reps": 10,
+      "tg_tps_mean": 39.493716180949114,
+      "tg_tps_stddev": 7.031132220540061,
+      "tg_tps_values": [
+        48.82387670122326,
+        37.2346486291467,
+        41.74243333202968,
+        28.051982399178048,
+        39.39761671124001,
+        30.149936113013116,
+        36.873959830226966,
+        47.2165173464315,
+        47.312652990795904,
+        38.13353775620596
+      ]
+    },
+    {
+      "label": "C",
+      "reps": 10,
+      "tg_tps_mean": 42.03391031582219,
+      "tg_tps_stddev": 2.958222378328222,
+      "tg_tps_values": [
+        38.00155901949347,
+        46.214543023429854,
+        38.94484884102032,
+        39.553073473845295,
+        40.54731408274907,
+        45.34990634288179,
+        40.53328355909401,
+        43.63726833586552,
+        42.16486478495836,
+        45.39244169488421
+      ]
+    },
+    {
+      "label": "D",
+      "reps": 10,
+      "tg_tps_mean": 39.06114470288609,
+      "tg_tps_stddev": 5.516678434632077,
+      "tg_tps_values": [
+        42.12855113722684,
+        32.45093842416769,
+        36.71223807386991,
+        43.63316740782135,
+        38.170980180338034,
+        32.54919422145091,
+        37.55361751466634,
+        46.893191856168,
+        33.752321479375766,
+        46.76724673377603
+      ]
+    },
+    {
+      "label": "E",
+      "reps": 10,
+      "tg_tps_mean": 38.53959511071414,
+      "tg_tps_stddev": 6.76347592925685,
+      "tg_tps_values": [
+        44.91391920350367,
+        31.321710086629537,
+        35.52852874050381,
+        45.14428018801285,
+        49.03081495501168,
+        30.081455722000616,
+        39.176781633895075,
+        37.98332258674977,
+        42.113084739976635,
+        30.10205325085779
+      ]
+    }
+  ],
+  "cpu": {
+    "available": false,
+    "reason": "perf is not usable in this environment yet (see HI133)"
+  },
+  "gpu_passes": [
+    {
+      "agent_ids_seen": [
+        "Agent 1",
+        "Agent 2",
+        "Agent 4"
+      ],
+      "capture_status": "complete",
+      "expected_gpu_count": 3,
+      "expected_reduction_provider": "meta",
+      "kernels": [
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 13635,
+          "mean_us": 91.90414132746608,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 5, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 206.518,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 1253112.967,
+          "vgpr_count": 40
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 544,
+          "mean_us": 608.9032959558823,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 1, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 2688.497,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 331243.393,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1000,
+          "mean_us": 81.857977,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 2, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 195.718,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 81857.977,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 324,
+          "mean_us": 213.62496604938272,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 1, true, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 381.197,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 69214.489,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 504,
+          "mean_us": 95.24764682539683,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 6, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 218.278,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 48004.814,
+          "vgpr_count": 48
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 504,
+          "mean_us": 83.21207341269842,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 4, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 200.958,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 41938.885,
+          "vgpr_count": 40
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 16511,
+          "mean_us": 2.1364320150202896,
+          "name": "quantize_q8_1(float const*, void*, long, long, long, long, long, unsigned int, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 3.32,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 35274.629,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1488,
+          "mean_us": 22.170327284946236,
+          "name": "void gated_delta_net_cuda<128, false, true>(float const*, float const*, float const*, float const*, float const*, float const*, float*, float*, long, long, long, long, long, long, long, long, long, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, float, long, int)",
+          "p95_us": 29.72,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 32989.447,
+          "vgpr_count": 40
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1488,
+          "mean_us": 19.3353561827957,
+          "name": "void concat_non_cont<unsigned int, 0>(char const*, char const*, char*, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long)",
+          "p95_us": 27.04,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 28771.01,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 8074,
+          "mean_us": 2.97096618776319,
+          "name": "void cpy_scalar<&(void cpy_1_scalar<float, float>(char const*, char*))>(char const*, char*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+          "p95_us": 4.84,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 23987.581,
+          "vgpr_count": 32
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 4689,
+          "mean_us": 4.921713371721049,
+          "name": "void rms_norm_f32<1024, true, false>(float const*, float*, int, long, long, long, float, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 7.0,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 23077.914,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 30,
+          "mean_us": 593.9768,
+          "name": "__amd_rocclr_fillBufferAligned",
+          "p95_us": 2776.811,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 17819.304,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 5516,
+          "mean_us": 2.454296047860769,
+          "name": "void k_bin_bcast<&(op_add(float, float)), float, float, float, float const*>(float const*, float const*, float*, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, float const*)",
+          "p95_us": 3.72,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 13537.897,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1488,
+          "mean_us": 9.079532930107526,
+          "name": "void k_get_rows_float_vec<float>(float const*, int const*, float*, long, long, HIP_vector_type<unsigned int, 3u>, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+          "p95_us": 16.16,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 13510.345,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1474,
+          "mean_us": 5.903308005427409,
+          "name": "__amd_rocclr_copyBuffer",
+          "p95_us": 8.639,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 8701.476,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 3502,
+          "mean_us": 2.4063326670474017,
+          "name": "void unary_gated_op_kernel<&(op_silu(float)), float>(float const*, float const*, float*, long, long, long, long)",
+          "p95_us": 3.68,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 8426.977,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 2976,
+          "mean_us": 2.5554243951612903,
+          "name": "void l2_norm_f32<32>(float const*, float*, int, long, long, long, float)",
+          "p95_us": 4.04,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 7604.943,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 2756,
+          "mean_us": 2.6129096516690855,
+          "name": "void rms_norm_f32<256, true, false>(float const*, float*, int, long, long, long, float, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 4.0,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 7201.179,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 476,
+          "mean_us": 13.401592436974791,
+          "name": "void flash_attn_tile<256, 256, 8, 2, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 19.64,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 6379.158,
+          "vgpr_count": 144
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1268,
+          "mean_us": 4.640942429022082,
+          "name": "void rope_multi<true, false, float>(float const*, float*, int, int, int, int, int, int, int, int, int, int, int const*, float, float, float, rope_corr_dims, float, float const*, mrope_sections, bool)",
+          "p95_us": 10.12,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 5884.715,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1488,
+          "mean_us": 3.534304435483871,
+          "name": "void ssm_conv_f32<true, 128ul, 4ul>(float const*, float const*, float const*, int, int, int, int, float*, int, int, int, long)",
+          "p95_us": 5.16,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 5259.045,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1488,
+          "mean_us": 3.18408938172043,
+          "name": "void k_bin_bcast<&(op_mul(float, float)), float, float, float, float const*>(float const*, float const*, float*, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, float const*)",
+          "p95_us": 4.4,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 4737.925,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 108,
+          "mean_us": 42.15302777777778,
+          "name": "void flash_attn_ext_vec<256, 1, (ggml_type)8, (ggml_type)8, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 46.72,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 4552.527,
+          "vgpr_count": 160
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1627,
+          "mean_us": 2.739700676090965,
+          "name": "void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, HIP_vector_type<unsigned int, 3u>, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+          "p95_us": 4.4,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 4457.493,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1488,
+          "mean_us": 1.820875,
+          "name": "void unary_op_kernel<&(op_softplus(float)), float>(float const*, float*, int)",
+          "p95_us": 2.72,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 2709.462,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1488,
+          "mean_us": 1.7267567204301077,
+          "name": "void unary_op_kernel<&(op_sigmoid(float)), float>(float const*, float*, int)",
+          "p95_us": 2.56,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 2569.414,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 992,
+          "mean_us": 2.2650635080645163,
+          "name": "void k_set_rows<float, long, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 3.52,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 2246.943,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 525,
+          "mean_us": 3.877904761904762,
+          "name": "void flash_attn_combine_results<256>(float const*, HIP_vector_type<float, 2u> const*, float*, int)",
+          "p95_us": 5.8,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 2035.9,
+          "vgpr_count": 56
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 288,
+          "mean_us": 5.296465277777778,
+          "name": "scale_f32(float const*, float*, float, float, long)",
+          "p95_us": 9.92,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 1525.382,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 634,
+          "mean_us": 2.054938485804416,
+          "name": "void unary_gated_op_kernel<&(op_sigmoid(float)), float>(float const*, float const*, float*, long, long, long, long)",
+          "p95_us": 3.8,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 1302.831,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 276,
+          "mean_us": 3.418677536231884,
+          "name": "_ZL16k_set_rows_quantIl10block_q8_0Li32ETnPFvPKfPT0_EXadL_ZL23quantize_f32_q8_0_blockS2_PS0_EEEvS2_PKT_S4_llllllllllllll15HIP_vector_typeIjLj3EESC_SC_SC_SC_",
+          "p95_us": 5.32,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 943.555,
+          "vgpr_count": 80
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 276,
+          "mean_us": 2.303460144927536,
+          "name": "void fwht_cuda<256>(float const*, float*, long, float)",
+          "p95_us": 3.48,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 635.755,
+          "vgpr_count": 32
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 109,
+          "mean_us": 5.28545871559633,
+          "name": "pad_f32(float const*, unsigned long, unsigned long, unsigned long, unsigned long, float*, int, int, int, int, int, int, int, int, int, int, int, int, bool)",
+          "p95_us": 6.76,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 576.115,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 276,
+          "mean_us": 1.8486847826086958,
+          "name": "void fwht_cuda<64>(float const*, float*, long, float)",
+          "p95_us": 2.72,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 510.237,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 32,
+          "mean_us": 10.02984375,
+          "name": "void flash_attn_tile<256, 256, 2, 2, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 14.08,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 320.955,
+          "vgpr_count": 240
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 138,
+          "mean_us": 2.1854927536231883,
+          "name": "void concat_cont<unsigned int, 0>(unsigned int const*, unsigned int const*, unsigned int*, long, long, long, long, long, long)",
+          "p95_us": 3.56,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 301.598,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 58,
+          "mean_us": 4.539948275862069,
+          "name": "void dequantize_block_q8_0_f16<false>(void const*, __half*, long)",
+          "p95_us": 6.32,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 263.317,
+          "vgpr_count": 64
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 17,
+          "mean_us": 13.543470588235294,
+          "name": "void flash_attn_tile<256, 256, 4, 2, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 19.52,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 230.239,
+          "vgpr_count": 240
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 1,
+          "mean_us": 33.48,
+          "name": "void flash_attn_ext_vec<256, 2, (ggml_type)8, (ggml_type)8, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 33.48,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 33.48,
+          "vgpr_count": 256
+        }
+      ],
+      "label": "1",
+      "output_dir": "<home>/.cache/bigcherry/profile-campaigns/hi134-layer-split-04/gpu-1",
+      "rccl_activity_seen": false
+    },
+    {
+      "agent_ids_seen": [
+        "Agent 1",
+        "Agent 2",
+        "Agent 4"
+      ],
+      "capture_status": "complete",
+      "expected_gpu_count": 3,
+      "expected_reduction_provider": "meta",
+      "kernels": [
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 10100,
+          "mean_us": 91.9719000990099,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 5, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 206.52,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 928916.191,
+          "vgpr_count": 40
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 404,
+          "mean_us": 614.3524331683168,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 1, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 2689.467,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 248198.383,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1000,
+          "mean_us": 81.35879,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 2, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 195.879,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 81358.79,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 240,
+          "mean_us": 213.6705041666667,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 1, true, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 381.359,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 51280.921,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 504,
+          "mean_us": 96.12797023809524,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 6, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 217.639,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 48448.497,
+          "vgpr_count": 48
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 504,
+          "mean_us": 83.47253968253969,
+          "name": "void mul_mat_vec_q<(ggml_type)8, 4, false, false, false, 0, 0>(void const*, void const*, int const*, ggml_cuda_mm_fusion_args_device, float*, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int)",
+          "p95_us": 205.519,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 42070.16,
+          "vgpr_count": 40
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 12752,
+          "mean_us": 2.1657285915934756,
+          "name": "quantize_q8_1(float const*, void*, long, long, long, long, long, unsigned int, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 3.36,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 27617.371,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1152,
+          "mean_us": 22.038219618055553,
+          "name": "void gated_delta_net_cuda<128, false, true>(float const*, float const*, float const*, float const*, float const*, float const*, float*, float*, long, long, long, long, long, long, long, long, long, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, float, long, int)",
+          "p95_us": 29.32,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 25388.029,
+          "vgpr_count": 40
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1152,
+          "mean_us": 19.346962673611113,
+          "name": "void concat_non_cont<unsigned int, 0>(char const*, char const*, char*, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long, long, long, long, long, unsigned long, unsigned long, unsigned long, unsigned long)",
+          "p95_us": 26.96,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 22287.701,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 6247,
+          "mean_us": 3.0818680966864096,
+          "name": "void cpy_scalar<&(void cpy_1_scalar<float, float>(char const*, char*))>(char const*, char*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, long)",
+          "p95_us": 4.8,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 19252.43,
+          "vgpr_count": 32
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 3611,
+          "mean_us": 4.930801163112711,
+          "name": "void rms_norm_f32<1024, true, false>(float const*, float*, int, long, long, long, float, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 6.92,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 17805.123,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 30,
+          "mean_us": 589.8367666666667,
+          "name": "__amd_rocclr_fillBufferAligned",
+          "p95_us": 2410.988,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 17695.103,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1152,
+          "mean_us": 9.393792534722222,
+          "name": "void k_get_rows_float_vec<float>(float const*, int const*, float*, long, long, HIP_vector_type<unsigned int, 3u>, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+          "p95_us": 16.56,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 10821.649,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 4270,
+          "mean_us": 2.434250819672131,
+          "name": "void k_bin_bcast<&(op_add(float, float)), float, float, float, float const*>(float const*, float const*, float*, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, float const*)",
+          "p95_us": 3.56,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 10394.251,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1159,
+          "mean_us": 5.774549611734254,
+          "name": "__amd_rocclr_copyBuffer",
+          "p95_us": 8.52,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 6692.703,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 2711,
+          "mean_us": 2.349578753227591,
+          "name": "void unary_gated_op_kernel<&(op_silu(float)), float>(float const*, float const*, float*, long, long, long, long)",
+          "p95_us": 3.88,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 6369.708,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 2304,
+          "mean_us": 2.548641927083333,
+          "name": "void l2_norm_f32<32>(float const*, float*, int, long, long, long, float)",
+          "p95_us": 4.0,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 5872.071,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 2126,
+          "mean_us": 2.664507996237065,
+          "name": "void rms_norm_f32<256, true, false>(float const*, float*, int, long, long, long, float, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, float const*, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 3.96,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 5664.744,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 357,
+          "mean_us": 13.845224089635854,
+          "name": "void flash_attn_tile<256, 256, 8, 2, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 19.68,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 4942.745,
+          "vgpr_count": 144
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 974,
+          "mean_us": 4.768195071868583,
+          "name": "void rope_multi<true, false, float>(float const*, float*, int, int, int, int, int, int, int, int, int, int, int const*, float, float, float, rope_corr_dims, float, float const*, mrope_sections, bool)",
+          "p95_us": 9.96,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 4644.222,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1152,
+          "mean_us": 3.4966276041666666,
+          "name": "void ssm_conv_f32<true, 128ul, 4ul>(float const*, float const*, float const*, int, int, int, int, float*, int, int, int, long)",
+          "p95_us": 5.2,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 4028.115,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1152,
+          "mean_us": 3.248671875,
+          "name": "void k_bin_bcast<&(op_mul(float, float)), float, float, float, float const*>(float const*, float const*, float*, unsigned int, unsigned int, unsigned int, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, float const*)",
+          "p95_us": 4.44,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 3742.47,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1256,
+          "mean_us": 2.7842269108280253,
+          "name": "void k_get_rows_float<float, float>(float const*, int const*, float*, long, long, HIP_vector_type<unsigned int, 3u>, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long, unsigned long)",
+          "p95_us": 4.44,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 3496.989,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 80,
+          "mean_us": 42.8333125,
+          "name": "void flash_attn_ext_vec<256, 1, (ggml_type)8, (ggml_type)8, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 46.8,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 3426.665,
+          "vgpr_count": 160
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1152,
+          "mean_us": 1.8338177083333334,
+          "name": "void unary_op_kernel<&(op_softplus(float)), float>(float const*, float*, int)",
+          "p95_us": 2.68,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 2112.558,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 1152,
+          "mean_us": 1.781282986111111,
+          "name": "void unary_op_kernel<&(op_sigmoid(float)), float>(float const*, float*, int)",
+          "p95_us": 2.64,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 2052.038,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 768,
+          "mean_us": 2.2962981770833335,
+          "name": "void k_set_rows<float, long, __half>(float const*, long const*, __half*, long, long, long, long, long, long, long, long, long, long, long, long, long, long, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>, HIP_vector_type<unsigned int, 3u>)",
+          "p95_us": 3.52,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 1763.557,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 406,
+          "mean_us": 3.9117167487684728,
+          "name": "void flash_attn_combine_results<256>(float const*, HIP_vector_type<float, 2u> const*, float*, int)",
+          "p95_us": 5.88,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 1588.157,
+          "vgpr_count": 56
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 288,
+          "mean_us": 5.299013888888889,
+          "name": "scale_f32(float const*, float*, float, float, long)",
+          "p95_us": 10.0,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 1526.116,
+          "vgpr_count": 8
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 487,
+          "mean_us": 2.3250841889117044,
+          "name": "void unary_gated_op_kernel<&(op_sigmoid(float)), float>(float const*, float const*, float*, long, long, long, long)",
+          "p95_us": 3.84,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 1132.316,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 206,
+          "mean_us": 3.4695048543689317,
+          "name": "_ZL16k_set_rows_quantIl10block_q8_0Li32ETnPFvPKfPT0_EXadL_ZL23quantize_f32_q8_0_blockS2_PS0_EEEvS2_PKT_S4_llllllllllllll15HIP_vector_typeIjLj3EESC_SC_SC_SC_",
+          "p95_us": 5.44,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 714.718,
+          "vgpr_count": 80
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 206,
+          "mean_us": 2.4194126213592235,
+          "name": "void fwht_cuda<256>(float const*, float*, long, float)",
+          "p95_us": 3.68,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 498.399,
+          "vgpr_count": 32
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 206,
+          "mean_us": 2.3316407766990292,
+          "name": "void fwht_cuda<64>(float const*, float*, long, float)",
+          "p95_us": 2.88,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 480.318,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 81,
+          "mean_us": 5.300197530864197,
+          "name": "pad_f32(float const*, unsigned long, unsigned long, unsigned long, unsigned long, float*, int, int, int, int, int, int, int, int, int, int, int, int, bool)",
+          "p95_us": 6.839,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 429.316,
+          "vgpr_count": 16
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 32,
+          "mean_us": 10.08496875,
+          "name": "void flash_attn_tile<256, 256, 2, 2, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 14.36,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 322.719,
+          "vgpr_count": 240
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 103,
+          "mean_us": 2.2927961165048543,
+          "name": "void concat_cont<unsigned int, 0>(unsigned int const*, unsigned int const*, unsigned int*, long, long, long, long, long, long)",
+          "p95_us": 3.84,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 236.158,
+          "vgpr_count": 24
+        },
+        {
+          "agent_ids": [
+            "Agent 1",
+            "Agent 2",
+            "Agent 4"
+          ],
+          "calls": 17,
+          "mean_us": 13.828117647058823,
+          "name": "void flash_attn_tile<256, 256, 4, 2, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 19.96,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 235.078,
+          "vgpr_count": 240
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 44,
+          "mean_us": 4.691772727272727,
+          "name": "void dequantize_block_q8_0_f16<false>(void const*, __half*, long)",
+          "p95_us": 6.6,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 206.438,
+          "vgpr_count": 64
+        },
+        {
+          "agent_ids": [
+            "Agent 4"
+          ],
+          "calls": 1,
+          "mean_us": 39.56,
+          "name": "void flash_attn_ext_vec<256, 2, (ggml_type)8, (ggml_type)8, false>(char const*, char const*, char const*, char const*, char const*, int const*, float*, HIP_vector_type<float, 2u>*, float, float, float, float, unsigned int, float, int, HIP_vector_type<unsigned int, 3u>, int, int, int, int, int, int, int, int, int, int, int, long, int, int, long, int, int, int, int, int, long)",
+          "p95_us": 39.56,
+          "scratch_size": 0,
+          "sgpr_count": 128,
+          "total_us": 39.56,
+          "vgpr_count": 256
+        }
+      ],
+      "label": "2",
+      "output_dir": "<home>/.cache/bigcherry/profile-campaigns/hi134-layer-split-04/gpu-2",
+      "rccl_activity_seen": false
+    }
+  ],
+  "receipt": {
+    "binary_path": "<home>/.cache/bigcherry/artifacts-store/builds/9e4ec712b0a76a2a7c819913988a8bad/5efae151ce308583c3ae1dd43fd91444/llama-server",
+    "build_plan_id": "5efae151ce308583c3ae1dd43fd91444",
+    "campaign_run_id": "hi134-layer-split-04",
+    "control_reps": 10,
+    "devices": "0,1,3",
+    "environment_note": "control block means spread 13.6% across the run (threshold 5%) -- profiling artifacts are still real and usable diagnostically, but no comparative performance conclusion should be drawn from this run alone",
+    "environment_stable": false,
+    "expected_gpu_count": 3,
+    "finished_at": "2026-08-27T18:19:38Z",
+    "lane_build": "control",
+    "lane_source": "bigcherry-native",
+    "model_path": "<models-root>/qwen3.8-27b/gguf/mtp/Qwen3.8-27B-Q8_0.gguf",
+    "platform_name": "linux-multi",
+    "profile_passes": 2,
+    "rocprofv3_version": "version: 1.1.0\n        git_revision: 97f5574fe2fdc7bef44fb01545347912ee9f1779\n        library_arch: x86_64-linux-gnu\n         system_name: Linux\n    system_processor: x86_64\n      system_version: 6.8.0-85-generic\n         compiler_id: GNU\n    compiler_version: 13.3.0\n        rocm_version: 7.2.4",
+    "runtime_profile_name": "hi134-layer-split-control",
+    "schema_version": 1,
+    "source_slice_id": "9e4ec712b0a76a2a7c819913988a8bad",
+    "started_at": "2026-08-27T18:16:32Z",
+    "workload_label": "hi134-layer-split-013-negative-control"
+  }
+}

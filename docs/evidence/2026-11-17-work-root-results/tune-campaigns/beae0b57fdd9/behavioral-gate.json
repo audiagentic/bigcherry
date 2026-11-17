@@ -1,0 +1,8 @@
+{
+  "behavioral_gate_contract_version": "hi143-v1",
+  "hard_fail": false,
+  "needs_throughput_adjudication": false,
+  "runtime_profile_digest": "ecd10cef3101a71fec73739a42ef0e6bba8dc249e412b8eb508b35a18decad0a",
+  "runtime_profile_name": "production-safe-single",
+  "vectors": []
+}

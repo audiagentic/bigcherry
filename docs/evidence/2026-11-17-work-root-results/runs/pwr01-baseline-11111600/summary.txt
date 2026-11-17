@@ -1,0 +1,14 @@
+commit b4440571dc1282074405d1af76ba16f75797d37c docs(architecture): audit code reduction and patch externalization (#842)
+CPU package energy not readable (/sys/class/powercap/intel-rapl:0/energy_uj): CPU package power left out
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+gpu0               11.0         87.0        130.0         11.0
+gpu1               17.0         90.0        133.0         14.0
+gpu2               18.0        213.0        211.0         18.0
+gpu3               12.0         75.0        145.0         12.0
+total              58.0        465.0        619.0         55.0
+decode: 58368 tokens in 604.5 s = 96.6 tok/s, 4.816 J/token (all devices)
+prefill: 1814563 tokens in 600.6 s = 3021.3 tok/s, 0.205 J/token (all devices)
+decode text: 8 distinct of 57 responses, reference 43d604ae4ffbb3c6

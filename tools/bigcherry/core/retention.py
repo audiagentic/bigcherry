@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import calendar
 import os
+import stat
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -104,29 +105,47 @@ def inspect_workspace(root: Path, *, measure: bool = True) -> Inventory:
     inv = Inventory(root)
     runs = root / "runs"
     if runs.is_dir() and not runs.is_symlink():
+        def add_run(d: Path, kind: str) -> None:
+            e = Entry(d, kind, d.name)
+            try:
+                if kind == "legacy":
+                    # Never read a flat symlink or special file as an adoption.
+                    from . import legacy_runs
+                    try:
+                        mode = os.lstat(d / rm.MANIFEST_NAME).st_mode
+                    except FileNotFoundError as exc:
+                        raise rm.ManifestError("flat run has no adopted manifest") from exc
+                    if not stat.S_ISREG(mode):
+                        raise rm.ManifestError("flat run manifest is a symlink or special file")
+                m = rm.read_manifest(d)
+                if kind == "legacy":
+                    try:
+                        legacy_runs.verify_adoption(root, d.name, m)
+                    except (legacy_runs.LegacyRunError, OSError) as exc:
+                        raise rm.ManifestError(f"untrusted flat run adoption: {exc}") from exc
+                if m["kind"] != kind or m["run_id"] != d.name:
+                    e.problem = "manifest names a different kind or run id than its directory"
+                else:
+                    e.manifest = m
+            except rm.ManifestError as exc:
+                e.problem = str(exc)
+            if measure:
+                e.size_bytes = dir_size(d)
+            inv.runs.append(e)
+
         for kind_dir in sorted(runs.iterdir()):
             if not kind_dir.is_dir() or kind_dir.is_symlink():
                 inv.unknown.append(kind_dir)
                 continue
-            if kind_dir.name not in rm.RUN_KINDS:
-                inv.unknown.append(kind_dir)          # a directory the layout does not define: reported, never touched
+            if kind_dir.name not in rm.NESTED_RUN_KINDS:
+                # A flat pre-manifest run; unadopted/corrupt ones remain GC blockers.
+                add_run(kind_dir, "legacy")
                 continue
             for d in sorted(kind_dir.iterdir()):
                 if not d.is_dir() or d.is_symlink():
                     inv.unknown.append(d)
                     continue
-                e = Entry(d, kind_dir.name, d.name)
-                try:
-                    m = rm.read_manifest(d)
-                    if m["kind"] != kind_dir.name or m["run_id"] != d.name:
-                        e.problem = "manifest names a different kind or run id than its directory"
-                    else:
-                        e.manifest = m
-                except rm.ManifestError as exc:
-                    e.problem = str(exc)
-                if measure:
-                    e.size_bytes = dir_size(d)
-                inv.runs.append(e)
+                add_run(d, kind_dir.name)
     for name, attr in (("builds", "builds"), ("sources", "sources")):
         p = root / name
         if p.is_dir():

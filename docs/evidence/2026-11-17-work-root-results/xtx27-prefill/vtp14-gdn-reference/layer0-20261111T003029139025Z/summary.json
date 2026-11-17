@@ -1,0 +1,65 @@
+{
+  "status": "CARD_FREE_QWEN_GDN_MATH_AND_SHARD_CONTINUITY_PASS_NOT_GPU",
+  "source_sha256": "eb85044dd7baf0b8401a3769bbf1e65f3bfc7b79432ff75f606a103d101ecb99",
+  "schema": "vtp14-gdn-partial-real-bf16-math-v1",
+  "layer": 0,
+  "rows": 2,
+  "source": "original BF16 conv1d, A_log, dt_bias, norm; synthetic projected QKV/a/b/z",
+  "checkpoint_source_sha256": "803a2591c4f5e7b1c2a7bdbbad78bbd0b68acdd0deab9552933ee7c337489dad",
+  "parameter_hashes": {
+    "index_sha256": "77042094076611b69791a610065f28b7013b8c621795fa86ddccc8bac7d1b9df",
+    "config_sha256": "191e0af232104ed8b65258cf3fb2b842e288008baca7633c11b82a1ac7203aab",
+    "A_log": {
+      "source": "model.language_model.layers.0.linear_attn.A_log",
+      "sha256": "429d53cd15ec0ea1a2d638100c3bbdf8d53505e69110fb17ee09d055c1fdbd34",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        48
+      ]
+    },
+    "dt_bias": {
+      "source": "model.language_model.layers.0.linear_attn.dt_bias",
+      "sha256": "969ce6b2149d20f0c365373fd89613167e373905c15f0e1cf5af62adf52228de",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        48
+      ]
+    },
+    "norm": {
+      "source": "model.language_model.layers.0.linear_attn.norm.weight",
+      "sha256": "70d11f294923a94aac97bedd27e596dbf496746c6b9e3b2b7c38798a0d2522cc",
+      "header_sha256": "f4cbd9978d80810a0e91ff1b9eee98afb230fdc94ef59550954079df3752ca05",
+      "shape": [
+        128
+      ]
+    }
+  },
+  "global_vs_shard_bf16_conv_max_abs": 0.0,
+  "global_vs_shard_output_max_abs": 5.204170427930421e-18,
+  "global_vs_shard_state_max_abs": 8.673617379884035e-19,
+  "rank_results": {
+    "xtx0": {
+      "heads": 12,
+      "state_elements": 196608,
+      "output_sha256": "f6069a4576df759cedc8a5533c8353307d39d9f60e0ac78d0a230a7f1b479592"
+    },
+    "xtx1": {
+      "heads": 12,
+      "state_elements": 196608,
+      "output_sha256": "1578461a6d7229e8340c5e45b58cd4a8b1ee49ef56f348488387db96c81f3ff9"
+    },
+    "r9700": {
+      "heads": 24,
+      "state_elements": 393216,
+      "output_sha256": "e8a32c7eed74d2d5ff674658d2fa186f7e293e1ac4f5a13ae4f77e6b0635ceb6"
+    }
+  },
+  "not_run": [
+    "GPU",
+    "actual QKV/a/b/z GEMMs",
+    "prefill KKT",
+    "speculative rollback",
+    "out projection",
+    "full model generation"
+  ]
+}

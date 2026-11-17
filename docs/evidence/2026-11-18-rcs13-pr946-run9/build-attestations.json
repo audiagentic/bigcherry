@@ -1,0 +1,63 @@
+{
+  "baseline": {
+    "binary_sha256": {
+      "engine": "a5f913ca3ed09d8b79b50fc123a1ca51c4e9aed809108a42c446fe21730d9b81",
+      "gfx12": "78695b10e7d2cf9a1c8b2bacb49d55b872ee52bb721e4195f9eaad39b40ed62a",
+      "helper": "44e7d3d1053a90d8ebba264a9aee664c264a69ad03a35c6f4aa46a6919ea4d6a",
+      "libavx.so": "37ab74ec9a906df93b602cefa3352e7cdbe9a7ed1f6f43ed76e10c9aea9f33c7",
+      "libr2.so": "7bb10de0d64d310b7550353927fbc3c115766acfd72b98bad5b6e14d69b12746",
+      "libref.so": "786bea0bb342367acc74105bfc028494023d046cb5485a4f61d7889d503da6f7",
+      "r3": "a9281f1855f3a89473ba49426378bac054b7a0196b8f27c1269f12b990af47ac",
+      "r3moe": "a08fe7e493fd711aed82e1d77e0a2cb66c497370050c2ebdb7df375b75f7f72c",
+      "r3ngram": "31a2be28189ea67afd8af1a53d5ba43af083415c6820d1a183e1ed5984b82c89",
+      "r4d": "e8d357890afbe221537cbc04f713f730d3d970e002cb2a93f2e26edc0114f726",
+      "serving": "7774d7c70f5ff5abc54fea9b5eef17991510b34915528ef4c5549c952632d3fb",
+      "spechub.so": "555b888e3655fb0321df71ed4d3f21f731e391dca43be1a1e4ba381fe15030dc"
+    },
+    "build_plan_id": "db104a6248399f1c3513a7f3f4c15864",
+    "installed_header_abi": 35,
+    "libr4d_exported_abi": 35,
+    "patch_gate": {
+      "pending_count": 0,
+      "pin": "v1.17.0",
+      "result": "passed",
+      "validated_count": 30
+    },
+    "source_sha": "e28734f097fe7c0ff59415ecfe0494271a1e22a0",
+    "source_slice_id": "833e240cd588a59e91ba7960fcbbda9f"
+  },
+  "candidate": {
+    "binary_sha256": {
+      "engine": "a5f913ca3ed09d8b79b50fc123a1ca51c4e9aed809108a42c446fe21730d9b81",
+      "gfx12": "7226dfb3187af6f9ed5fe990e416270505069d1a460bc4319e34aff1de5eda5d",
+      "helper": "1f0fd77d2a6e2fb97b97cc07dd52d0a81981802fef93168c399186112d90e166",
+      "libavx.so": "37ab74ec9a906df93b602cefa3352e7cdbe9a7ed1f6f43ed76e10c9aea9f33c7",
+      "libr2.so": "c5d955c570c99865da31616eefee63199a7b0325060f3426c53ed61a9bd8a5d7",
+      "libref.so": "786bea0bb342367acc74105bfc028494023d046cb5485a4f61d7889d503da6f7",
+      "r3": "732b9d661ec5b74b27dab07bcec0b318190ea998f9c701d03a59dfe0baafbab1",
+      "r3moe": "3e0d21612cae9e95a235ed1ecb6d5f8b1b35236209e6746ef5d843c514545c74",
+      "r3ngram": "f4996cdf69fe7c7d2f5958b811a88750d3e075ccbdb8b5d91c8a0319898377ee",
+      "r4d": "e8d357890afbe221537cbc04f713f730d3d970e002cb2a93f2e26edc0114f726",
+      "serving": "46d6d6817e2c8bd7f5fa6aff5900f33e54b2056803a810231ba429c2cf8aea1b",
+      "spechub.so": "555b888e3655fb0321df71ed4d3f21f731e391dca43be1a1e4ba381fe15030dc"
+    },
+    "build_plan_id": "a0a99806f887aaecce91ac4369d4b17c",
+    "installed_header_abi": 35,
+    "libr4d_exported_abi": 35,
+    "patch_gate": {
+      "pending_count": 0,
+      "pin": "v1.17.0",
+      "result": "passed",
+      "validated_count": 30
+    },
+    "source_sha": "17a16f5d7132efaa1c07dc858e111dfb7645ad10",
+    "source_slice_id": "833e240cd588a59e91ba7960fcbbda9f"
+  },
+  "identical_engine_and_libr4d": true,
+  "identical_engine_recipe_and_patch_tree": true,
+  "non_rcs13_serving_source_changed_since_baseline": true,
+  "same_effective_configure_except_equivalent_ccache_launcher_paths": true,
+  "same_upstream_slice": true,
+  "serving_binary_differs": true,
+  "source_isolation_for_actual_builds": false
+}

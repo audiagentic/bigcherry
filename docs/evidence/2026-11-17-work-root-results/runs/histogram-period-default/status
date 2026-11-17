@@ -1,0 +1,3 @@
+period_s 60 True cadence_ns 5002051490 max_heat_age_ns 10004102980
+traffic done
+no_live_feed lines: 26; evaluated: evaluated=6; committed: committed=0; epochs: <work-root>/flashnext/engine-measure.log:0

@@ -1,0 +1,6 @@
+doc slice 1: 47668 prompt tokens in 12.8s = 3719 tok/s
+doc slice 2: 46762 prompt tokens in 12.6s = 3716 tok/s
+doc slice 3: 44003 prompt tokens in 11.9s = 3704 tok/s
+doc slice 4: 46403 prompt tokens in 12.5s = 3711 tok/s
+doc slice 5: 48869 prompt tokens in 13.1s = 3723 tok/s
+doc slice 6: 47669 prompt tokens in 12.8s = 3715 tok/s

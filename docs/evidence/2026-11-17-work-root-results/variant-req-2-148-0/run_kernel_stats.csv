@@ -1,0 +1,16 @@
+"Name","Calls","TotalDurationNs","AverageNs","Percentage","MinNs","MaxNs","StdDev"
+"__amd_rocclr_streamOpsWait",2,15829902,7914951.000000,50.07,62961,15766941,11104390.749618
+"void (anonymous namespace)::moe_gemm_q_kernel<2u, 8u, 2u, 4u, 2, false, true, true, 128u, true, false>(unsigned char const*, float const*, (anonymous namespace)::MoeCls, (anonymous namespace)::MoeCls, (anonymous namespace)::MoeCls, (anonymous namespace)::MoeCls, int const*, int const*, unsigned short*, unsigned int const*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, (anonymous namespace)::MoeTab)",4,10699599,2674899.750000,33.84,1282895,4965694,1591045.685155
+"r3_moe_gpu::lane_reduce_tokens(unsigned short const*, int const*, unsigned short const*, unsigned short*, unsigned int, unsigned int, unsigned int)",2,1995503,997751.500000,6.31,876090,1119413,172055.343319
+"r3_moe_gpu::lane_prepare_activation(r3::moe_shm::Request*, unsigned char const*, float const*, unsigned char*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned long*)",2,1602778,801389.000000,5.07,799209,803569,3082.985566
+"__amd_rocclr_copyBuffer",148,784940,5303.648649,2.48,4160,7320,486.038895
+"void (anonymous namespace)::quant_act_fp8_kernel<true, false>(unsigned short const*, unsigned char*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",2,218802,109401.000000,0.6920,89001,129801,28849.956672
+"void (anonymous namespace)::gated_quant_fp8_kernel<0, true, false>(unsigned short const*, unsigned short*, unsigned char*, float*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int)",2,180362,90181.000000,0.5705,79641,100721,14905.810947
+"moe_blockmap_kernel(int const*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int*)",4,113681,28420.250000,0.3596,16120,43561,13641.816604
+"__amd_rocclr_fillBufferAligned",19,91802,4831.684211,0.2904,2720,10680,1865.419347
+"r3_moe_gpu::lane_select_tables(r3::moe_shm::Request const*, r3_moe_gpu::DeviceLayerTables const*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int, void**, void**, void**, void**, void**, void**, void**, void**)",2,30880,15440.000000,0.0977,8920,21960,9220.672427
+"r3_moe_gpu::lane_route_count(r3::moe_shm::Route const*, r3::moe_shm::Request*, r3_moe_gpu::DeviceLayerTables const*, unsigned int, unsigned int, unsigned int, unsigned int, unsigned int*, int*, unsigned short*)",2,27880,13940.000000,0.0882,12720,15160,1725.340546
+"r3_moe_gpu::lane_route_scatter(r3::moe_shm::Route const*, r3::moe_shm::Request const*, r3_moe_gpu::DeviceLayerTables const*, unsigned int, unsigned int, unsigned int, unsigned int, int const*, unsigned int*, int*, int*)",2,19760,9880.000000,0.0625,8800,10960,1527.350647
+"r3_moe_gpu::lane_route_prefix(unsigned int const*, int*, unsigned int*)",2,10080,5040.000000,0.0319,4360,5720,961.665222
+"r3_moe_gpu::lane_route_inverse(int const*, int*, unsigned int, unsigned int)",2,5920,2960.000000,0.0187,2640,3280,452.548340
+"r3_moe_gpu::lane_publish_done(unsigned int*, unsigned int)",2,4680,2340.000000,0.0148,2120,2560,311.126984

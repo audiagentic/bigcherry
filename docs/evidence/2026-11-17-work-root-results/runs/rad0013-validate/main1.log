@@ -1,0 +1,5 @@
+accept-bench: hello   drafted   567 accepted   323 ( 57%)  2.709 tok/step  26.1524 ms/step
+accept-bench: story   drafted   654 accepted   292 ( 45%)  2.3394 tok/step  26.046 ms/step
+accept-bench: code    drafted   417 accepted   370 ( 89%)  3.6619 tok/step  25.363 ms/step
+accept-bench: list    drafted   393 accepted   382 ( 97%)  3.916 tok/step  25.7835 ms/step
+accept-bench: random  drafted   396 accepted   381 ( 96%)  3.8864 tok/step  25.3598 ms/step

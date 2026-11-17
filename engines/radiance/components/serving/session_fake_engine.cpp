@@ -14,6 +14,9 @@
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <sys/stat.h>
 #include <sys/socket.h>
 #include <unistd.h>
 #include <dirent.h>
@@ -25,6 +28,7 @@
 #include <fstream>
 #include <sstream>
 #include <string>
+#include <utility>
 
 #include <nlohmann/json.hpp>
 
@@ -33,6 +37,25 @@ extern char** environ;
 namespace {
 volatile std::sig_atomic_t g_stop = 0;
 void on_stop(int) { g_stop = 1; }
+// Test-only POSIX mailbox creator: graceful exits retire their own name;
+ // SIGKILL intentionally bypasses this destructor to exercise owner cleanup.
+struct CreatedSegment {
+    std::string name;
+    int fd = -1;
+    explicit CreatedSegment(std::string segment_name) : name(std::move(segment_name)) {}
+    CreatedSegment(const CreatedSegment&) = delete;
+    CreatedSegment& operator=(const CreatedSegment&) = delete;
+    ~CreatedSegment() {
+        if (fd >= 0) {
+            ::close(fd);
+            ::shm_unlink(name.c_str());
+        }
+    }
+    bool create() {
+        fd = ::shm_open(name.c_str(), O_CREAT | O_EXCL | O_RDWR | O_CLOEXEC, 0600);
+        return fd >= 0 && ::ftruncate(fd, 8192) == 0;
+    }
+};
 
 std::string arg_after(int argc, char** argv, const char* flag) {
     for (int i = 1; i + 1 < argc; ++i)
@@ -64,7 +87,16 @@ int main(int argc, char** argv) {
         std::stringstream s;
         s << in.rdbuf();
         const json parsed = json::parse(s.str(), nullptr, false);
-        if (parsed.is_object() && !parsed.contains("spec")) m = parsed;
+        if (parsed.is_object() && !parsed.contains("spec")) {
+            m = parsed;
+        } else if (parsed.is_object() && parsed.contains("spec")) {
+            // The actual owner replay path consumes a strict v2 file. This
+            // card-free engine reads ONLY its fixture port and mailbox.
+            const auto& spec = parsed.at("spec");
+            m["port"] = spec.at("processes").at("engine").at("server").at("port");
+            if (spec.contains("handoff"))
+                m["shm"] = spec.at("handoff").at("transport").at("shm");
+        }
     }
     std::printf("fake engine: pid %d manifest %s\n", int(::getpid()), manifest.c_str());
     std::fflush(stdout);
@@ -92,6 +124,41 @@ int main(int argc, char** argv) {
             std::_Exit(0);
         }
         std::ofstream(m.at("descendant").get<std::string>()) << child << '\n';
+    }
+    // A fake helper shares the same manifest fixture. It reports a fresh readiness line, holds its
+    // process group until stopped, and can fail before/after readiness or ignore SIGINT.
+    const std::string role = arg_after(argc, argv, "--role");
+    if (role.rfind("helper", 0) == 0) {
+        const json h = m.value("helpers", json::object()).value(role, json::object());
+        if (h.contains("env_dump")) {
+            std::ofstream out(h.at("env_dump").get<std::string>());
+            for (char** e = environ; *e; ++e) out << *e << '\n';
+        }
+        if (h.contains("exit_at_start")) return h.at("exit_at_start").get<int>();
+        // Card-free helper0 models the POSIX mailbox's creator. The real worker
+        // creates O_EXCL and retires only its own inode; these fake paths are test-only.
+        const std::string shm = m.value("shm", std::string());
+        CreatedSegment segment(shm);
+        if (role == "helper0" && !shm.empty() && !h.value("no_shm", false) && !segment.create())
+            return 8;
+        std::signal(SIGINT, h.value("ignore_sigint", false) ? SIG_IGN : on_stop);
+        std::signal(SIGTERM, on_stop);
+        const auto up = Clock::now();
+        const auto ready_at = up + std::chrono::milliseconds(h.value("ready_delay_ms", 0));
+        const auto die_after = std::chrono::milliseconds(h.value("die_after_ms", -1));
+        bool ready = false;
+        while (!g_stop) {
+            const auto elapsed = Clock::now() - up;
+            if (die_after.count() >= 0 && elapsed >= die_after) return 7;
+            if (!ready && Clock::now() >= ready_at && !h.value("never_ready", false)) {
+                std::printf("r3_moe_worker: %s helper is ready\n",
+                            h.value("waiting_for_maps", false) ? "waiting for engine runtime expert maps" : "ready");
+                std::fflush(stdout);
+                ready = true;
+            }
+            ::usleep(10000);
+        }
+        return 0;
     }
     const std::string plan = arg_after(argc, argv, "--plan-memory");
     if (!plan.empty()) {

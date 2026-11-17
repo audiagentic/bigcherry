@@ -1,0 +1,13 @@
+commit 68d73ec75b21287ac42cb580a9a891199a03cea2 lab(radiance): PWR02 XTX max-clock sweep; RAD24 completed; PWR03 Intel CPU correction
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/67a435be11abe6053872355915df70a4/e315c3373c1f397eb16273556a7509ab
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+cpu_pkg            14.3         77.0         82.0         15.7
+gpu0                7.0        152.0        198.0          8.0
+gpu1                7.0        153.0        197.5          9.0
+gpu2               20.0        214.0        217.5         22.0
+gpu3               10.0         10.0         10.0         10.0
+total              58.3        606.0        705.0         64.7
+decode: 4096 tokens in 45.1 s = 90.8 tok/s, 6.673 J/token (all devices + CPU package)
+prefill: 136473 tokens in 41.3 s = 3304.4 tok/s, 0.213 J/token (all devices + CPU package)

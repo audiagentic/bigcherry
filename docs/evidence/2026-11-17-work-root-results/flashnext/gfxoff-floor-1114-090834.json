@@ -1,0 +1,109 @@
+{
+  "schema_version": 1,
+  "windows": {
+    "0000:03:00.0": {
+      "bdf": "0000:03:00.0",
+      "identity": {
+        "amdgpu_srcversion": "2F0E6E3215789522FB92997",
+        "firmware": {
+          "mes": {
+            "reason": "not_exposed_in_sysfs",
+            "status": "unavailable",
+            "value": null
+          },
+          "smc": {
+            "reason": "not_exposed_in_sysfs",
+            "status": "unavailable",
+            "value": null
+          }
+        },
+        "kernel_release": "7.0.13-gfxoff",
+        "pci_device": "0x744c"
+      },
+      "phase": "no_process",
+      "reason": "not_applicable",
+      "samples": [],
+      "sensors": {},
+      "status": "not_applicable"
+    },
+    "0000:06:00.0": {
+      "bdf": "0000:06:00.0",
+      "identity": {
+        "amdgpu_srcversion": "2F0E6E3215789522FB92997",
+        "firmware": {
+          "mes": {
+            "reason": "not_exposed_in_sysfs",
+            "status": "unavailable",
+            "value": null
+          },
+          "smc": {
+            "reason": "not_exposed_in_sysfs",
+            "status": "unavailable",
+            "value": null
+          }
+        },
+        "kernel_release": "7.0.13-gfxoff",
+        "pci_device": "0x744c"
+      },
+      "phase": "no_process",
+      "reason": "not_applicable",
+      "samples": [],
+      "sensors": {},
+      "status": "not_applicable"
+    },
+    "0000:09:00.0": {
+      "bdf": "0000:09:00.0",
+      "identity": {
+        "amdgpu_srcversion": "2F0E6E3215789522FB92997",
+        "firmware": {
+          "mes": {
+            "reason": "not_exposed_in_sysfs",
+            "status": "unavailable",
+            "value": null
+          },
+          "smc": {
+            "reason": "not_exposed_in_sysfs",
+            "status": "unavailable",
+            "value": null
+          }
+        },
+        "kernel_release": "7.0.13-gfxoff",
+        "pci_device": "0x7551"
+      },
+      "phase": "no_process",
+      "reason": null,
+      "samples": [
+        {
+          "busy_percent": 0,
+          "observed_at": 1794607732.2970672,
+          "power_uw": 16000000,
+          "vddgfx_mv": 35
+        },
+        {
+          "busy_percent": 0,
+          "observed_at": 1794607733.2982686,
+          "power_uw": 16000000,
+          "vddgfx_mv": 35
+        },
+        {
+          "busy_percent": 0,
+          "observed_at": 1794607734.2993073,
+          "power_uw": 16000000,
+          "vddgfx_mv": 35
+        },
+        {
+          "busy_percent": 0,
+          "observed_at": 1794607735.3003554,
+          "power_uw": 16000000,
+          "vddgfx_mv": 35
+        }
+      ],
+      "sensors": {
+        "busy_percent": "/sys/bus/pci/devices/0000:09:00.0/gpu_busy_percent",
+        "power_uw": "/sys/bus/pci/devices/0000:09:00.0/hwmon/hwmon10/power1_average",
+        "vddgfx_mv": "/sys/bus/pci/devices/0000:09:00.0/hwmon/hwmon10/in0_input"
+      },
+      "status": "measured"
+    }
+  }
+}

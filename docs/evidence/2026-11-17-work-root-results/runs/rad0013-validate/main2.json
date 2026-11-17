@@ -1,0 +1,70 @@
+{
+ "config": {
+  "endpoint": "/v1/completions",
+  "ignore_eos": true,
+  "kinds": [
+   "hello",
+   "story",
+   "code",
+   "list",
+   "random"
+  ],
+  "max_tokens": 512,
+  "model": "default",
+  "temperature": 0.0,
+  "url": "http://127.0.0.1:18448"
+ },
+ "kinds": {
+  "code": {
+   "acceptance": 0.8873,
+   "accepted": 370,
+   "decode_ms_per_step": 25.4855,
+   "decode_tokens_per_step": 3.6619,
+   "drafted": 417,
+   "prompt_sha256": "eab0ce7de5fd4e2efbea1c9fb2f0f35b33a7cc403c381d186bb8a72e763365d9",
+   "text_head": "\n\n<think>\n\n</think>\n\n```python\nclass Node:\n    def __init__(",
+   "text_sha256": "8dea95cbe774db33afb558f769d65f98c21726bb62ba8d170792a6b18a9340c3"
+  },
+  "hello": {
+   "acceptance": 0.5697,
+   "accepted": 323,
+   "decode_ms_per_step": 26.6286,
+   "decode_tokens_per_step": 2.709,
+   "drafted": 567,
+   "prompt_sha256": "185f8db32271fe25f561a6fc938b2e264306ec304eda518007d1764826381969",
+   "text_head": ", I'm a 22-year-old male, and I've been experiencing some sy",
+   "text_sha256": "582e20bcc7e5cd8f0f00a6f00fec9659da26243af7bba2e06954d8793a3c95eb"
+  },
+  "list": {
+   "acceptance": 0.972,
+   "accepted": 382,
+   "decode_ms_per_step": 25.777,
+   "decode_tokens_per_step": 3.916,
+   "drafted": 393,
+   "prompt_sha256": "97709eb1f9aa53c9d22d085d83ba35ebd8812860d93d3894c745059e5cb4f98e",
+   "text_head": "\n\n<think>\nThe user wants me to count from 1 to 500, with one",
+   "text_sha256": "d0546c65c20db450a5b2e26c72cbc75effc7782b6fbd2b39f41f71ab19e0dd2f"
+  },
+  "random": {
+   "acceptance": 0.9621,
+   "accepted": 381,
+   "decode_ms_per_step": 25.3588,
+   "decode_tokens_per_step": 3.8864,
+   "drafted": 396,
+   "prompt_sha256": "f72dddd1c84f6b929c1be9b78f92c9b086c10f9dbdfedb7b91c418c3f8afc250",
+   "text_head": " 0 2 8 8 4 1 9 7 1 6 9 3 9 9 3 7 5 1 0 5 8 2 0 9 7 4 9 4 4 5",
+   "text_sha256": "a1d5cdf2e38d32c9c636e76c33980be3d7c70d1ef88e5a63b8f0252e80ed3c70"
+  },
+  "story": {
+   "acceptance": 0.4465,
+   "accepted": 292,
+   "decode_ms_per_step": 26.037,
+   "decode_tokens_per_step": 2.3394,
+   "drafted": 654,
+   "prompt_sha256": "6baec6400b74b545bdfefd2016a3431f75e5c4f9551d2f87a9c9c1f33889bb93",
+   "text_head": "\n\n<think>\nThe user wants a long story about a lighthouse kee",
+   "text_sha256": "e337eef3ffbb5f1a1869c5b0d44338a78c28d2b6773240936f4acbf5bb7cf6a7"
+  }
+ },
+ "schema": "bigcherry/accept-bench/v1"
+}
