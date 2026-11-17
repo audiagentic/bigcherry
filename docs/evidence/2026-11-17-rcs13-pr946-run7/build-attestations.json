@@ -1,0 +1,67 @@
+{
+  "A": {
+    "abi_header": 35,
+    "abi_libr4d": 35,
+    "build_plan_id": "68e3acc27ed84d194f19f85b68f5c519",
+    "patch_gate": {
+      "pending": 0,
+      "pin": "v1.17.0",
+      "status": "passed",
+      "validated": 30
+    },
+    "sha256": {
+      "engine": "a5704dea94b8b7397ae0360a00bcfc48f311ae5c596a1abf3c62a77c8886a4ec",
+      "gfx12": "197bdf699c8727306890c27d8ca54889801face881f0464038a0cc8595663097",
+      "helper": "b239978f89ad1898d19397561c3ad1fab6eddcf776cd9cd54394ac455a874e5b",
+      "libavx.so": "37ab74ec9a906df93b602cefa3352e7cdbe9a7ed1f6f43ed76e10c9aea9f33c7",
+      "libr2.so": "729bd6ff182a32fcbc5eab86ec28ebf2c2c781979a4e9e05f7826462a793b122",
+      "libref.so": "786bea0bb342367acc74105bfc028494023d046cb5485a4f61d7889d503da6f7",
+      "r3": "b06553978f24d1d0e96faa0c2163a207a5ceebeb11d3e9ea54429ac0294b9b89",
+      "r3moe": "394d8a29af0299615e0f029dab38c2e0157b3ee909c140387f573b5a693d27e7",
+      "r3ngram": "04ed337bd61f602fda360078b9ee6947046ab2ddcce6422c45eb0d1077fa964a",
+      "r4d": "e8d357890afbe221537cbc04f713f730d3d970e002cb2a93f2e26edc0114f726",
+      "serving": "708c8381bc6be1b21c970d3d8e8ace0f48e287e2c85dd2f3e025a05ddbbbce57",
+      "spechub.so": "555b888e3655fb0321df71ed4d3f21f731e391dca43be1a1e4ba381fe15030dc"
+    },
+    "source_sha": "8c10d1cea356ea4e1e41e2df4ef630e1bb9fa1d0",
+    "upstream_slice_id": "833e240cd588a59e91ba7960fcbbda9f"
+  },
+  "B": {
+    "abi_header": 35,
+    "abi_libr4d": 35,
+    "build_plan_id": "374411b3c2cea28d0363ae5bab8089c7",
+    "patch_gate": {
+      "pending": 0,
+      "pin": "v1.17.0",
+      "status": "passed",
+      "validated": 30
+    },
+    "sha256": {
+      "engine": "a5704dea94b8b7397ae0360a00bcfc48f311ae5c596a1abf3c62a77c8886a4ec",
+      "gfx12": "7226dfb3187af6f9ed5fe990e416270505069d1a460bc4319e34aff1de5eda5d",
+      "helper": "bb1205be98feaff6c9626c324838324bd0c9488991ce22af5ed00a8ae367a4ca",
+      "libavx.so": "37ab74ec9a906df93b602cefa3352e7cdbe9a7ed1f6f43ed76e10c9aea9f33c7",
+      "libr2.so": "c5d955c570c99865da31616eefee63199a7b0325060f3426c53ed61a9bd8a5d7",
+      "libref.so": "786bea0bb342367acc74105bfc028494023d046cb5485a4f61d7889d503da6f7",
+      "r3": "732b9d661ec5b74b27dab07bcec0b318190ea998f9c701d03a59dfe0baafbab1",
+      "r3moe": "3e0d21612cae9e95a235ed1ecb6d5f8b1b35236209e6746ef5d843c514545c74",
+      "r3ngram": "f4996cdf69fe7c7d2f5958b811a88750d3e075ccbdb8b5d91c8a0319898377ee",
+      "r4d": "e8d357890afbe221537cbc04f713f730d3d970e002cb2a93f2e26edc0114f726",
+      "serving": "d1251c5b43178b244b62570e7a5e783c48e3a65f40175ee5eaf3eb062673cb58",
+      "spechub.so": "555b888e3655fb0321df71ed4d3f21f731e391dca43be1a1e4ba381fe15030dc"
+    },
+    "source_sha": "aa7fd2ead1fd50ba72908c7ce0fef7eedcaca2a3",
+    "upstream_slice_id": "833e240cd588a59e91ba7960fcbbda9f"
+  },
+  "same_effective_config_except_equivalent_launcher_path": true,
+  "same_upstream_patch_recipe": true,
+  "source_delta": [
+    "engines/radiance/components/bc-gfx12/bc_gfx12_plugin.cpp",
+    "engines/radiance/components/bc-gfx12/bc_moe_gemv.hip",
+    "engines/radiance/components/moe-remote/gemv_geometry.h",
+    "engines/radiance/components/moe-remote/gemv_geometry_test.cpp",
+    "engines/radiance/components/moe-remote/moe_lane_gemm.h",
+    "engines/radiance/components/moe-remote/moe_remote_gpu.h",
+    "engines/radiance/model_constant_guard.toml"
+  ]
+}
