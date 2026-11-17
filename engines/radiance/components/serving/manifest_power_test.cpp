@@ -1,5 +1,6 @@
 // RSC02 step 3: real v2 power admission and GFXOFF recording, injected
 // hardware and sensors only. No sysfs writes or GPU access in this test.
+#include "jcs.h"
 #include "manifest_power.h"
 
 #include <cstdlib>
@@ -48,6 +49,7 @@ struct Temporary {
 class Cards final : public ps::Hardware {
   public:
     int reads = 0, writes = 0;
+    int64_t board_cap = 100000000;
 
   private:
     v2::Result<ps::CardSnapshot> do_inspect(const ps::PciAddress& pci) override {
@@ -62,10 +64,16 @@ class Cards final : public ps::Hardware {
             value.maximum = 1000;
             value.writable = true;
         }
+        auto& cap = card.controls[static_cast<size_t>(ps::ControlId::board_cap)];
+        cap.current = board_cap;
+        cap.minimum = 50000000;
+        cap.maximum = 400000000;
         return card;
     }
-    v2::Status do_execute([[maybe_unused]] const ps::PowerCommand& command) override {
+    v2::Status do_execute(const ps::PowerCommand& command) override {
         ++writes;
+        if (const auto* cap = std::get_if<ps::BoardCap>(&command.value))
+            board_cap = cap->value.value;
         return std::nullopt;
     }
 };
@@ -129,6 +137,64 @@ int main() {
         expect(receipts == 2U, "two observe owner executions require separate durable receipts");
         expect(bridge.begin(original, v2::PlanUse::serving).has_value(),
                "power admission must never be repeated for a run");
+        // P0-2: the same strict authenticated apply manifest must admit
+        // successive owner executions with distinct durable journal/receipt
+        // IDs. A crashed execution cannot be reused: its unresolved journal
+        // must block admission until the real recovery API clears it.
+        Json apply_manifest = Json::parse(std::ifstream(original));
+        apply_manifest["spec"]["plan"]["power"]["mode"] = "apply";
+        apply_manifest["spec"]["intent"]["power"]["profile"] = "rsc02-injected-apply";
+        apply_manifest["spec"]["plan"]["power"]["profile"] = "rsc02-injected-apply";
+        apply_manifest["spec"]["plan"]["power"]["devices"][0]["settings"]["power_cap_w"] = 200;
+        apply_manifest["spec"]["intent"]["power"]["role_overrides"]["engine"] = {{"power_cap_w", 200}};
+        apply_manifest["provenance"]["/spec/plan/power/mode"]["source"] =
+            "test source apply-mode owner admission";
+        apply_manifest["metadata"].erase("content_digest");
+        std::string apply_digest, digest_failure;
+        expect(bc::serving::manifest_content_digest(apply_manifest, &apply_digest, &digest_failure),
+               "JCS recomputes modified strict-v2 apply manifest digest");
+        apply_manifest["metadata"]["content_digest"] = apply_digest;
+        const fs::path apply_path = t.root / "apply-v2-manifest.json";
+        std::ofstream(apply_path) << apply_manifest.dump(2) << '\n';
+        const auto parsed_apply = v2::load_manifest(apply_path, v2::PlanUse::serving);
+        if (!parsed_apply)
+            throw std::runtime_error("strict apply fixture refused: " +
+                                     v2::render_human("apply", parsed_apply.error()));
+        std::string first_apply_id;
+        {
+            ss::ManifestPower apply(hardware, records, sensor, [] { return true; }, true);
+            const auto status = apply.begin(apply_path, v2::PlanUse::serving);
+            if (status)
+                throw std::runtime_error("injected real apply refused: " + v2::render_human("apply", *status));
+            expect(hardware.writes > 0 && apply.execution().has_value(),
+                   "real apply must durably admit and issue typed hardware commands");
+            first_apply_id = apply.execution()->run_id;
+            expect(apply.execution()->manifest_origin_instance_id == parsed_apply.value().metadata.instance_id,
+                   "fresh execution keeps the exact immutable origin as reference");
+            // Destroy the owner WITHOUT finish: simulate owner crash after
+            // durable apply, not a fake journal shape.
+        }
+        const auto unresolved = records.unresolved_journals();
+        expect(unresolved && unresolved.value().size() == 1,
+               "real apply crash must leave exactly one recoverable journal");
+        ss::ManifestPower blocked(hardware, records, sensor, [] { return true; }, true);
+        expect(blocked.begin(apply_path, v2::PlanUse::serving).has_value(),
+               "fresh owner must refuse while earlier apply journal is unresolved");
+        expect(!ps::recover(
+                   unresolved.value().at(0), hardware, records, [] { return true; }, [] { return true; }),
+               "real typed crash recovery must restore the prior controls");
+        expect(hardware.board_cap == 100000000, "crashed apply's original board cap must be restored");
+        ss::ManifestPower apply_replay(hardware, records, sensor, [] { return true; }, true);
+        const auto again = apply_replay.begin(apply_path, v2::PlanUse::serving);
+        if (again)
+            throw std::runtime_error("second apply after recovery refused: " +
+                                     v2::render_human("apply-replay", *again));
+        expect(apply_replay.execution()->run_id != first_apply_id &&
+                   apply_replay.execution()->run_id != replay.execution()->run_id,
+               "every apply and observe replay must use a new execution run identity");
+        apply_replay.children_verified();
+        expect(!apply_replay.finish(), "second apply must restore after verified process exit");
+        expect(hardware.board_cap == 100000000, "second apply must restore original hardware control values");
 
         std::ifstream reader(original);
         Json altered = Json::parse(reader);

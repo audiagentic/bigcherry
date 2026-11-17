@@ -6,6 +6,7 @@
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
 #include "resources.h"
+#include "s8_replay.h"
 #include "sha256.h"
 #include "stored_manifest.h"
 #include "stored_manifest_cache.h"
@@ -1839,6 +1840,7 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     file(in.calibration_prompts_a);
     file(in.calibration_prompts_b);
     file(in.calibration_store);
+    file(in.calibration_records_file);
     if (values.contains("handoff") && values.at("handoff").contains("heat") &&
         values.at("handoff").at("heat").is_string() &&
         !values.at("handoff").at("heat").get<std::string>().empty())
@@ -1939,6 +1941,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     fs::create_directories(cache);
     const std::string id = stamp();
     const fs::path manifest = run_dir / ("manifest-" + id + ".json");
+    const fs::path s8_source = manifest.string() + ".s8-evidence.json";
     // The bash launcher's engine-only plan-extra: the two share one plan cache.
     const std::vector<std::string> base = resolver_args(in.options);
     std::vector<std::string> extra_sets;
@@ -1957,6 +1960,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 throw PlanFailed("calibration: a lab live policy is required");
             argv.insert(argv.end(), {"--calibration-run", "--live-policy", in.live_policy_file.string()});
         }
+        if (!in.calibration_records_file.empty())
+            argv.insert(argv.end(), {"--calibration-records", in.calibration_records_file.string()});
+        if (std::find(more.begin(), more.end(), "--unmeasured") == more.end())
+            argv.insert(argv.end(), {"--s8-replay-evidence", s8_source.string()});
         argv.insert(argv.end(), more.begin(), more.end());
         argv.insert(argv.end(), base.begin(), base.end());
         for (const auto& s : extra_sets)
@@ -1994,6 +2001,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     for (int round = 0; round < 5; ++round) {
         std::error_code ec;
         fs::remove(manifest, ec);
+        fs::remove(s8_source, ec);
         ManifestRun w = write(manifest, measured_args);
         if (w.exit == 10) {
             // No measured plan for this configuration: measure it with the engine alone (it stops after its
@@ -2118,9 +2126,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                         bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
                         bc::serving::engine_identity(engine, home), "budgets: default"));
             if (cache_selection) {
-                const StoredManifestIndex entry{cache_selection->key, manifest.filename().string(),
-                                                complete_file_identity(manifest), cache_selection->model_digest,
-                                                cache_selection->model_stamp};
+                if (!fs::is_regular_file(s8_source))
+                    throw PlanFailed("writer failed to publish its original native P1/P2 replay evidence");
+                const StoredManifestIndex entry{cache_selection->key,
+                                                manifest.filename().string(),
+                                                complete_file_identity(manifest),
+                                                cache_selection->model_digest,
+                                                cache_selection->model_stamp,
+                                                complete_file_identity(s8_source)};
                 // Each manifest carries an adjacent immutable replay attestation;
                 // the per-config index may point to another manifest on the next
                 // static key, but this exact file's identity remains verifiable.
@@ -2199,6 +2212,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     std::string source_name;
     ReplayEvidence evidence;
     std::optional<NamedCache> attestation;
+    std::optional<Resolved> current_config;
     if (given.replay_evidence) {
         evidence = given.replay_evidence.require("session.replay.evidence", m);
     } else {
@@ -2258,9 +2272,12 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         evidence.fresh_facts = fresh;
         evidence.effective_spec = current.document.at("spec");
         attestation = named_cache(in, resolved, fresh, engine, helper_binary, stored.parent_path());
+        current_config = resolved;
     }
     const Json& facts = evidence.fresh_facts;
-    const ReplayResult checked = authenticate_replay(bytes, stored.string(), evidence);
+    const auto calibration_mode = given.replay_evidence ? CalibrationVerification::exact_draft_match
+                                                        : CalibrationVerification::require_fresh_measured_s8;
+    const ReplayResult checked = authenticate_replay(bytes, stored.string(), evidence, calibration_mode);
     if (const auto* error = std::get_if<ReplayError>(&checked))
         throw ReplayFailed(error->reason, v2::render_human("bc-serve replay", error->detail));
     const auto& accepted = std::get<v2::Manifest>(checked);
@@ -2288,6 +2305,10 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
             throw ReplayFailed(
                 ReplayRefusal::execution_projection,
                 "replay: RSC12 static resolution key changed (config, inputs, calibration or power)");
+        if (bound.s8_digest.empty() ||
+            bound.s8_digest != complete_file_identity(stored.string() + ".s8-evidence.json"))
+            throw ReplayFailed(ReplayRefusal::calibration,
+                               "replay: the original measured S8 producer evidence is missing or tampered");
     }
 
     std::vector<std::string> ordered = accepted.spec.processes.engine.device.gpus;
@@ -2304,6 +2325,20 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     }
     if (const auto error = check_replay_live_room(accepted, facts, room))
         throw PlanFailed(v2::render_human("bc-serve replay room", *error));
+    if (!given.replay_evidence) {
+        // Production never substitutes the unmeasured RSC12 draft for S8.
+        // The original native P1 and raw P2 records were published by the
+        // strict measured writer. Requalify them against current scope/time
+        // BEFORE pinning/admitting any GPU child.
+        if (!current_config)
+            throw ReplayFailed(ReplayRefusal::calibration, "replay: current RSC12 scope is missing");
+        const StoredS8Evidence issued =
+            read_stored_s8_evidence(stored.string() + ".s8-evidence.json", accepted.metadata.content_digest);
+        const v2::Status renewed = verify_stored_s8(accepted, *current_config, facts, room, issued, engine,
+                                                    helper_binary, static_cast<int64_t>(std::time(nullptr)));
+        if (renewed)
+            throw ReplayFailed(ReplayRefusal::calibration, v2::render_human("bc-serve replay S8", *renewed));
+    }
 
     // Preserve the operator's original file as immutable input evidence;
     // hand every child only the authenticated sealed bytes, never that name.

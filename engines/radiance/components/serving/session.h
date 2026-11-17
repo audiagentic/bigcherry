@@ -252,6 +252,7 @@ struct EnginePlanInputs {
     std::string named_config;              // explicitly selected new RSC12 config; enables static-key reuse
     bool explicit_power_profile = false;   // only an explicit override may conflict with a stored profile
     std::filesystem::path calibration_prompts_a, calibration_prompts_b, calibration_store;
+    std::filesystem::path calibration_records_file; // real writer P2 source, part of static input key
 
     // OS/dependency seams: only the production default calls the real detector,
     // compiled-in resolver, model/build identity and live P1 probe. Tests supply

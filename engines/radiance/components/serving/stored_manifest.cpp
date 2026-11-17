@@ -77,7 +77,7 @@ Json execution_projection(const Json& spec) {
 }
 
 ReplayResult authenticate_replay(std::string_view bytes, std::string_view source,
-                                 const ReplayEvidence& evidence) {
+                                 const ReplayEvidence& evidence, CalibrationVerification calibration) {
     const auto decoded = v2::read_manifest(bytes, std::string(source), v2::PlanUse::serving);
     if (!decoded)
         return ReplayError{ReplayRefusal::bytes_or_digest, decoded.error()};
@@ -117,7 +117,8 @@ ReplayResult authenticate_replay(std::string_view bytes, std::string_view source
                 return refuse(ReplayRefusal::devices, Code::ownership_mismatch, "spec.facts.gpus",
                               "selected card BDF, architecture, HIP ordinal or total VRAM changed: " + bdf);
         }
-        if (saved_spec.at("calibration") != evidence.effective_spec.at("calibration"))
+        if (calibration == CalibrationVerification::exact_draft_match &&
+            saved_spec.at("calibration") != evidence.effective_spec.at("calibration"))
             return refuse(ReplayRefusal::calibration, Code::calibration_invalid, "spec.calibration",
                           "stored calibration no longer matches current seeded/refit records");
         if (execution_projection(saved_spec) != execution_projection(evidence.effective_spec))

@@ -159,7 +159,8 @@ ModelIdentity cached_model_identity(const std::filesystem::path& model, const st
         if (recorded.model_stamp && recorded.model_stamp.value() == before && !recorded.model_digest.empty())
             return {recorded.model_digest, before};
     }
-    const std::string digest = full_reader ? full_reader(model) : complete_file_identity(model);
+    const std::string digest = full_reader ? full_reader.require("stored.model.full_fingerprint", model)
+                                           : complete_file_identity(model);
     check_digest(digest, "full model identity");
     if (!(file_stamp(model) == before))
         throw std::runtime_error("model artifact changed while calculating full identity");
@@ -242,14 +243,19 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
     if (!j.is_object() || j.value("version", 0) != 1 || !j.contains("key") || !j.at("key").is_string() ||
         !j.contains("manifest") || !j.at("manifest").is_string() || !j.contains("digest") ||
         !j.at("digest").is_string() ||
-        j.size() != 4U + size_t(j.contains("model_digest")) + size_t(j.contains("model_stat")) ||
+        j.size() != 4U + size_t(j.contains("model_digest")) + size_t(j.contains("model_stat")) +
+                        size_t(j.contains("s8_digest")) ||
         (j.contains("model_digest") && !j.at("model_digest").is_string()) ||
+        (j.contains("s8_digest") && !j.at("s8_digest").is_string()) ||
         (j.contains("model_stat") && !j.contains("model_digest")))
         throw std::runtime_error("stored manifest index has an unknown or missing field");
     StoredManifestIndex result{j.at("key").get<std::string>(), j.at("manifest").get<std::string>(),
                                j.at("digest").get<std::string>(), j.value("model_digest", std::string())};
     if (j.contains("model_stat"))
         result.model_stamp = parse_stamp(j.at("model_stat"));
+    result.s8_digest = j.value("s8_digest", std::string());
+    if (!result.s8_digest.empty())
+        check_digest(result.s8_digest, "stored S8 writer evidence");
     check_digest(result.key, "stored key");
     check_digest(result.digest, "stored digest");
     if (!result.model_digest.empty())
@@ -272,6 +278,10 @@ void write_stored_index(const std::filesystem::path& index, const StoredManifest
         if (entry.model_digest.empty())
             throw std::runtime_error("model stat requires the full model digest");
         record["model_stat"] = write_stamp(*entry.model_stamp);
+    }
+    if (!entry.s8_digest.empty()) {
+        check_digest(entry.s8_digest, "stored S8 writer evidence");
+        record["s8_digest"] = entry.s8_digest;
     }
     const std::string bytes = record.dump(2) + "\n";
     const std::filesystem::path temp = index.string() + ".tmp." + std::to_string(::getpid());

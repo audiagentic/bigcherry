@@ -1,9 +1,10 @@
 #pragma once
 // RSC12 step 5: stable config identity for manifest reuse.
 // Ephemeral admission facts and per-session identities are not part of this key.
+#include "callback_boundary.h"
+
 #include <cstdint>
 #include <filesystem>
-#include <functional>
 #include <map>
 #include <nlohmann/json.hpp>
 #include <optional>
@@ -42,7 +43,7 @@ struct ModelIdentity {
 // Cache only the full artifact digest; no omitted chunk, header-only shortcut
 // or trust in a stale stat identity. The optional full reader is injected at
 // the OS file boundary so a test can assert zero reads on an index hit.
-using FullFileReader = std::function<std::string(const std::filesystem::path&)>;
+using FullFileReader = callback::Guarded<std::string(const std::filesystem::path&)>;
 ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
                                     FullFileReader full_reader = {});
 
@@ -60,6 +61,7 @@ struct StoredManifestIndex {
     std::string digest;
     std::string model_digest; // optional on generic indices; mandatory for production replay attestation
     std::optional<FileStamp> model_stamp; // full model digest reusable only with identical stat identity
+    std::string s8_digest; // optional full hash of the original writer's native P1/P2 replay evidence
 };
 // Exactly one index for a named config within this owner's run root; checked
 // before reuse. Original v2 bytes remain immutable, indexed only by digest.
