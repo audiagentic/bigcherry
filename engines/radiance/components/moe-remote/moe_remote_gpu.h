@@ -460,7 +460,6 @@ public:
         class_count_ = count;
         class_rows_ = sizes;
         large_rows_ = large_rows;
-        const size_t nclass = experts() / 2;
         for (uint32_t lane = 0; lane < lane_.size(); ++lane) {
             const uint32_t rank = lane % lane_shape_.slots;
             const uint32_t cls = lane_class(lane, lane_shape_.slots);
@@ -487,18 +486,10 @@ public:
                 return false;
             const uint32_t routes = dense_route_slots ? dense_route_slots : cap * shape_.top_k;
             w.cap_rows = cap;
-            if (!ensure_lane_work(w, cap, routes, routes) ||
-                !w.d_stats.ensure(3 * sizeof(uint64_t)) || !w.d_publish_limit.ensure(sizeof(uint32_t)) ||
-                (cls == kSmallClasses && !w.d_chunk_cnt.ensure(((shape_.max_rows + kCombineChunkRows - 1u) / kCombineChunkRows) * sizeof(uint32_t))) ||
+            if (!r3::worker_footprint::ensure_lane_buffers(w, footprint_shape(), cap, routes, routes,
+                                                            cls == kSmallClasses) ||
                 !hip_ok(hipMemset(w.d_publish_limit.p, 0xff, sizeof(uint32_t)), "lane publish limit"))
                 return false;
-            for (uint32_t parity = 0; parity < 2; ++parity) {
-                if (!w.gu_code[parity].ensure(nclass * sizeof(void*)) ||
-                    !w.gu_scale[parity].ensure(nclass * sizeof(void*)) ||
-                    !w.dn_code[parity].ensure(nclass * sizeof(void*)) ||
-                    !w.dn_scale[parity].ensure(nclass * sizeof(void*)))
-                    return false;
-            }
             if (!prepare_lane_scratch(w, rank, cap, routes) ||
                 !hip_ok(hipMemset(w.d_stats.p, 0, 3 * sizeof(uint64_t)), "zero lane stats"))
                 return false;
@@ -1012,7 +1003,7 @@ public:
         /* R3_MOE_WORKER_COMBINE, chunked (RAD42): the large lane publishes its rows chunk by chunk for helper 0's combine. */
         LaneChunks chunks{nullptr, nullptr, 0u};
         if (chunk_helper_ < kCombineMaskBits && !lane_is_small(lane, lane_shape_.slots)) {
-            if (!hip_ok(hipMemsetAsync(w.d_chunk_cnt.p, 0, ((shape_.max_rows + kCombineChunkRows - 1u) / kCombineChunkRows) * sizeof(uint32_t), w.stream), "lane chunk counters"))
+            if (!hip_ok(hipMemsetAsync(w.d_chunk_cnt.p, 0, r3::worker_footprint::chunk_counter_bytes(w.cap_rows), w.stream), "lane chunk counters"))
                 return -EIO;
             chunks = LaneChunks{static_cast<uint32_t*>(w.d_chunk_cnt.p),
                                 static_cast<uint32_t*>(dev_at(&hhost->chunks[slot_consumer(rank, hhost->rank_count)].seq[chunk_helper_][0])),
@@ -1830,24 +1821,6 @@ private:
         return rc;
     }
 
-    bool ensure_lane_work(LaneWork& w, uint32_t rows, uint32_t routes, uint32_t tr) {
-        return w.d_counts.ensure((size_t)experts() * 4) &&
-               w.d_rowmask.ensure((size_t)rows) &&
-               w.d_cursor.ensure((size_t)experts() * 4) &&
-               w.d_act.ensure((size_t)rows * shape_.hidden * 2) &&
-               w.d_flat.ensure((size_t)routes * 4) &&
-               w.d_sorted.ensure((size_t)tr * 4) &&
-               w.d_off.ensure((experts() + 1ull) * 4) &&
-               w.d_ew.ensure((size_t)tr * 2) &&
-               w.d_inv.ensure((size_t)tr * 4) &&
-               w.d_aq.ensure((size_t)rows * shape_.hidden) &&
-               w.d_as.ensure((size_t)rows * (shape_.hidden / kGroup) * 4) &&
-               w.d_gu.ensure((size_t)tr * 2 * mid_w() * 2) &&
-               w.d_mid.ensure((size_t)tr * mid_w()) &&
-               w.d_mid_s.ensure((size_t)tr * (mid_w() / kGroup) * 4) &&
-               w.d_down.ensure((size_t)tr * shape_.hidden * 2) &&
-               w.d_dbg.ensure((size_t)tr * 2 * mid_w() * 2);
-    }
 };
 
 } // namespace r3_moe_gpu
