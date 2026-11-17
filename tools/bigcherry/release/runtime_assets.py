@@ -12,13 +12,13 @@ import hashlib
 import io
 import json
 import os
-from pathlib import Path, PurePosixPath
 import re
 import shutil
 import stat
 import subprocess
 import tarfile
 import tempfile
+from pathlib import Path, PurePosixPath
 
 from ..core import engines
 
@@ -62,10 +62,14 @@ BUILD_METADATA = "bigcherry-build-metadata-radiance.json"
 # ship without hard-coding a model architecture inventory. Required entries
 # must match at least one file in every newly packaged build.
 RUN_SCOPE = "engine-runtime"
+# Deliberately explicit: unknown RSC12 configurations must be reviewed and
+# added to the engine payload contract, not silently copied from a checkout.
+SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
 RUN_MANIFEST = (
     ("bin/radiance", True),
     ("radiance_home/bin/bc-serve", True),
     (BUILD_METADATA, True),
+    *((f"configs/{name}", True) for name in SHIPPED_CONFIGS),
     ("radiance_home/helpers/r3_moe_worker", True),
     ("radiance_home/helpers/*.so*", False),
     ("radiance_home/kernels/*.so*", True),
@@ -163,9 +167,52 @@ def built_from(root: Path) -> dict[str, str]:
             "pinned": str(recipes.get("pinned", "")), "note": "BigCherry's patched build, not an upstream release"}
 
 
+def check_no_interpreter(name: str, path: Path) -> None:
+    """Reject scripts and text whose runtime depends on an interpreter.
+
+    The engine payload may contain ELF binaries and opaque binary catalogs,
+    but never script entrypoints. Inspect UTF-8 data/metadata, rather than
+    scanning arbitrary binary bytes as though they were source code.
+    """
+    rel = PurePosixPath(name)
+    if (any(part == "__pycache__" for part in rel.parts)
+            or rel.suffix.lower() in {".py", ".pyc", ".pyo", ".sh", ".bash", ".zsh"}
+            or rel.name.startswith(("python", "pypy"))):
+        raise BundleError(f"interpreter or shell file in runtime asset: {name}")
+    with path.open("rb") as source:
+        if source.read(2) == b"#!":
+            raise BundleError(f"script shebang in runtime asset: {name}")
+        if rel.suffix.lower() in {".toml", ".json", ".txt", ".ini", ".conf"}:
+            # Scan the complete text file, not just its first bytes. Text is
+            # streamed one line at a time; large data files are not decoded.
+            source.seek(0)
+            for line in source:
+                try:
+                    text = line.decode("utf-8")
+                except UnicodeDecodeError as exc:
+                    raise BundleError(f"non-UTF8 runtime metadata: {name}") from exc
+                if re.search(r"(?i)\b(?:python(?:[0-9]+(?:\.[0-9]+)*)?|pypy(?:[0-9]+)?)\b", text):
+                    raise BundleError(f"interpreter reference in runtime asset: {name}")
+
+
+def check_committed_config(root: Path, name: str, content: bytes) -> None:
+    """The shipped config must be the committed engine source at HEAD."""
+    relative = f"engines/radiance/configs/{name}"
+    result = subprocess.run(
+        ["git", "-C", str(root), "show", f"HEAD:{relative}"],
+        check=False, capture_output=True,
+    )
+    if result.returncode or result.stdout != content:
+        raise BundleError(f"uncommitted or absent tagged RSC12 config: {relative}")
+
+
 def check_run_manifest(names: set[str]) -> None:
     """A restored scoped bundle has exactly run-side files and every required kind."""
     for name in names:
+        rel = PurePosixPath(name)
+        if (any(part == "__pycache__" for part in rel.parts)
+                or rel.suffix.lower() in {".py", ".pyc", ".pyo", ".sh", ".bash", ".zsh"}):
+            raise BundleError(f"interpreter or shell file in runtime asset: {name}")
         if not any(fnmatch.fnmatchcase(name, pattern) for pattern, _ in RUN_MANIFEST):
             raise BundleError(f"non-runtime file in scoped bundle: {name}")
     for pattern, required in RUN_MANIFEST:
@@ -173,22 +220,41 @@ def check_run_manifest(names: set[str]) -> None:
             raise BundleError(f"missing runtime requirement: {pattern}")
 
 
-def runtime_files(build: Path) -> dict[str, Path]:
-    """Select only manifest files, rejecting missing runtime components."""
+def runtime_files(build: Path, root: Path) -> dict[str, Path]:
+    """Choose the binary build plus the *committed* engine config closure.
+
+    Configs are source inputs, not generated build products or site overlays.
+    The archive-relative paths are independent of the source checkout.
+    """
     files: dict[str, Path] = {}
-    root = build.resolve()
+    build_root = build.resolve()
     for pattern, _ in RUN_MANIFEST:
+        if pattern.startswith("configs/"):
+            continue
         for item in sorted(build.glob(pattern)):
             if not item.is_file():
                 continue
-            # Dereference only symlinks pointing to another file INSIDE this build.
-            if not item.resolve().is_relative_to(root):
+            if not item.resolve().is_relative_to(build_root):
                 raise BundleError(f"runtime symlink escapes build directory: {item}")
             files[item.relative_to(build).as_posix()] = item
+    config_dir = root / "engines/radiance/configs"
+    actual = sorted(item.name for item in config_dir.glob("*.toml"))
+    if actual != sorted(SHIPPED_CONFIGS):
+        raise BundleError(f"RSC12 config closure changed: {actual!r}")
+    if config_dir.is_symlink() or config_dir.parent.is_symlink():
+        raise BundleError("symlink in RSC12 config source directory")
+    for name in SHIPPED_CONFIGS:
+        source = config_dir / name
+        if not source.is_file() or source.is_symlink():
+            raise BundleError(f"missing or unsafe RSC12 config: {name}")
+        check_committed_config(root, name, source.read_bytes())
+        files[f"configs/{name}"] = source
     check_run_manifest(set(files))
+    for name, path in files.items():
+        check_no_interpreter(name, path)
     if len(files) > FILE_LIMIT:
         raise BundleError("too many files in runtime bundle")
-    if sum(p.stat().st_size for p in files.values()) > BYTE_LIMIT:
+    if sum(path.stat().st_size for path in files.values()) > BYTE_LIMIT:
         raise BundleError("runtime bundle exceeds size limit")
     return files
 
@@ -197,7 +263,7 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
     if not re.fullmatch(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise BundleError("unsafe Radiance release tag")
     build, plan_id, binary_sha = select_build(record, work_root)
-    files = runtime_files(build)
+    files = runtime_files(build, root)
     identity = stock_identity(root)
     version = sdk_version(sdk)
     manifest = {
@@ -277,6 +343,7 @@ def verify_runtime_tree(target: Path, asset: dict, manifest: dict,
             raise BundleError(f"runtime file SHA-256 mismatch: {name}")
         if stat.S_IMODE(path.stat().st_mode) != receipt["mode"]:
             raise BundleError(f"runtime file mode mismatch: {name}")
+        check_no_interpreter(name, path)
 
 
 def checked_extract(archive: Path, asset: dict, target: Path) -> dict:

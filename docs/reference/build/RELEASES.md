@@ -73,7 +73,7 @@ tagged worktree supplies `tools/lab/radiance/launch-flashnext-best.sh`,
 its shell libraries, Python `bigcherry` layout/resource commands, and
 layouts/configuration. A compatible ROCm SDK, model, hardware and
 layout-specific inputs (for example helper-route heat) are also required.
-**Phase 2 (design only)** replaces the repository worktree and lab
+**Phase 2 (implementation in progress)** replaces the repository worktree and lab
 launcher with a **single Python-free engine asset** that contains the
 readable RSC12 configs and starts via native `bc-serve`. The separate
 `bc-platform` release remains for development/build/release tooling, not
@@ -93,11 +93,22 @@ a runtime companion or compatibility pair. This is not installed yet.
   archive with its `.sha256` and receipt. A bundle that then fails verification refuses; it does not fall back to an
   older tag.
 
-### RSP01 phase 2: single Python-free engine release (design only)
+### RSP01 phase 2: single Python-free engine release (implementation in progress)
 
-See [the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-single-python-free-engine-release-design-only) for the bundle contract, exact RSC02/RSC12/RSC04 dependency table, unported functions and refusal tests. **No phase-2 standalone installer is available today.** The current `release-install <tag|latest>` still installs a scoped runtime beside a clean detached whole-repository source worktree in `$BC_WORK_ROOT/releases/<tag>/src`, and `launch-flashnext-best.sh --release` re-execs that tag's shell launcher. This is a **development** launch path, not an asset intended to ship with the future engine.
+See [the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-single-python-free-engine-release-implementation-in-progress) for the bundle contract, exact RSC02/RSC12/RSC04 dependency table, unported functions and refusal tests. **No phase-2 standalone installer is available today.** The current `release-install <tag|latest>` still installs a scoped runtime beside a clean detached whole-repository source worktree in `$BC_WORK_ROOT/releases/<tag>/src`, and `launch-flashnext-best.sh --release` re-execs that tag's shell launcher. This is a **development** launch path, not an asset intended to ship with the future engine.
 
-The final release contains only engine **binaries and data**: `bin/radiance`, matching engine-built `radiance_home/bin/bc-serve`, MoE helper, kernel/architecture/quantizer plugins and catalogs, required runtime libraries and metadata, plus `engines/radiance/configs/` per-model readable RSC12 configs and their tested data dependencies. `engines/radiance/archs.toml` is an **engine build input compiled into `bc-serve`** (`components/serving/CMakeLists.txt`); the current `engines/radiance/layouts/*.toml` become RSC12 configs in the bundle, not a platform-supplied layout overlay. Exclude Python, the Python supervisor, shell launcher, build/patch/campaign tools, `rad-*` diagnostics, `r4d_selftest`, tests and mutable/private host files. The independent `bc-platform-*` release is never selected or installed to run this asset.
+**Phase-2 payload slice (before native installer/workflow cutover):** The
+runtime file manifest includes the two RSC12 TOMLs from the committed engine
+source, not from mutable build/site directories. A pack/restore gate rejects
+missing or unreviewed configs, script files, Python caches, Python/shell
+shebangs and interpreter references in human-readable runtime metadata.
+The extracted prefix has `configs/` without a source checkout, platform
+package or launcher. This is an **asset invariant**, not a claim that the
+legacy Python `release-install` has been retired or that shipped native
+start/rollback acceptance is complete. An archive from an older tag without
+these files is not a valid new phase-2 engine asset.
+
+The final release contains only engine **binaries and data**: `bin/radiance`, matching engine-built `radiance_home/bin/bc-serve`, MoE helper, kernel/architecture/quantizer plugins and catalogs, required runtime libraries and metadata, plus `configs/flashnext.toml` and `configs/qwen27b.toml` at the archive root (copied from the tagged `engines/radiance/configs/` source) and their tested data dependencies. `engines/radiance/archs.toml` is an **engine build input compiled into `bc-serve`** (`components/serving/CMakeLists.txt`); the current `engines/radiance/layouts/*.toml` become RSC12 configs in the bundle, not a platform-supplied layout overlay. Exclude Python, the Python supervisor, shell launcher, build/patch/campaign tools, `rad-*` diagnostics, `r4d_selftest`, tests and mutable/private host files. The independent `bc-platform-*` release is never selected or installed to run this asset.
 
 Native `bc-serve start CONFIG` / `serve CONFIG` / `stop` / `status` and `start --manifest FILE` (RSC02 and RSC12) must own config resolution, the memory plan, ordered helpers, host checks, power/gfxoff, calibration and heat placement with no fallback to Python. Current `components/serving/session.cpp` provides **dense engine-only** ownership, not helper/power/lab modes; `tools/lab/radiance/launch-flashnext-best.sh` and `tools/bigcherry` remain **repository-only** until those functions are ported, RSC12 configs/manifest parity is accepted, hardware parity is proved and RSC04 retires the old callers. Host ROCm SDK, hardware, models, site configuration and selected heat/policy/calibration inputs remain external.
 
