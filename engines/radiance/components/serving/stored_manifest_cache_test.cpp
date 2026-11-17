@@ -1,6 +1,7 @@
 // RSC12 S5: the static key and index are distinct from the strict-v2
 // manifest digest, live-room admission and the per-start execution record.
 // Every test is CPU-only, with real file bytes and deterministic failure.
+#include "sha256.h"
 #include "stored_manifest_cache.h"
 
 #include <cassert>
@@ -70,6 +71,21 @@ ss::StaticResolutionInputs base() {
 int main() {
     try {
         Temporary t;
+        // FIPS 180-4 vectors and a multi-update block-boundary fixture guard
+        // against changing the repository's existing manifest hash grammar.
+        expect(bc::serving::sha256_hex("abc") ==
+                   "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
+               "incremental SHA-256 standard vector");
+        expect(bc::serving::sha256_hex("") ==
+                   "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+               "incremental SHA-256 empty vector");
+        bc::serving::Sha256 stream;
+        stream.update(std::string(63, 'a'));
+        stream.update("b");
+        stream.update(std::string(65, 'c'));
+        expect(stream.hex_digest() ==
+                   bc::serving::sha256_hex(std::string(63, 'a') + "b" + std::string(65, 'c')),
+               "incremental SHA-256 must match flat hash across block boundaries");
         const fs::path model = t.root / "model.bin";
         const fs::path saved = t.root / "manifest-record.json";
         const fs::path index = ss::stored_index_path(t.root, "fixture");
@@ -78,6 +94,18 @@ int main() {
         std::string contents((2U * 1024U * 1024U) + 5U, 'm');
         write(model, contents);
         const std::string first = ss::complete_file_identity(model);
+        // Compare with the original chunk-accumulator wire digest, not a new
+        // similarly named hash; persisted static keys must remain compatible.
+        std::string old_accumulator = "bigcherry/rsc12/chunked-file-v1\n";
+        constexpr size_t chunk_bytes = 1024U * 1024U;
+        for (size_t off = 0; off < contents.size(); off += chunk_bytes) {
+            const size_t count = std::min(chunk_bytes, contents.size() - off);
+            old_accumulator +=
+                std::to_string(count) + ":" + bc::serving::sha256_hex(contents.substr(off, count)) + "\n";
+        }
+        expect(first ==
+                   bc::serving::sha256_hex("bytes=" + std::to_string(contents.size()) + "\n" + old_accumulator),
+               "streamed full fingerprint must preserve historic domain-separated chunk digest");
         contents.back() = 'x';
         write(model, contents);
         const std::string second = ss::complete_file_identity(model);
@@ -128,6 +156,27 @@ int main() {
 
         write(saved, "unchanged strict-v2 manifest bytes\n");
         const std::string digest = ss::complete_file_identity(saved);
+        // RED P2-6: the actual config-index writer stores a full model digest
+        // keyed by stat identity, and the replay lookup must not even call the
+        // counting full-file reader when all identity fields are unchanged.
+        unsigned full_model_reads = 0;
+        const auto counting_model_reader = [&](const fs::path& source) {
+            ++full_model_reads;
+            return ss::complete_file_identity(source);
+        };
+        const ss::ModelIdentity model_first = ss::cached_model_identity(model, index, counting_model_reader);
+        expect(full_model_reads == 1 && model_first.digest == second,
+               "first start fingerprints all model bytes");
+        ss::write_stored_index(
+            index, {original, saved.filename().string(), digest, model_first.digest, model_first.stamp});
+        const ss::ModelIdentity model_hit = ss::cached_model_identity(model, index, counting_model_reader);
+        expect(full_model_reads == 1 && model_hit.digest == model_first.digest,
+               "unchanged model must be a true cache hit with zero model reader calls");
+        // A size (or inode, device, mtime_ns, ctime_ns) change must invalidate.
+        write(model, contents + "changed");
+        const ss::ModelIdentity model_changed = ss::cached_model_identity(model, index, counting_model_reader);
+        expect(full_model_reads == 2 && model_changed.digest != model_first.digest,
+               "changed model stat identity must invalidate full digest");
         ss::write_stored_index(index, {original, saved.filename().string(), digest});
         const auto found = ss::stored_manifest_for(t.root, "fixture", original);
         expect(found && *found == saved, "equal static key must reuse unchanged manifest");

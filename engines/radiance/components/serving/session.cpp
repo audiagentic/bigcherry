@@ -1777,6 +1777,7 @@ struct NamedCache {
     std::string key;
     fs::path index;
     std::string model_digest;
+    FileStamp model_stamp;
 };
 
 std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved& resolved, const Json& facts,
@@ -1801,7 +1802,10 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     static_inputs.engine_digest = engine_identity(engine, home);
     static_inputs.helper_digest =
         resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
-    static_inputs.model_digest = complete_file_identity(values.at("engine").at("model").get<std::string>());
+    const fs::path index = stored_index_path(run_dir, name);
+    const ModelIdentity artifact =
+        cached_model_identity(values.at("engine").at("model").get<std::string>(), index);
+    static_inputs.model_digest = artifact.digest;
     static_inputs.power_profile = in.power_profile;
 
     static_inputs.ordered_devices = Json::array();
@@ -1839,8 +1843,7 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         values.at("handoff").at("heat").is_string() &&
         !values.at("handoff").at("heat").get<std::string>().empty())
         file(values.at("handoff").at("heat").get<std::string>());
-    return NamedCache{static_resolution_key(static_inputs), stored_index_path(run_dir, name),
-                      static_inputs.model_digest};
+    return NamedCache{static_resolution_key(static_inputs), index, artifact.digest, artifact.stamp};
 }
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
@@ -2116,8 +2119,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                         bc::serving::engine_identity(engine, home), "budgets: default"));
             if (cache_selection) {
                 const StoredManifestIndex entry{cache_selection->key, manifest.filename().string(),
-                                                complete_file_identity(manifest),
-                                                cache_selection->model_digest};
+                                                complete_file_identity(manifest), cache_selection->model_digest,
+                                                cache_selection->model_stamp};
                 // Each manifest carries an adjacent immutable replay attestation;
                 // the per-config index may point to another manifest on the next
                 // static key, but this exact file's identity remains verifiable.
