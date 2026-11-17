@@ -73,6 +73,10 @@ class ReleaseInstallTests(unittest.TestCase):
         (self.root / "config").mkdir()
         (self.root / "releases").mkdir()
         (self.root / "engines/radiance/source.txt").write_text("radiance production")
+        configs = self.root / "engines/radiance/configs"
+        configs.mkdir()
+        for name in runtime_assets.SHIPPED_CONFIGS:
+            (configs / name).write_text(f"schema = 1\n# {name}\n")
         (self.root / "config/recipes.txt").write_text("pinned")
         (self.root / "releases/index.json").write_text('{"releases": []}')
         self._commit("initial source trees")
