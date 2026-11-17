@@ -460,7 +460,6 @@ public:
         class_count_ = count;
         class_rows_ = sizes;
         large_rows_ = large_rows;
-        const size_t nclass = experts() / 2;
         for (uint32_t lane = 0; lane < lane_.size(); ++lane) {
             const uint32_t rank = lane % lane_shape_.slots;
             const uint32_t cls = lane_class(lane, lane_shape_.slots);
