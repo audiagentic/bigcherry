@@ -21,13 +21,13 @@
 
 #undef NDEBUG   /* the checks below are assert()s: keep them live in Release component builds */
 #include <arpa/inet.h>
+#include <csignal>
+#include <cstdio>
 #include <netinet/in.h>
 #include <sys/socket.h>
-#include <sys/wait.h>
-#include <csignal>
 #include <sys/stat.h>
+#include <sys/wait.h>
 #include <unistd.h>
-#include <cstdio>
 
 #include <atomic>
 #include <cassert>
@@ -2481,7 +2481,6 @@ void session_engine_plan(Fixture& t) {
     }
     assert(refused);
 }
-
 
 // Real plan_engine_only + real session owner, with the fake KFD/proc tree,
 // a child-gated CPU manifest writer and a fake engine. Both manifest cache
