@@ -2,7 +2,7 @@
 id: RCS13
 order: 0
 plan: build-radiance-components
-state: pending
+state: in_progress
 created-at: '2026-11-13T03:53:14.434848+00:00'
 breadth: ''
 skill: advanced
@@ -59,7 +59,20 @@ No hand-picked constants; no compatibility shim; kernel changes only as bigcherr
 
 Stage 1 of the radiance protocol programme (see RCS12 staging): independent of the shared-memory ABI, so it can land first and in parallel with RHP01 evidence work.
 
+Stage 1 of the radiance protocol programme (see RCS12 staging): independent of the shared-memory ABI, so it can land first and in parallel with RHP01 evidence work.
+
+Status 2026-11-18: implementation merged to main with PR 946; the item stays in progress until criterion 2 (a model with intermediate > 2560) and criterion 3 on gfx1100 and gfx1030 are qualified. This is a correctness change, not a speed change: neutral performance is the expected and acceptable result.
+
+Evidence (docs/evidence/2026-11-17-rcs13-pr946-run6 .. 2026-11-18-rcs13-pr946-run12; runs 6-11 are gate-stop records):
+- Offline: K=2560 replay result buffers byte-identical (8/8 captured requests); theoretical W4H2 occupancy 8 -> 7 blocks per CU on gfx1201 (not a runtime result).
+- Run 12 (production launcher, TP2 gfx1100 engines + gfx1201 helper, A = main 7c0273976, B = PR 946 head, A/B/B/A, three seeds, 1 and 2 decode streams, separate prefill cells): decode engine ms/step A 37.85 and 37.70, B 37.53 and 36.96 (pooled B -1.4%, inside the spread: A repeats differ by 0.4%, B repeats by 1.7%); prefill TTFT A 1410 and 1415 ms, B 1402 and 1441 ms (+0.6%, inside B's own 2.7% spread); MTP draft/accept equal within noise (A 479/702, B 480/696); single-stream output hashes identical in all four cells; two-stream hashes differ across cells and also between two runs of the same arm A (concurrency nondeterminism present without the patch); 6488 executions of the dynamic-LDS W4H2 kernel recorded in B. Verdict recorded as: no attributable regression, no improvement claim; the strict multi-stream identity gate cannot be met by any arm and needs a deterministic concurrency oracle.
+- Process findings of runs 5-11 (all on main, fixed): TP2 helper footprint drift (60 B per lane, PR 1056); Python planner exit-11 remeasure and the S10 resolver rewriting the helper budget after measurement (PR 1058); helper VRAM release barrier before the final manifest (PR 1061).
+
+Open: (1) a card-free and, if a model exists, hardware test for intermediate > 2560 (grouped-GEMM fallback and the refusal path); (2) gfx1100 and gfx1030 byte identity and decode parity, each qualified independently; (3) a deterministic multi-stream oracle if a concurrency identity gate is wanted. Pick up when a model with K > 2560 or a gfx1100/gfx1030 helper layout is planned.
+
 ## Change Log
 
 - 2026-11-13T03:53:14.434848+00:00 (created-by): Created by bigcherry-1
 - 2026-11-13T03:53:59.413255+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+- 2026-11-17T22:25:51.124293+00:00 (updated-by): Updated: section:notes
+- 2026-11-17T22:26:00.089362+00:00 (state-transition): State: pending → in_progress
