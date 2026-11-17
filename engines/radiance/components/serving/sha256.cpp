@@ -66,7 +66,7 @@ void Sha256::process(const unsigned char* block) {
 }
 
 void Sha256::update(std::string_view bytes) {
-    if (bytes.size() > std::numeric_limits<uint64_t>::max() / 8U - size_)
+    if (bytes.size() > (std::numeric_limits<uint64_t>::max() / 8U) - size_)
         throw std::overflow_error("SHA-256 input bit length overflows");
     size_ += static_cast<uint64_t>(bytes.size());
     size_t offset = 0;
@@ -98,7 +98,7 @@ std::string Sha256::hex_digest() const {
     std::fill(final.pending_.begin() + static_cast<std::ptrdiff_t>(final.partial_), final.pending_.begin() + 56,
               0U);
     for (int i = 0; i < 8; ++i)
-        final.pending_[56 + i] = static_cast<unsigned char>(bits >> (56U - 8U * static_cast<unsigned>(i)));
+        final.pending_[56 + i] = static_cast<unsigned char>(bits >> (56U - (8U * static_cast<unsigned>(i))));
     final.process(final.pending_.data());
     std::ostringstream out;
     for (uint32_t v : final.state_)

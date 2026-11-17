@@ -166,10 +166,13 @@ int main() {
             const auto status = apply.begin(apply_path, v2::PlanUse::serving);
             if (status)
                 throw std::runtime_error("injected real apply refused: " + v2::render_human("apply", *status));
-            expect(hardware.writes > 0 && apply.execution().has_value(),
+            const auto& applied = apply.execution();
+            expect(hardware.writes > 0 && applied.has_value(),
                    "real apply must durably admit and issue typed hardware commands");
-            first_apply_id = apply.execution()->run_id;
-            expect(apply.execution()->manifest_origin_instance_id == parsed_apply.value().metadata.instance_id,
+            if (!applied)
+                throw std::runtime_error("durable apply did not issue an execution");
+            first_apply_id = applied->run_id;
+            expect(applied->manifest_origin_instance_id == parsed_apply.value().metadata.instance_id,
                    "fresh execution keeps the exact immutable origin as reference");
             // Destroy the owner WITHOUT finish: simulate owner crash after
             // durable apply, not a fake journal shape.
@@ -189,8 +192,12 @@ int main() {
         if (again)
             throw std::runtime_error("second apply after recovery refused: " +
                                      v2::render_human("apply-replay", *again));
-        expect(apply_replay.execution()->run_id != first_apply_id &&
-                   apply_replay.execution()->run_id != replay.execution()->run_id,
+        const auto& second_execution = apply_replay.execution();
+        const auto& observed_execution = replay.execution();
+        if (!second_execution || !observed_execution)
+            throw std::runtime_error("replay admission did not produce execution identities");
+        expect(second_execution->run_id != first_apply_id &&
+                   second_execution->run_id != observed_execution->run_id,
                "every apply and observe replay must use a new execution run identity");
         apply_replay.children_verified();
         expect(!apply_replay.finish(), "second apply must restore after verified process exit");

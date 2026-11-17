@@ -45,7 +45,7 @@ struct ModelIdentity {
 // the OS file boundary so a test can assert zero reads on an index hit.
 using FullFileReader = callback::Guarded<std::string(const std::filesystem::path&)>;
 ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
-                                    FullFileReader full_reader = {});
+                                    const FullFileReader& full_reader = {});
 
 // SHA-256 over RFC8785/JCS of these typed static inputs, with a version.
 // Independent of the stored manifest's own digest and per-start execution record.

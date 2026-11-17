@@ -17,7 +17,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
-#if defined(__clang__)
+#ifdef __clang__
 #if __has_feature(address_sanitizer)
 #define BC_TEST_ADDRESS_SANITIZER 1
 #endif
@@ -105,7 +105,7 @@ int main() {
         // Compare with the original chunk-accumulator wire digest, not a new
         // similarly named hash; persisted static keys must remain compatible.
         std::string old_accumulator = "bigcherry/rsc12/chunked-file-v1\n";
-        constexpr size_t chunk_bytes = 1024U * 1024U;
+        constexpr size_t chunk_bytes = size_t{1024} * size_t{1024};
         for (size_t off = 0; off < contents.size(); off += chunk_bytes) {
             const size_t count = std::min(chunk_bytes, contents.size() - off);
             old_accumulator +=
@@ -223,7 +223,7 @@ int main() {
         if (child == 0) {
             // ASan needs a large virtual address space for shadow mappings,
             // so preserve the 64 MiB cap only in the unsanitized regression.
-#if !defined(BC_TEST_ADDRESS_SANITIZER)
+#ifndef BC_TEST_ADDRESS_SANITIZER
             const rlimit budget{64ULL * 1024ULL * 1024ULL, 64ULL * 1024ULL * 1024ULL};
             if (::setrlimit(RLIMIT_AS, &budget) != 0)
                 ::_exit(30);
