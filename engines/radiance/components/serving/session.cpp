@@ -1360,9 +1360,9 @@ class Owner {
             argv.push_back(plan_.heat_session_nonce);
         }
         plan_.engine_launched_at = std::chrono::system_clock::now();
-        (void)spawn(argv, child_environment(environ, plan_.runtime), log,
-                    [&](pid_t pid) { track("engine", pid, log); },
-                    plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
+        (void)spawn(
+            argv, child_environment(environ, plan_.runtime), log, [&](pid_t pid) { track("engine", pid, log); },
+            plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
     }
 
     std::optional<std::string> exited_child() {
