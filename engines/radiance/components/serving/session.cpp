@@ -1,7 +1,9 @@
 #include "session.h"
 #include "power_transaction.h"
 
+#include "calibration_lab.h"
 #include "config_loader.h"
+#include "live_policy_ingest.h"
 #include "manifest_writer.h"
 #include "resources.h"
 
@@ -623,10 +625,10 @@ std::optional<std::string> canary(int port, const std::string& prompt, const std
 }
 
 PowerHook hooks_for_power_transaction(power::SessionPower& transaction) {
-    return PowerHook{
-        [&transaction]() -> v2::Status { return transaction.begin(); },
-        [&transaction]() -> v2::Status { return transaction.finish(); },
-    };
+    PowerHook hook;
+    hook.apply = [&transaction]() -> v2::Status { return transaction.begin(); };
+    hook.restore = [&transaction]() -> v2::Status { return transaction.finish(); };
+    return hook;
 }
 
 /* --- the owner
@@ -719,9 +721,15 @@ class Owner {
         int code = 0;
         std::vector<std::string> failures;
         try {
-            if (bool(s_.power_hook.apply) != bool(s_.power_hook.restore))
-                throw PlanFailed("power_hook: apply and restore must both be provided");
-            // Step 4 provides the actual journaled transaction; this is only its lifecycle boundary.
+            if (s_.power_hook.apply && s_.power_hook.begin_manifest)
+                throw PlanFailed("power_hook: choose pre-plan or manifest admission, not both");
+            if (bool(s_.power_hook.apply || s_.power_hook.begin_manifest) != bool(s_.power_hook.restore))
+                throw PlanFailed("power_hook: begin/apply and restore must both be provided");
+            if (s_.power_hook.begin_manifest && (!s_.power_hook.verify_serving || !s_.power_hook.verified_exit))
+                throw PlanFailed(
+                    "power_hook: manifest admission needs final verification and verified-exit proof");
+            // Legacy owner test hook remains compatible. Production uses the
+            // manifest-authenticated admission during the planner, before measurement.
             if (s_.power_hook.apply) {
                 power_attempted_ = true; // restore even if apply partially writes before throwing
                 require_callback(s_.power_hook.apply.invoke("session.power.apply"), "power_hook.apply");
@@ -731,9 +739,35 @@ class Owner {
             Hooks hooks;
             hooks.wait = [this](std::chrono::milliseconds d) { return service(d); };
             hooks.started = [this](const std::string& role, pid_t pid, const fs::path& log) {
+                // Register first so even a buggy planner that starts before
+                // admission leaves a child the owner can forcibly reap.
                 track(role, pid, log);
+                if (s_.power_hook.begin_manifest && !power_admitted_)
+                    throw PlanFailed("planner started a measuring child before durable power admission");
             };
             hooks.ended = [this](pid_t pid) { untrack(pid); };
+            if (s_.power_hook.begin_manifest) {
+                hooks.admit_power = [this](const fs::path& manifest, v2::PlanUse use) -> v2::Status {
+                    if (power_attempted_)
+                        return v2::make_error(v2::ConfigErrorCode::invalid_state, "session.power",
+                                              "duplicate manifest power admission");
+                    power_attempted_ = true; // restore even after a failed/partial begin
+                    const auto result =
+                        s_.power_hook.begin_manifest.invoke("session.power.begin_manifest", manifest, use);
+                    if (!result)
+                        return result.error();
+                    if (result.value())
+                        return result.value();
+                    record_["power_admission"] = {
+                        {"manifest", manifest.string()},
+                        {"phase", use == v2::PlanUse::measuring ? "measuring" : "serving"}};
+                    if (!event("power_applied"))
+                        return v2::make_error(v2::ConfigErrorCode::io_failure, "session.record",
+                                              "cannot persist manifest-bound power admission before measuring");
+                    power_admitted_ = true;
+                    return std::nullopt;
+                };
+            }
             hooks.selected_segment = [this](const std::string& name) {
                 if (name.rfind("/r3-serve-", 0) != 0)
                     throw PlanFailed("refusing to own a shared segment without a unique session name");
@@ -742,17 +776,31 @@ class Owner {
                 event("segment_selected");
             };
             plan_ = require_callback(s_.plan.invoke("session.plan", s_.run_dir, hooks), "session.plan");
+            if (s_.power_hook.begin_manifest && !power_admitted_)
+                throw PlanFailed("planner returned without DURABLE authenticated pre-measure power admission");
+            if (s_.power_hook.verify_serving)
+                require_callback(
+                    s_.power_hook.verify_serving.invoke("session.power.verify_serving", plan_.manifest),
+                    "power final manifest");
             record_["manifest"] = plan_.manifest.string();
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
             event("planned");
             if (stop_requested())
                 throw Stop{};
+            // No-process PWR06 floor, before any serving helper OR engine is
+            // launched. The measuring children have already been reaped.
+            if (s_.power_hook.gfxoff_window)
+                require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.floor", false),
+                                 "gfxoff floor receipt");
             start_helpers();
             start_engine();
             if (!wait_health())
                 throw Stop{};
             event("healthy");
+            if (s_.power_hook.gfxoff_window)
+                require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.loaded_idle", true),
+                                 "gfxoff loaded idle receipt");
             if (const auto why =
                     canary(plan_.port, s_.canary.prompt, s_.canary.expect, s_.timing.canary_timeout)) {
                 failures.push_back("start canary failed: the engine is up but " + *why);
@@ -760,15 +808,31 @@ class Owner {
                 throw Failed{};
             }
             event("canary_passed");
-            event("running");
-            while (service(s_.timing.poll)) {
-                if (const auto gone = exited_child()) {
-                    failures.push_back(*gone + " exited while serving");
-                    code = 1;
-                    throw Failed{};
-                }
+            if (s_.runtime_guard) {
+                require_callback(s_.runtime_guard.invoke("session.runtime_guard", plan_, engine_log_),
+                                 "runtime replay/heat/policy guard");
+                event(s_.laboratory ? "runtime_guard_preflight" : "runtime_guard_ready");
             }
-            event("stop_requested", {{"by", stop_reason()}});
+            if (s_.laboratory) {
+                event("calibrating");
+                calibrate();
+                event("calibration_completed");
+            } else {
+                event("running");
+                while (service(s_.timing.poll)) {
+                    if (s_.runtime_watch)
+                        require_callback(s_.runtime_watch.invoke("session.runtime_watch"),
+                                         "live heat/policy guard");
+                    if (const auto gone = exited_child()) {
+                        failures.push_back(*gone + " exited while serving");
+                        code = 1;
+                        throw Failed{};
+                    }
+                }
+                event("stop_requested", {{"by", stop_reason()}});
+            }
+            /* calibration terminates with the same verified stop/restore as a
+             * serving owner; it does not remain in a detached running state. */
         } catch (const Stop&) {
             event("stop_requested", {{"by", stop_reason()}});
         } catch (const Failed&) {
@@ -828,6 +892,11 @@ class Owner {
         }
         // Never restore power if a process or descendant of any tracked group may still hold a card.
         if (exited && power_attempted_) {
+            if (s_.power_hook.verified_exit) {
+                const auto acknowledged = s_.power_hook.verified_exit.invoke("session.power.verified_exit");
+                if (acknowledged)
+                    failures.push_back("power exit proof failed: " + acknowledged->message);
+            }
             const auto restored = s_.power_hook.restore.invoke("session.power.restore");
             if (!restored)
                 failures.push_back("power_hook restore callback failed; keep journal: " +
@@ -883,7 +952,10 @@ class Owner {
     int lock_ = -1, listen_ = -1;
     bool stop_ = false;
     bool power_attempted_ = false;
+    bool power_admitted_ = false;
     std::string handoff_shm_;
+    fs::path engine_log_;
+    std::vector<fs::path> helper_logs_;
     std::vector<int> stop_clients_;
     std::vector<Child> children_;
     EngineStart plan_;
@@ -1042,14 +1114,103 @@ class Owner {
             // A ready line from a process that just exited does not satisfy the gate.
             if (const auto gone = exited_child())
                 throw std::runtime_error(h.role + ": child exited after reporting ready: " + *gone);
+            helper_logs_.push_back(log);
             event("ready", {{"role", h.role}, {"pid", pid}});
         }
         if (!plan_.helpers.empty())
             require_segment(plan_.handoff_shm);
     }
 
+    // Only a measured, authenticated lab manifest can run this workload.
+    // The observation-space envelope is finite even if the helper's retained
+    // drift ring coarsens repeatedly. Each request runs with an HTTP deadline.
+    void calibrate() {
+        if (!s_.laboratory)
+            throw PlanFailed("calibration requested without lab inputs");
+        const auto verified = v2::load_manifest(plan_.manifest, v2::PlanUse::serving);
+        if (!verified)
+            throw PlanFailed("calibration manifest: " + verified.error().message);
+        const auto& spec = verified.value().spec;
+        if (spec.intent.service.profile != v2::Profile::kLab || spec.experiment || !spec.handoff ||
+            !spec.handoff->placement.live_policy || helper_logs_.empty())
+            throw PlanFailed(
+                "calibration requires a lab-only live-policy manifest with helper0 and no experiment");
+        const auto prompts = read_calibration_prompts(s_.laboratory->prompts_a, s_.laboratory->prompts_b);
+        if (!prompts)
+            throw PlanFailed("calibration prompts: " + prompts.error().message);
+        const auto& workload = prompts.value();
+        const auto& policy = *spec.handoff->placement.live_policy;
+        const fs::path helper_log = helper_logs_.front();
+        const auto begun = Clock::now();
+        constexpr auto request_timeout = std::chrono::seconds(120);
+        CalibrationEnvelope envelope;
+        bool have_feed = false;
+        const auto checked_limit = [&]() {
+            const auto drift = read_calibration_drift(helper_log);
+            if (!drift)
+                throw PlanFailed("calibration drift: " + drift.error().message);
+            const auto next = calibration_envelope(policy, workload.a.size(), workload.b.size(),
+                                                   request_timeout, drift.value());
+            if (!next)
+                throw PlanFailed("calibration envelope: " + next.error().message);
+            envelope = next.value();
+            have_feed = have_feed || envelope.accepted_feed;
+            const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - begun);
+            if (!have_feed && elapsed >= envelope.prefeed)
+                throw PlanFailed("calibration: no measured heat feed within the policy-only bound");
+            if (elapsed >= envelope.limit)
+                throw PlanFailed("calibration: finite measured workload/drift deadline exhausted");
+            if (stop_requested())
+                throw Stop{};
+            if (const auto gone = exited_child())
+                throw PlanFailed("calibration: child exited before convergence: " + *gone);
+            if (s_.runtime_watch)
+                require_callback(s_.runtime_watch.invoke("session.calibration.runtime_watch"),
+                                 "calibration live policy guard");
+        };
+        for (;;) {
+            // Every complete iteration is exactly A -> B -> B -> A; a marker
+            // from a partial traversal is deliberately not accepted.
+            for (const auto* series : {&workload.a, &workload.b, &workload.b, &workload.a}) {
+                for (const auto& prompt : *series) {
+                    checked_limit();
+                    const Json request = {
+                        {"model", "default"}, {"prompt", prompt}, {"max_tokens", 24}, {"temperature", 0}};
+                    const auto reply =
+                        http(plan_.port, "POST", "/v1/completions", request.dump(), request_timeout);
+                    if (!reply || reply->status < 200 || reply->status > 299)
+                        throw PlanFailed("calibration: workload HTTP request failed");
+                    const Json output = Json::parse(reply->body, nullptr, false);
+                    if (!output.is_object() || !output.contains("choices") ||
+                        !output.at("choices").is_array() || output.at("choices").empty() ||
+                        !output.at("choices").at(0).is_object() ||
+                        !output.at("choices").at(0).value("text", Json()).is_string())
+                        throw PlanFailed("calibration: workload reply is not a completion");
+                    checked_limit();
+                    if (!service(0ms))
+                        throw Stop{};
+                }
+            }
+            const auto marker = complete_calibration_marker(helper_log);
+            if (!marker)
+                throw PlanFailed("calibration marker: " + marker.error().message);
+            if (marker.value())
+                break;
+            checked_limit();
+        }
+        if (!plan_.summary.contains("calibration_store_key") ||
+            !plan_.summary.at("calibration_store_key").is_string())
+            throw PlanFailed("calibration: measured plan store key is absent");
+        if (s_.lab_evidence_gate)
+            require_callback(s_.lab_evidence_gate.invoke("session.calibration.prove_live"),
+                             "calibration final live evidence gate");
+        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store, plan_.manifest,
+                                            plan_.summary.at("calibration_store_key").get<std::string>());
+    }
+
     void start_engine() {
         const fs::path log = s_.run_dir / ("engine-" + stamp() + ".log");
+        engine_log_ = log;
         (void)spawn(plan_.argv, child_environment(environ, plan_.runtime), log,
                     [&](pid_t pid) { track("engine", pid, log); });
     }
@@ -1590,7 +1751,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     }
     auto write = [&](const fs::path& out_file, const std::vector<std::string>& more) {
         std::vector<std::string> argv = {in.self.string(), "--write-manifest", out_file.string(),
-                                         "--power-profile", "stock"};
+                                         "--power-profile", in.power_profile};
+        if (in.calibration_run) {
+            if (in.live_policy_file.empty())
+                throw PlanFailed("calibration: a lab live policy is required");
+            argv.insert(argv.end(), {"--calibration-run", "--live-policy", in.live_policy_file.string()});
+        }
         argv.insert(argv.end(), more.begin(), more.end());
         argv.insert(argv.end(), base.begin(), base.end());
         for (const auto& s : extra_sets)
@@ -1624,6 +1790,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     const std::vector<std::string> measured_args = {"--plan-cache",  cache.string(), "--engine-binary",
                                                     engine.string(), "--plan-extra", "budgets: default"};
     int pool_changes = 0;
+    bool power_admitted = false;
     for (int round = 0; round < 5; ++round) {
         std::error_code ec;
         fs::remove(manifest, ec);
@@ -1641,6 +1808,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
             fs::remove(plan, ec);
             fs::remove(ranks, ec);
+            if (hooks.admit_power && !power_admitted) {
+                require_callback(
+                    hooks.admit_power.invoke("session.hooks.admit_power", measuring, v2::PlanUse::measuring),
+                    "pre-measure manifest power admission");
+                power_admitted = true;
+            }
             const auto helper_measuring =
                 helper_starts({processes, facts}, home, helper_binary, measuring, true);
             MeasuringHelpers group(hooks);
@@ -1731,6 +1904,18 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             }
         }
         if (w.exit == 0) {
+            if (hooks.admit_power && !power_admitted) {
+                require_callback(
+                    hooks.admit_power.invoke("session.hooks.admit_power", manifest, v2::PlanUse::serving),
+                    "measured manifest power admission");
+                power_admitted = true;
+            }
+            if (in.calibration_run)
+                out.summary["calibration_store_key"] =
+                    bc::serving::calibration_key(bc::serving::plan_key_inputs(
+                        v, facts,
+                        bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
+                        bc::serving::engine_identity(engine, home), "budgets: default"));
             out.manifest = manifest;
             out.argv = {engine.string(), "--manifest", manifest.string(), "--role", "engine"};
             out.helpers = helper_starts({processes, facts}, home, helper_binary, manifest, false);

@@ -1128,6 +1128,108 @@ void helper_power_hook_boundary() {
 
 void real_session_power_returned_errors();
 
+void premeasurement_manifest_hook_integration() {
+    // One owner, one run, and one manifest admission *before* measuring.
+    // Explicit fake hooks record their sequencing without ever touching sysfs.
+    for (const std::string stage : {"normal", "begin_error", "ignored_begin_error", "verify_throw",
+                                    "loaded_error", "runtime_throw", "watch_error", "exit_throw"}) {
+        Case c("manifest-" + stage);
+        const fs::path trace = c.run / "hooks.trace";
+        const auto log = [trace](const std::string& value) {
+            std::ofstream out(trace, std::ios::app);
+            out << value << '\n';
+            if (!out)
+                throw std::runtime_error("cannot record integration hook");
+        };
+        const auto previous = c.session.plan;
+        c.session.plan = [previous, stage](const fs::path& run, const ss::Hooks& hooks) -> ss::EngineStart {
+            const fs::path provisional = run / "provisional-v2.json";
+            std::ofstream(provisional) << "{\"premeasured\":true}";
+            const auto admission = hooks.admit_power.invoke("integration.admit_power", provisional,
+                                                            bc::serving::v2::PlanUse::measuring);
+            if (!admission)
+                throw ss::PlanFailed(admission.error().message);
+            if (admission.value() && stage != "ignored_begin_error")
+                throw ss::PlanFailed(admission.value()->message);
+            return previous.require("integration.base_plan", run, hooks);
+        };
+        c.session.power_hook.begin_manifest =
+            [stage, log](const fs::path&, bc::serving::v2::PlanUse use) -> bc::serving::v2::Status {
+            assert(use == bc::serving::v2::PlanUse::measuring);
+            log("begin");
+            if (stage == "begin_error" || stage == "ignored_begin_error")
+                return bc::serving::v2::make_error(bc::serving::v2::ConfigErrorCode::admission_refused,
+                                                   "integration", "begin refused");
+            return std::nullopt;
+        };
+        c.session.power_hook.verify_serving = [stage,
+                                               log](const fs::path& manifest) -> bc::serving::v2::Status {
+            assert(manifest.filename() == "fake-manifest.json");
+            log("verify");
+            if (stage == "verify_throw")
+                throw 91; // NOLINT(bugprone-std-exception-baseclass): injected nonstandard callback
+            return std::nullopt;
+        };
+        c.session.power_hook.gfxoff_window = [stage, log](bool loaded) -> bc::serving::v2::Status {
+            log(loaded ? "loaded_idle" : "floor");
+            if (stage == "loaded_error" && loaded)
+                return bc::serving::v2::make_error(bc::serving::v2::ConfigErrorCode::io_failure,
+                                                   "integration.gfxoff", "receipt persistence failed");
+            return std::nullopt;
+        };
+        c.session.power_hook.verified_exit = [stage, log, &c] {
+            assert(c.engine_pid() <= 0 || gone(c.engine_pid()));
+            log("verified_exit");
+            if (stage == "exit_throw")
+                throw 37; // NOLINT(bugprone-std-exception-baseclass): injected nonstandard callback
+        };
+        c.session.power_hook.restore = [log, &c]() -> bc::serving::v2::Status {
+            assert(c.engine_pid() <= 0 || gone(c.engine_pid()));
+            log("finish");
+            return std::nullopt;
+        };
+        c.session.runtime_guard = [stage, log](const ss::EngineStart&,
+                                               const fs::path&) -> bc::serving::v2::Status {
+            log("runtime_start");
+            if (stage == "runtime_throw")
+                throw 91; // NOLINT(bugprone-std-exception-baseclass): injected nonstandard callback
+            return std::nullopt;
+        };
+        c.session.runtime_watch = [stage, log]() -> bc::serving::v2::Status {
+            log("watch");
+            if (stage == "watch_error")
+                return bc::serving::v2::make_error(bc::serving::v2::ConfigErrorCode::admission_refused,
+                                                   "integration.live", "live policy degraded");
+            return std::nullopt;
+        };
+        const pid_t owner = c.owner();
+        if (stage == "normal" || stage == "exit_throw") {
+            c.wait_state({"running"});
+            const auto stopped = ss::control(c.run, "stop", 10s);
+            assert(stopped && stopped->value("ok", true) == (stage == "normal"));
+            assert((exit_code(owner) == 0) == (stage == "normal"));
+        } else {
+            assert(exit_code(owner) != 0);
+        }
+        if (stage != "normal")
+            assert(c.record().value("state", "") == "failed");
+        const std::string events = text(trace);
+        const auto begin = events.find("begin\n");
+        const auto verified = events.find("verified_exit\n");
+        const auto finish = events.find("finish\n");
+        assert(begin == 0 && verified != std::string::npos && finish != std::string::npos && verified < finish);
+        if (stage == "begin_error" || stage == "ignored_begin_error" || stage == "verify_throw") {
+            assert(c.record().value("processes", Json::array()).empty());
+        } else {
+            assert(events.find("floor\n") != std::string::npos &&
+                   events.find("loaded_idle\n") != std::string::npos);
+            for (const auto& child : c.record().value("processes", Json::array()))
+                assert(gone(child.at("pid").get<pid_t>()));
+        }
+        assert(events.find("verify\n") == std::string::npos || events.find("verify\n") > begin);
+    }
+}
+
 int test_main(int argc, char** argv) {
     if (argc == 4 && std::string(argv[1]) == "--owner") {
         // owner mode for start_detached_runs_and_stops: serve the fake manifest already in the run directory
@@ -1152,6 +1254,7 @@ int test_main(int argc, char** argv) {
     fs::create_directories(g_root);
     injected_owner_plan_exception();
     real_session_power_returned_errors();
+    premeasurement_manifest_hook_integration();
     callback_nonstandard_regression();
     callback_exception_matrix();
     spawn_and_environment();

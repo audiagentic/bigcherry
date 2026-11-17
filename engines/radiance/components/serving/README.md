@@ -19,6 +19,57 @@ manifests they start from. The engine still starts from flags until the S4
 cutover, so this is not yet a fully qualified v1 launch.
 
 
+## RSC02 step 3: manifest-bound power and native runtime guards
+
+The foreground `bc-serve serve` and detached `bc-serve start` owner authenticate
+the pre-measurement `v2::Manifest` with the strict reader and bind power to its
+ordered engine/helper PCI addresses. On a cache hit, the measured manifest is
+the initial power admission; on a miss, the unmeasured manifest is admitted
+**before** any helper or engine measuring process. Both are journaled and
+the final measured manifest is checked against the admitted role/address order,
+profile digest and tuning. An owner that fails to record admission durably
+cannot launch a measuring child. The owner reaps all registered child
+process groups before calling `SessionPower::finish()`; every returned power
+or receipt error surfaces as a failed session, never a clean stop.
+
+The default `--power-profile stock` is observational. Hardware-changing
+v2 profiles require **both** a qualified profile and the opt-in
+`--allow-power-apply`, plus an unexpired, ancestor-and-instance-bound
+GPU lease. With no opt-in the owner rejects apply before a hardware write.
+No unit test calls the real Linux write interface: power tests use injected
+`power::Hardware`, `power::Records` and `power::Sensor`.
+PWR06 captures a no-process floor after measurement children exit, before
+the serving helpers and engine start; it captures loaded-idle evidence after
+health and before requests, evaluates the typed `power::Verdict`, and persists
+the advisory result in the session power receipt. Missing sensors cannot
+be misreported as healthy GFXOFF.
+
+A successful canary is followed by a **manifest-driven** MTP replay guard
+(depth greater than one, absent `profile_ops`): an engine log must include a
+recorded nonzero draft pass, with exactly one retry canary before refusal.
+For a manifest requesting live policy, the C++ runtime guard verifies the
+startup decision, samples the actual rank histogram without following
+symlinks, rejects empty/stale/future files, and checks live worker transport
+identity and placement journals through the typed runtime receipt reader.
+A live degradation or stale transport fails the owner; polling is bounded.
+
+Foreground lab calibration is opt-in:
+`bc-serve serve --calibration-run --live-policy FILE
+--calibration-prompts-a FILE --calibration-prompts-b FILE
+--calibration-store PATH`. It needs an authenticated measured lab manifest
+with helpers and no experiment, a finite nonempty A/B/B/A workload, measured
+drift evidence before the prefeed deadline, and a single complete calibration
+marker. A capped observation-space envelope prevents an unbounded run; the
+existing C++ ingest validator rejects malformed or incomplete records.
+No successful live-policy state is reported merely because calibration was
+requested; a final runtime telemetry proof is required. Detached calibration,
+automatic activation of a partial calibration and arbitrary lab shell scripts
+are not offered.
+
+Card-free tests: `bc_manifest_power_test`, `bc_session_guards_test` and
+`bc_session_test` (as well as existing `bc_power_transaction_test`).
+Every executable is a CMake target and declared in `component.toml`.
+
 ## Callback boundary and source scanner
 
 Injected callbacks in the current serving component use private typed
@@ -53,7 +104,8 @@ plans a clang AST inventory and CI gate with negative counterexamples.
 
 CPU-only static library `bc_serving` and `bc-serve`, packaged at
 `radiance_home/bin/bc-serve`. One C++ schema and strict TOML loader;
-no Python schema, shell launcher parser, or process starting.
+no Python schema or shell launcher parser; session and helper/engine process ownership
+are native C++.
 
 Build with `-DCMAKE_PREFIX_PATH=<installed radiance>` and
 `-DRADIANCE_SRC=<radiance source>`; build `bc-serve bc_serving_test`
@@ -124,7 +176,9 @@ The one document processes load is the serving manifest v1 (`--write-manifest`; 
 `docs/design/serving-manifest-v2/`), read by the shared strict reader. The resolver's own record (`--explain --json`,
 the hash `--validate` prints) is not a file any process reads. The engine starts from the v1 manifest (rad0009, shared
 `bc_serving_v1` library); helper-side manifest consumption and process supervision are still pending.
-This component does **not** start processes.
+The owner now launches and verifies measuring/serving process groups;
+legacy shell and Python paths remain reference oracles until the later
+hardware A/B and retirement gate.
 
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
 reuse radiance's existing nlohmann/json v3.12.0.
