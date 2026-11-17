@@ -14,6 +14,8 @@ Use `bigcherry.cli` for command parsing/presentation and retain
 - Tuning/replay: catalog, journal, promotion, correctness, ranking, replay
 - Experiments: `experiment-contract` and bundles
 - Diagnostics: `check` and `doctor` (deterministic, non-mutating, hardware-free)
+- Work root: `run new|status`, `clean`, `legacy-runs migrate` (historical
+  flat-run adoption, read-only by default; see `docs/reference/build/RUNS_LAYOUT.md`)
 - Exploration: `tools/lab/<plan-topic>`; not a package or evidence authority
 - Shell setup: `tools/env/`
 
