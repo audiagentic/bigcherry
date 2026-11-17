@@ -46,6 +46,20 @@ Almost everything card-free; first leased session only after v2 simulator, fake 
 
 See the slice list in the Description (S0-S17); each slice is a small PR with the gate stated there.
 
+### S15/S16 proof boundary — card-free preparation (2026-11-18)
+
+[The S15 A/B runbook](../../../reference/engines/radiance/RSC02_S15_ACCEPTANCE.md)
+specifies same build/model/ordered devices, RSC12 semantic execution
+projection, strict byte-bound manifest snapshots and actual process argv/env
+receipts for `qwen27b-tp3-int8` (dense) and `flashnext-4gpu` (helper).
+The real `bc_s15_dry_run_test` is card-free and **not** an S15 pass. The
+maintained balanced `ab-benchmark` schedule must be run with a vetted
+serving-owner lifecycle adapter (S14 receipt dependency); its existing direct
+engine server path is not parity evidence. Hardware, power/VRAM/room,
+retained-session/RHP12 and clean shutdown gates remain pending. Until they
+and RSP01 release acceptance pass, S16 deletion is blocked. Do not set
+either gate to complete based on a fake run.
+
 ## Detailed Solution & Technical Design
 
 Retain the C++ resolver, strict reader, memory ledger and probes; finish integration and the single v2 cutover.
