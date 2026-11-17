@@ -54,6 +54,8 @@ Flash-Next speed and capacity (2026-11-17, FLASHNEXT-AB.md, two XTX, no helper, 
 
 Default-cache identity (2026-11-17, IDENTITY.md): Flash-Next default bf16 and fp8 caches match the stock build at the KLD float floor (mean 6.4e-11 and 3.3e-11, max 2.2e-8, top-1 100%, 4,161 positions, placement pinned). Not bit-exact by construction (two binaries); greedy-stream comparison and the 27B default caches are not run.
 
+27B equality (2026-11-17, EQUALITY-27B.md): default bf16 and fp8 caches match the stock build at the float floor (short and long); packed caches on a same-build reference: long bf16_i8 0.002685 (bar 0.0027 met), bf16_fp8 0.003228, fp8 0.004947, reproducing VTP43; short bf16_i8 0.00141, bf16_fp8 0.00192, fp8 0.00224 (VTP43's short packed figures used an older build's reference and were too low). The libr3 gfx1100 selftest for patch B was not run by decision; Flash-Next serving on the two 7900 XTX exercised those rows.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
