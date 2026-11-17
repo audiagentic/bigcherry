@@ -1,0 +1,14 @@
+evidence gate skipped for set serving-manifest (required-state untested)
+evidence gate skipped for set host-compat (required-state untested)
+evidence gate skipped for set helper-config (required-state untested)
+evidence gate skipped for set mtp-pass-replay (required-state untested)
+evidence note: rad0008_hc_upmix_rt_sweep: evidence recorded at pin v1.9.0 (now v1.17.0)
+evidence note: rad0002_moe_remote_handoff: evidence recorded at pin v1.14.0 (now v1.17.0)
+evidence note: rad0009_serving_manifest: evidence recorded at patch digest 7b7bbd25e7f4 (now 339daa18d9d0)
+
+-- run advisories ---------------------------------------------------------
+[STOP] Build lane radiance:stock:linux-radiance failed.
+    Inspect the exception and stage logs named in the build failure before consuming any downstream artifact.
+radiance:stock:linux-radiance: FAILED -- generate/build/runtime-smoke failed: generate/build/runtime-smoke campaign failed: radiance:stock:build=failed (ResourceError: resource is already claimed: build-b401d10e134e9f48cc7bb6b73c55c6cd (waited 300.0s)); logs: <work-root>/build-logs/20261107T234234.293725Z-ec833683/build.log, <work-root>/build-logs/20261107T234234.293725Z-ec833683/radiance_stock_linux-radiance-8ae9eba2/lane.log
+build: 1/1 lane(s) failed
+build: logs=<work-root>/build-logs/20261107T234234.293725Z-ec833683

@@ -1,0 +1,29 @@
+{
+  "layout": "flashnext-2xtx-rdna2-tail-combine",
+  "owner_map_sha256": "28f43e45923dd6e0f78e9ad6e631c87af8675acf0a46b11223201a4bb09c1f4d",
+  "counts": [
+    9541,
+    9541,
+    5986
+  ],
+  "expert_bytes": 2534400,
+  "pair_witnesses": {
+    "0:1": [
+      0,
+      1,
+      0
+    ],
+    "0:2": [
+      0,
+      1,
+      6
+    ],
+    "1:2": [
+      0,
+      0,
+      6
+    ]
+  },
+  "model": "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+  "mtp_depth": 3
+}

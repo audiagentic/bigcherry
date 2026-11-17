@@ -1,0 +1,136 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 16,
+  "model": "default",
+  "prompt_tokens": 8192,
+  "reps": 1,
+  "seed": 61,
+  "shared_prefix": false,
+  "streams": [
+   4
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18415"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 2.762,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 844.991,
+    "event_gap_ms_p50": 830.001,
+    "event_gap_ms_p95": 844.991,
+    "event_gap_ms_p99": 844.991,
+    "mean_stream_decode_tps_est": 37.079,
+    "tokens": 64,
+    "ttft_ms_max": 23052.65,
+    "ttft_ms_p50": 20034.72,
+    "ttft_ms_p95": 23052.65
+   },
+   "engine": {
+    "decode_ms_per_step": 27.8912,
+    "decode_tokens_per_step": 20.0,
+    "decode_tokens_total": 60.0,
+    "decode_tps_engine": 717.073,
+    "draft_acceptance": 1.0,
+    "draft_accepted_total": 45.0,
+    "draft_tokens_total": 45.0,
+    "engine_step_seconds_decode_total": 0.083674,
+    "engine_steps_decode_total": 3.0,
+    "engine_steps_prefill_total": 18.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 54356.0,
+    "requests_running_max": 3.0,
+    "requests_running_mean": 2.223,
+    "requests_waiting_max": 2.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 133.072,
+     "error": "",
+     "events": 5,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13581,
+     "response_tail_ms": 2.16,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with",
+     "text_sha256": "7473ce3bd48091b015fff191df316a3873bdd329a5b27e98a7d1026e96a7c44a",
+     "tokens": 16,
+     "ttft_ms": 23052.65,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 6.248,
+     "error": "",
+     "events": 5,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13556,
+     "response_tail_ms": 2.77,
+     "stream": 1,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with",
+     "text_sha256": "7473ce3bd48091b015fff191df316a3873bdd329a5b27e98a7d1026e96a7c44a",
+     "tokens": 16,
+     "ttft_ms": 20034.72,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 4.513,
+     "error": "",
+     "events": 5,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13625,
+     "response_tail_ms": 2.7,
+     "stream": 2,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with",
+     "text_sha256": "7473ce3bd48091b015fff191df316a3873bdd329a5b27e98a7d1026e96a7c44a",
+     "tokens": 16,
+     "ttft_ms": 13579.13,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 4.483,
+     "error": "",
+     "events": 5,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 13594,
+     "response_tail_ms": 2.48,
+     "stream": 3,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with",
+     "text_sha256": "7473ce3bd48091b015fff191df316a3873bdd329a5b27e98a7d1026e96a7c44a",
+     "tokens": 16,
+     "ttft_ms": 9379.26,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 1.088,
+   "rep": 0,
+   "start_skew_ms": 3.197,
+   "streams": 4,
+   "wall_end_ns": 1793786664481778800,
+   "wall_s": 23.1698,
+   "wall_start_ns": 1793786641310306858
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "4": {
+   "aggregate_tps_median": 2.762,
+   "decode_ms_per_step_median": 27.8912,
+   "decode_tokens_per_step_median": 20.0,
+   "decode_tps_engine_median": 717.073,
+   "draft_acceptance_median": 1.0,
+   "event_gap_ms_p95_median": 844.991,
+   "reps_ok": 1,
+   "requests_running_mean_median": 2.223,
+   "ttft_ms_max_median": 23052.65
+  }
+ }
+}

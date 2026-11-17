@@ -1,0 +1,51 @@
+layout flashnext-4gpu: engine cards 2; helper0: card 0 gfx1100 22528 MiB head; helper1: card 1 gfx1100 22528 MiB head; helper2: card 3 gfx1030 14336 MiB tail
+recording the route histogram to <work-root>/flashnext/heat.live.rank0 every 60s
+plan check: no measured plan for this configuration (cache miss); measuring it first (the helpers come up and the engine stops after its memory plan; about 1-2 minutes, once per configuration)
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 1 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 2 of 3 owns 5931 of 25078 ranked experts, 14.00 GiB of its 14.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 1 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 2 of 3 owns 5931 of 25078 ranked experts, 14.00 GiB of its 14.00 GiB
+live policy: unmeasured; calibration not available 
+manifest: "<work-root>/flashnext/manifest-measuring-1107-125217-3059883.json" (unmeasured: for the measuring start only)
+digest: sha256:e5c51db819f0fd24e562baa23af3946ac2f8af57642a02c4f6ec9a23fce91bde
+no processes started
+helper0 (pid 3060662, log <work-root>/flashnext/helper0-1107-125217.log): waiting for ready...
+helper1 (pid 3060817, log <work-root>/flashnext/helper1-1107-125217.log): waiting for ready...
+helper2 (pid 3060920, log <work-root>/flashnext/helper2-1107-125217.log): waiting for ready...
+plan: stored 201da5aab20241046b52417bdffcf4f6e4a03993f0a124dd019750edc578238e
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 1 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 2 of 3 owns 5931 of 25078 ranked experts, 14.00 GiB of its 14.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 1 of 3 owns 9320 of 25078 ranked experts, 22.00 GiB of its 22.00 GiB
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 2 of 3 owns 5931 of 25078 ranked experts, 14.00 GiB of its 14.00 GiB
+live policy: no calibration for key d2970e0e8fc1a54516975d60edecab46942efa653e0aff0f4bc5f8a4f8eb9b9e; policy omitted (v1 cannot represent observe-only)
+manifest: "<work-root>/flashnext/manifest-1107-125217-3059883.json"
+digest: sha256:dd7e8c16f0de5adf4ddba83fb574bc1ba175fa2dce6dc8a130f75cfe06dece5c
+no processes started
+plan check: measured in 70 s; plan stored in <work-root>/flashnext/plan-cache and the manifest written
+helper0 (pid 3076895, log <work-root>/flashnext/helper0-1107-125217.log): waiting for ready...
+helper1 (pid 3077311, log <work-root>/flashnext/helper1-1107-125217.log): waiting for ready...
+helper2 (pid 3077535, log <work-root>/flashnext/helper2-1107-125217.log): waiting for ready...
+engine TP=1 cards 2 (pid 3077774, log <work-root>/flashnext/engine-1107-125217.log): waiting for /health...
+start canary: ok (answered ' Paris. The capital of Germany is Berlin. The capital of Ita')
+RADIANCE_EXIT=0
+Radiance layout flashnext-4gpu is up: http://127.0.0.1:18448 (OpenAI-compatible /v1/chat/completions, /v1/completions)
+  build    <work-root>/builds/c6938079bf56add212fe8c2d27813118/ef423f0ddd8c45a6fa0ee1214d8a07a4
+  engine   TP=1 cards 2 pid 3077774, log <work-root>/flashnext/engine-1107-125217.log
+  layout   flashnext-4gpu: helper0: card 0 gfx1100 22528 MiB head; helper1: card 1 gfx1100 22528 MiB head; helper2: card 3 gfx1030 14336 MiB tail\n  helpers  3076895 3077311 3077535 
+  stop     bash <repo>/tools/lab/radiance/launch-flashnext-best.sh stop

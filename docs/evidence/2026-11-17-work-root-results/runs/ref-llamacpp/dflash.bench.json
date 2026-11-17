@@ -1,0 +1,82 @@
+[
+ {
+  "depth": 2048,
+  "rep": 0,
+  "prompt_tokens": 2308,
+  "completion_tokens": 512,
+  "ttft_s": 2.338686466217041,
+  "prefill_tps": 986.8787600816461,
+  "decode_tps": 46.1158423756845,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7"
+ },
+ {
+  "depth": 2048,
+  "rep": 1,
+  "prompt_tokens": 2308,
+  "completion_tokens": 472,
+  "ttft_s": 2.5128726959228516,
+  "prefill_tps": 918.4707222712641,
+  "decode_tps": 42.416887060432664,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7"
+ },
+ {
+  "depth": 8192,
+  "rep": 0,
+  "prompt_tokens": 9090,
+  "completion_tokens": 512,
+  "ttft_s": 8.689580917358398,
+  "prefill_tps": 1046.0803675631491,
+  "decode_tps": 43.981679496584256,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log\n\n## Overview\n\nThis document tracks real-hardware validation runs on <host>'s dual RX 7900 XTX pair (GPU 0/1, `HIP_VISIB"
+ },
+ {
+  "depth": 8192,
+  "rep": 1,
+  "prompt_tokens": 9090,
+  "completion_tokens": 512,
+  "ttft_s": 8.883195638656616,
+  "prefill_tps": 1023.2804015306656,
+  "decode_tps": 42.61525096725847,
+  "text_head": "\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU 0/1, `HIP_VISIBLE_DEVICES=0,2`), compared ag"
+ },
+ {
+  "depth": 24576,
+  "rep": 0,
+  "prompt_tokens": 34888,
+  "completion_tokens": 512,
+  "ttft_s": 35.96524119377136,
+  "prefill_tps": 970.0477139033361,
+  "decode_tps": 35.100607869299644,
+  "text_head": "\n\n[94d3190049d245828489a5d6de068111]\n\n<think>\nThe user wants me to summarize the provided documents in detail. These are four distinct documents related to a pr"
+ },
+ {
+  "depth": 24576,
+  "rep": 1,
+  "prompt_tokens": 34886,
+  "completion_tokens": 512,
+  "ttft_s": 36.56036877632141,
+  "prefill_tps": 954.2026289022054,
+  "decode_tps": 41.19172470606907,
+  "text_head": "\n\n# Summary of the BigCherry Project Documentation\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Setup\n- **Hardware**: <host> machine with dual RX"
+ },
+ {
+  "depth": 98304,
+  "rep": 0,
+  "prompt_tokens": 110864,
+  "completion_tokens": 512,
+  "ttft_s": 148.51711249351501,
+  "prefill_tps": 746.4729022713855,
+  "decode_tps": 26.62988251470587,
+  "text_head": "\n\n[43face3a4fde4f73bebcb3bffe2468f5]\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU 0/1, `HI"
+ },
+ {
+  "depth": 98304,
+  "rep": 1,
+  "prompt_tokens": 110871,
+  "completion_tokens": 512,
+  "ttft_s": 150.46455931663513,
+  "prefill_tps": 736.8579053003764,
+  "decode_tps": 23.685127620794283,
+  "text_head": "\n\n# BigCherry \u2014 Consolidated Project Summary\n\n## 1. Project Identity & Mission\n\n**BigCherry** is a release-tolerant **overlay** (not a fork) for `llama.cpp` tar"
+ }
+]

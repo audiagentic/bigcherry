@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "c1996e812de7f7f3be10cfcaaad00b0bf415b8afc9729373cc0ccc35aaa4f991"
+  ],
+  "prompt_tokens": 504,
+  "prompt_tokens_target": 900,
+  "prompt_words": 504,
+  "reps": 2,
+  "seed": 7,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18450"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 108.189,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 28.696,
+    "event_gap_ms_p50": 24.833,
+    "event_gap_ms_p95": 25.543,
+    "event_gap_ms_p99": 28.696,
+    "mean_stream_decode_tps_est": 123.308,
+    "tokens": 256,
+    "ttft_ms_max": 297.86,
+    "ttft_ms_p50": 297.86,
+    "ttft_ms_p95": 297.86
+   },
+   "engine": {
+    "decode_ms_per_step": 24.8696,
+    "decode_tokens_per_step": 3.0732,
+    "decode_tokens_total": 252.0,
+    "decode_tps_engine": 123.572,
+    "draft_acceptance": 0.6911,
+    "draft_accepted_total": 170.0,
+    "draft_tokens_total": 246.0,
+    "engine_step_seconds_decode_total": 2.039303,
+    "engine_steps_decode_total": 82.0,
+    "engine_steps_prefill_total": 2.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 2633.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.727,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 123.308,
+     "error": "",
+     "events": 84,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 905,
+     "response_tail_ms": 0.39,
+     "stream": 0,
+     "text_head": "We need answer user's request. Need continue list of words with a short story. User provided long list of words, likely wants continuation? \"Continue this list of words with a short story.\" Could mean take the list and continue it by writing a short story using those words? Need infer. They gave a sequence of words. Maybe they want a short story that continues the list? Could be a prompt: Continue",
+     "text_sha256": "e3f967a2687453c81f5d8dff6e4d7387588e4950740491c3f8fd93d40fe0fc8e",
+     "tokens": 256,
+     "ttft_ms": 297.86,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.126,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1794294115836257791,
+   "wall_s": 2.3662,
+   "wall_start_ns": 1794294113469157894
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 108.709,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 27.788,
+    "event_gap_ms_p50": 24.75,
+    "event_gap_ms_p95": 25.316,
+    "event_gap_ms_p99": 27.788,
+    "mean_stream_decode_tps_est": 123.855,
+    "tokens": 256,
+    "ttft_ms_max": 295.79,
+    "ttft_ms_p50": 295.79,
+    "ttft_ms_p95": 295.79
+   },
+   "engine": {
+    "decode_ms_per_step": 24.7601,
+    "decode_tokens_per_step": 3.0843,
+    "decode_tokens_total": 256.0,
+    "decode_tps_engine": 124.569,
+    "draft_acceptance": 0.6948,
+    "draft_accepted_total": 173.0,
+    "draft_tokens_total": 249.0,
+    "engine_step_seconds_decode_total": 2.055085,
+    "engine_steps_decode_total": 83.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 905.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.818,
+    "requests_waiting_max": 0.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 123.855,
+     "error": "",
+     "events": 84,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 905,
+     "response_tail_ms": 0.26,
+     "stream": 0,
+     "text_head": "We need answer user's request. Need continue list of words with a short story. User provided long list of words, likely wants continuation? \"Continue this list of words with a short story.\" Could mean take the list and continue it by writing a short story using those words? Need infer. They gave a sequence of words. Maybe they want a short story that continues the list? Could be a prompt: Continue",
+     "text_sha256": "e3f967a2687453c81f5d8dff6e4d7387588e4950740491c3f8fd93d40fe0fc8e",
+     "tokens": 256,
+     "ttft_ms": 295.79,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.112,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1794294118192776788,
+   "wall_s": 2.3549,
+   "wall_start_ns": 1794294115837058956
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 108.449,
+   "decode_ms_per_step_median": 24.81485,
+   "decode_tokens_per_step_median": 3.07875,
+   "decode_tps_engine_median": 124.07050000000001,
+   "draft_acceptance_median": 0.69295,
+   "event_gap_ms_p95_median": 25.429499999999997,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.7725,
+   "ttft_ms_max_median": 296.82500000000005
+  }
+ }
+}

@@ -6,7 +6,7 @@ filesystem. The recorded reference logits, captures, model-sized and binary file
 logs of finished runs that no plan item cites were not kept. Relative paths below the folders match the original
 location under the work root (`runs/`, `flashnext/`, `tmp/` and top-level experiment folders).
 Absolute paths inside the files were replaced by placeholders: `<work-root>`, `<models-root>`, `<dev-root>`,
-`<data-root>`, `<repo>`, `<home>`, `<mnt>`, `<host>` (machine names); nothing else was edited.
+`<data-root>`, `<repo>`, `<home>`, `<mnt>`, `<host>` (machine names), `<ip>`; nothing else was edited.
 
 | Area | Entries kept | Files |
 |---|---:|---:|

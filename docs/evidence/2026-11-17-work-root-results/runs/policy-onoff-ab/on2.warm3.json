@@ -1,0 +1,96 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 8,
+  "model": "default",
+  "prompt_sha256": [
+   "69ed77defe410922791d3c9a5e42b1b6a775671fbd738f0fc225b23e7c7188dc"
+  ],
+  "prompt_tokens": 16144,
+  "prompt_tokens_target": 27000,
+  "prompt_words": 16144,
+  "reps": 1,
+  "seed": 903,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18450"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 1.026,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 26.1,
+    "event_gap_ms_p50": 26.1,
+    "event_gap_ms_p95": 26.1,
+    "event_gap_ms_p99": 26.1,
+    "mean_stream_decode_tps_est": 139.61,
+    "tokens": 8,
+    "ttft_ms_max": 7740.78,
+    "ttft_ms_p50": 7740.78,
+    "ttft_ms_p95": 7740.78
+   },
+   "engine": {
+    "decode_ms_per_step": 27.3102,
+    "decode_tokens_per_step": 4.0,
+    "decode_tokens_total": 8.0,
+    "decode_tps_engine": 146.465,
+    "draft_acceptance": 1.0,
+    "draft_accepted_total": 6.0,
+    "draft_tokens_total": 6.0,
+    "engine_step_seconds_decode_total": 0.05462,
+    "engine_steps_decode_total": 2.0,
+    "engine_steps_prefill_total": 16.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 28446.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.97,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 139.61,
+     "error": "",
+     "events": 3,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 26718,
+     "response_tail_ms": 7.56,
+     "stream": 0,
+     "text_head": "We need answer user's request. User",
+     "text_sha256": "24daac676d891c640fe210ac5d53b9dbe1e44714cb06074146f8980ba8def42d",
+     "tokens": 8,
+     "ttft_ms": 7740.78,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 1.578,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1794293871450794721,
+   "wall_s": 7.7985,
+   "wall_start_ns": 1794293863649895147
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 1.026,
+   "decode_ms_per_step_median": 27.3102,
+   "decode_tokens_per_step_median": 4.0,
+   "decode_tps_engine_median": 146.465,
+   "draft_acceptance_median": 1.0,
+   "event_gap_ms_p95_median": 26.1,
+   "reps_ok": 1,
+   "requests_running_mean_median": 0.97,
+   "ttft_ms_max_median": 7740.78
+  }
+ }
+}

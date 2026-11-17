@@ -1,0 +1,13 @@
+warm_s derived (min_samples+1)*cadence + min_residency = 87
+on1 label=on manifest=on VALID
+on1 cold-ttft 10337.9 8072.1 8108.7 7459.2 8039.4 7304.0 7303.1 7324.5 | doc 3690 3699 3708 3680 3688 3686 3690 3651 3662 3685 | dec1 agg 95.44 eng 107 ms 24.99 | dec6 agg 269.18 eng 364 ms 47.07
+on1 placement cycles: 8
+off1 label=off manifest=off VALID
+off1 cold-ttft 11013.1 10952.4 11074.7 10803.6 11077.6 10877.4 10990.3 10717.5 | doc 3644 3657 3667 3644 3650 3657 3649 3612 3633 3636 | dec1 agg 111.23 eng 136 ms 24.89 | dec6 agg 238.54 eng 353 ms 47.87
+off1 placement cycles: 0
+off2 label=off manifest=off VALID
+off2 cold-ttft 10562.7 10658.4 10958.6 11041.0 10686.1 10757.8 11042.1 10855.1 | doc 3646 3657 3665 3642 3651 3657 3650 3614 3630 3635 | dec1 agg 110.99 eng 136 ms 24.88 | dec6 agg 233.59 eng 349 ms 47.90
+off2 placement cycles: 0
+on2 label=on manifest=on VALID
+on2 cold-ttft 7445.2 7397.4 7409.3 7376.9 7473.7 7469.9 7428.2 7494.8 | doc 3692 3694 3630 3638 3686 3692 3643 3650 3664 3670 | dec1 agg 108.45 eng 124 ms 24.81 | dec6 agg 247.51 eng 329 ms 48.07
+on2 placement cycles: 3

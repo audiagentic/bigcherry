@@ -1,0 +1,2 @@
+decode tokens 4096 seconds 43.8
+prefill tokens 136468 seconds 41.2

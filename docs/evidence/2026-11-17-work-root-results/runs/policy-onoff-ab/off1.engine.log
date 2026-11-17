@@ -1,0 +1,444 @@
+I device: AQL backend, 1 device(s) [0:gfx1201]
+I model: qwen4exp  arch=qwen4exp  quant=bf16  48 layers  262144 ctx
+I vocab: end-of-generation also on <|endoftext|>=248044 (a control token the container declares neither as eos nor eot; without this a turn ending on it runs on)
+I vocab: 248077 tokens, bos=-1 eos=248046
+I gbnf: vocabulary index built in 57 ms, 26.11 MiB
+libr3: R3_MOE_WORKER GPU mailbox ready, 24571 owned experts, decode rows <= 4096
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libavx, libbcgfx12, libr2, libr3, libr3ngram, spechub
+I chained launches: off -- no drafter whose plugin measured a gain with them decodes speculatively
+I control vectors: not loaded (no --control-vector); a request that asks for one is refused
+libr3: R3_MOE_WORKER first layer map: layer 0 n_expert 512
+libr3: R3_MOE_WORKER layer 34 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 44 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 46 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 47 has protected experts; kept local
+I sampler: 248320-token vocabulary (248320 this rank), 32 rows, 7760 mask words (30.31 KiB per row)
+libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane
+I host-site execution: 8 of 1999 declared ops have no host kernel (gated_had_quant_fp8, moe_mailbox_publish, moe_mailbox_add, moe_mailbox_inject, qk_norm_rope_gate, qk_norm_rope_gate_kv_store, gate_quant_fp8, attn_paged_gate_quant). Their weights may still be tiered to host or SSD -- only the arithmetic is pinned to the device. --debug-graph lists the bands.
+I declare: 1999 ops, 101869 weights, 111 buffers, 8 KV groups
+I speculation: 'mtp' drafts 3 token(s) a step in 3 serial pass(es); prompt lookup fills in for any sequence it declines
+libr3: R3_MOE_WORKER layer 34 runtime slot map changed across ranks
+libr3: R3_MOE_WORKER layer 34 runtime slot map changed across ranks
+libr3: R3_MOE_WORKER layer 44 runtime slot map changed across ranks
+libr3: R3_MOE_WORKER layer 46 runtime slot map changed across ranks
+libr3: R3_MOE_WORKER layer 47 runtime slot map changed across ranks
+I sampler: 248320-token vocabulary (248320 this rank), 32 rows, 7760 mask words (30.31 KiB per row)
+libr3: R3_MOE_WORKER layer 44 runtime slot map changed across ranks
+libr3: R3_MOE_WORKER layer 46 runtime slot map changed across ranks
+libr3: R3_MOE_WORKER layer 47 runtime slot map changed across ranks
+I sampler: 248320-token vocabulary (248320 this rank), 32 rows, 7760 mask words (30.31 KiB per row)
+I activation arena: 256 tokens use 225.15 MiB, 1024 tokens use 669.14 MiB of 1.25 GiB (the fixed region is 2.22 MiB); the rest is lent to the expert slab while the steps are that small
+I placement: token embedding (1.18 GiB a rank) ram (default): pinned in host memory and read over the link in place, so its VRAM goes to the KV cache and the experts
+I placement: n-gram table (47.68 GiB) ram: as asked
+I placement: encoder towers (856.68 MiB a rank) vram (default)
+I kv: the pool backs 74% of the worst case (8 sequences all at 262144 tokens), 5.9 full-length sessions; a larger --host-pool-mib gives the cache more
+I chunk geometry: quantum 64 (attn block 4, state chunk 64), checkpoint interval 4096, max_tok 2048 -> prefill chunks of at most 2048
+radiance: plan check: admitted: claimable 32171251704 >= required 27293294592 bytes (margin 4877957112); resolved KV 23783800832 >= kv_required 18907078656 bytes (margin 4876722176)
+I VRAM budget, per card:
+  card total          31.86 GiB
+  already held       258.60 MiB   measured: driver context, code objects, anything else resident
+  driver drift        16.00 MiB   what that moves by after it is read: kept free
+  activation arena     1.29 GiB   computed from the buffer plan
+  step staging        90.42 MiB   the step batch's block tables and media staging, and the
+                                  KV tiers' copy staging
+  hardware queues    141.41 MiB   4 a card at 35.35 MiB each, measured: the engine's streams
+  expert prefetch     18.00 MiB   the next-layer prefetch's ring of expert units and buffers
+  --gpu-headroom-mib  96.00 MiB   left unclaimed on purpose
+  ------------------------------
+  claimable           29.96 GiB
+  static weights       5.40 GiB   off the top: every rank's own shard, and not a share of anything
+  ------------------------------
+  elastic             24.56 GiB   the experts keep what the host pool cannot hold; the cache takes the rest
+                                  and lends what no live request holds to the expert slab
+    experts                 0 B   0% of it
+    kv cache          22.15 GiB   90% of it -- 74% backing of the 8 x 262144 worst case: 5.9 full-length
+                                  sessions. With prefix caching a finished sequence's blocks stay held
+                                  for reuse, so the demand is live sessions, not running requests
+    prefill staging    2.41 GiB   out of the cache: two buffers of one layer's non-resident experts,
+                                  at the arena's top and lent back to the slab while steps are small
+  ==============================
+  vram_weights         5.40 GiB   static + experts
+  vram_kv             22.15 GiB   the cache's share
+  unclaimed           96.57 MiB   the headroom, the unusable above, and what MiB rounding
+                                  could not place
+
+I pools:
+vram_weights     5.40 GiB budget,        0 B used,   5.40 GiB free
+vram_kv         22.15 GiB budget,        0 B used,  22.15 GiB free
+host_pool       10.18 GiB budget,        0 B used,  10.18 GiB free
+
+I placement: 'token_embd.weight' (1.18 GiB) in the pinned host pool, read in place (--embedding-placement ram, the default)
+I mover: 0 slab slots (0 shadow, 0 more kept free out of a loan), 2506 pinned pool slots, 5.40 GiB static vram
+I load: rank 0, mover took 5.40 GiB, weights pool 627.00 KiB free of 5.40 GiB
+I heat engine: 2505 movable units, 64 moves a step, decay 0.950 hysteresis 1.25 min-gain 1.50 credit cap 512 admit-heat 8.0
+I placement: n-gram table copied into pinned memory the cards read, 47.68 GiB in 116.0 s
+I placement: n-gram table copied into pinned memory the cards read, 2 B in 0.0 s
+I load: 8.01 GiB of 12.49 GiB read, 1.7 GB/s, at container offset 114546069504
+I load: one pass over the container, 12.53 GiB read in 6.8 s (2.0 GB/s) for 1 rank(s); 5.8 s of that was the disk (2.3 GB/s)
+I load: 10934 weight(s), 10.13 GiB of planes, rearranged for their kernels by 16 worker(s) behind the read, 1.23 GiB held at most; done 8.6 s after the read began
+I load: 11575 weights, 12.49 GiB placed from 12.53 GiB of container read
+I chunk geometry: quantum 64 (attn block 4, state chunk 64), checkpoint interval 4096, max_tok 2048 -> prefill chunks of at most 2048
+I checkpoint slots: 26 linear-state snapshot(s) of 112.48 MiB in pinned host memory (2.86 GiB), none of it on the card
+I kv tier transfer: 2 paged group(s), 55.25 KiB an entry, batches of 296 through gather_rows/scatter_rows at u8
+I kv tiers: a finished conversation's KV is copied to host memory at once (12.00 GiB, 227745 entries, 910980 tokens of context) and its VRAM is given up when the expert loan or a request wants it; a full host tier drops its least recently used entries, the end of a conversation before its start. One entry is 55.25 KiB
+kv tiers: a session's linear state is saved to host memory -- 26 snapshot slot(s) of 112.48 MiB -- and a full store retires the least recently used
+I kv: KV layer bundles 13/36/36/13/1/1/13 (113 real layers)
+    vLLM stock    size  1 -> 113 groups, 113 slots (0 padding)
+    least-waste   size  1 -> 113 groups, 113 slots (0 padding)
+    radiance      per state kind, own pool ->  7 groups, 113 slots (0 padding)
+    (none)         ?        0 layers  state      0 B        0 slots =       0 B
+    kv_attn        full    13 layers  block    4 tok  page 52.00 KiB   387693 blocks = 19.23 GiB  (1550772 tokens)
+    kv_gdn_state   linear  36 layers  state 108.00 MiB       16 slots =  1.69 GiB
+    kv_gdn_conv    conv    36 layers  state 4.22 MiB        8 slots = 33.75 MiB
+    kv_qsa_tail    linear  13 layers  state 22.75 KiB       16 slots = 364.00 KiB
+    kv_ple_tok     conv     1 layers  state     20 B        8 slots =     160 B
+    kv_ple_conv    conv     1 layers  state 240.00 KiB        8 slots =  1.88 MiB
+    kv_qsa_bkey    full    13 layers  block    4 tok  page 3.25 KiB   387693 blocks =  1.20 GiB  (1550772 tokens)
+    pool at 0x752f1c600000, 22.15 GiB; groups at +0..+23783790848
+
+I prefix cache: 2 paged group(s) in 4-token entries; checkpoints every 4096 tokens (26 slots of 112.48 MiB a rank, pinned host memory), retention 'geometric-backoff'
+
+I arena: 3.65 GiB device + 47.08 MiB scratch + 0 B for the second lane = 3.70 GiB, charged to the VRAM budget before it was split
+I device: card 0 copy lists go to DMA engine 0 on a queue of this process's own (0.5 ms to open)
+I prefill staging: a 2.41 GiB ring at the top of the arena; a step of more than 1024 tokens copies the pooled experts of 48 routed layers onto the card up to 3 layers ahead of the layers that read them
+I mover: 2505 slots can be lent out of the KV cache (5.92 GiB), filled as it lends them
+I rank 0: expert prefetch on: 2 copies a routed layer by DMA, ring 14.51 MiB
+I kv: the cache can grow to 22.15 GiB a card -- 1550772 tokens of context, 5.9 sessions at 262144 -- with every block it lends the experts taken back; 1.72 GiB of that is per-sequence state, and up to 5.92 GiB is lent to the experts while no request holds it
+I mover: 1454 slots can be lent out of the activation arena (3.43 GiB), filled as it lends them
+I activation arena: lends 3.43 GiB while steps are at most 256 tokens, 3.00 GiB while steps are at most 1024 tokens
+I device allocations: 409 totalling 9.10 GiB, of which 27.55 GiB is the two pools -- the rest is the activation arena and the step staging. Anything on the card past this is the driver or a kernel plugin's own hipMalloc, which this cannot see.
+W card 0 settled at 125.16 MiB free against 221.77 MiB (the 96.00 MiB --gpu-headroom-mib and 125.77 MiB kept for the step staging and for what is built on first use), which leaves 0 B for a kernel's first launch to load its code object and size its scratch in -- under the 96.00 MiB this engine allows for its own. 96.60 MiB of the headroom was taken after the budget read the card, by another process on it or an allocation the budget does not count. Set --gpu-headroom-mib to at least 193: what is left here rises with it one for one.
+I draft floor: 2 paged group(s), 2 prefix-cached, 0 in the window snapshot -> a hit leaves no hole
+I media staging: 10.00 MiB a rank for a step's encoder rows and 48.27 MiB for an encoder pass of up to 16384 patches
+I step batch: 36.51 MiB pinned staging ring + 12.15 MiB device slab a rank (12.00 MiB of it block tables), 8 KV group(s), 0 derived buffer(s)
+I scheduler: --busy-prefill-chunk auto: a prefill chunk sharing a step leaves decode rows and waiting requests their room and keeps at least 1024 tokens (the prefill stager's smallest pass)
+I chat: template loaded (8952 bytes); tools=1 tool_calls=1 system=1 thinking=1
+I chat: reply format template: reasoning "<think>\n".."\n</think>\n\n"; calls "<tool_call>\n""<function="NAME">\n" "<parameter="ARG">\n"""VALUE"</parameter>\n" "</function>\n""</tool_call>"; grammar on "<tool_call>\n"
+I sampling defaults for requests that send none: temperature 1.00, top_k 20, top_p 0.95, min_p 0.00 (from the container)
+W media: the 'vision' encoder is loaded but this build has no media decoder (RAD_WITH_FFMPEG), so every media part will be refused
+I chat: the template takes reasoning_effort low, medium, xhigh, and none or minimal turn thinking off
+I chat: a request naming no reasoning_effort renders as 'xhigh', the template's own default (--reasoning-effort sets another)
+I STARTUP REPORT -- radiance 1.17.0
+I CONFIGURATION -- every option not at its default, the value in force, and where it came from
+I   --model                            <models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad  [manifest 04996f38f667]
+I   --radiance-home                    <work-root>/builds/f17f21fda44979e9abe84f13e96b8896/b43f943466729a2eb484e082dc45069f/radiance_home  [manifest 04996f38f667]
+I   --kernels                          libr4d@0.5.0,libr3moe@0.0.1,libref@0.1.0    [manifest 04996f38f667]
+I                                        the libraries named, in that order; architecture plugin qwen4exp_fp8@0.1.0
+I   --tp                               1                                           [manifest 04996f38f667]
+I   --p2p                              n/a                                         [auto]
+I                                        one rank: no collective crosses a card
+I   --max-num-batched-tokens           2048                                        [manifest 04996f38f667]
+I   --max-num-seqs                     8                                           [manifest 04996f38f667]
+I   --max-model-len                    262144                                      [manifest 04996f38f667]
+I   --rope-scaling                     none                                        [manifest 04996f38f667]
+I   --kv-cache-dtype                   fp8                                         [manifest 04996f38f667]
+I   --host-pool-mib                    9216                                        [manifest 04996f38f667]
+I   --host-headroom-mib                4705                                        [manifest 04996f38f667]
+I   --embedding-placement              ram                                         [auto]
+I                                        the table is 1.18 GiB a rank: pinned in host memory and read over the link in place, so its VRAM goes to the KV cache and the experts
+I   --vision-tower-placement           vram                                        [auto]
+I                                        the towers are 856.68 MiB a rank
+I   --ngram-placement                  ram                                         [manifest 04996f38f667]
+I                                        the table is 47.68 GiB: as asked
+I   --prefix-cache-mib                 12288                                       [manifest 04996f38f667]
+I   --placement                        expert_tiered                               [manifest 04996f38f667]
+I                                        as asked
+I   --checkpoint-interval              4096                                        [manifest 04996f38f667]
+I   --checkpoint-slots                 26                                          [manifest 04996f38f667]
+I   --prefix-resume                    nearest                                     [manifest 04996f38f667]
+I   --num-speculative-tokens           3                                           [manifest 04996f38f667]
+I   --port                             18450                                       [manifest 04996f38f667]
+I   --served-model-name                qwen4exp                                    [auto]
+I                                        the name the container states
+I   --mm-max-patches                   16384                                       [auto]
+I                                        the model carries a vision tower: 16384 patches is a 2048 x 2048 image, the largest one encoder pass takes
+I   --temp                             1                                           [auto]
+I                                        from the container
+I   --top-k                            20                                          [auto]
+I                                        from the container
+I   --top-p                            0.95                                        [auto]
+I                                        from the container
+I   --min-p                            0                                           [auto]
+I                                        the container states no min_p, so this is the built-in default
+I   --max-n                            8                                           [auto]
+I                                        the larger of 8 and --max-num-seqs
+I   --max-queued-requests              64                                          [auto]
+I                                        8 x --max-num-seqs
+I   --http-threads                     20                                          [auto]
+I                                        one a hardware thread, at least 4
+I   103 options at their default (-v lists every option; /diagnostics carries them all)
+I ENVIRONMENT -- the RADIANCE_* variables set, by name; their values are not shown
+I   RADIANCE_HOME
+I DERIVED -- what startup worked out that no single option states
+I   chained launches                   off
+I                                        no drafter whose plugin measured a gain with them decodes speculatively
+I   kernel selection                   libr3moe 196, libr4d 3068, libref (host) 2954 op bands
+I                                        attention:
+I                                        attn_dense -> attn_vit_h72_bf16
+I                                        attn_dense -> ref_attn_dense
+I                                        attn_paged -> attn_decode_h256_gqa12_fp8kv
+I                                        attn_paged -> attn_prefill_h256_gqa12_fp8kv
+I                                        attn_paged -> ref_attn_paged
+I                                        attn_paged_gate_quant -> attn_decode_gq_h256_gqa12_fp8kv
+I                                        kv_store -> kv_store_fp8
+I                                        kv_store -> ref_kv_store
+I                                        qk_norm_rope_gate -> qk_norm_rope_gate
+I                                        qk_norm_rope_gate_kv_store -> qk_norm_rope_gate_kv_store_fp8
+I                                        qsa_block_key -> qsa_block_key_bf16
+I                                        qsa_block_key -> ref_qsa_block_key
+I                                        qsa_score -> qsa_score_bf16
+I                                        qsa_score -> ref_qsa_score
+I                                        qsa_select -> qsa_select_i32
+I                                        qsa_select -> ref_qsa_select
+I                                        qsa_tail_store -> qsa_tail_store_bf16
+I                                        qsa_tail_store -> ref_qsa_tail_store
+I                                        qsa_work -> qsa_work_bf16
+I                                        qsa_work -> ref_qsa_work
+I                                        rope -> ref_rope
+I                                        rope -> rope_bf16
+I                                        rope_table -> ref_rope_table
+I                                        rope_table -> rope_table_f32
+I   vram split                         weights 5.40 GiB (experts 0 B of it), KV cache 22.15 GiB, a card
+I                                        VRAM budget, per card:
+I                                          card total          31.86 GiB
+I                                          already held       258.60 MiB   measured: driver context, code objects, anything else resident
+I                                          driver drift        16.00 MiB   what that moves by after it is read: kept free
+I                                          activation arena     1.29 GiB   computed from the buffer plan
+I                                          step staging        90.42 MiB   the step batch's block tables and media staging, and the
+I                                                                          KV tiers' copy staging
+I                                          hardware queues    141.41 MiB   4 a card at 35.35 MiB each, measured: the engine's streams
+I                                          expert prefetch     18.00 MiB   the next-layer prefetch's ring of expert units and buffers
+I                                          --gpu-headroom-mib  96.00 MiB   left unclaimed on purpose
+I                                          ------------------------------
+I                                          claimable           29.96 GiB
+I                                          static weights       5.40 GiB   off the top: every rank's own shard, and not a share of anything
+I                                          ------------------------------
+I                                          elastic             24.56 GiB   the experts keep what the host pool cannot hold; the cache takes the rest
+I                                                                          and lends what no live request holds to the expert slab
+I                                            experts                 0 B   0% of it
+I                                            kv cache          22.15 GiB   90% of it -- 74% backing of the 8 x 262144 worst case: 5.9 full-length
+I                                                                          sessions. With prefix caching a finished sequence's blocks stay held
+I                                                                          for reuse, so the demand is live sessions, not running requests
+I                                            prefill staging    2.41 GiB   out of the cache: two buffers of one layer's non-resident experts,
+I                                                                          at the arena's top and lent back to the slab while steps are small
+I                                          ==============================
+I                                          vram_weights         5.40 GiB   static + experts
+I                                          vram_kv             22.15 GiB   the cache's share
+I                                          unclaimed           96.57 MiB   the headroom, the unusable above, and what MiB rounding
+I                                                                          could not place
+I   weights by tier                    VRAM 5.40 GiB, host pool 7.10 GiB, container on disk 0 B, mapped 100.96 GiB (rank 0)
+I                                        the host pool holds the 1.18 GiB the placement flags put there (the token embedding, the encoder towers, the drafter's experts) beside the weights placed in it
+I   kv cache                           22.15 GiB a card: 1550772 tokens, 5.9 sessions at 262144
+I                                        1.72 GiB of it is per-sequence state; up to 5.92 GiB is lent to the experts while no request holds it
+I HARDWARE
+I   host      12th Gen Intel(R) Core(TM) i7-12700KF | 12 cores, 20 threads | RAM 91.88 GiB, 4.99 GiB available | swap 2.72 GiB, 2.72 GiB used
+I   system    kernel 7.0.13-070013-generic | Debian GNU/Linux 13 (trixie) | in a docker container | cgroup memory unlimited | memlock unlimited
+I   memory    huge pages madvise (defrag madvise, shmem never) | ttm.pages_limit 45.94 GiB | pinned by this process 72.83 GiB
+I   iommu     passthrough (the display devices' IOMMU groups are of type identity)
+I   amdgpu    cwsr_enable 1 | boot parameters: intel_iommu=on iommu=pt
+I   cpu       governor powersave, energy preference balance_performance (intel_pstate) | io_uring refused (Operation not permitted)
+I   runtime   HIP 7.2.53211 | backend device
+I   media     decoders absent (built without libav*)
+I   card 0000:03:00.0  not serving  gfx1100  23.98 GiB VRAM  NUMA -1  driver amdgpu card0
+I       link   00:01.0 16.0 GT/s x8 (max 16.0 GT/s x8) -> 01:00.0 16.0 GT/s x8 (max 16.0 GT/s x16) -> 02:00.0 16.0 GT/s x16 (max 16.0 GT/s x16) -> 03:00.0 16.0 GT/s x16 (max 16.0 GT/s x16)  [read at 0% busy: a link at rest parks below its maximum]
+I       pcie   0: 16.0GT/s, x8 78Mhz | 1: 16.0GT/s, x8 156Mhz | *2: 16.0GT/s, x8 623Mhz
+I       power  cap 303 W (default 303 W, max 348 W) | voltage offset 0 mV | sclk 500-2371 MHz | mclk 96-1249 MHz | runtime pm active (control auto) | iommu group identity
+I   card 0000:06:00.0  not serving  gfx1100  23.98 GiB VRAM  NUMA -1  driver amdgpu card1
+I       link   00:01.1 16.0 GT/s x8 (max 16.0 GT/s x8) -> 04:00.0 16.0 GT/s x8 (max 16.0 GT/s x16) -> 05:00.0 16.0 GT/s x16 (max 16.0 GT/s x16) -> 06:00.0 16.0 GT/s x16 (max 16.0 GT/s x16)  [read at 0% busy: a link at rest parks below its maximum]
+I       pcie   0: 16.0GT/s, x8 78Mhz | 1: 16.0GT/s, x8 156Mhz | *2: 16.0GT/s, x8 623Mhz
+I       power  cap 303 W (default 303 W, max 348 W) | voltage offset 0 mV | sclk 500-2371 MHz | mclk 96-1249 MHz | runtime pm active (control auto) | iommu group identity
+I   card 0000:09:00.0  rank 0 (device 0)  gfx1201 "AMD Radeon Graphics"  31.86 GiB VRAM  NUMA -1  driver amdgpu card2
+I       link   00:06.0 16.0 GT/s x4 (max 16.0 GT/s x4) -> 07:00.0 16.0 GT/s x4 (max 32.0 GT/s x16) -> 08:00.0 32.0 GT/s x16 (max 32.0 GT/s x16) -> 09:00.0 32.0 GT/s x16 (max 32.0 GT/s x16)  [read at 21% busy: a link at rest parks below its maximum]
+I       pcie   0: 16.0GT/s, x4 250Mhz | 1: 16.0GT/s, x4 616Mhz | *2: 16.0GT/s, x4 1143Mhz
+I       dma    copy lists on DMA engine 0, a queue of this process's own; they give way to the collectives
+I       power  cap 300 W (default 300 W, max 330 W) | voltage offset 0 mV | sclk 500-2350 MHz | mclk 96-1258 MHz | runtime pm active (control auto) | iommu group identity
+I   card 0000:17:00.0  not serving  gfx1030  15.98 GiB VRAM  NUMA -1  driver amdgpu card3
+I       link   00:1d.0 8.0 GT/s x4 (max 8.0 GT/s x4) -> 15:00.0 8.0 GT/s x4 (max 16.0 GT/s x16) -> 16:00.0 16.0 GT/s x16 (max 16.0 GT/s x16) -> 17:00.0 16.0 GT/s x16 (max 16.0 GT/s x16)  [read at 0% busy: a link at rest parks below its maximum]
+I       pcie   0: 8.0GT/s, x4 310Mhz | *1: 8.0GT/s, x4 619Mhz
+I       power  cap 303 W (default 303 W, max 339 W) | voltage offset 0 mV | sclk 500-2720 MHz | mclk 96-1000 MHz | runtime pm active (control auto) | iommu group identity
+I FINDINGS -- 0 warnings, 4 notes
+I   note experts-from-host: 5.91 GiB of weights a rank live in the pinned host pool and cross PCIe when they are used
+I        why: a prefill step streams every routed layer's pooled experts onto the card, so its speed is bounded by the link; decode reads the ones it routes to
+I        fix: more VRAM for the experts: a shorter --max-model-len or fewer --max-num-seqs, --embedding-placement ram, --kv-cache-dtype fp8, or more cards (--tp)
+I   note link-capped: card 0000:09:00.0 (rank 0): the card's link is 32.0 GT/s x16 at most, and 0000:00:06.0 above it is 16.0 GT/s x4 at most
+I        why: the host side of the link bounds what the card can move to and from host memory: streamed experts, the host pool and the all-reduce when it goes through host memory
+I        fix: a slot with the card's full width and speed (the board manual says which slots share lanes), or no riser; nothing to do if the board has no faster slot
+I   note swap-in-use: 2.72 GiB of swap is in use
+I        why: a host thread that faults on a swapped page stalls the step it is part of
+I        fix: free memory, or turn swap off on a machine that only serves
+I   note cpu-governor: the CPU governor is powersave with energy preference balance_performance
+I        why: the host side of a step -- scheduling, sampling, the n-gram gather, launch bookkeeping -- is single-threaded per rank, and a core that ramps slowly shows as host gap between steps
+I        fix: cpupower frequency-set -g performance, or echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
+I serving on http://0.0.0.0:18450  (/v1/completions; /v1/chat/completions with tools and reasoning)
+I server: listening on http://0.0.0.0:18450 (20 threads, up to 128)
+I req cmpl-0a99d566cba06001f8aa5d5b completion from 127.0.0.1:41386 model=default prompts=1 prompt=5 tok n=1 max_tokens=24
+r3_moe: R3_MOE_WORKER_FUSESTAGE on - decode-sized staging in the publish kernel
+I recorded pass: draft pass -1 at 5 token(s) -- 50 records, 10 of the 50 dispatches unordered behind the one before; 0 host op(s), 8 table refresh point(s) and 1 routing report(s) between the played stretches
+I recorded pass: draft pass 2 at 1 token(s) -- 46 records, 9 of the 46 dispatches unordered behind the one before; 0 host op(s), 8 table refresh point(s) and 1 routing report(s) between the played stretches
+I recorded pass: draft pass 3 at 1 token(s) -- 45 records, 9 of the 45 dispatches unordered behind the one before; 0 host op(s), 8 table refresh point(s) and 1 routing report(s) between the played stretches
+I recorded pass: draft pass 0 at 4 token(s) -- 1417 records, 246 of the 1414 dispatches unordered behind the one before; 0 host op(s), 392 table refresh point(s) and 48 routing report(s) between the played stretches
+I req cmpl-0a99d566cba06001f8aa5d5b done from 127.0.0.1:41386 finish=length prompt=5 (cache 0) gen=24 ttft=1.01s 96.9 tok/s 1.25s
+I req chatcmpl-4d34e93e36a784627508e1db chat from 127.0.0.1:41392 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-4d34e93e36a784627508e1db done from 127.0.0.1:41392 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.28s 0.28s
+I req chatcmpl-6f47f7d52a27b89f61d7557c chat from 127.0.0.1:41394 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-6f47f7d52a27b89f61d7557c done from 127.0.0.1:41394 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.64s 0.64s
+I req chatcmpl-72747e97595d2409eb059593 chat stream from 127.0.0.1:41428 model=default msgs=1 tools=0 prompt=26905 tok n=1 max_tokens=8
+I req chatcmpl-72747e97595d2409eb059593 done from 127.0.0.1:41428 finish=length prompt=26905 (cache 0) gen=8 reason=8 ttft=10.64s 131.0 tok/s 10.69s
+I req cmpl-cf0aecdfe22cf321897db592 completion from 127.0.0.1:47920 model=x prompts=1 prompt=48225 tok n=1 max_tokens=1
+I req cmpl-cf0aecdfe22cf321897db592 done from 127.0.0.1:47920 finish=length prompt=48225 (cache 0) gen=1 ttft=13.12s 13.13s
+I req chatcmpl-d9085439edb33ce25390808b chat from 127.0.0.1:35034 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-d9085439edb33ce25390808b done from 127.0.0.1:35034 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.22s 0.22s
+I req chatcmpl-9282ad6a92e3a09f2513cc46 chat from 127.0.0.1:35040 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-9282ad6a92e3a09f2513cc46 done from 127.0.0.1:35040 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.69s 0.69s
+I req chatcmpl-02d5cf045d361683762e0904 chat stream from 127.0.0.1:35050 model=default msgs=1 tools=0 prompt=26734 tok n=1 max_tokens=8
+I req chatcmpl-02d5cf045d361683762e0904 done from 127.0.0.1:35050 finish=length prompt=26734 (cache 0) gen=8 reason=8 ttft=11.07s 138.8 tok/s 11.13s
+I req cmpl-a8f5608219382178d1164b25 completion from 127.0.0.1:42292 model=x prompts=1 prompt=50247 tok n=1 max_tokens=1
+I req cmpl-a8f5608219382178d1164b25 done from 127.0.0.1:42292 finish=length prompt=50247 (cache 0) gen=1 ttft=13.74s 13.75s
+I req chatcmpl-9fb3ed16264c29f1593b1d9b chat from 127.0.0.1:34998 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-9fb3ed16264c29f1593b1d9b done from 127.0.0.1:34998 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.22s 0.22s
+I req chatcmpl-e285e8d8845893b987862919 chat from 127.0.0.1:35014 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-e285e8d8845893b987862919 done from 127.0.0.1:35014 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.67s 0.67s
+I req chatcmpl-38740fb8e63ebcef1cfffba2 chat stream from 127.0.0.1:35054 model=default msgs=1 tools=0 prompt=26718 tok n=1 max_tokens=8
+I req chatcmpl-38740fb8e63ebcef1cfffba2 done from 127.0.0.1:35054 finish=length prompt=26718 (cache 0) gen=8 reason=8 ttft=10.66s 139.2 tok/s 10.71s
+I req cmpl-8d788a28322866c4fc622f79 completion from 127.0.0.1:38942 model=x prompts=1 prompt=47422 tok n=1 max_tokens=1
+I req cmpl-8d788a28322866c4fc622f79 done from 127.0.0.1:38942 finish=length prompt=47422 (cache 0) gen=1 ttft=12.96s 12.97s
+I req chatcmpl-807c97c1a116c4984985ec99 chat from 127.0.0.1:34172 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-807c97c1a116c4984985ec99 done from 127.0.0.1:34172 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-d1e736762b3a98c54d491100 chat from 127.0.0.1:34182 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-d1e736762b3a98c54d491100 done from 127.0.0.1:34182 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.65s 0.65s
+I req chatcmpl-6ec9b7aa3a40d5597702cea1 chat stream from 127.0.0.1:34208 model=default msgs=1 tools=0 prompt=26789 tok n=1 max_tokens=8
+I req chatcmpl-6ec9b7aa3a40d5597702cea1 done from 127.0.0.1:34208 finish=length prompt=26789 (cache 0) gen=8 reason=8 ttft=11.01s 139.1 tok/s 11.07s
+I req cmpl-6b4c917b78328d03459f69ef completion from 127.0.0.1:51908 model=x prompts=1 prompt=55700 tok n=1 max_tokens=1
+I req cmpl-6b4c917b78328d03459f69ef done from 127.0.0.1:51908 finish=length prompt=55700 (cache 0) gen=1 ttft=15.23s 15.24s
+I req chatcmpl-b30400c4eb68261dfb8a994b chat from 127.0.0.1:54544 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-b30400c4eb68261dfb8a994b done from 127.0.0.1:54544 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-d92e164e60266fed0320eb33 chat from 127.0.0.1:54550 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-d92e164e60266fed0320eb33 done from 127.0.0.1:54550 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.67s 0.67s
+I req chatcmpl-b9933b3c79f28a8658f2ff56 chat stream from 127.0.0.1:54582 model=default msgs=1 tools=0 prompt=26693 tok n=1 max_tokens=8
+I req chatcmpl-b9933b3c79f28a8658f2ff56 done from 127.0.0.1:54582 finish=length prompt=26693 (cache 0) gen=8 reason=8 ttft=11.01s 140.0 tok/s 11.06s
+I req chatcmpl-b098e50fc446e086d4f75318 chat from 127.0.0.1:33966 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-b098e50fc446e086d4f75318 done from 127.0.0.1:33966 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-14f7e4215c675e21eba6acec chat from 127.0.0.1:33978 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-14f7e4215c675e21eba6acec done from 127.0.0.1:33978 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.69s 0.69s
+I req chatcmpl-3ec1715e34b72dd079e34372 chat stream from 127.0.0.1:33990 model=default msgs=1 tools=0 prompt=26797 tok n=1 max_tokens=8
+I req chatcmpl-3ec1715e34b72dd079e34372 done from 127.0.0.1:33990 finish=length prompt=26797 (cache 0) gen=8 reason=8 ttft=10.95s 138.8 tok/s 11.01s
+I req chatcmpl-c2225d2804d394198adac635 chat from 127.0.0.1:39094 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-c2225d2804d394198adac635 done from 127.0.0.1:39094 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-6aee8406ac4e1f09d1c27528 chat from 127.0.0.1:39110 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-6aee8406ac4e1f09d1c27528 done from 127.0.0.1:39110 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.67s 0.67s
+I req chatcmpl-1efb5e1e21c80374342922ea chat stream from 127.0.0.1:39126 model=default msgs=1 tools=0 prompt=26854 tok n=1 max_tokens=8
+I req chatcmpl-1efb5e1e21c80374342922ea done from 127.0.0.1:39126 finish=length prompt=26854 (cache 0) gen=8 reason=8 ttft=11.07s 138.8 tok/s 11.13s
+I req chatcmpl-b87a4ac6d483534383f7d3e7 chat from 127.0.0.1:38656 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-b87a4ac6d483534383f7d3e7 done from 127.0.0.1:38656 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-c2c00ba599cfb04815f98dcf chat from 127.0.0.1:38658 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-c2c00ba599cfb04815f98dcf done from 127.0.0.1:38658 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.65s 0.65s
+I req chatcmpl-3bce981477ddc1f16009b968 chat stream from 127.0.0.1:38694 model=default msgs=1 tools=0 prompt=26768 tok n=1 max_tokens=8
+I req chatcmpl-3bce981477ddc1f16009b968 done from 127.0.0.1:38694 finish=length prompt=26768 (cache 0) gen=8 reason=8 ttft=10.80s 139.7 tok/s 10.86s
+I req chatcmpl-84411c3c8368fdb7d0dc9979 chat from 127.0.0.1:49036 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-84411c3c8368fdb7d0dc9979 done from 127.0.0.1:49036 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-a46c32ba587a3f6099e01ae0 chat from 127.0.0.1:49046 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-a46c32ba587a3f6099e01ae0 done from 127.0.0.1:49046 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.65s 0.65s
+I req chatcmpl-6a355d4170ead95bd1000b47 chat stream from 127.0.0.1:49062 model=default msgs=1 tools=0 prompt=26746 tok n=1 max_tokens=8
+I req chatcmpl-6a355d4170ead95bd1000b47 done from 127.0.0.1:49062 finish=length prompt=26746 (cache 0) gen=8 reason=8 ttft=11.07s 138.5 tok/s 11.13s
+I req chatcmpl-b6cc24a4a56cc764cec59187 chat from 127.0.0.1:57684 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-b6cc24a4a56cc764cec59187 done from 127.0.0.1:57684 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-c3df0226cea34b5ae1f054ce chat from 127.0.0.1:57694 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-c3df0226cea34b5ae1f054ce done from 127.0.0.1:57694 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.65s 0.65s
+I req chatcmpl-57b752069171ea9f827b93a6 chat stream from 127.0.0.1:57728 model=default msgs=1 tools=0 prompt=26744 tok n=1 max_tokens=8
+I req chatcmpl-57b752069171ea9f827b93a6 done from 127.0.0.1:57728 finish=length prompt=26744 (cache 0) gen=8 reason=8 ttft=10.87s 138.6 tok/s 10.93s
+I req chatcmpl-e6eb6d3c2d3266da6c68ad51 chat from 127.0.0.1:43424 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-e6eb6d3c2d3266da6c68ad51 done from 127.0.0.1:43424 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-bfb4fd58f085807b17776b51 chat from 127.0.0.1:43434 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-bfb4fd58f085807b17776b51 done from 127.0.0.1:43434 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.66s 0.66s
+I req chatcmpl-71ae14b306e006ebbd68b3d9 chat stream from 127.0.0.1:43462 model=default msgs=1 tools=0 prompt=26761 tok n=1 max_tokens=8
+I req chatcmpl-71ae14b306e006ebbd68b3d9 done from 127.0.0.1:43462 finish=length prompt=26761 (cache 0) gen=8 reason=8 ttft=10.99s 139.4 tok/s 11.04s
+I req chatcmpl-e1e51f8ab13a4995beb1f34a chat from 127.0.0.1:40584 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-e1e51f8ab13a4995beb1f34a done from 127.0.0.1:40584 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-5162f6c8d4ed799d508255e0 chat from 127.0.0.1:40600 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-5162f6c8d4ed799d508255e0 done from 127.0.0.1:40600 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.65s 0.65s
+I req chatcmpl-a380bcf5db4dc568e2977bf3 chat stream from 127.0.0.1:40624 model=default msgs=1 tools=0 prompt=26805 tok n=1 max_tokens=8
+I req chatcmpl-a380bcf5db4dc568e2977bf3 done from 127.0.0.1:40624 finish=length prompt=26805 (cache 0) gen=8 reason=8 ttft=10.71s 138.4 tok/s 10.77s
+I req cmpl-5503ce85a5786df5da4d661d completion from 127.0.0.1:40742 model=x prompts=1 prompt=46335 tok n=1 max_tokens=1
+I req cmpl-5503ce85a5786df5da4d661d done from 127.0.0.1:40742 finish=length prompt=46335 (cache 0) gen=1 ttft=12.70s 12.71s
+I req cmpl-f12db7480de0c7add9e8fa27 completion from 127.0.0.1:58446 model=x prompts=1 prompt=57405 tok n=1 max_tokens=1
+I req cmpl-f12db7480de0c7add9e8fa27 done from 127.0.0.1:58446 finish=length prompt=57405 (cache 0) gen=1 ttft=15.67s 15.69s
+I req cmpl-887fb4cfdf614853bb968989 completion from 127.0.0.1:59448 model=x prompts=1 prompt=49367 tok n=1 max_tokens=1
+I req cmpl-887fb4cfdf614853bb968989 done from 127.0.0.1:59448 finish=length prompt=49367 (cache 0) gen=1 ttft=13.44s 13.45s
+I req cmpl-90bec7a0474de5e9bf2ae087 completion from 127.0.0.1:41960 model=x prompts=1 prompt=48378 tok n=1 max_tokens=1
+I req cmpl-90bec7a0474de5e9bf2ae087 done from 127.0.0.1:41960 finish=length prompt=48378 (cache 0) gen=1 ttft=13.24s 13.27s
+I req cmpl-f91176fb5f67057c90c29fe2 completion from 127.0.0.1:36816 model=x prompts=1 prompt=50873 tok n=1 max_tokens=1
+I req cmpl-f91176fb5f67057c90c29fe2 done from 127.0.0.1:36816 finish=length prompt=50873 (cache 0) gen=1 ttft=13.92s 13.93s
+I req cmpl-a794ccf4023fa48e012e3131 completion from 127.0.0.1:42922 model=x prompts=1 prompt=48535 tok n=1 max_tokens=1
+I req cmpl-a794ccf4023fa48e012e3131 done from 127.0.0.1:42922 finish=length prompt=48535 (cache 0) gen=1 ttft=13.25s 13.26s
+I req cmpl-c0cee3ccb6bcbee25fb58bf9 completion from 127.0.0.1:45398 model=x prompts=1 prompt=50104 tok n=1 max_tokens=1
+I req cmpl-c0cee3ccb6bcbee25fb58bf9 done from 127.0.0.1:45398 finish=length prompt=50104 (cache 0) gen=1 ttft=13.71s 13.72s
+I req cmpl-ad801270f75ed990478e837e completion from 127.0.0.1:46098 model=x prompts=1 prompt=49179 tok n=1 max_tokens=1
+I req cmpl-ad801270f75ed990478e837e done from 127.0.0.1:46098 finish=length prompt=49179 (cache 0) gen=1 ttft=13.59s 13.60s
+I req cmpl-75ce1526482fc77e7a552f1e completion from 127.0.0.1:47870 model=x prompts=1 prompt=51518 tok n=1 max_tokens=1
+I req cmpl-75ce1526482fc77e7a552f1e done from 127.0.0.1:47870 finish=length prompt=51518 (cache 0) gen=1 ttft=14.16s 14.17s
+I req cmpl-13311aa6984128092a3843e8 completion from 127.0.0.1:48082 model=x prompts=1 prompt=45700 tok n=1 max_tokens=1
+I req cmpl-13311aa6984128092a3843e8 done from 127.0.0.1:48082 finish=length prompt=45700 (cache 0) gen=1 ttft=12.55s 12.56s
+I req chatcmpl-e8c2714515c19c01cb6b55d6 chat from 127.0.0.1:46534 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-e8c2714515c19c01cb6b55d6 done from 127.0.0.1:46534 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-cbaa028999ff3c6648482906 chat from 127.0.0.1:46542 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-cbaa028999ff3c6648482906 done from 127.0.0.1:46542 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.67s 0.67s
+I req chatcmpl-61d4e4bf5e0a3da2b6022a4a chat stream from 127.0.0.1:46558 model=default msgs=1 tools=0 prompt=905 tok n=1 max_tokens=256
+I req chatcmpl-61d4e4bf5e0a3da2b6022a4a done from 127.0.0.1:46558 finish=length prompt=905 (cache 0) gen=256 reason=256 ttft=0.41s 134.3 tok/s 2.31s
+I req chatcmpl-037311d3330e26f2d76560f2 chat stream from 127.0.0.1:46716 model=default msgs=1 tools=0 prompt=905 tok n=1 max_tokens=256
+I req chatcmpl-037311d3330e26f2d76560f2 done from 127.0.0.1:46716 finish=length prompt=905 (cache 0) gen=256 reason=256 ttft=0.40s 134.7 tok/s 2.29s
+I req chatcmpl-66b840c4a1c17630cb732b74 chat from 127.0.0.1:38690 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-66b840c4a1c17630cb732b74 done from 127.0.0.1:38690 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-02462e21764f00538ee7580f chat from 127.0.0.1:38694 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-02462e21764f00538ee7580f done from 127.0.0.1:38694 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.67s 0.67s
+I req chatcmpl-1f6faf2a00201e33c3058470 chat stream from 127.0.0.1:38710 model=default msgs=1 tools=0 prompt=915 tok n=1 max_tokens=256
+I req chatcmpl-7e7b2eb8cf74336d89bc9412 chat stream from 127.0.0.1:38712 model=default msgs=1 tools=0 prompt=887 tok n=1 max_tokens=256
+I req chatcmpl-2992d9d6df8789496d01c0e1 chat stream from 127.0.0.1:38726 model=default msgs=1 tools=0 prompt=897 tok n=1 max_tokens=256
+I req chatcmpl-02a7d088367c972822d5ab00 chat stream from 127.0.0.1:38740 model=default msgs=1 tools=0 prompt=920 tok n=1 max_tokens=256
+I req chatcmpl-78eda6b754fd59c6ad590828 chat stream from 127.0.0.1:38714 model=default msgs=1 tools=0 prompt=905 tok n=1 max_tokens=256
+I req chatcmpl-b323a0a5fd20453dddeccbca chat stream from 127.0.0.1:38752 model=default msgs=1 tools=0 prompt=901 tok n=1 max_tokens=256
+I req chatcmpl-b323a0a5fd20453dddeccbca done from 127.0.0.1:38752 finish=length prompt=901 (cache 0) gen=256 reason=256 ttft=2.07s 73.1 tok/s 5.56s
+I req chatcmpl-1f6faf2a00201e33c3058470 done from 127.0.0.1:38710 finish=length prompt=915 (cache 0) gen=256 reason=256 ttft=0.76s 52.6 tok/s 5.61s
+I req chatcmpl-02a7d088367c972822d5ab00 done from 127.0.0.1:38740 finish=length prompt=920 (cache 0) gen=256 reason=256 ttft=1.50s 53.8 tok/s 6.25s
+I req chatcmpl-78eda6b754fd59c6ad590828 done from 127.0.0.1:38714 finish=length prompt=905 (cache 0) gen=256 reason=256 ttft=2.07s 59.4 tok/s 6.37s
+I req chatcmpl-7e7b2eb8cf74336d89bc9412 done from 127.0.0.1:38712 finish=length prompt=887 (cache 0) gen=256 reason=256 ttft=0.76s 44.7 tok/s 6.47s
+I req chatcmpl-2992d9d6df8789496d01c0e1 done from 127.0.0.1:38726 finish=length prompt=897 (cache 0) gen=256 reason=256 ttft=1.50s 51.1 tok/s 6.49s
+I req chatcmpl-a7ea61a1ac8a3d33d1e831d8 chat stream from 127.0.0.1:39066 model=default msgs=1 tools=0 prompt=901 tok n=1 max_tokens=256
+I req chatcmpl-75f4a66fcb9c99de3cf9be31 chat stream from 127.0.0.1:39052 model=default msgs=1 tools=0 prompt=915 tok n=1 max_tokens=256
+I req chatcmpl-0d09aff788db4019033629d0 chat stream from 127.0.0.1:39074 model=default msgs=1 tools=0 prompt=920 tok n=1 max_tokens=256
+I req chatcmpl-f5ec8482c45de2bbefa473ff chat stream from 127.0.0.1:39042 model=default msgs=1 tools=0 prompt=905 tok n=1 max_tokens=256
+I req chatcmpl-11dc625cf3a9f50fbc160115 chat stream from 127.0.0.1:39050 model=default msgs=1 tools=0 prompt=887 tok n=1 max_tokens=256
+I req chatcmpl-2b39d5b4c6bf60d33cb2d9c1 chat stream from 127.0.0.1:39056 model=default msgs=1 tools=0 prompt=897 tok n=1 max_tokens=256
+I req chatcmpl-75f4a66fcb9c99de3cf9be31 done from 127.0.0.1:39052 finish=length prompt=915 (cache 0) gen=256 reason=256 ttft=0.73s 52.5 tok/s 5.59s
+I req chatcmpl-f5ec8482c45de2bbefa473ff done from 127.0.0.1:39042 finish=length prompt=905 (cache 0) gen=256 reason=256 ttft=1.50s 57.7 tok/s 5.91s
+I req chatcmpl-a7ea61a1ac8a3d33d1e831d8 done from 127.0.0.1:39066 finish=length prompt=901 (cache 0) gen=256 reason=256 ttft=0.73s 46.9 tok/s 6.17s
+I req chatcmpl-11dc625cf3a9f50fbc160115 done from 127.0.0.1:39050 finish=length prompt=887 (cache 0) gen=256 reason=256 ttft=2.05s 60.4 tok/s 6.27s
+I req chatcmpl-0d09aff788db4019033629d0 done from 127.0.0.1:39074 finish=length prompt=920 (cache 0) gen=256 reason=256 ttft=1.50s 53.0 tok/s 6.31s
+I req chatcmpl-2b39d5b4c6bf60d33cb2d9c1 done from 127.0.0.1:39056 finish=length prompt=897 (cache 0) gen=256 reason=256 ttft=2.05s 58.8 tok/s 6.38s
+I req chatcmpl-27e5e7fa1bace926559042b0 chat from 127.0.0.1:58440 model=default msgs=1 tools=0 prompt=393 tok n=1 max_tokens=1
+I req chatcmpl-27e5e7fa1bace926559042b0 done from 127.0.0.1:58440 finish=length prompt=393 (cache 0) gen=1 reason=1 ttft=0.21s 0.21s
+I req chatcmpl-7d428fd96dda6cae8fbe17fc chat from 127.0.0.1:58454 model=default msgs=1 tools=0 prompt=1728 tok n=1 max_tokens=1
+I req chatcmpl-7d428fd96dda6cae8fbe17fc done from 127.0.0.1:58454 finish=length prompt=1728 (cache 0) gen=1 reason=1 ttft=0.66s 0.66s
+I req chatcmpl-9e9a4413b6a6535c4f7535e7 chat stream from 127.0.0.1:58500 model=default msgs=1 tools=0 prompt=8130 tok n=1 max_tokens=32
+I req chatcmpl-12a63ded5b058b6d50a72969 chat stream from 127.0.0.1:58484 model=default msgs=1 tools=0 prompt=8165 tok n=1 max_tokens=32
+I req chatcmpl-01a984ff6198974e41cfff45 chat stream from 127.0.0.1:58526 model=default msgs=1 tools=0 prompt=8114 tok n=1 max_tokens=32
+I req chatcmpl-109a66194e4ec65a7380db69 chat stream from 127.0.0.1:58478 model=default msgs=1 tools=0 prompt=8105 tok n=1 max_tokens=32
+I req chatcmpl-2726f700cc74f35b9ea28a3a chat stream from 127.0.0.1:58514 model=default msgs=1 tools=0 prompt=8105 tok n=1 max_tokens=32
+I req chatcmpl-03fb1590c9e1f80b67ea5584 chat stream from 127.0.0.1:58516 model=default msgs=1 tools=0 prompt=8115 tok n=1 max_tokens=32
+I req chatcmpl-9e9a4413b6a6535c4f7535e7 done from 127.0.0.1:58500 finish=length prompt=8130 (cache 0) gen=32 reason=32 ttft=5.43s 4.4 tok/s 12.51s
+I req chatcmpl-12a63ded5b058b6d50a72969 done from 127.0.0.1:58484 finish=length prompt=8165 (cache 0) gen=32 reason=32 ttft=7.77s 3.9 tok/s 15.70s
+I req chatcmpl-01a984ff6198974e41cfff45 done from 127.0.0.1:58526 finish=length prompt=8114 (cache 0) gen=32 reason=32 ttft=11.71s 4.6 tok/s 18.43s
+I req chatcmpl-109a66194e4ec65a7380db69 done from 127.0.0.1:58478 finish=length prompt=8105 (cache 0) gen=32 reason=32 ttft=14.91s 7.0 tok/s 19.37s
+I req chatcmpl-2726f700cc74f35b9ea28a3a done from 127.0.0.1:58514 finish=length prompt=8105 (cache 0) gen=32 reason=32 ttft=17.61s 15.7 tok/s 19.59s
+I req chatcmpl-03fb1590c9e1f80b67ea5584 done from 127.0.0.1:58516 finish=length prompt=8115 (cache 0) gen=32 reason=32 ttft=19.33s 88.5 tok/s 19.68s
+I req chatcmpl-a2c704cf370a8f80a3e7e393 chat stream from 127.0.0.1:38910 model=default msgs=1 tools=0 prompt=8105 tok n=1 max_tokens=32
+I req chatcmpl-3eecd4a774298d607494315f chat stream from 127.0.0.1:38874 model=default msgs=1 tools=0 prompt=8165 tok n=1 max_tokens=32
+I req chatcmpl-999fd559c9aa45ec2cf9e8b8 chat stream from 127.0.0.1:38886 model=default msgs=1 tools=0 prompt=8115 tok n=1 max_tokens=32
+I req chatcmpl-c28b2acae628cc57c118c123 chat stream from 127.0.0.1:38894 model=default msgs=1 tools=0 prompt=8130 tok n=1 max_tokens=32
+I req chatcmpl-5c29580ba05bfa4c4a4a945f chat stream from 127.0.0.1:38926 model=default msgs=1 tools=0 prompt=8114 tok n=1 max_tokens=32
+I req chatcmpl-ffe15124c1a232bae99f8985 chat stream from 127.0.0.1:38940 model=default msgs=1 tools=0 prompt=8105 tok n=1 max_tokens=32
+I req chatcmpl-a2c704cf370a8f80a3e7e393 done from 127.0.0.1:38910 finish=length prompt=8105 (cache 8064) gen=32 reason=32 ttft=0.15s 41.7 tok/s 0.89s
+I req chatcmpl-5c29580ba05bfa4c4a4a945f done from 127.0.0.1:38926 finish=length prompt=8114 (cache 8064) gen=32 reason=32 ttft=0.40s 63.9 tok/s 0.89s
+I req chatcmpl-ffe15124c1a232bae99f8985 done from 127.0.0.1:38940 finish=length prompt=8105 (cache 8064) gen=32 reason=32 ttft=0.40s 63.8 tok/s 0.89s
+I req chatcmpl-3eecd4a774298d607494315f done from 127.0.0.1:38874 finish=length prompt=8165 (cache 8128) gen=32 reason=32 ttft=0.15s 39.5 tok/s 0.93s
+I req chatcmpl-999fd559c9aa45ec2cf9e8b8 done from 127.0.0.1:38886 finish=length prompt=8115 (cache 8064) gen=32 reason=32 ttft=0.40s 58.8 tok/s 0.93s
+I req chatcmpl-c28b2acae628cc57c118c123 done from 127.0.0.1:38894 finish=length prompt=8130 (cache 8128) gen=32 reason=32 ttft=0.40s 58.7 tok/s 0.93s

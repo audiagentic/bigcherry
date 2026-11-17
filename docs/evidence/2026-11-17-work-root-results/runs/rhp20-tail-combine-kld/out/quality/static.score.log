@@ -1,0 +1,254 @@
+I device: AQL backend, 1 device(s) [0:gfx1201]
+I model: qwen4exp  arch=qwen4exp  quant=bf16  48 layers  262144 ctx
+I vocab: end-of-generation also on <|endoftext|>=248044 (a control token the container declares neither as eos nor eot; without this a turn ending on it runs on)
+I vocab: 248077 tokens, bos=-1 eos=248046
+I gbnf: vocabulary index built in 55 ms, 26.11 MiB
+libr3: R3_MOE_WORKER GPU mailbox ready, 25078 owned experts, decode rows <= 64
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libavx, libbcgfx12, libr2, libr3, libr3ngram, spechub
+I chained launches: off -- no drafter whose plugin measured a gain with them decodes speculatively
+I control vectors: not loaded (no --control-vector); a request that asks for one is refused
+libr3: R3_MOE_WORKER first layer map: layer 0 n_expert 512
+libr3: R3_MOE_WORKER layer 34 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 44 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 46 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 47 has protected experts; kept local
+I sampler: 248320-token vocabulary (248320 this rank), 1 rows, 7760 mask words (30.31 KiB per row)
+libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane
+I host-site execution: 8 of 1720 declared ops have no host kernel (gated_had_quant_fp8, moe_mailbox_publish, moe_mailbox_add, moe_mailbox_inject, qk_norm_rope_gate, qk_norm_rope_gate_kv_store, gate_quant_fp8, attn_paged_gate_quant). Their weights may still be tiered to host or SSD -- only the arithmetic is pinned to the device. --debug-graph lists the bands.
+I declare: 1720 ops, 99452 weights, 93 buffers, 8 KV groups
+I placement: token embedding (1.18 GiB a rank) ram (default): pinned in host memory and read over the link in place, so its VRAM goes to the KV cache and the experts
+I placement: n-gram table (47.68 GiB) disk: as asked
+I kv: the pool backs 100% of the worst case (1 sequences all at 8192 tokens), 1.0 full-length sessions; a larger --host-pool-mib gives the cache more
+I VRAM budget, per card:
+  card total          31.86 GiB
+  already held       258.57 MiB   measured: driver context, code objects, anything else resident
+  driver drift        16.00 MiB   what that moves by after it is read: kept free
+  activation arena    80.89 MiB   computed from the buffer plan
+  step staging        18.06 MiB   the step batch's block tables and media staging, and the
+                                  KV tiers' copy staging
+  hardware queues    141.41 MiB   4 a card at 35.35 MiB each, measured: the engine's streams
+  expert prefetch     18.00 MiB   the next-layer prefetch's ring of expert units and buffers
+  --gpu-headroom-mib  96.00 MiB   left unclaimed on purpose
+  ------------------------------
+  claimable           31.25 GiB
+  static weights       4.31 GiB   off the top: every rank's own shard, and not a share of anything
+  ------------------------------
+  elastic             26.94 GiB   the experts keep what the host pool cannot hold; the cache takes the rest
+                                  and lends what no live request holds to the expert slab
+    experts            4.81 GiB   18% of it -- the whole expert plane is resident, so more would do nothing
+    kv cache         212.31 MiB   1% of it -- backs 1 sequences all at 8192 tokens at once, which is the worst case and
+                                  more would be unusable
+    unusable          21.92 GiB   neither side could take it: both are at their ceiling
+  ==============================
+  vram_weights         9.12 GiB   static + experts
+  vram_kv            213.00 MiB   the cache's share
+  unclaimed           22.01 GiB   the headroom, the unusable above, and what MiB rounding
+                                  could not place
+
+I pools:
+vram_weights     9.12 GiB budget,        0 B used,   9.12 GiB free
+vram_kv        213.00 MiB budget,        0 B used, 213.00 MiB free
+host_pool       45.18 GiB budget,        0 B used,  45.18 GiB free
+
+I placement: 'token_embd.weight' (1.18 GiB) in the pinned host pool, read in place (--embedding-placement ram, the default)
+I mover: 2038 slab slots (32 shadow, 160 more kept free out of a loan), 33 pinned pool slots, 4.31 GiB static vram
+I load: rank 0, mover took 9.12 GiB, weights pool 364.00 KiB free of 9.12 GiB
+I heat engine: 2038 movable units, 64 moves a step, decay 0.950 hysteresis 1.25 min-gain 1.50 credit cap 512 admit-heat 8.0
+I load: 8.04 GiB of 10.30 GiB read, 2.6 GB/s, at container offset 117160472576
+I load: one pass over the container, 10.31 GiB read in 4.4 s (2.5 GB/s) for 1 rank(s); 4.3 s of that was the disk (2.6 GB/s)
+I load: 9035 weight(s), 8.78 GiB of planes, rearranged for their kernels by 16 worker(s) behind the read, 622.25 MiB held at most; done 4.5 s after the read began
+I load: 9338 weights, 10.30 GiB placed from 10.31 GiB of container read
+I load: 2 weight(s), 47.68 GiB, read in place from the container's mapping -- not copied and charged to no pool
+I chunk geometry: quantum 64 (attn block 4, state chunk 64), checkpoint interval 4096, max_tok 64 -> prefill chunks of at most 64
+W kv tiers: the prefix cache indexes no paged group, so there is nothing to move. --prefix-cache-mib does nothing here.
+I kv: KV layer bundles 12/36/36/12/1/1/12 (110 real layers)
+    vLLM stock    size  1 -> 110 groups, 110 slots (0 padding)
+    least-waste   size  1 -> 110 groups, 110 slots (0 padding)
+    radiance      per state kind, own pool ->  7 groups, 110 slots (0 padding)
+    (none)         ?        0 layers  state      0 B        0 slots =       0 B
+    kv_attn        full    12 layers  block    4 tok  page 48.00 KiB     2061 blocks = 96.61 MiB  (8244 tokens)
+    kv_gdn_state   linear  36 layers  state 108.00 MiB        1 slots = 108.00 MiB
+    kv_gdn_conv    conv    36 layers  state 2.11 MiB        1 slots =  2.11 MiB
+    kv_qsa_tail    linear  12 layers  state 12.00 KiB        1 slots = 12.00 KiB
+    kv_ple_tok     conv     1 layers  state      8 B        1 slots =       8 B
+    kv_ple_conv    conv     1 layers  state 180.00 KiB        1 slots = 180.00 KiB
+    kv_qsa_bkey    full    12 layers  block    4 tok  page 3.00 KiB     2061 blocks =  6.04 MiB  (8244 tokens)
+    pool at 0x73ce1be00000, 213.00 MiB; groups at +0..+223292416
+
+I prefix cache: disabled by --no-prefix-cache
+
+I arena: 65.66 MiB device + 15.23 MiB scratch + 0 B for the second lane = 80.89 MiB, charged to the VRAM budget before it was split
+I mover: 32 slots can be lent out of the KV cache (77.38 MiB), filled as it lends them
+I rank 0: expert prefetch on: 2 copies a routed layer by DMA, ring 14.51 MiB
+I kv: the cache can grow to 212.94 MiB a card -- 8244 tokens of context, 1.0 sessions at 8192 -- with every block it lends the experts taken back; 110.30 MiB of that is per-sequence state, and up to 77.38 MiB is lent to the experts while no request holds it
+I device allocations: 401 totalling 9.20 GiB, of which 9.33 GiB is the two pools -- the rest is the activation arena and the step staging. Anything on the card past this is the driver or a kernel plugin's own hipMalloc, which this cannot see.
+I card 0 settled at 22.07 GiB free against 149.41 MiB (the 96.00 MiB --gpu-headroom-mib and 53.41 MiB kept for the step staging and for what is built on first use). The split accounted for it: neither pool could address another byte, which is the `unusable` line of the VRAM budget above.
+I draft floor: 2 paged group(s), 0 prefix-cached, 0 in the window snapshot -> a hit leaves a hole in a drafter's own KV
+I step batch: 186.84 KiB pinned staging ring + 61.75 KiB device slab a rank (50.00 KiB of it block tables), 8 KV group(s), 0 derived buffer(s)
+I scheduler: --busy-prefill-chunk auto: a prefill chunk sharing a step leaves decode rows and waiting requests their room and keeps at least 64 tokens
+I STARTUP REPORT -- radiance 1.17.0
+I CONFIGURATION -- every option not at its default, the value in force, and where it came from
+I   --model                            <models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad  [manifest 11ef9030f447]
+I   --radiance-home                    <work-root>/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3/radiance_home  [manifest 11ef9030f447]
+I   --kernels                          libr4d@0.5.0,libr3moe@0.0.1,libref@0.1.0    [manifest 11ef9030f447]
+I                                        the libraries named, in that order; architecture plugin qwen4exp_fp8@0.1.0
+I   --tp                               1                                           [manifest 11ef9030f447]
+I   --p2p                              n/a                                         [auto]
+I                                        one rank: no collective crosses a card
+I   --max-num-batched-tokens           64                                          [manifest 11ef9030f447]
+I   --max-num-seqs                     1                                           [manifest 11ef9030f447]
+I   --max-model-len                    8192                                        [manifest 11ef9030f447]
+I   --rope-scaling                     none                                        [manifest 11ef9030f447]
+I   --kv-cache-dtype                   fp8                                         [manifest 11ef9030f447]
+I   --host-pool-mib                    45056                                       [manifest 11ef9030f447]
+I   --host-headroom-mib                4705                                        [manifest 11ef9030f447]
+I   --embedding-placement              ram                                         [auto]
+I                                        the table is 1.18 GiB a rank: pinned in host memory and read over the link in place, so its VRAM goes to the KV cache and the experts
+I   --vision-tower-placement           n/a                                         [auto]
+I                                        this server declares no encoder tower
+I   --ngram-placement                  disk                                        [manifest 11ef9030f447]
+I                                        the table is 47.68 GiB: as asked
+I   --prefix-cache-mib                 12288                                       [manifest 11ef9030f447]
+I   --placement                        expert_tiered                               [manifest 11ef9030f447]
+I                                        as asked
+I   --checkpoint-interval              4096                                        [manifest 11ef9030f447]
+I   --checkpoint-slots                 3                                           [manifest 11ef9030f447]
+I   --no-prefix-cache                  prefix caching off                          [auto]
+I                                        the KL mode: a prefix hit would start a document past positions the reference holds
+I   --prefix-resume                    nearest                                     [manifest 11ef9030f447]
+I   --num-speculative-tokens           0                                           [manifest 11ef9030f447]
+I                                        the KL mode scores the trunk's own rows
+I   --port                             46675                                       [manifest 11ef9030f447]
+I   --kld-ref                          <work-root>/runs/rad116-kld/reference   [command line]
+I   --kld-out                          <work-root>/runs/rhp20-tail-combine-kld/out/quality/static.kld.json  [command line]
+I   109 options at their default (-v lists every option; /diagnostics carries them all)
+I ENVIRONMENT -- the RADIANCE_* variables set, by name; their values are not shown
+I   RADIANCE_HOME
+I DERIVED -- what startup worked out that no single option states
+I   chained launches                   off
+I                                        no drafter whose plugin measured a gain with them decodes speculatively
+I   kernel selection                   libr3moe 192, libr4d 2166, libref (host) 2058 op bands
+I                                        attention:
+I                                        attn_paged -> attn_decode_h256_gqa12_fp8kv
+I                                        attn_paged -> attn_prefill_h256_gqa12_fp8kv
+I                                        attn_paged -> ref_attn_paged
+I                                        attn_paged_gate_quant -> attn_decode_gq_h256_gqa12_fp8kv
+I                                        kv_store -> kv_store_fp8
+I                                        kv_store -> ref_kv_store
+I                                        qk_norm_rope_gate -> qk_norm_rope_gate
+I                                        qk_norm_rope_gate_kv_store -> qk_norm_rope_gate_kv_store_fp8
+I                                        qsa_block_key -> qsa_block_key_bf16
+I                                        qsa_block_key -> ref_qsa_block_key
+I                                        qsa_score -> qsa_score_bf16
+I                                        qsa_score -> ref_qsa_score
+I                                        qsa_select -> qsa_select_i32
+I                                        qsa_select -> ref_qsa_select
+I                                        qsa_tail_store -> qsa_tail_store_bf16
+I                                        qsa_tail_store -> ref_qsa_tail_store
+I                                        qsa_work -> qsa_work_bf16
+I                                        qsa_work -> ref_qsa_work
+I                                        rope -> ref_rope
+I                                        rope -> rope_bf16
+I                                        rope_table -> ref_rope_table
+I                                        rope_table -> rope_table_f32
+I   vram split                         weights 9.12 GiB (experts 4.81 GiB of it), KV cache 212.31 MiB, a card
+I                                        VRAM budget, per card:
+I                                          card total          31.86 GiB
+I                                          already held       258.57 MiB   measured: driver context, code objects, anything else resident
+I                                          driver drift        16.00 MiB   what that moves by after it is read: kept free
+I                                          activation arena    80.89 MiB   computed from the buffer plan
+I                                          step staging        18.06 MiB   the step batch's block tables and media staging, and the
+I                                                                          KV tiers' copy staging
+I                                          hardware queues    141.41 MiB   4 a card at 35.35 MiB each, measured: the engine's streams
+I                                          expert prefetch     18.00 MiB   the next-layer prefetch's ring of expert units and buffers
+I                                          --gpu-headroom-mib  96.00 MiB   left unclaimed on purpose
+I                                          ------------------------------
+I                                          claimable           31.25 GiB
+I                                          static weights       4.31 GiB   off the top: every rank's own shard, and not a share of anything
+I                                          ------------------------------
+I                                          elastic             26.94 GiB   the experts keep what the host pool cannot hold; the cache takes the rest
+I                                                                          and lends what no live request holds to the expert slab
+I                                            experts            4.81 GiB   18% of it -- the whole expert plane is resident, so more would do nothing
+I                                            kv cache         212.31 MiB   1% of it -- backs 1 sequences all at 8192 tokens at once, which is the worst case and
+I                                                                          more would be unusable
+I                                            unusable          21.92 GiB   neither side could take it: both are at their ceiling
+I                                          ==============================
+I                                          vram_weights         9.12 GiB   static + experts
+I                                          vram_kv            213.00 MiB   the cache's share
+I                                          unclaimed           22.01 GiB   the headroom, the unusable above, and what MiB rounding
+I                                                                          could not place
+I   weights by tier                    VRAM 9.04 GiB, host pool 1.26 GiB, container on disk 0 B, mapped 100.86 GiB (rank 0)
+I                                        the host pool holds the 1.18 GiB the placement flags put there (the token embedding, the encoder towers, the drafter's experts) beside the weights placed in it
+I   kv cache                           212.94 MiB a card: 8244 tokens, 1.0 sessions at 8192
+I                                        110.30 MiB of it is per-sequence state; up to 77.38 MiB is lent to the experts while no request holds it
+I HARDWARE
+I   host      12th Gen Intel(R) Core(TM) i7-12700KF | 12 cores, 20 threads | RAM 91.89 GiB, 31.08 GiB available | swap 2.72 GiB, 2.71 GiB used
+I   system    kernel 7.0.13-gfxoff | Debian GNU/Linux 13 (trixie) | in a docker container | cgroup memory unlimited | memlock unlimited
+I   memory    huge pages madvise (defrag madvise, shmem never) | ttm.pages_limit 45.94 GiB | pinned by this process 45.19 GiB
+I   iommu     passthrough (the display devices' IOMMU groups are of type identity)
+I   amdgpu    cwsr_enable 1 | boot parameters: intel_iommu=on iommu=pt
+I   cpu       governor powersave, energy preference balance_performance (intel_pstate) | io_uring refused (Operation not permitted)
+I   runtime   HIP 7.2.53211 | backend device
+I   media     decoders absent (built without libav*)
+I   card 0000:03:00.0  not serving  gfx1100  23.98 GiB VRAM  NUMA -1  driver amdgpu card0
+I       link   00:01.0 16.0 GT/s x8 (max 16.0 GT/s x8) -> 01:00.0 16.0 GT/s x8 (max 16.0 GT/s x16) -> 02:00.0 16.0 GT/s x16 (max 16.0 GT/s x16) -> 03:00.0 16.0 GT/s x16 (max 16.0 GT/s x16)  [read at 0% busy: a link at rest parks below its maximum]
+I       pcie   0: 16.0GT/s, x8 78Mhz | 1: 16.0GT/s, x8 156Mhz | *2: 16.0GT/s, x8 623Mhz
+I       power  cap 0 W (default 303 W, max 348 W) | voltage offset 0 mV | sclk 500-2371 MHz | mclk 96-1249 MHz | runtime pm active (control auto) | iommu group identity
+I   card 0000:06:00.0  not serving  gfx1100  23.98 GiB VRAM  NUMA -1  driver amdgpu card1
+I       link   00:01.1 16.0 GT/s x8 (max 16.0 GT/s x8) -> 04:00.0 16.0 GT/s x8 (max 16.0 GT/s x16) -> 05:00.0 16.0 GT/s x16 (max 16.0 GT/s x16) -> 06:00.0 16.0 GT/s x16 (max 16.0 GT/s x16)  [read at 0% busy: a link at rest parks below its maximum]
+I       pcie   0: 16.0GT/s, x8 78Mhz | 1: 16.0GT/s, x8 156Mhz | *2: 16.0GT/s, x8 623Mhz
+I       power  cap 0 W (default 303 W, max 348 W) | voltage offset 0 mV | sclk 500-2371 MHz | mclk 96-1249 MHz | runtime pm active (control auto) | iommu group identity
+I   card 0000:09:00.0  rank 0 (device 0)  gfx1201 "AMD Radeon Graphics"  31.86 GiB VRAM  NUMA -1  driver amdgpu card2
+I       link   00:06.0 16.0 GT/s x4 (max 16.0 GT/s x4) -> 07:00.0 16.0 GT/s x4 (max 32.0 GT/s x16) -> 08:00.0 32.0 GT/s x16 (max 32.0 GT/s x16) -> 09:00.0 32.0 GT/s x16 (max 32.0 GT/s x16)  [read at 35% busy]
+I       pcie   0: 16.0GT/s, x4 250Mhz | 1: 16.0GT/s, x4 616Mhz | *2: 16.0GT/s, x4 1143Mhz
+I       dma    copy lists not used: nothing streams weights onto this card
+I       power  cap 300 W (default 300 W, max 330 W) | voltage offset 0 mV | sclk 500-2350 MHz | mclk 96-1258 MHz | runtime pm active (control auto) | iommu group identity
+I   card 0000:17:00.0  not serving  gfx1030  15.98 GiB VRAM  NUMA -1  driver amdgpu card3
+I       link   00:1d.0 8.0 GT/s x4 (max 8.0 GT/s x4) -> 15:00.0 8.0 GT/s x4 (max 16.0 GT/s x16) -> 16:00.0 16.0 GT/s x16 (max 16.0 GT/s x16) -> 17:00.0 16.0 GT/s x16 (max 16.0 GT/s x16)  [read at 0% busy: a link at rest parks below its maximum]
+I       pcie   0: 8.0GT/s, x4 310Mhz | *1: 8.0GT/s, x4 619Mhz
+I       power  cap 303 W (default 303 W, max 339 W) | voltage offset 0 mV | sclk 500-2720 MHz | mclk 96-1000 MHz | runtime pm active (control auto) | iommu group identity
+I FINDINGS -- 1 warning, 4 notes
+I   WARN link-below-max: card 0000:09:00.0 (rank 0): the PCIe link at 0000:07:00.0 runs 16.0 GT/s x4 of its 32.0 GT/s x16 while the card is 35% busy
+I        why: every copy between host memory and the card -- experts streamed from the host pool, the all-reduce through host memory, the embedding read in place -- and every kernel launch's packet fetch cross this link, so the card serves at the slower link's rate and a tensor-parallel step waits for it
+I        fix: a link stuck one level down after long uptime has been cleared by a reboot; check that it recovers under load (GET /diagnostics during a long prefill), and reseat or move the card if it trains narrow
+I   note experts-from-host: 77.34 MiB of weights a rank live in the pinned host pool and cross PCIe when they are used
+I        why: a prefill step streams every routed layer's pooled experts onto the card, so its speed is bounded by the link; decode reads the ones it routes to
+I        fix: more VRAM for the experts: a shorter --max-model-len or fewer --max-num-seqs, --embedding-placement ram, --kv-cache-dtype fp8, or more cards (--tp)
+I   note link-capped: card 0000:09:00.0 (rank 0): the card's link is 32.0 GT/s x16 at most, and 0000:00:06.0 above it is 16.0 GT/s x4 at most
+I        why: the host side of the link bounds what the card can move to and from host memory: streamed experts, the host pool and the all-reduce when it goes through host memory
+I        fix: a slot with the card's full width and speed (the board manual says which slots share lanes), or no riser; nothing to do if the board has no faster slot
+I   note swap-in-use: 2.71 GiB of swap is in use
+I        why: a host thread that faults on a swapped page stalls the step it is part of
+I        fix: free memory, or turn swap off on a machine that only serves
+I   note cpu-governor: the CPU governor is powersave with energy preference balance_performance
+I        why: the host side of a step -- scheduling, sampling, the n-gram gather, launch bookkeeping -- is single-threaded per rank, and a core that ramps slowly shows as host gap between steps
+I        fix: cpupower frequency-set -g performance, or echo performance | sudo tee /sys/devices/system/cpu/cpu*/cpufreq/energy_performance_preference
+W startup report: link-below-max: card 0000:09:00.0 (rank 0): the PCIe link at 0000:07:00.0 runs 16.0 GT/s x4 of its 32.0 GT/s x16 while the card is 35% busy. Fix: a link stuck one level down after long uptime has been cleared by a reboot; check that it recovers under load (GET /diagnostics during a long prefill), and reseat or move the card if it trains narrow
+I kld: scoring 8240 positions over 4 documents against <work-root>/runs/rad116-kld/reference (<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad, the whole vocabulary)
+I device: card 0 copy lists go to DMA engine 0 on a queue of this process's own (0.6 ms to open)
+I recorded pass: draft pass 0 at 64 token(s) -- 1886 records, 246 of the 1884 dispatches unordered behind the one before; 1 host op(s), 392 table refresh point(s) and 48 routing report(s) between the played stretches
+I kld: 8021 / 8240 positions, 3 / 4 documents, 15 s
+I kld: 4 documents in 15 s, 0 preemption(s)
+I kld: <models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad against <models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad, 8240 positions over 4 documents
+I kld: KLD mean 0.061964  median 0.016226  p99 0.67243  p99.9 2.5659  p99.99 3.8373  max 5.8663
+I kld: top-1 agreement 88.434%   PPL 9.1490 vs reference 9.1301 (x1.0021)
+I kld:   kld-docs-00                1950 pos  mean 0.02549  median 0.011023  p99 0.2294  p99.9 0.5087  top-1 91.54%
+I kld:   kld-docs-01                2211 pos  mean 0.07307  median 0.023667  p99 0.7492  p99.9 1.9777  top-1 88.15%
+I kld:   kld-docs-02                2132 pos  mean 0.08733  median 0.022838  p99 0.9103  p99.9 3.1912  top-1 85.37%
+I kld:   kld-docs-03                1947 pos  mean 0.05810  median 0.014059  p99 0.5421  p99.9 2.2231  top-1 89.01%
+I kld: report in <work-root>/runs/rhp20-tail-combine-kld/out/quality/static.kld.json, every position in <work-root>/runs/rhp20-tail-combine-kld/out/quality/static.kld.json.rows
+I heat engine: 6240 dispatches, 28 swaps proposed, 60 promotions, 47 demotions
+  127 dispatches declined on hysteresis, 4 found no candidate at one end
+  37 distinct units promoted, 28 readmits (47% of promotions were of something already demoted)
+  resident units a layer: min 1 max 507 mean 43.1 sd 139.5
+  per layer:
+   L0       1    1    1    1    1    1    1    1    1    1    1    1
+   L12      1    1    1    1    1    1    1    1    1    1    1    1
+   L24      1    1    1    1    1    1    1    1    1    1  506    1
+   L36      1    1    1    1    1    1    1    1  506    1  507  504
+
+I   routing evidence: 6240 layer-histograms credited, 48 layer-sweeps found nothing new, 0 dropped by a ring shallower than the run-ahead
+I mover: 131 dispatches, 60 promotions, 47 demotions, 0 staged (0.14 GiB h2d, 0.04 GiB d2h)
+  0 found no free move record, 0 starved of a slab slot, 13 of a pool slot; 107 slots quarantined
+
+libr3moe: admission high-water 1, capacity 33, outstanding 0

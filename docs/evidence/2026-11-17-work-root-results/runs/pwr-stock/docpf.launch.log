@@ -1,0 +1,16 @@
+RSC03 derived resource ledger: {"helpers": [{"arch": "gfx1100", "bdf": "0000:03:00.0", "expert_budget_mib": 23074, "reserve_mib": 1024, "slack_bytes": 0, "vram_mib": 24560, "worker_footprint_mib": 462}, {"arch": "gfx1100", "bdf": "0000:06:00.0", "expert_budget_mib": 23074, "reserve_mib": 1024, "slack_bytes": 0, "vram_mib": 24560, "worker_footprint_mib": 462}, {"arch": "gfx1030", "bdf": "0000:17:00.0", "expert_budget_mib": 14882, "reserve_mib": 1024, "slack_bytes": 0, "vram_mib": 16368, "worker_footprint_mib": 462}], "host": {"available_bytes": 87816142848, "committed_bytes": 70101876992, "components": [{"bytes": 6763520, "name": "embedding", "source": "engine plan"}, {"bytes": 0, "name": "unowned_experts", "source": "published owner map"}, {"bytes": 2535424, "name": "staging", "source": "engine plan"}, {"bytes": 1073741824, "name": "pool_margin", "source": "calibrated margin"}, {"bytes": 51200246016, "name": "ngram_ram", "source": "engine plan"}, {"bytes": 0, "name": "checkpoints", "source": "engine plan"}, {"bytes": 0, "name": "other_engine", "source": "engine plan"}, {"bytes": 12884901888, "name": "retained_kv", "source": "target * bytes per token"}, {"bytes": 4933550080, "name": "host_reserve", "source": "host reserve policy"}], "pin_available_bytes": 95508496384, "pin_committed_bytes": 13968080896, "remaining_bytes": 17714265856}, "host_kv_mib": 12288, "host_pool_mib": 1033, "owner_map_digest": "28f43e45923dd6e0f78e9ad6e631c87af8675acf0a46b11223201a4bb09c1f4d"}
+RSC03 resolved host pool 1033 MiB, host KV 12288 MiB
+layout flashnext-4gpu: engine cards 2; helper0: card 0 gfx1100 23074 MiB head; helper1: card 1 gfx1100 23074 MiB head; helper2: card 3 gfx1030 14882 MiB tail
+recording the route histogram to <work-root>/flashnext/heat.live.rank0 every 1s
+live placement: OFF -- no calibration record for key=8fa4f3dd2533577924deb9d5cd947031e6892a42c1b757a259e3ce738fd6c27e in <work-root>/live-policy-calibration.toml (a changed layout, helper budget or engine argument is a new key: calibrate again)
+helper0 (pid 3958344, log <work-root>/flashnext/helper0-1111-112725.log): waiting for ready...
+helper1 (pid 3959015, log <work-root>/flashnext/helper1-1111-112725.log): waiting for ready...
+helper2 (pid 3959170, log <work-root>/flashnext/helper2-1111-112725.log): waiting for ready...
+engine TP=1 cards 2 (pid 3959263, log <work-root>/flashnext/engine-1111-112725.log): waiting for /health...
+start canary: ok (answered ' Paris. The capital of Germany is Berlin. The capital of Ita')
+RADIANCE_EXIT=0
+Radiance layout flashnext-4gpu is up: http://127.0.0.1:18452 (OpenAI-compatible /v1/chat/completions, /v1/completions)
+  build    <work-root>/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3
+  engine   TP=1 cards 2 pid 3959263, log <work-root>/flashnext/engine-1111-112725.log
+  layout   flashnext-4gpu: helper0: card 0 gfx1100 23074 MiB head; helper1: card 1 gfx1100 23074 MiB head; helper2: card 3 gfx1030 14882 MiB tail\n  helpers  3958344 3959015 3959170 
+  stop     bash tools/lab/radiance/launch-flashnext-best.sh stop
