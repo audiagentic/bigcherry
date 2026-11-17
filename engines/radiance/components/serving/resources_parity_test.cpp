@@ -24,10 +24,10 @@ resources::ResourceRequest fixture_request(const Json& input) {
         input.at("unowned_expert_bytes").get<uint64_t>(), input.at("staging_bytes").get<uint64_t>(),
         input.at("ngram_ram_bytes").get<uint64_t>(),      input.at("checkpoint_bytes").get<uint64_t>(),
         input.at("other_engine_bytes").get<uint64_t>(),   input.at("kv_bytes_per_token").get<uint64_t>()};
-    request.target = {
-        input.at("context_tokens").get<uint64_t>(), input.at("concurrent_sessions").get<uint64_t>(),
-        input.at("retained_tokens").get<uint64_t>(), input.at("margin_mib").get<uint64_t>() * MiB,
-        input.at("reserve_mib").get<uint64_t>() * MiB};
+    request.target = {input.at("context_tokens").get<uint64_t>(),
+                      input.at("concurrent_sessions").get<uint64_t>(),
+                      input.at("retained_tokens").get<uint64_t>(), input.at("margin_mib").get<uint64_t>() * MiB,
+                      input.at("reserve_mib").get<uint64_t>() * MiB};
     request.host = {input.at("available_mib").get<uint64_t>() * MiB,
                     input.at("cgroup_room_mib").get<uint64_t>() * MiB,
                     input.at("pin_room_mib").get<uint64_t>() * MiB};

@@ -45,7 +45,9 @@ std::optional<uint64_t> multiply(uint64_t lhs, uint64_t rhs) {
 uint64_t ceil_div(uint64_t numerator, uint64_t denominator) {
     return (numerator / denominator) + (numerator % denominator != 0 ? 1U : 0U);
 }
-uint64_t mib(uint64_t value) { return ceil_div(value, MiB); }
+uint64_t mib(uint64_t value) {
+    return ceil_div(value, MiB);
+}
 bool sha256_hex(std::string_view hash) {
     return hash.size() == 64 && std::all_of(hash.begin(), hash.end(), [](char value) {
                return (value >= '0' && value <= '9') || (value >= 'a' && value <= 'f');

@@ -1001,8 +1001,8 @@ void manifest_writer_step(Fixture& t) {
         {
             auto altered = unmeasured.document;
             altered["spec"]["plan"]["owner_map"]["owner_map_sha256"] = "forged";
-            assert(!sv::resources::derive_launch(
-                {r.values, r.manifest.at("process_helpers"), t.facts, altered}));
+            assert(
+                !sv::resources::derive_launch({r.values, r.manifest.at("process_helpers"), t.facts, altered}));
         }
         {
             auto constrained = t.facts;

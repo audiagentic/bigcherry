@@ -1,75 +1,131 @@
 #pragma once
-/* Sole invocation boundary for injected serving-session callbacks.
- * The stored callable cannot be retrieved or directly invoked by the owner.
- * Compatible with the power component's v2 typed failure model.
- */
+// The only invocation mechanism for externally injected C++ callables.
+// The std::function is private and has no callable/raw accessor. Both
+// std::exception and non-standard exceptions become typed IO failures.
+#include "callback_boundary_abi.h"
 #include "v2/error.h"
+
 #include <exception>
 #include <functional>
-#include <optional>
+#include <stdexcept>
 #include <string>
+#include <string_view>
 #include <type_traits>
 #include <utility>
 
-namespace bc::serving::session {
+namespace bc::serving::callback {
 
-template <class Signature> class Callback;
+inline v2::ConfigError thrown(std::string_view path, std::string_view message) {
+    return v2::make_error(v2::ConfigErrorCode::io_failure, std::string(path),
+                          "injected callable threw: " + std::string(message));
+}
 
-template <class Return, class... Args> class Callback<Return(Args...)> {
+class Failure final : public std::runtime_error {
   public:
-    // v2::Status is already a typed success/error; never nest it in Result.
-    using Outcome = std::conditional_t<std::is_void_v<Return> || std::is_same_v<Return, v2::Status>,
-                                       v2::Status, v2::Result<Return>>;
-
-    Callback() = default;
-    Callback(const Callback&) = default;
-    Callback(Callback&&) noexcept = default;
-    Callback& operator=(const Callback&) = default;
-    Callback& operator=(Callback&&) noexcept = default;
-
-    // Exact return type: never discard a returned Status through a void callback.
-    // Must remain C++17-compatible for the HIP17 moe-remote include path.
-    template <class Fn, std::enable_if_t<!std::is_same_v<std::decay_t<Fn>, Callback> &&
-                                             std::is_invocable_v<Fn&, Args...> &&
-                                             std::is_same_v<std::invoke_result_t<Fn&, Args...>, Return>,
-                                         int> = 0>
-    Callback(Fn&& fn) : callable_(std::forward<Fn>(fn)) {}
-
-    // Exact return type: never discard a returned Status through a void callback.
-    // Must remain C++17-compatible for the HIP17 moe-remote include path.
-    template <class Fn, std::enable_if_t<!std::is_same_v<std::decay_t<Fn>, Callback> &&
-                                             std::is_invocable_v<Fn&, Args...> &&
-                                             std::is_same_v<std::invoke_result_t<Fn&, Args...>, Return>,
-                                         int> = 0>
-    Callback& operator=(Fn&& fn) {
-        callable_ = std::forward<Fn>(fn);
-        return *this;
+    explicit Failure(v2::ConfigError error, std::exception_ptr cause = {})
+        : std::runtime_error(error.path + ": " + error.message), error_(std::move(error)),
+          cause_(std::move(cause)) {}
+    const v2::ConfigError& error() const noexcept {
+        return error_;
+    }
+    const std::exception_ptr& cause() const noexcept {
+        return cause_;
     }
 
-    explicit operator bool() const noexcept { return static_cast<bool>(callable_); }
+  private:
+    v2::ConfigError error_;
+    std::exception_ptr cause_;
+};
 
-    [[nodiscard]] Outcome invoke(Args... args) const {
-        if (!callable_)
-            return v2::make_error(v2::ConfigErrorCode::invalid_state, "callback",
-                                  "required callback was not installed");
+// Injected virtual interfaces cannot retain raw callsites either. Their
+// implementations are invoked through this same conversion boundary.
+template <class F> auto invoke_backend(std::string_view path, F&& function) -> decltype(function()) {
+    try {
+        return std::forward<F>(function)();
+    } catch (const std::exception& error) {
+        return thrown(path, error.what());
+    } catch (...) {
+        return thrown(path, "non-standard exception");
+    }
+}
+
+template <class Signature> class Guarded;
+
+template <class R, class... Args> class Guarded<R(Args...)> final {
+  public:
+    Guarded() = default;
+    template <class F,
+              std::enable_if_t<
+                  std::is_invocable_r_v<R, F&, Args...> && !std::is_same_v<std::decay_t<F>, Guarded>, int> = 0>
+    Guarded(F&& function) : function_(std::forward<F>(function)) {}
+
+    explicit operator bool() const noexcept {
+        return bool(function_);
+    }
+
+    v2::Result<R> invoke(std::string_view path, Args... args) const {
+        if (!function_)
+            return v2::make_error(v2::ConfigErrorCode::invalid_state, std::string(path), "missing callback");
         try {
-            if constexpr (std::is_void_v<Return>) {
-                callable_(std::forward<Args>(args)...);
-                return std::nullopt;
-            } else {
-                return callable_(std::forward<Args>(args)...);
-            }
+            return function_(std::forward<Args>(args)...);
         } catch (const std::exception& error) {
-            return v2::make_error(v2::ConfigErrorCode::io_failure, "callback",
-                                  std::string("callback threw: ") + error.what());
+            return thrown(path, error.what());
         } catch (...) {
-            return v2::make_error(v2::ConfigErrorCode::io_failure, "callback",
-                                  "callback threw a non-standard exception");
+            return thrown(path, "non-standard exception");
+        }
+    }
+
+    R require(std::string_view path, Args... args) const {
+        if (!function_)
+            throw Failure(
+                v2::make_error(v2::ConfigErrorCode::invalid_state, std::string(path), "missing callback"));
+        try {
+            return function_(std::forward<Args>(args)...);
+        } catch (const std::exception& error) {
+            throw Failure(thrown(path, error.what()), std::current_exception());
+        } catch (...) {
+            throw Failure(thrown(path, "non-standard exception"), std::current_exception());
         }
     }
 
   private:
-    std::function<Return(Args...)> callable_;
+    std::function<R(Args...)> function_;
 };
 
-} // namespace bc::serving::session
+template <class... Args> class Guarded<void(Args...)> final {
+  public:
+    Guarded() = default;
+    // A void hook must itself return void: std::is_invocable_r<void> would also
+    // accept a Status-returning hook and silently discard its error.
+    template <class F, std::enable_if_t<std::is_same_v<std::invoke_result_t<F&, Args...>, void> &&
+                                            !std::is_same_v<std::decay_t<F>, Guarded>,
+                                        int> = 0>
+    Guarded(F&& function) : function_(std::forward<F>(function)) {}
+
+    explicit operator bool() const noexcept {
+        return bool(function_);
+    }
+
+    v2::Status invoke(std::string_view path, Args... args) const {
+        if (!function_)
+            return v2::make_error(v2::ConfigErrorCode::invalid_state, std::string(path), "missing callback");
+        try {
+            function_(std::forward<Args>(args)...);
+            return std::nullopt;
+        } catch (const std::exception& error) {
+            return thrown(path, error.what());
+        } catch (...) {
+            return thrown(path, "non-standard exception");
+        }
+    }
+
+    void require(std::string_view path, Args... args) const {
+        if (auto error = invoke(path, std::forward<Args>(args)...))
+            throw Failure(std::move(*error));
+    }
+
+  private:
+    std::function<void(Args...)> function_;
+};
+
+} // namespace bc::serving::callback
