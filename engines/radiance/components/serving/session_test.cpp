@@ -578,9 +578,16 @@ void unwritable_record_still_stops() {
     c.wait_state({"running"});
     const int engine = c.engine_pid();
     assert(engine > 0 && fs::exists(marker));
-    ::chmod(c.run.c_str(), 0500);
+    // The atomic record writer opens this temporary path before rename. A directory
+    // cannot be opened for writing even by root (unlike a chmod-protected run dir).
+    const fs::path blocked_tmp = c.run / "session.json.tmp";
+    if (!fs::create_directory(blocked_tmp))
+        throw std::runtime_error("cannot install atomic record write failure");
+    const int probe = ::open(blocked_tmp.c_str(), O_WRONLY | O_TRUNC);
+    if (probe >= 0)
+        ::close(probe);
+    assert(probe == -1 && errno == EISDIR);
     const auto reply = ss::control(c.run, "stop", 10s);
-    ::chmod(c.run.c_str(), 0700);
     const int result = exit_code(owner);
     assert(gone(engine) && !fs::exists(marker) && text(restored) == "verified\n");
     assert(result != 0 && reply && !reply->value("ok", true));
