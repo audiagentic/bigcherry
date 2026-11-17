@@ -1,5 +1,12 @@
 # Changelog
 
+## [11552.6.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.5.0...bc-llamacpp-11552.6.0) (2026-11-17)
+
+
+### New and changed
+
+* **patch:** migrate diagnostics to the diagnostic state; enforce source-class states (PRQ05) ([#1005](https://github.com/audiagentic/bigcherry/issues/1005)) ([a81b2cf](https://github.com/audiagentic/bigcherry/commit/a81b2cfbbef93841e3d059f78eeff43fd4754e1e))
+
 ## [11552.5.0](https://github.com/audiagentic/bigcherry/compare/bc-llamacpp-11552.4.0...bc-llamacpp-11552.5.0) (2026-11-11)
 
 

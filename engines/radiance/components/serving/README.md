@@ -47,6 +47,31 @@ be misreported as healthy GFXOFF.
 A successful canary is followed by a **manifest-driven** MTP replay guard
 (depth greater than one, absent `profile_ops`): an engine log must include a
 recorded nonzero draft pass, with exactly one retry canary before refusal.
+The heat-stream guard reads the unchanged engine histogram producer layout:
+native-endian cumulative `uint32_t[128][model.experts]`, including zero-padded
+inactive model layers. Its model dimensions are authenticated from the strict
+manifest and must fit the common `moe_shm::kMaxLayers` and expert-count domain.
+Each publication is an atomic replacement; the guard accepts new inodes when
+the full record and all per-cell counters remain consistent, and fails closed
+on resets or counter wrap rather than fabricating positive deltas.
+
+A serving owner mints a 128-bit nonce immediately before spawning each engine
+and passes the launch-only `--bc-heat-launch-nonce` flag to only that engine.
+The strict manifest reader validates and strips the flag, then binds its value
+in the immutable `BcEngineSettings` snapshot, never the environment. The
+engine-side histogram publisher retains the *exact* raw `.rankN` layout for
+the worker reader and optionally writes a versioned `.rankN.bcproof` companion
+containing that nonce and the published file's generation. The owner requires
+a matching proof and a post-launch, fresh, nonzero sample for every successful
+poll; it never treats an unproved legacy rank file as authenticated session
+evidence. Standalone engines without the nonce remain backward-compatible
+with existing raw-histogram workers. Since the two renames are separate,
+the owner retries a bounded number of times over a transient mismatch.
+This token guards against stray and previous-launch producers, not a
+same-UID adversary capable of inspecting the child environment or forging the
+publication. The sidecar is not a signature or an authority over arbitrary
+writers with access to the owner's credentials.
+
 For a manifest requesting live policy, the C++ runtime guard verifies the
 startup decision, samples the actual rank histogram without following
 symlinks, rejects empty/stale/future files, and checks live worker transport
@@ -182,3 +207,48 @@ hardware A/B and retirement gate.
 
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
 reuse radiance's existing nlohmann/json v3.12.0.
+
+## RSC02 step 5: named configs and immutable stored replay
+
+A foreground owner can start an RSC12 config with `bc-serve serve CONFIG --run-dir DIR
+--configs engines/radiance/configs` or `BIGCHERRY_CONFIGS` set to the config file/directory.
+`bc-serve start CONFIG` detaches the **same** owner. The first named-config
+start measures and writes a strict-v2 manifest. Later starts with the same
+versioned static resolution key reuse that exact manifest file; a changed
+effective setting, selected-card identity, power profile, engine/helper/
+kernel/runtime/producer build, full model artifact, heat input, calibration
+record or lab input forces a fresh manifest. The lookup is distinct from
+the existing engine-memory plan cache. The old `--set layout.name=...` serving
+path remains on its original planner.
+
+`bc-serve start --manifest FILE --run-dir DIR --configs FILE|DIR` replays a
+previously recorded strict-v2 manifest **without writing or normalising it**.
+A writer-produced manifest carries a separate atomic `FILE.replay-index.json`
+attestation (its original byte fingerprint, full model-file fingerprint
+and RSC12 static key); the manifest bytes remain immutable. The RSC12 config
+sources are needed for a fresh effective-settings and calibration check.
+A missing attestation or config source, changed input, changed build/model/
+selected device, invalid digest, stale calibration or insufficient current
+RAM/cgroup/memlock/pin/per-card VRAM stops before any GPU child. The owner
+still performs the authenticated power/lease admission, durable process
+record, start health/canary, runtime guards, verified shutdown and power
+restore. The session record is per start; it is **not** the manifest or the
+cache index. The original bytes are checked again immediately before
+launching a serving child.
+
+An explicit `--power-profile` conflicting with the recorded profile is
+refused. A stored lab experiment is not enabled by default: replay lacks
+the RSC12 lab-experiment static input-key oracle until that part lands,
+and refuses rather than inventing a config format. RSC12's dedicated
+`[config.NAME.power]` and site-defined profile tables also remain a
+loader dependency: this step binds the existing explicit owner
+`--power-profile` mechanism but does not introduce an unofficial power
+table schema. The bash launcher/Python supervisor are unchanged pending
+RSC02 step 6.
+
+CPU-only acceptance: `bc_stored_manifest_test` (strict bytes and typed
+identity refusals), `bc_stored_manifest_cache_test` (static reuse and
+invalidation), `bc_session_stored_test` (real owner call graph with fake
+GPU processes/OS facts). The dependency probes used by tests are explicit
+C++ callbacks; production always uses `detect`, the single RSC12 resolver,
+the strict v2 reader and P1 live-room measurement.

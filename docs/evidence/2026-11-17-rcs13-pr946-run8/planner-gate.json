@@ -1,0 +1,52 @@
+{
+  "baseline": {
+    "final_measured_host_pool_mib": 32301,
+    "manifest_sha256": "69365cab386b5d292791c166200432cf9bfa26d60be284f9ed2ec5c2b2a86a5f",
+    "owned_experts": 12641,
+    "owner_map_sha256": "744477bc8f39f18bdc68f472b4f83d6cbb2b576c0095439fe463cd84427ca391",
+    "plan_origin": "preexisting cache hit (no new measuring helper/engine start)",
+    "preflight_host_pool_mib": 32005,
+    "producer_matches_built_bcserve": true,
+    "source_sha": "e28734f097fe7c0ff59415ecfe0494271a1e22a0",
+    "strict_v2_final_manifest_written": true
+  },
+  "candidate": {
+    "captured_live_expert_ceiling_mib": 1826,
+    "error": "BC_CFG_ADMISSION_REFUSED / RAD_E_NOMEM (-6)",
+    "fail_closed": true,
+    "final_exit_code": 2,
+    "helper_runtime_requests": 0,
+    "helper_startup_w4h2": true,
+    "initial_host_pool_mib": 32005,
+    "measured_owner_map_expert_budget_mib": 30555,
+    "measuring_starts": 2,
+    "remeasured_host_pool_mib": 32301,
+    "shortfall_mib": 28729,
+    "source_sha": "778c7d701b10ec18bccfda3d2423e90272558901",
+    "strict_v2_final_manifest_written": false
+  },
+  "cpu_only_repro": {
+    "live_gpu_detection_reproduced": false,
+    "needs_inputs": "B manifest-measuring-1.json and measured-plan stderr",
+    "passed": true,
+    "uses_captured_validator_ceiling": true
+  },
+  "performance": {
+    "decode_ms_per_step": "not measured",
+    "executed_k2560_w4h2_dynamic_lds": "not proven",
+    "mtp_drafted_accepted": "not measured",
+    "occupancy": "not measured",
+    "prefill_ttft": "not measured",
+    "text_hash_parity": "not measured"
+  },
+  "pr": 946,
+  "run": "RCS13 Run 8",
+  "source_locations": [
+    "engines/radiance/components/serving/v2/s8_rules.cpp:244-275",
+    "engines/radiance/components/serving/v2/s10_inputs.cpp:110-127",
+    "engines/radiance/components/serving/v2/s10_resolver.cpp:355-366",
+    "tools/bigcherry/engine_adapters/radiance_plan.py:186-264"
+  ],
+  "valid_serve_samples": 0,
+  "verdict": "NOT_CLEARED"
+}
