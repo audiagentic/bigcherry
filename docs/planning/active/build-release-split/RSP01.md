@@ -2,7 +2,7 @@
 id: RSP01
 order: 0
 plan: build-release-split
-state: pending
+state: in_progress
 created-at: '2026-11-16T06:37:56.515652+00:00'
 breadth: ''
 skill: advanced
@@ -57,9 +57,9 @@ hardware are external prerequisites. Thus phase 1 can launch via the
 existing platform checkout but the archive is not a self-contained
 standalone distribution.
 
-### Phase 2: single Python-free engine release (design only)
+### Phase 2: single Python-free engine release (implementation in progress)
 
-**Status: not implemented.** Phase 1 delivers an engine-scoped archive, but `release-install <tag|latest>` currently creates a detached whole-repository worktree and the lab launcher still uses shell and Python to start that engine. RSC02 step 1 is an **engine-only** C++ session owner, not yet the fully autonomous helper/tuning launch path. This section is a future contract, not an existing installer interface.
+**Historical phase-1 baseline; superseded by the milestone plan below.** Phase 1 delivers an engine-scoped archive, but `release-install <tag|latest>` currently creates a detached whole-repository worktree and the lab launcher still uses shell and Python to start that engine. RSC02 step 1 is an **engine-only** C++ session owner, not yet the fully autonomous helper/tuning launch path. This section is a future contract, not an existing installer interface.
 
 #### One release asset and the engine boundary
 
@@ -109,6 +109,98 @@ Retain the **current** and **immediately previous** verified engine release for 
 2. Finish RSC02 steps 2–5 and RSC12 parity/stored-manifest checks. Port helper resources, live/power/gfxoff/host-check/calibration/heat behavior to C++, with synthetic partial-start, stale-key, host/SDK failure, helper death, power-restore refusal and tag-digest mismatch tests.
 3. Complete RSC02 step 6/RSC04 acceptance on dense **and** helper hardware, migrate callers, retire shell/Python start surfaces, then implement the one-tag worktree-free installer and current/previous rollback. Test existing v1 and pinned unscoped legacy installs **unchanged**, interrupted staging, unsafe paths and rollback. Run card-free component, release, core and patch suites; use a separate leased GPU acceptance gate.
 
+### Phase 2 implementation milestones (2026-11-18)
+
+**PR 1 — plan and audit.** This plan, its dependency inventory and typed
+failure contracts are the reviewable first milestone. Verify release
+code, workflow, build metadata, RSC12 configs, and native serving owner.
+Validation: no runtime path changed; inspect and commit the plan.
+
+**PR 2 — asset layout and exclusion gate.** Extend the single
+`tools/bigcherry/release/runtime_assets.py:RUN_MANIFEST` to include exactly
+`configs/flashnext.toml` and `configs/qwen27b.toml` from the *tagged engine
+source* (not site/model/heat data) in the archive root, along with matched
+`bin/radiance`, `radiance_home/bin/bc-serve`, helper/plugin/catalog/runtime
+libraries, build metadata. Add `radiance_home/bin/bc-release` once built.
+Make no-Python/no-shell policy a mandatory pack, extraction, restore and
+pre-upload check: reject .py, .pyc, __pycache__, interpreter shebangs,
+text references invoking an interpreter, and shell scripts/launchers.
+Retain the authoritative allowlist, refuse extras and missing requirements,
+and ensure reuse keys include new asset contract and config content via
+engine_tree. Files: `runtime_assets.py`, `ci_bundle.py`,
+`tools/tests/release/test_bu01_runtime_assets.py`,
+`test_ci_bundle.py`, `docs/reference/build/RELEASES.md`. Validate
+archive payload/layout, extra/missing/tampered members, config digests,
+strict source identity and no interpreter dependency in offline fixtures.
+
+**PR 3 — native installer/verifier.** Add a C++20
+`radiance_home/bin/bc-release` executable from
+`engines/radiance/components/serving`: `release_install.{h,cpp}`,
+`release_cli.cpp`, CMake target/installation and
+`component.toml [test] targets`. For one exact `bc-radiance-*` tag, parse
+its bound release record and permitted asset name/SHA-256, stream-verify
+the archive and manifest, reject unknown paths, duplicate/unsafe/nonregular
+members, file hash/mode or source/build identity mismatches, and SDK
+incompatibility. Extract to isolated staging, publish immutable versioned
+prefix and single-engine receipt last, then atomically set current/previous.
+Expose `install`, `verify`, `status`, `rollback`. Reverify the rollback
+candidate before switching; refuse corrupt current/previous states and
+interrupted staging; never rewrite phase-1 receipts or auto-promote the
+one pinned historical unscoped archive. Tests: `release_install_test.cpp`
+as a **real** card-free CTest declared in component.toml with two
+tiny tagged archives, install/verify/rollback/tamper/wrong-tag/traversal/
+failure-injection cases, and ASan+UBSan/g++/clang++ strict. The CLI must
+function outside the source checkout with no Python executable or shell.
+
+**PR 4 — release workflow cutover.** Update
+`.github/workflows/radiance-build.yml` and
+`radiance-release-bundle.yml` to package the exact native asset, run the
+no-Python gate against both newly built and reused archives before upload,
+publish tag-bound checksum/receipt and exclude runtime-source checkouts.
+The repository Python packing/building/patch/campaign/slice/release code
+belongs only to the independent `bc-platform` release and is not shipped.
+Update `docs/reference/build/RELEASES.md`, migrate new-format callers,
+delete dead new-format compatibility surfaces; preserve only the named
+published legacy archive exception. Validate complete release/core/patch
+Python suites (platform-side), patch-lint, forbidden-terms,
+clang-format, clang-tidy positive hunks and strict/sanitized C++.
+
+**Final acceptance (other lane)**: RSC02 step 6/RSC04 hardware parity
+and launcher retirement, RSC12 named config parity, and step-5 review fixes.
+On a leased host prove healthy dense and helper `bc-serve serve` from
+the extracted prefix, live guards/power/heat, stop/status, installed
+receipt recheck and rollback. No GPU or lease in PRs 1–4. Never claim
+the new asset is production-ready until these gates land.
+
+#### Python/shell dependency inventory and native replacement
+
+| Release install or startup dependency remaining in the old path | Native replacement: requirements-derived design, not a Python port |
+|---|---|
+| `release/install.py` Python install, Git tag resolution, source worktree creation and `release-install latest` | `bc-release install` binds an exact supplied tag to that tag's archive digest/receipt and installs without a source checkout. Any future `latest` transport discovery must reduce to a concrete tag before verification; no mutable index is a trust root. |
+| `release/runtime_assets.py` Python verifier/extractor, shell `sha256sum` | `release_install.cpp` bounded regular-file archive parser, streaming SHA-256, exact manifest file map and typed refusals. Python packer remains CI/platform-side, never payload. |
+| Worktree/build selection, current link/receipt writing, manual rollback | Native `bc-release install/verify/status/rollback` sealed prefix/index with atomic last-write receipt, current and previous candidate validation before switching; refuse an unsafe state rather than reinterpret legacy receipts. |
+| `tools/lab/radiance/launch-flashnext-best.sh` and `lib/plan-check.sh` | `bc-serve serve/start` through `session.cpp`, `manifest_writer.cpp`, `plan_cache.cpp`; RSC02 measured-plan and durable-admission contracts, not copied shell branches. |
+| `tools/bigcherry/serving/supervisor.py`; shell health/stop/status | Native `bc-serve` session ownership, control socket, health/canary, stop/status; RSC02 typed process lifecycle. |
+| `python3 -m bigcherry resources derive-launch`, repository layouts, CLI config resolution | Native `config_loader.cpp`, `resources.cpp`, stored manifest gate; `configs/*.toml` shipped, `archs.toml` compiled in. RSC12 schema and live measured-memory requirements are the source. |
+| `bigcherry gpu-power`, `gfxoff`, Python host checks, `lib/sdk-check.sh` | `power_transaction.cpp`, `power_linux.cpp`, `sdk_check.cpp`, `runtime_guards.cpp`; PWR09 durable admission/restore invariants and refusal-first host checks. |
+| `calibration_watchdog.py`, `heat-watch.py`, calibration/heat shell steps | `calibration_lab.cpp`, `live_policy*.cpp`, `runtime_guards.cpp`; RSC02 S8 validity, real producer shapes and heat lifecycle, no runtime Python. |
+| Repository Python build/patch/campaign/slice/release scripts and actions | Stay in the separately tagged `bc-platform` tooling; never in the engine asset or runtime installation/start dependency graph. |
+
+**Refusal gate matrix:** exact-tag mismatch, missing/forged tag record,
+bad archive digest, wrong product/scope, manifest digest drift,
+missing/extra/duplicate/traversal/symlink/non-regular file, unwanted
+Python/shell/interpreter reference, tampered bytes/mode, mismatched
+engine / bc-serve provenance, SDK mismatch, corrupt receipt, broken
+current/previous target, staging crash, and unverified rollback
+must all fail closed with a typed native error.
+
+**Scope/gate update (2026-11-18):** RSC02 steps 1–5 are merged on main,
+but step 5 review fixes are in a separate PR. RSC12 source configs and
+native loader exist; the old source layouts remain until RSC02 step 6
+and RSC04 acceptance. All hardware and retiring the legacy launcher/
+supervisor are explicitly out of this lane. Standalone helper startup
+must not silently import Python when unsupported.
+
 ## Code Samples & Guidance
 
 
@@ -156,6 +248,8 @@ Progress (2026-11-17): phase 1 merged in #1016 with engine-scoped binary payload
 Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replaces the pair design of #1019): one Python-free engine asset of binaries and data, start-up through bc-serve, tag-bound digest trust, current and previous release kept, gate table mapping each remaining Python or shell behaviour to its RSC02 step. Rewrite lanes for RSC02 step 2 (helpers and resource derivation) and step 4 (power transaction) are in review in C++ (a rewrite from requirements, the Python only a golden oracle); step 3, step 5 and the step 6 hardware A/B and retirement follow. Phase 2 build work is blocked until those merge.
 
 ## Change Log
+
+- 2026-11-18 (phase 2): in_progress; four PR milestones, native rewrite boundaries, all known runtime Python/shell dependencies, refusal and hardware acceptance gates.
 
 - 2026-11-16T06:37:56.515652+00:00 (created-by): Created by claude
 - 2026-11-16T19:22:34.283744+00:00 (updated-by): Updated: section:notes
