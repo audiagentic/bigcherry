@@ -27,7 +27,7 @@
   "ttft_s": 8.689580917358398,
   "prefill_tps": 1046.0803675631491,
   "decode_tps": 43.981679496584256,
-  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log\n\n## Overview\n\nThis document tracks real-hardware validation runs on Brutus's dual RX 7900 XTX pair (GPU 0/1, `HIP_VISIB"
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log\n\n## Overview\n\nThis document tracks real-hardware validation runs on <host>'s dual RX 7900 XTX pair (GPU 0/1, `HIP_VISIB"
  },
  {
   "depth": 8192,
@@ -37,7 +37,7 @@
   "ttft_s": 8.883195638656616,
   "prefill_tps": 1023.2804015306656,
   "decode_tps": 42.61525096725847,
-  "text_head": "\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n(GPU 0/1, `HIP_VISIBLE_DEVICES=0,2`), compared ag"
+  "text_head": "\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU 0/1, `HIP_VISIBLE_DEVICES=0,2`), compared ag"
  },
  {
   "depth": 24576,
@@ -57,7 +57,7 @@
   "ttft_s": 36.56036877632141,
   "prefill_tps": 954.2026289022054,
   "decode_tps": 41.19172470606907,
-  "text_head": "\n\n# Summary of the BigCherry Project Documentation\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Setup\n- **Hardware**: Brutus machine with dual RX"
+  "text_head": "\n\n# Summary of the BigCherry Project Documentation\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Setup\n- **Hardware**: <host> machine with dual RX"
  },
  {
   "depth": 98304,
@@ -67,7 +67,7 @@
   "ttft_s": 148.51711249351501,
   "prefill_tps": 746.4729022713855,
   "decode_tps": 26.62988251470587,
-  "text_head": "\n\n[43face3a4fde4f73bebcb3bffe2468f5]\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n(GPU 0/1, `HI"
+  "text_head": "\n\n[43face3a4fde4f73bebcb3bffe2468f5]\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU 0/1, `HI"
  },
  {
   "depth": 98304,
