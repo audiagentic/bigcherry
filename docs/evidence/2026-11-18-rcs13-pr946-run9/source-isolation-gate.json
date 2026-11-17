@@ -1,0 +1,43 @@
+{
+  "actual_build_sources_isolated": false,
+  "actual_source_delta_count": 22,
+  "baseline": "e28734f097fe7c0ff59415ecfe0494271a1e22a0",
+  "binary_proof": {
+    "engine_sha_equal": true,
+    "libr4d_sha_equal": true,
+    "non_rcs13_cpp_serving_changes": true,
+    "serving_sha_equal": false
+  },
+  "branch_delta_count": 7,
+  "branch_isolated_seven": true,
+  "candidate": "17a16f5d7132efaa1c07dc858e111dfb7645ad10",
+  "cpu_only": true,
+  "extra_non_rcs13_files": [
+    "docs/releases/events/7fa2013945b09572a21121c8177ae943f1ecf3b5c7966ef089a324179ab8ea17.json",
+    "docs/releases/events/c79763f4ab3450170a2674dac48841ffcabaae2984a8f6d195692fa7fd0e4c7c.json",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/calibration_lab.cpp",
+    "engines/radiance/components/serving/calibration_lab.h",
+    "engines/radiance/components/serving/golden/rsc02_calibration_deadlines.json",
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/runtime_guards.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session_guards_test.cpp",
+    "engines/radiance/components/serving/session_test.cpp",
+    "tools/bigcherry/engine_adapters/radiance_plan.py",
+    "tools/tests/core/test_radiance_plan_remeasure.py"
+  ],
+  "gate": "STOP_OLD_BASELINE_NOT_AN_RCS13_ONLY_COMPARISON",
+  "requires": "fresh baseline current-main build OR candidate rebuilt against old baseline",
+  "serving_session_hunks": [
+    "@@ -741,3 +741,3 @@ class Owner {",
+    "@@ -745 +745 @@ class Owner {",
+    "@@ -1156 +1156,2 @@ class Owner {",
+    "@@ -1213,0 +1215 @@ class Owner {",
+    "@@ -1401 +1403,2 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e",
+    "@@ -1555 +1558,2 @@ void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::p",
+    "@@ -1834,3 +1838,4 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_"
+  ]
+}

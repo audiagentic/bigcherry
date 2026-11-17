@@ -1,0 +1,23 @@
+{
+  "baseline_run9_plan": "not attempted after independent source isolation failure",
+  "candidate_fresh_measuring_helper_starts": 2,
+  "candidate_import_log_matches_current_main_planner": true,
+  "candidate_run9_plan": "strict-v2 measured manifest succeeded",
+  "candidate_source_sha": "17a16f5d7132efaa1c07dc858e111dfb7645ad10",
+  "decode_ms_per_step": null,
+  "executed_dynamic_lds_kernel_trace": null,
+  "final_host_pool_mib": 32301,
+  "gpu_lease_released_and_no_kfd_pids": true,
+  "manifest_sha256": "37cadb185ea22578cf5fea526acebd48b49c59e133c2385d1e3d2c7d787deb02",
+  "mtp_draft_accept_counts": null,
+  "native_producer_matches_candidate_build": true,
+  "output_hash_identity": null,
+  "owner_experts": 12641,
+  "owner_map_sha256": "744477bc8f39f18bdc68f472b4f83d6cbb2b576c0095439fe463cd84427ca391",
+  "planner_contains_measuring_helper_bdf_vram_release_barrier": true,
+  "planner_sha256_for_candidate": "cd09429a7c7a141734b60009074287a87e272e921a2e23ec33220ea85fc21397",
+  "prefill_ttft": null,
+  "production_abba_completed_cells": 0,
+  "same_current_main_python_tools_prepared_for_both_arms": true,
+  "source_remeasure_preflight_host_pool_mib": 32005
+}
