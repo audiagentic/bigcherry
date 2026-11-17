@@ -24,7 +24,6 @@ target_link_libraries(bc_contract_gen PRIVATE bc_contract)
 
 # The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve's manifest writer plans owner maps with it (manifest_writer.cpp).
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
-target_link_libraries(bc_experts PUBLIC bc_serving_v2)
 include("${CMAKE_CURRENT_SOURCE_DIR}/owner_map.cmake")
 
 # calibration.toml is compiled in: the seeds bc-serve derives with, each carrying its evidence.
