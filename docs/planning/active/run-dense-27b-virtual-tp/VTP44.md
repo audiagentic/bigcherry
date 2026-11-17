@@ -50,6 +50,8 @@ Device result (2026-11-16, DEVICE-AB.md): r4d_selftest on the R9700 with rad0040
 
 Flash-Next KLD (2026-11-17, FLASHNEXT-KLD.md): short corpus bf16_i8 0.0446, bf16_fp8 0.0495, fp8 0.0539 against a bit-identical bf16 repeat; but re-chunking the plain bf16 cache alone gives 0.037 on the same documents, the band RAD39 recorded. Placement was ruled out (pinned run identical). The 27B bar does not apply to this model.
 
+Flash-Next speed and capacity (2026-11-17, FLASHNEXT-AB.md, two XTX, no helper, no speculation): decode and TTFT within about 1% of bf16 for bf16_i8, bf16_fp8 +6.7% on one-stream decode and 5.9% slower 48K TTFT; capacity 1.283x (bf16_i8) and 1.307x (bf16_fp8) against bf16, below 1.3x for bf16_i8 because the QSA block-key group is not quantised; needle probe 8 to 9 of 9 for the packed caches. Open: per-token expert-id dump (generic engine option, own patch) to confirm routing flips as the KLD floor; the helper arm; a quantised QSA block-key layout if 1.3x matters for bf16_i8.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
@@ -73,7 +75,7 @@ L. Risks: option bits and tile shapes at gqa12 differ (spills near the 256-VGPR 
 - [x] GPT design review 1 findings resolved in this plan before implementation.
 - [ ] A single KV-layout descriptor table drives names, row sizes, probe, bringup, streaming refusal and the serving enum; no per-plugin lists remain.
 - [ ] The refactor of the gqa6 rows is proven unchanged (row-table dump, selftests, 27B KLD).
-- [ ] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache. KLD done 2026-11-17 (FLASHNEXT-KLD.md): it sits inside Flash-Next's arithmetic-noise band, so it cannot judge KV error; a noise-immune probe and the speed A/B remain.
+- [ ] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache. KLD done 2026-11-17 (FLASHNEXT-KLD.md): it sits inside Flash-Next's arithmetic-noise band, so it cannot judge KV error. Speed, capacity and a 9-question 48K needle probe done on the two XTX without the helper (FLASHNEXT-AB.md); the helper arm remains.
 - [ ] An unsupported (layout, head_dim, gqa, block, op) refuses at startup naming the tuple.
 - [ ] libr3 rewrites are per template with counts and an instantiation inventory check; model-constant allowlist entries added by VTP43 are removed or reduced.
 - [ ] rad0037/38 promoted through the lightweight tier with two named models, or the gap recorded.
