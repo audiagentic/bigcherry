@@ -1,0 +1,173 @@
+r3_moe_worker: manifest sha256 sha256:f00378f484b15ef1702d58bfa1c17c1b825990cdf64ed065f46b14d926c4b80d, role helper0
+r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM
+r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging
+r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O
+r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count
+r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy
+r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end
+r3_moe_worker: large-lane requests up to 32 rows take the GEMV
+r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE=1 applied
+r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9732 of 25078 ranked experts, 22.97 GiB of its 22.97 GiB
+r3_moe_worker: selected 9732 expert candidates, 22.971 GiB; host RSS 592.0 MiB
+r3_moe_worker: waiting for engine runtime expert maps
+r3_moe_worker: layer 48 has no runtime map (not declared by the engine); not owned
+r3_moe_worker: R3_MOE_WORKER_POWER_SAVE on
+r3_moe_worker: runtime map owns 9031 experts, 21.316 GiB
+r3_moe_worker: ready shm=/r3-moe-helper layers=49 bytes=223006720 (gfx1100, small lane rows <= 8, large <= 64)
+r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes on 4 efficiency core(s)
+forced resolved transaction=1 epoch=2 swap=0:1:0:0 helpers=0:1
+forced resolved transaction=2 epoch=3 swap=0:2:0:6 helpers=0:2
+forced resolved transaction=3 epoch=4 swap=0:1:0:13 helpers=1:2
+forced resolved transaction=4 epoch=5 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=5 epoch=6 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=6 epoch=7 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=7 epoch=8 swap=0:1:0:9 helpers=0:1
+forced resolved transaction=8 epoch=9 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=9 epoch=10 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=10 epoch=11 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=11 epoch=12 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=12 epoch=13 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=13 epoch=14 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=14 epoch=15 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=15 epoch=16 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=16 epoch=17 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=17 epoch=18 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=18 epoch=19 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=19 epoch=20 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=20 epoch=21 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=21 epoch=22 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=22 epoch=23 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=23 epoch=24 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=24 epoch=25 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=25 epoch=26 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=26 epoch=27 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=27 epoch=28 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=28 epoch=29 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=29 epoch=30 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=30 epoch=31 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=31 epoch=32 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=32 epoch=33 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=33 epoch=34 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=34 epoch=35 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=35 epoch=36 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=36 epoch=37 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=37 epoch=38 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=38 epoch=39 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=39 epoch=40 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=40 epoch=41 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=41 epoch=42 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=42 epoch=43 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=43 epoch=44 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=44 epoch=45 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=45 epoch=46 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=46 epoch=47 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=47 epoch=48 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=48 epoch=49 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=49 epoch=50 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=50 epoch=51 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=51 epoch=52 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=52 epoch=53 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=53 epoch=54 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=54 epoch=55 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=55 epoch=56 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=56 epoch=57 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=57 epoch=58 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=58 epoch=59 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=59 epoch=60 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=60 epoch=61 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=61 epoch=62 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=62 epoch=63 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=63 epoch=64 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=64 epoch=65 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=65 epoch=66 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=66 epoch=67 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=67 epoch=68 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=68 epoch=69 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=69 epoch=70 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=70 epoch=71 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=71 epoch=72 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=72 epoch=73 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=73 epoch=74 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=74 epoch=75 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=75 epoch=76 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=76 epoch=77 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=77 epoch=78 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=78 epoch=79 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=79 epoch=80 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=80 epoch=81 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=81 epoch=82 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=82 epoch=83 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=83 epoch=84 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=84 epoch=85 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=85 epoch=86 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=86 epoch=87 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=87 epoch=88 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=88 epoch=89 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=89 epoch=90 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=90 epoch=91 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=91 epoch=92 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=92 epoch=93 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=93 epoch=94 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=94 epoch=95 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=95 epoch=96 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=96 epoch=97 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=97 epoch=98 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=98 epoch=99 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=99 epoch=100 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=100 epoch=101 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=101 epoch=102 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=102 epoch=103 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=103 epoch=104 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=104 epoch=105 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=105 epoch=106 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=106 epoch=107 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=107 epoch=108 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=108 epoch=109 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=109 epoch=110 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=110 epoch=111 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=111 epoch=112 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=112 epoch=113 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=113 epoch=114 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=114 epoch=115 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=115 epoch=116 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=116 epoch=117 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=117 epoch=118 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=118 epoch=119 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=119 epoch=120 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=120 epoch=121 swap=0:0:0:3 helpers=1:2
+forced resolved transaction=121 epoch=122 swap=0:1:0:4 helpers=0:1
+forced resolved transaction=122 epoch=123 swap=0:2:0:0 helpers=0:2
+forced resolved transaction=123 epoch=124 swap=0:1:0:5 helpers=1:2
+forced resolved transaction=124 epoch=125 swap=0:0:0:3 helpers=0:1
+forced resolved transaction=125 epoch=126 swap=0:4:0:1 helpers=0:2
+forced resolved transaction=126 epoch=127 swap=0:0:0:2 helpers=1:2
+forced resolved transaction=127 epoch=128 swap=0:1:0:5 helpers=0:1
+forced resolved transaction=128 epoch=129 swap=0:3:0:0 helpers=0:2
+forced resolved transaction=129 epoch=130 swap=0:1:0:4 helpers=1:2
+forced resolved transaction=130 epoch=131 swap=0:0:0:2 helpers=0:1
+forced resolved transaction=131 epoch=132 swap=0:5:0:1 helpers=0:2
+forced resolved transaction=132 epoch=133 swap=0:0:0:3 helpers=1:2
+r3_moe_worker: epoch participant 0 exiting phase=0 transaction=132 fault=0
+r3_moe_worker: helper 0 stopping phase=0 transaction=132 placement_fault=0 journal_fault=0
+forced placement helper=0 attempted=132 committed=132 aborted=0 inflight=0 bytes_planned=669081600 local_bytes_staged=223027200 active_epoch=133 active_digest=ac62282d2bd12294 active_slot=0 pending_epoch=0 pending_digest=0000000000000000 ledger_charged=22888166400
+forced phase=1 n=132 min_ns=2214722 approx_median_ns=2097152 max_ns=2729270
+forced phase=2 n=132 min_ns=2254424 approx_median_ns=2097152 max_ns=5078291
+forced phase=3 n=132 min_ns=12628211 approx_median_ns=8388608 max_ns=23168814
+forced phase=4 n=132 min_ns=2065248 approx_median_ns=2097152 max_ns=2185444
+forced phase=5 n=132 min_ns=4193881 approx_median_ns=67108864 max_ns=106802393
+forced phase=6 n=132 min_ns=4186989 approx_median_ns=4194304 max_ns=6581942
+forced phase=7 n=132 min_ns=2067527 approx_median_ns=2097152 max_ns=4496978
+forced admission_pause n=132 min_ns=12581741 approx_median_ns=67108864 max_ns=119792242
+forced ack_actor=0 txn=132 phase=7 epoch=133 slot=0 digest=ac62282d2bd12294 consumed_step=0 fault=0
+forced ack_actor=1 txn=132 phase=7 epoch=133 slot=0 digest=ac62282d2bd12294 consumed_step=0 fault=0
+forced ack_actor=2 txn=132 phase=7 epoch=133 slot=0 digest=ac62282d2bd12294 consumed_step=0 fault=0
+forced ack_actor=4 txn=132 phase=6 epoch=133 slot=0 digest=ac62282d2bd12294 consumed_step=131 fault=0
+r3_moe_worker: placement epoch cycles completed 132 (every 0 s of burst)
+r3_moe_worker: lane 16 stages (us/request): routes 67.4 gate_up 367.0 quant 13.4 down 660.2 reduce 38.2
+r3_moe_worker: lane 16 experts a request by rows: 1 25.4, 2 14.5, 3-4 15.5, 5-8 12.1, 9-16 6.3, 17-32 2.0, 33-64 0.3, 65+ 0.0
+r3_moe_worker: small lane class 0 (rows <= 8): requests 0 (0 rows)
+r3_moe_worker: large-lane requests 5764 (362736 rows)
+r3_moe_worker: GPU timing samples=5764 sampled=6606.5 ms avg=1146.2 us
+r3_moe_worker: served 5764 requests, 362736 rows, 1771042 routes, compute 6606.5 ms (1146.2 us a request)

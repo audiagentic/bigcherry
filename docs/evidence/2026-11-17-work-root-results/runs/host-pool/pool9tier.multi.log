@@ -1,0 +1,9 @@
+8 sessions at once: 1023345 prompt + 1600 new tokens in 339 s = 3026 tok/s overall (prefill-dominated)
+0 77 s 82463
+1 150 s 166905
+2 134 s 93119
+3 335 s 170517
+4 190 s 87810
+5 290 s 161122
+6 221 s 98904
+7 339 s 162505

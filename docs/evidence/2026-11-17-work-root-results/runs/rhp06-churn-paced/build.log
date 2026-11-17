@@ -1,0 +1,592 @@
+evidence gate skipped for set serving-manifest (required-state untested)
+evidence gate skipped for set host-compat (required-state untested)
+evidence gate skipped for set helper-config (required-state untested)
+evidence gate skipped for set mtp-pass-replay (required-state untested)
+evidence note: rad0008_hc_upmix_rt_sweep: evidence recorded at pin v1.9.0 (now v1.17.0)
+evidence note: rad0002_moe_remote_handoff: evidence recorded at pin v1.14.0 (now v1.17.0)
+evidence note: rad0009_serving_manifest: evidence recorded at patch digest 7b7bbd25e7f4 (now 339daa18d9d0)
+-- radiance: HIP backend ON, targets gfx1201
+-- radiance: HIP Release flags '-O3 -DNDEBUG'
+-- radiance: no libavformat -- image, video and audio input will be refused
+-- libr3d: RDNA3 (gfx11xx) only, and this build targets gfx1201 -- not built
+-- libhalo: Strix Halo (gfx1151) only, and this build targets gfx1201 -- not built
+-- arch: 'hyv3_common' has no CMakeLists.txt -- not an architecture plugin, skipped
+-- Configuring done (0.2s)
+-- Generating done (0.1s)
+-- Build files have been written to: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd
+[0/2] Re-checking globbed directories...
+[1/2] Linking HIP executable bin/radiance
+[0/2] Re-checking globbed directories...
+[1/10] Linking HIP shared module radiance_home/kernels/spechub.so
+[2/10] Linking HIP executable bin/rad-tokcheck
+[3/10] Linking HIP shared module radiance_home/quantizers/libquant.so
+[4/10] Linking HIP executable bin/rad-gbnf-check
+[5/10] Linking HIP executable bin/rad-kbench
+[6/10] Linking HIP executable bin/rad-convert
+[7/10] Linking HIP executable bin/rad-info
+[8/10] Linking HIP executable bin/rad-tune
+[9/10] Linking HIP shared module radiance_home/kernels/libr4d.so
+-- Install configuration: "Release"
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/kernels.rkb
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/kernels_moe.rkb
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/vectors/qwen4exp-control-vector.gguf
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/vectors/qwen4exp-control-vector.json
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/doc/radiance/third_party/qwen-community.LICENSE
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/libexec/radiance/hfget.sh
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/rad-export
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/radiance
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/kernels/libref.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/quantizers/libquant.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/kernels/libr4d.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/r4d_selftest
+-- Set non-toolchain portion of runtime path of "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/r4d_selftest" to ""
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/kernels/libavx.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/anima.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/bailing_hybrid.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/breeze.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/clef_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/clef_fp8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/embgemma2.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/fishomni.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/flux3.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/flux3distilled.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/gemma3.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/gemma4.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/gemma4_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/glm5next.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/hunyuan3d2.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/hyv3_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/hyv3_fp8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/hyv3_gguf.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/krea2.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/laya.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/lfm2_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/llama_dense_fp8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/llama_fp8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/ltx2.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/minimaxh3.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/minimaxmusic3.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/nemotron35_embed.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/nomicbert.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/qwen35_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/qwen35_fp8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/qwen35_w8a8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/qwen35moe_fp8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/qwen3asr_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/qwen4exp_fp8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/qwenimage21.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/sdxl.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/spark25_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/spark25_w8a8.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/architectures/unlimitedocr_bf16.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_gemma4_audio.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_clef.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_glm_mla.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_dspark_bf16.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_mlp.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_gdn.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_moe_fp8.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_mtp_fp8.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_attn_gated.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_calib_full.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_glm_kda.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_mlp_fp8.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_attn_fp8.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_glm_mtp.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_glm_mhc.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_attn_gated_fp8.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_resample.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_sam.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_glm_tp.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_gemma4_vision.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_gemma4_unified.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_gemma4_dflash.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_vit.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_glm_vision.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_deepseek41_chat.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_dflash2.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_fp8.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_glm_router.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_gdn_fp8.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_ple.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_mtp_hc.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_vae2d.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_glm_indexer.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_qsa.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_gemma4_chat.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/bc_moe_remote_block.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_dspark.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_attn.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_arch.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/arch/rad_block_hc.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/radiance/kernels/spechub.so
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/rad-info
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/rad-convert
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/rad-kbench
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/rad-tune
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/rad-schemas
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/bin/rad-tokcheck
+-- Up-to-date: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_types.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_builder.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_clef.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_philox.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_sample.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_abi_layout_rows.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_device.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_runtime.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_plugin.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_laya.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_prefill_split.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_planes.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_yarn.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_spechub.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_abi.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_abi_layout.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_quant.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/bc_moe_remote.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_encoding.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/include/radiance/rad_format.h
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/lib/cmake/radiance/radianceTargets.cmake
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/lib/cmake/radiance/radiance-config.cmake
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/lib/cmake/radiance/radiance-config-version.cmake
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/lib/cmake/radiance/RadAddPlugin.cmake
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/doc/radiance/LICENSE
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/doc/radiance/NOTICE
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/doc/radiance/third_party/llama.cpp.LICENSE
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/doc/radiance/third_party/nlohmann-json.LICENSE
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/doc/radiance/third_party/cpp-httplib.LICENSE
+-- Installing: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/runtime-prefix/share/doc/radiance/third_party/liquidai-d1.LICENSE
+-- Configuring done (0.0s)
+-- Generating done (0.0s)
+-- Build files have been written to: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/components/bc-gfx12
+[1/1] Linking HIP shared module radiance_home/kernels/libbcgfx12.so
+-- libr2: r3_rewrite: 9 x 'asm volatile("s_wait_storecnt 0x0" ::: "memory")'
+
+-- libr2: 3 unit(s) built for gfx1030
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/components/libr2
+[1/1] Linking HIP shared module radiance_home/kernels/libr2.so
+r3_gen_stubs: 548 libr4d symbol(s) stubbed, 56 other undefined left to the linker
+-- libr3: r3_rewrite: native form of r4d_ar_entry.hip: 12 block(s)
+r3_rewrite: native form of r4d_attn_paged_h256_gqa6.hip: 2 block(s)
+r3_rewrite: native form of r4d_attn_prefill_h256_gqa6.hip: 10 block(s)
+r3_rewrite: native form of r4d_gemm_8a8_prefill.h: 2 block(s)
+r3_rewrite: native form of r4d_gemm_mxfp4a8_decode.hip: 10 block(s)
+r3_rewrite: native form of r4d_gemm_mxfp4a8_gemv.hip: 24 block(s)
+r3_rewrite: native form of r4d_gemm_mxfp4a8_tiled.hip: 14 block(s)
+r3_rewrite: native form of r4d_moe.hip: 25 block(s)
+r3_rewrite: native form of r4d_moe_mxfp4.hip: 8 block(s)
+r3_rewrite: native form of r4d_rows.cpp: 1 block(s)
+r3_rewrite: native form of r4d_selftest.cpp: 21 block(s)
+r3_rewrite: 9 x 'asm volatile("s_wait_storecnt 0x0" ::: "memory")'
+r3_rewrite: 1 x 'if (std::strncmp(p.gcnArchName, "gfx1201", 7) == 0 ||'
+r3_rewrite: 1 x 'std::strncmp(p.gcnArchName, "gfx1200", 7) == 0) devs.push_back(d);'
+r3_rewrite: 1 x 'C_LE("M", 128), C_LE("N", 36864), C_DIV("K", 64), C_DIV("N", 16), C_IN("dtype", "mxfp4a8"),'
+r3_rewrite: 1 x 'C_GE("M", 9), C_LE("M", 64), C_DIV("K", 128), C_DIV("N", 16), C_IN("dtype", "mxfp4a8"),'
+r3_rewrite: 1 x 'C_GE("M", 33), C_LE("M", 64), C_GE("N", 8192), C_LE("N", 36864), C_LE("K", 2560), C_DIV("K", 64),'
+
+-- libr3: 107 unit(s) built for gfx1100, 0 left out
+-- Configuring done (0.3s)
+-- Generating done (0.0s)
+-- Build files have been written to: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/components/libr3
+[1/2] Building HIP object CMakeFiles/libr3.dir/units/r4d_gemm_iqr.hip.o
+In file included from units/r4d_gemm_iqr.hip:2:
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj3ELj2ELj0ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj3ELj3ELj0ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj3ELj4ELj0ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj3ELj5ELj0ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj8ELj2ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj8ELj2ELj0ELj0ELj0EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj9ELj2ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj9ELj2ELj0ELj0ELj0EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj10ELj2ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj10ELj2ELj0ELj0ELj0EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:320:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m16_kernelIN11r4d_iqr_dev5FormTILj4ELj12ELj2ELj0ELj0ELj0EEELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  320 | void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj12ELj2ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj12ELj2ELj0ELj0ELj0EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj12ELj2ELj0ELj0ELj0EEELj2ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj4ELj12ELj2ELj0ELj0ELj0EEELj1ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj2ELj6ELj0ELj0ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj12ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj12ELj0ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj12ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj12ELj0ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj12ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj12ELj0ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj12ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj12ELj0ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj12ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj12ELj0ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj12ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj12ELj0ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj1ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  129 | void iqr_gemv_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj2ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj3ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj4ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj5ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj6ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj7ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj8ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:320:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m16_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  320 | void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj2ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj2ELj0ELj14ELj5ELj1EEELj1ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj1ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  129 | void iqr_gemv_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj2ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj3ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj4ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj5ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj6ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj7ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj8ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:320:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m16_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  320 | void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj2ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj3ELj0ELj14ELj5ELj1EEELj1ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj1ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  129 | void iqr_gemv_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj2ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj3ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj4ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj5ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj6ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj7ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj8ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:320:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m16_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  320 | void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj2ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj4ELj0ELj14ELj5ELj1EEELj1ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj1ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  129 | void iqr_gemv_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj2ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj3ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj4ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj5ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj6ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj7ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj8ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:320:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m16_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  320 | void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj2ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj5ELj0ELj14ELj5ELj1EEELj1ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj1ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  129 | void iqr_gemv_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj2ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj3ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj4ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj5ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj6ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj7ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj8ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:320:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m16_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  320 | void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj2ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj6ELj0ELj14ELj5ELj1EEELj1ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj1ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  129 | void iqr_gemv_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj2ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj3ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj4ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj5ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj6ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj7ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:129:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_115iqr_gemv_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj8ELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:320:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m16_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj4ELb0EEEvNS1_3CtxEPKaPKfPtjjjjNS_8GatedOutE': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+  320 | void iqr_m16_kernel(Ctx c0, const int8_t* __restrict__ X, const float* __restrict__ XS,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+  460 | void iqr_m64_kernel(Ctx c0, const uint8_t* __restrict__ Bp, const float* __restrict__ Sb,
+      |      ^
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj3ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj2ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 3 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj5ELj7ELj0ELj14ELj5ELj1EEELj1ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 4 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj2ELj0ELj16ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj3ELj0ELj16ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj4ELj0ELj16ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj5ELj0ELj16ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj6ELj0ELj16ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj7ELj0ELj16ELj5ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj2ELj0ELj16ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj3ELj0ELj16ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj4ELj0ELj16ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj5ELj0ELj16ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj6ELj0ELj16ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj7ELj0ELj16ELj0ELj1EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj4ELj0ELj16ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj5ELj0ELj16ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj6ELj0ELj16ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj7ELj0ELj16ELj0ELj0EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj2ELj0ELj16ELj0ELj3EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj3ELj0ELj16ELj0ELj3EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj4ELj0ELj16ELj0ELj3EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj5ELj0ELj16ELj0ELj3EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj6ELj0ELj16ELj0ELj3EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj7ELj0ELj16ELj0ELj3EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+units/../r4d-src/r4d_gemm_iqr.hip:460:6: warning: failed to meet occupancy target given by 'amdgpu-waves-per-eu' in '_ZN12_GLOBAL__N_114iqr_m64_kernelIN11r4d_iqr_dev5FormTILj6ELj2ELj0ELj15ELj0ELj3EEELj4ELj4EEEvNS1_3CtxEPKhPKfPvPtPjjjjjjj': desired occupancy was 6, final occupancy is 5 [-Wpass-failed]
+129 warnings generated when compiling for gfx1100.
+[2/2] Linking HIP shared module radiance_home/kernels/libr3.so
+r3_gen_stubs: 28 libr4d symbol(s) stubbed, 123 other undefined left to the linker
+-- The CXX compiler identification is GNU 14.2.0
+-- The HIP compiler identification is Clang 22.0.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/g++-14 - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Detecting HIP compiler ABI info
+-- Detecting HIP compiler ABI info - done
+-- Check for working HIP compiler: /opt/rocm-7.2.4/lib/llvm/bin/clang++ - skipped
+-- Detecting HIP compile features
+-- Detecting HIP compile features - done
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE
+-- Configuring done (1.2s)
+-- Generating done (0.0s)
+CMake Warning (unused-cli):
+  Manually-specified variables were not used by the project:
+
+    CMAKE_C_COMPILER
+    RAD_HIPCC
+
+
+-- Build files have been written to: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/components/moe-remote
+[1/19] Building CXX object CMakeFiles/bc_jcs.dir<repo>/engines/radiance/components/serving/sha256.cpp.o
+[2/19] Building CXX object CMakeFiles/bc_jcs.dir<repo>/engines/radiance/components/serving/jcs.cpp.o
+[3/19] Building CXX object CMakeFiles/bc_experts.dir<repo>/engines/radiance/components/serving/experts.cpp.o
+[4/19] Building CXX object CMakeFiles/bc_serving_v1.dir<repo>/engines/radiance/components/serving/v1/error.cpp.o
+[5/19] Linking CXX static library libbc_experts.a
+[6/19] Linking CXX static library libbc_jcs.a
+[7/19] Building CXX object CMakeFiles/bc_serving_v1.dir<repo>/engines/radiance/components/serving/v1/admission.cpp.o
+[8/19] Building CXX object CMakeFiles/bc_serving_v1.dir<repo>/engines/radiance/components/serving/v1/helper_settings.cpp.o
+[9/19] Building CXX object CMakeFiles/bc_serving_v1.dir<repo>/engines/radiance/components/serving/v1/strict_json.cpp.o
+[10/19] Building CXX object CMakeFiles/bc_serving_v1.dir<repo>/engines/radiance/components/serving/v1/manifest.cpp.o
+[11/19] Building CXX object CMakeFiles/bc_serving_v1.dir<repo>/engines/radiance/components/serving/generated/serving_codec.cpp.o
+[12/19] Linking CXX static library libbc_serving_v1.a
+[13/19] Building HIP object CMakeFiles/r3_moe_worker.dir/r3_moe_worker.cpp.o
+[14/19] Linking HIP executable helpers/r3_moe_worker
+[15/19] Building HIP object CMakeFiles/libr3moe.dir/mailbox_inverse_kernel.hip.o
+[16/19] Building HIP object CMakeFiles/libr3moe.dir/moe_mailbox_ops.hip.o
+[17/19] Building CXX object CMakeFiles/libr3moe.dir/moe_mailbox_plugin.cpp.o
+[18/19] Building CXX object CMakeFiles/libr3moe.dir/moe_remote_hook.cpp.o
+[19/19] Linking HIP shared module radiance_home/kernels/libr3moe.so
+-- The CXX compiler identification is GNU 14.2.0
+-- The HIP compiler identification is Clang 22.0.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/g++-14 - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Detecting HIP compiler ABI info
+-- Detecting HIP compiler ABI info - done
+-- Check for working HIP compiler: /opt/rocm-7.2.4/lib/llvm/bin/clang++ - skipped
+-- Detecting HIP compile features
+-- Detecting HIP compile features - done
+-- Configuring done (1.0s)
+-- Generating done (0.0s)
+CMake Warning (unused-cli):
+  Manually-specified variables were not used by the project:
+
+    CMAKE_C_COMPILER
+    RAD_HIPCC
+    RAD_HSA_RUNTIME
+
+
+-- Build files have been written to: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/components/ngram-helper
+[1/5] Building CXX object CMakeFiles/libr3ngram.dir/ngram_plugin.cpp.o
+[2/5] Building CXX object CMakeFiles/libr3ngram.dir/r3_ngram_host.cpp.o
+[3/5] Building HIP object CMakeFiles/r3_ngram_helper.dir/r3_ngram_helper.hip.o
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:29:9: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   29 |         hipGetDevice(&old);
+      |         ^~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:30:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   30 |         if (device >= 0) hipSetDevice(device);
+      |                          ^~~~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:31:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   31 |         if (codes) hipFree(codes);
+      |                    ^~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:32:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   32 |         if (ids) hipFree(ids);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:33:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   33 |         if (out) hipFree(out);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:34:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   34 |         if (lut) hipFree(lut);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:35:23: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   35 |         if (old >= 0) hipSetDevice(old);
+      |                       ^~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:48:42: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   48 |     ~DeviceGuard() { if (ok && old >= 0) hipSetDevice(old); }
+      |                                          ^~~~~~~~~~~~~~~~~
+8 warnings generated when compiling for gfx1030.
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:29:9: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   29 |         hipGetDevice(&old);
+      |         ^~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:30:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   30 |         if (device >= 0) hipSetDevice(device);
+      |                          ^~~~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:31:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   31 |         if (codes) hipFree(codes);
+      |                    ^~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:32:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   32 |         if (ids) hipFree(ids);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:33:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   33 |         if (out) hipFree(out);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:34:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   34 |         if (lut) hipFree(lut);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:35:23: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   35 |         if (old >= 0) hipSetDevice(old);
+      |                       ^~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:48:42: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   48 |     ~DeviceGuard() { if (ok && old >= 0) hipSetDevice(old); }
+      |                                          ^~~~~~~~~~~~~~~~~
+8 warnings generated when compiling for gfx1100.
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:29:9: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   29 |         hipGetDevice(&old);
+      |         ^~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:30:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   30 |         if (device >= 0) hipSetDevice(device);
+      |                          ^~~~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:31:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   31 |         if (codes) hipFree(codes);
+      |                    ^~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:32:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   32 |         if (ids) hipFree(ids);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:33:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   33 |         if (out) hipFree(out);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:34:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   34 |         if (lut) hipFree(lut);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:35:23: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   35 |         if (old >= 0) hipSetDevice(old);
+      |                       ^~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:48:42: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   48 |     ~DeviceGuard() { if (ok && old >= 0) hipSetDevice(old); }
+      |                                          ^~~~~~~~~~~~~~~~~
+8 warnings generated when compiling for gfx1201.
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:29:9: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   29 |         hipGetDevice(&old);
+      |         ^~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:30:26: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   30 |         if (device >= 0) hipSetDevice(device);
+      |                          ^~~~~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:31:20: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   31 |         if (codes) hipFree(codes);
+      |                    ^~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:32:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   32 |         if (ids) hipFree(ids);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:33:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   33 |         if (out) hipFree(out);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:34:18: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   34 |         if (lut) hipFree(lut);
+      |                  ^~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:35:23: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   35 |         if (old >= 0) hipSetDevice(old);
+      |                       ^~~~~~~~~~~~~~~~~
+<repo>/engines/radiance/components/ngram-helper/r3_ngram_helper.hip:48:42: warning: ignoring return value of type 'hipError_t' declared with 'nodiscard' attribute [-Wunused-value]
+   48 |     ~DeviceGuard() { if (ok && old >= 0) hipSetDevice(old); }
+      |                                          ^~~~~~~~~~~~~~~~~
+8 warnings generated when compiling for host.
+[4/5] Linking HIP shared module libr3_ngram_helper.so
+[5/5] Linking CXX shared module radiance_home/kernels/libr3ngram.so
+-- The CXX compiler identification is GNU 14.2.0
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: /usr/bin/g++-14 - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Configuring done (0.1s)
+-- Generating done (0.0s)
+CMake Warning (unused-cli):
+  Manually-specified variables were not used by the project:
+
+    CMAKE_C_COMPILER
+    CMAKE_HIP_COMPILER
+    RAD_HIPCC
+    RAD_HSA_RUNTIME
+
+
+-- Build files have been written to: <work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/components/serving
+[1/30] Building CXX object CMakeFiles/bc_jcs.dir/sha256.cpp.o
+[2/30] Building CXX object CMakeFiles/bc_serving_v1.dir/v1/admission.cpp.o
+[3/30] Building CXX object CMakeFiles/bc_experts.dir/experts.cpp.o
+[4/30] Building CXX object CMakeFiles/bc_jcs.dir/jcs.cpp.o
+[5/30] Building CXX object CMakeFiles/bc_serving_v1.dir/v1/error.cpp.o
+[6/30] Building CXX object CMakeFiles/bc_serving_v1.dir/v1/strict_json.cpp.o
+[7/30] Building CXX object CMakeFiles/bc_serving_v1.dir/v1/helper_settings.cpp.o
+[8/30] Building CXX object CMakeFiles/bc_serving.dir/calibration.cpp.o
+[9/30] Building CXX object CMakeFiles/bc_serving.dir/ledger.cpp.o
+[10/30] Building CXX object CMakeFiles/bc_serving.dir/live_policy.cpp.o
+[11/30] Building CXX object CMakeFiles/bc_serving.dir/sdk_check.cpp.o
+[12/30] Building CXX object CMakeFiles/bc_serving_v1.dir/v1/manifest.cpp.o
+[13/30] Building CXX object CMakeFiles/bc_serving_v1.dir/generated/serving_codec.cpp.o
+[14/30] Linking CXX static library libbc_experts.a
+[15/30] Linking CXX static library libbc_jcs.a
+[16/30] Linking CXX static library libbc_serving_v1.a
+[17/30] Building CXX object CMakeFiles/bc_contract_gen.dir/contract/generate.cpp.o
+[18/30] Building CXX object CMakeFiles/bc_serving.dir/live_policy_manifest.cpp.o
+[19/30] Building CXX object CMakeFiles/bc_owner_map.dir/owner_map.cpp.o
+[20/30] Linking CXX static library libbc_owner_map.a
+[21/30] Building CXX object CMakeFiles/bc_serving.dir/plan_cache.cpp.o
+[22/30] Building CXX object CMakeFiles/bc_serving.dir/live_policy_ingest.cpp.o
+[23/30] Building CXX object CMakeFiles/bc-serve.dir/main.cpp.o
+[24/30] Building CXX object CMakeFiles/bc_serving.dir/manifest_writer.cpp.o
+[25/30] Building CXX object CMakeFiles/bc_serving.dir/serving.cpp.o
+[26/30] Linking CXX static library libbc_serving.a
+[27/30] Linking CXX executable bin/bc-serve
+[28/30] Building CXX object CMakeFiles/bc_contract.dir/contract/registry.cpp.o
+[29/30] Linking CXX static library libbc_contract.a
+[30/30] Linking CXX executable bc_contract_gen
+build: logs=<work-root>/build-logs/20261107T235213.036759Z-4d1c3c3d
+radiance:stock:linux-radiance: ok build_plan_id=b401d10e134e9f48cc7bb6b73c55c6cd workload_id=None

@@ -1,0 +1,4 @@
+CPU package energy not readable (/sys/class/powercap/intel-rapl:0/energy_uj): CPU package power left out
+layout: bc-serve executable not found: set BC_SERVE_BINARY or RADIANCE_HOME, or supply --bc-serve (no static inventory fallback)
+RADIANCE_EXIT=99 layout 'flashnext-2xtx' does not resolve on this host (above)
+stopped

@@ -1,0 +1,13 @@
+arm	op	calls_r0	us_call_r0	calls_r1	us_call_r1	us_call_min
+exact-d1-pull0	ar_hc_write	4692	70.1	4692	18.0	18.0
+exact-d1-pull0	ar_gather_hc_write	4692	189.5	4692	45.3	45.3
+exact-d1-pull0	all_reduce	368	43.6	368	41.1	41.1
+exact-d1-pull0	all_gather	276	74.0	276	23.6	23.6
+exact-d6-pull0	ar_hc_write	4896	88.0	4896	38.7	38.7
+exact-d6-pull0	ar_gather_hc_write	4896	410.5	4896	43.9	43.9
+exact-d6-pull0	all_reduce	384	74.3	384	61.8	61.8
+exact-d6-pull0	all_gather	288	83.0	288	24.0	24.0
+exact-prefill-pull0	ar_hc_write	291	2251.0	291	2574.2	2251.0
+exact-prefill-pull0	ar_gather_hc_write	291	10253.6	291	2239.2	2239.2
+exact-prefill-pull0	all_reduce	14	5510.4	14	2522.8	2522.8
+exact-prefill-pull0	all_gather	3	14.7	3	26.0	14.7

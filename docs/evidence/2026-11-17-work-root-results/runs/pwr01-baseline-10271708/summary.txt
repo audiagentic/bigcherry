@@ -1,0 +1,13 @@
+commit c37fe8c2e992e01cfaa9a9828a94e563955b68f3 lab(radiance): pwr01 - CPU package sample parse, unique prompts so prefill is not served from the prefix cache
+gpus 0=gfx1100@0000:03:00.0 1=gfx1100@0000:06:00.0 2=gfx1201@0000:09:00.0 3=gfx1030@0000:17:00.0
+build <work-root>/builds/67a435be11abe6053872355915df70a4/e315c3373c1f397eb16273556a7509ab
+median watts per phase
+device      idle_loaded       decode      prefill   idle_after
+cpu_pkg             8.2         77.6         81.9          8.6
+gpu0                7.0        154.0        198.0          9.0
+gpu1                8.0        155.5        198.0          8.0
+gpu2               20.0        215.5        218.0         22.0
+gpu3               10.0         10.0         10.0         10.0
+total              53.2        612.6        705.9         57.6
+decode: 4096 tokens in 43.8 s = 93.5 tok/s, 6.551 J/token (all devices + CPU package)
+prefill: 136468 tokens in 41.2 s = 3312.3 tok/s, 0.213 J/token (all devices + CPU package)

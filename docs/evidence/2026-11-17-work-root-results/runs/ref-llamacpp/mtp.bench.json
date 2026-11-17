@@ -1,0 +1,82 @@
+[
+ {
+  "depth": 2048,
+  "rep": 0,
+  "prompt_tokens": 2306,
+  "completion_tokens": 512,
+  "ttft_s": 3.565593719482422,
+  "prefill_tps": 646.7366114652953,
+  "decode_tps": 61.90883939456418,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7"
+ },
+ {
+  "depth": 2048,
+  "rep": 1,
+  "prompt_tokens": 2306,
+  "completion_tokens": 190,
+  "ttft_s": 2.361997127532959,
+  "prefill_tps": 976.2924658627987,
+  "decode_tps": 48.33959625710026,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7"
+ },
+ {
+  "depth": 8192,
+  "rep": 0,
+  "prompt_tokens": 9088,
+  "completion_tokens": 512,
+  "ttft_s": 8.779415369033813,
+  "prefill_tps": 1035.1486537537119,
+  "decode_tps": 50.83396516979703,
+  "text_head": "\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n(GPU 0/1, `HIP_VISIBLE_DEVICES=0,2`), compared ag"
+ },
+ {
+  "depth": 8192,
+  "rep": 1,
+  "prompt_tokens": 9089,
+  "completion_tokens": 512,
+  "ttft_s": 8.346047163009644,
+  "prefill_tps": 1089.0185284697627,
+  "decode_tps": 68.90893917965772,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log\n\n## Overview\n\nThis document tracks real-hardware validation runs on Brutus's dual RX 7900 XTX pair (GPU 0/1, `HIP_VISIB"
+ },
+ {
+  "depth": 24576,
+  "rep": 0,
+  "prompt_tokens": 34887,
+  "completion_tokens": 512,
+  "ttft_s": 34.446457862854004,
+  "prefill_tps": 1012.789185433811,
+  "decode_tps": 49.04434433497593,
+  "text_head": "\n\n# Summary of the BigCherry Project Documentation\n\n## 1. Dual-XTX Production Bench Log (2026-08-19 \u2192 2026-08-27)\n\n**Hardware**: Dual RX 7900 XTX (gfx1100) on B"
+ },
+ {
+  "depth": 24576,
+  "rep": 1,
+  "prompt_tokens": 34884,
+  "completion_tokens": 512,
+  "ttft_s": 34.7749764919281,
+  "prefill_tps": 1003.1351137820958,
+  "decode_tps": 51.848679482584714,
+  "text_head": "\n\n# Summary of the BigCherry Project Documentation\n\n## 1. Dual-XTX Production-Parity Bench Log\n\n### Hardware & Setup\n- **Hardware**: Brutus server with dual RX "
+ },
+ {
+  "depth": 98304,
+  "rep": 0,
+  "prompt_tokens": 110872,
+  "completion_tokens": 512,
+  "ttft_s": 145.2008159160614,
+  "prefill_tps": 763.5769764826499,
+  "decode_tps": 43.89350861278969,
+  "text_head": "\n\n[26684f342019441eaa0d32a41b746c24]\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n(GPU 0/1, `HI"
+ },
+ {
+  "depth": 98304,
+  "rep": 1,
+  "prompt_tokens": 110872,
+  "completion_tokens": 512,
+  "ttft_s": 143.41549015045166,
+  "prefill_tps": 773.0824605047088,
+  "decode_tps": 32.44897824346735,
+  "text_head": "\n\n# BigCherry \u2014 Consolidated Project Summary\n\n## 1. Project Identity & Mission\n\n**BigCherry** is a release-tolerant **overlay** (not a fork) for `llama.cpp` tar"
+ }
+]

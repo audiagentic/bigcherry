@@ -1,0 +1,28 @@
+r3_moe_worker: manifest sha256 sha256:7d0e548ae5577a53b32e5d5a0726a8ad562479fec238a2ccd7450b495ff09adc, role helper2
+r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM
+r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging
+r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O
+r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count
+r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy
+r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end
+r3_moe_worker: few-rows prefill kernel on the large lane
+r3_moe_worker: large-lane requests up to 32 rows take the GEMV
+r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE=1 applied
+r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 2 of 3 owns 5986 of 25078 ranked experts, 14.13 GiB of its 14.53 GiB
+r3_moe_worker: selected 5986 expert candidates, 14.129 GiB; host RSS 287.0 MiB
+r3_moe_worker: waiting for engine runtime expert maps
+r3_moe_worker: R3_MOE_WORKER_POWER_SAVE on
+r3_moe_worker: runtime map owns 5308 experts, 12.529 GiB
+r3_moe_worker: ready shm=/r3-moe-helper layers=49 bytes=223006720 (gfx1030, small lane rows <= 8, large <= 4096)
+r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes on 4 efficiency core(s)
+r3_moe_worker: helper 2 stopping phase=0 transaction=1002 placement_fault=0 journal_fault=0
+placement helper=2 ledger_charged=13452595200 local_bytes_staged=1692979200
+r3_moe_worker: lane 2 stages (us/request): routes 36.6 gate_up 123.3 quant 17.4 down 81.0 reduce 18.1
+r3_moe_worker: lane 18 stages (us/request): routes 123.7 gate_up 295.3 quant 20.0 down 130.4 reduce 99.5
+r3_moe_worker: lane 18 experts a request by rows: 1 6.4, 2 2.7, 3-4 2.5, 5-8 1.7, 9-16 0.9, 17-32 0.3, 33-64 0.1, 65+ 0.2
+r3_moe_worker: small lane class 0 (rows <= 8): requests 25282 (138124 rows)
+r3_moe_worker: large-lane requests 200033 (33538400 rows)
+r3_moe_worker: GPU timing samples=200428 sampled=133879.4 ms avg=668.0 us
+r3_moe_worker: served 225315 requests, 33676524 rows, 20444737 routes, compute 150503.1 ms (668.0 us a request)

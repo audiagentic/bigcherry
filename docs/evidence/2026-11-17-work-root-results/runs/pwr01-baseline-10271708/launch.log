@@ -1,0 +1,9 @@
+helper0 on XTX 0 (pid 2701548, log <work-root>/flashnext/helper0-1027-170859.log): waiting for ready...
+helper1 on XTX 1 (pid 2701732, log <work-root>/flashnext/helper1-1027-170859.log): waiting for ready...
+engine on R9700 (pid 2701800, log <work-root>/flashnext/engine-1027-170859.log): waiting for /health...
+FLASHNEXT_EXIT=0
+Flash-Next is up: http://127.0.0.1:36080 (OpenAI-compatible /v1/chat/completions, /v1/completions)
+  build    <work-root>/builds/67a435be11abe6053872355915df70a4/e315c3373c1f397eb16273556a7509ab
+  engine   R9700 pid 2701800, log <work-root>/flashnext/engine-1027-170859.log
+  helpers  XTX 0 1, pids 2701548 2701732, logs <work-root>/flashnext/helper*-1027-170859.log
+  stop     bash tools/lab/radiance/launch-flashnext-best.sh stop

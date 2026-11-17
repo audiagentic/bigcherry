@@ -1,0 +1,82 @@
+[
+ {
+  "depth": 2048,
+  "rep": 0,
+  "prompt_tokens": 2305,
+  "completion_tokens": 512,
+  "ttft_s": 1.77789306640625,
+  "prefill_tps": 1296.4784235641457,
+  "decode_tps": 31.168433405350857,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7"
+ },
+ {
+  "depth": 2048,
+  "rep": 1,
+  "prompt_tokens": 2303,
+  "completion_tokens": 421,
+  "ttft_s": 1.9979050159454346,
+  "prefill_tps": 1152.7074518656186,
+  "decode_tps": 31.21646835896188,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log \u2014 Detailed Summary\n\n## 1. Purpose and Scope\n\nThis document is a **production-parity benchmark log** for a dual AMD RX 7"
+ },
+ {
+  "depth": 8192,
+  "rep": 0,
+  "prompt_tokens": 9089,
+  "completion_tokens": 512,
+  "ttft_s": 7.04307222366333,
+  "prefill_tps": 1290.4879733396397,
+  "decode_tps": 30.467636607437598,
+  "text_head": "\n\n# Dual-XTX Production-Parity Bench Log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair (GPU 0/1, `HIP_VISIBLE_DEVICES=0,1`), compared ag"
+ },
+ {
+  "depth": 8192,
+  "rep": 1,
+  "prompt_tokens": 9091,
+  "completion_tokens": 512,
+  "ttft_s": 7.221444129943848,
+  "prefill_tps": 1258.8894736862958,
+  "decode_tps": 30.46736245220998,
+  "text_head": "\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n(GPU 0/1, `HIP_VISIBLE_DEVICES=0,1`), compared ag"
+ },
+ {
+  "depth": 24576,
+  "rep": 0,
+  "prompt_tokens": 34886,
+  "completion_tokens": 512,
+  "ttft_s": 29.97253966331482,
+  "prefill_tps": 1163.9320655466197,
+  "decode_tps": 28.137193452168287,
+  "text_head": "\n\n<think>\nThe user wants me to summarize the provided documents in detail. These are four distinct documents related to a project called \"BigCherry\" which is a "
+ },
+ {
+  "depth": 24576,
+  "rep": 1,
+  "prompt_tokens": 34886,
+  "completion_tokens": 512,
+  "ttft_s": 30.56422472000122,
+  "prefill_tps": 1141.3998005704561,
+  "decode_tps": 28.13595717064574,
+  "text_head": "\n\n<think>\nThe user wants me to summarize the provided documents in detail. These are four distinct documents related to a project called \"BigCherry\" which is a "
+ },
+ {
+  "depth": 98304,
+  "rep": 0,
+  "prompt_tokens": 110870,
+  "completion_tokens": 512,
+  "ttft_s": 129.3735990524292,
+  "prefill_tps": 856.9754634024633,
+  "decode_tps": 22.98066809368465,
+  "text_head": "\n\n[15508f3d0d6043dfb26ecd7d144234b0]\n\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair (GPU 0/1, `HI"
+ },
+ {
+  "depth": 98304,
+  "rep": 1,
+  "prompt_tokens": 110868,
+  "completion_tokens": 512,
+  "ttft_s": 131.39855861663818,
+  "prefill_tps": 843.7535477345904,
+  "decode_tps": 22.998200652524208,
+  "text_head": "\n\n[70527013edd940528ace254eb2d81f00]\n\n<think>\nThe user wants me to summarize the extensive documentation they've provided. This is a massive collection of techn"
+ }
+]

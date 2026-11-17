@@ -1,0 +1,29 @@
+r3_moe_worker: manifest sha256 sha256:8d21aef8f0495a34e2ac869c21dc0e97b9c0a859f2052dfb8857ebf6ec465c6d, role helper0
+r3_moe_worker: R3_MOE_FP16 on - f16 WMMA MoE GEMM
+r3_moe_worker: R3_MOE_AHALF on - activation tile widened to half at staging
+r3_moe_worker: R3_MOE_WORKER_VECIO on - 16-byte lane I/O
+r3_moe_worker: R3_MOE_WORKER_LANE_QUANT on - gated quantise bounded by the route count
+r3_moe_worker: R3_MOE_WORKER_SPARSE_ACT on - sparse large-lane activation copy
+r3_moe_worker: R3_MOE_WORKER_FUSEROUTE on - fused small-lane front end
+r3_moe_worker: large-lane requests up to 32 rows take the GEMV
+r3_moe_worker: R3_MOE_WORKER_MOE_DOWN_TILE=1 applied
+r3_moe_worker: R3_MOE_WORKER_GEMV_W4H2 on - packed f16 W4 decode GEMV
+r3_moe_worker: owning the coldest experts of <work-root>/heat/flashnext-mixed.hot-first first
+r3_moe_worker: tail placement: helper 0 of 3 owns 9732 of 25078 ranked experts, 22.97 GiB of its 22.97 GiB
+r3_moe_worker: selected 9732 expert candidates, 22.971 GiB; host RSS 598.1 MiB
+r3_moe_worker: waiting for engine runtime expert maps
+r3_moe_worker: layer 48 has no runtime map (not declared by the engine); not owned
+r3_moe_worker: R3_MOE_WORKER_POWER_SAVE on
+r3_moe_worker: runtime map owns 9031 experts, 21.316 GiB
+r3_moe_worker: ready shm=/r3-moe-helper layers=49 bytes=223006720 (gfx1100, small lane rows <= 8, large <= 64)
+r3_moe_worker: R3_MOE_WORKER_COMBINE on - 8 CPU thread(s), large-lane steps of 256+ rows
+r3_moe_worker: R3_MOE_WORKER_CPU_SET auto - small lanes on 4 efficiency core(s)
+r3_moe_worker: epoch participant 0 exiting phase=0 transaction=0 fault=0
+r3_moe_worker: helper 0 stopping phase=0 transaction=0 placement_fault=0 journal_fault=0
+placement helper=0 ledger_charged=22888166400 local_bytes_staged=0
+r3_moe_worker: placement epoch cycles completed 0 (every 0 s of burst)
+r3_moe_worker: combine steps 0, CPU 0.0 ms (0.0 us a step)
+r3_moe_worker: small lane class 0 (rows <= 8): requests 0 (0 rows)
+r3_moe_worker: large-lane requests 0 (0 rows)
+r3_moe_worker: GPU timing samples=0 sampled=0.0 ms avg=0.0 us
+r3_moe_worker: served 0 requests, 0 rows, 0 routes, compute 0.0 ms (0.0 us a request)

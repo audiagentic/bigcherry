@@ -1,0 +1,13 @@
+layout flashnext-4gpu: engine cards 2; helper0: card 0 gfx1100 22528 MiB head; helper1: card 1 gfx1100 22528 MiB head; helper2: card 3 gfx1030 14336 MiB tail
+recording the route histogram to <work-root>/flashnext/heat.live.rank0 every 60s
+helper0 (pid 3209877, log <work-root>/flashnext/helper0-1107-130247.log): waiting for ready...
+helper1 (pid 3210071, log <work-root>/flashnext/helper1-1107-130247.log): waiting for ready...
+helper2 (pid 3210549, log <work-root>/flashnext/helper2-1107-130247.log): waiting for ready...
+engine TP=1 cards 2 (pid 3210685, log <work-root>/flashnext/engine-1107-130247.log): waiting for /health...
+start canary: ok (answered ' Paris. The capital of Germany is Berlin. The capital of Ita')
+RADIANCE_EXIT=0
+Radiance layout flashnext-4gpu is up: http://127.0.0.1:18448 (OpenAI-compatible /v1/chat/completions, /v1/completions)
+  build    <work-root>/builds/c6938079bf56add212fe8c2d27813118/ef423f0ddd8c45a6fa0ee1214d8a07a4
+  engine   TP=1 cards 2 pid 3210685, log <work-root>/flashnext/engine-1107-130247.log
+  layout   flashnext-4gpu: helper0: card 0 gfx1100 22528 MiB head; helper1: card 1 gfx1100 22528 MiB head; helper2: card 3 gfx1030 14336 MiB tail\n  helpers  3209877 3210071 3210549 
+  stop     bash <repo>/tools/lab/radiance/launch-flashnext-best.sh stop

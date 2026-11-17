@@ -1,0 +1,1123 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "diagnostic",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "_comment": "RHP06 paced forced churn (#733): pace_requests=104 = floor(R/(N+1)) from rhp06-churn-mid2 (R=16849 completed helper requests over the churn arm, N=161 swaps attempted), so swaps spread across scoring. policy-off control vs two paced churn passes.",
+    "schema_version": 1,
+    "engine": "radiance",
+    "evidence_role": "diagnostic",
+    "execution_evidence": "observe",
+    "quality_only": true,
+    "model": "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+    "server_args": [],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "2"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1201"
+      ],
+      "locators": [
+        "0000:09:00.0"
+      ]
+    },
+    "quality": {
+      "reference_dir": "<work-root>/runs/rad116-kld/reference",
+      "control": "policy-off",
+      "timeout_s": 5400,
+      "args": [],
+      "thresholds": {
+        "max_kld_mean_increase": 0.02,
+        "max_kld_median_increase": 0.01,
+        "max_kld_p99_increase": 0.2,
+        "max_kld_p999_increase": 0.5,
+        "max_top1_drop_points": 1.0,
+        "max_ppl_ratio_increase": 0.05
+      }
+    },
+    "arms": [
+      {
+        "name": "policy-off",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/bin/radiance",
+        "environment": {
+          "R3_MOE_WORKER_SKIP_OWNED": "1"
+        },
+        "settings": {},
+        "serving": {
+          "layout": "flashnext-4gpu",
+          "set": {
+            "service.max_context": 8192,
+            "service.max_sessions": 1,
+            "engine.max_num_batched_tokens": 64,
+            "engine.kv_cache_dtype": "fp8",
+            "memory.host_pool_mib": 45056,
+            "handoff.max_rows": 64,
+            "handoff.small_rows": 8,
+            "handoff.histogram_period_s": 1,
+            "engine.ngram_placement": "disk"
+          },
+          "heat": "<work-root>/heat/flashnext-mixed.hot-first",
+          "histogram": "/dev/null"
+        }
+      },
+      {
+        "name": "forced-churn",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/bin/radiance",
+        "environment": {
+          "R3_MOE_WORKER_SKIP_OWNED": "1"
+        },
+        "settings": {},
+        "serving": {
+          "layout": "flashnext-4gpu",
+          "set": {
+            "service.max_context": 8192,
+            "service.max_sessions": 1,
+            "engine.max_num_batched_tokens": 64,
+            "engine.kv_cache_dtype": "fp8",
+            "memory.host_pool_mib": 45056,
+            "handoff.max_rows": 64,
+            "handoff.small_rows": 8,
+            "handoff.histogram_period_s": 1,
+            "engine.ngram_placement": "disk"
+          },
+          "heat": "<work-root>/heat/flashnext-mixed.hot-first",
+          "histogram": "/dev/null",
+          "experiment": "<work-root>/runs/rhp06-churn-paced/experiment.json"
+        }
+      },
+      {
+        "name": "forced-churn-repeat",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/bin/radiance",
+        "environment": {
+          "R3_MOE_WORKER_SKIP_OWNED": "1"
+        },
+        "settings": {},
+        "serving": {
+          "layout": "flashnext-4gpu",
+          "set": {
+            "service.max_context": 8192,
+            "service.max_sessions": 1,
+            "engine.max_num_batched_tokens": 64,
+            "engine.kv_cache_dtype": "fp8",
+            "memory.host_pool_mib": 45056,
+            "handoff.max_rows": 64,
+            "handoff.small_rows": 8,
+            "handoff.histogram_period_s": 1,
+            "engine.ngram_placement": "disk"
+          },
+          "heat": "<work-root>/heat/flashnext-mixed.hot-first",
+          "histogram": "/dev/null",
+          "experiment": "<work-root>/runs/rhp06-churn-paced/experiment.json"
+        }
+      }
+    ]
+  },
+  "model_sha256": "0af5e96244e80c21ac8edca1719dae49b8a201b94a2f3994c3e24026ceaa4d20",
+  "arm_model_sha256": {},
+  "arm_provenance": {
+    "policy-off": {
+      "campaign_metadata": {
+        "binary_hash": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72",
+        "build_id": "b9e017fcffbd10fec20d16bdcbb88ef1",
+        "build_plan_id": "b401d10e134e9f48cc7bb6b73c55c6cd",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/usr/bin/g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_LAUNCHER": "<repo>/tools/bigcherry/bin/bc-ccache",
+          "CMAKE_CXX_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_LAUNCHER": "<repo>/tools/bigcherry/bin/bc-ccache",
+          "CMAKE_C_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72"
+        },
+        "runtime_bundle_hash": "ef87adee5bd0a49b9e7f1cb2617a8bb1",
+        "source_slice_id": "f6fc6f13e755443d133051a7075e2bcf",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/usr/bin/g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/usr/bin/gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 4.4.4"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.13.2.git.kitware.jobserver-pipe-1"
+          ],
+          [
+            "rocm_digest",
+            "b811dea988c46e94df2fdecfb1d4fbfe0b23cc3d83ebe05c51b676855ab9d062"
+          ],
+          [
+            "rocm_root",
+            "/opt/rocm-7.2.4"
+          ],
+          [
+            "rocm_stack",
+            "rocm-7-2"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d",
+        "tree_oid": "2ad6671b6c6f684646ba930b3e4b5f54f1cd37e6",
+        "object_format": "sha1",
+        "source_slice_id": "f6fc6f13e755443d133051a7075e2bcf",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/bc_plan_check.cpp",
+          "core/bc_plan_check.h",
+          "core/bc_plan_memory.cpp",
+          "core/bc_plan_memory.h",
+          "core/bc_serving_manifest.cpp",
+          "core/bc_serving_manifest.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_engine.h",
+          "core/place/bc_moe_remote_place.h",
+          "libr4d/bc_helper_config.h"
+        ]
+      }
+    },
+    "forced-churn": {
+      "campaign_metadata": {
+        "binary_hash": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72",
+        "build_id": "b9e017fcffbd10fec20d16bdcbb88ef1",
+        "build_plan_id": "b401d10e134e9f48cc7bb6b73c55c6cd",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/usr/bin/g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_LAUNCHER": "<repo>/tools/bigcherry/bin/bc-ccache",
+          "CMAKE_CXX_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_LAUNCHER": "<repo>/tools/bigcherry/bin/bc-ccache",
+          "CMAKE_C_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72"
+        },
+        "runtime_bundle_hash": "ef87adee5bd0a49b9e7f1cb2617a8bb1",
+        "source_slice_id": "f6fc6f13e755443d133051a7075e2bcf",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/usr/bin/g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/usr/bin/gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 4.4.4"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.13.2.git.kitware.jobserver-pipe-1"
+          ],
+          [
+            "rocm_digest",
+            "b811dea988c46e94df2fdecfb1d4fbfe0b23cc3d83ebe05c51b676855ab9d062"
+          ],
+          [
+            "rocm_root",
+            "/opt/rocm-7.2.4"
+          ],
+          [
+            "rocm_stack",
+            "rocm-7-2"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d",
+        "tree_oid": "2ad6671b6c6f684646ba930b3e4b5f54f1cd37e6",
+        "object_format": "sha1",
+        "source_slice_id": "f6fc6f13e755443d133051a7075e2bcf",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/bc_plan_check.cpp",
+          "core/bc_plan_check.h",
+          "core/bc_plan_memory.cpp",
+          "core/bc_plan_memory.h",
+          "core/bc_serving_manifest.cpp",
+          "core/bc_serving_manifest.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_engine.h",
+          "core/place/bc_moe_remote_place.h",
+          "libr4d/bc_helper_config.h"
+        ]
+      }
+    },
+    "forced-churn-repeat": {
+      "campaign_metadata": {
+        "binary_hash": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72",
+        "build_id": "b9e017fcffbd10fec20d16bdcbb88ef1",
+        "build_plan_id": "b401d10e134e9f48cc7bb6b73c55c6cd",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "/usr/bin/g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_LAUNCHER": "<repo>/tools/bigcherry/bin/bc-ccache",
+          "CMAKE_CXX_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "/usr/bin/gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "/usr/bin/gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_LAUNCHER": "<repo>/tools/bigcherry/bin/bc-ccache",
+          "CMAKE_C_COMPILER_RANLIB": "/usr/bin/gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72"
+        },
+        "runtime_bundle_hash": "ef87adee5bd0a49b9e7f1cb2617a8bb1",
+        "source_slice_id": "f6fc6f13e755443d133051a7075e2bcf",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "/usr/bin/g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "/usr/bin/gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 4.4.4"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Debian 14.2.0-19) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.13.2.git.kitware.jobserver-pipe-1"
+          ],
+          [
+            "rocm_digest",
+            "b811dea988c46e94df2fdecfb1d4fbfe0b23cc3d83ebe05c51b676855ab9d062"
+          ],
+          [
+            "rocm_root",
+            "/opt/rocm-7.2.4"
+          ],
+          [
+            "rocm_stack",
+            "rocm-7-2"
+          ],
+          [
+            "rocm_version",
+            "7.2.4"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "3faa650c6837d378ac83a8496aa01ede31b26b5f211dc5616b2b1be53e7bbe72"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d",
+        "tree_oid": "2ad6671b6c6f684646ba930b3e4b5f54f1cd37e6",
+        "object_format": "sha1",
+        "source_slice_id": "f6fc6f13e755443d133051a7075e2bcf",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/bc_plan_check.cpp",
+          "core/bc_plan_check.h",
+          "core/bc_plan_memory.cpp",
+          "core/bc_plan_memory.h",
+          "core/bc_serving_manifest.cpp",
+          "core/bc_serving_manifest.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_engine.h",
+          "core/place/bc_moe_remote_place.h",
+          "libr4d/bc_helper_config.h"
+        ]
+      }
+    }
+  },
+  "arm_variables": {
+    "policy-off": {
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {}
+    },
+    "forced-churn": {
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {}
+    },
+    "forced-churn-repeat": {
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {}
+    }
+  },
+  "schedule": [],
+  "schedule_seed": 0,
+  "settle_seconds": 20.0,
+  "runs": [],
+  "exploratory_comparisons": {},
+  "quality": {
+    "reference_dir": "<work-root>/runs/rad116-kld/reference",
+    "control": "policy-off",
+    "gate": "control",
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    },
+    "reference_metadata": null,
+    "recorded_reference": null,
+    "arms": {
+      "policy-off": {
+        "settings": {},
+        "argv": [
+          "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/bin/radiance",
+          "--manifest",
+          "<work-root>/runs/rhp06-churn-paced/out/manifests/policy-off/manifest.json",
+          "--role",
+          "engine",
+          "--kld-ref",
+          "<work-root>/runs/rad116-kld/reference",
+          "--kld-out",
+          "<work-root>/runs/rhp06-churn-paced/out/quality/policy-off.kld.json"
+        ],
+        "log": "<work-root>/runs/rhp06-churn-paced/out/quality/policy-off.score.log",
+        "returncode": 0,
+        "sidecars": [
+          {
+            "name": "helper0",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/policy-off/manifest.json",
+              "--role",
+              "helper0"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper0.log",
+            "ready_s": 0.80145237990655,
+            "returncode": 0,
+            "exited_before_stop": true,
+            "killed": false
+          },
+          {
+            "name": "helper1",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/policy-off/manifest.json",
+              "--role",
+              "helper1"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper1.log",
+            "ready_s": 0.40072611393406987,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          },
+          {
+            "name": "helper2",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/policy-off/manifest.json",
+              "--role",
+              "helper2"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper2.log",
+            "ready_s": 0.20027161808684468,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          }
+        ],
+        "result": {
+          "kld_mean": 0.06598200148145351,
+          "kld_median": 0.015387292951345444,
+          "kld_p99": 0.7035886573791497,
+          "kld_p999": 3.002915296077903,
+          "top1_percent": 88.54368932038835,
+          "ppl": 8.994390523900265,
+          "ppl_reference": 9.13008580709071
+        },
+        "all": {
+          "positions": 8240,
+          "kld": {
+            "mean": 0.06598200148145351,
+            "median": 0.015387292951345444,
+            "p90": 0.1497259393334389,
+            "p95": 0.25004659444093696,
+            "p99": 0.7035886573791497,
+            "p99_9": 3.002915296077903,
+            "p99_99": 5.69757617750171,
+            "max": 5.741372108459473
+          },
+          "top1_agreement": 0.8854368932038835,
+          "ppl": {
+            "candidate": 8.994390523900265,
+            "reference": 9.13008580709071,
+            "ratio": 0.9851375675916364
+          }
+        },
+        "by_source": {
+          "kld-docs-00": {
+            "positions": 1950,
+            "kld": {
+              "mean": 0.027155911972161734,
+              "median": 0.010501052718609571,
+              "p90": 0.059016985818743734,
+              "p95": 0.08553714230656624,
+              "p99": 0.21335269510746,
+              "p99_9": 0.48373113232849474,
+              "p99_99": 4.715462749386027,
+              "max": 5.688215255737305
+            },
+            "top1_agreement": 0.9117948717948718,
+            "ppl": {
+              "candidate": 9.11138932940152,
+              "reference": 9.163292939020268,
+              "ratio": 0.9943357033367639
+            },
+            "docs": 1
+          },
+          "kld-docs-01": {
+            "positions": 2211,
+            "kld": {
+              "mean": 0.07243082688810755,
+              "median": 0.023148229345679283,
+              "p90": 0.18337620794773102,
+              "p95": 0.2796051651239395,
+              "p99": 0.631700927019121,
+              "p99_9": 2.128871084451663,
+              "p99_99": 2.4416140158176423,
+              "max": 2.4512367248535156
+            },
+            "top1_agreement": 0.8905472636815921,
+            "ppl": {
+              "candidate": 8.770203515479222,
+              "reference": 8.677690058711404,
+              "ratio": 1.010661069494519
+            },
+            "docs": 1
+          },
+          "kld-docs-02": {
+            "positions": 2132,
+            "kld": {
+              "mean": 0.10563116210499211,
+              "median": 0.02443811483681202,
+              "p90": 0.22915284186601645,
+              "p95": 0.388110069930553,
+              "p99": 1.3092372000217443,
+              "p99_9": 3.5523295938968715,
+              "p99_99": 5.391956218290427,
+              "max": 5.741372108459473
+            },
+            "top1_agreement": 0.8541275797373359,
+            "ppl": {
+              "candidate": 10.260235082732677,
+              "reference": 10.783394571851511,
+              "ratio": 0.951484712385053
+            },
+            "docs": 1
+          },
+          "kld-docs-03": {
+            "positions": 1947,
+            "kld": {
+              "mean": 0.05412812943195306,
+              "median": 0.010923563502728939,
+              "p90": 0.13038670122623447,
+              "p95": 0.20103586912155147,
+              "p99": 0.5039694440364836,
+              "p99_9": 2.0322491312029194,
+              "p99_99": 4.869921628189067,
+              "max": 4.975775241851807
+            },
+            "top1_agreement": 0.8875192604006163,
+            "ppl": {
+              "candidate": 7.910054022106485,
+              "reference": 8.031755629578125,
+              "ratio": 0.9848474464258529
+            },
+            "docs": 1
+          }
+        }
+      },
+      "forced-churn": {
+        "settings": {},
+        "argv": [
+          "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/bin/radiance",
+          "--manifest",
+          "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn/manifest.json",
+          "--role",
+          "engine",
+          "--kld-ref",
+          "<work-root>/runs/rad116-kld/reference",
+          "--kld-out",
+          "<work-root>/runs/rhp06-churn-paced/out/quality/forced-churn.kld.json"
+        ],
+        "log": "<work-root>/runs/rhp06-churn-paced/out/quality/forced-churn.score.log",
+        "returncode": 0,
+        "sidecars": [
+          {
+            "name": "helper0",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn/manifest.json",
+              "--role",
+              "helper0"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper0.log",
+            "ready_s": 2.8044540949631482,
+            "returncode": 0,
+            "exited_before_stop": true,
+            "killed": false
+          },
+          {
+            "name": "helper1",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn/manifest.json",
+              "--role",
+              "helper1"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper1.log",
+            "ready_s": 0.3005049740895629,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          },
+          {
+            "name": "helper2",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn/manifest.json",
+              "--role",
+              "helper2"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper2.log",
+            "ready_s": 0.2003559439908713,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          }
+        ],
+        "result": {
+          "kld_mean": 0.07381573685781198,
+          "kld_median": 0.017149819061160088,
+          "kld_p99": 0.9377196627855298,
+          "kld_p999": 3.4330743651390145,
+          "top1_percent": 87.9368932038835,
+          "ppl": 8.837048930483936,
+          "ppl_reference": 9.13008580709071
+        },
+        "all": {
+          "positions": 8240,
+          "kld": {
+            "mean": 0.07381573685781198,
+            "median": 0.017149819061160088,
+            "p90": 0.15972248166799558,
+            "p95": 0.2680404409766187,
+            "p99": 0.9377196627855298,
+            "p99_9": 3.4330743651390145,
+            "p99_99": 5.412098480939928,
+            "max": 5.500860691070557
+          },
+          "top1_agreement": 0.8793689320388349,
+          "ppl": {
+            "candidate": 8.837048930483936,
+            "reference": 9.13008580709071,
+            "ratio": 0.9679042582076072
+          }
+        },
+        "by_source": {
+          "kld-docs-00": {
+            "positions": 1950,
+            "kld": {
+              "mean": 0.02571016813565997,
+              "median": 0.01023305719718337,
+              "p90": 0.0617026790976525,
+              "p95": 0.09460042305290699,
+              "p99": 0.21036597907543175,
+              "p99_9": 0.6044692057371096,
+              "p99_99": 0.9406907530725135,
+              "max": 1.007665753364563
+            },
+            "top1_agreement": 0.9005128205128206,
+            "ppl": {
+              "candidate": 9.148115836537825,
+              "reference": 9.163292939020268,
+              "ratio": 0.9983437065055714
+            },
+            "docs": 1
+          },
+          "kld-docs-01": {
+            "positions": 2211,
+            "kld": {
+              "mean": 0.06870736510072864,
+              "median": 0.023112520575523376,
+              "p90": 0.172806978225708,
+              "p95": 0.2564859390258789,
+              "p99": 0.6728239238262231,
+              "p99_9": 1.5616283667087483,
+              "p99_99": 2.3196046488285047,
+              "max": 2.432451009750366
+            },
+            "top1_agreement": 0.8950701040253279,
+            "ppl": {
+              "candidate": 8.637573989919808,
+              "reference": 8.677690058711404,
+              "ratio": 0.9953771028326457
+            },
+            "docs": 1
+          },
+          "kld-docs-02": {
+            "positions": 2132,
+            "kld": {
+              "mean": 0.13900475185013436,
+              "median": 0.03110027313232422,
+              "p90": 0.28516579568386086,
+              "p95": 0.6082134753465636,
+              "p99": 1.940708389282228,
+              "p99_9": 4.308479979991945,
+              "p99_99": 5.384406069803271,
+              "max": 5.500860691070557
+            },
+            "top1_agreement": 0.8400562851782364,
+            "ppl": {
+              "candidate": 9.409085112663524,
+              "reference": 10.783394571851511,
+              "ratio": 0.8725531695950899
+            },
+            "docs": 1
+          },
+          "kld-docs-03": {
+            "positions": 1947,
+            "kld": {
+              "mean": 0.05641331723761497,
+              "median": 0.01325955055654049,
+              "p90": 0.1435338526964188,
+              "p95": 0.22506223767995803,
+              "p99": 0.47320592284202534,
+              "p99_9": 1.3438385169507074,
+              "p99_99": 4.8163514839648105,
+              "max": 5.393126487731934
+            },
+            "top1_agreement": 0.8834103749357987,
+            "ppl": {
+              "candidate": 8.178830819169189,
+              "reference": 8.031755629578125,
+              "ratio": 1.0183117112091207
+            },
+            "docs": 1
+          }
+        },
+        "gate": {
+          "passed": false,
+          "problems": [
+            "KLD P99 0.703589 -> 0.937720"
+          ]
+        }
+      },
+      "forced-churn-repeat": {
+        "settings": {},
+        "argv": [
+          "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/bin/radiance",
+          "--manifest",
+          "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn-repeat/manifest.json",
+          "--role",
+          "engine",
+          "--kld-ref",
+          "<work-root>/runs/rad116-kld/reference",
+          "--kld-out",
+          "<work-root>/runs/rhp06-churn-paced/out/quality/forced-churn-repeat.kld.json"
+        ],
+        "log": "<work-root>/runs/rhp06-churn-paced/out/quality/forced-churn-repeat.score.log",
+        "returncode": 0,
+        "sidecars": [
+          {
+            "name": "helper0",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn-repeat/manifest.json",
+              "--role",
+              "helper0"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper0.log",
+            "ready_s": 2.404128276044503,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          },
+          {
+            "name": "helper1",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn-repeat/manifest.json",
+              "--role",
+              "helper1"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper1.log",
+            "ready_s": 0.30059387092478573,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          },
+          {
+            "name": "helper2",
+            "argv": [
+              "<work-root>/builds/f6fc6f13e755443d133051a7075e2bcf/b401d10e134e9f48cc7bb6b73c55c6cd/radiance_home/helpers/r3_moe_worker",
+              "--manifest",
+              "<work-root>/runs/rhp06-churn-paced/out/manifests/forced-churn-repeat/manifest.json",
+              "--role",
+              "helper2"
+            ],
+            "log": "<work-root>/runs/rhp06-churn-paced/out/quality/helper2.log",
+            "ready_s": 0.20037566614337265,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          }
+        ],
+        "result": {
+          "kld_mean": 0.0624988725890042,
+          "kld_median": 0.015917204320430756,
+          "kld_p99": 0.6967032122611996,
+          "kld_p999": 1.8441722899675488,
+          "top1_percent": 88.09466019417475,
+          "ppl": 9.035207948062745,
+          "ppl_reference": 9.13008580709071
+        },
+        "all": {
+          "positions": 8240,
+          "kld": {
+            "mean": 0.0624988725890042,
+            "median": 0.015917204320430756,
+            "p90": 0.15374070554971694,
+            "p95": 0.25075327903032296,
+            "p99": 0.6967032122611996,
+            "p99_9": 1.8441722899675488,
+            "p99_99": 4.222769965125176,
+            "max": 5.688215255737305
+          },
+          "top1_agreement": 0.8809466019417476,
+          "ppl": {
+            "candidate": 9.035207948062745,
+            "reference": 9.13008580709071,
+            "ratio": 0.9896082182541723
+          }
+        },
+        "by_source": {
+          "kld-docs-00": {
+            "positions": 1950,
+            "kld": {
+              "mean": 0.03045364454921927,
+              "median": 0.01102855522185564,
+              "p90": 0.06375022605061532,
+              "p95": 0.10545861944556222,
+              "p99": 0.2707509690523147,
+              "p99_9": 0.7012048299908583,
+              "p99_99": 4.730840551376533,
+              "max": 5.688215255737305
+            },
+            "top1_agreement": 0.9005128205128206,
+            "ppl": {
+              "candidate": 9.027934586742242,
+              "reference": 9.163292939020268,
+              "ratio": 0.9852281976382501
+            },
+            "docs": 1
+          },
+          "kld-docs-01": {
+            "positions": 2211,
+            "kld": {
+              "mean": 0.07198849041029994,
+              "median": 0.022041941061615944,
+              "p90": 0.18136464059352875,
+              "p95": 0.2747131288051605,
+              "p99": 0.6370650172233618,
+              "p99_9": 1.844989627599715,
+              "p99_99": 2.023704208254814,
+              "max": 2.056917905807495
+            },
+            "top1_agreement": 0.8891904115784712,
+            "ppl": {
+              "candidate": 8.697824571342453,
+              "reference": 8.677690058711404,
+              "ratio": 1.0023202617856624
+            },
+            "docs": 1
+          },
+          "kld-docs-02": {
+            "positions": 2132,
+            "kld": {
+              "mean": 0.08595924174571953,
+              "median": 0.021364299580454826,
+              "p90": 0.20929221659898758,
+              "p95": 0.34459739774465553,
+              "p99": 0.9647394400835048,
+              "p99_9": 1.6195592513084438,
+              "p99_99": 2.9166425211906963,
+              "max": 3.1068856716156006
+            },
+            "top1_agreement": 0.850375234521576,
+            "ppl": {
+              "candidate": 10.69997911031681,
+              "reference": 10.783394571851511,
+              "ratio": 0.9922644524431625
+            },
+            "docs": 1
+          },
+          "kld-docs-03": {
+            "positions": 1947,
+            "kld": {
+              "mean": 0.05812760532273747,
+              "median": 0.012505468912422657,
+              "p90": 0.14947069287300116,
+              "p95": 0.22628987878561008,
+              "p99": 0.5356922364234916,
+              "p99_9": 2.717977358341284,
+              "p99_99": 3.8190763216495345,
+              "max": 3.909546375274658
+            },
+            "top1_agreement": 0.8854648176682075,
+            "ppl": {
+              "candidate": 7.8457346373190795,
+              "reference": 8.031755629578125,
+              "ratio": 0.9768393112492123
+            },
+            "docs": 1
+          }
+        },
+        "gate": {
+          "passed": true,
+          "problems": []
+        }
+      }
+    },
+    "passed": false
+  },
+  "setting_activation": {}
+}

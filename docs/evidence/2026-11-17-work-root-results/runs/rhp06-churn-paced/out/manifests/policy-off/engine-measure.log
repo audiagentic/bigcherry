@@ -1,0 +1,55 @@
+I device: AQL backend, 1 device(s) [0:gfx1201]
+I model: qwen4exp  arch=qwen4exp  quant=bf16  48 layers  262144 ctx
+I vocab: end-of-generation also on <|endoftext|>=248044 (a control token the container declares neither as eos nor eot; without this a turn ending on it runs on)
+I vocab: 248077 tokens, bos=-1 eos=248046
+I gbnf: vocabulary index built in 58 ms, 26.11 MiB
+libr3: R3_MOE_WORKER GPU mailbox ready, 24571 owned experts, decode rows <= 64
+I kernel libraries on the search path that --kernels (or RADIANCE_KERNELS) does not name, and so not loaded: libavx, libbcgfx12, libr2, libr3, libr3ngram, spechub
+I chained launches: off -- no drafter whose plugin measured a gain with them decodes speculatively
+I control vectors: not loaded (no --control-vector); a request that asks for one is refused
+libr3: R3_MOE_WORKER first layer map: layer 0 n_expert 512
+libr3: R3_MOE_WORKER layer 34 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 44 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 46 has protected experts; kept local
+libr3: R3_MOE_WORKER layer 47 has protected experts; kept local
+I sampler: 248320-token vocabulary (248320 this rank), 1 rows, 7760 mask words (30.31 KiB per row)
+I host-site execution: 7 of 1846 declared ops have no host kernel (gated_had_quant_fp8, moe_mailbox_publish, moe_mailbox_add, qk_norm_rope_gate, qk_norm_rope_gate_kv_store, gate_quant_fp8, attn_paged_gate_quant). Their weights may still be tiered to host or SSD -- only the arithmetic is pinned to the device. --debug-graph lists the bands.
+I declare: 1846 ops, 99785 weights, 101 buffers, 8 KV groups
+I placement: token embedding (1.18 GiB a rank) ram (default): pinned in host memory and read over the link in place, so its VRAM goes to the KV cache and the experts
+I placement: n-gram table (47.68 GiB) disk: as asked
+I placement: encoder towers (856.68 MiB a rank) vram (default)
+I kv: the pool backs 100% of the worst case (1 sequences all at 8192 tokens), 1.0 full-length sessions; a larger --host-pool-mib gives the cache more
+I chunk geometry: quantum 64 (attn block 4, state chunk 64), checkpoint interval 4096, max_tok 64 -> prefill chunks of at most 64
+I VRAM budget, per card:
+  card total          31.86 GiB
+  already held       258.60 MiB   measured: driver context, code objects, anything else resident
+  driver drift        16.00 MiB   what that moves by after it is read: kept free
+  activation arena   370.45 MiB   computed from the buffer plan
+  step staging        66.64 MiB   the step batch's block tables and media staging, and the
+                                  KV tiers' copy staging
+  hardware queues    141.41 MiB   4 a card at 35.35 MiB each, measured: the engine's streams
+  expert prefetch     18.00 MiB   the next-layer prefetch's ring of expert units and buffers
+  --gpu-headroom-mib  96.00 MiB   left unclaimed on purpose
+  ------------------------------
+  claimable           30.91 GiB
+  static weights       5.15 GiB   off the top: every rank's own shard, and not a share of anything
+  ------------------------------
+  elastic             25.77 GiB   the experts keep what the host pool cannot hold; the cache takes the rest
+                                  and lends what no live request holds to the expert slab
+    experts            5.91 GiB   23% of it -- the whole expert plane is resident, so more would do nothing
+    kv cache         212.31 MiB   1% of it -- backs 1 sequences all at 8192 tokens at once, which is the worst case and
+                                  more would be unusable
+    unusable          19.65 GiB   neither side could take it: both are at their ceiling
+  ==============================
+  vram_weights        11.06 GiB   static + experts
+  vram_kv            213.00 MiB   the cache's share
+  unclaimed           19.74 GiB   the headroom, the unusable above, and what MiB rounding
+                                  could not place
+
+I pools:
+vram_weights    11.06 GiB budget,        0 B used,  11.06 GiB free
+vram_kv        213.00 MiB budget,        0 B used, 213.00 MiB free
+host_pool       45.18 GiB budget,        0 B used,  45.18 GiB free
+
+I placement: 'token_embd.weight' (1.18 GiB) in the pinned host pool, read in place (--embedding-placement ram, the default)
+radiance: --plan-memory: wrote <work-root>/runs/rhp06-churn-paced/out/manifests/policy-off/plan-measured.json; engine start-up took 1 MiB of MemAvailable; nothing loaded or allocated past the plan
