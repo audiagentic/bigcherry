@@ -6,6 +6,7 @@
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
 #include "resources.h"
+#include "s8_replay.h"
 #include "sha256.h"
 #include "stored_manifest.h"
 #include "stored_manifest_cache.h"
@@ -19,6 +20,7 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <linux/memfd.h>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -46,6 +48,54 @@ namespace fs = std::filesystem;
 using Json = nlohmann::json;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
+
+// An authenticated stored v2 document is held in a kernel-sealed anonymous
+// file. The path is only a view of this exact descriptor; it does not reopen
+// the operator's replaceable pathname. This execution envelope owns its
+// descriptor until the last child has verified its exit.
+class PinnedManifest final {
+  public:
+    explicit PinnedManifest(std::string_view admitted) {
+        fd_ = static_cast<int>(::syscall(SYS_memfd_create, "bc-stored-v2", MFD_CLOEXEC | MFD_ALLOW_SEALING));
+        if (fd_ < 0)
+            throw PlanFailed("replay: cannot allocate an authenticated manifest descriptor");
+        try {
+            size_t offset = 0;
+            while (offset < admitted.size()) {
+                const ssize_t n = ::write(fd_, admitted.data() + offset, admitted.size() - offset);
+                if (n < 0 && errno == EINTR)
+                    continue;
+                if (n <= 0)
+                    throw PlanFailed("replay: cannot copy admitted bytes into the sealed handoff");
+                offset += static_cast<size_t>(n);
+            }
+            if (::lseek(fd_, 0, SEEK_SET) != 0)
+                throw PlanFailed("replay: cannot rewind admitted manifest");
+            constexpr int seals = F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL;
+            if (::fcntl(fd_, F_ADD_SEALS, seals) != 0 || (::fcntl(fd_, F_GET_SEALS) & seals) != seals)
+                throw PlanFailed("replay: cannot seal admitted manifest bytes");
+        } catch (...) {
+            ::close(fd_);
+            fd_ = -1;
+            throw;
+        }
+    }
+    ~PinnedManifest() {
+        if (fd_ >= 0)
+            ::close(fd_);
+    }
+    PinnedManifest(const PinnedManifest&) = delete;
+    PinnedManifest& operator=(const PinnedManifest&) = delete;
+    int descriptor() const noexcept {
+        return fd_;
+    }
+    fs::path path() const {
+        return "/proc/self/fd/" + std::to_string(fd_);
+    }
+
+  private:
+    int fd_ = -1;
+};
 
 namespace {
 
@@ -418,7 +468,7 @@ Env child_environment(char** inherited, const Env& runtime) {
 }
 
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
-            const Callback<void(pid_t)>& recorded) {
+            const Callback<void(pid_t)>& recorded, int inherited_manifest_fd) {
     if (argv.empty() || argv[0].empty())
         throw std::runtime_error("spawn: an empty command");
     std::vector<std::string> envs;
@@ -475,6 +525,17 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
             ::_exit(127);
         }
         cloexec_above_stderr();
+        if (inherited_manifest_fd >= 0) {
+            // The owner keeps every other descriptor close-on-exec. Only the
+            // sealed, authenticated manifest becomes readable by the strict
+            // engine/worker readers at /proc/self/fd/N after execve.
+            const int flags = ::fcntl(inherited_manifest_fd, F_GETFD);
+            if (flags < 0 || ::fcntl(inherited_manifest_fd, F_SETFD, flags & ~FD_CLOEXEC) != 0) {
+                const int e = errno;
+                (void)!::write(report[1], &e, sizeof e);
+                ::_exit(127);
+            }
+        }
         if (!gate->wait_in_child())
             ::_exit(126); // never recorded: run nothing
         ::execve(cargv[0], cargv.data(), cenv.data());
@@ -691,6 +752,8 @@ class Owner {
             std::error_code ec;
             fs::remove(s_.run_dir / "session.sock", ec);
         }
+        if (handoff_lock_ >= 0)
+            ::close(handoff_lock_);
         if (lock_ >= 0)
             ::close(lock_);
     }
@@ -798,8 +861,39 @@ class Owner {
                 };
             }
             hooks.selected_segment = [this](const std::string& name) {
-                if (name.rfind("/r3-serve-", 0) != 0)
-                    throw PlanFailed("refusing to own a shared segment without a unique session name");
+                if (name.rfind("/r3-serve-", 0) != 0 || name.size() > 220U)
+                    throw PlanFailed("refusing an unqualified shared-memory transport name");
+                if (handoff_lock_ >= 0)
+                    throw PlanFailed("a session cannot select shared-memory transport twice");
+                // The lock resides on the same kernel-backed shared-memory mount
+                // as POSIX shm, not under a per-run-dir session root. It stays
+                // locked until all children are verified dead and the owner has
+                // unlinked its segment. No stored manifest bytes are changed.
+                const std::string lock_path = "/dev/shm/.bigcherry-transport-" + sha256_hex(name) + ".lock";
+                const int descriptor =
+                    ::open(lock_path.c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+                if (descriptor < 0)
+                    throw PlanFailed("cannot lock shared-memory transport " + name + ": " + errno_text());
+                if (::flock(descriptor, LOCK_EX | LOCK_NB) != 0) {
+                    ::close(descriptor);
+                    throw PlanFailed("shared-memory transport " + name + " already owned by another session");
+                }
+                // A crashed prior owner can leave the transport allocated even
+                // after its flock is released. Do not reuse or unlink its
+                // unknown contents until an operator has verified cleanup.
+                const int existing = ::shm_open(name.c_str(), O_RDONLY | O_CLOEXEC, 0);
+                if (existing >= 0) {
+                    ::close(existing);
+                    ::close(descriptor);
+                    throw PlanFailed("shared-memory transport " + name +
+                                     " still exists after an unverified stop");
+                }
+                if (errno != ENOENT) {
+                    const std::string problem = errno_text();
+                    ::close(descriptor);
+                    throw PlanFailed("cannot inspect shared-memory transport " + name + ": " + problem);
+                }
+                handoff_lock_ = descriptor;
                 handoff_shm_ = name;
                 record_["handoff_shm"] = name; // journal name even if the planner fails after helpers start
                 event("segment_selected");
@@ -808,10 +902,15 @@ class Owner {
             if (s_.power_hook.begin_manifest && !power_admitted_)
                 throw PlanFailed("planner returned without DURABLE authenticated pre-measure power admission");
             if (s_.power_hook.verify_serving)
-                require_callback(
-                    s_.power_hook.verify_serving.invoke("session.power.verify_serving", plan_.manifest),
-                    "power final manifest");
+                require_callback(s_.power_hook.verify_serving.invoke(
+                                     "session.power.verify_serving",
+                                     plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest),
+                                 "power final manifest");
             record_["manifest"] = plan_.manifest.string();
+            if (plan_.pinned_manifest) {
+                record_["power_admission"]["origin_manifest"] = plan_.manifest.string();
+                record_["power_admission"]["original_sha256"] = plan_.stored_sha256;
+            }
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
             event("planned");
@@ -822,8 +921,13 @@ class Owner {
             if (s_.power_hook.gfxoff_window)
                 require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.floor", false),
                                  "gfxoff floor receipt");
-            if (!plan_.stored_sha256.empty() && sha256_hex(read_file(plan_.manifest)) != plan_.stored_sha256)
+            if (!plan_.stored_sha256.empty() &&
+                sha256_hex(read_file(plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest)) !=
+                    plan_.stored_sha256)
                 throw PlanFailed("replay: stored manifest bytes changed after authentication");
+            if (s_.before_gpu_start)
+                require_callback(s_.before_gpu_start.invoke("session.before_gpu_start", plan_),
+                                 "pre-exec process boundary");
             start_helpers();
             start_engine();
             if (!wait_health())
@@ -980,7 +1084,7 @@ class Owner {
     };
 
     const Session& s_;
-    int lock_ = -1, listen_ = -1;
+    int lock_ = -1, listen_ = -1, handoff_lock_ = -1;
     bool stop_ = false;
     bool power_attempted_ = false;
     bool power_admitted_ = false;
@@ -1125,8 +1229,9 @@ class Owner {
                 if (!fresh)
                     throw std::runtime_error(h.role + ": cannot create readiness log " + log.string());
             }
-            const pid_t pid = spawn(h.argv, child_environment(environ, h.runtime), log,
-                                    [&](pid_t p) { track(h.role, p, log); });
+            const pid_t pid = spawn(
+                h.argv, child_environment(environ, h.runtime), log, [&](pid_t p) { track(h.role, p, log); },
+                plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
             const auto deadline = Clock::now() + s_.timing.helper_timeout;
             bool ready = false;
             while (Clock::now() < deadline) {
@@ -1255,8 +1360,9 @@ class Owner {
             argv.push_back(plan_.heat_session_nonce);
         }
         plan_.engine_launched_at = std::chrono::system_clock::now();
-        (void)spawn(argv, child_environment(environ, plan_.runtime), log,
-                    [&](pid_t pid) { track("engine", pid, log); });
+        (void)spawn(
+            argv, child_environment(environ, plan_.runtime), log, [&](pid_t pid) { track("engine", pid, log); },
+            plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
     }
 
     std::optional<std::string> exited_child() {
@@ -1708,6 +1814,7 @@ struct NamedCache {
     std::string key;
     fs::path index;
     std::string model_digest;
+    FileStamp model_stamp;
 };
 
 std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved& resolved, const Json& facts,
@@ -1720,12 +1827,22 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         throw PlanFailed("named CONFIG differs from the effective selected config: " + name);
     StaticResolutionInputs static_inputs;
     static_inputs.effective_values = values;
+    // Preserve operator CLI overrides separately from measured-derived values.
+    // RSC12's named layout selection already appears in effective_values.
+    for (const std::string& set : in.options.sets) {
+        const std::string key = set.substr(0, set.find('='));
+        if (key != "layout.name" && key != "handoff.shm")
+            static_inputs.operator_sets.push_back(set);
+    }
     static_inputs.producer_digest = complete_file_identity(in.self);
     const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
     static_inputs.engine_digest = engine_identity(engine, home);
     static_inputs.helper_digest =
         resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
-    static_inputs.model_digest = complete_file_identity(values.at("engine").at("model").get<std::string>());
+    const fs::path index = stored_index_path(run_dir, name);
+    const ModelIdentity artifact =
+        cached_model_identity(values.at("engine").at("model").get<std::string>(), index);
+    static_inputs.model_digest = artifact.digest;
     static_inputs.power_profile = in.power_profile;
 
     static_inputs.ordered_devices = Json::array();
@@ -1759,12 +1876,12 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     file(in.calibration_prompts_a);
     file(in.calibration_prompts_b);
     file(in.calibration_store);
+    file(in.calibration_records_file);
     if (values.contains("handoff") && values.at("handoff").contains("heat") &&
         values.at("handoff").at("heat").is_string() &&
         !values.at("handoff").at("heat").get<std::string>().empty())
         file(values.at("handoff").at("heat").get<std::string>());
-    return NamedCache{static_resolution_key(static_inputs), stored_index_path(run_dir, name),
-                      static_inputs.model_digest};
+    return NamedCache{static_resolution_key(static_inputs), index, artifact.digest, artifact.stamp};
 }
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
@@ -1860,6 +1977,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     fs::create_directories(cache);
     const std::string id = stamp();
     const fs::path manifest = run_dir / ("manifest-" + id + ".json");
+    const fs::path s8_source = manifest.string() + ".s8-evidence.json";
     // The bash launcher's engine-only plan-extra: the two share one plan cache.
     const std::vector<std::string> base = resolver_args(in.options);
     std::vector<std::string> extra_sets;
@@ -1878,6 +1996,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 throw PlanFailed("calibration: a lab live policy is required");
             argv.insert(argv.end(), {"--calibration-run", "--live-policy", in.live_policy_file.string()});
         }
+        if (!in.calibration_records_file.empty())
+            argv.insert(argv.end(), {"--calibration-records", in.calibration_records_file.string()});
+        if (std::find(more.begin(), more.end(), "--unmeasured") == more.end())
+            argv.insert(argv.end(), {"--s8-replay-evidence", s8_source.string()});
         argv.insert(argv.end(), more.begin(), more.end());
         argv.insert(argv.end(), base.begin(), base.end());
         for (const auto& s : extra_sets)
@@ -1915,6 +2037,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     for (int round = 0; round < 5; ++round) {
         std::error_code ec;
         fs::remove(manifest, ec);
+        fs::remove(s8_source, ec);
         ManifestRun w = write(manifest, measured_args);
         if (w.exit == 10) {
             // No measured plan for this configuration: measure it with the engine alone (it stops after its
@@ -2039,9 +2162,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                         bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
                         bc::serving::engine_identity(engine, home), "budgets: default"));
             if (cache_selection) {
-                const StoredManifestIndex entry{cache_selection->key, manifest.filename().string(),
+                if (!fs::is_regular_file(s8_source))
+                    throw PlanFailed("writer failed to publish its original native P1/P2 replay evidence");
+                const StoredManifestIndex entry{cache_selection->key,
+                                                manifest.filename().string(),
                                                 complete_file_identity(manifest),
-                                                cache_selection->model_digest};
+                                                cache_selection->model_digest,
+                                                cache_selection->model_stamp,
+                                                complete_file_identity(s8_source)};
                 // Each manifest carries an adjacent immutable replay attestation;
                 // the per-config index may point to another manifest on the next
                 // static key, but this exact file's identity remains verifiable.
@@ -2120,6 +2248,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     std::string source_name;
     ReplayEvidence evidence;
     std::optional<NamedCache> attestation;
+    std::optional<Resolved> current_config;
     if (given.replay_evidence) {
         evidence = given.replay_evidence.require("session.replay.evidence", m);
     } else {
@@ -2138,16 +2267,10 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
             const std::string shm = m.spec.handoff->transport.shm;
             if (shm.rfind("/r3-serve-", 0) != 0 || shm.size() > 220U)
                 throw PlanFailed("replay: stored helper shared-memory name is not owner-scoped");
-            if (!has_set("handoff.shm"))
-                in.options.sets.push_back("handoff.shm=" + shm);
         }
-        // These are the stored measured allocations, not new operator settings.
-        // Re-resolve with them for the static settings comparison; live room is
-        // independently sampled below and can refuse their reuse.
-        if (!has_set("memory.host_pool_mib"))
-            in.options.sets.push_back("memory.host_pool_mib=" + std::to_string(m.spec.resources.host.pool_mib));
-        if (!has_set("memory.host_kv_mib"))
-            in.options.sets.push_back("memory.host_kv_mib=" + std::to_string(m.spec.resources.host.kv_mib));
+        // The original operator/config/variant inputs must be reconstructed
+        // identically on first write and replay. A prior run's transport and
+        // S8 allocations are authenticated artifacts, never operator --sets.
         const Json fresh = detect(in.options.sys_root);
         const Resolved resolved = resolve(in.options, fresh);
         const Json definitions = load_layouts(in.options);
@@ -2185,9 +2308,12 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         evidence.fresh_facts = fresh;
         evidence.effective_spec = current.document.at("spec");
         attestation = named_cache(in, resolved, fresh, engine, helper_binary, stored.parent_path());
+        current_config = resolved;
     }
     const Json& facts = evidence.fresh_facts;
-    const ReplayResult checked = authenticate_replay(bytes, stored.string(), evidence);
+    const auto calibration_mode = given.replay_evidence ? CalibrationVerification::exact_draft_match
+                                                        : CalibrationVerification::require_fresh_measured_s8;
+    const ReplayResult checked = authenticate_replay(bytes, stored.string(), evidence, calibration_mode);
     if (const auto* error = std::get_if<ReplayError>(&checked))
         throw ReplayFailed(error->reason, v2::render_human("bc-serve replay", error->detail));
     const auto& accepted = std::get<v2::Manifest>(checked);
@@ -2215,6 +2341,10 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
             throw ReplayFailed(
                 ReplayRefusal::execution_projection,
                 "replay: RSC12 static resolution key changed (config, inputs, calibration or power)");
+        if (bound.s8_digest.empty() ||
+            bound.s8_digest != complete_file_identity(stored.string() + ".s8-evidence.json"))
+            throw ReplayFailed(ReplayRefusal::calibration,
+                               "replay: the original measured S8 producer evidence is missing or tampered");
     }
 
     std::vector<std::string> ordered = accepted.spec.processes.engine.device.gpus;
@@ -2231,12 +2361,34 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     }
     if (const auto error = check_replay_live_room(accepted, facts, room))
         throw PlanFailed(v2::render_human("bc-serve replay room", *error));
+    if (!given.replay_evidence) {
+        // Production never substitutes the unmeasured RSC12 draft for S8.
+        // The original native P1 and raw P2 records were published by the
+        // strict measured writer. Requalify them against current scope/time
+        // BEFORE pinning/admitting any GPU child.
+        if (!current_config)
+            throw ReplayFailed(ReplayRefusal::calibration, "replay: current RSC12 scope is missing");
+        const StoredS8Evidence issued =
+            read_stored_s8_evidence(stored.string() + ".s8-evidence.json", accepted.metadata.content_digest);
+        const v2::Status renewed = verify_stored_s8(accepted, *current_config, facts, room, issued, engine,
+                                                    helper_binary, static_cast<int64_t>(std::time(nullptr)));
+        if (renewed)
+            throw ReplayFailed(ReplayRefusal::calibration, v2::render_human("bc-serve replay S8", *renewed));
+    }
 
+    // Preserve the operator's original file as immutable input evidence;
+    // hand every child only the authenticated sealed bytes, never that name.
+    auto pinned = std::make_shared<PinnedManifest>(bytes);
+    const auto pinned_read = v2::load_manifest(pinned->path(), v2::PlanUse::serving);
+    if (!pinned_read || pinned_read.value().metadata.content_digest != accepted.metadata.content_digest)
+        throw ReplayFailed(ReplayRefusal::bytes_or_digest,
+                           "replay: sealed handoff does not match admitted v2 bytes");
     EngineStart out;
     out.manifest = stored;
     out.stored_sha256 = sha256_hex(bytes);
+    out.pinned_manifest = std::move(pinned);
     out.port = int(accepted.spec.processes.engine.server.port);
-    out.argv = {engine.string(), "--manifest", stored.string(), "--role", "engine"};
+    out.argv = {engine.string(), "--manifest", out.pinned_manifest->path().string(), "--role", "engine"};
     std::string ordinals, hip_ordinals;
     for (size_t i = 0; i < accepted.spec.processes.engine.device.gpus.size(); ++i) {
         const std::string& bdf = accepted.spec.processes.engine.device.gpus[i];
@@ -2261,7 +2413,8 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
             throw PlanFailed("replay: helper BDF vanished after live admission: " + h.gpu);
         HelperStart helper;
         helper.role = h.role;
-        helper.argv = {helper_binary.string(), "--manifest", stored.string(), "--role", h.role};
+        helper.argv = {helper_binary.string(), "--manifest", out.pinned_manifest->path().string(), "--role",
+                       h.role};
         helper.runtime = {{"RADIANCE_HOME", home.string()},
                           {"ROCR_VISIBLE_DEVICES", std::to_string(gpu->at("hip_ordinal").get<int>())},
                           {"HIP_VISIBLE_DEVICES", "0"}};
@@ -2283,7 +2436,8 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
                    {"replay", true}};
     // No writer or measuring child was started. Admission still passes through
     // the real owner's durable event before ANY GPU child can be forked.
-    require_callback(hooks.admit_power.invoke("session.hooks.admit_power", stored, v2::PlanUse::serving),
+    require_callback(hooks.admit_power.invoke("session.hooks.admit_power", out.pinned_manifest->path(),
+                                              v2::PlanUse::serving),
                      "stored manifest power admission");
     return out;
 }

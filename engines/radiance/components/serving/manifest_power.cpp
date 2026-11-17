@@ -1,4 +1,5 @@
 #include "manifest_power.h"
+#include "manifest_writer.h"
 
 #include <algorithm>
 #include <charconv>
@@ -201,9 +202,11 @@ v2::Status ManifestPower::begin(const std::filesystem::path& manifest, v2::PlanU
         engine_.push_back(pci.value());
     }
     bound_ = plan.value();
-    transaction_ =
-        std::make_unique<power::SessionPower>(plan.value(), authenticated.value().metadata.instance_id,
-                                              hardware_, records_, lease_, [this] { return verified_exit_; });
+    // Each owner execution owns exactly one durable power transaction and
+    // receipt. The authenticated instance id names the immutable origin only.
+    execution_ = PowerExecution{"power-" + new_instance_id(), authenticated.value().metadata.instance_id};
+    transaction_ = std::make_unique<power::SessionPower>(plan.value(), execution_->run_id, hardware_, records_,
+                                                         lease_, [this] { return verified_exit_; });
     return transaction_->begin();
 }
 
