@@ -29,6 +29,7 @@
 
 #include "callback_boundary.h"
 #include "serving.h"
+#include "stored_manifest.h"
 #include "v2/manifest.h"
 
 namespace bc::serving::power {
@@ -104,6 +105,7 @@ struct HelperStart {
 /* What the plan step hands the owner: one manifest and all of its children. */
 struct EngineStart {
     std::filesystem::path manifest;
+    std::string stored_sha256; // original bytes for a second read immediately before serving GPU children
     std::vector<std::string> argv;    // the engine binary, --manifest M, --role engine; nothing else
     std::vector<HelperStart> helpers; // ordered, prior to the engine
     std::string handoff_shm;          // unique to this owner; non-empty only with helpers
@@ -157,6 +159,10 @@ struct Hooks {
  * serving). */
 struct PlanFailed : std::runtime_error {
     using std::runtime_error::runtime_error;
+};
+struct ReplayFailed : PlanFailed {
+    ReplayRefusal reason;
+    ReplayFailed(ReplayRefusal why, const std::string& detail) : PlanFailed(detail), reason(why) {}
 };
 
 /* Step 4 power transaction boundary. Step 2 never writes device settings.
@@ -235,6 +241,17 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
 struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
     std::filesystem::path self; // this bc-serve (writes the manifests)
+    std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)
+    std::string named_config;              // explicitly selected new RSC12 config; enables static-key reuse
+    bool explicit_power_profile = false;   // only an explicit override may conflict with a stored profile
+    std::filesystem::path calibration_prompts_a, calibration_prompts_b, calibration_store;
+
+    // OS/dependency seams: only the production default calls the real detector,
+    // compiled-in resolver, model/build identity and live P1 probe. Tests supply
+    // card-free facts but still call replay_stored_manifest through Session::plan.
+    Callback<ReplayEvidence(const v2::Manifest&)> replay_evidence;
+    Callback<v2::P1LiveRoom(const v2::Manifest&, const nlohmann::json&)> replay_live_room;
+
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
@@ -246,6 +263,9 @@ struct EnginePlanInputs {
 /* Resolve a config then publish its measured manifest. On cache miss (exit 10) bring helpers up sequentially
  * against the unmeasured manifest, measure with --plan-memory and record helper RSS. On exit 11 adjust the
  * derived pool (bounded retries). Python and the launcher remain reference only until RSC11 S16. */
+EngineStart replay_stored_manifest(const EnginePlanInputs& given, const std::filesystem::path& run_dir,
+                                   const Hooks& hooks);
+
 EngineStart plan_engine_only(const EnginePlanInputs& given, const std::filesystem::path& run_dir,
                              const Hooks& hooks);
 

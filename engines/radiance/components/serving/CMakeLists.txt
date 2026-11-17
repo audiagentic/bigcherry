@@ -54,7 +54,7 @@ target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp stored_manifest.cpp stored_manifest_cache.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -71,6 +71,7 @@ target_compile_features(bc_serving_v2_p1_live PUBLIC cxx_std_20)
 target_include_directories(bc_serving_v2_p1_live PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
 
+target_link_libraries(bc_serving PUBLIC bc_serving_v2_p1_live)
 add_library(bc_serving_v2_p1 STATIC v2/p1_measurement.cpp)
 target_link_libraries(bc_serving_v2_p1 PUBLIC bc_serving_v2)
 target_include_directories(bc_serving_v2_p1 PUBLIC
@@ -134,6 +135,21 @@ if(BUILD_TESTING)
   add_test(NAME bc_heat_rename_contract COMMAND bc_session_guards_test rename)
   add_test(NAME bc_heat_reset_contract COMMAND bc_session_guards_test reset)
   add_test(NAME bc_heat_foreign_contract COMMAND bc_session_guards_test foreign)
+  add_executable(bc_session_stored_test EXCLUDE_FROM_ALL session_stored_test.cpp)
+  target_link_libraries(bc_session_stored_test PRIVATE bc_serving)
+  add_dependencies(bc_session_stored_test bc_fake_engine)
+  target_compile_definitions(bc_session_stored_test PRIVATE
+    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
+    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+  add_test(NAME bc_session_stored_test COMMAND bc_session_stored_test)
+  add_executable(bc_stored_manifest_cache_test EXCLUDE_FROM_ALL stored_manifest_cache_test.cpp)
+  target_link_libraries(bc_stored_manifest_cache_test PRIVATE bc_serving)
+  add_test(NAME bc_stored_manifest_cache_test COMMAND bc_stored_manifest_cache_test)
+  add_executable(bc_stored_manifest_test EXCLUDE_FROM_ALL stored_manifest_test.cpp)
+  target_link_libraries(bc_stored_manifest_test PRIVATE bc_serving)
+  target_compile_definitions(bc_stored_manifest_test PRIVATE
+    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+  add_test(NAME bc_stored_manifest_test COMMAND bc_stored_manifest_test)
   add_executable(bc_manifest_power_test EXCLUDE_FROM_ALL manifest_power_test.cpp)
   target_link_libraries(bc_manifest_power_test PRIVATE bc_serving)
   target_compile_definitions(bc_manifest_power_test PRIVATE
