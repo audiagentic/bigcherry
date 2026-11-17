@@ -7,8 +7,7 @@ Engine::xstats_open's weight loop never saw them: the map row stopped at n_reg a
 `unmapped`, leaving the layer's counts short. Flash-Next (hcbf16) keeps two such experts in layers 34, 44 and 46 and four in
 layer 47, and a 4,163-token run was missing 1,672 selections in those four layers.
 
-The map entry for a protected place is its model expert, read from the container entry of the layer-scope weights that name
-one. They are appended in ascending expert order, the order MoeFP8 lists them (`prot` is built ascending).
+The map entry for a protected place is its model expert, read from the tensor name of the layer-scope weights (the container directory keeps these bf16 entries outside the expert directory, so their `expert` field is -1). They are appended in ascending expert order, the order MoeFP8 lists them (`prot` is built ascending).
 """
 from bigcherry.patcher import Edit, FilePatch
 
@@ -26,8 +25,10 @@ PATCHES = (
             for (size_t w = 1; w < P.weights.size(); ++w) {
                 const WeightInfo& wi = P.weights[w];
                 if (wi.decl.group.layer != l || wi.decl.group.expert >= 0) continue;
-                const RadFileEntry* fe = file_ ? file_->find(wi.source) : nullptr;
-                if (fe && fe->layer == l && fe->expert >= 0) xs_protected.push_back(fe->expert);
+                int xs_pl = -1, xs_pe = -1;
+                const bool xs_named = sscanf(wi.source.c_str(), "blk.%d.ffn_gate_up_exps.%d.weight", &xs_pl, &xs_pe) == 2 ||
+                                      sscanf(wi.source.c_str(), "blk.%d.ffn_down_exps.%d.weight", &xs_pl, &xs_pe) == 2;
+                if (xs_named && xs_pl == l && xs_pe >= 0) xs_protected.push_back(xs_pe);
             }
             std::sort(xs_protected.begin(), xs_protected.end());
             xs_protected.erase(std::unique(xs_protected.begin(), xs_protected.end()), xs_protected.end());
