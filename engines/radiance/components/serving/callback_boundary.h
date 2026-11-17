@@ -54,8 +54,9 @@ template <class Signature> class Guarded;
 template <class R, class... Args> class Guarded<R(Args...)> final {
   public:
     Guarded() = default;
-    template <class F>
-        requires(std::is_invocable_r_v<R, F&, Args...> && !std::is_same_v<std::remove_cvref_t<F>, Guarded>)
+    template <class F,
+              std::enable_if_t<
+                  std::is_invocable_r_v<R, F&, Args...> && !std::is_same_v<std::decay_t<F>, Guarded>, int> = 0>
     Guarded(F&& function) : function_(std::forward<F>(function)) {}
 
     explicit operator bool() const noexcept {
@@ -94,8 +95,11 @@ template <class R, class... Args> class Guarded<R(Args...)> final {
 template <class... Args> class Guarded<void(Args...)> final {
   public:
     Guarded() = default;
-    template <class F>
-        requires(std::is_invocable_r_v<void, F&, Args...> && !std::is_same_v<std::remove_cvref_t<F>, Guarded>)
+    // A void hook must itself return void: std::is_invocable_r<void> would also
+    // accept a Status-returning hook and silently discard its error.
+    template <class F, std::enable_if_t<std::is_same_v<std::invoke_result_t<F&, Args...>, void> &&
+                                            !std::is_same_v<std::decay_t<F>, Guarded>,
+                                        int> = 0>
     Guarded(F&& function) : function_(std::forward<F>(function)) {}
 
     explicit operator bool() const noexcept {

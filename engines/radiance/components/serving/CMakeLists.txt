@@ -86,6 +86,10 @@ if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   add_test(NAME bc_callback_boundary_guard
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py")
+  # The shared header must compile at the HIP remote-MoE worker standard.
+  add_executable(bc_callback_boundary_cpp17_test EXCLUDE_FROM_ALL callback_boundary_cpp17_test.cpp)
+  set_target_properties(bc_callback_boundary_cpp17_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+  add_test(NAME bc_callback_boundary_cpp17_test COMMAND bc_callback_boundary_cpp17_test)
   add_executable(bc_callback_boundary_abi_test EXCLUDE_FROM_ALL callback_boundary_abi_test.cpp)
   target_link_libraries(bc_callback_boundary_abi_test PRIVATE ${CMAKE_DL_LIBS})
   target_link_options(bc_callback_boundary_abi_test PRIVATE -rdynamic)
