@@ -172,3 +172,48 @@ configs first (owner order 2026-11-14).
 ## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
 
 Acceptance gate added: the Python power transaction (PWR09) and its receipt lifecycle are part of supervisor acceptance (apply before the first measuring or serving process, restore after verified shutdown). bc-serve starts no processes today and the shell launcher remains the supervisor (it also does readiness waits, the canary, MTP replay verification, cleanup); recommended: a thin Python bigcherry serve calling the C++ resolver/validator, not a second resolver. The launcher stays until RSC02 reaches equivalence (RSC04).
+
+## RSC02 step 2 source inventory (2026-11-17)
+
+This is the *helper-bearing* path from start to running. Line references are to origin/main before step 2.
+Python and bash remain behavioural references until the S15/S16 acceptance and retirement gates.
+The 2026-11-17 owner directive supersedes the earlier thin-Python recommendation:
+the engine startup is a clean C++20 rewrite from RSC02/RSC11/RSC12 requirements
+and the manifest contract. The Python resource/supervisor code supplies only
+golden observable results and fault-injection scenarios, never C++ data shapes.
+Resource admission has typed C++ inputs/results, with JSON only at the manifest
+and parity-fixture boundaries.
+
+| Responsibility | Bash/Python location (origin/main) | Native ownership / remaining work |
+| --- | --- | --- |
+| Launch options; release-tag/build exclusivity | launch-flashnext-best.sh:142-259 | main.cpp:119-200 has named-config serve/start/stop/status. Release-selection migration is RSC04/S16. |
+| SDK/build checks, host diagnostics | launcher:384-396; lib/sdk-check.sh; Python host-check | sdk_check.cpp already runs in bc-serve. Diagnostic host-check integration is not step 2. |
+| Resolve layout, BDF/HIP ordinals, per-role card visibility | launcher:344-369; radiance_layout.py, radiance_inventory.py | serving.cpp:1050-1119,1403-1425 is one C++ inventory; session.cpp:923-975 maps engine ranks; step 2 maps helper roles without a second inventory. |
+| Model, kernels and helper build checks | launcher:384-393,466-483 | serving.cpp:1276-1300 derives kernels; session.cpp:948-965 verifies engine/build; step 2 checks helper binary/plugin and manifest identity. |
+| Resource derivation (RSC03): host expert pool, KV, tail and per-helper budgets | launcher:448-466; radiance_launch.py:28-175; radiance_resources.py:126-220 | manifest_writer.cpp:486-525 publishes actual owner map; serving.cpp:1082-1120,1180-1220,1252-1265 computes BDF/worker-footprint helper budgets and tail; v2/s8_rules.cpp:57-67,197-250 has native host-ledger arithmetic. Step 2 moves Python derive-launch host pool/KV admission to C++ using the *same* owner map and inventory. |
+| Resource inputs / host limits | radiance_launch.py:92-175; calibration.toml and radiance_resources.py | serving.cpp:971-983 provides MemAvailable/cgroup/pin; calibration.cpp provides measured target and margin; native code reads RAD v2 directory metadata only, counts unowned experts/embedding/staging/ngram and computes host pool, retained KV tier, helper budgets; refuse exceeded RAM/pin. |
+| Cached measured manifest, miss and refit | lib/plan-check.sh:99-130,203-263 | manifest_writer.cpp:404-555 builds/validates strict manifest; session.cpp:976-1084 already handles engine-only miss exit 10 and derived-pool retry exit 11. Step 2 measures with helpers resident, no fallback. |
+| Power apply/restore only after verified exits | launcher:286-307,412-436; supervisor.py:205-246,299-352 | **Step 4** supplies power_hook; step 2 declares/calls only the interface, no power writes or journal implementation. |
+| Ordered helper start, ready and shared segment | launcher:100-101,495-523,563-566,583-591; supervisor.py:152-163,255-266 | manifest_writer.cpp:255-267 and v2/manifest.cpp helper_view carry roles. Step 2 starts helper0...N with fresh readiness logs, bounded gate, per-role visibility and shared-segment check, before engine. |
+| RSS from measurement helpers (anonymous + shared once) | launcher:541-550,563-579; lib/plan-check.sh:246-263 | Step 2 reads /proc/PID/status RssAnon summed + RssShmem maximum, rounded up MiB, with helpers up during engine plan-memory. Reap all temporary children before serving. |
+| Engine-only measurement and serving lifecycle | launcher:563-633; supervisor.py:257-289 | session.cpp:1003-1055 measures engine and handles resident report; session.cpp:719-760 already starts manifest-only engine, awaits /health and validates start canary. Step 2 adds helper lifecycle and shared manifest. |
+| Child failure/stop safety | launcher:262-313,405-409; supervisor.py:292-355 | session.cpp:548-609,725-737 holds run lock, uses control socket, process groups, durable records and verified bounded termination. Step 2 extends unwinding to helpers and measurement. |
+| Loaded-idle gfxoff, MTP replay, live heat/policy, lab calibration | launcher:595-618,635-735; calibration_watchdog.py; supervisor.py:248-252 | Runtime guards/lab modes are RSC02 **step 3**, not step-2 acceptance. Live policy manifest support in live_policy*.cpp and manifest_writer.cpp is not the same as a runtime guard. |
+| Card-free acceptance / parity | tools/tests/serving/test_supervisor.py:175-275,371-392; campaign/test_rsc03_resources.py | session_fake_engine.cpp + session_test.cpp assert independently specified helper ordering, readiness and failure outcomes. Native ledger parity is checked against Python resource derivation for checked-in flashnext* and qwen27b* configs using recorded BDF/VRAM profiles from test_rsc11_inventory.py. |
+
+**Python derive-launch details.** radiance_launch.py:180-202 accepts the layout name, model, bc-serve, runtime home, heat,
+histogram, sessions, context and ngram placement; radiance_launch.py:28-175 asks
+bc-serve for the authoritative BDF/helper inventory and actual unmeasured
+owner map, reads only RAD v2 directory metadata, accounts model embedding,
+unowned expert bytes, max expert staging size and RAM-resident ngram.
+The pure radiance_resources.py:126-220 computes helper expert budgets as
+selected card VRAM less arch reserve and actual worker footprint, host expert
+pool including calibrated margin, retained host KV tier, and refuses
+MemAvailable/cgroup or AMD pin overcommit. It prints HOST_POOL_MIB/HOST_KV_MIB
+shell assignments plus a breakdown to stderr. The native start must use
+these *values and refusal rules*, not spawn Python or consume shell syntax.
+No resource fallback is permitted. Python stays in tests only until RSC11 S16.
+
+**Explicit non-claims:** step 2 is not GPU hardware acceptance, power/lease
+transactional completion, MTP/heat/lab guard completion or release/caller
+retirement. Those remain steps 3, 4, S15 and S16 respectively.

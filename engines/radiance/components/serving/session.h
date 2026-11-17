@@ -1,5 +1,5 @@
 #pragma once
-/* RSC02 step 1: the serving session owner, engine-only.
+/* RSC02: the serving session owner, dense and ordered-helper sessions.
  *
  * `bc-serve serve` is one foreground process that owns a whole serving session: it takes the session lock in the run
  * directory, makes the measured manifest (measuring first on a plan-cache miss), starts the engine from that manifest in
@@ -11,11 +11,10 @@
  *
  * A child gets its configuration from its manifest only: its environment is the owner's, with every bigcherry setting
  * variable (R3_*, RAD_*, BC_*, BIGCHERRY_*) and every device-visibility variable removed, plus the runtime's own
- * (RADIANCE_HOME and the device visibility of its cards). Helpers, power, the lab modes and the guards are later steps
- * (RSC02 steps 2-4); the reference for the behaviour is the Python supervisor (tools/bigcherry/serving/supervisor.py). */
+ * (RADIANCE_HOME and the device visibility of its cards). Power is an interface for RSC02 step 4; the lab modes and
+ * guards are step 3. The Python supervisor remains the behavioural reference through RSC11 S16. */
 #include <chrono>
 #include <filesystem>
-#include <functional>
 #include <map>
 #include <optional>
 #include <stdexcept>
@@ -26,13 +25,15 @@
 
 #include <nlohmann/json.hpp>
 
+#include "callback_boundary.h"
 #include "serving.h"
 
 namespace bc::serving::session {
 
 using Env = std::map<std::string, std::string>;
 
-/* --- children -------------------------------------------------------------------------------------------------- */
+/* --- children
+ * -------------------------------------------------------------------------------------------------- */
 
 /* The environment a child starts with: `inherited` (the owner's, NAME=VALUE) without any bigcherry setting or
  * device-visibility variable, then `runtime` on top. */
@@ -43,7 +44,7 @@ Env child_environment(char** inherited, const Env& runtime);
  * it durable there); when `recorded` throws, or this process dies first, the child exits without running anything and
  * the exception is rethrown. Throws, naming the program, when it cannot be started (exec failure included). */
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::filesystem::path& log,
-            const std::function<void(pid_t)>& recorded = {});
+            const Callback<void(pid_t)>& recorded = {});
 
 /* A child of this process: whether it is still running (reaps it when it has exited; its status goes to `status`). */
 bool running(pid_t pid, int* status = nullptr);
@@ -77,16 +78,28 @@ std::optional<std::string> canary(int port, const std::string& prompt, const std
 
 /* --- the session ------------------------------------------------------------------------------------------------- */
 
-/* What the plan step hands the owner: the engine's manifest and how to start it. */
+/* The role order is manifest order: helper0 makes the shared segment, helper1 attaches to it.
+ * Each helper starts with --manifest M --role helperN; device visibility is environment-only. */
+struct HelperStart {
+    std::string role;
+    std::vector<std::string> argv;
+    Env runtime;
+};
+
+/* What the plan step hands the owner: one manifest and all of its children. */
 struct EngineStart {
     std::filesystem::path manifest;
     std::vector<std::string> argv;   // the engine binary, --manifest M, --role engine; nothing else
+    std::vector<HelperStart> helpers; // ordered, prior to the engine
+    std::string handoff_shm;         // unique to this owner; non-empty only with helpers
     Env runtime;                     // RADIANCE_HOME, ROCR_VISIBLE_DEVICES, HIP_VISIBLE_DEVICES
     int port = 0;
     nlohmann::json summary = nlohmann::json::object();   // what `status` reports about the selection
 };
 
 struct Timing {
+    std::chrono::milliseconds helper_timeout{std::chrono::minutes(15)};
+    std::chrono::milliseconds helper_interval{std::chrono::milliseconds(200)};
     std::chrono::milliseconds health_timeout{std::chrono::minutes(15)};
     std::chrono::milliseconds health_interval{std::chrono::seconds(2)};
     std::chrono::milliseconds canary_timeout{std::chrono::minutes(2)};
@@ -100,34 +113,47 @@ struct Canary {
 };
 
 /* Wait up to the given time while the owner answers its control socket; false once a stop is requested. */
-using Wait = std::function<bool(std::chrono::milliseconds)>;
+using Wait = Callback<bool(std::chrono::milliseconds)>;
 
-/* What the owner gives its plan step: `wait`, and where to register a process the step starts (a measuring engine), so
- * the owner records it and, if the step cannot verify its exit, stops it itself and never reports the session stopped
- * while it lives. */
+/* What the owner gives its plan step: `wait`, and where to register a process the step starts (a measuring
+ * engine), so the owner records it and, if the step cannot verify its exit, stops it itself and never reports
+ * the session stopped while it lives. */
 struct Hooks {
     Wait wait;
-    std::function<void(const std::string& role, pid_t pid, const std::filesystem::path& log)> started;
-    std::function<void(pid_t pid)> ended;   // the step verified this process's exit
+    Callback<void(const std::string& role, pid_t pid, const std::filesystem::path& log)> started;
+    Callback<void(pid_t pid)> ended;                     // the step verified this process's exit
+    Callback<void(const std::string&)> selected_segment; // journal a unique helper segment before measuring
 };
 
-/* The plan step refused or could not make the manifest (the session ends with exit 97, nothing started for serving). */
+/* The plan step refused or could not make the manifest (the session ends with exit 97, nothing started for
+ * serving). */
 struct PlanFailed : std::runtime_error {
     using std::runtime_error::runtime_error;
 };
 
+/* Step 4 power transaction boundary. Step 2 never writes device settings.
+ * Both operations are optional as a pair: apply before measuring and restore only AFTER every child exited,
+ * including a partially failed apply. Step 4 supplies the journaled implementation. */
+struct PowerHook {
+    // Compatible directly with step 4 SessionPower::begin()/finish(): both return v2::Status.
+    // A returned failure must be observed, not discarded through a void callback.
+    Callback<v2::Status()> apply;
+    Callback<v2::Status()> restore;
+};
+
 struct Session {
+    PowerHook power_hook;
     std::filesystem::path run_dir;
     Timing timing;
     Canary canary;
-    // The plan step: runs with the session lock held, before any serving process starts (it may run measuring starts
-    // of its own, registered through the hooks and stopped before it returns). Throws to refuse.
-    std::function<EngineStart(const std::filesystem::path& run_dir, const Hooks& hooks)> plan;
+    // The plan step: runs with the session lock held, before any serving process starts (it may run measuring
+    // starts of its own, registered through the hooks and stopped before it returns). Throws to refuse.
+    Callback<EngineStart(const std::filesystem::path& run_dir, const Hooks& hooks)> plan;
 };
 
-/* The owner, in the foreground: 0 after a requested stop with every child exited; non-zero after a refusal, a failed
- * start, a child's exit while serving, or a child that could not be verified to exit. The session record
- * (run_dir/session.json) says which, with every event. */
+/* The owner, in the foreground: 0 after a requested stop with every child exited; non-zero after a refusal, a
+ * failed start, a child's exit while serving, or a child that could not be verified to exit. The session
+ * record (run_dir/session.json) says which, with every event. */
 int serve(const Session& session);
 
 /* `serve` detached: re-executes `self_argv` (this bc-serve with `serve` and its options) in a new session, its output
@@ -148,25 +174,25 @@ struct ManifestRun {
     int exit = 0;
     std::string out, err;
 };
-/* Runs this bc-serve (`argv[0]` is its path) to completion and returns its exit and output. Injectable for tests. */
-using ManifestRunner = std::function<ManifestRun(const std::vector<std::string>& argv)>;
-/* Runs a bc-serve to completion, waiting through `hooks.wait` (the owner keeps answering its socket; a stop request
- * ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it cannot verify
- * leaves the child the owner's to stop). */
+/* Runs this bc-serve (`argv[0]` is its path) to completion and returns its exit and output. Injectable for
+ * tests. */
+using ManifestRunner = Callback<ManifestRun(const std::vector<std::string>& argv)>;
+/* Runs a bc-serve to completion, waiting through `hooks.wait` (the owner keeps answering its socket; a stop
+ * request ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it
+ * cannot verify leaves the child the owner's to stop). */
 ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks = {});
 
 struct EnginePlanInputs {
-    Options options;                       // the resolver's inputs: site, profile, configs, layouts, model root, --set
-    std::filesystem::path self;            // this bc-serve (writes the manifests)
-    std::filesystem::path engine_binary;   // empty: <radiance_home>/../bin/radiance
-    ManifestRunner runner;                 // empty: run_to_completion with the owner's child environment
+    Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
+    std::filesystem::path self; // this bc-serve (writes the manifests)
+    std::filesystem::path engine_binary; // empty: <radiance_home>/../bin/radiance
+    std::filesystem::path helper_binary; // empty: <radiance_home>/helpers/r3_moe_worker
+    ManifestRunner runner;               // empty: run_to_completion with the owner's child environment
 };
 
-/* The engine-only plan: resolve the selection (refused when it has helpers or is a layout with server-args, which only
- * the bash launcher understands), then ask bc-serve for the measured manifest of exactly that configuration, measuring
- * it first on a cache miss (exit 10: the engine alone, --plan-memory against the unmeasured manifest) and once more with
- * the derived host pool when bc-serve asks for one (exit 11). The same plan-extra as the bash launcher's engine-only
- * start, so the two share the plan cache. */
+/* Resolve a config then publish its measured manifest. On cache miss (exit 10) bring helpers up sequentially
+ * against the unmeasured manifest, measure with --plan-memory and record helper RSS. On exit 11 adjust the
+ * derived pool (bounded retries). Python and the launcher remain reference only until RSC11 S16. */
 EngineStart plan_engine_only(const EnginePlanInputs& inputs, const std::filesystem::path& run_dir, const Hooks& hooks);
 
 } // namespace bc::serving::session

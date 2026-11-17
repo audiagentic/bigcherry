@@ -1,10 +1,13 @@
 #include "session.h"
 
 #include "config_loader.h"
+#include "manifest_writer.h"
+#include "resources.h"
 
 #include <algorithm>
 #include <cerrno>
 #include <csignal>
+#include <cstdint>
 #include <cstring>
 #include <ctime>
 #include <fstream>
@@ -19,11 +22,12 @@
 #include <netinet/in.h>
 #include <poll.h>
 #include <sys/file.h>
+#include <sys/mman.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
-#include <sys/un.h>
 #include <sys/syscall.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -253,23 +257,39 @@ struct Gate {
     void close_write() { if (fd[1] >= 0) ::close(fd[1]); fd[1] = -1; }
 };
 
-// Record a just-forked child through `recorded`, then let it run; when recording fails, close the gate (the child exits
-// without exec), reap it and rethrow.
-void record_then_release(Gate& gate, pid_t pid, const std::function<void(pid_t)>& recorded) {
+// Every injected callback returns a typed result. The legacy plan-step throwing
+// API converts errors only after the guarded invocation (never at a raw call).
+void require_callback(v2::Status status, std::string_view origin) {
+    if (status)
+        throw PlanFailed(std::string(origin) + ": " + status->message);
+}
+
+template <class T> T require_callback(v2::Result<T> result, std::string_view origin) {
+    if (!result)
+        throw PlanFailed(std::string(origin) + ": " + result.error().message);
+    return std::move(result.value());
+}
+
+// Record a just-forked child through `recorded`, then let it run; when recording fails, close the gate (the
+// child exits without exec), reap it and rethrow.
+void record_then_release(Gate& gate, pid_t pid, const Callback<void(pid_t)>& recorded) {
     gate.parent_side();
     try {
-        if (recorded) recorded(pid);
+        if (recorded)
+            require_callback(recorded.invoke(pid), "child registration");
     } catch (...) {
         gate.close_write();
         int st = 0;
-        while (::waitpid(pid, &st, 0) < 0 && errno == EINTR) {}
+        while (::waitpid(pid, &st, 0) < 0 && errno == EINTR) {
+        }
         throw;
     }
     gate.release();
 }
 
 bool group_gone(pid_t pgid) {
-    if (::kill(-pgid, 0) != 0 && errno == ESRCH) return true;
+    if (::kill(-pgid, 0) != 0 && errno == ESRCH)
+        return true;
     return !group_has_live_member(pgid);
 }
 
@@ -287,16 +307,19 @@ Env child_environment(char** inherited, const Env& runtime) {
     for (char** e = inherited; e && *e; ++e) {
         const std::string kv(*e);
         const size_t eq = kv.find('=');
-        if (eq == std::string::npos || eq == 0) continue;
+        if (eq == std::string::npos || eq == 0)
+            continue;
         const std::string name = kv.substr(0, eq);
-        if (!stripped(name)) env[name] = kv.substr(eq + 1);
+        if (!stripped(name))
+            env[name] = kv.substr(eq + 1);
     }
-    for (const auto& [k, v] : runtime) env[k] = v;
+    for (const auto& [k, v] : runtime)
+        env[k] = v;
     return env;
 }
 
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
-            const std::function<void(pid_t)>& recorded) {
+            const Callback<void(pid_t)>& recorded) {
     if (argv.empty() || argv[0].empty()) throw std::runtime_error("spawn: an empty command");
     std::vector<std::string> envs;
     for (const auto& [k, v] : env) envs.push_back(k + "=" + v);
@@ -476,6 +499,21 @@ std::optional<std::string> canary(int port, const std::string& prompt, const std
 
 namespace {
 
+void require_segment(const std::string& name); // measuring/serving readiness check
+
+enum class HelperReadiness : std::uint8_t { pending, ready };
+
+HelperReadiness read_helper_readiness(const fs::path& log) {
+    std::ifstream input(log);
+    for (std::string line; std::getline(input, line);) {
+        if (line.starts_with("r3_moe_worker: ready ") ||
+            line.starts_with("r3_moe_worker: waiting for engine runtime expert maps")) {
+            return HelperReadiness::ready;
+        }
+    }
+    return HelperReadiness::pending;
+}
+
 class Owner {
 public:
     explicit Owner(const Session& s) : s_(s) {}
@@ -525,7 +563,8 @@ public:
                    {"errors", Json::array()}};
         event("created");
         if (save_failed_) {
-            std::cerr << "bc-serve: no session starts without its record (" << (s_.run_dir / "session.json").string() << ")\n";
+            std::cerr << "bc-serve: no session starts without its record ("
+                      << (s_.run_dir / "session.json").string() << ")\n";
             return 1;
         }
         listen_socket();
@@ -533,28 +572,50 @@ public:
         struct sigaction sa{};
         sa.sa_handler = on_signal;
         sigemptyset(&sa.sa_mask);
-        for (int sig : {SIGINT, SIGTERM, SIGHUP}) ::sigaction(sig, &sa, nullptr);
+        for (int sig : {SIGINT, SIGTERM, SIGHUP})
+            ::sigaction(sig, &sa, nullptr);
         ::signal(SIGPIPE, SIG_IGN);
         g_signal = 0;
 
         int code = 0;
         std::vector<std::string> failures;
         try {
+            if (bool(s_.power_hook.apply) != bool(s_.power_hook.restore))
+                throw PlanFailed("power_hook: apply and restore must both be provided");
+            // Step 4 provides the actual journaled transaction; this is only its lifecycle boundary.
+            if (s_.power_hook.apply) {
+                power_attempted_ = true; // restore even if apply partially writes before throwing
+                require_callback(s_.power_hook.apply.invoke(), "power_hook.apply");
+                event("power_applied");
+            }
             event("planning");
             Hooks hooks;
             hooks.wait = [this](std::chrono::milliseconds d) { return service(d); };
-            hooks.started = [this](const std::string& role, pid_t pid, const fs::path& log) { track(role, pid, log); };
+            hooks.started = [this](const std::string& role, pid_t pid, const fs::path& log) {
+                track(role, pid, log);
+            };
             hooks.ended = [this](pid_t pid) { untrack(pid); };
-            plan_ = s_.plan(s_.run_dir, hooks);
+            hooks.selected_segment = [this](const std::string& name) {
+                if (name.rfind("/r3-serve-", 0) != 0)
+                    throw PlanFailed("refusing to own a shared segment without a unique session name");
+                handoff_shm_ = name;
+                record_["handoff_shm"] = name; // journal name even if the planner fails after helpers start
+                event("segment_selected");
+            };
+            plan_ = require_callback(s_.plan.invoke(s_.run_dir, hooks), "plan");
             record_["manifest"] = plan_.manifest.string();
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
             event("planned");
-            if (stop_requested()) throw Stop{};
+            if (stop_requested())
+                throw Stop{};
+            start_helpers();
             start_engine();
-            if (!wait_health()) throw Stop{};
+            if (!wait_health())
+                throw Stop{};
             event("healthy");
-            if (const auto why = canary(plan_.port, s_.canary.prompt, s_.canary.expect, s_.timing.canary_timeout)) {
+            if (const auto why =
+                    canary(plan_.port, s_.canary.prompt, s_.canary.expect, s_.timing.canary_timeout)) {
                 failures.push_back("start canary failed: the engine is up but " + *why);
                 code = 96;
                 throw Failed{};
@@ -572,12 +633,19 @@ public:
         } catch (const Stop&) {
             event("stop_requested", {{"by", stop_reason()}});
         } catch (const Failed&) {
+            if (code == 0)
+                code = 1; // an explicit failure never looks successful
         } catch (const PlanFailed& e) {
             failures.push_back(e.what());
             code = 97;
         } catch (const std::exception& e) {
             failures.push_back(e.what());
-            if (code == 0) code = 1;
+            if (code == 0)
+                code = 1;
+        } catch (...) {
+            failures.push_back("owner: unexpected non-standard exception");
+            if (code == 0)
+                code = 1;
         }
         // Stop every child, the engine first, each bounded; a survivor is never reported stopped.
         bool exited = true;
@@ -586,32 +654,81 @@ public:
             for (auto it = children_.rbegin(); it != children_.rend(); ++it) {
                 if (!stop_child(it->pid, SIGINT, s_.timing.stop_grace)) {
                     exited = false;
-                    failures.push_back(it->role + " (pid " + std::to_string(it->pid) +
-                                       ") or a process of its group is still alive after SIGKILL; not reporting stopped "
-                                       "while it holds the cards");
+                    failures.push_back(
+                        it->role + " (pid " + std::to_string(it->pid) +
+                        ") or a process of its group is still alive after SIGKILL; not reporting stopped "
+                        "while it holds the cards");
                 } else {
-                    for (auto& p : record_["processes"]) if (p.value("pid", 0) == it->pid) p["exited"] = true;
+                    for (auto& p : record_["processes"])
+                        if (p.value("pid", 0) == it->pid)
+                            p["exited"] = true;
                 }
             }
         }
-        for (const auto& f : failures) record_["errors"].push_back(f);
-        const std::string final_state = !exited ? "exit_unverified" : (failures.empty() ? "stopped" : "failed");
-        event(final_state);
-        if (!exited) code = 3;
-        else if (!failures.empty() && code == 0) code = 1;
-        for (const auto& f : failures) std::cerr << "bc-serve: " << f << '\n';
-        reply_stop_clients(final_state);
+        // Helpers use a cryptographically generated, per-run POSIX segment identity. On verified
+        // exit (including a killed creator) the owner can retire it; it must never unlink a shared
+        // name while any child or descendant may still map it.
+        if (exited && !handoff_shm_.empty()) {
+            if (::shm_unlink(handoff_shm_.c_str()) != 0 && errno != ENOENT)
+                failures.push_back("cannot retire this session's shared segment " + handoff_shm_ + ": " +
+                                   errno_text());
+            else
+                event("segment_retired");
+        }
+        // Never restore power if a process or descendant of any tracked group may still hold a card.
+        if (exited && power_attempted_) {
+            const auto restored = s_.power_hook.restore.invoke();
+            if (restored)
+                failures.push_back("power_hook restore failed; keep journal: " + restored->message);
+            else
+                event("power_restored");
+        }
+        // A failed intermediate record write is a session failure even if the hardware
+        // and all children were safely stopped; the durable history cannot be trusted.
+        if (save_failed_)
+            failures.push_back("session record persistence failed; refusing to claim a clean stop");
+        for (const auto& f : failures)
+            record_["errors"].push_back(f);
+        std::string final_state;
+        if (!exited)
+            final_state = "exit_unverified";
+        else if (failures.empty())
+            final_state = "stopped";
+        else
+            final_state = "failed";
+        const bool terminal_durable = event(final_state);
+        if (!terminal_durable) {
+            // The on-disk record may still say "running". Do not present the in-memory
+            // stopped state as a successful durable terminal record to any client.
+            final_state = "failed";
+            record_["state"] = final_state;
+            record_["errors"].push_back("terminal session state could not be persisted");
+            std::cerr << "bc-serve: terminal session state could not be persisted\n";
+        }
+        if (!exited)
+            code = 3;
+        else if ((!terminal_durable || !failures.empty()) && code == 0)
+            code = 1;
+        for (const auto& f : failures)
+            std::cerr << "bc-serve: " << f << '\n';
+        reply_stop_clients(final_state, terminal_durable);
         return code;
     }
 
 private:
-    struct Stop {};
-    struct Failed {};
-    struct Child { std::string role; pid_t pid; fs::path log; };
+  struct Stop : std::exception {};
+  struct Failed : std::exception {};
+  struct Child {
+      std::string role;
+      pid_t pid;
+      fs::path log;
+  };
 
     const Session& s_;
     int lock_ = -1, listen_ = -1;
     bool stop_ = false;
+    bool power_attempted_ = false;
+    std::string handoff_shm_;
     std::vector<int> stop_clients_;
     std::vector<Child> children_;
     EngineStart plan_;
@@ -625,6 +742,11 @@ private:
             return true;
         } catch (const std::exception& e) {
             if (!save_failed_) std::cerr << "bc-serve: the session record cannot be written: " << e.what() << '\n';
+            save_failed_ = true;
+            return false;
+        } catch (...) {
+            if (!save_failed_)
+                std::cerr << "bc-serve: the session record write threw an unknown exception\n";
             save_failed_ = true;
             return false;
         }
@@ -651,17 +773,18 @@ private:
         save();
     }
 
-    void event(const std::string& kind, const Json& detail = Json::object()) {
+    bool event(const std::string& kind, const Json& detail = Json::object()) {
         Json e = {{"at", utc_now()}, {"kind", kind}};
         for (auto it = detail.begin(); it != detail.end(); ++it) e[it.key()] = it.value();
         record_["events"].push_back(e);
         record_["state"] = kind;
-        save();
+        return save();
     }
 
     bool stop_requested() const { return stop_ || g_signal != 0; }
     std::string stop_reason() const {
-        if (g_signal) return std::string("signal ") + std::to_string(int(g_signal));
+        if (g_signal != 0)
+            return std::string("signal ") + std::to_string(int(g_signal));
         return stop_ ? "control socket" : "unknown";
     }
 
@@ -706,14 +829,55 @@ private:
         }
     }
 
-    void reply_stop_clients(const std::string& state) {
+    void reply_stop_clients(const std::string& state, bool terminal_durable) {
         for (int fd : stop_clients_) {
             Json reply = record_;
-            reply["ok"] = state == "stopped";
+            reply["ok"] = terminal_durable && !save_failed_ && state == "stopped";
+            if (!terminal_durable) {
+                reply["state"] = "failed";
+                reply["durable"] = false;
+                reply["error"] = "terminal session state could not be persisted";
+            }
             write_all(fd, reply.dump() + "\n");
             ::close(fd);
         }
         stop_clients_.clear();
+    }
+
+    void start_helpers() {
+        // Fresh readiness log per launch: measuring-start output must never be mistaken for current
+        // readiness.
+        for (const auto& h : plan_.helpers) {
+            const fs::path log = s_.run_dir / (h.role + "-" + stamp() + ".log");
+            {
+                std::ofstream fresh(log, std::ios::trunc);
+                if (!fresh)
+                    throw std::runtime_error(h.role + ": cannot create readiness log " + log.string());
+            }
+            const pid_t pid = spawn(h.argv, child_environment(environ, h.runtime), log,
+                                    [&](pid_t p) { track(h.role, p, log); });
+            const auto deadline = Clock::now() + s_.timing.helper_timeout;
+            bool ready = false;
+            while (Clock::now() < deadline) {
+                if (const auto gone = exited_child())
+                    throw std::runtime_error(h.role + ": helper set lost a child before readiness: " + *gone);
+                ready = read_helper_readiness(log) == HelperReadiness::ready;
+                if (ready)
+                    break;
+                if (!service(s_.timing.helper_interval))
+                    throw Stop{};
+            }
+            if (!ready)
+                throw std::runtime_error(h.role + " not ready within " +
+                                         std::to_string(s_.timing.helper_timeout.count() / 1000) + "s; see " +
+                                         log.string());
+            // A ready line from a process that just exited does not satisfy the gate.
+            if (const auto gone = exited_child())
+                throw std::runtime_error(h.role + ": child exited after reporting ready: " + *gone);
+            event("ready", {{"role", h.role}, {"pid", pid}});
+        }
+        if (!plan_.helpers.empty())
+            require_segment(plan_.handoff_shm);
     }
 
     void start_engine() {
@@ -737,15 +901,20 @@ private:
     bool wait_health() {
         const auto deadline = Clock::now() + s_.timing.health_timeout;
         while (Clock::now() < deadline) {
-            if (const auto reply = http(plan_.port, "GET", "/health", "", std::min(s_.timing.health_interval, 5000ms)))
-                if (reply->status >= 200 && reply->status <= 299) return true;
             if (const auto gone = exited_child())
-                throw std::runtime_error("the engine did not come up: " + *gone);
+                throw std::runtime_error("a child exited during health gate: " + *gone);
+            if (const auto reply =
+                    http(plan_.port, "GET", "/health", "", std::min(s_.timing.health_interval, 5000ms)))
+                if (reply->status >= 200 && reply->status <= 299) {
+                    if (const auto gone = exited_child())
+                        throw std::runtime_error("a child exited during health gate: " + *gone);
+                    return true;
+                }
             if (!service(s_.timing.health_interval)) return false;
         }
         throw std::runtime_error("the engine did not answer /health within " +
                                  std::to_string(s_.timing.health_timeout.count() / 1000) + " s; log " +
-                                 children_.front().log.string());
+                                 children_.back().log.string());
     }
 };
 
@@ -821,7 +990,8 @@ int start_detached(const std::vector<std::string>& self_argv, const fs::path& ru
     return 1;
 }
 
-/* --- the engine-only plan step --------------------------------------------------------------------------------------- */
+/* --- the engine-only plan step
+ * --------------------------------------------------------------------------------------- */
 
 ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks) {
     const Wait& wait = hooks.wait;
@@ -832,63 +1002,97 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
     const pid_t pid = [&] {
         int o = ::open(out.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
         int e = ::open(err.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0600);
-        if (o < 0 || e < 0) throw std::runtime_error("cannot create bc-serve output files in " + dir.string());
+        if (o < 0 || e < 0)
+            throw std::runtime_error("cannot create bc-serve output files in " + dir.string());
         std::vector<std::string> envs;
-        for (const auto& [k, v] : env) envs.push_back(k + "=" + v);
+        for (const auto& [k, v] : env) {
+            std::string value = k;
+            value += '=';
+            value += v;
+            envs.push_back(std::move(value));
+        }
         std::vector<char*> cargv, cenv;
-        for (const auto& a : argv) cargv.push_back(const_cast<char*>(a.c_str()));
+        for (const auto& a : argv)
+            cargv.push_back(const_cast<char*>(a.c_str()));
         cargv.push_back(nullptr);
-        for (const auto& s : envs) cenv.push_back(const_cast<char*>(s.c_str()));
+        for (const auto& s : envs)
+            cenv.push_back(const_cast<char*>(s.c_str()));
         cenv.push_back(nullptr);
         Gate gate;
         const pid_t p = ::fork();
         if (p == 0) {
-            ::setpgid(0, 0);   // its own group: stop_child signals the group
-            for (int s : {SIGINT, SIGTERM, SIGHUP, SIGPIPE}) ::signal(s, SIG_DFL);
+            ::setpgid(0, 0); // its own group: stop_child signals the group
+            for (int s : {SIGINT, SIGTERM, SIGHUP, SIGPIPE})
+                if (::signal(s, SIG_DFL) == SIG_ERR)
+                    ::_exit(126);
             const int in = ::open("/dev/null", O_RDONLY);
-            if (in >= 0) ::dup2(in, 0);
-            ::dup2(o, 1);
-            ::dup2(e, 2);
+            if (in >= 0 && ::dup2(in, STDIN_FILENO) < 0)
+                ::_exit(126);
+            if (::dup2(o, STDOUT_FILENO) < 0 || ::dup2(e, STDERR_FILENO) < 0)
+                ::_exit(126);
             cloexec_above_stderr();
-            if (!gate.wait_in_child()) ::_exit(126);   // never recorded: run nothing
+            if (!gate.wait_in_child())
+                ::_exit(126); // never recorded: run nothing
             ::execve(cargv[0], cargv.data(), cenv.data());
             ::_exit(127);
         }
         ::close(o);
         ::close(e);
-        if (p < 0) throw std::runtime_error("fork: " + errno_text());
-        ::setpgid(p, p);   // in both, so the group exists before any stop signals it
-        // registered with the owner before it runs (waited for through the owner, whose control socket stays answered):
-        // a writer whose exit is not verified here stays the owner's to stop, and the session is never reported stopped
-        // while it lives
-        record_then_release(gate, p, [&](pid_t q) { if (hooks.started) hooks.started("manifest writer", q, out); });
+        if (p < 0)
+            throw std::runtime_error("fork: " + errno_text());
+        ::setpgid(p, p); // in both, so the group exists before any stop signals it
+        // registered with the owner before it runs (waited for through the owner, whose control socket stays
+        // answered): a writer whose exit is not verified here stays the owner's to stop, and the session is
+        // never reported stopped while it lives
+        record_then_release(gate, p, [&](pid_t q) {
+            if (hooks.started)
+                require_callback(hooks.started.invoke("manifest writer", q, out), "hooks.started");
+        });
         return p;
     }();
+    bool end_notified = false;
+    auto notify_ended = [&] {
+        if (hooks.ended && !end_notified) {
+            end_notified = true; // an exception must not trigger a duplicate notification
+            require_callback(hooks.ended.invoke(pid), "hooks.ended");
+        }
+    };
     auto finish = [&](bool exited) {
         std::error_code ec;
         fs::remove(out, ec);
         fs::remove(err, ec);
-        if (!exited) throw std::runtime_error("plan: the manifest writer (pid " + std::to_string(pid) +
-                                              ") is still alive after SIGKILL");
-        if (hooks.ended) hooks.ended(pid);
+        if (!exited)
+            throw std::runtime_error("plan: the manifest writer (pid " + std::to_string(pid) +
+                                     ") is still alive after SIGKILL");
+        notify_ended();
     };
     int st = 0;
     try {
         while (running(pid, &st)) {
-            if (wait && !wait(100ms)) {
+            if (wait && !require_callback(wait.invoke(100ms), "hooks.wait")) {
                 finish(stop_child(pid, SIGTERM, 10s));
                 throw PlanFailed("plan: stopped while bc-serve wrote a manifest");
             }
-            if (!wait) std::this_thread::sleep_for(20ms);
+            if (!wait)
+                std::this_thread::sleep_for(20ms);
         }
-    } catch (const PlanFailed&) {
-        throw;
     } catch (...) {
-        if (stop_child(pid, SIGTERM, 10s) && hooks.ended) hooks.ended(pid);
-        throw;
+        // Includes the typed failure of an injected wait or exit notification.
+        // Reap first; never let notification errors prevent child cleanup.
+        const auto original = std::current_exception();
+        if (stop_child(pid, SIGTERM, 10s)) {
+            try {
+                notify_ended();
+            } catch (const PlanFailed& secondary) {
+                std::cerr << "manifest writer: secondary exit notification failed after reap: "
+                          << secondary.what() << '\n';
+            }
+        }
+        std::rethrow_exception(original);
     }
-    if (!stop_child(pid, SIGKILL, 10s)) finish(false);   // the writer exited; nothing of its group may stay
-    if (hooks.ended) hooks.ended(pid);
+    if (!stop_child(pid, SIGKILL, 10s))
+        finish(false); // all descendants verified gone
+    notify_ended();
     ManifestRun r;
     r.exit = WIFEXITED(st) ? WEXITSTATUS(st) : 128 + (WIFSIGNALED(st) ? WTERMSIG(st) : 0);
     r.out = read_file(out);
@@ -914,7 +1118,176 @@ std::vector<std::string> resolver_args(const Options& o) {
     return a;
 }
 
-std::string tail_text(const std::string& s, size_t n = 2000) { return s.size() > n ? s.substr(s.size() - n) : s; }
+std::string tail_text(const std::string& s, size_t n = 2000) {
+    return s.size() > n ? s.substr(s.size() - n) : s;
+}
+
+// One BDF-to-role assignment, as established by the existing C++ resolver. No implicit device selection.
+// Roles are ordered; the first helper creates the shared segment and later helpers attach.
+struct HelperSelection {
+    const Json& processes;
+    const Json& facts;
+};
+
+std::vector<HelperStart> helper_starts(HelperSelection selected, const fs::path& home,
+                                       const fs::path& helper_binary, const fs::path& manifest,
+                                       bool measuring) {
+    const Json& processes = selected.processes;
+    const Json& facts = selected.facts;
+    std::vector<HelperStart> starts;
+    for (size_t i = 0; i < processes.size(); ++i) {
+        const Json& worker = processes.at(i);
+        const std::string bdf = worker.at("bdf");
+        const Json* detected = nullptr;
+        for (const Json& gpu : facts.at("gpus"))
+            if (gpu.at("bdf") == bdf)
+                detected = &gpu;
+        if (detected == nullptr || detected->at("hip_ordinal") != worker.at("hip_ordinal") ||
+            detected->at("arch") != worker.at("arch"))
+            throw PlanFailed("helper" + std::to_string(i) +
+                             ": BDF/ordinal/architecture changed since the resolver selected it");
+        HelperStart h;
+        h.role = "helper" + std::to_string(i);
+        h.argv = {helper_binary.string(), "--manifest", manifest.string(), "--role", h.role};
+        if (measuring)
+            h.argv.push_back("--measuring");
+        h.runtime = {{"RADIANCE_HOME", home.string()},
+                     {"ROCR_VISIBLE_DEVICES", std::to_string(worker.at("hip_ordinal").get<int>())},
+                     {"HIP_VISIBLE_DEVICES", "0"}};
+        starts.push_back(std::move(h));
+    }
+    return starts;
+}
+
+// A plan-cache miss must measure with the same helpers holding their memory as in the real start.
+// Each process is recorded before exec; an unverified exit remains on the owner's list.
+void require_segment(const std::string& name) {
+    if (name.empty())
+        return; // engine-only/fake session
+    const int raw = ::shm_open(name.c_str(), O_RDONLY | O_CLOEXEC, 0);
+    if (raw < 0)
+        throw PlanFailed("helpers reported ready but the shared segment " + name +
+                         " is absent: " + errno_text());
+    struct SharedDescriptor {
+        int fd;
+        ~SharedDescriptor() { ::close(fd); }
+    };
+    const SharedDescriptor segment{raw};
+    struct stat st{};
+    const bool valid = ::fstat(segment.fd, &st) == 0 && S_ISREG(st.st_mode) && st.st_size > 0;
+    if (!valid)
+        throw PlanFailed("helpers reported ready but " + name + " is not a sized shared segment");
+}
+
+void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::path& run_dir,
+                            const Hooks& hooks, std::vector<pid_t>* pids) {
+    for (const HelperStart& h : helpers) {
+        const fs::path log = run_dir / (h.role + "-measuring-" + stamp() + ".log");
+        {
+            std::ofstream fresh(log, std::ios::trunc);
+            if (!fresh)
+                throw PlanFailed("cannot create fresh helper measurement log " + log.string());
+        }
+        const pid_t pid = spawn(h.argv, child_environment(environ, h.runtime), log, [&](pid_t p) {
+            if (hooks.started)
+                require_callback(hooks.started.invoke(h.role + " measuring", p, log), "hooks.started");
+        });
+        pids->push_back(pid);
+        const auto deadline = Clock::now() + std::chrono::minutes(15);
+        bool ready = false;
+        while (Clock::now() < deadline) {
+            for (const pid_t p : *pids)
+                if (!running(p))
+                    throw PlanFailed(h.role +
+                                     ": measuring helper exited before the whole set was ready; log " +
+                                     log.string());
+            ready = read_helper_readiness(log) == HelperReadiness::ready;
+            if (ready)
+                break;
+            if (hooks.wait) {
+                if (!require_callback(hooks.wait.invoke(200ms), "hooks.wait"))
+                    throw PlanFailed(h.role + ": measurement stopped during helper readiness");
+            } else {
+                std::this_thread::sleep_for(200ms);
+            }
+        }
+        if (!ready || !running(pid))
+            throw PlanFailed(h.role + ": measuring helper not ready/alive; see " + log.string());
+    }
+}
+
+uint64_t helper_resident_mib(const std::vector<pid_t>& helpers) {
+    uint64_t anon = 0, shared = 0;
+    for (const pid_t pid : helpers) {
+        if (!running(pid))
+            throw PlanFailed("measuring helper exited before resident-memory sample");
+        std::ifstream status("/proc/" + std::to_string(pid) + "/status");
+        uint64_t a = 0, b = 0;
+        bool have_a = false, have_b = false;
+        for (std::string line; std::getline(status, line);) {
+            std::istringstream words(line);
+            std::string label;
+            uint64_t n;
+            if (words >> label >> n) {
+                if (label == "RssAnon:") {
+                    a = n;
+                    have_a = true;
+                }
+                if (label == "RssShmem:") {
+                    b = n;
+                    have_b = true;
+                }
+            }
+        }
+        if (!have_a || !have_b)
+            throw PlanFailed("cannot measure RssAnon/RssShmem of helper pid " + std::to_string(pid));
+        anon += a;
+        shared = std::max(shared, b);
+    }
+    return (anon + shared + 1023) / 1024; // kB -> MiB; shared segment counted once
+}
+
+void stop_measure_helpers(std::vector<pid_t>* helpers, const Hooks& hooks) {
+    bool all_exited = true;
+    std::optional<std::string> callback_failure;
+    for (auto it = helpers->rbegin(); it != helpers->rend(); ++it) {
+        // Continue reaping every group even if a notification hook fails.
+        if (stop_child(*it, SIGINT, 60s)) {
+            if (hooks.ended) {
+                const auto result = hooks.ended.invoke(*it);
+                if (result && !callback_failure)
+                    callback_failure = "hooks.ended: " + result->message;
+            }
+        } else {
+            all_exited = false; // the owner still tracks an unverified group
+        }
+    }
+    helpers->clear();
+    if (!all_exited)
+        throw PlanFailed("a measuring helper or descendant survived SIGKILL; not reporting stopped");
+    if (callback_failure)
+        throw PlanFailed(*callback_failure);
+}
+
+// A measuring start never transfers these process groups to a serving session.
+class MeasuringHelpers {
+  public:
+    explicit MeasuringHelpers(const Hooks& hooks) : hooks_(hooks) {}
+    MeasuringHelpers(const MeasuringHelpers&) = delete;
+    MeasuringHelpers& operator=(const MeasuringHelpers&) = delete;
+    ~MeasuringHelpers() noexcept {
+        try {
+            stop_measure_helpers(&pids, hooks_);
+        } catch (...) { // NOLINT(bugprone-empty-catch)
+            // An unverified group stays registered with the session owner.
+        }
+    }
+    void stop() { stop_measure_helpers(&pids, hooks_); }
+    std::vector<pid_t> pids;
+
+  private:
+    const Hooks& hooks_;
+};
 
 } // namespace
 
@@ -938,24 +1311,33 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     if (layouts.at("kind").value(name, "") != "config")
         throw PlanFailed("serve: " + name + " is a layout (" + layouts.at("source").value(name, "") +
                          "); bc-serve serves configs (engines/radiance/configs, --configs): convert it first (RSC12)");
-    if (!r.manifest.at("process_helpers").empty())
-        throw PlanFailed("serve: " + name + " has helper groups; helper sessions come with RSC02 step 2 (until then: the "
-                         "bash launcher)");
+    const Json& processes = r.manifest.at("process_helpers");
     const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
     const fs::path engine = in.engine_binary.empty() ? home.parent_path() / "bin" / "radiance" : in.engine_binary;
     if (::access(engine.c_str(), X_OK) != 0)
         throw PlanFailed("serve: the engine binary " + engine.string() + " is not executable (--engine-binary)");
+    const fs::path helper_binary =
+        in.helper_binary.empty() ? home / "helpers" / "r3_moe_worker" : in.helper_binary;
+    if (!processes.empty() && ::access(helper_binary.c_str(), X_OK) != 0)
+        throw PlanFailed("serve: helper executable " + helper_binary.string() + " is absent");
     // bc-serve from a build (<build>/radiance_home/bin/bc-serve) writes manifests the engine of the same build reads: the
     // plan key and the manifest reader are compiled into both, so an engine or runtime home from another build is refused.
     const fs::path own_home = in.self.parent_path().parent_path();
     const fs::path own_engine = own_home.parent_path() / "bin" / "radiance";
-    if (in.self.parent_path().filename() == "bin" && own_home.filename() == "radiance_home" && fs::exists(own_engine)) {
+    if (in.self.parent_path().filename() == "bin" && own_home.filename() == "radiance_home" &&
+        fs::exists(own_engine)) {
         if (fs::weakly_canonical(home) != fs::weakly_canonical(own_home))
-            throw PlanFailed("serve: engine.radiance_home " + home.string() + " is not this bc-serve's build (" +
-                             own_home.string() + "); run the bc-serve of the build that serves");
+            throw PlanFailed("serve: engine.radiance_home " + home.string() +
+                             " is not this bc-serve's build (" + own_home.string() +
+                             "); run the bc-serve of the build that serves");
         if (fs::weakly_canonical(engine) != fs::weakly_canonical(own_engine))
-            throw PlanFailed("serve: the engine " + engine.string() + " is not this bc-serve's build (" + own_engine.string() +
+            throw PlanFailed("serve: the engine " + engine.string() + " is not this bc-serve's build (" +
+                             own_engine.string() +
                              "); a manifest is read by the engine of the build that wrote it");
+        if (!processes.empty() && fs::weakly_canonical(helper_binary) !=
+                                      fs::weakly_canonical(own_home / "helpers" / "r3_moe_worker"))
+            throw PlanFailed("serve: helper binary " + helper_binary.string() +
+                             " must come from this bc-serve's build");
     }
 
     // Rank order is the resolver's card order; the process sees its cards as HIP devices 0..n-1.
@@ -964,16 +1346,24 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     for (size_t i = 0; i < cards.size(); ++i) {
         const Json* gpu = nullptr;
         for (const Json& g : facts.at("gpus"))
-            if (g.at("bdf") == cards[i]) gpu = &g;
-        if (!gpu) throw PlanFailed("serve: engine card " + cards[i].get<std::string>() + " is not in the inventory");
-        rocr += (i ? "," : "") + std::to_string(gpu->at("hip_ordinal").get<int64_t>());
-        hip += (i ? "," : "") + std::to_string(i);
+            if (g.at("bdf") == cards[i])
+                gpu = &g;
+        if (gpu == nullptr)
+            throw PlanFailed("serve: engine card " + cards[i].get<std::string>() +
+                             " is not in the inventory");
+        rocr += (i != 0 ? "," : "") + std::to_string(gpu->at("hip_ordinal").get<int64_t>());
+        hip += (i != 0 ? "," : "") + std::to_string(i);
     }
     EngineStart out;
     out.port = int(v.at("engine").at("port").get<int64_t>());
-    out.runtime = {{"RADIANCE_HOME", home.string()}, {"ROCR_VISIBLE_DEVICES", rocr}, {"HIP_VISIBLE_DEVICES", hip}};
-    out.summary = {{"config", name}, {"source", layouts.at("source").value(name, "")},
-                   {"model", v.at("engine").at("model")}, {"engine_cards", cards}, {"engine", engine.string()}};
+    out.runtime = {
+        {"RADIANCE_HOME", home.string()}, {"ROCR_VISIBLE_DEVICES", rocr}, {"HIP_VISIBLE_DEVICES", hip}};
+    out.summary = {{"config", name},
+                   {"source", layouts.at("source").value(name, "")},
+                   {"model", v.at("engine").at("model")},
+                   {"engine_cards", cards},
+                   {"engine", engine.string()},
+                   {"helper_cards", v.at("layout").at("helper_cards")}};
 
     const ManifestRunner runner = in.runner ? in.runner : [&hooks](const std::vector<std::string>& argv) {
         return run_to_completion(argv, child_environment(environ, {}), hooks);
@@ -985,85 +1375,160 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     // The bash launcher's engine-only plan-extra: the two share one plan cache.
     const std::vector<std::string> base = resolver_args(in.options);
     std::vector<std::string> extra_sets;
+    const std::string handoff = processes.empty() ? std::string() : "/r3-serve-" + new_instance_id();
+    if (!handoff.empty()) {
+        extra_sets.push_back("handoff.shm=" + handoff);
+        if (hooks.selected_segment)
+            require_callback(hooks.selected_segment.invoke(handoff), "hooks.selected_segment");
+    }
     auto write = [&](const fs::path& out_file, const std::vector<std::string>& more) {
         std::vector<std::string> argv = {in.self.string(), "--write-manifest", out_file.string(), "--power-profile", "stock"};
         argv.insert(argv.end(), more.begin(), more.end());
         argv.insert(argv.end(), base.begin(), base.end());
         for (const auto& s : extra_sets) argv.insert(argv.end(), {"--set", s});
-        return runner(argv);
+        return require_callback(runner.invoke(argv), "manifest runner");
     };
-    const std::vector<std::string> measured_args = {"--plan-cache", cache.string(), "--engine-binary", engine.string(),
-                                                    "--plan-extra", "budgets: default"};
+    if (!processes.empty()) {
+        const fs::path draft = run_dir / ("manifest-resources-" + id + ".json");
+        const ManifestRun unmeasured = write(draft, {"--unmeasured"});
+        if (unmeasured.exit != 0)
+            throw PlanFailed("resources: cannot write owner map from the selected build: " +
+                             tail_text(unmeasured.err));
+        const Json doc = Json::parse(read_file(draft), nullptr, false);
+        if (!doc.is_object() || !doc.contains("spec"))
+            throw PlanFailed("resources: missing unmeasured owner-map manifest");
+        const auto ledger_result =
+            resources::derive_launch({v, processes, facts, doc}, in.options.calibration_cache);
+        if (!ledger_result)
+            throw PlanFailed("resources: " + ledger_result.error().message);
+        const auto& ledger = ledger_result.value();
+        extra_sets.push_back("memory.host_pool_mib=" + std::to_string(ledger.host_pool_mib));
+        extra_sets.push_back("memory.host_kv_mib=" + std::to_string(ledger.host_kv_mib));
+        out.summary["resource_ledger"] = resources::to_json(ledger);
+        out.summary["derived_tail_budget_mib"] = v.at("memory").at("tail_budget_mib");
+        std::cerr << "resources: derived host pool " << ledger.host_pool_mib << " MiB, host KV "
+                  << ledger.host_kv_mib << " MiB (C++ RAD/BDF ledger)\n";
+        std::error_code ec;
+        fs::remove(draft, ec);
+    }
+    const std::vector<std::string> measured_args = {"--plan-cache",  cache.string(), "--engine-binary",
+                                                    engine.string(), "--plan-extra", "budgets: default"};
     int pool_changes = 0;
     for (int round = 0; round < 5; ++round) {
         std::error_code ec;
         fs::remove(manifest, ec);
         ManifestRun w = write(manifest, measured_args);
         if (w.exit == 10) {
-            // No measured plan for this configuration: measure it with the engine alone (it stops after its memory plan).
-            std::cerr << "plan: no measured plan for " << name << " (cache miss); measuring it first (about 1-2 minutes)\n";
-            const fs::path measuring = run_dir / ("manifest-measuring-" + id + "-" + std::to_string(round) + ".json");
+            // No measured plan for this configuration: measure it with the engine alone (it stops after its
+            // memory plan).
+            std::cerr << "plan: no measured plan for " << name
+                      << " (cache miss); measuring it first (about 1-2 minutes)\n";
+            const fs::path measuring =
+                run_dir / ("manifest-measuring-" + id + "-" + std::to_string(round) + ".json");
             const ManifestRun u = write(measuring, {"--unmeasured"});
-            if (u.exit != 0) throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
+            if (u.exit != 0)
+                throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
             const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
             fs::remove(plan, ec);
             fs::remove(ranks, ec);
-            const fs::path log = run_dir / ("engine-measure-" + id + "-" + std::to_string(round) + ".log");
-            const pid_t pid = spawn({engine.string(), "--manifest", measuring.string(), "--role", "engine",
-                                     "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
-                                    child_environment(environ, out.runtime), log,
-                                    // registered with the owner before it runs: should its exit not be verified here,
-                                    // the owner stops it and the session is never reported stopped while it lives
-                                    [&](pid_t p) { if (hooks.started) hooks.started("measuring engine", p, log); });
-            int st = 0;
-            const auto deadline = Clock::now() + std::chrono::minutes(30);
-            bool stopped_early = false;
-            try {
-                while (running(pid, &st)) {
-                    if (Clock::now() > deadline || !wait(200ms)) {
-                        stopped_early = true;
-                        break;
+            const auto helper_measuring =
+                helper_starts({processes, facts}, home, helper_binary, measuring, true);
+            MeasuringHelpers group(hooks);
+            {
+                launch_measure_helpers(helper_measuring, run_dir, hooks, &group.pids);
+                // Exactly what the bash launcher measures: anonymous RSS total plus shared RSS once.
+                const uint64_t measured_helpers_mib = helper_resident_mib(group.pids);
+                require_segment(handoff);
+                const fs::path log =
+                    run_dir / ("engine-measure-" + id + "-" + std::to_string(round) + ".log");
+                const pid_t pid =
+                    spawn({engine.string(), "--manifest", measuring.string(), "--role", "engine",
+                           "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
+                          child_environment(environ, out.runtime), log,
+                          // registered with the owner before it runs: should its exit not be verified here,
+                          // the owner stops it and the session is never reported stopped while it lives
+                          [&](pid_t p) {
+                              if (hooks.started)
+                                  require_callback(hooks.started.invoke("measuring engine", p, log),
+                                                   "hooks.started");
+                          });
+                int st = 0;
+                const auto deadline = Clock::now() + std::chrono::minutes(30);
+                bool stopped_early = false, helper_died = false;
+                std::string failed_role;
+                try {
+                    while (running(pid, &st)) {
+                        // The measuring engine can take minutes: refuse immediately if a helper
+                        // vanished after readiness, not just if it fails before the engine starts.
+                        for (size_t i = 0; i < group.pids.size(); ++i)
+                            if (!running(group.pids[i])) {
+                                stopped_early = helper_died = true;
+                                failed_role = "helper" + std::to_string(i);
+                                break;
+                            }
+                        if (stopped_early)
+                            break;
+                        if (Clock::now() > deadline || !require_callback(wait.invoke(200ms), "hooks.wait")) {
+                            stopped_early = true;
+                            break;
+                        }
                     }
+                } catch (...) {
+                    if (stop_child(pid, SIGINT, 60s) && hooks.ended)
+                        require_callback(hooks.ended.invoke(pid), "hooks.ended");
+                    throw;
                 }
-            } catch (...) {
-                if (stop_child(pid, SIGINT, 60s) && hooks.ended) hooks.ended(pid);
-                throw;
+                if (stopped_early) {
+                    if (!stop_child(pid, SIGINT, 60s))
+                        throw std::runtime_error("plan: the measuring engine (pid " + std::to_string(pid) +
+                                                 ") is still alive after SIGKILL");
+                    if (hooks.ended)
+                        require_callback(hooks.ended.invoke(pid), "hooks.ended");
+                    if (helper_died)
+                        throw PlanFailed("plan: " + failed_role +
+                                         " died during engine memory measurement; refusing this plan");
+                    throw PlanFailed("plan: the measuring start was stopped (a stop request or 30 min)");
+                }
+                // the engine exited by itself; anything it left in its group goes too
+                if (!stop_child(pid, SIGKILL, 10s))
+                    throw std::runtime_error(
+                        "plan: a process of the measuring engine's group is still alive after SIGKILL");
+                if (hooks.ended)
+                    require_callback(hooks.ended.invoke(pid), "hooks.ended");
+                if (!WIFEXITED(st) || WEXITSTATUS(st) != 0 || !fs::exists(plan) || fs::file_size(plan) == 0 ||
+                    !fs::exists(ranks) || fs::file_size(ranks) == 0)
+                    throw PlanFailed("plan: the measuring start failed; see " + log.string());
+                std::smatch m;
+                const std::string text = read_file(log);
+                static const std::regex took(
+                    R"(--plan-memory: wrote .*; engine start-up took ([0-9]+) MiB of MemAvailable;)");
+                std::string engine_mib;
+                for (auto it = std::sregex_iterator(text.begin(), text.end(), took);
+                     it != std::sregex_iterator(); ++it)
+                    engine_mib = (*it)[1];
+                if (engine_mib.empty())
+                    throw PlanFailed(
+                        "plan: the measuring start did not report the engine's resident host memory; see " +
+                        log.string());
+                group.stop();
+                std::vector<std::string> stored = measured_args;
+                stored.insert(stored.end(),
+                              {"--measured-plan", plan.string(), "--rank-demand", ranks.string(),
+                               "--helpers-resident-mib", std::to_string(measured_helpers_mib),
+                               "--engine-resident-mib", engine_mib});
+                fs::remove(manifest, ec);
+                w = write(manifest, stored);
             }
-            if (stopped_early) {
-                if (!stop_child(pid, SIGINT, 60s))
-                    throw std::runtime_error("plan: the measuring engine (pid " + std::to_string(pid) +
-                                             ") is still alive after SIGKILL");
-                if (hooks.ended) hooks.ended(pid);
-                throw PlanFailed("plan: the measuring start was stopped (a stop request or 30 min)");
-            }
-            // the engine exited by itself; anything it left in its group goes too
-            if (!stop_child(pid, SIGKILL, 10s))
-                throw std::runtime_error("plan: a process of the measuring engine's group is still alive after SIGKILL");
-            if (hooks.ended) hooks.ended(pid);
-            if (!WIFEXITED(st) || WEXITSTATUS(st) != 0 || !fs::exists(plan) || fs::file_size(plan) == 0 ||
-                !fs::exists(ranks) || fs::file_size(ranks) == 0)
-                throw PlanFailed("plan: the measuring start failed; see " + log.string());
-            std::smatch m;
-            const std::string text = read_file(log);
-            static const std::regex took(R"(--plan-memory: wrote .*; engine start-up took ([0-9]+) MiB of MemAvailable;)");
-            std::string engine_mib;
-            for (auto it = std::sregex_iterator(text.begin(), text.end(), took); it != std::sregex_iterator(); ++it)
-                engine_mib = (*it)[1];
-            if (engine_mib.empty())
-                throw PlanFailed("plan: the measuring start did not report the engine's resident host memory; see " +
-                                 log.string());
-            std::vector<std::string> stored = measured_args;
-            stored.insert(stored.end(), {"--measured-plan", plan.string(), "--rank-demand", ranks.string(),
-                                         "--helpers-resident-mib", "0", "--engine-resident-mib", engine_mib});
-            fs::remove(manifest, ec);
-            w = write(manifest, stored);
         }
         if (w.exit == 0) {
             out.manifest = manifest;
             out.argv = {engine.string(), "--manifest", manifest.string(), "--role", "engine"};
+            out.helpers = helper_starts({processes, facts}, home, helper_binary, manifest, false);
+            out.handoff_shm = handoff;
             std::smatch d;
             static const std::regex digest(R"(digest: ([0-9a-f]+))");
-            if (std::regex_search(w.out, d, digest)) out.summary["manifest_digest"] = d[1].str();
+            if (std::regex_search(w.out, d, digest))
+                out.summary["manifest_digest"] = d[1].str();
             return out;
         }
         if (w.exit == 11) {

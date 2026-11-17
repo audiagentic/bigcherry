@@ -1,0 +1,7 @@
+# RSC02: target only the rewritten resource files; legacy/vendored headers
+# are excluded by invocation and header filter. Checks deliberately omit format
+# cosmetics and high-noise style checks while retaining correctness/refusal checks.
+Checks: '-*,bugprone-*,cert-*,performance-*,readability-*,-readability-identifier-length,-readability-magic-numbers,-readability-function-cognitive-complexity,-readability-braces-around-statements,-readability-avoid-const-params-in-decls,-readability-isolate-declaration,-readability-else-after-return,-readability-simplify-boolean-expr,-readability-redundant-member-init,-readability-uppercase-literal-suffix,-readability-trailing-comma'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*/components/serving/(resources\\.h|resources\\.cpp|resources_parity_test\\.cpp)$'
+FormatStyle: file

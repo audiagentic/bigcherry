@@ -125,7 +125,7 @@ struct Container {
             if ((uint32_t)e.layer >= layers || e.enc >= hdr.enc_count || e.plane_first + e.n_planes > hdr.plane_count) return false;
             for (uint32_t p = 0; p < e.n_planes; ++p)
                 if (!range(planes[e.plane_first + p].offset, planes[e.plane_first + p].bytes)) return false;
-            expert[(size_t)e.layer * experts + (uint32_t)e.expert][e.slot] = &e;
+            expert[(size_t)e.layer * experts + (uint32_t)e.expert][static_cast<size_t>(e.slot)] = &e;
         }
         return layers != 0;
     }
@@ -134,7 +134,7 @@ struct Container {
         return expert[(size_t)layer * experts + exp][slot];
     }
     const RadEncoding* encoding(const RadFileEntry* e) const { return e ? &encs[e->enc] : nullptr; }
-    const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[e->plane_first + p]; }
+    const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[static_cast<size_t>(e->plane_first) + static_cast<size_t>(p)]; }
 };
 
 /* What selection reads from the helper's settings: the heat ranking, the placement, the shares, the R3_MOE_WORKER_BALANCE

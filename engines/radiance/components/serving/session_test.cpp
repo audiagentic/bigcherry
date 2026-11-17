@@ -14,13 +14,16 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <type_traits>
 
+#include <cerrno>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
-#include <fcntl.h>
-#include <sys/stat.h>
 
 #ifndef BC_FAKE_ENGINE
 #error "BC_FAKE_ENGINE must name the fake engine binary"
@@ -59,6 +62,7 @@ struct Case {
     fs::path run;
     int port = free_port();
     Json behaviour = Json::object();
+    int helpers = 0;
     ss::Session session;
 
     explicit Case(const std::string& name) : run(g_root / (std::to_string(++g_case) + "-" + name)) {
@@ -69,7 +73,7 @@ struct Case {
         session.timing.canary_timeout = 5s;
         session.timing.stop_grace = 1s;
         session.timing.poll = 20ms;
-        session.plan = [this](const fs::path& rd, const ss::Hooks&) {
+        session.plan = [this](const fs::path& rd, const ss::Hooks& hooks) {
             Json m = behaviour;
             m["port"] = port;
             const fs::path manifest = rd / "fake-manifest.json";
@@ -77,9 +81,28 @@ struct Case {
             ss::EngineStart s;
             s.manifest = manifest;
             s.argv = {BC_FAKE_ENGINE, "--manifest", manifest.string(), "--role", "engine"};
-            s.runtime = {{"RADIANCE_HOME", "/runtime"}, {"ROCR_VISIBLE_DEVICES", "3"}, {"HIP_VISIBLE_DEVICES", "0"}};
+            s.runtime = {
+                {"RADIANCE_HOME", "/runtime"}, {"ROCR_VISIBLE_DEVICES", "3"}, {"HIP_VISIBLE_DEVICES", "0"}};
             s.port = port;
             s.summary = {{"config", "fake"}};
+            if (m.contains("shm")) {
+                s.handoff_shm = m.at("shm").get<std::string>();
+                if (hooks.selected_segment) {
+                    const auto status = hooks.selected_segment.invoke(s.handoff_shm);
+                    if (status)
+                        throw ss::PlanFailed(status->message);
+                }
+            }
+            for (int i = 0; i < helpers; ++i) {
+                const std::string role = "helper" + std::to_string(i);
+                ss::HelperStart h;
+                h.role = role;
+                h.argv = {BC_FAKE_ENGINE, "--manifest", manifest.string(), "--role", role};
+                h.runtime = {{"RADIANCE_HOME", "/runtime"},
+                             {"ROCR_VISIBLE_DEVICES", std::to_string(6 + i)},
+                             {"HIP_VISIBLE_DEVICES", "0"}};
+                s.helpers.push_back(h);
+            }
             return s;
         };
     }
@@ -126,7 +149,7 @@ int exit_code(pid_t pid, std::chrono::milliseconds limit = 15s) {
     }
     ::kill(pid, SIGKILL);
     ::waitpid(pid, &st, 0);
-    assert(!"the owner did not exit");
+    assert(false && "the owner did not exit");
     return -1;
 }
 
@@ -242,7 +265,8 @@ void engine_fails_to_start() {
     c.behaviour["exit_at_start"] = 4;
     assert(exit_code(c.owner()) == 1);
     const Json r = c.record();
-    assert(r.at("state") == "failed" && any_error_contains(r, "did not come up") && any_error_contains(r, "exit 4"));
+    assert(r.at("state") == "failed" && any_error_contains(r, "health gate") &&
+           any_error_contains(r, "exit 4"));
 }
 
 void engine_never_healthy() {
@@ -303,7 +327,12 @@ void stop_during_plan() {
     // a long plan step (a measuring start) waits through the owner, so a stop request ends it
     Case c("stop-plan");
     c.session.plan = [](const fs::path&, const ss::Hooks& h) -> ss::EngineStart {
-        while (h.wait(50ms)) {}
+        while (true) {
+            auto result = h.wait.invoke(50ms);
+            assert(result);
+            if (!result.value())
+                break;
+        }
         throw ss::PlanFailed("plan: stopped while measuring");
     };
     const pid_t owner = c.owner();
@@ -344,7 +373,9 @@ void unknown_command_and_no_owner() {
 void spawn_and_environment() {
     // exec failure is the caller's error, not a silent child
     bool threw = false;
-    try { ss::spawn({"/nonexistent/engine"}, {}, g_root / "spawn.log"); } catch (const std::runtime_error& e) {
+    try {
+        ss::spawn({"/nonexistent/engine"}, {}, g_root / "spawn.log");
+    } catch (const std::runtime_error& e) {
         threw = std::string(e.what()).find("/nonexistent/engine") != std::string::npos;
     }
     assert(threw);
@@ -352,8 +383,8 @@ void spawn_and_environment() {
     {
         const fs::path ran = g_root / "gate-ran";
         bool ran_before_recorded = true;
-        const pid_t pid = ss::spawn({"/bin/sh", "-c", "touch " + ran.string()}, {{"PATH", "/bin:/usr/bin"}}, g_root / "spawn.log",
-                                    [&](pid_t) {
+        const pid_t pid = ss::spawn({"/bin/sh", "-c", "touch " + ran.string()}, {{"PATH", "/bin:/usr/bin"}},
+                                    g_root / "spawn.log", [&](pid_t) {
                                         std::this_thread::sleep_for(200ms);
                                         ran_before_recorded = fs::exists(ran);
                                     });
@@ -363,19 +394,22 @@ void spawn_and_environment() {
         const fs::path never = g_root / "gate-never";
         bool refused = false;
         try {
-            ss::spawn({"/bin/sh", "-c", "touch " + never.string()}, {{"PATH", "/bin:/usr/bin"}}, g_root / "spawn.log",
-                      [](pid_t) { throw std::runtime_error("record failed"); });
-        } catch (const std::runtime_error& e) { refused = std::string(e.what()) == "record failed"; }
+            ss::spawn({"/bin/sh", "-c", "touch " + never.string()}, {{"PATH", "/bin:/usr/bin"}},
+                      g_root / "spawn.log", [](pid_t) { throw std::runtime_error("record failed"); });
+        } catch (const std::runtime_error& e) {
+            refused = std::string(e.what()).find("record failed") != std::string::npos;
+        }
         std::this_thread::sleep_for(200ms);
         assert(refused && !fs::exists(never));
-        // a writer that exits at once is registered before it can exit (the gate), so registration never fails
+        // a writer that exits at once is registered before it can exit (the gate), so registration never
+        // fails
         std::vector<pid_t> seen;
         ss::Hooks quick;
         quick.wait = [](std::chrono::milliseconds) { return true; };
-        quick.started = [&](const std::string&, pid_t pid, const fs::path&) {
+        quick.started = [&](const std::string&, pid_t registered_pid, const fs::path&) {
             std::this_thread::sleep_for(100ms);
-            seen.push_back(pid);
-            assert(ss::start_time(pid));   // still waiting at the gate: alive, not a zombie
+            seen.push_back(registered_pid);
+            assert(ss::start_time(registered_pid)); // still waiting at the gate: alive, not a zombie
         };
         assert(ss::run_to_completion({"/bin/true"}, {}, quick).exit == 0 && seen.size() == 1);
     }
@@ -525,21 +559,422 @@ void no_record_no_session() {
 }
 
 void unwritable_record_still_stops() {
-    // the record cannot be written any more (a full or read-only run directory): stopping goes ahead regardless
+    // A live engine is still reaped, and power restored only after verified exit, even when
+    // the terminal event cannot be made durable. The owner must not acknowledge success.
     Case c("readonly");
+    const fs::path marker = c.run.parent_path() / (c.run.filename().string() + "-power.marker");
+    const fs::path restored = c.run.parent_path() / (c.run.filename().string() + "-restored.txt");
+    c.session.power_hook.apply = [marker]() -> bc::serving::v2::Status {
+        std::ofstream(marker) << "applied";
+        return std::nullopt;
+    };
+    c.session.power_hook.restore = [marker, restored, &c]() -> bc::serving::v2::Status {
+        const int pid = c.engine_pid();
+        std::ofstream(restored) << (gone(pid) ? "verified" : "live") << '\n';
+        fs::remove(marker);
+        return std::nullopt;
+    };
     const pid_t owner = c.owner();
     c.wait_state({"running"});
     const int engine = c.engine_pid();
+    assert(engine > 0 && fs::exists(marker));
     ::chmod(c.run.c_str(), 0500);
     const auto reply = ss::control(c.run, "stop", 10s);
     ::chmod(c.run.c_str(), 0700);
-    assert(reply && reply->value("ok", false) && reply->at("state") == "stopped");
-    assert(gone(engine) && exit_code(owner) == 0);
+    const int result = exit_code(owner);
+    assert(gone(engine) && !fs::exists(marker) && text(restored) == "verified\n");
+    assert(result != 0 && reply && !reply->value("ok", true));
+    assert(reply->value("state", "") == "failed");
+    assert(reply->value("error", "").find("persist") != std::string::npos);
+    const Json durable = c.record();
+    assert(durable.value("state", "") == "running");
+    for (const auto& e : durable.at("events"))
+        assert(e.at("kind") != "stopped");
+}
+
+// Port of Python supervisor order, helper readiness and failure cases (all card-free).
+void helpers_order_and_killed() {
+    Case c("helper-order");
+    c.helpers = 2;
+    c.behaviour["helpers"] = {
+        {"helper0", {{"ready_delay_ms", 250}, {"env_dump", (c.run / "h0.env").string()}}},
+        {"helper1", {{"ready_delay_ms", 100}, {"env_dump", (c.run / "h1.env").string()}}},
+    };
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const Json r = c.record();
+    std::vector<std::string> events;
+    std::vector<std::string> roles;
+    for (const auto& e : r.at("events")) {
+        const std::string kind = e.at("kind");
+        if (kind == "started" || kind == "ready")
+            events.push_back(kind + ":" + e.at("role").get<std::string>());
+    }
+    assert((events == std::vector<std::string>{"started:helper0", "ready:helper0", "started:helper1",
+                                               "ready:helper1", "started:engine"}));
+    for (const auto& p : r.at("processes"))
+        roles.push_back(p.at("role").get<std::string>());
+    assert((roles == std::vector<std::string>{"helper0", "helper1", "engine"}));
+    const std::string env = text(c.run / "h1.env");
+    assert(env.find("ROCR_VISIBLE_DEVICES=7\n") != std::string::npos &&
+           env.find("HIP_VISIBLE_DEVICES=0\n") != std::string::npos);
+    for (const auto& p : r.at("processes"))
+        assert(!gone(p.at("pid")));
+    // Kill helper 0: the owner must stop the engine and every other helper, in reverse start order.
+    ::kill(r.at("processes").at(0).at("pid").get<int>(), SIGKILL);
+    assert(exit_code(owner) == 1);
+    const Json stopped = c.record();
+    assert(stopped.at("state") == "failed" && any_error_contains(stopped, "helper0"));
+    for (const auto& p : stopped.at("processes"))
+        assert(gone(p.at("pid")));
+}
+
+void helper_failure_unwinds() {
+    for (const auto& which : {"helper0", "helper1"}) {
+        Case c(std::string("helper-fail-") + which);
+        c.helpers = 2;
+        c.behaviour["helpers"] = {{which, {{"exit_at_start", 23}}}};
+        assert(exit_code(c.owner()) == 1);
+        const Json r = c.record();
+        assert(r.at("state") == "failed" && any_error_contains(r, which));
+        for (const auto& p : r.at("processes"))
+            assert(gone(p.at("pid")));
+        for (const auto& p : r.at("processes"))
+            assert(p.at("role") != "engine");
+    }
+    Case blocked("helper-timeout");
+    blocked.helpers = 1;
+    blocked.behaviour["helpers"] = {{"helper0", {{"never_ready", true}}}};
+    blocked.session.timing.helper_timeout = 250ms;
+    assert(exit_code(blocked.owner()) == 1);
+    assert(any_error_contains(blocked.record(), "not ready"));
+    const Json blocked_record = blocked.record();
+    for (const auto& p : blocked_record.at("processes"))
+        assert(gone(p.at("pid")));
+    // A waiting-for-maps message is a valid helper readiness gate.
+    Case waiting("helper-waiting-for-maps");
+    waiting.helpers = 1;
+    waiting.behaviour["helpers"] = {{"helper0", {{"waiting_for_maps", true}}}};
+    const auto owner = waiting.owner();
+    waiting.wait_state({"running"});
+    const auto stop_reply = ss::control(waiting.run, "stop", 10s);
+    assert(stop_reply.has_value() && stop_reply->value("ok", false));
+    assert(exit_code(owner) == 0);
+}
+
+std::string fake_segment(int index) {
+    return "/r3-serve-test-" + std::to_string(::getpid()) + "-" + std::to_string(index);
+}
+bool segment_exists(const std::string& name) {
+    const int fd = ::shm_open(name.c_str(), O_RDONLY | O_CLOEXEC, 0);
+    if (fd < 0)
+        return false;
+    struct stat st{};
+    const bool good = ::fstat(fd, &st) == 0 && st.st_size > 0;
+    ::close(fd);
+    return good;
+}
+void helper_shared_segment_gate() {
+    Case c("helper-shm");
+    c.helpers = 2;
+    c.behaviour["shm"] = fake_segment(g_case);
+    const std::string name = c.behaviour.at("shm");
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    assert(segment_exists(name));
+    const auto stop_reply = ss::control(c.run, "stop", 10s);
+    assert(stop_reply.has_value() && stop_reply->value("ok", false));
+    assert(exit_code(owner) == 0);
+    assert(!segment_exists(name));
+    assert(c.record().at("handoff_shm") == name);
+
+    Case missing("helper-no-segment");
+    missing.helpers = 1;
+    missing.behaviour["shm"] = fake_segment(g_case);
+    missing.behaviour["helpers"] = {{"helper0", {{"no_shm", true}}}};
+    assert(exit_code(missing.owner()) == 97); // missing segment is a PlanFailed (pre-engine admission)
+    assert(any_error_contains(missing.record(), "shared segment"));
+    const Json missing_record = missing.record();
+    for (const auto& p : missing_record.at("processes")) {
+        assert(gone(p.at("pid")));
+        assert(p.at("role") != "engine");
+    }
+
+    // A worker SIGKILL skips its own unlink. The owner may retire only its
+    // UUID-named segment and only after all helper/engine groups exited.
+    Case killed("helper-shm-killed");
+    killed.helpers = 2;
+    killed.behaviour["shm"] = fake_segment(g_case);
+    const std::string leftover = killed.behaviour.at("shm");
+    const pid_t stopped = killed.owner();
+    killed.wait_state({"running"});
+    const Json r = killed.record();
+    assert(segment_exists(leftover));
+    ::kill(r.at("processes")[0].at("pid").get<pid_t>(), SIGKILL);
+    assert(exit_code(stopped) == 1);
+    assert(!segment_exists(leftover));
+    const Json killed_record = killed.record();
+    for (const auto& p : killed_record.at("processes"))
+        assert(gone(p.at("pid")));
+}
+
+void callback_nonstandard_regression() {
+    Case c("nonstandard-apply");
+    const auto marker = c.run / "control";
+    c.session.power_hook.apply = [marker]() -> bc::serving::v2::Status {
+        std::ofstream(marker) << "changed";
+        throw 17; // NOLINT(bugprone-std-exception-baseclass)
+    };
+    c.session.power_hook.restore = [marker]() -> bc::serving::v2::Status {
+        fs::remove(marker);
+        return std::nullopt;
+    };
+    const pid_t owner = c.owner();
+    assert(exit_code(owner) != 0);
+    const Json record = c.record();
+    assert(record.value("state", "") == "failed" && !fs::exists(marker) &&
+           any_error_contains(record, "callback"));
+}
+
+// No raw function escapes the typed wrapper; attempting direct invocation does
+// not compile, even from a function taking a mutable Session or Hooks.
+using ReturnedStatus = decltype([]() -> bc::serving::v2::Status { return std::nullopt; });
+static_assert(!std::is_constructible_v<ss::Callback<void()>, ReturnedStatus>);
+static_assert(!std::is_assignable_v<ss::Callback<void()>&, ReturnedStatus>);
+static_assert(!std::is_constructible_v<ss::Callback<void()>, decltype([]() -> int { return 3; })>);
+static_assert(std::is_constructible_v<ss::Callback<bc::serving::v2::Status()>, ReturnedStatus>);
+static_assert(!std::is_invocable_v<ss::Callback<void()>&>);
+static_assert(!std::is_convertible_v<ss::Callback<void()>, std::function<void()>>);
+static_assert(!std::is_invocable_v<ss::ManifestRunner&, const std::vector<std::string>&>);
+static_assert(!std::is_invocable_v<ss::Wait&, std::chrono::milliseconds>);
+
+struct UnusualCallbackException {};
+enum class ThrowKind : uint8_t { standard, custom, integer };
+[[noreturn]] void injected_throw(ThrowKind kind) {
+    switch (kind) {
+    case ThrowKind::standard:
+        throw std::runtime_error("standard injected exception");
+    case ThrowKind::custom:
+        throw UnusualCallbackException{}; // NOLINT(bugprone-std-exception-baseclass)
+    case ThrowKind::integer:
+        throw 17; // NOLINT(bugprone-std-exception-baseclass)
+    }
+    std::abort();
+}
+
+void callback_exception_matrix() {
+    for (const ThrowKind kind : {ThrowKind::standard, ThrowKind::custom, ThrowKind::integer}) {
+        // Each callable kind reports the same typed error rather than leaking
+        // an exception, including a custom type and an int.
+        ss::Wait wait = [kind](std::chrono::milliseconds) -> bool { injected_throw(kind); };
+        const auto waited = wait.invoke(1ms);
+        assert(!waited && waited.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
+        ss::Hooks hooks;
+        hooks.started = [kind](const std::string&, pid_t, const fs::path&) { injected_throw(kind); };
+        hooks.ended = [kind](pid_t) { injected_throw(kind); };
+        hooks.selected_segment = [kind](const std::string&) { injected_throw(kind); };
+        assert(hooks.started.invoke("measuring", 1, fs::path("fake")));
+        assert(hooks.ended.invoke(1));
+        assert(hooks.selected_segment.invoke("/r3-serve-injected"));
+        ss::ManifestRunner runner = [kind](const std::vector<std::string>&) -> ss::ManifestRun {
+            injected_throw(kind);
+        };
+        const auto manifest = runner.invoke({});
+        assert(!manifest && manifest.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
+
+        // All owner-stage exit paths must reach the final journal and restore
+        // once, including an apply that changed a control before throwing.
+        for (const std::string stage : {"apply", "plan", "restore"}) {
+            Case c("callback-" + stage);
+            const fs::path marker = c.run / "power.journal";
+            const fs::path count = c.run / "restore.count";
+            const fs::path rd = c.run;
+            c.session.power_hook.apply = [marker, stage, kind]() -> bc::serving::v2::Status {
+                std::ofstream(marker) << "unresolved";
+                if (stage == "apply")
+                    injected_throw(kind);
+                return std::nullopt;
+            };
+            c.session.power_hook.restore = [marker, count, rd, stage, kind]() -> bc::serving::v2::Status {
+                const Json record = ss::read_record(rd).value_or(Json::object());
+                for (const auto& child : record.value("processes", Json::array()))
+                    assert(gone(child.at("pid").get<pid_t>())); // exit verified BEFORE restore
+                std::ofstream(count, std::ios::app) << "r";
+                if (stage == "restore")
+                    injected_throw(kind);
+                fs::remove(marker); // simulated successful journal resolution
+                return std::nullopt;
+            };
+            if (stage == "plan") {
+                const auto original = c.session.plan;
+                c.session.plan = [original, kind](const fs::path& run,
+                                                  const ss::Hooks& h) -> ss::EngineStart {
+                    const auto start = original.invoke(run, h);
+                    if (!start)
+                        throw ss::PlanFailed(start.error().message);
+                    const fs::path log = run / "measuring-injected.log";
+                    const pid_t child = ss::spawn({"/bin/sleep", "30"}, {}, log, [&](pid_t pid) {
+                        if (h.started) {
+                            const auto result = h.started.invoke("measuring", pid, log);
+                            if (result)
+                                throw ss::PlanFailed(result->message);
+                        }
+                    });
+                    std::ofstream(run / "measuring.pid") << child;
+                    injected_throw(kind);
+                };
+            }
+            const pid_t owner = c.owner();
+            if (stage == "restore") {
+                c.wait_state({"running"});
+                const auto stopped = ss::control(c.run, "stop", 10s);
+                assert(stopped && !stopped->value("ok", true));
+            }
+            assert(exit_code(owner) != 0);
+            const Json record = c.record();
+            assert(record.value("state", "") == "failed" && any_error_contains(record, "callback"));
+            std::ifstream restored(count);
+            std::string restore_count;
+            std::getline(restored, restore_count);
+            assert(restore_count == "r"); // never twice, even when restore itself throws
+            assert(fs::exists(marker) ==
+                   (stage == "restore")); // retain unresolved journal on restore failure
+            for (const auto& child : record.value("processes", Json::array())) {
+                assert(child.value("exited", false));
+                assert(gone(child.at("pid").get<pid_t>()));
+            }
+            if (stage == "plan") {
+                pid_t pid = 0;
+                std::ifstream(c.run / "measuring.pid") >> pid;
+                assert(pid > 0 && gone(pid));
+            }
+        }
+
+        // Actual process registration, wait and exit-notification callback sites.
+        // A failing registration keeps the pre-exec gate shut; a failing wait
+        // stops the live process; an exit notification is after verified reap.
+        for (const std::string stage : {"started", "wait", "ended"}) {
+            ss::Hooks h;
+            pid_t child = 0;
+            h.started = [&](const std::string&, pid_t pid, const fs::path&) {
+                child = pid;
+                if (stage == "started")
+                    injected_throw(kind);
+            };
+            h.wait = [&](std::chrono::milliseconds) -> bool {
+                if (stage == "wait")
+                    injected_throw(kind);
+                return true;
+            };
+            h.ended = [&](pid_t pid) {
+                assert(pid == child && gone(pid));
+                if (stage == "ended")
+                    injected_throw(kind);
+            };
+            bool failed = false;
+            try {
+                const std::vector<std::string> argv = stage == "ended"
+                                                          ? std::vector<std::string>{"/bin/true"}
+                                                          : std::vector<std::string>{"/bin/sleep", "30"};
+                (void)ss::run_to_completion(argv, {}, h);
+            } catch (const ss::PlanFailed&) {
+                failed = true;
+            }
+            assert(failed && child > 0 && gone(child));
+        }
+    }
+}
+
+void power_hook_returned_status_errors() {
+    using bc::serving::v2::ConfigErrorCode;
+    using bc::serving::v2::Status;
+    // SessionPower::begin()-style returned error (not a thrown exception).
+    Case apply("power-begin-return-error");
+    const fs::path journal = apply.run / "power.journal";
+    const fs::path restored = apply.run / "power.restored";
+    apply.session.power_hook.apply = [journal]() -> Status {
+        std::ofstream(journal) << "incomplete apply";
+        return bc::serving::v2::make_error(ConfigErrorCode::io_failure, "power", "begin returned failure");
+    };
+    apply.session.power_hook.restore = [journal, restored]() -> Status {
+        std::ofstream(restored, std::ios::app) << "r";
+        fs::remove(journal); // simulated rollback
+        return std::nullopt;
+    };
+    assert(exit_code(apply.owner()) != 0);
+    const Json begin_result = apply.record();
+    assert(begin_result.at("state") == "failed" &&
+           any_error_contains(begin_result, "begin returned failure"));
+    assert(!fs::exists(journal) && text(restored) == "r");
+    for (const auto& e : begin_result.at("events")) {
+        assert(e.at("kind") != "power_applied" && e.at("kind") != "running");
+    }
+    assert(begin_result.at("processes").empty());
+
+    // SessionPower::finish()-style returned error after verified exit leaves an
+    // unresolved receipt; neither a success event nor a successful stop reply.
+    Case finish("power-finish-return-error");
+    const fs::path unresolved = finish.run / "power.journal";
+    const fs::path count = finish.run / "power.restore.count";
+    finish.session.power_hook.apply = [unresolved]() -> Status {
+        std::ofstream(unresolved) << "receipt";
+        return std::nullopt;
+    };
+    finish.session.power_hook.restore = [count, &finish]() -> Status {
+        const Json durable = finish.record();
+        for (const auto& child : durable.at("processes"))
+            assert(gone(child.at("pid").get<pid_t>()));
+        std::ofstream(count, std::ios::app) << "r";
+        return bc::serving::v2::make_error(ConfigErrorCode::io_failure, "power", "finish returned failure");
+    };
+    const pid_t owner = finish.owner();
+    finish.wait_state({"running"});
+    const int engine = finish.engine_pid();
+    const auto reply = ss::control(finish.run, "stop", 10s);
+    assert(reply && !reply->value("ok", true) && reply->at("state") == "failed");
+    assert(exit_code(owner) != 0 && gone(engine));
+    assert(fs::exists(unresolved) && text(count) == "r");
+    const Json finish_result = finish.record();
+    assert(finish_result.at("state") == "failed" &&
+           any_error_contains(finish_result, "finish returned failure"));
+    for (const auto& e : finish_result.at("events"))
+        assert(e.at("kind") != "power_restored");
+}
+
+void helper_power_hook_boundary() {
+    Case c("hook");
+    c.helpers = 2;
+    const auto marker = c.run / "power.marker";
+    c.session.power_hook.apply = [marker]() -> bc::serving::v2::Status {
+        std::ofstream(marker) << "applied";
+        return std::nullopt;
+    };
+    c.session.power_hook.restore = [marker]() -> bc::serving::v2::Status {
+        assert(fs::exists(marker));
+        fs::remove(marker);
+        return std::nullopt;
+    };
+    const auto owner = c.owner();
+    c.wait_state({"running"});
+    assert(fs::exists(marker));
+    const auto r = ss::control(c.run, "stop", 10s);
+    assert(r && r->value("ok", false) && r->at("state") == "stopped");
+    assert(exit_code(owner) == 0 && !fs::exists(marker));
+    Case f("hook-restore-fail");
+    f.session.power_hook.apply = []() -> bc::serving::v2::Status { return std::nullopt; };
+    f.session.power_hook.restore = []() -> bc::serving::v2::Status {
+        throw std::runtime_error("journal remains");
+    };
+    const auto pid = f.owner();
+    f.wait_state({"running"});
+    const auto failed_reply = ss::control(f.run, "stop", 10s);
+    assert(failed_reply && !failed_reply->value("ok", true));
+    assert(exit_code(pid) == 1 && any_error_contains(f.record(), "journal remains"));
 }
 
 } // namespace
 
-int main(int argc, char** argv) {
+int test_main(int argc, char** argv) {
     if (argc == 4 && std::string(argv[1]) == "--owner") {
         // owner mode for start_detached_runs_and_stops: serve the fake manifest already in the run directory
         ss::Session s;
@@ -561,8 +996,15 @@ int main(int argc, char** argv) {
     g_root = fs::current_path() / "bc-session-fixture";
     fs::remove_all(g_root);
     fs::create_directories(g_root);
+    callback_nonstandard_regression();
+    callback_exception_matrix();
     spawn_and_environment();
     serve_status_stop();
+    helpers_order_and_killed();
+    helper_failure_unwinds();
+    helper_power_hook_boundary();
+    power_hook_returned_status_errors();
+    helper_shared_segment_gate();
     long_run_dir();
     canary_fails();
     engine_fails_to_start();
@@ -580,7 +1022,20 @@ int main(int argc, char** argv) {
     owner_killed_fails_closed();
     unwritable_record_still_stops();
     no_record_no_session();
-    std::cout << "PASS: session owner lifecycle (start order, canary, failures at every stage, stop via socket and "
-                 "signal, SIGKILL fallback, one owner per run directory, child environment, detached start)\n";
+    std::cout
+        << "PASS: session owner lifecycle (start order, canary, failures at every stage, stop via socket and "
+           "signal, SIGKILL fallback, one owner per run directory, child environment, detached start)\n";
     return 0;
+}
+
+int main(int argc, char** argv) noexcept {
+    try {
+        return test_main(argc, argv);
+    } catch (const std::exception& error) {
+        std::cerr << "session test: " << error.what() << '\n';
+        return 1;
+    } catch (...) {
+        std::cerr << "session test: non-standard exception" << '\n';
+        return 1;
+    }
 }
