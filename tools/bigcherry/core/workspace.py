@@ -55,7 +55,7 @@ def ensure_layout(root: Path) -> Path:
 
 
 def run_dir(root: Path, kind: str, run_id: str) -> Path:
-    if kind not in rm.RUN_KINDS:
+    if kind not in rm.NESTED_RUN_KINDS:
         raise WorkspaceError(f"unknown run kind {kind!r}")
     if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", run_id):
         raise WorkspaceError(f"run id {run_id!r} is not path safe")
@@ -94,8 +94,8 @@ def create_run(root: Path, kind: str, topic: str, *, plan_item: str | None, engi
                inputs: list | None = None, references: list | None = None, subkind: str | None = None,
                repo: Path | None = None, now: float | None = None) -> RunHandle:
     """Create <root>/runs/<kind>/<run-id>/ with its initial manifest. Never overwrites; retries on an id collision."""
-    if kind not in rm.RUN_KINDS:
-        raise WorkspaceError(f"unknown run kind {kind!r}; kinds are {sorted(rm.RUN_KINDS)}")
+    if kind not in rm.NESTED_RUN_KINDS:
+        raise WorkspaceError(f"unsupported nested run kind {kind!r}; kinds are {sorted(rm.NESTED_RUN_KINDS)}")
     ensure_layout(root)
     parent = Path(root) / "runs" / kind
     parent.mkdir(parents=True, exist_ok=True)

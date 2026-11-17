@@ -35,7 +35,22 @@ A build is eligible only if all of the following hold:
 - It is not among the most recent `--keep-newest` builds of its source
   slice (default: 3, independent of build age).
 - No managed run manifest names its build ID or path in a typed build
-  reference or input. The `retention.hold` mechanism on a referencing run
+  reference or input. This includes adopted flat `runs/<name>/` manifests
+  with `kind: legacy`, whose scanner records all detected recipe/build
+  pairs, including nonexistent builds. A flat manifest is accepted only when
+  it is a regular non-symlinked file carrying `legacy_inferred` provenance,
+  recognized `legacy_scan.scanner_version` and a matching tree stamp
+  (file count, total file bytes, maximum `mtime_ns`, directory count and a
+  digest of per-path metadata, including file identity/mtime/ctime). A
+  stat walk validates that stamp on **each** GC inspection, detecting ordinary
+  post-adoption edits; changed, unscannable, unmanifested, forged or invalid
+  flat runs stay **unclassified and block every build**, never implying zero
+  references. These metadata checks are not a cryptographic content seal.
+  Top-level loose *regular files* under `runs/` are never removed: GC
+  fully scans them read-only for build references at inspection time, and
+  unreadable, symlinked or special entries continue to block every build.
+  See [Runs layout and legacy adoption](RUNS_LAYOUT.md) for the opt-in
+  `bigcherry legacy-runs migrate` workflow. The `retention.hold` mechanism on a referencing run
   is respected. The work root must contain a genuine, fully readable `runs/`
   directory; missing, symlinked or partially unreadable run trees protect
   **all** builds rather than implying no references. Tracked repository

@@ -95,7 +95,7 @@ def inventory_legacy(root: Path, *, measure: bool = False) -> dict:
             continue
         if item.name == "runs":
             for kind in children(item):
-                if kind.is_symlink() or not kind.is_dir() or kind.name not in rm.RUN_KINDS:
+                if kind.is_symlink() or not kind.is_dir() or kind.name not in rm.NESTED_RUN_KINDS:
                     append(kind, "unclassified-run-kind", "unverified")
                     continue
                 for run in children(kind):

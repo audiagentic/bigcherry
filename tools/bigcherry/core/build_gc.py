@@ -159,7 +159,7 @@ def _manifest_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
     A corrupt/unreadable run record might hide a live reference, so none of
     the builds may be removed until it is repaired.
     """
-    from . import retention
+    from . import legacy_runs, retention
 
     runs = root / "runs"
     if runs.is_symlink() or not runs.is_dir():
@@ -171,8 +171,18 @@ def _manifest_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
     refs: dict[str, list[str]] = {}
     errors = [f"unreadable run manifest: {e.path}: {e.problem}" for e in inv.runs if e.manifest is None]
     for unknown in inv.unknown:
-        if unknown.is_relative_to(root / "runs"):
-            errors.append(f"unclassified run path: {unknown}")
+        if unknown.is_relative_to(runs):
+            if unknown.parent == runs and unknown.is_file() and not unknown.is_symlink():
+                # Loose historical documents have no run directory for a
+                # manifest. Fully scan them for pins instead of ignoring refs.
+                try:
+                    edges, _ = legacy_runs.scan_loose_file(root, unknown.name)
+                    for edge in edges:
+                        refs.setdefault(edge["id"], []).append(f"loose run file {unknown.name}")
+                except (OSError, legacy_runs.LegacyRunError) as exc:
+                    errors.append(f"unclassified run file: {unknown}: {exc}")
+            else:
+                errors.append(f"unclassified run path: {unknown}")
     for e in inv.runs:
         if not e.manifest:
             continue

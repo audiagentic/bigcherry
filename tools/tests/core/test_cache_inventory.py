@@ -101,7 +101,7 @@ class CacheInventory(unittest.TestCase):
         unknown.mkdir(parents=True)
         entry = self.decisions()["old"]
         self.assertEqual(entry["action"], "protected")
-        self.assertIn("unclassified run path", " ".join(entry["reasons"]))
+        self.assertIn("unreadable run manifest", " ".join(entry["reasons"]))
 
     def test_newest_k_per_recipe_even_if_old(self):
         self.build("older", age=40)
