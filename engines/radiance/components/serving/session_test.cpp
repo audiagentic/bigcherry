@@ -26,6 +26,8 @@
 #error "BC_FAKE_ENGINE must name the fake engine binary"
 #endif
 
+static_assert(!std::is_invocable_v<bc::serving::session::Wait, std::chrono::milliseconds>);
+static_assert(!std::is_invocable_v<bc::serving::session::ManifestRunner, const std::vector<std::string>&>);
 namespace fs = std::filesystem;
 namespace ss = bc::serving::session;
 using Json = nlohmann::json;
@@ -126,7 +128,7 @@ int exit_code(pid_t pid, std::chrono::milliseconds limit = 15s) {
     }
     ::kill(pid, SIGKILL);
     ::waitpid(pid, &st, 0);
-    assert(!"the owner did not exit");
+    assert(false && "the owner did not exit");
     return -1;
 }
 
@@ -303,7 +305,8 @@ void stop_during_plan() {
     // a long plan step (a measuring start) waits through the owner, so a stop request ends it
     Case c("stop-plan");
     c.session.plan = [](const fs::path&, const ss::Hooks& h) -> ss::EngineStart {
-        while (h.wait(50ms)) {}
+        while (h.wait.require("session.test.wait", 50ms)) {
+        }
         throw ss::PlanFailed("plan: stopped while measuring");
     };
     const pid_t owner = c.owner();
@@ -365,17 +368,35 @@ void spawn_and_environment() {
         try {
             ss::spawn({"/bin/sh", "-c", "touch " + never.string()}, {{"PATH", "/bin:/usr/bin"}}, g_root / "spawn.log",
                       [](pid_t) { throw std::runtime_error("record failed"); });
-        } catch (const std::runtime_error& e) { refused = std::string(e.what()) == "record failed"; }
+        } catch (const std::runtime_error& e) {
+            refused = std::string(e.what()).find("record failed") != std::string::npos;
+        }
         std::this_thread::sleep_for(200ms);
         assert(refused && !fs::exists(never));
+        for (bool foreign : {false, true}) {
+            const fs::path forbidden = g_root / (foreign ? "nonstd-gate" : "std-gate");
+            bool typed = false;
+            try {
+                ss::spawn(
+                    {"/bin/sh", "-c", "touch " + forbidden.string()}, {{"PATH", "/bin:/usr/bin"}},
+                    g_root / "spawn.log", [foreign](pid_t) {
+                        if (foreign)
+                            throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
+                        throw std::runtime_error("recording callback failure");
+                    });
+            } catch (const bc::serving::callback::Failure& err) {
+                typed = err.error().code == bc::serving::v2::ConfigErrorCode::io_failure;
+            }
+            assert(typed && !fs::exists(forbidden));
+        }
         // a writer that exits at once is registered before it can exit (the gate), so registration never fails
         std::vector<pid_t> seen;
         ss::Hooks quick;
         quick.wait = [](std::chrono::milliseconds) { return true; };
-        quick.started = [&](const std::string&, pid_t pid, const fs::path&) {
+        quick.started = [&](const std::string&, pid_t recorded_pid, const fs::path&) {
             std::this_thread::sleep_for(100ms);
-            seen.push_back(pid);
-            assert(ss::start_time(pid));   // still waiting at the gate: alive, not a zombie
+            seen.push_back(recorded_pid);
+            assert(ss::start_time(recorded_pid)); // still waiting at the gate: alive, not a zombie
         };
         assert(ss::run_to_completion({"/bin/true"}, {}, quick).exit == 0 && seen.size() == 1);
     }
@@ -388,6 +409,61 @@ void spawn_and_environment() {
     const auto echoed = ss::run_to_completion({"/bin/sh", "-c", "echo out; echo err >&2; exit 3"}, {{"PATH", "/bin"}}, hooks);
     assert(echoed.exit == 3 && echoed.out == "out\n" && echoed.err == "err\n");
     assert(registered.size() == 1 && registered == verified);   // registered with the owner, its exit verified
+    for (bool foreign : {false, true}) {
+        ss::ManifestRunner runner = [foreign](const std::vector<std::string>&) -> ss::ManifestRun {
+            if (foreign)
+                throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
+            throw std::runtime_error("runner exception");
+        };
+        auto result = runner.invoke("session.manifest.runner", std::vector<std::string>{});
+        assert(!result && result.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
+
+        ss::Hooks bad = hooks;
+        bad.wait = [foreign](std::chrono::milliseconds) -> bool {
+            if (foreign)
+                throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
+            throw std::runtime_error("wait exception");
+        };
+        bool typed = false;
+        const auto before = verified.size();
+        try {
+            ss::run_to_completion({"/bin/sleep", "30"}, {}, bad);
+        } catch (const bc::serving::callback::Failure& err) {
+            typed = err.error().code == bc::serving::v2::ConfigErrorCode::io_failure;
+        }
+        assert(typed && verified.size() == before + 1);
+
+        bad = hooks;
+        pid_t just_spawned = -1;
+        bad.started = [&](const std::string&, pid_t pid, const fs::path&) {
+            just_spawned = pid;
+            if (foreign)
+                throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
+            throw std::runtime_error("started exception");
+        };
+        typed = false;
+        try {
+            ss::run_to_completion({"/bin/true"}, {}, bad);
+        } catch (const bc::serving::callback::Failure& err) {
+            typed = err.error().code == bc::serving::v2::ConfigErrorCode::io_failure;
+        }
+        assert(typed && just_spawned > 0 && !ss::running(just_spawned));
+
+        bad = hooks;
+        bad.ended = [foreign](pid_t) {
+            if (foreign)
+                throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
+            throw std::runtime_error("ended exception");
+        };
+        typed = false;
+        try {
+            ss::run_to_completion({"/bin/true"}, {}, bad);
+        } catch (const bc::serving::callback::Failure& err) {
+            typed = err.error().code == bc::serving::v2::ConfigErrorCode::io_failure;
+        }
+        assert(typed);
+    }
+    const size_t extra_verified = verified.size() - 1U;
     int waits = 0;
     hooks.wait = [&](std::chrono::milliseconds) { return ++waits < 3; };
     const auto t0 = std::chrono::steady_clock::now();
@@ -395,8 +471,10 @@ void spawn_and_environment() {
     try {
         ss::run_to_completion({"/bin/sleep", "30"}, {}, hooks);
     } catch (const ss::PlanFailed&) { stopped = true; }
-    assert(stopped && waits == 3 && std::chrono::steady_clock::now() - t0 < 5s && verified.size() == 2);
-    // a writer that leaves a descendant ignoring SIGTERM: its whole group goes (SIGKILL after the grace) before it returns
+    assert(stopped && waits == 3 && std::chrono::steady_clock::now() - t0 < 5s &&
+           verified.size() == 2U + extra_verified);
+    // a writer that leaves a descendant ignoring SIGTERM: its whole group goes (SIGKILL after the grace) before
+    // it returns
     const fs::path child_pid = g_root / "writer-descendant.pid";
     waits = 0;
     hooks.wait = [&](std::chrono::milliseconds d) { std::this_thread::sleep_for(d); return ++waits < 5; };
@@ -405,7 +483,7 @@ void spawn_and_environment() {
         ss::run_to_completion({"/bin/sh", "-c", "trap '' TERM INT; /bin/sleep 60 & echo $! > " + child_pid.string() + "; wait"},
                               {{"PATH", "/bin"}}, hooks);
     } catch (const ss::PlanFailed&) { stopped = true; }
-    assert(stopped && verified.size() == 3 && gone(std::stoi(text(child_pid))));
+    assert(stopped && verified.size() == 3U + extra_verified && gone(std::stoi(text(child_pid))));
     char a[] = "PATH=/bin", b[] = "RAD_X=1", c[] = "BC_Y=2", d[] = "ROCR_VISIBLE_DEVICES=1", e[] = "HOME=/h";
     char* inherited[] = {a, b, c, d, e, nullptr};
     const auto env = ss::child_environment(inherited, {{"ROCR_VISIBLE_DEVICES", "4"}});
@@ -516,6 +594,22 @@ void owner_killed_fails_closed() {
     assert(exit_code(again) == 0);
 }
 
+void injected_owner_plan_exception() {
+    for (bool foreign : {false, true}) {
+        Case c(foreign ? "nonstandard-plan" : "standard-plan");
+        c.session.plan = [foreign](const fs::path&, const ss::Hooks&) -> ss::EngineStart {
+            if (foreign)
+                throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
+            throw std::runtime_error("injected plan exception");
+        };
+        assert(exit_code(c.owner()) != 0);
+        const auto record = c.record();
+        assert(record.value("state", "") == "failed");
+        assert(any_error_contains(record, "session.plan"));
+        assert(record.value("processes", Json::array()).empty());
+    }
+}
+
 void no_record_no_session() {
     // the record cannot be written at all: no session starts (nothing could find its processes later)
     Case c("no-record");
@@ -561,6 +655,7 @@ int main(int argc, char** argv) {
     g_root = fs::current_path() / "bc-session-fixture";
     fs::remove_all(g_root);
     fs::create_directories(g_root);
+    injected_owner_plan_exception();
     spawn_and_environment();
     serve_status_stop();
     long_run_dir();

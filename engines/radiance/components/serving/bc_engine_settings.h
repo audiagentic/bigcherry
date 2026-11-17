@@ -1,8 +1,8 @@
 #pragma once
 // Immutable, typed engine settings populated once by the strict serving manifest
 // reader. DSO consumers look up the exported symbol; no R3_* environment reads.
+#include "callback_boundary_abi.h"
 #include <cstdint>
-#include <dlfcn.h>
 
 struct BcEngineSettings {
     uint32_t struct_size = sizeof(BcEngineSettings);
@@ -32,9 +32,10 @@ extern "C" int bc_serving_engine_settings(BcEngineSettings* out);
 
 inline BcEngineSettings bc_engine_settings_snapshot() {
     BcEngineSettings settings{};
-    using GetSettings = int (*)(BcEngineSettings*);
-    static const auto get = reinterpret_cast<GetSettings>(dlsym(RTLD_DEFAULT, "bc_serving_engine_settings"));
-    if (get && get(&settings) && settings.struct_size == sizeof(settings) && settings.manifest)
+    static const auto get =
+        bc::serving::callback::GuardedSymbol<int(BcEngineSettings*)>::lookup("bc_serving_engine_settings");
+    const auto accepted = get.invoke(&settings);
+    if (accepted && *accepted != 0 && settings.struct_size == sizeof(settings) && settings.manifest)
         return settings;
     return BcEngineSettings{};
 }

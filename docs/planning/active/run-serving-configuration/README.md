@@ -9,6 +9,7 @@ resolved value carries its provenance and `explain` says why it has that value.
 | --- | --- | --- |
 | [RSC01](RSC01.md) | Typed TOML schema, every setting classified, effective manifest with provenance, `explain`; no serving change | - |
 | [RSC02](RSC02.md) | `bc-serve start/stop/status` (C++) replaces the shell launcher; starts a named config or a stored manifest; lifecycle | RSC01, RSC12 |
+| [RSC13](RSC13.md) | Clang AST audit of serving callable declarations and dispatch, with CI tripwire for unreviewed injection | RSC02 |
 | [RSC03](RSC03.md) | One derived start-up resource plan across host RAM, pinned memory and VRAM | RSC01, RSC02 |
 | [RSC04](RSC04.md) | Retire the legacy launch surfaces once callers migrate | RSC02, RSC03, RCS10 |
 | [RSC12](RSC12.md) | Readable per-model configs with named variants; a stored manifest per config | RSC01 |

@@ -1,0 +1,152 @@
+{
+  "schema": 1,
+  "cases": [
+    {
+      "name": "qualified_two_device",
+      "mode": "apply",
+      "profile": "qualified",
+      "profile_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifest_digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+      "devices": [
+        {
+          "role": "engine",
+          "bdf": "0000:03:00.0",
+          "hwmon": "hwmon2",
+          "settings": {
+            "vddgfx_offset_mv": -125,
+            "sclk_max_mhz": 2700,
+            "mclk_max_mhz": 1400,
+            "power_cap_w": 280
+          },
+          "before": {
+            "vddgfx_offset_mv": -100,
+            "sclk_max_mhz": 2600,
+            "mclk_max_mhz": 1300,
+            "power_cap_uw": 300000000
+          }
+        },
+        {
+          "role": "helper0",
+          "bdf": "0000:06:00.0",
+          "hwmon": "hwmon2",
+          "settings": {
+            "sclk_max_mhz": 2800
+          },
+          "before": {
+            "vddgfx_offset_mv": -90,
+            "sclk_max_mhz": 2700,
+            "mclk_max_mhz": 1200,
+            "power_cap_uw": 250000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "memory_ceiling_only",
+      "mode": "apply",
+      "profile": "qualified",
+      "profile_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifest_digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+      "devices": [
+        {
+          "role": "engine",
+          "bdf": "0000:03:00.0",
+          "hwmon": "hwmon2",
+          "settings": {
+            "mclk_max_mhz": 1350
+          },
+          "before": {
+            "vddgfx_offset_mv": -100,
+            "sclk_max_mhz": 2600,
+            "mclk_max_mhz": 1300,
+            "power_cap_uw": 300000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "cap_only",
+      "mode": "apply",
+      "profile": "qualified",
+      "profile_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifest_digest": "sha256:dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
+      "devices": [
+        {
+          "role": "engine",
+          "bdf": "0000:06:00.0",
+          "hwmon": "hwmon2",
+          "settings": {
+            "power_cap_w": 240
+          },
+          "before": {
+            "vddgfx_offset_mv": -90,
+            "sclk_max_mhz": 2700,
+            "mclk_max_mhz": 1200,
+            "power_cap_uw": 250000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "observe",
+      "mode": "observe",
+      "profile": "stock",
+      "profile_digest": "sha256:eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+      "manifest_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+      "devices": [
+        {
+          "role": "engine",
+          "bdf": "0000:03:00.0",
+          "hwmon": "hwmon2",
+          "settings": {},
+          "before": {
+            "vddgfx_offset_mv": -100,
+            "sclk_max_mhz": 2600,
+            "mclk_max_mhz": 1300,
+            "power_cap_uw": 300000000
+          }
+        }
+      ]
+    },
+    {
+      "name": "reversed_selection_bdf",
+      "mode": "apply",
+      "profile": "qualified",
+      "profile_digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+      "manifest_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "devices": [
+        {
+          "role": "helper0",
+          "bdf": "0000:06:00.0",
+          "hwmon": "hwmon2",
+          "settings": {
+            "sclk_max_mhz": 2800
+          },
+          "before": {
+            "vddgfx_offset_mv": -90,
+            "sclk_max_mhz": 2700,
+            "mclk_max_mhz": 1200,
+            "power_cap_uw": 250000000
+          }
+        },
+        {
+          "role": "engine",
+          "bdf": "0000:03:00.0",
+          "hwmon": "hwmon2",
+          "settings": {
+            "vddgfx_offset_mv": -125,
+            "sclk_max_mhz": 2700,
+            "mclk_max_mhz": 1400,
+            "power_cap_w": 280
+          },
+          "before": {
+            "vddgfx_offset_mv": -100,
+            "sclk_max_mhz": 2600,
+            "mclk_max_mhz": 1300,
+            "power_cap_uw": 300000000
+          }
+        }
+      ]
+    }
+  ]
+}

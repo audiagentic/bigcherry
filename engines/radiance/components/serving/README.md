@@ -19,6 +19,36 @@ manifests they start from. The engine still starts from flags until the S4
 cutover, so this is not yet a fully qualified v1 launch.
 
 
+## Callback boundary and source scanner
+
+Injected callbacks in the current serving component use private typed
+`callback::Guarded` / `GuardedSymbol` storage or private virtual methods
+dispatched by guarded adapters. The `bc_callback_boundary_guard` CTest
+scanner is a **best-effort pattern tripwire, not proof** that a future
+callable type cannot bypass this boundary.
+
+REVIEW4 found two compiling **known gaps** (both missed by the scanner,
+neither a passing safety test):
+
+```cpp
+int callback_impl(int) { throw 17; }
+using Hook = decltype(&callback_impl);
+struct Owner { Hook callback; int invoke(int x) { return callback(x); } };
+```
+
+```cpp
+class Injected { public: virtual int callback(int) = 0; };
+class Throwing : public Injected {
+  public: int callback(int) override { throw 17; }
+};
+int use(Injected& cb) { return cb.callback(3); }
+```
+
+The private wrappers protect current injection sites; the scanner alone
+cannot inventory arbitrary aliases, layouts, virtual interfaces or
+indirect calls. [RSC13](../../../../docs/planning/active/run-serving-configuration/RSC13.md)
+plans a clang AST inventory and CI gate with negative counterexamples.
+
 ## Detail
 
 CPU-only static library `bc_serving` and `bc-serve`, packaged at

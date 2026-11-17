@@ -46,7 +46,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
      "R\"bchp(${bc_helper_profile_seed})bchp\"\n")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml")
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -82,6 +82,21 @@ install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
 include(CTest)
 if(BUILD_TESTING)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  # A build target so the component test gate can declare it; building it runs the tripwire.
+  add_custom_target(bc_callback_boundary_guard
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py"
+    VERBATIM)
+  add_test(NAME bc_callback_boundary_guard
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py")
+  # The shared header must compile at the HIP remote-MoE worker standard.
+  add_executable(bc_callback_boundary_cpp17_test EXCLUDE_FROM_ALL callback_boundary_cpp17_test.cpp)
+  set_target_properties(bc_callback_boundary_cpp17_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
+  add_test(NAME bc_callback_boundary_cpp17_test COMMAND bc_callback_boundary_cpp17_test)
+  add_executable(bc_callback_boundary_abi_test EXCLUDE_FROM_ALL callback_boundary_abi_test.cpp)
+  target_link_libraries(bc_callback_boundary_abi_test PRIVATE ${CMAKE_DL_LIBS})
+  target_link_options(bc_callback_boundary_abi_test PRIVATE -rdynamic)
+  add_test(NAME bc_callback_boundary_abi_test COMMAND bc_callback_boundary_abi_test)
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
@@ -98,6 +113,9 @@ if(BUILD_TESTING)
   add_dependencies(bc_serving_test bc_fake_engine)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
+  add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
+  target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
+  add_test(NAME bc_power_transaction_test COMMAND bc_power_transaction_test)
   add_executable(bc_session_test EXCLUDE_FROM_ALL session_test.cpp)
   target_link_libraries(bc_session_test PRIVATE bc_serving)
   add_dependencies(bc_session_test bc_fake_engine)
@@ -209,7 +227,11 @@ if(BUILD_TESTING)
   get_property(_bc_tests DIRECTORY PROPERTY TESTS)
   foreach(_bc_test IN LISTS _bc_tests)
     if(TARGET ${_bc_test})
-      target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+      get_target_property(_bc_test_type ${_bc_test} TYPE)
+      # Script guards are utility targets: nothing to compile.
+      if(NOT _bc_test_type STREQUAL "UTILITY")
+        target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
+      endif()
     endif()
     # The tests resolve the repository's example layouts; the binaries have no built-in layouts (BIGCHERRY_LAYOUTS).
     set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT
