@@ -11,6 +11,7 @@ import os
 import re
 import subprocess
 import tempfile
+import tomllib
 from pathlib import Path
 
 def main():
@@ -25,11 +26,15 @@ def main():
     assert hashlib.sha256(a.heat.read_bytes()).hexdigest()==(
         'cbf8e17ad4e0e57470da2c000904d863621d5affcf8876c9b87960b9472ba06e'
     ), 'heat changed'
+    site=tomllib.loads(a.site.read_text())
+    assert Path(site['handoff']['heat']).resolve()==a.heat.resolve(), 'site points at another heat file'
+    assert Path(site['engine']['radiance_home']).resolve()==(build/'radiance_home').resolve(), 'site uses another runtime home'
     env=os.environ.copy()
+    work_root=Path(env.get('BC_WORK_ROOT') or build.parents[2])
     env.update({'BIGCHERRY_LAYOUTS':str(src/'engines/radiance/layouts'),
-                'BC_MODEL_ROOT':str(Path(env.get('BC_MODEL_ROOT','/models'))),
-                'BC_WORK_ROOT':str(Path(env.get('BC_WORK_ROOT','/tmp/bigcherry'))),
-                'BIGCHERRY_ENVIRONMENT':str(Path(env['BIGCHERRY_ENVIRONMENT']))})
+                'BC_MODEL_ROOT':str(Path(env.get('BC_MODEL_ROOT') or work_root.parent/'models')),
+                'BC_WORK_ROOT':str(work_root),
+                'BIGCHERRY_ENVIRONMENT':str(Path(env.get('BIGCHERRY_ENVIRONMENT') or work_root/'environment.local.toml'))})
     with tempfile.TemporaryDirectory(prefix='rcs13-owner-cpu-') as td:
         out=Path(td)/'owner-map.json'
         cmd=[str(bc),'--write-manifest',str(out),'--unmeasured',
