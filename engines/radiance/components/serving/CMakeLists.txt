@@ -46,7 +46,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
      "R\"bchp(${bc_helper_profile_seed})bchp\"\n")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml")
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp resources.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -121,6 +121,17 @@ if(BUILD_TESTING)
   add_dependencies(bc_session_test bc_fake_engine)
   target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_session_test COMMAND bc_session_test)
+  # A build target so the component test gate can declare it; building it runs the tripwire.
+  add_custom_target(bc_session_callback_guard
+    COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake"
+    VERBATIM)
+  add_test(NAME bc_session_callback_guard COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake")
+  # RSC02 step 2: Python-oracle fixture comparison is compiled and exercised by the C++ component suite.
+  add_executable(bc_resources_parity_test EXCLUDE_FROM_ALL resources_parity_test.cpp)
+  target_link_libraries(bc_resources_parity_test PRIVATE bc_serving)
+  target_compile_definitions(bc_resources_parity_test PRIVATE
+    BC_RSC02_PARITY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_resource_parity.json")
+  add_test(NAME bc_resources_parity_test COMMAND bc_resources_parity_test)
   add_executable(bc_jcs_test EXCLUDE_FROM_ALL jcs_test.cpp)
   target_link_libraries(bc_jcs_test PRIVATE bc_serving)
   target_compile_definitions(bc_jcs_test PRIVATE
