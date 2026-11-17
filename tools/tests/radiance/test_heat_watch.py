@@ -30,19 +30,24 @@ class HeatWatch(unittest.TestCase):
         write(td / "active", [top - v for v in active])
         write(td / "live.rank0", live)
         r = subprocess.run([sys.executable, str(TOOL), "--heat", str(td / "active"), "--live", str(td / "live.rank0"),
-                            "--out", str(td / "new"), "--once", "--min-share", "1",
-                            "--tail", "400", "--heads", "1600"], capture_output=True, text=True)
+                            "--out", str(td / "new"), "--config", "flashnext-4gpu",
+                            "--run-dir", str(td / "owner"), "--once", "--min-share", "1",
+                            "--tail", "400", "--heads", "1600"], check=False, capture_output=True, text=True)
         return r.returncode, r.stdout + r.stderr, td
 
     def test_moved_heat_is_advised_with_the_restart_command(self):
-        rc, out, td = self.run_once(hist(range(0, 400)), hist(range(112, 512)))
+        rc, out, td = self.run_once(hist(range(400)), hist(range(112, 512)))
         self.assertEqual(rc, 3, out)
         self.assertIn("RE-RANK ADVISED", out)
-        self.assertIn("--heat " + str(td / "new"), out)
+        self.assertIn("bc-serve stop --run-dir", out)
+        self.assertIn("bc-serve serve flashnext-4gpu --run-dir", out)
+        self.assertIn("handoff.heat=", out)
+        self.assertIn(str(td / "new"), out)
+        self.assertNotIn("launch-flashnext-best.sh", out)
         self.assertTrue((td / "new").exists())
 
     def test_matching_heat_is_kept(self):
-        h = hist(range(0, 400))
+        h = hist(range(400))
         rc, out, _ = self.run_once(h, h)
         self.assertEqual(rc, 0, out)
         self.assertIn("keep", out)

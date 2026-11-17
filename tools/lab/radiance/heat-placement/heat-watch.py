@@ -1,20 +1,22 @@
-#!/usr/bin/env python3
-"""RHP05 stage A, recommend-only: watch a recording Flash-Next server's live route histogram and say when its --heat file
+"""RHP05 stage A, recommend-only: watch a serving session's live route histogram and say when its heat file
 no longer fits the traffic.
 
-The launcher started with --record-heat PREFIX rewrites PREFIX.rank0 (cumulative counts) every --record-period seconds.
+The native serving owner writes the configured histogram (cumulative counts) every configured telemetry period.
 Every --every seconds this takes the counts of the last --window seconds (the newest snapshot minus the one from a window
 ago, so old traffic does not dilute a change), runs heat-drift.py on them against the active --heat file, and when a
-re-rank is advised writes the re-ranked hot-first file to --out and prints the restart command. It never restarts the
+re-rank is advised writes the re-ranked hot-first file to --out and prints a native owner restart command. It never restarts the
 server itself: a restart drains every session, so applying it stays an operator decision.
 
-  heat-watch.py --heat ACTIVE.hot-first --live PREFIX.rank0 --out NEW.hot-first [--every 300] [--window 1800]
+  heat-watch.py --heat ACTIVE.hot-first --live PREFIX.rank0 --out NEW.hot-first
+                --config CONFIG --run-dir SESSION-RUN-DIR [--every 300] [--window 1800]
                 [--tail 5931] [--heads 18640] [--min-share 2.5] [--ratio 1.5] [--once]
 """
 import argparse
 import array
 import collections
+import json
 import os
+import shlex
 import subprocess
 import sys
 import tempfile
@@ -39,6 +41,8 @@ def main() -> int:
     ap.add_argument("--heat", required=True, help="the server's active --heat file (hot-first)")
     ap.add_argument("--live", required=True, help="the live histogram the server rewrites (PREFIX.rank0)")
     ap.add_argument("--out", required=True, help="where a recommended re-ranked hot-first file goes")
+    ap.add_argument("--config", required=True, help="native bc-serve named configuration to restart")
+    ap.add_argument("--run-dir", required=True, help="native owner run directory to stop and reuse")
     ap.add_argument("--every", type=float, default=300.0, help="seconds between checks")
     ap.add_argument("--window", type=float, default=1800.0, help="seconds of traffic a check judges")
     ap.add_argument("--tail", type=int, default=5931, help="experts the tail owns (flashnext-4gpu's 14 GiB tail)")
@@ -63,14 +67,20 @@ def main() -> int:
                     t.write(window.tobytes())
                 r = subprocess.run([sys.executable, DRIFT, a.heat, t.name, "--tail", str(a.tail), "--heads", str(a.heads),
                                     "--min-share", str(a.min_share),
-                                    "--ratio", str(a.ratio), "--write", a.out], capture_output=True, text=True)
+                                    "--ratio", str(a.ratio), "--write", a.out], check=False, capture_output=True, text=True)
                 os.unlink(t.name)
                 stamp = time.strftime("%Y-%m-%d %H:%M:%S")
                 lines = [l for l in r.stdout.splitlines() if l.startswith(("active file", "re-ranked"))]
                 if r.returncode == 3:
+                    # RSC12 typed configuration: no inherited Bash --heat flag.
+                    heat_setting = shlex.quote("handoff.heat=" + json.dumps(a.out))
+                    config = shlex.quote(a.config)
+                    run_dir = shlex.quote(a.run_dir)
                     print(f"{stamp} RE-RANK ADVISED: {'; '.join(lines)}\n  restart with: "
-                          f"bash tools/lab/radiance/launch-flashnext-best.sh stop && "
-                          f"bash tools/lab/radiance/launch-flashnext-best.sh start --heat {a.out} [your other arguments]", flush=True)
+                          f"bc-serve stop --run-dir {run_dir} && "
+                          f"bc-serve serve {config} --run-dir {run_dir} --set {heat_setting}\n"
+                          "  reuse the original --configs/--site/--model-root/--engine-binary and power intent",
+                          flush=True)
                     advised = True
                 elif r.returncode == 0:
                     print(f"{stamp} keep: {'; '.join(lines)}", flush=True)
