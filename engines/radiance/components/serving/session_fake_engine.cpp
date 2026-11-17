@@ -87,7 +87,16 @@ int main(int argc, char** argv) {
         std::stringstream s;
         s << in.rdbuf();
         const json parsed = json::parse(s.str(), nullptr, false);
-        if (parsed.is_object() && !parsed.contains("spec")) m = parsed;
+        if (parsed.is_object() && !parsed.contains("spec")) {
+            m = parsed;
+        } else if (parsed.is_object() && parsed.contains("spec")) {
+            // The actual owner replay path consumes a strict v2 file. This
+            // card-free engine reads ONLY its fixture port and mailbox.
+            const auto& spec = parsed.at("spec");
+            m["port"] = spec.at("processes").at("engine").at("server").at("port");
+            if (spec.contains("handoff"))
+                m["shm"] = spec.at("handoff").at("transport").at("shm");
+        }
     }
     std::printf("fake engine: pid %d manifest %s\n", int(::getpid()), manifest.c_str());
     std::fflush(stdout);
