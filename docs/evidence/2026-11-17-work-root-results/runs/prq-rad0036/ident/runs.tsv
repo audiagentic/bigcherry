@@ -1,0 +1,3 @@
+1	D	--radiance-home <work-root>/builds/4942dad1956915880d997dbde320ef87/ba081b54c31fb28805aef41b11e49613/radiance_home --prefill-interleave 2 --prefill-governor kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000	2026-11-16T14:02:18	0
+2	A	--radiance-home <work-root>/builds/4942dad1956915880d997dbde320ef87/ba081b54c31fb28805aef41b11e49613/radiance_home --prefill-interleave 2 --prefill-governor kind=arrival	2026-11-16T14:03:06	0
+3	D	--radiance-home <work-root>/builds/4942dad1956915880d997dbde320ef87/ba081b54c31fb28805aef41b11e49613/radiance_home --prefill-interleave 2 --prefill-governor kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000	2026-11-16T14:03:34	0
