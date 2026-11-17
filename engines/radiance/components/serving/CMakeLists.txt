@@ -83,6 +83,10 @@ install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 include(CTest)
 if(BUILD_TESTING)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  # A build target so the component test gate can declare it; building it runs the tripwire.
+  add_custom_target(bc_callback_boundary_guard
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py"
+    VERBATIM)
   add_test(NAME bc_callback_boundary_guard
     COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py")
   # The shared header must compile at the HIP remote-MoE worker standard.
