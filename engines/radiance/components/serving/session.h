@@ -30,6 +30,7 @@
 #include "callback_boundary.h"
 #include "serving.h"
 #include "v2/manifest.h"
+#include "stored_manifest.h"
 
 namespace bc::serving::power {
 class SessionPower;
@@ -235,6 +236,12 @@ struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
     std::filesystem::path self; // this bc-serve (writes the manifests)
     std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)
+    // OS/dependency seams: only the production default calls the real detector,
+    // compiled-in resolver, model/build identity and live P1 probe. Tests supply
+    // card-free facts but still call replay_stored_manifest through Session::plan.
+    Callback<ReplayEvidence(const v2::Manifest&)> replay_evidence;
+    Callback<v2::P1LiveRoom(const v2::Manifest&, const nlohmann::json&)> replay_live_room;
+
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment

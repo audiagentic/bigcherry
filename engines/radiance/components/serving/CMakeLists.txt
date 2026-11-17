@@ -131,6 +131,13 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_session_guards_test PRIVATE
     BC_RSC02_CALIBRATION_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_calibration_deadlines.json")
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
+  add_executable(bc_session_stored_test EXCLUDE_FROM_ALL session_stored_test.cpp)
+  target_link_libraries(bc_session_stored_test PRIVATE bc_serving)
+  add_dependencies(bc_session_stored_test bc_fake_engine)
+  target_compile_definitions(bc_session_stored_test PRIVATE
+    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
+    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+  add_test(NAME bc_session_stored_test COMMAND bc_session_stored_test)
   add_executable(bc_stored_manifest_test EXCLUDE_FROM_ALL stored_manifest_test.cpp)
   target_link_libraries(bc_stored_manifest_test PRIVATE bc_serving)
   target_compile_definitions(bc_stored_manifest_test PRIVATE
