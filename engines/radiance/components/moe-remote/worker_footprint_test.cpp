@@ -10,6 +10,29 @@
 
 namespace fp = r3::worker_footprint;
 
+/* This is the same ensure_lane_buffers template the HIP worker instantiates, with a CPU allocator.
+ * Every requested buffer has its own counter, so both omitted and oversized fields fail the footprint test. */
+struct CpuBuffer {
+    uint64_t bytes = 0;
+    bool ensure(uint64_t n) { if (n > bytes) bytes = n; return true; }
+};
+struct CpuLane {
+    CpuBuffer d_counts, d_rowmask, d_cursor, d_act, d_flat, d_sorted, d_off, d_ew, d_inv;
+    CpuBuffer d_aq, d_as, d_gu, d_mid, d_mid_s, d_down, d_dbg, d_stats, d_publish_limit, d_chunk_cnt;
+    std::array<CpuBuffer, 2> gu_code, gu_scale, dn_code, dn_scale;
+    uint64_t allocated() const {
+        const CpuBuffer* buffers[] = {&d_counts, &d_rowmask, &d_cursor, &d_act, &d_flat, &d_sorted,
+            &d_off, &d_ew, &d_inv, &d_aq, &d_as, &d_gu, &d_mid, &d_mid_s, &d_down,
+            &d_dbg, &d_stats, &d_publish_limit, &d_chunk_cnt};
+        uint64_t n = 0;
+        for (const CpuBuffer* b : buffers) n += b->bytes;
+        for (unsigned parity = 0; parity < 2; ++parity)
+            n += gu_code[parity].bytes + gu_scale[parity].bytes + dn_code[parity].bytes + dn_scale[parity].bytes;
+        return n;
+    }
+};
+
+
 static void check(bool ok, const char* why) {
     if (!ok) { std::fprintf(stderr, "r3_worker_footprint_test: FAILED %s\n", why); std::exit(1); }
 }
@@ -117,6 +140,44 @@ int main() {
                   "and so for one class: classes past the count are not prepared");
         }
     }
+    /* The real lane-buffer preparation, running here with CPU-only stub ensure() methods.
+     * Audit every per-lane GPU allocation, including the eight pointer tables and small/large differences.
+     * Protocol 4096 and configured 64 must not reserve different chunk counts in the worker and the planner. */
+    for (const uint32_t cap : {1u, 8u, 64u, 256u, 257u, 4096u}) {
+        const uint64_t routes = uint64_t(cap) * flash.top_k;
+        for (const bool large : {false, true}) {
+            CpuLane w;
+            check(fp::ensure_lane_buffers(w, flash, cap, routes, routes, large), "CPU lane preparation");
+            const uint64_t E = flash.experts, H = flash.hidden, I = flash.intermediate, G = flash.act_group;
+            check(w.d_counts.bytes == E * 4 && w.d_cursor.bytes == E * 4 && w.d_rowmask.bytes == cap,
+                  "counts, cursor, mask allocations");
+            check(w.d_act.bytes == cap * H * 2 && w.d_flat.bytes == routes * 4 &&
+                  w.d_sorted.bytes == routes * 4 && w.d_off.bytes == (E + 1) * 4,
+                  "activations and routing allocations");
+            check(w.d_ew.bytes == routes * 2 && w.d_inv.bytes == routes * 4 &&
+                  w.d_aq.bytes == cap * H && w.d_as.bytes == cap * (H / G) * 4,
+                  "route weights and quantised activations");
+            check(w.d_gu.bytes == routes * 2 * I * 2 && w.d_mid.bytes == routes * I &&
+                  w.d_mid_s.bytes == routes * (I / G) * 4 && w.d_down.bytes == routes * H * 2 &&
+                  w.d_dbg.bytes == routes * 2 * I * 2, "gate, middle, down and debug allocations");
+            check(w.d_stats.bytes == 3 * sizeof(uint64_t) && w.d_publish_limit.bytes == sizeof(uint32_t),
+                  "lane stats and publish limit allocations");
+            const uint64_t chunks = large ? ((uint64_t(cap) + 255) / 256) * sizeof(uint32_t) : 0;
+            check(w.d_chunk_cnt.bytes == chunks && fp::chunk_counter_bytes(cap) == ((uint64_t(cap) + 255) / 256) * 4,
+                  "configured-capacity chunk counters");
+            for (unsigned parity = 0; parity < 2; ++parity)
+                check(w.gu_code[parity].bytes == (E / 2) * sizeof(void*) &&
+                      w.gu_scale[parity].bytes == (E / 2) * sizeof(void*) &&
+                      w.dn_code[parity].bytes == (E / 2) * sizeof(void*) &&
+                      w.dn_scale[parity].bytes == (E / 2) * sizeof(void*), "all eight parity pointer tables");
+            check(w.allocated() == fp::lane_bytes(flash, cap, routes, large),
+                  "CPU-prepared buffers equal the planner's lane footprint");
+        }
+    }
+    check(fp::chunk_counter_bytes(64) == 4 && fp::chunk_counter_bytes(4096) == 64,
+          "64-row versus protocol-4096 counters");
+    check(2 * (fp::chunk_counter_bytes(4096) - fp::chunk_counter_bytes(64)) == 120,
+          "run-6 mismatch reproduced before the fix: two large lanes, 120 bytes");
     std::puts("r3_worker_footprint_test: ok");
     return 0;
 }
