@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_084214_the-c-serving-owner-starts-h_3545",
+  "files": [
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/callback_boundary.h",
+    "engines/radiance/components/serving/session_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC02 step 2: C++ rewrite of the start-up session owner: ordered helper start with readiness and shared-segment checks, measuring lifecycle, resource derivation with typed inputs, and unwinding of every child. Injected callbacks (power apply/restore, plan, wait, started/ended) use the sealed Callback boundary so any throw becomes a typed failure and cleanup still runs; power hook results are typed Status and a returned error is surfaced; the owner never reports a stopped session whose final record could not be persisted (fail closed). Verified-exit-before-restore is preserved under persistence failure; tests are root-safe.",
+  "timestamp-utc": "2026-11-17T08:42:14.515378Z",
+  "user-summary-candidate": "The C++ serving owner starts helpers, measures and unwinds children safely, and refuses to report a clean stop when the final record was not saved."
+}
