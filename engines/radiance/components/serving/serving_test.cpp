@@ -13,6 +13,7 @@
 #include "sdk_check.h"
 #include "serving.h"
 #include "session.h"
+#include "stored_manifest_cache.h"
 #include "sha256.h"
 #include "test_rad_fixture.h"
 #include "v2/helper_settings.h"
@@ -1951,6 +1952,58 @@ void converted_layout_parity(Fixture& t) {
     }
     const auto site = t.file("parity-site.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n"
                                                  "[handoff]\nheat = \"" + heat.string() + "\"\nhistogram = \"/heat.live\"\n");
+    // RED P0-1: project the real RSC12 config resolver's producer values,
+    // not a hand-built "manifest-shaped" JSON. The actual writer chooses
+    // ephemeral shm and S8-derived pool/KV, which a replay must not turn into
+    // new operator settings when authenticating the same static resolution.
+    {
+        namespace ss = bc::serving::session;
+        Options selected;
+        selected.site = site;
+        selected.configs = {configs};
+        selected.model_root = t.root;
+        selected.sets = {"layout.name=\"flashnext-tp2xtx-r9700\""};
+        const Resolved actual = sv::resolve(selected, t.facts);
+        ss::StaticResolutionInputs input;
+        input.effective_values = actual.values;
+        input.ordered_devices = Json::array();
+        for (const char* group : {"engine_cards", "helper_cards"}) {
+            for (const Json& selected_bdf : actual.values.at("layout").at(group)) {
+                bool found = false;
+                for (const Json& gpu : t.facts.at("gpus")) {
+                    if (gpu.at("bdf") != selected_bdf)
+                        continue;
+                    input.ordered_devices.push_back({{"role_group", group},
+                                                     {"bdf", selected_bdf},
+                                                     {"arch", gpu.at("arch")},
+                                                     {"hip_ordinal", gpu.at("hip_ordinal")},
+                                                     {"vram_total_mib", gpu.at("vram_total_mib")}});
+                    found = true;
+                    break;
+                }
+                assert(found);
+            }
+        }
+        input.producer_digest = ss::complete_file_identity("/proc/self/exe");
+        input.engine_digest = ss::complete_file_identity(BC_FAKE_ENGINE);
+        input.helper_digest = ss::complete_file_identity(BC_FAKE_ENGINE);
+        input.model_digest = ss::complete_file_identity(model);
+        input.power_profile = "stock";
+        input.file_digests[site.string()] = ss::complete_file_identity(site);
+        for (const fs::path& file : sv::config_sources({configs}))
+            input.file_digests[file.string()] = ss::complete_file_identity(file);
+        const auto original_key = ss::static_resolution_key(input);
+        input.effective_values["handoff"]["shm"] = "/r3-serve-immutable-real-fixture";
+        input.effective_values["memory"]["host_pool_mib"] =
+            actual.values.at("memory").at("host_pool_mib").get<int64_t>() + 256;
+        input.effective_values["memory"]["host_kv_mib"] =
+            actual.values.at("memory").at("host_kv_mib").get<int64_t>() + 128;
+        assert(ss::static_resolution_key(input) == original_key &&
+               "one static projection must ignore S8-derived budgets and per-start shm");
+        input.effective_values["service"]["max_context"] = 4096;
+        assert(ss::static_resolution_key(input) != original_key &&
+               "operator-controlled context remains a static identity input");
+    }
     const std::string derived_pool = "7168", derived_kv = "10240";   // what a launch derived (resources derive-launch)
     const std::string port = launcher_default("PORT");
     size_t checked = 0;

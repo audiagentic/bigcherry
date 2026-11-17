@@ -1789,6 +1789,13 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         throw PlanFailed("named CONFIG differs from the effective selected config: " + name);
     StaticResolutionInputs static_inputs;
     static_inputs.effective_values = values;
+    // Preserve operator CLI overrides separately from measured-derived values.
+    // RSC12's named layout selection already appears in effective_values.
+    for (const std::string& set : in.options.sets) {
+        const std::string key = set.substr(0, set.find('='));
+        if (key != "layout.name" && key != "handoff.shm")
+            static_inputs.operator_sets.push_back(set);
+    }
     static_inputs.producer_digest = complete_file_identity(in.self);
     const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
     static_inputs.engine_digest = engine_identity(engine, home);
@@ -2207,16 +2214,10 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
             const std::string shm = m.spec.handoff->transport.shm;
             if (shm.rfind("/r3-serve-", 0) != 0 || shm.size() > 220U)
                 throw PlanFailed("replay: stored helper shared-memory name is not owner-scoped");
-            if (!has_set("handoff.shm"))
-                in.options.sets.push_back("handoff.shm=" + shm);
         }
-        // These are the stored measured allocations, not new operator settings.
-        // Re-resolve with them for the static settings comparison; live room is
-        // independently sampled below and can refuse their reuse.
-        if (!has_set("memory.host_pool_mib"))
-            in.options.sets.push_back("memory.host_pool_mib=" + std::to_string(m.spec.resources.host.pool_mib));
-        if (!has_set("memory.host_kv_mib"))
-            in.options.sets.push_back("memory.host_kv_mib=" + std::to_string(m.spec.resources.host.kv_mib));
+        // The original operator/config/variant inputs must be reconstructed
+        // identically on first write and replay. A prior run's transport and
+        // S8 allocations are authenticated artifacts, never operator --sets.
         const Json fresh = detect(in.options.sys_root);
         const Resolved resolved = resolve(in.options, fresh);
         const Json definitions = load_layouts(in.options);

@@ -84,8 +84,21 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
     }
     for (const auto* s : {&in.producer_digest, &in.engine_digest, &in.helper_digest, &in.model_digest})
         check_digest(*s, "static resolution key");
-    Json inputs = {{"version", 1},
-                   {"effective_values", in.effective_values},
+    // One projection for BOTH the new writer and stored replay. The owner
+    // supplies original resolved operator/config/variant values; S8's derived
+    // host pool/KV and the per-start POSIX transport never enter static
+    // identity. Explicit CLI memory overrides remain in operator_sets, and
+    // changed site/config bytes remain in file_digests.
+    Json static_values = in.effective_values;
+    if (static_values.contains("handoff") && static_values["handoff"].is_object())
+        static_values["handoff"].erase("shm");
+    if (static_values.contains("memory") && static_values["memory"].is_object()) {
+        static_values["memory"].erase("host_pool_mib");
+        static_values["memory"].erase("host_kv_mib");
+    }
+    Json inputs = {{"version", 2},
+                   {"effective_values", std::move(static_values)},
+                   {"operator_sets", in.operator_sets},
                    {"ordered_devices", in.ordered_devices},
                    {"producer", in.producer_digest},
                    {"engine", in.engine_digest},

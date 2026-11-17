@@ -6,12 +6,14 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <vector>
 
 namespace bc::serving::session {
 
 struct StaticResolutionInputs {
-    nlohmann::json effective_values;
-    nlohmann::json ordered_devices; // BDF, architecture, ordinal, total VRAM; no free/claimable room
+    nlohmann::json effective_values;        // RSC12 resolved values; transport and S8 budgets are projected out
+    std::vector<std::string> operator_sets; // original CLI overrides, excluding layout selection and transport
+    nlohmann::json ordered_devices;         // BDF, architecture, ordinal, total VRAM; no free/claimable room
     std::string producer_digest;
     std::string engine_digest;
     std::string helper_digest;
