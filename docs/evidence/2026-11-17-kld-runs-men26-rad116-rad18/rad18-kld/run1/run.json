@@ -1,0 +1,831 @@
+{
+  "schema_version": 1,
+  "capture_kind": "server-bench-balanced-v1",
+  "evidence_role": "diagnostic",
+  "performance_admitted": false,
+  "admission_blockers": [
+    "full source provenance and work equivalence require verification",
+    "replay activation, if applicable, requires separate admission"
+  ],
+  "configuration": {
+    "_comment": "RAD18 combine quality gate: output quality with R3_MOE_WORKER_COMBINE=1 (helper 0 adds both helpers' bf16 rows on the CPU) against the same helper layout with the combine off, scored by radiance KL mode through ab-benchmark --server-config (quality_only). Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; MAX_ROWS=64 with --max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: recorded on first use by quality.record (two-XTX tp 2 exact wire), as in helper-kld.json. Set RAD_BIN, RAD_HOME, R9700_BDF, KLD_REF_DIR. Retire with helper-combine-nofire-ab.json once the gate is decided.",
+    "schema_version": 1,
+    "engine": "radiance",
+    "evidence_role": "diagnostic",
+    "execution_evidence": "observe",
+    "quality_only": true,
+    "model": "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+    "server_args": [],
+    "environment": {
+      "HIP_VISIBLE_DEVICES": "0",
+      "ROCR_VISIBLE_DEVICES": "2",
+      "RADIANCE_HOME": "${RAD_HOME}"
+    },
+    "expected_execution": {
+      "backend": "ROCm",
+      "architectures": [
+        "gfx1201"
+      ],
+      "locators": [
+        "${R9700_BDF}"
+      ]
+    },
+    "quality": {
+      "reference_dir": "${KLD_REF_DIR}",
+      "corpus": "<data-root>/bigcherry-work/corpus/rad-kld-corpus-4.jsonl",
+      "control": "combine0",
+      "timeout_s": 5400,
+      "args": [
+        "--radiance-home",
+        "${RAD_HOME}",
+        "--kernels",
+        "libr4d,libr3moe,libref",
+        "--placement",
+        "expert_tiered",
+        "--tp",
+        "1",
+        "--host-pool-mib",
+        "22528",
+        "--kv-cache-dtype",
+        "fp8",
+        "--max-model-len",
+        "8192",
+        "--max-num-seqs",
+        "1",
+        "--max-num-batched-tokens",
+        "64"
+      ],
+      "record": {
+        "environment": {
+          "HIP_VISIBLE_DEVICES": "0,1",
+          "ROCR_VISIBLE_DEVICES": "0,1"
+        },
+        "args": [
+          "--radiance-home",
+          "${RAD_HOME}",
+          "--kernels",
+          "libr3,libr3moe,libref",
+          "--placement",
+          "expert_tiered",
+          "--tp",
+          "2",
+          "--tp-wire",
+          "exact",
+          "--host-pool-mib",
+          "14336",
+          "--gpu-headroom-mib",
+          "320",
+          "--kv-cache-dtype",
+          "fp8",
+          "--max-model-len",
+          "8192",
+          "--max-num-seqs",
+          "1",
+          "--max-num-batched-tokens",
+          "64"
+        ]
+      },
+      "thresholds": {
+        "max_kld_mean_increase": 0.02,
+        "max_kld_median_increase": 0.01,
+        "max_kld_p99_increase": 0.2,
+        "max_kld_p999_increase": 0.5,
+        "max_top1_drop_points": 1.0,
+        "max_ppl_ratio_increase": 0.05
+      }
+    },
+    "arms": [
+      {
+        "name": "combine0",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "environment": {
+          "R3_MOE_WORKER_SKIP_OWNED": "1"
+        },
+        "settings": {
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "64",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "<data-root>/bigcherry-work/runs/perf51/heat.rank0.hot-first"
+        }
+      },
+      {
+        "name": "combine1",
+        "mode": "stock",
+        "shutdown_method": "sigint",
+        "binary": "${RAD_BIN}",
+        "environment": {
+          "R3_MOE_WORKER_SKIP_OWNED": "1"
+        },
+        "settings": {
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "64",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "<data-root>/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER_COMBINE": "1"
+        }
+      }
+    ]
+  },
+  "model_sha256": "0af5e96244e80c21ac8edca1719dae49b8a201b94a2f3994c3e24026ceaa4d20",
+  "arm_model_sha256": {},
+  "arm_provenance": {
+    "combine0": {
+      "campaign_metadata": {
+        "binary_hash": "38e95ebd723fe8ff4f7be52c2f74c8f42e32453752c011cd31498b757531c185",
+        "build_id": "72edf362a03c2d0536659fac69430289",
+        "build_plan_id": "44987352d36d868623f8085f2814c946",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_CXX_COMPILER_RANLIB": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_C_COMPILER_RANLIB": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "38e95ebd723fe8ff4f7be52c2f74c8f42e32453752c011cd31498b757531c185"
+        },
+        "runtime_bundle_hash": "5d5eeaf3ed101a3fd6c4c3b153f83a4a",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "38e95ebd723fe8ff4f7be52c2f74c8f42e32453752c011cd31498b757531c185"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "685ec5bd858a31e90ba0431e844e3353c8c266fc",
+        "tree_oid": "6c2e292f5addb21e1b4691cfa6c4ec384401a81b",
+        "object_format": "sha1",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    },
+    "combine1": {
+      "campaign_metadata": {
+        "binary_hash": "38e95ebd723fe8ff4f7be52c2f74c8f42e32453752c011cd31498b757531c185",
+        "build_id": "72edf362a03c2d0536659fac69430289",
+        "build_plan_id": "44987352d36d868623f8085f2814c946",
+        "effective_configure": {
+          "CMAKE_BUILD_TYPE": "Release",
+          "CMAKE_CXX_COMPILER": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14",
+          "CMAKE_CXX_COMPILER-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_AR": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_CXX_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_CXX_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_CXX_COMPILER_RANLIB": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_CXX_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_C_COMPILER": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14",
+          "CMAKE_C_COMPILER-ADVANCED": "1",
+          "CMAKE_C_COMPILER_AR": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ar-14",
+          "CMAKE_C_COMPILER_AR-ADVANCED": "1",
+          "CMAKE_C_COMPILER_LAUNCHER": "ccache",
+          "CMAKE_C_COMPILER_RANLIB": "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-ranlib-14",
+          "CMAKE_C_COMPILER_RANLIB-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS": "",
+          "CMAKE_EXE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_EXE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_EXE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_EXE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS": "",
+          "CMAKE_MODULE_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_MODULE_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_MODULE_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_MODULE_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS": "",
+          "CMAKE_SHARED_LINKER_FLAGS-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG": "",
+          "CMAKE_SHARED_LINKER_FLAGS_DEBUG-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL": "",
+          "CMAKE_SHARED_LINKER_FLAGS_MINSIZEREL-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELEASE-ADVANCED": "1",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO": "",
+          "CMAKE_SHARED_LINKER_FLAGS_RELWITHDEBINFO-ADVANCED": "1"
+        },
+        "generated_compile_inputs_hash": null,
+        "generated_inputs_verification": null,
+        "runtime_artifacts": {
+          "radiance": "38e95ebd723fe8ff4f7be52c2f74c8f42e32453752c011cd31498b757531c185"
+        },
+        "runtime_bundle_hash": "5d5eeaf3ed101a3fd6c4c3b153f83a4a",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "toolchain": [
+          [
+            "CMAKE_CXX_COMPILER",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "CMAKE_C_COMPILER",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "CMAKE_GENERATOR",
+            "Ninja"
+          ],
+          [
+            "c_compiler_realpath",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-gcc-14"
+          ],
+          [
+            "c_compiler_version",
+            "x86_64-linux-gnu-gcc-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "cmake_version",
+            "cmake version 3.28.3"
+          ],
+          [
+            "cxx_compiler_realpath",
+            "<data-root>/bigcherry-work/toolchains/gcc14/root/usr/bin/x86_64-linux-gnu-g++-14"
+          ],
+          [
+            "cxx_compiler_version",
+            "x86_64-linux-gnu-g++-14 (Ubuntu 14.2.0-4ubuntu2~24.04.1) 14.2.0"
+          ],
+          [
+            "ninja_version",
+            "1.11.1"
+          ]
+        ]
+      },
+      "observed_runtime_artifacts": {
+        "radiance": "38e95ebd723fe8ff4f7be52c2f74c8f42e32453752c011cd31498b757531c185"
+      },
+      "compiler_observation": null,
+      "source_attestation": {
+        "upstream_revision": "685ec5bd858a31e90ba0431e844e3353c8c266fc",
+        "tree_oid": "6c2e292f5addb21e1b4691cfa6c4ec384401a81b",
+        "object_format": "sha1",
+        "source_slice_id": "2ecefd96ad3c216d0321eb67880e5e7d",
+        "allowed_untracked": [
+          "abi/bc_moe_remote.h",
+          "arch/common/bc_moe_remote_block.h",
+          "core/place/bc_moe_remote.cpp",
+          "core/place/bc_moe_remote_place.h"
+        ]
+      }
+    }
+  },
+  "arm_variables": {
+    "combine0": {
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "64",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "<data-root>/bigcherry-work/runs/perf51/heat.rank0.hot-first"
+      }
+    },
+    "combine1": {
+      "environment": {
+        "R3_MOE_WORKER_SKIP_OWNED": "1"
+      },
+      "settings": {
+        "R3_MOE_WORKER": "1",
+        "R3_MOE_WORKER_DEVICES": "0 1",
+        "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+        "R3_MOE_WORKER_ENGINE_RANKS": "1",
+        "R3_MOE_WORKER_MAX_ROWS": "64",
+        "R3_MOE_WORKER_SMALL_ROWS": "8",
+        "R3_MOE_WORKER_MIB": "22528",
+        "R3_MOE_WORKER_HEAT": "<data-root>/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+        "R3_MOE_WORKER_COMBINE": "1"
+      }
+    }
+  },
+  "schedule": [],
+  "schedule_seed": 0,
+  "settle_seconds": 20.0,
+  "runs": [],
+  "exploratory_comparisons": {},
+  "quality": {
+    "reference_dir": "<data-root>/bigcherry-work/runs/rad18-kld/reference",
+    "control": "combine0",
+    "gate": "control",
+    "thresholds": {
+      "max_kld_mean_increase": 0.02,
+      "max_kld_median_increase": 0.01,
+      "max_kld_p99_increase": 0.2,
+      "max_kld_p999_increase": 0.5,
+      "max_top1_drop_points": 1.0,
+      "max_ppl_ratio_increase": 0.05
+    },
+    "reference_metadata": null,
+    "recorded_reference": {
+      "argv": [
+        "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/bin/radiance",
+        "--model",
+        "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+        "--radiance-home",
+        "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/radiance_home",
+        "--kernels",
+        "libr3,libr3moe,libref",
+        "--placement",
+        "expert_tiered",
+        "--tp",
+        "2",
+        "--tp-wire",
+        "exact",
+        "--host-pool-mib",
+        "14336",
+        "--gpu-headroom-mib",
+        "320",
+        "--kv-cache-dtype",
+        "fp8",
+        "--max-model-len",
+        "8192",
+        "--max-num-seqs",
+        "1",
+        "--max-num-batched-tokens",
+        "64",
+        "--kld-record",
+        "<data-root>/bigcherry-work/runs/rad18-kld/reference",
+        "--kld-corpus",
+        "<data-root>/bigcherry-work/corpus/rad-kld-corpus-4.jsonl"
+      ],
+      "log": "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/reference.record.log",
+      "returncode": 0
+    },
+    "arms": {
+      "combine0": {
+        "settings": {
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "64",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "<data-root>/bigcherry-work/runs/perf51/heat.rank0.hot-first"
+        },
+        "argv": [
+          "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/bin/radiance",
+          "--model",
+          "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+          "--radiance-home",
+          "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/radiance_home",
+          "--kernels",
+          "libr4d,libr3moe,libref",
+          "--placement",
+          "expert_tiered",
+          "--tp",
+          "1",
+          "--host-pool-mib",
+          "22528",
+          "--kv-cache-dtype",
+          "fp8",
+          "--max-model-len",
+          "8192",
+          "--max-num-seqs",
+          "1",
+          "--max-num-batched-tokens",
+          "64",
+          "--kld-ref",
+          "<data-root>/bigcherry-work/runs/rad18-kld/reference",
+          "--kld-out",
+          "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/combine0.kld.json"
+        ],
+        "log": "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/combine0.score.log",
+        "returncode": 0,
+        "sidecars": [
+          {
+            "name": "helper0",
+            "argv": [
+              "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/radiance_home/helpers/r3_moe_worker",
+              "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            ],
+            "log": "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/helper0.log",
+            "ready_s": 0.40152412094175816,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          },
+          {
+            "name": "helper1",
+            "argv": [
+              "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/radiance_home/helpers/r3_moe_worker",
+              "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            ],
+            "log": "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/helper1.log",
+            "ready_s": 0.200817251810804,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          }
+        ],
+        "result": {
+          "kld_mean": 0.06142075525045341,
+          "kld_median": 0.014761790167540312,
+          "kld_p99": 0.6242077606916407,
+          "kld_p999": 2.3747365288736026,
+          "top1_percent": 89.08980582524272,
+          "ppl": 9.022819620746708,
+          "ppl_reference": 9.111430233754012
+        },
+        "all": {
+          "positions": 8240,
+          "kld": {
+            "mean": 0.06142075525045341,
+            "median": 0.014761790167540312,
+            "p90": 0.1499316424131394,
+            "p95": 0.2452493622899048,
+            "p99": 0.6242077606916407,
+            "p99_9": 2.3747365288736026,
+            "p99_99": 5.928164243651624,
+            "max": 7.592014789581299
+          },
+          "top1_agreement": 0.8908980582524272,
+          "ppl": {
+            "candidate": 9.022819620746708,
+            "reference": 9.111430233754012,
+            "ratio": 0.9902747855458477
+          }
+        },
+        "by_source": {
+          "kld-docs-00": {
+            "positions": 1950,
+            "kld": {
+              "mean": 0.03347040031813561,
+              "median": 0.011904820334166288,
+              "p90": 0.06934363916516306,
+              "p95": 0.11836950778961182,
+              "p99": 0.3865020567178726,
+              "p99_9": 1.2778783119916892,
+              "p99_99": 1.7685280080914716,
+              "max": 1.8793308734893799
+            },
+            "top1_agreement": 0.9112820512820513,
+            "ppl": {
+              "candidate": 9.072712574527023,
+              "reference": 9.119978102406709,
+              "ratio": 0.9948173638852035
+            },
+            "docs": 1
+          },
+          "kld-docs-01": {
+            "positions": 2211,
+            "kld": {
+              "mean": 0.06857956125741972,
+              "median": 0.021099403500556946,
+              "p90": 0.17679083347320557,
+              "p95": 0.2679343968629837,
+              "p99": 0.5888295948505411,
+              "p99_9": 1.8825771367549646,
+              "p99_99": 2.5755174570083614,
+              "max": 2.6069140434265137
+            },
+            "top1_agreement": 0.8950701040253279,
+            "ppl": {
+              "candidate": 8.756559919133666,
+              "reference": 8.852939443514364,
+              "ratio": 0.9891132741847336
+            },
+            "docs": 1
+          },
+          "kld-docs-02": {
+            "positions": 2132,
+            "kld": {
+              "mean": 0.08238672100385486,
+              "median": 0.0158662348985672,
+              "p90": 0.19285193532705314,
+              "p95": 0.324104942381381,
+              "p99": 0.850182354450226,
+              "p99_9": 3.203902143478576,
+              "p99_99": 6.936939521169846,
+              "max": 7.592014789581299
+            },
+            "top1_agreement": 0.8710131332082551,
+            "ppl": {
+              "candidate": 10.341939270737898,
+              "reference": 10.456850556876205,
+              "ratio": 0.9890109086370423
+            },
+            "docs": 1
+          },
+          "kld-docs-03": {
+            "positions": 1947,
+            "kld": {
+              "mean": 0.05832657602619315,
+              "median": 0.01359241921454668,
+              "p90": 0.13161446750164035,
+              "p95": 0.21661963313817967,
+              "p99": 0.49473494708537924,
+              "p99_9": 3.391507175445749,
+              "p99_99": 5.5536542287826505,
+              "max": 5.57253360748291
+            },
+            "top1_agreement": 0.8875192604006163,
+            "ppl": {
+              "candidate": 7.995137045355815,
+              "reference": 8.088625871495074,
+              "ratio": 0.9884419396292365
+            },
+            "docs": 1
+          }
+        }
+      },
+      "combine1": {
+        "settings": {
+          "R3_MOE_WORKER": "1",
+          "R3_MOE_WORKER_DEVICES": "0 1",
+          "R3_MOE_WORKER_MOE_DOWN_TILE": "1",
+          "R3_MOE_WORKER_ENGINE_RANKS": "1",
+          "R3_MOE_WORKER_MAX_ROWS": "64",
+          "R3_MOE_WORKER_SMALL_ROWS": "8",
+          "R3_MOE_WORKER_MIB": "22528",
+          "R3_MOE_WORKER_HEAT": "<data-root>/bigcherry-work/runs/perf51/heat.rank0.hot-first",
+          "R3_MOE_WORKER_COMBINE": "1"
+        },
+        "argv": [
+          "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/bin/radiance",
+          "--model",
+          "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+          "--radiance-home",
+          "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/radiance_home",
+          "--kernels",
+          "libr4d,libr3moe,libref",
+          "--placement",
+          "expert_tiered",
+          "--tp",
+          "1",
+          "--host-pool-mib",
+          "22528",
+          "--kv-cache-dtype",
+          "fp8",
+          "--max-model-len",
+          "8192",
+          "--max-num-seqs",
+          "1",
+          "--max-num-batched-tokens",
+          "64",
+          "--kld-ref",
+          "<data-root>/bigcherry-work/runs/rad18-kld/reference",
+          "--kld-out",
+          "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/combine1.kld.json"
+        ],
+        "log": "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/combine1.score.log",
+        "returncode": 0,
+        "sidecars": [
+          {
+            "name": "helper0",
+            "argv": [
+              "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/radiance_home/helpers/r3_moe_worker",
+              "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            ],
+            "log": "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/helper0.log",
+            "ready_s": 0.4010334669146687,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          },
+          {
+            "name": "helper1",
+            "argv": [
+              "<data-root>/bigcherry-work/builds/2ecefd96ad3c216d0321eb67880e5e7d/44987352d36d868623f8085f2814c946/radiance_home/helpers/r3_moe_worker",
+              "<models-root>/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
+            ],
+            "log": "<data-root>/bigcherry-work/runs/rad18-kld/run1/quality/helper1.log",
+            "ready_s": 0.20061379694379866,
+            "returncode": 0,
+            "exited_before_stop": false,
+            "killed": false
+          }
+        ],
+        "result": {
+          "kld_mean": 0.06142075525045341,
+          "kld_median": 0.014761790167540312,
+          "kld_p99": 0.6242077606916407,
+          "kld_p999": 2.3747365288736026,
+          "top1_percent": 89.08980582524272,
+          "ppl": 9.022819620746708,
+          "ppl_reference": 9.111430233754012
+        },
+        "all": {
+          "positions": 8240,
+          "kld": {
+            "mean": 0.06142075525045341,
+            "median": 0.014761790167540312,
+            "p90": 0.1499316424131394,
+            "p95": 0.2452493622899048,
+            "p99": 0.6242077606916407,
+            "p99_9": 2.3747365288736026,
+            "p99_99": 5.928164243651624,
+            "max": 7.592014789581299
+          },
+          "top1_agreement": 0.8908980582524272,
+          "ppl": {
+            "candidate": 9.022819620746708,
+            "reference": 9.111430233754012,
+            "ratio": 0.9902747855458477
+          }
+        },
+        "by_source": {
+          "kld-docs-00": {
+            "positions": 1950,
+            "kld": {
+              "mean": 0.03347040031813561,
+              "median": 0.011904820334166288,
+              "p90": 0.06934363916516306,
+              "p95": 0.11836950778961182,
+              "p99": 0.3865020567178726,
+              "p99_9": 1.2778783119916892,
+              "p99_99": 1.7685280080914716,
+              "max": 1.8793308734893799
+            },
+            "top1_agreement": 0.9112820512820513,
+            "ppl": {
+              "candidate": 9.072712574527023,
+              "reference": 9.119978102406709,
+              "ratio": 0.9948173638852035
+            },
+            "docs": 1
+          },
+          "kld-docs-01": {
+            "positions": 2211,
+            "kld": {
+              "mean": 0.06857956125741972,
+              "median": 0.021099403500556946,
+              "p90": 0.17679083347320557,
+              "p95": 0.2679343968629837,
+              "p99": 0.5888295948505411,
+              "p99_9": 1.8825771367549646,
+              "p99_99": 2.5755174570083614,
+              "max": 2.6069140434265137
+            },
+            "top1_agreement": 0.8950701040253279,
+            "ppl": {
+              "candidate": 8.756559919133666,
+              "reference": 8.852939443514364,
+              "ratio": 0.9891132741847336
+            },
+            "docs": 1
+          },
+          "kld-docs-02": {
+            "positions": 2132,
+            "kld": {
+              "mean": 0.08238672100385486,
+              "median": 0.0158662348985672,
+              "p90": 0.19285193532705314,
+              "p95": 0.324104942381381,
+              "p99": 0.850182354450226,
+              "p99_9": 3.203902143478576,
+              "p99_99": 6.936939521169846,
+              "max": 7.592014789581299
+            },
+            "top1_agreement": 0.8710131332082551,
+            "ppl": {
+              "candidate": 10.341939270737898,
+              "reference": 10.456850556876205,
+              "ratio": 0.9890109086370423
+            },
+            "docs": 1
+          },
+          "kld-docs-03": {
+            "positions": 1947,
+            "kld": {
+              "mean": 0.05832657602619315,
+              "median": 0.01359241921454668,
+              "p90": 0.13161446750164035,
+              "p95": 0.21661963313817967,
+              "p99": 0.49473494708537924,
+              "p99_9": 3.391507175445749,
+              "p99_99": 5.5536542287826505,
+              "max": 5.57253360748291
+            },
+            "top1_agreement": 0.8875192604006163,
+            "ppl": {
+              "candidate": 7.995137045355815,
+              "reference": 8.088625871495074,
+              "ratio": 0.9884419396292365
+            },
+            "docs": 1
+          }
+        },
+        "gate": {
+          "passed": true,
+          "problems": []
+        }
+      }
+    },
+    "passed": true
+  },
+  "setting_activation": {
+    "combine1": {
+      "R3_MOE_WORKER_COMBINE": {
+        "status": "executed",
+        "mechanism": "moe-remote:R3_MOE_WORKER_COMBINE",
+        "detail": "marker 'libr3moe: R3_MOE_WORKER_COMBINE on': control False, subject True"
+      }
+    }
+  }
+}
