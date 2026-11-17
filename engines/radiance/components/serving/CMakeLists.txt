@@ -103,6 +103,10 @@ if(BUILD_TESTING)
   add_dependencies(bc_session_test bc_fake_engine)
   target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_session_test COMMAND bc_session_test)
+  # A build target so the component test gate can declare it; building it runs the tripwire.
+  add_custom_target(bc_session_callback_guard
+    COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake"
+    VERBATIM)
   add_test(NAME bc_session_callback_guard COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake")
   # RSC02 step 2: Python-oracle fixture comparison is compiled and exercised by the C++ component suite.
   add_executable(bc_resources_parity_test EXCLUDE_FROM_ALL resources_parity_test.cpp)
