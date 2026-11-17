@@ -15,6 +15,8 @@ struct BcEngineSettings {
     int64_t max_rows = 64;
     const char* shm = "/r3-moe-helper";
     const char* histogram_file = nullptr;
+    // Ephemeral launch proof, decoded once from --bc-heat-launch-nonce, not a manifest field.
+    const char* heat_launch_nonce = nullptr;
     int64_t histogram_period_s = 0;
     uint32_t moe_native = 1;
     uint32_t moe_fp16 = 1;

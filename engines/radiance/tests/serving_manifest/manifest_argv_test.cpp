@@ -142,6 +142,33 @@ int main(int, char** argv) {
     CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
     CHECK(run({"--manifest", example}) == got);   // deterministic
 
+    // RSC02: the production launch owner passes one authenticated heat
+    // publication identity as an ephemeral flag, *outside* the signed manifest.
+    // The strict reader consumes it before radiance config_parse and makes it
+    // available only as a typed engine snapshot; it must never leak into argv.
+    const std::string heat_nonce = "0123456789abcdef0123456789abcdef";
+    const std::string with_heat =
+        run({"--manifest", example, "--role", "engine", "--bc-heat-launch-nonce", heat_nonce});
+    CHECK(with_heat == got && g_parsed);
+    CHECK(with_heat.find(heat_nonce) == std::string::npos);
+    BcEngineSettings heat_settings{};
+    CHECK(bc_serving_engine_settings(&heat_settings));
+    CHECK(heat_settings.heat_launch_nonce != nullptr);
+    if (heat_settings.heat_launch_nonce)
+        CHECK(std::string(heat_settings.heat_launch_nonce) == heat_nonce);
+    CHECK(run({"--manifest", example, "--bc-heat-launch-nonce", "bad"}) == "ERROR");
+    CHECK(run({"--manifest", example, "--bc-heat-launch-nonce", "0123456789ABCDEF0123456789abcdef"}) ==
+          "ERROR");
+    CHECK(run({"--manifest", example, "--bc-heat-launch-nonce", heat_nonce, "--bc-heat-launch-nonce",
+               heat_nonce}) == "ERROR");
+    CHECK(run({"--manifest", example, "--bc-heat-launch-nonce"}) == "ERROR");
+    CHECK(run({"--manifest", example, "--plan-memory", "memory.json", "--bc-heat-launch-nonce", heat_nonce}) ==
+          "ERROR");
+    CHECK(run({"--manifest", example}) == got);
+    BcEngineSettings no_heat{};
+    CHECK(bc_serving_engine_settings(&no_heat));
+    CHECK(no_heat.heat_launch_nonce == nullptr);
+
     // Hostile inherited R3_* variables must be inert. The manifest's typed
     // handoff settings are authoritative; the startup code must not rewrite them.
     {

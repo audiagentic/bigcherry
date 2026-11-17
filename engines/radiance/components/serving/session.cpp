@@ -12,6 +12,7 @@
 #include "stored_manifest_cache.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <csignal>
 #include <cstdint>
@@ -31,6 +32,7 @@
 #include <poll.h>
 #include <sys/file.h>
 #include <sys/mman.h>
+#include <sys/random.h>
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
@@ -418,6 +420,30 @@ bool group_gone(pid_t pgid) {
 std::string lower(std::string s) {
     std::transform(s.begin(), s.end(), s.begin(), [](unsigned char c) { return char(std::tolower(c)); });
     return s;
+}
+
+// Only the session owner can mint a fresh launch identity. It is supplied to
+// the engine in the explicitly constructed child environment, not inherited.
+std::string heat_launch_nonce() {
+    std::array<unsigned char, 16> random{};
+    size_t filled = 0;
+    while (filled < random.size()) {
+        const ssize_t n = ::getrandom(random.data() + filled, random.size() - filled, 0);
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            throw std::runtime_error("could not create the engine heat launch nonce");
+        filled += static_cast<size_t>(n);
+    }
+    constexpr char digits[] = "0123456789abcdef";
+    std::string token;
+    token.reserve(random.size() * 2);
+    for (const unsigned char byte : random) {
+        const auto code = static_cast<unsigned int>(byte);
+        token.push_back(digits[code >> 4U]);
+        token.push_back(digits[code & 15U]);
+    }
+    return token;
 }
 
 } // namespace
@@ -1322,11 +1348,21 @@ class Owner {
     void start_engine() {
         const fs::path log = s_.run_dir / ("engine-" + stamp() + ".log");
         engine_log_ = log;
+        // The strict reader accepts this ephemeral flag only for a serving
+        // engine with manifest-declared heat. Measuring engines, standalone
+        // engines and helpers never receive it; no ambient environment read.
+        std::vector<std::string> argv = plan_.argv;
+        const auto manifest = v2::load_manifest(plan_.manifest, v2::PlanUse::serving);
+        if (manifest && manifest.value().spec.handoff &&
+            manifest.value().spec.handoff->telemetry.histogram_file) {
+            plan_.heat_session_nonce = heat_launch_nonce();
+            argv.push_back("--bc-heat-launch-nonce");
+            argv.push_back(plan_.heat_session_nonce);
+        }
         plan_.engine_launched_at = std::chrono::system_clock::now();
-        (void)spawn(
-            plan_.argv, child_environment(environ, plan_.runtime), log,
-            [&](pid_t pid) { track("engine", pid, log); },
-            plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
+        (void)spawn(argv, child_environment(environ, plan_.runtime), log,
+                    [&](pid_t pid) { track("engine", pid, log); },
+                    plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
     }
 
     std::optional<std::string> exited_child() {
