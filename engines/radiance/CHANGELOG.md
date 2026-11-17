@@ -1,5 +1,28 @@
 # Changelog
 
+## [1170.28.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.27.0...bc-radiance-1170.28.0) (2026-11-17)
+
+
+### New and changed
+
+* **patch:** migrate diagnostics to the diagnostic state; enforce source-class states (PRQ05) ([#1005](https://github.com/audiagentic/bigcherry/issues/1005)) ([a81b2cf](https://github.com/audiagentic/bigcherry/commit/a81b2cfbbef93841e3d059f78eeff43fd4754e1e))
+* **patch:** promote rad0037_bf16_fp8_kv, rad0038_bf16_i8_kv, rad0040_kv_layout_table, rad0041_kv_b16_flashnext ([#1033](https://github.com/audiagentic/bigcherry/issues/1033)) ([ff48b48](https://github.com/audiagentic/bigcherry/commit/ff48b48ad81b8632d521ade80b9b201bef636b9d))
+* **radiance:** inactive credited heat source, policy oracle and heat ring (RHP02 B1, B2) ([#1010](https://github.com/audiagentic/bigcherry/issues/1010)) ([38086f3](https://github.com/audiagentic/bigcherry/commit/38086f33e364656b1ed4bcbabc799826235ab7ec))
+* **radiance:** inactive moe heat observer ABI package rad0031 (RHP02 slice A) ([#942](https://github.com/audiagentic/bigcherry/issues/942)) ([6192d18](https://github.com/audiagentic/bigcherry/commit/6192d183fadcd93bb001e0cfac4d060344903287))
+* **radiance:** live v26 topology cutover (RCS14) ([#1014](https://github.com/audiagentic/bigcherry/issues/1014)) ([d032876](https://github.com/audiagentic/bigcherry/commit/d032876232039378017a31ae1cd0d4456ce154ff))
+* **serving:** add guarded power transaction and diagnostics ([#1040](https://github.com/audiagentic/bigcherry/issues/1040)) ([77881c9](https://github.com/audiagentic/bigcherry/commit/77881c9059783088a881129246ee1f68b124e75d))
+* **serving:** bind RSC02 power and runtime guards ([#1055](https://github.com/audiagentic/bigcherry/issues/1055)) ([9ea4c83](https://github.com/audiagentic/bigcherry/commit/9ea4c83bbed760fcbf01f0b2765b575b57f281c9))
+* **serving:** replay stored manifests for named configurations ([#1066](https://github.com/audiagentic/bigcherry/issues/1066)) ([dc6c6da](https://github.com/audiagentic/bigcherry/commit/dc6c6daf165143cc0a5c28b401859fff849d33dc))
+* **serving:** rewrite RSC02 session owner and resource helpers ([#1043](https://github.com/audiagentic/bigcherry/issues/1043)) ([1c55c6d](https://github.com/audiagentic/bigcherry/commit/1c55c6dd147fff452bf0452ce66ea7cea703f414))
+
+
+### Fixes
+
+* **moe-remote:** align prepared lane buffers with shared footprint ([#1056](https://github.com/audiagentic/bigcherry/issues/1056)) ([8c10d1c](https://github.com/audiagentic/bigcherry/commit/8c10d1cea356ea4e1e41e2df4ef630e1bb9fa1d0))
+* **radiance:** remeasure host pool without changing owner map ([#1058](https://github.com/audiagentic/bigcherry/issues/1058)) ([e28734f](https://github.com/audiagentic/bigcherry/commit/e28734f097fe7c0ff59415ecfe0494271a1e22a0))
+* **serving:** bind heat guard to producer snapshots and engine launch ([#1067](https://github.com/audiagentic/bigcherry/issues/1067)) ([54c0169](https://github.com/audiagentic/bigcherry/commit/54c01698f9e5c7d0fec0f7b8a7f4c08ebeb98d13))
+* **serving:** gate GPU starts and validate calibration evidence ([#1059](https://github.com/audiagentic/bigcherry/issues/1059)) ([0043301](https://github.com/audiagentic/bigcherry/commit/0043301dd35cbfbe428c972edddf9a71f4ad53a4))
+
 ## [1170.27.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.26.0...bc-radiance-1170.27.0) (2026-11-16)
 
 
