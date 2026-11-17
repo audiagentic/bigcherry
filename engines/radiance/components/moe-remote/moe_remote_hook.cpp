@@ -8,6 +8,7 @@
 #include "engine_admission_gate.h"
 #include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
+#include "heat_publication.h"
 #include "moe_v26_gpu_contract.h"
 #include "rad_abi.h"
 #include "rad_device.h"   /* engine streams take only radiance events (rad_event_*), never raw HIP events */
@@ -845,14 +846,14 @@ void write_heat(uint32_t rank, RankState& s, bool final) {
     if (final) (void)hip_ok(hipDeviceSynchronize(), "sync before route histogram");
     std::vector<uint32_t> heat((size_t)kMaxLayers * g.hdr->expert_count);
     for (size_t i = 0; i < heat.size(); ++i) heat[i] = __atomic_load_n(&s.heat_host[i], __ATOMIC_RELAXED);
-    const bool stream = !final;
-    const std::string out = std::string(path) + ".rank" + std::to_string(rank);
-    const std::string tmp = out + ".tmp";
-    if (FILE* f = std::fopen(tmp.c_str(), "wb")) {
-        const size_t n = std::fwrite(heat.data(), sizeof(uint32_t), heat.size(), f);
-        const bool ok = std::fclose(f) == 0 && n == heat.size() && std::rename(tmp.c_str(), out.c_str()) == 0;
-        if (!stream) std::fprintf(stderr, "libr3: R3_MOE_WORKER route histogram %s (%zu counts)%s\n", out.c_str(), n, ok ? "" : " NOT written");
-    }
+    // The engine launcher provides a fresh nonce only to its serving child.
+    // Legacy standalone launches still publish the unchanged raw file.
+    const char* nonce = std::getenv("BC_HEAT_LAUNCH_NONCE");
+    const bool ok = r3::heat_publication::publish(path, rank, g.hdr->expert_count, heat,
+                                                   nonce ? std::string_view(nonce) : std::string_view{});
+    if (final)
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER route histogram %s.rank%u (%zu counts)%s\\n",
+                     path, rank, heat.size(), ok ? "" : " NOT written");
 }
 
 /* The live snapshot thread: every R3_MOE_WORKER_HISTOGRAM_PERIOD_S seconds, each ready rank's histogram. It takes g.mu per snapshot, so

@@ -47,6 +47,29 @@ be misreported as healthy GFXOFF.
 A successful canary is followed by a **manifest-driven** MTP replay guard
 (depth greater than one, absent `profile_ops`): an engine log must include a
 recorded nonzero draft pass, with exactly one retry canary before refusal.
+The heat-stream guard reads the unchanged engine histogram producer layout:
+native-endian cumulative `uint32_t[128][model.experts]`, including zero-padded
+inactive model layers. Its model dimensions are authenticated from the strict
+manifest and must fit the common `moe_shm::kMaxLayers` and expert-count domain.
+Each publication is an atomic replacement; the guard accepts new inodes when
+the full record and all per-cell counters remain consistent, and fails closed
+on resets or counter wrap rather than fabricating positive deltas.
+
+A serving owner mints a 128-bit nonce immediately before spawning each engine
+and injects `BC_HEAT_LAUNCH_NONCE` into only that child's environment. The
+engine-side histogram publisher retains the *exact* raw `.rankN` layout for
+the worker reader and optionally writes a versioned `.rankN.bcproof` companion
+containing that nonce and the published file's generation. The owner requires
+a matching proof and a post-launch, fresh, nonzero sample for every successful
+poll; it never treats an unproved legacy rank file as authenticated session
+evidence. Standalone engines without the nonce remain backward-compatible
+with existing raw-histogram workers. Since the two renames are separate,
+the owner retries a bounded number of times over a transient mismatch.
+This token guards against stray and previous-launch producers, not a
+same-UID adversary capable of inspecting the child environment or forging the
+publication. The sidecar is not a signature or an authority over arbitrary
+writers with access to the owner's credentials.
+
 For a manifest requesting live policy, the C++ runtime guard verifies the
 startup decision, samples the actual rank histogram without following
 symlinks, rejects empty/stale/future files, and checks live worker transport

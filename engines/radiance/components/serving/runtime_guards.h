@@ -11,24 +11,27 @@
 #include <optional>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace bc::serving::session {
 
 enum class ReplayVerdict : uint8_t { disabled, profiled, observed, absent };
 enum class HistogramVerdict : uint8_t { fresh, missing, unsafe, stale, future };
-// The producer writes raw cumulative uint32[model.layers][model.experts],
-// with no embedded run identifier. The model is authenticated by the v2
-// manifest; the owner supplies a pre-exec launch timestamp. Once published,
-// keep the inode bound to this launch for every later poll.
+// A successful sample carries full cumulative counts across atomic file
+// replacements, not a pinned inode. The producer stamps each publication with
+// the owner-only per-launch nonce in a versioned sidecar.
 struct HistogramIdentity {
     uint64_t device = 0;
     uint64_t inode = 0;
+    int64_t modified_ns = 0;
+    std::vector<uint32_t> counts;
 };
 struct HistogramExpectation {
     uint64_t layers = 0;
     uint64_t experts = 0;
     std::chrono::system_clock::time_point launched_at{};
     std::optional<HistogramIdentity> identity;
+    std::string launch_nonce;
 };
 HistogramVerdict histogram_verdict(const std::filesystem::path& rank_file,
                                    std::chrono::system_clock::time_point now, std::chrono::nanoseconds max_age,

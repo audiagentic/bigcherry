@@ -1,5 +1,6 @@
 // RSC02 step 3: native bounded ABBA lab and replay guard semantics. No GPU.
-#include "../moe-remote/moe_remote_shm.h"
+#include "../moe-remote/heat_publication.h"
+#include "../moe-remote/worker_heat_source.h"
 #include "calibration_lab.h"
 #include "runtime_guards.h"
 
@@ -41,16 +42,18 @@ struct Temporary {
     }
 };
 
-void publish_like_engine(const fs::path& rank, const std::vector<uint32_t>& counts, bool replace = true) {
-    const fs::path target = replace ? fs::path(rank.string() + ".tmp") : rank;
-    std::ofstream out(target, std::ios::binary | std::ios::trunc);
-    expect(bool(out), "cannot open histogram fixture");
-    out.write(reinterpret_cast<const char*>(counts.data()),
-              static_cast<std::streamsize>(counts.size() * sizeof(uint32_t)));
-    out.close();
-    expect(bool(out), "cannot write histogram fixture");
-    if (replace)
-        fs::rename(target, rank); // real engine replaces each snapshot atomically
+constexpr std::string_view kLaunchNonce = "0123456789abcdef0123456789abcdef";
+constexpr std::string_view kOtherNonce = "fedcba9876543210fedcba9876543210";
+
+void publish_like_engine(const fs::path& rank, const std::vector<uint32_t>& counts,
+                         std::string_view nonce = kLaunchNonce) {
+    const std::string filename = rank.string();
+    expect(filename.size() > 6 && filename.substr(filename.size() - 6) == ".rank0",
+           "producer fixture must use the actual rank path");
+    expect(r3::heat_publication::publish(filename.substr(0, filename.size() - 6), 0,
+                                         static_cast<uint32_t>(counts.size() / r3::moe_shm::kMaxLayers), counts,
+                                         nonce),
+           "the engine producer's shared publication function must succeed");
 }
 
 void producer_contract_case(std::string_view which) {
@@ -61,14 +64,29 @@ void producer_contract_case(std::string_view which) {
     const auto launch = now - std::chrono::seconds(10);
     std::vector<uint32_t> counts(static_cast<size_t>(kMaxLayers) * 2, 0);
     counts[0] = 20;
-    publish_like_engine(rank, counts);
+    publish_like_engine(rank, counts, which == "foreign" ? std::string_view{} : kLaunchNonce);
 
     if (which == "layers") {
-        const HistogramExpectation model{4, 2, launch, {}};
+        const HistogramExpectation model{4, 2, launch, {}, std::string(kLaunchNonce)};
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::fresh,
                "real 128-layer producer record must pass for a four-layer model");
+        // The unchanged worker reader must accept the producer's original
+        // binary layout even when the new optional proof sidecar is present.
+        r3::policy::HistogramFileSource worker(rank.string(), 4, 2);
+        r3::policy::HeatDelta delta;
+        std::string worker_error;
+        const auto realtime_ns = static_cast<uint64_t>(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count());
+        expect(worker.poll(1, realtime_ns, &delta, &worker_error) == r3::policy::HeatPoll::BASELINE &&
+                   delta.complete_cells && delta.layers == 4 && delta.experts == 2,
+               "legacy worker reader still accepts raw producer data with optional sidecar");
+
+        counts[4 * 2] = 1;
+        publish_like_engine(rank, counts);
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::unsafe,
+               "counts in padded layers cannot qualify the authenticated model");
     } else if (which == "rename") {
-        const HistogramExpectation model{kMaxLayers, 2, launch, {}};
+        const HistogramExpectation model{kMaxLayers, 2, launch, {}, std::string(kLaunchNonce)};
         HistogramIdentity first{};
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, &first) == HistogramVerdict::fresh,
                "initial producer snapshot must pass");
@@ -79,20 +97,35 @@ void producer_contract_case(std::string_view which) {
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), next) == HistogramVerdict::fresh,
                "atomic producer refresh must not fail due to changed inode");
     } else if (which == "reset") {
-        const HistogramExpectation model{kMaxLayers, 2, launch, {}};
+        const HistogramExpectation model{kMaxLayers, 2, launch, {}, std::string(kLaunchNonce)};
         HistogramIdentity first{};
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, &first) == HistogramVerdict::fresh,
                "initial counter snapshot must pass");
         counts[0] = 1;
-        publish_like_engine(rank, counts, false);
+        publish_like_engine(rank, counts);
         auto next = model;
         next.identity = first;
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), next) == HistogramVerdict::unsafe,
                "counter reset/wrap must not qualify as a new monotonic sample");
     } else if (which == "foreign") {
-        const HistogramExpectation model{kMaxLayers, 2, launch, {}};
+        const HistogramExpectation model{kMaxLayers, 2, launch, {}, std::string(kLaunchNonce)};
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::unsafe,
-               "post-launch histogram without engine-bound proof must be refused");
+               "post-launch histogram with no launch nonce must be refused");
+        publish_like_engine(rank, counts);
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::fresh,
+               "matching launch-bound proof qualifies");
+        publish_like_engine(rank, counts, kOtherNonce);
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::unsafe,
+               "a different launch nonce cannot authenticate the file");
+        // An unrelated writer may atomically replace the raw file, but cannot
+        // emit a matching companion with the secret nonce.
+        std::ofstream unrelated(rank.string() + ".tmp", std::ios::binary | std::ios::trunc);
+        unrelated.write(reinterpret_cast<const char*>(counts.data()),
+                        static_cast<std::streamsize>(counts.size() * sizeof(uint32_t)));
+        unrelated.close();
+        fs::rename(rank.string() + ".tmp", rank);
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::unsafe,
+               "raw publication with stale sidecar cannot hijack this session");
     } else {
         throw std::runtime_error("unknown heat regression case");
     }
@@ -131,13 +164,15 @@ int main(int argc, char** argv) {
         const auto now = std::chrono::system_clock::now() + std::chrono::seconds(1);
         const auto rank = tmp.root / "test.rank0";
         const auto launch = now - std::chrono::minutes(1);
-        const HistogramExpectation expected{2, 2, launch, {}};
-        tmp.write("test.rank0", std::string(16, '\0'));
+        const HistogramExpectation expected{4, 2, launch, {}, std::string(kLaunchNonce)};
+        std::vector<uint32_t> sample(size_t(r3::moe_shm::kMaxLayers) * 2, 0);
+        publish_like_engine(rank, sample);
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), expected) == HistogramVerdict::unsafe,
                "all-zero heat is no recorded rank demand");
-        std::string observed(16, '\0');
-        observed[0] = 3; // four native-endian cumulative uint32 counters, one with demand
-        tmp.write("test.rank0", observed);
+        sample[0] = 3;
+        publish_like_engine(rank, sample);
+        const std::string observed(reinterpret_cast<const char*>(sample.data()),
+                                   sample.size() * sizeof(uint32_t));
         HistogramIdentity identity{};
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), expected, &identity) ==
                        HistogramVerdict::fresh &&
@@ -174,7 +209,7 @@ int main(int argc, char** argv) {
         tmp.write("replacement.rank0", observed);
         fs::rename(tmp.root / "replacement.rank0", rank);
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), bound) == HistogramVerdict::unsafe,
-               "a replacement inode cannot hijack the bound engine heat stream");
+               "a replacement raw record without matching versioned proof cannot hijack the stream");
         fs::create_symlink(rank, tmp.root / "symlink.rank0");
         expect(histogram_verdict(tmp.root / "symlink.rank0", now, std::chrono::seconds(30), expected) ==
                    HistogramVerdict::unsafe,

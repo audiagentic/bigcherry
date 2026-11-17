@@ -1,8 +1,9 @@
 #include "runtime_guards.h"
+#include "../moe-remote/heat_publication.h"
 #include "experts.h"
 #include "v2/runtime_receipt.h"
 
-#include <array>
+#include <algorithm>
 #include <cerrno>
 #include <charconv>
 #include <cstring>
@@ -11,7 +12,9 @@
 #include <limits>
 #include <optional>
 #include <string>
+#include <thread>
 #include <utility>
+#include <vector>
 
 #include <fcntl.h>
 #include <sys/mman.h>
@@ -91,66 +94,132 @@ class ReadMapping final {
 };
 } // namespace
 
+// The companion is optional for legacy engines and deliberately invisible to
+// workers. A session owner, unlike a worker, requires an exact matching proof.
+bool read_heat_proof(const fs::path& rank_file, r3::heat_publication::Proof* proof) {
+    const std::string path = r3::heat_publication::proof_path(rank_file.string());
+    const Descriptor fd(::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+    if (fd.get() < 0)
+        return false;
+    struct stat before{}, after{};
+    if (::fstat(fd.get(), &before) != 0 || !S_ISREG(before.st_mode) ||
+        before.st_size != static_cast<off_t>(sizeof(*proof)))
+        return false;
+    size_t read = 0;
+    while (read < sizeof(*proof)) {
+        const ssize_t n = ::pread(fd.get(), reinterpret_cast<char*>(proof) + read, sizeof(*proof) - read,
+                                  static_cast<off_t>(read));
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n <= 0)
+            return false;
+        read += static_cast<size_t>(n);
+    }
+    return ::fstat(fd.get(), &after) == 0 && before.st_dev == after.st_dev && before.st_ino == after.st_ino &&
+           before.st_size == after.st_size && before.st_mtim.tv_sec == after.st_mtim.tv_sec &&
+           before.st_mtim.tv_nsec == after.st_mtim.tv_nsec &&
+           proof->magic == r3::heat_publication::kProofMagic &&
+           proof->version == r3::heat_publication::kProofVersion && proof->record_size == sizeof(*proof);
+}
+
 HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::system_clock::time_point now,
                                    std::chrono::nanoseconds max_age, const HistogramExpectation& expected,
                                    HistogramIdentity* observed) {
-    // Do not trust the file's own length as its shape: that makes partial
-    // histograms and a prior run's unrelated counters look like observations.
-    constexpr uint64_t max_bytes = 64ULL * 1024 * 1024;
-    if (expected.layers == 0 || expected.experts == 0 ||
-        expected.layers > max_bytes / sizeof(uint32_t) / expected.experts ||
+    using r3::moe_shm::kMaxHeatLdsBytes;
+    using r3::moe_shm::kMaxLayers;
+    constexpr uint64_t nanoseconds_per_second = 1000000000ULL;
+    if (expected.layers == 0 || expected.layers > kMaxLayers || expected.experts == 0 ||
+        expected.experts > kMaxHeatLdsBytes / sizeof(uint32_t) ||
+        !r3::heat_publication::valid_nonce(expected.launch_nonce) ||
         expected.launched_at.time_since_epoch().count() <= 0 || max_age.count() <= 0)
         return HistogramVerdict::unsafe;
-    const uint64_t required = expected.layers * expected.experts * sizeof(uint32_t);
-    const Descriptor fd(::open(rank_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
-    if (fd.get() < 0)
-        return errno == ENOENT ? HistogramVerdict::missing : HistogramVerdict::unsafe;
-    struct stat before{}, after{};
-    if (::fstat(fd.get(), &before) != 0 || !S_ISREG(before.st_mode) ||
-        before.st_size != static_cast<off_t>(required) || before.st_mtim.tv_sec < 0 ||
-        before.st_mtim.tv_nsec < 0 || before.st_mtim.tv_nsec >= 1000000000L ||
-        before.st_mtim.tv_sec > std::numeric_limits<int64_t>::max() / 1000000000LL)
+    const size_t cells = size_t(kMaxLayers) * static_cast<size_t>(expected.experts);
+    const size_t required = cells * sizeof(uint32_t);
+    if (expected.identity && expected.identity->counts.size() != cells)
         return HistogramVerdict::unsafe;
-    const HistogramIdentity identity{static_cast<uint64_t>(before.st_dev),
-                                     static_cast<uint64_t>(before.st_ino)};
-    if (expected.identity &&
-        (expected.identity->inode != identity.inode || expected.identity->device != identity.device))
-        return HistogramVerdict::unsafe;
-    const int64_t modified = (static_cast<int64_t>(before.st_mtim.tv_sec) * 1000000000LL) +
-                             static_cast<int64_t>(before.st_mtim.tv_nsec);
-    const auto launch_ns =
-        std::chrono::duration_cast<std::chrono::nanoseconds>(expected.launched_at.time_since_epoch()).count();
-    const auto now_ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
-    if (modified <= launch_ns)
-        return HistogramVerdict::unsafe; // previous run, even if it is otherwise still fresh
-    if (modified > now_ns)
-        return HistogramVerdict::future;
-    if (now_ns - modified > max_age.count())
-        return HistogramVerdict::stale;
 
-    // Read the *whole* fixed-size producer record before declaring evidence.
-    // Check metadata after reading, so truncated/in-flight writes fail closed.
-    std::array<uint32_t, 1024> counts{};
-    uint64_t bytes_read = 0;
-    bool observed_demand = false;
-    while (bytes_read < required) {
-        const size_t requested = static_cast<size_t>(std::min<uint64_t>(required - bytes_read, sizeof(counts)));
-        const ssize_t n = ::pread(fd.get(), counts.data(), requested, static_cast<off_t>(bytes_read));
-        if (n < 0 && errno == EINTR)
-            continue;
-        if (n <= 0 || static_cast<size_t>(n) % sizeof(uint32_t) != 0)
+    // The producer must rename the raw histogram, then rename its companion.
+    // A poll in that small gap may see two different generations. Re-read
+    // briefly rather than mistaking normal atomic publication for degradation.
+    for (int attempt = 0; attempt != 6; ++attempt) {
+        const Descriptor fd(::open(rank_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
+        if (fd.get() < 0)
+            return errno == ENOENT ? HistogramVerdict::missing : HistogramVerdict::unsafe;
+        struct stat before{}, after{};
+        if (::fstat(fd.get(), &before) != 0 || !S_ISREG(before.st_mode) ||
+            before.st_size != static_cast<off_t>(required) || before.st_mtim.tv_sec < 0 ||
+            before.st_mtim.tv_nsec < 0 || before.st_mtim.tv_nsec >= 1000000000L ||
+            static_cast<uint64_t>(before.st_mtim.tv_sec) >
+                static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) / nanoseconds_per_second)
             return HistogramVerdict::unsafe;
-        for (size_t i = 0; i < static_cast<size_t>(n) / sizeof(uint32_t); ++i)
-            observed_demand = observed_demand || counts[i] != 0;
-        bytes_read += static_cast<uint64_t>(n);
+
+        const int64_t modified = static_cast<int64_t>(before.st_mtim.tv_sec) * 1000000000LL +
+                                 static_cast<int64_t>(before.st_mtim.tv_nsec);
+        const auto launch_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(expected.launched_at.time_since_epoch())
+                .count();
+        const auto now_ns =
+            std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
+        if (modified <= launch_ns || (expected.identity && modified < expected.identity->modified_ns))
+            return HistogramVerdict::unsafe;
+        if (modified > now_ns)
+            return HistogramVerdict::future;
+        if (now_ns - modified > max_age.count())
+            return HistogramVerdict::stale;
+
+        std::vector<uint32_t> values(cells);
+        size_t copied = 0;
+        while (copied < required) {
+            const ssize_t n = ::pread(fd.get(), reinterpret_cast<char*>(values.data()) + copied,
+                                      required - copied, static_cast<off_t>(copied));
+            if (n < 0 && errno == EINTR)
+                continue;
+            if (n <= 0)
+                return HistogramVerdict::unsafe;
+            copied += static_cast<size_t>(n);
+        }
+        if (::fstat(fd.get(), &after) != 0 || before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
+            before.st_size != after.st_size || before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
+            before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
+            return HistogramVerdict::unsafe;
+
+        r3::heat_publication::Proof proof{};
+        const bool matched =
+            read_heat_proof(rank_file, &proof) &&
+            std::string_view(proof.launch_nonce.data(), proof.launch_nonce.size()) == expected.launch_nonce &&
+            proof.device == static_cast<uint64_t>(before.st_dev) &&
+            proof.inode == static_cast<uint64_t>(before.st_ino) &&
+            proof.size_bytes == static_cast<uint64_t>(required) &&
+            proof.modified_sec == static_cast<int64_t>(before.st_mtim.tv_sec) &&
+            proof.modified_nsec == static_cast<int64_t>(before.st_mtim.tv_nsec);
+        if (!matched) {
+            if (attempt != 5) {
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                continue;
+            }
+            return HistogramVerdict::unsafe;
+        }
+
+        bool demand = false;
+        const size_t model_cells = static_cast<size_t>(expected.layers) * static_cast<size_t>(expected.experts);
+        for (size_t i = 0; i < cells; ++i) {
+            if (i >= model_cells) {
+                if (values[i] != 0)
+                    return HistogramVerdict::unsafe; // never accept counts in padded layers
+            } else {
+                demand = demand || values[i] != 0;
+            }
+            if (expected.identity && values[i] < expected.identity->counts[i])
+                return HistogramVerdict::unsafe; // restart / wrap: fail closed, never synthesize a delta
+        }
+        if (!demand)
+            return HistogramVerdict::unsafe;
+        if (observed)
+            *observed = HistogramIdentity{static_cast<uint64_t>(before.st_dev),
+                                          static_cast<uint64_t>(before.st_ino), modified, std::move(values)};
+        return HistogramVerdict::fresh;
     }
-    if (!observed_demand || ::fstat(fd.get(), &after) != 0 || before.st_ino != after.st_ino ||
-        before.st_dev != after.st_dev || before.st_size != after.st_size ||
-        before.st_mtim.tv_sec != after.st_mtim.tv_sec || before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
-        return HistogramVerdict::unsafe;
-    if (observed)
-        *observed = identity;
-    return HistogramVerdict::fresh;
+    return HistogramVerdict::unsafe;
 }
 
 ReplayVerdict replay_verdict(int64_t manifest_depth, bool profiled, std::string_view log) {
@@ -211,7 +280,13 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
             bc::experts::Container model;
             if (!model.open(manifest.spec.intent.model.c_str()))
                 return refuse("heat", "cannot derive histogram shape from authenticated model container");
-            heat_expectation_ = HistogramExpectation{model.layers, model.experts, plan.engine_launched_at, {}};
+            heat_expectation_ = HistogramExpectation{
+                model.layers, model.experts, plan.engine_launched_at, {}, plan.heat_session_nonce};
+            if (model.layers == 0 || model.layers > r3::moe_shm::kMaxLayers || model.experts == 0 ||
+                model.experts > r3::moe_shm::kMaxHeatLdsBytes / sizeof(uint32_t))
+                return refuse("heat", "model dimensions exceed the engine histogram producer contract");
+            if (!r3::heat_publication::valid_nonce(heat_expectation_.launch_nonce))
+                return refuse("heat", "owner did not provide a session-bound heat publication nonce");
             if (heat_expectation_.launched_at.time_since_epoch().count() <= 0)
                 return refuse("heat", "owner did not bind heat publication to this engine launch");
             // Startup heat age is bounded by the policy and the engine's
@@ -247,8 +322,7 @@ v2::Status RuntimeGuards::inspect_heat() {
         return refuse(
             "heat", "manifest-declared engine rank0 heat histogram is absent, unsafe, stale or future-dated: " +
                         std::to_string(static_cast<int>(evidence)));
-    if (!heat_expectation_.identity)
-        heat_expectation_.identity = identity;
+    heat_expectation_.identity = std::move(identity);
     return std::nullopt;
 }
 
