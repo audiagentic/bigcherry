@@ -1,13 +1,17 @@
 # Host memory bandwidth baseline
 
-Captured 2026-11-18 to compare this host before and after increasing RAM from the current configuration. This is a STREAM-style host-memory throughput measurement; it does not identify installed DIMM count, rank, timings, channel population, or configured DRAM data rate.
+Captured 2026-11-18 to compare this host before and after increasing RAM from the current configuration. This is a STREAM-style host-memory throughput measurement. Linux exposes the DIMM SPD EEPROMs, which identify module capabilities; it does not expose the BIOS-trained settings currently in use.
 
 ## Visible system configuration
 
 - CPU: 12th Gen Intel Core i7-12700KF; Linux reports 1 socket, 12 cores, and 2 threads per core. 20 logical CPUs were online/available to this run.
 - Memory visible to the environment: 91 GiB total, about 74 GiB available at capture time.
 - Linux CPU frequency governor: `powersave`.
-- DIMM model/count, BIOS memory rate, and timings: unavailable. The environment does not expose SMBIOS/DMI tables or `dmidecode`; do not treat bandwidth as a substitute for those configuration details.
+- Board: Gigabyte Z690 AERO D; BIOS F30 (reported date 2025-06-19).
+- Two read-only SPD EEPROMs are visible. Both report DDR5 UDIMM modules, 48 GiB each (96 GiB total), with identical SPD contents.
+- SPD JEDEC timing: DDR5-5200, 42-42-42-84 (CL-RCD-RP-RAS).
+- SPD contains higher XMP/EXPO profiles, including DDR5-6400 32-39-39-84 and DDR5-6000 42-46-46-76. These are advertised profiles, not evidence that either is currently selected.
+- Active BIOS-trained data rate and timings, slot names, and channel population remain unavailable. The environment exposes neither SMBIOS/DMI tables nor memory-controller configuration; the SPD devices are read-only here.
 
 ## Method
 
@@ -24,7 +28,7 @@ OMP_NUM_THREADS=20 OMP_PROC_BIND=close OMP_PLACES=cores \
   work/tmp/bigcherry-stream 64000000 7
 ```
 
-Keep the compiler flags, element count, repetitions, thread settings, power policy, and background load consistent in the follow-up measurement. Record any changed RAM speed/timings and slot population from BIOS or a DMI-capable host alongside the next result.
+Keep the compiler flags, element count, repetitions, thread settings, power policy, and background load consistent in the follow-up measurement. Record the BIOS-selected speed/timings and slot population from firmware setup or a host tool with memory-controller access alongside the next result.
 
 ## Results
 
