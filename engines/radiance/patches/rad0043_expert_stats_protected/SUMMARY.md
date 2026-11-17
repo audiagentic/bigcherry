@@ -14,3 +14,10 @@ Not yet run. Expected on Flash-Next (hcbf16) with the same 4,163-token run: `ran
 ## Detail
 
 `Engine::xstats_open` builds the map from the program's weights that sit in an expert slot. The protected experts' weights are declared under the layer group alone, so they were skipped. The router's histogram is in sort-place order: the quantised experts take places 0 to n_reg-1 and the protected ones are sorted last. The patch appends, after each layer's regular places, the model experts named in the tensor names of the layer-scope weights (their container directory entries carry no expert field), ascending and without duplicates (the order the block lists its protected experts). Nothing outside `--expert-stats` changes: the map is read only by the stats tally.
+
+## Evidence (2026-11-17)
+Build `expert-stats-protected`, qwen3.8-next-flash-hcbf16, two 7900 XTX, six runs over the 4,163-token KLD corpus
+(prefill): every run has `ranks.unmapped` 0 (it was 1,672), 48 of 48 layers with selections == tokens x 10, 1,998,240
+selections in all. Flips against bf16-a with the protected experts counted: chunk 128 22,529 (1.127%), bf16_i8 22,068,
+bf16_fp8 22,065, fp8 22,114 (1.104-1.107%); the same-config repeat 0. Earlier figures that left out the protected
+experts (22,052-22,508) were within 0.1%. The state stays untested: this was a diagnostic run, not a qualification.
