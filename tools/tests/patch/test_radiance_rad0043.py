@@ -58,7 +58,8 @@ def test_applies_adds_lines_only_inside_xstats_open_and_is_idempotent():
         added = after.index("xs_extra", start)
         assert start < normalise < added < end
         # It labels each slot from the tensor name and appends the layer-scope (protected) experts.
-        assert "else if ((size_t)at < row.size()) row[(size_t)at] = xs_e;" in after
+        assert "? kClash : xs_e;" in after   # a unit whose gate/up and down names disagree is a clash, not a guess
+        assert "have no consistent model-expert tensor name" in after
         assert "std::unique(g.begin(), g.end()));" in after
 
         snapshot = after
