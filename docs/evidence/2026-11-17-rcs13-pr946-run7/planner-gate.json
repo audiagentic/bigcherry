@@ -1,0 +1,80 @@
+{
+  "cpu_reproducer": true,
+  "errors": [
+    "RCS13_RUN7_MEASURE_FAIL ValueError ValueError('rcs13-run7-a: the measured manifest was not written (11): plan: stored 082c747a525189a40674990db63a7f2e582bab7c034127b2633baa5add9d3468\\nr3_moe_worker: owning the coldest experts of [LOCAL_PATH] first\\nr3_moe_worker: owning the coldest experts of [LOCAL_PATH] first\\nbc-serve: the plan was measured with a 32005 MiB host pool; the measured inputs need 32301 MiB')",
+    "raise PlanError(f\"{name}: the measured manifest was not written ({result.returncode}): {result.stderr.strip()}\")",
+    "bigcherry.engine_adapters.radiance_plan.PlanError: rcs13-run7-a: the measured manifest was not written (11): plan: stored 082c747a525189a40674990db63a7f2e582bab7c034127b2633baa5add9d3468"
+  ],
+  "measuring_draft": {
+    "counts": [
+      12641
+    ],
+    "digest": "744477bc8f39f18bdc68f472b4f83d6cbb2b576c0095439fe463cd84427ca391",
+    "settings": {
+      "handoff_max_rows": 64,
+      "helper_vram_budgets_mib": [
+        30555
+      ],
+      "host_kv_mib": 0,
+      "host_pool_mib": 32005,
+      "max_batched_tokens": 256,
+      "ngram_placement": "disk",
+      "weights_disk_tier": "on"
+    }
+  },
+  "owned_expert_set_difference": {
+    "only_in_measuring": [
+      372
+    ],
+    "only_in_preflight": [
+      0
+    ]
+  },
+  "preflight": {
+    "counts": [
+      12269
+    ],
+    "digest": "c89150871acd9404cf96255644df017842ddc80143f9e2b0819daf69a1b96c71",
+    "settings": {
+      "handoff_max_rows": 4096,
+      "helper_vram_budgets_mib": [
+        29656
+      ],
+      "host_kv_mib": 12288,
+      "host_pool_mib": 9216,
+      "max_batched_tokens": 2048,
+      "ngram_placement": "ram",
+      "weights_disk_tier": null
+    }
+  },
+  "preflight_measuring_digest_equal": false,
+  "source_locations": {
+    "measure": "tools/bigcherry/engine_adapters/radiance_plan.py:108-146",
+    "ownership": "engines/radiance/components/serving/manifest_writer.cpp:490-519",
+    "preflight": "tools/bigcherry/engine_adapters/radiance_launch.py:96-146"
+  },
+  "strict_v2_measured_manifest_written": false,
+  "terminal_failure": {
+    "cpu_reproduced_no_gpu": true,
+    "cpu_reproduction_resident_mib": {
+      "engine_mib": 183,
+      "helpers_mib": 509
+    },
+    "cpu_reproduction_stored_plan_key": "082c747a525189a40674990db63a7f2e582bab7c034127b2633baa5add9d3468",
+    "derived_required_host_pool_mib": 32301,
+    "driver": "tools/bigcherry/engine_adapters/radiance_plan.py:151-159 treats bc-serve exit 11 as fatal instead of remeasuring",
+    "exit_code": 11,
+    "gpu_helper_lanes_start_ok": true,
+    "measured_host_pool_mib": 32005,
+    "measuring_engine_plan_wrote": true,
+    "source_locations": {
+      "cache_store": "engines/radiance/components/serving/main.cpp:652-673",
+      "coordinator_bug": "tools/bigcherry/engine_adapters/radiance_plan.py:158-160",
+      "error": "engines/radiance/components/serving/main.cpp:684-711",
+      "host_derived": "engines/radiance/components/serving/v2/s8_rules.cpp:57-66",
+      "replay": "tools/bigcherry/engine_adapters/radiance_plan.py:151-159"
+    },
+    "stage": "baseline normal measured-manifest write",
+    "strict_v2_measured_manifest_written": false
+  }
+}
