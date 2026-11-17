@@ -1,0 +1,21 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_224728_added-a-diagnostic-that-record_6121",
+  "files": [
+    "engines/radiance/patches/rad0044_expert_route_record/patch.py",
+    "engines/radiance/patches/rad0044_expert_route_record/patch.toml",
+    "engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md",
+    "engines/radiance/patches/rad0043_expert_stats_protected/patch.py",
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/recipes.toml",
+    "tools/tests/patch/test_radiance_rad0044.py",
+    "docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-ROUTING.md"
+  ],
+  "plan-item-ids": [
+    "VTP44"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0044 (diagnostic, untested, experiment expert-route-record): --expert-route-record FILE records the expert ids each token's router chose per routed trunk layer (one-sequence prefill, tape off, incomplete marker, temp file + rename); manifest field engine.tuning.expert_route_record (contract amendment 21, generated files regenerated). rad0043 now labels every routed unit from its tensor name: the container numbers quantised experts compactly while tensors carry model ids, so experts after a protected one were filed one id too low per protected expert below. Verified on Flash-Next TP2: recorded histograms equal --expert-stats in all 48 layers; repeat byte-identical.",
+  "timestamp-utc": "2026-11-17T22:47:28.668963Z",
+  "user-summary-candidate": "Added a diagnostic that records which experts the router picks for every token, and fixed the expert statistics so every expert is counted under its own id."
+}
