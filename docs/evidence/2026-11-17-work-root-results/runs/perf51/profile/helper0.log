@@ -1,0 +1,8 @@
+r3_moe_helper: container has no expert profile; owning experts evenly across layers
+r3_moe_helper: selected 8473 expert candidates, 19.999 GiB; host RSS 598.7 MiB
+r3_moe_helper: waiting for engine runtime expert maps
+r3_moe_helper: runtime map owns 7783 experts, 18.371 GiB
+r3_moe_helper: ready shm=/r3-moe-helper layers=49 bytes=148725760 (gfx1100, small lane rows <= 8, large <= 4096)
+r3_moe_helper: large-lane requests 221 (371608 rows)
+r3_moe_helper: GPU timing samples=132 sampled=63.8 ms avg=483.4 us
+r3_moe_helper: served 8674 requests, 404355 rows, 1321907 routes, compute 4193.4 ms (483.4 us a request)
