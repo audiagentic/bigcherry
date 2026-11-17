@@ -1,0 +1,11 @@
+01 review request `req_019f6485522d71a39101111111111111` on `ses_019f6485522d71a39101111111111111` was interrupted by a provider stream failure after roughly 10 minutes. The assistant response was empty and the session remained idle. The review was not completed and must not be represented as a GPT-auto approval.
+
+## Required next actions
+
+1. Re-run the interrupted s01 review against the current branch, or explicitly record that no GPT-auto approval was obtained.
+2. Run the full Python and C++ test suites on the current branch.
+3. Run the strict patch audit and campaign doctor.
+4. Rebuild stock, control, record, tune, and replay variants from the current branch.
+5. Re-run the single-GPU record inventory and tune campaign.
+6. Re-run the balanced stock/control/native/tuned/replay comparison using explicit `--rig hip` (see the server-bench root cause above).
+7. Run the 2
