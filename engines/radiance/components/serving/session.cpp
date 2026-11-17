@@ -18,6 +18,7 @@
 #include <ctime>
 #include <fstream>
 #include <iostream>
+#include <linux/memfd.h>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -44,6 +45,54 @@ namespace fs = std::filesystem;
 using Json = nlohmann::json;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
+
+// An authenticated stored v2 document is held in a kernel-sealed anonymous
+// file. The path is only a view of this exact descriptor; it does not reopen
+// the operator's replaceable pathname. This execution envelope owns its
+// descriptor until the last child has verified its exit.
+class PinnedManifest final {
+  public:
+    explicit PinnedManifest(std::string_view admitted) {
+        fd_ = static_cast<int>(::syscall(SYS_memfd_create, "bc-stored-v2", MFD_CLOEXEC | MFD_ALLOW_SEALING));
+        if (fd_ < 0)
+            throw PlanFailed("replay: cannot allocate an authenticated manifest descriptor");
+        try {
+            size_t offset = 0;
+            while (offset < admitted.size()) {
+                const ssize_t n = ::write(fd_, admitted.data() + offset, admitted.size() - offset);
+                if (n < 0 && errno == EINTR)
+                    continue;
+                if (n <= 0)
+                    throw PlanFailed("replay: cannot copy admitted bytes into the sealed handoff");
+                offset += static_cast<size_t>(n);
+            }
+            if (::lseek(fd_, 0, SEEK_SET) != 0)
+                throw PlanFailed("replay: cannot rewind admitted manifest");
+            constexpr int seals = F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL;
+            if (::fcntl(fd_, F_ADD_SEALS, seals) != 0 || (::fcntl(fd_, F_GET_SEALS) & seals) != seals)
+                throw PlanFailed("replay: cannot seal admitted manifest bytes");
+        } catch (...) {
+            ::close(fd_);
+            fd_ = -1;
+            throw;
+        }
+    }
+    ~PinnedManifest() {
+        if (fd_ >= 0)
+            ::close(fd_);
+    }
+    PinnedManifest(const PinnedManifest&) = delete;
+    PinnedManifest& operator=(const PinnedManifest&) = delete;
+    int descriptor() const noexcept {
+        return fd_;
+    }
+    fs::path path() const {
+        return "/proc/self/fd/" + std::to_string(fd_);
+    }
+
+  private:
+    int fd_ = -1;
+};
 
 namespace {
 
@@ -392,7 +441,7 @@ Env child_environment(char** inherited, const Env& runtime) {
 }
 
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
-            const Callback<void(pid_t)>& recorded) {
+            const Callback<void(pid_t)>& recorded, int inherited_manifest_fd) {
     if (argv.empty() || argv[0].empty())
         throw std::runtime_error("spawn: an empty command");
     std::vector<std::string> envs;
@@ -449,6 +498,17 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
             ::_exit(127);
         }
         cloexec_above_stderr();
+        if (inherited_manifest_fd >= 0) {
+            // The owner keeps every other descriptor close-on-exec. Only the
+            // sealed, authenticated manifest becomes readable by the strict
+            // engine/worker readers at /proc/self/fd/N after execve.
+            const int flags = ::fcntl(inherited_manifest_fd, F_GETFD);
+            if (flags < 0 || ::fcntl(inherited_manifest_fd, F_SETFD, flags & ~FD_CLOEXEC) != 0) {
+                const int e = errno;
+                (void)!::write(report[1], &e, sizeof e);
+                ::_exit(127);
+            }
+        }
         if (!gate->wait_in_child())
             ::_exit(126); // never recorded: run nothing
         ::execve(cargv[0], cargv.data(), cenv.data());
@@ -815,10 +875,15 @@ class Owner {
             if (s_.power_hook.begin_manifest && !power_admitted_)
                 throw PlanFailed("planner returned without DURABLE authenticated pre-measure power admission");
             if (s_.power_hook.verify_serving)
-                require_callback(
-                    s_.power_hook.verify_serving.invoke("session.power.verify_serving", plan_.manifest),
-                    "power final manifest");
+                require_callback(s_.power_hook.verify_serving.invoke(
+                                     "session.power.verify_serving",
+                                     plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest),
+                                 "power final manifest");
             record_["manifest"] = plan_.manifest.string();
+            if (plan_.pinned_manifest) {
+                record_["power_admission"]["origin_manifest"] = plan_.manifest.string();
+                record_["power_admission"]["original_sha256"] = plan_.stored_sha256;
+            }
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
             event("planned");
@@ -829,8 +894,13 @@ class Owner {
             if (s_.power_hook.gfxoff_window)
                 require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.floor", false),
                                  "gfxoff floor receipt");
-            if (!plan_.stored_sha256.empty() && sha256_hex(read_file(plan_.manifest)) != plan_.stored_sha256)
+            if (!plan_.stored_sha256.empty() &&
+                sha256_hex(read_file(plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest)) !=
+                    plan_.stored_sha256)
                 throw PlanFailed("replay: stored manifest bytes changed after authentication");
+            if (s_.before_gpu_start)
+                require_callback(s_.before_gpu_start.invoke("session.before_gpu_start", plan_),
+                                 "pre-exec process boundary");
             start_helpers();
             start_engine();
             if (!wait_health())
@@ -1132,8 +1202,9 @@ class Owner {
                 if (!fresh)
                     throw std::runtime_error(h.role + ": cannot create readiness log " + log.string());
             }
-            const pid_t pid = spawn(h.argv, child_environment(environ, h.runtime), log,
-                                    [&](pid_t p) { track(h.role, p, log); });
+            const pid_t pid = spawn(
+                h.argv, child_environment(environ, h.runtime), log, [&](pid_t p) { track(h.role, p, log); },
+                plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
             const auto deadline = Clock::now() + s_.timing.helper_timeout;
             bool ready = false;
             while (Clock::now() < deadline) {
@@ -1251,8 +1322,10 @@ class Owner {
         const fs::path log = s_.run_dir / ("engine-" + stamp() + ".log");
         engine_log_ = log;
         plan_.engine_launched_at = std::chrono::system_clock::now();
-        (void)spawn(plan_.argv, child_environment(environ, plan_.runtime), log,
-                    [&](pid_t pid) { track("engine", pid, log); });
+        (void)spawn(
+            plan_.argv, child_environment(environ, plan_.runtime), log,
+            [&](pid_t pid) { track("engine", pid, log); },
+            plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
     }
 
     std::optional<std::string> exited_child() {
@@ -2228,11 +2301,19 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     if (const auto error = check_replay_live_room(accepted, facts, room))
         throw PlanFailed(v2::render_human("bc-serve replay room", *error));
 
+    // Preserve the operator's original file as immutable input evidence;
+    // hand every child only the authenticated sealed bytes, never that name.
+    auto pinned = std::make_shared<PinnedManifest>(bytes);
+    const auto pinned_read = v2::load_manifest(pinned->path(), v2::PlanUse::serving);
+    if (!pinned_read || pinned_read.value().metadata.content_digest != accepted.metadata.content_digest)
+        throw ReplayFailed(ReplayRefusal::bytes_or_digest,
+                           "replay: sealed handoff does not match admitted v2 bytes");
     EngineStart out;
     out.manifest = stored;
     out.stored_sha256 = sha256_hex(bytes);
+    out.pinned_manifest = std::move(pinned);
     out.port = int(accepted.spec.processes.engine.server.port);
-    out.argv = {engine.string(), "--manifest", stored.string(), "--role", "engine"};
+    out.argv = {engine.string(), "--manifest", out.pinned_manifest->path().string(), "--role", "engine"};
     std::string ordinals, hip_ordinals;
     for (size_t i = 0; i < accepted.spec.processes.engine.device.gpus.size(); ++i) {
         const std::string& bdf = accepted.spec.processes.engine.device.gpus[i];
@@ -2257,7 +2338,8 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
             throw PlanFailed("replay: helper BDF vanished after live admission: " + h.gpu);
         HelperStart helper;
         helper.role = h.role;
-        helper.argv = {helper_binary.string(), "--manifest", stored.string(), "--role", h.role};
+        helper.argv = {helper_binary.string(), "--manifest", out.pinned_manifest->path().string(), "--role",
+                       h.role};
         helper.runtime = {{"RADIANCE_HOME", home.string()},
                           {"ROCR_VISIBLE_DEVICES", std::to_string(gpu->at("hip_ordinal").get<int>())},
                           {"HIP_VISIBLE_DEVICES", "0"}};
@@ -2279,7 +2361,8 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
                    {"replay", true}};
     // No writer or measuring child was started. Admission still passes through
     // the real owner's durable event before ANY GPU child can be forked.
-    require_callback(hooks.admit_power.invoke("session.hooks.admit_power", stored, v2::PlanUse::serving),
+    require_callback(hooks.admit_power.invoke("session.hooks.admit_power", out.pinned_manifest->path(),
+                                              v2::PlanUse::serving),
                      "stored manifest power admission");
     return out;
 }

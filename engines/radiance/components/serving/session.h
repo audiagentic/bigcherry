@@ -18,6 +18,7 @@
 #include <chrono>
 #include <filesystem>
 #include <map>
+#include <memory>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -38,6 +39,8 @@ class SessionPower;
 
 namespace bc::serving::session {
 
+class PinnedManifest; // a sealed, owner-held execution handoff, not a rewritten v2 manifest
+
 using Env = std::map<std::string, std::string>;
 // The shared C++17 callback boundary owns every injected callable; no second wrapper.
 template <class Signature> using Callback = callback::Guarded<Signature>;
@@ -55,7 +58,7 @@ Env child_environment(char** inherited, const Env& runtime);
  * exits without running anything and the exception is rethrown. Throws, naming the program, when it cannot be
  * started (exec failure included). */
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::filesystem::path& log,
-            const Callback<void(pid_t)>& recorded = {});
+            const Callback<void(pid_t)>& recorded = {}, int inherited_manifest_fd = -1);
 
 /* A child of this process: whether it is still running (reaps it when it has exited; its status goes to
  * `status`). */
@@ -105,7 +108,9 @@ struct HelperStart {
 /* What the plan step hands the owner: one manifest and all of its children. */
 struct EngineStart {
     std::filesystem::path manifest;
-    std::string stored_sha256; // original bytes for a second read immediately before serving GPU children
+    std::string stored_sha256; // original authenticated bytes, verified again against the pinned handoff
+    std::shared_ptr<PinnedManifest>
+        pinned_manifest;              // keeps a sealed file open across children; null on first start
     std::vector<std::string> argv;    // the engine binary, --manifest M, --role engine; nothing else
     std::vector<HelperStart> helpers; // ordered, prior to the engine
     std::string handoff_shm;          // unique to this owner; non-empty only with helpers
@@ -198,6 +203,10 @@ struct Session {
     // Actual live worker and heat checks, not the manifest's startup decision.
     Callback<v2::Status()> runtime_watch;
     Callback<v2::Status()> lab_evidence_gate;
+    // Injectable process boundary after the last authenticated byte check
+    // but before fork/exec. Production leaves it empty; a test can replace
+    // the operator's pathname at exactly the unsafe TOCTOU boundary.
+    Callback<v2::Status(const EngineStart&)> before_gpu_start;
     // The plan step: runs with the session lock held, before any serving process starts (it may run measuring
     // starts of its own, registered through the hooks and stopped before it returns). Throws to refuse.
     Callback<EngineStart(const std::filesystem::path& run_dir, const Hooks& hooks)> plan;

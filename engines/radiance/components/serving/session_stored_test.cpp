@@ -274,8 +274,12 @@ struct Case {
         check(final_record.has_value(), "owner must persist terminal record");
         const Json final = final_record.value_or(Json::object());
         if (succeed) {
-            check(final.at("power_admission").at("manifest") == stored.string(),
-                  "power bound to a different file");
+            check(final.at("power_admission").at("origin_manifest") == stored.string(),
+                  "power execution must retain the authenticated origin pathname");
+            check(final.at("power_admission").at("manifest") != stored.string(),
+                  "power must admit the pinned execution descriptor, never the original pathname");
+            check(final.at("power_admission").at("original_sha256").is_string(),
+                  "power execution must keep the original byte identity");
             check(final.at("selection").at("replay") == true, "run record must distinguish replay");
             const auto& events = final.at("events");
             size_t admitted = events.size(), first_child = events.size();
@@ -342,6 +346,52 @@ int main(int argc, char** argv) {
         altered_bytes.run_owner(false);
         Case detached(7);
         detached.run_detached();
+        // RED P1-4: a digest-correct manifest B can atomically replace the
+        // admitted manifest A pathname between the owner and the strict child
+        // reader. The child must still consume A, byte for byte.
+        Case pinned(10);
+        ss::Hooks pin_hooks;
+        pin_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        pin_hooks.admit_power = [](const fs::path&, v2::PlanUse) -> v2::Status { return std::nullopt; };
+        const ss::EngineStart admitted = ss::replay_stored_manifest(pinned.inputs, pinned.run, pin_hooks);
+        check(!admitted.stored_sha256.empty(), "stored bytes must have an admission digest");
+        const std::string alternate_bytes =
+            fixture(port(), pinned.original.at("spec").at("handoff").at("transport").at("shm")).dump(2) + "\n";
+        check(alternate_bytes != pinned.bytes, "replacement fixture must have different real v2 bytes");
+        const fs::path replacement = pinned.tmp.root / "replacement.json";
+        std::ofstream(replacement, std::ios::binary) << alternate_bytes;
+        fs::rename(replacement, pinned.stored);
+        check(read(pinned.stored) == alternate_bytes, "pathname replacement must succeed");
+        const auto child_bytes = read(admitted.argv.at(2));
+        const auto child_manifest = v2::read_manifest(child_bytes, admitted.argv.at(2), v2::PlanUse::serving);
+        check(bool(child_manifest), "the actual v2 child reader must accept its bound manifest");
+        check(child_bytes == pinned.bytes, "child reader must consume exactly the bytes the owner admitted");
+
+        // Exact P1-4 TOCTOU test: the OS/process boundary swaps the public
+        // pathname AFTER the owner's final SHA check and BEFORE first exec.
+        // The real v2 reader, through the child's actual --manifest argument,
+        // must still see A while the public pathname names valid B.
+        Case during_exec(11);
+        const fs::path new_manifest = during_exec.tmp.root / "valid-b.json";
+        const fs::path restore_a = during_exec.tmp.root / "valid-a-backup.json";
+        std::ofstream(new_manifest, std::ios::binary)
+            << fixture(port(), during_exec.original.at("spec").at("handoff").at("transport").at("shm")).dump(2)
+            << "\n";
+        std::ofstream(restore_a, std::ios::binary) << during_exec.bytes;
+        during_exec.session.before_gpu_start = [stored = during_exec.stored, a = during_exec.bytes,
+                                                new_manifest,
+                                                restore_a](const ss::EngineStart& plan) -> v2::Status {
+            fs::rename(new_manifest, stored);
+            const std::string actual_child_bytes = read(plan.argv.at(2));
+            const auto consumed = v2::read_manifest(actual_child_bytes, plan.argv.at(2), v2::PlanUse::serving);
+            if (!consumed || actual_child_bytes != a)
+                return v2::make_error(v2::ConfigErrorCode::plan_mismatch, "test.before_gpu_start",
+                                      "strict child reader followed swapped public manifest");
+            fs::rename(restore_a, stored);
+            return std::nullopt;
+        };
+        during_exec.run_owner(true);
+
         // RED P1-3: the same immutable helper manifest must never grant
         // transport ownership to two distinct run directories at once.
         Case first_transport(8);
