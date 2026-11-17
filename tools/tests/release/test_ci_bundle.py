@@ -31,7 +31,7 @@ class CiBundleTests(unittest.TestCase):
         (self.sdk / ".info").mkdir(parents=True)
         (self.sdk / ".info/version").write_text("7.2.4")
         build = self.work / "builds" / "src-01" / PLAN
-        for rel, data in (("bin/radiance", b"engine"), ("radiance_home/bin/bc-serve", b"serve"), ("radiance_home/helpers/r3_moe_worker", b"worker"),
+        for rel, data in (("bin/radiance", b"engine"), ("radiance_home/bin/bc-serve", b"serve"), ("radiance_home/bin/bc-release", b"release"), ("radiance_home/helpers/r3_moe_worker", b"worker"),
                           ("radiance_home/kernels/libr3moe.so", b"plugin")):
             (build / rel).parent.mkdir(parents=True, exist_ok=True)
             (build / rel).write_bytes(data)
