@@ -1,0 +1,12 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261117_031759_kept-experiment-results-now-li_1577",
+  "files": [
+    "docs/evidence/2026-11-17-kld-runs-men26-rad116-rad18/README.md",
+    "docs/evidence/2026-11-17-work-root-results/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Result files of finished runs and work-root experiments migrated to docs/evidence (KLD runs men26, rad116, rad18; then 1,138 plus 63 files selected by a per-entry triage of runs, flashnext, tmp and top-level entries) with path and machine-name placeholders, so the originals could be deleted: 5,752 work-root entries and about 117 GiB removed. PRs 1027, 1030, 1034.",
+  "timestamp-utc": "2026-11-17T03:17:59.212544Z",
+  "user-summary-candidate": "Kept experiment results now live in the repository as evidence."
+}

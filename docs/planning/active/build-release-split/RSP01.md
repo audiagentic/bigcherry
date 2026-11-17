@@ -109,7 +109,6 @@ Retain the **current** and **immediately previous** verified engine release for 
 2. Finish RSC02 steps 2–5 and RSC12 parity/stored-manifest checks. Port helper resources, live/power/gfxoff/host-check/calibration/heat behavior to C++, with synthetic partial-start, stale-key, host/SDK failure, helper death, power-restore refusal and tag-digest mismatch tests.
 3. Complete RSC02 step 6/RSC04 acceptance on dense **and** helper hardware, migrate callers, retire shell/Python start surfaces, then implement the one-tag worktree-free installer and current/previous rollback. Test existing v1 and pinned unscoped legacy installs **unchanged**, interrupted staging, unsafe paths and rollback. Run card-free component, release, core and patch suites; use a separate leased GPU acceptance gate.
 
-
 ## Code Samples & Guidance
 
 
@@ -154,7 +153,10 @@ Large blast radius: native launch behavior, engine config closure, install path 
 
 Progress (2026-11-17): phase 1 merged in #1016 with engine-scoped binary payload, matched `bc-serve`, integrity checks and a pinned legacy allowance. Owner revised phase 2: one Python-free engine release with RSC12 configs, native RSC02 startup/tuning and no platform pair; old installs are not converted. Standalone installer/launch still pending RSC02/RSC12/RSC04 gates.
 
+Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replaces the pair design of #1019): one Python-free engine asset of binaries and data, start-up through bc-serve, tag-bound digest trust, current and previous release kept, gate table mapping each remaining Python or shell behaviour to its RSC02 step. Rewrite lanes for RSC02 step 2 (helpers and resource derivation) and step 4 (power transaction) are in review in C++ (a rewrite from requirements, the Python only a golden oracle); step 3, step 5 and the step 6 hardware A/B and retirement follow. Phase 2 build work is blocked until those merge.
+
 ## Change Log
 
 - 2026-11-16T06:37:56.515652+00:00 (created-by): Created by claude
 - 2026-11-16T19:22:34.283744+00:00 (updated-by): Updated: section:notes
+- 2026-11-17T03:19:19.707415+00:00 (updated-by): Updated: section:notes
