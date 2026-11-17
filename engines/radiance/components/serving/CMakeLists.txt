@@ -130,6 +130,10 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_session_guards_test PRIVATE
     BC_RSC02_CALIBRATION_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_calibration_deadlines.json")
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
+  add_test(NAME bc_heat_layers_contract COMMAND bc_session_guards_test layers)
+  add_test(NAME bc_heat_rename_contract COMMAND bc_session_guards_test rename)
+  add_test(NAME bc_heat_reset_contract COMMAND bc_session_guards_test reset)
+  add_test(NAME bc_heat_foreign_contract COMMAND bc_session_guards_test foreign)
   add_executable(bc_manifest_power_test EXCLUDE_FROM_ALL manifest_power_test.cpp)
   target_link_libraries(bc_manifest_power_test PRIVATE bc_serving)
   target_compile_definitions(bc_manifest_power_test PRIVATE

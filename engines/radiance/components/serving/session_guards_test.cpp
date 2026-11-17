@@ -1,4 +1,5 @@
 // RSC02 step 3: native bounded ABBA lab and replay guard semantics. No GPU.
+#include "../moe-remote/moe_remote_shm.h"
 #include "calibration_lab.h"
 #include "runtime_guards.h"
 
@@ -39,10 +40,74 @@ struct Temporary {
         std::ofstream(root / name) << contents;
     }
 };
+
+void publish_like_engine(const fs::path& rank, const std::vector<uint32_t>& counts, bool replace = true) {
+    const fs::path target = replace ? fs::path(rank.string() + ".tmp") : rank;
+    std::ofstream out(target, std::ios::binary | std::ios::trunc);
+    expect(bool(out), "cannot open histogram fixture");
+    out.write(reinterpret_cast<const char*>(counts.data()),
+              static_cast<std::streamsize>(counts.size() * sizeof(uint32_t)));
+    out.close();
+    expect(bool(out), "cannot write histogram fixture");
+    if (replace)
+        fs::rename(target, rank); // real engine replaces each snapshot atomically
+}
+
+void producer_contract_case(std::string_view which) {
+    using r3::moe_shm::kMaxLayers;
+    Temporary tmp;
+    const fs::path rank = tmp.root / "engine.rank0";
+    const auto now = std::chrono::system_clock::now() + std::chrono::seconds(1);
+    const auto launch = now - std::chrono::seconds(10);
+    std::vector<uint32_t> counts(static_cast<size_t>(kMaxLayers) * 2, 0);
+    counts[0] = 20;
+    publish_like_engine(rank, counts);
+
+    if (which == "layers") {
+        const HistogramExpectation model{4, 2, launch, {}};
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::fresh,
+               "real 128-layer producer record must pass for a four-layer model");
+    } else if (which == "rename") {
+        const HistogramExpectation model{kMaxLayers, 2, launch, {}};
+        HistogramIdentity first{};
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, &first) == HistogramVerdict::fresh,
+               "initial producer snapshot must pass");
+        counts[0] += 4;
+        publish_like_engine(rank, counts);
+        auto next = model;
+        next.identity = first;
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), next) == HistogramVerdict::fresh,
+               "atomic producer refresh must not fail due to changed inode");
+    } else if (which == "reset") {
+        const HistogramExpectation model{kMaxLayers, 2, launch, {}};
+        HistogramIdentity first{};
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, &first) == HistogramVerdict::fresh,
+               "initial counter snapshot must pass");
+        counts[0] = 1;
+        publish_like_engine(rank, counts, false);
+        auto next = model;
+        next.identity = first;
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), next) == HistogramVerdict::unsafe,
+               "counter reset/wrap must not qualify as a new monotonic sample");
+    } else if (which == "foreign") {
+        const HistogramExpectation model{kMaxLayers, 2, launch, {}};
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::unsafe,
+               "post-launch histogram without engine-bound proof must be refused");
+    } else {
+        throw std::runtime_error("unknown heat regression case");
+    }
+}
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        if (argc == 2) {
+            producer_contract_case(argv[1]);
+            return 0;
+        }
+        expect(argc == 1, "invalid test arguments");
+        for (const char* check : {"layers", "rename", "reset", "foreign"})
+            producer_contract_case(check);
         using bc::serving::v2::LivePolicy;
         expect(replay_verdict(1, false, "") == ReplayVerdict::disabled, "MTP depth <= 1 is exempt");
         expect(replay_verdict(4, true, "") == ReplayVerdict::profiled, "profile-ops is exempt");
