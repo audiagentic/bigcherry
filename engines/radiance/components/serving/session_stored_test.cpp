@@ -14,6 +14,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 #include <netinet/in.h>
@@ -114,12 +115,21 @@ struct Case {
     ss::EnginePlanInputs inputs;
     ss::Session session;
 
-    explicit Case(int case_id, bool bad_build = false, bool bad_room = false, bool refuse_power = false) {
+    explicit Case(int case_id, bool bad_build = false, bool bad_room = false, bool refuse_power = false,
+                  fs::path existing_manifest = {}, fs::path existing_run = {}, fs::path existing_trace = {}) {
+        if (!existing_manifest.empty()) {
+            stored = std::move(existing_manifest);
+            run = std::move(existing_run);
+            trace = std::move(existing_trace);
+            bytes = read(stored);
+            original = Json::parse(bytes);
+        } else {
+            original = fixture(port(), "/r3-serve-cardfree-" + std::to_string(::getpid()) + "-" +
+                                           std::to_string(case_id));
+            bytes = original.dump(2) + "\n";
+            std::ofstream(stored, std::ios::binary) << bytes;
+        }
         fs::create_directories(run);
-        original =
-            fixture(port(), "/r3-serve-cardfree-" + std::to_string(::getpid()) + "-" + std::to_string(case_id));
-        bytes = original.dump(2) + "\n";
-        std::ofstream(stored, std::ios::binary) << bytes;
         const ss::ReplayEvidence facts = evidence(original);
         inputs.stored_manifest = stored;
         inputs.engine_binary = BC_FAKE_ENGINE;
@@ -178,6 +188,43 @@ struct Case {
             std::ofstream(trace, std::ios::app) << "restore\n";
             return std::nullopt;
         };
+    }
+
+    void run_detached() const {
+        const fs::path self = fs::read_symlink("/proc/self/exe");
+        // Real start boundary: fork/exec the owner with its stored file,
+        // then use its control socket for a verified stop. The same owner and
+        // replay planner execute in the new process, not a fake plan callback.
+        const std::vector<std::string> args = {self.string(), "--owner-stored", stored.string(), run.string(),
+                                               trace.string()};
+        check(ss::start_detached(args, run, 20s) == 0, "detached stored replay did not reach running");
+        const auto reply = ss::control(run, "stop", 10s);
+        check(reply && reply->value("ok", false), "detached stored replay did not stop cleanly");
+        check(read(stored) == bytes, "detached start rewrote stored bytes");
+        const auto completed = ss::read_record(run);
+        check(completed.has_value(), "detached owner must persist its terminal record");
+        const Json final = completed.value_or(Json::object());
+        int owner_status = 0;
+        const pid_t owner_pid = final.at("owner_pid").get<pid_t>();
+        check(::waitpid(owner_pid, &owner_status, 0) == owner_pid && WIFEXITED(owner_status) &&
+                  WEXITSTATUS(owner_status) == 0,
+              "detached stored replay owner must exit cleanly");
+        check(final.at("selection").at("replay") == true,
+              "detached owner must select authenticated stored replay");
+        const auto& events = final.at("events");
+        size_t admitted = events.size(), first_child = events.size();
+        for (size_t i = 0; i < events.size(); ++i) {
+            const std::string kind = events[i].at("kind").get<std::string>();
+            if (kind == "power_applied")
+                admitted = i;
+            if (kind == "started")
+                first_child = std::min(first_child, i);
+        }
+        check(admitted < first_child && first_child < events.size(),
+              "detached start must durably admit power before its first GPU child");
+        const std::string log = read(trace);
+        check(log.find("begin\n") < log.find("verify\n") && log.find("verified_exit\n") < log.find("restore\n"),
+              "detached replay must restore power only after verified exit");
     }
 
     int run_owner(bool succeed) const {
@@ -268,8 +315,13 @@ struct Case {
 };
 } // namespace
 
-int main() {
+int main(int argc, char** argv) {
     try {
+        if (argc == 5 && std::string(argv[1]) == "--owner-stored") {
+            Case owner(0, false, false, false, argv[2], argv[3], argv[4]);
+            return ss::serve(owner.session);
+        }
+        check(argc == 1, "unexpected command line in stored replay acceptance test");
         Case healthy(1);
         healthy.run_owner(true);
         Case changed_build(2, true);
@@ -288,8 +340,10 @@ int main() {
         altered_bytes.bytes = Json({{"bad", "tampered replacement"}}).dump() + "\n";
         std::ofstream(altered_bytes.stored, std::ios::trunc) << altered_bytes.bytes;
         altered_bytes.run_owner(false);
-        std::cout
-            << "production owner replay: success, static/live/power/missing-gate/tamper refusals passed\n";
+        Case detached(7);
+        detached.run_detached();
+        std::cout << "production and detached owner replay: success, static/live/power/missing-gate/tamper "
+                     "refusals passed\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "RSC02 S5 owner integration: " << e.what() << '\n';
