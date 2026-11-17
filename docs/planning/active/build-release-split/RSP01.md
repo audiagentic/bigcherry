@@ -166,7 +166,7 @@ Python suites (platform-side), patch-lint, forbidden-terms,
 clang-format, clang-tidy positive hunks and strict/sanitized C++.
 
 **Final acceptance (other lane)**: RSC02 step 6/RSC04 hardware parity
-and launcher retirement, RSC12 named config parity, and step-5 review fixes.
+and launcher retirement and RSC12 named config parity. Step-5 review fixes are now merged in #1069.
 On a leased host prove healthy dense and helper `bc-serve serve` from
 the extracted prefix, live guards/power/heat, stop/status, installed
 receipt recheck and rollback. No GPU or lease in PRs 1–4. Never claim
@@ -195,7 +195,7 @@ current/previous target, staging crash, and unverified rollback
 must all fail closed with a typed native error.
 
 **Scope/gate update (2026-11-18):** RSC02 steps 1–5 are merged on main,
-but step 5 review fixes are in a separate PR. RSC12 source configs and
+and step-5 review fixes merged in #1069. RSC12 source configs and
 native loader exist; the old source layouts remain until RSC02 step 6
 and RSC04 acceptance. All hardware and retiring the legacy launcher/
 supervisor are explicitly out of this lane. Standalone helper startup
