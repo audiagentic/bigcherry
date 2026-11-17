@@ -1,9 +1,15 @@
 #pragma once
-// The helpers' expert ownership, GPU-free (RSC03 slice 2): the .rad container reader and the owned-expert selection
-// (heat, budget, balance, tail placement) the helper process runs, moved here unchanged so bc-serve plans with the same
-// code the helper selects with. Only Radiance's installed container ABI (rad_format.h, rad_encoding.h) is read.
+#include "callback_boundary.h"
+// The helpers' expert ownership, GPU-free (RSC03 slice 2): the .rad container reader and the owned-expert
+// selection (heat, budget, balance, tail placement) the helper process runs, moved here unchanged so bc-serve
+// plans with the same code the helper selects with. Only Radiance's installed container ABI (rad_format.h,
+// rad_encoding.h) is read.
 #include "moe_backend.h"
+// The helper's imported implementation has its own diagnostic policy.
+#pragma GCC diagnostic push
+#pragma GCC diagnostic ignored "-Wunused-variable"
 #include "moe_remote_shm.h"
+#pragma GCC diagnostic pop
 #include "rad_encoding.h"
 #include "rad_format.h"
 
@@ -125,7 +131,7 @@ struct Container {
             if ((uint32_t)e.layer >= layers || e.enc >= hdr.enc_count || e.plane_first + e.n_planes > hdr.plane_count) return false;
             for (uint32_t p = 0; p < e.n_planes; ++p)
                 if (!range(planes[e.plane_first + p].offset, planes[e.plane_first + p].bytes)) return false;
-            expert[(size_t)e.layer * experts + (uint32_t)e.expert][e.slot] = &e;
+            expert[(size_t)e.layer * experts + (uint32_t)e.expert][static_cast<size_t>(e.slot)] = &e;
         }
         return layers != 0;
     }
@@ -134,7 +140,9 @@ struct Container {
         return expert[(size_t)layer * experts + exp][slot];
     }
     const RadEncoding* encoding(const RadFileEntry* e) const { return e ? &encs[e->enc] : nullptr; }
-    const RadFilePlane* plane(const RadFileEntry* e, int p) const { return &planes[e->plane_first + p]; }
+    const RadFilePlane* plane(const RadFileEntry* e, int p) const {
+        return &planes[static_cast<size_t>(e->plane_first) + static_cast<size_t>(p)];
+    }
 };
 
 /* What selection reads from the helper's settings: the heat ranking, the placement, the shares, the R3_MOE_WORKER_BALANCE
@@ -164,8 +172,8 @@ int64_t laid_out_bytes(const Container& f, bool device_layout, uint32_t l, uint3
 /* layout_check (may be empty) runs after the budget and backend checks and before anything else, as the worker's device-layout
  * agreement did; false fails the selection. */
 bool select_owned(const Container& f, const OwnerPolicy& p, const std::string& arch, bool device_layout,
-                  const std::function<bool()>& layout_check, const uint64_t* budgets, uint32_t helper, uint32_t helpers,
-                  Owned* out);
+                  const bc::serving::callback::Guarded<bool()>& layout_check, const uint64_t* budgets,
+                  uint32_t helper, uint32_t helpers, Owned* out);
 
 /* Every helper's owned experts at once, as each helper selects them (select_owned with its own index), and the experts no
  * helper owns, which stay with the engine (its card or its host pool). Fails with the failing helper named. */

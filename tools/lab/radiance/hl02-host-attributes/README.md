@@ -31,22 +31,25 @@ reduction, a full 10 MiB all-reduce or inference latency.
 - **Exclusive GPU lease**, acquired by the caller before every measurement;
   verify no foreign KFD processes. Never kill or signal foreign processes.
 
+Scratch binaries live under `${BC_WORK_ROOT}/tmp/hl02/` (not `builds/`, which holds only content-addressed builds); `rad50-tester` is built from the archived `archive/exp-rad42-cpu-bar-push` tag.
+
 ```sh
+mkdir -p "${BC_WORK_ROOT}/tmp/hl02"
 hipcc -O2 --offload-arch=gfx1100 --offload-arch=gfx1201 \
   tools/lab/radiance/hl02-host-attributes/host_attributes.hip \
-  -o "${BC_WORK_ROOT}/builds/hl02-attributes/host_attributes"
+  -o "${BC_WORK_ROOT}/tmp/hl02/host_attributes"
 
 # With separately held GPU lease:
 # Per-device/transfer matched idle, primary-read and primary-write controls:
 python3 tools/lab/radiance/hl02-host-attributes/run_matrix.py \
-  --binary "${BC_WORK_ROOT}/builds/hl02-attributes/host_attributes" \
+  --binary "${BC_WORK_ROOT}/tmp/hl02/host_attributes" \
   --output "artifacts/HL02-matrix/xtx-read.jsonl" \
   --primary 0 --victims 1 --directions read --rounds 1 --seconds 0.6 --mib 64
 
 # Serial 4 MiB CPU push vs GPU pull:
 python3 tools/lab/radiance/hl02-host-attributes/run_push_control.py \
-  --reader-binary "${BC_WORK_ROOT}/builds/hl02-attributes/host_attributes" \
-  --rad50-binary "${BC_WORK_ROOT}/builds/rad42-bar-push/rad50-tester" \
+  --reader-binary "${BC_WORK_ROOT}/tmp/hl02/host_attributes" \
+  --rad50-binary "${BC_WORK_ROOT}/tmp/hl02/rad50-tester" \
   --output "artifacts/HL02-matrix/push-xtx.jsonl" \
   --primary 0 --victim 1 --iterations 10
 ```

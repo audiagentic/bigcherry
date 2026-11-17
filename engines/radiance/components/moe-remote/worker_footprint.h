@@ -79,7 +79,13 @@ inline Lanes lanes_for(const SmallClasses& classes, uint32_t max_rows, uint32_t 
     return l;
 }
 
-/* One lane's work buffers (moe_remote_gpu.h ensure_lane_work, its stats, publish limit, the large lane's chunk counters and the
+/* The lane's chunk counters cover its configured capacity, not the protocol maximum. This one C++17
+ * formula sizes allocation, clearing and footprint accounting alike. */
+constexpr uint64_t chunk_counter_bytes(uint64_t rows) {
+    return ((rows + r3::moe_shm::kCombineChunkRows - 1) / r3::moe_shm::kCombineChunkRows) * sizeof(uint32_t);
+}
+
+/* One lane's work buffers (moe_remote_gpu.h ensure_lane_buffers, its stats, publish limit, the large lane's chunk counters and the
  * eight per-parity expert pointer tables) for `rows` rows and `routes` dense route slots. */
 inline uint64_t lane_bytes(const Shape& s, uint64_t rows, uint64_t routes, bool large) {
     const uint64_t tr = routes, I = s.intermediate, H = s.hidden, E = s.experts;
@@ -94,9 +100,44 @@ inline uint64_t lane_bytes(const Shape& s, uint64_t rows, uint64_t routes, bool 
     n += tr * H * 2;                              /* down rows */
     n += tr * 2 * I * 2;                          /* the GEMV debug comparison buffer (allocated with the lane) */
     n += 3 * sizeof(uint64_t) + sizeof(uint32_t); /* stats, publish limit */
-    if (large) n += ((rows + r3::moe_shm::kCombineChunkRows - 1) / r3::moe_shm::kCombineChunkRows) * sizeof(uint32_t);
+    if (large) n += chunk_counter_bytes(rows);
     n += 8 * (E / 2) * sizeof(void*);             /* gate/up and down code/scale tables, two parities */
     return n;
+}
+
+/* CPU-testable allocation contract shared by the GPU lane preparer and the stub-allocator test.
+ * Scratch is plugin-owned and excluded; all other per-lane buffers are requested here. */
+template <typename Work>
+inline bool ensure_lane_buffers(Work& w, const Shape& s, uint64_t rows, uint64_t routes, uint64_t tr, bool large) {
+    const uint64_t E = s.experts, H = s.hidden, I = s.intermediate, G = s.act_group;
+    if (!w.d_counts.ensure(E * sizeof(uint32_t)) ||
+        !w.d_rowmask.ensure(rows) ||
+        !w.d_cursor.ensure(E * sizeof(uint32_t)) ||
+        !w.d_act.ensure(rows * H * sizeof(uint16_t)) ||
+        !w.d_flat.ensure(routes * sizeof(uint32_t)) ||
+        !w.d_sorted.ensure(tr * sizeof(uint32_t)) ||
+        !w.d_off.ensure((E + 1) * sizeof(uint32_t)) ||
+        !w.d_ew.ensure(tr * sizeof(uint16_t)) ||
+        !w.d_inv.ensure(tr * sizeof(uint32_t)) ||
+        !w.d_aq.ensure(rows * H) ||
+        !w.d_as.ensure(rows * (H / G) * sizeof(uint32_t)) ||
+        !w.d_gu.ensure(tr * 2 * I * sizeof(uint16_t)) ||
+        !w.d_mid.ensure(tr * I) ||
+        !w.d_mid_s.ensure(tr * (I / G) * sizeof(uint32_t)) ||
+        !w.d_down.ensure(tr * H * sizeof(uint16_t)) ||
+        !w.d_dbg.ensure(tr * 2 * I * sizeof(uint16_t)) ||
+        !w.d_stats.ensure(3 * sizeof(uint64_t)) ||
+        !w.d_publish_limit.ensure(sizeof(uint32_t)) ||
+        (large && !w.d_chunk_cnt.ensure(chunk_counter_bytes(rows))))
+        return false;
+    const uint64_t table_bytes = (E / 2) * sizeof(void*);
+    for (uint32_t parity = 0; parity < 2; ++parity)
+        if (!w.gu_code[parity].ensure(table_bytes) ||
+            !w.gu_scale[parity].ensure(table_bytes) ||
+            !w.dn_code[parity].ensure(table_bytes) ||
+            !w.dn_scale[parity].ensure(table_bytes))
+            return false;
+    return true;
 }
 
 /* Every open lane's work buffers (the plugin scratch is not included; see the header comment). */

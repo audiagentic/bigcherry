@@ -1,0 +1,159 @@
+// RSC02 step 3: real v2 power admission and GFXOFF recording, injected
+// hardware and sensors only. No sysfs writes or GPU access in this test.
+#include "manifest_power.h"
+
+#include <cstdlib>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <iterator>
+#include <stdexcept>
+#include <string>
+#include <vector>
+
+#include <nlohmann/json.hpp>
+#include <unistd.h>
+
+#ifndef BC_CONTRACT_V2_DOCS_DIR
+#error "BC_CONTRACT_V2_DOCS_DIR must reference the committed v2 contract fixtures"
+#endif
+
+namespace fs = std::filesystem;
+namespace ps = bc::serving::power;
+namespace ss = bc::serving::session;
+namespace v2 = bc::serving::v2;
+using Json = nlohmann::json;
+
+namespace {
+void expect(bool truth, const char* reason) {
+    if (!truth)
+        throw std::runtime_error(reason);
+}
+struct Temporary {
+    fs::path root;
+    Temporary() {
+        std::string name = (fs::temp_directory_path() / "bc-manifest-power-XXXXXX").string();
+        std::vector<char> buffer(name.begin(), name.end());
+        buffer.push_back('\0');
+        const auto* created = ::mkdtemp(buffer.data());
+        if (!created)
+            throw std::runtime_error("mkdtemp");
+        root = created;
+    }
+    ~Temporary() {
+        std::error_code unused;
+        fs::remove_all(root, unused);
+    }
+};
+class Cards final : public ps::Hardware {
+  public:
+    int reads = 0, writes = 0;
+
+  private:
+    v2::Result<ps::CardSnapshot> do_inspect(const ps::PciAddress& pci) override {
+        ++reads;
+        ps::CardSnapshot card{};
+        card.pci = pci;
+        card.amdgpu = true;
+        card.hwmon = "hwmon0";
+        for (auto& value : card.controls) {
+            value.current = 100;
+            value.minimum = 0;
+            value.maximum = 1000;
+            value.writable = true;
+        }
+        return card;
+    }
+    v2::Status do_execute([[maybe_unused]] const ps::PowerCommand& command) override {
+        ++writes;
+        return std::nullopt;
+    }
+};
+class Telemetry final : public ps::Sensor {
+  public:
+    int floor = 0, idle = 0;
+
+  private:
+    v2::Result<ps::Window> do_measure(const ps::PciAddress& pci, ps::WindowPhase phase, size_t count) override {
+        ps::Window window{};
+        window.pci = pci;
+        window.phase = phase;
+        window.identity = "gfx1201";
+        window.sensor_identity = "hwmon0";
+        window.acquisition = ps::CaptureState::measured;
+        for (size_t index = 0; index < count; ++index) {
+            const auto offset = phase == ps::WindowPhase::engine_loaded_idle ? 10 : 0;
+            window.samples.push_back(
+                {ps::Microwatts{20000000 + offset}, ps::Millivolts{800}, 1U,
+                 std::chrono::system_clock::now() +
+                     std::chrono::seconds(phase == ps::WindowPhase::engine_loaded_idle ? 2 : 0)});
+        }
+        if (phase == ps::WindowPhase::no_process)
+            ++floor;
+        else
+            ++idle;
+        return window;
+    }
+};
+} // namespace
+
+int main() {
+    try {
+        Temporary t;
+        Cards hardware;
+        Telemetry sensor;
+        ps::DiskRecords records(t.root / "journals", t.root / "receipts");
+        ss::ManifestPower bridge(hardware, records, sensor, [] { return false; }, false);
+        const fs::path original = fs::path(BC_CONTRACT_V2_DOCS_DIR) / "example.flashnext-4gpu.json";
+        const auto admission = bridge.begin(original, v2::PlanUse::serving);
+        expect(!admission, "valid strict-v2 manifest with stock observe must admit without a GPU lease");
+        expect(hardware.reads == 4 && hardware.writes == 0,
+               "observe inspects all four ordered engine/helper BDFs without hardware writes");
+        expect(!bridge.verify_serving(original), "same authenticated manifest passes final policy continuity");
+        expect(!bridge.capture(ps::WindowPhase::no_process), "floor phase persists advisory evidence");
+        expect(!bridge.capture(ps::WindowPhase::engine_loaded_idle), "loaded idle phase persists typed GFXOFF");
+        expect(sensor.floor == 1 && sensor.idle == 1, "captures exactly paired floor and idle per engine BDF");
+        expect(!bridge.finish(), "observe finish has no restoration writes");
+        expect(hardware.writes == 0, "no write path can be reached by an observe manifest");
+        expect(bridge.begin(original, v2::PlanUse::serving).has_value(),
+               "power admission must never be repeated for a run");
+
+        std::ifstream reader(original);
+        Json altered = Json::parse(reader);
+        altered["spec"]["processes"]["engine"]["device"]["gpus"][0] = "0000:45:00.0";
+        const fs::path changed = t.root / "altered.json";
+        std::ofstream(changed) << altered.dump(2);
+        expect(bridge.verify_serving(changed).has_value(),
+               "tampering with a final BDF without a matching content digest is refused");
+        expect(bridge.capture(ps::WindowPhase::engine_loaded_idle).has_value() == false,
+               "capturing a repeated advisory window does not write any hardware");
+        // The real process is the fake lease's permitted ancestor. All lease
+        // files live in this temporary test tree; no hardware lease is acquired.
+        const fs::path lease_dir = t.root / "fake-leases";
+        fs::create_directories(lease_dir);
+        expect(::setenv("AGENT_INSTANCE", "rsc02-step3-fixture", 1) == 0, "set test instance");
+        Json fake_lease = {{"instance", "rsc02-step3-fixture"},
+                           {"expires", "2099-01-01T00:00:00Z"},
+                           {"pids", Json::array({::getpid()})}};
+        const auto write_lease = [&](const Json& value) {
+            std::ofstream(lease_dir / "gpu.json", std::ios::trunc) << value.dump();
+        };
+        write_lease(fake_lease);
+        expect(ss::owner_has_gpu_lease(lease_dir),
+               "current live ancestor, instance and UTC expiry are required");
+        fake_lease["expires"] = "2099-01-01T00:00:00junkZ";
+        write_lease(fake_lease);
+        expect(!ss::owner_has_gpu_lease(lease_dir),
+               "lease cannot accept garbage inside a future UTC timestamp");
+        fake_lease["expires"] = "2099-01-01T00:00:00.125Z";
+        write_lease(fake_lease);
+        expect(ss::owner_has_gpu_lease(lease_dir), "fractional RFC3339 UTC timestamp is valid");
+        fake_lease["instance"] = "another-instance";
+        write_lease(fake_lease);
+        expect(!ss::owner_has_gpu_lease(lease_dir), "another lease holder cannot authorize power");
+        return 0;
+    } catch (const std::exception& error) {
+        std::cerr << "RSC02 step 3 test failed: " << error.what() << '\n';
+        return 1;
+    }
+}
