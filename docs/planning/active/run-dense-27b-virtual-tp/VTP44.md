@@ -62,6 +62,13 @@ Status 2026-11-17 (end of this slice): rad0037/38/40/41 are validated in serving
 - A quantised QSA block-key layout: the unquantised block-key group holds bf16_i8 to 1.283x bf16 on Flash-Next, under the 1.3x bar.
 - A greedy-token stream comparison across builds (IDENTITY.md checks KLD only); the libr3 gfx1100 device selftest for patch B's rows (not run by decision; Flash-Next serving exercised them); the allowlist reduction and the GPT code review of patch B.
 
+Status 2026-11-18: rad0043 (`--expert-stats` counts and labels every expert, protected ones included) and rad0044 (`--expert-route-record FILE`, manifest field `expert_route_record`) are in review/verified on Flash-Next TP2 (recorded histograms equal the stats counts in all 48 layers). Chunk 128 vs 64 changes the expert set in 41.9% of token-layer rows, so replay is the way to a usable KLD. Replay, next (patch rad0045 or a second half of rad0044, its own slice and review):
+- Key: a row ordinal over the recorded documents (the record lists `doc_starts`); the core finds the pass's first ordinal from `positions_h[0]` and the document it is in; a replay run refuses a record whose model, top_k, routed layers or document lengths differ. Recorded passes (step tape) off, as for the record; one sequence, no drafting.
+- Router: the plain `router_topk` op (not the fused router/scatter variants, which replay turns off) takes an optional forced-ids operand; in libr3's `r3d_router_topk_row` the lane's key comes from `topk_key(logit[forced id])` instead of the selection loop, `nsel = top_k`, the weights are computed from the measured run's own logits over the forced set (`norm` as usual). First try ids only; replay the recorded weights too only if KLD is still not near 0. Fail closed if `router_topk` resolves to a plugin without the operand.
+- Manifest: `expert_route_replay` (FILE), refused together with `expert_route_record`.
+- Acceptance: replaying the reference's own record gives KLD 0 and no routing flips even at chunk 128; then the three KV arms score without routing noise (the 0.037-0.040 floor should drop).
+- Cleanup with it: the `RADIANCE_DEBUG_ROUTING` env hooks (rad_block_moe_fp8.h, bc_moe_remote_block.h, ctx.cpp) are superseded by the record and break the manifest-fields rule; remove them if the deletes are small anchored edits.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
