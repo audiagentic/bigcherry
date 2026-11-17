@@ -15,6 +15,7 @@ import dataclasses
 import json
 import re
 import subprocess
+import time
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -83,6 +84,57 @@ def helpers_resident_mib(pids: list[int]) -> int:
     return (anon + shm + 1023) // 1024
 
 
+
+_BDF = re.compile(r"^[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]$")
+
+
+def _read_helper_vram_used(bdf: str) -> int:
+    # KFD's BDF-scoped sysfs counter is also the source of bc-serve's live GPU facts.
+    # Only a verified BDF from the immutable measuring manifest may reach this path.
+    path = Path("/sys/bus/pci/devices") / bdf / "mem_info_vram_used"
+    try:
+        value = int(path.read_text(encoding="ascii").strip())
+    except (OSError, ValueError) as exc:
+        raise PlanError(f"measuring helper {bdf}: cannot read live VRAM usage from {path}: {exc}") from exc
+    if value < 0:
+        raise PlanError(f"measuring helper {bdf}: negative live VRAM usage in {path}")
+    return value
+
+
+def _snapshot_helper_vram(unmeasured: Path, count: int) -> dict[str, int]:
+    try:
+        document = json.loads(unmeasured.read_text(encoding="utf-8"))
+        bdfs = [h["gpu"] for h in document["spec"]["processes"]["helpers"]]
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        raise PlanError(f"measuring helper VRAM: cannot identify BDFs from {unmeasured}: {exc}") from exc
+    if len(bdfs) != count:
+        raise PlanError(f"measuring helper VRAM: helper count {len(bdfs)} differs from {count} started sidecars")
+    if any(not isinstance(bdf, str) or not _BDF.fullmatch(bdf) for bdf in bdfs):
+        raise PlanError("measuring helper VRAM: invalid helper PCI BDF in the measuring manifest")
+    if len(set(bdfs)) != count:
+        raise PlanError("measuring helper VRAM: duplicate helper PCI BDF")
+    return {bdf: _read_helper_vram_used(bdf) for bdf in bdfs}
+
+
+def _wait_for_helper_vram_release(baseline: dict[str, int], *, timeout_s: float) -> None:
+    # waitpid confirms exit, not that the kernel's VRAM counters have caught up.
+    # S8/S10 must evaluate *live* room after the measuring helper's expert allocations
+    # have actually left the GPU. Do not inflate/override S8's admission numbers.
+    deadline = time.monotonic() + timeout_s
+    while True:
+        outstanding = {
+            bdf: (used, baseline[bdf])
+            for bdf in baseline
+            if (used := _read_helper_vram_used(bdf)) > baseline[bdf]
+        }
+        if not outstanding:
+            return
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise PlanError(f"measuring helper VRAM was not released after verified child exit: {outstanding}")
+        time.sleep(min(0.1, remaining))
+
+
 def write_manifest(
     *, name: str, serving: dict[str, Any], binary: Path, model: Path, env: dict[str, str], serve: ServeSpec,
     run_dir: Path, plan_cache: Path, host: str,
@@ -146,6 +198,10 @@ def write_manifest(
             plan.unlink(missing_ok=True)
             ranks.unlink(missing_ok=True)
             specs = [dataclasses.replace(s, argv=(*s.argv, "--measuring")) for s in helper_specs(unmeasured)]
+            # Capture room before the measuring helpers occupy it. This BDF-verified
+            # baseline is only a wait condition, never a substitute for bc-serve's
+            # live admission facts (which are sampled again after the barrier).
+            baseline = _snapshot_helper_vram(unmeasured, len(specs)) if specs else {}
             helpers = SidecarSet(specs)
             try:
                 helpers.start()
@@ -165,6 +221,10 @@ def write_manifest(
                 raise PlanError(f"{name}: the measuring start's helpers did not come up: {exc}") from exc
             finally:
                 records = helpers.stop()
+                if baseline:
+                    _wait_for_helper_vram_release(
+                        baseline, timeout_s=max(spec.stop_timeout_s for spec in specs)
+                    )
             if engine.returncode or not plan.is_file() or not plan.stat().st_size or not ranks.is_file():
                 raise PlanError(f"{name}: the measuring start failed (engine exit {engine.returncode}); see {log}")
             if any(r["killed"] for r in records):
