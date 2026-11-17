@@ -29,6 +29,7 @@
 
 #include "callback_boundary.h"
 #include "serving.h"
+#include "v2/manifest.h"
 
 namespace bc::serving::power {
 class SessionPower;
@@ -137,6 +138,9 @@ struct Hooks {
     Callback<void(const std::string& role, pid_t pid, const std::filesystem::path& log)> started;
     Callback<void(pid_t pid)> ended;                     // the step verified this process's exit
     Callback<void(const std::string&)> selected_segment; // journal a unique helper segment before measuring
+    // Exactly one manifest-authenticated power admission, after the writer
+    // resolves selected cards but before any measuring/serving child starts.
+    Callback<v2::Status(const std::filesystem::path&, v2::PlanUse)> admit_power;
 };
 
 /* The plan step refused or could not make the manifest (the session ends with exit 97, nothing started for
@@ -153,17 +157,33 @@ struct PowerHook {
     // A returned failure must be observed, not discarded through a void callback.
     Callback<v2::Status()> apply;
     Callback<v2::Status()> restore;
+    // An alternative to apply for actual SessionPower: the planner supplies a
+    // strictly authenticated manifest before starting its measuring children.
+    Callback<v2::Status(const std::filesystem::path&, v2::PlanUse)> begin_manifest;
+    Callback<v2::Status(const std::filesystem::path&)> verify_serving;
+    Callback<v2::Status(bool)> gfxoff_window; // false: floor; true: loaded idle
+    Callback<void()> verified_exit;           // the owner calls only after verified child exit
 };
 
 // Bridge the actual step-4 transaction into the session owner's guarded
 // Status-returning hooks. SessionPower must outlive serve().
 PowerHook hooks_for_power_transaction(power::SessionPower& transaction);
 
+struct Laboratory {
+    std::filesystem::path prompts_a, prompts_b, calibration_store;
+};
 struct Session {
     PowerHook power_hook;
+    std::optional<Laboratory> laboratory; // explicit finite ABBA mode, never a detached serving session
     std::filesystem::path run_dir;
     Timing timing;
     Canary canary;
+    // Optional post-canary runtime guard (MTP replay, live heat and policy).
+    // The real CLI binds this; owner-only fakes can omit it.
+    Callback<v2::Status(const EngineStart&, const std::filesystem::path& engine_log)> runtime_guard;
+    // Actual live worker and heat checks, not the manifest's startup decision.
+    Callback<v2::Status()> runtime_watch;
+    Callback<v2::Status()> lab_evidence_gate;
     // The plan step: runs with the session lock held, before any serving process starts (it may run measuring
     // starts of its own, registered through the hooks and stopped before it returns). Throws to refuse.
     Callback<EngineStart(const std::filesystem::path& run_dir, const Hooks& hooks)> plan;
@@ -208,6 +228,9 @@ struct EnginePlanInputs {
     std::filesystem::path engine_binary; // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary; // empty: <radiance_home>/helpers/r3_moe_worker
     ManifestRunner runner;               // empty: run_to_completion with the owner's child environment
+    std::string power_profile = "stock"; // explicit v2 profile, observe by default
+    std::filesystem::path live_policy_file; // only with explicit lab calibration
+    bool calibration_run = false;
 };
 
 /* Resolve a config then publish its measured manifest. On cache miss (exit 10) bring helpers up sequentially
