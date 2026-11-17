@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261117_031759_the-engine-release-will-ship-w_4934",
+  "files": [
+    "docs/planning/active/build-release-split/RSP01.md",
+    "docs/reference/build/RELEASES.md"
+  ],
+  "plan-item-ids": [
+    "RSP01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSP01 phase 2 redesigned as one Python-free engine release: a single asset of binaries and data, no Python and no shell launcher, start-up through bc-serve, archs.toml compiled in, RSC12 configs shipped, trust as a tag-bound digest, current and previous release kept for rollback, and a gate table mapping each remaining Python or shell behaviour to the RSC02 step that rewrites it. PR 1022.",
+  "timestamp-utc": "2026-11-17T03:17:59.151006Z",
+  "user-summary-candidate": "The engine release will ship without Python."
+}

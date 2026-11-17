@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_031759_old-runs-can-now-be-classified_5741",
+  "files": [
+    "tools/bigcherry/core/legacy_runs.py",
+    "tools/bigcherry/core/build_gc.py",
+    "tools/bigcherry/core/retention.py",
+    "docs/reference/build/RUNS_LAYOUT.md",
+    "docs/reference/build/BUILD_CACHE_GC.md"
+  ],
+  "plan-item-ids": [
+    "WSL09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "One-time adoption of legacy flat runs: a scanner writes run manifests carrying the build references found in each run, publishes them atomically without overwrite after re-verifying every scanned file, and the GC and retention readers accept a flat manifest only with the migration provenance and a matching tree stamp. Run lookup keeps reporting corrupt nested runs. PR 1026; independent review closed five findings.",
+  "timestamp-utc": "2026-11-17T03:17:59.103203Z",
+  "user-summary-candidate": "Old runs can now be classified by the build cache cleaner instead of blocking it."
+}

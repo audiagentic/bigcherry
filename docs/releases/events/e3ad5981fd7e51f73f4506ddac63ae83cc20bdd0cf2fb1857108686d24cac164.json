@@ -1,0 +1,11 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261117_031802_a-lab-profiling-script-no-long_5211",
+  "files": [
+    "tools/lab/radiance/rad20-profile.sh"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad20-profile.sh no longer deletes every shared flashnext helper and engine log at the end of each iteration; the helper0 log copy stays. PR 1029.",
+  "timestamp-utc": "2026-11-17T03:18:02.527876Z",
+  "user-summary-candidate": "A lab profiling script no longer deletes other runs' logs."
+}
