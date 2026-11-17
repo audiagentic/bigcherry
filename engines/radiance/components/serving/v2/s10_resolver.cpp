@@ -352,7 +352,17 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
     if (helper.role != budget.role || helper.gpu != budget.bdf)
       return fail(ConfigErrorCode::ownership_mismatch, "spec.processes.helpers",
                   "helper budget role/BDF differs from v2 process");
-    helper.vram_budget_mib = budget.expert_budget_mib;
+    // S8's expert_budget_mib is the live *ceiling*, not a new placement decision.
+    // The engine measured exactly the original owner map and the serving helper must
+    // use that same map. Re-budgeting here changes select_owned() after measurement.
+    // Refuse if the measured placement cannot fit; never silently shrink/expand it.
+    if (helper.vram_budget_mib > budget.expert_budget_mib)
+      return fail(ConfigErrorCode::admission_refused,
+                  "spec.processes.helpers[" + std::to_string(i) + "].vram_budget_mib",
+                  "the measured owner map needs " + std::to_string(helper.vram_budget_mib) +
+                      " MiB of experts, but live claimable VRAM after the worker footprint allows only " +
+                      std::to_string(budget.expert_budget_mib) + " MiB");
+
   }
   if (s8.transport) {
     if (!out.spec.handoff)
