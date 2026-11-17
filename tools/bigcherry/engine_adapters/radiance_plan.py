@@ -15,20 +15,28 @@ import dataclasses
 import json
 import re
 import subprocess
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 from ..core.engines import ServeSpec
 from ..tuning.server_runner import _free_port
 from .base import SidecarError, SidecarSet, SidecarSpec
 
+# RSC11/S11: main.cpp exit 11, session.cpp pool_changes > 2, and plan-check.sh PLAN_POOL_CHANGES < 2.
 CACHE_MISS = 10
+REMEASURE_REQUIRED = 11
+MAX_POOL_CHANGES = 2
 _ENGINE_MIB = re.compile(r"--plan-memory: wrote .*; engine start-up took (\d+) MiB of MemAvailable;")
 _KEYS = {"layout", "set", "heat", "histogram", "calibration", "live_policy", "experiment", "calibration_run"}
 
 
 class PlanError(RuntimeError):
     pass
+
+
+class HostPoolRemeasureRefused(PlanError):
+    """bc-serve requested an invalid host pool or one that did not converge."""
 
 
 def _toml(value: Any) -> str:
@@ -96,7 +104,6 @@ def write_manifest(
     plan_cache.mkdir(parents=True, exist_ok=True)
     site = run_dir / "site.toml"
     _site(site, model, radiance_home, serving)
-    set_args = [a for key in sorted(sets) for a in ("--set", f"{key}={_toml(sets[key])}")]
     # What else decides the plan but is not a bc-serve setting: the route-heat file's contents and the lab experiment.
     extra = "; ".join(f"{k}-sha256: {_file_sha256(Path(serving[k]))}" for k in ("heat", "experiment") if k in serving) or "none"
     # What the helpers read besides the layout and the settings: the calibration store the live policy is derived from, an explicit
@@ -108,53 +115,90 @@ def write_manifest(
     if serving.get("calibration_run"):
         objects.append("--calibration-run")
     # The stock power profile observes the cards; a named profile is chosen explicitly, never implied.
-    common = ["--site", str(site), "--power-profile", "stock", *set_args, *objects]
+    # The pool can change after bc-serve exit 11. Rebuild the effective settings on every attempt:
+    # do not add a duplicate --set or carry the old pool into the measuring start.
+    def common_args() -> list[str]:
+        set_args = [a for key in sorted(sets) for a in ("--set", f"{key}={_toml(sets[key])}")]
+        return ["--site", str(site), "--power-profile", "stock", *set_args, *objects]
 
     def run(out: Path, *args: str) -> subprocess.CompletedProcess[str]:
-        return subprocess.run([str(bc_serve), "--write-manifest", str(out), *args], capture_output=True, text=True)
+        return subprocess.run([str(bc_serve), "--write-manifest", str(out), *args], capture_output=True, text=True, check=False)
 
     measured = run_dir / "manifest.json"
     cached = ["--plan-cache", str(plan_cache), "--engine-binary", str(binary), "--plan-extra", extra]
-    result = run(measured, *cached, *common)
-    if result.returncode == 0:
-        return measured
-    if result.returncode != CACHE_MISS:
-        raise PlanError(f"{name}: bc-serve --write-manifest failed ({result.returncode}): {result.stderr.strip()}")
-
-    unmeasured = run_dir / "manifest-measuring.json"
-    result = run(unmeasured, "--unmeasured", *common)
-    if result.returncode:
-        raise PlanError(f"{name}: the unmeasured manifest was not written ({result.returncode}): {result.stderr.strip()}")
     plan = run_dir / "plan-measured.json"
     ranks = run_dir / "plan-ranks.json"
     log = run_dir / "engine-measure.log"
-    plan.unlink(missing_ok=True)
-    ranks.unlink(missing_ok=True)
-    specs = [dataclasses.replace(s, argv=(*s.argv, "--measuring")) for s in helper_specs(unmeasured)]
-    helpers = SidecarSet(specs)
-    try:
-        helpers.start()
-        resident = helpers_resident_mib([r.process.pid for r in helpers._running]) if specs else 0
-        engine_env = dict(serve.env)
-        for var, relative in serve.env_from_binary:
-            engine_env[var] = str((binary.parent / relative).resolve())
-        engine_env.update(env)
-        argv = [str(binary), *(a.replace("{manifest}", str(unmeasured)) for a in serve.manifest_args), "--plan-memory", str(plan), "--plan-memory-ranks", str(ranks)]
-        with log.open("w", encoding="utf-8") as sink:
-            engine = subprocess.run(argv, env=engine_env, stdout=sink, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL)
-    except SidecarError as exc:
-        raise PlanError(f"{name}: the measuring start's helpers did not come up: {exc}") from exc
-    finally:
-        records = helpers.stop()
-    if engine.returncode or not plan.is_file() or not plan.stat().st_size or not ranks.is_file():
-        raise PlanError(f"{name}: the measuring start failed (engine exit {engine.returncode}); see {log}")
-    if any(r["killed"] for r in records):
-        raise PlanError(f"{name}: the measuring start's helpers did not exit cleanly")
-    found = _ENGINE_MIB.findall(log.read_text(encoding="utf-8", errors="replace"))
-    if not found:
-        raise PlanError(f"{name}: the measuring start did not report the engine's host memory; see {log}")
-    result = run(measured, *cached, *common, "--measured-plan", str(plan), "--rank-demand", str(ranks),
-                 "--helpers-resident-mib", str(resident), "--engine-resident-mib", found[-1])
-    if result.returncode:
-        raise PlanError(f"{name}: the measured manifest was not written ({result.returncode}): {result.stderr.strip()}")
-    return measured
+
+    # At most two changes in the host pool, as in the C++ owner and the bash launcher.
+    # Each change has a fresh plan cache key and a fresh immutable measuring manifest.
+    for pool_changes in range(MAX_POOL_CHANGES + 1):
+        common = common_args()
+        result = run(measured, *cached, *common)
+        from_measurement = False
+        if result.returncode == CACHE_MISS:
+            unmeasured = run_dir / f"manifest-measuring-{pool_changes}.json"
+            result = run(unmeasured, "--unmeasured", *common)
+            if result.returncode:
+                raise PlanError(
+                    f"{name}: the unmeasured manifest was not written ({result.returncode}): {result.stderr.strip()}"
+                )
+            plan.unlink(missing_ok=True)
+            ranks.unlink(missing_ok=True)
+            specs = [dataclasses.replace(s, argv=(*s.argv, "--measuring")) for s in helper_specs(unmeasured)]
+            helpers = SidecarSet(specs)
+            try:
+                helpers.start()
+                resident = helpers_resident_mib([r.process.pid for r in helpers._running]) if specs else 0
+                engine_env = dict(serve.env)
+                for var, relative in serve.env_from_binary:
+                    engine_env[var] = str((binary.parent / relative).resolve())
+                engine_env.update(env)
+                argv = [str(binary),
+                        *(a.replace("{manifest}", str(unmeasured)) for a in serve.manifest_args),
+                        "--plan-memory", str(plan), "--plan-memory-ranks", str(ranks)]
+                with log.open("w", encoding="utf-8") as sink:
+                    engine = subprocess.run(
+                        argv, env=engine_env, stdout=sink, stderr=subprocess.STDOUT, stdin=subprocess.DEVNULL, check=False
+                    )
+            except SidecarError as exc:
+                raise PlanError(f"{name}: the measuring start's helpers did not come up: {exc}") from exc
+            finally:
+                records = helpers.stop()
+            if engine.returncode or not plan.is_file() or not plan.stat().st_size or not ranks.is_file():
+                raise PlanError(f"{name}: the measuring start failed (engine exit {engine.returncode}); see {log}")
+            if any(r["killed"] for r in records):
+                raise PlanError(f"{name}: the measuring start's helpers did not exit cleanly")
+            found = _ENGINE_MIB.findall(log.read_text(encoding="utf-8", errors="replace"))
+            if not found:
+                raise PlanError(f"{name}: the measuring start did not report the engine's host memory; see {log}")
+            result = run(
+                measured, *cached, *common, "--measured-plan", str(plan), "--rank-demand", str(ranks),
+                "--helpers-resident-mib", str(resident), "--engine-resident-mib", found[-1]
+            )
+            from_measurement = True
+
+        if result.returncode == 0:
+            return measured
+        if result.returncode == REMEASURE_REQUIRED:
+            # main.cpp reports the requested pool on stdout, independently of human-readable stderr.
+            matches = re.findall(r"^derived_host_pool_mib=([0-9]+)$", result.stdout, re.MULTILINE)
+            pool = int(matches[-1]) if matches else 0
+            if not pool:
+                raise HostPoolRemeasureRefused(
+                    f"{name}: bc-serve requested remeasurement without a valid derived_host_pool_mib"
+                )
+            if pool_changes == MAX_POOL_CHANGES or pool == sets.get("memory.host_pool_mib"):
+                raise HostPoolRemeasureRefused(
+                    f"{name}: the host pool did not converge (last requested {pool} MiB)"
+                )
+            sets["memory.host_pool_mib"] = pool
+            continue
+        if from_measurement:
+            raise PlanError(
+                f"{name}: the measured manifest was not written ({result.returncode}): {result.stderr.strip()}"
+            )
+        raise PlanError(
+            f"{name}: bc-serve --write-manifest failed ({result.returncode}): {result.stderr.strip()}"
+        )
+    raise HostPoolRemeasureRefused(f"{name}: no measured manifest after bounded host-pool retries")
