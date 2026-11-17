@@ -17,6 +17,14 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#if defined(__clang__)
+#if __has_feature(address_sanitizer)
+#define BC_TEST_ADDRESS_SANITIZER 1
+#endif
+#elif defined(__SANITIZE_ADDRESS__)
+#define BC_TEST_ADDRESS_SANITIZER 1
+#endif
+
 namespace fs = std::filesystem;
 namespace ss = bc::serving::session;
 using Json = nlohmann::json;
@@ -213,9 +221,13 @@ int main() {
         const pid_t child = ::fork();
         expect(child >= 0, "fork bounded index verifier");
         if (child == 0) {
+            // ASan needs a large virtual address space for shadow mappings,
+            // so preserve the 64 MiB cap only in the unsanitized regression.
+#if !defined(BC_TEST_ADDRESS_SANITIZER)
             const rlimit budget{64ULL * 1024ULL * 1024ULL, 64ULL * 1024ULL * 1024ULL};
             if (::setrlimit(RLIMIT_AS, &budget) != 0)
                 ::_exit(30);
+#endif
             try {
                 (void)ss::read_stored_index(index);
                 ::_exit(31);
