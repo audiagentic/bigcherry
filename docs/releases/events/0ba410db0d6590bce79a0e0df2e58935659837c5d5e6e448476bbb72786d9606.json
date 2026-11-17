@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261117_224204_restarting-from-a-stored-manif_4232",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/manifest_power.cpp",
+    "engines/radiance/components/serving/component.toml"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC02 step 5 review fixes (#1069): one static input projection shared by writer and replay so a valid cache hit no longer refuses its own manifest; each owner execution gets its own power run and receipt id instead of reusing the manifest instance id; replayed helper shared-memory names are guarded by an owner lock across run directories; the admitted manifest bytes are pinned against a path swap between the digest check and the child open; every replay runs a fresh S8 calibration and evidence validity check; the model fingerprint is cached by device, inode, size and times with an O(1) accumulator so a cache-hit start no longer reads the 114 GiB model; teardown after a failed test assertion is bounded and every CTest of the component carries a 120 s timeout.",
+  "timestamp-utc": "2026-11-17T22:42:04.601900Z",
+  "user-summary-candidate": "Restarting from a stored manifest now works repeatedly, refuses stale calibration, and no longer hashes the whole model on every start."
+}

@@ -15,47 +15,86 @@ work: S
 
 ## Description
 
-After RSC02/RSC03 and RCS10/RHP09: remove the bash launcher, runtime-profile argument duplication in engines/radiance/recipes.toml (build recipes and patch sets stay), obsolete or superseded R3_* aliases (e.g. R3_MOE_WORKER_MIB, R3_MOE_WORKER_PLUGIN fallbacks, R3_MOE_WORKER_QUEUE_WARM), and hand-written layout budgets, migrating every caller in the same change.
+After RSC02/RSC03, RSC12 and RCS10/RHP09, retire the bash launch and Python serving start paths and the duplicated runtime-profile argument spellings. **Do not merge a deletion until RSC11 S15 passes on hardware on the same build for dense and helper configurations and release acceptance succeeds.** RSP01 phase 2 owns the Python-free release asset/installer and workflow; do not edit those files here. There is no backward-compatibility shim: callers adopt the native RSC12 config/manifest contract or remain explicitly blocked.
 
 ## Steps
 
-
+1. Record the exact callers, native commands, flags and remaining gates (inventory below). RSC02 step 6 first, independent of hardware.
+2. Test production `bc-serve serve/start` call graphs using fake engine/helper processes and real config-loader, writer, strict v2 reader, measuring plan and guards. Add genuinely missing typed functionality; never turn old positional flags into a second settings system.
+3. Execute the S15 short leased same-build A/B acceptance runbook (dense + helper, semantic execution projection and RHP12 gates). A card-free dry run is necessary but not proof of GPU parity.
+4. Migrate eligible callers and tests without removing the launcher; CI must enforce that migrated paths invoke the real native owner and do not silently use the shell. Separate release installer ownership stays with RSP01.
+5. After S15 and RSP01 acceptance, merge the separately reviewed S16 deletion PR, deleting the launcher, `lib/plan-check.sh`, `lib/sdk-check.sh` if orphaned, Python serving supervisor/CLI only once no callers remain, layout files and old spellings only after the RSC12 adapter parity. Keep historical experiment patches and records as historical evidence, not executable dependencies.
 
 ## Detailed Solution & Technical Design
 
+### Verified inventory, 2026-11-18, origin/main 9549aa603
 
+The direct-hit query is `git grep -n -e launch-flashnext-best.sh -e plan-check.sh -- tools/lab/radiance tools/tests tools/bigcherry config/serving-settings.toml .github/workflows/radiance-release-bundle.yml`; also grep indirect `$L`, `$LAUNCH` and the Python entry points. A hit in historical documentation or an experiment patch is not a runtime call. In the lab tree there are **13 direct .sh/.py callers**, not 16 active executable direct callers on this revision; do not assume the planning estimate is an exact count.
 
-## Code Samples & Guidance
+| Caller / surface | Required native replacement or disposition | Block to removal |
+| --- | --- | --- |
+| `launch-flashnext-best.sh` (start/stop, layout/build/release, canary, measuring, heat, live policy, power, gfxoff) | `bc-serve serve CONFIG --configs engines/radiance/configs --run-dir DIR --engine-binary BUILD/bin/radiance --site SITE --model-root ROOT --power-profile NAME`; detached `start CONFIG` only on non-leased hosts; `bc-serve stop/status --run-dir DIR`. Release mode belongs to RSP01 native tagged release. Typed service/handoff settings belong in configs or recorded `--set`. | **Yes**: S15 dense/helper parity and CLI/lab gaps; no deletion now. |
+| `lib/plan-check.sh` (sole source caller: launcher) | None: C++ owner handles measuring start, exit-10 plan-cache miss, exit-11 derived-pool remeasure, strict measured v2 writer, live admission before GPU child. | **Yes**, until launcher deletion, real planner tests and S15. |
+| `lib/sdk-check.sh` (sole source caller: launcher) | `bc-serve` native `sdk_check.cpp` plus typed environment/system checks. | **Yes** until launcher removed and SDK negative tests prove parity. |
+| `tools/lab/radiance/lab-env.sh` and `lab-build.sh` (not under `lib/`) | No serving start replacement; lab-side environment/build selection may remain for experiments. Never ship these in the engine release. | **No** for launcher deletion if they no longer start it. |
+| `burst-idle.sh`, `burst-trace.sh` | Native named helper config or recorded `--set` variant, `serve/start/stop --run-dir`; keep trace/client tooling. | **Yes** pending per-run mode/trace parity. |
+| `flashnext-parity.sh` | `bc-serve serve flashnext-4gpu --run-dir DIR`, with config-driven histogram period, semantic projection and matching benchmark client. Lease wraps foreground owner for its whole lifetime. | **Yes** pending short A/B/hardware parity. |
+| `flashnext-probe.sh` | `bc-serve serve CONFIG --run-dir DIR --engine-binary ...`, typed tracing and log-path receipts, `stop --run-dir`; no implicit inherited R3_* start configuration. | **Yes**: tracing and log-discovery parity. |
+| `heat-placement/rhp01-coverage.sh` | `serve CONFIG` with config/recorded handoff heat, histogram and live-policy state; no launcher `--heat` alias. | **Yes** pending real heat producer/consumer acceptance. |
+| `pwr01-baseline.sh`, `pwr03-idle-diag.sh` | Native `--power-profile NAME` and `--allow-power-apply` only with owner-held GPU lease; native gfxoff floor/loaded-idle receipts; keep samplers. | **Yes** pending measured power/gfxoff A/B. |
+| `rad20-burst-profile.sh`, `rad20-profile.sh`, `rad20-queue-probe.sh` | Native `serve CONFIG` plus **explicit, typed** profiling/child-wrapper capability if needed; `HELPER_WRAP`, `HELPER0_WRAP` and arbitrary `R3_*` environment are not valid config transports. | **Yes**: must not migrate by forwarding untrusted inherited environment. |
+| `rad20-helper-kill.sh` | Native `serve CONFIG`; kill a test-owned helper, verify owner stops the set and restores power; `status/stop --run-dir`. | **Yes** until session-fault card-free test and hardware parity. |
+| `heat-placement/heat-watch.py` | Diagnostic suggestion should say `bc-serve stop --run-dir ...` then `serve CONFIG` with a config-set heat input. No Python serving path required. | **No** once message updated, if semantics verified. |
+| `rhp20-forced-move.py` | Native `serve CONFIG` with explicit lab `--calibration-run --live-policy FILE --calibration-prompts-a/b --calibration-store` **only** for calibration; experiment moves require typed RSC12 lab experiment evidence, not a magic `--experiment`. | **Yes**: production experiment mode missing. |
+| `tools/bigcherry/cli/serve.py`, `serve_v2.py`, `serving/supervisor.py`, `serving/runtime_adapters.py`, `serving/activation.py` | `bc-serve serve/start/stop/status` + native `--explain` (the `explain CONFIG` subcommand is not implemented as of this inventory); `tools/tests/serving/*` are behavioural oracles, not release dependencies. | **Yes** for source deletion until Python call sites and tests migrate; **no** Python may appear in RSP01 engine asset. |
+| `bigcherry host-check`, `bigcherry gfxoff` and `tools/bigcherry/hardware/gfxoff.py` | Native `sdk_check.cpp`, `power_diagnostics.cpp`, session gfxoff floor/loaded-idle and refusal; standalone Python diagnostics can remain in developer tools, **no replacement needed in release**. | **No** for release if not packaged; negative startup tests still needed. |
+| `tools/bigcherry/engine_adapters/radiance_plan.py` via `radiance.py` (campaign/benchmark) | C++ `bc-serve serve CONFIG` for online runs; `bc-serve --write-manifest` / strict v2 writer for offline manifests via one native planner; keep Python-only orchestration outside engine asset until consumer migration. | **Yes** for source retirement and S14 campaign/benchmark receipt parity; not a reason to ship Python. |
+| `tools/bigcherry/release/install.py` | RSP01 Python-free tagged digest-trusted asset installer and `bc-serve` native release start; **do not edit here**. | **Yes**, owned by RSP01 phase 2. |
+| `.github/workflows/radiance-release-bundle.yml` | RSP01 emits one Python-free engine asset, not the lab launcher. **No edit in this lane.** | **Yes**, RSP01 release/rollback gates. |
+| `config/serving-settings.toml` (**40** launcher owner entries) | Named RSC12 native config plus `bc-serve` ownership metadata for each active profile; preserve historical records without inventing duplicate budgets. | **Yes** for reference cleanup after S15 and consumer migration. |
+| `engines/radiance/layouts/*.toml`, old `server-args` and `[layout.NAME.settings]` | RSC12 `configs/{flashnext,qwen27b}.toml`, strict native loader, named variants, semantic parity; remove old spellings together at RSC12 step 6. | **Yes** until every layout/campaign consumer uses configs. |
+| `tools/tests/lab/{test_launch_flashnext_cleanup,test_launch_flashnext_release,test_mtp_replay_guard,test_plan_check_launcher,test_helper_profile_parity,test_rhp16_calibrate,test_rhp18_policy_preflight,test_rhp19_calibration_watchdog}.py` | Native C++ declared CTest targets (`session_test`, `session_guards_test`, `session_stored_test`, calibration/power tests) and card-free CLI acceptance; launcher tests remain until equivalence proof. | **Yes**: migrate each semantic assertion, never delete a test merely because it reads bash. |
+| `tools/tests/campaign/test_rsc03_resources.py`, `tools/tests/release/test_release_install.py`, `engines/radiance/components/serving/serving_test.cpp` | RSC03 C++ derivation and RSC12 config semantic parity without reading soon-to-be-deleted launcher source; release tests transition in RSP01. | **Yes**: remove launcher text-oracle dependency after independently grounded fixture. |
+| Docs, READMEs, `experiments/radiance/*/change.patch`, historical JSON and evidence | Preserve historical references as evidence; update *active* runbooks to native commands only when tested. | **No** executable dependency, but active instructions must be updated at S16. |
 
+### Mode equivalence and open native gates
 
+| Launcher mode | Native state as of inventory | Acceptance gate |
+| --- | --- | --- |
+| `start --layout NAME --build DIR`, `stop` | Named `serve/start CONFIG --run-dir DIR --engine-binary DIR/bin/radiance`, `stop --run-dir`; config chooses helper layout. | Real resolver + writer + session-owner fake engine/helper test, then S15 GPU. |
+| `--release TAG|latest` | No direct `bc-serve` CLI equivalent; RSP01 installer and tag digest trust. | RSP01 acceptance and rollback. |
+| `--port`, `--heat`, `--record-heat`, `--record-period`, `--kv-dtype`, `--ngram-placement disk`, `--num-spec`, `--max-model-len`, `--budget` | Native registered settings and RSC12 config/provenance (e.g. `service`, `engine`, `handoff`, `memory`); no shell-flag aliases. Exact field coverage and produced argv/manifest require tests. | Real semantic projection parity; typed config and artifact checks. |
+| `--ngram-device INDEX` | Explicitly not carried over; typed field required before use. | Refuse unsupported use, do not emulate. |
+| `--live-policy FILE`, `--experiment FILE` | Native `--calibration-run --live-policy ...` only for lab ABBA, no general experiment start equivalent. | RSC12 lab experiment schema + production-graph test + hardware. |
+| `--calibrate --calibration-prompts-a/b` | Foreground native `serve --calibration-run --live-policy ... --calibration-prompts-a/b --calibration-store`. | ABBA evidence and two distinct real prompt files, guard test. |
+| `--gpu-power` / `--no-gpu-power` | Named `--power-profile` and guarded `--allow-power-apply`, only within lease held by the owner. | Durable admission before first GPU child and restore after verified exits. |
+| MTP replay, live policy report, gfxoff floor/loaded idle | Native owner guard/power hooks exist; exact lab receipts and log discovery still require parity. | Real producer/consumer fixtures, injected fault cases, S15. |
+| HELPER_WRAP/trace/profiler env hooks | No typed native replacement. | Explicit native laboratory interface or retire the experiment with evidence; no inherited environment shim. |
 
 ## Files
 
-
+`docs/planning/active/run-serving-configuration/{RSC04,RSC02,RSC11,RSC12}.md`; native serving component, RSC12 configs, lab caller/test tree. RSP01 release files are listed only as cross-lane dependencies.
 
 ## Validation
 
-No stale callers (grep); docs and schema inventory agree; RHP12 gate on every available layout.
-
-## Effort & Risk
-
-
-
-## Standards
-
-
+- `git grep` audit includes direct and indirect callers and catches config owner text and tests.
+- Every declared CTest has a real build/utility target and TIMEOUT; fake-engine tests use real session/planner/manifest production path, never a fabricated manifest. All CI tests remain card-free and must not rely on chmod/permission failures (CI can run as root).
+- C++17 HIP reachability for changed shared worker headers; strict g++/clang++, ASan/UBSan, clang-format, clang-tidy on positive diff hunks. Full Python suite, ruff, patch-lint, forbidden terms and bounded CI before each merge.
+- S15: one build, same-session A/B with same semantic launch projection, dense + helper, RHP12 ABBA four clean pairs, safety/canary/power/quality/performance/release gates. Proof required before S16 deletion.
+- S16 deletion proof: `git grep` has zero active runtime and test callers, not merely zero string mentions; allow historical evidence references explicitly.
 
 ## Acceptance Criteria
 
-The 'Derived, not hand-picked' literal inventory is empty and the legacy surfaces are gone.
+The 'Derived, not hand-picked' literal inventory is empty; every active caller uses native `bc-serve`; no Python, bash launcher or plan-check in the engine release; S15 and RSP01 proven; then and only then remove the launch surfaces and obsolete aliases.
 
 ## Notes
 
-Source: GPT configuration assessment 2026-11-02.
+Source: GPT configuration assessment 2026-11-02; RSC02 step 6 caller audit on 2026-11-18. No hardware acceptance has been executed. No source is deleted in this inventory PR.
 
 ## Change Log
 
 - 2026-11-02T00:53:10.689343+00:00 (created-by): Created by agent
+- 2026-11-18 (inventory): Reconciled direct callers and S15/S16 retirement gates; state intentionally stays pending until hardware proof.
 
 ## Ledger-events
 
