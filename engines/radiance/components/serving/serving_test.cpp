@@ -34,6 +34,7 @@
 
 #include <atomic>
 #include <cassert>
+#include <cerrno>
 #include <optional>
 #ifdef NDEBUG
 #error "assert-based test built with NDEBUG: its assertions would not run"
@@ -2698,6 +2699,120 @@ void converted_layout_parity(Fixture& t) {
 
 /* RSC12: a config resolves exactly as the layout it replaces (every effective value; only the provenance names
  * the config file), a variant changes only what it states, and the loader refuses what it does not know. */
+
+// Exercise the shipped bc-serve executable against the actual native
+// config-loader/resolver/detector with a fake sys-root. No GPU or planner
+// stubs and no Python parsing or permission-dependent assertions.
+struct CommandResult {
+    int exit_code;
+    std::string output;
+};
+CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
+    int fds[2];
+    if (::pipe(fds) != 0)
+        throw std::runtime_error("cli test: pipe failed");
+    const pid_t pid = ::fork();
+    if (pid == -1)
+        throw std::runtime_error("cli test: fork failed");
+    if (pid == 0) {
+        ::close(fds[0]);
+        if (::dup2(fds[1], STDOUT_FILENO) == -1 || ::dup2(fds[1], STDERR_FILENO) == -1)
+            ::_exit(127);
+        ::close(fds[1]);
+        std::vector<char*> argv;
+        argv.push_back(const_cast<char*>(BC_SERVE_EXE));
+        for (const auto& arg : arguments)
+            argv.push_back(const_cast<char*>(arg.c_str()));
+        argv.push_back(nullptr);
+        ::execv(BC_SERVE_EXE, argv.data());
+        ::_exit(127);
+    }
+    ::close(fds[1]);
+    std::string output;
+    char buf[2048];
+    for (;;) {
+        const auto n = ::read(fds[0], buf, sizeof(buf));
+        if (n == 0)
+            break;
+        if (n < 0) {
+            if (errno == EINTR)
+                continue;
+            ::close(fds[0]);
+            (void)::waitpid(pid, nullptr, 0);
+            throw std::runtime_error("cli test: read failed");
+        }
+        output.append(buf, static_cast<size_t>(n));
+    }
+    ::close(fds[0]);
+    int status = 0;
+    if (::waitpid(pid, &status, 0) != pid)
+        throw std::runtime_error("cli test: child wait failed");
+    return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, output};
+}
+void native_explain_cli(Fixture& t) {
+    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
+    if (!env || !fs::is_directory(env))
+        throw std::runtime_error("native_explain_cli: BIGCHERRY_LAYOUTS required");
+    const fs::path configs = fs::path(env).parent_path() / "configs";
+    const auto model = t.root / "explain-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const auto site = t.file("explain-site.toml",
+                             "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
+    auto command = [&](const std::string& name) {
+        return std::vector<std::string>{"explain",
+                                        name,
+                                        "--json",
+                                        "--configs",
+                                        configs.string(),
+                                        "--site",
+                                        site.string(),
+                                        "--model-root",
+                                        (t.root / "model-root").string(),
+                                        "--sys-root",
+                                        t.root.string()};
+    };
+    const auto base = run_bc_serve(command("qwen27b-tp3-int8"));
+    assert(base.exit_code == 0);
+    const Json base_doc = Json::parse(base.output);
+    assert(base_doc.at("config") == "qwen27b-tp3-int8");
+    assert(base_doc.at("values").at("layout").at("name") == "qwen27b-tp3-int8");
+    assert(base_doc.at("values").at("service").at("max_context") == 8192);
+    assert(base_doc.at("provenance")
+               .at("tuning.tp_ownership")
+               .at("source")
+               .get<std::string>()
+               .find("config qwen27b.toml") != std::string::npos);
+    const auto variant = run_bc_serve(command("qwen27b-tp3-int8-556"));
+    assert(variant.exit_code == 0);
+    const Json variant_doc = Json::parse(variant.output);
+    assert(variant_doc.at("values").at("tuning").at("tp_ownership") !=
+           base_doc.at("values").at("tuning").at("tp_ownership"));
+    assert(variant_doc.at("provenance")
+               .at("tuning.tp_ownership")
+               .at("source")
+               .get<std::string>()
+               .find("config qwen27b.toml") != std::string::npos);
+    const auto text_args = std::vector<std::string>{
+        "explain",    "qwen27b-tp3-int8", "--configs",    configs.string(),
+        "--site",     site.string(),      "--model-root", (t.root / "model-root").string(),
+        "--sys-root", t.root.string()};
+    const auto text_result = run_bc_serve(text_args);
+    assert(text_result.exit_code == 0);
+    assert(text_result.output.find("layout: qwen27b-tp3-int8") != std::string::npos);
+
+    auto bad = command("absent-config");
+    assert(run_bc_serve(bad).exit_code != 0);
+    bad = command("qwen27b-tp3-int8");
+    bad.push_back("--set");
+    bad.push_back("layout.name=\"qwen27b-tp3-int8-556\"");
+    const auto override = run_bc_serve(bad);
+    assert(override.exit_code != 0);
+    assert(override.output.find("cannot be replaced") != std::string::npos);
+    bad = command("qwen27b-tp3-int8");
+    bad.push_back("--unexpected-flag");
+    assert(run_bc_serve(bad).exit_code != 0);
+}
+
 void config_files(Fixture& t) {
     namespace sv = bc::serving;
     const char* env = std::getenv("BIGCHERRY_LAYOUTS");
@@ -3438,6 +3553,7 @@ int main(int argc, char** argv) {
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
         config_files(t);
+        native_explain_cli(t);
         converted_layout_parity(t);
         session_engine_plan(t);
         session_owner_real_planner_admission(t);

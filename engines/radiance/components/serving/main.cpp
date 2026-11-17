@@ -41,6 +41,7 @@ void usage() {
            "  --schema\n"
            "  --validate <site.toml> [profile.toml] [--set key=value]\n"
            "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
+           "  explain CONFIG [--json] [--configs DIR] [--site FILE] [--set key=value]\n"
            "  --layouts FILE|DIR  layout definitions (repeatable; a directory gives its *.toml); default "
            "BIGCHERRY_LAYOUTS,\n"
            "                     a ':'-separated list. Layouts are run-time data: none is compiled in\n"
@@ -390,6 +391,70 @@ void explain(const bc::serving::Resolved& result) {
                   << '\n';
     }
 }
+
+// RSC12 step 3: inspect the *same* detected facts, native config loader and
+// resolver used by the session owner, without planning, starting children or
+// loading Python layouts. A named config is a positional identity, not an
+// alternative spelling of layout.name in a second CLI settings language.
+int explain_command(int argc, char** argv) {
+    Options opts;
+    std::string name;
+    bool json = false;
+    for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        auto need = [&]() {
+            if (i + 1 >= argc)
+                throw std::runtime_error("explain: " + arg + " requires a value");
+            return std::string(argv[++i]);
+        };
+        if (arg == "--help" || arg == "-h") {
+            usage();
+            return 0;
+        } else if (arg == "--json") {
+            json = true;
+        } else if (arg == "--configs") {
+            opts.configs.emplace_back(need());
+        } else if (arg == "--site") {
+            opts.site = need();
+        } else if (arg == "--profile") {
+            opts.profile = need();
+        } else if (arg == "--model-root") {
+            opts.model_root = need();
+        } else if (arg == "--calibration") {
+            opts.calibration_cache = need();
+        } else if (arg == "--sys-root") {
+            opts.sys_root = need();
+        } else if (arg == "--set") {
+            const std::string setting = need();
+            if (setting.starts_with("layout.name="))
+                throw std::runtime_error("explain: named CONFIG cannot be replaced by --set layout.name");
+            opts.sets.push_back(setting);
+        } else if (!arg.empty() && arg.front() != '-') {
+            if (!name.empty())
+                throw std::runtime_error("explain: exactly one named CONFIG is required");
+            name = arg;
+        } else {
+            throw std::runtime_error("explain: unknown option " + arg);
+        }
+    }
+    if (name.empty())
+        throw std::runtime_error("explain: a named CONFIG is required");
+    opts.sets.push_back("layout.name=" + Json(name).dump());
+    const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
+    if (json) {
+        std::cout << Json{{"config", name},
+                          {"values", resolved.values},
+                          {"provenance", resolved.provenance},
+                          {"hash", resolved.hash},
+                          {"manifest", resolved.manifest}}
+                         .dump(2)
+                  << '\n';
+    } else {
+        explain(resolved);
+    }
+    return 0;
+}
+
 } // namespace
 
 static uint64_t parse_mib(const std::string& text, const char* flag, bool zero_allowed) {
@@ -428,6 +493,8 @@ int main(int argc, char** argv) {
     try {
         if (argc > 1) {
             const std::string cmd(argv[1]);
+            if (cmd == "explain")
+                return explain_command(argc, argv);
             if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status")
                 return session_command(cmd, argc, argv);
         }
