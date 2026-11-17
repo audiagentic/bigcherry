@@ -10,7 +10,6 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
-#include <functional>
 #include <iostream>
 #include <map>
 #include <stdexcept>
@@ -228,7 +227,7 @@ class Fixture {
     fs::path home_;
 };
 
-void refused(ErrorCode expected, const std::function<void()>& operation) {
+template <typename Operation> void refused(ErrorCode expected, Operation&& operation) {
     try {
         operation();
     } catch (const Error& e) {
