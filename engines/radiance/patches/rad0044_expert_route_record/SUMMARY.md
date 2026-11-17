@@ -11,7 +11,7 @@
 
 Not yet run. Expected on Flash-Next (hcbf16) over the 4,163-token run: a complete file of 4,163 rows x 48 layers x top-10, whose per-layer expert counts equal the `--expert-stats` counts of the same run.
 
-## Design
+## Detail
 
 - The recording rank (rank 0; every rank runs the full router) copies each routed trunk layer's reported ids, stream-ordered, into a staging buffer before the next layer's router overwrites the shared ids buffer, and appends them to a host table at the end of the pass.
 - Only one-sequence prefill passes without drafting are recorded, so rows are tokens in order; positions must continue, or restart at 0 for the next document (the file lists the row where each document starts). Anything else keeps the first reason and marks the file incomplete.
