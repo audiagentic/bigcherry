@@ -153,7 +153,7 @@ HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::syste
                 static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) / nanoseconds_per_second)
             return HistogramVerdict::unsafe;
 
-        const int64_t modified = static_cast<int64_t>(before.st_mtim.tv_sec) * 1000000000LL +
+        const int64_t modified = (static_cast<int64_t>(before.st_mtim.tv_sec) * 1000000000LL) +
                                  static_cast<int64_t>(before.st_mtim.tv_nsec);
         const auto launch_ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(expected.launched_at.time_since_epoch())

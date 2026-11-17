@@ -5,6 +5,7 @@
 // companion proof.
 #include "moe_remote_shm.h"
 
+#include <algorithm>
 #include <array>
 #include <cstdint>
 #include <cstdio>
@@ -40,10 +41,8 @@ static_assert(sizeof(Proof) == 88 && std::is_trivially_copyable_v<Proof>);
 inline bool valid_nonce(std::string_view nonce) {
     if (nonce.size() != kNonceLength)
         return false;
-    for (const char c : nonce)
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
-            return false;
-    return true;
+    return std::all_of(nonce.begin(), nonce.end(),
+                       [](const char c) { return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f'); });
 }
 
 inline std::string proof_path(std::string_view rank_path) {

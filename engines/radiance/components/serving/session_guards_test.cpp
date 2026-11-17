@@ -81,7 +81,7 @@ void producer_contract_case(std::string_view which) {
                    delta.complete_cells && delta.layers == 4 && delta.experts == 2,
                "legacy worker reader still accepts raw producer data with optional sidecar");
 
-        counts[4 * 2] = 1;
+        counts[size_t(4) * 2U] = 1;
         publish_like_engine(rank, counts);
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::unsafe,
                "counts in padded layers cannot qualify the authenticated model");

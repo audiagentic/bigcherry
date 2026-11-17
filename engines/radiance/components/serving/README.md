@@ -56,7 +56,9 @@ the full record and all per-cell counters remain consistent, and fails closed
 on resets or counter wrap rather than fabricating positive deltas.
 
 A serving owner mints a 128-bit nonce immediately before spawning each engine
-and injects `BC_HEAT_LAUNCH_NONCE` into only that child's environment. The
+and passes the launch-only `--bc-heat-launch-nonce` flag to only that engine.
+The strict manifest reader validates and strips the flag, then binds its value
+in the immutable `BcEngineSettings` snapshot, never the environment. The
 engine-side histogram publisher retains the *exact* raw `.rankN` layout for
 the worker reader and optionally writes a versioned `.rankN.bcproof` companion
 containing that nonce and the published file's generation. The owner requires

@@ -1,17 +1,17 @@
 #include "moe_remote_hook.h"
 #include "../serving/bc_engine_settings.h"
-#include "admission_ledger.h"
 #include "admission_completion.h"
-#include "owner_generation.h"
-#include "worker_epoch.h"
-#include "engine_rank_coordinator.h"
+#include "admission_ledger.h"
 #include "engine_admission_gate.h"
+#include "engine_rank_coordinator.h"
+#include "heat_publication.h"
 #include "moe_helper_watch.h"
 #include "moe_remote_shm.h"
-#include "heat_publication.h"
 #include "moe_v26_gpu_contract.h"
+#include "owner_generation.h"
 #include "rad_abi.h"
-#include "rad_device.h"   /* engine streams take only radiance events (rad_event_*), never raw HIP events */
+#include "rad_device.h" /* engine streams take only radiance events (rad_event_*), never raw HIP events */
+#include "worker_epoch.h"
 
 #include <hip/hip_runtime.h>
 
@@ -840,7 +840,8 @@ void report_shadow(uint32_t rank, RankState& s) {
  * between. The file is replaced by rename, so a reader never sees a half-written one. `final`: the engine is shutting down
  * (sync first, report the file). */
 void write_heat(uint32_t rank, RankState& s, bool final) {
-    const char* path = bc_engine_settings_snapshot().histogram_file;
+    const auto settings = bc_engine_settings_snapshot();
+    const char* path = settings.histogram_file;
     if (!path || !*path || !s.heat_host) return;
     /* The counts live in pinned host memory (RHP02): a snapshot is a CPU copy, with no HIP stream or queue of its own. */
     if (final) (void)hip_ok(hipDeviceSynchronize(), "sync before route histogram");
@@ -848,12 +849,12 @@ void write_heat(uint32_t rank, RankState& s, bool final) {
     for (size_t i = 0; i < heat.size(); ++i) heat[i] = __atomic_load_n(&s.heat_host[i], __ATOMIC_RELAXED);
     // The engine launcher provides a fresh nonce only to its serving child.
     // Legacy standalone launches still publish the unchanged raw file.
-    const char* nonce = std::getenv("BC_HEAT_LAUNCH_NONCE");
+    const char* nonce = settings.heat_launch_nonce;
     const bool ok = r3::heat_publication::publish(path, rank, g.hdr->expert_count, heat,
-                                                   nonce ? std::string_view(nonce) : std::string_view{});
+                                                  nonce ? std::string_view(nonce) : std::string_view{});
     if (final)
-        std::fprintf(stderr, "libr3: R3_MOE_WORKER route histogram %s.rank%u (%zu counts)%s\\n",
-                     path, rank, heat.size(), ok ? "" : " NOT written");
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER route histogram %s.rank%u (%zu counts)%s\\n", path, rank,
+                     heat.size(), ok ? "" : " NOT written");
 }
 
 /* The live snapshot thread: every R3_MOE_WORKER_HISTOGRAM_PERIOD_S seconds, each ready rank's histogram. It takes g.mu per snapshot, so

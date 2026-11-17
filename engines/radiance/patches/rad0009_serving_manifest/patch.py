@@ -15,7 +15,7 @@ from bigcherry.patcher import Edit, FilePatch
 _BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up extension point: the engine starts from a serving manifest v1 (the
  * document bc-serve --write-manifest writes) instead of command-line flags.
  *
- *   engine --manifest PATH [--role engine] [-v|-vv]
+ *   engine --manifest PATH [--role engine] [-v|-vv] [--bc-heat-launch-nonce HEX32]
  *
  * main() calls bc_serving_engine_argv before config_parse, so radiance's own parser and its own validation and
  * errors see the manifest's engine-bound values as the equivalent flags; no other flag may accompany --manifest.
@@ -63,6 +63,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -71,6 +72,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include <iterator>
 #include <set>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace rad {
@@ -95,6 +97,7 @@ std::vector<std::string> g_engine_bdfs;
 BcEngineSettings g_engine_settings{};
 std::string g_shm;
 std::string g_histogram;
+std::string g_heat_launch_nonce;
 
 bool fail(const std::string& why) {
     std::fprintf(stderr, "radiance: --manifest: %s\n", why.c_str());
@@ -126,12 +129,13 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_engine_settings = BcEngineSettings{};
     g_shm.clear();
     g_histogram.clear();
+    g_heat_launch_nonce.clear();
     bool manifest_mode = false;
     for (int i = 1; i < *argc; ++i)
         if (!std::strcmp((*argv)[i], "--manifest")) manifest_mode = true;
     if (!manifest_mode) return true;
 
-    std::string path, role, plan_memory, rank_out;
+    std::string path, role, plan_memory, rank_out, heat_nonce;
     std::vector<std::string> verbosity;
     /* Offline quality runs (the KL mode): which run to do and where its files are, not configuration. They name no manifest
      * field, so they pass through to config_parse unchanged beside the manifest's own flags. */
@@ -147,6 +151,18 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             if (i + 1 >= *argc) return fail("--role needs an argument");
             role = (*argv)[++i];
             if (role != "engine") return fail("--role must be engine, not '" + role + "'");
+        } else if (a == "--bc-heat-launch-nonce") {
+            // The launch owner creates a one-time token after manifest planning.
+            // It is never stored in the immutable manifest or forwarded to core.
+            if (!heat_nonce.empty()) return fail("--bc-heat-launch-nonce given twice");
+            if (i + 1 >= *argc || !*(*argv)[i + 1])
+                return fail("--bc-heat-launch-nonce needs a value");
+            heat_nonce = (*argv)[++i];
+            if (heat_nonce.size() != 32 ||
+                !std::all_of(heat_nonce.begin(), heat_nonce.end(), [](const char c) {
+                    return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+                }))
+                return fail("--bc-heat-launch-nonce must be exactly 128 bits of lowercase hex");
         } else if (a == "--plan-memory") {
             /* The measuring start: radiance writes its memory plan to FILE and stops (rad0011). It is the one flag that
              * lets the engine take an unmeasured manifest; every other start takes only a measured one. */
@@ -163,11 +179,13 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             if (i + 1 >= *argc || !*(*argv)[i + 1]) return fail(a + " needs a path");
             run_flags.emplace_back(a, (*argv)[++i]);
         } else {
-            return fail("'" + a + "' cannot be combined with --manifest (only --role engine, --plan-memory FILE, -v, -vv and the quality-run flags --kld-record, --kld-corpus, --kld-ref and --kld-out may)");
+            return fail("'" + a + "' cannot be combined with --manifest (only --role engine, --plan-memory FILE, launch-only --bc-heat-launch-nonce, -v, -vv and the quality-run flags may)");
         }
     }
 
     if (!rank_out.empty() && plan_memory.empty()) return fail("--plan-memory-ranks requires --plan-memory");
+    if (!heat_nonce.empty() && (!plan_memory.empty() || !rank_out.empty() || !run_flags.empty()))
+        return fail("--bc-heat-launch-nonce is valid only for serving, not measurement or quality runs");
     std::ifstream in(path, std::ios::binary);
     if (!in) return fail("cannot read '" + path + "'");
     const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
@@ -179,6 +197,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         std::fputs(v2::render_human("radiance", manifest.error()).c_str(), stderr);
         return false;
     }
+    if (!heat_nonce.empty() &&
+        (!manifest.value().spec.handoff || !manifest.value().spec.handoff->telemetry.histogram_file ||
+         manifest.value().spec.handoff->telemetry.histogram_file->empty()))
+        return fail("--bc-heat-launch-nonce requires an authenticated histogram publisher");
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
     if (doc.is_discarded()) return fail("'" + path + "' is not JSON");   /* unreachable after the strict reader */
     g_have_expected = false;
@@ -296,6 +318,10 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         const auto& e = *spec.experiment->engine;
         settings.shadow = e.shadow.value_or(false) ? 1u : 0u;
         settings.mask_only = static_cast<uint32_t>(e.mask_only.value_or(0));
+    }
+    if (!heat_nonce.empty()) {
+        g_heat_launch_nonce = std::move(heat_nonce);
+        settings.heat_launch_nonce = g_heat_launch_nonce.c_str();
     }
     g_engine_settings = settings;
     // The remaining non-migrated engine switches retain their original bridge
