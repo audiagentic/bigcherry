@@ -56,6 +56,12 @@ Default-cache identity (2026-11-17, IDENTITY.md): Flash-Next default bf16 and fp
 
 27B equality (2026-11-17, EQUALITY-27B.md): default bf16 and fp8 caches match the stock build at the float floor (short and long); packed caches on a same-build reference: long bf16_i8 0.002685 (bar 0.0027 met), bf16_fp8 0.003228, fp8 0.004947, reproducing VTP43; short bf16_i8 0.00141, bf16_fp8 0.00192, fp8 0.00224 (VTP43's short packed figures used an older build's reference and were too low). The libr3 gfx1100 selftest for patch B was not run by decision; Flash-Next serving on the two 7900 XTX exercised those rows.
 
+Status 2026-11-17 (end of this slice): rad0037/38/40/41 are validated in serving-core (#1033); `experiment.kv-bf16-packed` now lists only rad0042. Open, in order of value:
+- Per-token expert-id dump (a generic engine option, its own patch) and a routing-flip comparison across arms, to confirm or refute routing flips as the cause of Flash-Next's KLD floor (FLASHNEXT-KLD.md). Until then Flash-Next quality for the packed caches rests on the needle probe only.
+- The R9700 helper arm of the Flash-Next A/B (needs a measured plan from the launcher's measuring start) and speculation on (the n-gram table did not fit beside the host pool).
+- A quantised QSA block-key layout: the unquantised block-key group holds bf16_i8 to 1.283x bf16 on Flash-Next, under the 1.3x bar.
+- A greedy-token stream comparison across builds (IDENTITY.md checks KLD only); the libr3 gfx1100 device selftest for patch B's rows (not run by decision; Flash-Next serving exercised them); the allowlist reduction and the GPT code review of patch B.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
@@ -77,12 +83,12 @@ L. Risks: option bits and tile shapes at gqa12 differ (spills near the 256-VGPR 
 ## Acceptance Criteria
 
 - [x] GPT design review 1 findings resolved in this plan before implementation.
-- [ ] A single KV-layout descriptor table drives names, row sizes, probe, bringup, streaming refusal and the serving enum; no per-plugin lists remain.
-- [ ] The refactor of the gqa6 rows is proven unchanged (row-table dump, selftests, 27B KLD).
+- [x] A single KV-layout descriptor table drives names, row sizes, probe, bringup, streaming refusal and the serving enum; no per-plugin lists remain. DONE: rad0040 (#1012); `RAD_KV_LAYOUTS` and `RAD_KV_GEOMETRIES` in `abi/rad_builder.h`.
+- [x] The refactor of the gqa6 rows is proven unchanged (row-table dump, selftests, 27B KLD). DONE: row-table dump and instantiation inventory identical, r4d_selftest (gfx1201) 0 failures with every baseline row still passing, 27B default caches identical to the stock build and the packed caches reproducing VTP43 (EQUALITY-27B.md).
 - [ ] Flash-Next serves bf16_i8 and bf16_fp8 on the two 7900 XTX with the R9700 helper; KLD and speed recorded against its bf16 cache. KLD done 2026-11-17 (FLASHNEXT-KLD.md): it sits inside Flash-Next's arithmetic-noise band, so it cannot judge KV error. Speed, capacity and a 9-question 48K needle probe done on the two XTX without the helper (FLASHNEXT-AB.md); the helper arm remains.
-- [ ] An unsupported (layout, head_dim, gqa, block, op) refuses at startup naming the tuple.
+- [x] An unsupported (layout, head_dim, gqa, block, op) refuses at startup naming the tuple. DONE for (layout, head_dim, gqa): the plugin refuses naming them (`rad_kvq_geometry_ok`, arch_test); (block, op) mismatches are caught by row resolution.
 - [ ] libr3 rewrites are per template with counts and an instantiation inventory check; model-constant allowlist entries added by VTP43 are removed or reduced.
-- [ ] rad0037/38 promoted through the lightweight tier with two named models, or the gap recorded.
+- [x] rad0037/38 promoted through the lightweight tier with two named models, or the gap recorded. DONE 2026-11-17: rad0037, 38, 40 and 41 validated in #1033 (tag fix #1032) with 27B and Flash-Next as the named models; rad0042 stays an experiment overlay (it only edits the selftest).
 - [ ] GPT code review done and findings resolved; PR(s) merged with evidence.
 
 ## Notes
