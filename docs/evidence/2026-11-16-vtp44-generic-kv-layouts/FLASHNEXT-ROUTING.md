@@ -46,6 +46,9 @@ counts, a lower bound on selections that changed expert (flips that cancel insid
   quantised table (two each in layers 34, 44 and 46, four in 47). Patch rad0043 maps them; the figures here are from
   the runs with it. Counting them changed no total by more than 0.1% (22,052 to 22,068 for bf16_i8, for example),
   so the conclusion did not depend on them.
+  A recorded run (rad0044, the ids the router returns) later showed that in those four layers the per-expert labels were
+  also shifted (the container numbers the quantised experts compactly, the tensors by model expert), until rad0043
+  labelled units from the tensor name. The flip counts above compare runs that share labels, so they are unaffected.
 - Limits: one document pair, one run per arm, prefill only; tallies, not per-token ids, so causation from routing to
   KLD is inferred. The 27B model has no routing and is not affected.
 - What would make KLD usable on Flash-Next: record each step's chosen expert ids in the reference run and replay them in
