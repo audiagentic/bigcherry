@@ -58,9 +58,8 @@ def test_applies_adds_lines_only_inside_xstats_open_and_is_idempotent():
         added = after.index("xs_protected", start)
         assert start < normalise < added < end
         # It reads the layer-scope weights' container entries and only appends to the rows the regular loop filled.
-        assert "wi.decl.group.expert >= 0) continue;" in after
-        assert "layers[(size_t)l].push_back(g);" in after
-        assert "std::sort(xs_protected.begin(), xs_protected.end());" in after
+        assert "wi.decl.group.expert >= 0 ||" in after
+        assert "std::unique(g.begin(), g.end()));" in after
 
         snapshot = after
         second = apply_all(ps, root)
