@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_132212_the-c-serving-owner-applies_6873",
+  "files": [
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/calibration_lab.cpp",
+    "engines/radiance/components/serving/manifest_power.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/main.cpp"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RSC02 step 3 (#1055, review fixes #1059): the C++ owner's power hook binds the real SessionPower (v2 authentication, ordered BDFs, manifest-bound receipt, apply before any measurement, restore after verified exit, explicit opt-in for real apply); native runtime guards (loaded-idle GFXOFF verdict, MTP replay, live heat/policy) and lab calibration modes. Review fixes: typed child roles so the manifest writer is not refused by the pre-admission GPU-child gate, identical calibration prompts rejected, oracle-matched drift deadline, validated and launch-bound histogram evidence.",
+  "timestamp-utc": "2026-11-17T13:22:12.663472Z",
+  "user-summary-candidate": "The C++ serving owner applies the power plan before measuring and enforces the runtime guards and lab calibration modes."
+}

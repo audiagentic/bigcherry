@@ -109,6 +109,9 @@ struct EngineStart {
     std::string handoff_shm;          // unique to this owner; non-empty only with helpers
     Env runtime;                      // RADIANCE_HOME, ROCR_VISIBLE_DEVICES, HIP_VISIBLE_DEVICES
     int port = 0;
+    // Captured by the owner immediately before the engine's pre-exec fork.
+    // A previous session's heat file cannot satisfy this launch's guard.
+    std::chrono::system_clock::time_point engine_launched_at{};
     nlohmann::json summary = nlohmann::json::object(); // what `status` reports about the selection
 };
 
@@ -130,12 +133,17 @@ struct Canary {
 /* Wait up to the given time while the owner answers its control socket; false once a stop is requested. */
 using Wait = Callback<bool(std::chrono::milliseconds)>;
 
-/* What the owner gives its plan step: `wait`, and where to register a process the step starts (a measuring
- * engine), so the owner records it and, if the step cannot verify its exit, stops it itself and never reports
- * the session stopped while it lives. */
+// A role is a compile-time authority class, distinct from the event/ledger
+// label. Only the in-process manifest writer is allowed before power admission.
+enum class ChildKind : uint8_t { manifest_writer, measuring_helper, measuring_engine };
+
+/* The owner registers every planner child (including the CPU-only writer)
+ * before its pre-exec gate is released. Every child is reaped and journalled;
+ * measuring and serving processes require durable power admission. */
 struct Hooks {
     Wait wait;
-    Callback<void(const std::string& role, pid_t pid, const std::filesystem::path& log)> started;
+    Callback<void(ChildKind kind, const std::string& role, pid_t pid, const std::filesystem::path& log)>
+        started;
     Callback<void(pid_t pid)> ended;                     // the step verified this process's exit
     Callback<void(const std::string&)> selected_segment; // journal a unique helper segment before measuring
     // Exactly one manifest-authenticated power admission, after the writer
@@ -225,10 +233,10 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
 struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
     std::filesystem::path self; // this bc-serve (writes the manifests)
-    std::filesystem::path engine_binary; // empty: <radiance_home>/../bin/radiance
-    std::filesystem::path helper_binary; // empty: <radiance_home>/helpers/r3_moe_worker
-    ManifestRunner runner;               // empty: run_to_completion with the owner's child environment
-    std::string power_profile = "stock"; // explicit v2 profile, observe by default
+    std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
+    std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
+    ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
+    std::string power_profile = "stock";    // explicit v2 profile, observe by default
     std::filesystem::path live_policy_file; // only with explicit lab calibration
     bool calibration_run = false;
 };

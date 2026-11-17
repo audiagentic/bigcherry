@@ -127,6 +127,8 @@ if(BUILD_TESTING)
   # Step 3: independently built card-free guards and real v2 power bridge.
   add_executable(bc_session_guards_test EXCLUDE_FROM_ALL session_guards_test.cpp)
   target_link_libraries(bc_session_guards_test PRIVATE bc_serving)
+  target_compile_definitions(bc_session_guards_test PRIVATE
+    BC_RSC02_CALIBRATION_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_calibration_deadlines.json")
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
   add_executable(bc_manifest_power_test EXCLUDE_FROM_ALL manifest_power_test.cpp)
   target_link_libraries(bc_manifest_power_test PRIVATE bc_serving)

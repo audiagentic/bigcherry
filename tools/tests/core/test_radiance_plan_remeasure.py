@@ -118,3 +118,112 @@ def test_non_contract_exit_remains_terminal(monkeypatch, tmp_path, arm):
     with pytest.raises(radiance_plan.PlanError, match="measured manifest was not written"):
         write()
     assert len(measurements) == 1
+
+
+def test_helper_release_barrier_waits_for_actual_kernel_vram(monkeypatch):
+    # A SIGTERM + waitpid is not proof that the GPU VRAM accounting has converged.
+    elapsed = [0.0]
+    used = iter([30_000_000_000, 29_000_000_000, 59_000_000])
+    observed = []
+
+    def read(bdf):
+        assert bdf == "0000:09:00.0"
+        value = next(used)
+        observed.append(value)
+        return value
+
+    monkeypatch.setattr(radiance_plan, "_read_helper_vram_used", read)
+    monkeypatch.setattr(radiance_plan.time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(radiance_plan.time, "sleep", lambda delta: elapsed.__setitem__(0, elapsed[0] + delta))
+    radiance_plan._wait_for_helper_vram_release({"0000:09:00.0": 59_000_000}, timeout_s=1)
+    assert observed == [30_000_000_000, 29_000_000_000, 59_000_000]
+
+
+def test_helper_release_barrier_refuses_persistent_vram(monkeypatch):
+    elapsed = [0.0]
+    monkeypatch.setattr(radiance_plan, "_read_helper_vram_used", lambda bdf: 30_000_000_000)
+    monkeypatch.setattr(radiance_plan.time, "monotonic", lambda: elapsed[0])
+    monkeypatch.setattr(radiance_plan.time, "sleep", lambda delta: elapsed.__setitem__(0, elapsed[0] + delta))
+    with pytest.raises(radiance_plan.PlanError, match="VRAM.*not released"):
+        radiance_plan._wait_for_helper_vram_release({"0000:09:00.0": 59_000_000}, timeout_s=0.3)
+    assert 0.3 <= elapsed[0] <= 0.4
+
+
+def test_helper_vram_snapshot_requires_matching_bdfs(tmp_path, monkeypatch):
+    manifest = tmp_path / "draft.json"
+    manifest.write_text('{"spec":{"processes":{"helpers":[{"gpu":"0000:09:00.0"}]}}}')
+    monkeypatch.setattr(radiance_plan, "_read_helper_vram_used", lambda bdf: 60_000_000)
+    assert radiance_plan._snapshot_helper_vram(manifest, 1) == {"0000:09:00.0": 60_000_000}
+    with pytest.raises(radiance_plan.PlanError, match="helper count"):
+        radiance_plan._snapshot_helper_vram(manifest, 2)
+    manifest.write_text('{"spec":{"processes":{"helpers":[{"gpu":"bad/bdf"}]}}}')
+    with pytest.raises(radiance_plan.PlanError, match="BDF"):
+        radiance_plan._snapshot_helper_vram(manifest, 1)
+
+
+def test_final_writer_waits_until_stopped_helpers_release_vram(monkeypatch, tmp_path, arm):
+    from bigcherry.engine_adapters.base import SidecarSpec
+
+    binary, model, serve = arm
+    events = []
+    state = {"busy": False}
+    specs = [SidecarSpec(
+        name="helper0", argv=("worker",), env={}, ready_pattern="ready",
+        ready_timeout_s=1.0, stop_timeout_s=1.0,
+        log_path=tmp_path / "helper.log"
+    )]
+
+    class FakeSidecars:
+        def __init__(self, helpers):
+            assert len(helpers) == 1
+            self._running = []
+
+        def start(self):
+            events.append("helper_start")
+            state["busy"] = True
+
+        def stop(self):
+            events.append("helper_reaped")
+            # The process has exited, but kernel VRAM accounting still shows its experts.
+            return [{"killed": False}]
+
+    def used(bdf):
+        assert bdf == "0000:09:00.0"
+        return 30_000_000_000 if state["busy"] else 59_000_000
+
+    def release(_seconds):
+        events.append("gpu_vram_released")
+        state["busy"] = False
+
+    def run(argv, **kwargs):
+        if argv[0] == str(binary):
+            Path(argv[argv.index("--plan-memory") + 1]).write_text("{}")
+            Path(argv[argv.index("--plan-memory-ranks") + 1]).write_text("{}")
+            kwargs["stdout"].write("--plan-memory: wrote plan; engine start-up took 10 MiB of MemAvailable;\n")
+            return subprocess.CompletedProcess(argv, 0)
+        target = Path(argv[argv.index("--write-manifest") + 1])
+        if "--unmeasured" in argv:
+            target.write_text('{"spec":{"processes":{"helpers":[{"gpu":"0000:09:00.0"}]}}}')
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        if "--measured-plan" in argv:
+            events.append("final_admission")
+            if state["busy"]:
+                return subprocess.CompletedProcess(argv, 2, "", "BC_CFG_ADMISSION_REFUSED")
+            target.write_text('{"kind":"measured"}')
+            return subprocess.CompletedProcess(argv, 0, "", "")
+        return subprocess.CompletedProcess(argv, 10, "", "")
+
+    monkeypatch.setattr(radiance_plan, "SidecarSet", FakeSidecars)
+    monkeypatch.setattr(radiance_plan, "_read_helper_vram_used", used)
+    monkeypatch.setattr(radiance_plan, "helpers_resident_mib", lambda pids: 0)
+    monkeypatch.setattr(radiance_plan.subprocess, "run", run)
+    monkeypatch.setattr(radiance_plan.time, "sleep", release)
+    monkeypatch.setattr(radiance_plan, "_free_port", lambda host: 18410)
+
+    manifest = radiance_plan.write_manifest(
+        name="helper-admission", serving={"layout": "flashnext-tp2xtx-r9700"},
+        binary=binary, model=model, env={}, serve=serve,
+        run_dir=tmp_path / "run", plan_cache=tmp_path / "cache",
+        host="127.0.0.1", helper_specs=lambda _manifest: specs)
+    assert manifest.exists()
+    assert events == ["helper_start", "helper_reaped", "gpu_vram_released", "final_admission"]

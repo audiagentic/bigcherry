@@ -80,11 +80,13 @@ std::vector<std::string> marker_payloads(const std::string& bytes, std::string_v
 
 v2::Result<CalibrationPrompts> read_calibration_prompts(const fs::path& a, const fs::path& b) {
     CalibrationPrompts prompts;
-    const auto read = [&](const fs::path& path, std::vector<std::string>* out) -> v2::Status {
+    std::string raw_a, raw_b;
+    const auto read = [&](const fs::path& path, std::vector<std::string>* out, std::string* raw) -> v2::Status {
         auto file = text_of(path);
         if (!file)
             return file.error();
-        std::istringstream input(file.value());
+        *raw = std::move(file.value());
+        std::istringstream input(*raw);
         for (std::string line; std::getline(input, line);) {
             if (std::any_of(line.begin(), line.end(), [](unsigned char ch) { return !std::isspace(ch); }))
                 out->push_back(std::move(line));
@@ -93,10 +95,12 @@ v2::Result<CalibrationPrompts> read_calibration_prompts(const fs::path& a, const
             return invalid("prompts", path.filename().string() + ": a workload needs nonempty prompts");
         return std::nullopt;
     };
-    if (auto error = read(a, &prompts.a))
+    if (auto error = read(a, &prompts.a, &raw_a))
         return *error;
-    if (auto error = read(b, &prompts.b))
+    if (auto error = read(b, &prompts.b, &raw_b))
         return *error;
+    if (raw_a == raw_b || prompts.a == prompts.b)
+        return invalid("prompts", "A and B must be distinct raw inputs and distinct effective prompt batches");
     return prompts;
 }
 
@@ -186,9 +190,13 @@ v2::Result<CalibrationEnvelope> calibration_envelope(const v2::LivePolicy& polic
                 return invalid("drift", "observation horizon overflows");
             drift_ns = std::max(drift_ns, rounded);
         }
-        // A measured ring can extend the horizon but not the finite fixed
-        // A/B/B/A workload ceiling. Never reset the stopwatch on new drift.
-        extension_s = ceil_seconds(drift_ns);
+        // Match the watchdog's four phase horizons without accumulating
+        // independent ceil() rounding; add checked drift nanoseconds before
+        // rounding the full bound to whole seconds.
+        uint64_t total_drift_ns = 0, extended_ns = 0;
+        if (!safe_mul(4, drift_ns, &total_drift_ns) || !safe_add(baseline_ns, total_drift_ns, &extended_ns))
+            return invalid("drift", "four-phase measured drift horizon overflows");
+        extension_s = ceil_seconds(extended_ns) - baseline;
     }
     uint64_t limit = 0;
     if (!safe_add(baseline, work, &limit) || !safe_add(limit, std::min(extension_s, work), &limit) ||
@@ -196,6 +204,12 @@ v2::Result<CalibrationEnvelope> calibration_envelope(const v2::LivePolicy& polic
         return invalid("workload", "derived calibration deadline exceeds representable time");
     return CalibrationEnvelope{std::chrono::seconds(limit), std::chrono::seconds(baseline),
                                std::chrono::seconds(report), feed};
+}
+
+CalibrationEnvelope monotonic_calibration_envelope(const CalibrationEnvelope& admitted,
+                                                   const CalibrationEnvelope& observed) {
+    return CalibrationEnvelope{std::max(admitted.limit, observed.limit), admitted.prefeed,
+                               observed.report_period, admitted.accepted_feed || observed.accepted_feed};
 }
 
 v2::Result<bool> complete_calibration_marker(const fs::path& helper_log) {
