@@ -3,7 +3,7 @@
 Owner's question: "do we have power management in bigcherry - we built a lot of timings and settable fields but not sure how we captured
 it - is it configurable via the manifest? Should we have power profiles in a configuration and select those?"
 
-Repo: the main checkout (read via Brutus): <repo> ; run artefacts under <work-root>/runs.
+Repo: the main checkout (read via <host>): <repo> ; run artefacts under <work-root>/runs.
 Read-only. Be adversarial: say where my picture below is wrong.
 
 ## What I found in a quick look (verify and extend)

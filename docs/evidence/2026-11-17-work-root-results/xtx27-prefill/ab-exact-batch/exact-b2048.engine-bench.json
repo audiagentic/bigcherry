@@ -42,7 +42,7 @@
    "ttft_s": 0.4507415294647217,
    "prefill_tps": 1557.4335935578433,
    "decode_tps": 49.992716427466135,
-   "text_head": "\n\n[05c3a2acbb5e44db80d3c358fb26adec]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n(GPU ",
+   "text_head": "\n\n[05c3a2acbb5e44db80d3c358fb26adec]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU ",
    "error": null
   },
   {
@@ -53,7 +53,7 @@
    "ttft_s": 0.4366567134857178,
    "prefill_tps": 1616.8307464327854,
    "decode_tps": 49.837619543564536,
-   "text_head": "\n\n[9ffa6e3c81c84b02b4127e371e92070d]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair",
+   "text_head": "\n\n[9ffa6e3c81c84b02b4127e371e92070d]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair",
    "error": null
   },
   {
@@ -86,7 +86,7 @@
    "ttft_s": 3.155604839324951,
    "prefill_tps": 2116.234554079516,
    "decode_tps": 45.222906678359124,
-   "text_head": "\n\n[68ce46efeef8453495628652071f66cb]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n(GPU",
+   "text_head": "\n\n[68ce46efeef8453495628652071f66cb]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n(GPU",
    "error": null
   },
   {
@@ -97,7 +97,7 @@
    "ttft_s": 3.1616058349609375,
    "prefill_tps": 2112.850351594361,
    "decode_tps": 45.258071621305454,
-   "text_head": "\n\n[06e46746a86049eba7b456de671b4642]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n",
+   "text_head": "\n\n[06e46746a86049eba7b456de671b4642]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n",
    "error": null
   }
  ],

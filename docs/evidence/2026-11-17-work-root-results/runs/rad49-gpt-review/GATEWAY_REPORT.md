@@ -26,4 +26,4 @@ Ranked (estimates are the reviewer's hypotheses):
 Verification items: 35.5 vs 58+ GiB expert accounting (resolved: real intermediate is 640, 59.6 GiB); 46 TFLOPS peak overstates
 the opportunity; exact-result constraints on cross-device summation order.
 
-Next time: this agent can read local folders through its Brutus plug-in when told to.
+Next time: this agent can read local folders through its <host> plug-in when told to.

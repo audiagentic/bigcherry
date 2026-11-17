@@ -97,7 +97,7 @@
    "ttft_s": 2.661733627319336,
    "prefill_tps": 2509.6425620649006,
    "decode_tps": 44.78624120600971,
-   "text_head": "\n\n[2bc3cf0823774a048609733be098e497]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against Brutus's dual RX 7900 XTX pair\n",
+   "text_head": "\n\n[2bc3cf0823774a048609733be098e497]\n# Dual-XTX production-parity bench log\n\nReal-hardware validation runs against <host>'s dual RX 7900 XTX pair\n",
    "error": null
   }
  ],
