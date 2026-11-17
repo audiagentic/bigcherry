@@ -255,10 +255,11 @@ struct Gate {
 
 // Record a just-forked child through `recorded`, then let it run; when recording fails, close the gate (the child exits
 // without exec), reap it and rethrow.
-void record_then_release(Gate& gate, pid_t pid, const std::function<void(pid_t)>& recorded) {
+void record_then_release(Gate& gate, pid_t pid, const callback::Guarded<void(pid_t)>& recorded) {
     gate.parent_side();
     try {
-        if (recorded) recorded(pid);
+        if (recorded)
+            recorded.require("session.spawn.recorded", pid);
     } catch (...) {
         gate.close_write();
         int st = 0;
@@ -296,8 +297,9 @@ Env child_environment(char** inherited, const Env& runtime) {
 }
 
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
-            const std::function<void(pid_t)>& recorded) {
-    if (argv.empty() || argv[0].empty()) throw std::runtime_error("spawn: an empty command");
+            const callback::Guarded<void(pid_t)>& recorded) {
+    if (argv.empty() || argv[0].empty())
+        throw std::runtime_error("spawn: an empty command");
     std::vector<std::string> envs;
     for (const auto& [k, v] : env) envs.push_back(k + "=" + v);
     std::vector<char*> cargv, cenv;
@@ -545,7 +547,7 @@ public:
             hooks.wait = [this](std::chrono::milliseconds d) { return service(d); };
             hooks.started = [this](const std::string& role, pid_t pid, const fs::path& log) { track(role, pid, log); };
             hooks.ended = [this](pid_t pid) { untrack(pid); };
-            plan_ = s_.plan(s_.run_dir, hooks);
+            plan_ = s_.plan.require("session.plan", s_.run_dir, hooks);
             record_["manifest"] = plan_.manifest.string();
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
@@ -575,9 +577,25 @@ public:
         } catch (const PlanFailed& e) {
             failures.push_back(e.what());
             code = 97;
+        } catch (const callback::Failure& failure) {
+            bool plan_refusal = false;
+            if (failure.cause()) {
+                try {
+                    std::rethrow_exception(failure.cause());
+                } catch (const PlanFailed&) {
+                    plan_refusal = true;
+                } catch (...) {
+                }
+            }
+            failures.push_back(failure.what());
+            code = plan_refusal ? 97 : 1;
         } catch (const std::exception& e) {
             failures.push_back(e.what());
             if (code == 0) code = 1;
+        } catch (...) {
+            failures.push_back("unexpected non-standard exception in session owner");
+            if (code == 0)
+                code = 1;
         }
         // Stop every child, the engine first, each bounded; a survivor is never reported stopped.
         bool exited = true;
@@ -861,21 +879,26 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         // registered with the owner before it runs (waited for through the owner, whose control socket stays answered):
         // a writer whose exit is not verified here stays the owner's to stop, and the session is never reported stopped
         // while it lives
-        record_then_release(gate, p, [&](pid_t q) { if (hooks.started) hooks.started("manifest writer", q, out); });
+        record_then_release(gate, p, [&](pid_t q) {
+            if (hooks.started)
+                hooks.started.require("session.hooks.started", "manifest writer", q, out);
+        });
         return p;
     }();
     auto finish = [&](bool exited) {
         std::error_code ec;
         fs::remove(out, ec);
         fs::remove(err, ec);
-        if (!exited) throw std::runtime_error("plan: the manifest writer (pid " + std::to_string(pid) +
-                                              ") is still alive after SIGKILL");
-        if (hooks.ended) hooks.ended(pid);
+        if (!exited)
+            throw std::runtime_error("plan: the manifest writer (pid " + std::to_string(pid) +
+                                     ") is still alive after SIGKILL");
+        if (hooks.ended)
+            hooks.ended.require("session.hooks.ended", pid);
     };
     int st = 0;
     try {
         while (running(pid, &st)) {
-            if (wait && !wait(100ms)) {
+            if (wait && !wait.require("session.hooks.wait", 100ms)) {
                 finish(stop_child(pid, SIGTERM, 10s));
                 throw PlanFailed("plan: stopped while bc-serve wrote a manifest");
             }
@@ -884,11 +907,13 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
     } catch (const PlanFailed&) {
         throw;
     } catch (...) {
-        if (stop_child(pid, SIGTERM, 10s) && hooks.ended) hooks.ended(pid);
+        if (stop_child(pid, SIGTERM, 10s) && hooks.ended)
+            hooks.ended.require("session.hooks.ended", pid);
         throw;
     }
     if (!stop_child(pid, SIGKILL, 10s)) finish(false);   // the writer exited; nothing of its group may stay
-    if (hooks.ended) hooks.ended(pid);
+    if (hooks.ended)
+        hooks.ended.require("session.hooks.ended", pid);
     ManifestRun r;
     r.exit = WIFEXITED(st) ? WEXITSTATUS(st) : 128 + (WIFSIGNALED(st) ? WTERMSIG(st) : 0);
     r.out = read_file(out);
@@ -989,8 +1014,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         std::vector<std::string> argv = {in.self.string(), "--write-manifest", out_file.string(), "--power-profile", "stock"};
         argv.insert(argv.end(), more.begin(), more.end());
         argv.insert(argv.end(), base.begin(), base.end());
-        for (const auto& s : extra_sets) argv.insert(argv.end(), {"--set", s});
-        return runner(argv);
+        for (const auto& s : extra_sets)
+            argv.insert(argv.end(), {"--set", s});
+        return runner.require("session.manifest.runner", argv);
     };
     const std::vector<std::string> measured_args = {"--plan-cache", cache.string(), "--engine-binary", engine.string(),
                                                     "--plan-extra", "budgets: default"};
@@ -1009,37 +1035,44 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             fs::remove(plan, ec);
             fs::remove(ranks, ec);
             const fs::path log = run_dir / ("engine-measure-" + id + "-" + std::to_string(round) + ".log");
-            const pid_t pid = spawn({engine.string(), "--manifest", measuring.string(), "--role", "engine",
-                                     "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
-                                    child_environment(environ, out.runtime), log,
-                                    // registered with the owner before it runs: should its exit not be verified here,
-                                    // the owner stops it and the session is never reported stopped while it lives
-                                    [&](pid_t p) { if (hooks.started) hooks.started("measuring engine", p, log); });
+            const pid_t pid =
+                spawn({engine.string(), "--manifest", measuring.string(), "--role", "engine", "--plan-memory",
+                       plan.string(), "--plan-memory-ranks", ranks.string()},
+                      child_environment(environ, out.runtime), log,
+                      // registered with the owner before it runs: should its exit not be verified here,
+                      // the owner stops it and the session is never reported stopped while it lives
+                      [&](pid_t p) {
+                          if (hooks.started)
+                              hooks.started.require("session.hooks.started", "measuring engine", p, log);
+                      });
             int st = 0;
             const auto deadline = Clock::now() + std::chrono::minutes(30);
             bool stopped_early = false;
             try {
                 while (running(pid, &st)) {
-                    if (Clock::now() > deadline || !wait(200ms)) {
+                    if (Clock::now() > deadline || !wait.require("session.hooks.wait", 200ms)) {
                         stopped_early = true;
                         break;
                     }
                 }
             } catch (...) {
-                if (stop_child(pid, SIGINT, 60s) && hooks.ended) hooks.ended(pid);
+                if (stop_child(pid, SIGINT, 60s) && hooks.ended)
+                    hooks.ended.require("session.hooks.ended", pid);
                 throw;
             }
             if (stopped_early) {
                 if (!stop_child(pid, SIGINT, 60s))
                     throw std::runtime_error("plan: the measuring engine (pid " + std::to_string(pid) +
                                              ") is still alive after SIGKILL");
-                if (hooks.ended) hooks.ended(pid);
+                if (hooks.ended)
+                    hooks.ended.require("session.hooks.ended", pid);
                 throw PlanFailed("plan: the measuring start was stopped (a stop request or 30 min)");
             }
             // the engine exited by itself; anything it left in its group goes too
             if (!stop_child(pid, SIGKILL, 10s))
                 throw std::runtime_error("plan: a process of the measuring engine's group is still alive after SIGKILL");
-            if (hooks.ended) hooks.ended(pid);
+            if (hooks.ended)
+                hooks.ended.require("session.hooks.ended", pid);
             if (!WIFEXITED(st) || WEXITSTATUS(st) != 0 || !fs::exists(plan) || fs::file_size(plan) == 0 ||
                 !fs::exists(ranks) || fs::file_size(ranks) == 0)
                 throw PlanFailed("plan: the measuring start failed; see " + log.string());

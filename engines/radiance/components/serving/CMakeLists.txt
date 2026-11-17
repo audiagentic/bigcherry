@@ -24,6 +24,7 @@ target_link_libraries(bc_contract_gen PRIVATE bc_contract)
 
 # The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve's manifest writer plans owner maps with it (manifest_writer.cpp).
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
+target_link_libraries(bc_experts PUBLIC bc_serving_v2)
 include("${CMAKE_CURRENT_SOURCE_DIR}/owner_map.cmake")
 
 # calibration.toml is compiled in: the seeds bc-serve derives with, each carrying its evidence.
@@ -46,7 +47,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
      "R\"bchp(${bc_helper_profile_seed})bchp\"\n")
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml")
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -82,6 +83,13 @@ install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
 include(CTest)
 if(BUILD_TESTING)
+  find_package(Python3 COMPONENTS Interpreter REQUIRED)
+  add_test(NAME bc_callback_boundary_guard
+    COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/callback_guard.py")
+  add_executable(bc_callback_boundary_abi_test EXCLUDE_FROM_ALL callback_boundary_abi_test.cpp)
+  target_link_libraries(bc_callback_boundary_abi_test PRIVATE ${CMAKE_DL_LIBS})
+  target_link_options(bc_callback_boundary_abi_test PRIVATE -rdynamic)
+  add_test(NAME bc_callback_boundary_abi_test COMMAND bc_callback_boundary_abi_test)
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
@@ -98,6 +106,9 @@ if(BUILD_TESTING)
   add_dependencies(bc_serving_test bc_fake_engine)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
+  add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
+  target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
+  add_test(NAME bc_power_transaction_test COMMAND bc_power_transaction_test)
   add_executable(bc_session_test EXCLUDE_FROM_ALL session_test.cpp)
   target_link_libraries(bc_session_test PRIVATE bc_serving)
   add_dependencies(bc_session_test bc_fake_engine)

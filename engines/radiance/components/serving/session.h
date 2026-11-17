@@ -26,6 +26,7 @@
 
 #include <nlohmann/json.hpp>
 
+#include "callback_boundary.h"
 #include "serving.h"
 
 namespace bc::serving::session {
@@ -43,7 +44,7 @@ Env child_environment(char** inherited, const Env& runtime);
  * it durable there); when `recorded` throws, or this process dies first, the child exits without running anything and
  * the exception is rethrown. Throws, naming the program, when it cannot be started (exec failure included). */
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::filesystem::path& log,
-            const std::function<void(pid_t)>& recorded = {});
+            const callback::Guarded<void(pid_t)>& recorded = {});
 
 /* A child of this process: whether it is still running (reaps it when it has exited; its status goes to `status`). */
 bool running(pid_t pid, int* status = nullptr);
@@ -100,15 +101,15 @@ struct Canary {
 };
 
 /* Wait up to the given time while the owner answers its control socket; false once a stop is requested. */
-using Wait = std::function<bool(std::chrono::milliseconds)>;
+using Wait = callback::Guarded<bool(std::chrono::milliseconds)>;
 
 /* What the owner gives its plan step: `wait`, and where to register a process the step starts (a measuring engine), so
  * the owner records it and, if the step cannot verify its exit, stops it itself and never reports the session stopped
  * while it lives. */
 struct Hooks {
     Wait wait;
-    std::function<void(const std::string& role, pid_t pid, const std::filesystem::path& log)> started;
-    std::function<void(pid_t pid)> ended;   // the step verified this process's exit
+    callback::Guarded<void(const std::string& role, pid_t pid, const std::filesystem::path& log)> started;
+    callback::Guarded<void(pid_t pid)> ended; // the step verified this process's exit
 };
 
 /* The plan step refused or could not make the manifest (the session ends with exit 97, nothing started for serving). */
@@ -122,7 +123,7 @@ struct Session {
     Canary canary;
     // The plan step: runs with the session lock held, before any serving process starts (it may run measuring starts
     // of its own, registered through the hooks and stopped before it returns). Throws to refuse.
-    std::function<EngineStart(const std::filesystem::path& run_dir, const Hooks& hooks)> plan;
+    callback::Guarded<EngineStart(const std::filesystem::path& run_dir, const Hooks& hooks)> plan;
 };
 
 /* The owner, in the foreground: 0 after a requested stop with every child exited; non-zero after a refusal, a failed
@@ -149,10 +150,10 @@ struct ManifestRun {
     std::string out, err;
 };
 /* Runs this bc-serve (`argv[0]` is its path) to completion and returns its exit and output. Injectable for tests. */
-using ManifestRunner = std::function<ManifestRun(const std::vector<std::string>& argv)>;
-/* Runs a bc-serve to completion, waiting through `hooks.wait` (the owner keeps answering its socket; a stop request
- * ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it cannot verify
- * leaves the child the owner's to stop). */
+using ManifestRunner = callback::Guarded<ManifestRun(const std::vector<std::string>& argv)>;
+/* Runs a bc-serve to completion, waiting through `hooks.wait` (the owner keeps answering its socket; a stop
+ * request ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it
+ * cannot verify leaves the child the owner's to stop). */
 ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks = {});
 
 struct EnginePlanInputs {

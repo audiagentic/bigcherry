@@ -1,0 +1,7 @@
+# RSC02 step 4: use these checks on power_*.{h,cpp} only.
+# Run clang-tidy -p <serving-build> power_transaction.cpp power_records.cpp
+#     power_linux.cpp power_diagnostics.cpp power_transaction_acceptance_test.cpp.
+Checks: '-*,bugprone-*,cert-*,performance-*,readability-*,-readability-magic-numbers,-readability-identifier-length,-readability-function-cognitive-complexity,-readability-implicit-bool-conversion,-readability-isolate-declaration,-readability-else-after-return,-readability-braces-around-statements,-readability-redundant-*,-readability-trailing-comma,-readability-simplify-boolean-expr,-cert-err33-c,-bugprone-easily-swappable-parameters'
+WarningsAsErrors: '*'
+HeaderFilterRegex: '.*power_(transaction|records|linux|diagnostics|io)\.(h|cpp)$'
+FormatStyle: file
