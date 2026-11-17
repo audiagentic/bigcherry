@@ -52,6 +52,8 @@ Flash-Next KLD (2026-11-17, FLASHNEXT-KLD.md): short corpus bf16_i8 0.0446, bf16
 
 Flash-Next speed and capacity (2026-11-17, FLASHNEXT-AB.md, two XTX, no helper, no speculation): decode and TTFT within about 1% of bf16 for bf16_i8, bf16_fp8 +6.7% on one-stream decode and 5.9% slower 48K TTFT; capacity 1.283x (bf16_i8) and 1.307x (bf16_fp8) against bf16, below 1.3x for bf16_i8 because the QSA block-key group is not quantised; needle probe 8 to 9 of 9 for the packed caches. Open: per-token expert-id dump (generic engine option, own patch) to confirm routing flips as the KLD floor; the helper arm; a quantised QSA block-key layout if 1.3x matters for bf16_i8.
 
+Default-cache identity (2026-11-17, IDENTITY.md): Flash-Next default bf16 and fp8 caches match the stock build at the KLD float floor (mean 6.4e-11 and 3.3e-11, max 2.2e-8, top-1 100%, 4,161 positions, placement pinned). Not bit-exact by construction (two binaries); greedy-stream comparison and the 27B default caches are not run.
+
 ## Files
 
 - `abi/rad_builder.h`, `core/config.cpp`, `core/rad_core.h`, `core/engine_bringup.cpp`, `core/kvstream/bringup.cpp`, `arch/qwen35_fp8/qwen35_fp8.cpp`, `libr4d/r4d_rows.cpp`, `tests/config_test.cpp` (through patch rad0040).
