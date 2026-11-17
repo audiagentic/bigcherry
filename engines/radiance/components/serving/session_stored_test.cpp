@@ -40,6 +40,40 @@ void check(bool ok, const std::string& why) {
     if (!ok)
         throw std::runtime_error(why);
 }
+// Failure teardown is bounded even if an owner cannot stop.
+pid_t reap_for(pid_t pid, int* status, std::chrono::milliseconds limit) {
+    const auto deadline = std::chrono::steady_clock::now() + limit;
+    do {
+        const pid_t r = ::waitpid(pid, status, WNOHANG);
+        if (r != 0)
+            return r;
+        std::this_thread::sleep_for(20ms);
+    } while (std::chrono::steady_clock::now() < deadline);
+    return 0;
+}
+struct OwnerGuard {
+    pid_t pid;
+    fs::path run;
+    ~OwnerGuard() {
+        if (pid <= 0)
+            return;
+        try {
+            (void)ss::control(run, "stop", 500ms);
+        } catch (...) {
+        }
+        int status = 0;
+        if (reap_for(pid, &status, 3s) == pid)
+            return;
+        (void)::kill(pid, SIGTERM);
+        if (reap_for(pid, &status, 2s) == pid)
+            return;
+        (void)::kill(pid, SIGKILL);
+        (void)reap_for(pid, &status, 2s);
+    }
+    void disarm() {
+        pid = 0;
+    }
+};
 struct Temp {
     fs::path root;
     Temp() {
@@ -206,7 +240,7 @@ struct Case {
         const Json final = completed.value_or(Json::object());
         int owner_status = 0;
         const pid_t owner_pid = final.at("owner_pid").get<pid_t>();
-        check(::waitpid(owner_pid, &owner_status, 0) == owner_pid && WIFEXITED(owner_status) &&
+        check(reap_for(owner_pid, &owner_status, 15s) == owner_pid && WIFEXITED(owner_status) &&
                   WEXITSTATUS(owner_status) == 0,
               "detached stored replay owner must exit cleanly");
         check(final.at("selection").at("replay") == true,
@@ -239,6 +273,7 @@ struct Case {
             }
             std::_Exit(result);
         }
+        OwnerGuard owner_guard{pid, run};
         bool reached = false;
         const auto deadline = std::chrono::steady_clock::now() + 15s;
         std::string state;
@@ -251,11 +286,8 @@ struct Case {
             }
             std::this_thread::sleep_for(20ms);
         }
-        if (!reached) {
-            ::kill(pid, SIGTERM);
-            ::waitpid(pid, nullptr, 0);
+        if (!reached)
             throw std::runtime_error("owner session timed out in state " + state);
-        }
         const auto observed = ss::read_record(run);
         check(observed.has_value(), "owner must have a durable record");
         const Json record = observed.value_or(Json::object());
@@ -267,7 +299,10 @@ struct Case {
             check(state == "failed", "refused replay started the engine: " + record.dump(2));
         }
         int status = 0;
-        check(::waitpid(pid, &status, 0) == pid, "waitpid");
+        const pid_t reaped = reap_for(pid, &status, 15s);
+        if (reaped == pid)
+            owner_guard.disarm();
+        check(reaped == pid, "owner did not exit within 15 s");
         check(WIFEXITED(status) && (WEXITSTATUS(status) == 0) == succeed, "owner return code");
         check(read(stored) == bytes, "stored manifest changed after replay attempt");
         const auto final_record = ss::read_record(run);
@@ -399,15 +434,7 @@ int main(int argc, char** argv) {
         check(running_owner >= 0, "fork transport owner");
         if (running_owner == 0)
             std::_Exit(ss::serve(first_transport.session));
-        struct StopOnFailure {
-            pid_t pid;
-            ~StopOnFailure() {
-                if (pid > 0) {
-                    ::kill(pid, SIGTERM);
-                    (void)::waitpid(pid, nullptr, 0);
-                }
-            }
-        } stop_guard{running_owner};
+        OwnerGuard stop_guard{running_owner, first_transport.run};
         bool first_running = false;
         const auto deadline = std::chrono::steady_clock::now() + 15s;
         while (std::chrono::steady_clock::now() < deadline) {
@@ -436,10 +463,11 @@ int main(int argc, char** argv) {
         const auto stop_first = ss::control(first_transport.run, "stop", 10s);
         check(stop_first && stop_first->value("ok", false), "first owner must stop cleanly");
         int first_status = 0;
-        check(::waitpid(running_owner, &first_status, 0) == running_owner && WIFEXITED(first_status) &&
-                  WEXITSTATUS(first_status) == 0,
+        const pid_t reaped_first = reap_for(running_owner, &first_status, 15s);
+        if (reaped_first == running_owner)
+            stop_guard.disarm();
+        check(reaped_first == running_owner && WIFEXITED(first_status) && WEXITSTATUS(first_status) == 0,
               "first owner must keep transport while running and exit cleanly");
-        stop_guard.pid = 0;
         std::cout << "production and detached owner replay: success, static/live/power/missing-gate/tamper "
                      "refusals passed\n";
         return 0;

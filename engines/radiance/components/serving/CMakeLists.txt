@@ -280,4 +280,7 @@ if(BUILD_TESTING)
     set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT
                  "BIGCHERRY_LAYOUTS=${CMAKE_CURRENT_SOURCE_DIR}/../../layouts")
   endforeach()
+  # All declared component tests fail fast on a hung process in CI.
+  get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
+  set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
 endif()
