@@ -114,11 +114,16 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
     std::ifstream in(index, std::ios::binary);
     if (!in)
         throw std::runtime_error("cannot open stored manifest index " + index.string());
-    std::string bytes{std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
-    if (!in.eof() && in.fail())
+    // Read at most one byte beyond the protocol bound. An untrusted sparse
+    // or corrupt index must never determine our allocation size.
+    std::string bytes(8193U, '\0');
+    in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    const auto consumed = in.gcount();
+    if (in.bad())
         throw std::runtime_error("cannot read stored manifest index " + index.string());
-    if (bytes.size() > 8192)
+    if (consumed > 8192)
         throw std::runtime_error("stored manifest index exceeds 8 KiB");
+    bytes.resize(static_cast<size_t>(consumed));
     const auto parsed = v2::parse_strict_json(bytes, index.string());
     if (!parsed)
         throw std::runtime_error("stored manifest index is invalid: " + parsed.error().message);

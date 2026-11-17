@@ -12,6 +12,8 @@
 #include <string>
 #include <vector>
 
+#include <sys/resource.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace fs = std::filesystem;
@@ -155,6 +157,27 @@ int main() {
             refused = true;
         }
         expect(refused, "unsafe cache index must refuse even under root");
+        // RED P2-7: a corrupt sparse index must be rejected before allocating
+        // its full apparent size. Limit the child virtual address space so the
+        // test remains safe even when the original unbounded read regresses.
+        fs::resize_file(index, 512ULL * 1024ULL * 1024ULL);
+        const pid_t child = ::fork();
+        expect(child >= 0, "fork bounded index verifier");
+        if (child == 0) {
+            const rlimit budget{64ULL * 1024ULL * 1024ULL, 64ULL * 1024ULL * 1024ULL};
+            if (::setrlimit(RLIMIT_AS, &budget) != 0)
+                ::_exit(30);
+            try {
+                (void)ss::read_stored_index(index);
+                ::_exit(31);
+            } catch (const std::exception& e) {
+                ::_exit(std::string(e.what()).find("exceeds 8 KiB") != std::string::npos ? 0 : 32);
+            }
+        }
+        int exit_status = 0;
+        expect(::waitpid(child, &exit_status, 0) == child, "wait on bounded index verifier");
+        expect(WIFEXITED(exit_status) && WEXITSTATUS(exit_status) == 0,
+               "oversized sparse index must refuse at 8193 bytes, without allocating it");
         std::cout << "RSC12 static manifest reuse/rewrite/refusals passed\n";
         return 0;
     } catch (const std::exception& error) {
