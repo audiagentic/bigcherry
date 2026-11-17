@@ -49,7 +49,7 @@ int64_t nanoseconds(const timespec& timestamp) {
     const int64_t sec = static_cast<int64_t>(timestamp.tv_sec);
     if (sec > (INT64_MAX - timestamp.tv_nsec) / kBillion || sec < (INT64_MIN + timestamp.tv_nsec) / kBillion)
         throw std::runtime_error("file metadata timestamp is out of range");
-    return sec * kBillion + timestamp.tv_nsec;
+    return (sec * kBillion) + timestamp.tv_nsec;
 }
 
 FileStamp file_stamp(const std::filesystem::path& path) {
@@ -147,7 +147,7 @@ std::string complete_file_identity(const std::filesystem::path& path) {
 }
 
 ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
-                                    FullFileReader full_reader) {
+                                    const FullFileReader& full_reader) {
     // ctime_ns cannot be restored by normal in-place writes: even a same-size
     // write followed by a manual mtime reset changes this identity. An actor
     // capable of forging kernel inode/ctime fields is outside the threat model.

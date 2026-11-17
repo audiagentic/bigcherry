@@ -96,7 +96,7 @@ v2::Status same_s8(const v2::Manifest& saved, const v2::S8Resolution& before, co
                            "writer's stored S8 evidence differs from original P1 resolution");
     }
     if (auto why = check_selected_evidence(before.calibration_entries, after.calibration_entries, records, now))
-        return *why;
+        return why;
     return std::nullopt;
 }
 } // namespace
@@ -189,7 +189,7 @@ v2::Status verify_stored_s8(const v2::Manifest& admitted, const Resolved& curren
                                           [&](const Json& g) { return g.at("bdf") == bdf; });
         if (present == facts.at("gpus").end())
             return refusal("p1.gpu", "current engine GPU vanished from measured S8 scope");
-        constexpr int64_t mib = 1024 * 1024;
+        constexpr int64_t mib = int64_t{1024} * int64_t{1024};
         const int64_t available = present->at("vram_available_mib").get<int64_t>();
         if (available < 0 || available > std::numeric_limits<int64_t>::max() / mib)
             return refusal("p1.gpu", "current engine live VRAM is invalid");

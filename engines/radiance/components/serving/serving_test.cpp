@@ -105,7 +105,7 @@ struct Fixture {
         // A v2 cgroup with a limit at the leaf and none above; memlock limited, no CAP_IPC_LOCK;
         // amdgpu loaded with its system memory limit in force.
         write(root / "proc/self/cgroup", "0::/agents/serve\n");
-        write(root / "sys/fs/cgroup/agents/serve/memory.max", std::to_string(uint64_t(64) << 30) + "\n");
+        write(root / "sys/fs/cgroup/agents/serve/memory.max", std::to_string(uint64_t(64) << 30U) + "\n");
         write(root / "sys/fs/cgroup/agents/serve/memory.current", std::to_string(uint64_t(10) << 30) + "\n");
         write(root / "sys/fs/cgroup/agents/serve/memory.stat",
               "anon 1\nfile " + std::to_string(uint64_t(4) << 30) + "\n");
@@ -1149,9 +1149,10 @@ void manifest_writer_step(Fixture& t) {
         std::vector<uint32_t> counts(128 * 16, 0);
         for (uint32_t l = 0; l < 4; ++l)
             for (uint32_t e = 0; e < 16; ++e)
-                counts[l * 16 + e] = (e * 7 + l * 3) % 16 + 1;
+                counts[(l * 16) + e] = (((e * 7) + (l * 3)) % 16) + 1;
         std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+            .write(reinterpret_cast<const char*>(counts.data()),
+                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
     }
     Options opts;
     opts.site = t.file("writer-site.toml", "[engine]\nmodel = \"" + model.string() +
@@ -1546,10 +1547,10 @@ void manifest_writer_step(Fixture& t) {
                        "abort_quiescent_ns = 1500000000\n");
         const auto with_calibration = sv::build_manifest(calibrated);
         const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
-        assert(lp.at("cadence_ns") ==
-               2720000000ull +
-                   lp.at("effect_min_quiet_windows").get<uint64_t>() *
-                       ((lp.at("effect_window_samples").get<uint64_t>() * 1000000000ull + 63) / 64));
+        const uint64_t quiet_windows = lp.at("effect_min_quiet_windows").get<uint64_t>();
+        const uint64_t window_samples = lp.at("effect_window_samples").get<uint64_t>();
+        const uint64_t window_ns = ((window_samples * 1000000000ULL) + 63ULL) / 64ULL;
+        assert(lp.at("cadence_ns") == (2720000000ULL + (quiet_windows * window_ns)));
         assert(lp.at("accept_unwatermarked_heat") == true);
         assert(lp.at("max_moved_bytes") == 435200000ull && lp.at("margin_ppm") == 23000);
         assert(lp.at("half_life_observations_milli") == 59000000000ull);
@@ -1654,7 +1655,7 @@ void manifest_writer_step(Fixture& t) {
         const auto& structural_policy =
             structural_manifest.document.at("spec").at("handoff").at("placement").at("live_policy");
         assert(structural_policy.at("effect_gate") == false);
-        assert(structural_policy.at("max_moved_bytes") == 435200000ull);
+        assert(structural_policy.at("max_moved_bytes") == 435200000ULL);
         assert(structural_policy.at("margin_ppm") == 23000);
         assert(structural_manifest.document.at("provenance")
                    .at("/spec/handoff/placement/live_policy/effect_gate")
@@ -1717,10 +1718,10 @@ void manifest_writer_step(Fixture& t) {
         assert(cr_loaded.ok());
         const auto& crm = cr_loaded.value();
         Json measured = {
-            {"txn_p50_ns", 1770000000ull},
-            {"txn_p95_ns", 2720000000ull},
-            {"copy_bytes_per_s", 160000000ull},
-            {"heat_gap_max_ns", 5040000000ull},
+            {"txn_p50_ns", 1770000000ULL},
+            {"txn_p95_ns", 2720000000ULL},
+            {"copy_bytes_per_s", 160000000ULL},
+            {"heat_gap_max_ns", 5040000000ULL},
             {"heat_watermarked", 0},
             {"hot_set_k", 5931},
             {"marginal_error_ppm", 23000},
@@ -1738,7 +1739,7 @@ void manifest_writer_step(Fixture& t) {
              Json::array(
                  {Json::array({uint64_t(8), uint64_t(80000)}), Json::array({uint64_t(16), uint64_t(40000)}),
                   Json::array({uint64_t(32), uint64_t(16000)}), Json::array({uint64_t(64), uint64_t(10000)})})},
-            {"abort_quiescent_ns", 1500000000ull}};
+            {"abort_quiescent_ns", 1500000000ULL}};
         { // the v2 plan key covers the engine tuning settings (a changed TP split is another plan) and, in a
           // world of
             // more than one card type, every rank's card; an absent or empty tuning section keeps the key
@@ -1873,7 +1874,7 @@ void manifest_writer_step(Fixture& t) {
         with.sets = {"engine.tp_wire=\"wht6\"", "engine.no_prefix_cache=\"on\"", "engine.gpu_headroom_mib=320"};
         const auto r2 = sv::resolve(with, t.facts);
         assert(r2.typed.engine.tp_wire == "wht6" && r2.typed.engine.no_prefix_cache &&
-               r2.typed.engine.gpu_headroom_mib == 320u);
+               r2.typed.engine.gpu_headroom_mib == 320U);
         assert(r2.provenance.at("engine.tp_wire").at("origin") == "cli");
         sv::ManifestInputs c = in;
         c.resolved = r2;
@@ -1965,7 +1966,7 @@ void manifest_writer_step(Fixture& t) {
     const auto path = t.root / "written-manifest.json";
     sv::write_manifest_file(path, built.text);
     struct stat st{};
-    assert(::stat(path.c_str(), &st) == 0 && (st.st_mode & 0777) == 0444 &&
+    assert(::stat(path.c_str(), &st) == 0 && (st.st_mode & 0777U) == 0444 &&
            !fs::exists(path.string() + ".tmp"));
     assert(bc::serving::v2::load_manifest(path, bc::serving::v2::PlanUse::serving).ok());
     try {
@@ -2011,9 +2012,10 @@ void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir
         std::vector<uint32_t> counts(128 * 16, 0);
         for (uint32_t l = 0; l < 4; ++l)
             for (uint32_t e = 0; e < 16; ++e)
-                counts[l * 16 + e] = (e * 7 + l * 3) % 16 + 1;
+                counts[(l * 16) + e] = (((e * 7) + (l * 3)) % 16) + 1;
         std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+            .write(reinterpret_cast<const char*>(counts.data()),
+                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
     }
     std::string got;
     for (const char* name :
@@ -2212,7 +2214,8 @@ void derived_budget_is_the_workers(Fixture& t) {
     {
         std::vector<uint32_t> counts(128 * 16, 1);
         std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+            .write(reinterpret_cast<const char*>(counts.data()),
+                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
     }
     uint64_t budgets_on[2] = {}, budgets_off[2] = {};
     for (const bool power_save : {true, false}) {
@@ -2344,7 +2347,8 @@ void tp_engine_with_helper_layout(Fixture& t) {
     {
         std::vector<uint32_t> counts(128 * 16, 1);
         std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+            .write(reinterpret_cast<const char*>(counts.data()),
+                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
     }
     Options opts;
     opts.site = t.file("tp-helper-site.toml", "[engine]\nmodel = \"" + model.string() +
@@ -2395,7 +2399,8 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     {
         std::vector<uint32_t> counts(128 * 16, 1);
         std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+            .write(reinterpret_cast<const char*>(counts.data()),
+                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
     }
     Options opts;
     opts.site = t.file("tp-two-helper-site.toml", "[engine]\nmodel = \"" + model.string() +
@@ -2508,7 +2513,8 @@ void converted_layout_parity(Fixture& t) {
     {
         std::vector<uint32_t> counts(128 * 16, 1);
         std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()), counts.size() * 4);
+            .write(reinterpret_cast<const char*>(counts.data()),
+                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
     }
     const auto site = t.file("parity-site.toml", "[engine]\nmodel = \"" + model.string() +
                                                      "\"\nradiance_home = \"/runtime\"\n"
@@ -2617,9 +2623,9 @@ void converted_layout_parity(Fixture& t) {
                 "engine.prefix_resume=\"" + launcher_default("PREFIX_RESUME") + "\""};
             // what the launch derives reaches the config the same way; a pool or tier the layout pins is the
             // config's own
-            if (!args.count("--host-pool-mib"))
+            if (!args.contains("--host-pool-mib"))
                 derived.push_back("memory.host_pool_mib=" + derived_pool);
-            if (!args.count("--host-kv-mib"))
+            if (!args.contains("--host-kv-mib"))
                 derived.push_back("memory.host_kv_mib=" + derived_kv);
         } else { // plan_check_describe_engine_only
             launch = {sel, "engine.port=" + port};
@@ -2633,9 +2639,14 @@ void converted_layout_parity(Fixture& t) {
             for (const auto& [flag, value] : args) {
                 if (flag == "--host-pool-mib" || flag == "--host-kv-mib" || flag == "--ngram-placement")
                     continue;
-                if (!key.count(flag))
-                    throw std::runtime_error("layout " + name + ": server-arg " + flag +
-                                             " is not a manifest setting");
+                if (!key.contains(flag)) {
+                    std::string message = "layout ";
+                    message += name;
+                    message += ": server-arg ";
+                    message += flag;
+                    message += " is not a manifest setting";
+                    throw std::runtime_error(message);
+                }
                 const bool text = flag == "--kv-cache-dtype";
                 launch.push_back(key.at(flag) + "=" + (text ? "\"" + value + "\"" : value));
             }
@@ -3408,11 +3419,11 @@ int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--write-golden")
+        if (std::string(argv[i]) == "--write-golden") {
             write_golden = true;
-        else if (std::string(argv[i]) == "--dump-manifests" && i + 1 < argc)
+        } else if (std::string(argv[i]) == "--dump-manifests" && i + 1 < argc) {
             dump_dir = argv[++i];
-        else {
+        } else {
             std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR]\n";
             return 2;
         }

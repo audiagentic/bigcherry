@@ -71,9 +71,14 @@ class PinnedManifest final {
             }
             if (::lseek(fd_, 0, SEEK_SET) != 0)
                 throw PlanFailed("replay: cannot rewind admitted manifest");
-            constexpr int seals = F_SEAL_WRITE | F_SEAL_SHRINK | F_SEAL_GROW | F_SEAL_SEAL;
-            if (::fcntl(fd_, F_ADD_SEALS, seals) != 0 || (::fcntl(fd_, F_GET_SEALS) & seals) != seals)
+            constexpr unsigned int seals =
+                static_cast<unsigned int>(F_SEAL_WRITE) | static_cast<unsigned int>(F_SEAL_SHRINK) |
+                static_cast<unsigned int>(F_SEAL_GROW) | static_cast<unsigned int>(F_SEAL_SEAL);
+            if (::fcntl(fd_, F_ADD_SEALS, static_cast<int>(seals)) != 0)
                 throw PlanFailed("replay: cannot seal admitted manifest bytes");
+            const int applied = ::fcntl(fd_, F_GET_SEALS);
+            if (applied < 0 || (static_cast<unsigned int>(applied) & seals) != seals)
+                throw PlanFailed("replay: cannot verify admitted manifest seals");
         } catch (...) {
             ::close(fd_);
             fd_ = -1;
@@ -530,7 +535,9 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
             // sealed, authenticated manifest becomes readable by the strict
             // engine/worker readers at /proc/self/fd/N after execve.
             const int flags = ::fcntl(inherited_manifest_fd, F_GETFD);
-            if (flags < 0 || ::fcntl(inherited_manifest_fd, F_SETFD, flags & ~FD_CLOEXEC) != 0) {
+            const auto inherited_flags =
+                static_cast<int>(static_cast<unsigned int>(flags) & ~static_cast<unsigned int>(FD_CLOEXEC));
+            if (flags < 0 || ::fcntl(inherited_manifest_fd, F_SETFD, inherited_flags) != 0) {
                 const int e = errno;
                 (void)!::write(report[1], &e, sizeof e);
                 ::_exit(127);

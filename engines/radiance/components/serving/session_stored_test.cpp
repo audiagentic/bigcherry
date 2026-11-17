@@ -60,6 +60,7 @@ struct OwnerGuard {
         try {
             (void)ss::control(run, "stop", 500ms);
         } catch (...) {
+            std::cerr << "stored owner test: control stop unavailable; escalating cleanup\n";
         }
         int status = 0;
         if (reap_for(pid, &status, 3s) == pid)
@@ -451,7 +452,9 @@ int main(int argc, char** argv) {
         Case second_transport(9, false, false, false, first_transport.stored,
                               first_transport.tmp.root / "other-run", first_transport.tmp.root / "other-trace");
         second_transport.run_owner(false);
-        const Json second_record = ss::read_record(second_transport.run).value();
+        const auto second_lookup = ss::read_record(second_transport.run);
+        check(second_lookup.has_value(), "second owner must leave a durable refusal record");
+        const Json second_record = second_lookup.value_or(Json::object());
         check(second_record.at("processes").empty(),
               "cross-root transport collision must refuse before any child starts");
         bool transport_refusal = false;

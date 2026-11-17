@@ -155,32 +155,36 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         if (arg == "--help" || arg == "-h") {
             usage();
             return 0;
-        } else if (arg == "--run-dir")
+        } else if (arg == "--run-dir") {
             run_dir = need();
-        else if (arg == "--json" && cmd == "status")
+        } else if (arg == "--json" && cmd == "status") {
             json = true;
-        else if (!session_cmd)
-            throw std::runtime_error(cmd + ": unknown option " + arg + " (--run-dir" +
-                                     (cmd == "status" ? ", --json)" : ")"));
-        else if (arg == "--sys-root")
+        } else if (!session_cmd) {
+            std::string message = cmd;
+            message += ": unknown option ";
+            message += arg;
+            message += " (--run-dir";
+            message += cmd == "status" ? ", --json)" : ")";
+            throw std::runtime_error(message);
+        } else if (arg == "--sys-root") {
             opts.sys_root = need();
-        else if (arg == "--site")
+        } else if (arg == "--site") {
             opts.site = need();
-        else if (arg == "--profile")
+        } else if (arg == "--profile") {
             opts.profile = need();
-        else if (arg == "--layouts")
+        } else if (arg == "--layouts") {
             opts.layouts.emplace_back(need());
-        else if (arg == "--configs")
+        } else if (arg == "--configs") {
             opts.configs.emplace_back(need());
-        else if (arg == "--model-root")
+        } else if (arg == "--model-root") {
             opts.model_root = need();
-        else if (arg == "--calibration")
+        } else if (arg == "--calibration") {
             opts.calibration_cache = need();
-        else if (arg == "--calibration-records")
+        } else if (arg == "--calibration-records") {
             calibration_records = need();
-        else if (arg == "--set")
+        } else if (arg == "--set") {
             opts.sets.push_back(need());
-        else if (arg == "--manifest") {
+        } else if (arg == "--manifest") {
             stored_manifest = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
@@ -241,8 +245,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             const auto alive = r ? ss::alive_recorded(*r) : std::vector<Json>{};
             if (!alive.empty()) {
                 std::cerr << "stop failed: no session owner answers in " << run_dir.string()
-                          << ", and its last session (" << r->value("state", std::string("?"))
-                          << ") left running:\n";
+                          << ", and its last session ("
+                          << r.value_or(Json::object()).value("state", std::string("?")) << ") left running:\n";
                 for (const auto& p : alive)
                     std::cerr << "  " << p.value("role", std::string("?")) << " pid " << p.at("pid") << ", log "
                               << p.value("log", std::string()) << '\n';
@@ -322,7 +326,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.calibration_prompts_a = prompts_a;
     inputs.calibration_prompts_b = prompts_b;
     inputs.calibration_store = calibration_store;
-    inputs.calibration_records_file = calibration_records;
+    inputs.calibration_records_file = std::move(calibration_records);
 
     inputs.self = self;
     inputs.engine_binary = engine_binary;
@@ -709,9 +713,9 @@ int main(int argc, char** argv) {
                 !opts.calibration_cache.empty())
                 throw std::runtime_error("--detect takes only --sys-root and --json");
             auto facts = bc::serving::detect(opts.sys_root);
-            if (json)
+            if (json) {
                 std::cout << facts.dump(2) << '\n';
-            else {
+            } else {
                 auto host = facts.at("host");
                 std::cout << "host: " << host.at("mem_total_mib") << " MiB RAM, "
                           << host.at("mem_available_mib") << " MiB available, " << host.at("swap_total_mib")
