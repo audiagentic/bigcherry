@@ -50,16 +50,17 @@ def test_applies_adds_lines_only_inside_xstats_open_and_is_idempotent():
         removed = [line for line in difflib.unified_diff(before.splitlines(), after.splitlines(), n=0)
                    if line.startswith("-") and not line.startswith("---")]
         assert not removed, removed[:10]
-        assert after.count("xs_protected_base") > 1
+        assert after.count("xs_protected") > 1
         # The new loop sits after the rows are normalised and before the model's expert counts are read.
         start = after.index("int Engine::xstats_open()")
         end = after.index("xs_map_build(ids, n_model", start)
         normalise = after.index("if (v == kUnset || v < 0) v = -1;", start)
-        added = after.index("xs_protected_base", start)
+        added = after.index("xs_protected", start)
         assert start < normalise < added < end
-        # It reads the weights' container entries and never writes the unit rows the regular loop filled.
+        # It reads the layer-scope weights' container entries and only appends to the rows the regular loop filled.
         assert "wi.decl.group.expert >= 0) continue;" in after
-        assert "if (row[(size_t)xs_protected_at] < 0) row[(size_t)xs_protected_at] = fe->expert;" in after
+        assert "layers[(size_t)l].push_back(g);" in after
+        assert "std::sort(xs_protected.begin(), xs_protected.end());" in after
 
         snapshot = after
         second = apply_all(ps, root)
