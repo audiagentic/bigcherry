@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261117_222600_remote-moe-gemv-kernels-no-lon_8912",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_lane_gemm.h",
+    "engines/radiance/components/moe-remote/moe_remote_gpu.h",
+    "engines/radiance/components/moe-remote/gemv_geometry.h",
+    "engines/radiance/components/bc-gfx12/bc_moe_gemv.hip",
+    "engines/radiance/model_constant_guard.toml"
+  ],
+  "plan-item-ids": [
+    "RCS13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RCS13 (#946): the remote-MoE GEMV kernels use launch-sized dynamic LDS instead of fixed K<=2560 arrays; each stage's actual K and the device LDS limit are checked before launch with a pure per-variant calculator; the grouped GEMM is the fallback and a launch failure fails closed; both model-constant guard allowances are removed. K=2560 outputs are byte-identical and an end-to-end A/B/B/A (run 12) shows no attributable decode or prefill change. gfx1100/gfx1030 parity and a model with intermediate above 2560 remain open on the plan item.",
+  "timestamp-utc": "2026-11-17T22:26:00.158357Z",
+  "user-summary-candidate": "Remote-MoE GEMV kernels no longer silently do nothing when a model's intermediate size exceeds 2560."
+}
