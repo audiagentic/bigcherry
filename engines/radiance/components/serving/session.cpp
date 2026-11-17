@@ -738,11 +738,11 @@ class Owner {
             event("planning");
             Hooks hooks;
             hooks.wait = [this](std::chrono::milliseconds d) { return service(d); };
-            hooks.started = [this](const std::string& role, pid_t pid, const fs::path& log) {
-                // Register first so even a buggy planner that starts before
-                // admission leaves a child the owner can forcibly reap.
+            hooks.started = [this](ChildKind kind, const std::string& role, pid_t pid, const fs::path& log) {
+                // Register first, even on forbidden starts; cleanup must
+                // reap a child that never passed its pre-exec gate.
                 track(role, pid, log);
-                if (s_.power_hook.begin_manifest && !power_admitted_)
+                if (kind != ChildKind::manifest_writer && s_.power_hook.begin_manifest && !power_admitted_)
                     throw PlanFailed("planner started a measuring child before durable power admission");
             };
             hooks.ended = [this](pid_t pid) { untrack(pid); };
@@ -1153,7 +1153,8 @@ class Owner {
                                                    request_timeout, drift.value());
             if (!next)
                 throw PlanFailed("calibration envelope: " + next.error().message);
-            envelope = next.value();
+            envelope = envelope.limit.count() == 0 ? next.value()
+                                                   : monotonic_calibration_envelope(envelope, next.value());
             have_feed = have_feed || envelope.accepted_feed;
             const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - begun);
             if (!have_feed && elapsed >= envelope.prefeed)
@@ -1211,6 +1212,7 @@ class Owner {
     void start_engine() {
         const fs::path log = s_.run_dir / ("engine-" + stamp() + ".log");
         engine_log_ = log;
+        plan_.engine_launched_at = std::chrono::system_clock::now();
         (void)spawn(plan_.argv, child_environment(environ, plan_.runtime), log,
                     [&](pid_t pid) { track("engine", pid, log); });
     }
@@ -1398,7 +1400,8 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         // never reported stopped while it lives
         record_then_release(gate, p, [&](pid_t q) {
             if (hooks.started)
-                hooks.started.require("session.hooks.started", "manifest writer", q, out);
+                hooks.started.require("session.hooks.started", ChildKind::manifest_writer, "manifest writer", q,
+                                      out);
         });
         return p;
     }();
@@ -1552,7 +1555,8 @@ void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::p
         }
         const pid_t pid = spawn(h.argv, child_environment(environ, h.runtime), log, [&](pid_t p) {
             if (hooks.started)
-                require_callback(hooks.started.invoke("session.hooks.started", h.role + " measuring", p, log),
+                require_callback(hooks.started.invoke("session.hooks.started", ChildKind::measuring_helper,
+                                                      h.role + " measuring", p, log),
                                  "hooks.started");
         });
         pids->push_back(pid);
@@ -1831,9 +1835,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                           // the owner stops it and the session is never reported stopped while it lives
                           [&](pid_t p) {
                               if (hooks.started)
-                                  require_callback(
-                                      hooks.started.invoke("session.hooks.started", "measuring engine", p, log),
-                                      "hooks.started");
+                                  require_callback(hooks.started.invoke("session.hooks.started",
+                                                                        ChildKind::measuring_engine,
+                                                                        "measuring engine", p, log),
+                                                   "hooks.started");
                           });
                 int st = 0;
                 const auto deadline = Clock::now() + std::chrono::minutes(30);

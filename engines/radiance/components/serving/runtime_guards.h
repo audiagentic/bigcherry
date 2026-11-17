@@ -16,9 +16,23 @@ namespace bc::serving::session {
 
 enum class ReplayVerdict : uint8_t { disabled, profiled, observed, absent };
 enum class HistogramVerdict : uint8_t { fresh, missing, unsafe, stale, future };
-// Clock injection tests root-safe age, symlink and partial-file refusals.
+// The producer writes raw cumulative uint32[model.layers][model.experts],
+// with no embedded run identifier. The model is authenticated by the v2
+// manifest; the owner supplies a pre-exec launch timestamp. Once published,
+// keep the inode bound to this launch for every later poll.
+struct HistogramIdentity {
+    uint64_t device = 0;
+    uint64_t inode = 0;
+};
+struct HistogramExpectation {
+    uint64_t layers = 0;
+    uint64_t experts = 0;
+    std::chrono::system_clock::time_point launched_at{};
+    std::optional<HistogramIdentity> identity;
+};
 HistogramVerdict histogram_verdict(const std::filesystem::path& rank_file,
-                                   std::chrono::system_clock::time_point now, std::chrono::nanoseconds max_age);
+                                   std::chrono::system_clock::time_point now, std::chrono::nanoseconds max_age,
+                                   const HistogramExpectation& expected, HistogramIdentity* observed = nullptr);
 
 // A purely decoded signal, useful for card-free regression fixtures.
 // The typed manifest depth decides whether evidence is required; text cannot
@@ -43,12 +57,13 @@ class RuntimeGuards final {
         uint64_t device = 0;
         uint64_t inode = 0;
     };
-    v2::Status inspect_heat() const;
+    v2::Status inspect_heat();
     v2::Status inspect_policy();
 
     std::optional<v2::Manifest> manifest_;
     std::filesystem::path engine_log_;
     std::optional<std::filesystem::path> histogram_;
+    HistogramExpectation heat_expectation_;
     std::chrono::nanoseconds heat_age_budget_{std::chrono::seconds(30)};
     std::string segment_;
     std::optional<SegmentIdentity> segment_identity_;

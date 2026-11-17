@@ -455,7 +455,7 @@ void spawn_and_environment() {
         std::vector<pid_t> seen;
         ss::Hooks quick;
         quick.wait = [](std::chrono::milliseconds) { return true; };
-        quick.started = [&](const std::string&, pid_t registered_pid, const fs::path&) {
+        quick.started = [&](ss::ChildKind, const std::string&, pid_t registered_pid, const fs::path&) {
             std::this_thread::sleep_for(100ms);
             seen.push_back(registered_pid);
             assert(ss::start_time(registered_pid)); // still waiting at the gate: alive, not a zombie
@@ -466,7 +466,7 @@ void spawn_and_environment() {
     std::vector<pid_t> registered, verified;
     ss::Hooks hooks;
     hooks.wait = [](std::chrono::milliseconds) { return true; };
-    hooks.started = [&](const std::string& role, pid_t pid, const fs::path&) {
+    hooks.started = [&](ss::ChildKind, const std::string& role, pid_t pid, const fs::path&) {
         assert(role == "manifest writer");
         registered.push_back(pid);
     };
@@ -501,7 +501,7 @@ void spawn_and_environment() {
 
         bad = hooks;
         pid_t just_spawned = -1;
-        bad.started = [&](const std::string&, pid_t pid, const fs::path&) {
+        bad.started = [&](ss::ChildKind, const std::string&, pid_t pid, const fs::path&) {
             just_spawned = pid;
             if (foreign)
                 throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
@@ -925,10 +925,13 @@ void callback_exception_matrix() {
         const auto waited = wait.invoke("session.test.wait", 1ms);
         assert(!waited && waited.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
         ss::Hooks hooks;
-        hooks.started = [kind](const std::string&, pid_t, const fs::path&) { injected_throw(kind); };
+        hooks.started = [kind](ss::ChildKind, const std::string&, pid_t, const fs::path&) {
+            injected_throw(kind);
+        };
         hooks.ended = [kind](pid_t) { injected_throw(kind); };
         hooks.selected_segment = [kind](const std::string&) { injected_throw(kind); };
-        assert(hooks.started.invoke("session.test.started", "measuring", 1, fs::path("fake")));
+        assert(hooks.started.invoke("session.test.started", ss::ChildKind::measuring_engine, "measuring", 1,
+                                    fs::path("fake")));
         assert(hooks.ended.invoke("session.test.ended", 1));
         assert(hooks.selected_segment.invoke("session.test.selected_segment", "/r3-serve-injected"));
         ss::ManifestRunner runner = [kind](const std::vector<std::string>&) -> ss::ManifestRun {
@@ -969,7 +972,8 @@ void callback_exception_matrix() {
                     const fs::path log = run / "measuring-injected.log";
                     const pid_t child = ss::spawn({"/bin/sleep", "30"}, {}, log, [&](pid_t pid) {
                         if (h.started) {
-                            const auto result = h.started.invoke("session.test.started", "measuring", pid, log);
+                            const auto result = h.started.invoke(
+                                "session.test.started", ss::ChildKind::measuring_engine, "measuring", pid, log);
                             if (result)
                                 throw ss::PlanFailed(result->message);
                         }
@@ -1009,7 +1013,7 @@ void callback_exception_matrix() {
         for (const std::string stage : {"started", "wait", "ended"}) {
             ss::Hooks h;
             pid_t child = 0;
-            h.started = [&](const std::string&, pid_t pid, const fs::path&) {
+            h.started = [&](ss::ChildKind, const std::string&, pid_t pid, const fs::path&) {
                 child = pid;
                 if (stage == "started")
                     injected_throw(kind);
@@ -1127,6 +1131,56 @@ void helper_power_hook_boundary() {
 } // namespace
 
 void real_session_power_returned_errors();
+
+// Owner receives the real run_to_completion manifest writer BEFORE durable
+// manifest admission. This child is CPU-only; power still gates every GPU child.
+void manifest_writer_before_durable_admission() {
+    Case c("writer-before-admission");
+    const auto prior = c.session.plan;
+    const fs::path trace = c.run / "writer-order.trace";
+    c.session.plan = [prior, trace](const fs::path& run, const ss::Hooks& hooks) -> ss::EngineStart {
+        const auto written = ss::run_to_completion({"/bin/true"}, {}, hooks);
+        assert(written.exit == 0);
+        std::ofstream(trace, std::ios::app) << "writer_exited" << '\n';
+        const fs::path provisional = run / "provisional-v2.json";
+        std::ofstream(provisional) << "{}";
+        const auto result =
+            hooks.admit_power.invoke("session.test.admit", provisional, bc::serving::v2::PlanUse::serving);
+        if (!result)
+            throw ss::PlanFailed(result.error().message);
+        if (result.value())
+            throw ss::PlanFailed(result.value()->message);
+        std::ofstream(trace, std::ios::app) << "admitted" << '\n';
+        return prior.require("session.test.plan", run, hooks);
+    };
+    c.session.power_hook.begin_manifest = [trace](const fs::path&,
+                                                  bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
+        std::ofstream(trace, std::ios::app) << "apply" << '\n';
+        return std::nullopt;
+    };
+    c.session.power_hook.restore = []() -> bc::serving::v2::Status { return std::nullopt; };
+    c.session.power_hook.verify_serving = [](const fs::path&) -> bc::serving::v2::Status {
+        return std::nullopt;
+    };
+    c.session.power_hook.verified_exit = [] {};
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const auto reply = ss::control(c.run, "stop", 10s);
+    assert(reply && reply->value("ok", false));
+    assert(exit_code(owner) == 0);
+    const std::string entries = text(trace);
+    assert(entries.find("writer_exited\n") < entries.find("apply\n"));
+    assert(entries.find("apply\n") < entries.find("admitted\n"));
+    bool recorded = false;
+    const Json recorded_session = c.record();
+    for (const auto& p : recorded_session.at("processes")) {
+        if (p.value("role", std::string()) == "manifest writer") {
+            recorded = true;
+            assert(p.value("exited", false) && gone(p.at("pid").get<pid_t>()));
+        }
+    }
+    assert(recorded);
+}
 
 void premeasurement_manifest_hook_integration() {
     // One owner, one run, and one manifest admission *before* measuring.
@@ -1254,6 +1308,7 @@ int test_main(int argc, char** argv) {
     fs::create_directories(g_root);
     injected_owner_plan_exception();
     real_session_power_returned_errors();
+    manifest_writer_before_durable_admission();
     premeasurement_manifest_hook_integration();
     callback_nonstandard_regression();
     callback_exception_matrix();

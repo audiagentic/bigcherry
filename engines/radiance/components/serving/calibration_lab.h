@@ -36,6 +36,11 @@ v2::Result<std::optional<DriftProgress>> read_calibration_drift(const std::files
 v2::Result<CalibrationEnvelope> calibration_envelope(const v2::LivePolicy& policy, size_t a_count,
                                                      size_t b_count, std::chrono::seconds request_timeout,
                                                      const std::optional<DriftProgress>& drift);
+// An evolving drift ring may shorten its own latest estimate, but cannot
+// retract a deadline the owner already admitted. Keep the original prefeed
+// horizon anchored to the same uninterrupted stopwatch.
+CalibrationEnvelope monotonic_calibration_envelope(const CalibrationEnvelope& admitted,
+                                                   const CalibrationEnvelope& observed);
 v2::Result<bool> complete_calibration_marker(const std::filesystem::path& helper_log);
 
 } // namespace bc::serving::session
