@@ -43,6 +43,9 @@ class RuntimeAssetsTests(unittest.TestCase):
         serving.parent.mkdir(parents=True)
         serving.write_bytes(b"bc-serve")
         serving.chmod(0o755)
+        releaser = self.build / "radiance_home/bin/bc-release"
+        releaser.write_bytes(b"bc-release")
+        releaser.chmod(0o755)
         (self.build / "radiance_home/helpers/r3_moe_worker").write_bytes(b"worker")
         (self.build / "radiance_home/helpers/r3_moe_worker").chmod(0o755)
         (self.build / "radiance_home/kernels/libr3moe.so").write_bytes(b"plugin")
