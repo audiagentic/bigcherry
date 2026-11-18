@@ -1,0 +1,16 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261118_071819_fixed-a-stale-check-in-the-pac_9692",
+  "files": [
+    "engines/radiance/patches/rad0042_kv_b16_selftest/patch.py",
+    "engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md",
+    "docs/evidence/2026-11-16-vtp44-generic-kv-layouts/rad0042-selftest/README.md"
+  ],
+  "plan-item-ids": [
+    "VTP44"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0042 selftest overlay (experiment-only): the bf16_i8_rows inventory lists all ten rows with each row's gqa and block size (the stale four-row list rejected rad0041's six rows and failed on a gfx1100 device), and the fused gate+quantiser fold case takes a gqa6/block-4 geometry flag so the two gqa6/bs4 fused-decode rows are executed against their unfused pair. All 21 cases of the two packed layouts pass on a gfx1100 card; the libr3 rewrite step's exact-count checks pass. Found by the GPT review of the KV patches (no corruption found).",
+  "timestamp-utc": "2026-11-18T07:18:19.396436Z",
+  "user-summary-candidate": "Fixed a stale check in the packed KV cache selftest and added missing test cases for four-rank geometry."
+}
