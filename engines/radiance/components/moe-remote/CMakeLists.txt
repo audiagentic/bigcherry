@@ -96,6 +96,8 @@ if(BUILD_TESTING)
     set_target_properties(${name} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     add_test(NAME ${name} COMMAND ${name})
   endforeach()
+  # Keep the declared, card-free large-K geometry/admission target bounded.
+  set_tests_properties(r3_gemv_geometry_test PROPERTIES TIMEOUT 60)
   # The typed policy and forced-schedule settings come from the manifest's generated types (bc_serving_v2's headers).
   target_link_libraries(r3_policy_config_test PRIVATE Threads::Threads bc_serving_v2)
   target_link_libraries(r3_policy_driver_test PRIVATE Threads::Threads bc_serving_v2)
