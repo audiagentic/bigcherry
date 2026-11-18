@@ -106,6 +106,35 @@ class SemanticProjectionTests(unittest.TestCase):
         with self.assertRaisesRegex(ProjectionError, "duplicate physical card"):
             projection(bad, verify_bytes=False)
 
+    def test_refuses_matching_but_incomplete_observed_roles(self) -> None:
+        # Two arms agreeing is not enough: both must show every process
+        # declared by the manifest, with its actual --role argument.
+        missing = copy.deepcopy(self.a)
+        missing["processes"]["roles"].pop()
+        with self.assertRaisesRegex(ProjectionError, "missing observed roles"):
+            compare(missing, copy.deepcopy(missing), verify_bytes=False)
+
+        extra = copy.deepcopy(self.a)
+        extra["processes"]["roles"].append(
+            {"role": "ghost", "argv": ["r3_moe_worker", "--manifest",
+                                     extra["manifest_path"], "--role", "ghost"],
+             "env": {"ROCR_VISIBLE_DEVICES": "3"}}
+        )
+        with self.assertRaisesRegex(ProjectionError, "unexpected observed roles"):
+            compare(extra, copy.deepcopy(extra), verify_bytes=False)
+
+        forged = copy.deepcopy(self.a)
+        forged["processes"]["roles"][0]["argv"][-1] = "helper0"
+        with self.assertRaisesRegex(ProjectionError, "observed --role"):
+            compare(forged, copy.deepcopy(forged), verify_bytes=False)
+
+        omitted = copy.deepcopy(self.a)
+        omitted["processes"]["roles"][0]["argv"] = (
+            omitted["processes"]["roles"][0]["argv"][:-2]
+        )
+        with self.assertRaisesRegex(ProjectionError, "exactly one --role"):
+            compare(omitted, copy.deepcopy(omitted), verify_bytes=False)
+
     def test_requires_manifest_bytes_and_rejects_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "captured.json"
