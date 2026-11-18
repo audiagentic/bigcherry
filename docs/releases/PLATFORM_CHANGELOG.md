@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.47.0...bc-platform-1.48.0) (2026-11-18)
+
+
+### New and changed
+
+* **host:** preserve reproducible GFXOFF kernel patch and rebuild recipe ([#1090](https://github.com/audiagentic/bigcherry/issues/1090)) ([d1b2d16](https://github.com/audiagentic/bigcherry/commit/d1b2d16b2030c58881ae382b9f605d9be0588605))
+
 ## [1.47.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.46.0...bc-platform-1.47.0) (2026-11-18)
 
 
