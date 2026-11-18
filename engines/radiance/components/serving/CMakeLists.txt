@@ -84,7 +84,7 @@ target_include_directories(bc_serving_v2_p1_producer PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
 target_compile_features(bc_serving_v2_p1_producer PUBLIC cxx_std_20)
 
-add_executable(bc-serve main.cpp)
+add_executable(bc-serve main.cpp release_runtime.cpp)
 target_link_libraries(bc-serve PRIVATE bc_serving_v2_p1_producer)
 set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
@@ -94,6 +94,9 @@ install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 # No Python, shell, Git or GPU service is linked into this executable.
 find_package(ZLIB REQUIRED)
 add_library(bc_release_core STATIC release_install.cpp release_archive.cpp sha256.cpp)
+# bc-serve and bc-release share the same receipt/digest verifier; no second
+# runtime implementation or Python/batch wrapper is involved.
+target_link_libraries(bc-serve PRIVATE bc_release_core)
 target_compile_features(bc_release_core PUBLIC cxx_std_20)
 target_link_libraries(bc_release_core PUBLIC ZLIB::ZLIB)
 target_include_directories(bc_release_core PUBLIC
@@ -108,8 +111,14 @@ if(BUILD_TESTING)
   add_executable(bc_release_install_test EXCLUDE_FROM_ALL release_install_test.cpp)
   target_link_libraries(bc_release_install_test PRIVATE bc_release_core)
   target_compile_definitions(bc_release_install_test PRIVATE
+    BC_SERVE_EXE="$<TARGET_FILE:bc-serve>"
+    BC_RELEASE_EXE="$<TARGET_FILE:bc-release>"
+    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
+    BC_SESSION_STORED_TEST="$<TARGET_FILE:bc_session_stored_test>")
+  target_compile_definitions(bc_release_install_test PRIVATE
     BC_RELEASE_TEST_ROOT="${CMAKE_CURRENT_BINARY_DIR}"
-    BC_RELEASE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/release_testdata")
+    BC_RELEASE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/release_testdata"
+    BC_RELEASE_BINARY_PATH="$<TARGET_FILE:bc-release>")
   add_test(NAME bc_release_install_test COMMAND bc_release_install_test)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   # A build target so the component test gate can declare it; building it runs the tripwire.
@@ -137,6 +146,7 @@ if(BUILD_TESTING)
   add_executable(bc_fake_engine EXCLUDE_FROM_ALL session_fake_engine.cpp)
   target_include_directories(bc_fake_engine PRIVATE "${RADIANCE_SRC}/vendor")
   target_compile_features(bc_fake_engine PRIVATE cxx_std_20)
+  add_dependencies(bc_release_install_test bc-serve bc-release bc_fake_engine)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
@@ -170,13 +180,14 @@ if(BUILD_TESTING)
     BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_session_stored_test COMMAND bc_session_stored_test)
+  add_dependencies(bc_release_install_test bc_session_stored_test)
   # RSC02 S15: a real utility target for the no-card, native-and-legacy
   # fake-engine rehearsal. It depends on actual component binaries.
   add_custom_target(bc_s15_dry_run_test
     DEPENDS bc_session_stored_test bc_fake_engine)
   add_test(NAME bc_s15_dry_run_test
     COMMAND ${Python3_EXECUTABLE}
-      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/lab/radiance/rsc02_s15_projection.py"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/lab/radiance/rsc02_s15_ab.py"
       dry-run --native-test "$<TARGET_FILE:bc_session_stored_test>")
 
   add_executable(bc_stored_manifest_cache_test EXCLUDE_FROM_ALL stored_manifest_cache_test.cpp)

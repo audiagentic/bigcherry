@@ -1,0 +1,15 @@
+  FAIL  bf16_i8: the layout's rows and no other take it -- attn_prefill_h256_gqa12_b16i8 takes bf16_i8; attn_prefill_h256_gqa12_b16i8 does not pin head_dim 256, gqa 6, block 16, no window; attn_decode_h256_gqa12_b16i8 takes bf16_i8; attn_decode_h256_gqa12_b16i8 does not pin head_dim 256, gqa 6, block 16, no window; attn_decode_gq_h256_gqa12_b16i8 takes bf16_i8; attn_prefill_h256_gqa6_bs4_b16i8 takes bf16_i8; attn_prefill_h256_gqa6_bs4_b16i8 does not pin head_dim 256, gqa 6, block 16, no window; attn_decode_h256_gqa6_bs4_b16i8 takes bf16_i8; attn_decode_h256_gqa6_bs4_b16i8 does not pin head_dim 256, gqa 6, block 16, no window; attn_decode_gq_h256_gqa6_bs4_b16i8 takes bf16_i8
+  (kv_store_b16i8, a 784-byte row: expecting rc 0)
+  ok    kv_store_b16i8
+  (kv_store_b16i8, a 784-byte row, k_scale: expecting rc -12)
+  ok    kv_store_b16i8
+  (kv_store_b16i8, a 784-byte row, v_scale: expecting rc -12)
+  ok    kv_store_b16i8
+  (kv_store_b16i8, a 768-byte row: expecting rc -1)
+  ok    kv_store_b16i8
+  (kv_store_b16f8, a 784-byte row: expecting rc -1)
+  ok    kv_store_b16f8
+  ok    attn_prefill_h256_gqa6_b16i8 refuses a 768-byte token row
+  ok    attn_decode_h256_gqa6_b16i8 refuses a 768-byte token row
+  ok    attn_prefill_h256_gqa6_b16f8 refuses a 784-byte token row
+  ok    attn_decode_h256_gqa6_b16f8 refuses a 784-byte token row

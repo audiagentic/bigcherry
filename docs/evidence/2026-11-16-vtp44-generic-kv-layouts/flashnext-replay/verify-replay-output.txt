@@ -1,0 +1,6 @@
+arm                                 counts==record  KLD replay  KLD without  top1 replay
+bf16 chunk 64 (reference config)             48/48     0.00000      0.00000       1.0000
+bf16 chunk 128                               48/48     0.00762      0.03720       0.9570
+bf16_i8                                      48/48     0.00738      0.03815       0.9563
+bf16_fp8                                     48/48     0.00844      0.03798       0.9522
+fp8                                          48/48     0.00971      0.04022       0.9486

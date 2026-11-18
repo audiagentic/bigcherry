@@ -1,0 +1,21 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261118_010053_added-a-diagnostic-that-replay_6125",
+  "files": [
+    "engines/radiance/patches/rad0045_expert_route_replay/patch.py",
+    "engines/radiance/patches/rad0045_expert_route_replay/patch.toml",
+    "engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md",
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/recipes.toml",
+    "tools/tests/patch/test_radiance_rad0045.py",
+    "docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-REPLAY.md",
+    "docs/planning/active/run-dense-27b-virtual-tp/VTP44.md"
+  ],
+  "plan-item-ids": [
+    "VTP44"
+  ],
+  "status": "unreleased",
+  "technical-summary": "rad0045 (diagnostic, untested, experiment expert-route-replay): --expert-route-replay FILE replays a route recorded by rad0044. New op router_topk_replay in libr4d (router_topk's row function with the selection skipped; weights from the run's own logits over the forced experts), rad_route_replay_load ABI call, per-rank device table, document-start lookup, fail-closed record and pass validation, tape off and fused routers skipped while replaying; manifest field engine.tuning.expert_route_replay (contract amendment 22). Verified on Flash-Next TP2: replayed expert counts equal the record's in all 48 layers; self-replay KLD 0; with the route fixed KLD vs bf16 is chunk-128 0.0076, bf16_i8 0.0074, bf16_fp8 0.0084, fp8 0.0097 (0.037-0.040 without replay).",
+  "timestamp-utc": "2026-11-18T01:00:53.039361Z",
+  "user-summary-candidate": "Added a diagnostic that replays a recorded expert route, so KV cache quality on Flash-Next can finally be compared without routing noise."
+}

@@ -1,0 +1,8 @@
+rec-a {'layers': 48, 'routed': 48, 'top_k': 10, 'n_expert': 512, 'rows': 4163, 'tp': 2, 'max_tok': 64, 'complete': True, 'why': '', 'doc_starts': [0, 1951]}
+  layers whose recorded histogram != stats counts: [] | ids in range True | duplicate ids in a layer-0 row 0 | tokens 4163
+rec-b {'layers': 48, 'routed': 48, 'top_k': 10, 'n_expert': 512, 'rows': 4163, 'tp': 2, 'max_tok': 64, 'complete': True, 'why': '', 'doc_starts': [0, 1951]}
+  layers whose recorded histogram != stats counts: [] | ids in range True | duplicate ids in a layer-0 row 0 | tokens 4163
+rec-mbt128 {'layers': 48, 'routed': 48, 'top_k': 10, 'n_expert': 512, 'rows': 4163, 'tp': 2, 'max_tok': 128, 'complete': True, 'why': '', 'doc_starts': [0, 1951]}
+  layers whose recorded histogram != stats counts: [] | ids in range True | duplicate ids in a layer-0 row 0 | tokens 4163
+control pair identical: True
+chunk-128 vs chunk-64: token-layer rows with a different expert set: 83638 of 199824 (41.86%)

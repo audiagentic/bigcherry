@@ -1,0 +1,23 @@
+== neg-olddigest
+E[0] --expert-route-replay: <dev-root>/tmp/bigcherry/vtp44-fn/route-ref.route: the record has no document digests for its documents (record again with this build)
+I   --expert-route-replay              <dev-root>/tmp/bigcherry/vtp44-fn/route-ref.route  [command line]
+== neg-digest
+I   --expert-route-replay              <dev-root>/tmp/bigcherry/vtp44-fn/final/bad-digest.route  [command line]
+E --expert-route-replay: rank 0: the run's documents are not the recorded ones (their token digests differ)
+== neg-trunc
+E[0] --expert-route-replay: <dev-root>/tmp/bigcherry/vtp44-fn/final/truncated.route: the file's size is not its header's
+I   --expert-route-replay              <dev-root>/tmp/bigcherry/vtp44-fn/final/truncated.route  [command line]
+== neg-incomplete
+E[0] --expert-route-replay: <dev-root>/tmp/bigcherry/vtp44-fn/final/incomplete.route: the record is incomplete
+I   --expert-route-replay              <dev-root>/tmp/bigcherry/vtp44-fn/final/incomplete.route  [command line]
+== neg-wrongref
+I   --expert-route-replay              <dev-root>/tmp/bigcherry/vtp44-fn/final/rec2.route  [command line]
+E expert route replay: a document is longer than the record's
+E expert route replay: a document is longer than the record's
+== neg-both
+E[0] --expert-route-replay and --expert-route-record are exclusive
+I   --expert-route-record              <dev-root>/tmp/bigcherry/vtp44-fn/final/neg-both.route  [command line]
+I   --expert-route-replay              <dev-root>/tmp/bigcherry/vtp44-fn/final/rec2.route  [command line]
+== neg-seqs
+E[0] --expert-route-replay needs --max-num-seqs 1: rows are replayed in token order
+I   --expert-route-replay              <dev-root>/tmp/bigcherry/vtp44-fn/final/rec2.route  [command line]

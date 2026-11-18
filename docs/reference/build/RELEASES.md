@@ -136,6 +136,8 @@ The isolated install root contains immutable `releases/<tag>/` prefixes,
 their native `install.json` receipts, and an atomically replaced
 `index.json` with exactly **current** and **previous** entries. Any
 corrupt current or previous prefix prevents switching or rollback.
+Native `install` refuses an older semantic version (or an equal numeric version with a distinct exact tag) before extraction unless the operator explicitly passes `--allow-downgrade true`. The installer compares decimal version components numerically, not lexically. Authorized installs still retain the displaced verified current as `previous`; `rollback` is an independently explicit verified switch that needs no downgrade flag.
+
 Interrupted `.staging-*` trees cannot become a current release or be
 implicitly reused. The native error families distinguish invalid input
 (exit 2), digest failure (3), identity mismatch (4), unsafe archive (5),
@@ -143,6 +145,25 @@ corrupt installation (6), conflict (7), I/O (8), and SDK mismatch (9).
 Rollback only changes the verified index; it **does not start** an engine,
 assume hardware health or bypass `bc-serve` live guards. RSC02 step 6 and
 the RSC04 acceptance remain prerequisite to the production cutover.
+
+**Installed-tag startup:** run `releases/<tag>/radiance_home/bin/bc-serve
+serve CONFIG --run-dir DIR` (or `start CONFIG --run-dir DIR`) from the
+**current** verified release. The running native executable derives its
+installation prefix from its own canonical path, verifies the native
+`bc-release` current/previous index, tag-bound receipts, matched SDK and
+**every installed payload digest** before it plans or spawns children, and
+rejects absent metadata or a retained but non-current tag. `start` and its
+detached `serve` owner independently recheck the same identity. If neither
+`--configs` nor `BIGCHERRY_CONFIGS` is supplied, named configs come from
+that verified prefix's `configs/`; the engine binary and runtime home also
+default to this exact prefix. Explicit config arguments and environment
+retain their precedence, but cannot bypass release verification or substitute
+a different build's engine/home. A development binary not inside a verified
+release requires explicit configs. The native verifier is linked directly
+into `bc-serve`, not reimplemented or launched through Python/shell.
+The card-free install test also runs the real detached session owner against
+the fake engine **installed by `bc-release`**, while actual GPU acceptance
+remains gated on leased S15.
 
 The declared native `bc_release_install_test` CTest builds freshly versioned
 card-free archives and exercises install, verify, switch, rollback, tampering

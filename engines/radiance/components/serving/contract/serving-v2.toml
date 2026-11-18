@@ -2328,6 +2328,15 @@ min_length = 1
 doc = "Engine flag `--expert-route-record` (BigCherry rad0044; amendment 21). Value text as the flag takes it (FILE): write the experts each token's router chose, per routed layer, at shutdown."
 
 [[field]]
+path = "/spec/processes/engine/tuning/expert_route_replay"
+optional = true
+radiance_option = "--expert-route-replay"
+radiance_config = "Config.expert_route_replay"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-route-replay` (BigCherry rad0045; amendment 22). Value text as the flag takes it (FILE): take each token's experts from a route recorded by `expert_route_record` instead of the router's own choice."
+
+[[field]]
 path = "/spec/processes/engine/tuning/live"
 optional = true
 radiance_option = "--live"

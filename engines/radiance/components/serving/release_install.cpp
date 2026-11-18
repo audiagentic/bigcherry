@@ -129,6 +129,25 @@ bool valid_tag(const std::string& tag) {
     return std::regex_match(tag, pattern);
 }
 
+// Compare numeric components without overflow. Numeric aliases still need consent.
+int compare_versions(const std::string& candidate, const std::string& current) {
+    static const std::regex pattern(R"(^bc-radiance-([0-9]+)\.([0-9]+)\.([0-9]+)$)");
+    std::smatch a, b;
+    require(std::regex_match(candidate, a, pattern) && std::regex_match(current, b, pattern),
+            ErrorCode::invalid_input, "invalid version for release order");
+    for (int i = 1; i <= 3; ++i) {
+        std::string x = a[i].str(), y = b[i].str();
+        const auto xi = x.find_first_not_of('0'), yi = y.find_first_not_of('0');
+        x.erase(0, xi == std::string::npos ? x.size() - 1 : xi);
+        y.erase(0, yi == std::string::npos ? y.size() - 1 : yi);
+        if (x.size() != y.size())
+            return x.size() < y.size() ? -1 : 1;
+        if (x != y)
+            return x < y ? -1 : 1;
+    }
+    return 0;
+}
+
 void validate_store_tag(const std::string& tag) {
     require(valid_tag(tag), ErrorCode::invalid_install, "invalid tag in release state");
 }
@@ -263,6 +282,13 @@ void install(const InstallRequest& request) {
     }
     ensure_directory(root / "releases");
     const auto before = checked_index(root, request.sdk);
+    // Refuse unauthorized version switches before extracting a candidate.
+    if (before["current"].is_string()) {
+        const auto active = before["current"].get<std::string>();
+        if (active != request.tag && compare_versions(request.tag, active) <= 0)
+            require(request.allow_downgrade, ErrorCode::conflict,
+                    "downgrade or same-version identity change requires --allow-downgrade true");
+    }
     const auto final = root / "releases" / request.tag;
     if (fs::exists(final) || fs::is_symlink(fs::symlink_status(final))) {
         const auto existing = verify_one(root, request.sdk, request.tag);

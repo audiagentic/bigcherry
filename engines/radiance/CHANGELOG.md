@@ -1,5 +1,25 @@
 # Changelog
 
+## [1170.32.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.0...bc-radiance-1170.32.1) (2026-11-18)
+
+
+### Fixes
+
+* **release:** refuse unflagged engine downgrades ([#1122](https://github.com/audiagentic/bigcherry/issues/1122)) ([1ec2465](https://github.com/audiagentic/bigcherry/commit/1ec24652bc72019cf794095092171facbb47e88e))
+* **serving:** verify installed release before native startup ([#1121](https://github.com/audiagentic/bigcherry/issues/1121)) ([b305cdd](https://github.com/audiagentic/bigcherry/commit/b305cdd35c722423e136144890d1abeeb44f1bfa))
+
+## [1170.32.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.31.0...bc-radiance-1170.32.0) (2026-11-18)
+
+
+### New and changed
+
+* **radiance:** enforce declared component coupling on pin bumps ([#1114](https://github.com/audiagentic/bigcherry/issues/1114)) ([4012cbe](https://github.com/audiagentic/bigcherry/commit/4012cbe32c832cc6388e883a68a6e61805948499))
+
+
+### Fixes
+
+* **serving:** preflight calibration policy and reconcile S10 provenance ([#1118](https://github.com/audiagentic/bigcherry/issues/1118)) ([ce7b591](https://github.com/audiagentic/bigcherry/commit/ce7b5913ddb8f89d063a3ed45262aa31df4c0949))
+
 ## [1170.31.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.30.0...bc-radiance-1170.31.0) (2026-11-18)
 
 

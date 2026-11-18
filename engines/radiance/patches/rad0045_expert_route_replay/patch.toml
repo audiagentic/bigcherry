@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0045_expert_route_replay"
+order = 45
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP44"]
+requires = ["rad0044_expert_route_record"]
+conflicts = []
+tags = ["moe-routing"]

@@ -1,0 +1,31 @@
+| layout | KV type | TTFT 8k (s) | decode, 1 stream (chunks/s) | needle probes |
+|---|---|---|---|---|
+| flashnext-2xtx | fp8 | 3.82 | 29.7 | 2/2 |
+| flashnext-2xtx | bf16 | 3.91 | 28.1 | 2/2 |
+| flashnext-2xtx | bf16_fp8 | 3.52 | 29.2 | 2/2 |
+| flashnext-2xtx | bf16_i8 | 3.66 | 28.7 | 2/2 |
+| flashnext-2xtx-combine | fp8 | 3.37 | 29.8 | 2/2 |
+| flashnext-2xtx-combine | bf16 | 3.45 | 29.0 | 2/2 |
+| flashnext-2xtx-combine | bf16_fp8 | 3.37 | 28.5 | 1/2 |
+| flashnext-2xtx-combine | bf16_i8 | 3.39 | 28.6 | 2/2 |
+| flashnext-2xtx-rdna2-head | fp8 | 4.18 | 26.9 | 1/2 |
+| flashnext-2xtx-rdna2-head | bf16 | 4.29 | 27.3 | 2/2 |
+| flashnext-2xtx-rdna2-head | bf16_fp8 | 4.36 | 28.5 | 2/2 |
+| flashnext-2xtx-rdna2-head | bf16_i8 | 9.16 | 23.1 | 2/2 |
+| flashnext-2xtx-rdna2-tail | fp8 | 3.86 | 29.8 | 2/2 |
+| flashnext-2xtx-rdna2-tail | bf16 | 10.00 | 23.0 | 2/2 |
+| flashnext-2xtx-rdna2-tail | bf16_fp8 | 7.40 | 16.5 | 2/2 |
+| flashnext-2xtx-rdna2-tail | bf16_i8 | 3.82 | 28.1 | 2/2 |
+| flashnext-2xtx-rdna2-tail-combine | fp8 | 3.89 | 28.0 | 2/2 |
+| flashnext-2xtx-rdna2-tail-combine | bf16 | 8.75 | 12.0 | 2/2 |
+| flashnext-2xtx-rdna2-tail-combine | bf16_fp8 | 3.45 | 28.4 | 2/2 |
+| flashnext-2xtx-rdna2-tail-combine | bf16_i8 | 3.38 | 28.0 | 2/2 |
+| flashnext-4gpu | fp8 | 3.23 | 29.5 | 2/2 |
+| flashnext-4gpu | fp8@seqs4 | 3.42 | 29.2 | 2/2 |
+| flashnext-4gpu | bf16@seqs4 | 3.33 | 28.7 | 2/2 |
+| flashnext-4gpu | bf16_fp8@seqs4 | 3.38 | 29.5 | 2/2 |
+| flashnext-4gpu | bf16_i8@seqs4 | 3.44 | 26.1 | 2/2 |
+| flashnext-tp2xtx | fp8 | 4.64 | 25.2 | 0/2 |
+| flashnext-tp2xtx | bf16 | 4.46 | 24.3 | 2/2 |
+| flashnext-tp2xtx | bf16_fp8 | 7.15 | 24.1 | 2/2 |
+| flashnext-tp2xtx | bf16_i8 | 4.26 | 25.6 | 2/2 |

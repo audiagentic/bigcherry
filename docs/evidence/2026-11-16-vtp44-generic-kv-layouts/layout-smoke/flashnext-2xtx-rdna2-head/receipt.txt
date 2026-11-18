@@ -1,0 +1,14 @@
+start_utc 2026-11-17T23:53:53Z layout flashnext-2xtx-rdna2-head build <work-root>/builds/b893f5876bb7781648f3dc09390e201c/e5a91ea014057f2e28efee1e6db10b22
+23:58:00 fp8 start exit 0 247s
+23:58:20 fp8 client exit 0
+23:58:23 fp8 stop exit 0
+00:02:38 bf16_fp8 start exit 0 255s
+00:02:56 bf16_fp8 client exit 0
+00:02:59 bf16_fp8 stop exit 0
+00:06:39 bf16_i8 start exit 0 220s
+00:07:05 bf16_i8 client exit 0
+00:07:07 bf16_i8 stop exit 0
+00:10:50 bf16 start exit 0 223s
+00:11:09 bf16 client exit 0
+00:11:11 bf16 stop exit 0
+end_utc 2026-11-18T00:11:11Z

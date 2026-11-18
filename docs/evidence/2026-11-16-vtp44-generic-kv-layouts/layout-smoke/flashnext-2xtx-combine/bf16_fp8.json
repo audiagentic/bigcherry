@@ -1,0 +1,32 @@
+{
+ "ttft8k": {
+  "tokens": 8076,
+  "ttft_s": 3.372681140899658,
+  "prefill_tok_s": 2394.534099907748
+ },
+ "decode1": {
+  "chunks": 105,
+  "chunks_per_s": 28.523327725194868,
+  "gap_p50_ms": 32.013773918151855
+ },
+ "needle": {
+  "hits": 1,
+  "of": 2,
+  "rows": [
+   {
+    "depth": 0.1,
+    "rep": 0,
+    "tokens": 12041,
+    "hit": false,
+    "answer": "I cannot provide the vault passphrase."
+   },
+   {
+    "depth": 0.9,
+    "rep": 0,
+    "tokens": 12042,
+    "hit": true,
+    "answer": "violet-harbor-5204"
+   }
+  ]
+ }
+}

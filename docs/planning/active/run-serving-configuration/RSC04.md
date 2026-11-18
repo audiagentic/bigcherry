@@ -40,7 +40,7 @@ The direct-hit query is `git grep -n -e launch-flashnext-best.sh -e plan-check.s
 | `burst-idle.sh`, `burst-trace.sh` | Native named helper config or recorded `--set` variant, `serve/start/stop --run-dir`; keep trace/client tooling. | **Yes** pending per-run mode/trace parity. |
 | `flashnext-parity.sh` | `bc-serve serve flashnext-4gpu --run-dir DIR`, with config-driven histogram period, semantic projection and matching benchmark client. Lease wraps foreground owner for its whole lifetime. | **Yes** pending short A/B/hardware parity. |
 | `flashnext-probe.sh` | `bc-serve serve CONFIG --run-dir DIR --engine-binary ...`, typed tracing and log-path receipts, `stop --run-dir`; no implicit inherited R3_* start configuration. | **Yes**: tracing and log-discovery parity. |
-| `heat-placement/rhp01-coverage.sh` | `serve CONFIG` with config/recorded handoff heat, histogram and live-policy state; no launcher `--heat` alias. | **Yes** pending real heat producer/consumer acceptance. |
+| `heat-placement/rhp01-coverage.sh` | **ARCHIVED**, not migrated: it needs the routing_evidence lab experiment that the native observe-only mode correctly refuses; no new native lab mode. Immutable `archive/lab-rhp01-coverage`. | **No**: intentionally retired under owner rescope 2026-11-18. |
 | `pwr01-baseline.sh`, `pwr03-idle-diag.sh` | Native `--power-profile NAME` and `--allow-power-apply` only with owner-held GPU lease; native gfxoff floor/loaded-idle receipts; keep samplers. | **Yes** pending measured power/gfxoff A/B. |
 | `rad20-burst-profile.sh`, `rad20-profile.sh`, `rad20-queue-probe.sh` | Native `serve CONFIG` plus **explicit, typed** profiling/child-wrapper capability if needed; `HELPER_WRAP`, `HELPER0_WRAP` and arbitrary `R3_*` environment are not valid config transports. | **Yes**: must not migrate by forwarding untrusted inherited environment. |
 | `rad20-helper-kill.sh` | Native `serve CONFIG`; kill a test-owned helper, verify owner stops the set and restores power; `status/stop --run-dir`. | **Yes** until session-fault card-free test and hardware parity. |
@@ -71,6 +71,10 @@ The direct-hit query is `git grep -n -e launch-flashnext-best.sh -e plan-check.s
 | MTP replay, live policy report, gfxoff floor/loaded idle | Native owner guard/power hooks exist; exact lab receipts and log discovery still require parity. | Real producer/consumer fixtures, injected fault cases, S15. |
 | HELPER_WRAP/trace/profiler env hooks | No typed native replacement. | Explicit native laboratory interface or retire the experiment with evidence; no inherited environment shim. |
 
+## Code Samples & Guidance
+
+
+
 ## Files
 
 `docs/planning/active/run-serving-configuration/{RSC04,RSC02,RSC11,RSC12}.md`; native serving component, RSC12 configs, lab caller/test tree. RSP01 release files are listed only as cross-lane dependencies.
@@ -83,6 +87,14 @@ The direct-hit query is `git grep -n -e launch-flashnext-best.sh -e plan-check.s
 - S15: one build, same-session A/B with same semantic launch projection, dense + helper, RHP12 ABBA four clean pairs, safety/canary/power/quality/performance/release gates. Proof required before S16 deletion.
 - S16 deletion proof: `git grep` has zero active runtime and test callers, not merely zero string mentions; allow historical evidence references explicitly.
 
+## Effort & Risk
+
+
+
+## Standards
+
+
+
 ## Acceptance Criteria
 
 The 'Derived, not hand-picked' literal inventory is empty; every active caller uses native `bc-serve`; no Python, bash launcher or plan-check in the engine release; S15 and RSP01 proven; then and only then remove the launch surfaces and obsolete aliases.
@@ -90,6 +102,16 @@ The 'Derived, not hand-picked' literal inventory is empty; every active caller u
 ## Notes
 
 Source: GPT configuration assessment 2026-11-02; RSC02 step 6 caller audit on 2026-11-18. No hardware acceptance has been executed. No source is deleted in this inventory PR.
+
+Source: GPT configuration assessment 2026-11-02; RSC02 step 6 caller audit on 2026-11-18. No hardware acceptance has been executed. No source is deleted in this inventory PR.
+
+Owner rescope 2026-11-18 (engine first): the core production runtime path comes first; tooling only if the engine needs it at runtime; tests only if absolutely needed; Python that is not part of the production engine runtime (lab scripts, campaign planner radiance_plan.py, gfxoff.py and host-check diagnostics, repository tooling, remaining tests) stays. No new lab-only native modes, no profiling/child-wrapper capability, no migration of launcher-text tests. The inventory table above is therefore a ceiling: rows marked lab-only are resolved by classification below, not by native replacements.
+
+Production parity inventory (engine-first lane, PR #1118 and #1119 merged or open): build/source selection, card/layout/resourcing, SDK check (native sdk_check.cpp; the refusal currently skips silently when release metadata is missing: add a negative test before removing sdk-check.sh), plan-check.sh behaviours (measuring start, exit-10 plan-cache miss, exit-11 remeasure, strict v2 writer, owner map, cache validation: all native), processes (ordered helper-first roles, role/manifest binding, shared memory, health/watch, PID-start-time ownership), runtime admission (health, canary, MTP replay, durable power journal/receipt, restore after children exit, gfxoff floor and loaded idle), handoff (heat file, histogram, live policy, calibration key, strict S10 provenance), stop/status/stored manifest. Only live hardware parity is open for all of these (S15).
+
+Critical gap for the installed engine: the release archive holds configs/flashnext.toml, configs/qwen27b.toml, bin/radiance, radiance_home/bin/bc-serve and bc-release, but native config_sources() uses only an explicit --configs or BIGCHERRY_CONFIGS: `serve/start CONFIG` from an installed PREFIX does not auto-select PREFIX/configs, and `bc-serve start` does not itself re-verify the release. Close both before the Python installer is deleted.
+
+S16 classification: MIGRATE only standing-procedure scripts (flashnext-parity.sh for the bump parity gate, pwr01-baseline.sh); ARCHIVE rhp01-coverage.sh at archive/lab-rhp01-coverage (requires the forbidden routing_evidence lab experiment, do not add a native mode) to `bc-serve serve CONFIG --run-dir`; ARCHIVE to immutable tags archive/lab-<name> and delete from the tree: burst-idle.sh, burst-trace.sh, flashnext-probe.sh, pwr03-idle-diag.sh, rad20-burst-profile.sh, rad20-profile.sh, rad20-queue-probe.sh, rad20-helper-kill.sh, rhp20-forced-move.py (each with an immutable-tag historical TOOL_DISPOSITION row); DELETE after S15 and RSP01: launch-flashnext-best.sh, lib/plan-check.sh, lib/sdk-check.sh, serving/supervisor.py, runtime_adapters.py, activation.py, cli/serve.py, serve_v2.py and serving-only Python modules once callers are gone, tools/bigcherry/release/install.py after the installed-tag start gate. Launcher-text tests are deleted with their subjects (test_launch_flashnext_cleanup, test_launch_flashnext_release, test_plan_check_launcher, test_helper_profile_parity, test_rhp16_calibrate, test_rhp18_policy_preflight, test_rhp19_calibration_watchdog, test_mtp_replay_guard; test_runtime_sdk_check after the native SDK negative test): port only an assertion that guards a production behaviour with no native test. Direct blockers from git grep: release/install.py references the launcher; tests/release/test_release_install.py checks the launcher command; tests/campaign/test_rsc03_resources.py reads launcher text. Deletion proof: git grep shows zero executable references. DO NOT MERGE the deletion until the leased S15 A/B (tools/lab/radiance/rsc02_s15_ab.py, runbook docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md) passes on hardware for dense and helper configurations.
 
 ## Change Log
 
@@ -100,3 +122,4 @@ Source: GPT configuration assessment 2026-11-02; RSC02 step 6 caller audit on 20
 
 - chg_20261102_005338_planning-one-serve-command_5259
 - 2026-11-02T00:53:56.311686+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-18T04:42:21.572347+00:00 (updated-by): Updated: section:notes

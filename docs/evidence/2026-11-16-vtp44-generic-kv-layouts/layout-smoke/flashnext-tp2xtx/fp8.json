@@ -1,0 +1,32 @@
+{
+ "ttft8k": {
+  "tokens": 8076,
+  "ttft_s": 4.63893723487854,
+  "prefill_tok_s": 1740.9159881016265
+ },
+ "decode1": {
+  "chunks": 80,
+  "chunks_per_s": 25.188216324312314,
+  "gap_p50_ms": 31.951189041137695
+ },
+ "needle": {
+  "hits": 0,
+  "of": 2,
+  "rows": [
+   {
+    "depth": 0.1,
+    "rep": 0,
+    "tokens": 12041,
+    "hit": false,
+    "answer": "I cannot provide the vault passphrase."
+   },
+   {
+    "depth": 0.9,
+    "rep": 0,
+    "tokens": 12042,
+    "hit": false,
+    "answer": "I cannot provide the vault passphrase. The text you provided"
+   }
+  ]
+ }
+}
