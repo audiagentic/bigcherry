@@ -53,7 +53,10 @@ class ComponentCouplingTests(unittest.TestCase):
         bridge = (PATCH_ROOT / "rad0009_serving_manifest/patch.py").read_text()
         self.assertIn("kFields", bridge)
         self.assertIn("kEnvBindings", bridge)
-        self.assertIn("radiance_option", bridge)
+        self.assertIn("project_native_options(doc, v2::kFields, known)", bridge)
+        self.assertIn("projected.argv()", bridge)
+        projection = (serving.root / "v2/native_option_projection.h").read_text()
+        self.assertIn("field.radiance_option", projection)
         self.assertIn("bc_serving_engine_argv", bridge)
 
 
