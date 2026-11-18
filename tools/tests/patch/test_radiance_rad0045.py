@@ -20,7 +20,7 @@ from bigcherry.patcher import apply_all  # noqa: E402
 PATCHES = REPO / "engines/radiance/patches"
 PIN = REPO / "engines/radiance/tests/fixtures/19d4e8f"
 FILES = ("core/runtime/ctx.h", "core/runtime/ctx.cpp", "core/engine.cpp")
-BEGIN_ANCHOR = "    batch_       = b;\n"
+BEGIN_ANCHOR = "    step_fail_.clear();\n"
 
 
 def _load(name: str):
@@ -64,7 +64,7 @@ def test_applies_adds_lines_only_and_is_idempotent():
                        if l.startswith("-") and not l.startswith("---")]
             assert len(removed) <= 1, (rel, removed)   # only the tape condition is changed in place
         ctx = after["core/runtime/ctx.cpp"]
-        assert "route_replay_begin(); /* BC_VTP44_ROUTE_REPLAY_BEGIN" in ctx
+        assert "const int rp = route_replay_begin();" in ctx and "BC_VTP44_ROUTE_REPLAY_PASS_END" in ctx
         assert "&& route_rec_cap_ == 0 && !route_rp_;" in ctx
         # Every deviation fails the run; the pass is looked up through document starts, so the chunk size cannot matter.
         for text in ("only one-sequence prefill passes without drafting can be replayed",
@@ -74,11 +74,17 @@ def test_applies_adds_lines_only_and_is_idempotent():
                      "the record's routed layers are not this model's"):
             assert text in ctx, text
         assert "step_status_ = rc;" in ctx and "route_rp_used_ += n;" in ctx
+        # Fail closed: a layer never asked for its rows fails the pass; the admission error fails the step; a load before
+        # admission is a failure, not "not replaying".
+        assert "a routed layer did not take the recorded experts for exactly the pass's rows" in ctx
+        assert "a layer asked for recorded experts before its pass was admitted" in ctx
+        assert ctx.index("a layer asked for recorded experts before its pass was admitted") < ctx.index("return 0;   /* an MTP head's layer */")
         header = after["core/runtime/ctx.h"]
         assert header.index("struct RouteReplay") < header.index("struct CtxDesc")
         assert "const RouteReplay* route_replay = nullptr;" in header
         engine = after["core/engine.cpp"]
         assert "replayed %lld rows, the record has %lld" in engine
+        assert "their token digests differ" in engine
 
         snapshot = after
         second = apply_all(ps, root)
@@ -95,7 +101,7 @@ def test_anchor_drift_and_duplicate_fail_closed():
             _fixture(root)
             src = _with_record(root)["core/runtime/ctx.cpp"]
             assert src.count(BEGIN_ANCHOR) == 1
-            bad = src.replace(BEGIN_ANCHOR, BEGIN_ANCHOR.replace("b;", "b2;") if how == "drift" else BEGIN_ANCHOR * 2)
+            bad = src.replace(BEGIN_ANCHOR, BEGIN_ANCHOR.replace("clear", "reset") if how == "drift" else BEGIN_ANCHOR * 2)
             (root / "core/runtime/ctx.cpp").write_text(bad, encoding="utf-8")
             result = apply_all(ps, root)
             assert any(not p.ok for p in result), (how, result)

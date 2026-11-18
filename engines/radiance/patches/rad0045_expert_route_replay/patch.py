@@ -9,10 +9,13 @@ choices (FLASHNEXT-ROUTING.md); replay makes the measured run take the reference
   the row, and the weights come from this run's own logits over that set, by the same expression. An id outside
   [0, n_expert) is taken as expert 0 (the host validates the record, so only a generic launch reaches it).
 - runtime: `rad_route_replay_load` (abi, wrapper, test fake). The engine reads and checks the record against the model at
-  start (routed layers, n_expert, rows, documents, id range) and every rank's context keeps it as a device table. Each pass
-  must be one sequence's prefill without drafting whose positions continue or restart at 0 for the next document; its rows
-  are looked up through the document starts, so chunk size cannot matter. Anything else, or a run that does not consume
-  the whole record, fails the run. Recorded passes (the step tape) are off while replaying.
+  start (header strictly parsed, routed layers, n_expert, rows, documents and their token digests, id range, file size,
+  at most 1 GiB) and every rank's context keeps it as a device table. Each pass must be one sequence's prefill without
+  drafting whose positions continue or restart at 0 for the next document; its rows are looked up through the document
+  starts, so chunk size cannot matter. After every pass each routed layer must have been asked for exactly the pass's rows
+  (an architecture without the hook fails the pass instead of selecting its own experts). Anything else, a run that does
+  not consume the whole record, or documents whose token digests differ from the recorded ones, fails the run. Recorded
+  passes (the step tape) are off while replaying.
 - block (arch/common/rad_block_moe_fp8.h): declares `router_topk_replay` and a persistent step-tall forced-ids buffer when a
   plugin offers the op; on a replayed pass it loads the pass's rows, skips the fused routers and issues the replay op. With
   no such op the core fails the step.
@@ -189,7 +192,7 @@ R4D_SHAPES = FilePatch(path="libr4d/r4d_shapes.cpp", language="none", descriptio
         '    const int64_t M  = pi(p, n_p, "M");\n'
         '    const int64_t ne = pi(p, n_p, "n_expert");\n'
         '    const int64_t k  = pi(p, n_p, "top_k");\n'
-        '    if (ne <= 0 || ne > 256 || k <= 0 || k > ne) return RAD_E_UNSUPPORTED;\n'
+        '    if (ne <= 0 || ne > 512 || k <= 0 || k > ne || k > 32) return RAD_E_UNSUPPORTED;\n'
         '    const uint32_t D = dt_act(p, n_p, "dtype");\n'
         '    const RadOpdDesc l[] = {\n'
         '        opd(D, M, ne),\n'
@@ -284,6 +287,7 @@ CTX_H = FilePatch(path="core/runtime/ctx.h", language="none", description="VTP44
         "    std::vector<int>     layers;                          /* the routed trunk layers, ascending */\n"
         "    std::vector<int64_t> doc_starts;                      /* the first row of each recorded document */\n"
         "    std::vector<std::vector<int32_t>> ids;                /* [layers.size()][rows * top_k] */\n"
+        "    std::vector<uint64_t> doc_hashes;                     /* each document's FNV-1a 64 over its token ids */\n"
         "};\n\n",
         guard="BC_VTP44_ROUTE_REPLAY_TABLE",
     ),
@@ -298,7 +302,9 @@ CTX_H = FilePatch(path="core/runtime/ctx.h", language="none", description="VTP44
         "    int  route_replay_load(int layer, rad_buf dst, int64_t r0, int64_t rows, int64_t top_k);\n"
         "    const std::string& route_replay_problem() const { return route_rp_why_; }\n"
         "    int64_t route_replay_rows_used() const { return route_rp_used_; }\n"
-        "    int64_t route_replay_rows_total() const { return route_rp_ ? route_rp_->rows : 0; }",
+        "    int64_t route_replay_rows_total() const { return route_rp_ ? route_rp_->rows : 0; }\n"
+        "    const std::vector<uint64_t>& route_replay_doc_hashes() const { return route_rp_hash_; }\n"
+        "    const std::vector<uint64_t>& route_replay_record_hashes() const { return route_rp_->doc_hashes; }",
         guard="BC_VTP44_ROUTE_REPLAY_API",
     ),
     _after(
@@ -310,7 +316,10 @@ CTX_H = FilePatch(path="core/runtime/ctx.h", language="none", description="VTP44
         "    int                    route_rp_doc_   = -1;\n"
         "    int64_t                route_rp_base_  = 0, route_rp_next_pos_ = 0, route_rp_used_ = 0;\n"
         "    std::string            route_rp_why_;\n"
-        "    int  route_replay_begin();",
+        "    std::vector<int64_t>   route_rp_cov_;               /* rows loaded this pass, per routed layer */\n"
+        "    std::vector<uint64_t>  route_rp_hash_;              /* per document run so far: FNV-1a 64 of its token ids */\n"
+        "    int  route_replay_begin();\n"
+        "    int  route_replay_end();",
         guard="BC_VTP44_ROUTE_REPLAY_MEMBERS",
     ),
 ))
@@ -335,9 +344,19 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none", description="V
         guard="BC_VTP44_ROUTE_REPLAY_FREE",
     ),
     _after(
-        "rp-begin", "    batch_       = b;",
-        "    (void)route_replay_begin(); /* BC_VTP44_ROUTE_REPLAY_BEGIN: a problem fails the step at the first load */",
+        "rp-begin", "    step_fail_.clear();",
+        "    if (route_rp_) { const int rp = route_replay_begin(); if (rp < 0 && step_status_ >= 0) step_status_ = rp; } /* BC_VTP44_ROUTE_REPLAY_BEGIN */",
         guard="BC_VTP44_ROUTE_REPLAY_BEGIN",
+    ),
+    Edit(
+        id="rp-pass-end",
+        anchor=re.escape("        const int rf = route_flush();\n        if (rf < 0 && step_status_ >= 0) step_status_ = rf;\n    }\n"),
+        mode="insert_after",
+        text="    if (route_rp_) { /* BC_VTP44_ROUTE_REPLAY_PASS_END: every routed layer took the recorded experts for every row */\n"
+             "        const int re = route_replay_end();\n"
+             "        if (re < 0 && step_status_ >= 0) step_status_ = re;\n"
+             "    }\n",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_PASS_END"), expect_matches=1, max_span_lines=4, rationale=RATIONALE,
     ),
     Edit(
         id="rp-impl",
@@ -345,7 +364,8 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none", description="V
         mode="insert_before",
         text=r"""/* BC_VTP44_ROUTE_REPLAY_IMPL: replaying a recorded expert route (rad0045). The pass's rows are looked up through the
  * document starts: a restart at position 0 is the next recorded document, so the pass size cannot matter. Any
- * deviation fails the run, never a silent fallback to the router's own choice. */
+ * deviation fails the run, never a silent fallback to the router's own choice: a layer that was not asked for its rows
+ * (an architecture without the hook) fails the pass, and the documents' token digests must match at the end. */
 int Ctx::route_replay_begin() {
     if (!route_rp_ || !batch_) return RAD_OK;
     const RouteReplay& R = *route_rp_;
@@ -359,9 +379,10 @@ int Ctx::route_replay_begin() {
         return bad("only one-sequence prefill passes without drafting can be replayed");
     const int64_t n = batch_->n_tok;
     const int32_t* pos = batch_->positions_h;
-    if (n <= 0) return RAD_OK;
+    if (n <= 0) { std::fill(route_rp_cov_.begin(), route_rp_cov_.end(), (int64_t)0); return RAD_OK; }
     for (int64_t i = 1; i < n; ++i)
         if ((int64_t)pos[i] != (int64_t)pos[0] + i) return bad("token positions within a pass are not contiguous");
+    if (!batch_->token_ids) return bad("the pass has no token ids to digest");
     if (!route_rp_dev_) {
         const int64_t n_trunk = program_->meta.n_layers;
         route_rp_at_.assign((size_t)n_trunk, -1);
@@ -382,28 +403,38 @@ int Ctx::route_replay_begin() {
         for (size_t i = 0; i < layers.size(); ++i)
             RAD_TRY(rad_memcpy_async(route_rp_dev_ + i * per, R.ids[i].data(), per * sizeof(int32_t), stream_));
         RAD_TRY(rad_stream_sync(stream_));
+        route_rp_cov_.assign(layers.size(), 0);
     }
-    if (pos[0] == 0) ++route_rp_doc_;
+    if (pos[0] == 0) { ++route_rp_doc_; route_rp_hash_.push_back(14695981039346656037ull); }
     else if ((int64_t)pos[0] != route_rp_next_pos_) return bad("token positions do not continue the previous pass");
     if (route_rp_doc_ < 0 || route_rp_doc_ >= (int)R.doc_starts.size()) return bad("the run has more documents than the record");
     const int64_t d0 = R.doc_starts[(size_t)route_rp_doc_];
     const int64_t d1 = (size_t)route_rp_doc_ + 1 < R.doc_starts.size() ? R.doc_starts[(size_t)route_rp_doc_ + 1] : R.rows;
     if (d0 + pos[0] + n > d1) return bad("a document is longer than the record's");
+    {   /* the document's identity: the same tokens as the recorded run's */
+        std::vector<int32_t> tk((size_t)n);
+        RAD_TRY(rad_memcpy_async(tk.data(), batch_->token_ids, (size_t)n * sizeof(int32_t), stream_));
+        RAD_TRY(rad_stream_sync(stream_));
+        uint64_t& h = route_rp_hash_.back();
+        for (int64_t i = 0; i < n; ++i) { h ^= (uint64_t)(uint32_t)tk[(size_t)i]; h *= 1099511628211ull; }
+    }
     route_rp_base_ = d0 + pos[0];
     route_rp_next_pos_ = (int64_t)pos[0] + n;
     route_rp_used_ += n;
+    std::fill(route_rp_cov_.begin(), route_rp_cov_.end(), (int64_t)0);
     return RAD_OK;
 }
 
 int Ctx::route_replay_load(int layer, rad_buf dst, int64_t r0, int64_t rows, int64_t top_k) {
     if (!route_rp_) return 0;
-    if (layer < 0 || (size_t)layer >= route_rp_at_.size() || route_rp_at_[(size_t)layer] < 0) return 0;   /* an MTP head's layer */
     auto fail = [&](const char* why, int rc) {
         if (route_rp_why_.empty()) { route_rp_why_ = why; RAD_ERR("expert route replay: %s", why); }
         if (step_status_ >= 0) step_status_ = rc;
         return rc;
     };
     if (!route_rp_why_.empty()) return fail("", RAD_E_INVAL);
+    if (route_rp_cov_.empty()) return fail("a layer asked for recorded experts before its pass was admitted", RAD_E_INVAL);
+    if (layer < 0 || (size_t)layer >= route_rp_at_.size() || route_rp_at_[(size_t)layer] < 0) return 0;   /* an MTP head's layer */
     if (!dst) return fail("no kernel plugin offers router_topk_replay for this router", RAD_E_UNSUPPORTED);
     if (top_k != route_rp_->top_k) return fail("the model's top_k is not the record's", RAD_E_INVAL);
     int32_t* d = static_cast<int32_t*>(buf_ptr(dst));
@@ -411,7 +442,23 @@ int Ctx::route_replay_load(int layer, rad_buf dst, int64_t r0, int64_t rows, int
     const int64_t at = route_rp_at_[(size_t)layer];
     const int rc = rad_memcpy_async(d + r0 * top_k, route_rp_dev_ + ((at * route_rp_->rows) + route_rp_base_ + r0) * top_k,
                                     (size_t)(rows * top_k) * sizeof(int32_t), stream_);
-    return rc < 0 ? fail("the copy of the recorded experts failed", rc) : 1;
+    if (rc < 0) return fail("the copy of the recorded experts failed", rc);
+    route_rp_cov_[(size_t)at] += rows;
+    return 1;
+}
+
+/* After the pass: every routed layer must have been asked for exactly the pass's rows. An architecture that selects its
+ * own experts (no hook) asks for none, and so fails here instead of reporting a replay that did not happen. */
+int Ctx::route_replay_end() {
+    if (!route_rp_ || route_rp_cov_.empty() || !route_rp_why_.empty() || !batch_ || batch_->n_tok <= 0) return RAD_OK;
+    for (size_t i = 0; i < route_rp_cov_.size(); ++i)
+        if (route_rp_cov_[i] != batch_->n_tok) {
+            route_rp_why_ = "a routed layer did not take the recorded experts for exactly the pass's rows";
+            RAD_ERR("expert route replay: %s (routed layer %d: %lld of %lld rows)", route_rp_why_.c_str(),
+                    route_rp_->layers[i], (long long)route_rp_cov_[i], (long long)batch_->n_tok);
+            return RAD_E_INVAL;
+        }
+    return RAD_OK;
 }
 
 """,
@@ -423,7 +470,8 @@ BRINGUP = FilePatch(path="core/engine_bringup.cpp", language="none", description
     _before(
         "rp-read", "int Engine::start() {",
         r"""/* BC_VTP44_ROUTE_REPLAY_READ: a record written by --expert-route-record (rad0044), read whole and checked against this
- * model: an incomplete file, another model, other routed layers or an id outside the model refuse the start. */
+ * model: an incomplete file, another model, other routed layers, an id outside the model, a header that is not exactly
+ * what the writer makes, or a file whose size is not its header's refuse the start. */
 static int bc_route_replay_read(const std::string& path, int meta_layers, int meta_n_expert, const char* meta_name,
                                 RouteReplay* out) {
     FILE* f = std::fopen(path.c_str(), "rb");
@@ -433,40 +481,65 @@ static int bc_route_replay_read(const std::string& path, int meta_layers, int me
         std::fclose(f);
         return (int)RAD_E_INVAL;
     };
-    static char line[1 << 20];
-    if (!std::fgets(line, sizeof line, f) || std::strcmp(line, "RADROUTE1\n") != 0) return refuse("not an expert route record");
-    if (!std::fgets(line, sizeof line, f) || std::strchr(line, '\n') == nullptr) return refuse("the header is missing or too long");
-    const std::string h(line);
+    std::string magic, h;
+    int ch;
+    while ((ch = std::fgetc(f)) != EOF && ch != '\n' && magic.size() < 16) magic += (char)ch;
+    if (magic != "RADROUTE1") return refuse("not an expert route record");
+    while ((ch = std::fgetc(f)) != EOF && ch != '\n') {
+        h += (char)ch;
+        if (h.size() > (1u << 20)) return refuse("the header is too long");
+    }
+    if (ch != '\n') return refuse("the header is missing");
     auto field = [&](const char* key) -> const char* {
         const std::string k = std::string("\"") + key + "\":";
         const size_t p = h.find(k);
         return p == std::string::npos ? nullptr : h.c_str() + p + k.size();
     };
+    auto closes = [](char c) { return c == ',' || c == '}' || c == ']'; };
     auto num = [&](const char* key, long long* v) {
         const char* p = field(key);
         char* e = nullptr;
         if (!p) return false;
+        errno = 0;
         *v = std::strtoll(p, &e, 10);
-        return e != p;
+        return e != p && errno == 0 && closes(*e);
     };
     auto list = [&](const char* key, std::vector<long long>* v) {
         const char* p = field(key);
         if (!p || *p != '[') return false;
         for (++p; *p && *p != ']';) {
             char* e = nullptr;
+            errno = 0;
             v->push_back(std::strtoll(p, &e, 10));
-            if (e == p) return false;
+            if (e == p || errno != 0 || !closes(*e)) return false;
             p = e;
+            if (*p == ',') ++p;
+        }
+        return *p == ']';
+    };
+    auto hashes = [&](const char* key, std::vector<uint64_t>* v) {   /* ["0123456789abcdef", ...] */
+        const char* p = field(key);
+        if (!p || *p != '[') return false;
+        for (++p; *p && *p != ']';) {
+            if (*p != '"') return false;
+            char* e = nullptr;
+            errno = 0;
+            v->push_back((uint64_t)std::strtoull(p + 1, &e, 16));
+            if (e != p + 17 || errno != 0 || *e != '"') return false;
+            p = e + 1;
             if (*p == ',') ++p;
         }
         return *p == ']';
     };
     long long layers = 0, top_k = 0, n_expert = 0, rows = 0;
     std::vector<long long> routed, docs;
-    if (h.find("\"complete\":true") == std::string::npos) return refuse("the record is incomplete");
+    const char* cp = field("complete");
+    if (!cp || std::strncmp(cp, "true", 4) != 0 || !closes(cp[4])) return refuse("the record is incomplete");
     if (!num("layers", &layers) || !num("top_k", &top_k) || !num("n_expert", &n_expert) || !num("rows", &rows) ||
         !list("routed", &routed) || !list("doc_starts", &docs))
         return refuse("the header is not a record header");
+    if (!hashes("doc_hashes", &out->doc_hashes) || out->doc_hashes.size() != docs.size())
+        return refuse("the record has no document digests for its documents (record again with this build)");
     std::string want;
     for (const char* q = meta_name; *q; ++q) want += (*q == '"' || *q == '\\' || (unsigned char)*q < 0x20) ? '?' : *q;
     const char* mp = field("model");
@@ -479,18 +552,30 @@ static int bc_route_replay_read(const std::string& path, int meta_layers, int me
         if (routed[i] < 0 || routed[i] >= layers || (i && routed[i] <= routed[i - 1])) return refuse("the record's routed layers are invalid");
     for (size_t i = 0; i < docs.size(); ++i)
         if (docs[i] < 0 || docs[i] >= rows || (i && docs[i] <= docs[i - 1])) return refuse("the record's document starts are invalid");
+    /* The table lives on every rank's card beyond the memory plan, so it is bounded; the size is checked in 128 bits
+     * and against the file before anything is allocated. */
+    const unsigned __int128 bytes = (unsigned __int128)rows * (unsigned __int128)top_k * routed.size() * sizeof(int32_t);
+    if (bytes > ((unsigned __int128)1 << 30)) return refuse("larger than the 1 GiB a replay holds");
+    const long here = std::ftell(f);
+    if (here < 0 || std::fseek(f, 0, SEEK_END) != 0) return refuse("cannot size the file");
+    const long total = std::ftell(f);
+    if (total < here || (unsigned __int128)(total - here) != bytes) return refuse("the file's size is not its header's");
+    if (std::fseek(f, here, SEEK_SET) != 0) return refuse("cannot read the file");
     out->top_k = (int32_t)top_k;
     out->rows = rows;
     for (const long long l : routed) out->layers.push_back((int)l);
     out->doc_starts.assign(docs.begin(), docs.end());
-    out->ids.assign(routed.size(), {});
-    for (auto& v : out->ids) {
-        v.resize((size_t)(rows * top_k));
-        if (std::fread(v.data(), sizeof(int32_t), v.size(), f) != v.size()) return refuse("the record is shorter than its header says");
-        for (const int32_t id : v)
-            if (id < 0 || id >= n_expert) return refuse("the record holds an expert id outside the model");
+    try {
+        out->ids.assign(routed.size(), {});
+        for (auto& v : out->ids) {
+            v.resize((size_t)(rows * top_k));
+            if (std::fread(v.data(), sizeof(int32_t), v.size(), f) != v.size()) return refuse("the record is shorter than its header says");
+            for (const int32_t id : v)
+                if (id < 0 || id >= n_expert) return refuse("the record holds an expert id outside the model");
+        }
+    } catch (const std::exception&) {
+        return refuse("not enough host memory for the record");
     }
-    if (std::fgetc(f) != EOF) return refuse("the record is longer than its header says");
     std::fclose(f);
     return RAD_OK;
 }
@@ -509,10 +594,21 @@ static int bc_route_replay_read(const std::string& path, int meta_layers, int me
         "                RAD_ERR(\"--expert-route-replay and --expert-route-record are exclusive\");\n"
         "                return RAD_E_INVAL;\n"
         "            }\n"
-        "            static RouteReplay route_table;   /* read once, shared by every rank, for the life of the process */\n"
-        "            if (route_table.rows == 0)\n"
-        "                RAD_TRY(bc_route_replay_read(cfg_.expert_route_replay, (int)meta_.n_layers, (int)meta_.n_expert,\n"
-        "                                             meta_.name ? meta_.name : \"\", &route_table));\n"
+        "            static std::mutex route_mu;   /* one table, read for each engine and file, shared by that engine's ranks */\n"
+        "            static RouteReplay route_table;\n"
+        "            static const void* route_owner = nullptr;\n"
+        "            static std::string route_path;\n"
+        "            {\n"
+        "                std::lock_guard<std::mutex> route_lk(route_mu);\n"
+        "                if (route_owner != this || route_path != cfg_.expert_route_replay) {\n"
+        "                    RouteReplay fresh;\n"
+        "                    RAD_TRY(bc_route_replay_read(cfg_.expert_route_replay, (int)meta_.n_layers, (int)meta_.n_expert,\n"
+        "                                                 meta_.name ? meta_.name : \"\", &fresh));\n"
+        "                    route_table = std::move(fresh);\n"
+        "                    route_owner = this;\n"
+        "                    route_path = cfg_.expert_route_replay;\n"
+        "                }\n"
+        "            }\n"
         "            d.route_replay = &route_table;\n"
         "        }",
         guard="BC_VTP44_ROUTE_REPLAY_BRINGUP",
@@ -534,6 +630,9 @@ ENGINE = FilePatch(path="core/engine.cpp", language="none", description="VTP44 r
             } else if (s >= 0 && rc.route_replay_rows_used() != rc.route_replay_rows_total()) {
                 RAD_ERR("--expert-route-replay: rank %d replayed %lld rows, the record has %lld", r->index,
                         (long long)rc.route_replay_rows_used(), (long long)rc.route_replay_rows_total());
+                s = RAD_E_INVAL;
+            } else if (s >= 0 && rc.route_replay_doc_hashes() != rc.route_replay_record_hashes()) {
+                RAD_ERR("--expert-route-replay: rank %d: the run's documents are not the recorded ones (their token digests differ)", r->index);
                 s = RAD_E_INVAL;
             }
         }

@@ -94,6 +94,7 @@ CTX_H = FilePatch(path="core/runtime/ctx.h", language="none", description="VTP44
         "    const std::vector<std::vector<int32_t>>& route_record_rows() const { return route_rec_rows_; }\n"
         "    const std::vector<int64_t>& route_record_doc_starts() const { return route_rec_docs_; }\n"
         "    const std::vector<int>& route_record_layers() const { return route_rec_layers_; }\n"
+        "    const std::vector<uint64_t>& route_record_doc_hashes() const { return route_rec_hash_; }\n"
         "    const std::string& route_record_problem() const { return route_rec_why_; }",
         guard="BC_VTP44_ROUTE_RECORD_API",
     ),
@@ -106,6 +107,7 @@ CTX_H = FilePatch(path="core/runtime/ctx.h", language="none", description="VTP44
         "    std::vector<int64_t>   route_rec_docs_;\n"
         "    std::vector<char>      route_rec_got_;\n"
         "    std::vector<int>       route_rec_layers_, route_rec_at_;   /* routed trunk layers; layer -> index or -1 */\n"
+        "    std::vector<uint64_t>  route_rec_hash_;   /* per document: FNV-1a 64 of its token ids */\n"
         "    int64_t                route_rec_next_pos_ = 0;\n"
         "    std::string            route_rec_why_;\n"
         "    void route_record_note(const char* why);\n"
@@ -223,8 +225,20 @@ int Ctx::route_record_drain() {
         for (int64_t i = 1; i < n && route_rec_why_.empty(); ++i)
             if ((int64_t)pos[i] != p0 + i) route_record_note("token positions within a pass are not contiguous");
         if (route_rec_why_.empty()) {
-            if (p0 == 0) route_rec_docs_.push_back((int64_t)(route_rec_rows_[0].size() / (size_t)route_rec_k_));
-            else if (p0 != route_rec_next_pos_) route_record_note("token positions do not continue the previous pass");
+            if (p0 == 0) {
+                route_rec_docs_.push_back((int64_t)(route_rec_rows_[0].size() / (size_t)route_rec_k_));
+                route_rec_hash_.push_back(14695981039346656037ull);
+            } else if (p0 != route_rec_next_pos_) {
+                route_record_note("token positions do not continue the previous pass");
+            }
+        }
+        if (route_rec_why_.empty() && (!batch_->token_ids || route_rec_hash_.empty())) route_record_note("the pass has no token ids to digest");
+        if (route_rec_why_.empty()) {   /* the document's identity: replay must see the same tokens */
+            std::vector<int32_t> tk((size_t)n);
+            RAD_TRY(rad_memcpy_async(tk.data(), batch_->token_ids, (size_t)n * sizeof(int32_t), stream_));
+            RAD_TRY(rad_stream_sync(stream_));
+            uint64_t& h = route_rec_hash_.back();
+            for (int64_t i = 0; i < n; ++i) { h ^= (uint64_t)(uint32_t)tk[(size_t)i]; h *= 1099511628211ull; }
         }
         route_rec_next_pos_ = p0 + n;
     }
@@ -297,15 +311,20 @@ ENGINE = FilePatch(path="core/engine.cpp", language="none", description="VTP44 r
         if (!rf) {
             RAD_ERR("--expert-route-record: cannot write %s", tmp.c_str());
         } else {
-            std::string docs, lay;
+            std::string docs, lay, hashes;
             for (const int64_t d : rc.route_record_doc_starts()) docs += (docs.empty() ? "" : ",") + std::to_string((long long)d);
             for (const int l : routed) lay += (lay.empty() ? "" : ",") + std::to_string(l);
+            for (const uint64_t hv : rc.route_record_doc_hashes()) {
+                char hb[24];
+                std::snprintf(hb, sizeof hb, "\"%016llx\"", (unsigned long long)hv);
+                hashes += (hashes.empty() ? "" : ",") + std::string(hb);
+            }
             ok = std::fprintf(rf, "RADROUTE1\n{\"format\":\"radiance-expert-route/1\",\"model\":\"%s\",\"arch\":\"%s\",\"layers\":%d,"
                                   "\"routed\":[%s],\"top_k\":%d,\"n_expert\":%d,\"rows\":%lld,\"tp\":%d,\"max_tok\":%lld,"
-                                  "\"complete\":%s,\"why\":\"%s\",\"doc_starts\":[%s]}\n",
+                                  "\"complete\":%s,\"why\":\"%s\",\"doc_starts\":[%s],\"doc_hashes\":[%s]}\n",
                               js(meta_.name ? meta_.name : "").c_str(), js(meta_.arch_id ? meta_.arch_id : "").c_str(),
                               (int)meta_.n_layers, lay.c_str(), rk, (int)meta_.n_expert, (long long)nr, cfg_.tp,
-                              (long long)cfg_.max_tok, complete ? "true" : "false", js(why).c_str(), docs.c_str()) > 0;
+                              (long long)cfg_.max_tok, complete ? "true" : "false", js(why).c_str(), docs.c_str(), hashes.c_str()) > 0;
             if (complete)
                 for (const auto& lr : rows) ok = ok && std::fwrite(lr.data(), sizeof(int32_t), lr.size(), rf) == lr.size();
             ok = std::fclose(rf) == 0 && ok;
