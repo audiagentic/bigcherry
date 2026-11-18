@@ -1548,6 +1548,11 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "expert_route_replay": {
+                      "description": "Engine flag `--expert-route-replay` (BigCherry rad0045; amendment 22). Value text as the flag takes it (FILE): take each token's experts from a route recorded by `expert_route_record` instead of the router's own choice.",
+                      "type": "string",
+                      "minLength": 1
+                    },
                     "live": {
                       "description": "Engine flag `--live` (amendment 13). Present means the flag is given.",
                       "enum": [

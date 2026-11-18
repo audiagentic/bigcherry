@@ -1,0 +1,32 @@
+{
+ "ttft8k": {
+  "tokens": 8076,
+  "ttft_s": 3.2271580696105957,
+  "prefill_tok_s": 2502.5114437528896
+ },
+ "decode1": {
+  "chunks": 101,
+  "chunks_per_s": 29.527266066346463,
+  "gap_p50_ms": 31.804919242858887
+ },
+ "needle": {
+  "hits": 2,
+  "of": 2,
+  "rows": [
+   {
+    "depth": 0.1,
+    "rep": 0,
+    "tokens": 12041,
+    "hit": true,
+    "answer": "amber-falcon-3917"
+   },
+   {
+    "depth": 0.9,
+    "rep": 0,
+    "tokens": 12042,
+    "hit": true,
+    "answer": "violet-harbor-5204"
+   }
+  ]
+ }
+}

@@ -31,8 +31,23 @@ echo "gpus$LABEL" >> $OUT/summary.txt
 source tools/lab/radiance/lab-build.sh
 B=$(rad_build) || exit 1
 echo "build $B" >> $OUT/summary.txt
-L=tools/lab/radiance/launch-flashnext-best.sh
-URL=http://127.0.0.1:36080/v1/completions   # the launcher's default port
+# Keep the original 36080 port and the measured build pinned to this arm.
+BC_SERVE="$B/radiance_home/bin/bc-serve"
+[ -x "$BC_SERVE" ] || { echo "PWR01: native bc-serve missing from $B" >&2; exit 2; }
+[ -n "${BC_MODEL_ROOT:-}" ] || { echo "PWR01: BC_MODEL_ROOT is required" >&2; exit 2; }
+NATIVE_RUN="$OUT/session"
+NATIVE_ARGS=(--run-dir "$NATIVE_RUN" --engine-binary "$B/bin/radiance" --model-root "$BC_MODEL_ROOT"
+             --set 'engine.port=36080'
+             --power-profile "${PWR01_POWER_PROFILE:-performance}" --allow-power-apply)
+# Native power application requires the operator's lease and per-card
+# qualification; unlike the legacy implicit mode, it cannot silently apply
+# device settings without a durable receipt and restore proof.
+# A freshly installed bundle has its own verified RSC12 configs. A
+# development build takes the source catalogue explicitly.
+[ -f "$B/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$PWD/engines/radiance/configs")
+[ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ] &&
+  NATIVE_ARGS+=(--calibration "$BC_WORK_ROOT/live-policy-calibration.toml")
+URL=http://127.0.0.1:36080/v1/completions
 echo "t,phase,device,watts" > $OUT/samples.csv
 sampler() {   # one sample a second: every GPU's board power and the CPU package power over the last second
     local e0 e1 t0 t1 max
@@ -52,8 +67,42 @@ sampler() {   # one sample a second: every GPU's board power and the CPU package
     done
 }
 phase() { echo "$1" > $OUT/.phase; }
-bash $L start --build $B > $OUT/launch.log 2>&1 || { tail $OUT/launch.log; bash $L stop; exit 1; }
-phase idle_loaded; touch $OUT/.sampling; sampler & SP=$!
+# Session startup and shutdown remain inside this foreground procedure's
+# lease. Stop waits for every child and verified power restoration; no PID kill.
+OWNER=0
+SP=
+stop_native() {
+    local failed=0
+    rm -f "$OUT/.sampling"
+    if [ -n "$SP" ]; then wait "$SP" || failed=1; SP=; fi
+    if [ "$OWNER" = 1 ]; then
+        "$BC_SERVE" stop --run-dir "$NATIVE_RUN" > "$OUT/stop.log" 2>&1 || failed=1
+        wait "$OWNER_PID" || failed=1
+        OWNER=0
+    fi
+    return "$failed"
+}
+trap 'stop_native' EXIT
+trap 'stop_native; exit 130' INT TERM HUP
+"$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" > "$OUT/launch.log" 2>&1 &
+OWNER_PID=$!
+OWNER=1
+ready=0
+until=$((SECONDS + 2700))
+while [ "$SECONDS" -lt "$until" ]; do
+    if "$BC_SERVE" status --run-dir "$NATIVE_RUN" --json 2>/dev/null |
+        python3 -c 'import json,sys
+try:
+    assert json.load(sys.stdin).get("state") == "running"
+except (ValueError,AssertionError):
+    sys.exit(1)' 2>/dev/null; then
+        ready=1; break
+    fi
+    kill -0 "$OWNER_PID" 2>/dev/null || break
+    sleep 1
+done
+[ "$ready" = 1 ] || { echo "PWR01: native owner did not reach running state" >&2; tail "$OUT/launch.log"; exit 1; }
+phase idle_loaded; touch "$OUT/.sampling"; sampler & SP=$!
 sleep 5; sleep $PHASE_S
 tokens() {   # $1 prompt, $2 max_tokens: prints completion and prompt token counts
     curl -s -m 600 $URL -d "$(python3 -c 'import json,sys; print(json.dumps({"prompt":sys.argv[1],"max_tokens":int(sys.argv[2]),"temperature":0}))' "$1" "$2")" |
@@ -81,8 +130,8 @@ run_phase decode "Write a long story about a lighthouse keeper and the sea." 102
 LONG=$(python3 -c "print(' '.join(['The quick brown fox jumps over the lazy dog.']*800))")
 run_phase prefill "$LONG Summarise." 1 2
 phase idle_after; sleep 5; sleep $PHASE_S
-rm -f $OUT/.sampling; wait $SP
-bash $L stop > $OUT/stop.log 2>&1
+stop_native || { echo "PWR01: native stop did not verify every child exit" >&2; exit 1; }
+trap - EXIT INT TERM HUP
 python3 - $OUT <<'PY' | tee -a $OUT/summary.txt
 import csv, statistics, sys, pathlib, re
 out = pathlib.Path(sys.argv[1])

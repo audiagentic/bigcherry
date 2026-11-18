@@ -1,0 +1,6 @@
+start_utc 2026-11-17T23:34:09Z layout flashnext-r9700 build <work-root>/builds/b893f5876bb7781648f3dc09390e201c/e5a91ea014057f2e28efee1e6db10b22
+23:34:09 fp8 start exit 2 0s
+23:34:09 fp8 stop exit 0
+  fp8 refused/failed:  
+SKIP: the first type (fp8) did not start; layout flashnext-r9700 is broken, not the cache
+end_utc 2026-11-17T23:34:09Z

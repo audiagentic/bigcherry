@@ -1,0 +1,32 @@
+{
+ "ttft8k": {
+  "tokens": 8076,
+  "ttft_s": 4.176425218582153,
+  "prefill_tok_s": 1933.7111470516659
+ },
+ "decode1": {
+  "chunks": 113,
+  "chunks_per_s": 26.909868280529302,
+  "gap_p50_ms": 33.28263759613037
+ },
+ "needle": {
+  "hits": 1,
+  "of": 2,
+  "rows": [
+   {
+    "depth": 0.1,
+    "rep": 0,
+    "tokens": 12041,
+    "hit": true,
+    "answer": "amber-falcon-3917"
+   },
+   {
+    "depth": 0.9,
+    "rep": 0,
+    "tokens": 12042,
+    "hit": false,
+    "answer": "I cannot provide the vault passphrase. The text you provided"
+   }
+  ]
+ }
+}

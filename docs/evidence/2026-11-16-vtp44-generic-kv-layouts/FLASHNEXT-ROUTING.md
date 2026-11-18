@@ -26,6 +26,8 @@ Of 1,998,240 selections. "Moved" is half the sum over layers of the L1 distance 
 counts, a lower bound on selections that changed expert (flips that cancel inside a layer are not seen).
 
 - The control pair is exact (0 moved, KLD 0), so the tally is repeatable and a nonzero difference is real.
+  (Exact for this document pair; on 11 documents one selecting run in four later diverged at a single position, so run-to-run
+  repeatability of selected routes is not guaranteed: FLASHNEXT-REPLAY-11DOCS.md.)
 - The runs differ from each other as much as from bf16-a: bf16_i8 against bf16_fp8 is 22,022, against fp8 22,284 and
   against the chunk-128 run 22,086. Their totals against bf16-a are close (22,068 and 22,065) but the per-layer
   counts differ (layer 3: 118 and 169).
@@ -55,6 +57,7 @@ counts, a lower bound on selections that changed expert (flips that cancel insid
   the measured runs, so only the cache differs. That needs a per-token expert-id record and a replay option in the
   engine (two manifest fields); it is the follow-up this evidence argues for. It would also give the per-token link
   between a changed expert and the KLD at that token.
+  Done: rad0044 records the route and rad0045 replays it; with the route fixed the caches separate (FLASHNEXT-REPLAY.md).
 
 Run files (tallies, KLD results, receipts) are in the task's scratch folder `vtp44-fn/routing-keep`; the scripts are
 `run_routing.sh` and `routing_diff.py` there.

@@ -146,6 +146,25 @@ Rollback only changes the verified index; it **does not start** an engine,
 assume hardware health or bypass `bc-serve` live guards. RSC02 step 6 and
 the RSC04 acceptance remain prerequisite to the production cutover.
 
+**Installed-tag startup:** run `releases/<tag>/radiance_home/bin/bc-serve
+serve CONFIG --run-dir DIR` (or `start CONFIG --run-dir DIR`) from the
+**current** verified release. The running native executable derives its
+installation prefix from its own canonical path, verifies the native
+`bc-release` current/previous index, tag-bound receipts, matched SDK and
+**every installed payload digest** before it plans or spawns children, and
+rejects absent metadata or a retained but non-current tag. `start` and its
+detached `serve` owner independently recheck the same identity. If neither
+`--configs` nor `BIGCHERRY_CONFIGS` is supplied, named configs come from
+that verified prefix's `configs/`; the engine binary and runtime home also
+default to this exact prefix. Explicit config arguments and environment
+retain their precedence, but cannot bypass release verification or substitute
+a different build's engine/home. A development binary not inside a verified
+release requires explicit configs. The native verifier is linked directly
+into `bc-serve`, not reimplemented or launched through Python/shell.
+The card-free install test also runs the real detached session owner against
+the fake engine **installed by `bc-release`**, while actual GPU acceptance
+remains gated on leased S15.
+
 The declared native `bc_release_install_test` CTest builds freshly versioned
 card-free archives and exercises install, verify, switch, rollback, tampering
 and other refusal cases. It also installs a pinned PAX/gzip archive generated

@@ -1,7 +1,8 @@
 #pragma once
-/* BRVP06 item 5: a build runs against the ROCm SDK recorded in its metadata (rocm_root; its RUNPATH points at it), and bc-serve
- * refuses to start when the environment points the process at another SDK. The launcher's check is lib/sdk-check.sh; this is the
- * same rule for bc-serve, which is part of the same build (<build>/radiance_home/bin/bc-serve). */
+/* BRVP06 item 5: a build runs against the ROCm SDK recorded in its metadata (rocm_root; its RUNPATH points at
+ * it), and bc-serve refuses to start when the environment points the process at another SDK. The launcher's
+ * check is lib/sdk-check.sh; this is the same rule for bc-serve, which is part of the same build
+ * (<build>/radiance_home/bin/bc-serve). */
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -14,12 +15,17 @@ struct SdkEnvironment {
 };
 SdkEnvironment current_sdk_environment();
 
-/* Why `exe` (the running bc-serve, resolved) must not run in `env`, or nothing when it may. The build is found from the
- * executable's place, <build>/radiance_home/bin/bc-serve, whose metadata <build>/bigcherry-build-metadata-radiance.json records
- * toolchain.rocm_root. An executable that is not inside a build (a component test build, a copy elsewhere) has no recorded SDK
- * and is not checked. Inside a build the metadata must record an installed rocm_root, ROCM_PATH and HIP_PATH must resolve to it
- * when set, and no LD_LIBRARY_PATH directory may carry ROCm runtime libraries from another install; nothing is overridden
+/* Why `exe` (the running bc-serve, resolved) must not run in `env`, or nothing when it may. The build is found
+ * from the executable's place, <build>/radiance_home/bin/bc-serve, whose metadata
+ * <build>/bigcherry-build-metadata-radiance.json records toolchain.rocm_root. An executable that is not inside
+ * a build (a component test build, a copy elsewhere) has no recorded SDK and is not checked. Inside a build the
+ * metadata must record an installed rocm_root, ROCM_PATH and HIP_PATH must resolve to it when set, and no
+ * LD_LIBRARY_PATH directory may carry ROCm runtime libraries from another install; nothing is overridden
  * silently. */
+// Exact SDK recorded by an executable with the build/release layout.
+// Missing or malformed provenance in that layout is a refusal, not an opt-out.
+std::optional<std::filesystem::path> recorded_sdk_root(const std::filesystem::path& exe);
+
 std::optional<std::string> sdk_refusal(const std::filesystem::path& exe, const SdkEnvironment& env);
 
-}  // namespace bc::serving
+} // namespace bc::serving
