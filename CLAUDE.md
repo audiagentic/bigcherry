@@ -1,160 +1,59 @@
+# BigCherry agent instructions
+
+Project rules are shared across agents; see the generated workflow below.
+
 <!-- ag:managed:begin -->
 _Managed by AUDiaGentic — generated from component configs. Edit the owning component and re-run surface apply; edits here are overwritten._
 
-## Agent ledger process
+## BigCherry workflow
 
-After substantive implementation work, record a change event with the ag-ledger
-MCP tool record_change_event — the ledger is the authoritative release record.
-Required fields: change-class, files, technical-summary, user-summary-candidate,
-status ('unreleased'). Other fields are auto-generated.
-- Check release ledger state before changing release notes, changelog fragments, or release workflow files.
-- Keep release artifacts and job records synchronized with implementation and review outcomes.
-- Do not bypass ledger updates by editing generated release outputs only.
+Read [the shared project rules](docs/reference/agents/WORKFLOW.md) before making changes.
+This is the same project policy for Claude, Codex and other agents.
 
-When recording a change event for work associated with one or more plan items,
-include "plan-item-ids" in the event dict (e.g. {"plan-item-ids": ["CC07", "CC08"]}).
-The planning component will automatically link the ledger event ID to those items.
+- Work in an isolated task worktree based on fresh origin/main; never edit the primary checkout.
+  Respect container resource leases. Do not stash, reset, rebase, force-push or force-remove worktrees.
+- Use Planning MCP for plan/review lifecycle and Ledger MCP for substantive changes.
+  Pass the task worktree explicitly; commit generated plan and event files with their work.
+  If tools are unavailable, report the missing connection; do not edit authoritative records by hand.
+- Keep project-local builds, caches and task worktrees under the configured work root.
+  Preserve referenced evidence, installed-kernel build artifacts and other actors' work during cleanup.
+- Read docs/reference/tooling/TOOLING.md before adding or moving tooling or lab code.
+  Migrate internal callers together; do not introduce new legacy fallbacks. Retained compatibility
+  entrypoints follow the tooling disposition and retirement gates, not blanket deletion.
+- Validate the actual change, open a PR, wait for required checks and merge confirmation,
+  then clean only this task's merged worktree and scratch. Report what was observed.
 
-## Planning process
+These files are generated. Edit this project instruction source or the owning AUDiaGentic
+component, then regenerate both AGENTS.md and CLAUDE.md; do not hand-edit managed blocks.
 
-Use the ag-planning MCP tools to manage plan items in docs/planning/.
+## MCP onboarding
 
-## When to use
-- User asks to create a plan or work items 
-- Tracking multi-step implementation across sessions
-- Reviewing or updating the state of outstanding items
+Configure MCP access only for explicitly requested harnesses.
+Discover servers with `audiagentic mcp list` and targets with
+`audiagentic harness list`. Use `audiagentic mcp MCP_ID help` for setup.
+Install with `audiagentic mcp install MCP_ID harness ID[,ID...]`.
+This sets that MCP's complete native target selection; other MCPs remain unchanged.
+Component installation alone does not select native MCP exposure.
+For every directory instead of one project, `audiagentic setup harness ID[,ID...]`
+registers the worktree-scoped servers at that harness's user scope
+(`dry-run` reports only); their tools take a per-call `worktree`.
+Report configured separately from verified.
 
-## Item lifecycle
-1. Create items with plan_create_item — lands in docs/planning/active/<plan>/
-2. Revise content with plan_update_item as work progresses; for a findings-driven correction (not routine progress), record a plan_create_review first, then close it once incorporated
-3. After review triage, close handled reviews with plan_set_review_state(review_id, 'closed')
-4. Mark done with plan_set_state(item_id, 'completed') only when implementation and validation are done
-5. Keep unfinished work pending or in terminal discard states (superseded, deprecated); remove stale items with plan_delete_item
+## Task worktrees
 
-## Item ID convention
-Combine a short uppercase plan prefix with a sequence number: CC07, LSP01, ML01.
-Choose a prefix matching the plan name (CC → code-cleanup, LSP → lsp-mcp-enhancement).
-
-## Required fields for plan_create_item
-- plan: plan directory name (e.g. "code-cleanup")
-- title: short descriptive title
-
-## State discipline
-- Do not leave incorporated reviews in created/considered; close them.
-- Do not mark a parent item completed just because reviews were handled.
-- If an active item is superseded, transition to 'superseded' or 'deprecated' rather than deleting (preserves history and linked reviews).
-
-## Optional fields (fill out where applicable to provide complete planning context)
-- work: S / M / L — blast radius of the change
-- skill: basic / intermediate / advanced — cognitive difficulty
-- order: integer sort key (default 0)
-- description: Body section describing the work
-- steps: Implementation steps
-- detailed_solution: Detailed Solution & Technical Design (architecture, components, design)
-- code_samples: Code Samples & Guidance (including config samples and schemas)
-- files: Files to create/update
-- validation: How to validate the implementation
-  (include comprehensive tests where possible)
-- effort_risk: Complexity and risk assessment
-- standards: Applicable standards/rules
-- notes: Key design principles and additional context
-
-## Execution profile doctrine
-
-Execution profiles bind a provider to a specific model with optional
-execution parameters. They are stored in the canonical
-.audiagentic/config/agents.yaml document alongside prompts, roles,
-agent definitions, and triggers.
-
-## When to use
-- A job needs a predefined provider+model configuration
-- Execution parameters (temperature, max-tokens) should be
-  profile-driven
-- Multiple projects need different default model configurations
-
-## Resolution precedence at job launch
-1. Explicit `execution-profile-id` in job request
-2. Explicit provider-id / model-id in job request
-3. Execution profile selected by the Agent Definition
-4. Default execution profile (marked `is-default: true`)
-
-## Naming
-Use `execution-profile-id` (NOT `profile-id`) in job requests to avoid
-collision with `workflow-profile` (lite/standard/strict stage
-pipelines).
-
-## Role selection precedence (AS61/RO01)
-
-Today a Role is reached only through `agent_id` -> Agent Definition ->
-`role_id` (agent_task_submit). There is no standalone `agent-role-id`
-job-request field yet — that wiring belongs to AS78, not this
-component. This section states the precedence/conflict rule that
-MUST hold once one is introduced, so the rule is fixed before the
-field exists rather than improvised after.
-
-## Resolution precedence at job launch (once agent-role-id exists)
-1. Explicit `agent-role-id` in job request
-2. Role carried by an explicit `agent-id` (Agent Definition)
-3. Execution profile selection (`execution-profile-id` / provider-id
-   + model-id / default execution profile) is independent of role
-   selection — they compose, they do not override each other.
-4. `workflow-profile` (lite/standard/strict stage pipelines) and
-   `component-profile` (per-process config layer) are orthogonal to
-   both and never interact with role/profile precedence.
-
-## Conflicts fail closed
-A Role requirement that contradicts an explicitly selected Execution
-Profile is an error raised before dispatch — never a silent override
-in either direction, and never a permissive fallback. This applies
-the moment AS78 exposes a path where the two could disagree; there is
-no such path yet, so no conflict-checking code exists today.
-
-## Naming
-`agent-role-id` must stay distinguishable from `execution-profile-id`,
-`workflow-profile`, and `component-profile` — three distinct
-"profile" concepts already exist in this project; a role is a fourth,
-separate axis and must not collapse into any of them by accident.
-
-## Source control doctrine
-
-
-Never use `git stash` — this is a shared, multi-agent working tree and a stash
-can silently collide with another session's live edits. If work needs to be set
-aside, split it into its own deliberate check-in group or leave it uncommitted.
+One task is one branch in its own git worktree; never edit the primary checkout.
+- `audiagentic worktree start SLUG [item ID]` creates branch OWNER/SLUG from the fresh
+  remote default branch and prints the worktree path. Pass that path as the `worktree`
+  argument of the planning, ledger and gateway tools.
+- Publish with `audiagentic worktree ship title "type(scope): subject" body TEXT`. It syncs the
+  branch with the default branch, runs the pre-push checks the project names, pushes the exact
+  checked commit without force, opens or reuses the pull request and asks GitHub to
+  auto-merge, then returns. It never rebases and aborts on a conflict. Run `ship` again
+  whenever the default branch moved (a release landed) and the pull request shows BEHIND;
+  it reports `merged` when done. `sync`, `push` and `merge [dry-run yes]` are the single steps.
+- After `ship` reports merged, `audiagentic worktree finish BRANCH` preserves the work
+  (quarantine ref, archive) and removes the worktree and branch. It refuses unmerged work;
+  `abandon TIP12` discards it only after a verified bundle. `prune` reports what is eligible.
+- Never use `git worktree remove --force`, force-push, or edit the primary checkout.
+Details: docs/guides/WORKTREES.md.
 <!-- ag:managed:end -->
-
-## No legacy, no backward compatibility -- always migrate up
-
-This project does not carry backward-compatibility shims, legacy fallback
-paths, or default-preserving parameters added "so old callers keep working."
-When a function, schema, or interface changes, migrate every caller to the
-new shape in the same change -- do not leave the old behavior reachable
-behind a default value, an optional flag, or an untouched code path.
-
-This applies at every layer: production code, patches, tooling, and tests.
-A new required field replaces an old one; it does not get bolted on beside
-it with `= None` for compatibility. A changed function signature updates
-every call site; it does not grow an optional parameter whose absence
-silently reproduces the old behavior. If a real external consumer outside
-this repo depends on an old interface, that is a explicit, named exception
-to be called out and justified, not the default assumption.
-
-Rationale: this is a fast-moving, actively-developed research/tuning
-project with a small number of internal call sites per module, not a
-public API with unknown external consumers. Preserving old behavior by
-default hides real migration debt behind "it still works," and multiplies
-the number of code paths that need to be reasoned about and tested. Always
-prefer migrating everything up to the new shape over keeping the old one
-alive alongside it.
-
-## Planning group naming: build-/patching-/run-/tuning- prefix required
-
-Every planning group under docs/planning/ is named with one of four discipline
-prefixes: `build-<topic>` (build/compile infrastructure), `patching-<topic>`
-(patch authoring), `run-<topic>` (campaigns, tooling, execution) or
-`tuning-<topic>` (autotune campaigns), e.g. `patching-hip-autotune`,
-`run-gpu-collectives`.
-
-Before calling `plan_create_item`, check whether a prefixed group for the topic
-already exists and use it. If none exists, create the correctly prefixed one --
-never a bare, un-prefixed group name.
