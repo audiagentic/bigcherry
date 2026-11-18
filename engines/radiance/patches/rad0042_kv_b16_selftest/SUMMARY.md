@@ -11,7 +11,7 @@ Scope: r4d_selftest cases for the `bf16_fp8` and `bf16_i8` KV layouts on Flash-N
 
 ## Outcome
 
-Untested: the cases compile in a gfx1201 build and pass libr3's rewrite check; they have not run on a device. See README.md.
+The cases compile in a gfx1201 build and pass libr3's rewrite check. 2026-11-18: run on a gfx1100 card (one 7900 XTX, libr3's selftest, each case alone): all 21 cases of the two layouts pass, including `bf16_i8_rows` (after the inventory fix below) and the gqa6/block-4 fused-decode rows (docs/evidence/2026-11-16-vtp44-generic-kv-layouts/rad0042-selftest/). The gfx1201 device run was not repeated. Status stays untested: the overlay is test text only.
 
 ## Detail
 
