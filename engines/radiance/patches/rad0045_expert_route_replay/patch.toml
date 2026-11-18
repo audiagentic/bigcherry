@@ -6,6 +6,6 @@ kind = "diagnostic"
 origin = "local"
 backend = "agnostic"
 plan-ids = ["VTP44"]
-requires = []
+requires = ["rad0044_expert_route_record"]
 conflicts = []
 tags = ["moe-routing"]

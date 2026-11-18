@@ -8,6 +8,14 @@ choices (FLASHNEXT-ROUTING.md); replay makes the measured run take the reference
   expert weights). It is router_topk's row function with the selection loop skipped: lane r takes the recorded expert r of
   the row, and the weights come from this run's own logits over that set, by the same expression. An id outside
   [0, n_expert) is taken as expert 0 (the host validates the record, so only a generic launch reaches it).
+- runtime: `rad_route_replay_load` (abi, wrapper, test fake). The engine reads and checks the record against the model at
+  start (routed layers, n_expert, rows, documents, id range) and every rank's context keeps it as a device table. Each pass
+  must be one sequence's prefill without drafting whose positions continue or restart at 0 for the next document; its rows
+  are looked up through the document starts, so chunk size cannot matter. Anything else, or a run that does not consume
+  the whole record, fails the run. Recorded passes (the step tape) are off while replaying.
+- block (arch/common/rad_block_moe_fp8.h): declares `router_topk_replay` and a persistent step-tall forced-ids buffer when a
+  plugin offers the op; on a replayed pass it loads the pass's rows, skips the fused routers and issues the replay op. With
+  no such op the core fails the step.
 """
 from __future__ import annotations
 
@@ -230,4 +238,371 @@ R4D_ROWS = FilePatch(path="libr4d/r4d_rows.cpp", language="none", description="V
     ),
 ))
 
-PATCHES = (RAD_CORE, CONFIG, CONFIG_TEST, R4D_MOE, R4D_PLUGIN_H, R4D_SHAPES, R4D_ROWS)
+R_RUNTIME_H = FilePatch(path="abi/rad_runtime.h", language="none", description="VTP44 route replay ABI", edits=(
+    _after(
+        "rp-abi", "int32_t* rad_route_counts(RadCtx* c, int layer, int64_t n_expert);",
+        "/* BC_VTP44_ROUTE_REPLAY_ABI (rad0045): the experts to take for rows [r0, r0 + rows) of this pass's layer when a recorded\n"
+        " * route is being replayed: they are copied, stream-ordered, into `dst` (rows of `top_k` int32 at row r0). Returns 1 when\n"
+        " * replaying (a null `dst` then fails the step: the block has no way to use them), 0 when not replaying or the layer is\n"
+        " * not a routed trunk layer, <0 on error (the step is failed too). */\n"
+        "int rad_route_replay_load(RadCtx* c, int layer, rad_buf dst, int64_t r0, int64_t rows, int64_t top_k);",
+        guard="BC_VTP44_ROUTE_REPLAY_ABI",
+    ),
+))
+
+ISSUE_CPP = FilePatch(path="core/runtime/issue.cpp", language="none", description="VTP44 route replay wrapper", edits=(
+    Edit(
+        id="rp-wrapper",
+        anchor=re.escape("    return c ? static_cast<rad::Ctx*>(c)->route_counts(layer, n_expert) : nullptr;\n}\n"),
+        mode="insert_after",
+        text="\n/* BC_VTP44_ROUTE_REPLAY_WRAPPER */\n"
+             "int rad_route_replay_load(RadCtx* c, int layer, rad_buf dst, int64_t r0, int64_t rows, int64_t top_k) {\n"
+             "    return c ? static_cast<rad::Ctx*>(c)->route_replay_load(layer, dst, r0, rows, top_k) : RAD_E_INVAL;\n"
+             "}\n",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_WRAPPER"), expect_matches=1, max_span_lines=3, rationale=RATIONALE,
+    ),
+))
+
+ARCH_FAKES = FilePatch(path="tests/arch_fakes.h", language="none", description="VTP44 route replay test fake", edits=(
+    Edit(
+        id="rp-fake",
+        anchor=re.escape("    (void)c; (void)layer; (void)n_expert;\n    return nullptr;\n}\n"),
+        mode="insert_after",
+        text="/* BC_VTP44_ROUTE_REPLAY_FAKE: no recorded route here, so nothing is replayed. */\n"
+             "extern \"C\" int rad_route_replay_load(RadCtx*, int, rad_buf, int64_t, int64_t, int64_t) { return 0; }\n",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_FAKE"), expect_matches=1, max_span_lines=4, rationale=RATIONALE,
+    ),
+))
+
+CTX_H = FilePatch(path="core/runtime/ctx.h", language="none", description="VTP44 route replay in the context", edits=(
+    _before(
+        "rp-table", "struct CtxDesc {",
+        "/* BC_VTP44_ROUTE_REPLAY_TABLE: a recorded expert route (--expert-route-record's file), read once and shared by every rank. */\n"
+        "struct RouteReplay {\n"
+        "    int32_t              top_k = 0;\n"
+        "    int64_t              rows = 0;                        /* rows per layer, over all recorded documents */\n"
+        "    std::vector<int>     layers;                          /* the routed trunk layers, ascending */\n"
+        "    std::vector<int64_t> doc_starts;                      /* the first row of each recorded document */\n"
+        "    std::vector<std::vector<int32_t>> ids;                /* [layers.size()][rows * top_k] */\n"
+        "};\n\n",
+        guard="BC_VTP44_ROUTE_REPLAY_TABLE",
+    ),
+    _after(
+        "rp-desc", "    bool            record_passes = true;",
+        "    const RouteReplay* route_replay = nullptr;   /* BC_VTP44_ROUTE_REPLAY_DESC: replay this route (see rad_route_replay_load); null is off */",
+        guard="BC_VTP44_ROUTE_REPLAY_DESC",
+    ),
+    _after(
+        "rp-api", "    int64_t           route_n_expert() const { return route_n_expert_; }",
+        "    /* BC_VTP44_ROUTE_REPLAY_API: replaying a recorded route (rad0045). */\n"
+        "    int  route_replay_load(int layer, rad_buf dst, int64_t r0, int64_t rows, int64_t top_k);\n"
+        "    const std::string& route_replay_problem() const { return route_rp_why_; }\n"
+        "    int64_t route_replay_rows_used() const { return route_rp_used_; }\n"
+        "    int64_t route_replay_rows_total() const { return route_rp_ ? route_rp_->rows : 0; }",
+        guard="BC_VTP44_ROUTE_REPLAY_API",
+    ),
+    _after(
+        "rp-members", "    int32_t*               route_dev_      = nullptr;   /* card */",
+        "    /* BC_VTP44_ROUTE_REPLAY_MEMBERS */\n"
+        "    const RouteReplay*     route_rp_       = nullptr;\n"
+        "    int32_t*               route_rp_dev_   = nullptr;   /* card: [routed layer][route_rp_->rows][top_k] */\n"
+        "    std::vector<int>       route_rp_at_;                /* layer -> index in route_rp_->layers, or -1 */\n"
+        "    int                    route_rp_doc_   = -1;\n"
+        "    int64_t                route_rp_base_  = 0, route_rp_next_pos_ = 0, route_rp_used_ = 0;\n"
+        "    std::string            route_rp_why_;\n"
+        "    int  route_replay_begin();",
+        guard="BC_VTP44_ROUTE_REPLAY_MEMBERS",
+    ),
+))
+
+CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none", description="VTP44 route replay in the context", edits=(
+    _after(
+        "rp-init", "    record_passes_ = d.record_passes;",
+        "    route_rp_ = d.route_replay; /* BC_VTP44_ROUTE_REPLAY_INIT */",
+        guard="BC_VTP44_ROUTE_REPLAY_INIT",
+    ),
+    Edit(
+        id="rp-tape-off",
+        anchor=re.escape("&& route_rec_cap_ == 0;"),
+        mode="replace",
+        text="&& route_rec_cap_ == 0 && !route_rp_; /* BC_VTP44_ROUTE_REPLAY_TAPE: a played pass would not re-run the load */",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_TAPE"), expect_matches=1, max_span_lines=1, rationale=RATIONALE,
+    ),
+    _after(
+        "rp-free",
+        "    if (route_dev_)  { rad_dev_free(route_dev_, RAD_MEM_DEVICE);        route_dev_  = nullptr; }",
+        "    if (route_rp_dev_) { rad_dev_free(route_rp_dev_, RAD_MEM_DEVICE); route_rp_dev_ = nullptr; } /* BC_VTP44_ROUTE_REPLAY_FREE */",
+        guard="BC_VTP44_ROUTE_REPLAY_FREE",
+    ),
+    _after(
+        "rp-begin", "    batch_       = b;",
+        "    (void)route_replay_begin(); /* BC_VTP44_ROUTE_REPLAY_BEGIN: a problem fails the step at the first load */",
+        guard="BC_VTP44_ROUTE_REPLAY_BEGIN",
+    ),
+    Edit(
+        id="rp-impl",
+        anchor="^" + re.escape("int Ctx::route_flush() {") + "$",
+        mode="insert_before",
+        text=r"""/* BC_VTP44_ROUTE_REPLAY_IMPL: replaying a recorded expert route (rad0045). The pass's rows are looked up through the
+ * document starts: a restart at position 0 is the next recorded document, so the pass size cannot matter. Any
+ * deviation fails the run, never a silent fallback to the router's own choice. */
+int Ctx::route_replay_begin() {
+    if (!route_rp_ || !batch_) return RAD_OK;
+    const RouteReplay& R = *route_rp_;
+    auto bad = [&](const char* why) {
+        if (route_rp_why_.empty()) { route_rp_why_ = why; RAD_ERR("expert route replay: %s", why); }
+        return (int)RAD_E_INVAL;
+    };
+    if (!route_rp_why_.empty()) return RAD_E_INVAL;
+    if (batch_->phase != RAD_PHASE_PREFILL || batch_->n_seq != 1 || batch_->n_spec != 0 || batch_->draft_pass != 0 ||
+        !batch_->positions_h)
+        return bad("only one-sequence prefill passes without drafting can be replayed");
+    const int64_t n = batch_->n_tok;
+    const int32_t* pos = batch_->positions_h;
+    if (n <= 0) return RAD_OK;
+    for (int64_t i = 1; i < n; ++i)
+        if ((int64_t)pos[i] != (int64_t)pos[0] + i) return bad("token positions within a pass are not contiguous");
+    if (!route_rp_dev_) {
+        const int64_t n_trunk = program_->meta.n_layers;
+        route_rp_at_.assign((size_t)n_trunk, -1);
+        for (const WeightInfo& w : program_->weights) {
+            const int32_t l = w.decl.group.layer;
+            if (w.decl.group.expert >= 0 && l >= 0 && l < n_trunk) route_rp_at_[(size_t)l] = 0;
+        }
+        std::vector<int> layers;
+        for (int64_t l = 0; l < n_trunk; ++l) {
+            if (route_rp_at_[(size_t)l] < 0) continue;
+            route_rp_at_[(size_t)l] = (int)layers.size();
+            layers.push_back((int)l);
+        }
+        if (layers != R.layers) return bad("the record's routed layers are not this model's");
+        const size_t per = (size_t)R.rows * (size_t)R.top_k;
+        route_rp_dev_ = static_cast<int32_t*>(rad_dev_alloc(layers.size() * per * sizeof(int32_t), RAD_MEM_DEVICE));
+        if (!route_rp_dev_) return bad("the table allocation failed");
+        for (size_t i = 0; i < layers.size(); ++i)
+            RAD_TRY(rad_memcpy_async(route_rp_dev_ + i * per, R.ids[i].data(), per * sizeof(int32_t), stream_));
+        RAD_TRY(rad_stream_sync(stream_));
+    }
+    if (pos[0] == 0) ++route_rp_doc_;
+    else if ((int64_t)pos[0] != route_rp_next_pos_) return bad("token positions do not continue the previous pass");
+    if (route_rp_doc_ < 0 || route_rp_doc_ >= (int)R.doc_starts.size()) return bad("the run has more documents than the record");
+    const int64_t d0 = R.doc_starts[(size_t)route_rp_doc_];
+    const int64_t d1 = (size_t)route_rp_doc_ + 1 < R.doc_starts.size() ? R.doc_starts[(size_t)route_rp_doc_ + 1] : R.rows;
+    if (d0 + pos[0] + n > d1) return bad("a document is longer than the record's");
+    route_rp_base_ = d0 + pos[0];
+    route_rp_next_pos_ = (int64_t)pos[0] + n;
+    route_rp_used_ += n;
+    return RAD_OK;
+}
+
+int Ctx::route_replay_load(int layer, rad_buf dst, int64_t r0, int64_t rows, int64_t top_k) {
+    if (!route_rp_) return 0;
+    if (layer < 0 || (size_t)layer >= route_rp_at_.size() || route_rp_at_[(size_t)layer] < 0) return 0;   /* an MTP head's layer */
+    auto fail = [&](const char* why, int rc) {
+        if (route_rp_why_.empty()) { route_rp_why_ = why; RAD_ERR("expert route replay: %s", why); }
+        if (step_status_ >= 0) step_status_ = rc;
+        return rc;
+    };
+    if (!route_rp_why_.empty()) return fail("", RAD_E_INVAL);
+    if (!dst) return fail("no kernel plugin offers router_topk_replay for this router", RAD_E_UNSUPPORTED);
+    if (top_k != route_rp_->top_k) return fail("the model's top_k is not the record's", RAD_E_INVAL);
+    int32_t* d = static_cast<int32_t*>(buf_ptr(dst));
+    if (!d || !batch_ || rows <= 0 || r0 < 0 || r0 + rows > batch_->n_tok) return fail("a pass asked for rows it does not have", RAD_E_INVAL);
+    const int64_t at = route_rp_at_[(size_t)layer];
+    const int rc = rad_memcpy_async(d + r0 * top_k, route_rp_dev_ + ((at * route_rp_->rows) + route_rp_base_ + r0) * top_k,
+                                    (size_t)(rows * top_k) * sizeof(int32_t), stream_);
+    return rc < 0 ? fail("the copy of the recorded experts failed", rc) : 1;
+}
+
+""",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_IMPL"), expect_matches=1, max_span_lines=1, rationale=RATIONALE,
+    ),
+))
+
+BRINGUP = FilePatch(path="core/engine_bringup.cpp", language="none", description="VTP44 route replay bring-up", edits=(
+    _before(
+        "rp-read", "int Engine::start() {",
+        r"""/* BC_VTP44_ROUTE_REPLAY_READ: a record written by --expert-route-record (rad0044), read whole and checked against this
+ * model: an incomplete file, another model, other routed layers or an id outside the model refuse the start. */
+static int bc_route_replay_read(const std::string& path, int meta_layers, int meta_n_expert, const char* meta_name,
+                                RouteReplay* out) {
+    FILE* f = std::fopen(path.c_str(), "rb");
+    if (!f) { RAD_ERR("--expert-route-replay: cannot read %s", path.c_str()); return RAD_E_IO; }
+    auto refuse = [&](const char* why) {
+        RAD_ERR("--expert-route-replay: %s: %s", path.c_str(), why);
+        std::fclose(f);
+        return (int)RAD_E_INVAL;
+    };
+    static char line[1 << 20];
+    if (!std::fgets(line, sizeof line, f) || std::strcmp(line, "RADROUTE1\n") != 0) return refuse("not an expert route record");
+    if (!std::fgets(line, sizeof line, f) || std::strchr(line, '\n') == nullptr) return refuse("the header is missing or too long");
+    const std::string h(line);
+    auto field = [&](const char* key) -> const char* {
+        const std::string k = std::string("\"") + key + "\":";
+        const size_t p = h.find(k);
+        return p == std::string::npos ? nullptr : h.c_str() + p + k.size();
+    };
+    auto num = [&](const char* key, long long* v) {
+        const char* p = field(key);
+        char* e = nullptr;
+        if (!p) return false;
+        *v = std::strtoll(p, &e, 10);
+        return e != p;
+    };
+    auto list = [&](const char* key, std::vector<long long>* v) {
+        const char* p = field(key);
+        if (!p || *p != '[') return false;
+        for (++p; *p && *p != ']';) {
+            char* e = nullptr;
+            v->push_back(std::strtoll(p, &e, 10));
+            if (e == p) return false;
+            p = e;
+            if (*p == ',') ++p;
+        }
+        return *p == ']';
+    };
+    long long layers = 0, top_k = 0, n_expert = 0, rows = 0;
+    std::vector<long long> routed, docs;
+    if (h.find("\"complete\":true") == std::string::npos) return refuse("the record is incomplete");
+    if (!num("layers", &layers) || !num("top_k", &top_k) || !num("n_expert", &n_expert) || !num("rows", &rows) ||
+        !list("routed", &routed) || !list("doc_starts", &docs))
+        return refuse("the header is not a record header");
+    std::string want;
+    for (const char* q = meta_name; *q; ++q) want += (*q == '"' || *q == '\\' || (unsigned char)*q < 0x20) ? '?' : *q;
+    const char* mp = field("model");
+    if (!mp || *mp != '"' || h.compare(mp - h.c_str(), want.size() + 2, "\"" + want + "\"") != 0)
+        return refuse("the record is of another model");
+    if (layers != meta_layers || n_expert != meta_n_expert) return refuse("the record's layer or expert count is not this model's");
+    if (top_k <= 0 || top_k > 32 || rows <= 0 || routed.empty() || docs.empty() || docs[0] != 0)
+        return refuse("the record's shape is invalid");
+    for (size_t i = 0; i < routed.size(); ++i)
+        if (routed[i] < 0 || routed[i] >= layers || (i && routed[i] <= routed[i - 1])) return refuse("the record's routed layers are invalid");
+    for (size_t i = 0; i < docs.size(); ++i)
+        if (docs[i] < 0 || docs[i] >= rows || (i && docs[i] <= docs[i - 1])) return refuse("the record's document starts are invalid");
+    out->top_k = (int32_t)top_k;
+    out->rows = rows;
+    for (const long long l : routed) out->layers.push_back((int)l);
+    out->doc_starts.assign(docs.begin(), docs.end());
+    out->ids.assign(routed.size(), {});
+    for (auto& v : out->ids) {
+        v.resize((size_t)(rows * top_k));
+        if (std::fread(v.data(), sizeof(int32_t), v.size(), f) != v.size()) return refuse("the record is shorter than its header says");
+        for (const int32_t id : v)
+            if (id < 0 || id >= n_expert) return refuse("the record holds an expert id outside the model");
+    }
+    if (std::fgetc(f) != EOF) return refuse("the record is longer than its header says");
+    std::fclose(f);
+    return RAD_OK;
+}
+
+""",
+        guard="BC_VTP44_ROUTE_REPLAY_READ",
+    ),
+    _after(
+        "rp-bringup", "        d.profile_ops = cfg_.profile_ops;",
+        "        if (!cfg_.expert_route_replay.empty()) { /* BC_VTP44_ROUTE_REPLAY_BRINGUP */\n"
+        "            if (cfg_.max_seqs != 1) {\n"
+        "                RAD_ERR(\"--expert-route-replay needs --max-num-seqs 1: rows are replayed in token order\");\n"
+        "                return RAD_E_INVAL;\n"
+        "            }\n"
+        "            if (!cfg_.expert_route_record.empty()) {\n"
+        "                RAD_ERR(\"--expert-route-replay and --expert-route-record are exclusive\");\n"
+        "                return RAD_E_INVAL;\n"
+        "            }\n"
+        "            static RouteReplay route_table;   /* read once, shared by every rank, for the life of the process */\n"
+        "            if (route_table.rows == 0)\n"
+        "                RAD_TRY(bc_route_replay_read(cfg_.expert_route_replay, (int)meta_.n_layers, (int)meta_.n_expert,\n"
+        "                                             meta_.name ? meta_.name : \"\", &route_table));\n"
+        "            d.route_replay = &route_table;\n"
+        "        }",
+        guard="BC_VTP44_ROUTE_REPLAY_BRINGUP",
+    ),
+))
+
+ENGINE = FilePatch(path="core/engine.cpp", language="none", description="VTP44 route replay end check", edits=(
+    Edit(
+        id="rp-end",
+        anchor="^" + re.escape("    xstats_close();") + "$",
+        mode="insert_after",
+        text=r"""
+    if (!cfg_.expert_route_replay.empty()) { /* BC_VTP44_ROUTE_REPLAY_END: a replay that did not take the whole record is not a measurement */
+        for (auto& r : ranks_) {
+            const auto& rc = r->ctx;
+            if (!rc.route_replay_problem().empty()) {
+                RAD_ERR("--expert-route-replay: rank %d: %s", r->index, rc.route_replay_problem().c_str());
+                if (s >= 0) s = RAD_E_INVAL;
+            } else if (s >= 0 && rc.route_replay_rows_used() != rc.route_replay_rows_total()) {
+                RAD_ERR("--expert-route-replay: rank %d replayed %lld rows, the record has %lld", r->index,
+                        (long long)rc.route_replay_rows_used(), (long long)rc.route_replay_rows_total());
+                s = RAD_E_INVAL;
+            }
+        }
+    }""",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_END"), expect_matches=1, max_span_lines=1, rationale=RATIONALE,
+    ),
+))
+
+BLOCK = FilePatch(path="arch/common/rad_block_moe_fp8.h", language="none", description="VTP44 route replay in the MoE block", edits=(
+    _after(
+        "rp-members", "    rad_op op_router = 0, op_topk = 0, op_scatter = 0;",
+        "    /* BC_VTP44_ROUTE_REPLAY_MEMBERS (rad0045): router_topk with the experts given, and its step-tall buffer of them. */\n"
+        "    rad_op  op_topk_replay = 0;\n"
+        "    rad_buf b_forced = 0;",
+        guard="BC_VTP44_ROUTE_REPLAY_MEMBERS",
+    ),
+    _before(
+        "rp-declare", "    /* Protected experts are sorted last (`protect`); layers without them declare no protect",
+        "    /* BC_VTP44_ROUTE_REPLAY_DECLARE (rad0045): when a kernel plugin offers router_topk_replay, declare it with a persistent\n"
+        "     * buffer the core fills with a replayed pass's recorded experts (written outside the op stream, so not transient). */\n"
+        "    if (!c.sigmoid_router && rad_op_declared(b, \"router_topk_replay\")) {\n"
+        "        b_forced = decl_b(b, nm.f(\"blk.%d.route_forced\", l), RAD_I32, {g.max_tok, c.top_k}, RAD_BUF_PERSIST);\n"
+        "        if (!b_forced) return RAD_E_INVAL;\n"
+        "        op_topk_replay = rw(b, RAD_OP(b, \"router_topk_replay\",\n"
+        "                                   RAD_PARAMS(RAD_RANGE(\"M\", 1, c.rows), RAD_INT(\"n_expert\", c.n_expert_all),\n"
+        "                                              RAD_INT(\"top_k\", c.top_k), RAD_INT(\"norm\", c.norm_topk),\n"
+        "                                              RAD_STR(\"dtype\", g.dtype)),\n"
+        "                                   RAD_NOWEIGHTS),\n"
+        "                            {w.logits, b_forced}, {w.ids, w.ew});\n"
+        "        if (op_topk_replay && !rad_op_resolved(b, op_topk_replay)) op_topk_replay = 0;\n"
+        "    }\n",
+        guard="BC_VTP44_ROUTE_REPLAY_DECLARE", max_span=1,
+    ),
+    Edit(
+        id="rp-fused",
+        anchor=re.escape("    const bool rfused = op_router_fused && rows <= router_fused_rows;\n"
+                         "    const bool sfused = op_sigmoid_scatter && rows <= sigmoid_scatter_rows;\n"),
+        mode="replace",
+        text="    /* BC_VTP44_ROUTE_REPLAY_ISSUE (rad0045): a replayed pass takes this pass's recorded experts and the separate router,\n"
+             "     * router_topk_replay and scatter: the fused forms select their own. A block with no replay op (or a sigmoid router)\n"
+             "     * passes no buffer, which fails the step in the core while replaying. */\n"
+             "    const int replay = rad_route_replay_load(c_, layer, (op_topk_replay && !c.sigmoid_router) ? b_forced : 0, r0, rows, k);\n"
+             "    const bool rfused = replay == 0 && op_router_fused && rows <= router_fused_rows;\n"
+             "    const bool sfused = replay == 0 && op_sigmoid_scatter && rows <= sigmoid_scatter_rows;\n",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_ISSUE"), expect_matches=1, max_span_lines=3, rationale=RATIONALE,
+    ),
+    Edit(
+        id="rp-topk",
+        anchor=re.escape("    } else if (op_topk_scatter && rows <= topk_scatter_rows) {"),
+        mode="replace",
+        text="    } else if (op_topk_scatter && rows <= topk_scatter_rows && replay == 0) {",
+        guard=re.escape("replay == 0) {"), expect_matches=1, max_span_lines=1, rationale=RATIONALE,
+    ),
+    Edit(
+        id="rp-issue",
+        anchor=re.escape("        if (!c.sigmoid_router)\n"
+                         "        RAD_ISSUE_N(c_, op_topk, rows, brow_slice(w.logits, r0, rows, ne_all),\n"
+                         "                    brow_slice(w.ids, r0, rows, k), brow_slice(w.ew, r0, rows, k));\n"),
+        mode="replace",
+        text="        if (!c.sigmoid_router && replay > 0 && op_topk_replay)   /* BC_VTP44_ROUTE_REPLAY_TOPK */\n"
+             "            RAD_ISSUE_N(c_, op_topk_replay, rows, brow_slice(w.logits, r0, rows, ne_all),\n"
+             "                        brow_slice(b_forced, r0, rows, k), brow_slice(w.ids, r0, rows, k),\n"
+             "                        brow_slice(w.ew, r0, rows, k));\n"
+             "        else if (!c.sigmoid_router)\n"
+             "        RAD_ISSUE_N(c_, op_topk, rows, brow_slice(w.logits, r0, rows, ne_all),\n"
+             "                    brow_slice(w.ids, r0, rows, k), brow_slice(w.ew, r0, rows, k));\n",
+        guard=re.escape("BC_VTP44_ROUTE_REPLAY_TOPK"), expect_matches=1, max_span_lines=4, rationale=RATIONALE,
+    ),
+))
+
+PATCHES = (RAD_CORE, CONFIG, CONFIG_TEST, R4D_MOE, R4D_PLUGIN_H, R4D_SHAPES, R4D_ROWS,
+           R_RUNTIME_H, ISSUE_CPP, ARCH_FAKES, CTX_H, CTX_CPP, BRINGUP, ENGINE, BLOCK)

@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (42)
+## Engine patches (43)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -55,6 +55,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0042_kv_b16_selftest](../../../../engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md) | `untested` | `libr4d/r4d_selftest.cpp`: the Flash-Next QSA numeric cases (gqa 12 and gqa 6 with 4-token pages) take the two layouts, with a ragged last prefill tile and the decode at every wave count (1 to 5 rows at gqa 12, 4 and 8 rows at gqa 6); the split-KV prefill and mixed-step tables gain both geometries for both layouts; the fused gate+quantiser byte-identity case (`attn_decode_gq_h256_gqa12_*` against the decode and `gate_quant_fp8` pair) builds a bf16-K cache with finite E4M3 or int8 V bytes and f16 group scales. |
 | [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | `untested` | `--expert-stats` counts the routed experts a layer keeps in bf16 beside its quantised table (its protected experts). Before, their histogram indices had no entry in the stats map and were tallied as `unmapped`, so a quantised layer's counts came up short by exactly its protected experts' selections. |
 | [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | `untested` | `--expert-route-record FILE` writes the experts each token's router chose, for every routed trunk layer, when the run ends. A KLD run on a routed model cannot rank KV caches because any change in the arithmetic moves about 1.1% of the choices (FLASHNEXT-ROUTING.md); to score a cache alone the measured run has to take a reference run's choices. This is the record half; replay is a later patch. Manifest field `engine.tuning.expert_route_record` (contract amendment 21). |
+| [rad0045_expert_route_replay](../../../../engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md) | `untested` | `--expert-route-replay FILE` makes a run take, for every token and routed layer, the experts a reference run recorded with `--expert-route-record` (rad0044) instead of the router's own choice. KLD against a reference cannot rank KV caches on a routed model because any change in the arithmetic moves about 1.1% of the expert choices (42% of token-layer expert sets differ between chunk 64 and 128); replaying the reference's route removes that noise, so only the cache differs. Manifest field `engine.tuning.expert_route_replay` (contract amendment 22). |
 
 ## Components (6)
 
