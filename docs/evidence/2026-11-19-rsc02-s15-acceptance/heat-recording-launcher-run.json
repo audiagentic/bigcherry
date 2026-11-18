@@ -1,0 +1,18 @@
+{
+ "config": "launcher default (flashnext-4gpu)",
+ "port": 18405,
+ "canary": " Paris. The capital of Germany is Berlin. The capital of Italy is Rome. The capital of Spain is Madrid. The",
+ "corpus_prompts": 3386,
+ "workload": {
+  "requests": 608,
+  "completion_tokens": 55256,
+  "errors": 0,
+  "wall_s": 2270.7462981950666,
+  "elapsed_s": 605.8
+ },
+ "stop": {
+  "returncode": 0,
+  "tail": "stopped\nrestored to what ran before and verified\n"
+ },
+ "histogram": "<path>"
+}
