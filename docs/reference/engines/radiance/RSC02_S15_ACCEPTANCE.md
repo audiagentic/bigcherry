@@ -41,9 +41,15 @@ native typed mode is **BLOCKED**, not equivalent.
 
 1. **Card-free prerequisite:** build the declared component target
    `bc_s15_dry_run_test` and run `ctest -R '^bc_s15_dry_run_test$'`.
-   It runs the production native stored-manifest owner/fake engine plus two
-   existing real Bash launcher/fake engine tests; its comparator also injects
-   differences in speculation, histogram, helpers and role identity. It
+   It runs the production native stored-manifest owner/fake engine and its
+   comparator injects differences in speculation, histogram, helpers and
+   role identity.
+   Run the two longer real Bash launcher/fake-engine paths separately on a
+   suitable card-free host with
+   `python3 tools/lab/radiance/rsc02_s15_projection.py dry-run --native-test
+   BUILD/bc_session_stored_test --legacy-launch-tests`. They hang under
+   the CI build-container launcher environment, so no Bash success is
+   inferred from the component CTest. The card-free prerequisite
    **cannot** assert hardware, latency, power or equal end-to-end owner
    behaviour. The unit test `tools/tests/lab/test_rsc02_s15_projection.py`
    checks byte-binding and semantic tampering.

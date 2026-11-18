@@ -21,3 +21,6 @@ Build `expert-stats-protected`, qwen3.8-next-flash-hcbf16, two 7900 XTX, six run
 selections in all. Flips against bf16-a with the protected experts counted: chunk 128 22,529 (1.127%), bf16_i8 22,068,
 bf16_fp8 22,065, fp8 22,114 (1.104-1.107%); the same-config repeat 0. Earlier figures that left out the protected
 experts (22,052-22,508) were within 0.1%. The state stays untested: this was a diagnostic run, not a qualification.
+
+## 2026-11-18 correction (found by rad0044's route record)
+The first version of this patch appended the protected experts but kept the container's numbering for the quantised ones. Comparing a recorded run's per-layer histograms (rad0044, the ids the router returns) with `--expert-stats` showed 44 of 48 layers identical and layers 34, 44, 46 and 47 shifted: the container numbers the quantised experts compactly while their tensors are named by model expert, so each expert after a protected one was filed one id too low per protected expert below it, and the protected experts' counts sat at the appended indices. Totals and every flip count between runs were unaffected (both runs share the labels); per-expert counts in those four layers were wrong, and so would any `--expert-profile` made from them. The patch now labels every routed unit from its tensor name.

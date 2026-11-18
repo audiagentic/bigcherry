@@ -201,7 +201,7 @@ def _fixture(manifest: dict, location: str) -> dict:
             "processes": {"roles": roles}}
 
 
-def dry_run(native_test: Path) -> int:
+def dry_run(native_test: Path, *, legacy_launch_tests: bool = False) -> int:
     """Run two real fake-process lifecycles, plus projection failure injection.
 
     This is NOT proof that real Bash and native manifest projections match.
@@ -241,6 +241,9 @@ def dry_run(native_test: Path) -> int:
         print("RSC02 S15: native stored-manifest/real owner fake engine FAILED", file=sys.stderr)
         return 1
     print("RSC02 S15: real native owner -> fake engine PASS", flush=True)
+    if not legacy_launch_tests:
+        print("RSC02 S15: legacy Bash fake-launcher runs require --legacy-launch-tests (not CI)")
+        return 0
     os.environ.setdefault("BIGCHERRY_ENVIRONMENT", str(REPO / "config/environment.example.toml"))
     scratch = native_test.parent / "rsc02-s15-tmp"
     scratch.mkdir(parents=True, exist_ok=True)
@@ -266,10 +269,12 @@ def main(argv: list[str] | None = None) -> int:
     comp.add_argument("--output", type=Path)
     rehearsal = sub.add_parser("dry-run", help="run real card-free fake engine call graphs")
     rehearsal.add_argument("--native-test", type=Path, required=True)
+    rehearsal.add_argument("--legacy-launch-tests", action="store_true",
+                           help="run the long legacy fake-process launcher cases separately from CI")
     args = ap.parse_args(argv)
     try:
         if args.command == "dry-run":
-            return dry_run(args.native_test.resolve())
+            return dry_run(args.native_test.resolve(), legacy_launch_tests=args.legacy_launch_tests)
         report = compare(json.loads(args.legacy.read_text()), json.loads(args.native.read_text()))
         if args.output:
             args.output.write_text(json.dumps(report, indent=2) + "\n")

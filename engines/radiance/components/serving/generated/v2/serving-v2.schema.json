@@ -1543,6 +1543,11 @@
                       "type": "string",
                       "minLength": 1
                     },
+                    "expert_route_record": {
+                      "description": "Engine flag `--expert-route-record` (BigCherry rad0044; amendment 21). Value text as the flag takes it (FILE): write the experts each token's router chose, per routed layer, at shutdown.",
+                      "type": "string",
+                      "minLength": 1
+                    },
                     "live": {
                       "description": "Engine flag `--live` (amendment 13). Present means the flag is given.",
                       "enum": [

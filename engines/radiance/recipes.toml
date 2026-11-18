@@ -147,6 +147,10 @@ patches = ["rad0042_kv_b16_selftest"]
 [experiment.expert-stats-protected]
 patches = ["rad0043_expert_stats_protected"]
 
+# VTP44: the reference run records the experts each token chose; --expert-stats counts them (rad0043 maps every expert).
+[experiment.expert-route-record]
+patches = ["rad0043_expert_stats_protected", "rad0044_expert_route_record"]
+
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the
 # component's, never restated here.

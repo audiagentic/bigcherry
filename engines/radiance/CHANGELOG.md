@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.30.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.29.0...bc-radiance-1170.30.0) (2026-11-18)
+
+
+### New and changed
+
+* **release:** add native verified engine installation and rollback ([#1079](https://github.com/audiagentic/bigcherry/issues/1079)) ([3b61388](https://github.com/audiagentic/bigcherry/commit/3b613883c7eccdc1cbbbbbde879de361774a5e34))
+
 ## [1170.29.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.28.0...bc-radiance-1170.29.0) (2026-11-17)
 
 
