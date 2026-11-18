@@ -16,7 +16,7 @@ from collections import defaultdict
 from pathlib import Path
 from typing import Any
 
-from ..core import components, paths
+from ..core import component_coupling, components, paths
 from ..core.context import ProjectContext
 from ..engine_adapters import adapter, radiance_bump
 from ..patch import registry as patch_registry
@@ -218,6 +218,10 @@ def _drift(engine: str, context: ProjectContext, mirror: Path, target_sha: str) 
             checks = adapter(engine).source_drift_checks(context, root)
             failures: dict[str, list[str]] = {}
             for check in checks:
+                # This archive includes libr4d only: coupling is checked with
+                # the full target ls-tree and ABI separately below.
+                if check.id == "component-coupling":
+                    continue
                 for file, problems in check.run().items():
                     failures.setdefault(file, []).extend(problems)
         except Exception as exc:
@@ -274,8 +278,26 @@ def run(*, engine: str, target_ref: str, context: ProjectContext | None = None) 
         "core/mem", "core/runtime", "core/engine.cpp",
     ).splitlines()
     failures, findings = _drift(engine, context, mirror, to_sha)
+    # RUM02-07: the exact target source inventory also checks every owned
+    # component's declared headers, build inputs and plugin ABI. Read-only:
+    # no vendor checkout and no patch/materialisation side effects.
+    upstream_paths = set(_git(mirror, "ls-tree", "-r", "--name-only", to_sha).splitlines())
+    abi_header = _git(mirror, "show", f"{to_sha}:abi/rad_abi.h") if "abi/rad_abi.h" in upstream_paths else ""
+    abi_match = radiance_bump._ABI_DECLARATION.search(abi_header)
+    # A missing ABI header is an inventory failure, not an exception that
+    # prevents the rest of read-only triage (including minimal test mirrors).
+    abi = int(abi_match.group(1)) if abi_match else None
+    couplings = {
+        name: errors
+        for name, component in components.load_all(paths.REPO_ROOT, engine).items()
+        if (errors := component_coupling.problems(
+            component, upstream_paths=upstream_paths, upstream_abi=abi,
+            patch_root=context.patches_root))
+    }
     drift_count = sum(map(len, failures.values()))
-    verdict = "patches-affected" if patches else "drift-only" if drift_count else "clean"
+    verdict = ("patches-affected" if patches else
+               "drift-only" if drift_count else
+               "coupling-affected" if couplings else "clean")
     return {
         "engine": engine, "current_pin": current, "target": target_ref,
         "current_sha": from_sha, "target_sha": to_sha,
@@ -283,10 +305,11 @@ def run(*, engine: str, target_ref: str, context: ProjectContext | None = None) 
         "rewrite_anchors": rewrites, "patch_anchors": patches,
         "core_commit_subjects": subjects, "drift_failures": failures,
         "drift_details": findings,
+        "coupling_failures": couplings, "upstream_abi": abi,
         "verdict": verdict,
         "counts": {
             "changed_files": len(changed), "rewrite_anchor_files": len(rewrites),
-            "patch_target_files": len(patches), "drift_failures": drift_count,
+            "patch_target_files": len(patches), "drift_failures": drift_count, "coupling_failures": sum(map(len, couplings.values())),
         },
     }
 
@@ -322,6 +345,12 @@ def format_report(report: dict[str, Any]) -> str:
             lines.append(f"      closest {item['source']}:{suggestion['line']}: {suggestion['text']}")
     if not report["drift_details"]:
         lines.append("    none")
+    if "coupling_failures" in report:
+        lines.append(f"  component coupling (target plugin ABI {report['upstream_abi']}):")
+        for name, issues in sorted(report["coupling_failures"].items()):
+            lines.extend(f"    {name}: {issue}" for issue in issues)
+        if not report["coupling_failures"]:
+            lines.append("    all declared upstream component dependencies present")
     counts = report["counts"]
     lines.append(
         f"  verdict: {report['verdict']} (rewrite anchors {counts['rewrite_anchor_files']}, "

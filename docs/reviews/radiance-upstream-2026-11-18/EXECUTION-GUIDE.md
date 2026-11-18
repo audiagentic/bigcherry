@@ -1,5 +1,7 @@
 # Execution guide for the staged migration
 
+The [implementation queue](IMPLEMENTATION-ORDER.md) links the exact migration and optimization work packets, including the first canary and prerequisites for broader qualification.
+
 The initial roadmap and reviews merged in PR #1094 before this detail pass.
 The authoritative items below remain pending; writing a detailed plan does not
 mean the migration was implemented. Edit their scope/state through Planning MCP.

@@ -9,6 +9,32 @@
 - **Distinct identities:** upstream pin, component built-against, plugin ABI/layout, contract digest, stored-manifest digest, owner-map generation, per-start power ID, and asset tag/digest are separate fields with separate validity gates.
 - The machine-checked metadata milestone must update statuses below only after the gate proves each declaration; a clean patch apply does not prove that the runtime API and semantic contract still hold.
 
+## Machine-checked current-pin coupling milestone
+
+All six component manifests now declare `[coupling]` metadata, with a strict parser and
+a read-only source-consumer check under `tools/bigcherry/core/component_coupling.py`.
+The Radiance `pin-bump` drift phase enforces a target-tree check before rewrite,
+patch apply or build; `pin-triage` records failures for target source paths, ABI
+and missing owned declarations without altering the vendor checkout. The
+remote-MoE shared-memory magic, version and geometry constants are checked as
+an independent wire identity, not inferred from the plugin ABI.
+
+The typed engine option/env translation is **already** in the single
+`serving/contract/serving-v2.toml` field registry (via generated `v2::kFields`
+and `kEnvBindings`); rad0009 emits only from that registry and validates names
+against Radiance's parser. Native step-6 and RSC12 intent such as local
+heat/recording, budgets, lab experiments and helper settings remains distinct
+from upstream engine flags. RUM04 replaces the projection boundary, not the
+measured BigCherry admission contract.
+
+The inventory rows below are a historical baseline and intentionally retain
+their UNDECLARED status for **full patch/protocol semantic migration**.
+A successful mechanical declaration gate is narrower than RUM02-09 acceptance:
+it does not establish layout or protocol compatibility with the target.
+For example v2.1.0 has plugin ABI 40 versus this pin's 35, a moved/removed
+nlohmann source dependency and native rewrite drift. RUM03/04/02 own these
+changes; never translate a current-pin green test into a 2.x readiness claim.
+
 ## All six owned components
 
 | Component | Exact upstream header/source/cmake coupling | ABI, wire and layout | Flag/env names at the bridge | Link/build deps | RUM owner | Status |

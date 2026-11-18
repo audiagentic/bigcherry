@@ -12,3 +12,16 @@ configure = { RADIANCE_SRC = "{engine_source}" }
 
 [test]
 targets = ["bc_serving_test", "bc_session_test", "bc_session_guards_test", "bc_stored_manifest_cache_test", "bc_session_stored_test", "bc_s15_dry_run_test", "bc_stored_manifest_test", "bc_manifest_power_test", "bc_resources_parity_test", "bc_session_callback_guard", "bc_power_transaction_test", "bc_callback_boundary_abi_test", "bc_callback_boundary_cpp17_test", "bc_callback_boundary_guard", "bc_live_policy_test", "bc_live_policy_ingest_test", "bc_jcs_test", "bc_contract_test", "bc_contract_check", "bc_v2_native_projection_test", "bc_v2_reader_test", "bc_s5_refusal_test", "bc_experts_test", "bc_owner_map_test", "bc_v2_codec_test", "bc_v2_s8_test", "bc_v2_s10_test", "bc_v2_p1_test", "bc_v2_p1_live_test", "bc_v2_p1_producer_test", "bc_v2_native_measurement_test", "bc_v2_runtime_receipt_test", "bc_v2_runtime_receipt_live_test", "bc_release_install_test", "bc_typed_settings_test"]
+
+# Names crossing the Radiance build/runtime boundary. The core coupling gate
+# checks literals and source inventory; RUM02-07 own the eventual migration.
+[coupling]
+upstream-headers = ["rad_encoding.h", "rad_format.h", "rad_types.h"]
+upstream-files = ["abi/rad_encoding.h", "abi/rad_format.h", "abi/rad_types.h", "vendor/nlohmann/json.hpp"]
+upstream-source-globs = []
+patch-provided-files = []
+protocol-flags = ["--bc-heat-launch-nonce", "--manifest", "--measuring", "--plan-memory", "--plan-memory-ranks", "--role"]
+owned-flags = ["--allow-power-apply", "--calibration", "--calibration-prompts-a", "--calibration-prompts-b", "--calibration-records", "--calibration-run", "--calibration-store", "--configs", "--detect", "--engine-binary", "--engine-resident-mib", "--expected-dev", "--expected-ino", "--expected-manifest-digest", "--experiment", "--explain", "--from-log", "--help", "--helpers-resident-mib", "--json", "--lab-experiment", "--layouts", "--live-policy", "--measured-plan", "--model-root", "--plan-cache", "--plan-extra", "--power-profile", "--profile", "--publish-v2-live-room", "--publish-v2-p1", "--rank-demand", "--record-dir", "--run-dir", "--run-id", "--s8-replay-evidence", "--schema", "--set", "--site", "--sys-root", "--unmeasured", "--validate", "--write-manifest"]
+runtime-env = ["GPU_DEVICE_ORDINAL", "HIP_PATH", "HIP_VISIBLE_DEVICES", "R3_MOE_WORKER_FORMATS", "RADIANCE_HOME", "ROCR_VISIBLE_DEVICES"]
+abi-version = 35
+option-registry = "contract/serving-v2.toml"

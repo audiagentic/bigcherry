@@ -18,3 +18,14 @@ activation = "libbcgfx12: BC_GFX12_MOE_GEMV on"
 evidence = ["docs/evidence/RAD15/BC_GFX12_MOE_GEMV.run.json"]
 
 manifest = "/spec/processes/engine/kernels/gfx12_moe_gemv"
+# Names crossing the Radiance build/runtime boundary. The core coupling gate
+# checks literals and source inventory; RUM02-07 own the eventual migration.
+[coupling]
+upstream-headers = ["rad_abi.h", "rad_abi_layout.h"]
+upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h"]
+upstream-source-globs = []
+patch-provided-files = []
+protocol-flags = []
+owned-flags = []
+runtime-env = ["BC_GFX12_MOE_GEMV"]
+abi-version = 35

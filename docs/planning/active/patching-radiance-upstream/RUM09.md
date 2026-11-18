@@ -88,6 +88,8 @@ Prerequisites RUM03-RUM08. RUM10 fleet and later placement optimization are not 
 
 Astra source review ASTRA-CONSOLIDATION.md adds installed normal, measure/KL and stored-start proof: native option absent from BC registry passes via named launcher; wrong-level native key fails; identical immutable bytes and matching parser/build defaults reach planning/serving/replay; changed digest refuses before helper/power mutation. Cached starts still require fresh room; partial helper start rolls back. Explicitly support, pin or withhold every other shipped configuration before changing a common pin. Count actual handwritten/attachment deletions separately from moved/generated lines. No new bundle-index or acceptance framework.
 
+Stage Gate C: first run the TP1 Flash-Next production canary with disjoint heterogeneous helpers. This is first launch/parity evidence only. Run required mixed-rank qualification separately before any common-pin release claiming that support; if unavailable retain the previous release for those lanes. The helper-off profile is functional/KL control, not a throughput comparator; compare same layout and workload across old/new builds. Exact gate recipes: docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -97,3 +99,4 @@ Astra source review ASTRA-CONSOLIDATION.md adds installed normal, measure/KL and
 - 2026-11-18T02:20:14.331286+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:24:08.970577+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:27:05.771137+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T03:40:35.424079+00:00 (updated-by): Updated: section:notes
