@@ -40,6 +40,14 @@ leads, not proofs that their intended experimental dependency sets compose.
 No compilation, GPU benchmark, numerical parity, KLD or serving acceptance was
 performed. Validation below is required migration work, not a claim of success.
 
+## Manifest and extension redesign proposal
+
+See [the concrete YAML, placement and extension proposal](MANIFEST-AND-EXTENSIONS.md).
+Recommendation: reuse native upstream YAML for authoring, add a closed top-level
+`x-bigcherry` intent namespace, and retain generated immutable runtime contracts.
+Move injected implementations into owned components with narrow typed hooks;
+share one placement plan and upstream allocator instead of duplicating policy.
+
 ## Findings requiring design decisions first
 
 ### P0 — server entry point is incompatible with our manifest-to-argv bridge
