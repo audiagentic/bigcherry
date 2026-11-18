@@ -163,7 +163,7 @@ int main(int argc, char** argv) {
     const std::string plan = arg_after(argc, argv, "--plan-memory");
     if (!plan.empty()) {
         if (m.contains("measure_error")) {
-            std::printf("%s\\n", m.at("measure_error").get<std::string>().c_str());
+            std::printf("%s\n", m.at("measure_error").get<std::string>().c_str());
             std::fflush(stdout);
             return 42;
         }

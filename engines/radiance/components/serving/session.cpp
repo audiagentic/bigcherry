@@ -2105,8 +2105,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             }
             const auto helper_measuring =
                 helper_starts({processes, facts}, home, helper_binary, measuring, true);
-            // The resolver's immutable BDF selection is the measuring manifest's helper order.
-            // Capture idle counter noise before ANY measuring helper occupies its device.
+            // Native counterpart of radiance_plan._wait_for_helper_vram_release:\n            // strict writer
+            // admission is retained; the owner adds a guarded OS\n            // seam and binds the release
+            // deadline to its actual helper stop timeout.\n            // The resolver's immutable BDF
+            // selection is the measuring manifest's helper order. Capture idle counter noise before ANY
+            // measuring helper occupies its device.
             std::vector<std::string> helper_bdfs;
             for (const Json& helper : processes)
                 helper_bdfs.push_back(helper.at("bdf").get<std::string>());
@@ -2187,9 +2190,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     std::ifstream report(log);
                     for (std::string line; std::getline(report, line);) {
                         if (line.find("E --ngram-placement ram:") != std::string::npos)
-                            throw PlanFailed("BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM): "
-                                             "measuring-start host RAM admission: " + line +
-                                             " (inspect pinned pool, n-gram, checkpoints, MemAvailable and cgroup)");
+                            throw PlanFailed(
+                                "BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM): "
+                                "measuring-start host RAM admission: " +
+                                line + " (inspect pinned pool, n-gram, checkpoints, MemAvailable and cgroup)");
                     }
                     throw PlanFailed("plan: the measuring start failed; see " + log.string());
                 }
@@ -2215,8 +2219,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                 "helper VRAM release wait");
                     };
                 try {
-                    vram::await_release(baseline, in.options.sys_root,
-                                        hooks.helper_stop_timeout, io);
+                    vram::await_release(baseline, in.options.sys_root, hooks.helper_stop_timeout, io);
                 } catch (const vram::Refused& error) {
                     throw PlanFailed(error.what());
                 }

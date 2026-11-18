@@ -13,12 +13,12 @@ namespace fs = std::filesystem;
 using Clock = std::chrono::steady_clock;
 using namespace std::chrono_literals;
 bool valid_bdf(const std::string& bdf) {
-    if (bdf.size() != 12 || bdf[4] != ':' || bdf[7] != ':' || bdf[10] != '.' ||
-        bdf[11] < '0' || bdf[11] > '7') return false;
+    if (bdf.size() != 12 || bdf[4] != ':' || bdf[7] != ':' || bdf[10] != '.' || bdf[11] < '0' || bdf[11] > '7')
+        return false;
     for (size_t i : {0U, 1U, 2U, 3U, 5U, 6U, 8U, 9U}) {
         const char c = bdf[i];
-        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') ||
-              (c >= 'A' && c <= 'F'))) return false;
+        if (!((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f') || (c >= 'A' && c <= 'F')))
+            return false;
     }
     return true;
 }
@@ -28,7 +28,8 @@ fs::path used_path(const fs::path& root, const std::string& bdf) {
     return root / "sys/bus/pci/devices" / bdf / "mem_info_vram_used";
 }
 uint64_t read_used(const fs::path& path, const Hardware& hardware) {
-    if (hardware.read_used) return hardware.read_used(path);
+    if (hardware.read_used)
+        return hardware.read_used.require("helper_vram.hardware.read", path);
     std::ifstream in(path);
     std::string token, extra;
     if (!(in >> token) || (in >> extra))
@@ -48,9 +49,8 @@ uint64_t sample(const fs::path& root, const std::string& bdf, const Hardware& ha
                       ": cannot read VRAM usage from " + path.string() + ": " + e.what());
     }
 }
-}
-Baseline snapshot(const std::vector<std::string>& bdfs, const fs::path& root,
-                  const Hardware& hardware) {
+} // namespace
+Baseline snapshot(const std::vector<std::string>& bdfs, const fs::path& root, const Hardware& hardware) {
     Baseline result;
     for (const auto& bdf : bdfs) {
         // Three pre-start observations bound the actual idle counter noise for this BDF.
@@ -66,25 +66,25 @@ Baseline snapshot(const std::vector<std::string>& bdfs, const fs::path& root,
     }
     return result;
 }
-void await_release(const Baseline& baseline, const fs::path& root,
-                   std::chrono::milliseconds stop_timeout, const Hardware& hardware) {
+void await_release(const Baseline& baseline, const fs::path& root, std::chrono::milliseconds stop_timeout,
+                   const Hardware& hardware) {
     const auto deadline = Clock::now() + stop_timeout;
     while (true) {
         std::ostringstream outstanding;
         for (const auto& [bdf, observed] : baseline) {
             const auto used = sample(root, bdf, hardware);
-            const uint64_t ceiling = observed.baseline_bytes >
-                                             std::numeric_limits<uint64_t>::max() - observed.tolerance_bytes
-                                         ? std::numeric_limits<uint64_t>::max()
-                                         : observed.baseline_bytes + observed.tolerance_bytes;
+            const uint64_t ceiling =
+                observed.baseline_bytes > std::numeric_limits<uint64_t>::max() - observed.tolerance_bytes
+                    ? std::numeric_limits<uint64_t>::max()
+                    : observed.baseline_bytes + observed.tolerance_bytes;
             if (used > ceiling) {
-                outstanding << " BDF " << bdf << " used=" << used
-                            << " baseline=" << observed.baseline_bytes
-                            << " observed_noise=" << observed.tolerance_bytes
-                            << " ceiling=" << ceiling << " bytes;";
+                outstanding << " BDF " << bdf << " used=" << used << " baseline=" << observed.baseline_bytes
+                            << " observed_noise=" << observed.tolerance_bytes << " ceiling=" << ceiling
+                            << " bytes;";
             }
         }
-        if (outstanding.str().empty()) return;
+        if (outstanding.str().empty())
+            return;
         const auto now = Clock::now();
         if (now >= deadline)
             throw Refused("BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM): measuring helper VRAM not "
@@ -93,9 +93,10 @@ void await_release(const Baseline& baseline, const fs::path& root,
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(deadline - now);
         const auto delay = std::min(100ms, remaining);
         if (hardware.wait) {
-            if (!hardware.wait(delay))
+            if (!hardware.wait.require("helper_vram.hardware.wait", delay))
                 throw Refused("BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM): stop requested while "
-                              "waiting for measuring helper VRAM:" + outstanding.str());
+                              "waiting for measuring helper VRAM:" +
+                              outstanding.str());
         } else {
             std::this_thread::sleep_for(delay);
         }

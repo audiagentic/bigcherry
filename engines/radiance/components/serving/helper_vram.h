@@ -1,10 +1,12 @@
 #pragma once
-// RSC02: a card-free, BDF-scoped read/wait boundary for post-measurement VRAM accounting.
-// C++17 only: shared headers must also remain consumable by the remote-MoE worker.
+// RSC02: BDF-scoped post-measurement VRAM accounting, based on Python\'s\n//
+// radiance_plan._wait_for_helper_vram_release. Unlike Python\'s one baseline\n// sample, this records pre-start
+// counter noise and allows only that variance. C++17 only: shared headers must also remain consumable by the
+// remote-MoE worker.
+#include "callback_boundary.h"
 #include <chrono>
 #include <cstdint>
 #include <filesystem>
-#include <functional>
 #include <map>
 #include <stdexcept>
 #include <string>
@@ -15,12 +17,12 @@ struct Refused : std::runtime_error {
 };
 struct Hardware {
     // Production reads the sysfs file; tests can replace this OS boundary.
-    std::function<uint64_t(const std::filesystem::path&)> read_used;
+    callback::Guarded<uint64_t(const std::filesystem::path&)> read_used;
     // The session owner services its stop socket while waiting; false cancels admission.
-    std::function<bool(std::chrono::milliseconds)> wait;
+    callback::Guarded<bool(std::chrono::milliseconds)> wait;
 };
 struct Observation {
-    uint64_t baseline_bytes = 0; // highest observed pre-start usage
+    uint64_t baseline_bytes = 0;  // highest observed pre-start usage
     uint64_t tolerance_bytes = 0; // observed baseline spread, never a fixed MiB fudge
 };
 using Baseline = std::map<std::string, Observation>;

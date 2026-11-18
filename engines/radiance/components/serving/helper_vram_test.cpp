@@ -20,7 +20,7 @@ int main() {
     const fs::path usage = root / "sys/bus/pci/devices" / bdf / "mem_info_vram_used";
     fs::create_directories(usage.parent_path());
     auto write = [&](uint64_t bytes) { std::ofstream(usage, std::ios::trunc) << bytes << "\n"; };
-    const uint64_t mib = 1024 * 1024;
+    const uint64_t mib = uint64_t{1024} * 1024;
     write(128 * mib);
     const auto baseline = hv::snapshot({bdf}, root, {});
     assert(baseline.at(bdf).baseline_bytes == 128 * mib);
@@ -30,7 +30,8 @@ int main() {
     int polls = 0;
     hv::Hardware later;
     later.wait = [&](std::chrono::milliseconds) {
-        if (++polls == 2) write(128 * mib);
+        if (++polls == 2)
+            write(128 * mib);
         return true;
     };
     hv::await_release(baseline, root, 100ms, later);
@@ -42,8 +43,7 @@ int main() {
     } catch (const hv::Refused& e) {
         const std::string why = e.what();
         timed_out = why.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
-                    why.find(bdf) != std::string::npos &&
-                    why.find("268435456") != std::string::npos &&
+                    why.find(bdf) != std::string::npos && why.find("268435456") != std::string::npos &&
                     why.find("134217728") != std::string::npos;
     }
     assert(timed_out);
@@ -68,9 +68,7 @@ int main() {
     // Noise is observed, not a hand-picked MiB allowance.
     int samples = 0;
     hv::Hardware noisy;
-    noisy.read_used = [&](const fs::path&) {
-        return (128 + (samples++ % 2)) * mib;
-    };
+    noisy.read_used = [&](const fs::path&) { return (128 + (samples++ % 2)) * mib; };
     const auto observed = hv::snapshot({bdf}, root, noisy);
     assert(observed.at(bdf).tolerance_bytes == mib);
     bool invalid_bdf = false;

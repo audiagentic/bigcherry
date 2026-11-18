@@ -3729,9 +3729,9 @@ void helper_vram_owner_graph(Fixture& t) {
         rad.write(reinterpret_cast<const char*>(&header), sizeof header);
         assert(rad);
     }
-    const fs::path site = t.file("helper-vram-graph.toml",
-        "[engine]\nmodel = \"" + model.string() +
-        "\"\nradiance_home = \"" + home.string() + "\"\n");
+    const fs::path site =
+        t.file("helper-vram-graph.toml",
+               "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() + "\"\n");
     ss::EnginePlanInputs in;
     in.options.site = site;
     in.options.sys_root = t.root;
@@ -3761,7 +3761,8 @@ void helper_vram_owner_graph(Fixture& t) {
         const std::string why = e.what();
         blocked_baseline = why.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
                            why.find("cannot read VRAM") != std::string::npos;
-        if (!blocked_baseline) std::cerr << "helper graph: " << why << "\n";
+        if (!blocked_baseline)
+            std::cerr << "helper graph: " << why << "\n";
     }
     if (!blocked_baseline || writers < 1)
         throw std::runtime_error("helper graph did not reach the pre-start BDF baseline");
@@ -3772,12 +3773,13 @@ void helper_vram_owner_graph(Fixture& t) {
         active.helper_vram.read_used = [&](const fs::path& path) -> uint64_t {
             std::ifstream used(path);
             uint64_t bytes = 0;
-            if (!(used >> bytes)) throw std::runtime_error("missing fake BDF usage file");
+            if (!(used >> bytes))
+                throw std::runtime_error("missing fake BDF usage file");
             const unsigned n = ++samples[path.string()];
             // Three pre-start baseline observations; GPU usage lingers AFTER
             // reaped fake helpers, then settles. No actual GPU is contacted.
             if (n > 3 && (mode == "never" || (mode == "late" && n < 7)))
-                return bytes + 256 * 1024 * 1024;
+                return bytes + uint64_t{256} * 1024 * 1024;
             return bytes;
         };
         ss::Hooks live_hooks;
@@ -3798,8 +3800,10 @@ void helper_vram_owner_graph(Fixture& t) {
                 throw std::runtime_error("helper graph timeout: " + refusal +
                                          " writers=" + std::to_string(writers - before));
         } else if (writers - before < 4) {
-            throw std::runtime_error("helper graph " + mode + " stopped before final writer: " +
-                                     refusal + " writers=" + std::to_string(writers - before));
+            std::ostringstream message;
+            message << "helper graph " << mode << " stopped before final writer: " << refusal
+                    << " writers=" << (writers - before);
+            throw std::runtime_error(message.str());
         }
     }
 }
