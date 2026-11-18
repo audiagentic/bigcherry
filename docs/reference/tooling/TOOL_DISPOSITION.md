@@ -480,7 +480,6 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/helper-long-rows.sh` | **TRANSITIONAL** | `radiance` lab topic file; runs the long-row split comparison on captured requests (RAD06, shelved as evaluated); replaced by the MEN21 moe-harness commands.
 | `tools/lab/radiance/small_capture.py` | **TRANSITIONAL** | `radiance` lab topic file; derives small-lane (decode-sized) helper captures from real large-lane captures for the replay sweep (RAD06); replaced by the MEN21 moe-harness commands.
 | `tools/lab/radiance/helper-capture.sh` | **TRANSITIONAL** | `radiance` lab topic file; records real helper requests (format 2: quantised activations) for the replay sweep, one server cell (RAD06). |
-| `tools/lab/radiance/burst-idle.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 Option A gate: builds the branch, runs the production Flash-Next layout, samples each helper GPU's idle power (RAD20_HELPER_BDFS) before and after single, concurrent, back-to-back and long-prefill requests, and checks every request answers, the stop is clean and idle power stays under RAD20_IDLE_WATTS. |
 | `tools/lab/radiance/rad20-burst-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 Option A ab-benchmark server config: main vs the burst-armed helper build in the production Flash-Next layout, each arm with its own binary and radiance home. |
 | `tools/lab/radiance/rad20-burst-ab.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 Option A speed A/B runner: builds origin/main and the branch, resolves devices from R9700_BDF / XTX_BDFS, runs rad20-burst-ab.json through ab-benchmark. |
 | `tools/lab/radiance/rad20-burst-streams-ab.json` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 concurrency A/B server config: main vs the burst-armed helper build at 1, 2, 4 and 6 streams (stream_bench), combine on in both arms; run through rad20-burst-ab.sh. |
@@ -503,7 +502,6 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/rad25-spin-window.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD25: runs rad25-event-wake.sh at long periods to find where a blocking HIP event wait stops spinning. |
 | `tools/lab/radiance/pwr01-baseline.sh` | **KEEP** | PWR01 standing power baseline: native `bc-serve serve flashnext-4gpu --run-dir`, typed power-profile admission and verified stop. Per-GPU board/CPU RAPL samples, phases and joules per token are preserved; measured hardware equivalence remains gated on S15. |
 | `tools/lab/radiance/pwr03-ecore-ab.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR03: helper processes on the CPU's efficiency cores (taskset through HELPER_WRAP, efficiency cores read from the kernel generically (cpu_capacity, else the hybrid PMU)) against default placement, by package power and tok/s. |
-| `tools/lab/radiance/pwr03-idle-diag.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR03: per-thread CPU (top -H) and package power for 60 s of idle with the helpers on the efficiency cores, to find what stays busy. |
 | `tools/lab/radiance/rad25-spin-window-sdks.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD25: the blocked-wait spin-window sweep once per ROCm SDK declared for the host (rocm-sdks), to see whether any runtime sleeps sooner. |
 | `tools/lab/radiance/pwr01-soak.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR02 stability soak: pwr01-baseline.sh with 10-minute phases for sustained load at a power setting. |
 | `tools/lab/radiance/pwr02-xtx-sclk-sweep.sh` | **TRANSITIONAL** | `radiance` lab topic file; PWR02: from the workstation, sets the XTX helpers' max shader clock (OD_SCLK) level by level through sudo on the lab host and runs pwr01-baseline.sh at each, restoring the default afterwards. |
@@ -515,15 +513,11 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/rad32-wmma-exact.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD32 probe: exactness of the gfx11 bf16 WMMA sum of small E4M3 x E2M1 products. |
 | `tools/lab/radiance/rad32-wmma-exact.sh` | **TRANSITIONAL** | `radiance` lab topic file; builds and runs the exactness probe on a gfx1100 card. |
 | `tools/lab/radiance/rad29-compact-test.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD29 runner: builds route_compact_test and runs equivalence + timing on one GPU per architecture from the device inventory. |
-| `tools/lab/radiance/rad20-helper-kill.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 helper liveness test: SIGKILLs one helper of the production Flash-Next layout at idle, in decode and in prefill, and requires the engine to fail within a bound instead of hanging. |
 | `tools/lab/radiance/rad20-liveness-check.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 helper liveness normal-path check: idle-power gate plus the Flash-Next speed A/B against origin/main, devices from the host's environment settings. |
-| `tools/lab/radiance/rad20-burst-profile.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 profile of main vs burst helper builds: rocprofv3 kernel traces on both helpers, R3_MOE_WORKER_TRACE per-request times and 20 Hz helper clock/busy sampling over a fixed decode workload. |
 | `tools/lab/radiance/rad20-decode-client.py` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 client: N prompt slices of a text file to a radiance server, recording the server timings (prefill/decode rates, MTP draft_n / draft_n_accepted) and a hash of each generated text, for prompt-by-prompt arm comparison (the bench tg128 shape). |
 | `tools/lab/radiance/rad20-profile-analyse.py` | **TRANSITIONAL** | `radiance` lab topic file; analysis for rad20-burst-profile.sh: per-kernel durations, queue launch gaps, per-request helper/wait times and busy clocks, main vs burst. |
-| `tools/lab/radiance/rad20-queue-probe.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 driver-level queue view with power save on and off: KFD debugfs mqds/hqds (queues owned, hardware slots resident) and UMR CP/MES status on each helper GPU during decode and idle. |
 | `tools/lab/radiance/rad20-queue-warm.cpp` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 harness: placeholder HSA queues switched active/inactive through AMDKFD_IOC_UPDATE_QUEUE (0%/100%), measuring kernel-chain dispatch gaps, toggle cost and idle hold per mode (base, active, parked). |
 | `tools/lab/radiance/rad20-queue-warm.sh` | **TRANSITIONAL** | `radiance` lab topic file; runner for rad20-queue-warm.cpp on one GPU (RAD20_GPU_BDF): builds it, runs the three modes and samples hold power with amd-smi. |
-| `tools/lab/radiance/burst-trace.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 phase 1 gate: builds the branch, runs the production Flash-Next layout with R3_MOE_WORKER_BURST_TRACE=1 through single, concurrent, back-to-back and long-prefill requests, and checks the engine burst begin/end transitions pair up and end before shutdown. |
 | `tools/lab/radiance/rad20-cp-snapshot.sh` | **TRANSITIONAL** | `radiance` lab topic file; read-only AMD UMR snapshots of CP/GRBM status registers on one GPU (RAD20_GPU_BDF, UMR) through idle, empty, pending-barrier, released and destroyed phases of rad20-mes-idle, plus decoded busy bits; writes nothing to the GPU. |
 | `tools/lab/radiance/rad20-mes-idle.cpp` | **TRANSITIONAL** | `radiance` lab topic file; standalone HSA reproducer for the gfx1100 MES idle-power defect (a pending AQL BARRIER_AND keeps the GPU at 100% GFX / ~95 W); modes empty, drained, pending (+release); no GPU kernel. |
 | `tools/lab/radiance/rad20-mes-idle.sh` | **TRANSITIONAL** | `radiance` lab topic file; runner for rad20-mes-idle.cpp: GPU from RAD20_GPU_BDF, records kernel/firmware/ROCm, samples power/GFX/clock with amd-smi, writes samples.csv and results.json; changes no host setting. |
@@ -549,7 +543,6 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/gfx1030/link_and_bandwidth.hip` | **TRANSITIONAL** | `radiance` lab topic file; measures a host round trip (5/30/300 KB) and read bandwidth on a card, used for the 6900 XT drafter assessment (RAD16). Build: hipcc --offload-arch=gfx1030 -O2. |
 | `tools/lab/radiance/gfx1030/rowsk.hip` | **TRANSITIONAL** | `radiance` lab topic file; microbenchmark of the gfx1030 few-rows w4nl MoE kernel (`lane_moe_rows_w4`) per tile shape on the live tail's rows-an-expert mix, synthetic weights, output checked against the shipped shape (RAD23). Build: hipcc --offload-arch=gfx1030 -O3 with the moe-remote and radiance include dirs. |
 | `tools/lab/radiance/flashnext-parity.sh` | **KEEP** | Standing Flash-Next bump parity harness: native `bc-serve serve flashnext-4gpu --run-dir` with native strict-v2 manifest/role logs, preserves cold/doc prefill, decode 1/6 streams, 8-session TTFT, long context, warmup/baseline/compare. Lease and hardware equivalence remain an S15 gate. |
-| `tools/lab/radiance/flashnext-probe.sh` | **TRANSITIONAL** | `radiance` lab topic file; the short Flash-Next probe (RAD23): one layout started with R3_MOE_WORKER_TRACE=1, a 42K-token prefill + 64 decode and a cached 14K follow-up, then the engine's exposed wait per helper (trace_report.py) and each helper's stage times. ~3 minutes; stands in for long runs while probing. |
 | `tools/lab/radiance/flashnext_parity.py` | **TRANSITIONAL** | `radiance` lab topic file; the summarise/baseline/compare logic behind flashnext-parity.sh (stdlib only; tests in tools/tests/lab/test_flashnext_parity.py). |
 | `tools/lab/radiance/host-link-bw.hip` | **TRANSITIONAL** | `radiance` lab topic file; one card's host-link bandwidth as the remote-MoE path uses it (kernel reads/writes of pinned mapped host memory, and hipMemcpy), 21 MiB = two result planes of a 2048-row step (RAD23). Build: hipcc -O3 --offload-arch=gfx1030,gfx1100,gfx1201. |
 | `tools/lab/radiance/host-link-duplex.hip` | **TRANSITIONAL** | `radiance` lab topic file; HL01: one card's host link in both directions at once (kernel and copy-engine pull/push, serial vs duplex) and beside a compute-bound kernel, to decide whether tail transfers can overlap its GEMM. Build: hipcc -O3 --offload-arch=gfx1030,gfx1100,gfx1201. |
@@ -599,14 +592,12 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/heat-placement/heat-invert.py` | **TRANSITIONAL** | `radiance` lab topic file; RHP08: turns a recorded route histogram (uint32[128][512]) into the launcher's `--heat` file (max - count). |
 | `tools/lab/radiance/heat-placement/heat-drift.py` | **TRANSITIONAL** | `radiance` lab topic file; RHP05 stage A check: the share of live routes (a --record-heat histogram) that the active heat file sends to the heads and the tail against a re-ranked file; exits 3 and writes the re-ranked hot-first file when the tail takes more than --ratio x its re-ranked share (RAD23: matched heat ~1.5%, mismatched 4-12%). Restart with --heat to activate. |
 | `tools/lab/radiance/heat-placement/heat-watch.py` | **TRANSITIONAL** | `radiance` lab topic file; RHP05 stage A, recommend-only: beside a server started with --record-heat it judges the last --window seconds of live routes with heat-drift.py every --every seconds and, when a re-rank is advised, writes the re-ranked hot-first file and prints the restart command (never restarts itself). |
-| `tools/lab/radiance/heat-placement/rhp01-coverage.sh` | **TRANSITIONAL** | `radiance` lab topic file; RHP01 lease-wrapped runner for paired diagnostics-off/on route-coverage measurements (2K/4K/8K prefill, MTP/mixed stream, ring wrap); hardware-owner use only. |
 | `tools/lab/radiance/heat-placement/rhp01-evidence-off.json` | **TRANSITIONAL** | `radiance` lab topic file; RHP01 diagnostics-off experiment input for the coverage runner. |
 | `tools/lab/radiance/heat-placement/rhp01-evidence-on.json` | **TRANSITIONAL** | `radiance` lab topic file; RHP01 diagnostics-on experiment input for the coverage runner. |
 | `tools/lab/radiance/hostread-idle-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: does a kernel reading host-mapped memory slow down when the host CPU is idle versus busy-looping. |
 | `tools/lab/radiance/idle-gap-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: VRAM-streaming kernel with an idle gap, host waiting by event polling vs blocking-sync event. |
 | `tools/lab/radiance/ipc-signal-bench.cpp` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 experiment B: can a helper process sleep in the driver (blocked HSA signal wait) until another process's GPU work completes. |
 | `tools/lab/radiance/kernel-gfx11-mes-fix.py` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 backport of the gfx11 MES oversubscription-timer fix to a Linux v7.0.13 kernel tree. |
-| `tools/lab/radiance/rad20-profile.sh` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 decode diagnosis: rocprofv3 kernel trace and clock sampling of polling vs blocking helper builds over one 512-token decode. |
 | `tools/lab/radiance/wait-interference-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20: does a wait armed on an idle second stream slow kernels on the active stream (idle, hipStreamWaitValue32, own one-wave wait kernel). |
 | `tools/lab/rccl/ar-latency.hip` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/rccl/ar-latency.sh` | **TRANSITIONAL** | `rccl` lab topic file (see `tools/lab/rccl/README.md`); experiment-only, disposed per that README. |
@@ -658,7 +649,6 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/vulkan/queue-vk-ar.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/vulkan/queue-vk-first.sh` | **TRANSITIONAL** | `vulkan` lab topic file (see `tools/lab/vulkan/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/xtx27-PROGRESS.md` | **TRANSITIONAL** | XDP01-02 dual-XTX prefill and KV-budget lab progress ledger; experiment-only. |
-| `tools/lab/radiance/rhp20-forced-move.py` | **TRANSITIONAL** | RHP20 externally leased forced-move acceptance harness; lab-only, never enables live policy. |
 | `tools/lab/radiance/rhp20/tail.experiment.json` | **TRANSITIONAL** | RHP20 two-XTX plus RDNA2 tail forced-churn experiment; lab-only. |
 | `tools/lab/radiance/rhp20/tail-combine.experiment.json` | **TRANSITIONAL** | RHP20 RDNA2 tail with CPU combine forced-churn experiment; lab-only. |
 | `tools/lab/radiance/rhp20/kld.template.json` | **TRANSITIONAL** | RHP20 separate static-versus-forced numerical quality gate template; lab-only. |
@@ -690,3 +680,26 @@ TR00 inventory is captured and both pre-existing test/check issues from the orig
 - 2026-08-28T01:53:52.318064+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260828_015434_aligned-active-planning-record_5360
 - 2026-08-28T01:54:34.237199+00:00 (updated-by): Updated: section:ledger-events
+
+
+## RSC02 S16: immutable archived scripts (historical disposition, not live tooling)
+
+The ten scripts were archived by the owner at immutable `archive/lab-*`
+tags before this deletion. Each archive tag's path and blob ID were checked
+against the precise source file before removal. These historical rows are
+**not** current-state TOOL_DISPOSITION paths: the current registry and its
+TR14.DISPOSITION_STALE enforcement remain unchanged. The retirement PR is
+DRAFT only; no S15 hardware equivalence is claimed.
+
+| Archived path | Disposition | Immutable archive tag | Original blob |
+| --- | --- | --- | --- |
+| archived: tools/lab/radiance/burst-idle.sh | **ARCHIVED** | `archive/lab-burst-idle` | `e98d5a5a1d656cbdeac6a31ca76a9ebf7d25e881` |
+| archived: tools/lab/radiance/burst-trace.sh | **ARCHIVED** | `archive/lab-burst-trace` | `077738a92102f278a0fc5eb92d1b3a6f73c9e5dd` |
+| archived: tools/lab/radiance/flashnext-probe.sh | **ARCHIVED** | `archive/lab-flashnext-probe` | `31008346a18b0bd6f74bb38fa9dac7ce24b0fe13` |
+| archived: tools/lab/radiance/pwr03-idle-diag.sh | **ARCHIVED** | `archive/lab-pwr03-idle-diag` | `9b3c10820054d13bc9299480e5f39eb81e68d07c` |
+| archived: tools/lab/radiance/rad20-burst-profile.sh | **ARCHIVED** | `archive/lab-rad20-burst-profile` | `463943237e30bcef3c977dce9d5b5dae039510d5` |
+| archived: tools/lab/radiance/rad20-profile.sh | **ARCHIVED** | `archive/lab-rad20-profile` | `19ffb865bea5889ddfb872ee9441cb4cfa1e9733` |
+| archived: tools/lab/radiance/rad20-queue-probe.sh | **ARCHIVED** | `archive/lab-rad20-queue-probe` | `52f13f1033a9b87dee0508d3260465b4cfe54433` |
+| archived: tools/lab/radiance/rad20-helper-kill.sh | **ARCHIVED** | `archive/lab-rad20-helper-kill` | `2d9f9ededaed6c3730c0ed1cad5acfd5522753c9` |
+| archived: tools/lab/radiance/rhp20-forced-move.py | **ARCHIVED** | `archive/lab-rhp20-forced-move` | `81a41aa8eaa7a0f6f731949d82676dc47fdae378` |
+| archived: tools/lab/radiance/heat-placement/rhp01-coverage.sh | **ARCHIVED** | `archive/lab-rhp01-coverage` | `bd1b1e5b0084141850579d3df4ced32b653671f0` |
