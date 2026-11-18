@@ -11,6 +11,7 @@
 #include <sys/wait.h>
 #include <unistd.h>
 
+#include <algorithm>
 #include <cassert>
 #include <cerrno>
 #include <cstdio>
@@ -20,6 +21,7 @@
 #include <iostream>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #ifndef BC_SERVE_EXE
@@ -147,17 +149,13 @@ CommandResult run(const std::vector<std::string>& args) {
 void verify(const Fixture& f) {
     const std::vector<std::string> common{"--configs",    BC_CONFIGS_DIR,  "--site",     f.site.string(),
                                           "--model-root", f.root.string(), "--sys-root", f.root.string()};
-    const std::vector<std::string> values{"engine.port=47001",
-                                          "handoff.heat=\"" + f.heat.string() + "\"",
-                                          "handoff.histogram=\"/heat/lab.live\"",
-                                          "handoff.histogram_period_s=3",
-                                          "engine.kv_cache_dtype=\"bf16\"",
-                                          "engine.ngram_placement=\"disk\"",
-                                          "engine.num_speculative_tokens=0",
-                                          "service.max_context=8192",
-                                          "memory.host_pool_mib=4096",
-                                          "memory.host_kv_mib=0",
-                                          "memory.helper_budgets_mib=[8192,8192]"};
+    const std::vector<std::string> values{
+        "engine.port=47001", "handoff.heat=\"" + f.heat.string() + "\"", "handoff.histogram=\"/heat/lab.live\"",
+        "handoff.histogram_period_s=3", "engine.kv_cache_dtype=\"bf16\"", "engine.ngram_placement=\"disk\"",
+        "engine.num_speculative_tokens=0", "service.max_context=8192", "memory.host_pool_mib=4096",
+        "memory.host_kv_mib=0", "memory.helper_budgets_mib=[8192,8192]",
+        // CPU parallelism follows the CI host, not the fake GPUs.
+        "helper.combine_threads=" + std::to_string(std::max(1u, std::thread::hardware_concurrency()))};
     auto append = [&](std::vector<std::string>& args) {
         args.insert(args.end(), common.begin(), common.end());
         for (const auto& value : values) {
