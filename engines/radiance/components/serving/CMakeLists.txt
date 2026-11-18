@@ -54,7 +54,7 @@ target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -147,12 +147,16 @@ if(BUILD_TESTING)
   target_include_directories(bc_fake_engine PRIVATE "${RADIANCE_SRC}/vendor")
   target_compile_features(bc_fake_engine PRIVATE cxx_std_20)
   add_dependencies(bc_release_install_test bc-serve bc-release bc_fake_engine)
+  add_executable(bc_helper_vram_test EXCLUDE_FROM_ALL helper_vram_test.cpp)
+  target_link_libraries(bc_helper_vram_test PRIVATE bc_serving)
+  add_test(NAME bc_helper_vram_test COMMAND bc_helper_vram_test)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
+  set_tests_properties(bc_serving_test PROPERTIES TIMEOUT 180)
   # RSC04: real named resolver and strict-v2 writer with only fake OS hardware facts.
   add_executable(bc_typed_settings_test EXCLUDE_FROM_ALL typed_settings_test.cpp)
   target_link_libraries(bc_typed_settings_test PRIVATE bc_serving)
@@ -231,6 +235,12 @@ if(BUILD_TESTING)
   target_link_libraries(bc_contract_test PRIVATE bc_contract)
   target_compile_definitions(bc_contract_test PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(NAME bc_contract_test COMMAND bc_contract_test)
+  # Same C++17 native option/argv projection invoked by patched Radiance
+  # (rad0009). Never fork a second option-name translation table.
+  add_executable(bc_v2_native_projection_test EXCLUDE_FROM_ALL v2/native_option_projection_test.cpp)
+  target_link_libraries(bc_v2_native_projection_test PRIVATE bc_serving_v2)
+  add_test(NAME bc_v2_native_projection_test COMMAND bc_v2_native_projection_test)
+  set_tests_properties(bc_v2_native_projection_test PROPERTIES TIMEOUT 60)
   add_executable(bc_contract_check EXCLUDE_FROM_ALL contract/contract_check.cpp)
   target_link_libraries(bc_contract_check PRIVATE bc_contract)
   target_compile_definitions(bc_contract_check PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"

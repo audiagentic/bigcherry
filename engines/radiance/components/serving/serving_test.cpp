@@ -1,6 +1,7 @@
 #ifdef NDEBUG
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
+#include "../moe-remote/heat_publication.h"
 #include "calibration.h"
 #include "config_loader.h"
 #include "experts.h"
@@ -10,6 +11,7 @@
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "resources.h"
+#include "runtime_guards.h"
 #include "s8_replay.h"
 #include "sdk_check.h"
 #include "serving.h"
@@ -1234,6 +1236,26 @@ void manifest_writer_step(Fixture& t) {
     const auto back =
         bc::serving::v2::read_manifest(built.text, "writer test", bc::serving::v2::PlanUse::serving);
     assert(back.ok());
+    { // RED: strict native writer + real runtime guard must not kill recording-only serving.
+        namespace ss = bc::serving::session;
+        const fs::path file = t.root / "recording-only-guard-manifest.json";
+        sv::write_manifest_file(file, built.text);
+        const fs::path log = t.file("recording-only-guard-engine.log", "recorded pass: draft pass 8 token\n");
+        ss::EngineStart engine;
+        engine.manifest = file;
+        engine.handoff_shm =
+            built.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
+        engine.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
+        engine.heat_session_nonce = "0123456789abcdef0123456789abcdef";
+        ss::RuntimeGuards guard;
+        const auto result = guard.startup(engine, log, {});
+        if (result)
+            throw std::runtime_error("recording-only native runtime guard refused: " + result->message);
+        if (guard.policy_enabled())
+            throw std::runtime_error("uncalibrated recording-only manifest incorrectly activated policy");
+        if (const auto ongoing = guard.poll())
+            throw std::runtime_error("recording-only heat file affected serving: " + ongoing->message);
+    }
     // RED P1-5: measured producer P1 + raw P2 with a bounded valid_until.
     // Build the strict v2 consumer document via the REAL S10 writer, and
     // re-qualify that same native P1 with today's scope using the same S8.
@@ -1550,6 +1572,21 @@ void manifest_writer_step(Fixture& t) {
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
         const auto with_calibration = sv::build_manifest(calibrated);
+        { // A policy-enabled manifest must STILL refuse missing live heat.
+            namespace ss = bc::serving::session;
+            const fs::path document = t.root / "policy-enabled-guard-manifest.json";
+            sv::write_manifest_file(document, with_calibration.text);
+            ss::EngineStart active;
+            active.manifest = document;
+            active.handoff_shm =
+                with_calibration.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
+            active.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
+            active.heat_session_nonce = "0123456789abcdef0123456789abcdef";
+            ss::RuntimeGuards guard;
+            const auto failure = guard.startup(active, t.root / "recording-only-guard-engine.log", {});
+            if (!guard.policy_enabled() || !failure || failure->message.find("histogram") == std::string::npos)
+                throw std::runtime_error("qualified live policy lost strict histogram admission");
+        }
         const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
         const uint64_t quiet_windows = lp.at("effect_min_quiet_windows").get<uint64_t>();
         const uint64_t window_samples = lp.at("effect_window_samples").get<uint64_t>();
@@ -2540,6 +2577,7 @@ struct CommandResult {
     int exit_code;
     std::string output;
 };
+std::string serve_test_executable = BC_SERVE_EXE;
 CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
     int fds[2];
     if (::pipe(fds) != 0)
@@ -2553,11 +2591,12 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
             ::_exit(127);
         ::close(fds[1]);
         std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(BC_SERVE_EXE));
+        const char* binary = serve_test_executable.c_str();
+        argv.push_back(const_cast<char*>(binary));
         for (const auto& arg : arguments)
             argv.push_back(const_cast<char*>(arg.c_str()));
         argv.push_back(nullptr);
-        ::execv(BC_SERVE_EXE, argv.data());
+        ::execv(binary, argv.data());
         ::_exit(127);
     }
     ::close(fds[1]);
@@ -3265,6 +3304,29 @@ void session_engine_plan(Fixture& t) {
         refused = std::string(e.what()).find("measuring start failed") != std::string::npos;
     }
     assert(refused);
+    { // Real named resolver and process owner, fake measuring engine OS boundary.
+        ss::EnginePlanInputs ram = in;
+        ram.engine_binary = BC_FAKE_ENGINE;
+        ram.runner = [&](const std::vector<std::string>& argv) {
+            if (flag(argv, "--unmeasured")) {
+                std::ofstream(argv[2])
+                    << R"json({"measure_error":"E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare"})json";
+                return ss::ManifestRun{};
+            }
+            return ss::ManifestRun{10, "", "cache miss"};
+        };
+        bool host_ram_refused = false;
+        try {
+            (void)ss::plan_engine_only(ram, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string detail = e.what();
+            host_ram_refused = detail.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
+                               detail.find("host RAM") != std::string::npos &&
+                               detail.find("47.69 GiB") != std::string::npos &&
+                               detail.find("82.00 GiB") != std::string::npos;
+        }
+        assert(host_ram_refused);
+    }
     { // RSC04 lab experiments use the real named resolver and writer call graph.
         ss::EnginePlanInputs lab = in;
         lab.named_config = "qwen27b-tp3-int8";
@@ -3499,6 +3561,171 @@ void session_owner_real_planner_admission(Fixture& t) {
     }
 }
 
+// End-to-end CPU-only planner boundary: real resolver and bc-serve writer,
+// fake engine/helper process boundary and BDF-specific sysfs fixtures.
+void helper_vram_owner_graph(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path home = t.root / "session-build" / "radiance_home";
+    // The normal lightweight RAD fixture omits name strings. The real
+    // resource ledger requires an actual bounded name table in its directory.
+    const fs::path model = t.root / "helper-vram-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    {
+        std::fstream rad(model, std::ios::in | std::ios::out | std::ios::binary);
+        RadFileHeader header{};
+        rad.read(reinterpret_cast<char*>(&header), sizeof header);
+        header.str_off = header.file_bytes;
+        header.str_bytes = 7;
+        header.file_bytes += header.str_bytes;
+        rad.seekp(static_cast<std::streamoff>(header.str_off));
+        rad.write("weight", 7);
+        rad.seekp(0);
+        rad.write(reinterpret_cast<const char*>(&header), sizeof header);
+        assert(rad);
+    }
+    const fs::path site =
+        t.file("helper-vram-graph.toml",
+               "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() + "\"\n");
+    ss::EnginePlanInputs in;
+    in.options.site = site;
+    in.options.sys_root = t.root;
+    in.options.configs = {configs};
+    in.options.model_root = t.root;
+    in.options.sets = {"layout.name=\"flashnext-2xtx\"", "helper.combine_threads=1",
+                       "handoff.heat=\"" + (t.root / "writer.hot-first").string() + "\"",
+                       "handoff.histogram=\"" + (t.root / "vram-histogram").string() + "\""};
+    in.self = BC_SERVE_EXE;
+    in.engine_binary = BC_FAKE_ENGINE;
+    in.helper_binary = BC_FAKE_ENGINE;
+    int writers = 0;
+    std::vector<fs::path> measuring_histograms;
+    std::vector<std::vector<std::string>> serving_writer_args;
+    in.runner = [&](const std::vector<std::string>& args) -> ss::ManifestRun {
+        ++writers;
+        auto result = run_bc_serve({args.begin() + 1, args.end()});
+        const std::string file = fs::path(args.at(2)).filename().string();
+        if (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-measuring-", 0) != 0 &&
+            file.rfind("manifest-resources-", 0) != 0)
+            serving_writer_args.push_back(args);
+        if (result.exit_code == 0 && fs::is_regular_file(args.at(2))) {
+            if (file.rfind("manifest-measuring-", 0) == 0 ||
+                (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-resources-", 0) != 0)) {
+                const Json doc = Json::parse(std::ifstream(args.at(2)));
+                const fs::path prefix =
+                    doc.at("spec").at("handoff").at("telemetry").at("histogram_file").get<std::string>();
+                if (file.rfind("manifest-measuring-", 0) == 0)
+                    measuring_histograms.push_back(prefix);
+            }
+        }
+        return {result.exit_code, result.output, result.output};
+    };
+    in.helper_vram.read_used = [](const fs::path& path) -> uint64_t {
+        throw std::runtime_error("injected unreadable BDF-specific counter: " + path.string());
+    };
+    ss::Hooks hooks;
+    hooks.wait = [](std::chrono::milliseconds) { return true; };
+    bool blocked_baseline = false;
+    try {
+        (void)ss::plan_engine_only(in, t.root / "vram-graph-run", hooks);
+    } catch (const ss::PlanFailed& e) {
+        const std::string why = e.what();
+        blocked_baseline = why.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
+                           why.find("cannot read VRAM") != std::string::npos;
+        if (!blocked_baseline)
+            std::cerr << "helper graph: " << why << "\n";
+    }
+    if (!blocked_baseline || writers < 1)
+        throw std::runtime_error("helper graph did not reach the pre-start BDF baseline");
+
+    for (const std::string mode : {"immediate", "late", "never"}) {
+        ss::EnginePlanInputs active = in;
+        std::map<std::string, unsigned> samples;
+        active.helper_vram.read_used = [&](const fs::path& path) -> uint64_t {
+            std::ifstream used(path);
+            uint64_t bytes = 0;
+            if (!(used >> bytes))
+                throw std::runtime_error("missing fake BDF usage file");
+            const unsigned n = ++samples[path.string()];
+            // Three pre-start baseline observations; GPU usage lingers AFTER
+            // reaped fake helpers, then settles. No actual GPU is contacted.
+            if (n > 3 && (mode == "never" || (mode == "late" && n < 7)))
+                return bytes + uint64_t{256} * 1024 * 1024;
+            return bytes;
+        };
+        ss::Hooks live_hooks;
+        live_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        live_hooks.helper_stop_timeout = std::chrono::milliseconds(400);
+        const int before = writers;
+        std::string refusal;
+        const fs::path run_dir = t.root / ("vram-graph-" + mode);
+        fs::create_directories(run_dir);
+        try {
+            (void)ss::plan_engine_only(active, run_dir, live_hooks);
+        } catch (const ss::PlanFailed& e) {
+            refusal = e.what();
+        }
+        if (mode == "never") {
+            if (refusal.find("measuring helper VRAM not released") == std::string::npos ||
+                refusal.find("baseline=") == std::string::npos || writers - before != 3)
+                throw std::runtime_error("helper graph timeout: " + refusal +
+                                         " writers=" + std::to_string(writers - before));
+        } else if (writers - before < 4) {
+            std::ostringstream message;
+            message << "helper graph " << mode << " stopped before final writer: " << refusal
+                    << " writers=" << (writers - before);
+            throw std::runtime_error(message.str());
+        }
+    }
+    // Each measuring writer gets a private telemetry generation. A future
+    // engine that publishes during --plan-memory must never replace the
+    // serving engine's rank0 histogram at the operator's destination.
+    if (measuring_histograms.empty())
+        throw std::runtime_error("real measuring writer histogram fixture did not run");
+    for (const fs::path& path : measuring_histograms) {
+        if (path == t.root / "vram-histogram" || path.parent_path().parent_path() != t.root ||
+            path.parent_path().filename().string().rfind("vram-graph-", 0) != 0 ||
+            path.filename().string().rfind("histogram-measuring-", 0) != 0)
+            throw std::runtime_error("measuring histogram not isolated: " + path.string());
+    }
+    if (serving_writer_args.empty())
+        throw std::runtime_error("real serving writer was never invoked");
+    const std::string site_recording = "handoff.histogram=" + Json((t.root / "vram-histogram").string()).dump();
+    for (const auto& args : serving_writer_args) {
+        size_t histogram_overrides = 0;
+        for (size_t i = 0; i + 1 < args.size(); ++i)
+            if (args[i] == "--set" && args[i + 1].rfind("handoff.histogram=", 0) == 0) {
+                if (args[i + 1] != site_recording)
+                    throw std::runtime_error("private measuring prefix leaked to serving writer");
+                ++histogram_overrides;
+            }
+        if (histogram_overrides != 1)
+            throw std::runtime_error("serving writer lost the operator's recording destination");
+    }
+
+    // Exercise the real CPU publisher twice as future --plan-memory and serving
+    // producers would: neither generation may overwrite the other's files.
+    std::vector<uint32_t> counts(static_cast<size_t>(r3::moe_shm::kMaxLayers) * 16, 0);
+    counts[0] = 42;
+    const std::string serving_prefix = (t.root / "vram-histogram").string();
+    const std::string measurement_prefix = measuring_histograms.back().string();
+    const std::string nonce = "0123456789abcdef0123456789abcdef";
+    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
+        !r3::heat_publication::publish(serving_prefix, 0, 16, counts, nonce))
+        throw std::runtime_error("engine CPU histogram publication failed");
+    const ss::HistogramExpectation expected{
+        4, 16, std::chrono::system_clock::now() - std::chrono::seconds(3), {}, nonce};
+    const fs::path rank = serving_prefix + ".rank0";
+    if (ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
+                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
+        throw std::runtime_error("serving producer proof must qualify independently of measurement");
+    counts[0] += 1;
+    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
+        ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
+                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
+        throw std::runtime_error("later measuring publication affected the serving generation");
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -3507,8 +3734,10 @@ int main(int argc, char** argv) {
             write_golden = true;
         } else if (std::string(argv[i]) == "--dump-manifests" && i + 1 < argc) {
             dump_dir = argv[++i];
+        } else if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
+            serve_test_executable = argv[++i];
         } else {
-            std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR]\n";
+            std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR] [--bc-serve-exe PATH]\n";
             return 2;
         }
     }
@@ -3536,6 +3765,7 @@ int main(int argc, char** argv) {
         native_explain_cli(t);
         native_static_resolution_identity(t);
         session_engine_plan(t);
+        helper_vram_owner_graph(t);
         session_owner_real_planner_admission(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);

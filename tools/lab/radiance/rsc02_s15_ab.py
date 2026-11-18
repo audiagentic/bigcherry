@@ -11,11 +11,13 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 
@@ -128,7 +130,12 @@ def capture(processes: dict[str, int]) -> tuple[dict, dict[str, tuple[int, str]]
     if len(set(paths)) != 1:
         raise Refusal("roles do not share one manifest")
     path = Path(paths[0])
-    before = path.read_bytes()
+    # A stored-manifest replay hands every child a pinned descriptor ("/proc/self/fd/N"): it
+    # means the child's own open file, so read it through a child's /proc entry. The bytes
+    # are verified live here; the recorded hash keeps them bound afterwards.
+    pinned = re.fullmatch(r"/proc/self/fd/(\d+)", str(path))
+    readable = Path(f"/proc/{processes['engine']}/fd/{pinned.group(1)}") if pinned else path
+    before = readable.read_bytes()
     manifest = json.loads(before)
     snapshot = {
         "schema_version": 1,
@@ -137,8 +144,11 @@ def capture(processes: dict[str, int]) -> tuple[dict, dict[str, tuple[int, str]]
         "manifest": manifest,
         "processes": {"roles": observed},
     }
+    if pinned:
+        snapshot["manifest_read_path"] = str(readable)
+        snapshot["manifest_bytes_verified_live"] = True
     projection(snapshot)  # independent role completeness and byte binding
-    if path.read_bytes() != before:
+    if readable.read_bytes() != before:
         raise Refusal("manifest bytes mutated during capture")
     return snapshot, identities
 
@@ -241,11 +251,23 @@ def arm(cfg: dict) -> int:
         if which == "A":
             argv = ["bash", cfg["legacy_runner"], "start", "--layout", layout,
                     "--build", str(build), "--no-gpu-power"]
+            # Both arms must read the same route-heat bytes: the native arm takes them from the
+            # site file, so the control arm is told the same file instead of its own default.
+            heat = tomllib.loads(Path(cfg["site"]).read_text(encoding="utf-8")).get("handoff", {}).get("heat")
+            if heat:
+                argv += ["--heat", heat]
+            if cfg.get("host_pool_mib"):
+                argv += ["--host-pool-mib", str(cfg["host_pool_mib"])]
+            if cfg.get("ngram_placement"):
+                argv += ["--ngram-placement", cfg["ngram_placement"]]
             if cfg["power_apply"]:
                 argv.remove("--no-gpu-power")
                 argv.append("--gpu-power")
             started = command(argv, timeout=840, cwd=REPO,
-                              env={**os.environ, "BC_WORK_ROOT": str(work_root)})
+                              env={**os.environ, "BC_WORK_ROOT": str(work_root),
+                                   "BC_MODEL_ROOT": cfg["model_root"],
+                                   # the launcher's resource derivation asks bc-serve for the layout
+                                   "BIGCHERRY_LAYOUTS": str(REPO / "engines/radiance/layouts")})
             launch_log.write_text(started.stdout + "\n" + started.stderr)
             if started.returncode:
                 raise Refusal(f"Bash start failed: {started.returncode}: {started.stderr[-800:]}")
@@ -257,6 +279,10 @@ def arm(cfg: dict) -> int:
                     "--power-profile", cfg["power_profile"]]
             if cfg["power_apply"]:
                 argv.append("--allow-power-apply")
+            if cfg.get("host_pool_mib"):
+                argv += ["--set", f"memory.host_pool_mib={cfg['host_pool_mib']}"]
+            if cfg.get("ngram_placement"):
+                argv += ["--set", f'engine.ngram_placement="{cfg["ngram_placement"]}"']
             log = launch_log.open("wb")
             try:
                 owner = subprocess.Popen(argv, cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
@@ -270,7 +296,9 @@ def arm(cfg: dict) -> int:
                 try:
                     pids, status = observed_native(bc_serve, run_dir)
                     break
-                except (Refusal, ValueError):
+                except (Refusal, ValueError, subprocess.TimeoutExpired):
+                    # The owner answers status only between its start-up phases: a
+                    # measuring start can run for minutes, so a slow answer is "not yet".
                     time.sleep(2)
             else:
                 raise Refusal("native owner startup timed out before running status")
@@ -352,8 +380,13 @@ def accept(args: argparse.Namespace) -> int:
     cfg.pop("confirm")
     cfg["expected_build"] = build_identity({**cfg, "cohort": "helper"})
     save(out / "inputs.json", cfg)
-    for cohort in ("dense", "helper"):
-        for pair_number, order in enumerate(ORDER, 1):
+    for cohort in args.cohorts.split(","):
+        if cohort not in COHORTS:
+            raise Refusal(f"unknown cohort: {cohort}")
+    if not 1 <= args.pairs <= len(ORDER):
+        raise Refusal(f"--pairs must be 1..{len(ORDER)}")
+    for cohort in args.cohorts.split(","):
+        for pair_number, order in enumerate(ORDER[:args.pairs], 1):
             results = []
             for which in order:
                 label = f"{cohort}-pair{pair_number}-{which}"
@@ -392,7 +425,8 @@ def accept(args: argparse.Namespace) -> int:
             save(out / f"{cohort}-pair{pair_number}-comparison.json", report)
             if report["status"] != "PASS":
                 raise Refusal(f"{cohort} pair {pair_number}: semantic or greedy mismatch; stop")
-    save(out / "summary.json", {"status": "SHORT_AB_PASS", "pairs_per_cohort": 4,
+    save(out / "summary.json", {"status": "SHORT_AB_PASS", "pairs_per_cohort": args.pairs,
+                                 "cohorts": args.cohorts.split(","),
                                  "hardware_full_s15": "NOT_PROVEN: RHP12 and quality/retained-session gates remain"})
     return 0
 
@@ -408,6 +442,13 @@ def main() -> int:
         real.add_argument("--" + name, required=True)
     real.add_argument("--legacy-runner", required=True,
                       help="absolute archived Bash control from a pre-S16 checkout")
+    real.add_argument("--pairs", type=int, default=1,
+                      help="A/B pairs per cohort in ABBA order (1 proves launch equivalence; 4 adds drift control)")
+    real.add_argument("--cohorts", default="dense,helper", help="comma list of cohorts to run")
+    real.add_argument("--host-pool-mib", type=int, default=0,
+                      help="pin the helper cohort's host pool for BOTH arms (0: each arm derives its own)")
+    real.add_argument("--ngram-placement", default="disk", choices=("disk", "ram", ""),
+                      help="n-gram table placement for BOTH arms: a 91 GiB host cannot hold the 47.7 GiB table beside the pool")
     real.add_argument("--power-profile", default="stock")
     real.add_argument("--power-apply", action="store_true")
     real.add_argument("--confirm", required=True)

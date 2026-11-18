@@ -3,6 +3,7 @@
 
 #include "calibration_lab.h"
 #include "config_loader.h"
+#include "helper_vram.h"
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
 #include "resources.h"
@@ -836,6 +837,7 @@ class Owner {
             }
             event("planning");
             Hooks hooks;
+            hooks.helper_stop_timeout = s_.timing.stop_grace;
             hooks.wait = [this](std::chrono::milliseconds d) { return service(d); };
             hooks.started = [this](ChildKind kind, const std::string& role, pid_t pid, const fs::path& log) {
                 // Register first, even on forbidden starts; cleanup must
@@ -1773,7 +1775,7 @@ void stop_measure_helpers(std::vector<pid_t>* helpers, const Hooks& hooks) {
     std::optional<std::string> callback_failure;
     for (auto it = helpers->rbegin(); it != helpers->rend(); ++it) {
         // Continue reaping every group even if a notification hook fails.
-        if (stop_child(*it, SIGINT, 60s)) {
+        if (stop_child(*it, SIGINT, hooks.helper_stop_timeout)) {
             if (hooks.ended) {
                 const auto result = hooks.ended.invoke("session.hooks.ended", *it);
                 if (result && !callback_failure)
@@ -2029,7 +2031,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             require_callback(hooks.selected_segment.invoke("session.hooks.selected_segment", handoff),
                              "hooks.selected_segment");
     }
-    auto write = [&](const fs::path& out_file, const std::vector<std::string>& more) {
+    auto write = [&](const fs::path& out_file, const std::vector<std::string>& more,
+                     const std::optional<std::string>& scoped_set = std::nullopt) {
         std::vector<std::string> argv = {in.self.string(), "--write-manifest", out_file.string(),
                                          "--power-profile", in.power_profile};
         if (in.calibration_run) {
@@ -2047,6 +2050,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         argv.insert(argv.end(), base.begin(), base.end());
         for (const auto& s : extra_sets)
             argv.insert(argv.end(), {"--set", s});
+        // A measuring-only override is ordered after all site/config/operator
+        // sets. It must not enter the final serving manifest or the cache key.
+        if (scoped_set)
+            argv.insert(argv.end(), {"--set", *scoped_set});
         return require_callback(runner.invoke("session.manifest.runner", argv),
                                 "manifest runner callback threw");
     };
@@ -2089,7 +2096,19 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                       << " (cache miss); measuring it first (about 1-2 minutes)\n";
             const fs::path measuring =
                 run_dir / ("manifest-measuring-" + id + "-" + std::to_string(round) + ".json");
-            const ManifestRun u = write(measuring, {"--unmeasured"});
+            std::optional<std::string> measuring_histogram;
+            const Json telemetry = v.value("handoff", Json::object());
+            if (telemetry.contains("histogram") && telemetry.at("histogram").is_string() &&
+                !telemetry.at("histogram").get<std::string>().empty()) {
+                // Future Radiance measuring starts may publish heat, even though
+                // today's --plan-memory exits before allocating the route table.
+                // Isolate that generation instead of clearing an operator's
+                // recording path (which may be shared with another process).
+                const fs::path private_prefix =
+                    run_dir / ("histogram-measuring-" + id + "-" + std::to_string(round));
+                measuring_histogram = "handoff.histogram=" + Json(private_prefix.string()).dump();
+            }
+            const ManifestRun u = write(measuring, {"--unmeasured"}, measuring_histogram);
             if (u.exit != 0)
                 throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
             const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
@@ -2103,6 +2122,20 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             }
             const auto helper_measuring =
                 helper_starts({processes, facts}, home, helper_binary, measuring, true);
+            // Native counterpart of radiance_plan._wait_for_helper_vram_release:\n            // strict writer
+            // admission is retained; the owner adds a guarded OS\n            // seam and binds the release
+            // deadline to its actual helper stop timeout.\n            // The resolver's immutable BDF
+            // selection is the measuring manifest's helper order. Capture idle counter noise before ANY
+            // measuring helper occupies its device.
+            std::vector<std::string> helper_bdfs;
+            for (const Json& helper : processes)
+                helper_bdfs.push_back(helper.at("bdf").get<std::string>());
+            vram::Baseline baseline;
+            try {
+                baseline = vram::snapshot(helper_bdfs, in.options.sys_root, in.helper_vram);
+            } catch (const vram::Refused& error) {
+                throw PlanFailed(error.what());
+            }
             MeasuringHelpers group(hooks);
             {
                 launch_measure_helpers(helper_measuring, run_dir, hooks, &group.pids);
@@ -2168,8 +2201,19 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 if (hooks.ended)
                     require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
                 if (!WIFEXITED(st) || WEXITSTATUS(st) != 0 || !fs::exists(plan) || fs::file_size(plan) == 0 ||
-                    !fs::exists(ranks) || fs::file_size(ranks) == 0)
+                    !fs::exists(ranks) || fs::file_size(ranks) == 0) {
+                    // The engine can reject pinned n-gram RAM before writing its plan.
+                    // Surface its quantified resource refusal without changing the host pool.
+                    std::ifstream report(log);
+                    for (std::string line; std::getline(report, line);) {
+                        if (line.find("E --ngram-placement ram:") != std::string::npos)
+                            throw PlanFailed(
+                                "BC_CFG_ADMISSION_REFUSED (RAD_E_NOMEM): "
+                                "measuring-start host RAM admission: " +
+                                line + " (inspect pinned pool, n-gram, checkpoints, MemAvailable and cgroup)");
+                    }
                     throw PlanFailed("plan: the measuring start failed; see " + log.string());
+                }
                 std::smatch m;
                 const std::string text = read_file(log);
                 static const std::regex took(
@@ -2182,7 +2226,20 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     throw PlanFailed(
                         "plan: the measuring start did not report the engine's resident host memory; see " +
                         log.string());
-                group.stop();
+                group.stop(); // all helper groups have exited and been reaped
+                // waitpid alone is NOT the kernel's GPU VRAM accounting barrier. The writer
+                // next performs strict live S8/S10 admission; never feed it stale helper use.
+                vram::Hardware io = in.helper_vram;
+                if (!io.wait && hooks.wait)
+                    io.wait = [&](std::chrono::milliseconds delay) {
+                        return require_callback(hooks.wait.invoke("session.hooks.wait", delay),
+                                                "helper VRAM release wait");
+                    };
+                try {
+                    vram::await_release(baseline, in.options.sys_root, hooks.helper_stop_timeout, io);
+                } catch (const vram::Refused& error) {
+                    throw PlanFailed(error.what());
+                }
                 std::vector<std::string> stored = measured_args;
                 stored.insert(stored.end(), {"--measured-plan", plan.string(), "--rank-demand", ranks.string(),
                                              "--helpers-resident-mib", std::to_string(measured_helpers_mib),

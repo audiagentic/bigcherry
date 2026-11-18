@@ -1,5 +1,51 @@
 # Changelog
 
+## [1.51.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.6...bc-platform-1.51.0) (2026-11-18)
+
+
+### New and changed
+
+* **lab:** record the Flash-Next mixed-workload route heat ([#1150](https://github.com/audiagentic/bigcherry/issues/1150)) ([b8612d8](https://github.com/audiagentic/bigcherry/commit/b8612d88e753f443b88d75f8cf6acad2661db241))
+
+## [1.50.6](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.5...bc-platform-1.50.6) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** wait for helper VRAM release before the final manifest write ([#1147](https://github.com/audiagentic/bigcherry/issues/1147)) ([ec0ca83](https://github.com/audiagentic/bigcherry/commit/ec0ca833bf89280453dcb4a5b5af9bbd7b6b0793))
+
+## [1.50.5](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.4...bc-platform-1.50.5) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 runs both arms with the disk n-gram placement ([#1146](https://github.com/audiagentic/bigcherry/issues/1146)) ([89a2e4d](https://github.com/audiagentic/bigcherry/commit/89a2e4d969662b0eca3dc3560a0a5dbda5cd3fcb))
+* **release:** trim the engine asset (debug split, no benchmark catalogs) ([#1143](https://github.com/audiagentic/bigcherry/issues/1143)) ([758a426](https://github.com/audiagentic/bigcherry/commit/758a42656daa0b2927b28aa82aea0a3717a584d8))
+
+## [1.50.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.3...bc-platform-1.50.4) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 control arm gets the layout definitions its resource derivation needs ([#1141](https://github.com/audiagentic/bigcherry/issues/1141)) ([57bfd57](https://github.com/audiagentic/bigcherry/commit/57bfd5730cd6caa83917b781cc96dc7e0a6c796c))
+* **lab:** S15 control arm uses the site file's route-heat file ([#1139](https://github.com/audiagentic/bigcherry/issues/1139)) ([8484b54](https://github.com/audiagentic/bigcherry/commit/8484b54fabb058f47d91178fc9a165e8593a944a))
+* **lab:** S15 driver can pin one host pool for both arms ([#1142](https://github.com/audiagentic/bigcherry/issues/1142)) ([85577bb](https://github.com/audiagentic/bigcherry/commit/85577bb754add7d1249cfe58b88fa0b81e426101))
+
+## [1.50.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.2...bc-platform-1.50.3) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 capture reads a replayed start's pinned manifest descriptor; one pair per cohort by default ([#1137](https://github.com/audiagentic/bigcherry/issues/1137)) ([c9b9e30](https://github.com/audiagentic/bigcherry/commit/c9b9e30cc9f70aa37254957d8a7161b70f37c94e))
+
+## [1.50.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.1...bc-platform-1.50.2) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 driver tolerates a slow bc-serve status and passes the model root to arm A ([#1134](https://github.com/audiagentic/bigcherry/issues/1134)) ([3c301e2](https://github.com/audiagentic/bigcherry/commit/3c301e23a77cb580dc4ebda463d55cef83c74032))
+* **lab:** S15 projection treats per-start host memory readings as live observations ([#1136](https://github.com/audiagentic/bigcherry/issues/1136)) ([b50ed29](https://github.com/audiagentic/bigcherry/commit/b50ed29b3a95d71fb6381055b012e5c76e55513e))
+
 ## [1.50.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.0...bc-platform-1.50.1) (2026-11-18)
 
 

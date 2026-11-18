@@ -89,7 +89,7 @@ PIN_BLOBS = {
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "532725c"),
-        "core/bc_serving_manifest.cpp": (None, "688b11d"),
+        "core/bc_serving_manifest.cpp": (None, "bb02d82"),
         "core/CMakeLists.txt": ("921debd", "e763864"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
@@ -748,6 +748,11 @@ class TestServingManifestPatch(unittest.TestCase):
         temp, root = TestPlanMemoryPatch._applied(self)   # both patches: the test runs main()'s real order (manifest reader, then plan flags)
         try:
             work = Path(temp.name)
+            # The real patched-engine entry point must use the same table-driven
+            # emitter exercised by the card-free C++ rename test.
+            bridge = (root / "core" / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
+            self.assertIn('v2::project_native_options(doc, v2::kFields, known)', bridge)
+            self.assertIn('const auto native_argv = projected.argv();', bridge)
             scratch = work / "scratch"
             scratch.mkdir()
             test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"

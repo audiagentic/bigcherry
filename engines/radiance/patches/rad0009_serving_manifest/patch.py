@@ -60,6 +60,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 
 #include "manifest.h"
 #include "serving_types.h"
+#include "native_option_projection.h"
 
 #include <nlohmann/json.hpp>
 
@@ -101,23 +102,6 @@ std::string g_heat_launch_nonce;
 
 bool fail(const std::string& why) {
     std::fprintf(stderr, "radiance: --manifest: %s\n", why.c_str());
-    return false;
-}
-
-/* One field's value as flag text: a string or integer as is, an array of strings joined with commas (--kernels). */
-bool flag_text(const nlohmann::json& v, std::string* out) {
-    if (v.is_string()) { *out = v.get<std::string>(); return true; }
-    if (v.is_number_integer()) { *out = v.dump(); return true; }
-    if (v.is_array()) {
-        std::string joined;
-        for (const auto& e : v) {
-            if (!e.is_string()) return false;
-            if (!joined.empty()) joined += ',';
-            joined += e.get<std::string>();
-        }
-        *out = joined;
-        return true;
-    }
     return false;
 }
 
@@ -230,24 +214,13 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     /* Every registry field bound to a radiance option, in registry order. A field the manifest leaves out is left to
      * radiance's own default. The argv shape follows the JSON type alone; a shape the option does not accept is left
      * for radiance's own config_parse to reject, which makes main exit 2. */
-    std::vector<std::pair<std::string, std::string>> flags;
-    std::set<std::string> switches;   /* the flags above that take no value */
-    for (const v2::FieldInfo& f : v2::kFields) {
-        if (f.radiance_option.empty() || f.path.rfind("/spec/", 0) != 0) continue;
-        const nlohmann::json::json_pointer ptr{std::string(f.path)};
-        if (!doc.contains(ptr)) continue;
-        const std::string opt(f.radiance_option);
-        if (!known.count(opt)) return fail("\"" + std::string(f.path) + "\" is bound to " + opt + ", which is not a radiance option");
-        const nlohmann::json& v = doc.at(ptr);
-        if (f.radiance_switch) {   /* a flag that takes no value: its presence in the manifest is the flag (the registry makes it the one value "on") */
-            flags.emplace_back(opt, std::string());
-            switches.insert(opt);
-            continue;
-        }
-        std::string value;
-        if (!flag_text(v, &value)) return fail("\"" + std::string(f.path) + "\" has a value that is not a string, an integer or an array of strings");
-        flags.emplace_back(opt, value);
-    }
+    // Exactly one projection: the generated serving-v2 registry supplies ALL
+    // Radiance option names. This narrow hook is replaced by RUM04's immutable
+    // upstream runtime bundle; neither the manifest writer nor the engine
+    // maintains an independent option-name map.
+    const auto projected = v2::project_native_options(doc, v2::kFields, known);
+    if (!projected.error.empty()) return fail(projected.error);
+    const auto& flags = projected.flags;
     for (const char* required : {"--radiance-home", "--kernels"}) {
         bool found = false;
         for (const auto& kv : flags)
@@ -274,11 +247,9 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         g_store.push_back(kv.second);
     }
     g_emitted.clear();
-    for (const auto& kv : flags) {
-        g_store.push_back(kv.first);
-        if (!switches.count(kv.first)) g_store.push_back(kv.second);
-        g_emitted.push_back(kv.first);
-    }
+    for (const auto& kv : flags) g_emitted.push_back(kv.first);
+    const auto native_argv = projected.argv();
+    g_store.insert(g_store.end(), native_argv.begin(), native_argv.end());
     g_ptrs.clear();
     for (std::string& s : g_store) g_ptrs.push_back(&s[0]);
     g_ptrs.push_back(nullptr);

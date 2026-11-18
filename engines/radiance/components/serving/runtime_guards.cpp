@@ -313,7 +313,10 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
 }
 
 v2::Status RuntimeGuards::inspect_heat() {
-    if (!histogram_)
+    // Recording is observational: an unavailable or temporarily inconsistent
+    // histogram must not shut down inference. Strict freshness, nonce, identity
+    // and shape checks remain mandatory when live placement policy is active.
+    if (!policy_enabled_ || !histogram_)
         return std::nullopt;
     HistogramIdentity identity{};
     const auto evidence = histogram_verdict(*histogram_, std::chrono::system_clock::now(), heat_age_budget_,

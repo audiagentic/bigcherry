@@ -70,6 +70,8 @@ Gate for RCS02-RCS08. Do not start moves until the in-flight RAD06 evidence PR m
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE residual into RCS05/RCS09, close design-only gate" was NOT applied; this item stays open. Why: engines/radiance/engine.toml:63-69 now splits libr3, libr2, moe-remote and ngram-helper, but not standalone moe-harness or a loadable moe-backend-gfx1100 component; moe_backend.h:40-57,177 exposes shape/probe rather than the proposed loaded vtable. RCS05.md:14-32,59 covers the deferred gfx1100 plugin and RCS09.md:14-43 the model-shape contract, but neither owns RCS01.md:18-34's complete five-way file-ownership/harness-isolation acceptance. Active items that reference this one: RAD13, RCS05. Retain the architecture gate until RCS05/RCS09 explicitly absorb the backend ABI, independent harness ownership and complete file-to-component map.
 
+RCS15–18 stage native libr3d assessment, compute, transport and retirement. Keep the current generated component and serving behavior until native lanes and the surviving gfx1030 helper dependencies pass cutover. See docs/reviews/radiance-native-libr3d/INTEGRATION.md.
+
 ## Change Log
 
 - 2026-10-18T12:57:29.818029+00:00 (created-by): Created by agent
@@ -93,3 +95,8 @@ Order (do not combine rename, ABI change, component move and FP8 in one PR):
 
 Replay capture v3 carries the shape, activation, weight descriptor and backend identity; the v2 reader stays for existing captures. GEMM outputs are compared within recorded tolerances, never bitwise across different numerical implementations; routing, ownership, FP8 decode and scale lookup are compared exactly.
 - 2026-11-04T04:24:36.065558+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4233
+- 2026-11-18T08:52:18.070515+00:00 (updated-by): Updated: section:notes
