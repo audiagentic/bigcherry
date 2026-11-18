@@ -1914,6 +1914,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const auto prompts = read_calibration_prompts(in.calibration_prompts_a, in.calibration_prompts_b);
         if (!prompts)
             throw PlanFailed("calibration prompts: " + prompts.error().message);
+        // Validate the operator's JSON syntax before invoking the writer or
+        // admitting measuring children; strict v2 schema remains writer-owned.
+        const Json policy = Json::parse(read_file(in.live_policy_file), nullptr, false);
+        if (!policy.is_object())
+            throw PlanFailed("calibration live policy: expected a JSON object in " +
+                             in.live_policy_file.string());
     }
     if (!in.experiment_file.empty()) {
         // RSC04 minimum: observe-only lab experiment. Until RSC12 binds a

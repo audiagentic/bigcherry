@@ -107,6 +107,11 @@ v2::S10Inputs inputs(const v2::Manifest &m) {
 }
 int main() {
   auto m = fixture();
+  const auto live_source = v2::ProvenanceRecord{v2::Origin::kCli,        "--live-policy policy.json",
+                                                v2::ValueClass::kPolicy, v2::Lifecycle::kStartupOnly,
+                                                v2::Confidence::kExact,  {"/spec/intent/layout"}};
+  m.provenance["/spec/handoff/placement/live_policy"] = live_source;
+  m.provenance["/spec/handoff/placement/live_policy/cadence_ns"] = live_source;
   auto in = inputs(m);
   auto s8 = v2::resolve_s8(in.measured, in.calibrations, in.now_unix_s);
   assert(s8);
@@ -117,7 +122,18 @@ int main() {
   if (!solved) std::cerr << solved.error().path << ": "
                          << solved.error().message << "\n";
   assert(solved);
-  const auto &out = solved.value();
+  const auto& out = solved.value();
+  assert(!out.provenance.contains("/spec/handoff/placement/live_policy"));
+  assert(!out.provenance.contains("/spec/handoff/placement/live_policy/cadence_ns"));
+  auto measuring = m;
+  measuring.spec.plan.state = v2::PlanState::kUnmeasured;
+  auto dry = v2::resolve_s10(measuring, in);
+  assert(dry);
+  assert(dry.value().spec.handoff.has_value());
+  const auto dry_handoff = dry.value().spec.handoff.value_or(v2::Handoff{});
+  assert(!dry_handoff.placement.live_policy);
+  assert(!dry.value().provenance.contains("/spec/handoff/placement/live_policy"));
+  assert(!dry.value().provenance.contains("/spec/handoff/placement/live_policy/cadence_ns"));
   assert(out.spec.plan.power.profile == in.profile.name);
   assert(out.spec.plan.power.profile_digest.starts_with("sha256:"));
   assert(out.spec.plan.power.devices.size() == 4);
