@@ -6,7 +6,7 @@ miss (bc-serve exit 10), measures the plan first: the helpers come up on their c
 plan (``--plan-memory``) against the unmeasured manifest and exits, and bc-serve writes the measured manifest from that plan
 and stores it. The measuring start uses the GPUs like a cell does, so a campaign that needs one runs under the gpu lease.
 
-This is the same procedure as tools/lab/radiance/lib/plan-check.sh, which retires with the launcher (RSC02).
+The production procedure now belongs to native bc-serve; this planner stays platform-side.
 """
 
 from __future__ import annotations
@@ -24,7 +24,7 @@ from ..core.engines import ServeSpec
 from ..tuning.server_runner import _free_port
 from .base import SidecarError, SidecarSet, SidecarSpec
 
-# RSC11/S11: main.cpp exit 11, session.cpp pool_changes > 2, and plan-check.sh PLAN_POOL_CHANGES < 2.
+# Historical RSC11/S11 plan retries: native session handles exit-11 and pool-change admission.
 CACHE_MISS = 10
 REMEASURE_REQUIRED = 11
 MAX_POOL_CHANGES = 2

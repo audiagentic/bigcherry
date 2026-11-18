@@ -24,7 +24,6 @@ import urllib.request
 from rsc02_s15_projection import ProjectionError, compare, dry_run, projection
 
 REPO = Path(__file__).resolve().parents[3]
-LAUNCHER = REPO / "tools/lab/radiance/launch-flashnext-best.sh"
 OBSERVED_ENV = (
     "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "RADIANCE_HOME",
     "ROCM_PATH", "HIP_PATH", "LD_LIBRARY_PATH", "HSA_OVERRIDE_GFX_VERSION",
@@ -86,6 +85,7 @@ def build_identity(cfg: dict) -> dict:
         "helper": build / "radiance_home/helpers/r3_moe_worker",
         "build_metadata": build / "bigcherry-build-metadata-radiance.json",
         "model": Path(cfg["model_file"]),
+        "archived_bash_control": Path(cfg["legacy_runner"]),
     }
     # Dense builds may have no helper installed; the helper cohort must have it.
     if cfg["cohort"] == "dense" and not candidates["helper"].is_file():
@@ -249,7 +249,7 @@ def arm(cfg: dict) -> int:
     launch_log = out.with_suffix(".log")
     try:
         if which == "A":
-            argv = ["bash", str(LAUNCHER), "start", "--layout", layout,
+            argv = ["bash", cfg["legacy_runner"], "start", "--layout", layout,
                     "--build", str(build), "--no-gpu-power"]
             # Both arms must read the same route-heat bytes: the native arm takes them from the
             # site file, so the control arm is told the same file instead of its own default.
@@ -327,7 +327,7 @@ def arm(cfg: dict) -> int:
     finally:
         # Let the real owner stop *all* children and restore power. Never kill
         # an unrelated/reused PID or claim clean stop on a failed restore.
-        stop_argv = (["bash", str(LAUNCHER), "stop"] if which == "A"
+        stop_argv = (["bash", cfg["legacy_runner"], "stop"] if which == "A"
                      else [str(bc_serve), "stop", "--run-dir", str(run_dir)])
         try:
             stopped_result = command(stop_argv, timeout=180, cwd=REPO,
@@ -370,12 +370,10 @@ def accept(args: argparse.Namespace) -> int:
         raise Refusal("explicit hardware confirmation missing; use dry-run for CI")
     for name in ("build", "configs", "model_root", "work_root"):
         require_absolute_dir(getattr(args, name), name)
-    for name in ("bc_serve", "site", "model_file"):
+    for name in ("bc_serve", "site", "model_file", "legacy_runner"):
         require_absolute_file(getattr(args, name), name)
     if not shutil.which("agent-lease"):
         raise Refusal("agent-lease is required, no unleased fallback")
-    if not LAUNCHER.is_file():
-        raise Refusal("Bash control A absent; S15 must precede deletion")
     out = Path(args.out).resolve()
     out.mkdir(parents=True, exist_ok=True)
     cfg = vars(args).copy()
@@ -442,6 +440,8 @@ def main() -> int:
     for name in ("build", "bc-serve", "configs", "site", "model-root",
                  "model-file", "work-root", "out"):
         real.add_argument("--" + name, required=True)
+    real.add_argument("--legacy-runner", required=True,
+                      help="absolute archived Bash control from a pre-S16 checkout")
     real.add_argument("--pairs", type=int, default=1,
                       help="A/B pairs per cohort in ABBA order (1 proves launch equivalence; 4 adds drift control)")
     real.add_argument("--cohorts", default="dense,helper", help="comma list of cohorts to run")

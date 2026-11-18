@@ -1,1 +1,1 @@
-"""Serving lifecycle orchestration (RSC11)."""
+"""Non-runtime S8/S10 calibration lab tooling and measured-plan oracles."""

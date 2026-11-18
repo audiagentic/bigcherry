@@ -35,13 +35,14 @@ or lease was used to develop these changes.
 
 The lab-only `tools/lab/radiance/rsc02_s15_ab.py` driver is **not a
 production dependency** and is **not run by CI or by this agent on GPUs**.
-Run from the repository root, with the completed build and absolute inputs
+Run from the repository root, with the completed build, the archived control and absolute inputs
 recorded first. Replace the example paths with the real paths of **one**
 immutable build and selected model; all paths must already exist:
 
 ```bash
 python3 tools/lab/radiance/rsc02_s15_ab.py accept \
   --build /absolute/completed/BUILD \
+  --legacy-runner /absolute/archived-control.sh \
   --bc-serve /absolute/completed/BUILD/radiance_home/bin/bc-serve \
   --configs /absolute/repo/engines/radiance/configs \
   --site /absolute/SITE.toml \
@@ -81,8 +82,7 @@ leased hardware acceptance and release-start gate pass.
 
 ## Owners and build identity
 
-Run from a clean checkout on a leased host with the original Bash launcher
-and the candidate `bc-serve` present. Use exactly **one immutable completed
+Run from a clean candidate checkout on a leased host, supplying `--legacy-runner` as an absolute archived pre-S16 control script from an immutable, independently verified historical checkout. The candidate checkout itself no longer contains that script. Do not substitute the candidate native owner for control arm A. Use exactly **one immutable completed
 build** and record its full build metadata/source digest, `bc-serve`, engine,
 helpers, kernels and model SHA-256, ROCm/driver/runtime versions, ordered GPU
 PCI BDFs and architectures. Both arms must resolve the **same ordered cards,
@@ -104,8 +104,7 @@ resolve to exactly equal semantic execution projections; do not invent a
 profile or substitute a layout just to make a start pass. If production power
 intent is not stock/observe, use the same named profile for both and pass
 `--allow-power-apply` to the native owner **only after lease validation**.
-The Bash launcher controls are taken from its active help text; legacy
-options have no compatibility alias in native code. A cell with a missing
+The archived Bash control's options must match the exact historical code and receipt; legacy options have no compatibility alias in native code. A cell with a missing
 native typed mode is **BLOCKED**, not equivalent.
 
 ## Automated admission, observations and schedule

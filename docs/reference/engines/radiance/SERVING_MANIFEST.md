@@ -6,18 +6,16 @@ Operator guide for the Radiance serving manifest (`bigcherry/v1`). The contract 
 
 **One configuration method.** A manifest is the whole configuration of an engine or helper start: what to serve, how, and
 (for a serving start) the memory plan it must admit. Direct engine flags (`--tp`, `--kernels`, `--no-prefix-cache`, ...)
-are being retired in favour of it (RSC11). Status: the launcher and the helpers already start from a manifest; the
-campaign adapter, the lab job files and the engine's acceptance of direct flags move over in the steps listed under
+are being retired in favour of it (RSC11). Status: native `bc-serve` owns production start, helper ordering and plan admission; older campaign adapters and historical lab jobs are tracked under
 [Migration status](#migration-status). New work uses a manifest and never adds a flag.
 
 ## Who does what
 
 | Tool | Role |
 |---|---|
-| `bc-serve` | Resolves a configuration (host facts, site file, `--set`, layout) and writes the manifest. Starts no process. |
+| `bc-serve serve/start/stop/status` | Native production owner: selects RSC12 config, measures and validates the plan, owns engine/helper children and lifecycle; also provides explain and manifest tools. |
 | `radiance --manifest M --role engine` | The engine reads its whole configuration from `M`. |
 | `r3_moe_worker --manifest M --role helperN` | A helper reads its role from the same `M`. |
-| `tools/lab/radiance/launch-flashnext-best.sh` | The lab launcher: asks `bc-serve` for the manifest of the configuration it launches, measures the plan if none is cached, starts engine and helpers from the one file. |
 
 ## Writing a manifest
 
@@ -87,7 +85,7 @@ error naming the flag. `--radiance-home` and `--kernels` must be in the manifest
 them in). A serving start checks the live memory plan against the plan the manifest carries before any weights load; there
 is no switch to skip it.
 
-The engine also applies the manifest's hand-off settings to its environment at start, before it initialises, so the manifest is the only place they are configured and they win over a value the launcher left behind: `R3_MOE_WORKER` (set when the manifest has helpers), `R3_MOE_WORKER_SHM` (`spec.handoff.transport.shm`), `R3_MOE_WORKER_MAX_ROWS` (`transport.max_rows`), `R3_MOE_WORKER_SKIP_OWNED` (`transport.skip_owned`), `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` (`telemetry.histogram_file`, `telemetry.period_s`). Kernel switches that were environment variables are manifest fields under `spec.processes.engine.kernels` (contract amendment 14): `attn_native` (`R3_ATTN_NATIVE`), `moe_native`, `moe_fp16`, `moe_ahalf` (`R3_MOE_*` in the engine process), `gfx12_moe_gemv` (`BC_GFX12_MOE_GEMV`), `all_reduce_wire4` (`R3_AR_WIRE4`), `dec11` (`R3_DEC11`), `gemv` (`R3_GEMV`) and `fuse_stage` (`R3_MOE_WORKER_FUSESTAGE`, amendment 16). `R3_MOE_WORKER_COMBINE` is set from `helper_common.combine.enabled` so the engine agrees with the helpers. Each is a resolver key (`kernels.dec11 = true`), and rad0009 sets the variable from the field before the engine initialises (generated from the registry's `env_setting`), so a value in the launcher's environment loses to the manifest and an absent field leaves the kernel's own default. The lab-only patch and diagnostic-build switches are optional members of `spec.experiment.engine` (amendment 17): `mtp_full_head` (`RAD_MTP_FULL_HEAD`), `hc_pf2_fp8_down` (`RAD_HC_PF2_FP8_DOWN`), `routing_evidence` (`RAD_ROUTING_EVIDENCE`), `freeze_promotion_after` (`RAD_DIAG_FREEZE_PROMOTION_AFTER`), `shadow` (`R3_MOE_WORKER_SHADOW`) and `mask_only` (`R3_MOE_WORKER_MASK_ONLY`), applied the same way and refused by the `production` profile.
+The engine also applies the manifest's hand-off settings to its environment at start, before it initialises, so the manifest is the only place they are configured and they win over a value inherited from the calling environment: `R3_MOE_WORKER` (set when the manifest has helpers), `R3_MOE_WORKER_SHM` (`spec.handoff.transport.shm`), `R3_MOE_WORKER_MAX_ROWS` (`transport.max_rows`), `R3_MOE_WORKER_SKIP_OWNED` (`transport.skip_owned`), `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HISTOGRAM_PERIOD_S` (`telemetry.histogram_file`, `telemetry.period_s`). Kernel switches that were environment variables are manifest fields under `spec.processes.engine.kernels` (contract amendment 14): `attn_native` (`R3_ATTN_NATIVE`), `moe_native`, `moe_fp16`, `moe_ahalf` (`R3_MOE_*` in the engine process), `gfx12_moe_gemv` (`BC_GFX12_MOE_GEMV`), `all_reduce_wire4` (`R3_AR_WIRE4`), `dec11` (`R3_DEC11`), `gemv` (`R3_GEMV`) and `fuse_stage` (`R3_MOE_WORKER_FUSESTAGE`, amendment 16). `R3_MOE_WORKER_COMBINE` is set from `helper_common.combine.enabled` so the engine agrees with the helpers. Each is a resolver key (`kernels.dec11 = true`), and rad0009 sets the variable from the field before the engine initialises (generated from the registry's `env_setting`), so a value in the inherited environment loses to the manifest and an absent field leaves the kernel's own default. The lab-only patch and diagnostic-build switches are optional members of `spec.experiment.engine` (amendment 17): `mtp_full_head` (`RAD_MTP_FULL_HEAD`), `hc_pf2_fp8_down` (`RAD_HC_PF2_FP8_DOWN`), `routing_evidence` (`RAD_ROUTING_EVIDENCE`), `freeze_promotion_after` (`RAD_DIAG_FREEZE_PROMOTION_AFTER`), `shadow` (`R3_MOE_WORKER_SHADOW`) and `mask_only` (`R3_MOE_WORKER_MASK_ONLY`), applied the same way and refused by the `production` profile.
 
 ## Settings: `--set` key, manifest field, engine flag
 
@@ -136,9 +134,7 @@ manifest and radiance keeps its own default. The four experiment flags have no `
 ## Errors
 
 A manifest that fails the strict reader is refused with a stable error code and the offending field
-(`engines/radiance/components/serving` `errors.md`; the spec's error section). The launcher returns **96** for a failed
-start canary, **97** for plan measurement/storage/setup failure, **98** for a held launch lock or an already running
-server.
+(`engines/radiance/components/serving` `errors.md`; the spec's error section). Native start reports typed serving refusals for canary, plan/admission and session ownership failures; the historical shell exit codes are not a supported interface.
 
 ## Engine options
 
@@ -180,7 +176,7 @@ block are expanded. An arm with `serving` takes no `server_args` (they are setti
 manifest start has no attestation preflight).
 
 Before the first cell the harness asks the arm's build for the measured manifest of that configuration (`bc-serve --write-manifest`,
-plan cache `<work-root>/plan-cache`). On a cache miss it measures first, as the launcher does: the helpers come up on their cards
+plan cache `<work-root>/plan-cache`). On a cache miss the native owner measures first: the helpers come up on their cards
 (`--measuring`), the engine runs to the end of its memory plan (`--plan-memory`) and exits, and `bc-serve ... --measured-plan` writes
 the measured manifest and stores the plan. That measuring start uses the GPUs, so a campaign with a new configuration runs under the
 `gpu` lease like any measurement. The manifests are kept in the output directory under `manifests/<arm>/`.

@@ -4,7 +4,6 @@ from __future__ import annotations
 import unittest
 from dataclasses import replace
 
-from bigcherry.core import paths
 from bigcherry.engine_adapters import radiance_inventory as inventory
 from bigcherry.engine_adapters import radiance_layout as layouts
 from bigcherry.engine_adapters import radiance_resources as resource
@@ -64,13 +63,6 @@ def derive(layout=None, model=None, objective=None, limits=None, worker=None):
 
 
 class ResourceTests(unittest.TestCase):
-    def test_v1_lab_launcher_cannot_silently_use_fixed_host_budgets(self):
-        launcher = (paths.REPO_ROOT / "tools/lab/radiance/launch-flashnext-best.sh").read_text()
-        self.assertNotIn("HOST_POOL_MIB=9216", launcher)
-        self.assertNotIn("HOST_KV_MIB=12288", launcher)
-        self.assertIn("resources derive-launch", launcher)
-        self.assertIn("RSC03 resolved host pool", launcher)
-
     def test_shipped_layouts_have_no_literal_helper_budgets(self):
         for name, recipe in layouts.load_layouts().items():
             for helper in recipe.get("helper", []):

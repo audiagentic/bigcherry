@@ -18,7 +18,6 @@ from .. import __version__
 from ..patch import catalog as patch_catalog
 from ..source import sources
 from ..release import pin as _release_pin
-from ..release.install import cmd_release_install
 from ..release import ci_bundle as _ci_bundle
 from ..release.patch_promote import cmd_patch_promote
 from ..tuning.engine_bench import cmd_engine_bench
@@ -900,16 +899,6 @@ def build_parser() -> argparse.ArgumentParser:
     )
     pin_release_cmd.set_defaults(func=cmd_pin_release)
 
-    release_install_cmd = sub.add_parser(
-        "release-install",
-        help="verify and install a Radiance runtime bundle from a release tag in a detached worktree",
-    )
-    release_install_cmd.add_argument(
-        "tag", help="bc-radiance-* release tag or latest verified bundle release"
-    )
-    release_install_cmd.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
-    release_install_cmd.set_defaults(func=cmd_release_install)
-
     _ci_bundle.add_parser(sub)
 
     replay_inspect_cmd = sub.add_parser(
@@ -1661,10 +1650,6 @@ def build_parser() -> argparse.ArgumentParser:
     from .layout_cmds import register as _register_layout
 
     _register_layout(sub)
-
-    from .serve import register as _register_serve
-
-    _register_serve(sub)
 
     from .host_check import register as _register_host_check
 

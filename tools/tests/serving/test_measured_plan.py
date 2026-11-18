@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from dataclasses import replace
 from pathlib import Path
-from types import SimpleNamespace
 
 import pytest
 from bigcherry.engine_adapters import radiance_inventory as inv
@@ -19,9 +18,9 @@ from bigcherry.serving.measured_plan import (
     MeasuredPlanValidator,
     PlanBounds,
     PlanMeasurement,
+    ServingPlan,
     RoomRefusal,
 )
-from bigcherry.serving.supervisor import ProcessSpec, ServingPlan, Supervisor
 
 M = resource.MIB
 BDF = "0000:03:00.0"
@@ -141,13 +140,7 @@ class Writer:
             },
         }
         manifest.write_text(json.dumps(doc))
-        return ServingPlan(
-            manifest,
-            (
-                ProcessSpec("helper0", ("fake-helper",)),
-                ProcessSpec("engine", ("fake-engine",)),
-            ),
-        )
+        return ServingPlan(manifest)
 
 
 class Validator:
@@ -460,55 +453,3 @@ def test_non_s5_exception_never_triggers_a_retry(tmp_path):
     with pytest.raises(RuntimeError, match="model failed"):
         obj(layout(), "generic")
     assert len(source.calls) == 1
-
-
-def test_real_supervisor_consumes_measured_planner_and_s12_power_contract(tmp_path):
-    selected = layout()
-    obj, _source, _writer, _ = planner(
-        tmp_path, [EngineRoomRefused(room()), AdmissionReport(CLAIMABLE, CLAIMABLE)]
-    )
-    trace = []
-
-    class Launcher:
-        def start(self, spec):
-            trace.append(f"start:{spec.role}")
-            return SimpleNamespace(role=spec.role)
-
-        def ready(self, process, spec):
-            trace.append(f"ready:{spec.role}")
-
-        def stop(self, process):
-            trace.append(f"stop:{process.role}")
-
-        def exited(self, process):
-            trace.append(f"exited:{process.role}")
-            return True
-
-    sup = Supervisor(
-        resolve=lambda name: selected,
-        plan=obj,
-        launcher=Launcher(),
-        record_dir=tmp_path / "supervisor-record",
-        journal_dir=tmp_path / "journal",
-        wait=lambda check: check(),
-        lease_ok=lambda: True,
-        observe=lambda bdfs: {"source": "fake"},
-    )
-    result = sup.execute(name="test", run_id="integrated")
-    assert result["state"] == "stopped"
-    assert result["power"] == "observe"
-    assert result["manifest"] == str(tmp_path / "integrated-1.json")
-    assert trace == [
-        "start:helper0",
-        "ready:helper0",
-        "start:engine",
-        "ready:engine",
-        "stop:engine",
-        "stop:helper0",
-        "exited:helper0",
-        "exited:engine",
-    ]
-    assert (
-        json.loads((tmp_path / "records/integrated.plan.json").read_text())["state"]
-        == "admitted"
-    )

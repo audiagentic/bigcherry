@@ -23,11 +23,17 @@ from ..engine_adapters.radiance_resources import (
     Targets,
 )
 from ..hardware.power_receipt import write_json_atomic
-from .supervisor import ServeRefused, ServingPlan
 
 
-class MeasuredPlanRefused(ServeRefused):
-    """No measured, admitted v2 plan can safely be handed to the supervisor."""
+@dataclass(frozen=True)
+class ServingPlan:
+    """Planning-only manifest identity retained for non-runtime admission oracles."""
+    manifest: Path
+    processes: tuple[object, ...] = ()
+
+
+class MeasuredPlanRefused(RuntimeError):
+    """No measured and admitted v2 plan may be handed to a native session."""
 
 
 RoomKind = Literal["host_room", "gpu_room", "pin_room"]

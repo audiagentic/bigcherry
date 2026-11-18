@@ -27,8 +27,7 @@ Not built yet: the device-speed and phase-aware solver (RHP17, RHP04 stage 3), t
 
 The policy is a field of the serving manifest: `spec.handoff.placement.live_policy`. bc-serve fills it when
 `derive_manifest_live_policy` finds a record in the calibration store (`${BC_WORK_ROOT}/live-policy-calibration.toml`) for this
-configuration's **calibration key** and the record is complete. Otherwise the field is absent and the policy is off. The launcher
-reports ON (with measured cadence) or OFF (with the missing-record/unsupported-layout reason derived from manifest provenance).
+configuration's **calibration key** and the record is complete. Otherwise the field is absent and the policy is off. The native manifest and `bc-serve explain CONFIG` expose the selection and reason; a startup ON is not proof of effective migration.
 A helper-free start is NOT_APPLICABLE. RHP18 tracks the remaining per-epoch runtime/degraded status and audit identity.
 
 The calibration key is `sha256` of the plan key inputs without `engine_build` and `cache_version`
@@ -85,17 +84,11 @@ start-up layout, not production.
 Both arms get the same warm-up traffic (derived: `(min_samples + 1) * cadence + min_residency`). The off arm moves the calibration store
 aside; each arm's manifest is read and the arm is marked INVALID if its state differs from its label (runs/policy-onoff-ab/run.sh is the
 template). Report engine decode tok/s, client aggregate and ms/step separately; judge 1-stream decode over several prompts, not one.
-An instrumented run (`--experiment`) needs `--live-policy FILE`. The launcher prints `live placement: ON (...)` or `OFF -- reason`
-at start; a missing record, a layout the planner is not built for (heads followed by exactly one tail), and the lab profile are all
-named there. The default heat period is 1 s (a 60 s period starved the policy). Servers the launcher starts inside a lease are still listed
-by `agent-lease status` as outside any lease (they are detached).
+Instrumented lab runs need explicit policy evidence; do not rely on retired launcher flags. Inspect `spec.handoff.placement.live_policy` in the native-owned immutable manifest, and use the declared typed config. The default heat period was 1 s in historical runs (60 s starved the policy). The lease must cover the native process-owner lifetime, not just benchmark traffic.
 
 ## How to restore it after a key change
 
-Re-calibrate the layout (lab only, takes the `gpu` lease): `launch-flashnext-best.sh start --build DIR --port N --calibrate
---record-period 1 --calibration-prompts-a FILE --calibration-prompts-b FILE --live-policy policy.json`. The launcher ingests the
-record atomically into the store and a plain start then carries the derived `live_policy`. Recipe and prompt files:
-`runs/rhp16-calib9` (filler 27k prompts plus 44k document prompts, both workload orders). Do not edit the record's key by hand.
+Re-calibrate only through the supported native `bc-serve` typed calibration workflow under the GPU lease. The prior CLI recipe belongs to archived pre-S16 evidence (`runs/rhp16-calib9`); do not replay its shell flags as a new native mode or edit the calibration key by hand. See the current RSC12 configuration and S10 producer/consumer contract.
 
 ## When measuring
 

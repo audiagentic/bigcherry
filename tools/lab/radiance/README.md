@@ -1,12 +1,12 @@
 # Radiance lab operations
 
-Start with the [Radiance runbook](../../../docs/reference/engines/radiance/RUNBOOK.md) for production/lab source composition, launcher arguments, plan-check cache, layouts, and exit codes. The lab source is **production plus evaluated fixes and explicit experiments**; the validated remote-MoE hand-off is already in production. Build without a hand-off experiment:
+Start with the [Radiance runbook](../../../docs/reference/engines/radiance/RUNBOOK.md) for production/lab source composition, native serving, layouts, and admission/refusal contracts. The lab source is **production plus evaluated fixes and explicit experiments**; the validated remote-MoE hand-off is already in production. Build without a hand-off experiment:
 
 ```sh
 PYTHONPATH=tools python3 -m bigcherry build --lane radiance:stock:linux-radiance
 ```
 
-`lab-build.sh` provides `rad_build LOG` to sourced lab scripts. It reuses builds only for matching recorded engine/config trees and ROCm SDK, requiring both the engine and helper binaries. For an explicit build, give `--build DIR` to `launch-flashnext-best.sh`.
+`lab-build.sh` provides `rad_build LOG` to sourced lab scripts. It reuses builds only for matching recorded engine/config trees and ROCm SDK, requiring both the engine and helper binaries. For development serving from this build, use native `bc-serve serve CONFIG --configs DIR --engine-binary BUILD/bin/radiance --site SITE --model-root ROOT --run-dir RUN`.
 
 ## CI-seeded ccache (BU01)
 
@@ -40,28 +40,20 @@ The command first attempts to download and verify both release assets, the entir
 
 ## Launch and quality
 
-Hold the exclusive **gpu lease** for launches and measurements, not just the benchmark request: the first launch of a new configuration measures the engine's memory plan with helpers running (**about 1–2 minutes**). Every start of a helper layout starts the engine and the helpers from the measured serving manifest and the engine checks the plan it carries, even when a cached plan exists, waits for `/health`, then runs the mandatory start canary. The launcher returns **96** for a failed canary, **97** for plan measurement/storage/setup failure, or **98** for a held launch lock/already-running server. Stop before clearing `$BC_WORK_ROOT/flashnext/plan-cache` to force remeasurement.
-
-Use `--layout NAME` (`bigcherry layout list|show`) for device composition.
-
-The helper-free dense Qwen3.8-27B MXFP4 layout is `qwen27b-2xtx`: it selects both
-`gfx1100` cards from the host inventory and launches one engine with two tensor
-ranks, `libr3`, `--tp-wire wht6` and `--p2p off`. It needs no route-heat file or
-remote-MoE helper. From the repository root, after sourcing
-`tools/env/bigcherry-env.sh` and acquiring the GPU lease, start it with:
+The retired shell launch path is not an entrypoint. Hold the exclusive GPU lease for the **entire** native session, including measurement and verified shutdown. Start a named production configuration from an installed and verified release; for a local developer build supply all required native inputs explicitly:
 
 ```sh
-bash tools/lab/radiance/launch-flashnext-best.sh start --layout qwen27b-2xtx
+BUILD=/absolute/completed/build
+"$BUILD/radiance_home/bin/bc-serve" serve qwen27b \
+  --configs engines/radiance/configs \
+  --engine-binary "$BUILD/bin/radiance" \
+  --site /absolute/SITE.toml --model-root /absolute/MODELS \
+  --run-dir /absolute/RUN
 ```
 
-The dense path requires a successful fresh engine `--plan-memory` preflight and
-the normal response canary. The manifest-based plan check only
-understands Flash-Next helper layouts, so it is **not** yet enforced for TP dense.
-Do not treat this as a hardware-validated launch or a calibrated safety result.
+The native owner performs fail-closed plan measurement on a cache miss, helper/engine admission, health, canary and power cleanup. Use `bc-serve status --run-dir RUN --json` or `bc-serve stop --run-dir RUN` for an owned detached session. `lab-env.sh` and `lab-build.sh` remain for unrelated lab build scripts, not as serving launchers.
 
-The RDNA2 RX 6900 XT tail can improve placement capacity but has a known **worst-case quality penalty (RAD46)**; compare outputs against the two-XTX layout rather than inferring quality from throughput.
-
-For KL quality, use `helper-kld.json` with `PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config tools/lab/radiance/helper-kld.json`. Record the reference **once** with `quality.record` and `quality.corpus` present, then remove those keys and reuse the same reference directory for subsequent deterministic captures. See [patch validation](../../../docs/reference/testing/PATCH_VALIDATION.md). `helper-ab.json` is the speed harness; `fn-profile.sh` and `fn-profile-compare.py` support GPU kernel/copy traces.
+For KL quality, use `helper-kld.json` with `PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config tools/lab/radiance/helper-kld.json`. Record a reference once and compare deterministic captures. The RDNA2 tail has a known worst-case quality cost (RAD46); do not substitute throughput evidence for quality gates.
 
 ## Comparative benchmark harness
 
