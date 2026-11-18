@@ -8,6 +8,7 @@
 #include <algorithm>
 #include <limits>
 #include <set>
+#include <string_view>
 #include <utility>
 
 namespace bc::serving::v2 {
@@ -242,6 +243,27 @@ void power_provenance(Manifest *out) {
     out->provenance[leaf] = {Origin::kDerived, "PWR08 named profile + selected BDF inventory", ValueClass::kDerived,
                              Lifecycle::kStartupOnly, Confidence::kExact, {"/spec/intent/power", "/spec/facts/gpus"}};
 }
+// S10 intentionally suppresses live placement while measuring, and whenever
+// the measured startup gate refuses it. Unlike the shell launcher, strict v2
+// provenance is part of the wire contract: never leave records for a value
+// removed from the typed manifest. Keep the parent placement provenance.
+void suppress_live_policy(Manifest& m) {
+    if (!m.spec.handoff)
+        return;
+    m.spec.handoff->placement.live_policy.reset();
+    constexpr std::string_view path = "/spec/handoff/placement/live_policy";
+    for (auto it = m.provenance.begin(); it != m.provenance.end();) {
+        const std::string& key = it->first;
+        const bool exact = key == path;
+        const bool child =
+            key.size() > path.size() && key.compare(0, path.size(), path) == 0 && key[path.size()] == '/';
+        if (exact || child)
+            it = m.provenance.erase(it);
+        else
+            ++it;
+    }
+}
+
 } // namespace
 
 Status validate_s10_power_plan(const Manifest &m) {
@@ -305,7 +327,7 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
       off.reason_code = "measuring_start";
       off.reason_detail = "the measuring start produces the plan; the live policy starts with a measured manifest";
       out.spec.handoff->placement.live_policy_state = off;
-      out.spec.handoff->placement.live_policy.reset();
+      suppress_live_policy(out);
       out.provenance["/spec/handoff/placement/live_policy_state"] = {
           Origin::kDerived, "measuring start", ValueClass::kDerived, Lifecycle::kStartupOnly, Confidence::kExact, {}};
     }
@@ -393,7 +415,7 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
                   "qualified policy/heat preflight disagrees with live policy");
     out.spec.handoff->placement.live_policy_state = decision;
     if (!decision.configured)
-      out.spec.handoff->placement.live_policy.reset();
+      suppress_live_policy(out);
   } else if (out.spec.handoff) {
     return fail(ConfigErrorCode::plan_mismatch, "spec.handoff",
                 "engine-only plan cannot have remote handoff");

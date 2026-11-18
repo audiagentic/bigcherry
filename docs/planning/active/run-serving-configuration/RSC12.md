@@ -193,6 +193,8 @@ both manifests pass the strict reader. Helper configs carry the launcher's 1 s h
 
 Target-version coordination (RV4225, November 18): RUM04 owns migration to upstream 2.x native YAML plus typed x-bigcherry intent. Preserve current-pin TOML implementation history and RSC12 semantic projection/cache/live-admission guarantees; do not add a second resolver or parallel authoritative config path. All migrated internal callers switch together after RUM01 design approval. Existing item acceptance/state is unchanged.
 
+Warm-start implementation packet: docs/reviews/astra-performance-2026-11-18/IMPLEMENTATION-HANDOFF.md. Separate stable selected topology scope from fresh room checks. Keep streaming hashing and operation-scoped reuse in separate slices, with a generation mutation refusal test. Review the stable projection and digest version before changing the reader/writer.
+
 ## Change Log
 
 - 2026-11-13T22:56:54.680645+00:00 (created-by): Created by agent
@@ -203,3 +205,4 @@ Target-version coordination (RV4225, November 18): RUM04 owns migration to upstr
 - RV4225
 - 2026-11-18T01:41:05.379942+00:00 (updated-by): Updated: section:notes
 - RV4230
+- 2026-11-18T03:40:48.591484+00:00 (updated-by): Updated: section:notes

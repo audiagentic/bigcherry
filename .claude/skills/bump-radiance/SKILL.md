@@ -82,8 +82,12 @@ Write the verdict (bump / not now, and why) before running anything heavy.
    tag is ABI 40; RUM03's reviewed migration candidate is ABI 41.
 2. Inspect `BUMP_COUPLING.md`, `docs/reviews/radiance-upstream-2026-11-18/patch-footprint.json`,
    all six `component.toml` packages, every `patch.py` source anchor and `libr3/native/*.rw`.
-   Once the coupling gate is merged, examine undeclared names, missing upstream headers,
-   source inputs and ABI drift; until then label them **UNDECLARED**, not passed.
+   The `[coupling]` declarations on all six `component.toml` files are checked against
+   owned C++/HIP literal uses, target upstream paths, plugin ABI and owned wire constants.
+   `pin-triage --json` reports `coupling_failures`, `upstream_abi` and the
+   `coupling-affected` advisory verdict. A missing target ABI is a failure, not a clean finding.
+   This gate covers the declared surface only; undeclared patch semantics and RUM migration
+   acceptance remain open, never infer them from a clean declaration check.
 3. Use the **existing generated serving-v2 registry** to check RSC12/RSC02 names in
    `session.cpp`, `serving.cpp`, `config_loader.cpp` and rad0009. Distinguish native
    options from local/derived/helper fields. RUM04 removes proven native duplication:
@@ -111,7 +115,8 @@ The orchestrator is `pin-bump`; its reference is `docs/reference/build/PIN_BUMP.
         --source radiance --build stock --platform linux-radiance > <run dir>/pin-bump.log 2>&1
     # after a stop and a fix:  ... pin-bump <tag> --resume
 
-Phases, in order: fetch and rebase patches (the `drift` phase also runs the libr3 native-rewrite check), compile
+Phases, in order: fetch and rebase patches (the `drift` phase first enforces
+`component-coupling` as `COMPONENT_COUPLING_DRIFT`, then runs the libr3 native-rewrite check), compile
 gate (`components-build`, `component-plugin-abi`, `component-tests`), lane build and CPU smoke, optional
 `--accept` (hardware acceptance against stored baselines: needs the `gpu` lease). A failure writes
 `artifacts/pin-bump/radiance/resume-<tag>/failure.json` in the worktree: read `failure.code` and

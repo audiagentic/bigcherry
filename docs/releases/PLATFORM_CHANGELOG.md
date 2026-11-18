@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.50.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.0...bc-platform-1.50.1) (2026-11-18)
+
+
+### Fixes
+
+* **release:** refuse unflagged engine downgrades ([#1122](https://github.com/audiagentic/bigcherry/issues/1122)) ([1ec2465](https://github.com/audiagentic/bigcherry/commit/1ec24652bc72019cf794095092171facbb47e88e))
+* **serving:** verify installed release before native startup ([#1121](https://github.com/audiagentic/bigcherry/issues/1121)) ([b305cdd](https://github.com/audiagentic/bigcherry/commit/b305cdd35c722423e136144890d1abeeb44f1bfa))
+
+## [1.50.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.49.1...bc-platform-1.50.0) (2026-11-18)
+
+
+### New and changed
+
+* **radiance:** enforce declared component coupling on pin bumps ([#1114](https://github.com/audiagentic/bigcherry/issues/1114)) ([4012cbe](https://github.com/audiagentic/bigcherry/commit/4012cbe32c832cc6388e883a68a6e61805948499))
+
 ## [1.49.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.49.0...bc-platform-1.49.1) (2026-11-18)
 
 
