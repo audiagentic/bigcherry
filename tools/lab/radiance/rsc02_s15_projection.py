@@ -102,6 +102,10 @@ def _processes(value: object, manifest_path: str, expected_roles: list[str]) -> 
     return {"roles": results}
 
 
+#: Per-start host memory readings in the plan's resource inputs (not launch settings).
+LIVE_MEMORY_READINGS = ("cgroup_headroom_bytes", "mem_available_bytes", "pin_available_bytes")
+
+
 def projection(snapshot: dict, *, verify_bytes: bool = True) -> dict:
     """Project all launch semantics, excluding only explicitly named bookkeeping.
 
@@ -133,6 +137,17 @@ def projection(snapshot: dict, *, verify_bytes: bool = True) -> dict:
     if facts is None:
         raise ProjectionError("manifest.spec.facts missing")
     spec["stable_facts"] = _stable_facts(facts)
+    # Free host memory read at each start is a live observation, like the host
+    # facts above: two starts always read different values. The values derived
+    # from them (host pool, budgets) stay in the projection and must agree.
+    plan = spec.get("plan")
+    resource_inputs = plan.get("resource_inputs") if isinstance(plan, dict) else None
+    if isinstance(resource_inputs, dict):
+        for key in LIVE_MEMORY_READINGS:
+            if key in resource_inputs:
+                if type(resource_inputs[key]) is not int:
+                    raise ProjectionError(f"spec.plan.resource_inputs.{key}: expected an integer")
+                resource_inputs[key] = "<live-host-memory-reading>"
     if "handoff" in spec:
         handoff = _dict(spec["handoff"], "spec.handoff")
         transport = _dict(_get(handoff, "transport", "spec.handoff"), "spec.handoff.transport")
