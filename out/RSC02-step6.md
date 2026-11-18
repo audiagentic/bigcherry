@@ -15,7 +15,7 @@ Updated: 2026-11-18 (card-free work only; no hardware lease).
 - RED test first: `test_refuses_matching_but_incomplete_observed_roles` exercises two *equally incomplete* snapshots, a phantom role, a forged `--role` and an omitted `--role`. Before the production change, agreement between two snapshots could be reported as PASS even though the same helper was absent from both.
 - Production comparison now obtains the expected role set from the captured manifest `spec.processes.helpers[].role`, requires every role to have one matching `--role NAME` argument, and fails on missing/extra observed roles. This is an independent admission condition, not a replacement for the real manifest writer/strict reader or the fake-process owner rehearsal.
 - The original S15 dry-run and real owner CTest are left intact.
-- Validation status: GitHub CI pending when this note was written. The intended local worktree `/work/development/tmp/bigcherry/rsc02-step6-lab-experiment` was unavailable in this execution environment, so no local CTest, ASan/UBSan, clang-tidy, clang-format, full Python suite, patch-lint or forbidden-terms result is claimed.
+- Validation status: GitHub CI pending when this note was written. The intended local `rsc02-step6-lab-experiment` worktree was unavailable in this execution environment, so no local CTest, ASan/UBSan, clang-tidy, clang-format, full Python suite, patch-lint or forbidden-terms result is claimed.
 
 ## Remaining step-6 work (separate PRs)
 
