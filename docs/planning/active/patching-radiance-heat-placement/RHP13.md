@@ -53,6 +53,8 @@ Experts move between engine and helpers without restart with correct budget acco
 
 Depends on RHP11, RHP06 and RHP04 stage 3. Plan source: GPT staged plan 2026-11-01. Supersedes the tiered host-cache part of RHP07.
 
+Target-version coordination (RV4226, November 18): RUM05 implements this item's unified-residency goal on upstream 2.x by extending native fleet claims with helper reservations and one immutable placement view. No competing allocator or duplicate helper-byte subtraction. Reuse RHP04/RHP09 calibration; keep the initial bump's ownership policy unchanged and scope multi-model reclaim to RUM10 after RUM09. Existing item acceptance/state is unchanged.
+
 ## Change Log
 
 - 2026-11-01T22:51:59.877467+00:00 (created-by): Created by agent
@@ -61,3 +63,8 @@ Depends on RHP11, RHP06 and RHP04 stage 3. Plan source: GPT staged plan 2026-11-
 
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:58.493983+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4226
+- 2026-11-18T01:41:19.665983+00:00 (updated-by): Updated: section:notes
