@@ -9,19 +9,21 @@ mean the migration was implemented. Edit their scope/state through Planning MCP.
 | Stage | Item | Small deliverable and cleanup boundary |
 | --- | --- | --- |
 | 1 | [RUM01](../../planning/active/patching-radiance-upstream/RUM01.md) | Exact target, one deployed configuration, ownership and patch dispositions. Approve exclusions before coding. |
-| 2A | [RUM02](../../planning/active/patching-radiance-upstream/RUM02.md) | Extract injected implementation into owned files; keep direct typed hooks. Remove replaced raw-string implementations in the same slice. |
-| 2B | [RUM03](../../planning/active/patching-radiance-upstream/RUM03.md) | Pin JSON independently, port shared Registry eligibility and rebuild one plugin ABI/SDK generation. Remove duplicated include assumptions. |
-| 3 | [RUM04](../../planning/active/patching-radiance-upstream/RUM04.md) | Native YAML plus closed extension intent, one parser lifetime and admitted snapshot. Replace argv bridge and migrated duplicate config paths. |
-| 4 | [RUM05](../../planning/active/patching-radiance-upstream/RUM05.md) | Shared immutable placement view and external helper reservations in upstream accounting; reuse current calibrated policy. |
+| 2 | [RUM03](../../planning/active/patching-radiance-upstream/RUM03.md) | Pin JSON independently and rebuild matched ABI/SDK; port only required eligibility. |
+| 3 | [RUM04](../../planning/active/patching-radiance-upstream/RUM04.md) | Original native YAML bytes bound to existing measured admission; delete native-only resolver/registry/argv duplication. No new bundle index or native serializer. |
+| 4A | [RUM02](../../planning/active/patching-radiance-upstream/RUM02.md) | Extract only surviving implementations after removal decisions; record deleted attachments separately from moved lines. |
+| 4B | [RUM05](../../planning/active/patching-radiance-upstream/RUM05.md) | Fresh per-BDF admission, ordered child-local devices in normal/offline paths, disjoint helpers; retain independent owner verification. |
 | 5 | [RUM06](../../planning/active/patching-radiance-upstream/RUM06.md) | Engine/group-owned remote execution, exact ticket terminal states and drain-before-free; no new transport algorithm. |
-| 6 | [RUM07](../../planning/active/patching-radiance-upstream/RUM07.md) | One KV descriptor source and only supported retained formats; delete redundant row-size/dispatch switches. |
+| 6 | [RUM07](../../planning/active/patching-radiance-upstream/RUM07.md) | Native sizing/dispatch first; extend existing table only if a non-native format survives. |
 | 7 | [RUM08](../../planning/active/patching-radiance-upstream/RUM08.md) | Reuse upstream replay/controller where equivalent; remove old overrides only with focused proof. |
 | 8 | [RUM09](../../planning/active/patching-radiance-upstream/RUM09.md) | Minimum production transition gates, pin update and one installable release bundle. |
 | Later | [RUM10](../../planning/active/patching-radiance-upstream/RUM10.md) | Optional multi-model helper/reclaim support after single-model acceptance; does not block the bump. |
 
-RUM02 and RUM03 can proceed independently after RUM01; subsequent dependencies
+RUM03 precedes RUM04; RUM04 precedes RUM02 and RUM05. Evaluate native KV/replay/controller equivalence early, before porting affected hunks. Subsequent dependencies
 are recorded in each item. Keep independently compilable changes in small PRs.
 Combine slices only when an interface migration cannot compile on its own.
+
+See [Astra’s source review and deletion map](ASTRA-CONSOLIDATION.md) for exact callers, removal conditions, ordinal namespaces and cache/default identity. No runtime acceptance was obtained during this review.
 
 ## Reuse instead of parallel implementations
 
@@ -33,7 +35,7 @@ Combine slices only when an interface migration cannot compile on its own.
   RHP04/RHP09/RHP13 retain calibration/placement/resource ownership.
 - RSP01 and current release/SDK tools retain packaging and install verification.
 
-RSC12 and RHP13 have closed coordination reviews RV4225 and RV4226. Their
+RSC12 and RHP13 have coordination reviews RV4225/RV4226, refined by Astra RV4228/RV4229. The initial single-model path bypasses the fleet broker; shared reservations belong to RUM10. Their
 implementation states and current-pin acceptance have not been completed or
 superseded by this proposal. API examples in the items are explicitly sketches;
 actual upstream and local symbol names are called out separately.

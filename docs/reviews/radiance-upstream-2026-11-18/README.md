@@ -1,5 +1,7 @@
 # Radiance upstream migration review — 2026-11-18
 
+> **Astra refinement:** [ASTRA-CONSOLIDATION.md](ASTRA-CONSOLIDATION.md) and the current Planning items govern execution. They supersede earlier proposals for a normalized YAML writer, bundle index, parser-tree extension API, full native option mirror and initial fleet-broker reservations. Keep original YAML bytes bound to existing admission, delete native-only duplication before extracting survivors, and use disjoint helper cards initially. Earlier source inventories remain evidence, not implementation acceptance.
+
 ## Decision and scope
 
 Do not perform a pin-only update. Moving from BigCherry's v1.17.0 source to
@@ -39,6 +41,13 @@ tried separately against that partial production composition; their results are
 leads, not proofs that their intended experimental dependency sets compose.
 No compilation, GPU benchmark, numerical parity, KLD or serving acceptance was
 performed. Validation below is required migration work, not a claim of success.
+
+## Consolidation and future bumps
+
+See [the deeper source consolidation review](CONSOLIDATION.md) and its complete
+[patch-footprint inventory](patch-footprint.json). It identifies existing generated
+bindings and shared projections to preserve, real deletion opportunities, backend
+generator consumers and boundaries that must not be merged merely for fewer lines.
 
 ## Staged execution plans
 

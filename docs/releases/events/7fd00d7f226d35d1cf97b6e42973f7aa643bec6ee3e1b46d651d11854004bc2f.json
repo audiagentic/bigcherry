@@ -1,0 +1,26 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_022828_refined-the-radiance-bump-into_5340",
+  "files": [
+    "docs/reviews/radiance-upstream-2026-11-18",
+    "docs/planning/active/patching-radiance-upstream",
+    "docs/planning/active/patching-radiance-heat-placement/RHP13.md"
+  ],
+  "plan-item-ids": [
+    "RUM01",
+    "RUM02",
+    "RUM03",
+    "RUM04",
+    "RUM05",
+    "RUM06",
+    "RUM07",
+    "RUM08",
+    "RUM09",
+    "RUM10",
+    "RHP13"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Integrate Astra source review into RUM01\u201310: native immutable YAML with existing admission; delete duplicate native projections before extracting survivors; correct single-model broker/offline device assumptions; conditional KV/replay/policy retirements and bounded gates. Close incorporated reviews RV4228/RV4229.",
+  "timestamp-utc": "2026-11-18T02:28:28.363891Z",
+  "user-summary-candidate": "Refined the Radiance bump into a staged consolidation with concrete deletion conditions and upstream reuse; implementation remains pending."
+}

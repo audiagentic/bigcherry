@@ -1,0 +1,1063 @@
+{
+  "method": "Loaded declarative FilePatch definitions; counts are lexical footprint, not independent semantics or net deletion savings.",
+  "patches": [
+    {
+      "patch": "rad0001_drain_mover_before_arena_free",
+      "definition_lines": 28,
+      "edits": 1,
+      "targets": [
+        "core/engine.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0002_moe_remote_handoff",
+      "definition_lines": 1021,
+      "edits": 33,
+      "targets": [
+        "abi/bc_moe_remote.h",
+        "arch/common/bc_moe_remote_block.h",
+        "arch/common/rad_block_hc.h",
+        "arch/common/rad_block_moe_fp8.h",
+        "core/engine.cpp",
+        "core/engine.h",
+        "core/engine_bringup.cpp",
+        "core/place/bc_moe_remote.cpp",
+        "core/place/bc_moe_remote_engine.h",
+        "core/place/bc_moe_remote_place.h",
+        "core/place/planner.cpp",
+        "core/runtime/ctx.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "abi/bc_moe_remote.h",
+          "lines": 86
+        },
+        {
+          "path": "core/place/bc_moe_remote.cpp",
+          "lines": 242
+        },
+        {
+          "path": "core/place/bc_moe_remote_place.h",
+          "lines": 61
+        },
+        {
+          "path": "arch/common/bc_moe_remote_block.h",
+          "lines": 198
+        },
+        {
+          "path": "core/place/bc_moe_remote_engine.h",
+          "lines": 65
+        }
+      ]
+    },
+    {
+      "patch": "rad0003_mtp_full_head_switch",
+      "definition_lines": 30,
+      "edits": 2,
+      "targets": [
+        "arch/common/rad_block_mtp_fp8.h"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0004_moe_remote_diagnostics",
+      "definition_lines": 168,
+      "edits": 5,
+      "targets": [
+        "arch/common/bc_moe_remote_diag.h",
+        "arch/common/rad_block_moe_fp8.h"
+      ],
+      "created_payloads": [
+        {
+          "path": "arch/common/bc_moe_remote_diag.h",
+          "lines": 103
+        }
+      ]
+    },
+    {
+      "patch": "rad0005_mp4_ffmpeg6_writer",
+      "definition_lines": 29,
+      "edits": 1,
+      "targets": [
+        "core/mm/mp4.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0006_heat_freeze_diagnostic",
+      "definition_lines": 46,
+      "edits": 2,
+      "targets": [
+        "core/place/heat.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0007_hc_pf2_fp8_down",
+      "definition_lines": 642,
+      "edits": 7,
+      "targets": [
+        "libr4d/r4d_hc_bf16.hip"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0008_hc_upmix_rt_sweep",
+      "definition_lines": 102,
+      "edits": 1,
+      "targets": [
+        "libr4d/r4d_hc_bf16.hip"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0009_serving_manifest",
+      "definition_lines": 476,
+      "edits": 6,
+      "targets": [
+        "core/CMakeLists.txt",
+        "core/bc_serving_manifest.cpp",
+        "core/bc_serving_manifest.h",
+        "core/main.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "core/bc_serving_manifest.h",
+          "lines": 39
+        },
+        {
+          "path": "core/bc_serving_manifest.cpp",
+          "lines": 333
+        }
+      ]
+    },
+    {
+      "patch": "rad0010_routing_evidence",
+      "definition_lines": 113,
+      "edits": 11,
+      "targets": [
+        "core/engine.cpp",
+        "core/runtime/bc_moe_remote_evidence.h",
+        "core/runtime/ctx.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "core/runtime/bc_moe_remote_evidence.h",
+          "lines": 296
+        }
+      ]
+    },
+    {
+      "patch": "rad0011_plan_memory",
+      "definition_lines": 575,
+      "edits": 13,
+      "targets": [
+        "core/bc_plan_check.cpp",
+        "core/bc_plan_check.h",
+        "core/bc_plan_memory.cpp",
+        "core/bc_plan_memory.h",
+        "core/engine_bringup.cpp",
+        "core/main.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "core/bc_plan_memory.h",
+          "lines": 39
+        },
+        {
+          "path": "core/bc_plan_memory.cpp",
+          "lines": 207
+        },
+        {
+          "path": "core/bc_plan_check.h",
+          "lines": 40
+        },
+        {
+          "path": "core/bc_plan_check.cpp",
+          "lines": 144
+        }
+      ]
+    },
+    {
+      "patch": "rad0012_helper_kernel_config",
+      "definition_lines": 76,
+      "edits": 4,
+      "targets": [
+        "libr4d/bc_helper_config.h",
+        "libr4d/r4d_args.h",
+        "libr4d/r4d_rows.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "libr4d/bc_helper_config.h",
+          "lines": 39
+        }
+      ]
+    },
+    {
+      "patch": "rad0013_mtp_pass_replay",
+      "definition_lines": 158,
+      "edits": 1,
+      "targets": [
+        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0016_vtp14_rank_code_selection",
+      "definition_lines": 706,
+      "edits": 41,
+      "targets": [
+        "core/build/rad_build.h",
+        "core/build/rad_builder.cpp",
+        "core/config.cpp",
+        "core/device/aql.cpp",
+        "core/engine_bringup.cpp",
+        "core/plugin/bands.cpp",
+        "core/plugin/bc_rank_devices.cpp",
+        "core/plugin/bc_rank_devices.h",
+        "core/plugin/loader.cpp",
+        "core/plugin/registry.h",
+        "core/plugin/select.cpp",
+        "core/rad_core.h",
+        "tests/bc_rank_devices_test.cpp",
+        "tests/config_test.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "core/plugin/bc_rank_devices.h",
+          "lines": 62
+        },
+        {
+          "path": "core/plugin/bc_rank_devices.cpp",
+          "lines": 148
+        },
+        {
+          "path": "tests/bc_rank_devices_test.cpp",
+          "lines": 236
+        }
+      ]
+    },
+    {
+      "patch": "rad0017_vtp14_n3_shared_rendezvous",
+      "definition_lines": 218,
+      "edits": 8,
+      "targets": [
+        "core/engine_bringup.cpp",
+        "core/plugin/bc_shared_slot.cpp",
+        "core/plugin/bc_shared_slot.h",
+        "libr4d/r4d_ar_entry.hip",
+        "tests/bc_shared_slot_test.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "core/plugin/bc_shared_slot.h",
+          "lines": 40
+        },
+        {
+          "path": "core/plugin/bc_shared_slot.cpp",
+          "lines": 105
+        },
+        {
+          "path": "tests/bc_shared_slot_test.cpp",
+          "lines": 101
+        }
+      ]
+    },
+    {
+      "patch": "rad0018_vtp14_n2_tp_ownership",
+      "definition_lines": 454,
+      "edits": 16,
+      "targets": [
+        "abi/rad_builder.h",
+        "arch/common/rad_arch.h",
+        "arch/common/rad_block_attn_gated.h",
+        "arch/common/rad_block_gdn.h",
+        "arch/common/rad_block_mlp.h",
+        "arch/qwen35_bf16/qwen35_bf16.cpp",
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/rad_core.h",
+        "tests/config_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0019_vtp14_n2_tp_ownership_fp8",
+      "definition_lines": 285,
+      "edits": 12,
+      "targets": [
+        "arch/common/rad_arch.h",
+        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_dflash2.h",
+        "arch/common/rad_block_mlp_fp8.h",
+        "arch/common/rad_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0020_vtp14_tp3_pipelined_prefill",
+      "definition_lines": 190,
+      "edits": 12,
+      "targets": [
+        "abi/rad_builder.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/rad_core.h",
+        "tests/config_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0021_vtp14_weighted_twoshot_3rank",
+      "definition_lines": 134,
+      "edits": 6,
+      "targets": [
+        "libr4d/r4d.h",
+        "libr4d/r4d_ar_entry.hip",
+        "libr4d/r4d_ar_twoshot_Nrank_exact.hip"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0022_tune_pin",
+      "definition_lines": 138,
+      "edits": 7,
+      "targets": [
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/rad_core.h",
+        "tests/config_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0023_ar_timeline",
+      "definition_lines": 192,
+      "edits": 7,
+      "targets": [
+        "libr4d/r4d_ar_oneshot_Nrank_exact.hip"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0024_ts3_decode",
+      "definition_lines": 96,
+      "edits": 3,
+      "targets": [
+        "libr4d/r4d_ar_entry.hip"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0025_multiseq_pipelined_prefill",
+      "definition_lines": 331,
+      "edits": 20,
+      "targets": [
+        "abi/rad_runtime.h",
+        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_gdn_fp8.h",
+        "arch/common/rad_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "core/runtime/ctx.cpp",
+        "core/sched/batch.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0026_mixed_pipelined_prefill",
+      "definition_lines": 232,
+      "edits": 10,
+      "targets": [
+        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_gdn_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "core/runtime/ctx.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0027_mixed_one_pipelined_prefill",
+      "definition_lines": 235,
+      "edits": 13,
+      "targets": [
+        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_gdn_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0028_rank_consistent_block_drafts",
+      "definition_lines": 125,
+      "edits": 6,
+      "targets": [
+        "arch/common/rad_block_dflash2.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0029_rank_own_split",
+      "definition_lines": 112,
+      "edits": 1,
+      "targets": [
+        "core/engine_bringup.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0030_int8_pipelined_prefill",
+      "definition_lines": 87,
+      "edits": 4,
+      "targets": [
+        "arch/common/rad_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0031_ts_timeline",
+      "definition_lines": 197,
+      "edits": 6,
+      "targets": [
+        "libr4d/r4d_ar_twoshot_Nrank_exact.hip"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0032_ts3_duplex",
+      "definition_lines": 337,
+      "edits": 18,
+      "targets": [
+        "libr4d/r4d.h",
+        "libr4d/r4d_ar_entry.hip",
+        "libr4d/r4d_ar_twoshot_Nrank_exact.hip",
+        "libr4d/r4d_args.h",
+        "libr4d/r4d_rows.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0033_ts3_once",
+      "definition_lines": 255,
+      "edits": 18,
+      "targets": [
+        "libr4d/r4d.h",
+        "libr4d/r4d_ar_entry.hip",
+        "libr4d/r4d_ar_twoshot_Nrank_exact.hip",
+        "libr4d/r4d_args.h",
+        "libr4d/r4d_rows.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0034_prefill_concurrency",
+      "definition_lines": 66,
+      "edits": 25,
+      "targets": [
+        "core/config.cpp",
+        "core/rad_core.h",
+        "core/sched/metrics.h",
+        "core/sched/scheduler.cpp",
+        "core/sched/scheduler.h",
+        "core/server/adapters.h",
+        "core/server/iface.h",
+        "core/server/metrics.cpp",
+        "core/server/metrics.h",
+        "tests/config_test.cpp",
+        "tests/sched_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0035_prefill_order",
+      "definition_lines": 44,
+      "edits": 14,
+      "targets": [
+        "core/config.cpp",
+        "core/rad_core.h",
+        "core/sched/scheduler.cpp",
+        "core/sched/scheduler.h",
+        "tests/config_test.cpp",
+        "tests/sched_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0036_prefill_governor",
+      "definition_lines": 78,
+      "edits": 30,
+      "targets": [
+        "core/config.cpp",
+        "core/rad_core.h",
+        "core/sched/metrics.h",
+        "core/sched/prefill_governor.h",
+        "core/sched/scheduler.cpp",
+        "core/sched/scheduler.h",
+        "core/server/adapters.h",
+        "core/server/iface.h",
+        "core/server/metrics.cpp",
+        "core/server/metrics.h",
+        "tests/config_test.cpp",
+        "tests/sched_test.cpp"
+      ],
+      "created_payloads": [
+        {
+          "path": "core/sched/prefill_governor.h",
+          "lines": 115
+        }
+      ]
+    },
+    {
+      "patch": "rad0037_bf16_fp8_kv",
+      "definition_lines": 126,
+      "edits": 71,
+      "targets": [
+        "abi/rad_builder.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/kvstream/bringup.cpp",
+        "core/rad_core.h",
+        "libr4d/r4d_attn_decode_h256_gqa6.hip",
+        "libr4d/r4d_attn_paged_h256_gqa6.hip",
+        "libr4d/r4d_attn_prefill_h256_gqa6.hip",
+        "libr4d/r4d_model_bf16.hip",
+        "libr4d/r4d_plugin.h",
+        "libr4d/r4d_qk_norm_rope_gate.hip",
+        "libr4d/r4d_rows.cpp",
+        "libr4d/r4d_selftest.cpp",
+        "tests/arch_test.cpp",
+        "tests/config_test.cpp",
+        "tests/mem_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0038_bf16_i8_kv",
+      "definition_lines": 137,
+      "edits": 80,
+      "targets": [
+        "abi/rad_builder.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/kvstream/bringup.cpp",
+        "core/rad_core.h",
+        "libr4d/r4d_attn_decode_h256_gqa6.hip",
+        "libr4d/r4d_attn_paged_h256_gqa6.hip",
+        "libr4d/r4d_attn_prefill_h256_gqa6.hip",
+        "libr4d/r4d_common.h",
+        "libr4d/r4d_model_bf16.hip",
+        "libr4d/r4d_plugin.h",
+        "libr4d/r4d_qk_norm_rope_gate.hip",
+        "libr4d/r4d_rows.cpp",
+        "libr4d/r4d_selftest.cpp",
+        "tests/arch_test.cpp",
+        "tests/config_test.cpp",
+        "tests/mem_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0039_moe_heat_observer",
+      "definition_lines": 124,
+      "edits": 13,
+      "targets": [
+        "abi/rad_moe_heat.h",
+        "core/engine.cpp",
+        "core/runtime/bc_moe_heat_observer.cpp",
+        "core/runtime/bc_moe_heat_registry.cpp",
+        "core/runtime/bc_moe_heat_sidecar.h",
+        "core/runtime/ctx.cpp",
+        "core/runtime/ctx.h"
+      ],
+      "created_payloads": [
+        {
+          "path": "abi/rad_moe_heat.h",
+          "lines": 63
+        },
+        {
+          "path": "core/runtime/bc_moe_heat_sidecar.h",
+          "lines": 81
+        },
+        {
+          "path": "core/runtime/bc_moe_heat_registry.cpp",
+          "lines": 83
+        },
+        {
+          "path": "core/runtime/bc_moe_heat_observer.cpp",
+          "lines": 48
+        }
+      ]
+    },
+    {
+      "patch": "rad0040_kv_layout_table",
+      "definition_lines": 50,
+      "edits": 12,
+      "targets": [
+        "abi/rad_builder.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/kvstream/bringup.cpp",
+        "core/rad_core.h",
+        "libr4d/r4d_rows.cpp",
+        "tests/config_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0041_kv_b16_flashnext",
+      "definition_lines": 52,
+      "edits": 14,
+      "targets": [
+        "abi/rad_builder.h",
+        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "libr4d/r4d_attn_paged_gqa8.hip",
+        "libr4d/r4d_attn_paged_h256_gqa12.hip",
+        "libr4d/r4d_attn_paged_h256_gqa6_bs4.hip",
+        "libr4d/r4d_plugin.h",
+        "libr4d/r4d_rows.cpp",
+        "tests/arch_test.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0042_kv_b16_selftest",
+      "definition_lines": 31,
+      "edits": 9,
+      "targets": [
+        "libr4d/r4d_selftest.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0043_expert_stats_protected",
+      "definition_lines": 71,
+      "edits": 1,
+      "targets": [
+        "core/engine.cpp"
+      ],
+      "created_payloads": []
+    },
+    {
+      "patch": "rad0044_expert_route_record",
+      "definition_lines": 329,
+      "edits": 16,
+      "targets": [
+        "core/config.cpp",
+        "core/engine.cpp",
+        "core/engine_bringup.cpp",
+        "core/rad_core.h",
+        "core/runtime/ctx.cpp",
+        "core/runtime/ctx.h",
+        "tests/config_test.cpp"
+      ],
+      "created_payloads": []
+    }
+  ],
+  "shared_targets": {
+    "core/engine_bringup.cpp": [
+      "rad0002_moe_remote_handoff",
+      "rad0011_plan_memory",
+      "rad0016_vtp14_rank_code_selection",
+      "rad0017_vtp14_n3_shared_rendezvous",
+      "rad0018_vtp14_n2_tp_ownership",
+      "rad0020_vtp14_tp3_pipelined_prefill",
+      "rad0022_tune_pin",
+      "rad0029_rank_own_split",
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table",
+      "rad0044_expert_route_record"
+    ],
+    "core/config.cpp": [
+      "rad0016_vtp14_rank_code_selection",
+      "rad0018_vtp14_n2_tp_ownership",
+      "rad0020_vtp14_tp3_pipelined_prefill",
+      "rad0022_tune_pin",
+      "rad0034_prefill_concurrency",
+      "rad0035_prefill_order",
+      "rad0036_prefill_governor",
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table",
+      "rad0044_expert_route_record"
+    ],
+    "core/rad_core.h": [
+      "rad0016_vtp14_rank_code_selection",
+      "rad0018_vtp14_n2_tp_ownership",
+      "rad0020_vtp14_tp3_pipelined_prefill",
+      "rad0022_tune_pin",
+      "rad0034_prefill_concurrency",
+      "rad0035_prefill_order",
+      "rad0036_prefill_governor",
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table",
+      "rad0044_expert_route_record"
+    ],
+    "tests/config_test.cpp": [
+      "rad0016_vtp14_rank_code_selection",
+      "rad0018_vtp14_n2_tp_ownership",
+      "rad0020_vtp14_tp3_pipelined_prefill",
+      "rad0022_tune_pin",
+      "rad0034_prefill_concurrency",
+      "rad0035_prefill_order",
+      "rad0036_prefill_governor",
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table",
+      "rad0044_expert_route_record"
+    ],
+    "arch/qwen35_fp8/qwen35_fp8.cpp": [
+      "rad0019_vtp14_n2_tp_ownership_fp8",
+      "rad0020_vtp14_tp3_pipelined_prefill",
+      "rad0025_multiseq_pipelined_prefill",
+      "rad0026_mixed_pipelined_prefill",
+      "rad0027_mixed_one_pipelined_prefill",
+      "rad0028_rank_consistent_block_drafts",
+      "rad0030_int8_pipelined_prefill",
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table"
+    ],
+    "libr4d/r4d_rows.cpp": [
+      "rad0012_helper_kernel_config",
+      "rad0032_ts3_duplex",
+      "rad0033_ts3_once",
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table",
+      "rad0041_kv_b16_flashnext"
+    ],
+    "core/engine.cpp": [
+      "rad0001_drain_mover_before_arena_free",
+      "rad0002_moe_remote_handoff",
+      "rad0010_routing_evidence",
+      "rad0039_moe_heat_observer",
+      "rad0043_expert_stats_protected",
+      "rad0044_expert_route_record"
+    ],
+    "core/runtime/ctx.cpp": [
+      "rad0002_moe_remote_handoff",
+      "rad0010_routing_evidence",
+      "rad0025_multiseq_pipelined_prefill",
+      "rad0026_mixed_pipelined_prefill",
+      "rad0039_moe_heat_observer",
+      "rad0044_expert_route_record"
+    ],
+    "abi/rad_builder.h": [
+      "rad0018_vtp14_n2_tp_ownership",
+      "rad0020_vtp14_tp3_pipelined_prefill",
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table",
+      "rad0041_kv_b16_flashnext"
+    ],
+    "libr4d/r4d_ar_entry.hip": [
+      "rad0017_vtp14_n3_shared_rendezvous",
+      "rad0021_vtp14_weighted_twoshot_3rank",
+      "rad0024_ts3_decode",
+      "rad0032_ts3_duplex",
+      "rad0033_ts3_once"
+    ],
+    "arch/common/rad_block_attn_gated_fp8.h": [
+      "rad0019_vtp14_n2_tp_ownership_fp8",
+      "rad0025_multiseq_pipelined_prefill",
+      "rad0026_mixed_pipelined_prefill",
+      "rad0027_mixed_one_pipelined_prefill"
+    ],
+    "libr4d/r4d_ar_twoshot_Nrank_exact.hip": [
+      "rad0021_vtp14_weighted_twoshot_3rank",
+      "rad0031_ts_timeline",
+      "rad0032_ts3_duplex",
+      "rad0033_ts3_once"
+    ],
+    "libr4d/r4d_args.h": [
+      "rad0012_helper_kernel_config",
+      "rad0032_ts3_duplex",
+      "rad0033_ts3_once"
+    ],
+    "arch/common/rad_fp8.h": [
+      "rad0019_vtp14_n2_tp_ownership_fp8",
+      "rad0025_multiseq_pipelined_prefill",
+      "rad0030_int8_pipelined_prefill"
+    ],
+    "libr4d/r4d.h": [
+      "rad0021_vtp14_weighted_twoshot_3rank",
+      "rad0032_ts3_duplex",
+      "rad0033_ts3_once"
+    ],
+    "arch/common/rad_block_gdn_fp8.h": [
+      "rad0025_multiseq_pipelined_prefill",
+      "rad0026_mixed_pipelined_prefill",
+      "rad0027_mixed_one_pipelined_prefill"
+    ],
+    "core/sched/scheduler.cpp": [
+      "rad0034_prefill_concurrency",
+      "rad0035_prefill_order",
+      "rad0036_prefill_governor"
+    ],
+    "core/sched/scheduler.h": [
+      "rad0034_prefill_concurrency",
+      "rad0035_prefill_order",
+      "rad0036_prefill_governor"
+    ],
+    "tests/sched_test.cpp": [
+      "rad0034_prefill_concurrency",
+      "rad0035_prefill_order",
+      "rad0036_prefill_governor"
+    ],
+    "core/kvstream/bringup.cpp": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0040_kv_layout_table"
+    ],
+    "libr4d/r4d_plugin.h": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0041_kv_b16_flashnext"
+    ],
+    "libr4d/r4d_selftest.cpp": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0042_kv_b16_selftest"
+    ],
+    "tests/arch_test.cpp": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv",
+      "rad0041_kv_b16_flashnext"
+    ],
+    "arch/common/rad_block_moe_fp8.h": [
+      "rad0002_moe_remote_handoff",
+      "rad0004_moe_remote_diagnostics"
+    ],
+    "libr4d/r4d_hc_bf16.hip": [
+      "rad0007_hc_pf2_fp8_down",
+      "rad0008_hc_upmix_rt_sweep"
+    ],
+    "core/main.cpp": [
+      "rad0009_serving_manifest",
+      "rad0011_plan_memory"
+    ],
+    "arch/qwen4exp_fp8/qwen4exp_fp8.cpp": [
+      "rad0013_mtp_pass_replay",
+      "rad0041_kv_b16_flashnext"
+    ],
+    "arch/common/rad_arch.h": [
+      "rad0018_vtp14_n2_tp_ownership",
+      "rad0019_vtp14_n2_tp_ownership_fp8"
+    ],
+    "arch/common/rad_block_dflash2.h": [
+      "rad0019_vtp14_n2_tp_ownership_fp8",
+      "rad0028_rank_consistent_block_drafts"
+    ],
+    "core/sched/metrics.h": [
+      "rad0034_prefill_concurrency",
+      "rad0036_prefill_governor"
+    ],
+    "core/server/adapters.h": [
+      "rad0034_prefill_concurrency",
+      "rad0036_prefill_governor"
+    ],
+    "core/server/iface.h": [
+      "rad0034_prefill_concurrency",
+      "rad0036_prefill_governor"
+    ],
+    "core/server/metrics.cpp": [
+      "rad0034_prefill_concurrency",
+      "rad0036_prefill_governor"
+    ],
+    "core/server/metrics.h": [
+      "rad0034_prefill_concurrency",
+      "rad0036_prefill_governor"
+    ],
+    "libr4d/r4d_attn_decode_h256_gqa6.hip": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv"
+    ],
+    "libr4d/r4d_attn_paged_h256_gqa6.hip": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv"
+    ],
+    "libr4d/r4d_attn_prefill_h256_gqa6.hip": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv"
+    ],
+    "libr4d/r4d_model_bf16.hip": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv"
+    ],
+    "libr4d/r4d_qk_norm_rope_gate.hip": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv"
+    ],
+    "tests/mem_test.cpp": [
+      "rad0037_bf16_fp8_kv",
+      "rad0038_bf16_i8_kv"
+    ],
+    "core/runtime/ctx.h": [
+      "rad0039_moe_heat_observer",
+      "rad0044_expert_route_record"
+    ],
+    "abi/bc_moe_remote.h": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "arch/common/bc_moe_remote_block.h": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "arch/common/rad_block_hc.h": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "core/engine.h": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "core/place/bc_moe_remote.cpp": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "core/place/bc_moe_remote_engine.h": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "core/place/bc_moe_remote_place.h": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "core/place/planner.cpp": [
+      "rad0002_moe_remote_handoff"
+    ],
+    "arch/common/rad_block_mtp_fp8.h": [
+      "rad0003_mtp_full_head_switch"
+    ],
+    "arch/common/bc_moe_remote_diag.h": [
+      "rad0004_moe_remote_diagnostics"
+    ],
+    "core/mm/mp4.cpp": [
+      "rad0005_mp4_ffmpeg6_writer"
+    ],
+    "core/place/heat.cpp": [
+      "rad0006_heat_freeze_diagnostic"
+    ],
+    "core/CMakeLists.txt": [
+      "rad0009_serving_manifest"
+    ],
+    "core/bc_serving_manifest.cpp": [
+      "rad0009_serving_manifest"
+    ],
+    "core/bc_serving_manifest.h": [
+      "rad0009_serving_manifest"
+    ],
+    "core/runtime/bc_moe_remote_evidence.h": [
+      "rad0010_routing_evidence"
+    ],
+    "core/bc_plan_check.cpp": [
+      "rad0011_plan_memory"
+    ],
+    "core/bc_plan_check.h": [
+      "rad0011_plan_memory"
+    ],
+    "core/bc_plan_memory.cpp": [
+      "rad0011_plan_memory"
+    ],
+    "core/bc_plan_memory.h": [
+      "rad0011_plan_memory"
+    ],
+    "libr4d/bc_helper_config.h": [
+      "rad0012_helper_kernel_config"
+    ],
+    "core/build/rad_build.h": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/build/rad_builder.cpp": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/device/aql.cpp": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/plugin/bands.cpp": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/plugin/bc_rank_devices.cpp": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/plugin/bc_rank_devices.h": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/plugin/loader.cpp": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/plugin/registry.h": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/plugin/select.cpp": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "tests/bc_rank_devices_test.cpp": [
+      "rad0016_vtp14_rank_code_selection"
+    ],
+    "core/plugin/bc_shared_slot.cpp": [
+      "rad0017_vtp14_n3_shared_rendezvous"
+    ],
+    "core/plugin/bc_shared_slot.h": [
+      "rad0017_vtp14_n3_shared_rendezvous"
+    ],
+    "tests/bc_shared_slot_test.cpp": [
+      "rad0017_vtp14_n3_shared_rendezvous"
+    ],
+    "arch/common/rad_block_attn_gated.h": [
+      "rad0018_vtp14_n2_tp_ownership"
+    ],
+    "arch/common/rad_block_gdn.h": [
+      "rad0018_vtp14_n2_tp_ownership"
+    ],
+    "arch/common/rad_block_mlp.h": [
+      "rad0018_vtp14_n2_tp_ownership"
+    ],
+    "arch/qwen35_bf16/qwen35_bf16.cpp": [
+      "rad0018_vtp14_n2_tp_ownership"
+    ],
+    "arch/common/rad_block_mlp_fp8.h": [
+      "rad0019_vtp14_n2_tp_ownership_fp8"
+    ],
+    "libr4d/r4d_ar_oneshot_Nrank_exact.hip": [
+      "rad0023_ar_timeline"
+    ],
+    "abi/rad_runtime.h": [
+      "rad0025_multiseq_pipelined_prefill"
+    ],
+    "core/sched/batch.cpp": [
+      "rad0025_multiseq_pipelined_prefill"
+    ],
+    "core/sched/prefill_governor.h": [
+      "rad0036_prefill_governor"
+    ],
+    "libr4d/r4d_common.h": [
+      "rad0038_bf16_i8_kv"
+    ],
+    "abi/rad_moe_heat.h": [
+      "rad0039_moe_heat_observer"
+    ],
+    "core/runtime/bc_moe_heat_observer.cpp": [
+      "rad0039_moe_heat_observer"
+    ],
+    "core/runtime/bc_moe_heat_registry.cpp": [
+      "rad0039_moe_heat_observer"
+    ],
+    "core/runtime/bc_moe_heat_sidecar.h": [
+      "rad0039_moe_heat_observer"
+    ],
+    "libr4d/r4d_attn_paged_gqa8.hip": [
+      "rad0041_kv_b16_flashnext"
+    ],
+    "libr4d/r4d_attn_paged_h256_gqa12.hip": [
+      "rad0041_kv_b16_flashnext"
+    ],
+    "libr4d/r4d_attn_paged_h256_gqa6_bs4.hip": [
+      "rad0041_kv_b16_flashnext"
+    ]
+  }
+}

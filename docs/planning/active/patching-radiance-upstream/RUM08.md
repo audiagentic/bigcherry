@@ -34,6 +34,8 @@ Latest target commits add token/block/traversal verification, adaptive depth and
 
 rad0034/35 are optional policy experiments, rad0036 is the production governor. Port the current production objective with the existing upstream controller when equivalent; retain a small typed scheduler policy hook only for a demonstrated semantic gap. Never let two independent controllers adjust the same cap. Put timing observation at scheduler completion, not inside GPU kernels.
 
+Astra refinement: target pass_key keys the exact QSA-bound side and slot-indexed state for decode/verify/MTP; mixed remains live. Prefer removing rad0013's full local definition after one boundary-crossing fixed-depth comparison and one ineligible mixed shape. rad0036's aged-long-prompt reservation, remaining-token order and admission budget differ from native time control. Pin prefill-interleave/mixed-step-target-ms explicitly. Keep a demonstrated required long-profile decision or withhold that profile; do not claim native equivalence from option names. rad0034/35 were already superseded locally, not new deletions.
+
 ## Code Samples & Guidance
 
 Minimal replay key cases to inspect:
@@ -43,6 +45,12 @@ changed split/grid/exactness decision          => distinct key or explicit live 
 unknown/unrecordable shape                    => explicit no-replay
 ```
 The actual upstream key algorithm remains authoritative; these are proof cases, not a new hashing implementation.
+
+### Deep scan implementation refinement
+
+Main net-deletion candidates are rad0013 replay override after target semantic coverage proof and rad0036 governor after policy equivalence. Remove production entries, obsolete option/state mapping and superseded tests in the same slice. Diagnostics rad0010/39/43/44 may share route identity and bounded sink plumbing, but histogram/stats/per-token records retain different contracts and off-path costs.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
 
 ## Files
 
@@ -75,8 +83,14 @@ Imported stable roadmap identity from the reviewed design. Prerequisites: RUM04,
 
 Prerequisites RUM04/RUM06/RUM07. Reuse ENG02 measurement ownership for later depth tuning; no broad tuning campaign in this migration.
 
+Astra source review ASTRA-CONSOLIDATION.md: resolve native replay/controller choices before porting their hunks; no new generic scheduler interface. Integrated qualification remains RUM09.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
 - 2026-11-18T01:40:00.933069+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:35.850667+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:57:12.077870+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:20:05.918412+00:00 (updated-by): Updated: section:detailed_solution, section:notes
+- 2026-11-18T02:23:54.480453+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:26:51.232442+00:00 (updated-by): Updated: section:notes

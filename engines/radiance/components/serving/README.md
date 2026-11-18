@@ -265,7 +265,22 @@ and refuses rather than inventing a config format. RSC12's dedicated
 `[config.NAME.power]` and site-defined profile tables also remain a
 loader dependency: this step binds the existing explicit owner
 `--power-profile` mechanism but does not introduce an unofficial power
-table schema. The bash launcher/Python supervisor are unchanged pending
+table schema. RSC02 step 6 adds a separate, explicit **foreground lab observation** mode:
+`bc-serve serve CONFIG --configs DIR --run-dir DIR --lab-experiment FILE`.
+FILE is parsed as a v2 lab experiment object; only a placement object with
+`mode: observe` (and no forced schedule) is accepted in the actual
+`plan_engine_only` path, before the writer or any GPU child. The C++ owner
+reuses the production named resolver, measuring owner, strict writer/reader,
+durable power admission, runtime guards and verified stop. The experiment
+does not enter the stored-manifest index or replay. RSC12 has not yet bound
+shape-changing experiments into both the measured plan and static manifest
+key, so shape, forced churn, profiling and mixes with calibration/live policy
+fail closed. This is deliberately **not** the Bash `--experiment` forwarding
+surface: no shell environment transport, old alias or Python launcher is
+included. A fake-device CTest exercises the real resolver-to-writer bytes
+and refuses unsupported variants; hardware S15 is still pending.
+
+The bash launcher/Python supervisor are unchanged pending
 RSC02 step 6.
 
 CPU-only acceptance: `bc_stored_manifest_test` (strict bytes and typed

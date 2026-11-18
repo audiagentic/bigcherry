@@ -11,7 +11,7 @@ priority: P0
 work: M
 ---
 
-# Approve target identities and the minimal Radiance 2.x migration architecture
+# Approve an upstream-native migration with explicit deletion boundaries
 
 ## Description
 
@@ -19,35 +19,34 @@ Decide the exact target commit, native YAML ownership, generated runtime-contrac
 
 ## Steps
 
-- Freeze baseline 19d4e8fe and reviewed target b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e. If target moves, regenerate applicability and inspect only the additional delta before coding.
-- Approve the YAML/native-versus-extension ownership table and the single-model minimum scope. Record target contract and ABI fingerprint implications.
-- Use RSC13's callable inventory and RCS01's component boundaries to identify the few lifecycle/build hooks; do not invent a generic extension framework.
-- Choose one representative currently deployed Flash-Next layout and one helper-off control; record explicit scheduler/speculation defaults and source/build/model identities.
-- Record retire/reuse/port disposition for the 42 local patches. Retire only after equivalent behavior is demonstrated; treat zero anchor failures as a port lead, never acceptance.
+- Freeze target/build identities and the one production configuration.
+- Adopt Astra's native-YAML ownership decision: bind original immutable YAML bytes plus engine/build identity to the existing measured BigCherry contract; do not create a normalized writer, FleetConfig serializer, bundle index or generic extension registry.
+- Classify every current native binding as upstream-native, local-patched-native, derived admission, helper policy or diagnostic. Remove only the native-only mirror and migrate its actual callers.
+- Implement dependency/ABI foundation RUM03, then native-boundary/contract narrowing RUM04, then extract surviving code RUM02. Avoid packaging code whose purpose will be deleted.
+- Validate explicit engine-card order in the actual child-local namespace and propagate the same selected devices to offline measuring/KL mode.
+- Use one model with disjoint engine/helper cards initially; broker/shared-card features stay in RUM10.
 
 ## Detailed Solution & Technical Design
 
-Keep the bump focused on one working production configuration. Upstream main.cpp now parses FleetConfig, Registry storage is set_->..., RadBuildCtx gains slot_base and the plugin ABI is 41. These are design inputs, not defects to mask with more regex replacements.
+Astra's source review supersedes the normalized-config/bundle-first proposal. Upstream Reader::build_model sorts effective native options, calls config_parse, sets Config.given provenance and retains ModelEntry.args/cfg. These are the reusable foundations; a second native schema/resolver adds maintenance rather than removing it.
 
-Native options stay owned by upstream ConfigFlag/config_parse. BigCherry owns helper intent, calibrated placement, measured admission and receipts. Reuse the existing generated contract registry and strict v2 reader where semantics remain true. A version change for incompatible fields must migrate every internal caller together; no v1/v2/v3 runtime fallback.
+Bind one immutable original YAML snapshot to the existing strict measured BigCherry contract and engine identity. Native consumers parse those same bytes through fleet::parse; parsing once per startup process is acceptable and needs no shared ryml tree API. Conservative cache misses from comment/format changes are acceptable for the initial bump; semantic-key normalization is optional later work, not a new serializer now.
 
-Scope the initial extension to one engine plus its helper processes. Multi-engine helper support (RUM10), new optimization algorithms, new model families and exhaustive quantization tuning are nonblocking later work. RUM05 integrates existing placement policy rather than building a solver.
+For one model upstream use_broker() is false, choose_cards takes the first tp cards, and run preserves explicit list order. Keep existing per-BDF engine/helper/host admission, require disjoint assignments and refuse drift. Do not require Fleet::grant hooks that cannot account for helpers on this path. Offline main directly creates Engine and must receive the same chosen cfg.devices explicitly.
 
-Change boundaries: extraction-only PR; dependency/ABI PR; YAML and launcher PR; placement/lifecycle PRs; KV and scheduling ports; final acceptance/pin PR. Adjacent slices may combine only when they cannot compile independently, with the coupling recorded.
+Retain measured resource facts, owner-map verification, helper configuration, power policy and exact per-rank constraints. Current contract contains 113 radiance_option bindings, including local/derived fields: classify them rather than claiming all are removable. Full fleet external-reservation semantics are deferred.
 
 ## Code Samples & Guidance
 
-Proposed decision checklist, not an executable API:
+Native boundary to reuse: upstream fleet/config.cpp Reader::build_model -> config_parse -> ModelEntry.cfg/args/given.
 
-- native config authority: upstream fleet/config.cpp Reader -> config_parse
-- BigCherry runtime authority: generated typed manifest + v2::read_manifest
-- model identity: slot_base/rad_build_slot/rad_slot
-- collective identity: tp_group
-- ownership identity: immutable placement generation + owner-map digest
-- admission identity: build/model/topology/layout/native-config projection
-- initial supported mode: one explicitly selected production configuration
-
-Do not equate a source commit, ABI layout fingerprint, contract digest and live receipt; each identifies a different boundary.
+Proposed minimal persisted relationship, not an implemented schema:
+```text
+admitted start = original YAML bytes + content hash
+              + exact engine/build/default identity
+              + measured BigCherry-specific helper/resource/power contract
+```
+No normalized YAML writer, Config serialization, new bundle-index service or native-field mapping registry. Source evidence: docs/reviews/radiance-upstream-2026-11-18/ASTRA-CONSOLIDATION.md.
 
 ## Files
 
@@ -70,7 +69,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-A short decision record identifies approved native/extension authority, exact target, hook owners, per-patch disposition and one minimal acceptance layout. RUM02-RUM09 have executable entry/exit conditions; RUM10 is explicitly optional after the bump.
+Decision record names concrete native mirrors/bridges to remove, survivor code to extract, required retained admission guarantees, exact child-device mapping and reordered stages. No new serialization/broker framework is introduced for the first bump.
 
 ## Notes
 
@@ -83,3 +82,10 @@ Prerequisites: none. RUM02/RUM03 follow this gate; RUM04 then feeds RUM05/RUM06;
 - 2026-11-18T01:27:53.871983+00:00 (created-by): Created by codex
 - 2026-11-18T01:33:53.788616+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:42:41.477373+00:00 (updated-by): Updated: section:effort_risk
+
+## Reviews
+
+- RV4227
+- 2026-11-18T01:56:23.440036+00:00 (updated-by): Updated: section:code_samples
+- RV4228
+- 2026-11-18T02:16:19.600984+00:00 (updated-by): Updated: section:title, section:steps, section:detailed_solution, section:code_samples, section:acceptance_criteria

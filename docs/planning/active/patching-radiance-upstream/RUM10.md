@@ -33,13 +33,9 @@ A mutable authored x-bigcherry section does not participate in upstream reload's
 
 ## Code Samples & Guidance
 
-Proposed identity rule:
-```text
-model_runtime_identity = hash(engine_build, model_artifact,
-                              normalized_native_config,
-                              helper_contract, placement_generation)
-```
-Compare this identity in the managed reload path; do not hash YAML comments or a file path as runtime semantics.
+Initial migration uses exact original YAML byte identity and matched build/default identity (RUM04); comment-only cache misses are acceptable. For an actual later multi-model requirement, decide immutable per-model binding and semantic reuse using the existing identities. Do not require normalized_native_config or a YAML serializer.
+
+Single-model Fleet::use_broker() is false at the pinned target. External reservations/global reclaim belong here only when a supported sharing path needs them; account at the actual allocation path, not an unused grant hook. Reuse upstream load/park/restore/reload lifetimes and existing ledgers. Avoid a second epoch service, generic fleet framework or power arbiter.
 
 ## Files
 
@@ -69,8 +65,14 @@ Imported stable roadmap identity from the reviewed design. Prerequisites: RUM09.
 
 Prerequisite RUM09. Priority P3 deliberately excludes this from minimum bump delivery; no fleet abstraction beyond current upstream lifecycle is justified in earlier items.
 
+Astra source review ASTRA-CONSOLIDATION.md: optional after RUM09; engine/helper cards stay disjoint initially. Hot reload, shared resource accounting and cross-engine qualification are deferred capabilities, not initial bump gates.
+
 ## Change Log
 
 - 2026-11-18T01:28:59.863720+00:00 (created-by): Created by codex
 - 2026-11-18T01:34:06.708874+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:49.306824+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:57:27.470953+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:20:26.900308+00:00 (updated-by): Updated: section:code_samples, section:notes
+- 2026-11-18T02:24:22.080593+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:27:21.643448+00:00 (updated-by): Updated: section:notes

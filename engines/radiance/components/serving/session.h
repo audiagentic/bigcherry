@@ -268,6 +268,7 @@ struct EnginePlanInputs {
     std::string power_profile = "stock";    // explicit v2 profile, observe by default
     std::filesystem::path live_policy_file; // only with explicit lab calibration
     bool calibration_run = false;
+    std::filesystem::path experiment_file; // foreground lab-only v2 experiment; never replay/cache
 };
 
 /* Resolve a config then publish its measured manifest. On cache miss (exit 10) bring helpers up sequentially

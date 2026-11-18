@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.49.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.2...bc-platform-1.49.0) (2026-11-18)
+
+
+### New and changed
+
+* **serving:** add native observe-only lab experiment mode ([#1095](https://github.com/audiagentic/bigcherry/issues/1095)) ([9293d53](https://github.com/audiagentic/bigcherry/commit/9293d537119596d407e53d8340714229c324d508))
+
+
+### Fixes
+
+* **test:** restore truncated S15 projection tail ([#1104](https://github.com/audiagentic/bigcherry/issues/1104)) ([ecc91c0](https://github.com/audiagentic/bigcherry/commit/ecc91c0d2eb6f76b247d6d8c5e5ae667140ab755))
+
+## [1.48.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.1...bc-platform-1.48.2) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** accept intentional S15 missing-role rejection ([#1098](https://github.com/audiagentic/bigcherry/issues/1098)) ([7cf94f9](https://github.com/audiagentic/bigcherry/commit/7cf94f93f9f74b07be0b2b2a5aced8deaaeb3bfc))
+
 ## [1.48.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.0...bc-platform-1.48.1) (2026-11-18)
 
 
