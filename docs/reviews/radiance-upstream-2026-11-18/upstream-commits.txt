@@ -1,0 +1,160 @@
+b8bca788 2026-11-17 sched: --draft-suffix on, SuffixDecoding as a step selector on the MTP chain
+e78d484e 2026-11-17 spec: --draft-depth adaptive stops the MTP chain inside the step
+d0fd4aa1 2026-11-17 spec: --draft-verify token|block|traversal for the coupled MTP chain
+9b6eba80 2026-11-17 arch/common: the clamp refusal reads the codebook-down flag (#503)
+e912b04f 2026-11-17 libr4d: skip the scalar-cache invalidate behind chained waits in kernels that make no scalar load after the wait
+ca7a7212 2026-11-17 qwen4exp: verify/decode pass launch order, prefetch width, chain polling, turnover slots
+946a6f9e 2026-11-17 aql: the prefetch stream takes the half-lap system acquire too
+01f08152 2026-11-17 aql: no packet-header acquire on chained launches whose kernels acquire for themselves
+30459797 2026-11-17 libr4d: register form of the fused all-reduce writes with a wake store into the idle peer path
+cfec01ec 2026-11-17 qsa: skip score/select where no attention reads them; select once per pass below the exact bound
+315aea7d 2026-11-16 test(libr4d): benchmark W6NL expert down against W5NL
+d1b5a45e 2026-11-16 feat(qwen4exp): support U4 gate with W6NL down experts
+590dbcc1 2026-11-16 fix(minimaxh3): keep mixed-site encoder operands host-readable
+73a284d7 2026-11-17 data/recipes: ling-3.0-flash-iq8r-w4nl64
+33f96447 2026-11-16 bailing_hybrid: Ling-3.0-flash on an IQ8R trunk
+2e558e2d 2026-11-16 arch/common: a clamped gated product writes rotated int8 codes
+79ac2bd5 2026-11-15 Add Muse Glimmer IQ4R-V4 with quantized DFlash2
+742191a2 2026-11-17 dashboard: fix dashboard not supporting reverse proxy via rel path
+73f94b43 2026-11-17 engine: do not load the vision tower in a build without a media decoder
+7bd195d3 2026-11-17 vram: charge the runtime's resident queue scratch to the card budget
+b2228c17 2026-11-17 sched: size the pinned staging ring for 16 builds instead of 3
+8dcd8fdc 2026-11-17 place: --expert-pin-top cuts fractional profile shares correctly
+8f2e511f 2026-11-17 aql: flush the host data path before every doorbell; empty the scalar cache behind a chained wait
+78ad2096 2026-11-16 docs: lfm3 IQ8R container
+bfadfbee 2026-11-16 tests: lfm3 int8 and IQ8R trunks
+1f50d235 2026-11-16 recipes: lfm3-1.7b-iq8r
+df453ff4 2026-11-16 lfm3_bf16: int8 and IQ8R trunks
+eaa14ac7 2026-11-16 lfm3_bf16: linears through LinearFP8
+ceb92ea7 2026-11-14 docs: lfm3 in the README's model table; libr4d README names the h128/gqa4 window rows
+2e0945c1 2026-11-13 docs: lfm3 raw prompts and BOS
+6b96295f 2026-11-11 tests: lfm3's config.json through the checkpoint reader
+29057b0c 2026-11-11 lfm3_bf16: the sandwich joins as norm_add_norm where a library serves it
+09ad42e6 2026-11-11 libhalo selftest: rope_rows and rmsnorm_rows give rope's and rmsnorm's bytes
+1f002245 2026-11-11 libhalo: windowed attention at head_dim 128 with 4 queries per kv head, and the row-form names of rope and rmsnorm
+21c4544b 2026-11-11 tests: lfm3 resumed from the prefix cache equals a cold run
+f5d2d74a 2026-11-11 docs: the lfm3 section of ARCHITECTURES.md
+6997f8da 2026-11-11 tests, docs: lfm3 in the family tests, with its golden and declare cases
+6c7bcefe 2026-11-11 arch: lfm3_bf16, LiquidAI's LFM3 at bf16
+660d4101 2026-11-11 libr4d: windowed attention at head_dim 128 with 4 queries per kv head
+38c182a2 2026-11-16 chat: a tool-call delimiter is not a turn terminator
+b988378e 2026-11-16 chat: read a function name that ends at whitespace (Ling 3.0)
+bd3fa646 2026-11-16 libr4d: hc_read decode forms G, S and kernel B3 back, B3 without a lane branch after its WMMA
+1d94e416 2026-11-16 libr4d: keep short IQR verification on the decode path
+ba3ebd38 2026-11-15 feat(qwen4exp): support calibrated U5 gate/W5 down recipe
+157959fd 2026-11-15 server: a control-vector variant, MODEL:NAME, that runs with the vector on
+aadabde0 2026-11-15 http: a route's captures replace those the request already carries
+b27f3522 2026-11-16 Adapt gemma4_bf16's SWA implementation to gemma4
+c9bce68d 2026-11-15 museglimmer: the reply-format table moves to arch/common
+a8d82678 2026-11-15 fp8: the trunk-rotation question lives beside its predicates
+8ac613dd 2026-11-15 museglimmer: the two plugins read their text_config through the common helpers
+97b45907 2026-11-15 mm+text+tests: three one-line residues the 2.1.0 review pass logged
+c256342b 2026-11-15 tests: the hash-check tests read the shared timeout, not a literal
+66b0dcf0 2026-11-15 server: the guarded-route set is declared once, at registration
+0f011f27 2026-11-15 fleet: the local-operator rule is one predicate, read twice
+c3a4775f 2026-11-15 util: a log_once for the warnings that speak once per process
+b9ecbde0 2026-11-15 util: one wording for the bounded read's refusal
+5e2e5966 2026-11-15 format: bound the geometry the bailing layout products are built from
+3bf9dc95 2026-11-15 diag: the report writes take the atomic, link-safe path
+d893fd05 2026-11-15 diag: the baseline and corpus files are read like the reports they are
+5c66eecc 2026-11-15 device: the stuck-exit watchdog does not fire during load
+f4981154 2026-11-15 text: the tool-call arguments probe parses under bounds
+392746da 2026-11-15 museglimmer: the vision tower bounds the config it allocates by
+4943bba2 2026-11-15 format: a bailing container must promise a walkable layer count
+6e8a2f0a 2026-11-15 engine: the scored step refuses its union before pinning tries it
+9a960c3d 2026-11-15 spec: the dependency table says what HTTP and JSON are now
+79cc319d 2026-11-15 vendor: cpp-httplib 0.66.0 -- the thread-creation failure stops aborting
+0ff61a19 2026-11-15 sched: the preemption gate credits only what the recompute adopts
+b98c2eb1 2026-11-15 vendor: the shims that hold lifted code say so in the record
+5736dd11 2026-11-15 sched: the bidirectional plane trusts its runs no further than it checks them
+90b1229b 2026-11-15 place: the profile file is read like the untrusted file it is
+e5862f3d 2026-11-15 place: the profile's tmp name is created, never overwritten
+c2403b2e 2026-11-15 kvstream: a stage run past the host layer says so, once
+444b8515 2026-11-15 scripts: hfget refuses names curl cannot fetch faithfully
+965a7caa 2026-11-15 hf: a lone container does not outrank weights beside it
+4c9a79ca 2026-11-15 tests: the served dashboard bytes get hashed from outside
+70be48c6 2026-11-15 scripts: the expert report never prints an untrusted string raw
+be09d90c 2026-11-15 libquant: the codebook loader caps as it reads and refuses an infinite unit
+3ac3954f 2026-11-15 sample: the schema reaches the converter through the bounded read
+9bfdd95c 2026-11-15 server: a wrong api key closes the connection it guessed on
+e30ada33 2026-11-15 server: the worker-start failure logs its reason sanitized
+1231eefb 2026-11-15 server: the model card hides the expert-profile path keyless
+51e4c7f0 2026-11-15 server: what a client put in a request never reaches the log raw
+1b4e4059 2026-11-15 server: /props keeps the model path to the operator
+d7e3c2a5 2026-11-15 sched: an anchor row with no anchor is row zero, not row minus one
+b44f7a9b 2026-11-15 sched: an over-cap request would stall every queue behind it
+981cd1e4 2026-11-15 format: the index does not get to reach outside the model dir
+50ea36f2 2026-11-15 place: a profile's counts must be unsigned to steer anything
+f2f94fc6 2026-11-15 util: one bounded read for the files a container supplies
+e46a8ba3 2026-11-15 util: the bounded read refuses before the tree exists
+7b9f3365 2026-11-15 vendor: the jinja engine budgets its nesting and its range()
+2fda03cc 2026-11-15 vendor: the pattern parser counts its nesting, and refuses past 64
+b83d53cf 2026-11-15 front: a refused request does not wake a model to be refused
+41a1aa00 2026-11-15 fleet: the admin routes read all three legs, as the engine's guards do
+2a2b7563 2026-11-15 radiance 2.1.0
+ddcb9c69 2026-11-14 radiance 2.0.0
+b4c04b60 2026-11-12 Delete .woodpecker.yml
+f0f764d6 2026-11-12 Delete STRIX_HALOD_RADIANCE.md
+60bcc30e 2026-11-08 libr4d: decode tile arms for the int4/int5 x int8 GEMM
+7da9ccf3 2026-11-09 scripts: expert_stats_report.py, what a --expert-stats file says per layer
+f3e4d118 2026-10-30 libr4d: gqa 7 at head_dim 128
+c6ef279a 2026-11-11 libr3d: branch-free, bit-identical e4m3_to_f32
+aafec917 2026-11-11 libr3d: mxfp4a8 -- do not scan a VRAM e8 plane from the host
+451b1368 2026-11-05 tests: the preemption cases pin --prefill-interleave 0
+a5830463 2026-11-05 scheduler: --prefill-interleave defaults to auto:1 where nothing pins the schedule
+6e134fc1 2026-11-05 sched_test: the burst simulation starts with sequences decoding, and takes auto:SHARE
+c00b882b 2026-11-05 scheduler: --prefill-interleave auto:SHARE sets the decode-only share of a chunk step's time
+5a8c5533 2026-11-05 sched_test: an opt-in timed simulation of a burst of long prompts
+f87d03d3 2026-11-05 scheduler: --prefill-interleave auto sizes the decode-only steps from measured step times
+f713f449 2026-11-02 glm5next: the width split is for all-MXFP4 experts
+e0c386ee 2026-11-02 docs: GLM-5.3-Flash lays its experts out by what the deployment needs
+8ef50a77 2026-11-02 glm5next: experts split by width at four ranks and up, whole for the file tier
+b954585f 2026-10-29 moe_mxfp4: the small-M form at GLM's TP4 slices too
+220cb3f1 2026-10-29 moe_mxfp4: a pin for the small-M form, and --perfmx-tp 4 to time it at the TP4 slices
+be623ba1 2026-10-29 glm indexer: a step that takes all its blocks does not split
+c9e34d53 2026-10-28 glm5next_test: the indexer's tests take both paths, scored and taking all
+8fa226e6 2026-10-28 glm indexer: a step whose every row takes all its blocks skips the query side
+bd38e7ec 2026-10-30 dma lane: the room check drops a reused fence slot and keeps what it once knew read
+8c389c02 2026-10-28 docs: glm5next serves an fp8 latent cache
+d858aa72 2026-10-28 glm5next: --kv-cache-dtype fp8 narrows the latent attention cache to E4M3
+f776ecbf 2026-10-28 r4d_selftest: the mla_attn fp8kv rows against libref
+e494369e 2026-10-28 libref, libavx mla_attn: an optional kv_dtype, the cache shaped from it
+17f0eae4 2026-10-28 r4d mla_attn: E4M3 latent cache twins of the three rows
+b632c72f 2026-11-05 sched: an overdue preempted prefill keeps its place ahead of the queue
+12b7b788 2026-11-01 sched: an overdue preempted prefill is failed only when waiting cannot help
+01c7a333 2026-11-01 sched: a preempted request publishes its prefix; the recompute adopts it
+e3d65f3a 2026-11-05 libr3d: fix the w4a4 activation row pitch (strides are elements, not bytes)
+28939a99 2026-11-05 libref: fix the w4a4 activation row pitch and the dequant_w4 wq extent
+df4e2ea8 2026-11-05 ref_test: sweep geometries for w4a8/w4a4 moe_gemm_q and the dequant_w4 zero-point arm
+b87010c7 2026-11-05 libref: w4a4 reference implementation and dequant_w4 op
+4bd9c397 2026-11-05 libr3d: accept a null params in sample_logprobs, per the canonical schema
+7f5218ee 2026-11-05 qwen4exp: decode, verify and draft passes are recorded, keyed by their split cap (issue #402)
+036bd8fe 2026-11-05 libr3d: register the fused gdn_conv_recurrent_update row
+87c60437 2026-11-05 libr3d: add 8 kernels — MoE GEMM (w4a8, w4a4, mod4), dequant_w4, row_topk_merge, ngram_ids, gemm_nt_q_bias, gemm_nt_q_short
+8ab6f2a8 2026-11-05 libr4d: qsa_select launches its chained form from a site of its own
+e2e94168 2026-11-04 qwen4exp: chained launches pay with the MTP drafter
+b0a58b5d 2026-11-04 libr4d: chained forms for Flash-Next's decode step, hc_read forms G, S and B3
+aeaf6a45 2026-10-31 r4d_selftest: sweep the verify-against-decode check to 2048 keys
+d6109d7e 2026-10-31 libr4d: the split-KV merge reads a causal row's own segments
+030a3a37 2026-10-31 advance_test: StepSlot::hrow is the row of the last accepted position
+1a900398 2026-10-31 kbench: a fixture for Nemotron-H's rows, and docs/KERNELS.md from it
+6436410e 2026-10-31 kbench: the report check reads every plugin's table, not only lib*
+7cad854f 2026-10-31 libr4d: the gqa16 decode takes a verify of eight rows, so a draft step matches its single-row decodes
+72160a9c 2026-10-31 nemotron-3.5-bolt-74b compose: two cards at w4a8, four at FP8
+882050e4 2026-10-31 data/recipes: nemotron74-fp8.recipe and nemotron74-w4nl64-gptq.recipe
+0c4292e4 2026-10-31 arch/nemotronh: Nemotron-3.5-Bolt-74B-A9B
+cc46e3b7 2026-10-31 core/mm: the Radio image family and video tubelets
+eda0e92e 2026-10-31 arch/common: LiLiCorr, DFlash2's backbone with a candidate correlator
+6f9c084a 2026-10-31 arch/common: calibrate in layer ranges (RADIANCE_CALIB_LAYERS)
+c9c3a988 2026-10-31 arch/common: MoeFP8's ungated relu2 experts, a router on the hidden width, and no reduce
+3b7ef1ed 2026-10-31 arch/common: AttnFP8 without positions, and with KV heads replicated above their count
+b466c91b 2026-10-31 ops: attn_dense at head_dim 80 and grid_embed_cpe, for the C-RADIO tower
+2420b2b3 2026-10-31 ops: act_mul's relu, relu(x)^2 over one tensor
+63416510 2026-10-31 ops: ssd_update and ple_conv_bias, Mamba-2's scan and convolution
+3b278dce 2026-10-31 ops: attention sinks and LiLiCorr's correlator
+44490c85 2026-10-31 libr4d: paged attention at head_dim 128 and gqa 16
+dccc6329 2026-10-31 abi, sched: RadBatch::anchor_rows, ABI 36
+a1b76433 2026-10-31 core/format: read nemotron_h checkpoints
+e6787b7b 2026-10-31 core/format: a stacked vector may have parts of different widths at TP > 1
+394b8cd2 2026-10-31 kbench: a kernel that lays out a weight table's experts is handed them laid out
+e0c3f971 2026-10-31 arch/common: DFlash2's split fc gathers its message as a range

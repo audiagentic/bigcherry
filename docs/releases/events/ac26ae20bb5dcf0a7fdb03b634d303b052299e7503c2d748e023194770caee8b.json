@@ -1,0 +1,30 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_013004_created-the-staged-radiance-mi_4710",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream",
+    "docs/planning/active/build-host-kernel/BHK02.md",
+    "docs/planning/active/build-host-kernel/BHK03.md",
+    "docs/planning/active/build-host-kernel/BHK04.md",
+    "docs/reviews/radiance-upstream-2026-11-18"
+  ],
+  "plan-item-ids": [
+    "RUM01",
+    "RUM02",
+    "RUM03",
+    "RUM04",
+    "RUM05",
+    "RUM06",
+    "RUM07",
+    "RUM08",
+    "RUM09",
+    "RUM10",
+    "BHK02",
+    "BHK03",
+    "BHK04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Import the reviewed upstream Radiance delta and manifest/placement redesign and create an initial sequenced migration roadmap RUM01-RUM10 through Planning MCP. Reuse existing serving/component/placement ownership; keep optional fleet work outside the minimum bump. Add BHK02-BHK04 for active timing readout, write-path feasibility and corrected before/after RAM methodology without duplicating BHK01 recovery. Detailed code guidance is a second pass after this skeleton is merged; no implementation or deep testing performed.",
+  "timestamp-utc": "2026-11-18T01:30:04.494113Z",
+  "user-summary-candidate": "Created the staged Radiance migration plans and host memory follow-ups for review and merge."
+}

@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.48.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.1...bc-platform-1.48.2) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** accept intentional S15 missing-role rejection ([#1098](https://github.com/audiagentic/bigcherry/issues/1098)) ([7cf94f9](https://github.com/audiagentic/bigcherry/commit/7cf94f93f9f74b07be0b2b2a5aced8deaaeb3bfc))
+
+## [1.48.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.0...bc-platform-1.48.1) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** bind S15 process captures to manifest roles ([#1093](https://github.com/audiagentic/bigcherry/issues/1093)) ([f2c69bd](https://github.com/audiagentic/bigcherry/commit/f2c69bd07f1022e43ca9e81b3bc59368d7d23e24))
+
 ## [1.48.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.47.0...bc-platform-1.48.0) (2026-11-18)
 
 
