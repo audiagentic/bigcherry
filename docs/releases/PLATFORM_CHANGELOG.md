@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.50.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.2...bc-platform-1.50.3) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 capture reads a replayed start's pinned manifest descriptor; one pair per cohort by default ([#1137](https://github.com/audiagentic/bigcherry/issues/1137)) ([c9b9e30](https://github.com/audiagentic/bigcherry/commit/c9b9e30cc9f70aa37254957d8a7161b70f37c94e))
+
+## [1.50.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.1...bc-platform-1.50.2) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 driver tolerates a slow bc-serve status and passes the model root to arm A ([#1134](https://github.com/audiagentic/bigcherry/issues/1134)) ([3c301e2](https://github.com/audiagentic/bigcherry/commit/3c301e23a77cb580dc4ebda463d55cef83c74032))
+* **lab:** S15 projection treats per-start host memory readings as live observations ([#1136](https://github.com/audiagentic/bigcherry/issues/1136)) ([b50ed29](https://github.com/audiagentic/bigcherry/commit/b50ed29b3a95d71fb6381055b012e5c76e55513e))
+
 ## [1.50.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.0...bc-platform-1.50.1) (2026-11-18)
 
 

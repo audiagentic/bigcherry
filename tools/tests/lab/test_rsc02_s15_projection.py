@@ -72,6 +72,31 @@ class SemanticProjectionTests(unittest.TestCase):
         self.assertTrue(report["equal"], report)
         self.assertEqual(report["legacy_projection_sha256"], report["native_projection_sha256"])
 
+    def test_live_memory_readings_are_observations_but_inputs_are_not(self) -> None:
+        # S15 dense pair 1 (hardware): the three readings below differed between two
+        # starts of the same config; every derived value and the greedy output agreed.
+        inputs = self.b["manifest"]["spec"]["plan"]["resource_inputs"]
+        for key in ("cgroup_headroom_bytes", "mem_available_bytes", "pin_available_bytes"):
+            inputs[key] += 4096
+        report = compare(self.a, self.b, verify_bytes=False)
+        self.assertTrue(report["equal"], report)
+        # A real input (what the plan must hold) still fails the comparison.
+        self.assert_rejects_change(
+            lambda snap: snap["manifest"]["spec"]["plan"]["resource_inputs"].__setitem__(
+                "checkpoint_bytes", snap["manifest"]["spec"]["plan"]["resource_inputs"]["checkpoint_bytes"] + 1))
+
+    def test_pinned_manifest_descriptor_snapshot_is_verified_at_capture(self) -> None:
+        # A stored-manifest replay gives children `--manifest /proc/self/fd/N`: the path only
+        # exists inside the child, so the capture verifies the bytes live and records that.
+        pinned = _fixture(copy.deepcopy(self.original), "/proc/self/fd/5")
+        pinned["manifest_bytes_verified_live"] = True
+        pinned["manifest_read_path"] = "/proc/0/fd/5"      # the child is gone by compare time
+        pinned["manifest_file_sha256"] = "0" * 64
+        projection(pinned)                                  # must not re-read a vanished descriptor
+        pinned.pop("manifest_bytes_verified_live")          # without the live proof it must read the path
+        with self.assertRaises(Exception):
+            projection(pinned)
+
     def test_refuses_semantic_changes_and_missing_roles(self) -> None:
         self.assert_rejects_change(
             lambda s: s["manifest"]["spec"]["processes"]["engine"]["execution"].update(
