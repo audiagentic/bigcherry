@@ -111,6 +111,8 @@ void usage() {
            "         --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B\n"
            "             --calibration-store FILE   foreground finite ABBA workload, strict measured-drift "
            "gate\n"
+           "         --lab-experiment FILE   foreground lab-profile run with a strict-v2 experiment object;\n"
+           "             no stored-manifest replay until RSC12 keys its bytes, no calibration mode\n"
            "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
            "and verified\n"
            "         owner GPU lease; own one session in the foreground: measured manifest (measuring first on "
@@ -138,7 +140,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     std::string config_name;
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
-    fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records;
+    fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records, lab_experiment;
     bool calibration_run = false;
     bool allow_power_apply = false;
     bool json = false;
@@ -195,6 +197,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         } else if (arg == "--power-profile") {
             power_profile = need();
             explicit_power_profile = true;
+        } else if (arg == "--lab-experiment") {
+            lab_experiment = need();
         } else if (arg == "--calibration-run") {
             calibration_run = true;
             passed.push_back(arg);
@@ -226,6 +230,13 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
         throw std::runtime_error("--manifest must name an existing regular file");
     run_dir = fs::absolute(run_dir);
+    if (!lab_experiment.empty() &&
+        (cmd != "serve" || calibration_run || config_name.empty() || !stored_manifest.empty() ||
+         !live_policy_file.empty() || !prompts_a.empty() || !prompts_b.empty() || !calibration_store.empty()))
+        throw std::runtime_error("--lab-experiment requires foreground serve CONFIG and excludes calibration, "
+                                 "live policy and replay");
+    if (!lab_experiment.empty() && !fs::is_regular_file(lab_experiment))
+        throw std::runtime_error("--lab-experiment needs an existing JSON file");
     if (calibration_run) {
         if (cmd != "serve" || live_policy_file.empty() || prompts_a.empty() || prompts_b.empty() ||
             calibration_store.empty())
@@ -334,6 +345,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.power_profile = power_profile;
     inputs.live_policy_file = std::move(live_policy_file);
     inputs.calibration_run = calibration_run;
+    inputs.experiment_file = std::move(lab_experiment);
     // Hardware and durable records live through the entire foreground owner.
     // A real write needs BOTH an explicit opt-in and a live ancestor-bound lease.
     bc::serving::power::LinuxHardware hardware(opts.sys_root);
