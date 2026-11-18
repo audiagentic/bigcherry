@@ -16,3 +16,7 @@ Untested: the cases compile in a gfx1201 build and pass libr3's rewrite check; t
 ## Detail
 
 See README.md.
+
+## 2026-11-18 additions (GPT review of the KV patches; found by a gfx1100 device selftest)
+- The `bf16_i8_rows` inventory case (rad0038) listed only the four gqa 6 / 16-token-page rows and so rejected the six rows rad0041 added (gqa 12, and gqa 6 at four ranks, over 4-token pages); on a gfx1100 device it failed. It now lists all ten rows, each with the gqa and block size it must pin, and no other row may take `bf16_i8`.
+- The fused gate+quantiser fold case ran at gqa 12 only, so the two gqa 6 / 4-token-page fused rows (`attn_decode_gq_h256_gqa6_bs4_<layout>`) had no execution test. `attn_gq_fold_case` takes a geometry flag, and the packed layouts run at both, at 3 and 24 rows, against their unfused pair.
