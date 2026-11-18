@@ -1,8 +1,7 @@
 #pragma once
 /* BRVP06 item 5: a build runs against the ROCm SDK recorded in its metadata (rocm_root; its RUNPATH points at
- * it), and bc-serve refuses to start when the environment points the process at another SDK. The launcher's
- * check is lib/sdk-check.sh; this is the same rule for bc-serve, which is part of the same build
- * (<build>/radiance_home/bin/bc-serve). */
+ * it), and bc-serve refuses to start when the environment points the process at another SDK.
+ * This native admission rule is independent of any former shell SDK check. */
 #include <filesystem>
 #include <optional>
 #include <string>
