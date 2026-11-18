@@ -121,6 +121,8 @@ enum class Fault : std::uint8_t {
     python_file,
     shebang,
     interpreter_reference,
+    benchmark_catalog,
+    moe_benchmark_catalog,
     entry_mode,
     wrong_manifest,
     wrong_source,
@@ -149,7 +151,6 @@ class Fixture {
         add("radiance_home/bin/bc-serve", executable ? read_file(BC_SERVE_EXE) : "serve-binary", 0755);
         add("radiance_home/bin/bc-release", executable ? read_file(BC_RELEASE_EXE) : "release-binary", 0755);
         add("radiance_home/helpers/r3_moe_worker", "worker-binary", 0755);
-        add("radiance_home/kernels.rkb", "catalog");
         add("radiance_home/kernels/libr3moe.so", "kernel");
         add("radiance_home/architectures/qwen.so", "architecture");
         add("radiance_home/quantizers/quant.so", "quant");
@@ -165,6 +166,10 @@ class Fixture {
         add("configs/flashnext.toml", "schema = 1\n");
         add("configs/qwen27b.toml", "schema = 1\n");
 
+        if (fault == Fault::benchmark_catalog)
+            add("radiance_home/kernels.rkb", "benchmark fixture");
+        if (fault == Fault::moe_benchmark_catalog)
+            add("radiance_home/kernels_moe.rkb", "benchmark fixture");
         if (fault == Fault::python_file)
             add("radiance_home/vectors/config.py", "print('must refuse')\n");
         if (fault == Fault::shebang)
@@ -548,6 +553,17 @@ void test_native_installed_start_gate() {
           "tampered current release reached serving: " + read_file(log));
 }
 
+void test_benchmark_catalogs_are_not_native_runtime_members() {
+    ScopedDir d;
+    Fixture f(d.path);
+    for (const auto fault : {Fault::benchmark_catalog, Fault::moe_benchmark_catalog}) {
+        auto req = f.make(fault == Fault::benchmark_catalog ? "bc-radiance-1170.64.0" :
+                                                              "bc-radiance-1170.65.0",
+                          fault);
+        refused(ErrorCode::unsafe_archive, [&] { bc::release::install(req); });
+    }
+}
+
 void test_interrupted_staging_refuses_install() {
     ScopedDir d;
     Fixture f(d.path);
@@ -568,6 +584,7 @@ int main() {
         test_tamper_refuses_rollback_without_switch();
         test_refusal_matrix();
         test_digest_tag_sdk_and_existing_integrity_refuse();
+        test_benchmark_catalogs_are_not_native_runtime_members();
         test_interrupted_staging_refuses_install();
         test_real_platform_packer_golden();
         test_native_installed_start_gate();

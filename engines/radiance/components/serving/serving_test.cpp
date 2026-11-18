@@ -2721,6 +2721,7 @@ struct CommandResult {
     int exit_code;
     std::string output;
 };
+std::string serve_test_executable = BC_SERVE_EXE;
 CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
     int fds[2];
     if (::pipe(fds) != 0)
@@ -2734,11 +2735,12 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
             ::_exit(127);
         ::close(fds[1]);
         std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(BC_SERVE_EXE));
+        const char* binary = serve_test_executable.c_str();
+        argv.push_back(const_cast<char*>(binary));
         for (const auto& arg : arguments)
             argv.push_back(const_cast<char*>(arg.c_str()));
         argv.push_back(nullptr);
-        ::execv(BC_SERVE_EXE, argv.data());
+        ::execv(binary, argv.data());
         ::_exit(127);
     }
     ::close(fds[1]);
@@ -3689,8 +3691,10 @@ int main(int argc, char** argv) {
             write_golden = true;
         } else if (std::string(argv[i]) == "--dump-manifests" && i + 1 < argc) {
             dump_dir = argv[++i];
+        } else if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
+            serve_test_executable = argv[++i];
         } else {
-            std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR]\n";
+            std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR] [--bc-serve-exe PATH]\n";
             return 2;
         }
     }

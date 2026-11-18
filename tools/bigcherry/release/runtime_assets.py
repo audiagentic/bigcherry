@@ -62,6 +62,7 @@ BUILD_METADATA = "bigcherry-build-metadata-radiance.json"
 # ship without hard-coding a model architecture inventory. Required entries
 # must match at least one file in every newly packaged build.
 RUN_SCOPE = "engine-runtime"
+ELF_DEBUG_POLICY = "gnu-objcopy-split-debug-strip-all-v1"
 # Deliberately explicit: unknown RSC12 configurations must be reviewed and
 # added to the engine payload contract, not silently copied from a checkout.
 SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
@@ -76,8 +77,6 @@ RUN_MANIFEST = (
     ("radiance_home/kernels/*.so*", True),
     ("radiance_home/architectures/*.so*", True),
     ("radiance_home/quantizers/*.so*", True),
-    ("radiance_home/kernels.rkb", True),
-    ("radiance_home/kernels_moe.rkb", False),
     ("radiance_home/vectors/*", False),
     ("runtime-prefix/lib/*.so*", False),
     ("runtime-prefix/lib/**/*.so*", False),
@@ -89,7 +88,8 @@ RUN_MANIFEST = (
 def payload_contract_key() -> str:
     """Versioned payload schema and selection policy, including optional files."""
     policy = {"schema": SCHEMA, "scope": RUN_SCOPE, "manifest": RUN_MANIFEST,
-              "build_metadata": BUILD_METADATA, "build_identity_schema": 2}
+              "build_metadata": BUILD_METADATA, "build_identity_schema": 2,
+              "elf_debug_policy": ELF_DEBUG_POLICY}
     return hashlib.sha256(json.dumps(policy, sort_keys=True,
                                       separators=(",", ":")).encode()).hexdigest()
 
@@ -289,6 +289,39 @@ def runtime_files(build: Path, root: Path) -> dict[str, Path]:
     return files
 
 
+def split_elf_debug(files: dict[str, Path], scratch: Path
+                    ) -> tuple[dict[str, Path], dict[str, Path]]:
+    """Split each shipped host ELF without touching the recorded build inputs.
+
+    GNU objcopy operates on the host ELF container, not embedded GPU code
+    objects. Separate debug files live outside the runtime archive; every
+    checksum of a runtime member is computed from its stripped copy.
+    """
+    selected = dict(files)
+    debug: dict[str, Path] = {}
+    objcopy = shutil.which("objcopy")
+    for name, source in sorted(files.items()):
+        with source.open("rb") as stream:
+            if stream.read(4) != b"\x7fELF":
+                continue
+        if objcopy is None:
+            raise BundleError("GNU objcopy required to strip runtime ELF debug data")
+        stripped = scratch / "runtime" / name
+        symbol_file = scratch / "debug" / (name + ".debug")
+        stripped.parent.mkdir(parents=True, exist_ok=True)
+        symbol_file.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, stripped)
+        for args in (("--only-keep-debug", str(stripped), str(symbol_file)),
+                     ("--strip-all", str(stripped)),
+                     (f"--add-gnu-debuglink={symbol_file}", str(stripped))):
+            result = subprocess.run([objcopy, *args], check=False, capture_output=True, text=True)
+            if result.returncode:
+                raise BundleError(f"ELF debug split failed for {name}: {result.stderr.strip()}")
+        selected[name] = stripped
+        debug[name] = symbol_file
+    return selected, debug
+
+
 def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict:
     if not re.fullmatch(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise BundleError("unsafe Radiance release tag")
@@ -297,51 +330,59 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
     identity = stock_identity(root)
     version = sdk_version(sdk)
     built_identity = built_from(root)
-    manifest = {
-        "schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE, "built_from": built_identity, "release_tag": tag,
-        "plan_id": plan_id, "source_slice_id": build.parent.name,
-        "binary_sha256": binary_sha,
-        "rocm_version": version, **identity,
-        "files": {
-            name: {"sha256": digest(path), "size": path.stat().st_size,
-                   "mode": 0o755 if os.access(path, os.X_OK) else 0o644}
-            for name, path in sorted(files.items())
-        },
-    }
-    encoded = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
     out = work_root / "release-assets" / tag
     out.mkdir(parents=True, exist_ok=True)
-    name = f"{PRODUCT}-{plan_id}.tar.gz"
-    dest = out / name
-    staged = out / (name + ".pending")
-    with staged.open("wb") as raw:
-        with gzip.GzipFile(filename="", fileobj=raw, mode="wb", compresslevel=1, mtime=0) as gz:
-            with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as tar:
-                for item_name, content in [("bundle.json", encoded)]:
-                    info = tarfile.TarInfo(item_name)
-                    info.size, info.mode, info.mtime = len(content), 0o644, 0
-                    info.uid = info.gid = 0
-                    tar.addfile(info, io.BytesIO(content))
-                for item_name, path in sorted(files.items()):
-                    info = tarfile.TarInfo(item_name)
-                    info.size, info.mode, info.mtime = path.stat().st_size, manifest["files"][item_name]["mode"], 0
-                    info.uid = info.gid = 0
-                    with path.open("rb") as f:
-                        tar.addfile(info, f)
-    sha = digest(staged)
-    checksums = name + ".sha256"
-    asset = {"schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE,
-             "file_names": sorted(manifest["files"]), "name": name, "sha256": sha,
-             "checksum_name": checksums, "manifest_sha256": hashlib.sha256(encoded).hexdigest(),
-             "plan_id": plan_id, "source_slice_id": build.parent.name,
-             "rocm_version": version, "binary_sha256": binary_sha, "built_from": built_identity, **identity}
-    old = record.get("runtime_assets", {}).get(tag)
-    if old is not None and old != asset:
-        staged.unlink()
-        raise BundleError("release record asset changed; refusing to replace existing verified digest")
-    staged.replace(dest)
-    (out / checksums).write_text(f"{sha}  {name}\n")
-    return asset
+    with tempfile.TemporaryDirectory(prefix=".elf-debug-", dir=out) as directory:
+        files, debug = split_elf_debug(files, Path(directory))
+        manifest = {
+            "schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE, "built_from": built_identity, "release_tag": tag,
+            "plan_id": plan_id, "source_slice_id": build.parent.name,
+            "binary_sha256": digest(files["bin/radiance"]),
+            "source_binary_sha256": binary_sha,
+            "rocm_version": version, **identity,
+            "files": {
+                name: {"sha256": digest(path), "size": path.stat().st_size,
+                       "mode": 0o755 if os.access(path, os.X_OK) else 0o644}
+                for name, path in sorted(files.items())
+            },
+        }
+        encoded = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
+        name = f"{PRODUCT}-{plan_id}.tar.gz"
+        dest = out / name
+        staged = out / (name + ".pending")
+        with staged.open("wb") as raw:
+            with gzip.GzipFile(filename="", fileobj=raw, mode="wb", compresslevel=1, mtime=0) as gz:
+                with tarfile.open(fileobj=gz, mode="w", format=tarfile.PAX_FORMAT) as tar:
+                    for item_name, content in [("bundle.json", encoded)]:
+                        info = tarfile.TarInfo(item_name)
+                        info.size, info.mode, info.mtime = len(content), 0o644, 0
+                        info.uid = info.gid = 0
+                        tar.addfile(info, io.BytesIO(content))
+                    for item_name, path in sorted(files.items()):
+                        info = tarfile.TarInfo(item_name)
+                        info.size, info.mode, info.mtime = path.stat().st_size, manifest["files"][item_name]["mode"], 0
+                        info.uid = info.gid = 0
+                        with path.open("rb") as f:
+                            tar.addfile(info, f)
+        sha = digest(staged)
+        checksums = name + ".sha256"
+        asset = {"schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE,
+                 "file_names": sorted(manifest["files"]), "name": name, "sha256": sha,
+                 "checksum_name": checksums, "manifest_sha256": hashlib.sha256(encoded).hexdigest(),
+                 "plan_id": plan_id, "source_slice_id": build.parent.name,
+                 "rocm_version": version, "binary_sha256": digest(files["bin/radiance"]),
+                 "source_binary_sha256": binary_sha, "built_from": built_identity, **identity}
+        old = record.get("runtime_assets", {}).get(tag)
+        if old is not None and old != asset:
+            staged.unlink()
+            raise BundleError("release record asset changed; refusing to replace existing verified digest")
+        for item_name, symbol_file in debug.items():
+            sidecar = out / "debug" / (item_name + ".debug")
+            sidecar.parent.mkdir(parents=True, exist_ok=True)
+            shutil.copyfile(symbol_file, sidecar)
+        staged.replace(dest)
+        (out / checksums).write_text(f"{sha}  {name}\n")
+        return asset
 
 
 def verify_runtime_tree(target: Path, asset: dict, manifest: dict,
@@ -358,7 +399,7 @@ def verify_runtime_tree(target: Path, asset: dict, manifest: dict,
         if asset.get("file_names") != sorted(checks):
             raise BundleError("runtime receipt file set differs from manifest")
     for key in ("schema", "plan_id", "source_slice_id", "binary_sha256",
-                "rocm_version", "engine_tree", "config_tree"):
+                "source_binary_sha256", "rocm_version", "engine_tree", "config_tree"):
         if manifest.get(key) != asset.get(key):
             raise BundleError(f"runtime manifest/record mismatch: {key}")
     actual: set[str] = set()

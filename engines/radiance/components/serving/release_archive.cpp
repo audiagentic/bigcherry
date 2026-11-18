@@ -54,8 +54,6 @@ bool runtime_member(const std::string& name) {
         "radiance_home/bin/bc-serve",
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
-        "radiance_home/kernels.rkb",
-        "radiance_home/kernels_moe.rkb",
         "bigcherry-build-metadata-radiance.json",
         "configs/flashnext.toml",
         "configs/qwen27b.toml",
@@ -188,7 +186,6 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
         "bigcherry-build-metadata-radiance.json",
-        "radiance_home/kernels.rkb",
         "configs/flashnext.toml",
         "configs/qwen27b.toml",
     };
@@ -208,6 +205,10 @@ void validate_manifest(const Json& manifest, const Json& record, const std::stri
                             "binary_sha256", "plan_id", "source_slice_id"}) {
         required_equal(manifest, record, key);
     }
+    // The packer records the pre-strip lane SHA separately from the SHA of
+    // the shipped ELF. Older verified receipts have only binary_sha256.
+    if (manifest.contains("source_binary_sha256") || record.contains("source_binary_sha256"))
+        required_equal(manifest, record, "source_binary_sha256");
     require(required_text(manifest, "product", ErrorCode::wrong_identity) == "bigcherryrad",
             ErrorCode::wrong_identity, "not a BigCherry Radiance engine");
     require(required_text(manifest, "payload_scope", ErrorCode::wrong_identity) == "engine-runtime",
