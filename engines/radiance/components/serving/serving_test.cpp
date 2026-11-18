@@ -3449,6 +3449,29 @@ void session_engine_plan(Fixture& t) {
         refused = std::string(e.what()).find("measuring start failed") != std::string::npos;
     }
     assert(refused);
+    { // Real named resolver and process owner, fake measuring engine OS boundary.
+        ss::EnginePlanInputs ram = in;
+        ram.engine_binary = BC_FAKE_ENGINE;
+        ram.runner = [&](const std::vector<std::string>& argv) {
+            if (flag(argv, "--unmeasured")) {
+                std::ofstream(argv[2])
+                    << R"json({"measure_error":"E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare"})json";
+                return ss::ManifestRun{};
+            }
+            return ss::ManifestRun{10, "", "cache miss"};
+        };
+        bool host_ram_refused = false;
+        try {
+            (void)ss::plan_engine_only(ram, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string detail = e.what();
+            host_ram_refused = detail.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
+                               detail.find("host RAM") != std::string::npos &&
+                               detail.find("47.69 GiB") != std::string::npos &&
+                               detail.find("82.00 GiB") != std::string::npos;
+        }
+        assert(host_ram_refused);
+    }
     { // RSC04 lab experiments use the real named resolver and writer call graph.
         ss::EnginePlanInputs lab = in;
         lab.named_config = "qwen27b-tp3-int8";
@@ -3683,6 +3706,108 @@ void session_owner_real_planner_admission(Fixture& t) {
     }
 }
 
+// End-to-end CPU-only planner boundary: real resolver and bc-serve writer,
+// fake engine/helper process boundary and BDF-specific sysfs fixtures.
+void helper_vram_owner_graph(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path home = t.root / "session-build" / "radiance_home";
+    // The normal lightweight RAD fixture omits name strings. The real
+    // resource ledger requires an actual bounded name table in its directory.
+    const fs::path model = t.root / "helper-vram-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    {
+        std::fstream rad(model, std::ios::in | std::ios::out | std::ios::binary);
+        RadFileHeader header{};
+        rad.read(reinterpret_cast<char*>(&header), sizeof header);
+        header.str_off = header.file_bytes;
+        header.str_bytes = 7;
+        header.file_bytes += header.str_bytes;
+        rad.seekp(static_cast<std::streamoff>(header.str_off));
+        rad.write("weight", 7);
+        rad.seekp(0);
+        rad.write(reinterpret_cast<const char*>(&header), sizeof header);
+        assert(rad);
+    }
+    const fs::path site =
+        t.file("helper-vram-graph.toml",
+               "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() + "\"\n");
+    ss::EnginePlanInputs in;
+    in.options.site = site;
+    in.options.sys_root = t.root;
+    in.options.configs = {configs};
+    in.options.model_root = t.root;
+    in.options.sets = {"layout.name=\"flashnext-2xtx\"", "helper.combine_threads=1",
+                       "handoff.heat=\"" + (t.root / "writer.hot-first").string() + "\"",
+                       "handoff.histogram=\"" + (t.root / "vram-histogram").string() + "\""};
+    in.self = BC_SERVE_EXE;
+    in.engine_binary = BC_FAKE_ENGINE;
+    in.helper_binary = BC_FAKE_ENGINE;
+    int writers = 0;
+    in.runner = [&](const std::vector<std::string>& args) -> ss::ManifestRun {
+        ++writers;
+        auto result = run_bc_serve({args.begin() + 1, args.end()});
+        return {result.exit_code, result.output, result.output};
+    };
+    in.helper_vram.read_used = [](const fs::path& path) -> uint64_t {
+        throw std::runtime_error("injected unreadable BDF-specific counter: " + path.string());
+    };
+    ss::Hooks hooks;
+    hooks.wait = [](std::chrono::milliseconds) { return true; };
+    bool blocked_baseline = false;
+    try {
+        (void)ss::plan_engine_only(in, t.root / "vram-graph-run", hooks);
+    } catch (const ss::PlanFailed& e) {
+        const std::string why = e.what();
+        blocked_baseline = why.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
+                           why.find("cannot read VRAM") != std::string::npos;
+        if (!blocked_baseline)
+            std::cerr << "helper graph: " << why << "\n";
+    }
+    if (!blocked_baseline || writers < 1)
+        throw std::runtime_error("helper graph did not reach the pre-start BDF baseline");
+
+    for (const std::string mode : {"immediate", "late", "never"}) {
+        ss::EnginePlanInputs active = in;
+        std::map<std::string, unsigned> samples;
+        active.helper_vram.read_used = [&](const fs::path& path) -> uint64_t {
+            std::ifstream used(path);
+            uint64_t bytes = 0;
+            if (!(used >> bytes))
+                throw std::runtime_error("missing fake BDF usage file");
+            const unsigned n = ++samples[path.string()];
+            // Three pre-start baseline observations; GPU usage lingers AFTER
+            // reaped fake helpers, then settles. No actual GPU is contacted.
+            if (n > 3 && (mode == "never" || (mode == "late" && n < 7)))
+                return bytes + uint64_t{256} * 1024 * 1024;
+            return bytes;
+        };
+        ss::Hooks live_hooks;
+        live_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        live_hooks.helper_stop_timeout = std::chrono::milliseconds(400);
+        const int before = writers;
+        std::string refusal;
+        const fs::path run_dir = t.root / ("vram-graph-" + mode);
+        fs::create_directories(run_dir);
+        try {
+            (void)ss::plan_engine_only(active, run_dir, live_hooks);
+        } catch (const ss::PlanFailed& e) {
+            refusal = e.what();
+        }
+        if (mode == "never") {
+            if (refusal.find("measuring helper VRAM not released") == std::string::npos ||
+                refusal.find("baseline=") == std::string::npos || writers - before != 3)
+                throw std::runtime_error("helper graph timeout: " + refusal +
+                                         " writers=" + std::to_string(writers - before));
+        } else if (writers - before < 4) {
+            std::ostringstream message;
+            message << "helper graph " << mode << " stopped before final writer: " << refusal
+                    << " writers=" << (writers - before);
+            throw std::runtime_error(message.str());
+        }
+    }
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -3722,6 +3847,7 @@ int main(int argc, char** argv) {
         native_explain_cli(t);
         converted_layout_parity(t);
         session_engine_plan(t);
+        helper_vram_owner_graph(t);
         session_owner_real_planner_admission(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);
