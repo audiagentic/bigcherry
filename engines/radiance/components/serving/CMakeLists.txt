@@ -176,7 +176,7 @@ if(BUILD_TESTING)
     DEPENDS bc_session_stored_test bc_fake_engine)
   add_test(NAME bc_s15_dry_run_test
     COMMAND ${Python3_EXECUTABLE}
-      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/lab/radiance/rsc02_s15_projection.py"
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/lab/radiance/rsc02_s15_ab.py"
       dry-run --native-test "$<TARGET_FILE:bc_session_stored_test>")
 
   add_executable(bc_stored_manifest_cache_test EXCLUDE_FROM_ALL stored_manifest_cache_test.cpp)
