@@ -53,6 +53,12 @@ struct PlacementView {
 ```
 Publish one owning plan before declaring kernels. Views stay valid until admissions stop, ranks/helper work drain, and the generation is retired. Do not borrow vectors owned by temporary YAML decode objects.
 
+### Deep scan implementation refinement
+
+Trace bc_moe_remote_skip_unit -> declared layer map -> helper ownership -> after_route/combine through one immutable owner/local-slot/encoding view. Feed helper reservations into target Fleet::grant/load_op accounting; don't duplicate allocation pools. Reproduce current ownership first; RHP04/RHP09 own future solver improvement. Plan/cache/power/receipt identities remain distinct.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - engines/radiance/components/serving/v2/s8_rules.cpp
@@ -90,3 +96,4 @@ Prerequisites RUM02/RUM03/RUM04. RHP13 remains unified-allocator scope owner and
 - 2026-11-18T01:28:20.204242+00:00 (created-by): Created by codex
 - 2026-11-18T01:37:43.826131+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:10.971610+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:56:51.018833+00:00 (updated-by): Updated: section:code_samples

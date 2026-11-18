@@ -53,6 +53,12 @@ Shutdown
 
 Target source landmarks: upstream libr4d/r4d_ar_entry.hip rv_for(group), rv_barrier(rv,world); local BcMoeRemotePlugin callbacks in rad0002; existing admission_ledger.h and engine_rank_coordinator.h. These are extension points to reconcile, not a request for another callback framework.
 
+### Deep scan implementation refinement
+
+Trace bc_moe_remote_register/g_plugin -> admit/bind -> rank TLS -> before_pass -> route/combine -> host_done/rank_done -> shutdown. Reuse admission_ledger/engine_admission_gate/engine_rank_coordinator, bind engine/generation/group once and remove function-static policy caches. Reuse mailbox epoch; don't introduce a second ticket or epoch service. Preserve target fence/acquire/wake ordering.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - engines/radiance/patches/rad0002_moe_remote_handoff/patch.py
@@ -92,3 +98,4 @@ Prerequisites RUM02/RUM03/RUM05. Coordinate RCS14 topology without absorbing unr
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
 - 2026-11-18T01:39:45.710628+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:17.981906+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:56:58.746185+00:00 (updated-by): Updated: section:code_samples

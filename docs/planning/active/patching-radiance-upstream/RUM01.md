@@ -49,6 +49,12 @@ Proposed decision checklist, not an executable API:
 
 Do not equate a source commit, ABI layout fingerprint, contract digest and live receipt; each identifies a different boundary.
 
+### Deep scan implementation refinement
+
+Adopt CONSOLIDATION.md as the seam decision record. Inventory already exists in patch-footprint.json: 42 definitions, 580 edits, 25 created-file payloads/2974 lines. Define success as fewer independent upstream sites and projections, not simply moved lines. Keep a small owner/attachment-symbol/ABI/proof inventory in existing patch tooling; no second bump engine.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - docs/reviews/radiance-upstream-2026-11-18/README.md
@@ -83,3 +89,8 @@ Prerequisites: none. RUM02/RUM03 follow this gate; RUM04 then feeds RUM05/RUM06;
 - 2026-11-18T01:27:53.871983+00:00 (created-by): Created by codex
 - 2026-11-18T01:33:53.788616+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:42:41.477373+00:00 (updated-by): Updated: section:effort_risk
+
+## Reviews
+
+- RV4227
+- 2026-11-18T01:56:23.440036+00:00 (updated-by): Updated: section:code_samples

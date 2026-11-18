@@ -47,6 +47,12 @@ format ID + supported shape predicate
 ```
 All consumers read this one typed descriptor. For target native I8, call rad_kv_row_elems and multiply by dtype storage width; for a retained hybrid supply its explicit packed-row byte contract.
 
+### Deep scan implementation refinement
+
+Extend existing rad0040 RAD_KV_LAYOUTS/rad_kvq_from_name into the target dtype contract instead of another registry. Include libr3 r3_rewrite.py as a downstream consumer. One descriptor feeds planning bytes, stream stride, store/read and row selection. Keep ISA/kernel specialization; do not reduce lines by adding per-element virtual dispatch.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - engines/radiance/patches/rad0037_bf16_fp8_kv/patch.py
@@ -83,3 +89,4 @@ Prerequisites RUM03/RUM06. The 166 failed-edit review surface is partly cascadin
 - 2026-11-18T01:28:34.138312+00:00 (created-by): Created by codex
 - 2026-11-18T01:39:53.057270+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:26.892039+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:57:05.367589+00:00 (updated-by): Updated: section:code_samples
