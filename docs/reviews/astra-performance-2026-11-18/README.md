@@ -1,5 +1,7 @@
 # Radiance performance and maintainability review
 
+Use the [implementation handoff](IMPLEMENTATION-HANDOFF.md) for edit order, exact checks and stop conditions.
+
 Reviewed source at `a1a48cc0a6bc14a4352e8c9120397410bcab98ae`. Three GPT-6.2 Astra passes covered runtime, deployment and tooling. A separate source pass counted file reads during Radiance recipe resolution. The review examines maintained paths, active patch enrollment, and representative lab/campaign consumers. Generated schema code, vendor trees, historical experiment variants and archived evidence are context where needed, rather than a line-by-line audit. The [prior Radiance migration review](../radiance-upstream-2026-11-18/ASTRA-CONSOLIDATION.md) owns the upstream YAML and patch-port decisions.
 
 | Area | Source findings and implementation notes |

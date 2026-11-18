@@ -1,0 +1,23 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_034304_radiance-implementation-packet_4347",
+  "files": [
+    "docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md",
+    "docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-ORDER.md",
+    "docs/reviews/astra-performance-2026-11-18/IMPLEMENTATION-HANDOFF.md"
+  ],
+  "plan-item-ids": [
+    "RUM01",
+    "RUM04",
+    "RUM07",
+    "RUM09",
+    "RSC12",
+    "BU02",
+    "BRBC05",
+    "RAD54"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Convert Astra reviews into staged Radiance migration and optimization packets. Freeze first canary, immutable YAML ownership and gates, distinguish actual KV/TP qualification, and stage runtime artifact identity before throughput comparisons.",
+  "timestamp-utc": "2026-11-18T03:43:04.677299Z",
+  "user-summary-candidate": "Radiance implementation packets now have explicit edit order, checks and stop conditions."
+}
