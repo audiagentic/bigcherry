@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.50.6](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.5...bc-platform-1.50.6) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** wait for helper VRAM release before the final manifest write ([#1147](https://github.com/audiagentic/bigcherry/issues/1147)) ([ec0ca83](https://github.com/audiagentic/bigcherry/commit/ec0ca833bf89280453dcb4a5b5af9bbd7b6b0793))
+
 ## [1.50.5](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.4...bc-platform-1.50.5) (2026-11-18)
 
 
