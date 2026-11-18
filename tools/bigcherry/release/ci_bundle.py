@@ -10,7 +10,6 @@ compile flags can never reuse a stale bundle (it may rebuild when it did not nee
 """
 from __future__ import annotations
 
-import argparse
 import ast
 import hashlib
 import json
@@ -111,9 +110,9 @@ def discover_compile_dependencies(root: Path) -> tuple[str, ...]:
                 if not name.startswith("bigcherry."):
                     continue
                 path = name[len("bigcherry."):].replace(".", "/") + ".py"
-                if path.split("/")[0] in allowed and (base / path).is_file():
-                    if path not in seen:
-                        pending.append(path)
+                if (path.split("/")[0] in allowed and (base / path).is_file()
+                        and path not in seen):
+                    pending.append(path)
     return tuple("tools/bigcherry/" + item for item in sorted(seen))
 
 
@@ -155,7 +154,7 @@ def pack_and_verify(tag: str, *, root: Path, work_root: Path, sdk: Path, plan_id
     """Pack the lane build into the release archive and restore it into a scratch work root; only a restorable archive is kept."""
     if not TAG.fullmatch(tag):
         raise CiBundleError(f"not a bc-radiance release tag: {tag}")
-    build, plan, binary_sha = lane_build(work_root, plan_id)
+    _build, plan, binary_sha = lane_build(work_root, plan_id)
     record = {"notes": f"release asset lane build: radiance:stock:linux-radiance build_plan_id={plan} binary_sha256={binary_sha}"}
     asset = ra.pack(record, root, work_root, sdk, tag)
     out = work_root / "release-assets" / tag
@@ -170,8 +169,106 @@ def pack_and_verify(tag: str, *, root: Path, work_root: Path, sdk: Path, plan_id
     return receipt
 
 
+def tagged_config(root: Path, tag: str, name: str) -> bytes:
+    """Read the immutable config at the exact release tag, never HEAD."""
+    if name not in ra.SHIPPED_CONFIGS or not TAG.fullmatch(tag):
+        raise CiBundleError("unapproved tag/config in engine release")
+    result = subprocess.run(
+        ["git", "-C", str(root), "show", f"refs/tags/{tag}:engines/radiance/configs/{name}"],
+        check=False, capture_output=True,
+    )
+    if result.returncode:
+        raise CiBundleError(f"RSC12 config is absent from release tag {tag}: {name}")
+    return result.stdout
+
+
+def tagged_build_inputs_tree(root: Path, tag: str) -> str:
+    """Compile-affecting inputs of the selected immutable tag, not checkout HEAD."""
+    if not TAG.fullmatch(tag):
+        raise CiBundleError("invalid release tag for build-input identity")
+    lines = []
+    for rel in BUILD_INPUTS:
+        result = subprocess.run(
+            ["git", "-C", str(root), "rev-parse", f"refs/tags/{tag}:{rel}"],
+            check=False, capture_output=True, text=True,
+        )
+        if result.returncode or not re.fullmatch("[a-f0-9]{40}", result.stdout.strip()):
+            raise CiBundleError(f"missing tagged build input at {tag}: {rel}")
+        lines.append(f"{rel} {result.stdout.strip()}")
+    return hashlib.sha256("\n".join(lines).encode()).hexdigest()
+
+
+def verify_publish_candidate(tag: str, directory: Path, *, root: Path) -> dict:
+    """Final mandatory, SDK-free, Python-free payload gate before GH upload.
+
+    Both freshly built and verbatim reused assets pass the *same* real
+    archive extraction and file-map checks. Nothing under 'tools/' enters
+    the runtime archive; this Python implementation is platform-side CI
+    tooling, not a release-time interpreter dependency.
+    """
+    if not TAG.fullmatch(tag):
+        raise CiBundleError("publishing requires one exact Radiance release tag")
+    if not directory.is_dir() or directory.is_symlink():
+        raise CiBundleError("bundle staging directory is missing or unsafe")
+    entries = list(directory.iterdir())
+    if any(not item.is_file() or item.is_symlink() for item in entries):
+        raise CiBundleError("bundle staging contains nonregular files")
+    archives = [item for item in entries if ra.CI_ARCHIVE.fullmatch(item.name)]
+    if len(archives) != 1:
+        raise CiBundleError("bundle staging must contain exactly one engine archive")
+    archive = archives[0]
+    stem = archive.name[:-len(".tar.gz")]
+    receipt_path = directory / (stem + ra.CI_RECEIPT_SUFFIX)
+    checksum = directory / (archive.name + ".sha256")
+    if {item.name for item in entries} != {archive.name, receipt_path.name, checksum.name}:
+        raise CiBundleError("bundle staging has missing or unexpected release files")
+    try:
+        receipt = json.loads(receipt_path.read_text())
+    except (OSError, ValueError) as exc:
+        raise CiBundleError("bundle staging release receipt is unreadable") from exc
+    ra.require_product("upload receipt", receipt)
+    if (receipt.get("schema") != ra.SCHEMA or receipt.get("payload_scope") != ra.RUN_SCOPE
+            or receipt.get("release_tag") != tag or receipt.get("name") != archive.name
+            or receipt.get("checksum_name") != checksum.name):
+        raise CiBundleError("upload receipt has wrong schema, scope, tag or archive name")
+    expected = receipt.get("sha256")
+    if not isinstance(expected, str) or not re.fullmatch("[a-f0-9]{64}", expected):
+        raise CiBundleError("upload receipt has no valid archive digest")
+    if checksum.read_text().strip() != f"{expected}  {archive.name}":
+        raise CiBundleError("upload checksum differs from tagged release receipt")
+    if ra.digest(archive) != expected:
+        raise CiBundleError("upload archive does not match tag-bound digest")
+    origin = receipt.get("reused_from", tag)
+    if not isinstance(origin, str) or not TAG.fullmatch(origin):
+        raise CiBundleError("upload archive has invalid original release tag")
+    if "reused_from" in receipt and origin == tag:
+        raise CiBundleError("redundant reused_from tag")
+    identity = ra.tag_identity(root, tag)
+    if origin != tag and ra.tag_identity(root, origin) != identity:
+        raise CiBundleError("reused archive source trees do not match target release")
+    key = receipt.get("runtime_key")
+    if (not isinstance(key, dict)
+            or set(key) != {"engine_tree", "config_tree", "build_inputs",
+                            "payload_contract", "rocm_version"}
+            or any(key.get(k) != v or receipt.get(k) != v for k, v in identity.items())
+            or key.get("build_inputs") != tagged_build_inputs_tree(root, tag)
+            or key.get("rocm_version") != receipt.get("rocm_version")
+            or key.get("payload_contract") != ra.payload_contract_key()):
+        raise CiBundleError("release runtime key differs from tagged source/payload policy")
+    with tempfile.TemporaryDirectory(prefix="rsp01-upload-verify-") as scratch:
+        extracted = Path(scratch) / "unpacked"
+        manifest = ra.checked_extract(archive, receipt, extracted)
+        ra.require_product("upload manifest", manifest)
+        if manifest.get("release_tag") != origin:
+            raise CiBundleError("archive manifest belongs to a different original release")
+        for name in ra.SHIPPED_CONFIGS:
+            if (extracted / "configs" / name).read_bytes() != tagged_config(root, tag, name):
+                raise CiBundleError(f"released RSC12 config differs from tagged source: {name}")
+    return receipt
+
+
 def _gh(args: list[str], root: Path) -> str:
-    result = subprocess.run(["gh", *args], cwd=root, capture_output=True, text=True)
+    result = subprocess.run(["gh", *args], cwd=root, check=False, capture_output=True, text=True)
     if result.returncode:
         raise CiBundleError(f"gh {' '.join(args[:2])} failed: {result.stderr.strip()[-300:]}")
     return result.stdout
@@ -274,6 +371,10 @@ def apply_prune(plan: dict, *, root: Path) -> None:
 def cmd_release_bundle(args) -> int:
     root = Path(args.root).resolve()
     try:
+        if args.verify_publish_dir is not None:
+            result = verify_publish_candidate(args.tag, Path(args.verify_publish_dir), root=root)
+            print(json.dumps({"verified": True, "tag": args.tag, "archive": result["name"]}, sort_keys=True))
+            return 0
         if args.prune:
             plan = prune_plan(root=root, keep=args.keep)
             print(json.dumps(plan, sort_keys=True))
@@ -304,6 +405,8 @@ def add_parser(sub) -> None:
     p.add_argument("--work", default="work", help="work root holding builds/ (default work)")
     p.add_argument("--sdk", help="ROCm SDK root the build used (required to pack; the build names its SDK, never the host default)")
     p.add_argument("--plan-id", help="lane build plan id (default: the one build under the work root)")
+    p.add_argument("--verify-publish-dir",
+                   help="final pre-upload gate: verify exactly one Python-free tagged engine archive/receipt/checksum (no SDK)")
     p.add_argument("--find-reusable", action="store_true",
                    help="print the earlier release whose bundle has this runtime key (no build needed), then exit")
     p.add_argument("--prune", action="store_true",

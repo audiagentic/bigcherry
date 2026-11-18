@@ -166,11 +166,44 @@ Python suites (platform-side), patch-lint, forbidden-terms,
 clang-format, clang-tidy positive hunks and strict/sanitized C++.
 
 **Final acceptance (other lane)**: RSC02 step 6/RSC04 hardware parity
-and launcher retirement and RSC12 named config parity. Step-5 review fixes are now merged in #1069.
-On a leased host prove healthy dense and helper `bc-serve serve` from
-the extracted prefix, live guards/power/heat, stop/status, installed
-receipt recheck and rollback. No GPU or lease in PRs 1–4. Never claim
-the new asset is production-ready until these gates land.
+and launcher retirement and RSC12 named config parity. Step-5 review fixes
+merged in #1069. On a leased host prove healthy dense and helper
+`bc-serve serve` from the extracted prefix, live guards/power/heat,
+stop/status, installed receipt recheck and rollback. No GPU or lease in
+PRs 1–4. Never claim the new asset is production-ready until these gates land.
+
+**Implementation ledger, 2026-11-18 (phase 2):** PR #1072 merged the
+plan and dependency inventory; PR #1077 merged the exact Python-free
+engine payload and two committed RSC12 configs; PR #1079 merged the
+native `bc-release` C++20 install/verify/status/rollback, current/previous
+retention, atomic receipt/index, card-free native CTest and real production
+PAX/gzip writer golden. The workflow cutover is the fourth slice: new and
+reused engine archives both pass a mandatory final publish gate against the
+exact selected Git tag, byte and file digests, config closure, no Python/shell
+or interpreter references, and build-input/runtime identity. The release
+channel still publishes a single archive plus its checksum and tag-bound
+receipt; these three files describe one engine asset, not a platform pair.
+CI/platform Python code is a build/publish dependency only, never packaged.
+
+**Remaining phase-2 dependencies — owned by RSC02 step 6/RSC04, not
+by the release workflow slice:**
+1. Remove the legacy `launch-flashnext-best.sh` and `lib/*.sh` runtime
+   launcher paths and their remaining callers from the release/start
+   distribution; the asset already rejects shell files, but the repository
+   development launcher is still maintained during migration.
+2. Prove native `bc-serve serve CONFIG` and detached `start CONFIG` from
+   the installed tag's `configs/*.toml`, with stored-manifest freshness,
+   helper/power/heat/calibration/health and SDK guards. Assert there is
+   no source checkout, Python or shell in that live startup call graph;
+   finish RSC12 parity and RSC04 mode acceptance on leased dense/helper
+   hardware. Tests are prepared card-free but cannot substitute for
+   leased production acceptance.
+3. Remove the legacy Python `tools/bigcherry/release/install.py`
+   `release-install` implementation and any compatibility re-exec path
+   only after the native start/install cutover; preserve *existing*
+   phase-1 installations and the single pinned published legacy archive
+   without conversion. Do not add a shim.
+These remain explicit refusal gates, not assertions of production readiness.
 
 #### Python/shell dependency inventory and native replacement
 
@@ -248,6 +281,13 @@ Progress (2026-11-17): phase 1 merged in #1016 with engine-scoped binary payload
 Progress (2026-11-17): phase 1 merged (#1016). Phase 2 redesigned (#1022, replaces the pair design of #1019): one Python-free engine asset of binaries and data, start-up through bc-serve, tag-bound digest trust, current and previous release kept, gate table mapping each remaining Python or shell behaviour to its RSC02 step. Rewrite lanes for RSC02 step 2 (helpers and resource derivation) and step 4 (power transaction) are in review in C++ (a rewrite from requirements, the Python only a golden oracle); step 3, step 5 and the step 6 hardware A/B and retirement follow. Phase 2 build work is blocked until those merge.
 
 ## Change Log
+
+- 2026-11-18 (RSP01 phase-2 release cutover): merged #1072/#1077/#1079;
+  single Python-free asset + native exact-tag install, verify and rollback
+  delivered. Final pre-upload gate checks built/reused archives against
+  selected-tag content and runtime identity. Deferred: step-6 launcher
+  retirement, installed `bc-serve serve CONFIG` acceptance and deletion
+  of the Python `release-install` path; hardware gate remains open.
 
 - 2026-11-18 (phase 2): in_progress; four PR milestones, native rewrite boundaries, all known runtime Python/shell dependencies, refusal and hardware acceptance gates.
 
