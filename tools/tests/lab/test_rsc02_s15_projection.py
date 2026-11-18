@@ -1,0 +1,127 @@
+"""RSC02 S15: fail-closed semantic launch comparison, without GPU hardware.
+
+These tests operate on the actual strict-v2 contract's helper fixture.
+The integration dry-run CTest invokes both real launch owners with fake engines.
+"""
+from __future__ import annotations
+
+import copy
+import hashlib
+import json
+import sys
+import tempfile
+import unittest
+from pathlib import Path
+
+REPO = Path(__file__).resolve().parents[3]
+sys.path.insert(0, str(REPO / "tools/lab/radiance"))
+from rsc02_s15_projection import (
+    V2_EXAMPLE,
+    ProjectionError,
+    _fixture,
+    compare,
+    projection,
+)
+
+
+class SemanticProjectionTests(unittest.TestCase):
+    def setUp(self) -> None:
+        self.original = json.loads(V2_EXAMPLE.read_text(encoding="utf-8"))
+        self.a = _fixture(copy.deepcopy(self.original), "/fake/a/manifest.json")
+        self.b = _fixture(copy.deepcopy(self.original), "/fake/b/manifest.json")
+
+    def assert_rejects_change(self, updater) -> None:
+        different = copy.deepcopy(self.b)
+        updater(different)
+        report = compare(self.a, different, verify_bytes=False)
+        self.assertFalse(report["equal"], report)
+        self.assertEqual(report["status"], "FAIL")
+        self.assertTrue(report["different_paths"])
+
+    def test_ignores_only_explicit_per_session_bookkeeping(self) -> None:
+        other = self.b["manifest"]
+        other["metadata"]["instance_id"] = "nonce"
+        other["metadata"]["content_digest"] = "untrusted unit test bytes"
+        other["provenance"] = {}
+        other["spec"]["facts"]["host"]["memory"]["available_mib"] = 2
+        for card in other["spec"]["facts"]["gpus"]:
+            card["vram"]["available_mib"] = 1
+        other["spec"]["processes"]["engine"]["server"]["port"] += 1
+        other["spec"]["handoff"]["transport"]["shm"] = "/different-session"
+        other["spec"]["handoff"]["telemetry"]["histogram_file"] = "/new-histogram"
+        report = compare(self.a, self.b, verify_bytes=False)
+        self.assertTrue(report["equal"], report)
+        self.assertEqual(report["legacy_projection_sha256"], report["native_projection_sha256"])
+
+    def test_refuses_semantic_changes_and_missing_roles(self) -> None:
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["processes"]["engine"]["execution"].update(
+                num_speculative_tokens=s["manifest"]["spec"]["processes"]["engine"]["execution"][
+                    "num_speculative_tokens"
+                ] + 1
+            )
+        )
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["resources"]["host"].update(pool_mib=1)
+        )
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["handoff"]["telemetry"].update(period_s=17)
+        )
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["intent"].update(model="wrong.rad")
+        )
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["intent"]["power"].update(profile="unsafe")
+        )
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["processes"]["helpers"].pop()
+        )
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["plan"]["owner_map"].update(owner_map_sha256="changed")
+        )
+        self.assert_rejects_change(
+            lambda s: s["manifest"]["spec"]["handoff"]["placement"].update(heat_file="/wrong")
+        )
+        self.assert_rejects_change(
+            lambda s: s["processes"]["roles"][0]["argv"].append("--unexpected-argument")
+        )
+        self.assert_rejects_change(
+            lambda s: s["processes"]["roles"][0]["env"].update(HIP_VISIBLE_DEVICES="1")
+        )
+        self.assert_rejects_change(lambda s: s["processes"]["roles"].pop())
+
+    def test_refuses_unsupported_argv_and_duplicate_roles(self) -> None:
+        bad = copy.deepcopy(self.b)
+        bad["processes"]["roles"][0]["argv"] += ["--manifest", "/another"]
+        with self.assertRaisesRegex(ProjectionError, "exactly one"):
+            projection(bad, verify_bytes=False)
+        bad = copy.deepcopy(self.b)
+        bad["processes"]["roles"].append(copy.deepcopy(bad["processes"]["roles"][0]))
+        with self.assertRaisesRegex(ProjectionError, "duplicate process role"):
+            projection(bad, verify_bytes=False)
+        bad = copy.deepcopy(self.b)
+        bad["manifest"]["spec"]["facts"]["gpus"][1]["bdf"] = (
+            bad["manifest"]["spec"]["facts"]["gpus"][0]["bdf"]
+        )
+        with self.assertRaisesRegex(ProjectionError, "duplicate physical card"):
+            projection(bad, verify_bytes=False)
+
+    def test_requires_manifest_bytes_and_rejects_tampering(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "captured.json"
+            encoded = json.dumps(self.original, sort_keys=True).encode()
+            path.write_bytes(encoded)
+            a = _fixture(copy.deepcopy(self.original), str(path))
+            a["manifest_file_sha256"] = hashlib.sha256(encoded).hexdigest()
+            projection(a)
+            a["manifest"]["spec"]["intent"]["model"] = "tampered"
+            with self.assertRaisesRegex(ProjectionError, "disagree"):
+                projection(a)
+            a = _fixture(copy.deepcopy(self.original), str(path))
+            a["manifest_file_sha256"] = "0" * 64
+            with self.assertRaisesRegex(ProjectionError, "disagree"):
+                projection(a)
+
+
+if __name__ == "__main__":
+    unittest.main()

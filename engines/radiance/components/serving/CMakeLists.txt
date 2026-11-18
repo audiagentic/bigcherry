@@ -170,6 +170,15 @@ if(BUILD_TESTING)
     BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_session_stored_test COMMAND bc_session_stored_test)
+  # RSC02 S15: a real utility target for the no-card, native-and-legacy
+  # fake-engine rehearsal. It depends on actual component binaries.
+  add_custom_target(bc_s15_dry_run_test
+    DEPENDS bc_session_stored_test bc_fake_engine)
+  add_test(NAME bc_s15_dry_run_test
+    COMMAND ${Python3_EXECUTABLE}
+      "${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/lab/radiance/rsc02_s15_projection.py"
+      dry-run --native-test "$<TARGET_FILE:bc_session_stored_test>")
+
   add_executable(bc_stored_manifest_cache_test EXCLUDE_FROM_ALL stored_manifest_cache_test.cpp)
   target_link_libraries(bc_stored_manifest_cache_test PRIVATE bc_serving)
   add_test(NAME bc_stored_manifest_cache_test COMMAND bc_stored_manifest_cache_test)
@@ -313,4 +322,7 @@ if(BUILD_TESTING)
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
+  # S15 composite owner/Bash tests may contend with independent CI CTests.
+  set_tests_properties(bc_s15_dry_run_test PROPERTIES TIMEOUT 300 RESOURCE_LOCK rsc02_fake_owner)
+  set_tests_properties(bc_session_stored_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
 endif()
