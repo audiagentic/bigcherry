@@ -1,0 +1,40 @@
+---
+id: BHK01
+order: 1
+plan: build-host-kernel
+state: in_progress
+created-at: '2026-11-18T00:45:00+00:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P1
+work: M
+---
+
+# Recover and validate the protected Linux 7.0.13-gfxoff host-kernel patch
+
+## Description
+
+The original 7.0.13-gfxoff source tree and GFXOFF edit scripts were lost in the 2026-11-17 work-root purge. Keep the evidenced upstream GFX12 compute-queue GFXOFF fix, source-reference file, recovery config, ordered patch series, build recipe, and cross-release comparison under `host/kernel/7.0.13-gfxoff/`. Generated sources and modules remain in project scratch and never in Git.
+
+## Steps and acceptance
+
+1. [x] Record upstream archive URL and SHA-256, downloaded detached signature (cryptographic signature verification remains open), upstream commit identity, and Ubuntu mainline source-commit provenance.
+2. [x] Apply one evidenced upstream hunk on clean v7.0.13; verify `git apply --check`; retain full resulting source file and recovered config, without inventing changes attributed to deleted `_gfxoff_edit*.py` scripts.
+3. [x] Keep stock/patched amdgpu-only build recipe with 12-job limit, `nice`, and no installation or loading; keep `compare-release.sh` for release regression checks. Follow protected-host cleanup safeguards.
+4. [ ] Rebuild stock module first with matching build dependencies, compiler and `CONFIG_MODVERSIONS` evidence; compare to recorded stock `4F5C8C3B57F8DA15B66C039`. Initial attempt stopped at missing `flex` (also missing `bison` and `bc`); no installation authorized.
+5. [ ] Rebuild patched module and compare to installed `2F0E6E3215789522FB92997`; if the stock control hash does not match, do not claim exact reproduction. Compare object/code if toolchain permits. Establish signature verification with trusted key and audit Ubuntu source/diff beyond the amdgpu file.
+6. [ ] Recover or regenerate **ABI-matching `Module.symvers` and generated headers** for the memory-timing reader; do not reuse generic 7.0.13 headers for the installed custom kernel or force ABI loading.
+7. [ ] Confirm kernel latency and long-running serving acceptance separately from the PWR06 idle-power measurement; host remains protected throughout.
+
+## Verification completed
+
+Repository checks: forbidden terms (0 findings), ShellCheck, git whitespace check, and 545 selected Python tests with 164 subtests passed. Kernel module build intentionally stopped at missing flex; bison and bc absent.
+
+## Protected prerequisite and evidence
+
+The installed `7.0.13-gfxoff` kernel, modules, boot records and the read-only `<work-root>/kernel-recovery/2026-11-18/` bundle must not be removed or overwritten. Before cleanup inspect `/lib/modules/<kernel>/build` and `/lib/modules/<kernel>/source` plus bootloader kernel references; a dangling link is not permission to remove the running/installed kernel. All generated source/build trees stay under the work root. Cleanup must name exact scratch trees only and preserve build receipts. Never run kernel installation, `insmod`, `modprobe`, `depmod`, bootloader update, reboot or sudo as part of this plan.
+
+PWR06 measured the R9700 loaded-HIP idle change from stock 20.6 W, 3% busy, 612 mV to patched 15.0 W, 0% busy, 29 mV (MES 0x81 unchanged; three 60-second repetitions). This validates behavior, **not** the full installed source diff. The original `_gfxoff_edit*.py` scripts are missing, so additional historical edits remain uncertain.
+
+Reference: `host/kernel/7.0.13-gfxoff/README.md`; `docs/reference/serving-host-prerequisites.md`; `docs/evidence/2026-11-18-gfxoff-kernel-recovery/README.md`.

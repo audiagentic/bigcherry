@@ -1,0 +1,2 @@
+# Preserve upstream mail-format patches byte-for-byte; their diff context is not whitespace to lint.
+patches/*.patch -whitespace
