@@ -109,7 +109,8 @@ if(BUILD_TESTING)
   target_link_libraries(bc_release_install_test PRIVATE bc_release_core)
   target_compile_definitions(bc_release_install_test PRIVATE
     BC_RELEASE_TEST_ROOT="${CMAKE_CURRENT_BINARY_DIR}"
-    BC_RELEASE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/release_testdata")
+    BC_RELEASE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/release_testdata"
+    BC_RELEASE_BINARY_PATH="$<TARGET_FILE:bc-release>")
   add_test(NAME bc_release_install_test COMMAND bc_release_install_test)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   # A build target so the component test gate can declare it; building it runs the tripwire.

@@ -136,6 +136,8 @@ The isolated install root contains immutable `releases/<tag>/` prefixes,
 their native `install.json` receipts, and an atomically replaced
 `index.json` with exactly **current** and **previous** entries. Any
 corrupt current or previous prefix prevents switching or rollback.
+Native `install` refuses an older semantic version (or an equal numeric version with a distinct exact tag) before extraction unless the operator explicitly passes `--allow-downgrade true`. The installer compares decimal version components numerically, not lexically. Authorized installs still retain the displaced verified current as `previous`; `rollback` is an independently explicit verified switch that needs no downgrade flag.
+
 Interrupted `.staging-*` trees cannot become a current release or be
 implicitly reused. The native error families distinguish invalid input
 (exit 2), digest failure (3), identity mismatch (4), unsafe archive (5),

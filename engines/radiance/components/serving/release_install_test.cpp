@@ -17,6 +17,7 @@
 #include <utility>
 #include <vector>
 
+#include <sys/wait.h>
 #include <unistd.h>
 
 namespace {
@@ -264,6 +265,66 @@ void test_two_installs_and_rollback() {
           "verified reinstall did not select requested exact tag");
 }
 
+// Execute the actual native CLI without a shell or a Python launcher.
+int cli_install(const InstallRequest& request, const char* authorization) {
+    const pid_t pid = ::fork();
+    check(pid >= 0, "fork for native CLI failed");
+    if (pid == 0) {
+        ::execl(BC_RELEASE_BINARY_PATH, BC_RELEASE_BINARY_PATH, "install", "--tag", request.tag.c_str(),
+                "--record", request.record.c_str(), "--archive", request.archive.c_str(), "--root",
+                request.root.c_str(), "--sdk", request.sdk.c_str(), "--allow-downgrade", authorization,
+                static_cast<char*>(nullptr));
+        ::_exit(127);
+    }
+    int status = 0;
+    check(::waitpid(pid, &status, 0) == pid && WIFEXITED(status), "native CLI terminated abnormally");
+    return WEXITSTATUS(status);
+}
+
+void test_downgrade_refused_before_unpack() {
+    ScopedDir d;
+    Fixture f(d.path);
+    const auto a = f.make("bc-radiance-1170.31.0");
+    const auto b = f.make("bc-radiance-1170.32.0");
+    const auto old = f.make("bc-radiance-1170.30.0");
+    bc::release::install(a);
+    bc::release::install(b);
+    refused(ErrorCode::conflict, [&] { bc::release::install(old); });
+    const auto still = bc::release::verify(a.root, a.sdk);
+    check(still["current"] == b.tag && still["previous"] == a.tag,
+          "unflagged downgrade changed installed current/previous");
+    check(!fs::exists(a.root / "releases" / old.tag),
+          "unflagged downgrade should refuse before extracting the older release");
+    check(cli_install(old, "yes") == static_cast<int>(ErrorCode::invalid_input),
+          "CLI accepted untyped downgrade authorization");
+    check(cli_install(old, "false") == static_cast<int>(ErrorCode::conflict),
+          "CLI accepted explicitly denied downgrade");
+    check(cli_install(old, "true") == 0, "CLI rejected explicitly authorized downgrade");
+    const auto downgraded = bc::release::verify(a.root, a.sdk);
+    check(downgraded["current"] == old.tag && downgraded["previous"] == b.tag,
+          "authorized downgrade did not retain previous exact release");
+    check(bc::release::rollback(a.root, a.sdk)["current"] == b.tag,
+          "explicit rollback cannot restore the verified newer release");
+    const auto numeric_alias = f.make("bc-radiance-1170.032.0");
+    refused(ErrorCode::conflict, [&] { bc::release::install(numeric_alias); });
+    auto authorized_alias = numeric_alias;
+    authorized_alias.allow_downgrade = true;
+    bc::release::install(authorized_alias);
+    check(bc::release::verify(a.root, a.sdk)["previous"] == b.tag,
+          "equal numeric version with different tag did not retain prior current");
+}
+
+void test_numeric_version_order() {
+    ScopedDir d;
+    Fixture f(d.path);
+    auto nine = f.make("bc-radiance-1170.9.0");
+    auto ten = f.make("bc-radiance-1170.10.0");
+    bc::release::install(nine);
+    bc::release::install(ten);
+    check(bc::release::verify(nine.root, nine.sdk)["current"] == ten.tag,
+          "integer version order incorrectly used lexicographic comparison");
+}
+
 void test_tamper_refuses_rollback_without_switch() {
     ScopedDir d;
     Fixture f(d.path);
@@ -367,6 +428,8 @@ void test_interrupted_staging_refuses_install() {
 int main() {
     try {
         test_two_installs_and_rollback();
+        test_downgrade_refused_before_unpack();
+        test_numeric_version_order();
         test_tamper_refuses_rollback_without_switch();
         test_refusal_matrix();
         test_digest_tag_sdk_and_existing_integrity_refuse();
