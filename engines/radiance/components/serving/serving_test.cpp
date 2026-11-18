@@ -3351,6 +3351,77 @@ void session_engine_plan(Fixture& t) {
             refused_prompts = std::string(e.what()).find("distinct") != std::string::npos;
         }
         assert(refused_prompts && !wrote);
+        // RHP18 parity: invalid live-policy source is rejected before any writer
+        // subprocess or measuring/helper child, not as a late manifest error.
+        ss::EnginePlanInputs malformed = bad_calibration;
+        malformed.calibration_prompts_b = t.file("session-calibration-distinct-b.txt", "distinct prompt\n");
+        malformed.live_policy_file = t.file("session-calibration-malformed-policy.json", "{not valid JSON");
+        bool called_writer = false;
+        malformed.runner = [&](const std::vector<std::string>&) {
+            called_writer = true;
+            return ss::ManifestRun{2, "", "unexpected writer for malformed live policy"};
+        };
+        bool refused_policy = false;
+        try {
+            (void)ss::plan_engine_only(malformed, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            refused_policy = std::string(e.what()).find("live policy") != std::string::npos;
+        }
+        if (!refused_policy || called_writer)
+            throw std::runtime_error("calibration live-policy preflight failed before writer admission");
+
+        // The positive calibration path crosses the real resolver, writer and
+        // foreground owner. The OS process boundary blocks GPU measuring.
+        ss::EnginePlanInputs valid = malformed;
+        valid.named_config = "flashnext-2xtx";
+        valid.helper_binary = BC_FAKE_ENGINE;
+        valid.options.sets = {"layout.name=\"flashnext-2xtx\""};
+        valid.options.sets.push_back("handoff.heat=\"" + (t.root / "parity.hot-first").string() + "\"");
+        valid.options.sets.push_back("handoff.histogram=\"" + (t.root / "session-calibration-histogram").string() + "\"");
+        valid.options.site = t.file("session-calibration-helper-site.toml",
+                                    "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
+                                        "\"\nradiance_home = \"" + home.string() + "\"\n");
+        valid.live_policy_file =
+            t.file("session-calibration-valid-policy.json",
+                   R"json({"effect_gate":true,"accept_unwatermarked_heat":false,"cadence_ns":60000000000,
+            "max_moves":8,"max_moved_bytes":4294967296,"min_residency_ns":300000000000,
+            "max_heat_age_ns":120000000000,"min_samples":1000,"abort_cooldown_ns":30000000000,
+            "learned_eligibility_ttl_ns":600000000000,"effect_window_samples":5000,
+            "effect_min_quiet_windows":3,"effect_revert_ttl_ns":120000000000,
+            "margin_ppm":100000,"half_life_observations_milli":4000,"effect_noise_multiplier_milli":2000,
+            "protected_layers":[0,1]})json");
+        const fs::path calibration_run = t.root / "session-calibration-real-writer-owner";
+        bool submitted_to_writer = false;
+        fs::path written_calibration;
+        valid.runner = [&](const std::vector<std::string>& argv) {
+            submitted_to_writer =
+                submitted_to_writer ||
+                (flag(argv, "--calibration-run") &&
+                 has(argv, "--live-policy", valid.live_policy_file.string()) && !flag(argv, "--experiment"));
+            if (!flag(argv, "--unmeasured"))
+                return ss::ManifestRun{10, "", "uncached measured plan"};
+            const auto actual = run_bc_serve({argv.begin() + 1, argv.end()});
+            if (actual.exit_code != 0)
+                throw std::runtime_error("calibration strict writer: " + actual.output);
+            written_calibration = argv.at(2);
+            return ss::ManifestRun{2, "", "card-free: refuse before the measuring GPU child"};
+        };
+        ss::Session calibration_owner;
+        calibration_owner.run_dir = calibration_run;
+        calibration_owner.plan = [valid](const fs::path& rd, const ss::Hooks& hooks) {
+            return ss::plan_engine_only(valid, rd, hooks);
+        };
+        if (ss::serve(calibration_owner) == 0 || !submitted_to_writer || written_calibration.empty() ||
+            !fs::is_regular_file(written_calibration))
+            throw std::runtime_error("calibration owner did not execute the real native writer");
+        const auto produced =
+            bc::serving::v2::load_manifest(written_calibration, bc::serving::v2::PlanUse::measuring);
+        if (!produced || produced.value().spec.intent.service.profile != bc::serving::v2::Profile::kLab ||
+            !produced.value().spec.handoff || produced.value().spec.handoff->placement.live_policy ||
+            produced.value().spec.handoff->placement.live_policy_state.reason_code != "measuring_start" ||
+            produced.value().provenance.contains("/spec/handoff/placement/live_policy") ||
+            produced.value().spec.experiment)
+            throw std::runtime_error("calibration owner wrote an invalid unmeasured lab manifest");
     }
     // the measuring start that fails is refused, naming its log
     in.runner = [&](const std::vector<std::string>& argv) {
