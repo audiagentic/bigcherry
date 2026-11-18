@@ -256,6 +256,8 @@ def arm(cfg: dict) -> int:
             heat = tomllib.loads(Path(cfg["site"]).read_text(encoding="utf-8")).get("handoff", {}).get("heat")
             if heat:
                 argv += ["--heat", heat]
+            if cfg.get("host_pool_mib"):
+                argv += ["--host-pool-mib", str(cfg["host_pool_mib"])]
             if cfg["power_apply"]:
                 argv.remove("--no-gpu-power")
                 argv.append("--gpu-power")
@@ -275,6 +277,8 @@ def arm(cfg: dict) -> int:
                     "--power-profile", cfg["power_profile"]]
             if cfg["power_apply"]:
                 argv.append("--allow-power-apply")
+            if cfg.get("host_pool_mib"):
+                argv += ["--set", f"memory.host_pool_mib={cfg['host_pool_mib']}"]
             log = launch_log.open("wb")
             try:
                 owner = subprocess.Popen(argv, cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
@@ -437,6 +441,8 @@ def main() -> int:
     real.add_argument("--pairs", type=int, default=1,
                       help="A/B pairs per cohort in ABBA order (1 proves launch equivalence; 4 adds drift control)")
     real.add_argument("--cohorts", default="dense,helper", help="comma list of cohorts to run")
+    real.add_argument("--host-pool-mib", type=int, default=0,
+                      help="pin the helper cohort's host pool for BOTH arms (0: each arm derives its own)")
     real.add_argument("--power-profile", default="stock")
     real.add_argument("--power-apply", action="store_true")
     real.add_argument("--confirm", required=True)
