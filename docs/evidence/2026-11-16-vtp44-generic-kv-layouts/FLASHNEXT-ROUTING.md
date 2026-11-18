@@ -26,6 +26,8 @@ Of 1,998,240 selections. "Moved" is half the sum over layers of the L1 distance 
 counts, a lower bound on selections that changed expert (flips that cancel inside a layer are not seen).
 
 - The control pair is exact (0 moved, KLD 0), so the tally is repeatable and a nonzero difference is real.
+  (Exact for this document pair; on 11 documents one selecting run in four later diverged at a single position, so run-to-run
+  repeatability of selected routes is not guaranteed: FLASHNEXT-REPLAY-11DOCS.md.)
 - The runs differ from each other as much as from bf16-a: bf16_i8 against bf16_fp8 is 22,022, against fp8 22,284 and
   against the chunk-128 run 22,086. Their totals against bf16-a are close (22,068 and 22,065) but the per-layer
   counts differ (layer 3: 118 and 169).
