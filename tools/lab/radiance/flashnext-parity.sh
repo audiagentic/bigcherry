@@ -103,8 +103,9 @@ BC_SERVE="$BUILD/radiance_home/bin/bc-serve"
 [ -n "${BC_MODEL_ROOT:-}" ] || { echo "flashnext-parity: BC_MODEL_ROOT not set" >&2; exit 2; }
 NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BUILD/bin/radiance"
              --set "engine.port=$PORT"
-             --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-performance}" --allow-power-apply)
-# The power profile is explicit so a held GPU lease can apply only qualified,
+             --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}" --allow-power-apply)
+# The default is stock (observe only): bc-serve refuses a named non-stock profile without its rule file, and the stored
+# baseline was taken with the cards' own settings. The power profile is explicit so a held GPU lease can apply only qualified,
 # journalled settings; a missing lease or missing qualification fails closed.
 # Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
 [ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
