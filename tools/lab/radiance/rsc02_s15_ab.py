@@ -258,6 +258,8 @@ def arm(cfg: dict) -> int:
                 argv += ["--heat", heat]
             if cfg.get("host_pool_mib"):
                 argv += ["--host-pool-mib", str(cfg["host_pool_mib"])]
+            if cfg.get("ngram_placement"):
+                argv += ["--ngram-placement", cfg["ngram_placement"]]
             if cfg["power_apply"]:
                 argv.remove("--no-gpu-power")
                 argv.append("--gpu-power")
@@ -279,6 +281,8 @@ def arm(cfg: dict) -> int:
                 argv.append("--allow-power-apply")
             if cfg.get("host_pool_mib"):
                 argv += ["--set", f"memory.host_pool_mib={cfg['host_pool_mib']}"]
+            if cfg.get("ngram_placement"):
+                argv += ["--set", f'engine.ngram_placement="{cfg["ngram_placement"]}"']
             log = launch_log.open("wb")
             try:
                 owner = subprocess.Popen(argv, cwd=REPO, stdout=log, stderr=subprocess.STDOUT,
@@ -443,6 +447,8 @@ def main() -> int:
     real.add_argument("--cohorts", default="dense,helper", help="comma list of cohorts to run")
     real.add_argument("--host-pool-mib", type=int, default=0,
                       help="pin the helper cohort's host pool for BOTH arms (0: each arm derives its own)")
+    real.add_argument("--ngram-placement", default="disk", choices=("disk", "ram", ""),
+                      help="n-gram table placement for BOTH arms: a 91 GiB host cannot hold the 47.7 GiB table beside the pool")
     real.add_argument("--power-profile", default="stock")
     real.add_argument("--power-apply", action="store_true")
     real.add_argument("--confirm", required=True)
