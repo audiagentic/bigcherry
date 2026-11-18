@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.47.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.46.0...bc-platform-1.47.0) (2026-11-18)
+
+
+### New and changed
+
+* **release:** publish verified Python-free engine bundle ([#1086](https://github.com/audiagentic/bigcherry/issues/1086)) ([98d481c](https://github.com/audiagentic/bigcherry/commit/98d481cc836d71685ee9c0e57214dde7a9ba6529))
+
 ## [1.46.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.45.0...bc-platform-1.46.0) (2026-11-17)
 
 
