@@ -38,6 +38,25 @@ class SemanticProjectionTests(unittest.TestCase):
         self.assertEqual(report["status"], "FAIL")
         self.assertTrue(report["different_paths"])
 
+    def test_dry_run_interprets_deliberately_missing_helper_as_rejection(self) -> None:
+        # The real CTest still invokes the owner; only the OS subprocess is
+        # faked here to prove that deliberate failure injection can succeed.
+        from unittest import mock
+        from rsc02_s15_projection import dry_run
+
+        with mock.patch("rsc02_s15_projection.subprocess.run") as run:
+            run.return_value.returncode = 0
+            self.assertEqual(dry_run(Path("/fake-native-owner")), 0)
+            run.assert_called_once()
+
+    def test_fixture_observes_exact_manifest_helper_roles(self) -> None:
+        expected = ["engine"] + [
+            helper["role"] for helper in self.original["spec"]["processes"]["helpers"]
+        ]
+        actual = [row["role"] for row in self.a["processes"]["roles"]]
+        self.assertEqual(actual, expected)
+        projection(self.a, verify_bytes=False)
+
     def test_ignores_only_explicit_per_session_bookkeeping(self) -> None:
         other = self.b["manifest"]
         other["metadata"]["instance_id"] = "nonce"
