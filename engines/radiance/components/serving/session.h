@@ -29,6 +29,7 @@
 #include <nlohmann/json.hpp>
 
 #include "callback_boundary.h"
+#include "helper_vram.h"
 #include "serving.h"
 #include "stored_manifest.h"
 #include "v2/manifest.h"
@@ -158,6 +159,8 @@ struct Hooks {
     // Exactly one manifest-authenticated power admission, after the writer
     // resolves selected cards but before any measuring/serving child starts.
     Callback<v2::Status(const std::filesystem::path&, v2::PlanUse)> admit_power;
+    // One owner-recorded bound for verified measuring-helper teardown AND counter release.
+    std::chrono::milliseconds helper_stop_timeout{std::chrono::seconds(60)};
 };
 
 /* The plan step refused or could not make the manifest (the session ends with exit 97, nothing started for
@@ -265,6 +268,7 @@ struct EnginePlanInputs {
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
+    vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default
     std::filesystem::path live_policy_file; // only with explicit lab calibration
     bool calibration_run = false;

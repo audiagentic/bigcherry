@@ -1,12 +1,35 @@
 # RSC02 S15 — same-build Bash-to-native acceptance
 
-**State: prepared, hardware NOT RUN.** This is the RSC11 S15 gate for retiring
+**State: operator hardware acceptance attempted 2026-11-18; dense passed, helper blocked.** This is the RSC11 S15 gate for retiring
 `launch-flashnext-best.sh`, `lib/plan-check.sh` and the Python supervisor at
 S16. S13 must have merged, S14 must provide attributable serving/campaign
 receipts, the step-5 stored-manifest review fixes must be merged, and the RSP01
 Python-free tagged release must pass its own gate before retirement. The
 RSC12 named-config loader is the source of effective settings, not a new
 launcher-flag mapping. There is **no GPU fallback** in card-free CI.
+
+## 2026-11-18 leased acceptance finding (helper cohort blocked)
+
+The operator's leased S15 short A/B found that the dense native cohort passes, but no
+helper parity has been accepted. The native `bc-serve serve flashnext-4gpu` measuring
+start reached a measured owner map, then the final manifest's strict S10 live
+VRAM admission refused helper0 (23,074 MiB of experts required, 391 MiB
+live claimable). Measuring helper processes had exited, but their BDF-scoped
+`mem_info_vram_used` counters had not necessarily returned to the pre-start
+baseline. The native owner requires a bounded post-reap VRAM release barrier
+before the final writer; neither a stale pre-measurement snapshot nor a
+larger helper budget may bypass live admission.
+
+For `flashnext-tp2xtx-r9700`, the measuring engine reported **host RAM**
+rather than VRAM exhaustion: the RAM-pinned n-gram table requires 47.69 GiB,
+another 64.60 GiB was projected for pools, checkpoint slots and other engine
+allocation, and 4.59 GiB headroom was required against 82.00 GiB
+reported available. The native owner's derived pool was 32,005 MiB.
+The Bash launcher's RAM admission also refuses this host; do not shrink the
+pool merely to turn the start green, infer nonreclaimable page cache without
+evidence, or claim helper equivalence. Both arms need admissible identical
+settings and new leased confirmation after the CPU-only fixes pass. No GPU
+or lease was used to develop these changes.
 
 ## One-command leased short A/B acceptance (operator only)
 
