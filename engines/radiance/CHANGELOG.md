@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.32.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.1...bc-radiance-1170.32.2) (2026-11-18)
+
+
+### Fixes
+
+* **release:** trim the engine asset (debug split, no benchmark catalogs) ([#1143](https://github.com/audiagentic/bigcherry/issues/1143)) ([758a426](https://github.com/audiagentic/bigcherry/commit/758a42656daa0b2927b28aa82aea0a3717a584d8))
+
 ## [1170.32.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.0...bc-radiance-1170.32.1) (2026-11-18)
 
 
