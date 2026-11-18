@@ -120,7 +120,18 @@ def projection(snapshot: dict, *, verify_bytes: bool = True) -> dict:
     if not isinstance(path, str) or not path:
         raise ProjectionError("snapshot.manifest_path must be nonempty")
     manifest = _dict(_get(record, "manifest", "snapshot"), "snapshot.manifest")
-    if verify_bytes:
+    if verify_bytes and record.get("manifest_bytes_verified_live") is True:
+        # A pinned child descriptor exists only while that child lives: its bytes were
+        # verified against the recorded hash when the snapshot was captured.
+        expected = _get(record, "manifest_file_sha256", "snapshot")
+        if not isinstance(expected, str) or len(expected) != 64:
+            raise ProjectionError("snapshot.manifest_file_sha256 is required")
+        live = record.get("manifest_read_path")
+        if isinstance(live, str) and Path(live).exists():
+            contents = Path(live).read_bytes()
+            if hashlib.sha256(contents).hexdigest() != expected or json.loads(contents) != manifest:
+                raise ProjectionError("manifest path, observed bytes and SHA-256 disagree")
+    elif verify_bytes:
         expected = _get(record, "manifest_file_sha256", "snapshot")
         if not isinstance(expected, str) or len(expected) != 64:
             raise ProjectionError("snapshot.manifest_file_sha256 is required")

@@ -11,6 +11,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -128,7 +129,12 @@ def capture(processes: dict[str, int]) -> tuple[dict, dict[str, tuple[int, str]]
     if len(set(paths)) != 1:
         raise Refusal("roles do not share one manifest")
     path = Path(paths[0])
-    before = path.read_bytes()
+    # A stored-manifest replay hands every child a pinned descriptor ("/proc/self/fd/N"): it
+    # means the child's own open file, so read it through a child's /proc entry. The bytes
+    # are verified live here; the recorded hash keeps them bound afterwards.
+    pinned = re.fullmatch(r"/proc/self/fd/(\d+)", str(path))
+    readable = Path(f"/proc/{processes['engine']}/fd/{pinned.group(1)}") if pinned else path
+    before = readable.read_bytes()
     manifest = json.loads(before)
     snapshot = {
         "schema_version": 1,
@@ -137,8 +143,11 @@ def capture(processes: dict[str, int]) -> tuple[dict, dict[str, tuple[int, str]]
         "manifest": manifest,
         "processes": {"roles": observed},
     }
+    if pinned:
+        snapshot["manifest_read_path"] = str(readable)
+        snapshot["manifest_bytes_verified_live"] = True
     projection(snapshot)  # independent role completeness and byte binding
-    if path.read_bytes() != before:
+    if readable.read_bytes() != before:
         raise Refusal("manifest bytes mutated during capture")
     return snapshot, identities
 
@@ -357,8 +366,13 @@ def accept(args: argparse.Namespace) -> int:
     cfg.pop("confirm")
     cfg["expected_build"] = build_identity({**cfg, "cohort": "helper"})
     save(out / "inputs.json", cfg)
-    for cohort in ("dense", "helper"):
-        for pair_number, order in enumerate(ORDER, 1):
+    for cohort in args.cohorts.split(","):
+        if cohort not in COHORTS:
+            raise Refusal(f"unknown cohort: {cohort}")
+    if not 1 <= args.pairs <= len(ORDER):
+        raise Refusal(f"--pairs must be 1..{len(ORDER)}")
+    for cohort in args.cohorts.split(","):
+        for pair_number, order in enumerate(ORDER[:args.pairs], 1):
             results = []
             for which in order:
                 label = f"{cohort}-pair{pair_number}-{which}"
@@ -397,7 +411,8 @@ def accept(args: argparse.Namespace) -> int:
             save(out / f"{cohort}-pair{pair_number}-comparison.json", report)
             if report["status"] != "PASS":
                 raise Refusal(f"{cohort} pair {pair_number}: semantic or greedy mismatch; stop")
-    save(out / "summary.json", {"status": "SHORT_AB_PASS", "pairs_per_cohort": 4,
+    save(out / "summary.json", {"status": "SHORT_AB_PASS", "pairs_per_cohort": args.pairs,
+                                 "cohorts": args.cohorts.split(","),
                                  "hardware_full_s15": "NOT_PROVEN: RHP12 and quality/retained-session gates remain"})
     return 0
 
@@ -411,6 +426,9 @@ def main() -> int:
     for name in ("build", "bc-serve", "configs", "site", "model-root",
                  "model-file", "work-root", "out"):
         real.add_argument("--" + name, required=True)
+    real.add_argument("--pairs", type=int, default=1,
+                      help="A/B pairs per cohort in ABBA order (1 proves launch equivalence; 4 adds drift control)")
+    real.add_argument("--cohorts", default="dense,helper", help="comma list of cohorts to run")
     real.add_argument("--power-profile", default="stock")
     real.add_argument("--power-apply", action="store_true")
     real.add_argument("--confirm", required=True)

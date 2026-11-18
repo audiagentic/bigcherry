@@ -85,6 +85,18 @@ class SemanticProjectionTests(unittest.TestCase):
             lambda snap: snap["manifest"]["spec"]["plan"]["resource_inputs"].__setitem__(
                 "checkpoint_bytes", snap["manifest"]["spec"]["plan"]["resource_inputs"]["checkpoint_bytes"] + 1))
 
+    def test_pinned_manifest_descriptor_snapshot_is_verified_at_capture(self) -> None:
+        # A stored-manifest replay gives children `--manifest /proc/self/fd/N`: the path only
+        # exists inside the child, so the capture verifies the bytes live and records that.
+        pinned = _fixture(copy.deepcopy(self.original), "/proc/self/fd/5")
+        pinned["manifest_bytes_verified_live"] = True
+        pinned["manifest_read_path"] = "/proc/0/fd/5"      # the child is gone by compare time
+        pinned["manifest_file_sha256"] = "0" * 64
+        projection(pinned)                                  # must not re-read a vanished descriptor
+        pinned.pop("manifest_bytes_verified_live")          # without the live proof it must read the path
+        with self.assertRaises(Exception):
+            projection(pinned)
+
     def test_refuses_semantic_changes_and_missing_roles(self) -> None:
         self.assert_rejects_change(
             lambda s: s["manifest"]["spec"]["processes"]["engine"]["execution"].update(
