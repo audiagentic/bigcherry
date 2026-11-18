@@ -332,14 +332,20 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error("installed release refusal: SDK provenance is absent");
         bc::serving::verify_installed_prefix(self, *sdk);
         const fs::path home = *prefix / "radiance_home";
-        if (engine_binary.empty())
-            engine_binary = *prefix / "bin/radiance";
-        const bool explicit_home =
-            std::any_of(opts.sets.begin(), opts.sets.end(), [](const std::string& setting) {
+        const fs::path trusted_engine = *prefix / "bin/radiance";
+        if (!engine_binary.empty()) {
+            std::error_code error;
+            const fs::path selected = fs::canonical(engine_binary, error);
+            if (error || selected != fs::canonical(trusted_engine))
+                throw std::runtime_error(
+                    "installed release refusal: engine binary differs from verified prefix");
+        }
+        engine_binary = trusted_engine;
+        if (std::any_of(opts.sets.begin(), opts.sets.end(), [](const std::string& setting) {
                 return setting.starts_with("engine.radiance_home=");
-            });
-        if (!explicit_home)
-            opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
+            }))
+            throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
+        opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
     }
     if (!config_name.empty() && opts.configs.empty()) {
         const char* env = std::getenv("BIGCHERRY_CONFIGS");

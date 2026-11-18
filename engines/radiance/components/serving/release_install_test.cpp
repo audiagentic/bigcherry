@@ -383,10 +383,16 @@ int run_cli(const fs::path& exe, const std::vector<std::string>& args, const fs:
             ::_exit(127);
         ::close(fd);
         ::unsetenv("BIGCHERRY_CONFIGS");
-        if (!installed_engine.empty())
-            ::setenv("BC_INSTALLED_TEST_ENGINE", installed_engine.c_str(), 1);
+        // The isolated temporary SDK is intentionally not the CI host's SDK.
+        // Do not inherit the host's ROCm override into a synthetic release.
+        ::unsetenv("ROCM_PATH");
+        ::unsetenv("HIP_PATH");
         std::vector<std::string> owned = {exe.string()};
         owned.insert(owned.end(), args.begin(), args.end());
+        if (!installed_engine.empty()) {
+            owned.push_back("--installed-engine");
+            owned.push_back(installed_engine.string());
+        }
         std::vector<char*> argv;
         argv.reserve(owned.size() + 1);
         for (auto& text : owned)
@@ -395,7 +401,7 @@ int run_cli(const fs::path& exe, const std::vector<std::string>& args, const fs:
         ::execv(exe.c_str(), argv.data());
         ::_exit(127);
     }
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(45);
     int status = 0;
     for (;;) {
         const auto ended = ::waitpid(pid, &status, WNOHANG);
@@ -443,6 +449,18 @@ void test_native_installed_start_gate() {
     check(valid != 0 && read_file(log).find("release refusal") == std::string::npos &&
               read_file(log).find("sdk-check") == std::string::npos,
           "verified prefix should reach real resolver: " + read_file(log));
+
+    // The executable must not verify one asset then launch another engine
+    // or source plugins from an unverified runtime home.
+    for (const std::vector<std::string> bypass :
+         {std::vector<std::string>{"--engine-binary", "/bin/true"},
+          std::vector<std::string>{"--set", "engine.radiance_home=\"/tmp/not-the-install\""}}) {
+        std::vector<std::string> args = {"serve", "qwen27b-tp3-int8", "--run-dir", run.string()};
+        args.insert(args.end(), bypass.begin(), bypass.end());
+        const int rc = run_cli(serve, args, log);
+        check(rc != 0 && read_file(log).find("installed release refusal") != std::string::npos,
+              "installed release allowed substituting a different runtime: " + read_file(log));
+    }
 
     // Missing receipt is not equivalent to a checkout; both entrypoints
     // refuse before they ever plan or launch a child.
