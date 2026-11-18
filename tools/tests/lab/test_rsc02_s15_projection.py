@@ -92,9 +92,10 @@ class SemanticProjectionTests(unittest.TestCase):
         self.assert_rejects_change(
             lambda s: s["manifest"]["spec"]["intent"]["power"].update(profile="unsafe")
         )
-        self.assert_rejects_change(
-            lambda s: s["manifest"]["spec"]["processes"]["helpers"].pop()
-        )
+        missing_manifest_helper = copy.deepcopy(self.b)
+        missing_manifest_helper["manifest"]["spec"]["processes"]["helpers"].pop()
+        with self.assertRaisesRegex(ProjectionError, "unexpected observed roles"):
+            compare(self.a, missing_manifest_helper, verify_bytes=False)
         self.assert_rejects_change(
             lambda s: s["manifest"]["spec"]["plan"]["owner_map"].update(owner_map_sha256="changed")
         )
@@ -107,7 +108,10 @@ class SemanticProjectionTests(unittest.TestCase):
         self.assert_rejects_change(
             lambda s: s["processes"]["roles"][0]["env"].update(HIP_VISIBLE_DEVICES="1")
         )
-        self.assert_rejects_change(lambda s: s["processes"]["roles"].pop())
+        missing_observation = copy.deepcopy(self.b)
+        missing_observation["processes"]["roles"].pop()
+        with self.assertRaisesRegex(ProjectionError, "missing observed roles"):
+            compare(self.a, missing_observation, verify_bytes=False)
 
     def test_refuses_unsupported_argv_and_duplicate_roles(self) -> None:
         bad = copy.deepcopy(self.b)

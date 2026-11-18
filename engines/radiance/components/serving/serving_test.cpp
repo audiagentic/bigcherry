@@ -3348,6 +3348,58 @@ void session_engine_plan(Fixture& t) {
         refused = std::string(e.what()).find("measuring start failed") != std::string::npos;
     }
     assert(refused);
+    { // RSC04 lab experiments use the real named resolver and writer call graph.
+        ss::EnginePlanInputs lab = in;
+        lab.named_config = "qwen27b-tp3-int8";
+        lab.experiment_file =
+            t.file("lab-geometry.json", R"({"placement":{"mode":"observe","epoch_cycle_s":30}})");
+        lab.engine_binary = BC_FAKE_ENGINE;
+        const fs::path lab_run = t.root / "lab-session-run";
+        fs::create_directories(lab_run);
+        bool writer_checked = false;
+        fs::path produced;
+        lab.runner = [&](const std::vector<std::string>& argv) {
+            writer_checked =
+                has(argv, "--experiment", lab.experiment_file.string()) && !flag(argv, "--calibration-run");
+            if (!flag(argv, "--unmeasured"))
+                return ss::ManifestRun{10, "", "no cached measured plan"};
+            const auto written = run_bc_serve({argv.begin() + 1, argv.end()});
+            if (written.exit_code != 0)
+                throw std::runtime_error("lab strict writer: " + written.output);
+            produced = argv.at(2);
+            return ss::ManifestRun{2, "", "deliberately stop before the measuring GPU child"};
+        };
+        try {
+            (void)ss::plan_engine_only(lab, lab_run, wait);
+        } catch (const ss::PlanFailed& e) {
+            std::cerr << "lab graph: " << e.what() << "\n";
+        }
+        if (!writer_checked || produced.empty() || !fs::is_regular_file(produced))
+            throw std::runtime_error("lab graph: writer_argv=" + std::to_string(writer_checked) +
+                                     " produced=" + produced.string());
+        // Real named resolver, real C++ writer, strict-v2 producer/reader bytes.
+        const auto native = bc::serving::v2::load_manifest(produced, bc::serving::v2::PlanUse::measuring);
+        assert(native && native.value().spec.experiment &&
+               native.value().spec.intent.service.profile == bc::serving::v2::Profile::kLab);
+        const auto detached = run_bc_serve({"start", "qwen27b-tp3-int8", "--run-dir", run.string(),
+                                            "--lab-experiment", lab.experiment_file.string()});
+        assert(detached.exit_code != 0 && detached.output.find("requires foreground") != std::string::npos);
+        // An unsupported lab shape changes measurements: refuse before the writer/child.
+        ss::EnginePlanInputs shaped = lab;
+        shaped.experiment_file = t.file("lab-shape-rejected.json", R"({"shape":{}})");
+        bool child_writer_called = false;
+        shaped.runner = [&](const std::vector<std::string>&) {
+            child_writer_called = true;
+            return ss::ManifestRun{2, "", "unsupported lab experiment"};
+        };
+        bool refused_shape = false;
+        try {
+            (void)ss::plan_engine_only(shaped, lab_run / "shape-rejected", wait);
+        } catch (const ss::PlanFailed& e) {
+            refused_shape = std::string(e.what()).find("observe-only") != std::string::npos;
+        }
+        assert(refused_shape && !child_writer_called);
+    }
 }
 
 // Real plan_engine_only + real session owner, with the fake KFD/proc tree,
