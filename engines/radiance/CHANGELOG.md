@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.32.3](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.2...bc-radiance-1170.32.3) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** wait for helper VRAM release before the final manifest write ([#1147](https://github.com/audiagentic/bigcherry/issues/1147)) ([ec0ca83](https://github.com/audiagentic/bigcherry/commit/ec0ca833bf89280453dcb4a5b5af9bbd7b6b0793))
+
 ## [1170.32.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.1...bc-radiance-1170.32.2) (2026-11-18)
 
 
