@@ -112,15 +112,24 @@ class AdapterTests(unittest.TestCase):
 
     def test_radiance_declares_libr3s_native_rewrite_check(self):
         context = ProjectContext.resolve(engine="radiance")
-        (check,) = adapter("radiance").source_drift_checks(context, Path("/src"))
+        coupling, check = adapter("radiance").source_drift_checks(context, Path("/src"))
+        self.assertEqual(coupling.id, "component-coupling")
         self.assertEqual((check.id, check.failure_code), ("libr3-native-rewrite", "NATIVE_REWRITE_DRIFT"))
+
+    def test_radiance_coupling_is_an_enforced_drift_check(self):
+        context = ProjectContext.resolve(engine="radiance")
+        checks = adapter("radiance").source_drift_checks(context, Path("/src"))
+        self.assertEqual(checks[0].id, "component-coupling")
+        self.assertEqual(checks[0].failure_code, "COMPONENT_COUPLING_DRIFT")
+        with self.assertRaises(BumpCheckError):
+            checks[0].run()  # non-existent target cannot be treated as a clean pin
 
     def test_radiance_check_runs_libr3s_real_script_against_the_given_source(self):
         context = ProjectContext.resolve(engine="radiance")
         source = _tmp(self)
         (source / "libr4d").mkdir()
         (source / "libr4d" / "r4d_moe.hip").write_text("not the real kernel\n", encoding="utf-8")
-        (check,) = adapter("radiance").source_drift_checks(context, source)
+        coupling, check = adapter("radiance").source_drift_checks(context, source)
         failures = check.run()
         self.assertIn("libr3/native/r4d_moe.hip.rw", failures)
         self.assertIn("libr3/rewrites.txt", failures)

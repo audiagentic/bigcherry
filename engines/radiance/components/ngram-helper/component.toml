@@ -15,3 +15,15 @@ configure = { RADIANCE_SRC = "{engine_source}" }
 
 # Runtime settings: see libr3/component.toml for the status vocabulary. Names are runtime identifiers and did not change.
 
+
+# Names crossing the Radiance build/runtime boundary. The core coupling gate
+# checks literals and source inventory; RUM02-07 own the eventual migration.
+[coupling]
+upstream-headers = ["rad_abi.h", "rad_abi_layout.h", "rad_plugin.h"]
+upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "abi/rad_plugin.h"]
+upstream-source-globs = []
+patch-provided-files = []
+protocol-flags = []
+owned-flags = []
+runtime-env = []
+abi-version = 35
