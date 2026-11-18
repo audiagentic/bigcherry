@@ -59,7 +59,7 @@ def _stable_facts(facts: object) -> dict:
     return {"cpu": _get(host, "cpu", "spec.facts.host"), "gpus": devices}
 
 
-def _processes(value: object, manifest_path: str) -> dict:
+def _processes(value: object, manifest_path: str, expected_roles: list[str]) -> dict:
     proc = _dict(value, "snapshot.processes")
     rows = _get(proc, "roles", "snapshot.processes")
     if not isinstance(rows, list) or not rows:
@@ -81,13 +81,24 @@ def _processes(value: object, manifest_path: str) -> dict:
         idx = argv.index("--manifest")
         if idx + 1 >= len(argv) or argv[idx + 1] != manifest_path:
             raise ProjectionError(f"{role}: observed manifest argument not bound to captured bytes")
+        if argv.count("--role") != 1:
+            raise ProjectionError(f"{role}: exactly one --role NAME is required")
+        role_idx = argv.index("--role")
+        if role_idx + 1 >= len(argv) or argv[role_idx + 1] != role:
+            raise ProjectionError(f"{role}: observed --role must match captured process role")
         normal = list(argv)
         normal[idx + 1] = "<manifest-bytes>"
         results.append({"role": role, "argv": normal, "env": dict(sorted(env.items()))})
     if len({p["role"] for p in results}) != len(results):
         raise ProjectionError("duplicate process role")
-    if "engine" not in {p["role"] for p in results}:
-        raise ProjectionError("missing engine role")
+    observed = {p["role"] for p in results}
+    expected = set(expected_roles)
+    missing = sorted(expected - observed)
+    extra = sorted(observed - expected)
+    if missing:
+        raise ProjectionError(f"snapshot.processes.roles: missing observed roles: {missing}")
+    if extra:
+        raise ProjectionError(f"snapshot.processes.roles: unexpected observed roles: {extra}")
     return {"roles": results}
 
 
@@ -137,6 +148,16 @@ def projection(snapshot: dict, *, verify_bytes: bool = True) -> dict:
                 raise ProjectionError("histogram output must be a valid path")
             telemetry["histogram_file"] = "<per-run-histogram-output>"
     proc = _dict(_get(spec, "processes", "spec"), "spec.processes")
+    helpers = _get(proc, "helpers", "spec.processes")
+    if not isinstance(helpers, list):
+        raise ProjectionError("spec.processes.helpers: expected a list")
+    expected_roles = ["engine"]
+    for i, helper in enumerate(helpers):
+        h = _dict(helper, f"spec.processes.helpers[{i}]")
+        role = _get(h, "role", f"spec.processes.helpers[{i}]")
+        if not isinstance(role, str) or not role or role in expected_roles:
+            raise ProjectionError(f"spec.processes.helpers[{i}]: invalid or duplicate role")
+        expected_roles.append(role)
     engine = _dict(_get(proc, "engine", "spec.processes"), "spec.processes.engine")
     server = _dict(_get(engine, "server", "spec.processes.engine"), "spec.processes.engine.server")
     port = _get(server, "port", "spec.processes.engine.server")
@@ -148,7 +169,7 @@ def projection(snapshot: dict, *, verify_bytes: bool = True) -> dict:
     return {
         "producer_build_sha256": build,
         "spec": spec,
-        "processes": _processes(_get(record, "processes", "snapshot"), path),
+        "processes": _processes(_get(record, "processes", "snapshot"), path, expected_roles),
     }
 
 
