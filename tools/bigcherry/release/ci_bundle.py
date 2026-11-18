@@ -64,6 +64,7 @@ BUILD_INPUTS = (
     "tools/bigcherry/campaign/resolution.py",
     "tools/bigcherry/campaign/runtime_bundle.py",
     "tools/bigcherry/core/artifacts.py",
+    "tools/bigcherry/core/component_coupling.py",
     "tools/bigcherry/core/components.py",
     "tools/bigcherry/core/context.py",
     "tools/bigcherry/core/csource.py",

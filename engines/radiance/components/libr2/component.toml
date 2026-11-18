@@ -16,3 +16,15 @@ outputs = ["kernels/libr2.so"]
 configure = { RADIANCE_SRC = "{engine_source}", R2_TARGETS = "{targets}" }
 
 # libr2 reads no environment variable of its own (libr3's R3_* settings are read by libr3's native forms, which libr2 does not use).
+
+# Names crossing the Radiance build/runtime boundary. The core coupling gate
+# checks literals and source inventory; RUM02-07 own the eventual migration.
+[coupling]
+upstream-headers = ["rad_abi.h"]
+upstream-files = ["abi/rad_abi.h", "libr4d/CMakeLists.txt"]
+upstream-source-globs = ["libr4d/r4d_*.cpp", "libr4d/r4d_*.hip"]
+patch-provided-files = []
+protocol-flags = []
+owned-flags = []
+runtime-env = []
+abi-version = 35
