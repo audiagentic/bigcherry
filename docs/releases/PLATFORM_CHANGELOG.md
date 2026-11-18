@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.0...bc-platform-1.51.1) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 projection treats live VRAM readings and the owner heat nonce as observations ([#1154](https://github.com/audiagentic/bigcherry/issues/1154)) ([bda5538](https://github.com/audiagentic/bigcherry/commit/bda55382b6eeffd2b0fb07e67c5c418583b5dce1))
+
 ## [1.51.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.6...bc-platform-1.51.0) (2026-11-18)
 
 
