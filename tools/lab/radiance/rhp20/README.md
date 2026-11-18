@@ -53,41 +53,9 @@ claimed as exercised here; it needs a separately measured layout with a
 nonzero incoming reserve and no incumbent owner. The card-free suite
 includes a zero-owner refusal check.
 
-## Exact hardware-owner commands (two independent cells)
+## Historical forced-move driver (archived)
 
-From this worktree or after merging to main:
-
-```bash
-# From the BigCherry repository root
-source tools/env/bigcherry-env.sh
-BUILD=${BC_WORK_ROOT}/builds/daf793f13be8d5762deecb73e3372641/a29e62ada0fe691746707b2b87c3e9f3
-# Owner acquires and holds the GPU lease externally before running either cell.
-
-PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py prepare --layout flashnext-2xtx-rdna2-tail
-PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py run --layout flashnext-2xtx-rdna2-tail --build "$BUILD" --port 36080 --out ${BC_WORK_ROOT}/runs/rhp20-tail-forced-1000 --lease-held --identity ${BC_WORK_ROOT}/runs/rhp20-tail-forced-1000/identity.json
-
-PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py prepare --layout flashnext-2xtx-rdna2-tail-combine
-PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py run --layout flashnext-2xtx-rdna2-tail-combine --build "$BUILD" --port 36080 --out ${BC_WORK_ROOT}/runs/rhp20-tail-combine-forced-1000 --lease-held --identity ${BC_WORK_ROOT}/runs/rhp20-tail-combine-forced-1000/identity.json
-```
-
-The `run` command internally calls:
-
-```bash
-bash tools/lab/radiance/launch-flashnext-best.sh start --build "$BUILD" --port 36080 --layout flashnext-2xtx-rdna2-tail --experiment tools/lab/radiance/rhp20/tail.experiment.json --record-period 1
-bash tools/lab/radiance/launch-flashnext-best.sh start --build "$BUILD" --port 36080 --layout flashnext-2xtx-rdna2-tail-combine --experiment tools/lab/radiance/rhp20/tail-combine.experiment.json --record-period 1
-```
-
-**Only one layout may run at a time.** The runner stops the engine and
-helpers in `finally`, then saves correlated helper logs, live manifest,
-benchmarks, and a verdict. It never fabricates the per-expert contribution
-probe. `--identity` is a required hardware-produced record of
-`records: [{expert: "layer:expert", transaction_id: 1, before_epoch: 1, after_epoch: 2, source_isa: "gfx1100",
-target_isa: "gfx1100", before_sha256: "...", after_sha256: "..."}]`;
-the transaction and epoch must match an actual same-ISA resolved swap, and the two hashes must reflect the actual same expert's output contribution
-under identical inputs before/after its **committed** same-ISA move.
-An API token-text comparison alone is not valid proof. Until a genuine
-per-expert probe exists, the runner **must FAIL** this criterion. Cross-ISA
-movements are gated numerically, not by byte identity.
+The one-off RHP20 forced-move harness and its Bash start path were retired under S16 after archival in `archive/lab-rhp20-forced-move`. The old command examples are **not runnable in this checkout** and are not a supported native production mode. For reproducibility, use the archive and original recorded build/lease/manifest inputs; do not fabricate a replacement native profiling mode. New production runs use typed RSC12 configs with `bc-serve serve CONFIG --run-dir DIR`, and the cross-ISA quality acceptance remains pending.
 
 ## Layout-specific KLD, separate from 1,000-move stress
 
