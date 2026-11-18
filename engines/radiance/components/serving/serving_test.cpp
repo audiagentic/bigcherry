@@ -10,6 +10,7 @@
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "resources.h"
+#include "runtime_guards.h"
 #include "s8_replay.h"
 #include "sdk_check.h"
 #include "serving.h"
@@ -1234,6 +1235,28 @@ void manifest_writer_step(Fixture& t) {
     const auto back =
         bc::serving::v2::read_manifest(built.text, "writer test", bc::serving::v2::PlanUse::serving);
     assert(back.ok());
+    { // RED: strict native writer + real runtime guard must not kill recording-only serving.
+        namespace ss = bc::serving::session;
+        const fs::path file = t.root / "recording-only-guard-manifest.json";
+        sv::write_manifest_file(file, built.text);
+        const fs::path log = t.file("recording-only-guard-engine.log",
+                                    "recorded pass: draft pass 8 token\n");
+        ss::EngineStart engine;
+        engine.manifest = file;
+        engine.handoff_shm = built.document.at("spec").at("handoff").at("transport")
+                                 .at("shm").get<std::string>();
+        engine.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
+        engine.heat_session_nonce = "0123456789abcdef0123456789abcdef";
+        ss::RuntimeGuards guard;
+        const auto result = guard.startup(engine, log, {});
+        if (result)
+            throw std::runtime_error("recording-only native runtime guard refused: " +
+                                     result->message);
+        if (guard.policy_enabled())
+            throw std::runtime_error("uncalibrated recording-only manifest incorrectly activated policy");
+        if (const auto ongoing = guard.poll())
+            throw std::runtime_error("recording-only heat file affected serving: " + ongoing->message);
+    }
     // RED P1-5: measured producer P1 + raw P2 with a bounded valid_until.
     // Build the strict v2 consumer document via the REAL S10 writer, and
     // re-qualify that same native P1 with today's scope using the same S8.
@@ -3744,9 +3767,16 @@ void helper_vram_owner_graph(Fixture& t) {
     in.engine_binary = BC_FAKE_ENGINE;
     in.helper_binary = BC_FAKE_ENGINE;
     int writers = 0;
+    std::vector<fs::path> measuring_histograms;
     in.runner = [&](const std::vector<std::string>& args) -> ss::ManifestRun {
         ++writers;
         auto result = run_bc_serve({args.begin() + 1, args.end()});
+        if (result.exit_code == 0 &&
+            fs::path(args.at(2)).filename().string().find("manifest-measuring-") == 0) {
+            const Json doc = Json::parse(std::ifstream(args.at(2)));
+            measuring_histograms.emplace_back(doc.at("spec").at("handoff").at("telemetry")
+                                            .at("histogram_file").get<std::string>());
+        }
         return {result.exit_code, result.output, result.output};
     };
     in.helper_vram.read_used = [](const fs::path& path) -> uint64_t {
@@ -3805,6 +3835,18 @@ void helper_vram_owner_graph(Fixture& t) {
                     << " writers=" << (writers - before);
             throw std::runtime_error(message.str());
         }
+    }
+    // Each measuring writer gets a private telemetry generation. A future
+    // engine that publishes during --plan-memory must never replace the
+    // serving engine's rank0 histogram at the operator's destination.
+    if (measuring_histograms.empty())
+        throw std::runtime_error("real measuring writer histogram fixture did not run");
+    for (const fs::path& path : measuring_histograms) {
+        if (path == t.root / "vram-histogram" ||
+            path.parent_path() != t.root / "vram-graph-immediate" &&
+                path.parent_path() != t.root / "vram-graph-late" &&
+                path.parent_path() != t.root / "vram-graph-never")
+            throw std::runtime_error("measuring histogram not isolated: " + path.string());
     }
 }
 
