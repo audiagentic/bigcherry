@@ -85,6 +85,28 @@ class SemanticProjectionTests(unittest.TestCase):
             lambda snap: snap["manifest"]["spec"]["plan"]["resource_inputs"].__setitem__(
                 "checkpoint_bytes", snap["manifest"]["spec"]["plan"]["resource_inputs"]["checkpoint_bytes"] + 1))
 
+    def test_live_vram_figures_and_owner_nonce_are_observations(self) -> None:
+        # S15 helper pair 1 (hardware): greedy output and every setting agreed; the plan's live-measured
+        # VRAM figures, resident_other_bytes and the native owner's per-launch heat nonce differed.
+        for snap, shift in ((self.a, 0), (self.b, 4096)):
+            plan = snap["manifest"]["spec"]["plan"]
+            vram = plan.setdefault("engine_memory", {}).setdefault("expected", {}).setdefault("vram", {})
+            for key in ("claimable", "elastic", "experts"):
+                vram[key] = 1000 + shift
+            vram["cards"] = [{"bdf": "0000:03:00.0", "free": 500 + shift}]
+            plan.setdefault("resource_inputs", {})["resident_other_bytes"] = 7 + shift
+        engine = next(r for r in self.b["processes"]["roles"] if r["role"] == "engine")
+        engine["argv"] += ["--bc-heat-launch-nonce", "e501fbdc43e10838d4da6f11c811a2ef"]
+        report = compare(self.a, self.b, verify_bytes=False)
+        self.assertTrue(report["equal"], report)
+        # The nonce is dropped only as a pair: a dangling flag is refused, a repeated one too.
+        engine["argv"] += ["--bc-heat-launch-nonce"]
+        with self.assertRaises(ProjectionError):
+            projection(self.b, verify_bytes=False)
+        # A real engine argument difference still fails.
+        engine["argv"] = engine["argv"][:-3] + ["--context", "1"]
+        self.assertFalse(compare(self.a, self.b, verify_bytes=False)["equal"])
+
     def test_pinned_manifest_descriptor_snapshot_is_verified_at_capture(self) -> None:
         # A stored-manifest replay gives children `--manifest /proc/self/fd/N`: the path only
         # exists inside the child, so the capture verifies the bytes live and records that.
