@@ -1,0 +1,19 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_024938_documented-targeted-ways-to-re_9465",
+  "files": [
+    "docs/reviews/astra-performance-2026-11-18/README.md",
+    "docs/reviews/astra-performance-2026-11-18/RUNTIME.md",
+    "docs/reviews/astra-performance-2026-11-18/DEPLOYMENT.md",
+    "docs/reviews/astra-performance-2026-11-18/TOOLING.md",
+    "docs/reviews/astra-performance-2026-11-18/CONTROL-PLANE.md"
+  ],
+  "plan-item-ids": [
+    "RSC12",
+    "BU02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Record a Radiance-only Astra 6.2 source review of runtime work, serving/deployment, and Radiance tooling. Prioritize stable replay scope, launch-scoped artifact identity, consumer-only MoE dispatch, and the existing build parallelism policy. Register findings with current owners and define focused proof for each candidate.",
+  "timestamp-utc": "2026-11-18T02:49:38.863033Z",
+  "user-summary-candidate": "Documented targeted ways to reduce Radiance hot-path, startup and build work and simplify configuration. Runtime implementation remains pending."
+}
