@@ -57,54 +57,9 @@ older tag family, and extra repository paths owned by the engine). The package p
 
 ## Installing a release
 
-`release-install <tag|latest>` (Radiance) verifies and unpacks the
-engine alongside a clean detached source worktree at its tag; see the
-[Radiance runbook](../engines/radiance/RUNBOOK.md). **RSP01 phase 1** changes
-the bundle payload and strengthens installed-tree integrity checks. It does
-not change the `release-install` interface or the tagged-worktree installation
-architecture. The engine bundle now contains the three required launch binaries:
-`bin/radiance`, `radiance_home/bin/bc-serve`, and
-`radiance_home/helpers/r3_moe_worker`, along with build metadata and
-the runtime plugins/catalogs. The existing lab launcher can again run
-this installed engine; its required build-side binaries are present.
+Radiance releases now use a single Python-free **engine-runtime** asset and native `bc-release install/verify/status/rollback`. The platform CLI does **not** offer the retired `release-install` command and does not create detached source worktrees for deployment. Native `bc-serve` in the verified current prefix rechecks the tag-bound installation before starting; no source-checkout launcher or Python runtime is required.
 
-The archive alone is **not** a self-contained launch environment. The
-tagged worktree supplies `tools/lab/radiance/launch-flashnext-best.sh`,
-its shell libraries, Python `bigcherry` layout/resource commands, and
-layouts/configuration. A compatible ROCm SDK, model, hardware and
-layout-specific inputs (for example helper-route heat) are also required.
-**RSP01 phase 2:** CI now packages and gates a **single Python-free engine asset**
-with the readable RSC12 configs and native `bc-release` installer. The separate
-`bc-platform` release remains for development/build/release tooling, not
-a runtime companion or compatibility pair. Native deployment and verification
-work outside the source checkout; autonomous production start through
-`bc-serve serve CONFIG` still awaits RSC02 step 6 and RSC04 acceptance.
-The legacy `release-install` command remains platform-only until its retirement.
-
-- A `runtime_assets[<tag>]` entry in a pin record committed at the tag is the source of truth and takes precedence
-  (receipt `source: "record"`).
-- A tag with no entry (a release made by CI) installs from its release's own `bigcherryrad-<plan>.tar.gz`, `.sha256` and
-  `bigcherryrad-<plan>.receipt.json` (receipt `source: "ci"`); a receipt or `bundle.json` whose `product` is not
-  `bigcherryrad` is refused before anything else is checked. The receipt is the asset entry plus `release_tag`,
-  `runtime_key` and an optional `reused_from`. It installs only when the archive matches the `.sha256` asset and the
-  receipt; the receipt's `release_tag` is the tag; `runtime_key`'s `engine_tree`/`config_tree` equal the tag's trees
-  (git objects at the tag) and the bundle's; every extracted file matches the archive's `bundle.json`; and
-  `rocm_version` equals the host SDK. `bundle.json` may name another tag only when `reused_from` names that tag and
-  its trees equal this tag's. Any failure refuses the install.
-- `latest` is the numerically newest local `bc-radiance-*` tag with a record entry or a release carrying exactly one
-  archive with its `.sha256` and receipt. A bundle that then fails verification refuses; it does not fall back to an
-  older tag.
-
-### RSP01 phase 2: single Python-free engine release (implementation in progress)
-
-See [the RSP01 plan](../../planning/active/build-release-split/RSP01.md#phase-2-single-python-free-engine-release-implementation-in-progress)
-for the contract, RSC02/RSC12/RSC04 dependencies and refusal matrix.
-The **native `bc-release`** install/verify/status/rollback flow is implemented
-and tested without a repository checkout, Python, shell or GPU. This is the
-new-format installation path for one exact selected tag. The pre-existing
-Python `release-install <tag|latest>` still creates a detached source worktree
-and its shell launch path remains **development-only**; it is not part of the
-new engine asset and is pending deletion in the RSC02 step-6 cutover.
+Obtain an exact release tag's `bigcherryrad-PLAN.tar.gz`, `.sha256` and `.receipt.json` from the same trusted publishing channel. The receipt's tag and cryptographic binding must be verified, not inferred from a mutable `latest` pointer.
 
 **Native install and CI release workflow (RSP01 phase-2 slices):**
 `radiance_home/bin/bc-release` is an independently linked C++20 release
@@ -184,20 +139,17 @@ source, not from mutable build/site directories. A pack/restore gate rejects
 missing or unreviewed configs, script files, Python caches, Python/shell
 shebangs and interpreter references in human-readable runtime metadata.
 The extracted prefix has `configs/` without a source checkout, platform
-package or launcher. This is an **asset invariant**, not a claim that the
-legacy Python `release-install` has been retired or that shipped native
-start/rollback acceptance is complete. An archive from an older tag without
+package or launcher. This is an **asset invariant**; hardware dense/helper acceptance is still separate from offline installation verification. An archive from an older tag without
 these files is not a valid new phase-2 engine asset.
 
 The scoped release asset contains only engine **binaries and data**: `bin/radiance`, matching engine-built `radiance_home/bin/bc-serve`, MoE helper, kernel/architecture/quantizer plugins and catalogs, required runtime libraries and metadata, plus `configs/flashnext.toml` and `configs/qwen27b.toml` at the archive root (copied from the tagged `engines/radiance/configs/` source) and their tested data dependencies. `engines/radiance/archs.toml` is an **engine build input compiled into `bc-serve`** (`components/serving/CMakeLists.txt`); the current `engines/radiance/layouts/*.toml` become RSC12 configs in the bundle, not a platform-supplied layout overlay. Exclude Python, the Python supervisor, shell launcher, build/patch/campaign tools, `rad-*` diagnostics, `r4d_selftest`, tests and mutable/private host files. The independent `bc-platform-*` release is never selected or installed to run this asset.
 
-Native `bc-serve start CONFIG` / `serve CONFIG` / `stop` / `status` and `start --manifest FILE` (RSC02 and RSC12) must own config resolution, the memory plan, ordered helpers, host checks, power/gfxoff, calibration and heat placement with no fallback to Python. The native session owner, helpers and guards have landed through RSC02 step 5, but final step-6 native-mode parity and RSC04 hardware acceptance are not complete; `tools/lab/radiance/launch-flashnext-best.sh` and the Python `bigcherry` start commands remain **repository-only** until callers are retired. Host ROCm SDK, hardware, models, site configuration and selected heat/policy/calibration inputs remain external.
+Native `bc-serve start CONFIG` / `serve CONFIG` / `stop` / `status` and `start --manifest FILE` (RSC02 and RSC12) must own config resolution, the memory plan, ordered helpers, host checks, power/gfxoff, calibration and heat placement with no fallback to Python. The native session owner, helpers and guards have landed through RSC02 step 5, but final step-6 native-mode parity and RSC04 hardware acceptance are not complete; the obsolete shell/Python start commands have been removed from the development tree. Host ROCm SDK, hardware, models, site configuration and selected heat/policy/calibration inputs remain external.
 
 Rollback retains the **current and previous** verified engine release, with the previous reverified on rollback. **Existing installs are never converted** or their v1 receipts rewritten; a fresh reinstall from a tag replaces other older installs under the two-release retention policy. The one previously published unscoped `bc-radiance-1170.0.0` archive keeps exactly its phase-1 SHA-pinned `PUBLISHED_LEGACY_ASSETS` exception, not eligibility for the new standalone format. Unsafe or partial upgrades never displace the active verified release. The native installer, current/previous retention and atomic rollback are
 implemented. Production `bc-serve serve CONFIG` from a newly installed tag
 still awaits RSC02 step-6 helper/health parity and the leased hardware gate.
-Deleting the legacy Python installer and launcher is owned by that cutover;
-neither is bundled with the engine.
+The legacy Python installer and shell launcher have been deleted from the source-deletion branch; neither is bundled with the engine. Do not merge before the S15 hardware gate.
 
 
 ## Bump gates per engine
@@ -260,12 +212,9 @@ archive, its `.sha256` and its receipt are attached only after the mandatory
 Python-free, interpreter/shebang, exact-tag content and digest verification (the build starts from main's compiler cache, so only what the tag changed
 recompiles; most releases only change documentation, so most are reuses).
 
-`bigcherry --engine radiance release-install <tag|latest>` installs it: checksum, per-file digests, source trees against the
-tag, the ROCm version against the host SDK. The bundle includes `bigcherry-build-metadata-radiance.json`, which the launcher's
-SDK check and the campaign tools read. The first CI bundle (bc-radiance-1170.11.0) was installed on the lab host and brought up
-`flashnext-4gpu` (R9700 engine, two RX 7900 XTX and the RX 6900 XT tail on libr2) before the trigger was turned on.
+The native `bc-release install --tag TAG --record RECEIPT --archive ARCHIVE --root ROOT --sdk SDK` validates the selected exact tag, checks every file, SDK and installed index, and retains current/previous prefixes. The first CI bundle (`bc-radiance-1170.11.0`) was validated on a lab host; that earlier historical run is not evidence for the S16 cutover.
 
-A run that fails leaves the release without assets and the next `release-install latest` skips it. Fix the cause and run the
+A run that fails leaves the release without assets and there is no installable asset for that tag. Fix the cause and run the
 workflow again from the Actions tab with the tag (`workflow_dispatch`). To replace a bundle that was attached in error, delete its
 three assets from the release first: the workflow refuses a release that already has one. Retention (owner decision): the bundles of the newest 10
 distinct runtimes are kept (a release that reuses a bundle counts with the release it reuses), the newest radiance release's
