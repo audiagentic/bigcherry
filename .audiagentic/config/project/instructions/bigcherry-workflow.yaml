@@ -1,0 +1,24 @@
+id: bigcherry-workflow
+title: BigCherry workflow
+preferred-targets:
+  - instruction
+content:
+  body: |
+    Read [the shared project rules](docs/reference/agents/WORKFLOW.md) before making changes.
+    This is the same project policy for Claude, Codex and other agents.
+
+    - Work in an isolated task worktree based on fresh origin/main; never edit the primary checkout.
+      Respect container resource leases. Do not stash, reset, rebase, force-push or force-remove worktrees.
+    - Use Planning MCP for plan/review lifecycle and Ledger MCP for substantive changes.
+      Pass the task worktree explicitly; commit generated plan and event files with their work.
+      If tools are unavailable, report the missing connection; do not edit authoritative records by hand.
+    - Keep project-local builds, caches and task worktrees under the configured work root.
+      Preserve referenced evidence, installed-kernel build artifacts and other actors' work during cleanup.
+    - Read docs/reference/tooling/TOOLING.md before adding or moving tooling or lab code.
+      Migrate internal callers together; do not introduce new legacy fallbacks. Retained compatibility
+      entrypoints follow the tooling disposition and retirement gates, not blanket deletion.
+    - Validate the actual change, open a PR, wait for required checks and merge confirmation,
+      then clean only this task's merged worktree and scratch. Report what was observed.
+
+    These files are generated. Edit this project instruction source or the owning AUDiaGentic
+    component, then regenerate both AGENTS.md and CLAUDE.md; do not hand-edit managed blocks.

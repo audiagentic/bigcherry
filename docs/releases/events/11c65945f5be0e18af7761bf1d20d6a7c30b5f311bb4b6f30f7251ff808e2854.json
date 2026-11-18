@@ -1,0 +1,16 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_011353_unified-claude-and-codex-proje_2910",
+  "files": [
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".gitignore",
+    ".audiagentic/config/project/instructions/bigcherry-workflow.yaml",
+    "docs/reference/agents/WORKFLOW.md",
+    "docs/guides/WORKTREES.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Replace divergent project-owned agent rules with one tracked AUDiaGentic instruction contribution; regenerate identical Codex/Claude entry files through installed surface renderer. Consolidate workflow documentation, reconcile internal migration with governed compatibility retirement, retain Planning/Ledger requirements and kernel artifact retention. Validate regeneration idempotence, provider byte parity, local links and ignored runtime exclusion. Host-local workspace bootstrap installed separately.",
+  "timestamp-utc": "2026-11-18T01:13:53.812694Z",
+  "user-summary-candidate": "Unified Claude and Codex project instructions and added workspace rule discovery."
+}
