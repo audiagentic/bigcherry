@@ -1,6 +1,6 @@
 ---
 id: RUM04
-order: 4
+order: 3
 plan: patching-radiance-upstream
 state: pending
 created-at: '2026-11-18T01:28:13.721371+00:00'
@@ -11,59 +11,40 @@ priority: P0
 work: L
 ---
 
-# Reuse native fleet YAML and compile typed BigCherry intent into an immutable runtime bundle
+# Use original native YAML and remove duplicated engine configuration contracts
 
 ## Description
 
-Implement native settings through upstream YAML validation with closed top-level x-bigcherry intent. Keep generated per-model contracts, digest/provenance and live admission. Migrate current configuration callers together; coordinate RSC12 rather than create a competing resolver.
+Replace the local native-setting mirror and argv bridge with upstream YAML/Config behavior. Bind immutable original YAML to the existing measured BigCherry contract, retaining only helper/local/derived guarantees that upstream does not supply.
 
 ## Steps
 
-- Inventory current TOML/native-setting duplication in config_loader.{h,cpp}, serving.cpp, manifest_writer.cpp, session.cpp and rad0009. Use RSC12 as current input owner; implement target YAML migration here without creating another resolver.
-- Factor upstream fleet/config.cpp parse ownership just enough to let native Reader and BigCherry extension decoder inspect the same resolved location-bearing ryml tree. Never return borrowed nodes after the parser/tree is destroyed.
-- Decode a closed versioned top-level x-bigcherry object keyed by native model ID. Native options are read by upstream ConfigFlag/config_parse; extension intent contains only helper/layout/power/calibration policy references and necessary role overrides.
-- Compile effective native Config and extension intent into one normalized per-model projection, then feed existing v2/S8/S10 measured resolution/admission. Keep generated runtime JSON immutable; no independently authored YAML/JSON policy copies.
-- Replace bc_serving_engine_argv and g_emitted startup relabeling with an admitted Config/FleetConfig adapter. Update session launch, native metadata, smoke/fake-engine fixtures and all internal config callers together.
-- Bind native semantic projection plus extension/owner generation into stored-plan key and managed reload identity. Raw file paths, comments and key order are provenance, not execution equality.
-- For first cutover permit one remote-MoE engine. Make stock binary capability/refusal and extension-required checks happen before helpers allocate. Port stored-manifest exact replay and measuring-versus-serving behavior without quietly reverting to mutable authored YAML.
-- Remove obsolete native-option alias tables, --set/argv conversions and replaced TOML/layout entry paths once every caller and test is migrated. Keep only an explicit offline conversion tool if a named external need is approved.
+- Classify contract radiance_option bindings and actual readers; separate native sampling/chat/limits from local-patched flags and resource-derived values.
+- Use upstream Reader::build_model/config_parse to obtain native Config and provenance from the original admitted YAML bytes. Use existing BC profile selection first; add only a narrow x-bigcherry selector if needed, not a new schema for native settings.
+- Bind exact YAML bytes/digest and engine/build identity to the existing measured contract; never reopen a mutable authored path during exact replay.
+- Migrate native consumers in main.cpp/session.cpp and model/home reads in v2/p1_producer.cpp to native Config/build identity. Remove the full local Resolved::typed Engine mirror after those production callers migrate.
+- Remove native-only engine_of/leaf_of_key/engine_option_fields mappings and corresponding contract fields through the existing registry/code generator. Preserve local/derived fields until their consumers have equivalent typed inputs.
+- Delete bc_serving_engine_argv, bc_serving_mark_given, flag_text and g_store/g_ptrs/g_emitted/g_label after daemon, measuring, stored-replay and offline callers use the native path.
+- Preserve helper inheritance and exact rank order separately from native defaults/YAML anchors. Preserve fresh resource/power admission on every start.
+- For the initial managed path refuse unqualified authored-file hot reload; drain and restart from a newly admitted immutable snapshot using the existing supervisor.
 
 ## Detailed Solution & Technical Design
 
-Upstream already provides fleet::parse(text,origin,out), validates duplicate/root/model-level keys, resolves anchors/merge keys and feeds native keys into config_parse. x- keys are ignored; arbitrary model extension keys are not accepted. Adding x-bigcherry text alone executes nothing.
+Native defaults, validation and YAML provenance already exist upstream. Do not duplicate them in a normalized projection, a generated YAML writer, a serialized FleetConfig or another binding table. Reparse the same immutable bytes in each actual consumer through fleet::parse; there is no need to expose private ryml tree ownership to BigCherry.
 
-Use a minimal YAML document owner whose lifetime encloses both Reader::run and extension decoding; expose one shared tree view rather than a generic parser plugin system. Choose signatures in RUM01, then migrate parse/load call sites together. Reuse upstream defaults/alias behavior and source locations. Limit supported merge/anchor semantics to what the native parser actually resolves and validate extension fields after resolution.
+Remove only proven native duplication. The current generated contract also describes derived engine memory, patched per-rank/plugin settings, helper execution, owner maps, power and provenance; those remain necessary. Remove fields and every internal reader together with an explicit contract/fingerprint migration, never a compatibility fallback.
 
-Current v2::read_manifest already performs identity -> digest -> structural decode -> provenance -> semantics and distinguishes PlanUse::measuring/serving. Keep that path for helper/admission data; do not drop it in favor of untyped YAML. S8/S10 continue owning resource arithmetic and power qualification. Do not invent a second JSON parser in this slice. Independently pinned nlohmann from RUM03 keeps this migration small.
+stored_manifest_cache already has one writer/replay projection; measured plan_cache has different exclusions. Extend existing identity inputs with original YAML bytes/hash and build identity rather than unifying these caches. Conservative formatting-only invalidation is simpler and safe for this bump. Secrets remain provider/environment references; do not persist resolved api-key values as YAML snapshots.
 
-Bundle design starts small: immutable native normalized projection plus per-model strict contract, bound in one index/receipt. Leaf artifacts do not hash the index, avoiding circular digests. Existing plan_cache and stored_manifest_cache should own cache/replay; extend their key_inputs once rather than add a parallel bundle cache. Runtime instance ID and live room/power readings are not static plan identity.
-
-Upstream Fleet::reload compares entry.args, so extension changes would be missed unless explicitly incorporated. For the first single-model managed deployment, reject direct authored-file reload that bypasses resolution/admission; use existing supervisor drain-and-restart of a newly admitted snapshot rather than implementing full transactional fleet reload now. RUM10 can later integrate concurrent fleet reload.
+The measured runtime contract may persist the YAML bytes or bind an immutable recorded snapshot using its existing storage mechanism; choose the smaller existing mechanism. Do not add an independently managed bundle index or artifact service.
 
 ## Code Samples & Guidance
 
-Proposed parse-once orchestration, not current upstream API:
-```cpp
-auto doc = parse_yaml_document(bytes, origin); // owns parser, tree and locations
-FleetConfig native = read_native_fleet(doc);  // same upstream Reader validation
-BcIntent intent = read_bigcherry_intent(doc);  // closed x-bigcherry schema
-ResolvedStart start = resolve_existing_plan(native, intent, measured_inputs);
-validate_runtime_bundle(start);              // existing strict contract + live admission
-```
+Deletion candidates after caller migration: rad0009 bc_serving_engine_argv, bc_serving_mark_given, flag_text, g_store/g_ptrs/g_emitted/g_label; native-only branches of manifest_writer::engine_of/leaf_of_key and serving::engine_option_fields; full Resolved::typed Engine mirror when model/home production reads move to native Config/build identity.
 
-Native/extension mapping rule:
-```text
-models.NAME.tp / kv-cache-dtype / max-model-len -> upstream native ownership
-x-bigcherry.models.NAME.helper-profile/layout -> BigCherry intent only
-plan bytes / owner maps / measured memory -> generated, never authored
-```
-All names above are design sketches; implement the smallest typed adapter through actual current libraries.
+Keep: strict digest/identity, owner-map verification, measured host/VRAM/pin/power admission and helper settings.
 
-### Deep scan implementation refinement
-
-Correct earlier broad consolidation premise: rad0009 already iterates generated v2::kFields; reuse serving-v2.toml/contract/generate.cpp metadata rather than invent a second mapping registry. stored_manifest_cache.cpp already shares writer/replay static projection. Preserve distinct plan_cache.cpp::plan_key_inputs measured-memory and static-resolution identities; share typed effective inputs, not one blanket digest. Remove obsolete g_emitted/argv adapter only after all callers migrate.
-
-Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+Test one native YAML option's value/provenance against upstream, exact snapshot replay, changed-build invalidation, fresh-live-room refusal and offline cfg.devices mapping. These prove the replacement without generating a second Config schema.
 
 ## Files
 
@@ -81,11 +62,11 @@ Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-1
 
 ## Validation
 
-Use existing typed-settings, stored-manifest and session fixtures with a small case set: native-only parity; extension decode plus exact model reference; duplicate/unknown/misplaced key; digest/build/topology mismatch; fresh live-room refusal on cached start; helper/engine same generation; managed reload refusal or drain/re-admit. Parameterize close variants instead of writing parallel test engines. One one-model CPU/fake launch is enough before RUM09 hardware canary.
+Reuse existing session, stored-manifest and typed-setting fixtures. One native option absent from the BC registry must pass through the actual named launcher; wrong-level native key fails. One retained helper setting binds correctly. Normal/measure/KL/stored starts consume identical admitted bytes despite author-file change, or refuse changed digest before child/power mutation. Check stale build/topology and fresh-room refusal; managed reload refuses. One fake launch before the RUM09 canary.
 
 ## Effort & Risk
 
-L: duplicated setting authority, dangling YAML node views and stale cached/reloaded plans are the main risks. One parser lifetime, one semantic projection and existing strict admission reduce both code and test scope.
+L: duplicate authority and mutable config inputs can invalidate admission. Reuse native parsing on identical immutable bytes with matching build/default/environment identity; retain existing measured contract and fresh admission.
 
 ## Standards
 
@@ -93,13 +74,11 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-One authored YAML file owns native and typed extension intent without duplicated engine options. Both decode paths share resolved tree lifetime. Engine/helpers consume the admitted snapshot and exact replay remains strict. No token-path config parsing; no legacy argv bridge remains reachable after target cutover.
+Native settings have one upstream parser/default/provenance authority and no duplicate BigCherry mirror. Exact replay uses admitted immutable bytes with build identity; all helper/resource/power guarantees remain. No new normalized writer, serializer, generic registry or bundle layer is required.
 
 ## Notes
 
-Imported stable roadmap identity from the reviewed design. Prerequisites: RUM01, RUM02, RUM03. Review: docs/reviews/radiance-upstream-2026-11-18/README.md; proposal: MANIFEST-AND-EXTENSIONS.md. This initial item is the first-pass execution skeleton; detailed code guidance follows after the plan merge.
-
-Prerequisites RUM01/RUM02/RUM03. Coordinate RSC12 current-config ownership and RSC07/RSC11 measured-plan semantics; do not rewrite their current-pin implementation history. Initial cutover does not implement arbitrary multi-model helper reload.
+Prerequisites RUM01/RUM03; this slice precedes RUM02. Coordinate RSC12 authoring and RSC07/RSC11 measured-plan ownership. ASTRA-CONSOLIDATION.md supersedes earlier normalized bundle and parser-tree proposals. Keep current-pin history; managed single-model reload is refused at the common operation and requires reprepare/restart.
 
 ## Change Log
 
@@ -107,3 +86,7 @@ Prerequisites RUM01/RUM02/RUM03. Coordinate RSC12 current-config ownership and R
 - 2026-11-18T01:37:35.422476+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:04.055379+00:00 (updated-by): Updated: section:effort_risk
 - 2026-11-18T01:56:44.422220+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:16:28.315942+00:00 (updated-by): Updated: section:title, order=3, section:description, section:steps, section:detailed_solution, section:code_samples, section:acceptance_criteria, section:notes
+- 2026-11-18T02:22:48.978686+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:25:52.100615+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:28:11.086931+00:00 (updated-by): Updated: section:validation, section:effort_risk, section:notes

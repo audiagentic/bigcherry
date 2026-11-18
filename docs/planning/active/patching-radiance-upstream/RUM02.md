@@ -1,6 +1,6 @@
 ---
 id: RUM02
-order: 2
+order: 4
 plan: patching-radiance-upstream
 state: pending
 created-at: '2026-11-18T01:28:00.655993+00:00'
@@ -19,41 +19,30 @@ Move large source-creation literals and duplicated policy from patch.py into ord
 
 ## Steps
 
-- Use RSC13's callable inventory to enumerate source-creation blocks in rad0002, rad0009 and rad0011; record original symbols, owning components and upstream call sites before editing.
-- Extract ordinary CPU implementation into owned .cpp/.h files under existing serving/moe-remote components; keep architecture template adapters close to their actual ABI needs rather than introducing a broad extension framework.
-- Link owned files through one declared CMake target/source list. Include source/headers in engine build identity and release SDK inputs; do not copy them into upstream or generated build trees without hashing.
-- Retain only includes, target linkage and concrete declare/route/combine/lifecycle call sites in patch.py. Remove corresponding create=True implementation payloads in the same slice.
-- Keep the externally loaded plugin C ABI explicit and versioned. Internal linked engine glue uses direct typed calls and bound references; no virtual event bus or name-based registry in token execution.
-- Submit extraction separately where baseline compilation is feasible, then reanchor the small hooks during the target port. If baseline and target must change together, document the unavoidable coupling.
+- Complete RUM04's native-boundary decision and removal first; do not extract rad0009/rad0011 bodies whose current purpose is obsolete.
+- Build the keep/delete map from actual callers and RSC13 inventory: keep remote execution/admission, measured memory/plan checking, exact rank constraints, shared group adapter and qualified diagnostics.
+- Move only surviving CPU implementation and tests from raw patch strings into existing serving/moe-remote owners and declared CMake targets.
+- Keep necessary architecture template adapters as small owned headers with typed operand/handle views; preserve RAD_OP dependency declarations and fused route/combine semantics.
+- Reduce patch.py to concrete linkage/include/call-site changes. Remove the old created payload in the same change, and hash/link all owned source inputs.
+- Separate moved lines from real deletion and verify a no-behavior-change slice only where extraction is still warranted.
 
 ## Detailed Solution & Technical Design
 
-Current rad0002 embeds abi/bc_moe_remote.h, core/place/bc_moe_remote.cpp and architecture adapters as large Python raw strings; rad0009 embeds the startup bridge and emitted-option globals. Move implementation bodies, not merely the strings into another file that still gets copied into upstream. Serving already has bc_serving_v2.cmake as one source-list integration point; extend that pattern only for needed owned sources.
+Extraction is not the first objective: preserve fewer concepts. rad0009 startup translation should mostly disappear through upstream YAML; measuring/expected-plan hooks from rad0011 may survive. Classify first, delete native duplication second, extract actual BigCherry behavior third.
 
-Suggested ownership: serving owns config/plan admission; moe-remote owns session/ticket/owner-map adapter; existing libr3/libr4d collective code owns backend execution; upstream keeps model-building and lifecycle calls. Do not add a new top-level 'extension service' component.
+Retain ordinary direct typed calls and the existing extern-C plugin contract where needed. Do not add an extension event bus, service locator, callback factory or generic lifecycle manager. The first supported case is one engine and disjoint helpers, so full multi-engine helper ownership is not a prerequisite.
 
-The MoE after_route adapter currently depends on model templates, RadOperand slicing and declared operation handles. Keep a narrow typed adapter that binds these handles during declare; do not serialize an upstream model struct or pass a map of arbitrary pointers. Preserve rad_op_reads/writes declarations, fused gather semantics and zero-work policy branches.
-
-One direct call at a lifecycle/step boundary is acceptable. Resolve policy, layout and ownership once; do not replace compile-time kernel specialization with per-element callbacks. A smaller patch diff is not by itself a speedup; count removed duplicated policy/map work and measure only if execution changes.
+Source movement improves patch review but does not shrink compiled code. Net reduction comes from removed startup bridge/projections, proven upstream replay/governor reuse and redundant internal callers, not reorganizing the same text.
 
 ## Code Samples & Guidance
 
-Proposed linked ownership (illustrative names, not existing APIs):
-```cpp
-// Construct once for this admitted engine generation.
-bc::RemoteExecutionState remote(admitted_contract, placement_view);
-// Bind operation handles during architecture declare.
-bc::RemoteOps ops = bc::declare_remote_ops(builder, geometry, remote);
-// Concrete upstream call site; no parsing or profile lookup here.
-bc::after_route(ctx, ops, bound_step, routed_views);
+Sequence:
+```text
+native ownership classification -> remove obsolete bridges/mirrors
+-> enumerate actual surviving callers -> extract surviving implementation
+-> minimal target attachment sites -> focused boundary proof
 ```
-Keep existing versioned extern-C plugin boundary where shared objects call across it. Do not add a new generic callback table for linked code.
-
-### Deep scan implementation refinement
-
-Extract rad0002's five created payloads, rad0009's header/source, rad0011's four memory/check files, rad0016/rad0017 implementations/tests and diagnostic sidecars into their actual owners. Track moved LOC separately from deleted LOC. Use RSC13 callable inventory before deleting each old body; preserve templated RAD_ISSUE operand/read-write semantics rather than replacing them with a generic callback bus.
-
-Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+See Astra removal map for exact surviving versus removable source clusters.
 
 ## Files
 
@@ -78,13 +67,11 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-Large implementation payloads no longer live in changed patch.py packages; every owned file participates in build identity and packaging. Hook signatures are typed and lifecycle-owned. Extraction preserves existing behavior and removes duplicate implementations rather than adding alternate paths.
+Surviving large implementations in changed packages move only where doing so reduces repeated upstream attachments or build drift. Obsolete implementations are deleted first. Owned files participate in build identity/packaging; typed hooks preserve behavior. Moving every payload or relocating on the old pin is not an initial-start gate.
 
 ## Notes
 
-Imported stable roadmap identity from the reviewed design. Prerequisites: RUM01. Review: docs/reviews/radiance-upstream-2026-11-18/README.md; proposal: MANIFEST-AND-EXTENSIONS.md. This initial item is the first-pass execution skeleton; detailed code guidance follows after the plan merge.
-
-Prerequisite RUM01. Coordinate RCS13 inventory and RCS01/RCS08 boundaries. Cleanup opportunities: duplicated global policy getters, repeated row-layout switches and repeated include paths only when their callers are migrated in this slice.
+Prerequisites RUM01/RUM03/RUM04. The Astra source review ASTRA-CONSOLIDATION.md supersedes extraction-first ordering. Coordinate RCS13 inventory and RCS01/RCS08 component ownership. Remove obsolete native bridges/replay/policy before moving surviving code; movement is not net deletion.
 
 ## Change Log
 
@@ -92,3 +79,8 @@ Prerequisite RUM01. Coordinate RCS13 inventory and RCS01/RCS08 boundaries. Clean
 - 2026-11-18T01:37:27.808050+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:42:49.165174+00:00 (updated-by): Updated: section:effort_risk
 - 2026-11-18T01:56:30.966408+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:16:37.229196+00:00 (updated-by): Updated: order=4, section:steps, section:detailed_solution, section:code_samples, section:notes
+- 2026-11-18T02:22:18.965936+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:25:00.590374+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:25:21.136200+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:28:04.354691+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

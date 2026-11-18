@@ -1,5 +1,7 @@
 # Proposal: reuse upstream YAML, resolve once, keep extensions small
 
+> **Astra refinement:** [ASTRA-CONSOLIDATION.md](ASTRA-CONSOLIDATION.md) and the current Planning items govern execution. They supersede earlier proposals for a normalized YAML writer, bundle index, parser-tree extension API, full native option mirror and initial fleet-broker reservations. Keep original YAML bytes bound to existing admission, delete native-only duplication before extracting survivors, and use disjoint helper cards initially. Earlier source inventories remain evidence, not implementation acceptance.
+
 Status: design proposal; no runtime or contract implementation changed.
 This supplements the [migration review](README.md). It incorporates the request
 to refactor placement and extension code rather than port large injected blocks.

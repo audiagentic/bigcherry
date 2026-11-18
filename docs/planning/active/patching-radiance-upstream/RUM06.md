@@ -93,9 +93,14 @@ Imported stable roadmap identity from the reviewed design. Prerequisites: RUM02,
 
 Prerequisites RUM02/RUM03/RUM05. Coordinate RCS14 topology without absorbing unrelated backend/kernel redesign. Reuse the current protocol epoch rather than introducing another generation format.
 
+Astra source review ASTRA-CONSOLIDATION.md: initial scope is the admitted single-engine generation, not a general multi-engine factory. Preserve independent helper model-byte ownership verification. Reuse existing parent tickets and mailbox epochs. One existing partial-start/drain fixture plus route/combine activation in RUM09 is sufficient unless a real failure requires expansion.
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
 - 2026-11-18T01:39:45.710628+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:17.981906+00:00 (updated-by): Updated: section:effort_risk
 - 2026-11-18T01:56:58.746185+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:19:52.290526+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:23:21.830497+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:26:23.178450+00:00 (updated-by): Updated: section:notes
