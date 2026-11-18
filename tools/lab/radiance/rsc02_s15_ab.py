@@ -245,7 +245,8 @@ def arm(cfg: dict) -> int:
                 argv.remove("--no-gpu-power")
                 argv.append("--gpu-power")
             started = command(argv, timeout=840, cwd=REPO,
-                              env={**os.environ, "BC_WORK_ROOT": str(work_root)})
+                              env={**os.environ, "BC_WORK_ROOT": str(work_root),
+                                   "BC_MODEL_ROOT": cfg["model_root"]})
             launch_log.write_text(started.stdout + "\n" + started.stderr)
             if started.returncode:
                 raise Refusal(f"Bash start failed: {started.returncode}: {started.stderr[-800:]}")
@@ -270,7 +271,9 @@ def arm(cfg: dict) -> int:
                 try:
                     pids, status = observed_native(bc_serve, run_dir)
                     break
-                except (Refusal, ValueError):
+                except (Refusal, ValueError, subprocess.TimeoutExpired):
+                    # The owner answers status only between its start-up phases: a
+                    # measuring start can run for minutes, so a slow answer is "not yet".
                     time.sleep(2)
             else:
                 raise Refusal("native owner startup timed out before running status")
