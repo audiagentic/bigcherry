@@ -1903,6 +1903,32 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         in.options.layouts = configs.empty() || !given.options.layouts.empty() ? layout_sources(given.options)
                                                                                : std::vector<fs::path>{};
     }
+
+    if (in.calibration_run) {
+        // The Bash launcher rejected unusable A/B inputs before starting a child.
+        // The native foreground owner validates the effective prompt batches at
+        // the planner boundary, ahead of its writer, measuring and GPU children.
+        if (in.live_policy_file.empty() || in.calibration_prompts_a.empty() ||
+            in.calibration_prompts_b.empty() || in.calibration_store.empty())
+            throw PlanFailed("calibration: live policy, two prompt files and store are required");
+        const auto prompts = read_calibration_prompts(in.calibration_prompts_a, in.calibration_prompts_b);
+        if (!prompts)
+            throw PlanFailed("calibration prompts: " + prompts.error().message);
+    }
+    if (!in.experiment_file.empty()) {
+        // RSC04 minimum: observe-only lab experiment. Until RSC12 binds a
+        // full experiment input into both measured-plan and manifest keys,
+        // shaping/forcing/profile variants cannot safely reuse measurements.
+        if (in.calibration_run || !in.live_policy_file.empty())
+            throw PlanFailed("lab experiment: a calibration/live-policy run is a separate mode");
+        const Json experiment = Json::parse(read_file(in.experiment_file), nullptr, false);
+        if (!experiment.is_object() || experiment.size() != 1 || !experiment.contains("placement") ||
+            !experiment.at("placement").is_object() ||
+            experiment.at("placement").value("mode", std::string()) != "observe" ||
+            experiment.at("placement").contains("forced"))
+            throw PlanFailed(
+                "lab experiment: observe-only placement is supported until RSC12 binds experiment inputs");
+    }
     const Json facts = detect(in.options.sys_root);
     const Resolved r = resolve(in.options, facts);
     const Json& v = r.values;
@@ -1944,7 +1970,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                              " must come from this bc-serve's build");
     }
 
-    const auto cache_selection = named_cache(in, r, facts, engine, helper_binary, run_dir);
+    // RSC12 has no lab experiment static key: never replay a different experiment.
+    const auto cache_selection =
+        in.experiment_file.empty() ? named_cache(in, r, facts, engine, helper_binary, run_dir) : std::nullopt;
     if (cache_selection) {
         if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache_selection->key)) {
             EnginePlanInputs replay = in;
@@ -2003,6 +2031,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 throw PlanFailed("calibration: a lab live policy is required");
             argv.insert(argv.end(), {"--calibration-run", "--live-policy", in.live_policy_file.string()});
         }
+        if (!in.experiment_file.empty())
+            argv.insert(argv.end(), {"--experiment", in.experiment_file.string()});
         if (!in.calibration_records_file.empty())
             argv.insert(argv.end(), {"--calibration-records", in.calibration_records_file.string()});
         if (std::find(more.begin(), more.end(), "--unmeasured") == more.end())

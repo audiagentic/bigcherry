@@ -21,7 +21,7 @@ Compare local bf16_i8 with upstream I8 numerics, reuse matching kernels and keep
 
 - Make a compact comparison of upstream RAD_I8 per-token/head K/V scale/row format and local bf16_i8/bf16_fp8/b16 formats: dtype, row bytes, scale placement, quantization/rounding and supported head/GQA forms.
 - Reuse upstream implementations where the numeric/layout contract truly matches. Decide which local hybrid formats remain valuable; don't port every historical variant by default.
-- Extend one layout descriptor source aligned to upstream rad_kv_row_elems and capability probes. Derive planner allocation, stream transfer and kernel dispatch from that source.
+- Decide native equivalence before porting each format hunk. If no non-native production format survives, delete the local table and call native sizing/dispatch directly. Only for retained extra formats extend the existing rad0040 table; do not introduce a global descriptor registry.
 - Port store and attention readers together; preserve d6109d7e causal split-KV merge behavior and MTP shared KV group semantics. Update model declarations and exact row strides, not only option names.
 - Update rad0037/rad0038/rad0040/rad0041 hook definitions and the necessary rad0042 selftests. Remove duplicate switches/row-size literals for migrated formats in the same slice.
 - Migrate authored names and contract enum/probe mappings explicitly, refusing obsolete formats with a migration message. Do not keep aliases whose semantics differ invisibly.
@@ -37,21 +37,7 @@ New target model families add attention shapes, but migrating the production Fla
 
 ## Code Samples & Guidance
 
-Proposed layout descriptor checklist:
-```text
-format ID + supported shape predicate
--> dtype/row-element/scale layout
--> store op + paged/decode/prefill read ops
--> transfer stride + allocation size
--> existing quality classification
-```
-All consumers read this one typed descriptor. For target native I8, call rad_kv_row_elems and multiply by dtype storage width; for a retained hybrid supply its explicit packed-row byte contract.
-
-### Deep scan implementation refinement
-
-Extend existing rad0040 RAD_KV_LAYOUTS/rad_kvq_from_name into the target dtype contract instead of another registry. Include libr3 r3_rewrite.py as a downstream consumer. One descriptor feeds planning bytes, stream stride, store/read and row selection. Keep ISA/kernel specialization; do not reduce lines by adding per-element virtual dispatch.
-
-Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+Native format: call rad_kv_row_elems and multiply by dtype storage width. Compare exact offsets/scales/rounding and causal read/write, not just names or byte size. If all supported formats are native, delete local layout/dispatch duplication. Only retained non-native formats extend existing rad0040 RAD_KV_LAYOUTS/rad_kvq_from_name; derive their planner/transfer/store/read bytes together and include libr3 r3_rewrite.py. No new global descriptor registry or per-element virtual dispatch. Source/removal proof: ASTRA-CONSOLIDATION.md and patch-footprint.json.
 
 ## Files
 
@@ -84,9 +70,15 @@ Imported stable roadmap identity from the reviewed design. Prerequisites: RUM03,
 
 Prerequisites RUM03/RUM06. The 166 failed-edit review surface is partly cascading; don't repair anchors one by one before choosing the unified KV contract.
 
+Astra source review ASTRA-CONSOLIDATION.md: evaluate this slice early and independently where possible, before porting obsolete hunks. Same byte count does not establish equivalent offsets/scales/rounding. Integrated qualification depends on selected ABI/placement/runtime.
+
 ## Change Log
 
 - 2026-11-18T01:28:34.138312+00:00 (created-by): Created by codex
 - 2026-11-18T01:39:53.057270+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:26.892039+00:00 (updated-by): Updated: section:effort_risk
 - 2026-11-18T01:57:05.367589+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:19:59.088702+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-18T02:23:39.101657+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:26:37.220559+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:28:24.920139+00:00 (updated-by): Updated: section:code_samples

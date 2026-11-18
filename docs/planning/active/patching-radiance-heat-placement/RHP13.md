@@ -55,6 +55,8 @@ Depends on RHP11, RHP06 and RHP04 stage 3. Plan source: GPT staged plan 2026-11-
 
 Target-version coordination (RV4226, November 18): RUM05 implements this item's unified-residency goal on upstream 2.x by extending native fleet claims with helper reservations and one immutable placement view. No competing allocator or duplicate helper-byte subtraction. Reuse RHP04/RHP09 calibration; keep the initial bump's ownership policy unchanged and scope multi-model reclaim to RUM10 after RUM09. Existing item acceptance/state is unchanged.
 
+Astra RV4229 supersedes the initial migration reservation suggestion in RV4226: target single-model Fleet bypasses its broker. RUM05 preserves existing measured per-BDF admission, exact ordered child-local devices in normal/offline paths and disjoint engine/helper cards. Do not add unused Fleet::grant hooks. RHP13 dynamic tier moves retain their own scope and gates; shared fleet reservations/reclaim are optional RUM10 after a real co-residency requirement.
+
 ## Change Log
 
 - 2026-11-01T22:51:59.877467+00:00 (created-by): Created by agent
@@ -68,3 +70,5 @@ Target-version coordination (RV4226, November 18): RUM05 implements this item's 
 
 - RV4226
 - 2026-11-18T01:41:19.665983+00:00 (updated-by): Updated: section:notes
+- RV4229
+- 2026-11-18T02:21:21.425473+00:00 (updated-by): Updated: section:notes

@@ -1,6 +1,6 @@
 ---
 id: RUM03
-order: 3
+order: 2
 plan: patching-radiance-upstream
 state: pending
 created-at: '2026-11-18T01:28:07.390588+00:00'
@@ -87,9 +87,14 @@ Imported stable roadmap identity from the reviewed design. Prerequisites: RUM01.
 
 Prerequisite RUM01; can proceed alongside RUM02 after design approval. Keep dependency cleanup limited to the actual removed header and duplicated include plumbing.
 
+Astra source review ASTRA-CONSOLIDATION.md: execute after RUM01 and before native-config slice RUM04. Build only the minimum rank eligibility required by the selected lane; keep SDK/fingerprint inputs. No strict JSON-to-YAML rewrite.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
 - 2026-11-18T01:34:00.281140+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:42:56.897731+00:00 (updated-by): Updated: section:effort_risk
 - 2026-11-18T01:56:37.647939+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:19:44.169437+00:00 (updated-by): Updated: order=2, section:notes
+- 2026-11-18T02:22:32.511127+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:25:34.495094+00:00 (updated-by): Updated: section:notes

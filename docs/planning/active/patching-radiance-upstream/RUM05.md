@@ -11,53 +11,39 @@ priority: P1
 work: L
 ---
 
-# Unify placement plans and helper reservations with upstream resource accounting
+# Preserve one ownership plan and disjoint-card admission without a new fleet broker
 
 ## Description
 
-Implement the target-version portion through RHP13: one immutable owner/local-slot/encoding plan, local placement views and external helper reservations in upstream accounting. Reuse RHP04/RHP09 calibration; do not implement a second allocator or a new optimizer for the initial bump.
+Align the initial single-model migration with upstream explicit card order and existing BigCherry measured admission. Share immutable ownership views and remove repeated mapping work; defer broker/shared-card extensions.
 
 ## Steps
 
-- Use RHP13's existing unified-resource scope and RHP04/RHP09's calibrated policy as the owner. Define one typed immutable placement generation with engine ranks, expert owner/local slot/encoding and its memory terms.
-- Validate native tp/cards against exact ordered engine/helper assignments; upstream cards is an allowed fleet set, not guaranteed rank order. Resolve stable physical identities before allocation.
-- Make planner skip-owned, architecture declare, helper setup and observers read views of the same plan. Remove per-step map construction and duplicated JSON/slot-map copies only after auditing lifetimes.
-- Extend upstream fleet reservation/grant path at the smallest external-reservation seam for helper host/pinned/VRAM demand. Include queue scratch and the enlarged staging ring, and never subtract one helper allocation twice.
-- Keep actual allocation in upstream fleet/device pools. Reuse S8/S10 measured admission for the resolved ceilings; do not bolt on another allocator or a new global solver.
-- Keep initial ownership fixed through each parent step. Existing live migration may remain supported only through its proven epoch protocol; no new adaptive ownership during this bump.
-- Validate helper coverage for prefill/verify/fallback modes. If skip-owned cannot serve an enabled pass, refuse that combination before start instead of falling back to absent weights.
+- Freeze one production model with explicit engine card list and disjoint helper cards; validate tp, identities and no overlaps before starting processes.
+- Translate admitted physical BDFs through current ROCR/HIP visibility masking to the actual child-local ordinal namespace. Preserve ordering across native YAML serving and offline measuring/KL Config.
+- Reuse upstream single-model Fleet::choose_cards order; add only a bounded mixed-ISA eligibility change if Engine::usable_cards incorrectly rejects a needed production device.
+- Share admitted owner/local-slot/encoding views with planner, helper setup and runtime. Preserve the helper's independent bc::experts::plan_owners verification; recomputation there is an integrity check, not redundant policy.
+- Keep measured per-BDF host/pinned/VRAM/helper budgets and existing skip-owned checks, incorporating changed queue/staging costs.
+- Do not add Fleet::grant/LoadBroker hooks for this single-model path: use_broker is false. Leave overlapping cards, flex lending and shared reclaim to RUM10.
+- Keep current calibrated ownership policy for acceptance; later optimization remains RHP04/RHP09/RHP13.
 
 ## Detailed Solution & Technical Design
 
-Plan selection, reservation and execution are separate operations. An admitted plan chooses ownership and typed layout; the fleet allocator grants physical memory; the remote adapter executes a frozen generation. A dense owner/local-slot view indexed by layer/expert avoids repeated hash lookups but must carry exact encoding/geometry and lifetime. Reuse current owner-map digest and mailbox epoch constructs, not a second generation protocol.
+Upstream fleet.cpp use_broker() returns models_.size()>1. For one model choose_cards assigns the first tp entries of cards_, run preserves explicit list order, and load_op writes cfg.devices. Native offline main creates Engine directly and does not transfer fc.cards; carry the same validated selected vector there explicitly.
 
-Inspect upstream Fleet::grant, load_op, load_host_room and its card accounting before extending. Helper cards may be outside the engine-only native cards set, but all physical device claims must be reconciled in one ledger. Native reservations cover local experts/KV/static arena and external claims cover actual helper demand; define which bytes are shared versus exclusive and give each term one owner.
+Current session launch masks visible devices, so host GPU ordinals and engine child-local ordinals differ. Identity/admission must resolve physical cards once and construct both the mask and native local indices from the same ordered selection. Do not compare host ordinals directly to YAML child indices.
 
-The first target port should produce the same ownership as the current admitted configuration. Smarter placement later evaluates a bounded candidate set using qualified throughput/link costs and the named service objective, through RHP04/RHP09. Do not introduce a generic optimizer, automatic per-token movements or hard-coded hysteresis constants to migrate a pin.
-
-Upstream model flex may reclaim resources; external helper ownership cannot be silently reclaimed while tickets still reference it. During single-model acceptance reserve the required helper footprint or reject unsupported reclaim. Full fleet transfer/reclaim belongs in RUM10.
+No new allocator is necessary for disjoint cards: retain current per-device measured admission, native engine allocation and helper footprint checks. Full shared fleet reservations require a different integration and remain optional later work. Removing plan recomputation at worker startup would weaken independent owner-map verification; keep it.
 
 ## Code Samples & Guidance
 
-Proposed view contract (illustrative; reuse existing types where they already express it):
-```cpp
-struct ExpertPlacement {
-    uint32_t owner_role;
-    uint32_t local_slot;
-    EncodingId encoding;
-};
-struct PlacementView {
-    Generation generation;
-    std::span<const ExpertPlacement> experts;
-};
+Verified native path: Fleet::run explicit cards order -> choose_cards first tp when !use_broker -> load_op cfg.devices.
+
+Required local mapping:
+```text
+ordered admitted BDFs -> launcher visibility mask -> child-local cfg.devices
 ```
-Publish one owning plan before declaring kernels. Views stay valid until admissions stop, ranks/helper work drain, and the generation is retired. Do not borrow vectors owned by temporary YAML decode objects.
-
-### Deep scan implementation refinement
-
-Trace bc_moe_remote_skip_unit -> declared layer map -> helper ownership -> after_route/combine through one immutable owner/local-slot/encoding view. Feed helper reservations into target Fleet::grant/load_op accounting; don't duplicate allocation pools. Reproduce current ownership first; RHP04/RHP09 own future solver improvement. Plan/cache/power/receipt identities remain distinct.
-
-Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+Use the same selection for offline Engine construction. Gate wrong-order, masked namespace and helper-overlap refusals with small fixtures.
 
 ## Files
 
@@ -71,7 +57,7 @@ Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-1
 
 ## Validation
 
-Small pure fixtures: exact owner-map agreement; local/helper byte sum without double counting; infeasible budget refusal; stale generation/unsupported pass refusal; single helper reservation release after drain. RUM09 supplies the one active-layout memory/correctness canary. Do not run a layout optimizer campaign.
+Reuse small fixtures for exact ordered BDF to visible mask to child-local device binding, including a nontrivial normal/offline order; local/helper byte sums; infeasible fresh budget; independent worker owner verification; unsupported-pass refusal and existing helper reservation release after drain. RUM09 supplies active-layout memory/correctness. No new broker or optimizer campaign.
 
 ## Effort & Risk
 
@@ -83,7 +69,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-One placement generation and one physical accounting model feed all readers. Queue/staging/helper/KV costs are explicit. Initial target ownership matches the admitted control, and unsupported skip-owned/flex combinations refuse before executing.
+The admitted single-model engine/helper assignment matches exact physical identities and child-local rank order in serving and offline mode. Existing measured admission and independent ownership checks remain. No broker hook or competing allocator is added for this scope.
 
 ## Notes
 
@@ -91,9 +77,15 @@ Imported stable roadmap identity from the reviewed design. Prerequisites: RUM02,
 
 Prerequisites RUM02/RUM03/RUM04. RHP13 remains unified-allocator scope owner and RHP04/RHP09 remain optimization/calibration owners. No second allocator or new solver is part of this migration.
 
+Astra source review ASTRA-CONSOLIDATION.md supersedes the earlier mandatory Fleet::grant external-reservation proposal for the initial bump; dependencies RUM02/RUM03/RUM04. Shared-card integration is RUM10 only.
+
 ## Change Log
 
 - 2026-11-18T01:28:20.204242+00:00 (created-by): Created by codex
 - 2026-11-18T01:37:43.826131+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:10.971610+00:00 (updated-by): Updated: section:effort_risk
 - 2026-11-18T01:56:51.018833+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T02:16:44.473099+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:detailed_solution, section:code_samples, section:acceptance_criteria, section:notes
+- 2026-11-18T02:23:07.396066+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:26:08.989224+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T02:28:17.614303+00:00 (updated-by): Updated: section:validation
