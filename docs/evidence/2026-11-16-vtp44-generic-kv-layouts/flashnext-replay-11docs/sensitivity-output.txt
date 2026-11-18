@@ -1,0 +1,24 @@
+
+set3-long-00: 10832 positions
+  mbt128    first 256-token window above 0.02 starts at position None; share of KLD mass in the top 1% of positions: 0.26
+  bf16_i8   first 256-token window above 0.02 starts at position 2605; share of KLD mass in the top 1% of positions: 0.35
+  bf16_fp8  first 256-token window above 0.02 starts at position 7593; share of KLD mass in the top 1% of positions: 0.36
+  per-position KLD correlation mbt128 vs bf16_i8: 0.77
+  per-position KLD correlation bf16_i8 vs bf16_fp8: 0.84
+  per-position KLD correlation mbt128 vs bf16_fp8: 0.82
+
+set3-long-01: 14532 positions
+  mbt128    first 256-token window above 0.02 starts at position 2202; share of KLD mass in the top 1% of positions: 0.51
+  bf16_i8   first 256-token window above 0.02 starts at position 2308; share of KLD mass in the top 1% of positions: 0.55
+  bf16_fp8  first 256-token window above 0.02 starts at position 2449; share of KLD mass in the top 1% of positions: 0.56
+  per-position KLD correlation mbt128 vs bf16_i8: 0.56
+  per-position KLD correlation bf16_i8 vs bf16_fp8: 0.41
+  per-position KLD correlation mbt128 vs bf16_fp8: 0.30
+
+set3-long-02: 14527 positions
+  mbt128    first 256-token window above 0.02 starts at position 963; share of KLD mass in the top 1% of positions: 0.50
+  bf16_i8   first 256-token window above 0.02 starts at position 1000; share of KLD mass in the top 1% of positions: 0.48
+  bf16_fp8  first 256-token window above 0.02 starts at position 956; share of KLD mass in the top 1% of positions: 0.49
+  per-position KLD correlation mbt128 vs bf16_i8: 0.42
+  per-position KLD correlation bf16_i8 vs bf16_fp8: 0.42
+  per-position KLD correlation mbt128 vs bf16_fp8: 0.39

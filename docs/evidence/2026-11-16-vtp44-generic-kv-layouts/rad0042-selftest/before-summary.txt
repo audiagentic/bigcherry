@@ -1,0 +1,25 @@
+start_utc 2026-11-18T03:06:50Z selftest <dev-root>/tmp/bigcherry/rad0045/r3selftest/libr3/r3_selftest lib <work-root>/builds/2a71a0404317ae66cb97299a1cbc8939/44a32c5d01d41bb0ccd49d061e85d822/radiance_home/kernels/libr3.so
+attn_decode_gq_h256_b16f8 FAIL rc=2 0s
+attn_decode_gq_h256_b16i8 FAIL rc=2 0s
+attn_decode_gq_h256_gqa12_b16f8 FAIL rc=2 0s
+attn_decode_gq_h256_gqa12_b16i8 FAIL rc=2 0s
+attn_decode_gq_h256_gqa6_b16f8 FAIL rc=2 0s
+attn_decode_gq_h256_gqa6_b16i8 FAIL rc=2 0s
+attn_decode_h256_b16f8 FAIL rc=2 0s
+attn_decode_h256_b16i8 FAIL rc=2 0s
+attn_decode_h256_gqa12_b16f8 pass 0s
+attn_decode_h256_gqa12_b16i8 pass 0s
+attn_decode_h256_gqa6_b16f8 pass 1s
+attn_decode_h256_gqa6_b16i8 pass 0s
+attn_prefill_h256_b16f8 FAIL rc=2 1s
+attn_prefill_h256_b16i8 FAIL rc=2 0s
+attn_prefill_h256_gqa12_b16f8 FAIL rc=2 0s
+attn_prefill_h256_gqa12_b16i8 FAIL rc=2 0s
+attn_prefill_h256_gqa6_b16f8 pass 87s
+attn_prefill_h256_gqa6_b16i8 pass 59s
+bf16_i8_rows FAIL rc=1 0s
+kv_store_b16f8 pass 0s
+kv_store_b16i8 pass 0s
+qk_norm_rope_gate_kv_store_b16f8 pass 0s
+qk_norm_rope_gate_kv_store_b16i8 pass 1s
+end_utc 2026-11-18T03:09:19Z

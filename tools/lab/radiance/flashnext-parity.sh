@@ -8,11 +8,11 @@
 #   bash tools/lab/radiance/flashnext-parity.sh baseline --out DIR --name NAME [--to FILE]
 #   bash tools/lab/radiance/flashnext-parity.sh compare --out DIR --baseline FILE
 #
-# measure: N launches (default 2) of launch-flashnext-best.sh with production defaults (layout flashnext-4gpu, 262144
+# measure: N launches (default 2) of native bc-serve serve flashnext-4gpu with production defaults (layout flashnext-4gpu, 262144
 #   context, 8 sessions; the live expert-placement policy is on when $BC_WORK_ROOT/live-policy-calibration.toml exists),
-#   --record-period 1. Each launch warms up (only with the policy on: (min_samples + 1) heat windows plus a second, from the
-#   manifest the launch wrote), then measures cold prefill, decode step time at 1 and 6 streams, 8 sessions and a 256K
-#   context, stops the launcher (always, also on failure) and keeps the helper's `policy placement` line. Raw records go
+#   handoff.histogram_period_s=1 from RSC12. Each launch warms up (only with the policy on:
+#   (min_samples + 1) heat windows plus a second, from the native strict-v2 manifest), then measures cold prefill, decode step time at 1 and 6 streams, 8 sessions and a 256K
+#   context, stops the native session (always, also on failure) and keeps the helper's `policy placement` line. Raw records go
 #   to OUT/launch-<i>/, the summary to OUT/parity.json (flashnext_parity.py summarise). It uses all four cards: hold the
 #   gpu lease (agent-lease acquire gpu ... -- bash tools/lab/radiance/flashnext-parity.sh measure ...). It runs in the
 #   foreground for about 20 minutes a launch (measured 2026-11-08: ~7.5 min policy warmup, ~3.5 min cold/doc/decode/sess8,
@@ -24,9 +24,8 @@
 #   gated metric's tolerance derived from the spread the run measured; refuses a single launch.
 # compare: the table against a baseline; exit 1 on a gated regression beyond its allowance.
 set -u
-cd "$(dirname "${BASH_SOURCE[0]}")/../../.."
+cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 REPO=$(pwd)
-LAUNCHER=tools/lab/radiance/launch-flashnext-best.sh
 PARITY=tools/lab/radiance/flashnext_parity.py
 
 # The workload: this is the measurement's definition, identical before and after a bump (compare refuses a mismatch).
@@ -99,6 +98,19 @@ source tools/env/bigcherry-env.sh >/dev/null 2>&1
 RUN=$BC_WORK_ROOT/flashnext
 URL=http://127.0.0.1:$PORT
 BUILD=$(cd "$BUILD" && pwd)
+BC_SERVE="$BUILD/radiance_home/bin/bc-serve"
+[ -x "$BC_SERVE" ] || { echo "flashnext-parity: $BUILD has no native radiance_home/bin/bc-serve" >&2; exit 2; }
+[ -n "${BC_MODEL_ROOT:-}" ] || { echo "flashnext-parity: BC_MODEL_ROOT not set" >&2; exit 2; }
+NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BUILD/bin/radiance"
+             --set "engine.port=$PORT"
+             --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-performance}" --allow-power-apply)
+# The power profile is explicit so a held GPU lease can apply only qualified,
+# journalled settings; a missing lease or missing qualification fails closed.
+# Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
+[ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
+if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
+  NATIVE_ARGS+=(--calibration "$BC_WORK_ROOT/live-policy-calibration.toml")
+fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 
@@ -115,16 +127,49 @@ python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port
   --set WARMUP_SEED0=$WARMUP_SEED0 --set RECORD_PERIOD=$RECORD_PERIOD || exit
 
 LAUNCHED=0
-stop_launcher() {
+NATIVE_PID=
+stop_native() {
   [ "$LAUNCHED" = 1 ] || return 0
+  # Native stop verifies exit of each child; never kill a recorded PID.
+  "$BC_SERVE" stop --run-dir "$RUN" >> "$L/owner.log" 2>&1 ||
+    { echo "flashnext-parity: native stop failed (see $L/owner.log)" >&2; return 1; }
+  wait "$NATIVE_PID" ||
+    { echo "flashnext-parity: owner exited with error (see $L/owner.log)" >&2; return 1; }
   LAUNCHED=0
-  bash "$LAUNCHER" stop >> "$L/launcher.log" 2>&1 || echo "flashnext-parity: launcher stop failed (see $L/launcher.log)" >&2
 }
-trap 'stop_launcher' EXIT
-trap 'stop_launcher; exit 130' INT TERM HUP
-
-fail() { echo "flashnext-parity: launch $i: $*" >&2; stop_launcher; exit 1; }
-
+trap 'stop_native' EXIT
+trap 'stop_native; exit 130' INT TERM HUP
+fail() { echo "flashnext-parity: launch $i: $*" >&2; stop_native; exit 1; }
+wait_native_ready() {
+  local until=$((SECONDS + 2700))
+  while [ "$SECONDS" -lt "$until" ]; do
+    if "$BC_SERVE" status --run-dir "$RUN" --json 2>/dev/null |
+        python3 -c 'import json,sys
+try:
+    r=json.load(sys.stdin)
+    assert r.get("state")=="running"
+except (ValueError,AssertionError):
+    sys.exit(1)' 2>/dev/null; then
+      return 0
+    fi
+    kill -0 "$NATIVE_PID" 2>/dev/null || return 1
+    sleep 1
+  done
+  return 1
+}
+# Native session record owns the committed manifest and precise per-role log paths.
+session_value() {
+  python3 - "$RUN/session.json" "$1" <<'PY'
+import json,sys
+with open(sys.argv[1], encoding="utf-8") as f:
+    r=json.load(f)
+if sys.argv[2]=="manifest":
+    print(r["manifest"])
+else:
+    paths=[p["log"] for p in r["processes"] if p.get("role")==sys.argv[2]]
+    if paths: print(paths[-1])
+PY
+}
 # stream-bench NAME STREAMS PROMPT_TOKENS MAX_TOKENS REPS SEED: one record, raw JSON in $L/NAME.json, log in $L/NAME.log
 stream_bench() {
   PYTHONPATH=tools python3 -m bigcherry stream-bench --url "$URL" --streams "$2" --prompt-tokens "$3" --max-tokens "$4" \
@@ -144,15 +189,12 @@ for i in $(seq 1 "$LAUNCHES"); do
   L=$OUT/launch-$i
   mkdir -p "$L/warmup"
   echo "flashnext-parity: launch $i/$LAUNCHES -> $L" >&2
-  LAUNCHED=1   # a start that fails half way is stopped as well
-  bash "$LAUNCHER" start --build "$BUILD" --port "$PORT" --record-period "$RECORD_PERIOD" > "$L/launcher.log" 2>&1 \
-    || fail "launcher start failed (see $L/launcher.log)"
-  # the start's stamp names its logs and manifest: engine-STAMP.log, helper0-STAMP.log, manifest-STAMP-PID.json
-  ENGINE_LOG=$(sed -n 's/^ *engine .* log \(.*engine-[0-9-]*\.log\)$/\1/p' "$L/launcher.log" | tail -1)
-  [ -n "$ENGINE_LOG" ] || fail "the launcher printed no engine log path"
-  STAMP=$(basename "$ENGINE_LOG" .log); STAMP=${STAMP#engine-}
-  MANIFEST=$(ls -t "$RUN"/manifest-"$STAMP"-*.json 2>/dev/null | head -1)
-  [ -n "$MANIFEST" ] || fail "no manifest $RUN/manifest-$STAMP-*.json from this start"
+  "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" > "$L/owner.log" 2>&1 &
+  NATIVE_PID=$!
+  LAUNCHED=1
+  wait_native_ready || fail "native bc-serve refused or exited (see $L/owner.log)"
+  MANIFEST=$(session_value manifest) || fail "native session has no committed manifest"
+  [ -f "$MANIFEST" ] || fail "native session did not commit a strict-v2 manifest"
   cp "$MANIFEST" "$L/manifest.json"
   python3 "$PARITY" warmup-plan "$L/manifest.json" --out "$L/launch.json" >&2 || fail "cannot read the manifest's live policy"
   WARMUP_S=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["warmup_s"])' "$L/launch.json")
@@ -186,10 +228,12 @@ for i in $(seq 1 "$LAUNCHES"); do
     stream_bench "long-$s" 1 "$LONG_PROMPT_TOKENS" "$LONG_MAX_TOKENS" "$LONG_REPS" "$s"
   done
 
-  stop_launcher
-  cp "$ENGINE_LOG" "$L/engine.log" 2>/dev/null
-  if cp "$RUN/helper0-$STAMP.log" "$L/helper0.log" 2>/dev/null; then
-    grep 'policy placement' "$L/helper0.log" | tail -1 > "$L/policy-placement.txt"
+  ENGINE_LOG=$(session_value engine) || fail "native session has no engine log"
+  HELPER_LOG=$(session_value helper0) || fail "native session has no helper0 log"
+  stop_native || fail "native stop did not verify every child exited"
+  [ -z "$ENGINE_LOG" ] || cp "$ENGINE_LOG" "$L/engine.log" 2>/dev/null
+  if [ -n "$HELPER_LOG" ] && cp "$HELPER_LOG" "$L/helper0.log" 2>/dev/null; then
+    grep 'policy placement' "$L/helper0.log" | tail -1 > "$L/policy-placement.txt" || :
   fi
   python3 "$PARITY" policy-line "$L/helper0.log" --out "$L/policy.json" >&2
 done

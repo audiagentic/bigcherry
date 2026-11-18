@@ -1,0 +1,7 @@
+start_utc 2026-11-17T23:30:36Z
+radiance_sha256 baee085bb39e5c2855fcc37b0663543c2d1e7cce877f6c12a1d74583e8ecc406
+build <work-root>/builds/925ec49aea49a782ba4002971cabc41d/754790cbc77e8399e6481dafc9f01476
+23:31:53 rec-a exit 0 77s
+23:33:11 rec-b exit 0 78s
+23:34:07 rec-mbt128 exit 0 56s
+end_utc 2026-11-17T23:34:07Z

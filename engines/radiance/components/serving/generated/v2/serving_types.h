@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:ec0e60d027d1a51f834f62fd600324f727f51e8eaa63aea2589234e482219590";
+inline constexpr std::string_view kFingerprint = "sha256:b7cba6960870e3b704d1c0bd46a969cba19e33e417f5838269a42bd5411258b9";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:2becbfca0a16de5adb6d7356fe1a17a781f6a0dd894966722b669cb34e18fdca";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:a8b8949e29e4fe8a8be76c5cc4b3478e2c7bc21489040745f7da760922e932d4";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -1056,6 +1056,9 @@ struct EngineTuning {
     // Engine flag `--expert-route-record` (BigCherry rad0044; amendment 21). Value text as the flag takes it (FILE):
     // write the experts each token's router chose, per routed layer, at shutdown.
     std::optional<std::string> expert_route_record;
+    // Engine flag `--expert-route-replay` (BigCherry rad0045; amendment 22). Value text as the flag takes it (FILE):
+    // take each token's experts from a route recorded by `expert_route_record` instead of the router's own choice.
+    std::optional<std::string> expert_route_replay;
     // Engine flag `--live` (amendment 13). Present means the flag is given.
     std::optional<OptLive> live;
     // Engine flag `--p2p` (amendment 13). Value text as the flag takes it (MODE).
@@ -1563,7 +1566,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 440> kFields = {{
+inline constexpr std::array<FieldInfo, 441> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2434,6 +2437,9 @@ inline constexpr std::array<FieldInfo, 440> kFields = {{
     {"/spec/processes/engine/tuning/expert_route_record", "string", "policy", false, false,
      "--expert-route-record", "Config.expert_route_record", false,
      "Engine flag `--expert-route-record` (BigCherry rad0044; amendment 21). Value text as the flag takes it (FILE): write the experts each token's router chose, per routed layer, at shutdown.", "", "", ""},
+    {"/spec/processes/engine/tuning/expert_route_replay", "string", "policy", false, false,
+     "--expert-route-replay", "Config.expert_route_replay", false,
+     "Engine flag `--expert-route-replay` (BigCherry rad0045; amendment 22). Value text as the flag takes it (FILE): take each token's experts from a route recorded by `expert_route_record` instead of the router's own choice.", "", "", ""},
     {"/spec/processes/engine/tuning/live", "enum", "policy", false, false,
      "--live", "Config.live_view", true,
      "Engine flag `--live` (amendment 13). Present means the flag is given.", "", "", ""},

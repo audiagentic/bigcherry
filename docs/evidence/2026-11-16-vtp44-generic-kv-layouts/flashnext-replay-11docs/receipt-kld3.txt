@@ -1,0 +1,11 @@
+start_utc 2026-11-18T01:26:29Z
+radiance_sha256 a87a9982a46d7aea03f7a0b5606c7fce93e48549c8a4baed366eb8137eae7b30
+build <work-root>/builds/2a71a0404317ae66cb97299a1cbc8939/44a32c5d01d41bb0ccd49d061e85d822
+01:41:13 ref-record exit 0 884s
+01:55:57 ref-route exit 0 883s
+02:10:47 replay-self exit 0 890s
+02:19:24 replay-mbt128 exit 0 517s
+02:36:11 replay-bf16_i8 exit 0 1007s
+02:51:29 replay-bf16_fp8 exit 0 918s
+03:06:49 replay-fp8 exit 0 920s
+end_utc 2026-11-18T03:06:49Z
