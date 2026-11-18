@@ -1,5 +1,7 @@
 # Source consolidation and future-bump design
 
+> **Astra refinement:** [ASTRA-CONSOLIDATION.md](ASTRA-CONSOLIDATION.md) and the current Planning items govern execution. They supersede earlier proposals for a normalized YAML writer, bundle index, parser-tree extension API, full native option mirror and initial fleet-broker reservations. Keep original YAML bytes bound to existing admission, delete native-only duplication before extracting survivors, and use disjoint helper cards initially. Earlier source inventories remain evidence, not implementation acceptance.
+
 Scope: static source analysis at BigCherry `cd0581fc9` and upstream
 `b8bca788`. No builds, GPU runs or numerical acceptance. This extends the
 per-patch migration review; it does not certify every runtime path.
