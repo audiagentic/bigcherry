@@ -55,6 +55,7 @@ counts, a lower bound on selections that changed expert (flips that cancel insid
   the measured runs, so only the cache differs. That needs a per-token expert-id record and a replay option in the
   engine (two manifest fields); it is the follow-up this evidence argues for. It would also give the per-token link
   between a changed expert and the KLD at that token.
+  Done: rad0044 records the route and rad0045 replays it; with the route fixed the caches separate (FLASHNEXT-REPLAY.md).
 
 Run files (tallies, KLD results, receipts) are in the task's scratch folder `vtp44-fn/routing-keep`; the scripts are
 `run_routing.sh` and `routing_diff.py` there.

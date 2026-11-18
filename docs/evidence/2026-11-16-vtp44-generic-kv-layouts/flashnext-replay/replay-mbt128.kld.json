@@ -1,0 +1,71 @@
+{
+ "model": "<models-root>/radiance/bigcherry/qwen3.8-next-flash-hcbf16/qwen3.8-next-flash-hcbf16.rad",
+ "reference": "<models-root>/radiance/bigcherry/qwen3.8-next-flash-hcbf16/qwen3.8-next-flash-hcbf16.rad",
+ "ref_dir": "<dev-root>/tmp/bigcherry/vtp44-fn/routing-in/ref",
+ "ref_form": "top-64 + tail",
+ "corpus": "<dev-root>/tmp/bigcherry/vtp44-fn/corpus2.jsonl",
+ "created": "2026-11-18T00:55:01Z",
+ "docs": 2,
+ "percentile": "linear interpolation between order statistics",
+ "all": {
+  "positions": 4161,
+  "kld": {
+   "mean": 0.0076205541090963325,
+   "median": 0.002430439693853259,
+   "p90": 0.016593966633081436,
+   "p95": 0.026230892166495323,
+   "p99": 0.07806930243968926,
+   "p99_9": 0.27039288520814025,
+   "p99_99": 0.9033166785240049,
+   "max": 0.9343029856681824
+  },
+  "top1_agreement": 0.9569814948329728,
+  "ppl": {
+   "candidate": 8.865944321610053,
+   "reference": 8.880978902264197,
+   "ratio": 0.9983071032124273
+  }
+ },
+ "by_source": {
+  "kld-docs-00": {
+   "positions": 1950,
+   "kld": {
+    "mean": 0.004552985580351627,
+    "median": 0.001870171632617712,
+    "p90": 0.009549205098301181,
+    "p95": 0.014385773567482827,
+    "p99": 0.04572227057069536,
+    "p99_9": 0.16927814663946578,
+    "p99_99": 0.29235429392010526,
+    "max": 0.32043173909187317
+   },
+   "top1_agreement": 0.958974358974359,
+   "ppl": {
+    "candidate": 9.106074549150627,
+    "reference": 9.159595587044887,
+    "ratio": 0.9941568339578268
+   },
+   "docs": 1
+  },
+  "kld-docs-01": {
+   "positions": 2211,
+   "kld": {
+    "mean": 0.010326008035397634,
+    "median": 0.0034719491377472878,
+    "p90": 0.023050334304571152,
+    "p95": 0.036413904279470444,
+    "p99": 0.10579881742596671,
+    "p99_9": 0.3677870303392371,
+    "p99_99": 0.9178415099978444,
+    "max": 0.9343029856681824
+   },
+   "top1_agreement": 0.9552238805970149,
+   "ppl": {
+    "candidate": 8.659421208997433,
+    "reference": 8.642293689546435,
+    "ratio": 1.0019818256664565
+   },
+   "docs": 1
+  }
+ }
+}
