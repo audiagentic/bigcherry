@@ -108,6 +108,9 @@ NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BU
 # journalled settings; a missing lease or missing qualification fails closed.
 # Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
 [ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
+# A build directory (not an installed bundle) has no site file naming the engine home: say it, or the owner refuses
+# with "missing required key: engine.radiance_home".
+[ -d "$BUILD/radiance_home" ] && NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
 if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
   NATIVE_ARGS+=(--calibration "$BC_WORK_ROOT/live-policy-calibration.toml")
 fi
