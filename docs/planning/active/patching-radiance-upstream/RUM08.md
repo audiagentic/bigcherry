@@ -44,6 +44,12 @@ unknown/unrecordable shape                    => explicit no-replay
 ```
 The actual upstream key algorithm remains authoritative; these are proof cases, not a new hashing implementation.
 
+### Deep scan implementation refinement
+
+Main net-deletion candidates are rad0013 replay override after target semantic coverage proof and rad0036 governor after policy equivalence. Remove production entries, obsolete option/state mapping and superseded tests in the same slice. Diagnostics rad0010/39/43/44 may share route identity and bounded sink plumbing, but histogram/stats/per-token records retain different contracts and off-path costs.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - engines/radiance/patches/rad0013_mtp_pass_replay/patch.py
@@ -80,3 +86,4 @@ Prerequisites RUM04/RUM06/RUM07. Reuse ENG02 measurement ownership for later dep
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
 - 2026-11-18T01:40:00.933069+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:35.850667+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:57:12.077870+00:00 (updated-by): Updated: section:code_samples

@@ -49,6 +49,12 @@ bc::after_route(ctx, ops, bound_step, routed_views);
 ```
 Keep existing versioned extern-C plugin boundary where shared objects call across it. Do not add a new generic callback table for linked code.
 
+### Deep scan implementation refinement
+
+Extract rad0002's five created payloads, rad0009's header/source, rad0011's four memory/check files, rad0016/rad0017 implementations/tests and diagnostic sidecars into their actual owners. Track moved LOC separately from deleted LOC. Use RSC13 callable inventory before deleting each old body; preserve templated RAD_ISSUE operand/read-write semantics rather than replacing them with a generic callback bus.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - engines/radiance/patches/rad0002_moe_remote_handoff/patch.py
@@ -85,3 +91,4 @@ Prerequisite RUM01. Coordinate RCS13 inventory and RCS01/RCS08 boundaries. Clean
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
 - 2026-11-18T01:37:27.808050+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:42:49.165174+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:56:30.966408+00:00 (updated-by): Updated: section:code_samples

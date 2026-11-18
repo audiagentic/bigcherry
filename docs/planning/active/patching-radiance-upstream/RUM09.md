@@ -49,6 +49,12 @@ bundle install/relocate | result + explicit unsupported modes
 ```
 Use existing release, KLD and receipt tools; do not create a new campaign framework for this table.
 
+### Deep scan implementation refinement
+
+Add an improvement receipt: changed upstream attachment sites, handwritten projections, actual runtime branches removed, moved source lines, generated lines and retained code. Do not impose arbitrary LOC quotas. For subsequent bumps regenerate the seam overlap report with existing FilePatch/registry APIs and run focused changed-seam checks plus one admitted production canary. Existing unrelated atomic writer consolidation is not a bump gate.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - engines/radiance/recipes.toml
@@ -85,3 +91,4 @@ Prerequisites RUM03-RUM08. RUM10 fleet and later placement optimization are not 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
 - 2026-11-18T01:40:08.541378+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:42.600655+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:57:19.521344+00:00 (updated-by): Updated: section:code_samples

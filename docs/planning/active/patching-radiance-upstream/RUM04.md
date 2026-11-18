@@ -59,6 +59,12 @@ plan bytes / owner maps / measured memory -> generated, never authored
 ```
 All names above are design sketches; implement the smallest typed adapter through actual current libraries.
 
+### Deep scan implementation refinement
+
+Correct earlier broad consolidation premise: rad0009 already iterates generated v2::kFields; reuse serving-v2.toml/contract/generate.cpp metadata rather than invent a second mapping registry. stored_manifest_cache.cpp already shares writer/replay static projection. Preserve distinct plan_cache.cpp::plan_key_inputs measured-memory and static-resolution identities; share typed effective inputs, not one blanket digest. Remove obsolete g_emitted/argv adapter only after all callers migrate.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - engines/radiance/components/serving/config_loader.h
@@ -100,3 +106,4 @@ Prerequisites RUM01/RUM02/RUM03. Coordinate RSC12 current-config ownership and R
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
 - 2026-11-18T01:37:35.422476+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:04.055379+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:56:44.422220+00:00 (updated-by): Updated: section:code_samples

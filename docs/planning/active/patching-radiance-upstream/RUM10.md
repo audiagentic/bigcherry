@@ -41,6 +41,12 @@ model_runtime_identity = hash(engine_build, model_artifact,
 ```
 Compare this identity in the managed reload path; do not hash YAML comments or a file path as runtime semantics.
 
+### Deep scan implementation refinement
+
+Do not prematurely build generic fleet services to centralize single-engine state. Extend target lifecycle only after the single-model cutover. Similar names don't imply equal semantics: session write_atomic lacks release_install's exclusive/no-follow/fsync guarantees, and cache/receipt identities cannot be collapsed for convenience.
+
+Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md. Use patch-footprint.json to inspect every overlapping patch before changing an attachment site.
+
 ## Files
 
 - docs/reviews/radiance-upstream-2026-11-18/MANIFEST-AND-EXTENSIONS.md
@@ -74,3 +80,4 @@ Prerequisite RUM09. Priority P3 deliberately excludes this from minimum bump del
 - 2026-11-18T01:28:59.863720+00:00 (created-by): Created by codex
 - 2026-11-18T01:34:06.708874+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:43:49.306824+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-18T01:57:27.470953+00:00 (updated-by): Updated: section:code_samples

@@ -40,6 +40,13 @@ leads, not proofs that their intended experimental dependency sets compose.
 No compilation, GPU benchmark, numerical parity, KLD or serving acceptance was
 performed. Validation below is required migration work, not a claim of success.
 
+## Consolidation and future bumps
+
+See [the deeper source consolidation review](CONSOLIDATION.md) and its complete
+[patch-footprint inventory](patch-footprint.json). It identifies existing generated
+bindings and shared projections to preserve, real deletion opportunities, backend
+generator consumers and boundaries that must not be merged merely for fewer lines.
+
 ## Staged execution plans
 
 The roadmap merged in PR #1094. See [the execution guide](EXECUTION-GUIDE.md)

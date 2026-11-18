@@ -1,0 +1,27 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_015928_detailed-the-reusable-foundati_8549",
+  "files": [
+    "docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md",
+    "docs/reviews/radiance-upstream-2026-11-18/patch-footprint.json",
+    "docs/reviews/radiance-upstream-2026-11-18/README.md",
+    "docs/planning/active/patching-radiance-upstream",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM01/RV4227.md"
+  ],
+  "plan-item-ids": [
+    "RUM01",
+    "RUM02",
+    "RUM03",
+    "RUM04",
+    "RUM05",
+    "RUM06",
+    "RUM07",
+    "RUM08",
+    "RUM09",
+    "RUM10"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Deeper static consolidation scan inventories all 42 patch definitions, 580 edits, 25 created payloads/2974 text lines and shared upstream targets. Trace generated field bindings, separate measured/static cache projections, remote admission/placement lifecycle, KV descriptor and libr3 rewrite-generator consumers. Refine RUM01-RUM10 with concrete source/deletion guidance and correct broad earlier assumptions about existing reuse. Close design review RV4227. No builds, hardware tests or runtime implementation; source movement is not claimed as net deletion.",
+  "timestamp-utc": "2026-11-18T01:59:28.975383Z",
+  "user-summary-candidate": "Detailed the reusable foundations and actual deletion opportunities for easier future Radiance bumps."
+}
