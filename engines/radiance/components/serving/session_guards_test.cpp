@@ -278,6 +278,16 @@ int main(int argc, char** argv) {
         expect(base.value().limit == std::chrono::seconds(80), "ABBA workload capped by actual prompts");
         expect(base.value().report_period == std::chrono::seconds(2) && !base.value().accepted_feed,
                "unmeasured feed never qualifies by default");
+        // RED: no-accepted-delta deadline must not borrow the four phase horizon.
+        LivePolicy slow_policy = policy;
+        slow_policy.cadence_ns = 60000000000LL;
+        slow_policy.max_heat_age_ns = 120000000000LL;
+        slow_policy.min_samples = 1000;
+        const auto feed_deadline = calibration_heat_feed_deadline(slow_policy, std::chrono::seconds(1));
+        expect(bool(feed_deadline) && feed_deadline.value() == std::chrono::seconds(1121),
+               "the histogram no-feed bound must be policy and recording-period derived");
+        expect(!calibration_heat_feed_deadline(slow_policy, std::chrono::seconds(0)),
+               "calibration cannot use an absent histogram cadence");
         DriftProgress drift{};
         drift.capacity = 10;
         drift.intervals = 7;

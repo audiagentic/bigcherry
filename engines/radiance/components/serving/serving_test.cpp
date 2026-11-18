@@ -3253,6 +3253,53 @@ void session_engine_plan(Fixture& t) {
             "effect_min_quiet_windows":3,"effect_revert_ttl_ns":120000000000,
             "margin_ppm":100000,"half_life_observations_milli":4000,"effect_noise_multiplier_milli":2000,
             "protected_layers":[0,1]})json");
+        // RED: a strict observation policy cannot consume raw file heat.
+        bool strict_writer_called = false;
+        ss::EnginePlanInputs strict_heat = valid;
+        strict_heat.runner = [&](const std::vector<std::string>&) {
+            strict_writer_called = true;
+            return ss::ManifestRun{2, "", "unexpected writer for strict file heat"};
+        };
+        bool refused_strict_heat = false;
+        try {
+            (void)ss::plan_engine_only(strict_heat, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string why = e.what();
+            refused_strict_heat = why.find("accept_unwatermarked_heat") != std::string::npos &&
+                                  why.find("histogram") != std::string::npos;
+        }
+        if (!refused_strict_heat || strict_writer_called)
+            throw std::runtime_error("calibration accepted non-watermarked histogram with a strict policy");
+
+        std::ifstream policy_input(valid.live_policy_file);
+        std::string opted_in_policy{std::istreambuf_iterator<char>(policy_input),
+                                    std::istreambuf_iterator<char>()};
+        const std::string strict_setting = "\"accept_unwatermarked_heat\":false";
+        const auto setting_pos = opted_in_policy.find(strict_setting);
+        if (setting_pos == std::string::npos)
+            throw std::runtime_error("calibration policy fixture lost strict file heat setting");
+        opted_in_policy.replace(setting_pos, strict_setting.size(),
+                                "\"accept_unwatermarked_heat\":true");
+        valid.live_policy_file = t.file("session-calibration-opted-in-policy.json", opted_in_policy);
+
+        bool missing_store_writer = false;
+        ss::EnginePlanInputs missing_store = valid;
+        missing_store.calibration_store = t.root / "new-calibration-store.toml";
+        missing_store.runner = [&](const std::vector<std::string>&) {
+            missing_store_writer = true;
+            return ss::ManifestRun{2, "", "unexpected writer for missing store"};
+        };
+        bool refused_store = false;
+        try {
+            (void)ss::plan_engine_only(missing_store, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string why = e.what();
+            refused_store = why.find("calibration store") != std::string::npos &&
+                            why.find("empty") != std::string::npos &&
+                            why.find(missing_store.calibration_store.string()) != std::string::npos;
+        }
+        if (!refused_store || missing_store_writer)
+            throw std::runtime_error("calibration store preflight did not explain missing store");
         const fs::path calibration_run = t.root / "session-calibration-real-writer-owner";
         bool submitted_to_writer = false;
         fs::path written_calibration;
