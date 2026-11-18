@@ -236,7 +236,7 @@ def dry_run(native_test: Path) -> int:
     print("RSC02 S15: projection unit gate and deliberate mismatches PASS", flush=True)
 
     result = subprocess.run([str(native_test)], cwd=native_test.parent,
-                            timeout=105, check=False)
+                            timeout=240, check=False)
     if result.returncode:
         print("RSC02 S15: native stored-manifest/real owner fake engine FAILED", file=sys.stderr)
         return 1

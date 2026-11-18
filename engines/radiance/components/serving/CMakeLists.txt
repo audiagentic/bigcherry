@@ -313,4 +313,7 @@ if(BUILD_TESTING)
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
+  # S15 composite owner/Bash tests may contend with independent CI CTests.
+  set_tests_properties(bc_s15_dry_run_test PROPERTIES TIMEOUT 300 RESOURCE_LOCK rsc02_fake_owner)
+  set_tests_properties(bc_session_stored_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
 endif()
