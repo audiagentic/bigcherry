@@ -137,7 +137,6 @@ class Fixture {
         add("radiance_home/bin/bc-serve", "serve-binary", 0755);
         add("radiance_home/bin/bc-release", "release-binary", 0755);
         add("radiance_home/helpers/r3_moe_worker", "worker-binary", 0755);
-        add("radiance_home/kernels.rkb", "catalog");
         add("radiance_home/kernels/libr3moe.so", "kernel");
         add("radiance_home/architectures/qwen.so", "architecture");
         add("radiance_home/quantizers/quant.so", "quant");

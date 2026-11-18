@@ -54,16 +54,12 @@ bool runtime_member(const std::string& name) {
         "radiance_home/bin/bc-serve",
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
-        "radiance_home/kernels.rkb",
-        "radiance_home/kernels_moe.rkb",
         "bigcherry-build-metadata-radiance.json",
         "configs/flashnext.toml",
         "configs/qwen27b.toml",
     };
     if (exact.contains(name))
         return true;
-    if (prefix(name, "radiance_home/vectors/"))
-        return name.size() > std::string("radiance_home/vectors/").size();
     constexpr std::array<std::string_view, 6> directories = {
         "radiance_home/helpers/",    "radiance_home/kernels/", "radiance_home/architectures/",
         "radiance_home/quantizers/", "runtime-prefix/lib/",    "runtime-prefix/lib64/",
@@ -188,7 +184,6 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
         "bigcherry-build-metadata-radiance.json",
-        "radiance_home/kernels.rkb",
         "configs/flashnext.toml",
         "configs/qwen27b.toml",
     };
@@ -197,8 +192,8 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
     require(names.size() <= kMaxFiles, ErrorCode::invalid_install, "too many runtime files");
     require(record["file_names"] == sorted, ErrorCode::wrong_identity,
             "receipt file_names differs from manifest");
-    require(manifest["files"]["bin/radiance"]["sha256"] == record.at("binary_sha256"),
-            ErrorCode::wrong_identity, "engine binary digest differs from release record");
+    // binary_sha256 identifies the original build, not its stripped runtime copy.
+    // The archived file is independently authenticated by the file-map digest.
     return names;
 }
 

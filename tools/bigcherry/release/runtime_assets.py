@@ -76,9 +76,6 @@ RUN_MANIFEST = (
     ("radiance_home/kernels/*.so*", True),
     ("radiance_home/architectures/*.so*", True),
     ("radiance_home/quantizers/*.so*", True),
-    ("radiance_home/kernels.rkb", True),
-    ("radiance_home/kernels_moe.rkb", False),
-    ("radiance_home/vectors/*", False),
     ("runtime-prefix/lib/*.so*", False),
     ("runtime-prefix/lib/**/*.so*", False),
     ("runtime-prefix/lib64/*.so*", False),
@@ -289,11 +286,46 @@ def runtime_files(build: Path, root: Path) -> dict[str, Path]:
     return files
 
 
+def stripped_runtime_files(files: dict[str, Path], scratch: Path,
+                           debug_root: Path) -> dict[str, Path]:
+    """Strip each ELF in an isolated copy; retain unshipped debug sidecars.
+
+    The build's original binary and metadata are never mutated. Per-member
+    archive digests are calculated from the stripped copies.
+    """
+    staged = dict(files)
+    for name, source in sorted(files.items()):
+        with source.open("rb") as f:
+            if f.read(4) != bytes((0x7f,)) + b"ELF":
+                continue
+        target = scratch / name
+        debug = debug_root / (name + ".debug")
+        target.parent.mkdir(parents=True, exist_ok=True)
+        debug.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+        try:
+            subprocess.run(["objcopy", "--only-keep-debug", str(source), str(debug)],
+                           check=True, capture_output=True)
+            subprocess.run(["strip", "--strip-unneeded", str(target)],
+                           check=True, capture_output=True)
+        except (OSError, subprocess.CalledProcessError) as exc:
+            raise BundleError(f"cannot split ELF debug information: {name}: {exc}") from exc
+        staged[name] = target
+    return staged
+
+
 def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict:
     if not re.fullmatch(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise BundleError("unsafe Radiance release tag")
     build, plan_id, binary_sha = select_build(record, work_root)
-    files = runtime_files(build, root)
+    selected = runtime_files(build, root)
+    with tempfile.TemporaryDirectory(prefix="runtime-strip-", dir=work_root) as scratch:
+        prepared = stripped_runtime_files(selected, Path(scratch), work_root / "debug-symbols" / tag)
+        return _pack_selected(record, root, work_root, sdk, tag, build, plan_id, binary_sha, prepared)
+
+
+def _pack_selected(record: dict, root: Path, work_root: Path, sdk: Path, tag: str,
+                   build: Path, plan_id: str, binary_sha: str, files: dict[str, Path]) -> dict:
     identity = stock_identity(root)
     version = sdk_version(sdk)
     built_identity = built_from(root)
@@ -468,8 +500,10 @@ def restore(archive: Path, checksum: Path, asset: dict, root: Path, work_root: P
     stage = Path(tempfile.mkdtemp(prefix="bu01-runtime-", dir=builds))
     try:
         checked_extract(archive, asset, stage)
-        if digest(stage / "bin/radiance") != asset["binary_sha256"]:
-            raise BundleError("release binary digest differs from recorded lane binary")
+        # The original binary_sha256 binds the build provenance; scoped assets
+        # contain stripped runtime bytes checked against the file-map digest.
+        if asset.get("payload_scope") is None and digest(stage / "bin/radiance") != asset["binary_sha256"]:
+            raise BundleError("legacy release binary digest differs from recorded lane binary")
         # Historical pre-scope releases have no run-side membership contract.
         if asset.get("payload_scope") is None and not (stage / "radiance_home/helpers/r3_moe_worker").is_file():
             raise BundleError("legacy release missing remote MoE helper binary")

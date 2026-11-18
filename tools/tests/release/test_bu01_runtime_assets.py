@@ -1,6 +1,8 @@
 """BU01 offline Radiance runtime bundle packaging and verification tests."""
 import io
 import json
+import re
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -85,6 +87,53 @@ class RuntimeAssetsTests(unittest.TestCase):
         checksum = archive.parent / asset["checksum_name"]
         return asset, archive, checksum
 
+    def test_stripping_preserves_dynamic_dependencies_and_gpu_section(self):
+        src = self.path / "elf-source.cpp"
+        src.write_text(
+            'extern "C" __attribute__((used,section(".hip_fatbin"))) '
+            'const unsigned char code[] = {1,2,3,4,5};\n'
+            'int main() { return code[0] - 1; }\n'
+        )
+        binary = self.build / "bin/radiance"
+        subprocess.run(["c++", "-g", "-o", str(binary), str(src)], check=True)
+        original = assets.digest(binary)
+        self.record["notes"] = (f"pin-bump lane build: radiance:stock:linux-radiance "
+                                f"build_plan_id={PLAN} binary_sha256={original}")
+        original_dynamic = subprocess.check_output(["readelf", "-d", str(binary)])
+        original_ldd = subprocess.check_output(["ldd", str(binary)])
+        unpacked = re.sub(rb"0x[0-9a-f]+", b"0xADDR", original_ldd)
+        before = self.path / "fatbin-before"
+        subprocess.run(["objcopy", "--dump-section", f".hip_fatbin={before}", str(binary)], check=True)
+        asset, archive, checksum = self.packaged()
+        installed = assets.restore(archive, checksum, asset, self.root,
+                                   self.path / "stripped-work", self.sdk)
+        actual = installed / "bin/radiance"
+        self.assertEqual(asset["binary_sha256"], original)
+        self.assertNotEqual(assets.digest(actual), original)
+        self.assertLess(actual.stat().st_size, binary.stat().st_size)
+        self.assertEqual(subprocess.check_output(["readelf", "-d", str(actual)]), original_dynamic)
+        after_ldd = subprocess.check_output(["ldd", str(actual)])
+        self.assertEqual(re.sub(rb"0x[0-9a-f]+", b"0xADDR", after_ldd), unpacked)
+        after = self.path / "fatbin-after"
+        subprocess.run(["objcopy", "--dump-section", f".hip_fatbin={after}", str(actual)], check=True)
+        self.assertEqual(before.read_bytes(), after.read_bytes())
+        debug = self.work / "debug-symbols" / TAG / "bin/radiance.debug"
+        self.assertTrue(debug.is_file())
+        self.assertNotIn("bin/radiance.debug", asset["file_names"])
+        self.assertFalse((installed / "bin/radiance.debug").exists())
+        self.assertEqual(subprocess.run([str(actual)]).returncode, 0)
+
+    def test_no_benchmark_catalogs_or_unpinned_vectors(self):
+        vector = self.build / "radiance_home/vectors/qwen4exp-control-vector.gguf"
+        vector.parent.mkdir(parents=True, exist_ok=True)
+        vector.write_bytes(b"optional control vector")
+        asset, archive, _ = self.packaged()
+        prohibited = {"radiance_home/kernels.rkb", "radiance_home/kernels_moe.rkb",
+                      "radiance_home/vectors/qwen4exp-control-vector.gguf"}
+        self.assertFalse(prohibited.intersection(asset["file_names"]))
+        with tarfile.open(archive, "r:gz") as tar:
+            self.assertFalse(prohibited.intersection(tar.getnames()))
+
     def test_bc_serve_is_required_and_pack_includes_it(self):
         self.assertIn(("radiance_home/bin/bc-serve", True), assets.RUN_MANIFEST)
         asset, archive, checksum = self.packaged()
@@ -149,13 +198,13 @@ class RuntimeAssetsTests(unittest.TestCase):
         import tarfile
         include = {
             "radiance_home/helpers/libr3_ngram_helper.so": b"ngram",
-            "radiance_home/vectors/qwen4exp-control-vector.gguf": b"vector",
             "runtime-prefix/lib/librad.so": b"shared library",
         }
         exclude = {
             "bin/rad-tune", "bin/rad-kbench", "bin/rad-convert", "bin/rad-gbnf-check",
             "bin/rad-tokcheck", "bin/rad-schemas", "bin/rad-info", "bin/r4d_selftest",
             "radiance_home/testarch/radtest_arch.so",
+            "radiance_home/vectors/qwen4exp-control-vector.gguf",
             "radiance_home/testkernels/radtest_base.so",
             "radiance_home/kernels/rad-avx-bench", "radiance_home/kernels/rad-avx-check",
             "runtime-prefix/bin/rad-convert", "runtime-prefix/bin/radiance",
@@ -283,7 +332,9 @@ class RuntimeAssetsTests(unittest.TestCase):
             with self.subTest(name=rel), self.assertRaisesRegex(
                 assets.BundleError, "interpreter|script|shell"
             ):
-                self.packaged()
+                assets.check_no_interpreter("radiance_home/vectors/" + rel, target)
+            self.assertNotIn("radiance_home/vectors/" + rel,
+                             assets.runtime_files(self.build, self.root))
             target.unlink()
         # A build-side pycache under an optional directory is not an asset
         # member (the manifest selects files, never whole directories).
