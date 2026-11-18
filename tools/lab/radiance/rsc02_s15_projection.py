@@ -251,9 +251,18 @@ def dry_run(native_test: Path, *, legacy_launch_tests: bool = False) -> int:
         node[field] += 1
         if compare(a, modified, verify_bytes=False)["equal"]:
             raise ProjectionError(f"dry-run: {field} semantic mismatch was dropped")
-    if compare(a, {**b, "processes": {"roles": b["processes"]["roles"][:-1]}},
-               verify_bytes=False)["equal"]:
-        raise ProjectionError("dry-run: missing helper was ignored")
+    # The comparator rejects incomplete process captures before projecting
+    # either arm. A deliberate missing-role injection must trigger that typed
+    # refusal; it is not a failed rehearsal or evidence of A/B equivalence.
+    incomplete = {**b, "processes": {"roles": b["processes"]["roles"][:-1]}}
+    try:
+        report = compare(a, incomplete, verify_bytes=False)
+    except ProjectionError as error:
+        if "missing observed roles" not in str(error):
+            raise
+    else:
+        if report["equal"]:
+            raise ProjectionError("dry-run: missing helper was ignored")
     print("RSC02 S15: projection unit gate and deliberate mismatches PASS", flush=True)
 
     result = subprocess.run([str(native_test)], cwd=native_test.parent,
