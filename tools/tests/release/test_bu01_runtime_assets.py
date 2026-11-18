@@ -1,6 +1,9 @@
 """BU01 offline Radiance runtime bundle packaging and verification tests."""
 import io
 import json
+import re
+import shutil
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -130,6 +133,91 @@ class RuntimeAssetsTests(unittest.TestCase):
         path.unlink()
         with self.assertRaisesRegex(assets.BundleError, "missing or invalid build identity"):
             self.packaged()
+
+    def test_source_build_sha_is_bound_to_the_packaged_record(self):
+        asset, archive, checksum = self.packaged()
+        self.assertIn("source_binary_sha256", asset)
+        asset["source_binary_sha256"] = "0" * 64
+        with self.assertRaisesRegex(assets.BundleError, "source_binary_sha256"):
+            assets.restore(archive, checksum, asset, self.root,
+                           self.path / "other-work", self.sdk)
+
+    def test_elf_debug_policy_in_runtime_reuse_key(self):
+        self.assertIn("split", assets.ELF_DEBUG_POLICY)
+        current = assets.payload_contract_key()
+        with mock.patch.object(assets, "ELF_DEBUG_POLICY", "do-not-split"):
+            self.assertNotEqual(current, assets.payload_contract_key())
+
+    def test_pack_splits_debug_elf_preserves_loader_and_offload(self):
+        # A card-free ELF fixture exercises the real pack and checked extract.
+        source = self.path / "probe.c"
+        source.write_text(
+            '__attribute__((used, section(".hip_fatbin"))) '
+            'const unsigned char fatbin[] = {0, 17, 34, 255};\n'
+            '__attribute__((used, section(".llvm.offloading"))) '
+            'const unsigned char offload[] = {11, 22, 33};\n'
+            'int main(void) { return fatbin[1] == 17 ? 0 : 1; }\n'
+        )
+        binary = self.build / "bin/radiance"
+        subprocess.run(["cc", "-g", "-O0", "-o", str(binary), str(source)], check=True)
+        # The entrypoint, a native helper, and a plugin must all be split.
+        serving = self.build / "radiance_home/bin/bc-serve"
+        helper = self.build / "radiance_home/helpers/r3_moe_worker"
+        plugin = self.build / "radiance_home/kernels/libr3moe.so"
+        for other in (serving, helper):
+            shutil.copy2(binary, other)
+        subprocess.run(["cc", "-g", "-shared", "-fPIC", "-o", str(plugin),
+                        str(source)], check=True)
+        original_digest = assets.digest(binary)
+        self.record["notes"] = (
+            f"pin-bump lane build: radiance:stock:linux-radiance "
+            f"build_plan_id={PLAN} binary_sha256={original_digest}"
+        )
+        before_dynamic = subprocess.check_output(["readelf", "-d", str(binary)])
+        before_ldd = re.sub(rb"\s*\(0x[0-9a-f]+\)", b"", subprocess.check_output(["ldd", str(binary)]))
+        original_sections = {
+            section: subprocess.check_output(["readelf", "-x", section, str(binary)])
+            for section in (".hip_fatbin", ".llvm.offloading")
+        }
+        asset, archive, checksum = self.packaged()
+        restored = assets.restore(
+            archive, checksum, asset, self.root, self.path / "unpacked", self.sdk
+        )
+        shipped = restored / "bin/radiance"
+        self.assertEqual(subprocess.check_output(["readelf", "-d", str(shipped)]),
+                         before_dynamic)
+        self.assertEqual(re.sub(rb"\s*\(0x[0-9a-f]+\)", b"",
+                                subprocess.check_output(["ldd", str(shipped)])), before_ldd)
+        for section, content in original_sections.items():
+            self.assertEqual(subprocess.check_output(
+                ["readelf", "-x", section, str(shipped)]), content)
+        sections = subprocess.check_output(["readelf", "-SW", str(shipped)]).decode()
+        self.assertNotIn(".debug_info", sections)
+        self.assertNotIn(".symtab", sections)
+        self.assertNotIn(".strtab", sections)
+        self.assertIn(".dynsym", sections)
+        self.assertNotEqual(assets.digest(shipped), original_digest)
+        self.assertEqual(assets.digest(shipped), asset["binary_sha256"])
+        self.assertEqual(asset["source_binary_sha256"], original_digest)
+        debug = archive.parent / "debug" / "bin/radiance.debug"
+        self.assertTrue(debug.is_file(), debug)
+        self.assertIn(".debug_info", subprocess.check_output(
+            ["readelf", "-SW", str(debug)]).decode())
+        self.assertEqual(subprocess.run([str(shipped)], check=False).returncode, 0)
+        with tarfile.open(archive, "r:gz") as tar:
+            self.assertFalse(any(name.endswith(".debug") for name in tar.getnames()))
+        for name in ("radiance_home/bin/bc-serve",
+                     "radiance_home/helpers/r3_moe_worker",
+                     "radiance_home/kernels/libr3moe.so"):
+            stripped = restored / name
+            section_names = subprocess.check_output(
+                ["readelf", "-SW", str(stripped)]).decode()
+            self.assertNotIn(".debug_info", section_names)
+            self.assertNotIn(".symtab", section_names)
+            self.assertIn(".dynsym", section_names)
+            self.assertTrue((archive.parent / "debug" / (name + ".debug")).is_file())
+        self.assertEqual(subprocess.run([str(restored / "radiance_home/bin/bc-serve")],
+                                        check=False).returncode, 0)
 
     def test_pack_restore_stock_binary_without_compiler(self):
         asset, archive, checksum = self.packaged()

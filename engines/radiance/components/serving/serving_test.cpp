@@ -2734,11 +2734,14 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
             ::_exit(127);
         ::close(fds[1]);
         std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(BC_SERVE_EXE));
+        const char* binary = std::getenv("BC_SERVE_TEST_EXE");
+        if (binary == nullptr || *binary == '\0')
+            binary = BC_SERVE_EXE;
+        argv.push_back(const_cast<char*>(binary));
         for (const auto& arg : arguments)
             argv.push_back(const_cast<char*>(arg.c_str()));
         argv.push_back(nullptr);
-        ::execv(BC_SERVE_EXE, argv.data());
+        ::execv(binary, argv.data());
         ::_exit(127);
     }
     ::close(fds[1]);
