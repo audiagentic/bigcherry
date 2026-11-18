@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.6...bc-platform-1.51.0) (2026-11-18)
+
+
+### New and changed
+
+* **lab:** record the Flash-Next mixed-workload route heat ([#1150](https://github.com/audiagentic/bigcherry/issues/1150)) ([b8612d8](https://github.com/audiagentic/bigcherry/commit/b8612d88e753f443b88d75f8cf6acad2661db241))
+
 ## [1.50.6](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.5...bc-platform-1.50.6) (2026-11-18)
 
 
