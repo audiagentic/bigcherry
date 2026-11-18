@@ -64,7 +64,14 @@ tuning/
 dispatch-db/
 
 # -- AI tool artifacts --
-.audiagentic/
+.audiagentic/*
+!.audiagentic/config/
+.audiagentic/config/*
+!.audiagentic/config/project/
+.audiagentic/config/project/*
+!.audiagentic/config/project/instructions/
+.audiagentic/config/project/instructions/*
+!.audiagentic/config/project/instructions/bigcherry-workflow.yaml
 .clinerules/
 
 # -- Build output artifacts --
