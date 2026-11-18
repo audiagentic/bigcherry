@@ -143,7 +143,7 @@ server.
 ## Engine options
 
 Every engine option that is configuration has a manifest field (contract amendment 13; the full list is the generated field reference,
-`docs/design/serving-manifest-v2/serving-fields.md`). Beyond the capacity and placement keys above, the engine options sit in seven optional sections under
+[generated field reference](../../../../engines/radiance/components/serving/generated/v2/serving-fields.md)). Beyond the capacity and placement keys above, the engine options sit in seven optional sections under
 `spec.processes.engine`, set through `bc-serve --set section.name=value` or the same key in a profile TOML:
 
 | Section | What | Examples |
