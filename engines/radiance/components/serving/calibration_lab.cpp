@@ -140,6 +140,32 @@ v2::Result<std::optional<DriftProgress>> read_calibration_drift(const fs::path& 
     return std::optional<DriftProgress>{progress};
 }
 
+v2::Result<std::chrono::seconds> calibration_heat_feed_deadline(const v2::LivePolicy& policy,
+                                                               std::chrono::seconds histogram_period) {
+    const auto cadence = positive(policy.cadence_ns, "cadence_ns");
+    const auto age = positive(policy.max_heat_age_ns, "max_heat_age_ns");
+    const auto samples = positive(policy.min_samples, "min_samples");
+    if (!cadence)
+        return cadence.error();
+    if (!age)
+        return age.error();
+    if (!samples)
+        return samples.error();
+    if (histogram_period.count() <= 0)
+        return invalid("heat", "calibration requires a positive histogram publication period");
+    uint64_t periods = 0, period_ns = 0, sample_ns = 0, deadline_ns = 0;
+    // One file snapshot establishes the baseline; subsequent snapshots
+    // can contribute the admitted observation budget. Never equate the
+    // min_samples counter with policy proposal-cadence intervals.
+    if (!safe_add(samples.value(), 1, &periods) ||
+        !safe_mul(static_cast<uint64_t>(histogram_period.count()), 1000000000ULL, &period_ns) ||
+        !safe_mul(periods, period_ns, &sample_ns) ||
+        !safe_add(sample_ns, std::max(cadence.value(), age.value()), &deadline_ns) ||
+        ceil_seconds(deadline_ns) > static_cast<uint64_t>(std::chrono::seconds::max().count()))
+        return invalid("heat", "derived histogram heat feed deadline overflows");
+    return std::chrono::seconds(ceil_seconds(deadline_ns));
+}
+
 v2::Result<CalibrationEnvelope> calibration_envelope(const v2::LivePolicy& policy, size_t a_count,
                                                      size_t b_count, std::chrono::seconds request_timeout,
                                                      const std::optional<DriftProgress>& drift) {
