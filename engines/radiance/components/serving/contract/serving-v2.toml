@@ -2313,6 +2313,15 @@ min_length = 1
 doc = "Engine flag `--expert-stats` (amendment 13). Value text as the flag takes it (FILE)."
 
 [[field]]
+path = "/spec/processes/engine/tuning/expert_route_record"
+optional = true
+radiance_option = "--expert-route-record"
+radiance_config = "Config.expert_route_record"
+kind = "string"
+min_length = 1
+doc = "Engine flag `--expert-route-record` (BigCherry rad0044; amendment 21). Value text as the flag takes it (FILE): write the experts each token's router chose, per routed layer, at shutdown."
+
+[[field]]
 path = "/spec/processes/engine/tuning/live"
 optional = true
 radiance_option = "--live"

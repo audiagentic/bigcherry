@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0044_expert_route_record"
+order = 44
+state = "untested"
+kind = "diagnostic"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["VTP44"]
+requires = []
+conflicts = []
+tags = ["moe-routing"]

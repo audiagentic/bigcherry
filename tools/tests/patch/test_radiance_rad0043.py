@@ -50,15 +50,16 @@ def test_applies_adds_lines_only_inside_xstats_open_and_is_idempotent():
         removed = [line for line in difflib.unified_diff(before.splitlines(), after.splitlines(), n=0)
                    if line.startswith("-") and not line.startswith("---")]
         assert not removed, removed[:10]
-        assert after.count("xs_protected") > 1
+        assert after.count("xs_extra") > 1
         # The new loop sits after the rows are normalised and before the model's expert counts are read.
         start = after.index("int Engine::xstats_open()")
         end = after.index("xs_map_build(ids, n_model", start)
         normalise = after.index("if (v == kUnset || v < 0) v = -1;", start)
-        added = after.index("xs_protected", start)
+        added = after.index("xs_extra", start)
         assert start < normalise < added < end
-        # It reads the layer-scope weights' container entries and only appends to the rows the regular loop filled.
-        assert "wi.decl.group.expert >= 0 ||" in after
+        # It labels each slot from the tensor name and appends the layer-scope (protected) experts.
+        assert "? kClash : xs_e;" in after   # a unit whose gate/up and down names disagree is a clash, not a guess
+        assert "have no consistent model-expert tensor name" in after
         assert "std::unique(g.begin(), g.end()));" in after
 
         snapshot = after

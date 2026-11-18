@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (41)
+## Engine patches (42)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -54,6 +54,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0041_kv_b16_flashnext](../../../../engines/radiance/patches/rad0041_kv_b16_flashnext/SUMMARY.md) | `validated` | libr4d's gqa8-body units (`r4d_attn_paged_h256_gqa12.hip`, `r4d_attn_paged_h256_gqa6_bs4.hip`) gain the two layouts' prefill, decode and fused gate+quantiser entry points behind a new `R4D_ATTN_B16` flag, built from the existing gqa6 templates' `O_KB16V8` / `O_KB16I8` forms. One tuple list in `r4d_rows.cpp` (`R4D_B16_QSA_TUPLES`) generates their twelve rows (decode causal or not), with compile-time checks that a tuple's `kv_dtype` is the layout table's name and its (layout, head_dim, gqa) is in `RAD_KV_GEOMETRIES`. `abi/rad_builder.h` gets `RAD_KV_GEOMETRIES` and `rad_kvq_geometry_ok`; the Qwen4 expert FP8 plugin reads the layout and geometry tables for its name, row size and refusal, and its probe offers every layout the table lists for the model's geometry. |
 | [rad0042_kv_b16_selftest](../../../../engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md) | `untested` | `libr4d/r4d_selftest.cpp`: the Flash-Next QSA numeric cases (gqa 12 and gqa 6 with 4-token pages) take the two layouts, with a ragged last prefill tile and the decode at every wave count (1 to 5 rows at gqa 12, 4 and 8 rows at gqa 6); the split-KV prefill and mixed-step tables gain both geometries for both layouts; the fused gate+quantiser byte-identity case (`attn_decode_gq_h256_gqa12_*` against the decode and `gate_quant_fp8` pair) builds a bf16-K cache with finite E4M3 or int8 V bytes and f16 group scales. |
 | [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | `untested` | `--expert-stats` counts the routed experts a layer keeps in bf16 beside its quantised table (its protected experts). Before, their histogram indices had no entry in the stats map and were tallied as `unmapped`, so a quantised layer's counts came up short by exactly its protected experts' selections. |
+| [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | `untested` | `--expert-route-record FILE` writes the experts each token's router chose, for every routed trunk layer, when the run ends. A KLD run on a routed model cannot rank KV caches because any change in the arithmetic moves about 1.1% of the choices (FLASHNEXT-ROUTING.md); to score a cache alone the measured run has to take a reference run's choices. This is the record half; replay is a later patch. Manifest field `engine.tuning.expert_route_record` (contract amendment 21). |
 
 ## Components (6)
 

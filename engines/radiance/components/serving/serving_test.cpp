@@ -2138,7 +2138,7 @@ void engine_only_layout(Fixture& t) {
                    .ok());
         assert(
             bc::serving::engine_option_fields().size() ==
-            94 /* VTP42: four prefill options become one governor spec (85 flags + 9 environment settings) */);
+            95 /* VTP44: --expert-route-record joins; VTP42: four prefill options become one governor spec (86 flags + 9 environment settings) */);
         Options bad = opts;
         bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
         fail(bad, t.facts, "no_such_option");
