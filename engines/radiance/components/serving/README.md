@@ -274,3 +274,25 @@ invalidation), `bc_session_stored_test` (real owner call graph with fake
 GPU processes/OS facts). The dependency probes used by tests are explicit
 C++ callbacks; production always uses `detect`, the single RSC12 resolver,
 the strict v2 reader and P1 live-room measurement.
+
+## RSC02 step 6: typed lab inputs, not shell flag aliases
+
+The RSC12 native registry already owns the launcher-mode values:
+`engine.port`, `handoff.heat`, `handoff.histogram`,
+`handoff.histogram_period_s`, `engine.kv_cache_dtype`,
+`engine.ngram_placement`, `engine.num_speculative_tokens`,
+`service.max_context`, and `memory.host_pool_mib`/`host_kv_mib`/
+`helper_budgets_mib`. Explicit helper budgets belong in
+`[[config.NAME.helpers]] budget_mib`. Named variants, site files, and
+recorded `--set key=value` values are resolved with source provenance;
+`--ngram-device` has no typed contract field and remains refused.
+
+**Design source:** RSC04's mode table, RSC12 named-config precedence,
+and the native serving-v2 process contract. **Difference from the bash
+launcher:** no second syntax translates `--port`, `--heat`, `--budget`,
+or other legacy flags into environment variables; the one resolver writes
+the typed manifest. `bc_typed_settings_test` executes the compiled `bc-serve
+explain` and `--write-manifest --unmeasured` against a synthetic KFD/
+PCI/proc filesystem, real named configs, and producer-shaped route heat,
+checking provenance, manifest fields and typed refusal cases. The test's
+unmeasured manifest is not serving authorization. GPU parity remains S15.

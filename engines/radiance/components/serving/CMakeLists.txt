@@ -143,6 +143,15 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
+  # RSC04: real named resolver and strict-v2 writer with only fake OS hardware facts.
+  add_executable(bc_typed_settings_test EXCLUDE_FROM_ALL typed_settings_test.cpp)
+  target_link_libraries(bc_typed_settings_test PRIVATE bc_serving)
+  add_dependencies(bc_typed_settings_test bc-serve)
+  target_compile_definitions(bc_typed_settings_test PRIVATE
+    BC_SERVE_EXE=\"$<TARGET_FILE:bc-serve>\"
+    BC_CONFIGS_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/../../configs\")
+  add_test(NAME bc_typed_settings_test COMMAND bc_typed_settings_test)
+  set_tests_properties(bc_typed_settings_test PROPERTIES TIMEOUT 60)
   add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
   target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
   add_test(NAME bc_power_transaction_test COMMAND bc_power_transaction_test)
