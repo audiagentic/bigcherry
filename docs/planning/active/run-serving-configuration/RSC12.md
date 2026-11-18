@@ -191,7 +191,14 @@ both manifests pass the strict reader. Helper configs carry the launcher's 1 s h
 
 **2026-11-14 candidate variants of `qwen27b-tp3-int8-556-long` (pending VTP36 step 9 / VTP39).** A lone-prefill wide-step variant (checkpoint interval, step budget, prefill span) and a decode-share variant (prefill interleave). Each must be expressible with the resolver's own keys; `prefill_span`, `prefill_interleave` and `busy_prefill_chunk` are not yet `engine.*` config fields (only `max_num_batched_tokens` and `checkpoint_interval` are), so adding them is part of taking either variant. No `--set` in a served start.
 
+Target-version coordination (RV4225, November 18): RUM04 owns migration to upstream 2.x native YAML plus typed x-bigcherry intent. Preserve current-pin TOML implementation history and RSC12 semantic projection/cache/live-admission guarantees; do not add a second resolver or parallel authoritative config path. All migrated internal callers switch together after RUM01 design approval. Existing item acceptance/state is unchanged.
+
 ## Change Log
 
 - 2026-11-13T22:56:54.680645+00:00 (created-by): Created by agent
 - 2026-11-14T06:59:38.869898+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4225
+- 2026-11-18T01:41:05.379942+00:00 (updated-by): Updated: section:notes

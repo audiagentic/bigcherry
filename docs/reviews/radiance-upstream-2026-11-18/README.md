@@ -40,6 +40,12 @@ leads, not proofs that their intended experimental dependency sets compose.
 No compilation, GPU benchmark, numerical parity, KLD or serving acceptance was
 performed. Validation below is required migration work, not a claim of success.
 
+## Staged execution plans
+
+The roadmap merged in PR #1094. See [the execution guide](EXECUTION-GUIDE.md)
+for RUM01-RUM10 dependency order, ownership reuse and a deliberately bounded
+validation budget. Detailed implementation guidance lives in the Planning MCP items.
+
 ## Manifest and extension redesign proposal
 
 See [the concrete YAML, placement and extension proposal](MANIFEST-AND-EXTENSIONS.md).

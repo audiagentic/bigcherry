@@ -1,0 +1,37 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_014532_detailed-the-staged-migration_3112",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream",
+    "docs/planning/active/build-host-kernel/BHK02.md",
+    "docs/planning/active/build-host-kernel/BHK03.md",
+    "docs/planning/active/build-host-kernel/BHK04.md",
+    "docs/planning/active/run-serving-configuration/RSC12.md",
+    "docs/planning/active/patching-radiance-heat-placement/RHP13.md",
+    "docs/planning/completed/run-serving-configuration/reviews/RSC12/RV4225.md",
+    "docs/planning/completed/patching-radiance-heat-placement/reviews/RHP13/RV4226.md",
+    "docs/reviews/radiance-upstream-2026-11-18/EXECUTION-GUIDE.md",
+    "docs/evidence/2026-11-18-memory-baseline/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM01",
+    "RUM02",
+    "RUM03",
+    "RUM04",
+    "RUM05",
+    "RUM06",
+    "RUM07",
+    "RUM08",
+    "RUM09",
+    "RUM10",
+    "RSC12",
+    "RHP13",
+    "BHK02",
+    "BHK03",
+    "BHK04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Second pass after roadmap PR #1094: expand RUM01-RUM10 and BHK02-BHK04 through Planning MCP with file/symbol-specific changes, proposed typed interfaces, reuse/removal guidance, dependency order, risks and deliberately minimum gates. Clarify RSC12 YAML ownership and RHP13 native allocator integration through closed reviews RV4225/RV4226, without completing implementation. Add execution index and a transparent historical Triad traffic-count correction; no harness/runtime changes, native builds or hardware tests performed. Two bounded gateway review requests remained queued, were cancelled and yielded no analysis; no delegated conclusions are claimed.",
+  "timestamp-utc": "2026-11-18T01:45:32.312501Z",
+  "user-summary-candidate": "Detailed the staged migration with code guidance, streamlined reuse/cleanup and only necessary transition tests."
+}
