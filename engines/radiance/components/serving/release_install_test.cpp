@@ -8,12 +8,17 @@
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <fcntl.h>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
+#include <iterator>
 #include <map>
+#include <signal.h>
 #include <stdexcept>
 #include <string>
+#include <sys/wait.h>
+#include <thread>
 #include <utility>
 #include <vector>
 
@@ -29,6 +34,12 @@ namespace fs = std::filesystem;
 void check(bool passed, const std::string& reason) {
     if (!passed)
         throw std::runtime_error(reason);
+}
+
+std::string read_file(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    check(in.good(), "could not read executable fixture: " + path.string());
+    return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
 
 void write_file(const fs::path& path, const std::string& bytes) {
@@ -121,7 +132,7 @@ class Fixture {
         write_file(home_ / "sdk/.info/version", "7.2.4\n");
     }
 
-    InstallRequest make(const std::string& tag, Fault fault = Fault::none) {
+    InstallRequest make(const std::string& tag, Fault fault = Fault::none, bool executable = false) {
         const auto folder = home_ / "assets" / tag;
         fs::create_directories(folder);
         const std::string plan(32, 'a');
@@ -132,16 +143,24 @@ class Fixture {
         auto add = [&](const std::string& name, const std::string& data, unsigned mode = 0644) {
             members[name] = Member{name, data, mode, '0'};
         };
-        add("bin/radiance", "radiance-binary", 0755);
-        add("radiance_home/bin/bc-serve", "serve-binary", 0755);
-        add("radiance_home/bin/bc-release", "release-binary", 0755);
+        const std::string engine_bytes = executable ? read_file(BC_FAKE_ENGINE) : "radiance-binary";
+        add("bin/radiance", engine_bytes, 0755);
+        add("radiance_home/bin/bc-serve", executable ? read_file(BC_SERVE_EXE) : "serve-binary", 0755);
+        add("radiance_home/bin/bc-release", executable ? read_file(BC_RELEASE_EXE) : "release-binary", 0755);
         add("radiance_home/helpers/r3_moe_worker", "worker-binary", 0755);
         add("radiance_home/kernels.rkb", "catalog");
         add("radiance_home/kernels/libr3moe.so", "kernel");
         add("radiance_home/architectures/qwen.so", "architecture");
         add("radiance_home/quantizers/quant.so", "quant");
-        add("bigcherry-build-metadata-radiance.json",
-            fault == Fault::interpreter_reference ? R"({"interpreter": "python3"})" : R"({"build": "native"})");
+        std::string metadata = R"({"build": "native"})";
+        if (fault == Fault::interpreter_reference) {
+            metadata = R"({"interpreter": "python3"})";
+        } else if (executable) {
+            metadata = Json({{"toolchain", Json::array({Json::array({"rocm_root", (home_ / "sdk").string()}),
+                                                        Json::array({"rocm_version", "7.2.4"})})}})
+                           .dump();
+        }
+        add("bigcherry-build-metadata-radiance.json", metadata);
         add("configs/flashnext.toml", "schema = 1\n");
         add("configs/qwen27b.toml", "schema = 1\n");
 
@@ -165,7 +184,7 @@ class Fixture {
             {"release_tag", tag},
             {"plan_id", plan},
             {"source_slice_id", "fixture-slice"},
-            {"binary_sha256", bc::serving::sha256_hex("radiance-binary")},
+            {"binary_sha256", bc::serving::sha256_hex(engine_bytes)},
             {"rocm_version", "7.2.4"},
             {"engine_tree", std::string(40, 'b')},
             {"config_tree", std::string(40, 'c')},
@@ -210,7 +229,7 @@ class Fixture {
             {"file_names", names},
             {"plan_id", plan},
             {"source_slice_id", "fixture-slice"},
-            {"binary_sha256", bc::serving::sha256_hex("radiance-binary")},
+            {"binary_sha256", bc::serving::sha256_hex(engine_bytes)},
             {"rocm_version", "7.2.4"},
             {"engine_tree", std::string(40, 'b')},
             {"config_tree", std::string(40, 'c')},
@@ -352,6 +371,122 @@ void test_real_platform_packer_golden() {
           "actual packaged model config was missing");
 }
 
+// Exercise the shipped CLI entrypoints, not just release-core functions. The
+// real bc-serve is installed in the freshly built asset with the fake GPU engine.
+int run_cli(const fs::path& exe, const std::vector<std::string>& args, const fs::path& output,
+            const fs::path& installed_engine = {}) {
+    const pid_t pid = ::fork();
+    check(pid >= 0, "fork of native release CLI failed");
+    if (pid == 0) {
+        const int fd = ::open(output.c_str(), O_CREAT | O_TRUNC | O_WRONLY | O_CLOEXEC, 0600);
+        if (fd < 0 || ::dup2(fd, STDOUT_FILENO) < 0 || ::dup2(fd, STDERR_FILENO) < 0)
+            ::_exit(127);
+        ::close(fd);
+        ::unsetenv("BIGCHERRY_CONFIGS");
+        // The isolated temporary SDK is intentionally not the CI host's SDK.
+        // Do not inherit the host's ROCm override into a synthetic release.
+        ::unsetenv("ROCM_PATH");
+        ::unsetenv("HIP_PATH");
+        std::vector<std::string> owned = {exe.string()};
+        owned.insert(owned.end(), args.begin(), args.end());
+        if (!installed_engine.empty()) {
+            owned.push_back("--installed-engine");
+            owned.push_back(installed_engine.string());
+        }
+        std::vector<char*> argv;
+        argv.reserve(owned.size() + 1);
+        for (auto& text : owned)
+            argv.push_back(text.data());
+        argv.push_back(nullptr);
+        ::execv(exe.c_str(), argv.data());
+        ::_exit(127);
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(45);
+    int status = 0;
+    for (;;) {
+        const auto ended = ::waitpid(pid, &status, WNOHANG);
+        if (ended == pid)
+            return WIFEXITED(status) ? WEXITSTATUS(status) : 128;
+        check(ended >= 0, "waitpid failed");
+        if (std::chrono::steady_clock::now() >= deadline) {
+            ::kill(pid, SIGKILL);
+            (void)::waitpid(pid, &status, 0);
+            throw std::runtime_error("native CLI did not return within test deadline");
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
+}
+
+void test_native_installed_start_gate() {
+    ScopedDir d;
+    Fixture f(d.path);
+    auto a = f.make("bc-radiance-1170.70.0", Fault::none, true);
+    const auto installed = a.root / "releases" / a.tag;
+    const auto cli = fs::path(BC_RELEASE_EXE);
+    const auto log = d.path / "cli.log";
+    const int installed_rc = run_cli(cli,
+                                     {"install", "--tag", a.tag, "--record", a.record.string(), "--archive",
+                                      a.archive.string(), "--root", a.root.string(), "--sdk", a.sdk.string()},
+                                     log);
+    check(installed_rc == 0,
+          "bc-release CLI failed to install freshly packaged native executables: " + read_file(log));
+    const auto serve = installed / "radiance_home/bin/bc-serve";
+    const auto run = d.path / "run";
+    // The same installed asset also powers the existing real detached owner
+    // and strict v2 replay test. Its fake process is drawn from PREFIX/bin,
+    // not the component test build: this is a card-free release->start gate.
+    const int replay = run_cli(BC_SESSION_STORED_TEST, {}, log, installed / "bin/radiance");
+    check(replay == 0,
+          "native stored-manifest session did not start the installed fake engine: " + read_file(log));
+    // A verified prefix must select its packaged RSC12 configs (rather
+    // than treating the name as a legacy layouts entry). The minimal test
+    // package intentionally has no named configs, so resolution refuses
+    // with a named-config error after the installed-prefix gate.
+    const int valid = run_cli(serve,
+                              {"serve", "qwen27b-tp3-int8", "--run-dir", run.string(), "--site",
+                               (d.path / "missing-site.toml").string()},
+                              log);
+    check(valid != 0 && read_file(log).find("release refusal") == std::string::npos &&
+              read_file(log).find("sdk-check") == std::string::npos,
+          "verified prefix should reach real resolver: " + read_file(log));
+
+    // The executable must not verify one asset then launch another engine
+    // or source plugins from an unverified runtime home.
+    for (const std::vector<std::string> bypass :
+         {std::vector<std::string>{"--engine-binary", "/bin/true"},
+          std::vector<std::string>{"--set", "engine.radiance_home=\"/tmp/not-the-install\""}}) {
+        std::vector<std::string> args = {"serve", "qwen27b-tp3-int8", "--run-dir", run.string()};
+        args.insert(args.end(), bypass.begin(), bypass.end());
+        const int rc = run_cli(serve, args, log);
+        check(rc != 0 && read_file(log).find("installed release refusal") != std::string::npos,
+              "installed release allowed substituting a different runtime: " + read_file(log));
+    }
+
+    // Missing receipt is not equivalent to a checkout; both entrypoints
+    // refuse before they ever plan or launch a child.
+    const std::string original_install_receipt = read_file(installed / "install.json");
+    fs::remove(installed / "install.json");
+    for (const auto& mode : {"serve", "start"}) {
+        const int rc = run_cli(serve, {mode, "qwen27b-tp3-int8", "--run-dir", run.string()}, log);
+        check(rc != 0 && read_file(log).find("installed release refusal") != std::string::npos,
+              std::string(mode) + " did not refuse the missing receipt: " + read_file(log));
+    }
+    // Reinstall and flip the current tag. The old still-retained release
+    // is valid for rollback, never for a new serve/start.
+    write_file(installed / "install.json", original_install_receipt);
+    check(bc::release::verify(a.root, a.sdk)["current"] == a.tag, "restored fixture is not verified");
+    const auto b = f.make("bc-radiance-1170.71.0", Fault::none, true);
+    bc::release::install(b);
+    const int retired = run_cli(serve, {"start", "qwen27b-tp3-int8", "--run-dir", run.string()}, log);
+    check(retired != 0 && read_file(log).find("not the verified current tag") != std::string::npos,
+          "retained old prefix started despite current tag change: " + read_file(log));
+    const auto current_serve = b.root / "releases" / b.tag / "radiance_home/bin/bc-serve";
+    write_file(b.root / "releases" / b.tag / "configs/qwen27b.toml", "schema = 9\n");
+    const int tampered = run_cli(current_serve, {"serve", "qwen27b-tp3-int8", "--run-dir", run.string()}, log);
+    check(tampered != 0 && read_file(log).find("BC_RELEASE_3") != std::string::npos,
+          "tampered current release reached serving: " + read_file(log));
+}
+
 void test_interrupted_staging_refuses_install() {
     ScopedDir d;
     Fixture f(d.path);
@@ -372,6 +507,7 @@ int main() {
         test_digest_tag_sdk_and_existing_integrity_refuse();
         test_interrupted_staging_refuses_install();
         test_real_platform_packer_golden();
+        test_native_installed_start_gate();
         std::cout << "bc_release_install_test: native asset/rollback refusals passed\n";
         return 0;
     } catch (const std::exception& e) {

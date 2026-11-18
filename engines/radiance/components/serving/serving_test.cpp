@@ -1060,6 +1060,9 @@ void sdk_environment_step(Fixture& t) {
     assert(refused({}, "is not installed"));
     std::ofstream(build / "bigcherry-build-metadata-radiance.json", std::ios::trunc) << "{not json";
     assert(refused({}, "cannot be read"));
+    // A recognizable build/release path without provenance is not a reason to bypass SDK admission.
+    fs::remove(build / "bigcherry-build-metadata-radiance.json");
+    assert(refused({}, "metadata missing"));
     // an executable that is not inside a build has no recorded SDK and is not checked
     assert(!sv::sdk_refusal(t.root / "elsewhere" / "bc-serve",
                             {other.string(), other.string(), (other / "lib").string()}));
@@ -3379,7 +3382,8 @@ void session_engine_plan(Fixture& t) {
         // Keep the card-free fixture valid even on a one-vCPU CI runner.
         valid.options.sets.push_back("helper.combine_threads=1");
         valid.options.sets.push_back("handoff.heat=\"" + (t.root / "parity.hot-first").string() + "\"");
-        valid.options.sets.push_back("handoff.histogram=\"" + (t.root / "session-calibration-histogram").string() + "\"");
+        valid.options.sets.push_back("handoff.histogram=\"" +
+                                     (t.root / "session-calibration-histogram").string() + "\"");
         valid.options.site = t.file("session-calibration-helper-site.toml",
                                     "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
                                         "\"\nradiance_home = \"" + home.string() + "\"\n");

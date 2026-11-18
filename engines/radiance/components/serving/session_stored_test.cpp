@@ -36,6 +36,7 @@ using Json = nlohmann::json;
 using namespace std::chrono_literals;
 
 namespace {
+std::optional<fs::path> g_installed_engine;
 void check(bool ok, const std::string& why) {
     if (!ok)
         throw std::runtime_error(why);
@@ -167,8 +168,11 @@ struct Case {
         fs::create_directories(run);
         const ss::ReplayEvidence facts = evidence(original);
         inputs.stored_manifest = stored;
-        inputs.engine_binary = BC_FAKE_ENGINE;
-        inputs.helper_binary = BC_FAKE_ENGINE;
+        // The release integration test substitutes ONLY the OS process binary
+        // with the fake engine extracted by native bc-release. All replay,
+        // resolver, writer and session-owner logic remains production code.
+        inputs.engine_binary = g_installed_engine.value_or(fs::path(BC_FAKE_ENGINE));
+        inputs.helper_binary = inputs.engine_binary;
         inputs.self = "/tmp/cardfree-bc-serve";
         inputs.replay_evidence = [facts, bad_build](const v2::Manifest&) {
             auto snapshot = facts;
@@ -230,8 +234,10 @@ struct Case {
         // Real start boundary: fork/exec the owner with its stored file,
         // then use its control socket for a verified stop. The same owner and
         // replay planner execute in the new process, not a fake plan callback.
-        const std::vector<std::string> args = {self.string(), "--owner-stored", stored.string(), run.string(),
-                                               trace.string()};
+        std::vector<std::string> args = {self.string(), "--owner-stored", stored.string(), run.string(),
+                                         trace.string()};
+        if (g_installed_engine)
+            args.push_back(g_installed_engine->string());
         check(ss::start_detached(args, run, 20s) == 0, "detached stored replay did not reach running");
         const auto reply = ss::control(run, "stop", 10s);
         check(reply && reply->value("ok", false), "detached stored replay did not stop cleanly");
@@ -357,11 +363,16 @@ struct Case {
 
 int main(int argc, char** argv) {
     try {
-        if (argc == 5 && std::string(argv[1]) == "--owner-stored") {
+        if ((argc == 5 || argc == 6) && std::string(argv[1]) == "--owner-stored") {
+            if (argc == 6)
+                g_installed_engine = argv[5];
             Case owner(0, false, false, false, argv[2], argv[3], argv[4]);
             return ss::serve(owner.session);
         }
-        check(argc == 1, "unexpected command line in stored replay acceptance test");
+        if (argc == 3 && std::string(argv[1]) == "--installed-engine")
+            g_installed_engine = argv[2];
+        else
+            check(argc == 1, "unexpected command line in stored replay acceptance test");
         Case healthy(1);
         healthy.run_owner(true);
         Case changed_build(2, true);
