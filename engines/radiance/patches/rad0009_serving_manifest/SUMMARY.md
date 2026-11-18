@@ -3,6 +3,30 @@
 **Status:** validated
 **Plan item:** RSC07
 
+## Current v2 projection boundary (RUM04 migration seam, 2026-11-18)
+
+The v1 description below records this patch's original design; the production
+patch now admits the **strict serving-v2 manifest**. Its single source of
+upstream option and environment names is
+`components/serving/contract/serving-v2.toml`, generated as
+`v2::kFields` (113 native option bindings) and `v2::kEnvBindings`
+(15 environment bindings). No second field-to-flag table is maintained here.
+
+`bc_serving_engine_argv` in the patched `core/bc_serving_manifest.cpp`
+now calls the owned C++17 header
+`components/serving/v2/native_option_projection.h` to project the
+generated bindings and emit `projected.argv()`. The runtime checks
+every projected name against Radiance's actual option inventory; a changed
+option name fails closed until both sides agree. The shared CTest
+`bc_v2_native_projection_test` exercises every binding, no-value switches,
+and a one-entry port rename that changes emitted argv; the patch package's
+card-free test compiles and runs the real patched entry point.
+
+This temporary translation seam is what **RUM04** removes in favor of
+the immutable admitted original YAML bytes and upstream fleet parser,
+while retaining BigCherry's measured admission and local owner settings.
+It is not evidence of 2.x compatibility or a request to move the pin.
+
 ## Summary
 
 Lets the engine start from a serving manifest v1: `engine --manifest PATH [--role engine] [-v|-vv]`, with no command-line converter in our tooling.
