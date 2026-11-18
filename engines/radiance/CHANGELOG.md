@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.32.4](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.3...bc-radiance-1170.32.4) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** keep recording-only heat observational ([#1151](https://github.com/audiagentic/bigcherry/issues/1151)) ([65644df](https://github.com/audiagentic/bigcherry/commit/65644df6571efa80a019232ecfa517385db87ed5))
+
 ## [1170.32.3](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.2...bc-radiance-1170.32.3) (2026-11-18)
 
 
