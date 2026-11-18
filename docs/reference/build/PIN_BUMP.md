@@ -57,6 +57,41 @@ source rewrite drift with closest target-source lines. Its verdict is
 results exit zero: triage is advice, not a bump gate. Usage and environment
 errors exit 2.
 
+### Radiance-specific coupling readiness (before `pin-bump`)
+
+Radiance's source and component dependencies are inventoried in
+[`BUMP_COUPLING.md`](../engines/radiance/BUMP_COUPLING.md) (six components, 42 patches).
+Read it with RUM01–RUM10 and the
+[Astra source review](../../reviews/radiance-upstream-2026-11-18/ASTRA-CONSOLIDATION.md).
+**RUM03 -> RUM04 -> RUM02** is the current migration order. The newest tag
+can differ from RUM01's reviewed target; record the exact commit and ABI.
+
+Before moving a pin, compare (a) managed patch targets and `libr3/native/*.rw`
+rewrite blocks, (b) each component's upstream source/header/ABI and wire
+version, (c) the exact target `RAD_ABI_VERSION` and layout fingerprint,
+(d) source emissions from the **existing generated serving-v2 mapping**
+without adding another native-field table, and (e) the Python-free runtime
+asset's pinned version and **complete** component `built-against` closure.
+A coupling counts as DECLARED only after its source-consumer and upstream-
+presence gate is merged and exercised; a clean textual patch is not ABI
+proof. Missing source, undeclared upstream names, failed native rewrite
+or ABI mismatch means **not ready**, even if advisory triage returns zero.
+
+For the exact-ref rewrite check, extract only target `libr4d` from the
+shared bare mirror into project-local scratch and run `r3_rewrite.py --check`
+against checked-in `rewrites.txt` and `native/`. Do not move
+`vendor/radiance` during read-only triage. The 2026-11-18 `v2.1.0` preflight
+found 19 rewrite failures and ABI 40 (not RUM03's ABI-41 candidate).
+
+RUM04 replaces native-only BigCherry option mirroring with upstream
+`fleet::parse` of **the exact admitted immutable original YAML bytes**,
+while preserving the existing strictly measured BigCherry contract and
+fresh resource/power admission. No normalized YAML writer, new Config
+schema, FleetConfig serializer or independent bundle index is needed.
+BHK02–BHK04 own GFXOFF host-kernel prerequisites outside Radiance.
+After these source/ABI checks, component CTests, runtime asset verification
+and RUM09 minimal hardware acceptance remain mandatory.
+
 ## The procedure
 
 Work on ONE tree at a time. Do not bump H: and J: (the build server) in the same
