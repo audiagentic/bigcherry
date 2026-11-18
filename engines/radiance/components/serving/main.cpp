@@ -41,6 +41,7 @@ void usage() {
            "  --schema\n"
            "  --validate <site.toml> [profile.toml] [--set key=value]\n"
            "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
+           "  explain CONFIG [--json] [--configs DIR] [--site FILE] [--set key=value]\n"
            "  --layouts FILE|DIR  layout definitions (repeatable; a directory gives its *.toml); default "
            "BIGCHERRY_LAYOUTS,\n"
            "                     a ':'-separated list. Layouts are run-time data: none is compiled in\n"
@@ -137,34 +138,54 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     std::string config_name;
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
-    fs::path live_policy_file, prompts_a, prompts_b, calibration_store;
+    fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records;
     bool calibration_run = false;
     bool allow_power_apply = false;
     bool json = false;
-    std::vector<std::string> passed;   // the options as given, for `start` to hand to its detached `serve`
+    std::vector<std::string> passed; // the options as given, for `start` to hand to its detached `serve`
     for (int i = 2; i < argc; ++i) {
         const std::string arg = argv[i];
         auto need = [&]() {
-            if (i + 1 >= argc) throw std::runtime_error(arg + " requires a value");
+            if (i + 1 >= argc)
+                throw std::runtime_error(arg + " requires a value");
             passed.push_back(arg);
             passed.push_back(argv[i + 1]);
             return std::string(argv[++i]);
         };
         const bool session_cmd = cmd == "serve" || cmd == "start";
-        if (arg == "--help" || arg == "-h") { usage(); return 0; }
-        else if (arg == "--run-dir") run_dir = need();
-        else if (arg == "--json" && cmd == "status") json = true;
-        else if (!session_cmd) throw std::runtime_error(cmd + ": unknown option " + arg + " (--run-dir" +
-                                                        (cmd == "status" ? ", --json)" : ")"));
-        else if (arg == "--sys-root") opts.sys_root = need();
-        else if (arg == "--site") opts.site = need();
-        else if (arg == "--profile") opts.profile = need();
-        else if (arg == "--layouts") opts.layouts.emplace_back(need());
-        else if (arg == "--configs") opts.configs.emplace_back(need());
-        else if (arg == "--model-root") opts.model_root = need();
-        else if (arg == "--calibration") opts.calibration_cache = need();
-        else if (arg == "--set") opts.sets.push_back(need());
-        else if (arg == "--manifest") {
+        if (arg == "--help" || arg == "-h") {
+            usage();
+            return 0;
+        } else if (arg == "--run-dir") {
+            run_dir = need();
+        } else if (arg == "--json" && cmd == "status") {
+            json = true;
+        } else if (!session_cmd) {
+            std::string message = cmd;
+            message += ": unknown option ";
+            message += arg;
+            message += " (--run-dir";
+            message += cmd == "status" ? ", --json)" : ")";
+            throw std::runtime_error(message);
+        } else if (arg == "--sys-root") {
+            opts.sys_root = need();
+        } else if (arg == "--site") {
+            opts.site = need();
+        } else if (arg == "--profile") {
+            opts.profile = need();
+        } else if (arg == "--layouts") {
+            opts.layouts.emplace_back(need());
+        } else if (arg == "--configs") {
+            opts.configs.emplace_back(need());
+        } else if (arg == "--model-root") {
+            opts.model_root = need();
+        } else if (arg == "--calibration") {
+            opts.calibration_cache = need();
+        } else if (arg == "--calibration-records") {
+            calibration_records = need();
+        } else if (arg == "--set") {
+            opts.sets.push_back(need());
+        } else if (arg == "--manifest") {
             stored_manifest = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
@@ -195,7 +216,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error(message);
         }
     }
-    if (run_dir.empty()) throw std::runtime_error(cmd + ": --run-dir DIR is required (the session's lock, socket, record, logs)");
+    if (run_dir.empty())
+        throw std::runtime_error(cmd +
+                                 ": --run-dir DIR is required (the session's lock, socket, record, logs)");
     if (!config_name.empty() && !stored_manifest.empty())
         throw std::runtime_error("choose a named CONFIG or --manifest FILE, never both");
     if (!config_name.empty())
@@ -216,13 +239,15 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (cmd == "stop") {
         const auto reply = ss::control(run_dir, "stop", std::chrono::minutes(10));
         if (!reply) {
-            // No owner: nothing is stopped by a recorded PID (it can be reused). A process of the last session that is
-            // still the same process (PID and start time) means its owner died without stopping it: not stopped.
+            // No owner: nothing is stopped by a recorded PID (it can be reused). A process of the last session
+            // that is still the same process (PID and start time) means its owner died without stopping it: not
+            // stopped.
             const auto r = ss::read_record(run_dir);
             const auto alive = r ? ss::alive_recorded(*r) : std::vector<Json>{};
             if (!alive.empty()) {
                 std::cerr << "stop failed: no session owner answers in " << run_dir.string()
-                          << ", and its last session (" << r->value("state", std::string("?")) << ") left running:\n";
+                          << ", and its last session ("
+                          << r.value_or(Json::object()).value("state", std::string("?")) << ") left running:\n";
                 for (const auto& p : alive)
                     std::cerr << "  " << p.value("role", std::string("?")) << " pid " << p.at("pid") << ", log "
                               << p.value("log", std::string()) << '\n';
@@ -230,41 +255,55 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             }
             std::cout << "no session owner answers in " << run_dir.string()
                       << (r ? " (last session: " + r->value("state", std::string("?")) +
-                                  "; none of its processes is running)" : std::string()) << '\n';
+                                  "; none of its processes is running)"
+                            : std::string())
+                      << '\n';
             return 0;
         }
-        if (reply->value("ok", false)) { std::cout << "stopped\n"; return 0; }
+        if (reply->value("ok", false)) {
+            std::cout << "stopped\n";
+            return 0;
+        }
         std::cerr << "stop failed (" << reply->value("state", std::string("?")) << "):\n";
-        for (const auto& e : reply->value("errors", Json::array())) std::cerr << "  " << e.get<std::string>() << '\n';
+        for (const auto& e : reply->value("errors", Json::array()))
+            std::cerr << "  " << e.get<std::string>() << '\n';
         return 1;
     }
     if (cmd == "status") {
         const auto reply = ss::control(run_dir, "status", std::chrono::seconds(5));
-        if (json) { std::cout << (reply ? *reply : Json({{"ok", false}, {"state", "no_owner"}})).dump(2) << '\n'; return reply ? 0 : 3; }
+        if (json) {
+            std::cout << (reply ? *reply : Json({{"ok", false}, {"state", "no_owner"}})).dump(2) << '\n';
+            return reply ? 0 : 3;
+        }
         if (!reply) {
             const auto r = ss::read_record(run_dir);
             std::cout << "no session running in " << run_dir.string()
-                      << (r ? " (last session: " + r->value("state", std::string("?")) + ")" : std::string()) << '\n';
+                      << (r ? " (last session: " + r->value("state", std::string("?")) + ")" : std::string())
+                      << '\n';
             if (r)
                 for (const auto& p : ss::alive_recorded(*r))
-                    std::cout << "  WARNING: its " << p.value("role", std::string("?")) << " pid " << p.at("pid")
-                              << " is still running without an owner\n";
+                    std::cout << "  WARNING: its " << p.value("role", std::string("?")) << " pid "
+                              << p.at("pid") << " is still running without an owner\n";
             return 3;
         }
         std::cout << "state    " << reply->value("state", std::string()) << '\n'
-                  << "owner    pid " << reply->value("owner_pid", 0) << ", since " << reply->value("started_at", std::string()) << '\n';
+                  << "owner    pid " << reply->value("owner_pid", 0) << ", since "
+                  << reply->value("started_at", std::string()) << '\n';
         if (reply->contains("selection")) {
             const Json& s = reply->at("selection");
-            std::cout << "config   " << s.value("config", std::string()) << " (" << s.value("source", std::string()) << ")\n"
+            std::cout << "config   " << s.value("config", std::string()) << " ("
+                      << s.value("source", std::string()) << ")\n"
                       << "model    " << s.value("model", std::string()) << '\n'
                       << "cards    " << s.value("engine_cards", Json::array()).dump() << '\n';
         }
-        if (reply->contains("port")) std::cout << "port     " << reply->at("port") << '\n';
-        if (reply->contains("manifest")) std::cout << "manifest " << reply->at("manifest").get<std::string>() << '\n';
+        if (reply->contains("port"))
+            std::cout << "port     " << reply->at("port") << '\n';
+        if (reply->contains("manifest"))
+            std::cout << "manifest " << reply->at("manifest").get<std::string>() << '\n';
         for (const auto& p : reply->value("processes", Json::array()))
             if (!p.value("exited", false))
-                std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0) << ", log "
-                      << p.value("log", std::string()) << '\n';
+                std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0)
+                          << ", log " << p.value("log", std::string()) << '\n';
         return 0;
     }
     // serve and start: the build's SDK rule, as for every other mode
@@ -275,7 +314,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         std::vector<std::string> child = {self.string(), "serve"};
         child.insert(child.end(), passed.begin(), passed.end());
         // --run-dir as an absolute path: the detached owner does not share this shell's directory assumptions
-        for (size_t i = 0; i + 1 < child.size(); ++i) if (child[i] == "--run-dir") child[i + 1] = run_dir.string();
+        for (size_t i = 0; i + 1 < child.size(); ++i)
+            if (child[i] == "--run-dir")
+                child[i + 1] = run_dir.string();
         return ss::start_detached(child, run_dir, std::chrono::minutes(45));
     }
     ss::EnginePlanInputs inputs;
@@ -286,6 +327,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.calibration_prompts_a = prompts_a;
     inputs.calibration_prompts_b = prompts_b;
     inputs.calibration_store = calibration_store;
+    inputs.calibration_records_file = std::move(calibration_records);
 
     inputs.self = self;
     inputs.engine_binary = engine_binary;
@@ -346,36 +388,108 @@ void explain(const bc::serving::Resolved& result) {
         const auto& meta = it.value();
         std::string group = key;
         auto dot = key.find('.');
-        Json val = dot == std::string::npos
-            ? result.values.at(key)
-            : result.values.at(key.substr(0, dot)).at(key.substr(dot + 1));
-        std::cout << key << " = " << val.dump() << "  ["
-                  << meta.at("origin").get<std::string>() << ", "
-                  << meta.at("lifecycle").get<std::string>() << "] "
-                  << meta.at("source").get<std::string>() << '\n';
+        Json val = dot == std::string::npos ? result.values.at(key)
+                                            : result.values.at(key.substr(0, dot)).at(key.substr(dot + 1));
+        std::cout << key << " = " << val.dump() << "  [" << meta.at("origin").get<std::string>() << ", "
+                  << meta.at("lifecycle").get<std::string>() << "] " << meta.at("source").get<std::string>()
+                  << '\n';
     }
 }
+
+// RSC12 step 3: inspect the *same* detected facts, native config loader and
+// resolver used by the session owner, without planning, starting children or
+// loading Python layouts. A named config is a positional identity, not an
+// alternative spelling of layout.name in a second CLI settings language.
+int explain_command(int argc, char** argv) {
+    Options opts;
+    std::string name;
+    bool json = false;
+    for (int i = 2; i < argc; ++i) {
+        const std::string arg = argv[i];
+        auto need = [&]() {
+            if (i + 1 >= argc)
+                throw std::runtime_error("explain: " + arg + " requires a value");
+            return std::string(argv[++i]);
+        };
+        if (arg == "--help" || arg == "-h") {
+            usage();
+            return 0;
+        } else if (arg == "--json") {
+            json = true;
+        } else if (arg == "--configs") {
+            opts.configs.emplace_back(need());
+        } else if (arg == "--site") {
+            opts.site = need();
+        } else if (arg == "--profile") {
+            opts.profile = need();
+        } else if (arg == "--model-root") {
+            opts.model_root = need();
+        } else if (arg == "--calibration") {
+            opts.calibration_cache = need();
+        } else if (arg == "--sys-root") {
+            opts.sys_root = need();
+        } else if (arg == "--set") {
+            const std::string setting = need();
+            if (setting.starts_with("layout.name="))
+                throw std::runtime_error("explain: named CONFIG cannot be replaced by --set layout.name");
+            opts.sets.push_back(setting);
+        } else if (!arg.empty() && arg.front() != '-') {
+            if (!name.empty())
+                throw std::runtime_error("explain: exactly one named CONFIG is required");
+            name = arg;
+        } else {
+            throw std::runtime_error("explain: unknown option " + arg);
+        }
+    }
+    if (name.empty())
+        throw std::runtime_error("explain: a named CONFIG is required");
+    opts.sets.push_back("layout.name=" + Json(name).dump());
+    const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
+    if (json) {
+        std::cout << Json{{"config", name},
+                          {"values", resolved.values},
+                          {"provenance", resolved.provenance},
+                          {"hash", resolved.hash},
+                          {"manifest", resolved.manifest}}
+                         .dump(2)
+                  << '\n';
+    } else {
+        explain(resolved);
+    }
+    return 0;
+}
+
 } // namespace
 
 static uint64_t parse_mib(const std::string& text, const char* flag, bool zero_allowed) {
     size_t used = 0;
     unsigned long long n = 0;
-    try { n = std::stoull(text, &used); } catch (const std::exception&) { used = 0; }
+    try {
+        n = std::stoull(text, &used);
+    } catch (const std::exception&) {
+        used = 0;
+    }
     if (used != text.size() || text.empty() || text[0] == '-' || (n == 0 && !zero_allowed))
-        throw std::runtime_error(std::string(flag) + (zero_allowed ? " must be a whole number of MiB, is \"" : " must be a positive integer (MiB), is \"") + text + "\"");
+        throw std::runtime_error(std::string(flag) +
+                                 (zero_allowed ? " must be a whole number of MiB, is \""
+                                               : " must be a positive integer (MiB), is \"") +
+                                 text + "\"");
     return n;
 }
 
-/* A JSON object an operator supplies (a live policy, a lab experiment): read once, never defaulted; empty path = none.
- * `from` names the file for the member's provenance record. */
+/* A JSON object an operator supplies (a live policy, a lab experiment): read once, never defaulted; empty path
+ * = none. `from` names the file for the member's provenance record. */
 static void load_json_input(const fs::path& path, const char* flag, Json* out, std::string* from) {
-    if (path.empty()) return;
+    if (path.empty())
+        return;
     std::ifstream in(path, std::ios::binary);
-    if (!in) throw std::runtime_error(std::string(flag) + ": cannot read " + path.string());
+    if (!in)
+        throw std::runtime_error(std::string(flag) + ": cannot read " + path.string());
     std::ostringstream text;
     text << in.rdbuf();
     *out = Json::parse(text.str(), nullptr, false);
-    if (!out->is_object()) throw std::runtime_error(std::string(flag) + ": " + path.string() + " is not a JSON object");
+    if (!out->is_object())
+        throw std::runtime_error(std::string(flag) + ": " + path.string() + " is not a JSON object");
     *from = std::string(flag) + " " + path.filename().string();
 }
 
@@ -383,7 +497,10 @@ int main(int argc, char** argv) {
     try {
         if (argc > 1) {
             const std::string cmd(argv[1]);
-            if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status") return session_command(cmd, argc, argv);
+            if (cmd == "explain")
+                return explain_command(argc, argv);
+            if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status")
+                return session_command(cmd, argc, argv);
         }
         if (argc > 1 && std::string(argv[1]) == "calibration-ingest") {
             // The helper has only the *typed v1 manifest* cache key. It is
@@ -395,61 +512,76 @@ int main(int argc, char** argv) {
             std::string extra;
             for (int i = 2; i < argc; ++i) {
                 const std::string arg(argv[i]);
-                if (i + 1 >= argc) throw std::runtime_error(arg + " requires a value");
-                if (arg == "--from-log") log = argv[++i];
-                else if (arg == "--calibration") cache = argv[++i];
-                else if (arg == "--manifest") manifest = argv[++i];
-                else if (arg == "--plan-cache") plan_dir = argv[++i];
-                else if (arg == "--engine-binary") binary = argv[++i];
-                else if (arg == "--plan-extra") extra = argv[++i];
-                else if (arg == "--site") ingest_opts.site = argv[++i];
-                else if (arg == "--profile") ingest_opts.profile = argv[++i];
-                else if (arg == "--layouts") ingest_opts.layouts.emplace_back(argv[++i]);
-                else if (arg == "--configs") ingest_opts.configs.emplace_back(argv[++i]);
-                else if (arg == "--model-root") ingest_opts.model_root = argv[++i];
-                else if (arg == "--sys-root") ingest_opts.sys_root = argv[++i];
-                else if (arg == "--set") ingest_opts.sets.push_back(argv[++i]);
-                else throw std::runtime_error("calibration-ingest: unknown option " + arg);
+                if (i + 1 >= argc)
+                    throw std::runtime_error(arg + " requires a value");
+                if (arg == "--from-log")
+                    log = argv[++i];
+                else if (arg == "--calibration")
+                    cache = argv[++i];
+                else if (arg == "--manifest")
+                    manifest = argv[++i];
+                else if (arg == "--plan-cache")
+                    plan_dir = argv[++i];
+                else if (arg == "--engine-binary")
+                    binary = argv[++i];
+                else if (arg == "--plan-extra")
+                    extra = argv[++i];
+                else if (arg == "--site")
+                    ingest_opts.site = argv[++i];
+                else if (arg == "--profile")
+                    ingest_opts.profile = argv[++i];
+                else if (arg == "--layouts")
+                    ingest_opts.layouts.emplace_back(argv[++i]);
+                else if (arg == "--configs")
+                    ingest_opts.configs.emplace_back(argv[++i]);
+                else if (arg == "--model-root")
+                    ingest_opts.model_root = argv[++i];
+                else if (arg == "--sys-root")
+                    ingest_opts.sys_root = argv[++i];
+                else if (arg == "--set")
+                    ingest_opts.sets.push_back(argv[++i]);
+                else
+                    throw std::runtime_error("calibration-ingest: unknown option " + arg);
             }
-            if (log.empty() || cache.empty() || manifest.empty() || plan_dir.empty() ||
-                binary.empty() || ingest_opts.site.empty() || extra.empty())
-                throw std::runtime_error(
-                    "calibration-ingest: --from-log --calibration --manifest --plan-cache "
-                    "--engine-binary --site --plan-extra are required");
+            if (log.empty() || cache.empty() || manifest.empty() || plan_dir.empty() || binary.empty() ||
+                ingest_opts.site.empty() || extra.empty())
+                throw std::runtime_error("calibration-ingest: --from-log --calibration --manifest --plan-cache "
+                                         "--engine-binary --site --plan-extra are required");
             // Do not invent a plan key from a filename or trust a supplied
             // raw key. Verify the exact resolved model, engine, and measured
             // plan against the strict lab manifest.
-            if (fs::exists(cache)) ingest_opts.calibration_cache = cache;
+            if (fs::exists(cache))
+                ingest_opts.calibration_cache = cache;
             const auto facts = bc::serving::detect(ingest_opts.sys_root);
             const auto resolved = bc::serving::resolve(ingest_opts, facts);
             const Json& values = resolved.values;
             const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
             const Json inputs = bc::serving::plan_key_inputs(
-                values, facts, bc::serving::container_identity(
-                    values.at("engine").at("model").get<std::string>()),
+                values, facts,
+                bc::serving::container_identity(values.at("engine").at("model").get<std::string>()),
                 bc::serving::engine_identity(binary, home), extra);
             const auto plan = bc::serving::plan_cache_lookup(plan_dir, inputs);
             if (!plan)
                 throw std::runtime_error("calibration-ingest: exact measured plan is absent from cache");
-            const auto verified = bc::serving::v2::load_manifest(
-                manifest, bc::serving::v2::PlanUse::serving);
+            const auto verified = bc::serving::v2::load_manifest(manifest, bc::serving::v2::PlanUse::serving);
             if (!verified)
                 throw std::runtime_error("calibration-ingest: strict lab manifest rejected: " +
-                    bc::serving::v2::render_human("bc-serve", verified.error()));
+                                         bc::serving::v2::render_human("bc-serve", verified.error()));
             const auto& m = verified.value();
             if (!m.spec.plan.engine_memory ||
                 m.spec.intent.layout != values.at("layout").at("name").get<std::string>() ||
                 m.spec.intent.model != values.at("engine").at("model").get<std::string>() ||
                 m.spec.plan.engine_memory->model_identity != inputs.at("model").get<std::string>() ||
                 m.spec.plan.engine_memory->engine_identity != inputs.at("engine_build").get<std::string>())
-                throw std::runtime_error("calibration-ingest: launch/model/engine identity does not match lab manifest");
+                throw std::runtime_error(
+                    "calibration-ingest: launch/model/engine identity does not match lab manifest");
             std::ifstream in(manifest, std::ios::binary);
-            if (!in) throw std::runtime_error("calibration-ingest: cannot reread manifest");
+            if (!in)
+                throw std::runtime_error("calibration-ingest: cannot reread manifest");
             const Json raw = Json::parse(in);
             if (raw.at("spec").at("plan").at("engine_memory").at("expected") != plan->plan_json)
                 throw std::runtime_error("calibration-ingest: cached measured plan differs from lab manifest");
-            bc::serving::ingest_live_policy_log(
-                log, cache, manifest, bc::serving::calibration_key(inputs));
+            bc::serving::ingest_live_policy_log(log, cache, manifest, bc::serving::calibration_key(inputs));
             std::cout << "calibration: " << cache << '\n';
             return 0;
         }
@@ -460,10 +592,11 @@ int main(int argc, char** argv) {
         std::optional<uint64_t> helpers_resident_mib, engine_resident_mib;
         std::string plan_extra;
         fs::path plan_cache, engine_binary;
-        fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file;
+        fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file,
+            s8_replay_evidence_file;
         std::string power_profile;
-        // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an explicit live
-        // policy and NO experiment, so the plan it measures is the production plan.
+        // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an
+        // explicit live policy and NO experiment, so the plan it measures is the production plan.
         bool calibration_run = false;
         bool unmeasured = false;
         bool publish_v2_live_room = false;
@@ -476,60 +609,104 @@ int main(int argc, char** argv) {
                     throw std::runtime_error(std::string(what) + " requires a value");
                 return std::string(argv[++i]);
             };
-            if (arg == "--help" || arg == "-h") { usage(); return 0; }
-            if (arg == "--detect") detection = true;
-            else if (arg == "--schema") schema = true;
-            else if (arg == "--publish-v2-live-room") publish_v2_live_room = true;
-            else if (arg == "--publish-v2-p1") publish_v2_p1 = need_arg("--publish-v2-p1");
-            else if (arg == "--validate") validation = true;
-            else if (arg == "--explain") explanation = true;
-            else if (arg == "--json") json = true;
-            else if (arg == "--sys-root") opts.sys_root = need_arg("--sys-root");
-            else if (arg == "--site") opts.site = need_arg("--site");
-            else if (arg == "--profile") opts.profile = need_arg("--profile");
-            else if (arg == "--layouts") opts.layouts.emplace_back(need_arg("--layouts"));
-            else if (arg == "--configs") opts.configs.emplace_back(need_arg("--configs"));
-            else if (arg == "--model-root") opts.model_root = need_arg("--model-root");
-            else if (arg == "--calibration") opts.calibration_cache = need_arg("--calibration");
-            else if (arg == "--write-manifest") write_manifest = need_arg("--write-manifest");
-            else if (arg == "--unmeasured") unmeasured = true;
-            else if (arg == "--live-policy") live_policy_file = need_arg("--live-policy");
-            else if (arg == "--calibration-run") calibration_run = true;
-            else if (arg == "--experiment") experiment_file = need_arg("--experiment");
-            else if (arg == "--plan-extra") plan_extra = need_arg("--plan-extra");
-            else if (arg == "--rank-demand") rank_demand_file = need_arg("--rank-demand");
-            else if (arg == "--calibration-records") calibration_records_file = need_arg("--calibration-records");
-            else if (arg == "--power-profile") power_profile = need_arg("--power-profile");
-            else if (arg == "--measured-plan") measured_plan_file = need_arg("--measured-plan");
-            else if (arg == "--helpers-resident-mib") helpers_resident_mib = parse_mib(need_arg("--helpers-resident-mib"), "--helpers-resident-mib", true);
-            else if (arg == "--engine-resident-mib") engine_resident_mib = parse_mib(need_arg("--engine-resident-mib"), "--engine-resident-mib", false);
-            else if (arg == "--plan-cache") plan_cache = need_arg("--plan-cache");
-            else if (arg == "--engine-binary") engine_binary = need_arg("--engine-binary");
-            else if (arg == "--set") opts.sets.push_back(need_arg("--set"));
+            if (arg == "--help" || arg == "-h") {
+                usage();
+                return 0;
+            }
+            if (arg == "--detect")
+                detection = true;
+            else if (arg == "--schema")
+                schema = true;
+            else if (arg == "--publish-v2-live-room")
+                publish_v2_live_room = true;
+            else if (arg == "--publish-v2-p1")
+                publish_v2_p1 = need_arg("--publish-v2-p1");
+            else if (arg == "--validate")
+                validation = true;
+            else if (arg == "--explain")
+                explanation = true;
+            else if (arg == "--json")
+                json = true;
+            else if (arg == "--sys-root")
+                opts.sys_root = need_arg("--sys-root");
+            else if (arg == "--site")
+                opts.site = need_arg("--site");
+            else if (arg == "--profile")
+                opts.profile = need_arg("--profile");
+            else if (arg == "--layouts")
+                opts.layouts.emplace_back(need_arg("--layouts"));
+            else if (arg == "--configs")
+                opts.configs.emplace_back(need_arg("--configs"));
+            else if (arg == "--model-root")
+                opts.model_root = need_arg("--model-root");
+            else if (arg == "--calibration")
+                opts.calibration_cache = need_arg("--calibration");
+            else if (arg == "--write-manifest")
+                write_manifest = need_arg("--write-manifest");
+            else if (arg == "--unmeasured")
+                unmeasured = true;
+            else if (arg == "--live-policy")
+                live_policy_file = need_arg("--live-policy");
+            else if (arg == "--calibration-run")
+                calibration_run = true;
+            else if (arg == "--experiment")
+                experiment_file = need_arg("--experiment");
+            else if (arg == "--plan-extra")
+                plan_extra = need_arg("--plan-extra");
+            else if (arg == "--rank-demand")
+                rank_demand_file = need_arg("--rank-demand");
+            else if (arg == "--calibration-records")
+                calibration_records_file = need_arg("--calibration-records");
+            else if (arg == "--s8-replay-evidence")
+                s8_replay_evidence_file = need_arg("--s8-replay-evidence");
+            else if (arg == "--power-profile")
+                power_profile = need_arg("--power-profile");
+            else if (arg == "--measured-plan")
+                measured_plan_file = need_arg("--measured-plan");
+            else if (arg == "--helpers-resident-mib")
+                helpers_resident_mib =
+                    parse_mib(need_arg("--helpers-resident-mib"), "--helpers-resident-mib", true);
+            else if (arg == "--engine-resident-mib")
+                engine_resident_mib =
+                    parse_mib(need_arg("--engine-resident-mib"), "--engine-resident-mib", false);
+            else if (arg == "--plan-cache")
+                plan_cache = need_arg("--plan-cache");
+            else if (arg == "--engine-binary")
+                engine_binary = need_arg("--engine-binary");
+            else if (arg == "--set")
+                opts.sets.push_back(need_arg("--set"));
             else if (!arg.empty() && arg.front() == '-')
                 throw std::runtime_error("unknown option " + arg);
-            else positional.push_back(arg);
+            else
+                positional.push_back(arg);
         }
-        // BRVP06: a build runs against the ROCm SDK it recorded; an environment that points at another one is refused here, before
-        // any mode runs (--help above is the only thing that answers in such an environment)
-        if (const auto refusal = bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
+        // BRVP06: a build runs against the ROCm SDK it recorded; an environment that points at another one is
+        // refused here, before any mode runs (--help above is the only thing that answers in such an
+        // environment)
+        if (const auto refusal =
+                bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
             throw std::runtime_error(*refusal);
-        const int modes = int(detection) + int(schema) + int(validation) +
-                          int(explanation) + int(!write_manifest.empty()) +
-                          int(publish_v2_live_room) + int(!publish_v2_p1.empty());
+        const int modes = int(detection) + int(schema) + int(validation) + int(explanation) +
+                          int(!write_manifest.empty()) + int(publish_v2_live_room) +
+                          int(!publish_v2_p1.empty());
         const bool plan_mode = !write_manifest.empty();
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())
             throw std::runtime_error("--plan-extra goes with --write-manifest");
+        if ((!s8_replay_evidence_file.empty() && (write_manifest.empty() || unmeasured)))
+            throw std::runtime_error("--s8-replay-evidence requires a measured --write-manifest");
         if (write_manifest.empty() && (!calibration_records_file.empty() || !power_profile.empty()))
             throw std::runtime_error("--calibration-records and --power-profile go with --write-manifest");
         if (measured_plan_file.empty() != rank_demand_file.empty())
-            throw std::runtime_error("--measured-plan and --rank-demand go together (the engine's --plan-memory and --plan-memory-ranks)");
+            throw std::runtime_error("--measured-plan and --rank-demand go together (the engine's "
+                                     "--plan-memory and --plan-memory-ranks)");
         if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
-            throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab profile, or --calibration-run");
+            throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab "
+                                     "profile, or --calibration-run");
         if (calibration_run && (live_policy_file.empty() || !experiment_file.empty()))
-            throw std::runtime_error("--calibration-run takes an explicit --live-policy and no --experiment (the production plan is measured)");
+            throw std::runtime_error("--calibration-run takes an explicit --live-policy and no --experiment "
+                                     "(the production plan is measured)");
         if (write_manifest.empty() && (unmeasured || !live_policy_file.empty() || !experiment_file.empty()))
             throw std::runtime_error("--unmeasured, --live-policy and --experiment go with --write-manifest");
         if (write_manifest.empty() && !measured_plan_file.empty())
@@ -537,33 +714,34 @@ int main(int argc, char** argv) {
         if (unmeasured && !measured_plan_file.empty())
             throw std::runtime_error("--unmeasured has no plan: it takes no --measured-plan");
         if (measured_plan_file.empty() != (!helpers_resident_mib && !engine_resident_mib))
-            throw std::runtime_error("--helpers-resident-mib and --engine-resident-mib go with --measured-plan (the host memory the "
-                                     "helpers and the engine held in the measuring start that produced the plan), both or neither");
+            throw std::runtime_error(
+                "--helpers-resident-mib and --engine-resident-mib go with --measured-plan (the host memory the "
+                "helpers and the engine held in the measuring start that produced the plan), both or neither");
         if (!measured_plan_file.empty() && (!helpers_resident_mib || !engine_resident_mib))
-            throw std::runtime_error("--measured-plan needs both --helpers-resident-mib and --engine-resident-mib");
-        if (modes != 1) throw std::runtime_error("choose one mode (see --help)");
+            throw std::runtime_error(
+                "--measured-plan needs both --helpers-resident-mib and --engine-resident-mib");
+        if (modes != 1)
+            throw std::runtime_error("choose one mode (see --help)");
         if (!publish_v2_p1.empty()) {
-            if (!positional.empty() || !opts.calibration_cache.empty() || json ||
-                unmeasured || !measured_plan_file.empty() || !plan_extra.empty() ||
-                !live_policy_file.empty() || !experiment_file.empty() || calibration_run ||
-                helpers_resident_mib || engine_resident_mib)
-                throw std::runtime_error(
-                    "--publish-v2-p1 accepts only --site/--profile/--set/--sys-root");
+            if (!positional.empty() || !opts.calibration_cache.empty() || json || unmeasured ||
+                !measured_plan_file.empty() || !plan_extra.empty() || !live_policy_file.empty() ||
+                !experiment_file.empty() || calibration_run || helpers_resident_mib || engine_resident_mib)
+                throw std::runtime_error("--publish-v2-p1 accepts only --site/--profile/--set/--sys-root");
             std::ifstream in(publish_v2_p1, std::ios::binary);
-            if (!in) throw std::runtime_error("P1 cannot open request " + publish_v2_p1);
+            if (!in)
+                throw std::runtime_error("P1 cannot open request " + publish_v2_p1);
             const std::string bytes((std::istreambuf_iterator<char>(in)), {});
             const auto request = bc::serving::parse_plan_json(bytes, publish_v2_p1);
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto resolved = bc::serving::resolve(opts, facts);
-            const auto record = bc::serving::v2::produce_p1_inputs(
-                resolved, facts, opts.sys_root, request);
+            const auto record = bc::serving::v2::produce_p1_inputs(resolved, facts, opts.sys_root, request);
             std::cout << record.dump(2) << '\n';
             return 0;
         }
         if (publish_v2_live_room) {
-            if (!positional.empty() || !opts.calibration_cache.empty() || json ||
-                unmeasured || !measured_plan_file.empty() || !plan_extra.empty() ||
-                !live_policy_file.empty() || !experiment_file.empty() || calibration_run)
+            if (!positional.empty() || !opts.calibration_cache.empty() || json || unmeasured ||
+                !measured_plan_file.empty() || !plan_extra.empty() || !live_policy_file.empty() ||
+                !experiment_file.empty() || calibration_run)
                 throw std::runtime_error(
                     "--publish-v2-live-room accepts only --site/--profile/--set/--sys-root");
             // Native live-room publication is NOT a v2 startup manifest or a
@@ -573,86 +751,87 @@ int main(int argc, char** argv) {
             std::vector<std::string> selected = resolved.typed.layout.engine_cards;
             selected.insert(selected.end(), resolved.typed.layout.helper_cards.begin(),
                             resolved.typed.layout.helper_cards.end());
-            const auto measured = bc::serving::v2::measure_live_room(
-                facts, opts.sys_root, selected);
+            const auto measured = bc::serving::v2::measure_live_room(facts, opts.sys_root, selected);
             if (!measured)
-                throw std::runtime_error(
-                    "P1 live-room refusal: " + measured.error().path + ": " +
-                    measured.error().message);
+                throw std::runtime_error("P1 live-room refusal: " + measured.error().path + ": " +
+                                         measured.error().message);
             const auto& room = measured.value();
-            Json record = {
-                {"schema_version", 1}, {"kind", "bc_serve_v2_live_room"},
-                {"layout", resolved.typed.layout.name},
-                {"engine_bdfs", resolved.typed.layout.engine_cards},
-                {"helper_bdfs", resolved.typed.layout.helper_cards},
-                {"resource_inputs", {
-                    {"mem_available_bytes", room.mem_available_bytes},
-                    {"cgroup_headroom_bytes", room.cgroup_headroom_bytes},
-                    {"pin_available_bytes", room.pin_available_bytes}
-                }},
-                {"provenance", room.evidence}
-            };
+            Json record = {{"schema_version", 1},
+                           {"kind", "bc_serve_v2_live_room"},
+                           {"layout", resolved.typed.layout.name},
+                           {"engine_bdfs", resolved.typed.layout.engine_cards},
+                           {"helper_bdfs", resolved.typed.layout.helper_cards},
+                           {"resource_inputs",
+                            {{"mem_available_bytes", room.mem_available_bytes},
+                             {"cgroup_headroom_bytes", room.cgroup_headroom_bytes},
+                             {"pin_available_bytes", room.pin_available_bytes}}},
+                           {"provenance", room.evidence}};
             std::cout << record.dump(2) << '\n';
             return 0;
         }
         if (schema) {
-            if (!positional.empty()) throw std::runtime_error("--schema takes no files");
+            if (!positional.empty())
+                throw std::runtime_error("--schema takes no files");
             std::cout << bc::serving::json_schema().dump(2) << '\n';
             return 0;
         }
         if (detection) {
-            if (!positional.empty() || !opts.site.empty() || !opts.profile.empty() ||
-                !opts.sets.empty() || !opts.calibration_cache.empty())
+            if (!positional.empty() || !opts.site.empty() || !opts.profile.empty() || !opts.sets.empty() ||
+                !opts.calibration_cache.empty())
                 throw std::runtime_error("--detect takes only --sys-root and --json");
             auto facts = bc::serving::detect(opts.sys_root);
-            if (json) std::cout << facts.dump(2) << '\n';
-            else {
+            if (json) {
+                std::cout << facts.dump(2) << '\n';
+            } else {
                 auto host = facts.at("host");
                 std::cout << "host: " << host.at("mem_total_mib") << " MiB RAM, "
-                          << host.at("mem_available_mib") << " MiB available, "
-                          << host.at("swap_total_mib") << " MiB swap, "
-                          << host.at("shm_available_mib") << " MiB /dev/shm available, "
+                          << host.at("mem_available_mib") << " MiB available, " << host.at("swap_total_mib")
+                          << " MiB swap, " << host.at("shm_available_mib") << " MiB /dev/shm available, "
                           << host.at("cpu_count") << " CPUs\n";
                 for (const auto& g : facts.at("gpus"))
-                    std::cout << "HIP " << g.at("hip_ordinal") << "  "
-                              << g.at("arch").get<std::string>() << " "
-                              << g.at("bdf").get<std::string>() << "  "
-                              << g.at("vram_total_mib") << " MiB VRAM  "
-                              << g.at("current_link_speed").get<std::string>() << " x"
+                    std::cout << "HIP " << g.at("hip_ordinal") << "  " << g.at("arch").get<std::string>() << " "
+                              << g.at("bdf").get<std::string>() << "  " << g.at("vram_total_mib")
+                              << " MiB VRAM  " << g.at("current_link_speed").get<std::string>() << " x"
                               << g.at("current_link_width") << '\n';
             }
             return 0;
         }
         if (validation) {
-            if (positional.empty() || positional.size() > 2 ||
-                !opts.site.empty() || !opts.profile.empty())
+            if (positional.empty() || positional.size() > 2 || !opts.site.empty() || !opts.profile.empty())
                 throw std::runtime_error("--validate expects <site.toml> [profile.toml]");
             opts.site = positional[0];
-            if (positional.size() == 2) opts.profile = positional[1];
+            if (positional.size() == 2)
+                opts.profile = positional[1];
         } else if (!positional.empty()) {
             throw std::runtime_error("unexpected file; use --site or --profile");
         }
         if (plan_mode) {
             if (!positional.empty())
-                throw std::runtime_error("--write-manifest takes --site, --profile, --set and --calibration only");
+                throw std::runtime_error(
+                    "--write-manifest takes --site, --profile, --set and --calibration only");
             if (unmeasured && (!plan_cache.empty() || !engine_binary.empty() || !plan_extra.empty()))
-                throw std::runtime_error("--unmeasured has no plan: it takes no --plan-cache, --engine-binary or --plan-extra");
+                throw std::runtime_error(
+                    "--unmeasured has no plan: it takes no --plan-cache, --engine-binary or --plan-extra");
             if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
                 throw std::runtime_error("--write-manifest needs --plan-cache DIR and --engine-binary PATH");
             if (power_profile.empty())
-                throw std::runtime_error("--write-manifest needs --power-profile NAME (stock observes the cards)");
+                throw std::runtime_error(
+                    "--write-manifest needs --power-profile NAME (stock observes the cards)");
             bc::serving::v2::WriterInputs s10;
             s10.power_profile = power_profile;
             s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
             s10.calibration_records = Json::array();
             if (!calibration_records_file.empty()) {
                 std::ifstream rin(calibration_records_file, std::ios::binary);
-                if (!rin) throw std::runtime_error("--calibration-records: cannot read " + calibration_records_file.string());
+                if (!rin)
+                    throw std::runtime_error("--calibration-records: cannot read " +
+                                             calibration_records_file.string());
                 std::ostringstream text;
                 text << rin.rdbuf();
                 s10.calibration_records = Json::parse(text.str(), nullptr, false);
                 if (!s10.calibration_records.is_array())
-                    throw std::runtime_error("--calibration-records: " + calibration_records_file.string() + " is not a JSON array");
+                    throw std::runtime_error("--calibration-records: " + calibration_records_file.string() +
+                                             " is not a JSON array");
             }
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto r = bc::serving::resolve(opts, facts);
@@ -672,29 +851,33 @@ int main(int argc, char** argv) {
                 std::cerr << "live policy: unmeasured; calibration not available \n";
                 bc::serving::write_manifest_file(write_manifest, built.text);
                 std::cout << "manifest: " << write_manifest << " (unmeasured: for the measuring start only)\n"
-                          << "digest: " << built.digest << '\n' << "no processes started\n";
+                          << "digest: " << built.digest << '\n'
+                          << "no processes started\n";
                 return 0;
             }
             const auto key_inputs = bc::serving::plan_key_inputs(
                 v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
                 bc::serving::engine_identity(engine_binary, home), plan_extra);
-            // The v1 manifest for this configuration from its measured plan: given by a measuring start (--measured-plan,
-            // checked against the configuration and stored in the cache under this key) or found in the cache. A miss is exit
-            // 10: a manifest without a measured plan is not written.
+            // The v1 manifest for this configuration from its measured plan: given by a measuring start
+            // (--measured-plan, checked against the configuration and stored in the cache under this key) or
+            // found in the cache. A miss is exit 10: a manifest without a measured plan is not written.
             std::optional<bc::serving::CachedPlan> plan;
             if (!measured_plan_file.empty()) {
                 std::ifstream in(measured_plan_file, std::ios::binary);
-                if (!in) throw std::runtime_error("cannot read " + measured_plan_file.string());
+                if (!in)
+                    throw std::runtime_error("cannot read " + measured_plan_file.string());
                 std::ostringstream plan_text;
                 plan_text << in.rdbuf();
-                const Json measured = bc::serving::parse_plan_json(plan_text.str(), measured_plan_file.string());
+                const Json measured =
+                    bc::serving::parse_plan_json(plan_text.str(), measured_plan_file.string());
                 bc::serving::check_plan_for_configuration(
                     v, bc::serving::decode_engine_plan(measured, measured_plan_file.string()));
                 Json ranks;
                 std::string ranks_from;
                 load_json_input(rank_demand_file, "--rank-demand", &ranks, &ranks_from);
-                bc::serving::plan_cache_store(plan_cache, key_inputs, measured, ranks,
-                                              bc::serving::HostResident{*helpers_resident_mib, *engine_resident_mib});
+                bc::serving::plan_cache_store(
+                    plan_cache, key_inputs, measured, ranks,
+                    bc::serving::HostResident{*helpers_resident_mib, *engine_resident_mib});
                 std::cerr << "plan: stored " << bc::serving::plan_key(key_inputs) << '\n';
             }
             plan = bc::serving::plan_cache_lookup(plan_cache, key_inputs);
@@ -705,33 +888,38 @@ int main(int argc, char** argv) {
                 return 10;
             }
             {
-                // P1: measure now, at every manifest written: the cached plan and per-rank demand, the owner map, and the
-                // host's live room. The retention target is the host KV tier the launcher runs with, over the measured KV
-                // density (one full session's KV over its context), at most every session at full context.
+                // P1: measure now, at every manifest written: the cached plan and per-rank demand, the owner
+                // map, and the host's live room. The retention target is the host KV tier the launcher runs
+                // with, over the measured KV density (one full session's KV over its context), at most every
+                // session at full context.
                 const int64_t ctx = v.at("service").at("max_context").get<int64_t>();
                 const int64_t sessions = v.at("service").at("max_sessions").get<int64_t>();
                 const int64_t per_token = plan->plan.kv_one_session.bytes / std::max<int64_t>(1, ctx);
-                if (per_token <= 0) throw std::runtime_error("the measured plan has no KV per token");
+                if (per_token <= 0)
+                    throw std::runtime_error("the measured plan has no KV per token");
                 const int64_t retention = std::min<int64_t>(
                     v.at("memory").at("host_kv_mib").get<int64_t>() * 1048576 / per_token, ctx * sessions);
                 const bool helpers = !r.manifest.at("process_helpers").empty();
                 const Json sources = {
-                    {"engine_plan", plan->plan_json}, {"rank_demand", plan->rank_demand},
+                    {"engine_plan", plan->plan_json},
+                    {"rank_demand", plan->rank_demand},
                     {"engine_binary", engine_binary.string()},
                     {"helper_binary", helpers ? (home / "helpers" / "r3_moe_worker").string() : std::string()},
                     {"retention_target_tokens", retention},
                     {"margin", bc::serving::host_ledger_margin(r, opts.calibration_cache)},
                     {"run_id", "bc-serve --write-manifest " + write_manifest.filename().string()}};
                 s10.p1_record = bc::serving::v2::produce_p1(r, facts, opts.sys_root, sources);
-                // The plan echoes the host pool it was measured with; S8 derives the pool from what was measured. When they
-                // differ, the plan is for another pool: exit 11 with the derived one, and the launcher measures once more
-                // with it (that configuration has its own cache key, so this happens once per configuration).
+                // The plan echoes the host pool it was measured with; S8 derives the pool from what was
+                // measured. When they differ, the plan is for another pool: exit 11 with the derived one, and
+                // the launcher measures once more with it (that configuration has its own cache key, so this
+                // happens once per configuration).
                 bc::serving::v2::MeasuredResourceInputs measured_inputs;
-                if (const auto e = bc::serving::v2::decode(s10.p1_record.at("resource_inputs"), "p1.resource_inputs",
-                                                           &measured_inputs))
+                if (const auto e = bc::serving::v2::decode(s10.p1_record.at("resource_inputs"),
+                                                           "p1.resource_inputs", &measured_inputs))
                     throw std::runtime_error(e->message);
                 const auto derived = bc::serving::v2::derived_host_pool_mib(measured_inputs);
-                if (!derived) throw std::runtime_error("the derived host pool overflows");
+                if (!derived)
+                    throw std::runtime_error("the derived host pool overflows");
                 if (*derived != plan->plan.host_pool_mib) {
                     std::cerr << "bc-serve: the plan was measured with a " << plan->plan.host_pool_mib
                               << " MiB host pool; the measured inputs need " << *derived << " MiB\n";
@@ -752,30 +940,51 @@ int main(int argc, char** argv) {
             const auto built = bc::serving::build_manifest(in);
             const auto& prov = built.document.at("provenance");
             const auto& spec = built.document.at("spec");
-            const bool has_handoff = spec.contains("handoff");   // an engine-only manifest has no hand-off section
-            const auto placement = has_handoff ? spec.at("handoff").at("placement") : bc::serving::Json::object();
+            const bool has_handoff =
+                spec.contains("handoff"); // an engine-only manifest has no hand-off section
+            const auto placement =
+                has_handoff ? spec.at("handoff").at("placement") : bc::serving::Json::object();
             if (has_handoff && !placement.contains("live_policy"))
                 std::cerr << "live policy: no calibration for key " << bc::serving::calibration_key(key_inputs)
-                          << "; " << placement.at("live_policy_state").at("reason_code").get<std::string>() << ": "
-                          << placement.at("live_policy_state").at("reason_detail").get<std::string>() << '\n';
-            else if (has_handoff) for (auto it = prov.begin(); it != prov.end(); ++it) {
-                const std::string pointer = "/spec/handoff/placement/live_policy/";
-                if (it.key().rfind(pointer, 0) != 0) continue;
-                const std::string field = it.key().substr(pointer.size());
-                std::cerr << "live policy: " << field << "=" << placement.at("live_policy").at(field).dump()
-                          << " [" << it.value().at("origin") << "] "
-                          << it.value().at("source").get<std::string>() << '\n';
-            }
+                          << "; " << placement.at("live_policy_state").at("reason_code").get<std::string>()
+                          << ": " << placement.at("live_policy_state").at("reason_detail").get<std::string>()
+                          << '\n';
+            else if (has_handoff)
+                for (auto it = prov.begin(); it != prov.end(); ++it) {
+                    const std::string pointer = "/spec/handoff/placement/live_policy/";
+                    if (it.key().rfind(pointer, 0) != 0)
+                        continue;
+                    const std::string field = it.key().substr(pointer.size());
+                    std::cerr << "live policy: " << field << "=" << placement.at("live_policy").at(field).dump()
+                              << " [" << it.value().at("origin") << "] "
+                              << it.value().at("source").get<std::string>() << '\n';
+                }
             bc::serving::write_manifest_file(write_manifest, built.text);
-            std::cout << "manifest: " << write_manifest << '\n' << "digest: " << built.digest << '\n' << "no processes started\n";
+            if (!s8_replay_evidence_file.empty()) {
+                // The writer publishes the EXACT P1 producer record and P2
+                // evidence consumed by S8 for this measured manifest. This
+                // sibling is independently digest-bound; no manifest field or
+                // allocation is rewritten to permit replay.
+                const Json replay_source = {{"version", 1},
+                                            {"manifest_digest", built.digest},
+                                            {"produced_at_unix_s", s10.now_unix_s},
+                                            {"p1_record", s10.p1_record},
+                                            {"calibration_records", s10.calibration_records}};
+                bc::serving::write_manifest_file(s8_replay_evidence_file, replay_source.dump(2) + "\n");
+            }
+            std::cout << "manifest: " << write_manifest << '\n'
+                      << "digest: " << built.digest << '\n'
+                      << "no processes started\n";
             return 0;
         }
         auto result = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
         if (validation) {
             std::cout << "valid: " << result.hash << '\n';
         } else {
-            if (json) std::cout << result.manifest.dump(2) << '\n';
-            else explain(result);
+            if (json)
+                std::cout << result.manifest.dump(2) << '\n';
+            else
+                explain(result);
         }
         return 0;
     } catch (const std::exception& error) {

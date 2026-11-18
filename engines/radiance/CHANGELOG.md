@@ -1,5 +1,19 @@
 # Changelog
 
+## [1170.29.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.28.0...bc-radiance-1170.29.0) (2026-11-17)
+
+
+### New and changed
+
+* **radiance:** launch-sized LDS for GEMV kernels and pre-launch dispatch to grouped GEMM (RCS13 step 2) ([#946](https://github.com/audiagentic/bigcherry/issues/946)) ([0b93cb8](https://github.com/audiagentic/bigcherry/commit/0b93cb8840ccc46e9cf6d78271b7d6ac375061b3))
+* **serving:** inspect named configs with native bc-serve ([#1078](https://github.com/audiagentic/bigcherry/issues/1078)) ([f14245a](https://github.com/audiagentic/bigcherry/commit/f14245a0407c9648118ea4f87ff9f3c55d15e805))
+
+
+### Fixes
+
+* **serving:** close RSC02 step 5 replay review findings ([#1069](https://github.com/audiagentic/bigcherry/issues/1069)) ([9549aa6](https://github.com/audiagentic/bigcherry/commit/9549aa603af95234693a48c65d09647ea9f41dc0))
+* **serving:** finalize RSC02 replay validation and lint ([#1074](https://github.com/audiagentic/bigcherry/issues/1074)) ([eb2fc8e](https://github.com/audiagentic/bigcherry/commit/eb2fc8e6a1649a35f765b048f580c7cd62847143))
+
 ## [1170.28.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.27.0...bc-radiance-1170.28.0) (2026-11-17)
 
 

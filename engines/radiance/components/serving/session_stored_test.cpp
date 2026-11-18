@@ -40,6 +40,41 @@ void check(bool ok, const std::string& why) {
     if (!ok)
         throw std::runtime_error(why);
 }
+// Failure teardown is bounded even if an owner cannot stop.
+pid_t reap_for(pid_t pid, int* status, std::chrono::milliseconds limit) {
+    const auto deadline = std::chrono::steady_clock::now() + limit;
+    do {
+        const pid_t r = ::waitpid(pid, status, WNOHANG);
+        if (r != 0)
+            return r;
+        std::this_thread::sleep_for(20ms);
+    } while (std::chrono::steady_clock::now() < deadline);
+    return 0;
+}
+struct OwnerGuard {
+    pid_t pid;
+    fs::path run;
+    ~OwnerGuard() {
+        if (pid <= 0)
+            return;
+        try {
+            (void)ss::control(run, "stop", 500ms);
+        } catch (...) {
+            std::cerr << "stored owner test: control stop unavailable; escalating cleanup\n";
+        }
+        int status = 0;
+        if (reap_for(pid, &status, 3s) == pid)
+            return;
+        (void)::kill(pid, SIGTERM);
+        if (reap_for(pid, &status, 2s) == pid)
+            return;
+        (void)::kill(pid, SIGKILL);
+        (void)reap_for(pid, &status, 2s);
+    }
+    void disarm() {
+        pid = 0;
+    }
+};
 struct Temp {
     fs::path root;
     Temp() {
@@ -206,7 +241,7 @@ struct Case {
         const Json final = completed.value_or(Json::object());
         int owner_status = 0;
         const pid_t owner_pid = final.at("owner_pid").get<pid_t>();
-        check(::waitpid(owner_pid, &owner_status, 0) == owner_pid && WIFEXITED(owner_status) &&
+        check(reap_for(owner_pid, &owner_status, 15s) == owner_pid && WIFEXITED(owner_status) &&
                   WEXITSTATUS(owner_status) == 0,
               "detached stored replay owner must exit cleanly");
         check(final.at("selection").at("replay") == true,
@@ -239,6 +274,7 @@ struct Case {
             }
             std::_Exit(result);
         }
+        OwnerGuard owner_guard{pid, run};
         bool reached = false;
         const auto deadline = std::chrono::steady_clock::now() + 15s;
         std::string state;
@@ -251,11 +287,8 @@ struct Case {
             }
             std::this_thread::sleep_for(20ms);
         }
-        if (!reached) {
-            ::kill(pid, SIGTERM);
-            ::waitpid(pid, nullptr, 0);
+        if (!reached)
             throw std::runtime_error("owner session timed out in state " + state);
-        }
         const auto observed = ss::read_record(run);
         check(observed.has_value(), "owner must have a durable record");
         const Json record = observed.value_or(Json::object());
@@ -267,15 +300,22 @@ struct Case {
             check(state == "failed", "refused replay started the engine: " + record.dump(2));
         }
         int status = 0;
-        check(::waitpid(pid, &status, 0) == pid, "waitpid");
+        const pid_t reaped = reap_for(pid, &status, 15s);
+        if (reaped == pid)
+            owner_guard.disarm();
+        check(reaped == pid, "owner did not exit within 15 s");
         check(WIFEXITED(status) && (WEXITSTATUS(status) == 0) == succeed, "owner return code");
         check(read(stored) == bytes, "stored manifest changed after replay attempt");
         const auto final_record = ss::read_record(run);
         check(final_record.has_value(), "owner must persist terminal record");
         const Json final = final_record.value_or(Json::object());
         if (succeed) {
-            check(final.at("power_admission").at("manifest") == stored.string(),
-                  "power bound to a different file");
+            check(final.at("power_admission").at("origin_manifest") == stored.string(),
+                  "power execution must retain the authenticated origin pathname");
+            check(final.at("power_admission").at("manifest") != stored.string(),
+                  "power must admit the pinned execution descriptor, never the original pathname");
+            check(final.at("power_admission").at("original_sha256").is_string(),
+                  "power execution must keep the original byte identity");
             check(final.at("selection").at("replay") == true, "run record must distinguish replay");
             const auto& events = final.at("events");
             size_t admitted = events.size(), first_child = events.size();
@@ -342,6 +382,95 @@ int main(int argc, char** argv) {
         altered_bytes.run_owner(false);
         Case detached(7);
         detached.run_detached();
+        // RED P1-4: a digest-correct manifest B can atomically replace the
+        // admitted manifest A pathname between the owner and the strict child
+        // reader. The child must still consume A, byte for byte.
+        Case pinned(10);
+        ss::Hooks pin_hooks;
+        pin_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        pin_hooks.admit_power = [](const fs::path&, v2::PlanUse) -> v2::Status { return std::nullopt; };
+        const ss::EngineStart admitted = ss::replay_stored_manifest(pinned.inputs, pinned.run, pin_hooks);
+        check(!admitted.stored_sha256.empty(), "stored bytes must have an admission digest");
+        const std::string alternate_bytes =
+            fixture(port(), pinned.original.at("spec").at("handoff").at("transport").at("shm")).dump(2) + "\n";
+        check(alternate_bytes != pinned.bytes, "replacement fixture must have different real v2 bytes");
+        const fs::path replacement = pinned.tmp.root / "replacement.json";
+        std::ofstream(replacement, std::ios::binary) << alternate_bytes;
+        fs::rename(replacement, pinned.stored);
+        check(read(pinned.stored) == alternate_bytes, "pathname replacement must succeed");
+        const auto child_bytes = read(admitted.argv.at(2));
+        const auto child_manifest = v2::read_manifest(child_bytes, admitted.argv.at(2), v2::PlanUse::serving);
+        check(bool(child_manifest), "the actual v2 child reader must accept its bound manifest");
+        check(child_bytes == pinned.bytes, "child reader must consume exactly the bytes the owner admitted");
+
+        // Exact P1-4 TOCTOU test: the OS/process boundary swaps the public
+        // pathname AFTER the owner's final SHA check and BEFORE first exec.
+        // The real v2 reader, through the child's actual --manifest argument,
+        // must still see A while the public pathname names valid B.
+        Case during_exec(11);
+        const fs::path new_manifest = during_exec.tmp.root / "valid-b.json";
+        const fs::path restore_a = during_exec.tmp.root / "valid-a-backup.json";
+        std::ofstream(new_manifest, std::ios::binary)
+            << fixture(port(), during_exec.original.at("spec").at("handoff").at("transport").at("shm")).dump(2)
+            << "\n";
+        std::ofstream(restore_a, std::ios::binary) << during_exec.bytes;
+        during_exec.session.before_gpu_start = [stored = during_exec.stored, a = during_exec.bytes,
+                                                new_manifest,
+                                                restore_a](const ss::EngineStart& plan) -> v2::Status {
+            fs::rename(new_manifest, stored);
+            const std::string actual_child_bytes = read(plan.argv.at(2));
+            const auto consumed = v2::read_manifest(actual_child_bytes, plan.argv.at(2), v2::PlanUse::serving);
+            if (!consumed || actual_child_bytes != a)
+                return v2::make_error(v2::ConfigErrorCode::plan_mismatch, "test.before_gpu_start",
+                                      "strict child reader followed swapped public manifest");
+            fs::rename(restore_a, stored);
+            return std::nullopt;
+        };
+        during_exec.run_owner(true);
+
+        // RED P1-3: the same immutable helper manifest must never grant
+        // transport ownership to two distinct run directories at once.
+        Case first_transport(8);
+        const pid_t running_owner = ::fork();
+        check(running_owner >= 0, "fork transport owner");
+        if (running_owner == 0)
+            std::_Exit(ss::serve(first_transport.session));
+        OwnerGuard stop_guard{running_owner, first_transport.run};
+        bool first_running = false;
+        const auto deadline = std::chrono::steady_clock::now() + 15s;
+        while (std::chrono::steady_clock::now() < deadline) {
+            const auto rec = ss::read_record(first_transport.run);
+            if (rec && rec->value("state", std::string()) == "running") {
+                first_running = true;
+                break;
+            }
+            if (rec && rec->value("state", std::string()) == "failed")
+                break;
+            std::this_thread::sleep_for(25ms);
+        }
+        check(first_running, "first owner must be running before cross-root transport collision");
+        Case second_transport(9, false, false, false, first_transport.stored,
+                              first_transport.tmp.root / "other-run", first_transport.tmp.root / "other-trace");
+        second_transport.run_owner(false);
+        const auto second_lookup = ss::read_record(second_transport.run);
+        check(second_lookup.has_value(), "second owner must leave a durable refusal record");
+        const Json second_record = second_lookup.value_or(Json::object());
+        check(second_record.at("processes").empty(),
+              "cross-root transport collision must refuse before any child starts");
+        bool transport_refusal = false;
+        for (const auto& error : second_record.value("errors", Json::array()))
+            if (error.is_string() &&
+                error.get<std::string>().find("shared-memory transport") != std::string::npos)
+                transport_refusal = true;
+        check(transport_refusal, "cross-root refusal must name the shared-memory transport");
+        const auto stop_first = ss::control(first_transport.run, "stop", 10s);
+        check(stop_first && stop_first->value("ok", false), "first owner must stop cleanly");
+        int first_status = 0;
+        const pid_t reaped_first = reap_for(running_owner, &first_status, 15s);
+        if (reaped_first == running_owner)
+            stop_guard.disarm();
+        check(reaped_first == running_owner && WIFEXITED(first_status) && WEXITSTATUS(first_status) == 0,
+              "first owner must keep transport while running and exit cleanly");
         std::cout << "production and detached owner replay: success, static/live/power/missing-gate/tamper "
                      "refusals passed\n";
         return 0;

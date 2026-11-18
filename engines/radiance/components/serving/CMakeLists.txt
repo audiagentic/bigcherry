@@ -54,7 +54,7 @@ target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp stored_manifest.cpp stored_manifest_cache.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -89,8 +89,28 @@ target_link_libraries(bc-serve PRIVATE bc_serving_v2_p1_producer)
 set_target_properties(bc-serve PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
 install(TARGETS bc-serve RUNTIME DESTINATION radiance_home/bin)
 
+# RSP01: standalone native release verification/installation. The binary is
+# a run-side tool; only the build needs a C++ compiler and zlib headers.
+# No Python, shell, Git or GPU service is linked into this executable.
+find_package(ZLIB REQUIRED)
+add_library(bc_release_core STATIC release_install.cpp release_archive.cpp sha256.cpp)
+target_compile_features(bc_release_core PUBLIC cxx_std_20)
+target_link_libraries(bc_release_core PUBLIC ZLIB::ZLIB)
+target_include_directories(bc_release_core PUBLIC
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+add_executable(bc-release release_cli.cpp)
+target_link_libraries(bc-release PRIVATE bc_release_core)
+set_target_properties(bc-release PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
+install(TARGETS bc-release RUNTIME DESTINATION radiance_home/bin)
+
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(bc_release_install_test EXCLUDE_FROM_ALL release_install_test.cpp)
+  target_link_libraries(bc_release_install_test PRIVATE bc_release_core)
+  target_compile_definitions(bc_release_install_test PRIVATE
+    BC_RELEASE_TEST_ROOT="${CMAKE_CURRENT_BINARY_DIR}"
+    BC_RELEASE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/release_testdata")
+  add_test(NAME bc_release_install_test COMMAND bc_release_install_test)
   find_package(Python3 COMPONENTS Interpreter REQUIRED)
   # A build target so the component test gate can declare it; building it runs the tripwire.
   add_custom_target(bc_callback_boundary_guard
@@ -118,9 +138,10 @@ if(BUILD_TESTING)
   target_include_directories(bc_fake_engine PRIVATE "${RADIANCE_SRC}/vendor")
   target_compile_features(bc_fake_engine PRIVATE cxx_std_20)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
-  target_link_libraries(bc_serving_test PRIVATE bc_serving)
-  add_dependencies(bc_serving_test bc_fake_engine)
+  target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
+  add_dependencies(bc_serving_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
+  target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
   add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
   target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
@@ -280,4 +301,7 @@ if(BUILD_TESTING)
     set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT
                  "BIGCHERRY_LAYOUTS=${CMAKE_CURRENT_SOURCE_DIR}/../../layouts")
   endforeach()
+  # All declared component tests fail fast on a hung process in CI.
+  get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
+  set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
 endif()

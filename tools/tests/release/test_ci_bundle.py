@@ -2,10 +2,10 @@
 import json
 import os
 import shutil
-from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from bigcherry.release import ci_bundle as cb
@@ -31,7 +31,7 @@ class CiBundleTests(unittest.TestCase):
         (self.sdk / ".info").mkdir(parents=True)
         (self.sdk / ".info/version").write_text("7.2.4")
         build = self.work / "builds" / "src-01" / PLAN
-        for rel, data in (("bin/radiance", b"engine"), ("radiance_home/bin/bc-serve", b"serve"), ("radiance_home/helpers/r3_moe_worker", b"worker"),
+        for rel, data in (("bin/radiance", b"engine"), ("radiance_home/bin/bc-serve", b"serve"), ("radiance_home/bin/bc-release", b"release"), ("radiance_home/helpers/r3_moe_worker", b"worker"),
                           ("radiance_home/kernels/libr3moe.so", b"plugin")):
             (build / rel).parent.mkdir(parents=True, exist_ok=True)
             (build / rel).write_bytes(data)
@@ -43,6 +43,13 @@ class CiBundleTests(unittest.TestCase):
             target.write_bytes(b"runtime data")
         (build / assets.BUILD_METADATA).write_text('{"build_plan_id": "' + PLAN + '"}')
         self.build = build
+        configs = self.root / "engines/radiance/configs"
+        configs.mkdir(parents=True)
+        for name in assets.SHIPPED_CONFIGS:
+            (configs / name).write_text(f"schema = 1\n# {name}\n")
+        committed = mock.patch.object(assets, "check_committed_config")
+        committed.start()
+        self.addCleanup(committed.stop)
         for target, name, value in ((assets, "stock_identity", TREE_ID), (cb, "build_inputs_tree", "e" * 64)):
             patch = mock.patch.object(target, name, return_value=value)
             patch.start()
@@ -115,7 +122,7 @@ class CiBundleTests(unittest.TestCase):
                                        "runtime_key": {**key, "engine_tree": "f" * 40}},
             "bc-radiance-1170.10.0": {"schema": assets.SCHEMA, "payload_scope": assets.RUN_SCOPE,
                                        "runtime_key": key, "plan_id": PLAN,
-                                       "file_names": sorted(assets.runtime_files(self.build))},
+                                       "file_names": sorted(assets.runtime_files(self.build, self.root))},
         }
         def fake_gh(args, root):
             if args[:2] == ["release", "list"]:

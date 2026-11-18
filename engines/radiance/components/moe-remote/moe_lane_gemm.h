@@ -33,7 +33,14 @@ __constant__ float kGemvW4nl[16] = { 1.125f, 3.25f, 5.5f, 8.0f, 11.0f, 14.0f, 18
                                      -1.125f, -3.25f, -5.5f, -8.0f, -11.0f, -14.0f, -18.0f, -22.0f };
 
 constexpr uint32_t kGemvTile = 64;        /* outputs a block */
-constexpr uint32_t kGemvMaxK = 2560;
+// Dynamic LDS row view: each block uses its own class K as the row stride.
+template <typename T> struct GemvLdsRows {
+    T* data;
+    uint32_t stride;
+    __device__ __forceinline__ T* operator[](uint32_t row) const {
+        return data + (uint64_t)row * stride;
+    }
+};
 
 template <bool TOKEN, bool FP8>
 __global__ __launch_bounds__(256) void lane_moe_gemv(
@@ -44,7 +51,7 @@ __global__ __launch_bounds__(256) void lane_moe_gemv(
     using namespace r3::moe_shm;
     const uint32_t r = blockIdx.x;
     if (r >= (uint32_t)off[shape.experts]) return;
-    __shared__ float a[kGemvMaxK];
+    extern __shared__ __align__(16) unsigned char gemv_lds[];
     __shared__ uint32_t sh_e;
     if (threadIdx.x == 0) {
         uint32_t lo = 0, hi = shape.experts;          /* last e with off[e] <= r */
@@ -55,7 +62,8 @@ __global__ __launch_bounds__(256) void lane_moe_gemv(
     const uint32_t e = sh_e, cls = e & 1u, ix = e >> 1;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kGemvTile;
-    if (n_base >= N || K > kGemvMaxK) return;
+    if (n_base >= N) return;
+    float* a = reinterpret_cast<float*>(gemv_lds);
     const uint32_t arow = TOKEN ? (uint32_t)sorted[r] / top_k : r;
     const uint8_t* ar = aq + (uint64_t)arow * a_stride;
     const float* asr = as + (uint64_t)arow * (a_stride / 128u);
@@ -141,7 +149,7 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_wide(
     using namespace r3::moe_shm;
     const uint32_t r = blockIdx.x;
     if (r >= (uint32_t)off[shape.experts]) return;
-    __shared__ float a[kGemvMaxK];
+    extern __shared__ __align__(16) unsigned char gemv_lds[];
     __shared__ uint32_t sh_e;
     if (threadIdx.x == 0) {
         uint32_t lo = 0, hi = shape.experts;          /* last e with off[e] <= r */
@@ -152,7 +160,8 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_wide(
     const uint32_t e = sh_e, cls = e & 1u, ix = e >> 1;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kGemvTile;
-    if (n_base >= N || K > kGemvMaxK || (K & 15u)) return;
+    if (n_base >= N || (K & 15u)) return;
+    float* a = reinterpret_cast<float*>(gemv_lds);
     const uint32_t arow = TOKEN ? (uint32_t)sorted[r] / top_k : r;
     const uint8_t* ar = aq + (uint64_t)arow * a_stride;
     const float* asr = as + (uint64_t)arow * (a_stride / 128u);
@@ -250,8 +259,7 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_h2(
     using namespace r3::moe_shm;
     const uint32_t r = blockIdx.x;
     if (r >= (uint32_t)off[shape.experts]) return;
-    __shared__ uint32_t a[R][kGemvMaxK / 2];        /* K half values as half2 pairs, in two planes, a row */
-    __shared__ float asc[R][kGemvMaxK / 128u];
+    extern __shared__ __align__(16) unsigned char gemv_lds[];
     __shared__ uint32_t sh_e, sh_first;
     if (threadIdx.x == 0) {
         uint32_t lo = 0, hi = shape.experts;
@@ -265,7 +273,9 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_h2(
     const uint32_t nr = (uint32_t)off[e + 1] - r < R ? (uint32_t)off[e + 1] - r : R;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kGemvTile;
-    if (n_base >= N || K > kGemvMaxK || (K & 15u)) return;
+    if (n_base >= N || (K & 15u)) return;
+    GemvLdsRows<uint32_t> a{reinterpret_cast<uint32_t*>(gemv_lds), K / 2u};
+    GemvLdsRows<float> asc{reinterpret_cast<float*>(gemv_lds + (uint64_t)R * K * sizeof(uint16_t)), K / 128u};
     const uint32_t k16 = K / 16u;
     /* element k = 16 d + 4 q + j sits in plane (j & 1), half2 index (d * 4 + q), lane (j >> 1) */
     for (uint32_t m = 0; m < nr; ++m) {
@@ -373,8 +383,7 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_w4h2(
     using namespace r3::moe_shm;
     const uint32_t r = blockIdx.x;
     if (r >= (uint32_t)off[shape.experts]) return;
-    __shared__ uint16_t a[kGemvMaxK];
-    __shared__ float asc[kGemvMaxK / 128u];
+    extern __shared__ __align__(16) unsigned char gemv_lds[];
     __shared__ uint32_t sh_e;
     if (threadIdx.x == 0) {
         uint32_t lo = 0, hi = shape.experts;
@@ -385,7 +394,9 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_w4h2(
     const uint32_t e = sh_e, cls = e & 1u, ix = e >> 1;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kGemvTile;
-    if (n_base >= N || K > kGemvMaxK || (K & 63u)) return;
+    if (n_base >= N || (K & 63u)) return;
+    uint16_t* a = reinterpret_cast<uint16_t*>(gemv_lds);
+    float* asc = reinterpret_cast<float*>(gemv_lds + (uint64_t)K * sizeof(uint16_t));
     const uint32_t arow = TOKEN ? (uint32_t)sorted[r] / top_k : r;
     const uint8_t* ar = aq + (uint64_t)arow * a_stride;
     const float* asr = as + (uint64_t)arow * (a_stride / 128u);
@@ -466,11 +477,12 @@ __global__ __launch_bounds__(256) void lane_moe_gemv_mr(
     const uint32_t cls = e & 1u, ix = e >> 1;
     const uint32_t N = cls ? n1 : n0, K = cls ? k1 : k0;
     const uint32_t n_base = blockIdx.y * kMrTile;
-    if (n_base >= N || K > kGemvMaxK || (K & 15u)) return;
+    if (n_base >= N || (K & 15u)) return;
     const uint8_t* codes = static_cast<const uint8_t*>(cls ? code1[ix] : code0[ix]);
     const uint8_t* scales = static_cast<const uint8_t*>(cls ? scale1[ix] : scale0[ix]);
     if (!codes || !scales) return;
-    __shared__ float a[kMrRows][kGemvMaxK];
+    extern __shared__ __align__(16) unsigned char gemv_lds[];
+    GemvLdsRows<float> a{reinterpret_cast<float*>(gemv_lds), K};
     const uint32_t k16 = K / 16u, ktiles = (K + 127u) / 128u;
     const uint32_t lane = threadIdx.x % warpSize, wave = threadIdx.x / warpSize, waves = blockDim.x / warpSize;
     constexpr uint32_t U = 4;

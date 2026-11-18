@@ -1,15 +1,13 @@
 """BU01 offline Radiance runtime bundle packaging and verification tests."""
-import hashlib
 import io
 import json
-from pathlib import Path
 import tarfile
 import tempfile
 import unittest
+from pathlib import Path
 from unittest import mock
 
 from bigcherry.release import runtime_assets as assets
-
 
 ROOT = Path(__file__).resolve().parents[2]
 TAG = "bc-radiance-1160.0.0"
@@ -26,6 +24,12 @@ class RuntimeAssetsTests(unittest.TestCase):
         self.work = self.path / "work"
         self.root = self.path / "repo"
         self.root.mkdir()
+        config_dir = self.root / "engines/radiance/configs"
+        config_dir.mkdir(parents=True)
+        for name in assets.SHIPPED_CONFIGS:
+            (config_dir / name).write_text(f"schema = 1\n# {name}\n")
+        self.committed_config = mock.patch.object(assets, "check_committed_config")
+        self.committed_config.start()
         self.sdk = self.path / "sdk"
         (self.sdk / ".info").mkdir(parents=True)
         (self.sdk / ".info/version").write_text("7.2.4")
@@ -39,6 +43,9 @@ class RuntimeAssetsTests(unittest.TestCase):
         serving.parent.mkdir(parents=True)
         serving.write_bytes(b"bc-serve")
         serving.chmod(0o755)
+        releaser = self.build / "radiance_home/bin/bc-release"
+        releaser.write_bytes(b"bc-release")
+        releaser.chmod(0o755)
         (self.build / "radiance_home/helpers/r3_moe_worker").write_bytes(b"worker")
         (self.build / "radiance_home/helpers/r3_moe_worker").chmod(0o755)
         (self.build / "radiance_home/kernels/libr3moe.so").write_bytes(b"plugin")
@@ -57,6 +64,7 @@ class RuntimeAssetsTests(unittest.TestCase):
 
     def tearDown(self):
         self.patch.stop()
+        self.committed_config.stop()
         self.temp.cleanup()
 
     def packaged(self):
@@ -118,7 +126,7 @@ class RuntimeAssetsTests(unittest.TestCase):
         with tarfile.open(archive, "r:gz") as tar:
             manifest = json.loads(tar.extractfile("bundle.json").read())
             names = set(tar.getnames()) - {"bundle.json"}
-        expected = set(assets.runtime_files(self.build))
+        expected = set(assets.runtime_files(self.build, self.root))
         self.assertEqual(names, expected)
         self.assertEqual(set(manifest["files"]), expected)
         self.assertEqual(asset["payload_scope"], assets.RUN_SCOPE)
@@ -140,12 +148,12 @@ class RuntimeAssetsTests(unittest.TestCase):
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.symlink_to(external, target_is_directory=True)
         with self.assertRaisesRegex(assets.BundleError, "symlink escapes"):
-            assets.runtime_files(self.build)
+            assets.runtime_files(self.build, self.root)
         dest.unlink()
         dest.mkdir()
         (dest / "libforeign.so").symlink_to(external / "libforeign.so")
         with self.assertRaisesRegex(assets.BundleError, "symlink escapes"):
-            assets.runtime_files(self.build)
+            assets.runtime_files(self.build, self.root)
 
     def test_only_published_legacy_asset_receipts_are_grandfathered(self):
         published = assets.PUBLISHED_LEGACY_ASSETS["bc-radiance-1170.0.0"]
@@ -171,19 +179,83 @@ class RuntimeAssetsTests(unittest.TestCase):
         for pattern, required in assets.RUN_MANIFEST:
             if not required:
                 continue
-            members = list(self.build.glob(pattern))
+            if pattern.startswith("configs/"):
+                members = [self.root / "engines/radiance" / pattern]
+                refusal = "RSC12 config closure changed"
+            else:
+                members = list(self.build.glob(pattern))
+                refusal = "missing runtime requirement"
             self.assertTrue(members, pattern)
             saved = [(item, item.read_bytes()) for item in members]
             try:
                 for item, _ in saved:
                     item.unlink()
                 with self.subTest(pattern=pattern), self.assertRaisesRegex(
-                    assets.BundleError, "missing runtime requirement"
+                    assets.BundleError, refusal
                 ):
-                    assets.runtime_files(self.build)
+                    assets.runtime_files(self.build, self.root)
             finally:
                 for item, data in saved:
                     item.write_bytes(data)
+
+    def test_packaged_rsc12_configs_are_verified_without_checkout(self):
+        asset, archive, checksum = self.packaged()
+        for name in assets.SHIPPED_CONFIGS:
+            self.assertIn(f"configs/{name}", asset["file_names"])
+        installed = assets.restore(archive, checksum, asset, self.root,
+                                   self.path / "other-work", self.sdk)
+        for name in assets.SHIPPED_CONFIGS:
+            self.assertEqual((installed / "configs" / name).read_bytes(),
+                             (self.root / "engines/radiance/configs" / name).read_bytes())
+        # Two source TOMLs, no source tree, scripts or layouts in the payload.
+        self.assertFalse((installed / "engines").exists())
+        self.assertFalse((installed / "tools").exists())
+
+    def test_changed_or_extra_rsc12_source_config_refuses_pack(self):
+        extra = self.root / "engines/radiance/configs/unreviewed.toml"
+        extra.write_text("schema = 1\n")
+        with self.assertRaisesRegex(assets.BundleError, "RSC12 config closure"):
+            self.packaged()
+        extra.unlink()
+        with mock.patch.object(assets, "check_committed_config",
+                               side_effect=assets.BundleError("uncommitted RSC12 config")):
+            with self.assertRaisesRegex(assets.BundleError, "uncommitted"):
+                self.packaged()
+
+    def test_python_shell_and_interpreter_content_refused_before_pack(self):
+        vector_dir = self.build / "radiance_home/vectors"
+        vector_dir.mkdir(parents=True)
+        for rel, data in (
+            ("entry.py", b"print(1)"),
+            ("launch.sh", b"echo hello"),
+            ("script.dat", b"#!/usr/bin/env python3\npass\n"),
+        ):
+            target = vector_dir / rel
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(data)
+            with self.subTest(name=rel), self.assertRaisesRegex(
+                assets.BundleError, "interpreter|script|shell"
+            ):
+                self.packaged()
+            target.unlink()
+        # A build-side pycache under an optional directory is not an asset
+        # member (the manifest selects files, never whole directories).
+        cache = vector_dir / "__pycache__/entry.pyc"
+        cache.parent.mkdir(parents=True)
+        cache.write_bytes(b"compiled")
+        self.assertNotIn("radiance_home/vectors/__pycache__/entry.pyc",
+                         assets.runtime_files(self.build, self.root))
+        with self.assertRaisesRegex(assets.BundleError, "interpreter or shell"):
+            assets.check_run_manifest({"radiance_home/vectors/__pycache__/entry.pyc"})
+        cache.unlink()
+        metadata = self.build / assets.BUILD_METADATA
+        initial = metadata.read_bytes()
+        try:
+            metadata.write_text('{"runner": "/usr/bin/python3"}')
+            with self.assertRaisesRegex(assets.BundleError, "interpreter reference"):
+                self.packaged()
+        finally:
+            metadata.write_bytes(initial)
 
     def test_restore_refuses_receipt_file_set_disagreeing_with_manifest(self):
         asset, archive, checksum = self.packaged()

@@ -208,6 +208,28 @@ hardware A/B and retirement gate.
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
 reuse radiance's existing nlohmann/json v3.12.0.
 
+## RSC02 step 6: native named-config inspection (RSC12)
+
+`bc-serve explain CONFIG --configs engines/radiance/configs --site SITE --model-root ROOT [--set key=value] [--json]`
+inspects the effective RSC12 named configuration using the **same native
+detector, config loader and resolver** as `serve/start CONFIG`. It starts no
+children, does not measure a plan and requires no GPU lease. In text mode it
+prints engine/helper counts and each provenance record; JSON includes
+`config`, `values`, `provenance`, `hash` and the resolved template
+`manifest`. An unknown config, unknown option, extra positional argument or
+`--set layout.name=...` override is refused rather than silently selecting
+another layout.
+
+**Design source:** RSC12's one named configuration plus provenance and RSC02's
+single native resolver. **Difference from the retired interfaces:** this is
+not a Python `bigcherry serve explain` wrapper and does not derive defaults
+from the bash launcher's option parser. The existing `bc-serve --explain`
+remains a lower-level, site/profile-oriented resolver inspection; no
+launcher-compatibility flags are introduced. `bc_serving_test` execs the
+actual `bc-serve` binary with a synthetic KFD/PCI/proc filesystem and a real
+config file, checks base/variant provenance, JSON/text behaviour and refusal
+cases without requiring any GPU, permission failure or fake planner.
+
 ## RSC02 step 5: named configs and immutable stored replay
 
 A foreground owner can start an RSC12 config with `bc-serve serve CONFIG --run-dir DIR

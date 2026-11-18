@@ -241,12 +241,52 @@ void test_prelaunch_dispatch() {
                         Reason::KernelDynamicLdsExceeded, false);
 }
 
+void test_stage_dispatch() {
+    const Preferences fp8{true, false, false, 2, true};
+    const Preferences w4{false, true, false, 0, false};
+    CHECK(preferred_variant(fp8, 2560, 3072) == Variant::H2Fp8R2);
+    CHECK(preferred_variant(w4, 2560, 3072) == Variant::W4H2);
+    CHECK(preferred_variant({true, false, true, 4, true}, 2560, 3072) ==
+          Variant::MultiRowFp8R4);
+    CHECK(preferred_variant({true, false, false, 0, true}, 2560, 3072) ==
+          Variant::WideFp8);
+    CHECK(preferred_variant({false, false, false, 0, false}, 2560, 3072) ==
+          Variant::GenericW4);
+    const auto variant = preferred_variant(fp8, 2560, 3072);
+    auto caps = caps_for(geometry(variant, 2560));
+    CHECK(std::holds_alternative<Gemv>(
+        choose_stage(true, variant, 2560, 2560, 128, caps)));
+    check_choice_reason(choose_stage(true, variant, 3072, 3072, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, true);
+    // One parity's larger K must not be erased by the smaller one.
+    check_choice_reason(choose_stage(true, variant, 2560, 3072, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, true);
+    check_choice_reason(choose_stage(true, variant, 3072, 2560, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, true);
+    // A larger hidden never implies refusal if grouped GEMM works.
+    check_choice_reason(choose_stage(true, variant, 4096, 4096, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, true);
+    check_choice_reason(choose_stage(false, variant, 2560, 2560, 128, caps),
+                        Reason::KernelUnavailable, true);
+    caps.generic_gemm_available = false;
+    check_choice_reason(choose_stage(true, variant, 3072, 3072, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, false);
+    check_choice_reason(choose_stage(false, variant, 2560, 2560, 128, caps),
+                        Reason::KernelUnavailable, false);
+    // Debug W4 and gfx12 decode paths obey the same selector.
+    check_choice_reason(choose_stage(true, Variant::GenericW4, 3072, 3072, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, false);
+    check_choice_reason(choose_stage(true, Variant::Gfx12Fp8R2, 3072, 3072, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, false);
+}
+
 }  // namespace
 
 int main() {
     test_sizes_and_shapes();
     test_layout_indices();
     test_prelaunch_dispatch();
+    test_stage_dispatch();
     if (failures) {
         std::cerr << failures << " GEMV geometry checks failed\n";
         return EXIT_FAILURE;

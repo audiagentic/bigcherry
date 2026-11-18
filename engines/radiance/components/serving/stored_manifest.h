@@ -50,8 +50,13 @@ nlohmann::json execution_projection(const nlohmann::json& spec);
 // No file writes. The same strict reader used by the engine authenticates
 // the original bytes and digest, then the owner verifies the current build,
 // model, selected-device identity, calibration, and RSC12 execution projection.
-ReplayResult authenticate_replay(std::string_view bytes, std::string_view source,
-                                 const ReplayEvidence& evidence);
+enum class CalibrationVerification {
+    exact_draft_match,
+    require_fresh_measured_s8, // caller must complete the typed live S8 gate before owner admission
+};
+ReplayResult
+authenticate_replay(std::string_view bytes, std::string_view source, const ReplayEvidence& evidence,
+                    CalibrationVerification calibration = CalibrationVerification::exact_draft_match);
 
 // A separate live admission on EVERY replay. Called even when the stored
 // manifest's original facts and identity still match. It covers host RAM,

@@ -153,6 +153,33 @@ inline Geometry required_lds_bytes(Variant variant, uint32_t k, uint32_t group) 
                      static_bytes, static_cast<uint32_t>(total)};
 }
 
+// The preference order is the production launch order; use one testable
+// contract for it and for the HIP dispatcher.
+struct Preferences {
+    bool fp8;
+    bool w4h2;
+    bool multi_row;
+    uint32_t h2_rows;
+    bool wide;
+};
+inline Variant preferred_variant(const Preferences& p, uint32_t k0, uint32_t k1) {
+    if (!p.fp8)
+        return p.w4h2 && !(k0 % detail::kW4WeightGroup) &&
+               !(k1 % detail::kW4WeightGroup) ? Variant::W4H2 : Variant::GenericW4;
+    if (p.multi_row && !(k0 % detail::kVectorBytes) && !(k1 % detail::kVectorBytes))
+        return Variant::MultiRowFp8R4;
+    if (!(k0 % detail::kVectorBytes) && !(k1 % detail::kVectorBytes)) {
+        switch (p.h2_rows) {
+            case 4: return Variant::H2Fp8R4;
+            case 2: return Variant::H2Fp8R2;
+            case 1: return Variant::H2Fp8R1;
+            default: break;
+        }
+        if (p.wide) return Variant::WideFp8;
+    }
+    return Variant::GenericFp8;
+}
+
 struct Capabilities {
     uint32_t per_block_lds_limit;     // runtime actual/opted-in per-block limit
     uint32_t kernel_dynamic_lds_limit; // runtime limit for this compiled kernel
@@ -203,6 +230,16 @@ inline Choice choose_gemv(Variant variant, uint32_t k0, uint32_t k1,
     if (!caps.active_blocks_per_cu)
         return fallback(Reason::OccupancyUnavailable);
     return Gemv{variant, selected.dynamic_bytes};
+}
+
+// Disabled and rejected GEMV both require a checked grouped kernel.
+inline Choice choose_stage(bool requested, Variant variant, uint32_t k0,
+                           uint32_t k1, uint32_t group, const Capabilities& caps) {
+    if (!k0 || !k1) return Refuse{Reason::ZeroK};
+    if (!requested)
+        return caps.generic_gemm_available ? Choice{GenericGemm{Reason::KernelUnavailable}}
+                                           : Choice{Refuse{Reason::KernelUnavailable}};
+    return choose_gemv(variant, k0, k1, group, caps);
 }
 
 } // namespace r3_moe_gpu::gemv_geometry

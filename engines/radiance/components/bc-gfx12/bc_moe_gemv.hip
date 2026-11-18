@@ -10,17 +10,19 @@
 // parity, each a pointer table (zero leading stride) or a stacked plane. A geometry this kernel does not take is declined
 // with RAD_E_UNSUPPORTED and the row hands the call to libr4d.
 #include "rad_abi.h"
+#include "../moe-remote/gemv_geometry.h"
 
 #include <hip/hip_runtime.h>
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <limits>
+#include <algorithm>
 
 namespace {
 
 constexpr uint32_t kTile = 64;      /* outputs a block */
-constexpr uint32_t kMaxK = 2560;    /* the activation row staged in LDS */
 constexpr uint32_t kRows = 2;       /* routed rows of one expert a block, each weight decoded once for both */
 
 struct Cls {
@@ -30,6 +32,13 @@ struct Cls {
     uint32_t n, k, w_ld, s_ld;      /* w_ld bytes a weight row, s_ld bf16 a scale row */
 };
 
+template <typename T> struct GemvLdsRows {
+    T* data;
+    uint32_t stride;
+    __device__ __forceinline__ T* operator[](uint32_t row) const {
+        return data + (uint64_t)row * stride;
+    }
+};
 typedef _Float16 h2v __attribute__((ext_vector_type(2)));
 __device__ __forceinline__ h2v e4m3x2_to_h2(uint32_t x) {   /* codes in bits 0..7 and 16..23 */
     const uint32_t h = ((x & 0x007F007Fu) << 7) | ((x & 0x00800080u) << 8);
@@ -54,8 +63,7 @@ __global__ __launch_bounds__(256) void moe_gemv_fp8_h2(
         for (uint32_t j = threadIdx.x; j < kTile && n_base + j < N; j += blockDim.x) y[(uint64_t)r * y_ld + n_base + j] = 0;
         return;
     }
-    __shared__ uint32_t a[kRows][kMaxK / 2];   /* K half values as half2 pairs, in two planes, a row */
-    __shared__ float asc[kRows][kMaxK / 128u];
+    extern __shared__ __align__(16) unsigned char gemv_lds[];
     __shared__ uint32_t sh_e, sh_first;
     if (threadIdx.x == 0) {
         uint32_t lo = 0, hi = n_expert;
@@ -70,6 +78,9 @@ __global__ __launch_bounds__(256) void moe_gemv_fp8_h2(
     const Cls& c = (e & 1u) ? c1 : c0;
     const uint32_t K = c.k, fy = N / parts, fc = c.n / parts;
     if (n_base >= N) return;
+    // Each parity uses its own K stride within the host's max-K allocation.
+    GemvLdsRows<uint32_t> a{reinterpret_cast<uint32_t*>(gemv_lds), K / 2u};
+    GemvLdsRows<float> asc{reinterpret_cast<float*>(gemv_lds + (uint64_t)kRows * K * sizeof(uint16_t)), K / 128u};
     const uint32_t k16 = K / 16u;
     /* element k = 16 d + 4 q + j sits in plane (j & 1), half2 index (d * 4 + q), lane (j >> 1) */
     for (uint32_t m = 0; m < nr; ++m) {
@@ -206,7 +217,8 @@ extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
     if (n_expert <= 0 || top_k <= 0 || parts <= 0) return RAD_E_UNSUPPORTED;
     if (N0 <= 0 || N1 <= 0 || K0 <= 0 || K1 <= 0 || N0 % (64 * parts) || N1 % (64 * parts) || K0 % 128 || K1 % 128)
         return RAD_E_UNSUPPORTED;
-    if (K0 > kMaxK || K1 > kMaxK) return RAD_E_UNSUPPORTED;
+    if (K0 > std::numeric_limits<uint32_t>::max() || K1 > std::numeric_limits<uint32_t>::max())
+        return RAD_E_UNSUPPORTED;
     const long long N = N0 > N1 ? N0 : N1, K = K0 > K1 ? K0 : K1;
     if (Aq->dtype != RAD_F8E4M3 || As->dtype != RAD_F32 || Y->dtype != RAD_BF16) return RAD_E_UNSUPPORTED;
     if (sorted->dtype != RAD_I32 || off->dtype != RAD_I32 || !sorted->data || !off->data) return RAD_E_UNSUPPORTED;
@@ -223,19 +235,47 @@ extern "C" int bc_moe_gemm_fp8_decode(const RadArgs* a, RadStream stream) {
     if (a_sorted) return RAD_E_UNSUPPORTED;
     /* libr4d's decode band (r4d_moe_decode_band); a larger step is a GEMM, not this kernel's shape */
     if (2 * T > 3 * n_expert) return RAD_E_UNSUPPORTED;
+    using namespace r3_moe_gpu::gemv_geometry;
+    // Pre-launch fit using the real compiled variant, static LDS, per-block
+    // limit and occupancy; rejection is delegated, never launched.
+    const auto geometry = required_lds_bytes(Variant::Gfx12Fp8R2, (uint32_t)K, 128u);
+    if (!std::holds_alternative<LdsLayout>(geometry)) return RAD_E_UNSUPPORTED;
+    const auto& layout = std::get<LdsLayout>(geometry);
+    int device = -1;
+    hipDeviceProp_t prop{};
+    hipFuncAttributes attr{};
+    if (hipGetDevice(&device) != hipSuccess || hipGetDeviceProperties(&prop, device) != hipSuccess ||
+        hipFuncGetAttributes(&attr, (const void*)moe_gemv_fp8_h2<true>) != hipSuccess)
+        return RAD_E_UNSUPPORTED;
+    const uint64_t dyn_limit = attr.maxDynamicSharedSizeBytes > 0
+        ? (uint64_t)attr.maxDynamicSharedSizeBytes : (uint64_t)prop.sharedMemPerBlock;
+    const uint64_t block_limit = prop.sharedMemPerBlock;
+    if (dyn_limit > std::numeric_limits<uint32_t>::max() ||
+        block_limit > std::numeric_limits<uint32_t>::max() ||
+        attr.sharedSizeBytes > std::numeric_limits<uint32_t>::max()) return RAD_E_UNSUPPORTED;
+    int blocks = 0;
+    if (hipOccupancyMaxActiveBlocksPerMultiprocessor(
+            &blocks, moe_gemv_fp8_h2<true>, 256, layout.dynamic_bytes) != hipSuccess)
+        return RAD_E_UNSUPPORTED;
+    const Capabilities caps{(uint32_t)block_limit, (uint32_t)dyn_limit,
+                            (uint32_t)attr.sharedSizeBytes, (uint32_t)std::max(0, blocks),
+                            true, false};
+    const Choice choice = choose_gemv(Variant::Gfx12Fp8R2, (uint32_t)K0, (uint32_t)K1, 128u, caps);
+    if (!std::holds_alternative<Gemv>(choice)) return RAD_E_UNSUPPORTED;
+    const uint32_t lds_bytes = std::get<Gemv>(choice).dynamic_lds;
     Cls c0{}, c1{};
     if (!cls_of(&a->t[2], &a->t[3], (n_expert + 1) / 2, N0, K0, &c0)) return RAD_E_UNSUPPORTED;
     if (!cls_of(&a->t[6], &a->t[7], n_expert / 2, N1, K1, &c1)) return RAD_E_UNSUPPORTED;
     const dim3 grid((unsigned)T, (unsigned)((N + kTile - 1) / kTile));
     if (a_sorted)
-        hipLaunchKernelGGL(moe_gemv_fp8_h2<false>, grid, dim3(256), 0, (hipStream_t)stream, (const uint8_t*)Aq->data,
+        hipLaunchKernelGGL(moe_gemv_fp8_h2<false>, grid, dim3(256), lds_bytes, (hipStream_t)stream, (const uint8_t*)Aq->data,
                            (const float*)As->data, (const int32_t*)sorted->data, (const int32_t*)off->data, c0, c1,
                            (uint16_t*)Y->data, (uint32_t)N, (uint32_t)parts, (uint32_t)n_expert, (uint32_t)top_k, (uint32_t)a_ld,
                            (uint32_t)as_ld, (uint32_t)y_ld);
     else
-        hipLaunchKernelGGL(moe_gemv_fp8_h2<true>, grid, dim3(256), 0, (hipStream_t)stream, (const uint8_t*)Aq->data,
+        hipLaunchKernelGGL(moe_gemv_fp8_h2<true>, grid, dim3(256), lds_bytes, (hipStream_t)stream, (const uint8_t*)Aq->data,
                            (const float*)As->data, (const int32_t*)sorted->data, (const int32_t*)off->data, c0, c1,
                            (uint16_t*)Y->data, (uint32_t)N, (uint32_t)parts, (uint32_t)n_expert, (uint32_t)top_k, (uint32_t)a_ld,
                            (uint32_t)as_ld, (uint32_t)y_ld);
-    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_UNSUPPORTED;
+    return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }

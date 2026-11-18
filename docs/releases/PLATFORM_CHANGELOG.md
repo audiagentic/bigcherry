@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.46.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.45.0...bc-platform-1.46.0) (2026-11-17)
+
+
+### New and changed
+
+* **release:** add native verified engine installation and rollback ([#1079](https://github.com/audiagentic/bigcherry/issues/1079)) ([3b61388](https://github.com/audiagentic/bigcherry/commit/3b613883c7eccdc1cbbbbbde879de361774a5e34))
+
+## [1.45.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.44.0...bc-platform-1.45.0) (2026-11-17)
+
+
+### New and changed
+
+* **radiance:** launch-sized LDS for GEMV kernels and pre-launch dispatch to grouped GEMM (RCS13 step 2) ([#946](https://github.com/audiagentic/bigcherry/issues/946)) ([0b93cb8](https://github.com/audiagentic/bigcherry/commit/0b93cb8840ccc46e9cf6d78271b7d6ac375061b3))
+* **release:** package RSC12 configs in Python-free engine assets ([#1077](https://github.com/audiagentic/bigcherry/issues/1077)) ([0ee5fee](https://github.com/audiagentic/bigcherry/commit/0ee5fee4e68136896e917d14d6e585e0e5c95592))
+
+
+### Fixes
+
+* **serving:** finalize RSC02 replay validation and lint ([#1074](https://github.com/audiagentic/bigcherry/issues/1074)) ([eb2fc8e](https://github.com/audiagentic/bigcherry/commit/eb2fc8e6a1649a35f765b048f580c7cd62847143))
+
 ## [1.44.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.43.0...bc-platform-1.44.0) (2026-11-17)
 
 
