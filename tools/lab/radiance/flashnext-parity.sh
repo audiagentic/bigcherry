@@ -121,6 +121,8 @@ if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
 fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
+# Route-heat recording at the period the live policy needs (RSC12), into the run's own folder.
+NATIVE_ARGS+=(--set "handoff.histogram=$OUT/heat.live" --set "handoff.histogram_period_s=1")
 
 LONG_COUNT=$(wc -w <<< "$LONG_SEEDS")
 python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port "$PORT" \
