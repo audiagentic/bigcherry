@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.50.5](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.4...bc-platform-1.50.5) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 runs both arms with the disk n-gram placement ([#1146](https://github.com/audiagentic/bigcherry/issues/1146)) ([89a2e4d](https://github.com/audiagentic/bigcherry/commit/89a2e4d969662b0eca3dc3560a0a5dbda5cd3fcb))
+* **release:** trim the engine asset (debug split, no benchmark catalogs) ([#1143](https://github.com/audiagentic/bigcherry/issues/1143)) ([758a426](https://github.com/audiagentic/bigcherry/commit/758a42656daa0b2927b28aa82aea0a3717a584d8))
+
 ## [1.50.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.3...bc-platform-1.50.4) (2026-11-18)
 
 
