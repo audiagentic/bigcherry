@@ -61,6 +61,23 @@ The live native entry points are `bc-serve serve CONFIG --run-dir DIR --configs 
 
 **Retirement order:** inventory first (this PR); card-free native gaps and tests next; an automated leased S15 same-build A/B on dense and helper layouts with equal RSC12 semantic execution projection, at least four clean ABBA pairs per RHP12 and all safety/release gates; only then S16 caller migration and deletion. Hardware parity is not shown by passing fake-engine CI. The release asset, installer and release workflow are owned by the concurrent RSP01 phase-2 lane and must not be modified by this change. Keep step 6 and RSC04 open until those proofs exist.
 
+### S15 preparation: leased hardware gate, not yet satisfied
+
+The bounded harness specification is
+[the S15 acceptance runbook](../../../reference/engines/radiance/RSC02_S15_ACCEPTANCE.md).
+The native `bc_s15_dry_run_test` runs with no cards, invokes the genuine
+stored-manifest owner against a fake engine, exercises the pre-existing Bash
+launcher fake-engine cases, and checks the strict-v2 semantic projection
+(comparing role/BDF/model/plan/resource/handoff/argv/env and excluding only
+explicit per-session transport and bookkeeping). It does **not** prove
+hardware equality, power or throughput. RHP12's >=4 clean paired A/B
+repetitions per dense and helper configuration and their retained-session
+cohorts are required before S16. A remaining S14 integration dependency is
+the serving-owner lifecycle adapter for the maintained
+`bigcherry ab-benchmark --server-config` capture; that command currently
+starts the engine directly, not both serving owners. Never substitute it for
+launcher-to-owner hardware parity. RSP01 owns the release asset and workflow.
+
 ## Detailed Solution & Technical Design
 
 **A session owner process (review 2026-11-14, P0).** `bc-serve serve CONFIG` is a foreground C++ process that owns
