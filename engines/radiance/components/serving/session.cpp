@@ -2032,7 +2032,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                              "hooks.selected_segment");
     }
     auto write = [&](const fs::path& out_file, const std::vector<std::string>& more,
-                     const std::vector<std::string>& scoped_sets = {}) {
+                     const std::optional<std::string>& scoped_set = std::nullopt) {
         std::vector<std::string> argv = {in.self.string(), "--write-manifest", out_file.string(),
                                          "--power-profile", in.power_profile};
         if (in.calibration_run) {
@@ -2052,8 +2052,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             argv.insert(argv.end(), {"--set", s});
         // A measuring-only override is ordered after all site/config/operator
         // sets. It must not enter the final serving manifest or the cache key.
-        for (const auto& s : scoped_sets)
-            argv.insert(argv.end(), {"--set", s});
+        if (scoped_set)
+            argv.insert(argv.end(), {"--set", *scoped_set});
         return require_callback(runner.invoke("session.manifest.runner", argv),
                                 "manifest runner callback threw");
     };
@@ -2096,7 +2096,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                       << " (cache miss); measuring it first (about 1-2 minutes)\n";
             const fs::path measuring =
                 run_dir / ("manifest-measuring-" + id + "-" + std::to_string(round) + ".json");
-            std::vector<std::string> measuring_sets;
+            std::optional<std::string> measuring_histogram;
             const Json telemetry = v.value("handoff", Json::object());
             if (telemetry.contains("histogram") && telemetry.at("histogram").is_string() &&
                 !telemetry.at("histogram").get<std::string>().empty()) {
@@ -2106,9 +2106,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 // recording path (which may be shared with another process).
                 const fs::path private_prefix =
                     run_dir / ("histogram-measuring-" + id + "-" + std::to_string(round));
-                measuring_sets.push_back("handoff.histogram=" + Json(private_prefix.string()).dump());
+                measuring_histogram = "handoff.histogram=" + Json(private_prefix.string()).dump();
             }
-            const ManifestRun u = write(measuring, {"--unmeasured"}, measuring_sets);
+            const ManifestRun u = write(measuring, {"--unmeasured"}, measuring_histogram);
             if (u.exit != 0)
                 throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
             const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
