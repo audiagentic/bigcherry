@@ -142,6 +142,16 @@ class RuntimeAssetsTests(unittest.TestCase):
             assets.restore(archive, checksum, asset, self.root,
                            self.path / "other-work", self.sdk)
 
+    def test_benchmark_catalogs_are_not_runtime_members(self):
+        # Both files are present in the build fixture, but never ship.
+        for name in ("radiance_home/kernels.rkb", "radiance_home/kernels_moe.rkb"):
+            self.assertTrue((self.build / name).is_file())
+            self.assertNotIn(name, assets.runtime_files(self.build, self.root))
+        asset, archive, _ = self.packaged()
+        with tarfile.open(archive, "r:gz") as tar:
+            self.assertFalse(any(name.endswith(".rkb") for name in tar.getnames()))
+        self.assertFalse(any(name.endswith(".rkb") for name in asset["file_names"]))
+
     def test_elf_debug_policy_in_runtime_reuse_key(self):
         self.assertIn("split", assets.ELF_DEBUG_POLICY)
         current = assets.payload_contract_key()

@@ -77,8 +77,6 @@ RUN_MANIFEST = (
     ("radiance_home/kernels/*.so*", True),
     ("radiance_home/architectures/*.so*", True),
     ("radiance_home/quantizers/*.so*", True),
-    ("radiance_home/kernels.rkb", True),
-    ("radiance_home/kernels_moe.rkb", False),
     ("radiance_home/vectors/*", False),
     ("runtime-prefix/lib/*.so*", False),
     ("runtime-prefix/lib/**/*.so*", False),

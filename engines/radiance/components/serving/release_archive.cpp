@@ -54,8 +54,6 @@ bool runtime_member(const std::string& name) {
         "radiance_home/bin/bc-serve",
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
-        "radiance_home/kernels.rkb",
-        "radiance_home/kernels_moe.rkb",
         "bigcherry-build-metadata-radiance.json",
         "configs/flashnext.toml",
         "configs/qwen27b.toml",
@@ -188,7 +186,6 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
         "bigcherry-build-metadata-radiance.json",
-        "radiance_home/kernels.rkb",
         "configs/flashnext.toml",
         "configs/qwen27b.toml",
     };
