@@ -261,7 +261,9 @@ def arm(cfg: dict) -> int:
                 argv.append("--gpu-power")
             started = command(argv, timeout=840, cwd=REPO,
                               env={**os.environ, "BC_WORK_ROOT": str(work_root),
-                                   "BC_MODEL_ROOT": cfg["model_root"]})
+                                   "BC_MODEL_ROOT": cfg["model_root"],
+                                   # the launcher's resource derivation asks bc-serve for the layout
+                                   "BIGCHERRY_LAYOUTS": str(REPO / "engines/radiance/layouts")})
             launch_log.write_text(started.stdout + "\n" + started.stderr)
             if started.returncode:
                 raise Refusal(f"Bash start failed: {started.returncode}: {started.stderr[-800:]}")
