@@ -1,0 +1,2 @@
+# Ordered patch series for upstream Linux v7.0.13
+0001-drm-amdgpu-re-enable-gfxoff-for-compute-on-gfx12.patch
