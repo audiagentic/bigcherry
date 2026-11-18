@@ -5,6 +5,7 @@
 #include "manifest_power.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
+#include "release_runtime.h"
 #include "runtime_guards.h"
 #include "sdk_check.h"
 #include "session.h"
@@ -12,6 +13,8 @@
 #include "v2/p1_live_room.h"
 #include "v2/p1_producer.h"
 #include "v2/s8_rules.h"
+#include <algorithm>
+#include <cstdlib>
 #include <ctime>
 
 #include <filesystem>
@@ -317,10 +320,36 @@ int session_command(const std::string& cmd, int argc, char** argv) {
                           << ", log " << p.value("log", std::string()) << '\n';
         return 0;
     }
-    // serve and start: the build's SDK rule, as for every other mode
-    if (const auto refusal = bc::serving::sdk_refusal("/proc/self/exe", bc::serving::current_sdk_environment()))
-        throw std::runtime_error(*refusal);
+    // A released executable must reverify its current tag + entire install
+    // before any plan or child can run. A detached start's child verifies again.
     const fs::path self = fs::read_symlink("/proc/self/exe");
+    if (const auto refusal = bc::serving::sdk_refusal(self, bc::serving::current_sdk_environment()))
+        throw std::runtime_error(*refusal);
+    const auto prefix = bc::serving::installed_prefix(self);
+    if (prefix) {
+        const auto sdk = bc::serving::recorded_sdk_root(self);
+        if (!sdk)
+            throw std::runtime_error("installed release refusal: SDK provenance is absent");
+        bc::serving::verify_installed_prefix(self, *sdk);
+        const fs::path home = *prefix / "radiance_home";
+        if (engine_binary.empty())
+            engine_binary = *prefix / "bin/radiance";
+        const bool explicit_home =
+            std::any_of(opts.sets.begin(), opts.sets.end(), [](const std::string& setting) {
+                return setting.starts_with("engine.radiance_home=");
+            });
+        if (!explicit_home)
+            opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
+    }
+    if (!config_name.empty() && opts.configs.empty()) {
+        const char* env = std::getenv("BIGCHERRY_CONFIGS");
+        if (!env || !*env) {
+            if (!prefix)
+                throw std::runtime_error(
+                    "serve: no --configs or BIGCHERRY_CONFIGS and executable is not a verified release prefix");
+            opts.configs.push_back(*prefix / "configs");
+        }
+    }
     if (cmd == "start") {
         std::vector<std::string> child = {self.string(), "serve"};
         child.insert(child.end(), passed.begin(), passed.end());

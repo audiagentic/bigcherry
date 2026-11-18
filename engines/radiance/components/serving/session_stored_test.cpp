@@ -167,8 +167,12 @@ struct Case {
         fs::create_directories(run);
         const ss::ReplayEvidence facts = evidence(original);
         inputs.stored_manifest = stored;
-        inputs.engine_binary = BC_FAKE_ENGINE;
-        inputs.helper_binary = BC_FAKE_ENGINE;
+        // The release integration test substitutes ONLY the OS process binary
+        // with the fake engine extracted by native bc-release. All replay,
+        // resolver, writer and session-owner logic remains production code.
+        const char* installed = std::getenv("BC_INSTALLED_TEST_ENGINE");
+        inputs.engine_binary = installed && *installed ? installed : BC_FAKE_ENGINE;
+        inputs.helper_binary = inputs.engine_binary;
         inputs.self = "/tmp/cardfree-bc-serve";
         inputs.replay_evidence = [facts, bad_build](const v2::Manifest&) {
             auto snapshot = facts;
