@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.49.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.49.0...bc-platform-1.49.1) (2026-11-18)
+
+
+### Fixes
+
+* **release:** bind Radiance asset to all component revisions ([#1106](https://github.com/audiagentic/bigcherry/issues/1106)) ([0394be4](https://github.com/audiagentic/bigcherry/commit/0394be4afdc4d0d12bd59a8eae83add2f3e2259c))
+
 ## [1.49.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.2...bc-platform-1.49.0) (2026-11-18)
 
 
