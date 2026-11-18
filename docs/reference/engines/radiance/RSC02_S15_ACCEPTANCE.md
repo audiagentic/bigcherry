@@ -71,7 +71,12 @@ native typed mode is **BLOCKED**, not equivalent.
    `manifest` and `processes.roles[]: {role,argv,env}`. Capture the
    minimal *execution-relevant* environment (GPU selectors, runtime home,
    kernel/transport and any settings reaching children), never the entire
-   shell, secrets or sensitive host environment. The observed `--manifest`
+   shell, secrets or sensitive host environment. The observed process set
+   must contain **exactly** `engine` plus every `spec.processes.helpers[].role`
+   declared in the captured manifest; each actual argv must have exactly one
+   `--role NAME` agreeing with its captured label. Two arms missing the same
+   helper are both invalid even if their semantic projections otherwise match.
+   The observed `--manifest`
    argument must refer to captured bytes; a missing, substituted or mutable
    manifest fails closed. Use the same selection rules on both arms.
 4. **Compare the two captures before measurements:**

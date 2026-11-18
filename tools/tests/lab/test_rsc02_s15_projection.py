@@ -38,6 +38,25 @@ class SemanticProjectionTests(unittest.TestCase):
         self.assertEqual(report["status"], "FAIL")
         self.assertTrue(report["different_paths"])
 
+    def test_dry_run_interprets_deliberately_missing_helper_as_rejection(self) -> None:
+        # The real CTest still invokes the owner; only the OS subprocess is
+        # faked here to prove that deliberate failure injection can succeed.
+        from unittest import mock
+        from rsc02_s15_projection import dry_run
+
+        with mock.patch("rsc02_s15_projection.subprocess.run") as run:
+            run.return_value.returncode = 0
+            self.assertEqual(dry_run(Path("/fake-native-owner")), 0)
+            run.assert_called_once()
+
+    def test_fixture_observes_exact_manifest_helper_roles(self) -> None:
+        expected = ["engine"] + [
+            helper["role"] for helper in self.original["spec"]["processes"]["helpers"]
+        ]
+        actual = [row["role"] for row in self.a["processes"]["roles"]]
+        self.assertEqual(actual, expected)
+        projection(self.a, verify_bytes=False)
+
     def test_ignores_only_explicit_per_session_bookkeeping(self) -> None:
         other = self.b["manifest"]
         other["metadata"]["instance_id"] = "nonce"
@@ -73,9 +92,10 @@ class SemanticProjectionTests(unittest.TestCase):
         self.assert_rejects_change(
             lambda s: s["manifest"]["spec"]["intent"]["power"].update(profile="unsafe")
         )
-        self.assert_rejects_change(
-            lambda s: s["manifest"]["spec"]["processes"]["helpers"].pop()
-        )
+        missing_manifest_helper = copy.deepcopy(self.b)
+        missing_manifest_helper["manifest"]["spec"]["processes"]["helpers"].pop()
+        with self.assertRaisesRegex(ProjectionError, "unexpected observed roles"):
+            compare(self.a, missing_manifest_helper, verify_bytes=False)
         self.assert_rejects_change(
             lambda s: s["manifest"]["spec"]["plan"]["owner_map"].update(owner_map_sha256="changed")
         )
@@ -88,7 +108,10 @@ class SemanticProjectionTests(unittest.TestCase):
         self.assert_rejects_change(
             lambda s: s["processes"]["roles"][0]["env"].update(HIP_VISIBLE_DEVICES="1")
         )
-        self.assert_rejects_change(lambda s: s["processes"]["roles"].pop())
+        missing_observation = copy.deepcopy(self.b)
+        missing_observation["processes"]["roles"].pop()
+        with self.assertRaisesRegex(ProjectionError, "missing observed roles"):
+            compare(self.a, missing_observation, verify_bytes=False)
 
     def test_refuses_unsupported_argv_and_duplicate_roles(self) -> None:
         bad = copy.deepcopy(self.b)
@@ -105,6 +128,35 @@ class SemanticProjectionTests(unittest.TestCase):
         )
         with self.assertRaisesRegex(ProjectionError, "duplicate physical card"):
             projection(bad, verify_bytes=False)
+
+    def test_refuses_matching_but_incomplete_observed_roles(self) -> None:
+        # Two arms agreeing is not enough: both must show every process
+        # declared by the manifest, with its actual --role argument.
+        missing = copy.deepcopy(self.a)
+        missing["processes"]["roles"].pop()
+        with self.assertRaisesRegex(ProjectionError, "missing observed roles"):
+            compare(missing, copy.deepcopy(missing), verify_bytes=False)
+
+        extra = copy.deepcopy(self.a)
+        extra["processes"]["roles"].append(
+            {"role": "ghost", "argv": ["r3_moe_worker", "--manifest",
+                                     extra["manifest_path"], "--role", "ghost"],
+             "env": {"ROCR_VISIBLE_DEVICES": "3"}}
+        )
+        with self.assertRaisesRegex(ProjectionError, "unexpected observed roles"):
+            compare(extra, copy.deepcopy(extra), verify_bytes=False)
+
+        forged = copy.deepcopy(self.a)
+        forged["processes"]["roles"][0]["argv"][-1] = "helper0"
+        with self.assertRaisesRegex(ProjectionError, "observed --role"):
+            compare(forged, copy.deepcopy(forged), verify_bytes=False)
+
+        omitted = copy.deepcopy(self.a)
+        omitted["processes"]["roles"][0]["argv"] = (
+            omitted["processes"]["roles"][0]["argv"][:-2]
+        )
+        with self.assertRaisesRegex(ProjectionError, "exactly one --role"):
+            compare(omitted, copy.deepcopy(omitted), verify_bytes=False)
 
     def test_requires_manifest_bytes_and_rejects_tampering(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
