@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261118_202205_the-python-free-engine-release_8031",
+  "files": [
+    "tools/bigcherry/release/runtime_assets.py",
+    "engines/radiance/components/serving/release_archive.cpp"
+  ],
+  "plan-item-ids": [
+    "RSP01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Engine release asset trimmed: ELF debug and symbol sections split out of the runtime asset (about 165 MB, dynamic symbols and GPU code objects kept) and the benchmark catalogs kernels.rkb and kernels_moe.rkb removed from the required payload; the downgrade refusal of an engine release is flagged and tested. Architecture plugin set stays whole because the loader scans every plugin.",
+  "timestamp-utc": "2026-11-18T20:22:05.735131Z",
+  "user-summary-candidate": "The Python-free engine release package is smaller: debug data and benchmark-only catalogs are no longer shipped."
+}
