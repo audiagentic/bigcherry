@@ -3449,6 +3449,29 @@ void session_engine_plan(Fixture& t) {
         refused = std::string(e.what()).find("measuring start failed") != std::string::npos;
     }
     assert(refused);
+    { // Real named resolver and process owner, fake measuring engine OS boundary.
+        ss::EnginePlanInputs ram = in;
+        ram.engine_binary = BC_FAKE_ENGINE;
+        ram.runner = [&](const std::vector<std::string>& argv) {
+            if (flag(argv, "--unmeasured")) {
+                std::ofstream(argv[2])
+                    << R"json({"measure_error":"E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare"})json";
+                return ss::ManifestRun{};
+            }
+            return ss::ManifestRun{10, "", "cache miss"};
+        };
+        bool host_ram_refused = false;
+        try {
+            (void)ss::plan_engine_only(ram, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string detail = e.what();
+            host_ram_refused = detail.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
+                               detail.find("host RAM") != std::string::npos &&
+                               detail.find("47.69 GiB") != std::string::npos &&
+                               detail.find("82.00 GiB") != std::string::npos;
+        }
+        assert(host_ram_refused);
+    }
     { // RSC04 lab experiments use the real named resolver and writer call graph.
         ss::EnginePlanInputs lab = in;
         lab.named_config = "qwen27b-tp3-int8";
