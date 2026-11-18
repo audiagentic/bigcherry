@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261118_202205_the-flash-next-route-heat-plac_8502",
+  "files": [
+    "tools/lab/radiance/heat/flashnext-mixed.rank0.heat",
+    "tools/lab/radiance/heat/flashnext-mixed.hot-first",
+    "tools/lab/radiance/heat/README.md"
+  ],
+  "plan-item-ids": [
+    "RHP02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Rebuilt the Flash-Next route-heat file lost from the work root: recorded on the four-card layout under a mixed code-and-documentation workload (608 requests, 600 s, 25,003 of 25,088 expert cells seen), inverted with heat-invert.py, committed as managed data with recording provenance.",
+  "timestamp-utc": "2026-11-18T20:22:05.739684Z",
+  "user-summary-candidate": "The Flash-Next route-heat placement seed is restored and now lives in the repository with a record of how it was made."
+}

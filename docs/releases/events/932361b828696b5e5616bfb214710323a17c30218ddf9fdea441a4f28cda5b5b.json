@@ -1,0 +1,17 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261118_202205_the-engines-start-up-and-rele_4571",
+  "files": [
+    "tools/lab/radiance/launch-flashnext-best.sh",
+    "tools/bigcherry/serving/supervisor.py",
+    "tools/bigcherry/release/install.py"
+  ],
+  "plan-item-ids": [
+    "RSC04",
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "S16: retired the bash launcher, its plan-check and sdk-check helpers, the Python serving supervisor and commands, and the Python release installer after the leased S15 hardware acceptance (dense cohort PASS; helper cohort equal greedy hash and clean stops; native flashnext-4gpu served 538 requests with no errors). bc-serve and bc-release are the only serving and install entry points; the pre-S16 launcher is preserved at the tag archive/pre-s16-launcher. Evidence: docs/evidence/2026-11-19-rsc02-s15-acceptance.",
+  "timestamp-utc": "2026-11-18T20:22:05.723557Z",
+  "user-summary-candidate": "The engine's start-up and release install path no longer uses Python or the old launcher script; the native bc-serve and bc-release do all of it."
+}
