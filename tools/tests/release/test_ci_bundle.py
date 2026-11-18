@@ -48,6 +48,19 @@ class CiBundleTests(unittest.TestCase):
         configs.mkdir(parents=True)
         for name in assets.SHIPPED_CONFIGS:
             (configs / name).write_text(f"schema = 1\n# {name}\n")
+        # Minimal production-schema build identity for the synthetic repository.
+        engine_dir = self.root / "engines/radiance"
+        components = ("bc-gfx12", "libr2", "libr3", "moe-remote", "ngram-helper", "serving")
+        (engine_dir / "engine.toml").write_text(
+            'upstream = "https://codeberg.org/StillDeadcode/radiance"\n'
+            '[components]\n' +
+            "".join(f'{name} = "engines/radiance/components/{name}"\n' for name in components))
+        (engine_dir / "recipes.toml").write_text(
+            'pinned = "v1.17.0"\npinned-version = "1.17.0"\n')
+        for name in components:
+            component_dir = engine_dir / "components" / name
+            component_dir.mkdir(parents=True)
+            (component_dir / "component.toml").write_text('built-against = "v1.17.0"\n')
         committed = mock.patch.object(assets, "check_committed_config")
         committed.start()
         self.addCleanup(committed.stop)
