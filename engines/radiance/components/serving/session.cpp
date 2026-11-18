@@ -2031,7 +2031,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             require_callback(hooks.selected_segment.invoke("session.hooks.selected_segment", handoff),
                              "hooks.selected_segment");
     }
-    auto write = [&](const fs::path& out_file, const std::vector<std::string>& more) {
+    auto write = [&](const fs::path& out_file, const std::vector<std::string>& more,
+                     const std::vector<std::string>& scoped_sets = {}) {
         std::vector<std::string> argv = {in.self.string(), "--write-manifest", out_file.string(),
                                          "--power-profile", in.power_profile};
         if (in.calibration_run) {
@@ -2048,6 +2049,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         argv.insert(argv.end(), more.begin(), more.end());
         argv.insert(argv.end(), base.begin(), base.end());
         for (const auto& s : extra_sets)
+            argv.insert(argv.end(), {"--set", s});
+        // A measuring-only override is ordered after all site/config/operator
+        // sets. It must not enter the final serving manifest or the cache key.
+        for (const auto& s : scoped_sets)
             argv.insert(argv.end(), {"--set", s});
         return require_callback(runner.invoke("session.manifest.runner", argv),
                                 "manifest runner callback threw");
@@ -2091,7 +2096,19 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                       << " (cache miss); measuring it first (about 1-2 minutes)\n";
             const fs::path measuring =
                 run_dir / ("manifest-measuring-" + id + "-" + std::to_string(round) + ".json");
-            const ManifestRun u = write(measuring, {"--unmeasured"});
+            std::vector<std::string> measuring_sets;
+            const Json telemetry = v.value("handoff", Json::object());
+            if (telemetry.contains("histogram") && telemetry.at("histogram").is_string() &&
+                !telemetry.at("histogram").get<std::string>().empty()) {
+                // Future Radiance measuring starts may publish heat, even though
+                // today's --plan-memory exits before allocating the route table.
+                // Isolate that generation instead of clearing an operator's
+                // recording path (which may be shared with another process).
+                const fs::path private_prefix =
+                    run_dir / ("histogram-measuring-" + id + "-" + std::to_string(round));
+                measuring_sets.push_back("handoff.histogram=" + Json(private_prefix.string()).dump());
+            }
+            const ManifestRun u = write(measuring, {"--unmeasured"}, measuring_sets);
             if (u.exit != 0)
                 throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
             const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
