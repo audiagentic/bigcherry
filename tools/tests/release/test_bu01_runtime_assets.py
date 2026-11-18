@@ -26,6 +26,17 @@ class RuntimeAssetsTests(unittest.TestCase):
         self.root.mkdir()
         config_dir = self.root / "engines/radiance/configs"
         config_dir.mkdir(parents=True)
+        engine_dir = self.root / "engines/radiance"
+        component_names = ("bc-gfx12", "libr2", "libr3", "moe-remote", "ngram-helper", "serving")
+        (engine_dir / "engine.toml").write_text(
+            'upstream = "https://codeberg.org/StillDeadcode/radiance"\n'
+            '[components]\n' +
+            "".join(f'{name} = "engines/radiance/components/{name}"\n' for name in component_names))
+        (engine_dir / "recipes.toml").write_text('pinned = "v1.17.0"\npinned-version = "1.17.0"\n')
+        for name in component_names:
+            component = engine_dir / "components" / name
+            component.mkdir(parents=True)
+            (component / "component.toml").write_text('built-against = "v1.17.0"\n')
         for name in assets.SHIPPED_CONFIGS:
             (config_dir / name).write_text(f"schema = 1\n# {name}\n")
         self.committed_config = mock.patch.object(assets, "check_committed_config")
@@ -83,6 +94,42 @@ class RuntimeAssetsTests(unittest.TestCase):
         (self.build / "radiance_home/bin/bc-serve").unlink()
         with self.assertRaisesRegex(assets.BundleError, "missing runtime requirement"):
             assets.pack(self.record, self.root, self.work, self.sdk, TAG)
+
+    def test_runtime_manifest_binds_every_component_to_upstream_pin(self):
+        asset, archive, _ = self.packaged()
+        with tarfile.open(archive, "r:gz") as tar:
+            manifest = json.load(tar.extractfile("bundle.json"))
+        identity = manifest["built_from"]
+        self.assertEqual(identity["pinned"], "v1.17.0")
+        self.assertEqual(identity["pinned_version"], "1.17.0")
+        self.assertEqual(identity["components"], {
+            name: "v1.17.0" for name in
+            ("bc-gfx12", "libr2", "libr3", "moe-remote", "ngram-helper", "serving")
+        })
+        self.assertEqual(asset["built_from"], identity)
+
+    def test_pin_move_updates_identity_and_stale_component_refuses(self):
+        first = assets.built_from(self.root)
+        engine_dir = self.root / "engines/radiance"
+        (engine_dir / "recipes.toml").write_text('pinned = "v2.1.0"\npinned-version = "2.1.0"\n')
+        with self.assertRaisesRegex(assets.BundleError, "built-against"):
+            self.packaged()
+        for component in (engine_dir / "components").iterdir():
+            (component / "component.toml").write_text('built-against = "v2.1.0"\n')
+        second = assets.built_from(self.root)
+        self.assertNotEqual(first, second)
+        self.assertTrue(all(x == "v2.1.0" for x in second["components"].values()))
+        asset, archive, _ = self.packaged()
+        with tarfile.open(archive, "r:gz") as tar:
+            manifest = json.load(tar.extractfile("bundle.json"))
+        self.assertEqual(manifest["built_from"], second)
+        self.assertEqual(asset["built_from"], second)
+
+    def test_missing_component_identity_refuses(self):
+        path = self.root / "engines/radiance/components/libr3/component.toml"
+        path.unlink()
+        with self.assertRaisesRegex(assets.BundleError, "missing or invalid build identity"):
+            self.packaged()
 
     def test_pack_restore_stock_binary_without_compiler(self):
         asset, archive, checksum = self.packaged()
