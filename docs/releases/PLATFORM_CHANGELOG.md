@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.50.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.3...bc-platform-1.50.4) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 control arm gets the layout definitions its resource derivation needs ([#1141](https://github.com/audiagentic/bigcherry/issues/1141)) ([57bfd57](https://github.com/audiagentic/bigcherry/commit/57bfd5730cd6caa83917b781cc96dc7e0a6c796c))
+* **lab:** S15 control arm uses the site file's route-heat file ([#1139](https://github.com/audiagentic/bigcherry/issues/1139)) ([8484b54](https://github.com/audiagentic/bigcherry/commit/8484b54fabb058f47d91178fc9a165e8593a944a))
+* **lab:** S15 driver can pin one host pool for both arms ([#1142](https://github.com/audiagentic/bigcherry/issues/1142)) ([85577bb](https://github.com/audiagentic/bigcherry/commit/85577bb754add7d1249cfe58b88fa0b81e426101))
+
 ## [1.50.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.2...bc-platform-1.50.3) (2026-11-18)
 
 
