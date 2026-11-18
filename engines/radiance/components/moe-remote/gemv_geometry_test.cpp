@@ -280,7 +280,6 @@ void test_stage_dispatch() {
                         Reason::KernelDynamicLdsExceeded, false);
 }
 
-
 void test_large_k_model_stage_admission() {
     // A model's gate/up input K is hidden; its down input K is intermediate.
     // The production owner checks BOTH choices at startup and again before
@@ -295,8 +294,10 @@ void test_large_k_model_stage_admission() {
     // An LDS budget sufficient for gate/up is not sufficient for down:
     // down must choose grouped GEMM, never a GEMV sized for hidden.
     auto caps = caps_for(hidden_layout);
-    const Choice gate_up = choose_stage(true, variant, hidden, hidden, 128, caps);
-    const Choice down = choose_stage(true, variant, intermediate, intermediate, 128, caps);
+    const Choice gate_up =
+        choose_stage(true, variant, hidden, hidden, 128, caps);
+    const Choice down =
+        choose_stage(true, variant, intermediate, intermediate, 128, caps);
     CHECK(std::holds_alternative<Gemv>(gate_up));
     check_choice_reason(down, Reason::KernelDynamicLdsExceeded, true);
 
