@@ -28,6 +28,8 @@ Replace the local native-setting mirror and argv bridge with upstream YAML/Confi
 - Preserve helper inheritance and exact rank order separately from native defaults/YAML anchors. Preserve fresh resource/power admission on every start.
 - For the initial managed path refuse unqualified authored-file hot reload; drain and restart from a newly admitted immutable snapshot using the existing supervisor.
 
+Implementation boundary: store exact original UTF-8 YAML in the existing strict measured session manifest, with its byte digest and existing build admission. The linked implementation handoff fixes the consumer, cache and replay migration order. Migrate in one call chain at a time and remove the native mapping only after all real callers use the sealed native input.
+
 ## Detailed Solution & Technical Design
 
 Native defaults, validation and YAML provenance already exist upstream. Do not duplicate them in a normalized projection, a generated YAML writer, a serialized FleetConfig or another binding table. Reparse the same immutable bytes in each actual consumer through fleet::parse; there is no need to expose private ryml tree ownership to BigCherry.
@@ -80,6 +82,10 @@ Native settings have one upstream parser/default/provenance authority and no dup
 
 Prerequisites RUM01/RUM03; this slice precedes RUM02. Coordinate RSC12 authoring and RSC07/RSC11 measured-plan ownership. ASTRA-CONSOLIDATION.md supersedes earlier normalized bundle and parser-tree proposals. Keep current-pin history; managed single-model reload is refused at the common operation and requires reprepare/restart.
 
+Executable guidance: docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md. This storage choice supersedes the earlier alternative snapshot storage sketch.
+
+First prove YAML transport and entry points using a supported fixture. The v1.17 Flash-Next `fp8` spelling is not equivalent to target native `fp8`; use RUM07 disposition before starting the real production-format lane. Target host-pool capacity is aggregate before division by TP; preserve actual admitted bytes and validate this in a multi-rank negative test.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -90,3 +96,5 @@ Prerequisites RUM01/RUM03; this slice precedes RUM02. Coordinate RSC12 authoring
 - 2026-11-18T02:22:48.978686+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:25:52.100615+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:28:11.086931+00:00 (updated-by): Updated: section:validation, section:effort_risk, section:notes
+- 2026-11-18T03:39:58.662306+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-18T03:41:39.090024+00:00 (updated-by): Updated: section:notes
