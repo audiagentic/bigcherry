@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.1...bc-platform-1.51.2) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** parity harness names the build's radiance_home for bc-serve ([#1158](https://github.com/audiagentic/bigcherry/issues/1158)) ([ac8f106](https://github.com/audiagentic/bigcherry/commit/ac8f1065514e54face2b61fb890e9f7936289d0a))
+
 ## [1.51.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.0...bc-platform-1.51.1) (2026-11-18)
 
 
