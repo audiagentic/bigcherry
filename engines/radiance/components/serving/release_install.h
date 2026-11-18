@@ -41,6 +41,7 @@ struct InstallRequest {
     fs::path archive; // the record's permitted asset, downloaded unmodified
     fs::path root;
     fs::path sdk;
+    bool allow_downgrade = false; // explicit operator authorization
 };
 
 // This module derives the on-disk trust and retention contract directly from
