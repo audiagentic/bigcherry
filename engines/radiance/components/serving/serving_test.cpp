@@ -1,6 +1,7 @@
 #ifdef NDEBUG
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
+#include "../moe-remote/heat_publication.h"
 #include "calibration.h"
 #include "config_loader.h"
 #include "experts.h"
@@ -10,6 +11,7 @@
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "resources.h"
+#include "runtime_guards.h"
 #include "s8_replay.h"
 #include "sdk_check.h"
 #include "serving.h"
@@ -1234,6 +1236,26 @@ void manifest_writer_step(Fixture& t) {
     const auto back =
         bc::serving::v2::read_manifest(built.text, "writer test", bc::serving::v2::PlanUse::serving);
     assert(back.ok());
+    { // RED: strict native writer + real runtime guard must not kill recording-only serving.
+        namespace ss = bc::serving::session;
+        const fs::path file = t.root / "recording-only-guard-manifest.json";
+        sv::write_manifest_file(file, built.text);
+        const fs::path log = t.file("recording-only-guard-engine.log", "recorded pass: draft pass 8 token\n");
+        ss::EngineStart engine;
+        engine.manifest = file;
+        engine.handoff_shm =
+            built.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
+        engine.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
+        engine.heat_session_nonce = "0123456789abcdef0123456789abcdef";
+        ss::RuntimeGuards guard;
+        const auto result = guard.startup(engine, log, {});
+        if (result)
+            throw std::runtime_error("recording-only native runtime guard refused: " + result->message);
+        if (guard.policy_enabled())
+            throw std::runtime_error("uncalibrated recording-only manifest incorrectly activated policy");
+        if (const auto ongoing = guard.poll())
+            throw std::runtime_error("recording-only heat file affected serving: " + ongoing->message);
+    }
     // RED P1-5: measured producer P1 + raw P2 with a bounded valid_until.
     // Build the strict v2 consumer document via the REAL S10 writer, and
     // re-qualify that same native P1 with today's scope using the same S8.
@@ -1550,6 +1572,21 @@ void manifest_writer_step(Fixture& t) {
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
         const auto with_calibration = sv::build_manifest(calibrated);
+        { // A policy-enabled manifest must STILL refuse missing live heat.
+            namespace ss = bc::serving::session;
+            const fs::path document = t.root / "policy-enabled-guard-manifest.json";
+            sv::write_manifest_file(document, with_calibration.text);
+            ss::EngineStart active;
+            active.manifest = document;
+            active.handoff_shm =
+                with_calibration.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
+            active.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
+            active.heat_session_nonce = "0123456789abcdef0123456789abcdef";
+            ss::RuntimeGuards guard;
+            const auto failure = guard.startup(active, t.root / "recording-only-guard-engine.log", {});
+            if (!guard.policy_enabled() || !failure || failure->message.find("histogram") == std::string::npos)
+                throw std::runtime_error("qualified live policy lost strict histogram admission");
+        }
         const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
         const uint64_t quiet_windows = lp.at("effect_min_quiet_windows").get<uint64_t>();
         const uint64_t window_samples = lp.at("effect_window_samples").get<uint64_t>();
@@ -3744,9 +3781,25 @@ void helper_vram_owner_graph(Fixture& t) {
     in.engine_binary = BC_FAKE_ENGINE;
     in.helper_binary = BC_FAKE_ENGINE;
     int writers = 0;
+    std::vector<fs::path> measuring_histograms;
+    std::vector<std::vector<std::string>> serving_writer_args;
     in.runner = [&](const std::vector<std::string>& args) -> ss::ManifestRun {
         ++writers;
         auto result = run_bc_serve({args.begin() + 1, args.end()});
+        const std::string file = fs::path(args.at(2)).filename().string();
+        if (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-measuring-", 0) != 0 &&
+            file.rfind("manifest-resources-", 0) != 0)
+            serving_writer_args.push_back(args);
+        if (result.exit_code == 0 && fs::is_regular_file(args.at(2))) {
+            if (file.rfind("manifest-measuring-", 0) == 0 ||
+                (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-resources-", 0) != 0)) {
+                const Json doc = Json::parse(std::ifstream(args.at(2)));
+                const fs::path prefix =
+                    doc.at("spec").at("handoff").at("telemetry").at("histogram_file").get<std::string>();
+                if (file.rfind("manifest-measuring-", 0) == 0)
+                    measuring_histograms.push_back(prefix);
+            }
+        }
         return {result.exit_code, result.output, result.output};
     };
     in.helper_vram.read_used = [](const fs::path& path) -> uint64_t {
@@ -3806,6 +3859,53 @@ void helper_vram_owner_graph(Fixture& t) {
             throw std::runtime_error(message.str());
         }
     }
+    // Each measuring writer gets a private telemetry generation. A future
+    // engine that publishes during --plan-memory must never replace the
+    // serving engine's rank0 histogram at the operator's destination.
+    if (measuring_histograms.empty())
+        throw std::runtime_error("real measuring writer histogram fixture did not run");
+    for (const fs::path& path : measuring_histograms) {
+        if (path == t.root / "vram-histogram" || path.parent_path().parent_path() != t.root ||
+            path.parent_path().filename().string().rfind("vram-graph-", 0) != 0 ||
+            path.filename().string().rfind("histogram-measuring-", 0) != 0)
+            throw std::runtime_error("measuring histogram not isolated: " + path.string());
+    }
+    if (serving_writer_args.empty())
+        throw std::runtime_error("real serving writer was never invoked");
+    const std::string site_recording = "handoff.histogram=" + Json((t.root / "vram-histogram").string()).dump();
+    for (const auto& args : serving_writer_args) {
+        size_t histogram_overrides = 0;
+        for (size_t i = 0; i + 1 < args.size(); ++i)
+            if (args[i] == "--set" && args[i + 1].rfind("handoff.histogram=", 0) == 0) {
+                if (args[i + 1] != site_recording)
+                    throw std::runtime_error("private measuring prefix leaked to serving writer");
+                ++histogram_overrides;
+            }
+        if (histogram_overrides != 1)
+            throw std::runtime_error("serving writer lost the operator's recording destination");
+    }
+
+    // Exercise the real CPU publisher twice as future --plan-memory and serving
+    // producers would: neither generation may overwrite the other's files.
+    std::vector<uint32_t> counts(static_cast<size_t>(r3::moe_shm::kMaxLayers) * 16, 0);
+    counts[0] = 42;
+    const std::string serving_prefix = (t.root / "vram-histogram").string();
+    const std::string measurement_prefix = measuring_histograms.back().string();
+    const std::string nonce = "0123456789abcdef0123456789abcdef";
+    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
+        !r3::heat_publication::publish(serving_prefix, 0, 16, counts, nonce))
+        throw std::runtime_error("engine CPU histogram publication failed");
+    const ss::HistogramExpectation expected{
+        4, 16, std::chrono::system_clock::now() - std::chrono::seconds(3), {}, nonce};
+    const fs::path rank = serving_prefix + ".rank0";
+    if (ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
+                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
+        throw std::runtime_error("serving producer proof must qualify independently of measurement");
+    counts[0] += 1;
+    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
+        ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
+                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
+        throw std::runtime_error("later measuring publication affected the serving generation");
 }
 
 int main(int argc, char** argv) {
