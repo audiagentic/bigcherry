@@ -280,6 +280,54 @@ void test_stage_dispatch() {
                         Reason::KernelDynamicLdsExceeded, false);
 }
 
+
+void test_large_k_model_stage_admission() {
+    // A model's gate/up input K is hidden; its down input K is intermediate.
+    // The production owner checks BOTH choices at startup and again before
+    // enqueuing any output writer. These are the same pure choices it consumes.
+    constexpr uint32_t hidden = 2560;
+    constexpr uint32_t intermediate = 3072;
+    constexpr Variant variant = Variant::W4H2;
+    const auto hidden_layout = geometry(variant, hidden);
+    const auto intermediate_layout = geometry(variant, intermediate);
+    CHECK(intermediate_layout.dynamic_bytes > hidden_layout.dynamic_bytes);
+
+    // An LDS budget sufficient for gate/up is not sufficient for down:
+    // down must choose grouped GEMM, never a GEMV sized for hidden.
+    auto caps = caps_for(hidden_layout);
+    const Choice gate_up = choose_stage(true, variant, hidden, hidden, 128, caps);
+    const Choice down = choose_stage(true, variant, intermediate, intermediate, 128, caps);
+    CHECK(std::holds_alternative<Gemv>(gate_up));
+    check_choice_reason(down, Reason::KernelDynamicLdsExceeded, true);
+
+    // A larger hidden width is not itself a startup refusal when the
+    // verified grouped GEMM can run that projection.
+    check_choice_reason(choose_stage(true, variant, 4096, 4096, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, true);
+
+    // With no grouped GEMM, the same down stage has a typed refusal;
+    // Runner::set_shape must reject it before any lane can publish.
+    caps.generic_gemm_available = false;
+    const Choice refused_down =
+        choose_stage(true, variant, intermediate, intermediate, 128, caps);
+    check_choice_reason(refused_down, Reason::KernelDynamicLdsExceeded, false);
+    CHECK(std::holds_alternative<Gemv>(
+        choose_stage(true, variant, hidden, hidden, 128, caps)));
+    check_choice_reason(choose_stage(true, variant, 4096, 4096, 128, caps),
+                        Reason::KernelDynamicLdsExceeded, false);
+
+    // The old fixed 2560 limit is not a ban: capable hardware can use
+    // a launch-sized 3072-byte-width GEMV and the actual LDS reservation.
+    caps = caps_for(intermediate_layout);
+    const Choice large_down =
+        choose_stage(true, variant, intermediate, intermediate, 128, caps);
+    CHECK(std::holds_alternative<Gemv>(large_down));
+    if (const auto* gemv = std::get_if<Gemv>(&large_down)) {
+        CHECK(gemv->variant == variant);
+        CHECK(gemv->dynamic_lds == intermediate_layout.dynamic_bytes);
+    }
+}
+
 }  // namespace
 
 int main() {
@@ -287,6 +335,7 @@ int main() {
     test_layout_indices();
     test_prelaunch_dispatch();
     test_stage_dispatch();
+    test_large_k_model_stage_admission();
     if (failures) {
         std::cerr << failures << " GEMV geometry checks failed\n";
         return EXIT_FAILURE;
