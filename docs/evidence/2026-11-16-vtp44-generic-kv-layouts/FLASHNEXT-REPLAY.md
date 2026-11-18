@@ -54,7 +54,7 @@ reference-configuration run (bf16, chunk 64).
 
 ## Files
 `flashnext-replay/`: the five replayed runs' KLD files and the four not-replayed ones they are compared with
-(`noreplay-*`), receipts, `run_record.sh` / `run_replay.sh` (the runs; paths are those of the run), `verify_record.py` /
+(`noreplay-*`), receipts, `run_record.sh` / `run_replay.sh` (the runs; absolute paths replaced by `<work-root>`, `<dev-root>`, `<models-root>`), `verify_record.py` /
 `verify_replay.py` and their outputs (record against stats counts; replay against the record and the not-replayed KLD), and
 `bootstrap_replay.py` with its output. The per-position rows, the stats files and the 8 MB route file were in the run
 folders and are not kept; the route file is reproduced by `run_record.sh`.
