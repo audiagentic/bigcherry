@@ -1,5 +1,17 @@
 # Changelog
 
+## [1170.31.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.30.0...bc-radiance-1170.31.0) (2026-11-18)
+
+
+### New and changed
+
+* **serving:** add native observe-only lab experiment mode ([#1095](https://github.com/audiagentic/bigcherry/issues/1095)) ([9293d53](https://github.com/audiagentic/bigcherry/commit/9293d537119596d407e53d8340714229c324d508))
+
+
+### Fixes
+
+* **serving:** preflight calibration prompts before child admission ([#1099](https://github.com/audiagentic/bigcherry/issues/1099)) ([1b4fb4b](https://github.com/audiagentic/bigcherry/commit/1b4fb4b331d83c3ca4cf785b7e5abbed96f48f84))
+
 ## [1170.30.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.29.0...bc-radiance-1170.30.0) (2026-11-18)
 
 

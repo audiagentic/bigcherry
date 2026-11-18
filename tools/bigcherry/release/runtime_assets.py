@@ -89,7 +89,7 @@ RUN_MANIFEST = (
 def payload_contract_key() -> str:
     """Versioned payload schema and selection policy, including optional files."""
     policy = {"schema": SCHEMA, "scope": RUN_SCOPE, "manifest": RUN_MANIFEST,
-              "build_metadata": BUILD_METADATA}
+              "build_metadata": BUILD_METADATA, "build_identity_schema": 2}
     return hashlib.sha256(json.dumps(policy, sort_keys=True,
                                       separators=(",", ":")).encode()).hexdigest()
 
@@ -156,16 +156,45 @@ def select_build(record: dict, work_root: Path) -> tuple[Path, str, str]:
     return matches[0], plan_id, binary_sha
 
 
-def built_from(root: Path) -> dict[str, str]:
-    """What this build is made from: the upstream radiance release it patches, named so the bundle cannot pass for that release."""
+def built_from(root: Path) -> dict:
+    """The exact upstream pin and each owned component's build-against revision.
+
+    Read the declared closure on every pack. A pin move via pin-bump updates
+    recipes and component.toml together; a stale or missing declaration refuses
+    packaging instead of publishing a mixed engine and plugin generation.
+    """
     import tomllib
+
+    engine_file = root / "engines/radiance/engine.toml"
+    recipes_file = root / "engines/radiance/recipes.toml"
     try:
-        engine = tomllib.loads((root / "engines/radiance/engine.toml").read_text(encoding="utf-8"))
-        recipes = tomllib.loads((root / "engines/radiance/recipes.toml").read_text(encoding="utf-8"))
-    except OSError:   # a checkout without the engine files (a unit-test fixture) has nothing to say
-        engine, recipes = {}, {}
+        engine = tomllib.loads(engine_file.read_text(encoding="utf-8"))
+        recipes = tomllib.loads(recipes_file.read_text(encoding="utf-8"))
+    except (OSError, tomllib.TOMLDecodeError) as exc:
+        raise BundleError(f"cannot read Radiance build identity: {exc}") from exc
+    pinned = recipes.get("pinned")
+    pinned_version = recipes.get("pinned-version")
+    declared = engine.get("components")
+    if (not isinstance(pinned, str) or not pinned or
+            not isinstance(pinned_version, str) or not pinned_version or
+            not isinstance(declared, dict) or not declared):
+        raise BundleError("incomplete Radiance pin or component identity declarations")
+    components = {}
+    for name, relative in sorted(declared.items()):
+        if (not isinstance(name, str) or not re.fullmatch(r"[a-z][a-z0-9-]+", name) or
+                relative != f"engines/radiance/components/{name}"):
+            raise BundleError(f"invalid Radiance component path: {name}")
+        try:
+            comp = tomllib.loads((root / relative / "component.toml").read_text(encoding="utf-8"))
+        except (OSError, tomllib.TOMLDecodeError) as exc:
+            raise BundleError(f"missing or invalid build identity for {name}: {exc}") from exc
+        against = comp.get("built-against")
+        if against != pinned:
+            raise BundleError(f"{name} built-against {against!r} differs from Radiance pin {pinned!r}")
+        components[name] = against
     return {"project": engines.RADIANCE, "upstream": str(engine.get("upstream", "")),
-            "pinned": str(recipes.get("pinned", "")), "note": "BigCherry's patched build, not an upstream release"}
+            "pinned": pinned, "pinned_version": pinned_version,
+            "components": components, "note": "BigCherry's patched build, not an upstream release"}
 
 
 def check_no_interpreter(name: str, path: Path) -> None:
@@ -267,8 +296,9 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
     files = runtime_files(build, root)
     identity = stock_identity(root)
     version = sdk_version(sdk)
+    built_identity = built_from(root)
     manifest = {
-        "schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE, "built_from": built_from(root), "release_tag": tag,
+        "schema": SCHEMA, "product": PRODUCT, "payload_scope": RUN_SCOPE, "built_from": built_identity, "release_tag": tag,
         "plan_id": plan_id, "source_slice_id": build.parent.name,
         "binary_sha256": binary_sha,
         "rocm_version": version, **identity,
@@ -304,7 +334,7 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
              "file_names": sorted(manifest["files"]), "name": name, "sha256": sha,
              "checksum_name": checksums, "manifest_sha256": hashlib.sha256(encoded).hexdigest(),
              "plan_id": plan_id, "source_slice_id": build.parent.name,
-             "rocm_version": version, "binary_sha256": binary_sha, **identity}
+             "rocm_version": version, "binary_sha256": binary_sha, "built_from": built_identity, **identity}
     old = record.get("runtime_assets", {}).get(tag)
     if old is not None and old != asset:
         staged.unlink()
@@ -321,6 +351,8 @@ def verify_runtime_tree(target: Path, asset: dict, manifest: dict,
         raise BundleError("runtime manifest has no file map")
     if manifest.get("payload_scope") != asset.get("payload_scope"):
         raise BundleError("runtime manifest/record mismatch: payload_scope")
+    if asset.get("built_from") is not None and manifest.get("built_from") != asset["built_from"]:
+        raise BundleError("runtime manifest/record mismatch: built_from")
     if asset.get("payload_scope") == RUN_SCOPE:
         check_run_manifest(set(checks))
         if asset.get("file_names") != sorted(checks):

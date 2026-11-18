@@ -169,4 +169,11 @@ class SemanticProjectionTests(unittest.TestCase):
             a["manifest"]["spec"]["intent"]["model"] = "tampered"
             with self.assertRaisesRegex(ProjectionError, "disagree"):
                 projection(a)
-          
+            a = _fixture(copy.deepcopy(self.original), str(path))
+            a["manifest_file_sha256"] = "0" * 64
+            with self.assertRaisesRegex(ProjectionError, "disagree"):
+                projection(a)
+
+
+if __name__ == "__main__":
+    unittest.main()

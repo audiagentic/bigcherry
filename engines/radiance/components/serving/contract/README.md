@@ -99,20 +99,16 @@ enumerator (from an enum value or a calibration key) is a C++ identifier and uni
 their use: a map's `key_ref` is a string def, tuple elements are integer defs, a calibration value refers to an integer
 or string def. Counts are not negative. A tuple item takes no scalar `item_*` attribute.
 
-## Inactive v2 scaffold (RSC11 S9)
+## Serving manifest v2
 
-`serving-v2.toml` is the **new**, single-source v2 registry. The production `bigcherry/v1` generator output, schema fingerprints, reader and writer remain unchanged until the one S13 activation. The version-specific generated C++ types/codec, Python codec, schema, field reference and fingerprints live under `../generated/v2/`; the documented copies are in `docs/design/serving-manifest-v2/`. V2 code has its own error types; it does not translate or accept v1 manifests.
+`serving-v2.toml` is the v2 registry. The committed `generated/v2/` directory contains the C++ types and codec, Python codec, schema, [field reference](../generated/v2/serving-fields.md) and fingerprints. `bc_contract_check` verifies those outputs and the published schema against the registry.
 
-Regenerate by invoking `bc_contract_gen` with `contract/serving-v2.toml` and `generated/v2`, then copy `serving-v2.schema.json` and `serving-fields.md` to their documented v2 equivalents. `bc_contract_check` compares both v1 and v2 committed outputs against the registry, including the copies in docs; v2 generation never mutates a v1 output. `bc_v2_codec_test` checks the compiled C++ codec; `tools/tests/core/test_serving_manifest_v2_contract.py` checks the generated Python codec, synthetic fixtures, closed schema, duplicate rejection, role/BDF semantics and version isolation.
-
-V2-only `[[field]]` attributes `origins` and `confidences` declare permitted provenance source and evidence quality; omitted attributes mean unrestricted. Values are validated against the registry's v2 provenance enums, emitted in the C++ field table/Python constraints and included in the v2 semantic fingerprint. RSC03 resource budgets and RSC09 handoff fields must be derived or calibrated, never profile estimates. See `docs/design/serving-manifest-v2/spec.md` for all v2 additions and pending S8/S10/S13 obligations.
-
-## Inactive v2 successor (RSC11 S9)
-
-`serving-v2.toml` is the single v2 registry. `bc_contract_gen` produces committed `generated/v2/{serving-v2.schema.json,serving_types.h,serving_codec.h,serving_codec.cpp,serving_codec.py,serving-fields.md,contract.fingerprint}`; `bc_contract_check` byte-compares all generated artifacts and the v2 documentation mirrors. Regenerate with:
+Regenerate with:
 
 ```
 <serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving-v2.toml engines/radiance/components/serving/generated/v2
 ```
 
-Then copy the generated schema and field reference to `docs/design/serving-manifest-v2/` (schema destination: `serving-manifest.v2.schema.json`). The S8/S10 type interface and S5/S11 separate admission-refusal wire are documented in `docs/design/serving-manifest-v2/spec.md`. These artifacts are inactive until S13; v1 generation, its fingerprints, and production readers remain unchanged.
+Copy `serving-v2.schema.json` to `docs/design/serving-manifest-v2/serving-manifest.v2.schema.json`. Link to the generated field reference directly.
+
+V2 field declarations can restrict provenance through `origins` and `confidences`. Omitted attributes leave the respective value unrestricted. These restrictions are included in the semantic fingerprint. See the [manifest specification](../../../../../docs/design/serving-manifest-v2/spec.md) for resource admission and calibration.

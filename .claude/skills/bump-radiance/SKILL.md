@@ -12,6 +12,21 @@ line they anchor on). A bump is therefore: find what upstream changed, see which
 run the `pin-bump` gates, repair what drifted, then measure on hardware. Never skip the triage: it is what tells
 you whether the bump is worth doing at all.
 
+## Target and ownership boundary
+
+Read RUM01–RUM10 and `docs/reviews/radiance-upstream-2026-11-18/ASTRA-CONSOLIDATION.md`
+before changing the pin. The current migration order is **RUM03 dependency/ABI -> RUM04 native-config
+boundary -> RUM02 extraction**, followed by dependent placement/remote/KV/scheduler slices.
+RUM04 reuses **upstream native YAML parsing of the exact admitted immutable original bytes** and the
+existing strictly measured BigCherry manifest; it does **not** authorize a normalized native-option
+registry, a FleetConfig serializer, a new bundle index or a second allocator. Current RSC12/RSC02
+native-option bridging is temporary and native-only rows are deleted only after actual callers migrate.
+BHK02–BHK04 own host-kernel/GFXOFF, not the Radiance patch series.
+
+See `docs/reference/engines/radiance/BUMP_COUPLING.md` for the full six-component,
+42-patch inventory and its **DECLARED/UNDECLARED** rule. Matching patch anchors and
+component `built-against` alone do not establish ABI or wire compatibility.
+
 ## 1. Is there something to bump to? (read-only, a minute)
 
 Run `python3 -m bigcherry --engine radiance pin-triage <target-tag>` (or
@@ -43,7 +58,9 @@ Then intersect `changed.txt` with what bigcherry depends on:
   (strip `.rw`) and every `r4d_*.{hip,cpp,h}` named in `rewrites.txt`. A hit means a block may drift.
   The exact test, with no checkout: extract only libr4d and run the rewriter's own check against it:
 
-      S=$(mktemp -d); git -C $G archive $B libr4d | tar -x -C $S
+      mkdir -p ${BC_WORK_ROOT}/tmp
+      S=$(mktemp -d ${BC_WORK_ROOT}/tmp/radiance-rewrite.XXXXXX)
+      git -C $G archive $B libr4d | tar -x -C $S
       python3 engines/radiance/components/libr3/r3_rewrite.py --source $S/libr4d \
           --rules engines/radiance/components/libr3/rewrites.txt \
           --native engines/radiance/components/libr3/native --check      # {"failures": {}} when all apply
@@ -57,6 +74,32 @@ Then intersect `changed.txt` with what bigcherry depends on:
   worth doing and worth measuring.
 
 Write the verdict (bump / not now, and why) before running anything heavy.
+
+### BigCherry-owned coupling preflight (read-only)
+
+1. Record the exact candidate commit, its `abi/rad_abi.h` `RAD_ABI_VERSION`, and whether it
+   is RUM01's **reviewed target**. The newest tag may differ. The 2026-11-18 `v2.1.0`
+   tag is ABI 40; RUM03's reviewed migration candidate is ABI 41.
+2. Inspect `BUMP_COUPLING.md`, `docs/reviews/radiance-upstream-2026-11-18/patch-footprint.json`,
+   all six `component.toml` packages, every `patch.py` source anchor and `libr3/native/*.rw`.
+   Once the coupling gate is merged, examine undeclared names, missing upstream headers,
+   source inputs and ABI drift; until then label them **UNDECLARED**, not passed.
+3. Use the **existing generated serving-v2 registry** to check RSC12/RSC02 names in
+   `session.cpp`, `serving.cpp`, `config_loader.cpp` and rad0009. Distinguish native
+   options from local/derived/helper fields. RUM04 removes proven native duplication:
+   do not create a second native mapping authority or serializer.
+4. Verify the Python-free engine asset records the exact Radiance `pinned`,
+   `pinned-version`, every component's `built-against`, and release tag/digest.
+   Any mixed-version plugin bundle must refuse packaging; the interpreter exclusion
+   and SDK checks must remain in place.
+5. An exit 0 from `pin-triage` means the advisory analysis completed, not that
+   the bump is accepted. Run exact-ref `git archive` + `r3_rewrite.py --check`
+   separately. A drift or ABI failure is **not ready**; do not run `pin-bump`,
+   alter vendor or use GPU during a read-only readiness check.
+
+The timestamped verdict and explicit gaps live in `BUMP_COUPLING.md`.
+No local machine paths, private environment or hardware fingerprints belong
+in committed evidence.
 
 ## 3. Run the bump (hours; detached; a slice worktree)
 

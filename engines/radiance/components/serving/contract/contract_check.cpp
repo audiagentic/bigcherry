@@ -80,7 +80,6 @@ int main() {
     };
     for (const auto& [name, content] : files) compare(src + "/generated/v2/" + name, content);
     compare(docs + "/serving-manifest.v2.schema.json", files.at("serving-v2.schema.json"));
-    compare(docs + "/serving-fields.md", files.at("serving-fields.md"));
     if (bc::serving::v2::kFingerprint != bc::contract::fingerprint(r) ||
         bc::serving::v2::kSemanticFingerprint != bc::contract::semantic_fingerprint(r)) {
         std::printf("FAIL: the compiled generated/v2/serving_types.h has other fingerprints\n");

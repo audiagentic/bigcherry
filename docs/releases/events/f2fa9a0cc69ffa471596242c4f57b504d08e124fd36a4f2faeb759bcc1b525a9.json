@@ -1,0 +1,13 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_030926_radiance-serving-documentation_9396",
+  "files": [
+    "docs/design/serving-manifest-v2/serving-fields.md",
+    "engines/radiance/components/serving/contract/README.md",
+    "engines/radiance/components/serving/contract/contract_check.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove duplicate generated v2 field reference from design docs and use the checked canonical generated artifact. Consolidate regeneration instructions and keep published schema verification.",
+  "timestamp-utc": "2026-11-18T03:09:26.342104Z",
+  "user-summary-candidate": "Radiance serving documentation now has one generated field reference."
+}
