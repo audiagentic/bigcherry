@@ -1,0 +1,21 @@
+{
+  "clean_stops": true,
+  "different_paths": [
+    "/processes/roles/0/argv/length",
+    "/spec/plan/engine_memory/expected/vram/cards/0/free",
+    "/spec/plan/engine_memory/expected/vram/cards/1/free",
+    "/spec/plan/engine_memory/expected/vram/claimable",
+    "/spec/plan/engine_memory/expected/vram/elastic",
+    "/spec/plan/engine_memory/expected/vram/experts",
+    "/spec/plan/resource_inputs/resident_other_bytes"
+  ],
+  "equal": false,
+  "greedy_equal": true,
+  "greedy_sha256": {
+    "A": "eb2265d34def6374ae398a5e54791e7f339a25182c0590054ba91a2570778e36",
+    "B": "eb2265d34def6374ae398a5e54791e7f339a25182c0590054ba91a2570778e36"
+  },
+  "legacy_projection_sha256": "26e70707f4e101f190b1629fea99eb453ca5056304f23f071a93089edabed814",
+  "native_projection_sha256": "46fc4cae953b27d1fc6ac86e198228f577c5547a28504d65619515cc33d8abc4",
+  "status": "FAIL"
+}
