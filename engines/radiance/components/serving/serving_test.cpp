@@ -3376,6 +3376,8 @@ void session_engine_plan(Fixture& t) {
         valid.named_config = "flashnext-2xtx";
         valid.helper_binary = BC_FAKE_ENGINE;
         valid.options.sets = {"layout.name=\"flashnext-2xtx\""};
+        // Keep the card-free fixture valid even on a one-vCPU CI runner.
+        valid.options.sets.push_back("helper.combine_threads=1");
         valid.options.sets.push_back("handoff.heat=\"" + (t.root / "parity.hot-first").string() + "\"");
         valid.options.sets.push_back("handoff.histogram=\"" + (t.root / "session-calibration-histogram").string() + "\"");
         valid.options.site = t.file("session-calibration-helper-site.toml",
