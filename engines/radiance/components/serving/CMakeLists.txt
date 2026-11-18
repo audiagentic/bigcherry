@@ -220,6 +220,12 @@ if(BUILD_TESTING)
   target_link_libraries(bc_contract_test PRIVATE bc_contract)
   target_compile_definitions(bc_contract_test PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(NAME bc_contract_test COMMAND bc_contract_test)
+  # Same C++17 native option/argv projection invoked by patched Radiance
+  # (rad0009). Never fork a second option-name translation table.
+  add_executable(bc_v2_native_projection_test EXCLUDE_FROM_ALL v2/native_option_projection_test.cpp)
+  target_link_libraries(bc_v2_native_projection_test PRIVATE bc_serving_v2)
+  add_test(NAME bc_v2_native_projection_test COMMAND bc_v2_native_projection_test)
+  set_tests_properties(bc_v2_native_projection_test PROPERTIES TIMEOUT 60)
   add_executable(bc_contract_check EXCLUDE_FROM_ALL contract/contract_check.cpp)
   target_link_libraries(bc_contract_check PRIVATE bc_contract)
   target_compile_definitions(bc_contract_check PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
