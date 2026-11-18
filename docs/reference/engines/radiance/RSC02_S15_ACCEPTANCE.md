@@ -8,6 +8,54 @@ Python-free tagged release must pass its own gate before retirement. The
 RSC12 named-config loader is the source of effective settings, not a new
 launcher-flag mapping. There is **no GPU fallback** in card-free CI.
 
+## One-command leased short A/B acceptance (operator only)
+
+The lab-only `tools/lab/radiance/rsc02_s15_ab.py` driver is **not a
+production dependency** and is **not run by CI or by this agent on GPUs**.
+Run from the repository root, with the completed build and absolute inputs
+recorded first. Replace the example paths with the real paths of **one**
+immutable build and selected model; all paths must already exist:
+
+```bash
+python3 tools/lab/radiance/rsc02_s15_ab.py accept \
+  --build /absolute/completed/BUILD \
+  --bc-serve /absolute/completed/BUILD/radiance_home/bin/bc-serve \
+  --configs /absolute/repo/engines/radiance/configs \
+  --site /absolute/SITE.toml \
+  --model-root /absolute/model-root \
+  --model-file /absolute/model-root/actual-model-file.rad \
+  --work-root /absolute/BC_WORK_ROOT \
+  --out /absolute/BC_WORK_ROOT/rsc02-s15-short-ab \
+  --power-profile stock \
+  --confirm I-WILL-RUN-ON-LEASED-GPUS
+```
+
+The driver checks `rocm-smi` and `free -g` before **each** arm,
+then acquires an individual `agent-lease acquire gpu --ttl 30m --est 15m`
+lease and releases it when that arm exits. It alternates A/B, B/A, A/B,
+B/A for **each** dense Qwen 27B and helper Flash-Next cohort; A is the
+existing Bash launcher and B the foreground native owner. It refuses
+unleased startup or any unclean stop, and halts the sequence at the first
+failure. To test only the fake-engine/card-free path, run
+`python3 tools/lab/radiance/rsc02_s15_ab.py dry-run --native-test BUILD-TEST/bc_session_stored_test`;
+this is also the `bc_s15_dry_run_test` CTest entrypoint.
+
+Every paired short run **passes** only if the same build/engine/helper/model
+digests remain unchanged, both start/health/canary succeed, all manifest
+bytes are bound to observed `/proc` launch arguments and complete
+engine/helper role inventories, the existing strict semantic comparator
+reports **zero** mismatches, one fixed temperature-zero greedy completion
+has the **same SHA-256** on both arms, power observations/receipts are
+retained, and all owned children and power state have a verified clean
+stop. Each cell writes its own preflight, snapshot, output hash, power
+and stop evidence under `--out`. Failed starts, missing receipts where
+required, process races, mismatches and incomplete stops **block** the
+next lease; inspect and restore the host before any retry. The short
+run's `SHORT_AB_PASS` is **not** the full S15 PASS: S14 attribution and
+the RHP12 quality, retained-session, energy, safety and performance
+requirements below remain mandatory. Do not merge S16 until the full
+leased hardware acceptance and release-start gate pass.
+
 ## Owners and build identity
 
 Run from a clean checkout on a leased host with the original Bash launcher
@@ -25,7 +73,7 @@ The two configurations in the S15 acceptance matrix are:
 | Cohort | Bash control A | Native candidate B | Compulsory evidence |
 | --- | --- | --- | --- |
 | Dense TP | `launch-flashnext-best.sh start --layout qwen27b-tp3-int8 --build BUILD` | `bc-serve serve qwen27b-tp3-int8 --configs DIR --site SITE --model-root ROOT --run-dir RUN --engine-binary BUILD/bin/radiance --power-profile PROFILE` | Three ordered engine ranks; disk ngram, KV, MTP replay, returned canary and shutdown |
-| Helper | `launch-flashnext-best.sh start --layout flashnext-4gpu --build BUILD` | `bc-serve serve flashnext-4gpu --configs DIR --site SITE --model-root ROOT --run-dir RUN --engine-binary BUILD/bin/radiance --power-profile PROFILE` | Real engine/helper ranks, heat producer/consumer format, histogram, owner map, live policy, measured plan and startup admission |
+| Helper | `launch-flashnext-best.sh start --layout flashnext-tp2xtx-r9700 --build BUILD` | `bc-serve serve flashnext-tp2xtx-r9700 --configs DIR --site SITE --model-root ROOT --run-dir RUN --engine-binary BUILD/bin/radiance --power-profile PROFILE` | Real engine/helper ranks, heat producer/consumer format, histogram, owner map, live policy, measured plan and startup admission |
 
 Here `DIR`, `SITE`, `ROOT`, `BUILD`, `RUN`, and `PROFILE` are
 **actual recorded operator inputs** selected before the lease. They must

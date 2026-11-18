@@ -24,7 +24,7 @@ from dataclasses import replace
 
 from ..campaign import build as campaign_build
 from ..campaign import runtime_bundle
-from ..core import components, engines, paths
+from ..core import component_coupling, components, engines, paths
 from ..core import config as campaign_config
 from ..core.process import run_checked
 from .base import BumpCheck, BumpCheckError, DriftCheck
@@ -265,7 +265,29 @@ def rewrite_drift(component: components.Component, source_dir: Path, runner: Rew
 def source_drift_checks(context: ProjectContext, source_dir: Path, runner: RewriteRunner = _run_rewrite) -> tuple[DriftCheck, ...]:
     """One drift check per declared component that rewrites the engine's sources (it carries r3_rewrite.py)."""
     declared = components.load_all(paths.REPO_ROOT, context.engine)
-    checks = []
+
+    def coupling_run() -> dict[str, list[str]]:
+        if not source_dir.is_dir():
+            raise BumpCheckError(f"component coupling: source tree is unavailable: {source_dir}")
+        upstream_paths = {
+            path.relative_to(source_dir).as_posix()
+            for path in source_dir.rglob("*") if path.is_file()
+        }
+        abi = expected_abi_version(source_dir)
+        return {
+            f"{name}/component.toml": faults
+            for name, component in sorted(declared.items())
+            if (faults := component_coupling.problems(
+                component, upstream_paths=upstream_paths, upstream_abi=abi,
+                patch_root=context.patches_root
+            ))
+        }
+
+    checks = [DriftCheck(
+        "component-coupling", "COMPONENT_COUPLING_DRIFT",
+        "update owned [coupling] declarations and the consumer for this upstream pin, then rerun pin-bump",
+        coupling_run,
+    )]
     for name, component in sorted(declared.items()):
         if not (component.root / REWRITE_SCRIPT).is_file():
             continue

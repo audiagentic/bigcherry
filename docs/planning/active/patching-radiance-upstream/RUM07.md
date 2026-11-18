@@ -72,6 +72,8 @@ Prerequisites RUM03/RUM06. The 166 failed-edit review surface is partly cascadin
 
 Astra source review ASTRA-CONSOLIDATION.md: evaluate this slice early and independently where possible, before porting obsolete hunks. Same byte count does not establish equivalent offsets/scales/rounding. Integrated qualification depends on selected ABI/placement/runtime.
 
+Production-format implementation blocker: target's native FP8 opt-in is absent on Qwen4exp and native i8 has different scale bytes; a copied Flash-Next YAML is not sufficient. Resolve local E4M3 retention or explicitly qualify a replacement before RUM09 real production canary. Refer to docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md.
+
 ## Change Log
 
 - 2026-11-18T01:28:34.138312+00:00 (created-by): Created by codex
@@ -82,3 +84,4 @@ Astra source review ASTRA-CONSOLIDATION.md: evaluate this slice early and indepe
 - 2026-11-18T02:23:39.101657+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:26:37.220559+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:28:24.920139+00:00 (updated-by): Updated: section:code_samples
+- 2026-11-18T03:41:48.679183+00:00 (updated-by): Updated: section:notes

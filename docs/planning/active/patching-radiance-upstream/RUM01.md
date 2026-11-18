@@ -77,6 +77,8 @@ Imported stable roadmap identity from the reviewed design. Prerequisites: none. 
 
 Prerequisites: none. RUM02/RUM03 follow this gate; RUM04 then feeds RUM05/RUM06; RUM07/RUM08 precede RUM09. Current-pin RSC/RCS/RHP work stays owned by those groups. No implementation or deep tests in this plan-detail task.
 
+Execution decisions: use the named TP1 Flash-Next production lane for first native canary, and separately use helper-off for functional/KL control. This does not qualify mixed engine ranks. Follow docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md for frozen names, inputs and ownership inventory; record installed artifact identities before beginning gates.
+
 ## Change Log
 
 - 2026-11-18T01:27:53.871983+00:00 (created-by): Created by codex
@@ -89,3 +91,5 @@ Prerequisites: none. RUM02/RUM03 follow this gate; RUM04 then feeds RUM05/RUM06;
 - 2026-11-18T01:56:23.440036+00:00 (updated-by): Updated: section:code_samples
 - RV4228
 - 2026-11-18T02:16:19.600984+00:00 (updated-by): Updated: section:title, section:steps, section:detailed_solution, section:code_samples, section:acceptance_criteria
+- RV4232
+- 2026-11-18T03:39:43.858967+00:00 (updated-by): Updated: section:notes
