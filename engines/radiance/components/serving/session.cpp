@@ -1903,6 +1903,17 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         in.options.layouts = configs.empty() || !given.options.layouts.empty() ? layout_sources(given.options)
                                                                                : std::vector<fs::path>{};
     }
+    if (in.calibration_run) {
+        // The Bash launcher rejected unusable A/B inputs before starting a child.
+        // The native foreground owner validates the effective prompt batches at
+        // the planner boundary, ahead of its writer, measuring and GPU children.
+        if (in.live_policy_file.empty() || in.calibration_prompts_a.empty() ||
+            in.calibration_prompts_b.empty() || in.calibration_store.empty())
+            throw PlanFailed("calibration: live policy, two prompt files and store are required");
+        const auto prompts = read_calibration_prompts(in.calibration_prompts_a, in.calibration_prompts_b);
+        if (!prompts)
+            throw PlanFailed("calibration prompts: " + prompts.error().message);
+    }
     const Json facts = detect(in.options.sys_root);
     const Resolved r = resolve(in.options, facts);
     const Json& v = r.values;

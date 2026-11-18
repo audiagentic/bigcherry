@@ -3330,6 +3330,28 @@ void session_engine_plan(Fixture& t) {
         }
         assert(refused && calls.empty());
     }
+    { // Calibration parity: invalid prompt batches must be refused before the writer or any GPU child.
+        ss::EnginePlanInputs bad_calibration = in;
+        bad_calibration.named_config = "qwen27b-tp3-int8";
+        bad_calibration.self = BC_SERVE_EXE;
+        bad_calibration.calibration_run = true;
+        bad_calibration.live_policy_file = t.file("session-calibration-policy.json", "{}");
+        bad_calibration.calibration_prompts_a = t.file("session-calibration-a.txt", "same prompt\n");
+        bad_calibration.calibration_prompts_b = t.file("session-calibration-b.txt", "same prompt\n");
+        bad_calibration.calibration_store = t.file("session-calibration-store.toml", "");
+        bool wrote = false;
+        bad_calibration.runner = [&](const std::vector<std::string>&) {
+            wrote = true;
+            return ss::ManifestRun{2, "", "invalid calibration must never reach writer"};
+        };
+        bool refused_prompts = false;
+        try {
+            (void)ss::plan_engine_only(bad_calibration, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            refused_prompts = std::string(e.what()).find("distinct") != std::string::npos;
+        }
+        assert(refused_prompts && !wrote);
+    }
     // the measuring start that fails is refused, naming its log
     in.runner = [&](const std::vector<std::string>& argv) {
         ss::ManifestRun r;
