@@ -1,0 +1,29 @@
+start_utc 2026-11-18T00:59:03Z layout flashnext-4gpu build <work-root>/builds/b893f5876bb7781648f3dc09390e201c/e5a91ea014057f2e28efee1e6db10b22
+01:02:26 fp8 start exit 0 203s
+01:02:40 fp8 client exit 0
+01:02:43 fp8 stop exit 0
+01:05:58 bf16_fp8 start exit 1 195s
+01:05:58 bf16_fp8 stop exit 0
+  bf16_fp8 refused/failed: reason_code":"gpu_room shortfall_bytes":4946746172
+  bf16_fp8 does not fit at the layout's sessions: retry with 4 sessions
+01:09:16 bf16_fp8@seqs4 start exit 0 198s
+01:09:32 bf16_fp8@seqs4 client exit 0
+01:09:34 bf16_fp8@seqs4 stop exit 0
+01:12:46 bf16_i8 start exit 1 192s
+01:12:46 bf16_i8 stop exit 0
+  bf16_i8 refused/failed: reason_code":"gpu_room shortfall_bytes":5470191215
+  bf16_i8 does not fit at the layout's sessions: retry with 4 sessions
+01:16:05 bf16_i8@seqs4 start exit 0 199s
+01:16:19 bf16_i8@seqs4 client exit 0
+01:16:22 bf16_i8@seqs4 stop exit 0
+01:17:50 bf16 start exit 1 88s
+01:17:50 bf16 stop exit 0
+  bf16 refused/failed: reason_code":"gpu_room shortfall_bytes":13321977455
+  bf16 does not fit at the layout's sessions: retry with 4 sessions
+01:21:12 bf16@seqs4 start exit 0 202s
+01:21:28 bf16@seqs4 client exit 0
+01:21:30 bf16@seqs4 stop exit 0
+01:26:09 fp8@seqs4 start exit 0 279s
+01:26:24 fp8@seqs4 client exit 0
+01:26:27 fp8@seqs4 stop exit 0
+end_utc 2026-11-18T01:26:27Z

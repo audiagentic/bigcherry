@@ -1,0 +1,30 @@
+
+all documents: 11 documents, 69108 positions; mean KLD {'mbt128': 0.024, 'bf16_i8': 0.02288, 'bf16_fp8': 0.02513, 'fp8': 0.0274}
+  bf16_i8  -mbt128    -0.00112 [-0.00177,-0.00023] excl 0
+  bf16_fp8 -mbt128    +0.00113 [-0.00060,+0.00310] incl 0
+  fp8      -mbt128    +0.00341 [+0.00071,+0.00676] excl 0
+  bf16_fp8 -bf16_i8   +0.00225 [+0.00073,+0.00431] excl 0
+  fp8      -bf16_i8   +0.00452 [+0.00151,+0.00803] excl 0
+  fp8      -bf16_fp8  +0.00227 [+0.00051,+0.00386] excl 0
+  bf16_i8 beats fp8 in 11 of 11 documents
+  bf16_fp8 beats fp8 in 10 of 11 documents
+
+without the two noisiest long documents: 9 documents, 40049 positions; mean KLD {'mbt128': 0.00618, 'bf16_i8': 0.00568, 'bf16_fp8': 0.00673, 'fp8': 0.00736}
+  bf16_i8  -mbt128    -0.00049 [-0.00144,+0.00011] incl 0
+  bf16_fp8 -mbt128    +0.00055 [-0.00018,+0.00117] incl 0
+  fp8      -mbt128    +0.00118 [+0.00018,+0.00195] excl 0
+  bf16_fp8 -bf16_i8   +0.00105 [+0.00056,+0.00158] excl 0
+  fp8      -bf16_i8   +0.00168 [+0.00125,+0.00201] excl 0
+  fp8      -bf16_fp8  +0.00063 [+0.00018,+0.00092] excl 0
+  bf16_i8 beats fp8 in 9 of 9 documents
+  bf16_fp8 beats fp8 in 8 of 9 documents
+
+the eight short documents only: 8 documents, 29217 positions; mean KLD {'mbt128': 0.00658, 'bf16_i8': 0.00572, 'bf16_fp8': 0.00668, 'fp8': 0.00723}
+  bf16_i8  -mbt128    -0.00086 [-0.00167,-0.00021] excl 0
+  bf16_fp8 -mbt128    +0.00010 [-0.00032,+0.00044] incl 0
+  fp8      -mbt128    +0.00065 [-0.00002,+0.00126] incl 0
+  bf16_fp8 -bf16_i8   +0.00096 [+0.00049,+0.00168] excl 0
+  fp8      -bf16_i8   +0.00151 [+0.00115,+0.00193] excl 0
+  fp8      -bf16_fp8  +0.00055 [+0.00003,+0.00095] excl 0
+  bf16_i8 beats fp8 in 8 of 8 documents
+  bf16_fp8 beats fp8 in 7 of 8 documents
