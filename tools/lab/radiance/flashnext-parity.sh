@@ -108,11 +108,21 @@ NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BU
 # journalled settings; a missing lease or missing qualification fails closed.
 # Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
 [ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
+# A build directory (not an installed bundle) has no site file naming the engine home: say it, or the owner refuses
+# with "missing required key: engine.radiance_home".
+[ -d "$BUILD/radiance_home" ] && NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
+# The helpers need the workload heat file (it has no portable path). The measurement pins the recorded heat the stored
+# baseline was taken with; FLASHNEXT_PARITY_HEAT overrides it for a run that compares heat files on purpose.
+HEAT="${FLASHNEXT_PARITY_HEAT:-$REPO/tools/lab/radiance/heat/perf51.rank0.hot-first}"
+[ -f "$HEAT" ] || { echo "flashnext-parity: heat file $HEAT not found" >&2; exit 2; }
+NATIVE_ARGS+=(--set "handoff.heat=$HEAT")
 if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
   NATIVE_ARGS+=(--calibration "$BC_WORK_ROOT/live-policy-calibration.toml")
 fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
+# Route-heat recording at the period the live policy needs (RSC12), into the run's own folder.
+NATIVE_ARGS+=(--set "handoff.histogram=$OUT/heat.live" --set "handoff.histogram_period_s=1")
 
 LONG_COUNT=$(wc -w <<< "$LONG_SEEDS")
 python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port "$PORT" \
