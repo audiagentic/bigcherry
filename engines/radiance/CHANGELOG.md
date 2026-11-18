@@ -1,5 +1,13 @@
 # Changelog
 
+## [1170.32.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.0...bc-radiance-1170.32.1) (2026-11-18)
+
+
+### Fixes
+
+* **release:** refuse unflagged engine downgrades ([#1122](https://github.com/audiagentic/bigcherry/issues/1122)) ([1ec2465](https://github.com/audiagentic/bigcherry/commit/1ec24652bc72019cf794095092171facbb47e88e))
+* **serving:** verify installed release before native startup ([#1121](https://github.com/audiagentic/bigcherry/issues/1121)) ([b305cdd](https://github.com/audiagentic/bigcherry/commit/b305cdd35c722423e136144890d1abeeb44f1bfa))
+
 ## [1170.32.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.31.0...bc-radiance-1170.32.0) (2026-11-18)
 
 
