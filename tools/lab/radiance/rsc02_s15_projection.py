@@ -88,6 +88,14 @@ def _processes(value: object, manifest_path: str, expected_roles: list[str]) -> 
             raise ProjectionError(f"{role}: observed --role must match captured process role")
         normal = list(argv)
         normal[idx + 1] = "<manifest-bytes>"
+        for flag in OWNER_ONLY_ENGINE_FLAGS:
+            if normal.count(flag) > 1:
+                raise ProjectionError(f"{role}: {flag} given more than once")
+            if flag in normal:
+                at = normal.index(flag)
+                if at + 1 >= len(normal):
+                    raise ProjectionError(f"{role}: {flag} needs a value")
+                del normal[at:at + 2]
         results.append({"role": role, "argv": normal, "env": dict(sorted(env.items()))})
     if len({p["role"] for p in results}) != len(results):
         raise ProjectionError("duplicate process role")
@@ -103,7 +111,16 @@ def _processes(value: object, manifest_path: str, expected_roles: list[str]) -> 
 
 
 #: Per-start host memory readings in the plan's resource inputs (not launch settings).
-LIVE_MEMORY_READINGS = ("cgroup_headroom_bytes", "mem_available_bytes", "pin_available_bytes")
+LIVE_MEMORY_READINGS = ("cgroup_headroom_bytes", "mem_available_bytes", "pin_available_bytes",
+                        "resident_other_bytes")
+#: Per-start VRAM figures in the plan's expected memory: what the cards had free at that start and the
+#: claimable, elastic and expert totals derived from it. Two starts always read different values; the
+#: card ranking, owner map and helper budgets stay in the projection and must agree.
+LIVE_VRAM_READINGS = ("claimable", "elastic", "experts")
+#: Engine argument the native owner alone adds: a random per-launch nonce binding the heat histogram it
+#: guards to this launch. The bash launcher has no guard, so it passes none. Its value is never compared;
+#: its presence is recorded in the projection as the owner-only addition.
+OWNER_ONLY_ENGINE_FLAGS = ("--bc-heat-launch-nonce",)
 
 
 def projection(snapshot: dict, *, verify_bytes: bool = True) -> dict:
@@ -159,6 +176,15 @@ def projection(snapshot: dict, *, verify_bytes: bool = True) -> dict:
                 if type(resource_inputs[key]) is not int:
                     raise ProjectionError(f"spec.plan.resource_inputs.{key}: expected an integer")
                 resource_inputs[key] = "<live-host-memory-reading>"
+    expected_memory = plan.get("engine_memory", {}).get("expected") if isinstance(plan, dict) else None
+    vram = expected_memory.get("vram") if isinstance(expected_memory, dict) else None
+    if isinstance(vram, dict):
+        for key in LIVE_VRAM_READINGS:
+            if key in vram:
+                vram[key] = "<live-vram-reading>"
+        for card in vram.get("cards", []) if isinstance(vram.get("cards"), list) else []:
+            if isinstance(card, dict) and "free" in card:
+                card["free"] = "<live-vram-reading>"
     if "handoff" in spec:
         handoff = _dict(spec["handoff"], "spec.handoff")
         transport = _dict(_get(handoff, "transport", "spec.handoff"), "spec.handoff.transport")
