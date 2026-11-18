@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.51.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.2...bc-platform-1.51.3) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** parity harness defaults to the stock power profile ([#1160](https://github.com/audiagentic/bigcherry/issues/1160)) ([f34412e](https://github.com/audiagentic/bigcherry/commit/f34412e6fd905e50799a3420d993820002bc202b))
+
 ## [1.51.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.1...bc-platform-1.51.2) (2026-11-18)
 
 
