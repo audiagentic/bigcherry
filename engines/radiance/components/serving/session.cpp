@@ -1311,13 +1311,13 @@ class Owner {
             const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - begun);
             if (!have_feed && (elapsed >= feed_deadline.value() || elapsed >= envelope.limit)) {
                 const uint64_t accepted = drift.value() ? drift.value()->accepted_heat_deltas : 0;
-                throw PlanFailed(
-                    "BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration: heat_watermarked "
-                    "missing sufficient accepted heat deltas from helper0 (accepted_heat_deltas=" +
-                    std::to_string(accepted) + ", need at least 2); source is the engine histogram "
-                    "without coherent observation watermarks; check accept_unwatermarked_heat "
-                    "and histogram publication. Derived no-feed deadline " +
-                    std::to_string(feed_deadline.value().count()) + "s");
+                throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration: heat_watermarked "
+                                 "missing sufficient accepted heat deltas from helper0 (accepted_heat_deltas=" +
+                                 std::to_string(accepted) +
+                                 ", need at least 2); source is the engine histogram "
+                                 "without coherent observation watermarks; check accept_unwatermarked_heat "
+                                 "and histogram publication. Derived no-feed deadline " +
+                                 std::to_string(feed_deadline.value().count()) + "s");
             }
             if (elapsed >= envelope.limit)
                 throw PlanFailed("calibration: finite measured workload/drift deadline exhausted");
@@ -1943,11 +1943,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (policy.contains("accept_unwatermarked_heat") &&
             policy.at("accept_unwatermarked_heat").is_boolean() &&
             !policy.at("accept_unwatermarked_heat").get<bool>())
-            throw PlanFailed(
-                "BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration histogram source is "
-                "unwatermarked; explicit accept_unwatermarked_heat=true is required in "
-                "--live-policy for engine histogram calibration (or provide a coherent "
-                "credited heat source); refusing to override strict policy");
+            throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration histogram source is "
+                             "unwatermarked; explicit accept_unwatermarked_heat=true is required in "
+                             "--live-policy for engine histogram calibration (or provide a coherent "
+                             "credited heat source); refusing to override strict policy");
         std::error_code store_error;
         if (!fs::is_regular_file(in.calibration_store, store_error))
             throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration store " +

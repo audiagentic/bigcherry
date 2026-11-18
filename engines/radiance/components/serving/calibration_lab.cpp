@@ -141,7 +141,7 @@ v2::Result<std::optional<DriftProgress>> read_calibration_drift(const fs::path& 
 }
 
 v2::Result<std::chrono::seconds> calibration_heat_feed_deadline(const v2::LivePolicy& policy,
-                                                               std::chrono::seconds histogram_period) {
+                                                                std::chrono::seconds histogram_period) {
     const auto cadence = positive(policy.cadence_ns, "cadence_ns");
     const auto age = positive(policy.max_heat_age_ns, "max_heat_age_ns");
     const auto samples = positive(policy.min_samples, "min_samples");

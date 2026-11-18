@@ -3278,8 +3278,7 @@ void session_engine_plan(Fixture& t) {
         const auto setting_pos = opted_in_policy.find(strict_setting);
         if (setting_pos == std::string::npos)
             throw std::runtime_error("calibration policy fixture lost strict file heat setting");
-        opted_in_policy.replace(setting_pos, strict_setting.size(),
-                                "\"accept_unwatermarked_heat\":true");
+        opted_in_policy.replace(setting_pos, strict_setting.size(), "\"accept_unwatermarked_heat\":true");
         valid.live_policy_file = t.file("session-calibration-opted-in-policy.json", opted_in_policy);
 
         bool missing_store_writer = false;

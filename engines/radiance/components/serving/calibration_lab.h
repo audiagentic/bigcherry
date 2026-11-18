@@ -37,7 +37,7 @@ v2::Result<std::optional<DriftProgress>> read_calibration_drift(const std::files
 // publication interval, policy cadence/age and the admitted sample requirement.
 // This is independent of the longer four-phase convergence deadline.
 v2::Result<std::chrono::seconds> calibration_heat_feed_deadline(const v2::LivePolicy& policy,
-                                                               std::chrono::seconds histogram_period);
+                                                                std::chrono::seconds histogram_period);
 v2::Result<CalibrationEnvelope> calibration_envelope(const v2::LivePolicy& policy, size_t a_count,
                                                      size_t b_count, std::chrono::seconds request_timeout,
                                                      const std::optional<DriftProgress>& drift);
