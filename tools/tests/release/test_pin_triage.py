@@ -34,6 +34,7 @@ class PinTriageTests(unittest.TestCase):
         git(self.source, "init", "-q")
         self._source("line one\nlaunch(a);\nline three\n")
         self._put("core/engine.cpp", "old core\n")
+        self._put("abi/rad_abi.h", "#define RAD_ABI_VERSION 7u\n")
         self._commit("initial upstream")
         git(self.source, "tag", "v1")
         self._source("line ONE\nlaunch(a);\nline three\n")
@@ -54,6 +55,10 @@ class PinTriageTests(unittest.TestCase):
         self.component = components.Component(
             name="libfix", engine="radiance", root=self.component_root,
             targets=("gfx1100",), built_against="v1", outputs=("kernels/x.so",), settings={},
+            coupling={"upstream-headers": (), "upstream-files": ("abi/rad_abi.h",),
+                      "upstream-source-globs": (), "patch-provided-files": (),
+                      "protocol-flags": (), "owned-flags": (), "runtime-env": (),
+                      "abi-version": 7, "option-registry": ""},
         )
         self.recipes = self.root / "recipes.toml"
         self.recipes.write_text('pinned = "v1"\n')
@@ -120,6 +125,13 @@ class PinTriageTests(unittest.TestCase):
         self.assertEqual(report["verdict"], "clean")
         self.assertEqual(report["counts"]["changed_files"], 0)
         self.assertFalse(report["drift_details"])
+
+    def test_coupling_breaks_clean_verdict_at_same_revision(self):
+        self.component.coupling["upstream-files"] = ("abi/renamed_header.h",)
+        report = pin_triage.run(engine="radiance", target_ref="v1", context=self.context)
+        self.assertEqual(report["verdict"], "coupling-affected")
+        self.assertGreater(report["counts"]["coupling_failures"], 0)
+        self.assertIn("libfix", report["coupling_failures"])
 
     def test_json_cli_parses_and_scope_is_engine(self):
         self.assertEqual(engine_scope.scope("pin-triage"), engine_scope.ENGINE)

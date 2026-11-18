@@ -53,7 +53,8 @@ controller and vendor tree; it may fetch missing refs into the shared bare
 upstream mirror. It reports current pin, diff stat, changed rewrite
 anchors, changed registered patch targets, core commit subjects, and exact
 source rewrite drift with closest target-source lines. Its verdict is
-`clean`, `drift-only` or `patches-affected` with counts. Non-clean
+`clean`, `coupling-affected`, `drift-only` or `patches-affected`
+with counts and, for Radiance, `coupling_failures` and `upstream_abi`. Non-clean
 results exit zero: triage is advice, not a bump gate. Usage and environment
 errors exit 2.
 
@@ -72,9 +73,23 @@ version, (c) the exact target `RAD_ABI_VERSION` and layout fingerprint,
 (d) source emissions from the **existing generated serving-v2 mapping**
 without adding another native-field table, and (e) the Python-free runtime
 asset's pinned version and **complete** component `built-against` closure.
-A coupling counts as DECLARED only after its source-consumer and upstream-
-presence gate is merged and exercised; a clean textual patch is not ABI
-proof. Missing source, undeclared upstream names, failed native rewrite
+The mechanical `[coupling]` gate (all six `component.toml` files) is enforced
+in pin-bump's `drift` phase, and reported read-only in `pin-triage`. It compares
+owned C++/HIP upstream-header references, literal process flag/environment names,
+patch-provided source declarations, target upstream file/glob presence,
+`RAD_ABI_VERSION` and the owned remote-MoE wire version/layout constants.
+The schema refuses unknown, incomplete, or unsafe declarations; absent upstream
+ABI information is not a pass. For current-pin typed native settings, the **only**
+option/env translation table is `serving/contract/serving-v2.toml`:
+`radiance_option`/`radiance_switch`/`env_setting` generate `v2::kFields`
+and `v2::kEnvBindings`, consumed by `serving.cpp` and managed patch rad0009.
+Local heat, budgets, lab and helper intent are BigCherry contract fields, not
+independently invented upstream flags. RUM04 replaces this narrow projection
+with upstream native YAML plus the immutable original-byte runtime bundle.
+
+A clean textual patch or component declaration is not proof of ABI/layout
+semantics beyond the checked surfaces. Missing source, undeclared upstream names,
+failed native rewrite
 or ABI mismatch means **not ready**, even if advisory triage returns zero.
 
 For the exact-ref rewrite check, extract only target `libr4d` from the
@@ -347,7 +362,10 @@ verdict engine):
 
 `preflight -> declare -> pull -> drift -> audit -> patch-lint -> coverage -> apply -> compile -> lane-build -> cpu-smoke -> reaudit -> complete`.
 
-The `drift` phase (MEN19) runs right after the pull, on the pristine bumped upstream tree, before the audit, patch rebase and builds: it asks the engine adapter for `source_drift_checks` (llama.cpp has none) and STOPs with the check's code and the failures per file. For radiance it runs libr3's `r3_rewrite.py --check` (writes nothing) against the bumped `libr4d` sources and STOPs with `NATIVE_REWRITE_DRIFT`, listing every `rewrites.txt` rule and `native/*.rw` block that no longer matches, so one run shows the whole port instead of the first block the build trips on. A check that cannot run STOPs with `SOURCE_DRIFT_UNCHECKED`.
+The `drift` phase (MEN19) runs right after the pull, on the pristine bumped upstream tree, before the audit, patch rebase and builds: it asks the engine adapter for `source_drift_checks` (llama.cpp has none) and STOPs with the check's code and the failures per file. For radiance it first checks `component-coupling` (source includes and option/env literals,
+declared upstream source inventory, plugin ABI and owned wire constants) and STOPs with
+`COMPONENT_COUPLING_DRIFT` for any mismatch. It then runs libr3's
+`r3_rewrite.py --check` (writes nothing) against the bumped `libr4d` sources and STOPs with `NATIVE_REWRITE_DRIFT`, listing every `rewrites.txt` rule and `native/*.rw` block that no longer matches, so one run shows the whole port instead of the first block the build trips on. A check that cannot run STOPs with `SOURCE_DRIFT_UNCHECKED`.
 
 The `compile` phase runs the engine's own compile checks (the engine adapter's `compile_checks`) against the patched vendor tree, and `audit`/`reaudit` run its `audit_checks`; see [Per-engine bump gates](#per-engine-bump-gates). For llama.cpp the compile check is `bigcherry.build.source_compile_check` with `clang++`; it needs neither ROCm nor a GPU. A successful phase records the exact effective source-tree OID. On `--resume` it is skipped when that OID is unchanged and re-run when the checked tree changed.
 

@@ -11,7 +11,7 @@ from __future__ import annotations
 import hashlib
 import re
 import tomllib
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import engines
@@ -57,6 +57,8 @@ class Component:
     configure: tuple[tuple[str, str], ...] = ()
     #: CMake targets that build the component's offline tests; the bump gate builds them and runs ctest (MEN10 step f)
     test_targets: tuple[str, ...] = ()
+    #: Immutable Radiance upstream/header/ABI coupling declarations.
+    coupling: dict[str, tuple[str, ...] | str | int] = field(default_factory=dict)
 
     def content_digest(self) -> str:
         """sha256 over every file of the component (path and bytes), the identity a build binds."""
@@ -89,7 +91,7 @@ def load(root: Path, engine: str) -> Component:
         raise ComponentError(f"{path}: name {name!r} must match its directory {root.name!r}")
     if data.get("engine") != engine:
         raise ComponentError(f"{path}: engine {data.get('engine')!r} is not {engine!r}, the engine listing it")
-    unknown = sorted(set(data) - {"schema", "name", "engine", "targets", "built-against", "outputs", "setting", "build", "test"})
+    unknown = sorted(set(data) - {"schema", "name", "engine", "targets", "built-against", "outputs", "setting", "build", "test", "coupling"})
     if unknown:
         raise ComponentError(f"{path}: unknown key(s): {', '.join(unknown)}")
     built_against = data.get("built-against")
@@ -116,6 +118,46 @@ def load(root: Path, engine: str) -> Component:
     if not isinstance(test, dict) or set(test) - {"targets"}:
         raise ComponentError(f"{path}: [test] may only declare targets")
     test_targets = _strings(test["targets"], f"{path}: test.targets") if "targets" in test else ()
+    # A missing declaration is allowed for older fixture/other-engine readers,
+    # but the bump coupling gate rejects it for each Radiance component.
+    raw_coupling = data.get("coupling", {})
+    names = {"upstream-headers", "upstream-files", "upstream-source-globs",
+             "patch-provided-files", "protocol-flags", "owned-flags", "runtime-env"}
+    required = names | {"abi-version"}
+    if not isinstance(raw_coupling, dict):
+        raise ComponentError(f"{path}: [coupling] must be a table")
+    if "coupling" in data and (set(raw_coupling) - required - {"option-registry", "wire-constants"} or required - set(raw_coupling)):
+        raise ComponentError(f"{path}: [coupling] must declare exactly {', '.join(sorted(required))} and optional option-registry and wire-constants")
+    coupling: dict[str, tuple[str, ...] | str | int] = {}
+    if "coupling" in data:
+        for key in names:
+            values = raw_coupling[key]
+            if not isinstance(values, list) or any(not isinstance(v, str) or not v for v in values) or len(set(values)) != len(values):
+                raise ComponentError(f"{path}: coupling.{key} must be distinct nonempty strings")
+            if key in {"upstream-files", "upstream-source-globs", "patch-provided-files"}:
+                if any(v.startswith("/") or ".." in Path(v).parts or "\\" in v for v in values):
+                    raise ComponentError(f"{path}: coupling.{key} must use relative upstream source paths")
+            if key == "upstream-headers" and any("/" in v or "\\" in v or v in {".", ".."} for v in values):
+                raise ComponentError(f"{path}: coupling.{key} must use header basenames")
+            if key in {"protocol-flags", "owned-flags"} and any(not re.fullmatch(r"--[a-z][a-z0-9-]*", v) for v in values):
+                raise ComponentError(f"{path}: coupling.{key} must use --option names")
+            if key == "runtime-env" and any(not re.fullmatch(r"[A-Z][A-Z0-9_]*", v) for v in values):
+                raise ComponentError(f"{path}: coupling.{key} must use environment variable names")
+            coupling[key] = tuple(values)
+        abi = raw_coupling["abi-version"]
+        if not isinstance(abi, int) or isinstance(abi, bool) or abi < 1:
+            raise ComponentError(f"{path}: coupling.abi-version must be a positive integer")
+        coupling["abi-version"] = abi
+        option_registry = raw_coupling.get("option-registry", "")
+        if not isinstance(option_registry, str) or option_registry.startswith("/") or ".." in Path(option_registry).parts:
+            raise ComponentError(f"{path}: coupling.option-registry must be a relative path string")
+        coupling["option-registry"] = option_registry
+        wire = raw_coupling.get("wire-constants", [])
+        if not isinstance(wire, list) or any(not isinstance(x, str) or not re.fullmatch(
+                r"[a-zA-Z0-9_./-]+::[a-zA-Z][a-zA-Z0-9_]* = (?:0x[0-9a-fA-F]+|[0-9]+)", x)
+                or ".." in Path(x.split("::", 1)[0]).parts for x in wire) or len(set(wire)) != len(wire):
+            raise ComponentError(f"{path}: coupling.wire-constants must be unique relative-file::symbol = numeric-value entries")
+        coupling["wire-constants"] = tuple(wire)
     return Component(
         name=name,
         engine=engine,
@@ -125,6 +167,7 @@ def load(root: Path, engine: str) -> Component:
         outputs=_strings(data.get("outputs"), f"{path}: outputs"),
         settings=settings,
         test_targets=test_targets,
+        coupling=coupling,
         configure=tuple(sorted((str(k), str(v)) for k, v in (data.get("build", {}).get("configure", {}) or {}).items())),
     )
 
