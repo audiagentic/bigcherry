@@ -70,6 +70,19 @@ class ReleaseInstallTests(unittest.TestCase):
         fake_gh.chmod(fake_gh.stat().st_mode | stat.S_IXUSR)
         self._git("init", "-q")
         (self.root / "engines/radiance").mkdir(parents=True)
+        # Minimal production-schema build identity for the synthetic repository.
+        engine_dir = self.root / "engines/radiance"
+        components = ("bc-gfx12", "libr2", "libr3", "moe-remote", "ngram-helper", "serving")
+        (engine_dir / "engine.toml").write_text(
+            'upstream = "https://codeberg.org/StillDeadcode/radiance"\n'
+            '[components]\n' +
+            "".join(f'{name} = "engines/radiance/components/{name}"\n' for name in components))
+        (engine_dir / "recipes.toml").write_text(
+            'pinned = "v1.17.0"\npinned-version = "1.17.0"\n')
+        for name in components:
+            component_dir = engine_dir / "components" / name
+            component_dir.mkdir(parents=True)
+            (component_dir / "component.toml").write_text('built-against = "v1.17.0"\n')
         (self.root / "config").mkdir()
         (self.root / "releases").mkdir()
         (self.root / "engines/radiance/source.txt").write_text("radiance production")
