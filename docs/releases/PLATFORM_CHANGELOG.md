@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.48.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.1...bc-platform-1.48.2) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** accept intentional S15 missing-role rejection ([#1098](https://github.com/audiagentic/bigcherry/issues/1098)) ([7cf94f9](https://github.com/audiagentic/bigcherry/commit/7cf94f93f9f74b07be0b2b2a5aced8deaaeb3bfc))
+
 ## [1.48.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.48.0...bc-platform-1.48.1) (2026-11-18)
 
 
