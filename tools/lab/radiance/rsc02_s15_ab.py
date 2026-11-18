@@ -17,6 +17,7 @@ import shutil
 import subprocess
 import sys
 import time
+import tomllib
 import urllib.error
 import urllib.request
 
@@ -250,6 +251,11 @@ def arm(cfg: dict) -> int:
         if which == "A":
             argv = ["bash", str(LAUNCHER), "start", "--layout", layout,
                     "--build", str(build), "--no-gpu-power"]
+            # Both arms must read the same route-heat bytes: the native arm takes them from the
+            # site file, so the control arm is told the same file instead of its own default.
+            heat = tomllib.loads(Path(cfg["site"]).read_text(encoding="utf-8")).get("handoff", {}).get("heat")
+            if heat:
+                argv += ["--heat", heat]
             if cfg["power_apply"]:
                 argv.remove("--no-gpu-power")
                 argv.append("--gpu-power")
