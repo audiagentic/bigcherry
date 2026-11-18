@@ -1,0 +1,22 @@
+PASS 2-doc route ids equal the earlier build's
+PASS 2-doc header has complete and doc_hashes
+PASS 2-doc digests equal an independent FNV-1a of the reference tokens  [['185c79edc77de5f7', '3657351c84149fed']]
+PASS self-replay (2 docs) KLD zero to rounding (< 1e-9: the reference keeps the top 64 tokens) and top-1 100%  [mean 6.40e-11]
+PASS self-replay expert counts equal the record in all routed layers  [48/48]
+PASS neg-olddigest fails cleanly with its message  [NEG neg-olddigest PASS (exit 1, message matched)]
+PASS neg-digest fails cleanly with its message  [NEG neg-digest PASS (exit 1, message matched)]
+PASS neg-trunc fails cleanly with its message  [NEG neg-trunc PASS (exit 1, message matched)]
+PASS neg-incomplete fails cleanly with its message  [NEG neg-incomplete PASS (exit 1, message matched)]
+PASS neg-wrongref fails cleanly with its message  [NEG neg-wrongref PASS (exit 1, message matched)]
+PASS neg-both fails cleanly with its message  [NEG neg-both PASS (exit 1, message matched)]
+PASS neg-seqs fails cleanly with its message  [NEG neg-seqs PASS (exit 1, message matched)]
+PASS all seven negatives ran  [7 of 7]
+PASS 11-doc digests equal an independent FNV-1a of the reference tokens  [69119 rows, 11 docs]
+INFO the earlier build's route differs from this build's in 999 of 69119 rows, in documents [7], first at position 2604 of document 7
+INFO selected routes are NOT always repeatable: this build's run 1 and run 2 differ in 999 rows; run 2 and the earlier build's route differ in 0 rows (3 of the 4 selecting runs agree, one diverges at one position and stays diverged)
+PASS 11-doc: the second recording on this build equals the earlier build's route (so the deviation is run to run, not build to build)
+PASS the earlier build's route replayed on this build (fp8, 11 docs): per-position KLD rows byte-identical to the earlier build's (the replay path is unchanged)  [1105728 bytes]
+PASS follow-up run present: route3b.route
+PASS follow-up run present: replay3-oldroute-fp8.kld.json.rows
+
+ALL PASS

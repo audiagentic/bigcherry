@@ -1,0 +1,8 @@
+
+this build, run 1 vs run 2: 18750 of 3317712 layer-rows differ (0.5651%), 999 of 69119 token rows
+  doc  7:    999 rows differ, first at position 2604, in layers [19, 23, 26, 27, 28, 30, 31, 33, 34, 39, 41, 42, 43, 44, 47]
+
+this build run 1 vs the earlier build: 18750 of 3317712 layer-rows differ (0.5651%), 999 of 69119 token rows
+  doc  7:    999 rows differ, first at position 2604, in layers [19, 23, 26, 27, 28, 30, 31, 33, 34, 39, 41, 42, 43, 44, 47]
+
+this build run 2 vs the earlier build: 0 of 3317712 layer-rows differ (0.0000%), 0 of 69119 token rows

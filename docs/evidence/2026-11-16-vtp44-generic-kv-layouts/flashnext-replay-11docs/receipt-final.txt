@@ -1,0 +1,25 @@
+start_utc 2026-11-18T03:13:47Z
+radiance_sha256 e2c7fa95d62299ff39cbf2e7d2423cb83f253b5da036da8098e9c17ef4d5304a
+build <work-root>/builds/266a4b73e1d9555ea3fa58acde819c36/b54290b18d5c4fe2caeb70088d73a203
+03:15:37 rec2 exit 0 110s
+03:17:25 self2 exit 0 108s
+03:18:04 neg-olddigest exit 1 38s
+NEG neg-olddigest PASS (exit 1, message matched)
+03:20:05 neg-digest exit 1 121s
+NEG neg-digest PASS (exit 1, message matched)
+03:21:08 neg-trunc exit 1 63s
+NEG neg-trunc PASS (exit 1, message matched)
+03:21:37 neg-incomplete exit 1 29s
+NEG neg-incomplete PASS (exit 1, message matched)
+03:22:38 neg-wrongref exit 1 61s
+NEG neg-wrongref PASS (exit 1, message matched)
+03:23:56 neg-both exit 1 78s
+NEG neg-both PASS (exit 1, message matched)
+03:24:29 neg-seqs exit 1 33s
+NEG neg-seqs PASS (exit 1, message matched)
+03:39:24 route3 exit 0 895s
+03:54:49 replay3-fp8 exit 0 925s
+end_utc 2026-11-18T03:54:49Z
+04:14:46 replay3-oldroute-fp8 exit 0 872s
+04:29:46 route3b exit 0 900s
+end2_utc 2026-11-18T04:29:46Z
