@@ -1155,6 +1155,21 @@ Resolved resolve(const Options& options, const Json& facts) {
     }
     if (value_at(values, "layout.name") != name)
         throw std::runtime_error("layout.name: resolution inconsistency");
+    if (!exists(values, "helper.combine_threads")) {
+        // Not set by any layer: the calibrated ceiling, held to the CPUs this host has (the worker clamps to the same
+        // count), so a smaller host resolves instead of refusing a literal it never chose.
+        const Calibration calibration = Calibration::standard(options.calibration_cache);
+        const Calibrated ceiling = calibration.get("calibration.combine_threads.max",
+            CalibrationMatch{"", name, value_at(values, "service.objective").get<std::string>()});
+        if (!ceiling.value.is_number_integer() || ceiling.value.get<int64_t>() < 1)
+            throw std::runtime_error("calibration.combine_threads.max: expected a positive integer");
+        const uint64_t cpus = facts.at("host").at("cpu_count").get<uint64_t>();
+        const uint64_t threads = std::max<uint64_t>(1, std::min(ceiling.value.get<uint64_t>(), cpus));
+        put(values, provenance, *field_for("helper.combine_threads"), threads, "derived",
+            "min(" + std::to_string(ceiling.value.get<uint64_t>()) + ", " + std::to_string(cpus) + " discovered CPUs); " +
+            ceiling.describe("calibration.combine_threads.max"),
+            Json::array({"facts.host.cpu_count", "calibration.combine_threads.max"}));
+    }
     // An omitted budget-mib (RAD49): the EXPERT budget is the card's VRAM less its archs.toml reserve-mib less the helper's own
     // device memory besides its arena (its lanes, pointer banks, slot map and one incoming slot, worker_footprint.h, the
     // definition the worker checks its allocations against), so the owner planner (plan_owners) and the helper's arena agree.
@@ -1332,21 +1347,6 @@ Resolved resolve(const Options& options, const Json& facts) {
     if (value_at(values, "helper.engine_ranks").get<size_t>() !=
         value_at(values, "engine.tp").get<size_t>())
         throw std::runtime_error("helper.engine_ranks must equal engine.tp");
-    if (!exists(values, "helper.combine_threads")) {
-        // Not set by any layer: the calibrated ceiling, held to the CPUs this host has (the worker clamps to the same
-        // count), so a smaller host resolves instead of refusing a literal it never chose.
-        const Calibration calibration = Calibration::standard(options.calibration_cache);
-        const Calibrated ceiling = calibration.get("calibration.combine_threads.max",
-            CalibrationMatch{"", name, value_at(values, "service.objective").get<std::string>()});
-        if (!ceiling.value.is_number_integer() || ceiling.value.get<int64_t>() < 1)
-            throw std::runtime_error("calibration.combine_threads.max: expected a positive integer");
-        const uint64_t cpus = facts.at("host").at("cpu_count").get<uint64_t>();
-        const uint64_t threads = std::max<uint64_t>(1, std::min(ceiling.value.get<uint64_t>(), cpus));
-        put(values, provenance, *field_for("helper.combine_threads"), threads, "derived",
-            "min(" + std::to_string(ceiling.value.get<uint64_t>()) + ", " + std::to_string(cpus) + " discovered CPUs); " +
-            ceiling.describe("calibration.combine_threads.max"),
-            Json::array({"facts.host.cpu_count", "calibration.combine_threads.max"}));
-    }
     // the combine runs in a helper: an engine-only configuration starts no combine threads
     if (!engine_only && value_at(values, "helper.combine_threads").get<uint64_t>() >
         facts.at("host").at("cpu_count").get<uint64_t>())
