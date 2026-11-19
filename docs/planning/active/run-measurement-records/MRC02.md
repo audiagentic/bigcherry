@@ -59,9 +59,10 @@ Small. Risk: sysfs layouts differ by kernel; keep each fact independently readab
 
 ## Notes
 
-
+Add to the fact list (2026-11-19): DIMM population, configured memory speed and profile (`dmidecode -t memory`), and MemAvailable at start. A random 1-in-160 clang crash rate and an engine host-admission refusal at 74.1 GiB available (47.68 GiB n-gram table) were both explained only by host state that no record carried (BHK01/BHK04 notes). The collector is read-only; unreadable values are flagged, not zero.
 
 ## Change Log
 
 - 2026-11-19T00:50:28.025472+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:08.497481+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-19T07:38:54.834871+00:00 (updated-by): Updated: section:notes
