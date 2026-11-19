@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from bigcherry.bench import workloads
 from bigcherry.cli.main import main
-from bigcherry.core import run_records
+from bigcherry.core import host_facts, run_records
 from bigcherry.experiment import attestation, bundle
 
 
@@ -97,7 +97,9 @@ def test_workload_producer_pins_manifest_bytes_and_metrics(tmp_path):
         work_root=tmp_path,
         argv=["bigcherry", "workload", "run", "prefill-doc-44k"],
         environment={"ROCM_PATH": "/opt/fixture"},
-        host_snapshot={"kernel": {"value": "test", "readable": True}},
+        host_snapshot=host_facts.snapshot_at_start(
+            {"kernel_release": {"value": "test", "readable": True}},
+            captured_at="2026-11-19T11:59:59Z"),
     )
     path.unlink()
     store = run_records.RunRecordStore(tmp_path)
@@ -190,6 +192,9 @@ def test_llama_row_publishes_phase_metrics_and_attestation(tmp_path):
         work_root=tmp_path,
         expected=expected,
         observed=observed,
+        host_snapshot=host_facts.snapshot_at_start(
+            {"kernel_release": {"value": "fixture", "readable": True}},
+            captured_at="2026-11-19T11:59:59Z"),
     )
     store = run_records.RunRecordStore(tmp_path)
     record = store.get_record(digest)

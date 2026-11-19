@@ -21,9 +21,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from ..core import feature_states, host_facts, measurement_producers
+from ..core import engines, feature_states, host_facts, measurement_producers
 from ..core.context import resolve_work_root
-from ..core import engines
 from . import stream_bench
 
 card_paths = host_facts.card_paths
@@ -391,7 +390,9 @@ def publish_record(
     if not isinstance(config, dict):
         raise WorkloadError("record requires exact workload config")
 
-    facts = host_snapshot if host_snapshot is not None else host_facts.collect_host_facts()
+    if host_snapshot is None:
+        raise WorkloadError("missing measurement-start host facts; invoke via bigcherry workload run")
+    facts = host_facts.validate_start_snapshot(host_snapshot)
     return measurement_producers.publish(
         work_root=work_root,
         run_id=row["row_id"],

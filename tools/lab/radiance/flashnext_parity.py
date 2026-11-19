@@ -509,8 +509,8 @@ def capture_host_facts(launch: Path) -> None:
     tools = str(REPO / "tools")
     if tools not in sys.path:
         sys.path.insert(0, tools)
-    from bigcherry.core.host_facts import collect_host_facts
-    _write(launch / "host-facts.json", collect_host_facts())
+    from bigcherry.core import host_facts
+    _write(launch / "host-facts.json", host_facts.snapshot_at_start())
 
 
 def capture_launch_provenance(
@@ -566,6 +566,8 @@ def publish_launch_record(
     snapshot = _load(launch / "launch-provenance.json")
     warmup = _load(launch / "launch.json")
     facts = _load(launch / "host-facts.json")
+    from bigcherry.core import host_facts as host_capture
+    host_capture.validate_start_snapshot(facts)
     states = feature_states.read_feature_states(launch / feature_states.FILE_NAME)
     if any(item["engine"] != "radiance" for item in states):
         raise ParityError("native feature-state engine differs from Radiance")
@@ -642,7 +644,9 @@ def publish_launch_record(
     }
     record = {
         "schema_version": 1, "run_id": manifest["metadata"]["instance_id"],
-        "recorded_at": snapshot["recorded_at"],
+        # The curated native argv was captured before warmup. The host
+        # snapshot marks the actual measurement start, not argv selection.
+        "recorded_at": facts["captured_at"],
         "identity": identity, "workload": {
             "name": "flashnext-parity", "definition": run["workload"],
         },

@@ -16,9 +16,9 @@ import urllib.parse
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..core import engines
 from ..core import (
     calibration_records,
+    engines,
     feature_states,
     host_facts,
     measurement_producers,
@@ -89,6 +89,14 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         )
     native_states = _file(run_dir / feature_states.FILE_NAME)
     states = feature_states.read_feature_states(native_states)
+    start_file = _file(run_dir / host_facts.START_RECEIPT_FILE)
+    start = host_facts.read_start_receipt(start_file)
+    raw_start = start_file.read_bytes()
+    if session.get("host_facts_start_sha256") != _digest(raw_start):
+        raise run_records.RecordError("native owner start facts digest differs from session receipt")
+    from ..core.measurement_producers import utc_stamp
+    if utc_stamp(session["started_at"]) > utc_stamp(start["captured_at"]):
+        raise run_records.RecordError("native host facts timestamp predates owner start")
     if any(state["engine"] != engines.RADIANCE for state in states):
         raise run_records.RecordError("native feature-state engine differs")
     instance = manifest.get("metadata", {}).get("instance_id")
@@ -109,6 +117,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         "layout": intent["layout"],
     }
     source_inputs: dict[str, bytes | Path] = {
+        "native_host_facts_start": start_file,
         "native_session": session_file,
         "native_feature_states": native_states,
         "native_build_metadata": metadata_file,
@@ -132,14 +141,20 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         "identity": identity,
         "run_id": instance,
         "feature_states": states,
+        "host_start": start,
         "inputs": source_inputs,
     }
 
 
 def _host(snapshot: dict | None) -> dict:
-    # The platform ingest may happen after the native owner stopped. Unlike
-    # native feature states, these host readings are at ingest time only.
-    return snapshot if snapshot is not None else host_facts.collect_host_facts()
+    if snapshot is None:
+        raise run_records.RecordError(
+            "missing measurement-start host facts; never sample at result ingest time"
+        )
+    try:
+        return host_facts.validate_start_snapshot(snapshot)
+    except ValueError as exc:
+        raise run_records.RecordError(f"invalid measurement-start host facts: {exc}") from exc
 
 
 def _now() -> str:
@@ -316,6 +331,10 @@ def publish_calibration_run(
             ),
         }
     )
+    # Native calibration receipt is the sole host authority; a caller cannot
+    # substitute end-of-run host readings for a missing start snapshot.
+    if host_snapshot is not None and host_snapshot != c["host_start"]:
+        raise run_records.RecordError("native host facts differ from supplied ingest snapshot")
     sha = measurement_producers.publish(
         work_root=work_root,
         run_id=c["run_id"] + "-calibration",
@@ -337,7 +356,7 @@ def publish_calibration_run(
         environment=_native_environment(c["session"]),
         power_settings=c["manifest"]["spec"].get("power", {}),
         inputs=inputs,
-        host_facts=_host(host_snapshot),
+        host_facts=_host(c["host_start"]),
         feature_states=c["feature_states"],
         validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
         session_id=c["run_id"],
@@ -537,6 +556,11 @@ def publish_rsc02_arm(
             raise run_records.RecordError("RSC02 native feature-state engine differs")
         inputs["rsc02_native_feature_states"] = states_file
         inputs["rsc02_native_session"] = run_dir / "session.json"
+        native_start_file = _file(run_dir / host_facts.START_RECEIPT_FILE)
+        host_facts.read_start_receipt(native_start_file)
+        if native_session.get("host_facts_start_sha256") != _digest(native_start_file.read_bytes()):
+            raise run_records.RecordError("RSC02 native owner host start digest differs")
+        inputs["rsc02_native_host_start"] = native_start_file
     return measurement_producers.publish(
         work_root=work_root,
         run_id=f"rsc02-{manifest['metadata']['instance_id']}-{result['arm']}",

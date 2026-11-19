@@ -331,9 +331,13 @@ class RunRecordsTests(unittest.TestCase):
                 "reason_code": "no_calibration", "reason_detail": "not configured",
                 "engine": "radiance", "observed_at": "2026-11-19T00:00:00Z"
             }]))
-            (launch / "host-facts.json").write_text(json.dumps({"kernel_release": {
-                "value": "fixture", "readable": True
-            }}))
+            from bigcherry.core import host_facts
+            (launch / "host-facts.json").write_text(json.dumps(
+                host_facts.snapshot_at_start(
+                    {"kernel_release": {"value": "fixture", "readable": True}},
+                    captured_at="2026-11-19T00:00:00Z",
+                )
+            ))
             (launch / "launch-provenance.json").write_text(json.dumps({
                 "argv": ["bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450"],
                 "environment": {"ROCM_PATH": "fixture-rocm"},
@@ -350,8 +354,8 @@ class RunRecordsTests(unittest.TestCase):
         return out
 
     def test_two_harness_records_match_results_compare_verdict(self):
-        from bigcherry.core import results, run_records
         from bigcherry.__main__ import main as bigcherry_main
+        from bigcherry.core import results, run_records
 
         base = self.run_fixture("base", [1.0, 1.04])
         now = self.run_fixture("now", [1.30, 1.30])
@@ -420,7 +424,9 @@ class RunRecordsTests(unittest.TestCase):
             "bigcherry.core.host_facts.collect_host_facts", return_value=fake_facts
         ):
             self.assertEqual(fp.main(["capture-host-facts", str(launch)]), 0)
-            self.assertEqual(json.loads((launch / "host-facts.json").read_text()), fake_facts)
+            snapshot = json.loads((launch / "host-facts.json").read_text())
+            self.assertEqual(snapshot["facts"]["kernel_build"], fake_facts["kernel_build"])
+            self.assertEqual(snapshot["capture_phase"], "measurement_start")
             self.assertEqual(fp.main([
                 "capture-provenance", "--heat", str(self.heat),
                 "--power-profile", "stock", str(launch), "--",
@@ -438,7 +444,7 @@ class RunRecordsTests(unittest.TestCase):
             self.assertEqual(len(digest), 64)
             store = run_records.RunRecordStore(self.root)
             rec = store.get_record(digest)
-            self.assertEqual(rec["host_facts"], fake_facts)
+            self.assertEqual(rec["host_facts"], snapshot)
             self.assertEqual(
                 json.loads(store.get_blob(rec["provenance"]["argv"]))[-2:],
                 ["--set", "engine.port=18450"],

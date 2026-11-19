@@ -218,10 +218,11 @@ def test_record_and_run_manifest_host_facts_round_trip(tmp_path, monkeypatch):
         "host_facts": {},
         "feature_states": [],
     }
-    record = run_records.with_host_facts(original, facts)
+    start = host_facts.snapshot_at_start(facts, captured_at="2026-11-19T09:59:00Z")
+    record = run_records.with_host_facts(original, start)
     assert original["host_facts"] == {}
     digest = store.put_record(record)
-    assert store.get_record(digest)["host_facts"] == facts
+    assert store.get_record(digest)["host_facts"] == start
     # The lifecycle manifest uses the same platform-owned collector.
     manifest = run_manifest.new_manifest(
         run_id="run-001",

@@ -6,7 +6,7 @@ import json
 from copy import deepcopy
 
 import pytest
-from bigcherry.core import feature_states, run_records
+from bigcherry.core import feature_states, host_facts, run_records
 
 
 def observed(
@@ -45,7 +45,10 @@ def run_record(store):
             "power_settings": blob,
             "inputs": [],
         },
-        "host_facts": {},
+        "host_facts": host_facts.snapshot_at_start(
+            {"kernel_release": {"value": "fixture", "readable": True}},
+            captured_at="2026-11-19T11:59:00Z",
+        ),
         "feature_states": [],
     }
 

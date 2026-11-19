@@ -47,6 +47,7 @@ def bmp(width: int = SIZE, height: int = SIZE) -> bytes:
 def jpeg(width: int = SIZE, height: int = SIZE) -> bytes:
     """The same picture as a JPEG (needs Pillow, which the stdlib lacks)."""
     import io
+
     from PIL import Image
     image = Image.new("RGB", (width, height))
     image.putdata([pixel(x, y, width, height) for y in range(height) for x in range(width)])
@@ -127,6 +128,8 @@ def main(argv: list[str] | None = None) -> int:
     from bigcherry.bench.radiance_lab_records import verify_live_target
 
     verify_live_target(args.run_dir, args.url)
+    from bigcherry.core import host_facts
+    host_start = host_facts.snapshot_at_start()
     actual_image_bytes = {"bmp": bmp, "jpeg": jpeg, "png": png}[args.kind]()
     status, payload, seconds = ask(args.url, args.model, args.timeout, args.kind,
                                    image_bytes=actual_image_bytes)
@@ -140,7 +143,7 @@ def main(argv: list[str] | None = None) -> int:
                     "image_width": SIZE, "image_height": SIZE},
         argv=[str(Path(__file__).resolve()), *(argv if argv is not None else sys.argv[1:])],
         extra_inputs={"image_payload": actual_image_bytes},
-        work_root=args.work_root,
+        work_root=args.work_root, host_snapshot=host_start,
     )
     print(json.dumps({"result": result, "record_sha256": digest}))
     if args.out:

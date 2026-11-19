@@ -111,11 +111,19 @@ roots. Its read-only probes include kernel, ROCm, amdgpu/firmware, VRAM,
 PCIe card/bridge links, clock state and OD max, power cap and bounds,
 host memory/DIMMs, environment-file SHA-256 and GPU lease status. A reported
 zero current power cap is flagged `zero_cap_suspect`, never interpreted as
-a valid cap. Use `run_records.with_host_facts(record)` in Python platform
-adapters and `run_manifest.new_manifest(host=...)` or
-`run_manifest.new_manifest(collect_host_facts=True)` for an explicit
-snapshot; callers opt in to collection at run creation rather than
-performing extra sysfs/tool queries on unrelated lifecycle operations.
+a valid cap. For every newly published measurement, capture `host_facts.snapshot_at_start()`
+**before** the first measured request or child, and pass the sealed snapshot
+to `measurement_producers.publish(..., host_facts=start)` or
+`run_records.with_host_facts(record, start)`. Every leaf has independent
+`readable` and, when unreadable, a reason; new record writes refuse an
+empty, legacy or post-measurement snapshot while existing immutable v1 records
+remain readable. Native `bc-serve` writes `host-facts.start.v1.json` before
+child launch; the platform ingest verifies its SHA-256 against `session.json`
+and copies its start-time fields without resampling at ingest. Owners of
+external benchmark and lab runs capture before their measured invocation.
+`run_manifest.new_manifest(host=...)` or its optional
+`collect_host_facts=True` remains available for non-measurement lifecycle
+snapshots, without imposing sysfs/tool queries on unrelated operations.
 The workloads tool imports its card/power sampling readers from this core
 module. MRC01's manifest edges and results CLI, and MRC06's producer
 migrations, are outside these slices.
@@ -225,8 +233,9 @@ bigcherry results ingest-calibration --run-dir /path/to/run --work-root ROOT --j
 The platform's MRC04 reader requires one selected `native_v1` record and
 verifies its key/provenance and all source snapshots before producing an
 MRC01 run record. `RUN/calibration-record.sha256` is a pointer, not a new
-measurement store. Ingest before reusing the run directory. Host snapshots
-obtained during offline ingest are not claims about measurement-start state.
+measurement store. Ingest before reusing the run directory. Ingest reads `RUN/host-facts.start.v1.json`, checks the digest sealed in
+the native owner session, and refuses missing, tampered or publication-time
+host facts. No sysfs or ROCm host facts are collected during offline ingest.
 
 `needle_probe.py` and `image_probe.py` now require a matching local native
 `--run-dir` and optional `--work-root`. Their `--out` is a digest-pointer

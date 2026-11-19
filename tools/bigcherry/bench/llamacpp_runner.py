@@ -15,6 +15,7 @@ import runpy
 import sys
 from pathlib import Path
 
+from ..core import host_facts
 from ..experiment import attestation
 from . import llamacpp_records
 
@@ -55,6 +56,10 @@ def run_with_records(
     path_backup, argv_backup = sys.path[:], sys.argv[:]
     changed: list[tuple[object, str, object]] = []
     produced: list[str] = []
+    # This wrapper owns the external benchmark invocation. Its start
+    # capture applies to every result row; the external launcher has no
+    # per-request start callback, so do not claim per-request snapshots.
+    host_start = host_facts.snapshot_at_start(phase="owner_start")
     # A single canonical append_result call per measured row; family routing
     # is a second invocation of the same row, not another measurement.
     try:
@@ -83,6 +88,7 @@ def run_with_records(
                 work_root=work_root,
                 expected=expected,
                 observed=_observed_from_measured_log(row),
+                host_snapshot=host_start,
             )
             produced.append(digest)
             print(f"run-record v1: {digest}")

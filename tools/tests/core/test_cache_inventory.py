@@ -941,7 +941,11 @@ class CacheInventory(unittest.TestCase):
             "metrics": {"decode": {}, "prefill": {}, "ttft": {}},
             "provenance": {"effective_config": blob, "argv": blob,
                            "environment": blob, "power_settings": blob, "inputs": []},
-            "host_facts": {}, "feature_states": [],
+            "host_facts": __import__("bigcherry.core.host_facts", fromlist=["snapshot_at_start"])
+                              .snapshot_at_start(
+                                  {"kernel_release": {"value": "fixture", "readable": True}},
+                                  captured_at="2026-11-18T11:59:00Z"),
+            "feature_states": [],
         }
         store.put_record(record)
         self.assertIn("run record", " ".join(self.decisions()[pinned.name]["reasons"]))

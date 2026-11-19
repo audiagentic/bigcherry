@@ -19,6 +19,7 @@
 #include <csignal>
 #include <cstdint>
 #include <cstring>
+#include <cstdlib>
 #include <ctime>
 #include <fstream>
 #include <iostream>
@@ -152,6 +153,186 @@ std::string read_file(const fs::path& path) {
     std::ostringstream text;
     text << in.rdbuf();
     return text.str();
+}
+
+// MRC02's native owner writes only passive start-of-session host evidence.
+// Python is not loaded by bc-serve. The platform ingester validates this
+// timestamped receipt instead of sampling the host after calibration finishes.
+Json start_fact(std::optional<Json> value, const std::string& reason = "unreadable") {
+    if (!value)
+        return {{"value", nullptr}, {"readable", false}, {"reason", reason}};
+    return {{"value", *value}, {"readable", true}};
+}
+
+std::optional<std::string> host_line(const fs::path& path) {
+    std::ifstream input(path);
+    if (!input)
+        return std::nullopt;
+    std::string value;
+    std::getline(input, value);
+    const auto first = value.find_first_not_of(" \t\r\n");
+    if (first == std::string::npos)
+        return std::nullopt;
+    const auto last = value.find_last_not_of(" \t\r\n");
+    return value.substr(first, last - first + 1);
+}
+
+Json host_text(const fs::path& path, const std::string& missing = "unreadable") {
+    const auto value = host_line(path);
+    return start_fact(value ? std::optional<Json>(*value) : std::nullopt, missing);
+}
+
+Json host_positive_number(const fs::path& path, const std::string& zero = "invalid_zero") {
+    const auto raw = host_line(path);
+    if (!raw)
+        return start_fact(std::nullopt);
+    if (!std::regex_match(*raw, std::regex("[0-9]+")))
+        return start_fact(std::nullopt, "malformed");
+    try {
+        const auto n = std::stoull(*raw);
+        return n > 0 ? start_fact(Json(n)) : start_fact(std::nullopt, zero);
+    } catch (const std::exception&) {
+        return start_fact(std::nullopt, "malformed");
+    }
+}
+
+Json host_available_kib(const fs::path& path) {
+    std::ifstream input(path);
+    if (!input)
+        return start_fact(std::nullopt);
+    std::string line;
+    static const std::regex pattern(R"(^MemAvailable:\s+([0-9]+)\s+kB$)");
+    while (std::getline(input, line)) {
+        std::smatch match;
+        if (!std::regex_match(line, match, pattern))
+            continue;
+        try {
+            return start_fact(Json(std::stoull(match[1].str())));
+        } catch (const std::exception&) {
+            return start_fact(std::nullopt, "malformed_mem_available");
+        }
+    }
+    return start_fact(std::nullopt, "mem_available_unobserved");
+}
+
+Json host_clock(const fs::path& path) {
+    std::ifstream input(path);
+    if (!input)
+        return start_fact(std::nullopt);
+    std::string line;
+    const std::regex mhz("([0-9]+(?:\\.[0-9]+)?)\\s*(M|G)Hz", std::regex_constants::icase);
+    while (std::getline(input, line)) {
+        if (line.find('*') == std::string::npos)
+            continue;
+        std::smatch found;
+        if (std::regex_search(line, found, mhz)) {
+            try {
+                const double magnitude = std::stod(found[1].str());
+                const double scale = found[2].str() == "G" || found[2].str() == "g" ? 1000.0 : 1.0;
+                return start_fact(Json(static_cast<unsigned long long>(magnitude * scale)));
+            } catch (const std::exception&) {
+                return start_fact(std::nullopt, "malformed_clock");
+            }
+        }
+    }
+    return start_fact(std::nullopt, "no_active_clock");
+}
+
+Json host_card(const fs::path& device, const std::string& bdf) {
+    Json card = {
+        {"bdf", start_fact(Json(bdf))},
+        {"vram_total_bytes", host_positive_number(device / "mem_info_vram_total")},
+        {"firmware_version", host_text(device / "firmware_version")},
+        {"sclk_current_mhz", host_clock(device / "pp_dpm_sclk")},
+        {"mclk_current_mhz", host_clock(device / "pp_dpm_mclk")},
+        {"sclk_od_max_mhz", start_fact(std::nullopt, "native_od_max_unobserved")},
+        {"mclk_od_max_mhz", start_fact(std::nullopt, "native_od_max_unobserved")},
+    };
+    const auto arch = host_line(device / "gfx_target_version");
+    std::smatch match;
+    if (arch && std::regex_match(*arch, match, std::regex("([0-9]+)\\.([0-9])\\.([0-9])")))
+        card["arch"] = start_fact(Json("gfx" + match[1].str() + match[2].str() + match[3].str()));
+    else if (arch && std::regex_match(*arch, std::regex("gfx[0-9a-z]+")))
+        card["arch"] = start_fact(Json(*arch));
+    else
+        card["arch"] = start_fact(std::nullopt, arch ? "malformed" : "unreadable");
+    fs::path hwmon;
+    std::error_code ec;
+    if (fs::is_directory(device / "hwmon", ec)) {
+        for (const auto& item : fs::directory_iterator(device / "hwmon", ec)) {
+            if (item.is_directory(ec) && (hwmon.empty() || item.path() < hwmon))
+                hwmon = item.path();
+        }
+    }
+    auto power_reading = [&](const char* name, const std::string& zero = "invalid_zero") {
+        if (hwmon.empty())
+            return start_fact(std::nullopt, "no_hwmon");
+        return host_positive_number(hwmon / name, zero);
+    };
+    card["power"] = {
+        {"cap_uw", power_reading("power1_cap", "zero_cap_suspect")},
+        {"cap_default_uw", power_reading("power1_cap_default", "zero_cap_suspect")},
+        {"cap_min_uw", power_reading("power1_cap_min")},
+        {"cap_max_uw", power_reading("power1_cap_max")},
+        {"average_uw", power_reading("power1_average")},
+        {"perf_level", host_text(device / "power_dpm_force_performance_level")},
+    };
+    card["pcie"] = {
+        {"card", {
+            {"current_speed", host_text(device / "current_link_speed")},
+            {"current_width", host_positive_number(device / "current_link_width")},
+            {"max_speed", host_text(device / "max_link_speed")},
+            {"max_width", host_positive_number(device / "max_link_width")},
+        }},
+        {"upstream", Json::array()},
+        {"upstream_readability", start_fact(std::nullopt, "native_upstream_unobserved")},
+    };
+    return card;
+}
+
+Json native_start_host_facts(const fs::path& sys_root = "/sys", const fs::path& proc_root = "/proc") {
+    Json facts = {
+        {"kernel_release", host_text(proc_root / "sys/kernel/osrelease")},
+        {"kernel_build", host_text(proc_root / "version")},
+        {"amdgpu_version", host_text(sys_root / "module/amdgpu/version")},
+        {"amdgpu_srcversion", host_text(sys_root / "module/amdgpu/srcversion")},
+        {"mem_available_kib", host_available_kib(proc_root / "meminfo")},
+        {"memory", {
+            {"populated_dimms", start_fact(std::nullopt, "native_dmidecode_unobserved")},
+            {"configured_speed_mt_s", start_fact(std::nullopt, "native_dmidecode_unobserved")},
+            {"profile", start_fact(std::nullopt, "native_dmidecode_unobserved")},
+        }},
+        {"gpu_lease_holder", start_fact(std::nullopt, "native_lease_api_unavailable")},
+    };
+    const char* rocm = std::getenv("ROCM_PATH");
+    facts["rocm_version"] = rocm && *rocm ? host_text(fs::path(rocm) / ".info/version")
+                                          : start_fact(std::nullopt, "sdk_not_selected");
+    const fs::path env_file = "/etc/bigcherry/environment.toml";
+    const auto environment = host_line(env_file);
+    facts["environment_sha256"] = environment ? start_fact(Json(sha256_hex(read_file(env_file))))
+                                             : start_fact(std::nullopt, "environment_unreadable");
+    Json cards = Json::object();
+    std::error_code ec;
+    const fs::path drm = sys_root / "class/drm";
+    if (fs::is_directory(drm, ec)) {
+        for (const auto& entry : fs::directory_iterator(drm, ec)) {
+            const auto name = entry.path().filename().string();
+            if (!std::regex_match(name, std::regex("card[0-9]+")))
+                continue;
+            const auto device = fs::weakly_canonical(entry.path() / "device", ec);
+            if (ec)
+                continue;
+            const auto bdf = device.filename().string();
+            if (!std::regex_match(bdf, std::regex("[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\\.[0-7]")))
+                continue;
+            cards[bdf] = host_card(device, bdf);
+        }
+    }
+    facts["cards"] = cards;
+    facts["cards_readability"] = cards.empty() ? start_fact(std::nullopt, "no_cards_detected")
+                                                : start_fact(Json(cards.size()));
+    return {{"schema_version", 1}, {"capture_phase", "owner_start"},
+            {"captured_at", utc_now()}, {"facts", facts}};
 }
 
 bool starts_with(const std::string& s, const char* prefix) {
@@ -816,6 +997,18 @@ class Owner {
         if (save_failed_) {
             std::cerr << "bc-serve: no session starts without its record ("
                       << (s_.run_dir / "session.json").string() << ")\n";
+            return 1;
+        }
+        // Owner-start host readings are sealed before planner/power admission
+        // and before any measured GPU child. Never sample at ingest time.
+        try {
+            const std::string start = native_start_host_facts().dump(2) + "\n";
+            write_atomic(s_.run_dir / "host-facts.start.v1.json", start);
+            record_["host_facts_start_sha256"] = sha256_hex(start);
+            if (!save())
+                return 1;
+        } catch (const std::exception& e) {
+            std::cerr << "bc-serve: cannot persist native host-facts start receipt: " << e.what() << '\n';
             return 1;
         }
         listen_socket();

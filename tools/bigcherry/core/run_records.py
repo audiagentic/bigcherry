@@ -50,17 +50,22 @@ def _json_bytes(value: object) -> bytes:
 
 
 def with_host_facts(record: dict[str, Any], facts: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Return an independent v1 record populated from the platform collector.
+    """Copy a measurement-owner's already captured v1 start snapshot.
 
     Adapters call this before `put_record`; existing stored records are immutable.
     A caller may inject a fixture snapshot, avoiding host access in unit tests.
     """
     from copy import deepcopy
 
-    from .host_facts import collect_host_facts
+    from .host_facts import validate_start_snapshot
 
+    if facts is None:
+        raise RecordError("start host facts must be captured by the measurement owner")
     updated = deepcopy(record)
-    updated["host_facts"] = deepcopy(facts if facts is not None else collect_host_facts())
+    try:
+        updated["host_facts"] = deepcopy(validate_start_snapshot(facts))
+    except ValueError as exc:
+        raise RecordError(f"invalid start host facts: {exc}") from exc
     validate_record(updated)
     return updated
 
@@ -321,6 +326,19 @@ class RunRecordStore:
         return raw
 
     def put_record(self, record: dict[str, Any]) -> str:
+        # MRC02: new records cannot masquerade as measured when they have
+        # empty or publication-time host facts. Keep get_record backward
+        # compatible with existing immutable v1 objects, including {}.
+        from .host_facts import validate_start_snapshot
+
+        try:
+            validate_start_snapshot(record.get("host_facts"))
+            start = datetime.fromisoformat(record["host_facts"]["captured_at"])
+            recorded = datetime.fromisoformat(record["recorded_at"])
+            if start > recorded:
+                raise ValueError("host-facts start timestamp is after measured record")
+        except (ValueError, KeyError, TypeError) as exc:
+            raise RecordError(f"new records require valid start host facts: {exc}") from exc
         data = canonical_record_bytes(record)
         for ref in blob_references(record):
             self.get_blob(ref)

@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -21,6 +20,7 @@ import time
 import tomllib
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from rsc02_s15_projection import ProjectionError, compare, dry_run, projection
 
@@ -243,6 +243,10 @@ def arm(cfg: dict) -> int:
     identity_before = build_identity(cfg)
     if cfg["expected_build"] != identity_before:
         raise Refusal("immutable build/model identity changed since preflight")
+    # Capture in the leased arm itself before either Bash or native starts.
+    from bigcherry.core import host_facts
+    host_start = host_facts.snapshot_at_start(phase="owner_start")
+    save(out.with_suffix(".host-start.v1.json"), host_start)
     record = {"cohort": cohort, "arm": which, "build_identity": identity_before,
               "run_dir": str(run_dir), "state": "admitting"}
     save(out, record)
@@ -424,8 +428,12 @@ def accept(args: argparse.Namespace) -> int:
 
                 snapshot_file = Path(cell["out"]).with_suffix(".snapshot.json")
                 snapshot = json.loads(snapshot_file.read_text(encoding="utf-8"))
+                from bigcherry.core import host_facts
+                start = host_facts.read_start_receipt(
+                    Path(cell["out"]).with_suffix(".host-start.v1.json"))
                 record_digest = publish_rsc02_arm(
                     result, snapshot, work_root=Path(cell["work_root"]),
+                    host_snapshot=start,
                 )
                 (out / f"{label}.record.sha256").write_text(record_digest + "\n")
                 results.append((which, result, snapshot_file))
