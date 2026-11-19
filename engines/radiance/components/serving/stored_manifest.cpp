@@ -68,6 +68,8 @@ Json execution_projection(const Json& spec) {
                       {"processes", spec.at("processes")},
                       {"power", spec.at("plan").at("power")},
                       {"host_reserve_mib", spec.at("resources").at("host").at("reserve_mib")}};
+    if (spec.contains("native_config"))
+        projected["native_config"] = spec.at("native_config");
     if (spec.contains("handoff")) {
         Json handoff = spec.at("handoff");
         // The shared segment is an execution-record identity, not a

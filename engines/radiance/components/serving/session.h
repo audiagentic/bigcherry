@@ -297,8 +297,8 @@ NativeConfigInspection inspect_and_reconcile_native_config(
     const Env& complete_environment, const std::vector<std::string>& selected_engine_bdfs,
     int selected_tp, const Hooks& hooks = {}, int resolution_root_fd = -1);
 
-// Private planner input. This deliberately has no CLI spelling: the current writer/P1 chain cannot yet persist
-// and consume this snapshot, so a successful inspection is followed by a fail-closed stop before cache or GPU work.
+// Private native YAML selection and runtime overrides, with no new CLI spelling.
+// A stored replay consumes its embedded YAML and uses only the root and runtime settings here.
 struct NativeAdmissionRequest {
     std::filesystem::path authored_yaml;
     std::filesystem::path resolution_root;
@@ -322,7 +322,7 @@ struct EnginePlanInputs {
 
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
-    std::optional<NativeAdmissionRequest> native_admission; // internal migration gate; never enables a launch
+    std::optional<NativeAdmissionRequest> native_admission;
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default

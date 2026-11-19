@@ -1499,7 +1499,8 @@ void manifest_writer_step(Fixture& t) {
                           {"calibration_records", qualified.s10.calibration_records}};
         const fs::path sibling = t.root / "native-s8-evidence.json";
         sv::write_manifest_file(sibling, raw.dump(2) + "\n");
-        const ss::StoredS8Evidence measured = ss::read_stored_s8_evidence(sibling, issued.digest);
+        const ss::StoredS8Evidence measured =
+            ss::read_stored_s8_evidence(sibling, issued.digest, ss::complete_file_identity(sibling));
         v2::P1LiveRoom room{};
         constexpr int64_t MiB = 1048576;
         room.mem_available_bytes = 92160LL * MiB;
@@ -3532,7 +3533,9 @@ void session_engine_plan(Fixture& t) {
         fs::create_directories(gated_run);
         const fs::path cache_tripwire = gated_run /
             ("stored-" + bc::serving::sha256_hex(gated.named_config) + ".index.json");
+#ifndef BC_NATIVE_V3_SESSION_ONLY
         std::ofstream(cache_tripwire) << "deliberately malformed cache index";
+#endif
         int writer_calls = 0;
 #ifndef BC_NATIVE_V3_SESSION_ONLY
         gated.runner = [&](const std::vector<std::string>&) {
@@ -3594,6 +3597,7 @@ void session_engine_plan(Fixture& t) {
                 if (attempt.is_directory()) attempt_dirs.push_back(attempt.path());
         bool owner_receipt_verified = false;
         bool measured_artifact_verified = false;
+        fs::path original_manifest;
         if (attempt_dirs.size() == 1 && !admitted_measurement_manifest_sha256.empty()) {
             const fs::path attempt = attempt_dirs.front();
             std::vector<fs::path> cache_entries;
@@ -3613,7 +3617,7 @@ void session_engine_plan(Fixture& t) {
                     cache_record.at("resident").at("engine_mib") ==
                         std::max<int64_t>(1, (rank_demand.at("resident_other_bytes").get<int64_t>() +
                                                ((int64_t{1} << 20) - 1)) / (int64_t{1} << 20));
-                const fs::path measured_path = attempt / "manifest-native-measured.json";
+                const fs::path measured_path = gated_run / ("manifest-native-" + attempt.filename().string() + ".json");
                 std::ifstream measured_file(measured_path, std::ios::binary);
                 if (owner_receipt_verified && measured_file) {
                     const std::string measured_bytes((std::istreambuf_iterator<char>(measured_file)),
@@ -3632,6 +3636,7 @@ void session_engine_plan(Fixture& t) {
                             spec.plan.resource_inputs &&
                             spec.plan.resource_inputs->resident_other_bytes ==
                                 rank_demand.at("resident_other_bytes").get<int64_t>();
+                        if (measured_artifact_verified) original_manifest = measured_path;
                     }
                 }
             }
@@ -3646,6 +3651,80 @@ void session_engine_plan(Fixture& t) {
                                      "writer with a sealed serving handoff: " +
                                      native_gate_error);
 
+        write(t.root / "proc/self/limits",
+              "Limit                     Soft Limit           Hard Limit          Units\n"
+              "Max locked memory         unlimited            unlimited           bytes\n");
+        const auto attestation_path = original_manifest.string() + ".replay-index.json";
+        const auto original_index = ss::read_stored_index(attestation_path);
+        assert(original_index.native_measurement &&
+               original_index.manifest_filename == original_manifest.filename().string());
+        ss::EnginePlanInputs replay = gated;
+        replay.stored_manifest = original_manifest;
+        ss::Hooks stored_hooks;
+        stored_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        unsigned replay_inspections = 0;
+        unsigned replay_admissions = 0;
+        stored_hooks.started = [&](ss::ChildKind kind, const std::string&, pid_t, const fs::path&) {
+            assert(kind == ss::ChildKind::native_config_inspector);
+            ++replay_inspections;
+        };
+        stored_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse use) {
+            assert(use == bc::serving::v2::PlanUse::serving && replay_inspections == replay_admissions + 1);
+            ++replay_admissions;
+            return bc::serving::v2::Status{};
+        };
+        const auto refuse_stored = [&](const ss::EnginePlanInputs& rejected, std::string_view why) {
+            try {
+                (void)ss::replay_stored_manifest(rejected, gated_run, stored_hooks);
+            } catch (const std::exception& error) {
+                if (std::string_view(error.what()).find(why) != std::string_view::npos) return;
+                throw;
+            }
+            throw std::runtime_error("stored v3 replay unexpectedly admitted: " + std::string(why));
+        };
+        auto tampered = original_index;
+        tampered.native_measurement->sha256 = std::string(64, '0');
+        ss::write_stored_index(attestation_path, tampered);
+        refuse_stored(replay, "owner measurement no longer matches");
+        ss::write_stored_index(attestation_path, original_index);
+        const auto replace_fixture_bytes = [&](const fs::path& path, const std::string& bytes) {
+            const fs::path replacement = path.string() + ".fixture-replacement";
+            write(replacement, bytes);
+            fs::rename(replacement, path);
+        };
+        const auto change_bytes_and_refuse = [&](const fs::path& path, std::string_view why) {
+            std::ifstream original(path, std::ios::binary);
+            const std::string bytes((std::istreambuf_iterator<char>(original)), std::istreambuf_iterator<char>());
+            assert(!bytes.empty());
+            replace_fixture_bytes(path, bytes + '\n');
+            assert(ss::complete_file_identity(path) != ss::complete_file_identity_bytes(bytes));
+            refuse_stored(replay, why);
+            replace_fixture_bytes(path, bytes);
+        };
+        change_bytes_and_refuse(original_manifest, "no longer binds the original manifest bytes");
+        change_bytes_and_refuse(original_manifest.string() + ".s8-evidence.json", "producer evidence was tampered");
+        auto changed_build = replay;
+        changed_build.engine_binary = t.root / "changed-native-engine";
+        fs::copy_file(BC_FAKE_ENGINE, changed_build.engine_binary);
+        std::ofstream(changed_build.engine_binary, std::ios::binary | std::ios::app) << '\n';
+        refuse_stored(changed_build, "engine, kernels or helper build changed");
+        auto wrong_root = replay;
+        wrong_root.native_admission->resolution_root = t.root;
+        refuse_stored(wrong_root, "requested resolution root differs");
+        auto low_replay = replay;
+        low_replay.replay_live_room = [](const auto&, const auto&) {
+            return bc::serving::v2::P1LiveRoom{1, 1, 1};
+        };
+        refuse_stored(low_replay, "live MemAvailable/cgroup room");
+        assert(replay_inspections == 0 && replay_admissions == 0 && !fs::exists(native_yaml));
+
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        const auto hit = ss::plan_engine_only(gated, gated_run, stored_hooks);
+        assert(hit.manifest == original_manifest && hit.summary.at("replay") == true &&
+               hit.stored_sha256 == bc::serving::file_sha256(original_manifest));
+        assert(replay_inspections == 1 && replay_admissions == 1);
+        fs::remove(native_yaml);
+
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path owner_run = run / "native-serving-owner";
         fs::create_directories(owner_run);
@@ -3659,12 +3738,14 @@ void session_engine_plan(Fixture& t) {
         owner.timing.stop_grace = std::chrono::seconds(1);
         owner.timing.poll = std::chrono::milliseconds(20);
         owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
-            return ss::plan_engine_only(fresh, dir, hooks);
+            return fresh.stored_manifest.empty() ? ss::plan_engine_only(fresh, dir, hooks)
+                                                : ss::replay_stored_manifest(fresh, dir, hooks);
         };
         bool serving_power_verified = false;
         bool cleared_children = false;
         owner.power_hook.begin_manifest = [&](const fs::path& path, bc::serving::v2::PlanUse use) {
-            assert(use == bc::serving::v2::PlanUse::measuring);
+            assert(use == (fresh.stored_manifest.empty() ? bc::serving::v2::PlanUse::measuring
+                                                        : bc::serving::v2::PlanUse::serving));
             assert(bc::serving::v2::load_manifest(path, use));
             fs::remove(native_yaml);
             return bc::serving::v2::Status{};
@@ -3682,7 +3763,7 @@ void session_engine_plan(Fixture& t) {
         };
         owner.before_gpu_start = [&](const ss::EngineStart& plan) {
             assert(serving_power_verified && plan.execution_manifest() != plan.manifest);
-            std::ofstream(plan.manifest, std::ios::trunc) << "{}\n";
+            replace_fixture_bytes(plan.manifest, "{}\n");
             assert(::setenv("TEST_NATIVE_FROZEN", "changed-after-admission", 1) == 0);
             return bc::serving::v2::Status{};
         };
@@ -3694,29 +3775,43 @@ void session_engine_plan(Fixture& t) {
                                    std::string::npos;
             return bc::serving::v2::Status{};
         };
-        auto stop_owner = std::async(std::launch::async, [&] {
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
-            while (std::chrono::steady_clock::now() < deadline) {
-                const auto record = ss::read_record(owner_run).value_or(Json::object());
-                const std::string state = record.value("state", std::string());
-                if (state == "failed" || state == "stopped") return false;
-                if (state == "running") {
-                    const auto reply = ss::control(owner_run, "stop", std::chrono::seconds(3));
-                    return reply && reply->value("ok", false);
+        const auto run_owner = [&] {
+            auto stop_owner = std::async(std::launch::async, [&] {
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+                while (std::chrono::steady_clock::now() < deadline) {
+                    const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+                    const std::string state = record.value("state", std::string());
+                    if (state == "failed" || state == "stopped") return false;
+                    if (state == "running") {
+                        const auto reply = ss::control(owner.run_dir, "stop", std::chrono::seconds(3));
+                        return reply && reply->value("ok", false);
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 }
-                std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            }
-            (void)ss::control(owner_run, "stop", std::chrono::seconds(3));
-            return false;
-        });
-        const int owner_result = ss::serve(owner);
-        const bool owner_stopped = stop_owner.get();
-        assert(::unsetenv("TEST_NATIVE_FROZEN") == 0);
-        const auto completed = ss::read_record(owner_run).value_or(Json::object());
-        if (!(owner_result == 0 && owner_stopped && serving_handoff_seen && cleared_children &&
-              completed.value("state", std::string()) == "stopped" && ss::alive_recorded(completed).empty()))
-            throw std::runtime_error("native v3 session did not complete sealed fresh serving and verified stop: " +
-                                     completed.dump());
+                (void)ss::control(owner.run_dir, "stop", std::chrono::seconds(3));
+                return false;
+            });
+            const int owner_result = ss::serve(owner);
+            const bool owner_stopped = stop_owner.get();
+            assert(::unsetenv("TEST_NATIVE_FROZEN") == 0);
+            const auto completed = ss::read_record(owner.run_dir).value_or(Json::object());
+            if (!(owner_result == 0 && owner_stopped && serving_handoff_seen && cleared_children &&
+                  completed.value("state", std::string()) == "stopped" && ss::alive_recorded(completed).empty()))
+                throw std::runtime_error("native v3 session did not complete sealed serving and verified stop: " +
+                                         completed.dump());
+            return completed;
+        };
+        (void)run_owner();
+        assert(!fs::exists(native_yaml));
+        owner.run_dir = run / "native-stored-owner";
+        fs::create_directories(owner.run_dir);
+        fresh.stored_manifest = original_manifest;
+        assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
+        serving_power_verified = cleared_children = serving_handoff_seen = false;
+        const auto replay_record = run_owner();
+        assert(replay_record.at("selection").at("replay") == true &&
+               replay_record.at("selection").at("plan_measurement_attempt") == original_index.native_measurement->attempt_id &&
+               replay_record.at("processes").size() == 2);
 
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path low_room_run = run / "native-low-room";
@@ -3762,7 +3857,7 @@ void session_engine_plan(Fixture& t) {
             low_room_error.find("MemAvailable (" + std::to_string(room_mib) + " MiB)") == std::string::npos ||
             low_room_error.find("checkpoint floor") == std::string::npos ||
             attempt == fs::directory_iterator{} ||
-            fs::exists(attempt->path() / "manifest-native-measured.json"))
+            fs::exists(low_room_run / ("manifest-native-" + attempt->path().filename().string() + ".json")))
             throw std::runtime_error("native v3 post-measure admission did not refuse live host room: " + low_room_error);
 
         const fs::path home_alias = t.root / "native-runtime-home-link";
@@ -3820,11 +3915,12 @@ void session_engine_plan(Fixture& t) {
               drift_role_order[1] == "native v3 measuring draft writer" &&
               drift_role_order[2] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
               !fs::exists(drift_attempt_dirs.front() / "plan-cache") &&
-              !fs::exists(drift_attempt_dirs.front() / "manifest-native-measured.json")))
+              !fs::exists(drift_run / ("manifest-native-" + drift_attempt_dirs.front().filename().string() + ".json"))))
             throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
                                      "publication: " + runtime_home_drift_error);
 #else
-        if (!(admitted_expected_path && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
+        if (!(admitted_expected_path && writer_calls == 0 && !power_admitted && fs::exists(cache_tripwire) &&
+              inspector_roles.size() == 1 &&
               inspector_roles[0] == "native config inspector" && reaped.size() == 1))
             throw std::runtime_error("native admission did not reach its expected fail-closed gate: " +
                                      native_gate_error);

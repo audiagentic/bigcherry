@@ -184,10 +184,10 @@ struct PinnedManifestSnapshot {
     std::string file_identity;
 };
 
-PinnedManifestSnapshot pin_manifest_file(const fs::path& path, v2::PlanUse use) {
+std::string read_manifest_file(const fs::path& path) {
     const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
     if (fd < 0)
-        throw PlanFailed("manifest: cannot open writer output " + path.string() + ": " + errno_text());
+        throw PlanFailed("manifest: cannot open " + path.string() + ": " + errno_text());
     struct Close {
         int fd;
         ~Close() { ::close(fd); }
@@ -196,7 +196,7 @@ PinnedManifestSnapshot pin_manifest_file(const fs::path& path, v2::PlanUse use) 
     struct stat st{};
     if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0 ||
         static_cast<uint64_t>(st.st_size) > v2::kMaxDocumentBytes)
-        throw PlanFailed("manifest: writer output is not a bounded regular file: " + path.string());
+        throw PlanFailed("manifest: input is not a bounded regular file: " + path.string());
 
     std::string bytes;
     bytes.reserve(static_cast<size_t>(st.st_size));
@@ -206,13 +206,18 @@ PinnedManifestSnapshot pin_manifest_file(const fs::path& path, v2::PlanUse use) 
         if (n < 0 && errno == EINTR)
             continue;
         if (n < 0)
-            throw PlanFailed("manifest: cannot read writer output " + path.string() + ": " + errno_text());
+            throw PlanFailed("manifest: cannot read " + path.string() + ": " + errno_text());
         if (n == 0)
             break;
         if (bytes.size() + static_cast<size_t>(n) > v2::kMaxDocumentBytes)
-            throw PlanFailed("manifest: writer output exceeds the strict document size limit: " + path.string());
+            throw PlanFailed("manifest: input exceeds the strict document size limit: " + path.string());
         bytes.append(chunk.data(), static_cast<size_t>(n));
     }
+    return bytes;
+}
+
+PinnedManifestSnapshot pin_manifest_file(const fs::path& path, v2::PlanUse use) {
+    const std::string bytes = read_manifest_file(path);
     auto parsed = v2::read_manifest(bytes, path.string(), use);
     if (!parsed)
         throw PlanFailed(v2::render_human("bc-serve manifest admission", parsed.error()));
@@ -2265,8 +2270,24 @@ struct NamedCache {
     FileStamp model_stamp;
 };
 
+static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
+                                          const Hooks& hooks, const NativeConfigSnapshot* expected_native);
+
+static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
+    const fs::path& resolution_root, const fs::path& runtime_home, const Env& selected, Env overrides) {
+    for (const char* key : {"RADIANCE_HOME", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
+                            "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL"})
+        if (overrides.count(key))
+            throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
+    for (const auto& [key, value] : selected)
+        overrides[key] = value;
+    overrides["RADIANCE_HOME"] = runtime_home.string();
+    return std::make_shared<const NativeEngineLaunch>(resolution_root, current_child_environment(overrides));
+}
+
 std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved& resolved, const Json& facts,
-                                      const fs::path& engine, const fs::path& helper, const fs::path& run_dir) {
+                                      const fs::path& engine, const fs::path& helper, const fs::path& run_dir,
+                                      const NativeConfigSnapshot* native = nullptr) {
     if (in.named_config.empty())
         return std::nullopt; // preserve the existing --set/layout serve path
     const Json& values = resolved.values;
@@ -2284,6 +2305,9 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     }
     static_inputs.producer_digest = complete_file_identity(in.self);
     const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
+    if (native)
+        static_inputs.native_config = NativeStaticIdentity{
+            native->sha256(), native->resolution_root(), fs::canonical(home).string()};
     static_inputs.engine_digest = engine_identity(engine, home);
     static_inputs.helper_digest =
         resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
@@ -2459,24 +2483,27 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                    {"helper_cards", v.at("layout").at("helper_cards")}};
 
     if (in.native_admission) {
-        static const std::array<const char*, 5> reserved_environment = {
-            "RADIANCE_HOME", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES",
-            "GPU_DEVICE_ORDINAL"};
-        for (const char* key : reserved_environment)
-            if (in.native_admission->runtime_overrides.count(key))
-                throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
         const fs::path frozen_runtime_home = fs::canonical(home);
-        Env runtime = in.native_admission->runtime_overrides;
-        for (const auto& [name_key, value] : out.runtime)
-            runtime[name_key] = value; // verified build and local device selection take precedence
-        runtime["RADIANCE_HOME"] = frozen_runtime_home.string();
-        out.native_launch = std::make_shared<const NativeEngineLaunch>(in.native_admission->resolution_root,
-                                                                       current_child_environment(runtime));
+        out.native_launch = prepare_native_launch(in.native_admission->resolution_root, frozen_runtime_home,
+                                                  out.runtime, in.native_admission->runtime_overrides);
         const auto& launch = *out.native_launch;
         const NativeConfigSnapshot snapshot =
             NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
         launch.root.require_matches(snapshot.resolution_root());
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
+        std::optional<NamedCache> cache;
+        if (v2::kContractVersion == 3) {
+            if (in.runner || !processes.empty() || in.calibration_run || !in.experiment_file.empty())
+                throw PlanFailed("native v3 admission requires the real writer and a production engine-only config");
+            cache = named_cache(in, r, facts, engine, helper_binary, run_dir, &snapshot);
+            if (cache) {
+                if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache->key)) {
+                    EnginePlanInputs replay = in;
+                    replay.stored_manifest = *saved;
+                    return replay_stored_manifest(replay, run_dir, hooks, &snapshot);
+                }
+            }
+        }
         const NativeConfigInspection native_inspection = inspect_and_reconcile_native_config(
             engine, snapshot, frozen_runtime_home, v.at("engine").at("model").get<std::string>(),
             launch.environment, selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, launch.root.descriptor());
@@ -2485,13 +2512,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                              "integration is incomplete; refusing before cache reuse, manifest writing, power "
                              "admission, or GPU child startup");
 
-        // This candidate owner path is deliberately engine-only and one-shot.
-        // Helper fleets, named-cache reuse, pool retries and stored-index writes
-        // stay closed until their v3 identity chain exists.
-        if (in.runner)
-            throw PlanFailed("native v3 measuring admission requires the real sealed-fd manifest writer child");
-        if (!processes.empty())
-            throw PlanFailed("native v3 measurement currently admits engine-only layouts");
+        // The native measurement path currently makes one engine-only attempt.
         if (!hooks.admit_power || !wait)
             throw PlanFailed("native v3 measurement requires durable power admission and the owner stop gate");
         const Json frozen_key = plan_key_inputs(
@@ -2636,12 +2657,15 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (!owned.owner || owned.owner->attempt_id != attempt_id || owned.key != plan_key(frozen_key))
             throw PlanFailed("native v3 owner cache publication did not return the exact attempt receipt");
 
-        const fs::path measured_manifest = attempt_dir / "manifest-native-measured.json";
+        const fs::path measured_manifest = fs::absolute(run_dir) / ("manifest-native-" + attempt_id + ".json");
+        const fs::path s8_source = measured_manifest.string() + ".s8-evidence.json";
         std::vector<std::string> measured_argv = {
             in.self.string(), "--write-manifest", measured_manifest.string(), "--power-profile", in.power_profile,
             "--plan-cache", owner_cache.string(), "--engine-binary", absolute_engine.string(), "--plan-extra",
             "budgets: default", "--expected-plan-key", plan_key(frozen_key), "--expected-owner-attempt", attempt_id,
             "--bc-native-config-fd", std::to_string(snapshot_handoff->descriptor())};
+        if (cache)
+            measured_argv.insert(measured_argv.end(), {"--s8-replay-evidence", s8_source.string()});
         measured_argv.insert(measured_argv.end(), resolver.begin(), resolver.end());
         const ManifestRun final_writer = run_planning_child(
             measured_argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
@@ -2680,6 +2704,19 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             !final_spec.plan.resource_inputs ||
             final_spec.plan.resource_inputs->resident_other_bytes != decoded_ranks.resident_other_bytes)
             throw PlanFailed("native v3 measured serving artifact changed the owner plan or frozen model/build identities");
+        if (cache) {
+            const auto current = named_cache(in, after_resolve, after_facts, engine, helper_binary, run_dir, &snapshot);
+            if (!current || current->key != cache->key)
+                throw PlanFailed("native v3 static inputs changed during measurement; refusing named cache publication");
+            if (!fs::is_regular_file(s8_source) || fs::is_symlink(s8_source))
+                throw PlanFailed("native v3 measured writer did not publish ordinary S8 replay evidence");
+            const StoredManifestIndex entry{
+                cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model_digest,
+                current->model_stamp, complete_file_identity(s8_source),
+                StoredManifestIndex::NativeMeasurement{attempt_id, owned.owner_sha256}};
+            write_stored_index(measured_manifest.string() + ".replay-index.json", entry);
+            write_stored_index(cache->index, entry);
+        }
         out.manifest = measured_manifest;
         out.stored_sha256 = std::move(final_snapshot.sha256);
         out.pinned_manifest = std::move(final_snapshot.pinned);
@@ -3062,9 +3099,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     throw PlanFailed("plan: no measured manifest after 5 rounds");
 }
 
-EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
-                                   const Hooks& hooks) {
-    if (given.native_admission)
+static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
+                                          const Hooks& hooks, const NativeConfigSnapshot* expected_native) {
+    if (given.native_admission && v2::kContractVersion != 3)
         throw PlanFailed("replay: private native admission cannot be combined with legacy stored replay; "
                          "replay must consume the embedded native snapshot");
     if (!hooks.admit_power || !hooks.wait)
@@ -3074,16 +3111,31 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     const fs::path stored = fs::absolute(given.stored_manifest);
     if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16ULL * 1024ULL * 1024ULL)
         throw PlanFailed("replay: manifest must be an existing bounded regular file");
-    const std::string bytes = read_file(stored);
+    const std::string bytes = v2::kContractVersion == 3 ? read_manifest_file(stored) : read_file(stored);
     const Json source = Json::parse(bytes, nullptr, false);
-    if (const auto api = source.find("apiVersion"); api != source.end() && *api == "bigcherry/v3")
+    if (const auto api = source.find("apiVersion");
+        v2::kContractVersion != 3 && api != source.end() && *api == "bigcherry/v3")
         throw PlanFailed("replay: native v3 stored manifests require fresh native admission; stored replay is "
                          "not available until the v3 owner/cache/replay chain is complete");
     const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);
     if (!verified)
         throw PlanFailed(v2::render_human("bc-serve replay", verified.error()));
     const auto& m = verified.value();
+    std::optional<NativeConfigSnapshot> native_snapshot;
+    if (const auto native = v2::native_config_view(m)) {
+        if (given.replay_evidence || given.calibration_run || !given.experiment_file.empty() ||
+            m.spec.handoff || !m.spec.processes.helpers.empty())
+            throw PlanFailed("replay: native v3 requires current production engine-only inputs");
+        native_snapshot = NativeConfigSnapshot::admitted(std::string(native->yaml_utf8),
+            std::string(native->identity.sha256), std::string(native->identity.resolution_root));
+        if (expected_native && expected_native->manifest_field() != native_snapshot->manifest_field())
+            throw PlanFailed("replay: stored native snapshot differs from the named start");
+        if (given.native_admission &&
+            fs::canonical(given.native_admission->resolution_root) != native_snapshot->resolution_root())
+            throw PlanFailed("replay: requested resolution root differs from the stored native snapshot");
+    }
     const fs::path home = m.spec.processes.engine.runtime.radiance_home;
+    const fs::path native_runtime_home = native_snapshot ? fs::canonical(home) : fs::path{};
     const fs::path engine =
         given.engine_binary.empty() ? home.parent_path() / "bin" / "radiance" : given.engine_binary;
     const fs::path helper_binary =
@@ -3137,6 +3189,9 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         // S8 allocations are authenticated artifacts, never operator --sets.
         const Json fresh = detect(in.options.sys_root);
         const Resolved resolved = resolve(in.options, fresh);
+        if (native_snapshot &&
+            fs::canonical(resolved.values.at("engine").at("radiance_home").get<std::string>()) != native_runtime_home)
+            throw PlanFailed("replay: native runtime home differs from the current configuration");
         const Json definitions = load_layouts(in.options);
         source_name = definitions.at("source").value(name, "");
         if (definitions.at("kind").value(name, "") != "config")
@@ -3150,6 +3205,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
             throw PlanFailed("replay: a lab manifest requires the explicitly gated foreground calibration run");
         ManifestInputs draft;
         draft.resolved = resolved;
+        draft.native_config = native_snapshot;
         draft.profile = expected_profile;
         draft.instance_id = new_instance_id();
         draft.producer_sha256 = file_sha256(given.self);
@@ -3171,7 +3227,8 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         evidence.engine_identity = engine_identity(engine, home);
         evidence.fresh_facts = fresh;
         evidence.effective_spec = current.document.at("spec");
-        attestation = named_cache(in, resolved, fresh, engine, helper_binary, stored.parent_path());
+        attestation = named_cache(in, resolved, fresh, engine, helper_binary, stored.parent_path(),
+                                  native_snapshot ? &*native_snapshot : nullptr);
         current_config = resolved;
     }
     const Json& facts = evidence.fresh_facts;
@@ -3181,34 +3238,57 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     if (const auto* error = std::get_if<ReplayError>(&checked))
         throw ReplayFailed(error->reason, v2::render_human("bc-serve replay", error->detail));
     const auto& accepted = std::get<v2::Manifest>(checked);
+    std::optional<StoredManifestIndex> bound;
     if (attestation) {
         const fs::path sidecar = stored.string() + ".replay-index.json";
         if (!fs::is_regular_file(sidecar) || fs::is_symlink(sidecar))
             throw ReplayFailed(
                 ReplayRefusal::missing_gate,
                 "replay: the original manifest has no durable RSC12 static identity attestation");
-        StoredManifestIndex bound;
         try {
             bound = read_stored_index(sidecar);
         } catch (const std::exception& e) {
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                std::string("replay: stored attestation is corrupt: ") + e.what());
         }
-        if (bound.manifest_filename != stored.filename().string() ||
-            bound.digest != complete_file_identity_bytes(bytes))
+        if (bound->manifest_filename != stored.filename().string() ||
+            bound->digest != complete_file_identity_bytes(bytes))
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                "replay: stored attestation no longer binds the original manifest bytes");
-        if (bound.model_digest.empty() || bound.model_digest != attestation->model_digest)
+        if (bound->model_digest.empty() || bound->model_digest != attestation->model_digest)
             throw ReplayFailed(ReplayRefusal::model,
                                "replay: complete model artifact bytes no longer match the original");
-        if (bound.key != attestation->key)
+        if (bound->key != attestation->key)
             throw ReplayFailed(
                 ReplayRefusal::execution_projection,
                 "replay: RSC12 static resolution key changed (config, inputs, calibration or power)");
-        if (bound.s8_digest.empty() ||
-            bound.s8_digest != complete_file_identity(stored.string() + ".s8-evidence.json"))
-            throw ReplayFailed(ReplayRefusal::calibration,
-                               "replay: the original measured S8 producer evidence is missing or tampered");
+    }
+    if (native_snapshot) {
+        if (!bound || !bound->native_measurement || !current_config)
+            throw ReplayFailed(ReplayRefusal::missing_gate,
+                               "replay: native v3 requires the manifest-bound owner measurement");
+        const auto& receipt = *bound->native_measurement;
+        const auto& current = current_config->values;
+        const Json key_inputs = plan_key_inputs(current, facts, evidence.model_identity, evidence.engine_identity,
+                                                "budgets: default", &*native_snapshot);
+        const auto owner_dir = stored.parent_path() / "measurement-attempts" / receipt.attempt_id / "plan-cache";
+        const auto cached = plan_cache_lookup(owner_dir, key_inputs);
+        if (!cached || !cached->owner || cached->owner->attempt_id != receipt.attempt_id ||
+            cached->owner_sha256 != receipt.sha256 ||
+            v2::encode(accepted.spec.plan.engine_memory->expected) != cached->plan_json ||
+            !accepted.spec.plan.resource_inputs)
+            throw ReplayFailed(ReplayRefusal::bytes_or_digest,
+                               "replay: native owner measurement no longer matches the exact final manifest");
+        const auto ranks = decode_engine_rank_demand(cached->rank_demand, accepted.spec.processes.engine.device.gpus,
+                                                     "stored native owner rank demand");
+        if (accepted.spec.plan.resource_inputs->resident_other_bytes != ranks.resident_other_bytes ||
+            cached->plan.vram.cards.size() != ranks.gpu.size())
+            throw ReplayFailed(ReplayRefusal::bytes_or_digest,
+                               "replay: native owner resident or rank facts differ from the final manifest");
+        for (size_t i = 0; i < ranks.gpu.size(); ++i)
+            if (cached->plan.vram.cards[i].free != ranks.gpu[i].claimable_bytes)
+                throw ReplayFailed(ReplayRefusal::bytes_or_digest,
+                                   "replay: native owner rank facts disagree with the measured plan");
     }
 
     std::vector<std::string> ordered = accepted.spec.processes.engine.device.gpus;
@@ -3230,10 +3310,16 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         // The original native P1 and raw P2 records were published by the
         // strict measured writer. Requalify them against current scope/time
         // BEFORE pinning/admitting any GPU child.
-        if (!current_config)
-            throw ReplayFailed(ReplayRefusal::calibration, "replay: current RSC12 scope is missing");
-        const StoredS8Evidence issued =
-            read_stored_s8_evidence(stored.string() + ".s8-evidence.json", accepted.metadata.content_digest);
+        if (!current_config || !bound || bound->s8_digest.empty())
+            throw ReplayFailed(ReplayRefusal::calibration, "replay: current RSC12 scope or S8 evidence is missing");
+        const StoredS8Evidence issued = [&] {
+            try {
+                return read_stored_s8_evidence(stored.string() + ".s8-evidence.json",
+                                              accepted.metadata.content_digest, bound->s8_digest);
+            } catch (const std::exception& error) {
+                throw ReplayFailed(ReplayRefusal::calibration, error.what());
+            }
+        }();
         const v2::Status renewed = verify_stored_s8(accepted, *current_config, facts, room, issued, engine,
                                                     helper_binary, static_cast<int64_t>(std::time(nullptr)));
         if (renewed)
@@ -3246,7 +3332,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     const auto pinned_read = v2::load_manifest(pinned->path(), v2::PlanUse::serving);
     if (!pinned_read || pinned_read.value().metadata.content_digest != accepted.metadata.content_digest)
         throw ReplayFailed(ReplayRefusal::bytes_or_digest,
-                           "replay: sealed handoff does not match admitted v2 bytes");
+                           "replay: sealed handoff does not match admitted manifest bytes");
     EngineStart out;
     out.manifest = stored;
     out.stored_sha256 = sha256_hex(bytes);
@@ -3268,6 +3354,25 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     out.runtime = {{"RADIANCE_HOME", home.string()},
                    {"ROCR_VISIBLE_DEVICES", ordinals},
                    {"HIP_VISIBLE_DEVICES", hip_ordinals}};
+    if (native_snapshot) {
+        out.argv.front() = fs::absolute(engine).string();
+        out.native_launch = prepare_native_launch(
+            native_snapshot->resolution_root(), native_runtime_home, out.runtime,
+            given.native_admission ? given.native_admission->runtime_overrides : Env{});
+        const auto& launch = *out.native_launch;
+        const auto inspected = inspect_and_reconcile_native_config(
+            engine, *native_snapshot, native_runtime_home, accepted.spec.intent.model, launch.environment,
+            accepted.spec.processes.engine.device.gpus, accepted.spec.processes.engine.scheduler.tp,
+            hooks, launch.root.descriptor());
+        const auto& admitted = accepted.spec.processes.engine;
+        if (inspected.listener_port != admitted.server.port ||
+            inspected.max_context != accepted.spec.intent.service.max_context_tokens ||
+            inspected.max_sequences != accepted.spec.intent.service.max_sessions ||
+            inspected.kernels != admitted.runtime.kernels ||
+            fs::canonical(home) != native_runtime_home ||
+            engine_identity(engine, native_runtime_home) != evidence.engine_identity)
+            throw PlanFailed("replay: native parser or build differs from the stored engine inputs");
+    }
     for (const auto& h : accepted.spec.processes.helpers) {
         const Json* gpu = nullptr;
         for (const auto& g : facts.at("gpus"))
@@ -3298,12 +3403,19 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
                    {"helper_cards", source.at("spec").at("processes").at("helpers")},
                    {"manifest_digest", accepted.metadata.content_digest},
                    {"replay", true}};
-    // No writer or measuring child was started. Admission still passes through
-    // the real owner's durable event before ANY GPU child can be forked.
+    if (native_snapshot)
+        out.summary["plan_measurement_attempt"] = bound->native_measurement->attempt_id;
+    // Replay starts no writer or measuring child. The owner admits power
+    // durably before the serving engine can be forked.
     require_callback(hooks.admit_power.invoke("session.hooks.admit_power", out.pinned_manifest->path(),
                                               v2::PlanUse::serving),
                      "stored manifest power admission");
     return out;
+}
+
+EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
+                                   const Hooks& hooks) {
+    return replay_stored_manifest(given, run_dir, hooks, nullptr);
 }
 
 } // namespace bc::serving::session

@@ -77,6 +77,7 @@ struct CachedPlan {
     std::string key, measured_at;
     HostResident resident;
     std::optional<OwnerMeasurementEvidence> owner;
+    std::string owner_sha256; // validated digest of the owner receipt, empty for an unowned entry
 };
 
 /* What a plan must agree with in the configuration it is stored for (values, as resolve() returns them): the host pool it

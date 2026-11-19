@@ -421,9 +421,11 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
     CachedPlan c{decode_engine_plan(e.at("plan"), where), e.at("plan"), e.at("rank_demand"), key,
                  e.at("measured_at").get<std::string>(),
                  {res.at("helpers_mib").get<uint64_t>(), res.at("engine_mib").get<uint64_t>()}};
-    if (has_owner)
+    if (has_owner) {
         c.owner = OwnerMeasurementEvidence{e.at("owner").at("attempt_id").get<std::string>(),
                                            e.at("owner").at("measuring_manifest_sha256").get<std::string>()};
+        c.owner_sha256 = e.at("owner").at("measurement_sha256").get<std::string>();
+    }
     return c;
 }
 
@@ -490,7 +492,8 @@ CachedPlan plan_cache_store_owned(const fs::path& dir, const Json& key_inputs, c
         {"helpers_resident_mib", resident.helpers_mib}, {"engine_resident_mib", resident.engine_mib},
         {"native_config_sha256", version == 3 ? key_inputs.at("native_config").at("sha256") : Json(nullptr)},
         {"resolution_root", version == 3 ? key_inputs.at("native_config").at("resolution_root") : Json(nullptr)}};
-    provenance["measurement_sha256"] = owner_measurement_digest(provenance, c.key);
+    c.owner_sha256 = owner_measurement_digest(provenance, c.key);
+    provenance["measurement_sha256"] = c.owner_sha256;
     c.owner = owner;
     write_cache_entry(dir, key_inputs, c, version, &provenance);
     return c;

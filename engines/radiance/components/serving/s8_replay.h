@@ -20,7 +20,8 @@ struct StoredS8Evidence {
 };
 
 // Bounded strict parsing; no synthesized "manifest-shaped" records.
-StoredS8Evidence read_stored_s8_evidence(const std::filesystem::path& path, const std::string& expected_digest);
+StoredS8Evidence read_stored_s8_evidence(const std::filesystem::path& path, const std::string& expected_digest,
+                                         const std::string& expected_file_identity);
 
 // Uses the SAME real S10-to-S8 typed consumer as the writer. Re-resolves
 // qualified P2 records in the current measured model/build/device/owner scope.

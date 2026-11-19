@@ -14,6 +14,12 @@
 
 namespace bc::serving::session {
 
+struct NativeStaticIdentity {
+    std::string yaml_sha256;
+    std::string resolution_root;
+    std::string runtime_home;
+};
+
 struct StaticResolutionInputs {
     nlohmann::json effective_values;        // RSC12 resolved values; transport and S8 budgets are projected out
     std::vector<std::string> operator_sets; // original CLI overrides, excluding layout selection and transport
@@ -24,6 +30,7 @@ struct StaticResolutionInputs {
     std::string model_digest; // full artifact bytes, not only the container header/tables
     std::string power_profile;
     std::map<std::string, std::string> file_digests; // config, site, calibration, heat, lab evidence
+    std::optional<NativeStaticIdentity> native_config;
 };
 
 // One Linux file identity: every listed metadata change invalidates a reused
@@ -65,6 +72,11 @@ struct StoredManifestIndex {
     std::string model_digest; // optional on generic indices; mandatory for production replay attestation
     std::optional<FileStamp> model_stamp; // full model digest reusable only with identical stat identity
     std::string s8_digest; // optional full hash of the original writer's native P1/P2 replay evidence
+    struct NativeMeasurement {
+        std::string attempt_id;
+        std::string sha256;
+    };
+    std::optional<NativeMeasurement> native_measurement;
 };
 // Exactly one index for a named config within this owner's run root; checked
 // before reuse. Original v2 bytes remain immutable, indexed only by digest.

@@ -42,6 +42,25 @@ void check_filename(const std::string& filename) {
         throw std::runtime_error("stored manifest index has unsafe filename");
 }
 
+void check_native_measurement(const StoredManifestIndex& entry) {
+    if (!entry.native_measurement)
+        return;
+    const auto& measurement = *entry.native_measurement;
+    const std::string& attempt = measurement.attempt_id;
+    if (attempt.size() != 36)
+        throw std::runtime_error("stored native measurement has an invalid attempt ID");
+    for (size_t i = 0; i < attempt.size(); ++i) {
+        const char c = attempt[i];
+        const bool hyphen = i == 8 || i == 13 || i == 18 || i == 23;
+        if (hyphen ? c != '-' : !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+            throw std::runtime_error("stored native measurement has an invalid attempt ID");
+    }
+    if (entry.manifest_filename != "manifest-native-" + attempt + ".json" ||
+        entry.model_digest.empty() || !entry.model_stamp || entry.s8_digest.empty())
+        throw std::runtime_error("stored native measurement is missing its manifest, model or S8 attestation");
+    check_digest(measurement.sha256, "stored native measurement");
+}
+
 int64_t nanoseconds(const timespec& timestamp) {
     constexpr int64_t kBillion = 1000000000LL;
     if (timestamp.tv_nsec < 0 || timestamp.tv_nsec >= kBillion)
@@ -212,7 +231,7 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
         static_values["memory"].erase("host_pool_mib");
         static_values["memory"].erase("host_kv_mib");
     }
-    Json inputs = {{"version", 2},
+    Json inputs = {{"version", in.native_config ? 3 : 2},
                    {"effective_values", std::move(static_values)},
                    {"operator_sets", in.operator_sets},
                    {"ordered_devices", in.ordered_devices},
@@ -222,6 +241,15 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
                    {"model_artifact", in.model_digest},
                    {"power_profile", in.power_profile},
                    {"inputs", in.file_digests}};
+    if (in.native_config) {
+        const auto& native = *in.native_config;
+        check_digest(native.yaml_sha256, "static native YAML");
+        if (!std::filesystem::path(native.resolution_root).is_absolute() ||
+            !std::filesystem::path(native.runtime_home).is_absolute())
+            throw std::runtime_error("static native identity requires absolute execution and runtime directories");
+        inputs["native_config"] = {{"sha256", native.yaml_sha256}, {"resolution_root", native.resolution_root},
+                                    {"runtime_home", native.runtime_home}};
+    }
     for (const auto& [key, digest] : in.file_digests) {
         if (key.empty())
             throw std::runtime_error("static resolution key has an unnamed file");
@@ -261,7 +289,7 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
         !j.contains("manifest") || !j.at("manifest").is_string() || !j.contains("digest") ||
         !j.at("digest").is_string() ||
         j.size() != 4U + size_t(j.contains("model_digest")) + size_t(j.contains("model_stat")) +
-                        size_t(j.contains("s8_digest")) ||
+                        size_t(j.contains("s8_digest")) + size_t(j.contains("native_measurement")) ||
         (j.contains("model_digest") && !j.at("model_digest").is_string()) ||
         (j.contains("s8_digest") && !j.at("s8_digest").is_string()) ||
         (j.contains("model_stat") && !j.contains("model_digest")))
@@ -270,6 +298,14 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
                                j.at("digest").get<std::string>(), j.value("model_digest", std::string())};
     if (j.contains("model_stat"))
         result.model_stamp = parse_stamp(j.at("model_stat"));
+    if (const auto native = j.find("native_measurement"); native != j.end()) {
+        if (!native->is_object() || native->size() != 2 ||
+            !native->contains("attempt_id") || !native->at("attempt_id").is_string() ||
+            !native->contains("sha256") || !native->at("sha256").is_string())
+            throw std::runtime_error("stored native measurement has an invalid shape");
+        result.native_measurement = StoredManifestIndex::NativeMeasurement{
+            native->at("attempt_id").get<std::string>(), native->at("sha256").get<std::string>()};
+    }
     result.s8_digest = j.value("s8_digest", std::string());
     if (!result.s8_digest.empty())
         check_digest(result.s8_digest, "stored S8 writer evidence");
@@ -278,6 +314,7 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
     if (!result.model_digest.empty())
         check_digest(result.model_digest, "stored model artifact");
     check_filename(result.manifest_filename);
+    check_native_measurement(result);
     return result;
 }
 
@@ -287,8 +324,12 @@ void write_stored_index(const std::filesystem::path& index, const StoredManifest
     if (!entry.model_digest.empty())
         check_digest(entry.model_digest, "stored model artifact");
     check_filename(entry.manifest_filename);
+    check_native_measurement(entry);
     Json record = {
         {"version", 1}, {"key", entry.key}, {"manifest", entry.manifest_filename}, {"digest", entry.digest}};
+    if (entry.native_measurement)
+        record["native_measurement"] = {{"attempt_id", entry.native_measurement->attempt_id},
+                                        {"sha256", entry.native_measurement->sha256}};
     if (!entry.model_digest.empty())
         record["model_digest"] = entry.model_digest;
     if (entry.model_stamp) {
