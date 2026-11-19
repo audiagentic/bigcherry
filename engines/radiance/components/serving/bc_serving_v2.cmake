@@ -4,7 +4,8 @@
 #
 # The including project provides a radiance::abi or rad_abi target for rad_types.h.
 # The serving component owns the pinned JSON header for all three consumers.
-set(BC_SERVING_V2_NLOHMANN_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/third_party")
+# component.content_digest() binds this exact 3.12.0 header and its recorded SHA-256
+# (third_party/nlohmann/README.md) into every component build identity.
 function(bc_add_manifest_library target abi generated)
   set(src "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
   # Errors, strict JSON, the generated codec, semantics and role views.
@@ -25,9 +26,14 @@ if(NOT TARGET bc_serving_v2)
   else()
     message(FATAL_ERROR "bc_serving_v2.cmake: needs the radiance::abi (or rad_abi) target for rad_types.h")
   endif()
+  if(NOT TARGET bc_json_dependency)
+    add_library(bc_json_dependency INTERFACE)
+    target_include_directories(bc_json_dependency SYSTEM INTERFACE "${_bc_v2_dir}/third_party")
+  endif()
   # RFC 8785 JCS and SHA-256
   add_library(bc_jcs STATIC "${_bc_v2_dir}/jcs.cpp" "${_bc_v2_dir}/sha256.cpp")
   target_compile_features(bc_jcs PUBLIC cxx_std_20)
-  target_include_directories(bc_jcs PUBLIC "${_bc_v2_dir}" "${BC_SERVING_V2_NLOHMANN_INCLUDE}")
+  target_include_directories(bc_jcs PUBLIC "${_bc_v2_dir}")
+  target_link_libraries(bc_jcs PUBLIC bc_json_dependency)
   bc_add_manifest_library(bc_serving_v2 ${_bc_v2_abi} "${_bc_v2_dir}/generated/v2")
 endif()

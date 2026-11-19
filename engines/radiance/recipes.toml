@@ -3,8 +3,8 @@
 # here are engines/radiance/patches/<id>/ packages; they never mix with llama.cpp's.
 version = 2
 engine = "radiance"
-# Radiance 2.1.0 migration candidate: ABI44, frozen source commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e.
-pinned = "v2.1.0"
+# Radiance 2.1.0 migration candidate: upstream ABI43, patched ABI44, frozen source commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e.
+pinned = "3deabdaeca17b58bad90d332f4b204cf7bb8a10e"
 pinned-version = "2.1.0"
 
 # Validated serving patches, including the production remote-MoE hand-off.
@@ -87,19 +87,19 @@ required-state = "untested"
 
 [source.radiance-native]
 class = "production"
-description = "Radiance 2.1.0 as released: no overlay, no patches."
+description = "Frozen upstream source snapshot 3deabdaeca17b58bad90d332f4b204cf7bb8a10e (after the v2.1.0 tag): no overlay, no patches."
 overlay = false
 patch-sets = []
 
 [source.radiance]
 class = "production"
-description = "Radiance 2.1.0 with BigCherry's migrated production patch sets."
+description = "Radiance snapshot 3deabdaeca17b58bad90d332f4b204cf7bb8a10e with BigCherry's migrated production patch sets."
 overlay = false
 patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "vtp14-mixed-tp"]
 
 [source.radiance-diag]
 class = "diagnostic"
-description = "Radiance 2.1.0 with the migrated production patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
+description = "Frozen upstream snapshot 3deabdaeca17b58bad90d332f4b204cf7bb8a10e with the migrated production patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config", "vtp14-mixed-tp"]
 

@@ -7,7 +7,7 @@ name = "libr2"
 engine = "radiance"
 targets = ["gfx1030"]
 # the rewrite rules and units.txt are written against this revision's libr4d and refuse any other.
-built-against = "v2.1.0"
+built-against = "3deabdaeca17b58bad90d332f4b204cf7bb8a10e"
 outputs = ["kernels/libr2.so"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and the lane's
@@ -27,4 +27,4 @@ patch-provided-files = []
 protocol-flags = []
 owned-flags = []
 runtime-env = []
-abi-version = 35
+abi-version = 43

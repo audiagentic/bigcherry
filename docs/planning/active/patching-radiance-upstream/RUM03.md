@@ -107,6 +107,12 @@ RV4242 resolution (2026-11-19): preserve rad0018/rad0020 as their established AB
 
 User reaffirmation (2026-11-19): B16F8 and B16I8 are required legacy cache features for this bump. ABI44's canonical descriptor must preserve IDs, widths, offsets, and capability bits for both formats; it does not itself port or validate runtime support. Keep rad0048 as sole ABI/descriptor owner and make rad0040 a consumer, then rebuild every plugin against the one ABI44 fingerprint. RUM07 carries the complete B16 runtime and focused correctness gates.
 
+Source-pin correction (2026-11-19): the v2.1.0 tag resolves to ABI40 commit 2a2b756371c26f2768b8d129a098df275ace2c73, but migration artifacts were composed from upstream main commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e (ABI43). The local upstream mirror confirms that exact commit is refs/heads/main. Pin the recipe and all component built-against identities to the full SHA; keep pinned-version = 2.1.0 for BigCherry release numbering. All six coupling abi-version declarations are 43 (unpatched source); the local composed plugin ABI44 gate remains separate. Focused recipe, engine-recipe, pin-bump and pin-triage checks pass (121 passed, 5 subtests). Canonical ordered apply/replay, ABI44 build and refusal fixtures still need a rerun under the corrected pin; GPU performance gates remain separate.
+
+RUM03 targeted validation after the shared JSON dependency migration (2026-11-19): focused recipe/pin suite passes 121 tests with 5 subtests, including the updated full-SHA expectation. The serving component reconfigures successfully. Focused CPU-only target builds succeeded for bc_v2_p1_live_test, bc-release and bc_fake_engine; bc_v2_p1_live_test ran successfully. A combined multi-target build invocation exited nonzero after reporting 11/13 steps; rerunning bc_fake_engine alone succeeded, so treat that combined invocation as inconclusive rather than a code failure. Full component build, full CTest, canonical ordered patch replay and ABI44 loader fixture gates remain pending.
+
+Follow-up targeted validation (2026-11-19): component coupling suite passes with updated ABI43 expectation (9 passed, 1 skipped, 10 subtests). ABI44 package replay/release-fixture tests pass 2/2 against the exact 3deabdaeca17b58bad90d332f4b204cf7bb8a10e checkout. Runtime-asset metadata tests pass 26/26 with 15 subtests. The ABI43 prefix/ABI44 extension fixture is no longer skipped when RADIANCE_SRC points to the frozen composition checkout.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -132,3 +138,7 @@ User reaffirmation (2026-11-19): B16F8 and B16I8 are required legacy cache featu
 - RV4242
 - 2026-11-19T04:26:05.437126+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T04:33:41.862009+00:00 (updated-by): Updated: section:notes
+- RV4246
+- 2026-11-19T07:57:07.207210+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T08:01:30.731011+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T08:06:37.521336+00:00 (updated-by): Updated: section:notes
