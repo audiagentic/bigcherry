@@ -120,6 +120,10 @@ C13 (2026-11-19): built and ran `bc_native_fleet_config_test` against exact pinn
 
 C15 (2026-11-19): fresh measuring and serving writer outputs are now read with no-follow/bounded regular-file checks, validated for their exact role, and sealed before power admission or child launch. EngineStart keeps the durable manifest path for receipts/indexing and exposes execution_manifest() for sealed reads; measuring helper and engine children inherit the sealed descriptor, and runtime guards, calibration reads, power verification, and digest checks use the same admitted bytes. Stored replay binds its attestation to the already-read authenticated bytes. Focused serving, stored replay, native option projection, and generated v3 wire tests pass; the first serving run used a stale binary, so it was rebuilt before the passing run. Direct test execution was used because CTest's launcher is blocked by this container's unprivileged-user-namespace restriction. This is a sealed launch handoff slice; native FleetConfig/YAML wiring and remaining RUM04 consumers/mirror deletion remain open. Ledger event chg_20261119_100847_pinned-freshly-written-manifes_8772.
 
+C24 (2026-11-19): merged current origin/main at 5e814a1d8; merge base matches origin/main. Rebuilt and ran bc_session_guards_test, including proof_lag; passed. Evidence: docs/evidence/radiance-latest-bump/README.md C24; Ledger event chg_20261119_115029_integrated-latest-main-into-th_1067.
+
+C25 (2026-11-19): measuring preflight now reads host pool/KV/reserve/TP from the exact strict parsed measuring manifest and uses freshly detected host room. A session regression drives exit-11 to raise pool to 2048 MiB/rank, forces a second cache miss, and verifies TP3 refusal before a second measuring child. bc_resources_parity_test and bc_serving_test passed. Evidence: docs/evidence/radiance-latest-bump/README.md C25; Ledger event chg_20261119_120029_fixed-measuring-start-memory-a_1732.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -140,3 +144,4 @@ C15 (2026-11-19): fresh measuring and serving writer outputs are now read with n
 - 2026-11-19T09:40:16.121520+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T10:09:03.548031+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T10:09:50.104454+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T12:01:22.900750+00:00 (updated-by): Updated: section:notes

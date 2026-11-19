@@ -3,6 +3,7 @@
 #include "calibration.h"
 #include "experts.h"
 #include "serving.h"
+#include "v2/manifest.h"
 
 #include <algorithm>
 #include <array>
@@ -364,13 +365,12 @@ v2::Result<ResourceLedger> derive_launch(const LaunchDocuments& documents,
     }
 }
 
-v2::Status preflight_host_pool(const Json& values, const Json& facts) {
+namespace {
+v2::Status preflight_host_pool_mib(uint64_t per_rank_mib, uint64_t ranks, uint64_t kv_mib,
+                                   uint64_t reserve_mib, const Json& facts) {
     try {
-        const Json& memory = values.at("memory");
-        const uint64_t per_rank_mib = nonnegative_bytes(memory, "host_pool_mib");
-        const uint64_t ranks = positive_bytes(values.at("engine"), "tp");
-        const uint64_t kv_mib = nonnegative_bytes(memory, "host_kv_mib");
-        const uint64_t reserve_mib = nonnegative_bytes(memory, "host_reserve_mib");
+        if (ranks == 0)
+            return invalid("engine rank count must be positive");
         const auto pool_total_mib = multiply(per_rank_mib, ranks);
         const auto pinned_mib = pool_total_mib ? add(*pool_total_mib, kv_mib) : std::nullopt;
         const auto committed_mib = pinned_mib ? add(*pinned_mib, reserve_mib) : std::nullopt;
@@ -403,6 +403,17 @@ v2::Status preflight_host_pool(const Json& values, const Json& facts) {
     } catch (const std::exception& error) {
         return malformed(std::string("invalid host-pool preflight inputs: ") + error.what());
     }
+}
+} // namespace
+
+v2::Status preflight_host_pool(const v2::Manifest& manifest, const Json& facts) {
+    const auto& host = manifest.spec.resources.host;
+    const int64_t ranks = manifest.spec.processes.engine.scheduler.tp;
+    if (host.pool_mib < 0 || host.kv_mib < 0 || host.reserve_mib < 0 || ranks <= 0)
+        return malformed("invalid host-pool preflight values in admitted measuring manifest");
+    return preflight_host_pool_mib(static_cast<uint64_t>(host.pool_mib), static_cast<uint64_t>(ranks),
+                                   static_cast<uint64_t>(host.kv_mib),
+                                   static_cast<uint64_t>(host.reserve_mib), facts);
 }
 
 Json to_json(const ResourceLedger& ledger) {

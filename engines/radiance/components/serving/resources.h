@@ -13,6 +13,10 @@
 
 #include <nlohmann/json.hpp>
 
+namespace bc::serving::v2 {
+struct Manifest;
+}
+
 namespace bc::serving::resources {
 
 struct ModelFootprint {
@@ -110,8 +114,8 @@ v2::Result<ResourceLedger> derive_launch(const LaunchDocuments& documents,
                                          const std::filesystem::path& calibration_cache = {});
 
 // The measuring start has no measured engine footprint yet. Still admit the
-// configured pinned pool for every TP rank against fresh RAM, cgroup and pin room.
-v2::Status preflight_host_pool(const nlohmann::json& resolved_values,
+// effective allocation from the exact measuring manifest against fresh RAM, cgroup and pin room.
+v2::Status preflight_host_pool(const v2::Manifest& measuring_manifest,
                                const nlohmann::json& detected_facts);
 
 // Wire format is needed only for status and the frozen Python-oracle parity fixture.

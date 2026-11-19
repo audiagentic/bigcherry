@@ -1,6 +1,7 @@
 // RSC03 admission invariants against checked-in Python-oracle observations.
 // Fixture is external JSON; the native calculation accepts only typed measured facts.
 #include "resources.h"
+#include "v2/manifest.h"
 
 #include <cassert>
 #include <cstdint>
@@ -112,10 +113,11 @@ int main() {
         sample = base;
         sample.helpers.push_back(sample.helpers.at(0));
         refuses(sample, bc::serving::v2::ConfigErrorCode::invalid_value, "duplicate helper");
-        const Json tp3_values = Json::parse(R"json({
-            "engine": {"tp": 3},
-            "memory": {"host_pool_mib": 2048, "host_kv_mib": 256, "host_reserve_mib": 128}
-        })json");
+        bc::serving::v2::Manifest tp3_manifest;
+        tp3_manifest.spec.processes.engine.scheduler.tp = 3;
+        tp3_manifest.spec.resources.host.pool_mib = 2048;
+        tp3_manifest.spec.resources.host.kv_mib = 256;
+        tp3_manifest.spec.resources.host.reserve_mib = 128;
         const Json tp3_facts = Json::parse(R"json({
             "host": {
                 "mem_total_mib": 16384,
@@ -124,12 +126,30 @@ int main() {
                 "amdgpu_pin": {"loaded": true, "lifted": false, "cap_mib": 8000}
             }
         })json");
-        const auto tp3_refusal = resources::preflight_host_pool(tp3_values, tp3_facts);
+        const auto tp3_refusal = resources::preflight_host_pool(tp3_manifest, tp3_facts);
         assert(tp3_refusal && tp3_refusal->code == bc::serving::v2::ConfigErrorCode::admission_refused &&
                tp3_refusal->message.find("across 3 engine ranks") != std::string::npos);
-        Json tp1_values = tp3_values;
-        tp1_values["engine"]["tp"] = 1;
-        assert(!resources::preflight_host_pool(tp1_values, tp3_facts));
+        auto tp1_manifest = tp3_manifest;
+        tp1_manifest.spec.processes.engine.scheduler.tp = 1;
+        assert(!resources::preflight_host_pool(tp1_manifest, tp3_facts));
+        const Json enough_for_old_pool = Json::parse(R"json({
+            "host": {
+                "mem_total_mib": 16384,
+                "mem_available_mib": 8000,
+                "memory_cgroups": [{"room_mib": 8000}],
+                "amdgpu_pin": {"loaded": true, "lifted": false, "cap_mib": 14000}
+            }
+        })json");
+        assert(!resources::preflight_host_pool(tp3_manifest, enough_for_old_pool));
+        bc::serving::v2::Manifest effective_manifest;
+        effective_manifest.spec.resources.host.pool_mib = 4096;
+        effective_manifest.spec.resources.host.kv_mib = 256;
+        effective_manifest.spec.resources.host.reserve_mib = 128;
+        effective_manifest.spec.processes.engine.scheduler.tp = 3;
+        const auto effective_refusal = resources::preflight_host_pool(effective_manifest, enough_for_old_pool);
+        assert(effective_refusal &&
+               effective_refusal->code == bc::serving::v2::ConfigErrorCode::admission_refused &&
+               effective_refusal->message.find("across 3 engine ranks") != std::string::npos);
         std::cout << "RSC02: " << cases.size()
                   << " C++/Python config/profile derivations and refusals passed\n";
     } catch (const std::exception& error) {

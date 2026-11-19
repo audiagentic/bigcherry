@@ -3315,6 +3315,84 @@ void session_engine_plan(Fixture& t) {
         }
         assert(refused_all_ranks && writer_calls == 2 && !power_admitted && !child_started);
     }
+    { // A later plan miss must recheck the effective pool from its sealed manifest, not the original resolver values.
+        ss::EnginePlanInputs revised = in;
+        const fs::path revised_root = t.root / "tp3-revised-room-root";
+        fs::create_directories(revised_root);
+        for (const char* name : {"proc", "sys", "dev"})
+            fs::copy(t.root / name, revised_root / name, fs::copy_options::recursive);
+        revised.options.sys_root = revised_root;
+        revised.options.sets = {"layout.name=\"qwen27b-tp3-int8\"", "memory.host_pool_mib=0",
+                                "memory.host_kv_mib=0"};
+        const auto original_resolved = bc::serving::resolve(revised.options, session_facts);
+        assert(original_resolved.values.at("memory").at("host_pool_mib").get<int64_t>() == 0);
+        auto effective_options = revised.options;
+        effective_options.sets.push_back("memory.host_pool_mib=2048");
+        const auto effective_resolved = bc::serving::resolve(effective_options, session_facts);
+        const auto original_manifests = session_manifest_pair(original_resolved, session_facts);
+        const auto effective_manifests = session_manifest_pair(effective_resolved, session_facts);
+        const uint64_t kv_mib = effective_resolved.values.at("memory").at("host_kv_mib").get<uint64_t>();
+        const uint64_t reserve_mib = effective_resolved.values.at("memory").at("host_reserve_mib").get<uint64_t>();
+        const uint64_t room_mib = reserve_mib + std::max<uint64_t>(kv_mib, 4096) + 1;
+        assert(room_mib < reserve_mib + kv_mib + 3 * 2048);
+        const uint64_t total_kib = session_facts.at("host").at("mem_total_mib").get<uint64_t>() * 1024;
+        write(revised_root / "proc/meminfo", std::string("MemTotal:       ") + std::to_string(total_kib) + " kB\n" +
+                                                "MemAvailable:     " + std::to_string(room_mib * 1024) + " kB\n" +
+                                                "SwapTotal:        8388608 kB\n");
+        int writer_calls = 0;
+        revised.runner = [&](const std::vector<std::string>& argv) {
+            ss::ManifestRun result;
+            switch (++writer_calls) {
+            case 1:
+                result.exit = 10;
+                break;
+            case 2:
+                assert(flag(argv, "--unmeasured"));
+                assert(original_manifests.measuring.at("spec").at("resources").at("host").at("pool_mib") == 0);
+                std::ofstream(argv[2]) << original_manifests.measuring.dump(2) << '\n';
+                break;
+            case 3:
+                result.exit = 11;
+                result.out = "derived_host_pool_mib=2048\n";
+                break;
+            case 4:
+                result.exit = 10;
+                break; // the increased pool has no measured plan yet
+            case 5:
+                assert(flag(argv, "--unmeasured") && has(argv, "--set", "memory.host_pool_mib=2048"));
+                assert(effective_manifests.measuring.at("spec").at("resources").at("host").at("pool_mib") ==
+                       2048);
+                std::ofstream(argv[2]) << effective_manifests.measuring.dump(2) << '\n';
+                break;
+            default:
+                assert(!"unexpected writer call after the effective-pool refusal");
+            }
+            return result;
+        };
+        int power_admissions = 0;
+        std::vector<std::string> revised_started;
+        std::vector<pid_t> revised_ended;
+        ss::Hooks revised_hooks;
+        revised_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        revised_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+            ++power_admissions;
+            return bc::serving::v2::Status{};
+        };
+        revised_hooks.started = [&](ss::ChildKind, const std::string& role, pid_t pid, const fs::path&) {
+            revised_started.push_back(role + " " + std::to_string(pid));
+        };
+        revised_hooks.ended = [&](pid_t pid) { revised_ended.push_back(pid); };
+        bool refused_effective_pool = false;
+        try {
+            (void)ss::plan_engine_only(revised, run / "tp3-revised-room", revised_hooks);
+        } catch (const ss::PlanFailed& error) {
+            refused_effective_pool = std::string(error.what()).find(
+                "host RAM admission refused for host pool across 3 engine ranks") != std::string::npos;
+        }
+        assert(refused_effective_pool && writer_calls == 5 && power_admissions == 1 &&
+               revised_started.size() == 1 && revised_started.front().rfind("measuring engine ", 0) == 0 &&
+               revised_ended.size() == 1);
+    }
     { // configs from BIGCHERRY_CONFIGS alone reach the manifest writer, whose environment has no BIGCHERRY_*:
       // as files
         ss::EnginePlanInputs env_only = in;
