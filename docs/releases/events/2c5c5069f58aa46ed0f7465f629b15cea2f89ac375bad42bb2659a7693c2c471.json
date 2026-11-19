@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_202206_release-bundles-that-build-fre_1086",
+  "files": [
+    "tools/bigcherry/release/runtime_assets.py",
+    "tools/tests/release/test_ci_bundle.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1187: ELF debug sidecars from #1143 were written inside the release upload staging directory, so the first fresh-build bundle (bc-radiance-1170.32.5) failed 'bundle staging contains nonregular files'; sidecars now go to <work-root>/release-debug/<tag>/ and the upload gate is unchanged.",
+  "timestamp-utc": "2026-11-19T20:22:06.087443Z",
+  "user-summary-candidate": "Release bundles that build fresh publish again."
+}

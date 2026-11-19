@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_202206_every-measured-run-now-records_6696",
+  "files": [
+    "tools/bigcherry/core/run_records.py",
+    "tools/bigcherry/core/schemas/run-record-v1.schema.json",
+    "tools/bigcherry/core/host_facts.py",
+    "tools/bigcherry/core/feature_states.py",
+    "engines/radiance/components/serving/feature_state.cpp",
+    "tools/bigcherry/core/results.py",
+    "tools/bigcherry/core/calibration_records.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Run-measurement-records platform (MRC01-MRC05 first slices): #1188 run-record v1 schema + content-addressed store + queries + retention protection; #1191 host-facts collector (kernel, ROCm, firmware, clocks, power bounds, PCIe, env digest, lease); #1195 native feature states written by bc-serve with a production WARNING when the live policy is off; #1198 bigcherry results baseline|compare|history with provenance diff and drift flags; #1199 calibration-record store v1 with a native Radiance adapter (post-#1169 records stay current).",
+  "timestamp-utc": "2026-11-19T20:22:06.137091Z",
+  "user-summary-candidate": "Every measured run now records how it executed, and policy-off starts warn loudly."
+}

@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_202206_build-cleanup-cannot-delete-bu_5442",
+  "files": [
+    "tools/bigcherry/core/retention.py",
+    "tools/bigcherry/core/build_gc.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1204: the build GC protects builds referenced by native bc-release install receipts, MRC01 run records and stored serving manifests (12 builds newly protected explicitly); inventory 104 builds, 0 candidates; apply not run.",
+  "timestamp-utc": "2026-11-19T20:22:06.155589Z",
+  "user-summary-candidate": "Build cleanup cannot delete builds an installed release or a recorded run still needs."
+}
