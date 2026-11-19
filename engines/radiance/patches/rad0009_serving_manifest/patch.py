@@ -368,7 +368,16 @@ if(NOT DEFINED BC_SERVING_V2_CMAKE)
                       "is required (the shared serving manifest v1 library); the BigCherry lane passes it")
 endif()
 include("${BC_SERVING_V2_CMAKE}")
-target_link_libraries(rad_core PUBLIC bc_serving_v2)"""
+target_link_libraries(rad_core PUBLIC bc_serving_v2)
+
+if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
+  get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)
+  add_executable(bc_native_fleet_config_test
+      "${_bc_serving}/native_fleet_config.cpp"
+      "${_bc_serving}/native_fleet_config_test.cpp")
+  target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)
+endif()
+"""
 
 
 
@@ -434,7 +443,43 @@ PATCHES = (
                 rationale="main's signature is unique; the synthetic argv must be in place before config_parse reads argc/argv.",
             ),
             Edit(
+                id="bc-managed-single-engine-marker",
+                anchor=r"^int main\(int argc, char\*\* argv\) \{$",
+                text="\n    char** const bc_original_argv = argv;",
+                guard=r"bc_original_argv = argv",
+                applies_if=r'#include "fleet/config\.h"',
+                expect_matches=1,
+                rationale="Identify an admitted manifest by the argv replacement, before the flag extractor runs.",
+            ),
+            Edit(
+                id="bc-skip-native-cli-for-measured-manifest",
+                anchor=r"^    std::string path;$",
+                text="    rad::Config cfg;\n    if (argv == bc_original_argv) {\n",
+                mode="insert_before",
+                guard=r"if \(argv == bc_original_argv\)",
+                applies_if=r'#include "fleet/config\.h"',
+                expect_matches=1,
+                rationale="Managed admission already validated the input and extracted its launch flags.",
+            ),
+            Edit(
+                id="bc-use-single-engine-for-measured-manifest",
+                anchor=r"^    rad::Config cfg = std::move\(fleet\.models\[0\]\.cfg\);$",
+                text=(
+                    "        cfg = std::move(fleet.models[0].cfg);\n"
+                    "    } else {\n"
+                    "        if (rad::config_parse(argc, argv, &cfg) != RAD_OK ||\n"
+                    "            !bc_serving_mark_given(&cfg.given)) return 2;\n"
+                    "    }"
+                ),
+                mode="replace",
+                guard=r"^        cfg = std::move\(fleet\.models\[0\]\.cfg\);$",
+                applies_if=r'#include "fleet/config\.h"',
+                expect_matches=1,
+                rationale="The temporary measured-manifest lane uses the prior single-engine lifecycle; native YAML keeps the fleet.",
+            ),
+            Edit(
                 id="bc-serving-mark-given",
+                applies_if=r"rad::config_usage\(argv\[0\]\)",
                 anchor=r"^    if \(s < 0\)  \{ rad::config_usage\(argv\[0\]\); return 2; \}$",
                 text="\n    if (!bc_serving_mark_given(&cfg.given)) return 2;",
                 guard=r"if \(!bc_serving_mark_given\(&cfg\.given\)\) return 2;",

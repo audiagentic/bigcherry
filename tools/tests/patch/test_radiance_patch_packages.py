@@ -727,6 +727,13 @@ class TestServingManifestPatch(unittest.TestCase):
                 "endif()",
                 'include("${BC_SERVING_V2_CMAKE}")',
                 "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
+                'if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")',
+                'get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)',
+                "add_executable(bc_native_fleet_config_test",
+                '"${_bc_serving}/native_fleet_config.cpp"',
+                '"${_bc_serving}/native_fleet_config_test.cpp")',
+                "target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)",
+                "endif()",
             ])
         finally:
             temp.cleanup()
