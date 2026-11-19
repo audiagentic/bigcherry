@@ -492,6 +492,8 @@ int bc_serving_take_native_measuring_config(rad::Config* out) {
 
 int bc_serving_prepare_native_engine_config(const v2::Manifest* manifest, v2::PlanUse use,
                                              rad::Config* out) {
+    g_have_expected = false;
+    g_engine_bdfs.clear();
     if (!manifest || !out) return fail("native Config staging requires a manifest and output"), -1;
     if (use != v2::PlanUse::measuring && use != v2::PlanUse::serving)
         return fail("native Config staging supports only measuring and serving roles"), -1;
@@ -500,6 +502,10 @@ int bc_serving_prepare_native_engine_config(const v2::Manifest* manifest, v2::Pl
     const bool serving = use == v2::PlanUse::serving;
     if (serving != manifest->spec.plan.engine_memory.has_value())
         return fail("native Config staging role differs from strict manifest role"), -1;
+    const auto admitted = native_engine_inputs(manifest->spec, *native_view);
+    if (!complete_native_engine_inputs(admitted))
+        return fail("native Config staging has incomplete engine admission inputs"), -1;
+    if (prepare_native_engine_config(admitted, out) < 0) return -1;
     if (serving) {
         const auto view = v2::engine_view(*manifest);
         if (!view.ok()) {
@@ -511,13 +517,9 @@ int bc_serving_prepare_native_engine_config(const v2::Manifest* manifest, v2::Pl
         g_floor_ppm = view.value().kv_backing_floor_ppm;
         g_have_expected = true;
     } else {
-        g_have_expected = false;
         g_engine_bdfs = manifest->spec.processes.engine.device.gpus;
     }
-    const auto admitted = native_engine_inputs(manifest->spec, *native_view);
-    if (!complete_native_engine_inputs(admitted))
-        return fail("native Config staging has incomplete engine admission inputs"), -1;
-    return prepare_native_engine_config(admitted, out);
+    return 1;
 }
 
 extern "C" int bc_serving_engine_settings(BcEngineSettings* out) {
