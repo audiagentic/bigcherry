@@ -783,6 +783,11 @@ int main(int argc, char** argv) {
                                      "--plan-memory and --plan-memory-ranks)");
         if (!expected_owner_attempt.empty() && !measured_plan_file.empty())
             throw std::runtime_error("--expected-owner-attempt is for cache-only writer reads");
+        if (plan_mode && bc::serving::v2::kContractVersion == 3 && !unmeasured &&
+            expected_owner_attempt.empty())
+            throw std::runtime_error("v3 measured cache reads require --expected-owner-attempt");
+        if (plan_mode && bc::serving::v2::kContractVersion == 3 && !unmeasured && expected_plan_key.empty())
+            throw std::runtime_error("v3 measured cache reads require --expected-plan-key");
         if (!expected_plan_key.empty() && !unmeasured &&
             !(plan_mode && bc::serving::v2::kContractVersion == 3 && native_config_fd >= 3))
             throw std::runtime_error(

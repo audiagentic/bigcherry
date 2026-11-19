@@ -291,3 +291,9 @@ Verification: configured a fresh generated-v3 serving build from this task workt
 The rad0011 post-split hook now checks each rank's actual process-visible device PCI address against the selected ordered BDF before emitting its rank-demand sidecar. The session owner cache publisher also verifies each sidecar `claimable_bytes` equals the same-rank `EnginePlan.vram.cards[].free` fact, rejecting internally inconsistent measurement pairs. Added focused patch-composition and cache mismatch coverage.
 
 Verification: `TestPlanMemoryPatch.test_p1_native_rank_demand_is_post_split_and_v1_plan_is_unchanged` passed (1/1); default-v2 `bc_serving_test` and `bc_session_stored_test` passed (2/2); generated-v3 `bc_native_v3_session_test` and `bc_serving_v3_writer_test` passed (2/2). `git diff --check` passed. No GPU was used; rank identity and receipt consistency are checked in CPU-side fixtures, not hardware behavior.
+
+## C58 — Require owner identity on v3 measured cache reads (2026-11-20)
+
+The v3 measured writer now requires both `--expected-plan-key` and `--expected-owner-attempt` before resolving or reading any measured cache entry. The expected key is checked against the effective native snapshot key before lookup; the attempt ID is checked against the stored owner receipt after the keyed lookup. Added CLI assertions for missing-attempt refusal and for acceptance of the complete owner-bound argument shape up to sealed-snapshot validation.
+
+Verification: rebuilt and passed generated-v3 `bc_native_v3_session_test` (1/1). No GPU was used; this is a CLI/cache-ingress gate, not a completed owner measurement path.

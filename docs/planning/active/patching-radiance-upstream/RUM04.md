@@ -205,6 +205,8 @@ C56 (2026-11-20): retained the strict inspector result and now reconcile its lis
 
 C57 (2026-11-20): rad0011 now records rank demand only when each post-split `rad::Config.devices` ordinal resolves via `rad::dev_pci_address()` to the selected ordered BDF. `plan_cache_store_owned()` also requires each rank receipt's claimable bytes to equal the paired EnginePlan card's free-VRAM fact. Targeted verification passed: rad0011 patch composition (1/1), default-v2 serving + stored-session CTests (2/2), generated-v3 session + real writer CTests (2/2). See evidence C57. No GPU used.
 
+C58 (2026-11-20): v3 measured writer cache reads now require both owner-frozen `--expected-plan-key` and `--expected-owner-attempt` before snapshot/cache processing. The effective native key is recomputed before cache lookup; the selected cache receipt is checked against the expected attempt. Fresh generated-v3 `bc_native_v3_session_test` passes (1/1), including refusal for a missing owner attempt. See evidence C58. This ingress gate is not the actual session-owned measurement path.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -260,3 +262,4 @@ C57 (2026-11-20): rad0011 now records rank demand only when each post-split `rad
 - 2026-11-19T19:21:04.806627+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:35:09.573526+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:43:56.206142+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T19:46:03.317466+00:00 (updated-by): Updated: section:notes

@@ -2799,15 +2799,23 @@ void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
     bc::test::write_rad(model, 0, 0, 128, 128, {});
     const fs::path site = t.file("v3-measured-key-site.toml", "[engine]\nmodel = \"" + model.string() +
                                                                    "\"\nradiance_home = \"/runtime\"\n");
-    const auto measured_key = run_bc_serve(
-        {"--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
-         std::string(64, '0'), "--plan-cache", "missing-cache", "--engine-binary", "/missing/radiance",
-         "--power-profile", "stock", "--configs", configs_dir.string(), "--site", site.string(), "--model-root",
-         (t.root / "model-root").string(), "--sys-root", t.root.string(), "--set",
-         "layout.name=\"qwen27b-tp3-int8\""});
+    const std::vector<std::string> measured_args = {
+        "--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
+        std::string(64, '0'), "--expected-owner-attempt", "native-test-attempt", "--plan-cache", "missing-cache",
+        "--engine-binary", "/missing/radiance", "--power-profile", "stock", "--configs", configs_dir.string(),
+        "--site", site.string(), "--model-root", (t.root / "model-root").string(), "--sys-root", t.root.string(),
+        "--set", "layout.name=\"qwen27b-tp3-int8\""};
+    const auto measured_key = run_bc_serve(measured_args);
     if (measured_key.output.find("native snapshot descriptor must be a fully sealed memfd") == std::string::npos)
         throw std::runtime_error("v3 measured writer rejected the frozen-key guard before snapshot loading: " +
                                  measured_key.output);
+    std::vector<std::string> missing_owner_args = measured_args;
+    const auto owner_arg = std::find(missing_owner_args.begin(), missing_owner_args.end(), "--expected-owner-attempt");
+    missing_owner_args.erase(owner_arg, owner_arg + 2);
+    const auto missing_owner = run_bc_serve(missing_owner_args);
+    if (missing_owner.output.find("v3 measured cache reads require --expected-owner-attempt") == std::string::npos)
+        throw std::runtime_error("v3 measured writer did not require its owner attempt before snapshot access: " +
+                                 missing_owner.output);
 }
 void native_explain_cli(Fixture& t) {
     const char* env = std::getenv("BIGCHERRY_LAYOUTS");
