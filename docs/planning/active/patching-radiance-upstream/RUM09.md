@@ -98,6 +98,8 @@ RV4240: original Gate C required a helper-on mixed-TP canary despite the selecte
 
 User direction (2026-11-19): migrate all retained, historically tested BigCherry features onto the new Radiance base and include them in the production recipe. After Gate A and RUM07's exact compatibility gates pass, update the candidate pin and promote the packages together; do not leave them candidate-only while waiting for the final paired performance comparison. The final RUM09 deployment/runtime qualification and performance comparison remain pending and must gate release/publish. The latest origin/main commits through 31bd5b9e9 are merged into the task branch; their stored-manifest replay, boot-placement receipt, and parity warmup changes are part of the candidate.
 
+Main integration checkpoint 99ae7bfea incorporates origin/main d611e7997, with ledger acknowledgement 25dee8511 on the isolated integration branch. The merged v2 serving, stored manifest, and feature state checks passed 3/3. FlashNext parity harness passed 18/18. The integration branch is ready to combine with the native startup checkpoint. These checks establish compatibility of the merge, with the candidate release gates still open.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -118,3 +120,4 @@ User direction (2026-11-19): migrate all retained, historically tested BigCherry
 - RV4245
 - 2026-11-19T07:30:08.804115+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
 - 2026-11-19T07:35:45.850777+00:00 (state-transition): State: pending → in_progress
+- 2026-11-19T21:41:03.879740+00:00 (updated-by): Updated: section:notes
