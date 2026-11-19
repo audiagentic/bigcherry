@@ -219,7 +219,7 @@ without loading Python. After a **successfully completed and cleanly
 stopped** native calibration session, invoke the platform ingest:
 
 ```sh
-PYTHONPATH=tools python3 -m bigcherry results ingest-calibration --run-dir /path/to/run --work-root ROOT --json
+bigcherry results ingest-calibration --run-dir /path/to/run --work-root ROOT --json
 ```
 
 The platform's MRC04 reader requires one selected `native_v1` record and
@@ -238,8 +238,8 @@ remains read-only lifecycle/comparison evidence, not a measurement index.
 Today's parity records in **UTC** and one verified record by digest:
 
 ```sh
-PYTHONPATH=tools python3 -m bigcherry results list --today --engine radiance --workload parity --json
-PYTHONPATH=tools python3 -m bigcherry results show RECORD_SHA256 --json
+bigcherry results list --today --engine radiance --workload parity --json
+bigcherry results show RECORD_SHA256 --json
 ```
 
 These are read-only SHA-verified store views; missing historic manifest

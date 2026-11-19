@@ -16,6 +16,7 @@ import urllib.parse
 from datetime import UTC, datetime
 from pathlib import Path
 
+from ..core import engines
 from ..core import (
     calibration_records,
     feature_states,
@@ -88,7 +89,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         )
     native_states = _file(run_dir / feature_states.FILE_NAME)
     states = feature_states.read_feature_states(native_states)
-    if any(state["engine"] != "radiance" for state in states):
+    if any(state["engine"] != engines.RADIANCE for state in states):
         raise run_records.RecordError("native feature-state engine differs")
     instance = manifest.get("metadata", {}).get("instance_id")
     if not isinstance(instance, str) or not instance:
@@ -98,7 +99,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
     ):
         raise run_records.RecordError("strict manifest lacks model/layout")
     identity = {
-        "engine": "radiance",
+        "engine": engines.RADIANCE,
         "build_id": metadata["build_id"],
         "binary_sha256": metadata["binary_hash"],
         "source_revision": metadata.get("source_commit")
@@ -532,7 +533,7 @@ def publish_rsc02_arm(
             )
         states_file = _file(run_dir / feature_states.FILE_NAME)
         states = feature_states.read_feature_states(states_file)
-        if any(x["engine"] != "radiance" for x in states):
+        if any(x["engine"] != engines.RADIANCE for x in states):
             raise run_records.RecordError("RSC02 native feature-state engine differs")
         inputs["rsc02_native_feature_states"] = states_file
         inputs["rsc02_native_session"] = run_dir / "session.json"
@@ -541,7 +542,7 @@ def publish_rsc02_arm(
         run_id=f"rsc02-{manifest['metadata']['instance_id']}-{result['arm']}",
         recorded_at=recorded_at or _now(),
         identity={
-            "engine": "radiance",
+            "engine": engines.RADIANCE,
             "build_id": build["build_id"],
             "binary_sha256": meta,
             "source_revision": build.get("source_commit")
