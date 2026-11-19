@@ -26,12 +26,7 @@ from ..core.context import resolve_work_root
 from ..core import engines
 from . import stream_bench
 
-card_paths = host_facts.card_paths
-power_state = host_facts.power_state
-_board_watts = host_facts.board_watts
-
 CATALOG = Path(__file__).with_name("workloads.toml")
-DEFAULT_INDEX = resolve_work_root() / "results/index.jsonl"
 DEFAULT_RUNS = resolve_work_root() / "results/workloads"
 SCHEMA = "bigcherry.workload-result.v1"
 
@@ -228,7 +223,7 @@ def _run_power(cfg: dict, url: str) -> tuple[dict, dict]:
 
     def poll():
         while not stop.is_set():
-            readings[active_phase[0]].append(_board_watts())
+            readings[active_phase[0]].append(host_facts.board_watts())
             stop.wait(1.0)
 
     thread = threading.Thread(target=poll, daemon=True)
@@ -297,7 +292,7 @@ def make_row(workload_id: str, cfg: dict, metrics: dict, detail: dict,
             "runner_commit": detail.get("runner_commit"),
             "layout": info.get("layout"), "kernel": kernel or platform.release(),
             "model": info.get("model"), "policy": info.get("policy", {"state": "unknown", "calibration_key": None}),
-            "power_state": power if power is not None else power_state(),
+            "power_state": power if power is not None else host_facts.power_state(),
             "options": info.get("options", {}), "manifest": info.get("manifest"),
             "manifest_digest": info.get("manifest_digest"), "run_folder": run_folder}
 
@@ -420,75 +415,6 @@ def publish_record(
         host_facts=facts, feature_states=states,
         validity={"state": "unverified", "reason_codes": ["ATTESTATION_MISSING"]},
     )
-
-
-def append_index(path: Path, row: dict) -> None:
-    """Retired writer: legacy JSONL rows are a read-only source of history."""
-    raise WorkloadError("legacy results/index.jsonl is read-only; use run-record v1")
-
-
-def read_index(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    rows = []
-    with path.open() as stream:
-        for number, line in enumerate(stream, 1):
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise WorkloadError(f"{path}:{number}: invalid JSONL: {exc}") from exc
-            if obj.get("schema") != SCHEMA:
-                raise WorkloadError(f"{path}:{number}: unknown result schema")
-            rows.append(obj)
-    return rows
-
-
-def difference(a: dict, b: dict) -> list[str]:
-    return [name for name, fn in (
-        ("layout", lambda x: x.get("layout")),
-        ("build", lambda x: (x.get("build_path"), x.get("build_commit"), x.get("build_id"))),
-        ("kernel", lambda x: x.get("kernel")),
-        ("model", lambda x: x.get("model")),
-        ("policy", lambda x: x.get("policy")),
-        ("power", lambda x: x.get("power_state")),
-        ("options", lambda x: x.get("options")),
-        ("corpus", lambda x: x.get("details", {}).get("corpus_sha256")),
-        ("phase", lambda x: (x.get("details", {}).get("phase_seconds"),
-                            x.get("details", {}).get("power_sensor"))),
-        ("reps", lambda x: x.get("details", {}).get("completed_reps")),
-    ) if fn(a) != fn(b)]
-
-
-def compare(rows: list[dict], workload_id: str, version: int, *,
-            layout: str | None = None, since: str | None = None) -> str:
-    selected = [r for r in rows if r["workload_id"] == workload_id and r["workload_version"] == version
-                and (layout is None or r.get("layout") == layout)
-                and (since is None or r["timestamp"][:10] >= since[:10])]
-    selected.sort(key=lambda r: r["timestamp"])
-    headers = "date                  row              layout              build        policy  metric                    median"
-    lines = [f"{workload_id}@{version}: {len(selected)} rows", headers]
-    for r in selected:
-        metrics = r["metrics"]
-        scalar = [k for k in ("prefill_tps", "decode_aggregate_tps", "ttft_ms", "decode_tps", "prefill_tps")
-                  if k in metrics]
-        name = scalar[0] if scalar else next((k for k in metrics if k != "board_watts"), "board_watts")
-        value = metrics[name]["median"]
-        if not isinstance(value, (float, int)):
-            value = float("nan")
-        for metric_name in (("decode_tps", "prefill_tps") if workload_id == "pwr-phases" else (name,)):
-            value = metrics[metric_name]["median"]
-            lines.append(f"{r['timestamp'][:19]:<21} {r['row_id']:<16} {(r.get('layout') or '?'):<19} "
-                         f"{Path(r['build_path']).name[:12] if r.get('build_path') else '?':<12} "
-                         f"{r.get('policy', {}).get('state', '?'):<7} {metric_name:<24} {value:.2f}")
-    if len(selected) > 1:
-        reference = selected[0]
-        for r in selected[1:]:
-            changes = difference(reference, r)
-            if changes:
-                lines.append(f"WARNING {r['row_id']} differs from {reference['row_id']}: {', '.join(changes)}")
-    if selected and any(r.get("source") == "seeded" for r in selected):
-        lines.append("NOTE seeded history may lack per-rep timing, kernel, manifest, or power readback; unknown is not stock.")
-    return "\n".join(lines)
 
 
 def live_info(url: str, work_root: Path, manifest: Path | None) -> dict:

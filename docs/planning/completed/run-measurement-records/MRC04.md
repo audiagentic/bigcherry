@@ -2,7 +2,7 @@
 id: MRC04
 order: 4
 plan: run-measurement-records
-state: in_progress
+state: completed
 created-at: '2026-11-19T00:50:37.155384+00:00'
 breadth: ''
 skill: advanced
@@ -44,8 +44,7 @@ The store is an index over records, not a gate: lookup misses are reported and t
 
 ## Validation
 
-- Unit tests: same key across two build ids returns one record; a key input that is not declared changes nothing; provenance preserved.
-- Live: calibrate on one Radiance build, start a second build with the same layout, and observe the record is used and reported as carried across builds.
+Merged: #1169 (narrow policy calibration key shared by calibration run and production), #1199 (platform calibration-record v1 schema, declared kinds and keys, reader/validator, bigcherry calibration list|show|validate, native Radiance adapter), #1220 (typed calibration reference/quantity blobs in run records; native serving tests: a record written on one build activates on another for the same narrow key), #1223 (strict readers: hash-only rows refused; mandatory provenance on native ingest; bc-serve calibration-prune applied to the live store, 6 dead rows removed and kept verbatim as a test fixture). Tests: tools/tests/core/test_calibration_records.py, bc_live_policy_test, bc_live_policy_ingest_test, bc_serving_test.
 
 ## Effort & Risk
 
@@ -57,9 +56,7 @@ Medium. Depends on the Radiance key fix landing first; risk of two parallel key 
 
 ## Acceptance Criteria
 
-- A rebuild or pin bump never orphans a calibration record.
-- Each record carries build, plan key and source revision as provenance.
-- The declared key of each kind is listed in the docs and enforced by a test.
+Calibration records are keyed by a declared narrow key and carry full provenance; a record survives rebuilds and activates on any build with the same key; readers refuse unknown or hash-only formats instead of keeping a legacy path; the production store holds only current records.
 
 ## Notes
 
@@ -70,7 +67,6 @@ First user landed (#1169, 2026-11-19): the Radiance live policy's calibration re
 - 2026-11-19T00:50:37.155384+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:17.503543+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-19T07:39:03.286068+00:00 (updated-by): Updated: section:notes
-
 
 ## Slice 1 implementation note (2026-11-20)
 
@@ -86,3 +82,5 @@ Platform `bigcherry calibration list|show|validate` is read-only.
 The remaining MRC04 slices are MRC01 quantity-blob interop for large evidence,
 run-record `calibration_record` reference migration, and device activation
 proof across separate builds; these are not claimed by the CPU-only slice 1.
+- 2026-11-19T22:35:13.458602+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-19T22:35:17.919941+00:00 (state-transition): State: in_progress → completed

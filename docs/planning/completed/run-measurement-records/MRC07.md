@@ -2,7 +2,7 @@
 id: MRC07
 order: 0
 plan: run-measurement-records
-state: pending
+state: superseded
 created-at: '2026-11-19T21:40:26.884199+00:00'
 breadth: ''
 skill: intermediate
@@ -53,9 +53,11 @@ llamacpp_runner.py's redirect is gone; exactly one llama.cpp measurement write p
 
 ## Notes
 
-
+Superseded 2026-11-20: moved to plan run-llamacpp-measurement as LCM01 (and LCM02 for the llama.cpp feature-state/host-facts parts), so llama.cpp work lives in its own group while current work is Radiance only.
 
 ## Change Log
 
 - 2026-11-19T21:40:26.884199+00:00 (created-by): Created by agent
 - 2026-11-19T21:40:47.843002+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-19T22:18:15.138629+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:18:19.782876+00:00 (state-transition): State: pending → superseded
