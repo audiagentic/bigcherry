@@ -16,12 +16,12 @@ targets = ["bc_feature_state_test", "bc_helper_vram_test", "bc_serving_test", "b
 # Names crossing the Radiance build/runtime boundary. The core coupling gate
 # checks literals and source inventory; RUM02-07 own the eventual migration.
 [coupling]
-upstream-headers = ["rad_encoding.h", "rad_format.h", "rad_types.h"]
-upstream-files = ["abi/rad_encoding.h", "abi/rad_format.h", "abi/rad_types.h"]
+upstream-headers = ["rad_abi.h", "rad_encoding.h", "rad_format.h", "rad_types.h"]
+upstream-files = ["abi/rad_abi.h", "abi/rad_encoding.h", "abi/rad_format.h", "abi/rad_types.h"]
 upstream-source-globs = []
 patch-provided-files = []
 protocol-flags = ["--bc-heat-launch-nonce", "--manifest", "--measuring", "--plan-memory", "--plan-memory-ranks", "--role"]
-owned-flags = ["--allow-downgrade", "--allow-power-apply", "--calibration", "--calibration-prompts-a", "--calibration-prompts-b", "--calibration-records", "--calibration-run", "--calibration-store", "--configs", "--detect", "--engine-binary", "--engine-resident-mib", "--expected-dev", "--expected-ino", "--expected-manifest-digest", "--expected-owner-attempt", "--expected-plan-key", "--experiment", "--explain", "--from-log", "--help", "--helpers-resident-mib", "--json", "--lab-experiment", "--layouts", "--live-policy", "--measured-plan", "--model-root", "--plan-cache", "--plan-extra", "--power-profile", "--profile", "--publish-v2-live-room", "--publish-v2-p1", "--rank-demand", "--record-dir", "--run-dir", "--run-id", "--s8-replay-evidence", "--schema", "--set", "--site", "--sys-root", "--unmeasured", "--validate", "--write-manifest"]
-runtime-env = ["GPU_DEVICE_ORDINAL", "HIP_PATH", "HIP_VISIBLE_DEVICES", "R3_MOE_WORKER_FORMATS", "RADIANCE_HOME", "ROCR_VISIBLE_DEVICES"]
+owned-flags = ["--allow-downgrade", "--allow-power-apply", "--bc-inspect-native-config", "--bc-native-config-fd", "--calibration", "--calibration-prompts-a", "--calibration-prompts-b", "--calibration-records", "--calibration-run", "--calibration-store", "--configs", "--detect", "--engine-binary", "--engine-resident-mib", "--expected-dev", "--expected-ino", "--expected-manifest-digest", "--expected-owner-attempt", "--expected-plan-key", "--experiment", "--explain", "--from-log", "--help", "--helpers-resident-mib", "--json", "--lab-experiment", "--layouts", "--live-policy", "--measured-plan", "--model-root", "--plan-cache", "--plan-extra", "--power-profile", "--profile", "--publish-v2-live-room", "--publish-v2-p1", "--rank-demand", "--record-dir", "--run-dir", "--run-id", "--s8-replay-evidence", "--schema", "--set", "--site", "--sys-root", "--unmeasured", "--validate", "--write-manifest"]
+runtime-env = ["GPU_DEVICE_ORDINAL", "HIP_PATH", "HIP_VISIBLE_DEVICES", "R3_MOE_WORKER_FORMATS", "RADIANCE_HOME", "RADIANCE_KERNELS", "ROCR_VISIBLE_DEVICES"]
 abi-version = 43
 option-registry = "contract/serving-v2.toml"
