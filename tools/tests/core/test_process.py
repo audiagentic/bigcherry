@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import io
 import subprocess
 import unittest
 from unittest import mock
@@ -56,13 +57,13 @@ class CheckedRunnerTests(unittest.TestCase):
         cwd = Path("/build")
         argv = ["cmake", "--build", "out", "-j"]
         with mock.patch("bigcherry.core.process.subprocess.Popen") as popen:
-            popen.return_value.stdout = iter([b"[1/1] done\n"])
+            popen.return_value.stdout = io.BytesIO(b"[1/1] done\n")
             popen.return_value.wait.return_value = 0
             self.assertIsNone(run_checked(argv, cwd))
         self.assertEqual(argv, popen.call_args.args[0])
         self.assertEqual(cwd, popen.call_args.kwargs["cwd"])
         popen.return_value.wait.return_value = 2
-        popen.return_value.stdout = iter([b"error: expected ;\n"])
+        popen.return_value.stdout = io.BytesIO(b"error: expected ;\n")
         with mock.patch("bigcherry.core.process.subprocess.Popen", popen), self.assertRaises(subprocess.CalledProcessError):
             run_checked(argv, cwd)
 

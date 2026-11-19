@@ -17,6 +17,11 @@ namespace bc::serving {
 /* The container's identity without reading its weights: sha256 over its size and its header, directory, plane and
  * encoding tables (the bytes every expert size and weight placement is computed from). */
 std::string container_identity(const std::filesystem::path& model);
+/* The digest of the detected GPUs' IDENTITY: BDF, architecture, HIP ordinal, total VRAM and the other attributes that
+   do not change while the host runs. Live VRAM use (vram_used_mib, vram_available_mib) and the negotiated PCIe link
+   change from one start to the next (the previous engine's pages are still being released), so they are not part of it:
+   a digest over the whole detection made a stored S8 replay refuse an unchanged configuration. */
+std::string gpu_inventory_digest(const nlohmann::json& gpus);
 
 /* The engine build's identity: sha256 over the engine binary and every regular file under its runtime home (plugins,
  * kernels, helpers), by relative path and content. */
