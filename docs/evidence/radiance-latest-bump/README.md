@@ -173,3 +173,7 @@ Built `bc_serving_v3_writer_test`; its focused CTest passed (1/1). This proves t
 Completed the version-3 measured-plan key boundary: native keys now include the exact ordered engine and helper device identities (role, ordinal, BDF, HIP ordinal, architecture and VRAM), in addition to snapshot SHA-256 and resolution root. Native plan-cache files now persist version 3 and lookup requires the envelope version to match the key; v2 cache identity and files remain version 2. Tests verify helper reorder invalidation, v3 store/read, and refusal of a v2 envelope for a v3 key.
 
 Built `bc-serve` and `bc_serving_test`; focused CTest passed (1/1). This is cache identity groundwork only: production does not yet select native YAML, and the session owner still needs to bind measured artifacts to the exact tracked attempt before publishing a native cache entry. No GPU execution or performance claim is attached.
+
+## C40 — Latest main integration (2026-11-20)
+
+Merged current `origin/main` at `224456e53`, including `068776438` and the intervening run-record/host-facts changes, into the isolated bump branch. Verified `origin/main` is an ancestor of the bump HEAD and the worktree is clean after the merge. Focused Python checks for host facts, run records, and benchmark workloads passed: 32 tests. Pytest emitted only the repository's existing `pytest-asyncio` fixture-scope deprecation warning. Radiance-specific work remains on the same task branch and its checkpoints are preserved.
