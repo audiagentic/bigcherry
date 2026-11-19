@@ -21,8 +21,8 @@
 #   each: a stored baseline drifts a few percent from day to day (cold sess8: 28.9 vs 30.4 ms for one build a day apart).
 #   For kernels without a model use tools/lab/radiance/kbench_ab.py (rad-kbench per row, two builds).
 # baseline: docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json (or --to) from a measured OUT, each
-#   gated metric's tolerance derived from the spread the run measured; refuses a single launch.
-# compare: the table against a baseline; exit 1 on a gated regression beyond its allowance.
+#   MRC05 baseline embeds each SHA-verified launch and provenance blob. Requires records.
+# compare: MRC05 one-sided gates with provenance differences; refuses path-only historical baselines.
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 REPO=$(pwd)
@@ -81,13 +81,16 @@ done
 case "$CMD" in
   baseline)
     [ -n "$OUT" ] && [ -n "$NAME" ] || usage
-    [ -f "$OUT/parity.json" ] || python3 "$PARITY" summarise "$OUT" || exit
-    source tools/env/bigcherry-env.sh >/dev/null 2>&1   # BC_WORK_ROOT: the baseline names its build and run under it
-    exec python3 "$PARITY" baseline "$OUT" --name "$NAME" ${TO:+--to "$TO"} ;;
+    source tools/env/bigcherry-env.sh >/dev/null 2>&1 || exit 2
+    # No parity.json fallback: only MRC01 launch SHA receipts are authoritative.
+    if [ -n "$TO" ]; then
+      exec python3 "$PARITY" baseline "$OUT" --name "$NAME" --to "$TO" --work-root "$BC_WORK_ROOT"
+    fi
+    exec python3 "$PARITY" baseline "$OUT" --name "$NAME" --work-root "$BC_WORK_ROOT" ;;
   compare)
     [ -n "$OUT" ] && [ -n "$BASELINE" ] || usage
-    [ -f "$OUT/parity.json" ] || python3 "$PARITY" summarise "$OUT" || exit
-    exec python3 "$PARITY" compare "$OUT" --baseline "$BASELINE" ;;
+    source tools/env/bigcherry-env.sh >/dev/null 2>&1 || exit 2
+    exec python3 "$PARITY" compare "$OUT" --baseline "$BASELINE" --work-root "$BC_WORK_ROOT" ;;
   measure) ;;
   *) usage ;;
 esac

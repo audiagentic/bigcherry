@@ -117,8 +117,19 @@ adapters and `run_manifest.new_manifest(host=...)` or
 snapshot; callers opt in to collection at run creation rather than
 performing extra sysfs/tool queries on unrelated lifecycle operations.
 The workloads tool imports its card/power sampling readers from this core
-module. MRC01's manifest edges and results CLI, and MRC06's producer
-migrations, are outside these slices.
+module. WSL01 manifests carry `references: [{type: measurement_record, id: SHA256,
+role: measurement}]` linked with `run_manifest.link_measurement_record`.
+`resolve_measurement_records(run_dir, store)` and
+`find_run_for_record(runs_root, store, SHA256)` verify both identities and
+content; links never change lifecycle/harvest/retention state. The SHA store
+query accepts `run_id` as well as engine/layout/workload/metric/time.
+Operators use `bigcherry results put --record FILE --blob SHA256=PATH
+--run-dir RUN_DIR` to copy/validate all supplied content and link WSL01;
+`bigcherry results show SHA256` and `bigcherry results query --run-id RUN_ID
+--metric prefill.tokens_per_second --json` read exclusively through the store.
+`results list` retains the explicit read-only legacy-row bridge. Never
+promote missing historical provenance by guessing file bytes.
+MRC06 owns remaining producer migrations.
 
 MRC03's feature-state v1 JSON contract lives at
 `tools/bigcherry/core/schemas/feature-state-v1.schema.json`: a list of
@@ -163,9 +174,9 @@ engine, layout, workload and phase-qualified metric; baseline and trailing
 drift flags use two launches, not a single-launch verdict.
 
 ```bash
-PYTHONPATH=tools python -m bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload parity --name reference --to reference.json
-PYTHONPATH=tools python -m bigcherry results compare --baseline reference.json --since 2026-11-20T00:00:00Z
-PYTHONPATH=tools python -m bigcherry results history --engine radiance --layout flashnext-4gpu --workload parity --metric decode.tokens_per_second --baseline reference.json --json
+bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload flashnext-parity --name reference --to reference.json
+bigcherry results compare --baseline reference.json --since 2026-11-20T00:00:00Z
+bigcherry results history --engine radiance --layout flashnext-4gpu --workload flashnext-parity --metric decode.decode1_ms_per_step --baseline reference.json --json
 ```
 
 For controlled cohorts, repeat `--record SHA256` on baseline/compare, or
@@ -176,9 +187,17 @@ Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
 **MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
 measure` now publishes one immutable run-record v1 per completed native launch
 by default under `$BC_WORK_ROOT/run-records/v1/`. `--records` is explicit on;
-`--no-records` opts out without changing the legacy measured `parity.json`
-summary, or the harness's `baseline` / `compare` commands. Each
-`OUT/launch-N/record.sha256` contains the record digest. The record carries
+`--no-records` opts out of record publication and therefore disables
+portable baseline/compare for that cohort; `parity.json` remains only a
+measured summary view. Each `OUT/launch-N/record.sha256` contains a digest
+verified against the immutable MRC01 store. `flashnext-parity.sh baseline
+--out OUT --name NAME [--to FILE]` now delegates to `core.results.make_baseline`
+and defaults to `OUT/baseline.mrc05.json`, never the tracked historical
+baseline. `flashnext-parity.sh compare --out OUT --baseline FILE` delegates
+to `core.results.compare_records`, printing host/feature/config/policy
+provenance differences before gates. Both refuse missing launch receipts;
+neither reads `parity.json` for a verdict or converts old path-only data
+into an immutable record. The record carries
 `engine=radiance`, build ID and binary hash from the build metadata, Git
 revision, measured model/layout, the exact harness workload definition,
 phase-separated cold/sess8 TTFT, document/long-context prefill, decode step
@@ -194,7 +213,7 @@ inputs are snapshotted before launch and checked for mutation; feature states
 are read from the native run directory using MRC03. Passive MRC02 host facts
 are captured immediately before measurement. Incomplete state, metadata,
 or mismatched key aborts **record publication**, rather than fabricate
-provenance. The old `parity.json` remains for existing consumers only and is
+provenance. The old `parity.json` remains a read-only summary view for existing consumers and is
 not ingested as a source of run-record metric truth. The remaining MRC06
 producer migrations and legacy-writer retirement are separate slices.
 
@@ -437,3 +456,12 @@ For generated agent surfaces, edit the owning component/configuration and
 re-apply it. Do not edit managed blocks in `AGENTS.md` or `CLAUDE.md`
 directly.
 
+
+Historical Flash-Next v1.17.0 `flashnext-4gpu-parity.json` is **read-only
+and unreproducible**: its original manifest/heat bytes were never captured.
+The 2026-11-19 four-arm A/B evidence contains path-based parity summaries
+without the complete immutable v1 host/policy/feature provenance, so no
+MRC05 baseline or policy-confound verdict can be synthesized from it.
+Completion of MRC05 Step 6 requires a new qualified two-launch hardware
+reference and four newly recorded arms with provenance; do not claim the
+historical 2026-11-19 data satisfies that acceptance gate.
