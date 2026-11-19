@@ -169,6 +169,20 @@ void check_plan_for_configuration(const Json& values, const v2::EnginePlan& plan
             throw std::runtime_error("the plan holds an unknown host consumer " + c.name);
 }
 
+std::string gpu_inventory_digest(const Json& gpus) {
+    static const char* const kIdentity[] = {"arch",        "bdf",           "drm_render_minor", "gfx_target_version",
+                                            "hip_ordinal", "kfd_node",      "max_link_speed",   "max_link_width",
+                                            "numa_node",   "simd_count",    "vram_total_mib"};
+    Json identity = Json::array();
+    for (const Json& g : gpus) {
+        Json one = Json::object();
+        for (const char* key : kIdentity)
+            if (g.contains(key)) one[key] = g.at(key);
+        identity.push_back(std::move(one));
+    }
+    return sha256_hex(identity.dump());
+}
+
 std::string plan_key(const Json& key_inputs) { return sha256_hex(key_inputs.dump()); }
 // A policy measurement describes this hardware/service scope, not the engine's VRAM plan. Its
 // transaction, lane-service, heat-drift and noise readings can be reused with a different engine
