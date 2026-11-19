@@ -118,7 +118,32 @@ PYTHONPATH=tools python -m bigcherry results history --engine radiance --layout 
 For controlled cohorts, repeat `--record SHA256` on baseline/compare, or
 filter with `--since`/`--until`. `--work-root` selects the record store.
 Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
-0 for a clean gate. MRC06 will migrate producers; the Radiance lab CLI stays.
+0 for a clean gate. MRC06 continues to migrate the remaining producers.
+
+**MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
+measure` now publishes one immutable run-record v1 per completed native launch
+by default under `$BC_WORK_ROOT/run-records/v1/`. `--records` is explicit on;
+`--no-records` opts out without changing the legacy measured `parity.json`
+summary, or the harness's `baseline` / `compare` commands. Each
+`OUT/launch-N/record.sha256` contains the record digest. The record carries
+`engine=radiance`, build ID and binary hash from the build metadata, Git
+revision, measured model/layout, the exact harness workload definition,
+phase-separated cold/sess8 TTFT, document/long-context prefill, decode step
+times and ungated draft acceptance. `metric_specs` keeps the harness's
+one-sided gate and real same-prompt repeats (distinct prompts are not noise
+samples). No GPU tests are needed for the adapter's fixture/compare parity.
+
+The native strict manifest, source heat bytes, the selected calibration row
+when the policy is configured, full `live_policy_state`, owner argv/sets,
+a curated environment snapshot, effective power state and actual
+warmup are SHA-256 content blobs, not mutable paths. Heat and calibration
+inputs are snapshotted before launch and checked for mutation; feature states
+are read from the native run directory using MRC03. Passive MRC02 host facts
+are captured immediately before measurement. Incomplete state, metadata,
+or mismatched key aborts **record publication**, rather than fabricate
+provenance. The old `parity.json` remains for existing consumers only and is
+not ingested as a source of run-record metric truth. The remaining MRC06
+producer migrations and legacy-writer retirement are separate slices.
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be
