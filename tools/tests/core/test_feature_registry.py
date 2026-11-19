@@ -1,4 +1,4 @@
-"""Platform production feature coverage and llama.cpp adapter gates."""
+"""Radiance production feature coverage, warning and status gates."""
 import pytest
 from bigcherry.core import engines, feature_registry, feature_states
 
@@ -14,7 +14,6 @@ def test_registry_and_required_snapshots():
     expected = {"live_policy", "mtp", "prefix_cache", "kv_host_tier",
                 "helper_combine", "vision_tower_placement", "mm_max_patches"}
     assert set(feature_registry.feature_ids(engines.RADIANCE)) == expected
-    assert set(feature_registry.feature_ids(engines.LLAMACPP)) == {"dispatch_cache", "tuning"}
     assert feature_registry.is_production(engines.RADIANCE, "live_policy")
     assert not feature_registry.is_production(engines.RADIANCE, "mtp")
     snapshot = [state(engines.RADIANCE, f) for f in sorted(expected)]
@@ -23,19 +22,8 @@ def test_registry_and_required_snapshots():
         feature_registry.require_coverage(engines.RADIANCE, snapshot[:-1])
     with pytest.raises(feature_states.FeatureStateError, match="undeclared"):
         feature_registry.require_coverage(engines.RADIANCE, snapshot + [state(engines.RADIANCE, "made_up")])
-    with pytest.raises(feature_states.FeatureStateError, match="engine"):
-        feature_registry.require_coverage(engines.LLAMACPP, snapshot)
-
-
-def test_llama_adapter_explicit_configuration_and_absence():
-    active = feature_registry.llamacpp_states(
-        {"GGML_HIP_DISPATCH_MODE": "replay", "GGML_HIP_DISPATCH_CACHE": "cache.bin",
-         "GGML_HIP_TUNE_WORKLOAD": "workload.json"}, at=AT)
-    assert {s["feature_id"]: s["state"] for s in active} == {
-        "dispatch_cache": "active", "tuning": "active"}
-    empty = feature_registry.llamacpp_states({}, at=AT)
-    assert all(s["state"] == "inactive" and s["reason_code"] == "not_configured" for s in empty)
-    feature_states.validate_feature_states(empty)
+    with pytest.raises(feature_states.FeatureStateError, match="unknown engine"):
+        feature_registry.require_coverage("undeclared-engine", snapshot)
 
 
 def test_warnings_and_strict_production_refusal():

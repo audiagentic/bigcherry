@@ -1,12 +1,10 @@
-"""MRC03 platform registry, coverage gate, and engine-neutral production warning.
+"""MRC03 platform feature registry, snapshot coverage and production warnings.
 
-Native engines own their actual start observations. This registry declares the
-feature IDs and expected production capabilities, not their runtime states.
-Older MRC01 records remain readable; new producers must provide a full snapshot.
+Radiance owns the measured runtime states. The platform declares which
+features are expected in production without inferring runtime enablement.
 """
 from __future__ import annotations
 
-from datetime import UTC, datetime
 from typing import Any
 
 from . import engines, feature_states
@@ -23,10 +21,6 @@ FEATURES: dict[str, dict[str, dict[str, Any]]] = {
         "vision_tower_placement": {"production": False},
         "mm_max_patches": {"production": False},
     },
-    engines.LLAMACPP: {
-        "dispatch_cache": {"production": False},
-        "tuning": {"production": False},
-    },
 }
 
 
@@ -35,8 +29,6 @@ class ProductionFeatureError(feature_states.FeatureStateError):
 
 
 def feature_ids(engine: str) -> tuple[str, ...]:
-    if engine == engines.LLAMACPP_RECORD:
-        engine = engines.LLAMACPP
     try:
         return tuple(FEATURES[engine])
     except KeyError as exc:
@@ -46,8 +38,7 @@ def feature_ids(engine: str) -> tuple[str, ...]:
 def is_production(engine: str, feature_id: str) -> bool:
     if feature_id not in feature_ids(engine):
         raise feature_states.FeatureStateError(f"undeclared feature: {engine}/{feature_id}")
-    canonical = engines.LLAMACPP if engine == engines.LLAMACPP_RECORD else engine
-    return FEATURES[canonical][feature_id]["production"]
+    return FEATURES[engine][feature_id]["production"]
 
 
 def require_coverage(engine: str, states: list[dict]) -> list[dict]:
@@ -69,8 +60,7 @@ def production_warnings(engine: str, states: list[dict], *, strict: bool = False
     require_coverage(engine, states)
     warnings: list[str] = []
     for entry in states:
-        canonical = engines.LLAMACPP if engine == engines.LLAMACPP_RECORD else engine
-        declaration = FEATURES[canonical][entry["feature_id"]]
+        declaration = FEATURES[engine][entry["feature_id"]]
         if not declaration["production"] or entry["state"] == "active":
             continue
         if entry["reason_code"] in declaration.get("not_applicable", ()):
@@ -83,37 +73,3 @@ def production_warnings(engine: str, states: list[dict], *, strict: bool = False
     if strict and warnings:
         raise ProductionFeatureError("; ".join(warnings))
     return warnings
-
-
-def llamacpp_states(environment: dict[str, str], *, at: str | None = None) -> list[dict]:
-    """Read dispatch/tuning decisions from the actual measured run environment.
-
-    A configured path or mode is not execution proof. The status here describes
-    configured enablement; VA25 validity independently tracks device evidence.
-    """
-    if not isinstance(environment, dict) or any(
-        not isinstance(k, str) or not isinstance(v, str)
-        for k, v in environment.items()
-    ):
-        raise feature_states.FeatureStateError("llamacpp feature environment must be strings")
-    stamp = at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
-    mode = environment.get("GGML_HIP_DISPATCH_MODE", "")
-    cache = environment.get("GGML_HIP_DISPATCH_CACHE", "")
-    tuning = environment.get("GGML_HIP_TUNE_WORKLOAD", "")
-    configured = mode in ("replay", "record") and bool(cache)
-    values = (
-        ("dispatch_cache", configured, f"mode={mode or 'unset'}; cache={'configured' if cache else 'absent'}"),
-        ("tuning", bool(tuning), f"workload={'configured' if tuning else 'absent'}"),
-    )
-    states = [
-        {
-            "feature_id": name,
-            "state": "active" if enabled else "inactive",
-            "reason_code": "configured" if enabled else "not_configured",
-            "reason_detail": detail,
-            "engine": engines.LLAMACPP_RECORD,
-            "observed_at": stamp,
-        }
-        for name, enabled, detail in values
-    ]
-    return require_coverage(engines.LLAMACPP_RECORD, states)

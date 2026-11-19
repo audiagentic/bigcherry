@@ -16,7 +16,6 @@ from dataclasses import dataclass, field
 from pathlib import Path, PurePosixPath
 
 LLAMACPP = "llamacpp"
-LLAMACPP_RECORD = "llama.cpp"  # legacy upstream run-row identity
 RADIANCE = "radiance"
 
 ENGINES_DIR = "engines"

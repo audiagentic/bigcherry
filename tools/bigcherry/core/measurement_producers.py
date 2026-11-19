@@ -58,10 +58,9 @@ def publish(
         raise run_records.RecordError("actual argv required")
     if any(not isinstance(v, (bytes, Path)) for v in inputs.values()):
         raise run_records.RecordError("provenance inputs must be exact bytes or readable files")
-    # Only the producing runtime/adapter can attest its resolved features.
-    # Older immutable v1 records stay readable, but no new partial snapshot
-    # may silently appear as an empty feature_states array.
-    feature_registry.require_coverage(identity["engine"], feature_states)
+    # Only registered producer engines have a native feature-state contract.
+    if identity["engine"] in feature_registry.FEATURES:
+        feature_registry.require_coverage(identity["engine"], feature_states)
     store = run_records.RunRecordStore(work_root)
 
     def source_blob(source: bytes | Path) -> dict:

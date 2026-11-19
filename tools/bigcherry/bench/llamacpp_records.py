@@ -9,7 +9,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
-from ..core import engines, feature_registry, host_facts, measurement_producers, run_records
+from ..core import host_facts, measurement_producers, run_records
 from ..experiment import attestation
 
 _HEX = re.compile(r"[0-9a-f]{64}\Z")
@@ -115,7 +115,7 @@ def publish_row(
         run_id=str(row.get("run_id") or hashlib.sha256(payload).hexdigest()),
         recorded_at=measured_when,
         identity={
-            "engine": engines.LLAMACPP_RECORD,
+            "engine": "llama.cpp",
             "build_id": build_id,
             "binary_sha256": binary_hash,
             "source_revision": source,
@@ -142,8 +142,6 @@ def publish_row(
         host_facts=host_snapshot
         if host_snapshot is not None
         else host_facts.collect_host_facts(),
-        feature_states=feature_registry.llamacpp_states(
-            env, at=measurement_producers.utc_stamp(measured_when)
-        ),
+        feature_states=[],
         validity=validity,
     )

@@ -136,14 +136,10 @@ the preflight/provenance reason; other default-off options are diagnostic
 rather than automatically required. MRC06 still owns producer migration.
 
 The platform registry at `tools/bigcherry/core/feature_registry.py` declares
-each engine's supported feature IDs and which features are expected in
-production. Radiance's native owner reports all seven declared features
-before admitting children; the llama.cpp benchmark adapter reports the
-dispatch-cache and tuning configuration from the actual captured environment.
-An enabled configuration is not a VA25 execution attestation. Unknown,
-missing, duplicate or wrong-engine feature states cause new
-`measurement_producers.publish` calls to refuse publication; old immutable
-v1 records remain readable.
+Radiance feature IDs and their production expectations. The native owner reports
+all seven declared features before child admission. Missing, duplicate, and
+wrong-engine states refuse new Radiance measurement publication. Other engine
+producers are scoped to MRC07.
 
 Inspect the authenticated native snapshot with
 `bigcherry status --run-dir RUN`. A required inactive or degraded feature
