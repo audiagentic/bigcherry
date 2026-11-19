@@ -1599,10 +1599,16 @@ void manifest_writer_step(Fixture& t) {
                        key +
                        "\"\n" +
 
+                       "record_schema_version = 1\n"
+                       "calibration_kind = \"radiance.live_policy\"\n"
+                       "calibration_key_fields = " + sv::policy_calibration_key_fields().dump() + "\n" +
                        "calibration_inputs = " + Json(policy_inputs.dump()).dump() + "\n" +
                        "source_plan_key = \"" + sv::plan_key(calibrated.measured->key_inputs) + "\"\n" +
                        "source_engine_build = \"" +
                        calibrated.measured->key_inputs.at("engine_build").get<std::string>() + "\"\n" +
+                       "source_revision = \"source_slice:fixture\"\n"
+                       "run_id = \"00000000-0000-4000-8000-000000000001\"\n"
+                       "host_facts_digest = \"" + std::string(64,'3') + "\"\n" +
                        "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
                        "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic "
                        "noise/drift/lane readings\"\n"
@@ -1618,6 +1624,103 @@ void manifest_writer_step(Fixture& t) {
                        "effect_row_noise_ns = 1550000\n"
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
+        // Pre-MRC04 #1169 scoped records remain active. Only records lacking
+        // calibration_inputs entirely are genuinely hash-only legacy.
+        {
+            std::ifstream input(calibrated.calibration_cache);
+            std::string historical((std::istreambuf_iterator<char>(input)),
+                                    std::istreambuf_iterator<char>());
+            for (const std::string field : {"record_schema_version", "calibration_kind",
+                                            "calibration_key_fields", "source_revision",
+                                            "run_id", "host_facts_digest"}) {
+                const auto at = historical.find(field + " = ");
+                assert(at != std::string::npos);
+                const auto end_line = historical.find('\n', at);
+                assert(end_line != std::string::npos);
+                historical.erase(at, end_line - at + 1);
+            }
+            sv::ManifestInputs scoped = calibrated;
+            scoped.calibration_cache = t.file("post-1169-policy.toml", historical);
+            const auto qualified = sv::build_manifest(scoped);
+            assert(qualified.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            const auto scoped_record = sv::read_live_policy_record(scoped.calibration_cache, key);
+            assert(scoped_record && scoped_record->record_schema_version == 1);
+            assert(scoped_record->source_revision.empty() &&
+                   scoped_record->run_id.empty() && scoped_record->host_facts_digest.empty());
+
+            for (const std::string field : {"calibration_inputs", "source_plan_key",
+                                            "source_engine_build"}) {
+                const auto at = historical.find(field + " = ");
+                assert(at != std::string::npos);
+                const auto end_line = historical.find('\n', at);
+                assert(end_line != std::string::npos);
+                historical.erase(at, end_line - at + 1);
+            }
+            sv::ManifestInputs legacy = calibrated;
+            legacy.calibration_cache = t.file("hash-only-policy.toml", historical);
+            const auto no_policy = sv::build_manifest(legacy);
+            assert(!no_policy.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            const auto old_record = sv::read_live_policy_record(legacy.calibration_cache, key);
+            assert(old_record && old_record->record_schema_version == 0);
+        }
+        // A verbatim 2026-11-19 production store contains the #1169 scoped
+        // record keyed c2a1... and earlier hash-only records. Derive with the
+        // *actual recorded scope* and this CPU-only synthetic model geometry.
+        // No production file is modified, and missing v1 provenance is not
+        // guessed during activation.
+        {
+            constexpr const char* production_key =
+                "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
+            const fs::path store = BC_CALIBRATION_PRODUCTION_FIXTURE;
+            std::ifstream input(store, std::ios::binary);
+            assert(input);
+            const std::string before((std::istreambuf_iterator<char>(input)),
+                                      std::istreambuf_iterator<char>());
+            const auto production_record = sv::read_live_policy_record(store, production_key);
+            assert(production_record && production_record->record_schema_version == 1);
+            assert(production_record->calibration_inputs &&
+                   sv::live_policy_record_complete(*production_record));
+            const Json& scope = *production_record->calibration_inputs;
+            Json production_spec = built.document.at("spec");
+            production_spec["plan"]["engine_memory"]["model_identity"] = scope.at("model");
+            production_spec["intent"]["layout"] = scope.at("layout");
+            production_spec["intent"]["service"]["objective"] = scope.at("objective");
+            production_spec["intent"]["power"]["profile"] = scope.at("power_profile");
+            production_spec["processes"]["engine"]["device"]["gpus"] = Json::array();
+            for (const auto& card : scope.at("engine_cards"))
+                production_spec["processes"]["engine"]["device"]["gpus"].push_back(card.at("bdf"));
+            auto& helpers = production_spec["processes"]["helpers"];
+            assert(helpers.size() == scope.at("helper_cards").size());
+            for (size_t i = 0; i < helpers.size(); ++i) {
+                const auto& card = scope.at("helper_cards")[i];
+                helpers[i]["gpu"] = card.at("bdf");
+                helpers[i]["tier"] = card.at("tier");
+                helpers[i]["formats"] = card.at("formats");
+                helpers[i]["rows_kernel"] = card.at("rows_kernel");
+            }
+            production_spec["processes"]["helper_common"] = scope.at("helper_runtime");
+            production_spec["handoff"]["telemetry"]["period_s"] = scope.at("histogram_period_s");
+            for (const auto& field : {"max_rows", "small_rows", "gemv_large_rows", "skip_owned"})
+                production_spec["handoff"]["transport"][field] = scope.at("remote_service").at(field);
+            production_spec["handoff"]["kernels"]["moe_down_tile"] =
+                scope.at("remote_service").at("moe_down_tile");
+            assert(sv::policy_calibration_inputs(production_spec) == scope);
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(production_spec)) ==
+                   production_key);
+            bc::experts::Container container;
+            assert(container.open(model.c_str()));
+            sv::ManifestInputs production = calibrated;
+            production.calibration_cache = store;
+            std::string skip;
+            const auto derived = sv::derive_manifest_live_policy(production, container,
+                                                                  production_spec, &skip);
+            if (!derived || !derived->policy.is_object() || derived->policy.empty())
+                throw std::runtime_error("post-#1169 production policy did not derive: " + skip);
+            std::ifstream check(store, std::ios::binary);
+            const std::string after((std::istreambuf_iterator<char>(check)),
+                                     std::istreambuf_iterator<char>());
+            assert(before == after);
+        }
         const auto with_calibration = sv::build_manifest(calibrated);
         { // A different engine build consumes the SAME qualified hardware evidence,
           // with a distinct strict memory-plan identity and a new manifest digest.
