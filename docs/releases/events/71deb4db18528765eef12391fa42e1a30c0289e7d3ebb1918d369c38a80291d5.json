@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_repeated-policy-on-starts-reus_4496",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1177: a production manifest's derived live_policy is excluded from the stored-manifest execution projection (the replay key already hashes the calibration store), so a second policy-on start replays its stored manifest instead of refusing BC_CFG_PLAN_MISMATCH; lab manifests still compare the explicit policy.",
+  "timestamp-utc": "2026-11-19T07:11:11.380086Z",
+  "user-summary-candidate": "Repeated policy-on starts reuse their stored plan."
+}
