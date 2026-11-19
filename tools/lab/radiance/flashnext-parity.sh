@@ -217,6 +217,11 @@ for i in $(seq 1 "$LAUNCHES"); do
   cp "$MANIFEST" "$L/manifest.json" || fail "cannot archive the manifest"
   python3 "$PARITY" warmup-plan "$L/manifest.json" --out "$L/launch.json" >&2 || fail "cannot read the manifest's live policy"
   WARMUP_S=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["warmup_s"])' "$L/launch.json")
+  # FLASHNEXT_PARITY_WARMUP_S: an experiment arm's warmup in seconds, used only when the policy is on and only if it is
+  # longer than the derived one (never shortens the policy's own sampling period). The log line below states it.
+  if [ -n "${FLASHNEXT_PARITY_WARMUP_S:-}" ] && awk -v w="$WARMUP_S" -v o="$FLASHNEXT_PARITY_WARMUP_S" 'BEGIN { exit !(w > 0 && o > w) }'; then
+    WARMUP_S=$FLASHNEXT_PARITY_WARMUP_S
+  fi
 
   python3 "$PARITY" doc-calibrate --url "$URL" --tokens "$DOC_PROMPT_TOKENS" --measured "$DOC_FILLS" \
     --timeout "$REQUEST_TIMEOUT_S" --out "$L/doc-calibration.json" || fail "document calibration failed"

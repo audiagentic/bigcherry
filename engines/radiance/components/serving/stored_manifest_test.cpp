@@ -102,6 +102,32 @@ int main() {
         e.effective_spec["processes"]["engine"]["server"]["port"] = 9999;
         refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
                 v2::ConfigErrorCode::plan_mismatch);
+        // A production start with the live policy on stores the policy the start derived (from the calibration store, which
+        // the replay key already binds, and the measured plan). The replay's current draft is unmeasured and derives none:
+        // that absence is not a configuration change and must not refuse a stored policy-on manifest.
+        e = evidence;
+        e.effective_spec["handoff"]["placement"].erase("live_policy");
+        require(std::holds_alternative<v2::Manifest>(ss::authenticate_replay(bytes, path.string(), e)),
+                "a stored production manifest with a derived live policy must replay against a draft that derives none");
+        // Real configuration changes still refuse, with the policy present or not.
+        e.effective_spec["handoff"]["placement"]["strategy"] = "roundrobin";
+        refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
+                v2::ConfigErrorCode::plan_mismatch);
+        e = evidence;
+        e.effective_spec["handoff"]["placement"]["live_policy"]["cadence_ns"] = 1;
+        require(std::holds_alternative<v2::Manifest>(ss::authenticate_replay(bytes, path.string(), e)),
+                "a different derived policy value is a startup derivation, not configuration (production)");
+        e = evidence;
+        e.effective_spec["intent"]["layout"] = "another-layout";
+        refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
+                v2::ConfigErrorCode::plan_mismatch);
+        // A lab manifest's policy is explicit operator input (--live-policy), so it IS part of what must match.
+        Json lab_stored = source.at("spec"), lab_draft = source.at("spec");
+        lab_stored["intent"]["service"]["profile"] = "lab";
+        lab_draft["intent"]["service"]["profile"] = "lab";
+        lab_draft["handoff"]["placement"].erase("live_policy");
+        require(ss::execution_projection(lab_stored) != ss::execution_projection(lab_draft),
+                "a lab manifest's explicit live policy stays in the execution projection");
         refused(ss::authenticate_replay(bytes, path.string(), {}), ss::ReplayRefusal::missing_gate,
                 v2::ConfigErrorCode::invalid_state);
 

@@ -44,6 +44,18 @@ the scope hashes to the record key; production matches the current model/cards/l
 service inputs before enabling. Changing model, physical cards/architectures, layout, histogram
 period, power profile or helper execution behavior still requires compatible evidence.
 
+**Startup guards (a production start with the policy on).** Right after the start canary `bc-serve` checks the engine's
+histogram stream and the worker's placement control. Two states of a fresh start are healthy and accepted, nothing else is
+loosened: the engine's first snapshot may still hold no route counts (the check waits up to the declared histogram period or
+the policy's allowed heat age, never for any other failure), and the worker's boot placement has transaction 0 with an
+empty journal, because a transaction is numbered only when the worker begins one (it must be active, fault-free, with both
+journal slots empty). Every refusal names the failing check.
+
+A second production start of an unchanged configuration replays the first start's stored manifest (RSC02). The policy a
+production manifest carries is derived by the start, not configured, so it is not part of the replay's execution
+projection (the replay key binds the calibration store's identity); a lab manifest's explicit `--live-policy` is, and any
+other configuration difference still refuses the replay.
+
 **Legacy migration caveat:** historical records in `live-policy-calibration.toml` have only
 the old hash, layout, objective and measurements; they lack model and helper-card provenance.
 They remain readable for audit, but are not automatically promoted across budget or card changes.

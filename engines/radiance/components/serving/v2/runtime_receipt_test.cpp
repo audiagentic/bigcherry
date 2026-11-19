@@ -78,6 +78,33 @@ int main() {
     assert(doc.at("snapshots").at(0).at("placement_stopped") == false);
   }
 
+  // The boot placement: the worker numbers a transaction only when it begins one, so a freshly started engine has
+  // transaction 0, an active sealed placement and an empty journal. That is a healthy "no transaction yet" state.
+  {
+    auto control = make_control(1, 99, 0, 0, 0);
+    PlacementJournal empty{};
+    auto boot = publish_runtime_receipt("test-run", make_startup(), digest, 1, 99, control, empty);
+    assert(boot);
+    assert(boot.value().at("runtime_status") == "active");
+    assert(boot.value().at("snapshots").at(0).at("transaction_id") == 0);
+    assert(boot.value().at("placement_stopped") == false && boot.value().at("degraded") == false);
+    // ... and only that state: nothing else about transaction 0 is accepted.
+    auto faulted = make_control(1, 99, 5, 0, 0);
+    assert(publish_runtime_receipt("test-run", make_startup(), digest, 1, 99, faulted, empty)); // degraded, reported
+    assert(publish_runtime_receipt("test-run", make_startup(), digest, 1, 99, faulted, empty).value().at("runtime_status") == "degraded");
+    auto moving = make_control(1, 99, 0, 0, 0);
+    moving.state = static_cast<uint32_t>(PlacementState::RESERVING);
+    assert(!publish_runtime_receipt("test-run", make_startup(), digest, 1, 99, moving, empty));   // a transaction is under way
+    PlacementJournal stray{};
+    stray.entry[0].transaction_id = 3;                                                              // a journal without a control txn
+    assert(!publish_runtime_receipt("test-run", make_startup(), digest, 1, 99, control, stray));
+    PlacementJournal fault_only{};
+    fault_only.entry[1].cleanup_fault = 4;
+    assert(!publish_runtime_receipt("test-run", make_startup(), digest, 1, 99, control, fault_only));
+    auto no_digest = make_control(1, 0, 0, 0, 0);
+    assert(!publish_runtime_receipt("test-run", make_startup(), digest, 1, 0, no_digest, empty));   // still needs a sealed owner map
+  }
+
   // Missing telemetry (zero control) fails closed.
   {
     PlacementControl zero{};
