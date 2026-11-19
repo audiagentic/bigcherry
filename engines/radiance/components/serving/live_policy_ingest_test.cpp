@@ -67,15 +67,40 @@ int main() {
     assert(!rec->calibration_inputs);  // old hash-only evidence remains readable but unqualified
     // Production records bind their scope and preserve measured-plan/build provenance.
     const Json scope = {{"policy_key_version", 2}, {"model", "test-model"},
-                        {"layout", "flashnext-4gpu"}, {"objective", "balanced"}};
+                        {"layout", "flashnext-4gpu"}, {"objective", "balanced"},
+                        {"power_profile", "stock"}, {"engine_cards", Json::array()},
+                        {"helper_cards", Json::array()}, {"histogram_period_s", 1},
+                        {"helper_runtime", Json::object()}, {"remote_service", Json::object()}};
     const std::string stable_key = sv::policy_calibration_key(scope);
     const fs::path stable_store = dir / "scoped.toml";
     sv::ingest_live_policy_record(log, stable_store, key, "flashnext-4gpu", "balanced", stable_key,
-                                  sv::LivePolicyProvenance{scope, std::string(64,'1'), std::string(64,'2')});
+                                  sv::LivePolicyProvenance{scope, std::string(64,'1'), std::string(64,'2'),
+                                                           "revision-test", "run-abc", std::string(64,'3')});
     const auto scoped_record = sv::read_live_policy_record(stable_store, stable_key);
     assert(scoped_record && scoped_record->calibration_inputs && *scoped_record->calibration_inputs == scope);
     assert(scoped_record->source_plan_key == std::string(64,'1') &&
            scoped_record->source_engine_build == std::string(64,'2'));
+    assert(scoped_record->record_schema_version == 1);
+    assert(scoped_record->calibration_kind == "radiance.live_policy");
+    assert(scoped_record->calibration_key_fields == sv::policy_calibration_key_fields());
+    assert(scoped_record->source_revision == "revision-test" && scoped_record->run_id == "run-abc");
+    assert(scoped_record->host_facts_digest == std::string(64,'3'));
+    assert(rec->record_schema_version == 0); // historic records are audit-only
+    assert(sv::policy_calibration_key(scope) == stable_key);
+    auto changed_build = scope;
+    changed_build["engine_build"] = std::string(64,'5');
+    assert(sv::policy_calibration_key(scope) != sv::policy_calibration_key(changed_build));
+    // The store's declared inputs are narrow: a build identity cannot become
+    // a key field merely by being included in source evidence.
+    bool wide_scope_refused = false;
+    try {
+        sv::ingest_live_policy_record(log, dir/"wide-key.toml", key, "flashnext-4gpu",
+                                      "balanced", sv::policy_calibration_key(changed_build),
+                                      sv::LivePolicyProvenance{changed_build, std::string(64,'1'),
+                                               std::string(64,'2'), "revision-test", "run-abc",
+                                               std::string(64,'3')});
+    } catch (const std::runtime_error&) { wide_scope_refused = true; }
+    assert(wide_scope_refused);
     bool mismatched_provenance_refused = false;
     try {
         sv::ingest_live_policy_record(log, dir / "wrong-scope.toml", key, "flashnext-4gpu",

@@ -45,6 +45,7 @@ from .patch import (
     cmd_patch_verify_evidence,
     cmd_patches,
 )
+from .calibration import cmd_calibration
 from .accept import cmd_accept
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
@@ -1336,6 +1337,17 @@ def build_parser() -> argparse.ArgumentParser:
         "--force", action="store_true", help="generate even against an unpatched tree"
     )
     generate.set_defaults(func=cmd_generate)
+
+    # MRC04: platform view of native calibration TOML or generic v1 JSON store.
+    calibration = sub.add_parser("calibration", help="inspect/validate calibration records (read-only)")
+    cal_sub = calibration.add_subparsers(dest="calibration_action", required=True)
+    for action in ("list", "show", "validate"):
+        command = cal_sub.add_parser(action, help=f"{action} calibration evidence")
+        command.add_argument("--store", type=Path, help="native TOML cache or v1 JSON store directory")
+        if action == "show":
+            command.add_argument("--kind", required=True)
+            command.add_argument("--key", required=True)
+        command.set_defaults(func=cmd_calibration)
 
     status = sub.add_parser("status", help="show checkout and release status")
     status.set_defaults(func=cmd_status)

@@ -1599,10 +1599,16 @@ void manifest_writer_step(Fixture& t) {
                        key +
                        "\"\n" +
 
+                       "record_schema_version = 1\n"
+                       "calibration_kind = \"radiance.live_policy\"\n"
+                       "calibration_key_fields = " + sv::policy_calibration_key_fields().dump() + "\n" +
                        "calibration_inputs = " + Json(policy_inputs.dump()).dump() + "\n" +
                        "source_plan_key = \"" + sv::plan_key(calibrated.measured->key_inputs) + "\"\n" +
                        "source_engine_build = \"" +
                        calibrated.measured->key_inputs.at("engine_build").get<std::string>() + "\"\n" +
+                       "source_revision = \"source_slice:fixture\"\n"
+                       "run_id = \"00000000-0000-4000-8000-000000000001\"\n"
+                       "host_facts_digest = \"" + std::string(64,'3') + "\"\n" +
                        "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
                        "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic "
                        "noise/drift/lane readings\"\n"
@@ -1618,6 +1624,23 @@ void manifest_writer_step(Fixture& t) {
                        "effect_row_noise_ns = 1550000\n"
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
+        // Old #1169 scoped rows can be inspected but no longer bypass the
+        // platform v1 activation contract if their record schema is absent.
+        {
+            std::ifstream input(calibrated.calibration_cache);
+            std::string historical((std::istreambuf_iterator<char>(input)),
+                                    std::istreambuf_iterator<char>());
+            const std::string marker = "record_schema_version = 1\n";
+            const auto at = historical.find(marker);
+            assert(at != std::string::npos);
+            historical.erase(at, marker.size());
+            sv::ManifestInputs legacy = calibrated;
+            legacy.calibration_cache = t.file("legacy-policy-v2.toml", historical);
+            const auto old_manifest = sv::build_manifest(legacy);
+            assert(!old_manifest.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            const auto old_record = sv::read_live_policy_record(legacy.calibration_cache, key);
+            assert(old_record && old_record->record_schema_version == 0);
+        }
         const auto with_calibration = sv::build_manifest(calibrated);
         { // A different engine build consumes the SAME qualified hardware evidence,
           // with a distinct strict memory-plan identity and a new manifest digest.

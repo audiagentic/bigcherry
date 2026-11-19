@@ -52,6 +52,8 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
         if (skipped_reason) *skipped_reason = "record key=" + key + ": " + why;
         return std::nullopt;
     };
+    if (record->record_schema_version != 1)
+        return skip("legacy_record_schema: record lacks the platform v1 provenance contract; audit-only, no activation");
     if (!record->calibration_inputs || *record->calibration_inputs != policy_inputs)
         return skip("record has no matching model/card/service calibration provenance; not activating legacy or incompatible evidence");
     // Behind a TP engine (RAD49) every rank counts every routed row of a handed-off pass (the router is replicated), so rank
