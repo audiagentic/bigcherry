@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_live-placement-calibration-now_5135",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/calibration_lab.cpp",
+    "engines/radiance/components/serving/calibration_lab.h"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1162: a native --calibration-run refuses a live policy with accept_unwatermarked_heat=false (file histogram heat is never watermarked), derives a bounded no-feed deadline from the histogram period, min_samples, cadence and max heat age (1,121 s at a 1 s period instead of ~67 h), and names a missing calibration store before the manifest writer runs.",
+  "timestamp-utc": "2026-11-19T07:11:11.195593Z",
+  "user-summary-candidate": "Live-placement calibration now fails fast with a clear reason instead of running for hours without heat."
+}
