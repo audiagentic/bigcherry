@@ -83,10 +83,8 @@ record. Its MRC05 direction/gate/repeat metadata matches the parity harness
 exactly; the card-free fixture runs both results compare and the harness's
 unchanged compare across two baseline and two candidate launches.
 
-Retained transition boundary: `OUT/parity.json` is still written and existing
-`baseline` / `compare` readers remain live, as explicitly required for this
-slice. It is a compatibility summary, not the canonical measurement writer.
-Do not retire it before consumer scanning. The origin/main base for this slice
+Transition boundary retired 2026-11-20: `OUT/parity.json`, the harness `summarise`, `baseline` and `compare` wrappers and
+`--no-records` are removed; the harness calls `bigcherry results` over the launch records. The origin/main base for this slice
 contains MRC05 but not the newly pushed MRC04 reader, so selected calibration
 TOML was independently verified in that slice; slice 2 replaces the
 temporary reader with MRC04's shared validator.

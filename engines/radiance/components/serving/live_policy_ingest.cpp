@@ -2,6 +2,7 @@
 #include "live_policy.h"
 #include "plan_cache.h"
 #include "sha256.h"
+#include "third_party/toml.hpp"
 #include "v2/manifest.h"
 
 #include <nlohmann/json.hpp>
@@ -174,7 +175,7 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
                                const std::string& key, const std::string& layout,
                                 const std::string& objective,
                                const std::string& target_store_key,
-                               const std::optional<LivePolicyProvenance>& provenance) {
+                               const LivePolicyProvenance& provenance) {
     if (log.empty() || cache.empty()) invalid("log and calibration cache are required");
     std::istringstream lines(read_text(log));
     std::string line;
@@ -197,27 +198,25 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
     // under the policy scope. The original full plan/build identities survive
     // separately in provenance and never affect lookup.
     record["plan_cache_key"] = store_key;
-    if (provenance) {
-        require_declared_policy_calibration_inputs(provenance->inputs);
-        if (policy_calibration_key(provenance->inputs) != store_key)
-            invalid("policy scope digest differs from requested store key");
-        if (provenance->source_revision.empty() || provenance->run_id.empty() ||
-            provenance->host_facts_digest.size() != 64 ||
-            provenance->host_facts_digest.find_first_not_of("0123456789abcdef") != std::string::npos)
-            invalid("missing or invalid source revision, run or host-facts provenance");
-        for (const std::string& hex : {provenance->source_plan_key, provenance->source_engine_build})
-            if (hex.size() != 64 || hex.find_first_not_of("0123456789abcdef") != std::string::npos)
-                invalid("missing or invalid source plan/build provenance");
-        record["calibration_inputs"] = provenance->inputs.dump();
-        record["source_plan_key"] = provenance->source_plan_key;
-        record["source_engine_build"] = provenance->source_engine_build;
-        record["record_schema_version"] = 1;
-        record["calibration_kind"] = "radiance.live_policy";
-        record["calibration_key_fields"] = policy_calibration_key_fields();
-        record["source_revision"] = provenance->source_revision;
-        record["run_id"] = provenance->run_id;
-        record["host_facts_digest"] = provenance->host_facts_digest;
-    }
+    require_declared_policy_calibration_inputs(provenance.inputs);
+    if (policy_calibration_key(provenance.inputs) != store_key)
+        invalid("policy scope digest differs from requested store key");
+    if (provenance.source_revision.empty() || provenance.run_id.empty() ||
+        provenance.host_facts_digest.size() != 64 ||
+        provenance.host_facts_digest.find_first_not_of("0123456789abcdef") != std::string::npos)
+        invalid("missing or invalid source revision, run or host-facts provenance");
+    for (const std::string& hex : {provenance.source_plan_key, provenance.source_engine_build})
+        if (hex.size() != 64 || hex.find_first_not_of("0123456789abcdef") != std::string::npos)
+            invalid("missing or invalid source plan/build provenance");
+    record["calibration_inputs"] = provenance.inputs.dump();
+    record["source_plan_key"] = provenance.source_plan_key;
+    record["source_engine_build"] = provenance.source_engine_build;
+    record["record_schema_version"] = 1;
+    record["calibration_kind"] = "radiance.live_policy";
+    record["calibration_key_fields"] = policy_calibration_key_fields();
+    record["source_revision"] = provenance.source_revision;
+    record["run_id"] = provenance.run_id;
+    record["host_facts_digest"] = provenance.host_facts_digest;
     if (!cache.parent_path().empty() && !fs::exists(cache.parent_path()))
         invalid("calibration cache parent directory does not exist");
     Lock lock(cache.string() + ".lock");
@@ -239,7 +238,7 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
             out << "\n[[live_policy_record]]\n";
             for (const auto& field : {"plan_cache_key", "layout", "objective", "seeded", "evidence"})
                 out << field << " = " << toml_string(record.at(field)) << '\n';
-            if (provenance) {
+            {
                 out << "record_schema_version = 1\n";
                 out << "calibration_kind = " << toml_string(record.at("calibration_kind")) << '\n';
                 out << "calibration_key_fields = " << record.at("calibration_key_fields").dump() << '\n';
@@ -285,5 +284,63 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
         fs::remove(temp, ec);
         throw;
     }
+}
+std::vector<std::string> prune_live_policy_store(const fs::path& cache, bool apply) {
+    if (cache.empty() || !fs::is_regular_file(cache) || fs::is_symlink(cache))
+        invalid("missing or unsafe calibration store " + cache.string());
+    Lock lock(cache.string() + ".lock");
+    const std::string text = read_text(cache);
+    // Split into the header and one block per [[live_policy_record]] (the store is written by this file, one block each).
+    static const std::string kBlock = "[[live_policy_record]]";
+    std::vector<size_t> starts;
+    for (size_t at = text.find(kBlock); at != std::string::npos; at = text.find(kBlock, at + 1))
+        if (at == 0 || text[at - 1] == '\n') starts.push_back(at);
+    std::string kept = text.substr(0, starts.empty() ? text.size() : starts.front());
+    std::vector<std::string> removed;
+    for (size_t i = 0; i < starts.size(); ++i) {
+        const size_t end = i + 1 < starts.size() ? starts[i + 1] : text.size();
+        const std::string block = text.substr(starts[i], end - starts[i]);
+        toml::table parsed;
+        try { parsed = toml::parse(block); }
+        catch (const toml::parse_error& e) { invalid(std::string("unparseable live_policy_record block: ") + e.what()); }
+        const auto* rows = parsed["live_policy_record"].as_array();
+        const auto* row = rows && rows->size() == 1 ? (*rows)[0].as_table() : nullptr;
+        if (!row) invalid("unparseable live_policy_record block");
+        if (row->contains("calibration_inputs")) kept += block;
+        else removed.push_back(std::string((*row)["plan_cache_key"].value_or(std::string_view("?"))));
+    }
+    if (!apply || removed.empty()) return removed;
+    const fs::path temp = cache.string() + ".tmp." + std::to_string(::getpid());
+    try {
+        {
+            std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+            if (!out) invalid("cannot create temporary calibration file");
+            out << kept;
+            out.flush();
+            if (!out) invalid("cannot flush temporary calibration file");
+        }
+        // The pruned file must read back through the strict reader (any key, the read validates every row).
+        (void)read_live_policy_record(temp, std::string(64, '0'));
+        const int fd = ::open(temp.c_str(), O_RDONLY | O_CLOEXEC);
+        if (fd < 0 || ::fsync(fd) != 0) {
+            if (fd >= 0) ::close(fd);
+            invalid("cannot sync calibration file");
+        }
+        ::close(fd);
+        fs::permissions(temp, fs::status(cache).permissions());
+        fs::rename(temp, cache);
+        const fs::path parent = cache.parent_path().empty() ? fs::path(".") : cache.parent_path();
+        const int directory = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (directory < 0 || ::fsync(directory) != 0) {
+            if (directory >= 0) ::close(directory);
+            invalid("cannot sync calibration cache directory");
+        }
+        ::close(directory);
+    } catch (...) {
+        std::error_code ec;
+        fs::remove(temp, ec);
+        throw;
+    }
+    return removed;
 }
 } // namespace bc::serving

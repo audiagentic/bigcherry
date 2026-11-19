@@ -13,13 +13,11 @@ struct ManifestInputs;
 struct LivePolicyRecord {
     std::string key, layout, objective, seeded, evidence, source;
     nlohmann::json measurements;
-    // New-format records bind source evidence to the narrow, typed hardware/service scope.
-    // Historical hash-only records may be parsed for audit but cannot be auto-activated.
+    // Records bind source evidence to the narrow, typed hardware/service scope; a record without it is refused.
     std::optional<nlohmann::json> calibration_inputs;
     std::string source_plan_key, source_engine_build;
     // In-memory activation state: 1 includes verified post-#1169 scoped
     // records (later revision/run/host provenance remains unavailable).
-    // 0 is reserved for genuinely hash-only, audit-only evidence.
     uint32_t record_schema_version = 0;
     std::string calibration_kind, source_revision, run_id, host_facts_digest;
     nlohmann::json calibration_key_fields = nlohmann::json::array();

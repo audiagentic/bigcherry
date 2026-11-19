@@ -1756,8 +1756,8 @@ void manifest_writer_step(Fixture& t) {
                        "effect_row_noise_ns = 1550000\n"
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
-        // Pre-MRC04 #1169 scoped records remain active. Only records lacking
-        // calibration_inputs entirely are genuinely hash-only legacy.
+        // Pre-MRC04 #1169 scoped records remain active. Records lacking calibration_inputs entirely are an
+        // unsupported format and are refused.
         {
             std::ifstream input(calibrated.calibration_cache);
             std::string historical((std::istreambuf_iterator<char>(input)),
@@ -1790,13 +1790,15 @@ void manifest_writer_step(Fixture& t) {
             }
             sv::ManifestInputs legacy = calibrated;
             legacy.calibration_cache = t.file("hash-only-policy.toml", historical);
-            const auto no_policy = sv::build_manifest(legacy);
-            assert(!no_policy.document.at("spec").at("handoff").at("placement").contains("live_policy"));
-            const auto old_record = sv::read_live_policy_record(legacy.calibration_cache, key);
-            assert(old_record && old_record->record_schema_version == 0);
+            bool hash_only_refused = false;   // a store with a hash-only row is refused, not read as audit evidence
+            try { (void)sv::build_manifest(legacy); }
+            catch (const std::exception& e) {
+                hash_only_refused = std::string(e.what()).find("unsupported record format") != std::string::npos;
+            }
+            assert(hash_only_refused);
         }
-        // A verbatim 2026-11-19 production store contains the #1169 scoped
-        // record keyed c2a1... and earlier hash-only records. Derive with the
+        // The 2026-11-19 production store (its hash-only rows pruned) holds the #1169 scoped
+        // record keyed c2a1.... Derive with the
         // *actual recorded scope* and this CPU-only synthetic model geometry.
         // No production file is modified, and missing v1 provenance is not
         // guessed during activation.
@@ -1858,8 +1860,20 @@ void manifest_writer_step(Fixture& t) {
           // with a distinct strict memory-plan identity and a new manifest digest.
             sv::ManifestInputs rebuilt = calibrated;
             rebuilt.measured->key_inputs["engine_build"] = std::string(64, 'f');
+            // Native cross-build activation: fixture was written by build A,
+            // the effective measured plan on build B has a different identity.
+            const auto persisted_a = sv::read_live_policy_record(calibrated.calibration_cache, key);
+            assert(persisted_a && persisted_a->calibration_inputs &&
+                   persisted_a->source_engine_build ==
+                       calibrated.measured->key_inputs.at("engine_build").get<std::string>());
+            assert(persisted_a->source_engine_build !=
+                   rebuilt.measured->key_inputs.at("engine_build").get<std::string>());
             const auto carried = sv::build_manifest(rebuilt);
+            assert(sv::policy_calibration_key(
+                       sv::policy_calibration_inputs(carried.document.at("spec"))) == key);
             assert(carried.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            assert(carried.document.at("spec").at("handoff").at("placement").at("live_policy") ==
+                   with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy"));
             assert(carried.document.at("spec").at("plan").at("engine_memory").at("engine_identity") !=
                    with_calibration.document.at("spec").at("plan").at("engine_memory").at("engine_identity"));
             assert(carried.digest != with_calibration.digest);
