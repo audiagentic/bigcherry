@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_203430_closed-a-runtime-home-symlink_1266",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM04/RV4250.md",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Freeze the canonical native runtime-home target before inspection; use it in RADIANCE_HOME, inspector inputs and engine build identity, then refuse if later resolved/final manifest homes point elsewhere. Add a byte-identical symlink-retarget regression that proves refusal before owner cache or measured artifact publication. Make the fake resident sidecar one KiB below an MiB boundary and require rad0011's ceiling-rounded log/cache resident value.",
+  "timestamp-utc": "2026-11-19T20:34:30.235937Z",
+  "user-summary-candidate": "Closed a runtime-home symlink identity gap in the v3 measurement path and added targeted regression coverage. Generated-v3 session and default-v2 serving checks pass; hardware BDF verification and production/replay gates remain open."
+}

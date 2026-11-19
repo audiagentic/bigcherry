@@ -22,6 +22,7 @@
 #include <dirent.h>
 
 #include <chrono>
+#include <algorithm>
 #include <cerrno>
 #include <csignal>
 #include <cstdio>
@@ -222,6 +223,7 @@ int main(int argc, char** argv) {
             m["port"] = spec.at("processes").at("engine").at("server").at("port");
             m["engine_cards"] = spec.at("processes").at("engine").at("device").at("gpus");
             m["host_pool_mib"] = spec.at("resources").at("host").at("pool_mib");
+            m["max_context"] = spec.at("intent").at("service").at("max_context_tokens");
             m["ngram_placement"] = spec.at("processes").at("engine").at("execution").at("ngram_placement");
             if (spec.contains("handoff"))
                 m["shm"] = spec.at("handoff").at("transport").at("shm");
@@ -302,7 +304,8 @@ int main(int argc, char** argv) {
             {"host", json::array()},
             {"checkpoints", {{"slot_bytes", 1048576}, {"floor_slots", 8}, {"want_slots", 72},
                               {"from", "engine plan (fake measurement)"}}},
-            {"kv_one_session", {{"bytes", 4096}, {"from", "engine plan (fake measurement)"}}},
+            {"kv_one_session", {{"bytes", std::max<int64_t>(4096, m.value("max_context", int64_t{4096}))},
+                                  {"from", "engine plan (fake measurement)"}}},
             {"vram", {{"claimable", 10}, {"statics", 1}, {"elastic", 9}, {"experts", 0}, {"kv", 9},
                        {"stage", 0}, {"kv_resolved", 9}, {"expert_floor", 0}, {"kv_ceiling", 9},
                        {"expert_ceiling", 0}, {"from", "engine plan (fake measurement)"},
@@ -315,15 +318,21 @@ int main(int argc, char** argv) {
             plan_doc["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
                                         {"residence", "pinned"}, {"from", "engine plan (fake measurement)"},
                                         {"remedy", ""}});
+        const int64_t engine_resident_mib = m.value("engine_mib", int64_t{1234});
+        if (engine_resident_mib <= 0 || engine_resident_mib > ((int64_t{1} << 53) - 1) / (int64_t{1} << 20))
+            throw std::runtime_error("fake engine_mib is outside the measured wire range");
+        // A non-integral MiB sidecar exercises rad0011's ceiling-to-MiB resident receipt.
+        const int64_t resident_other_bytes = engine_resident_mib * (int64_t{1} << 20) - 1024;
         json ranks = {{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
-                      {"gpu", json::array()}, {"resident_other_bytes", 0}};
+                      {"gpu", json::array()},
+                      {"resident_other_bytes", resident_other_bytes}};
         for (const auto& bdf : cards)
             ranks["gpu"].push_back({{"bdf", bdf}, {"required_bytes", 10}, {"fixed_bytes", 1},
                                     {"claimable_bytes", 10}, {"evidence", "rad0011 fake measurement"}});
         std::ofstream(plan) << plan_doc.dump(2) << '\n';
         std::ofstream(arg_after(argc, argv, "--plan-memory-ranks")) << ranks.dump(2) << '\n';
-        std::printf("I --plan-memory: wrote %s; engine start-up took %d MiB of MemAvailable; done\n", plan.c_str(),
-                    m.value("engine_mib", 1234));
+        std::printf("I --plan-memory: wrote %s; engine start-up took %lld MiB of MemAvailable; done\n", plan.c_str(),
+                    static_cast<long long>(engine_resident_mib));
         return 0;
     }
     if (m.contains("exit_at_start")) return m.at("exit_at_start").get<int>();

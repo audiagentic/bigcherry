@@ -904,7 +904,9 @@ class TestPlanMemoryPatch(unittest.TestCase):
             for expected in (
                 ("bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
                  "ranks_[0]->program);"),
-                "if (ri == 0) bc_plan_memory_note_ranks(rank_cfg_);",
+                "if (ri == 0) { std::vector<int> actual_rank_devices; actual_rank_devices.reserve(ranks_.size()); "
+                "for (const auto& rank : ranks_) actual_rank_devices.push_back(rank->device); "
+                "bc_plan_memory_note_ranks(rank_cfg_, actual_rank_devices); }",
                 "RAD_TRY(bc_plan_memory_done());",
             ):
                 self.assertIn(expected, " ".join(added))
@@ -926,7 +928,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             self.assertLess(split, rank_cfg)
             self.assertLess(note, rank_cfg)
             self.assertLess(resolve, note)
-            rank_note = bringup.index("bc_plan_memory_note_ranks(rank_cfg_)")
+            rank_note = bringup.index("bc_plan_memory_note_ranks(rank_cfg_, actual_rank_devices)")
             self.assertLess(split, rank_note)
             self.assertLess(rank_cfg, rank_note)
             # RSC08 S4: the live plan is checked right after the VRAM split, before any pool is configured
@@ -944,15 +946,16 @@ class TestPlanMemoryPatch(unittest.TestCase):
             manifest = (root / "core/bc_serving_manifest.cpp").read_text()
             assert source.index("bc_plan_memory_note(cfg_, facts, vb,") < source.index("vram_budget_rank_split(")
             assert source.index("vram_budget_rank_split(") < source.index(
-                "if (ri == 0) bc_plan_memory_note_ranks(") < source.index("r->pools.configure(")
+                "if (ri == 0) {") < source.index("r->pools.configure(")
             assert "c.vram_weights_mib + (__int128)c.vram_kv_mib" in plan
             assert "f.n_queues * f.queue_bytes" in plan
             assert '"radiance_p1_rank_demand"' in plan
-            assert "rad::dev_pci_address(c.devices.front()) != bdfs[i]" in plan
+            assert "rad::dev_pci_address(actual_rank_devices[i]) != bdfs[i]" in plan
+            assert "c.devices.front()" not in plan
             assert "g_rank_gpu" in plan
             assert "g_rank_facts = facts;" in plan
             assert "void bc_plan_memory_note_ranks(" in plan
-            assert source.count("bc_plan_memory_note_ranks(rank_cfg_);") == 1
+            assert source.count("bc_plan_memory_note_ranks(rank_cfg_, actual_rank_devices);") == 1
             assert "--plan-memory-ranks" in flags
             assert 'g_store.push_back("--plan-memory-ranks");' in manifest
             assert "out << v2::encode(g_plan).dump(2)" in plan

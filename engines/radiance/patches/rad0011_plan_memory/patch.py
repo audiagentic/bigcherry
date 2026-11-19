@@ -38,7 +38,7 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
                          const rad::Program& prog);
 /* Publish rank demand only after the rank split, before configuring pools. */
-void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg);
+void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg, const std::vector<int>& actual_rank_devices);
 
 /* After plan(): with --plan-memory, writes the plan and exits (status 0, or 2 when nothing was recorded or FILE cannot be
  * written). Otherwise returns 0 and start-up goes on. */
@@ -240,6 +240,7 @@ _BC_PLAN_MEMORY_CPP = r"""/* bc_plan_memory.cpp -- see bc_plan_memory.h (BigCher
 #include "bc_serving_manifest.h"
 #include "serving_codec.h"
 
+#include "device/device.h"
 #include "mem/prefix.h"
 #include "mem/vram_budget.h"
 #include "place/planner.h"
@@ -350,11 +351,12 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
     g_noted = true;
 }
 
-void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg) {
+void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg, const std::vector<int>& actual_rank_devices) {
     /* Capture each rank's split only after vram_budget_rank_split. */
     if (!bc_plan::rank_measure_out().empty()) {
         const auto bdfs = bc_serving_engine_bdfs();
         if (bdfs.size() != g_rank_facts.size() || rank_cfg.size() != g_rank_facts.size() ||
+            actual_rank_devices.size() != g_rank_facts.size() ||
             g_rank_facts.empty()) {
             g_error = "P1 rank/BDF/VRAM g_rank_facts do not match the measured layout";
             return;
@@ -366,7 +368,7 @@ void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg) {
         for (size_t i = 0; i < g_rank_facts.size(); ++i) {
             const auto& f = g_rank_facts[i];
             const auto& c = rank_cfg[i];
-            if (c.devices.size() != 1 || rad::dev_pci_address(c.devices.front()) != bdfs[i]) {
+            if (rad::dev_pci_address(actual_rank_devices[i]) != bdfs[i]) {
                 g_error = "P1 actual rank device BDF differs from the selected ordered engine BDFs";
                 return;
             }
@@ -525,8 +527,13 @@ PATCHES = (
             Edit(
                 id="bc-plan-memory-ranks-post-split",
                 anchor=r"^        const Config& rc = rank_cfg_\[ri\];$",
-                text="\n        if (ri == 0) bc_plan_memory_note_ranks(rank_cfg_);",
-                guard=r"if \(ri == 0\) bc_plan_memory_note_ranks\(rank_cfg_\);",
+                text=("\n        if (ri == 0) {"
+                      "\n            std::vector<int> actual_rank_devices;"
+                      "\n            actual_rank_devices.reserve(ranks_.size());"
+                      "\n            for (const auto& rank : ranks_) actual_rank_devices.push_back(rank->device);"
+                      "\n            bc_plan_memory_note_ranks(rank_cfg_, actual_rank_devices);"
+                      "\n        }"),
+                guard=r"bc_plan_memory_note_ranks\(rank_cfg_, actual_rank_devices\);",
                 max_span_lines=1,
                 expect_matches=1,
                 rationale="Unique rank config access occurs after the rank split and before any per-rank pool is configured.",

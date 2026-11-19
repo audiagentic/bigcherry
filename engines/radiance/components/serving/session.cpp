@@ -6,12 +6,14 @@
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
+#include "rank_demand.h"
 #include "resources.h"
 #include "s8_replay.h"
 #include "sha256.h"
 #include "stored_manifest.h"
 #include "stored_manifest_cache.h"
 #include "v2/document_bytes.h"
+#include "serving_codec.h"
 #include "v2/strict_json.h"
 
 #include <algorithm>
@@ -2375,30 +2377,37 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             if (in.native_admission->runtime_overrides.count(key))
                 throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
         native_execution_root.emplace(in.native_admission->resolution_root);
+        const fs::path frozen_runtime_home = fs::canonical(home);
         const NativeConfigSnapshot snapshot =
             NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
         native_execution_root->require_matches(snapshot.resolution_root());
         Env runtime = in.native_admission->runtime_overrides;
         for (const auto& [name_key, value] : out.runtime)
             runtime[name_key] = value; // verified build and local device selection take precedence
+        runtime["RADIANCE_HOME"] = frozen_runtime_home.string();
         native_complete_environment = current_child_environment(runtime);
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
         const NativeConfigInspection native_inspection = inspect_and_reconcile_native_config(
-            engine, snapshot, home, v.at("engine").at("model").get<std::string>(), native_complete_environment,
+            engine, snapshot, frozen_runtime_home, v.at("engine").at("model").get<std::string>(),
+            native_complete_environment,
             selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, native_execution_root->descriptor());
         if (v2::kContractVersion != 3)
             throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
                              "integration is incomplete; refusing before cache reuse, manifest writing, power "
                              "admission, or GPU child startup");
 
-        // The candidate v3 lane proves only the sealed native snapshot to a real
-        // writer draft. It deliberately stops before cache selection, P1, power,
-        // measurement, helper startup or the serving engine.
+        // This candidate owner path is deliberately engine-only and one-shot.
+        // Helper fleets, named-cache reuse, pool retries, serving startup and
+        // stored-index writes stay closed until their v3 identity chain exists.
         if (in.runner)
-            throw PlanFailed("native v3 draft admission requires the real sealed-fd manifest writer child");
+            throw PlanFailed("native v3 measuring admission requires the real sealed-fd manifest writer child");
+        if (!processes.empty())
+            throw PlanFailed("native v3 measurement currently admits engine-only layouts");
+        if (!hooks.admit_power || !wait)
+            throw PlanFailed("native v3 measurement requires durable power admission and the owner stop gate");
         const Json frozen_key = plan_key_inputs(
             v, facts, container_identity(v.at("engine").at("model").get<std::string>()),
-            engine_identity(engine, home), "budgets: default", &snapshot);
+            engine_identity(engine, frozen_runtime_home), "budgets: default", &snapshot);
         const auto snapshot_handoff = std::make_shared<PinnedManifest>(snapshot.manifest_field().dump());
         const fs::path draft = run_dir / ("manifest-native-draft-" + stamp() + ".json");
         std::vector<std::string> argv = {
@@ -2430,8 +2439,153 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             native_inspection.max_sequences != emitted_service.max_sessions ||
             native_inspection.kernels != emitted_engine.runtime.kernels)
             throw PlanFailed("native v3 draft differs from the admitted YAML listener, limits or kernel order");
-        throw PlanFailed("native v3 measuring draft verified; P1, owner-cache measurement/reuse, stored replay, "
-                         "power admission and GPU startup remain gated");
+
+        const fs::path measuring_execution = verified.pinned->path();
+        if (const auto refusal = resources::preflight_host_pool(verified.parsed, detect(in.options.sys_root)))
+            throw PlanFailed("native resources: " + refusal->message);
+        require_callback(hooks.admit_power.invoke("session.hooks.admit_power", measuring_execution,
+                                                   v2::PlanUse::measuring),
+                         "native v3 pre-measure power admission");
+
+        const std::string attempt_id = new_instance_id();
+        const fs::path attempt_dir = fs::absolute(run_dir / "measurement-attempts" / attempt_id);
+        fs::create_directories(attempt_dir);
+        const fs::path plan_path = attempt_dir / "plan.json";
+        const fs::path ranks_path = attempt_dir / "rank-demand.json";
+        const fs::path measurement_log = attempt_dir / "engine-measuring.log";
+        const fs::path absolute_engine = fs::absolute(engine);
+        native_execution_root->require_matches(snapshot.resolution_root());
+        const pid_t measuring_pid = spawn(
+            {absolute_engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
+             "--plan-memory", plan_path.string(), "--plan-memory-ranks", ranks_path.string()},
+            native_complete_environment, measurement_log,
+            [&](pid_t pid) {
+                if (hooks.started)
+                    require_callback(hooks.started.invoke("session.hooks.started", ChildKind::measuring_engine,
+                                                          "native v3 measuring engine", pid, measurement_log),
+                                     "native v3 measuring engine registration");
+            },
+            verified.pinned->descriptor(), native_execution_root->descriptor());
+        int measuring_status = 0;
+        bool stopped = false;
+        const auto deadline = Clock::now() + std::chrono::minutes(30);
+        try {
+            while (running(measuring_pid, &measuring_status)) {
+                if (Clock::now() > deadline ||
+                    !require_callback(wait.invoke("session.hooks.wait", 200ms), "native measuring wait")) {
+                    stopped = true;
+                    break;
+                }
+            }
+        } catch (...) {
+            const auto original = std::current_exception();
+            if (stop_child(measuring_pid, SIGINT, 60s) && hooks.ended)
+                require_callback(hooks.ended.invoke("session.hooks.ended", measuring_pid), "hooks.ended");
+            std::rethrow_exception(original);
+        }
+        if (stopped) {
+            if (!stop_child(measuring_pid, SIGINT, 60s))
+                throw PlanFailed("native v3 measuring engine remained alive after its stop deadline");
+            if (hooks.ended)
+                require_callback(hooks.ended.invoke("session.hooks.ended", measuring_pid), "hooks.ended");
+            throw PlanFailed("native v3 measurement stopped by request or 30-minute deadline");
+        }
+        if (!stop_child(measuring_pid, SIGKILL, 10s))
+            throw PlanFailed("native v3 measuring engine process group remained alive after exit");
+        if (hooks.ended)
+            require_callback(hooks.ended.invoke("session.hooks.ended", measuring_pid), "hooks.ended");
+        if (!WIFEXITED(measuring_status) || WEXITSTATUS(measuring_status) != 0 ||
+            !fs::is_regular_file(plan_path) || !fs::is_regular_file(ranks_path) ||
+            fs::file_size(plan_path) == 0 || fs::file_size(ranks_path) == 0 ||
+            fs::file_size(plan_path) > v2::kMaxDocumentBytes || fs::file_size(ranks_path) > v2::kMaxDocumentBytes)
+            throw PlanFailed("native v3 measuring engine failed or produced incomplete plan/rank output; see " +
+                             measurement_log.string());
+
+        const std::string log_text = read_file(measurement_log);
+        const Json measured_plan = parse_plan_json(read_file(plan_path), plan_path.string());
+        const Json rank_demand = parse_plan_json(read_file(ranks_path), ranks_path.string());
+        const auto decoded_plan = decode_engine_plan(measured_plan, plan_path.string());
+        const EngineRankDemand decoded_ranks =
+            decode_engine_rank_demand(rank_demand, selected_bdfs, ranks_path.string());
+        constexpr uint64_t kMiB = uint64_t{1} << 20;
+        const uint64_t engine_resident_mib =
+            std::max<uint64_t>(1, (static_cast<uint64_t>(decoded_ranks.resident_other_bytes) + kMiB - 1) / kMiB);
+        static const std::regex resident_line(
+            R"(--plan-memory: wrote .*; engine start-up took ([0-9]+) MiB of MemAvailable;)" );
+        std::vector<uint64_t> logged_resident_mib;
+        for (auto match = std::sregex_iterator(log_text.begin(), log_text.end(), resident_line);
+             match != std::sregex_iterator(); ++match)
+            logged_resident_mib.push_back(std::stoull((*match)[1].str()));
+        if (logged_resident_mib.size() != 1 || logged_resident_mib.front() != engine_resident_mib)
+            throw PlanFailed("native v3 rank sidecar and rad0011 engine resident-memory log disagree; see " +
+                             measurement_log.string());
+        check_plan_for_configuration(v, decoded_plan);
+        if (decoded_plan.vram.cards.size() != selected_bdfs.size() || decoded_ranks.gpu.size() != selected_bdfs.size())
+            throw PlanFailed("native v3 measurement rank count differs from the selected ordered BDFs");
+        for (size_t i = 0; i < selected_bdfs.size(); ++i)
+            if (decoded_plan.vram.cards[i].free != decoded_ranks.gpu[i].claimable_bytes)
+                throw PlanFailed("native v3 measured plan and rank receipt disagree on same-rank free VRAM");
+
+        native_execution_root->require_matches(snapshot.resolution_root());
+        const Json after_facts = detect(in.options.sys_root);
+        const Resolved after_resolve = resolve(in.options, after_facts);
+        const fs::path after_home = after_resolve.values.at("engine").at("radiance_home").get<std::string>();
+        if (fs::canonical(after_home) != frozen_runtime_home)
+            throw PlanFailed("native v3 runtime home changed during measurement; refusing to publish its result");
+        const Json after_key = plan_key_inputs(
+            after_resolve.values, after_facts,
+            container_identity(after_resolve.values.at("engine").at("model").get<std::string>()),
+            engine_identity(engine, frozen_runtime_home), "budgets: default", &snapshot);
+        if (plan_key(after_key) != plan_key(frozen_key))
+            throw PlanFailed("native v3 plan inputs, native snapshot, model or engine build changed during "
+                             "measurement; refusing to publish or re-key the result");
+
+        const fs::path owner_cache = attempt_dir / "plan-cache";
+        const CachedPlan owned = plan_cache_store_owned(
+            owner_cache, frozen_key, measured_plan, rank_demand, v, HostResident{0, engine_resident_mib},
+            OwnerMeasurementEvidence{attempt_id, verified.sha256});
+        if (!owned.owner || owned.owner->attempt_id != attempt_id || owned.key != plan_key(frozen_key))
+            throw PlanFailed("native v3 owner cache publication did not return the exact attempt receipt");
+
+        const fs::path measured_manifest = attempt_dir / "manifest-native-measured.json";
+        std::vector<std::string> measured_argv = {
+            in.self.string(), "--write-manifest", measured_manifest.string(), "--power-profile", in.power_profile,
+            "--plan-cache", owner_cache.string(), "--engine-binary", absolute_engine.string(), "--plan-extra",
+            "budgets: default", "--expected-plan-key", plan_key(frozen_key), "--expected-owner-attempt", attempt_id,
+            "--bc-native-config-fd", std::to_string(snapshot_handoff->descriptor())};
+        measured_argv.insert(measured_argv.end(), resolver.begin(), resolver.end());
+        const ManifestRun final_writer = run_planning_child(
+            measured_argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
+            "native v3 measured writer", snapshot_handoff->descriptor());
+        if (final_writer.exit != 0)
+            throw PlanFailed("native v3 measured writer refused its owner receipt (exit " +
+                             std::to_string(final_writer.exit) + "): " + tail_text(final_writer.err));
+        const auto final_snapshot = pin_manifest_file(measured_manifest, v2::PlanUse::serving);
+        const auto final_native = v2::native_config_view(final_snapshot.parsed);
+        const auto& final_spec = final_snapshot.parsed.spec;
+        if (!final_native || final_native->yaml_utf8 != snapshot.yaml_utf8() ||
+            final_native->identity.sha256 != snapshot.sha256() ||
+            final_native->identity.resolution_root != snapshot.resolution_root())
+            throw PlanFailed("native v3 measured serving artifact changed the admitted YAML snapshot identity");
+        if (final_spec.intent.model != v.at("engine").at("model").get<std::string>() ||
+            final_spec.processes.engine.device.gpus != selected_bdfs)
+            throw PlanFailed("native v3 measured serving artifact changed the frozen model or ordered engine devices");
+        const fs::path final_home = final_spec.processes.engine.runtime.radiance_home;
+        if (fs::canonical(final_home) != frozen_runtime_home ||
+            engine_identity(engine, frozen_runtime_home) != frozen_key.at("engine_build").get<std::string>())
+            throw PlanFailed("native v3 measured serving artifact changed the frozen runtime home or engine build");
+        if (!final_spec.plan.engine_memory)
+            throw PlanFailed("native v3 measured serving artifact has no engine memory receipt");
+        // The manifest cache_key is the serving-contract key recomputed by read_manifest(). It is
+        // intentionally distinct from the operational owner-cache key used for this measurement.
+        if (v2::encode(final_spec.plan.engine_memory->expected) != owned.plan_json ||
+            final_spec.plan.engine_memory->model_identity != frozen_key.at("model").get<std::string>() ||
+            final_spec.plan.engine_memory->engine_identity != frozen_key.at("engine_build").get<std::string>() ||
+            !final_spec.plan.resource_inputs ||
+            final_spec.plan.resource_inputs->resident_other_bytes != decoded_ranks.resident_other_bytes)
+            throw PlanFailed("native v3 measured serving artifact changed the owner plan or frozen model/build identities");
+        throw PlanFailed("native v3 measured artifact verified for owner attempt " + attempt_id +
+                         "; serving start, stored replay and index publication remain gated");
     }
 
     // RSC12 has no lab experiment static key: never replay a different experiment.

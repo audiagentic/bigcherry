@@ -17,6 +17,7 @@
 #include "serving.h"
 #include "session.h"
 #include "sha256.h"
+#include "serving_codec.h"
 #include "stored_manifest_cache.h"
 #include "test_manifest_fixture.h"
 #include "test_rad_fixture.h"
@@ -3240,12 +3241,17 @@ void session_engine_plan(Fixture& t) {
     in.options.site = site;
     in.options.configs = {configs};
     in.options.model_root = t.root / "model-root"; // the site's model wins; the root is still required
-    in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
+    in.options.sets = {"layout.name=\"qwen27b-tp3-int8\"", "memory.host_pool_mib=1024"};
     in.self = t.root / "bc-serve-test";
     fs::create_symlink(BC_SERVE_EXE, in.self);
     in.engine_binary = BC_FAKE_ENGINE;
     const Json session_facts = bc::serving::detect(t.root);
     const auto session_resolved = bc::serving::resolve(in.options, session_facts);
+    for (const Json& bdf : session_resolved.values.at("layout").at("engine_cards")) {
+        const fs::path gtt = t.root / "sys/bus/pci/devices" / bdf.get<std::string>() / "mem_info_gtt_used";
+        fs::create_directories(gtt.parent_path());
+        std::ofstream(gtt) << "0\n";
+    }
     SessionManifestPair session_manifests;
 #ifndef BC_NATIVE_V3_SESSION_ONLY
     session_manifests = session_manifest_pair(session_resolved, session_facts);
@@ -3295,13 +3301,16 @@ void session_engine_plan(Fixture& t) {
         };
 #endif
         bool power_admitted = false;
+        int power_admit_calls = 0;
+        std::string admitted_measurement_manifest_sha256;
         std::vector<std::string> inspector_roles;
         std::vector<pid_t> reaped;
         ss::Hooks admission_hooks;
         admission_hooks.wait = [](std::chrono::milliseconds) { return true; };
         admission_hooks.started = [&](ss::ChildKind kind, const std::string& role, pid_t,
                                       const fs::path&) {
-            assert(kind == ss::ChildKind::native_config_inspector || kind == ss::ChildKind::manifest_writer);
+            assert(kind == ss::ChildKind::native_config_inspector || kind == ss::ChildKind::manifest_writer ||
+                   kind == ss::ChildKind::measuring_engine);
             inspector_roles.push_back(role);
         };
         admission_hooks.ended = [&](pid_t pid) {
@@ -3312,8 +3321,14 @@ void session_engine_plan(Fixture& t) {
             }
             reaped.push_back(pid);
         };
-        admission_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+        admission_hooks.admit_power = [&](const fs::path& manifest_path, bc::serving::v2::PlanUse) {
             power_admitted = true;
+            ++power_admit_calls;
+            std::ifstream manifest_file(manifest_path, std::ios::binary);
+            if (!manifest_file) throw std::runtime_error("cannot read pinned native measuring manifest in test hook");
+            const std::string manifest_bytes((std::istreambuf_iterator<char>(manifest_file)),
+                                             std::istreambuf_iterator<char>());
+            admitted_measurement_manifest_sha256 = bc::serving::sha256_hex(manifest_bytes);
             return bc::serving::v2::Status{};
         };
         bool stopped_before_v2 = false;
@@ -3323,7 +3338,7 @@ void session_engine_plan(Fixture& t) {
         } catch (const ss::PlanFailed& error) {
             native_gate_error = error.what();
 #ifdef BC_NATIVE_V3_SESSION_ONLY
-            stopped_before_v2 = std::string_view(error.what()).find("native v3 measuring draft verified") !=
+            stopped_before_v2 = std::string_view(error.what()).find("native v3 measured artifact verified") !=
                                 std::string_view::npos;
 #else
             stopped_before_v2 = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
@@ -3331,13 +3346,120 @@ void session_engine_plan(Fixture& t) {
 #endif
         }
 #ifdef BC_NATIVE_V3_SESSION_ONLY
-        if (!(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 2 &&
+        const fs::path attempts = gated_run / "measurement-attempts";
+        std::vector<fs::path> attempt_dirs;
+        if (fs::is_directory(attempts))
+            for (const auto& attempt : fs::directory_iterator(attempts))
+                if (attempt.is_directory()) attempt_dirs.push_back(attempt.path());
+        bool owner_receipt_verified = false;
+        bool measured_artifact_verified = false;
+        if (attempt_dirs.size() == 1 && !admitted_measurement_manifest_sha256.empty()) {
+            const fs::path attempt = attempt_dirs.front();
+            std::vector<fs::path> cache_entries;
+            const fs::path owner_cache = attempt / "plan-cache";
+            if (fs::is_directory(owner_cache))
+                for (const auto& entry : fs::directory_iterator(owner_cache))
+                    if (entry.is_regular_file() && entry.path().extension() == ".json")
+                        cache_entries.push_back(entry.path());
+            if (cache_entries.size() == 1) {
+                std::ifstream cache_file(cache_entries.front(), std::ios::binary);
+                Json cache_record;
+                cache_file >> cache_record;
+                const Json& owner = cache_record.at("owner");
+                const Json& rank_demand = cache_record.at("rank_demand");
+                owner_receipt_verified = owner.at("attempt_id") == attempt.filename().string() &&
+                    owner.at("measuring_manifest_sha256") == admitted_measurement_manifest_sha256 &&
+                    cache_record.at("resident").at("engine_mib") ==
+                        std::max<int64_t>(1, (rank_demand.at("resident_other_bytes").get<int64_t>() +
+                                               ((int64_t{1} << 20) - 1)) / (int64_t{1} << 20));
+                const fs::path measured_path = attempt / "manifest-native-measured.json";
+                std::ifstream measured_file(measured_path, std::ios::binary);
+                if (owner_receipt_verified && measured_file) {
+                    const std::string measured_bytes((std::istreambuf_iterator<char>(measured_file)),
+                                                     std::istreambuf_iterator<char>());
+                    const auto parsed = bc::serving::v2::read_manifest(
+                        measured_bytes, "native v3 session measurement test", bc::serving::v2::PlanUse::serving);
+                    if (parsed.ok()) {
+                        const auto& spec = parsed.value().spec;
+                        const auto native = bc::serving::v2::native_config_view(parsed.value());
+                        measured_artifact_verified = native && native->yaml_utf8 == native_yaml_bytes &&
+                            spec.intent.model == model.string() && spec.processes.engine.device.gpus ==
+                                session_resolved.values.at("layout").at("engine_cards").get<std::vector<std::string>>() &&
+                            spec.plan.engine_memory &&
+                            bc::serving::v2::encode(spec.plan.engine_memory->expected) == cache_record.at("plan") &&
+                            spec.plan.engine_memory->model_identity == bc::serving::container_identity(model) &&
+                            spec.plan.resource_inputs &&
+                            spec.plan.resource_inputs->resident_other_bytes ==
+                                rank_demand.at("resident_other_bytes").get<int64_t>();
+                    }
+                }
+            }
+        }
+        if (!(stopped_before_v2 && writer_calls == 0 && power_admitted && inspector_roles.size() == 4 &&
               inspector_roles[0] == "native config inspector" &&
-              inspector_roles[1] == "native v3 measuring draft writer" && reaped.size() == 2 &&
-              !fs::exists(gated_run / "plan-cache") && !fs::exists(native_yaml) &&
-              fs::exists(cache_tripwire)))
-            throw std::runtime_error("native v3 session did not verify a real writer draft before its closed gate: " +
+              inspector_roles[1] == "native v3 measuring draft writer" &&
+              inspector_roles[2] == "native v3 measuring engine" &&
+              inspector_roles[3] == "native v3 measured writer" && reaped.size() == 4 && owner_receipt_verified &&
+              measured_artifact_verified && !fs::exists(native_yaml) && fs::exists(cache_tripwire)))
+            throw std::runtime_error("native v3 session did not complete one owner-tracked measurement and measured "
+                                     "writer before its closed serving gate: " +
                                      native_gate_error);
+
+        const fs::path home_alias = t.root / "native-runtime-home-link";
+        const fs::path replacement_home = t.root / "native-runtime-home-identical";
+        fs::create_directories(replacement_home);
+        fs::create_directory_symlink(home, home_alias);
+        const fs::path drift_site = t.file(
+            "session-site-runtime-link.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" +
+                home_alias.string() + "\"\n");
+        const fs::path drift_yaml = native_root / "fleet-runtime-drift.yaml";
+        std::ofstream(drift_yaml, std::ios::binary) << native_yaml_bytes;
+        ss::EnginePlanInputs home_drift = gated;
+        home_drift.options.site = drift_site;
+        home_drift.native_admission = ss::NativeAdmissionRequest{
+            drift_yaml, native_root, gated.native_admission->runtime_overrides};
+        const fs::path drift_run = t.root / "native-runtime-drift-run";
+        fs::create_directories(drift_run);
+        ss::Hooks drift_hooks;
+        std::map<pid_t, std::string> drift_roles;
+        std::vector<std::string> drift_role_order;
+        drift_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        drift_hooks.started = [&](ss::ChildKind, const std::string& role, pid_t pid, const fs::path&) {
+            drift_roles.emplace(pid, role);
+            drift_role_order.push_back(role);
+        };
+        drift_hooks.ended = [&](pid_t pid) {
+            if (drift_roles.at(pid) == "native config inspector") {
+                fs::remove(drift_yaml);
+                fs::remove(home_alias);
+                fs::create_directory_symlink(replacement_home, home_alias);
+            }
+        };
+        bool drift_power_admitted = false;
+        drift_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+            drift_power_admitted = true;
+            return bc::serving::v2::Status{};
+        };
+        bool runtime_home_drift_refused = false;
+        try {
+            (void)ss::plan_engine_only(home_drift, drift_run, drift_hooks);
+        } catch (const ss::PlanFailed& error) {
+            runtime_home_drift_refused =
+                std::string_view(error.what()).find("runtime home changed during measurement") != std::string_view::npos;
+        }
+        std::vector<fs::path> drift_attempt_dirs;
+        const fs::path drift_attempts = drift_run / "measurement-attempts";
+        if (fs::is_directory(drift_attempts))
+            for (const auto& attempt : fs::directory_iterator(drift_attempts))
+                if (attempt.is_directory()) drift_attempt_dirs.push_back(attempt.path());
+        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 3 &&
+              drift_role_order[0] == "native config inspector" &&
+              drift_role_order[1] == "native v3 measuring draft writer" &&
+              drift_role_order[2] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
+              !fs::exists(drift_attempt_dirs.front() / "plan-cache") &&
+              !fs::exists(drift_attempt_dirs.front() / "manifest-native-measured.json")))
+            throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
+                                     "publication");
 #else
         if (!(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
               inspector_roles[0] == "native config inspector" && reaped.size() == 1))
@@ -3352,6 +3474,7 @@ void session_engine_plan(Fixture& t) {
             ++forbidden_inspector_calls;
             return ss::ManifestRun{};
         };
+        const int power_calls_before_invalid_override = power_admit_calls;
         bool selector_refused = false;
         try {
             (void)ss::plan_engine_only(reserved_override, gated_run, admission_hooks);
@@ -3359,7 +3482,8 @@ void session_engine_plan(Fixture& t) {
             selector_refused = std::string_view(error.what()).find("runtime override cannot select CUDA_VISIBLE_DEVICES") !=
                                std::string_view::npos;
         }
-        assert(selector_refused && forbidden_inspector_calls == 0 && !power_admitted);
+        assert(selector_refused && forbidden_inspector_calls == 0 &&
+               power_admit_calls == power_calls_before_invalid_override);
     }
 #ifdef BC_NATIVE_V3_SESSION_ONLY
     return;
