@@ -131,6 +131,7 @@ struct EngineStart {
     std::string heat_session_nonce;
     // Native launches retain the admitted working directory and exact environment across child starts.
     std::shared_ptr<const NativeEngineLaunch> native_launch;
+    std::uint64_t native_helper_resident_mib = 0; // measured by the owner, outside the engine's P1 record
 
     // The exact strict document that was admitted and will be consumed by this role.
     // Stored replay and fresh launches use a sealed descriptor; manifest remains the durable public path.

@@ -15,6 +15,7 @@
 #include "stored_manifest.h"
 #include "stored_manifest_cache.h"
 #include "v2/document_bytes.h"
+#include "v2/s8_rules.h"
 #include "serving_codec.h"
 #include "v2/strict_json.h"
 
@@ -111,11 +112,12 @@ class NativeExecutionRoot final {
 };
 
 struct NativeEngineLaunch {
-    NativeEngineLaunch(const fs::path& resolution_root, Env complete_environment)
-        : root(resolution_root), environment(std::move(complete_environment)) {}
+    NativeEngineLaunch(const fs::path& resolution_root, Env complete_environment, fs::path system_root)
+        : root(resolution_root), environment(std::move(complete_environment)), sys_root(std::move(system_root)) {}
 
     NativeExecutionRoot root;
     Env environment;
+    fs::path sys_root;
 };
 
 // An admitted v2 document or native config snapshot is held in a kernel-sealed
@@ -873,6 +875,28 @@ namespace {
 
 void require_segment(const std::string& name); // measuring/serving readiness check
 
+v2::Result<v2::P1LiveRoom> measure_session_live_room(const v2::Manifest& manifest, const Json& facts,
+                                                    const fs::path& sys_root) {
+    auto ordered = manifest.spec.processes.engine.device.gpus;
+    for (const auto& helper : manifest.spec.processes.helpers)
+        ordered.push_back(helper.gpu);
+    const auto room = v2::measure_live_room(facts, sys_root, ordered);
+    if (!room)
+        return room;
+    const auto& gpus = facts.at("gpus");
+    for (const auto& gpu : manifest.spec.facts.gpus) {
+        if (std::find(ordered.begin(), ordered.end(), gpu.bdf) == ordered.end())
+            continue;
+        const auto current = std::find_if(gpus.begin(), gpus.end(),
+            [&](const Json& fact) { return fact.at("bdf") == gpu.bdf; });
+        if (current == gpus.end() || current->at("arch") != gpu.arch ||
+            current->at("hip_ordinal") != gpu.hip_ordinal || current->at("vram_total_mib") != gpu.vram.total_mib)
+            return v2::make_error(v2::ConfigErrorCode::ownership_mismatch, "spec.facts.gpus",
+                                  "selected GPU identity changed: " + gpu.bdf);
+    }
+    return room;
+}
+
 enum class HelperReadiness : std::uint8_t { pending, ready };
 
 HelperReadiness read_helper_readiness(const fs::path& log) {
@@ -1116,6 +1140,8 @@ class Owner {
             if (s_.before_gpu_start)
                 require_callback(s_.before_gpu_start.invoke("session.before_gpu_start", plan_),
                                  "pre-exec process boundary");
+            if (v2::kContractVersion == 3 || plan_.native_launch)
+                recheck_native_host_room();
             start_helpers();
             start_engine();
             if (!wait_health())
@@ -1413,6 +1439,32 @@ class Owner {
             ::close(fd);
         }
         stop_clients_.clear();
+    }
+
+    void recheck_native_host_room() {
+        if (!plan_.native_launch || !plan_.pinned_manifest)
+            throw PlanFailed("native serving pre-exec requires admitted launch inputs and a sealed manifest");
+        const auto manifest = v2::load_manifest(plan_.execution_manifest(), v2::PlanUse::serving);
+        if (!manifest)
+            throw PlanFailed(v2::render_human("native serving pre-exec", manifest.error()));
+        const auto& admitted = manifest.value();
+        const auto& spec = admitted.spec;
+        const auto native = v2::native_config_view(admitted);
+        if (!native || !spec.plan.resource_inputs || !spec.plan.engine_memory)
+            throw PlanFailed("native serving pre-exec requires a measured native plan");
+        plan_.native_launch->root.require_matches(native->identity.resolution_root);
+        const auto& sys_root = plan_.native_launch->sys_root;
+        const auto live = measure_session_live_room(admitted, detect(sys_root), sys_root);
+        if (!live)
+            throw PlanFailed(v2::render_human("native serving pre-exec room", live.error()));
+        auto inputs = *spec.plan.resource_inputs;
+        inputs.mem_available_bytes = live.value().mem_available_bytes;
+        inputs.cgroup_headroom_bytes = live.value().cgroup_headroom_bytes;
+        inputs.pin_available_bytes = live.value().pin_available_bytes;
+        if (const auto refusal = v2::require_measured_host_room(
+                spec.resources.host, spec.processes.engine.scheduler.tp,
+                spec.plan.engine_memory->expected.checkpoints.slot_bytes, inputs, plan_.native_helper_resident_mib))
+            throw PlanFailed(v2::render_human("native serving pre-exec room", *refusal));
     }
 
     void start_helpers() {
@@ -2375,7 +2427,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
                                           const Hooks& hooks, const NativeConfigSnapshot* expected_native);
 
 static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
-    const fs::path& resolution_root, const fs::path& runtime_home, const Env& selected, Env overrides) {
+    const fs::path& resolution_root, const fs::path& runtime_home, const Env& selected, Env overrides,
+    const fs::path& sys_root) {
     for (const char* key : {"RADIANCE_HOME", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES",
                             "CUDA_VISIBLE_DEVICES", "GPU_DEVICE_ORDINAL"})
         if (overrides.count(key))
@@ -2383,7 +2436,8 @@ static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
     for (const auto& [key, value] : selected)
         overrides[key] = value;
     overrides["RADIANCE_HOME"] = runtime_home.string();
-    return std::make_shared<const NativeEngineLaunch>(resolution_root, current_child_environment(overrides));
+    return std::make_shared<const NativeEngineLaunch>(resolution_root, current_child_environment(overrides),
+                                                      fs::absolute(sys_root));
 }
 
 std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved& resolved, const Json& facts,
@@ -2586,7 +2640,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     if (in.native_admission) {
         const fs::path frozen_runtime_home = fs::canonical(home);
         out.native_launch = prepare_native_launch(in.native_admission->resolution_root, frozen_runtime_home,
-                                                  out.runtime, in.native_admission->runtime_overrides);
+                                                  out.runtime, in.native_admission->runtime_overrides,
+                                                  in.options.sys_root);
         const auto& launch = *out.native_launch;
         const NativeConfigSnapshot snapshot =
             NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
@@ -2829,6 +2884,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         out.argv = {absolute_engine.string(), "--manifest", out.execution_manifest().string(), "--role", "engine"};
         out.helpers = helper_starts({processes, after_facts}, frozen_runtime_home, helper_binary,
                                     out.execution_manifest(), false);
+        out.native_helper_resident_mib = measured_helpers_mib;
         out.handoff_shm = handoff;
         out.summary["plan_measurement_attempt"] = attempt_id;
         out.summary["manifest_digest"] = final_snapshot.parsed.metadata.content_digest;
@@ -3306,6 +3362,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
                 "replay: RSC12 static resolution key changed (config, inputs, calibration or power)");
     }
     std::string native_helper_build;
+    uint64_t native_helper_resident_mib = 0;
     if (native_snapshot) {
         if (!bound || !bound->native_measurement || !current_config)
             throw ReplayFailed(ReplayRefusal::missing_gate,
@@ -3327,6 +3384,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
             !accepted.spec.plan.resource_inputs)
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                "replay: native owner measurement no longer matches the exact final manifest");
+        native_helper_resident_mib = cached->resident.helpers_mib;
         const auto ranks = decode_engine_rank_demand(cached->rank_demand, accepted.spec.processes.engine.device.gpus,
                                                      "stored native owner rank demand");
         if (accepted.spec.plan.resource_inputs->resident_other_bytes != ranks.resident_other_bytes ||
@@ -3339,14 +3397,11 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
                                    "replay: native owner rank facts disagree with the measured plan");
     }
 
-    std::vector<std::string> ordered = accepted.spec.processes.engine.device.gpus;
-    for (const auto& h : accepted.spec.processes.helpers)
-        ordered.push_back(h.gpu);
     v2::P1LiveRoom room{};
     if (given.replay_live_room) {
         room = given.replay_live_room.require("session.replay.live_room", accepted, facts);
     } else {
-        const auto measured = v2::measure_live_room(facts, in.options.sys_root, ordered);
+        const auto measured = measure_session_live_room(accepted, facts, in.options.sys_root);
         if (!measured)
             throw PlanFailed(v2::render_human("bc-serve replay room", measured.error()));
         room = measured.value();
@@ -3406,7 +3461,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
         out.argv.front() = fs::absolute(engine).string();
         out.native_launch = prepare_native_launch(
             native_snapshot->resolution_root(), native_runtime_home, out.runtime,
-            given.native_admission ? given.native_admission->runtime_overrides : Env{});
+            given.native_admission ? given.native_admission->runtime_overrides : Env{}, in.options.sys_root);
+        out.native_helper_resident_mib = native_helper_resident_mib;
         const auto& launch = *out.native_launch;
         const auto inspected = inspect_and_reconcile_native_config(
             engine, *native_snapshot, native_runtime_home, accepted.spec.intent.model, launch.environment,

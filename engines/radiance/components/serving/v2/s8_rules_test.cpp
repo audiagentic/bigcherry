@@ -100,6 +100,26 @@ int main() {
   assert(result.host.kv_mib == 1); // 4096 retained tokens x 128 measured bytes
   assert(result.host.reserve_mib == 4);
   assert(result.host.checkpoint_slots.value() == 5);
+  auto startup_room = result.resource_inputs;
+  const int64_t helper_resident_mib = 8;
+  const int64_t pinned = (result.host.pool_mib + result.host.kv_mib) * MiB;
+  const int64_t committed = pinned + result.host.reserve_mib * MiB + startup_room.ngram_bytes +
+      *result.host.checkpoint_slots * fixture_input.checkpoint_slot_bytes +
+      startup_room.resident_other_bytes + helper_resident_mib * MiB;
+  startup_room.mem_available_bytes = startup_room.cgroup_headroom_bytes = committed;
+  startup_room.pin_available_bytes = pinned;
+  const auto check_startup_room = [&] {
+    return s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                         startup_room, helper_resident_mib);
+  };
+  assert(!check_startup_room());
+  startup_room.mem_available_bytes = committed - 1;
+  const auto ram_shortage = check_startup_room();
+  assert(ram_shortage && ram_shortage->code == s8::ConfigErrorCode::admission_refused);
+  startup_room.mem_available_bytes = committed;
+  startup_room.cgroup_headroom_bytes = committed - 1;
+  const auto cgroup_shortage = check_startup_room();
+  assert(cgroup_shortage && cgroup_shortage->code == s8::ConfigErrorCode::admission_refused);
   assert(result.helpers.size() == 1 &&
          result.helpers[0].expert_budget_mib == 23548);
   assert(result.transport->max_rows == 512 && result.transport->skip_owned);

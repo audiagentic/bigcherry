@@ -64,6 +64,37 @@ std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &r) {
   return ceil_mib(pool_bytes);
 }
 
+Status require_measured_host_room(const HostResources &host, int64_t engine_ranks,
+                                  int64_t checkpoint_slot_bytes, const MeasuredResourceInputs &r,
+                                  uint64_t helper_resident_mib) {
+  int64_t reserve, pool_total_mib, pinned_mib, pinned, committed, checkpoint_bytes;
+  if (!host.checkpoint_slots || !positive(engine_ranks) ||
+      !positive(r.mem_available_bytes) || !positive(r.cgroup_headroom_bytes) || !positive(r.pin_available_bytes) ||
+      !mul(host.reserve_mib, kMiB, &reserve) ||
+      !mul(host.pool_mib, engine_ranks, &pool_total_mib) ||
+      !add(pool_total_mib, host.kv_mib, &pinned_mib) ||
+      !mul(pinned_mib, kMiB, &pinned) ||
+      !mul(checkpoint_slot_bytes, *host.checkpoint_slots, &checkpoint_bytes) ||
+      helper_resident_mib > uint64_t(kMaxWireInteger / kMiB) ||
+      !add(pinned, r.ngram_bytes, &committed) ||
+      !add(committed, checkpoint_bytes, &committed) ||
+      !add(committed, r.resident_other_bytes, &committed) ||
+      !add(committed, static_cast<int64_t>(helper_resident_mib) * kMiB, &committed) ||
+      !add(committed, reserve, &committed))
+    return bad(ConfigErrorCode::invalid_value, "spec.plan.resource_inputs",
+               "invalid measured host admission inputs or byte overflow");
+  const int64_t host_room = std::min(r.mem_available_bytes, r.cgroup_headroom_bytes);
+  if (committed > host_room || pinned > r.pin_available_bytes) {
+    std::ostringstream msg;
+    msg << "host bytes required=" << committed << " available=" << host_room
+        << "; pinned bytes required=" << pinned
+        << " available=" << r.pin_available_bytes
+        << "; adjust retention, ownership or calibrated reserve";
+    return bad(ConfigErrorCode::admission_refused, "spec.resources.host", msg.str());
+  }
+  return std::nullopt;
+}
+
 Status require_measured_vram(int64_t required, int64_t claimable,
                              const std::string &bdf) {
   if (!positive(required) || !positive(claimable))
@@ -193,7 +224,7 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
 
   // This is the S7 resource ledger's byte-exact host-pool/KV arithmetic,
   // now taking only the S9 typed, engine-measured resource inputs.
-  int64_t retained_bytes, committed, pinned, checkpoint_bytes;
+  int64_t retained_bytes;
   const auto pool = derived_host_pool_mib(r);
   if (!pool || !mul(r.kv_bytes_per_token, r.retention_target_tokens, &retained_bytes)) {
     return fail(ConfigErrorCode::invalid_value, scope_path,
@@ -202,30 +233,9 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
   const int64_t pool_mib = *pool;
   const int64_t kv_mib = ceil_mib(retained_bytes);
   const int64_t reserve_mib = ceil_mib(m.host_reserve_bytes);
-  int64_t reserve_rounded_bytes, pool_total_mib, pinned_mib;
-  if (!mul(reserve_mib, kMiB, &reserve_rounded_bytes) ||
-      !mul(pool_mib, m.engine_ranks, &pool_total_mib) ||
-      !add(pool_total_mib, kv_mib, &pinned_mib) ||
-      !mul(pinned_mib, kMiB, &pinned) ||
-      !add(pinned, r.ngram_bytes, &committed) ||
-      !mul(m.checkpoint_slot_bytes, m.checkpoint_slots, &checkpoint_bytes) ||
-      !add(committed, checkpoint_bytes, &committed) ||
-      !add(committed, r.resident_other_bytes, &committed) ||
-      !add(committed, reserve_rounded_bytes, &committed)) {
-    return fail(ConfigErrorCode::invalid_value, scope_path,
-                "derived host admission overflow");
-  }
-  const int64_t host_room =
-      std::min(r.mem_available_bytes, r.cgroup_headroom_bytes);
-  if (committed > host_room || pinned > r.pin_available_bytes) {
-    std::ostringstream msg;
-    msg << "host bytes required=" << committed << " available=" << host_room
-        << "; pinned bytes required=" << pinned
-        << " available=" << r.pin_available_bytes
-        << "; adjust retention, ownership or calibrated reserve";
-    return fail(ConfigErrorCode::admission_refused, "spec.resources.host",
-                msg.str());
-  }
+  const HostResources host{pool_mib, kv_mib, reserve_mib, m.checkpoint_slots};
+  if (auto e = require_measured_host_room(host, m.engine_ranks, m.checkpoint_slot_bytes, r, 0))
+    return *e;
 
   if (r.helper_footprints.size() != m.helpers.size())
     return fail(ConfigErrorCode::ownership_mismatch,
@@ -241,7 +251,7 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
   }
   S8Resolution out;
   out.resource_inputs = r;
-  out.host = {pool_mib, kv_mib, reserve_mib, m.checkpoint_slots};
+  out.host = host;
   bool has_owned_experts = false;
   for (const auto &fp : r.helper_footprints) {
     const auto it = device_by_role.find({fp.role, fp.bdf});

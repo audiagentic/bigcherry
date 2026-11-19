@@ -79,6 +79,8 @@ Prerequisites RUM02/RUM03/RUM04. RHP13 remains unified-allocator scope owner and
 
 Astra source review ASTRA-CONSOLIDATION.md supersedes the earlier mandatory Fleet::grant external-reservation proposal for the initial bump; dependencies RUM02/RUM03/RUM04. Shared-card integration is RUM10 only.
 
+Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gates after power admission, before any serving child forks. The new gate uses authenticated helper RSS and the sealed manifest; existing VRAM checks remain. Final v3 owner and S8 tests passed 2/2. Focused v2 serving, session, stored and S8 tests passed 4/4. Leased physical placement and offline rank-order qualification remain open.
+
 ## Change Log
 
 - 2026-11-18T01:28:20.204242+00:00 (created-by): Created by codex
@@ -90,3 +92,4 @@ Astra source review ASTRA-CONSOLIDATION.md supersedes the earlier mandatory Flee
 - 2026-11-18T02:26:08.989224+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:28:17.614303+00:00 (updated-by): Updated: section:validation
 - 2026-11-19T22:18:39.878379+00:00 (state-transition): State: pending → in_progress
+- 2026-11-19T22:59:23.833156+00:00 (updated-by): Updated: section:notes

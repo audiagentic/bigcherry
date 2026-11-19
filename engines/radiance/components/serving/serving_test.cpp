@@ -4945,6 +4945,26 @@ void helper_vram_owner_graph(Fixture& t) {
     assert(refused.at("processes").size() == 1 &&
            refused.at("processes").at(0).at("role") == "native config inspector" &&
            ss::alive_recorded(refused).empty());
+
+    const auto meminfo = t.root / "proc/meminfo";
+    std::ifstream prior(meminfo);
+    const std::string prior_room((std::istreambuf_iterator<char>(prior)), std::istreambuf_iterator<char>());
+    const auto reduced = std::regex_replace(prior_room, std::regex("MemAvailable:[^\n]+"),
+                                           "MemAvailable: 1024 kB");
+    assert(reduced != prior_room);
+    owner.before_gpu_start = [&](const ss::EngineStart& plan) {
+        assert(plan.summary.at("replay") == true && admissions.size() == 4);
+        write(meminfo, reduced);
+        return bc::serving::v2::Status{};
+    };
+    const int low_room = ss::serve(owner);
+    write(meminfo, prior_room);
+    const auto room_refused = ss::read_record(owner.run_dir).value_or(Json::object());
+    assert(low_room != 0 && admissions.size() == 4 && samples == measured_samples);
+    assert(room_refused.at("errors").dump().find("host bytes required=") != std::string::npos);
+    assert(room_refused.at("processes").size() == 1 &&
+           room_refused.at("processes").at(0).at("role") == "native config inspector" &&
+           ss::alive_recorded(room_refused).empty());
 #else
     int writers = 0;
     std::vector<fs::path> measuring_histograms;
