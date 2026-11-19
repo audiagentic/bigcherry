@@ -416,6 +416,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (calibration_run)
         session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
+    session.publish_feature_states = true;
     if (calibration_run)
         session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
     session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
