@@ -1,0 +1,10 @@
+cmake_minimum_required(VERSION 3.21)
+project(bc_ltx_tp3_reference LANGUAGES CXX)
+include(CTest)
+
+if(BUILD_TESTING)
+  add_executable(ltx_tp3_reference_test ltx_tp3_reference_test.cpp)
+  target_compile_features(ltx_tp3_reference_test PRIVATE cxx_std_20)
+  target_compile_options(ltx_tp3_reference_test PRIVATE -Wall -Wextra -Werror -pedantic -UNDEBUG)
+  add_test(NAME ltx_tp3_reference_test COMMAND ltx_tp3_reference_test)
+endif()
