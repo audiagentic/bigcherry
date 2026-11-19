@@ -27,6 +27,7 @@ Block keys: ``reference_dir`` (required), ``args`` (engine arguments of the KL r
 from __future__ import annotations
 
 import dataclasses
+from contextlib import nullcontext
 import json
 import os
 import subprocess
@@ -34,6 +35,7 @@ from pathlib import Path
 from typing import Any
 
 from ..engine_adapters import EngineAdapter, QualityCommand, SidecarError, SidecarSet, failed_sidecars
+from ..engine_adapters.base import QualityLaunch
 from ..experiment.engine_quality import (
     KldResult, QualityParseError, QualityThresholds, parse_radiance_kld_json, quality_gate,
 )
@@ -132,15 +134,18 @@ def _run(command: QualityCommand) -> dict[str, Any]:
     record: dict[str, Any] = {"argv": list(command.argv), "log": str(command.log_path)}
     with command.log_path.open("wb") as log:
         try:
-            done = subprocess.run(
-                list(command.argv), env=command.env, stdout=log, stderr=subprocess.STDOUT,
-                stdin=subprocess.DEVNULL, timeout=command.timeout_s,
-            )
+            with command.prepare() if command.prepare else nullcontext(QualityLaunch(command.argv)) as launch:
+                if launch.manifest_sha256 is not None:
+                    record["manifest_sha256"] = launch.manifest_sha256
+                done = subprocess.run(
+                    list(launch.argv), env=command.env, stdout=log, stderr=subprocess.STDOUT,
+                    stdin=subprocess.DEVNULL, timeout=command.timeout_s, cwd=launch.cwd, pass_fds=launch.pass_fds,
+                )
             record["returncode"] = done.returncode
         except subprocess.TimeoutExpired:
             record["returncode"] = None
             record["error"] = f"quality run exceeded {command.timeout_s:g}s"
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
             record["returncode"] = None
             record["error"] = f"cannot start {command.argv[0]}: {exc}"
     return record

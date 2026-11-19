@@ -824,7 +824,7 @@ class TestServingManifestPatch(unittest.TestCase):
             self.assertIn("NativeFleetConfig::replay", bridge)
             self.assertIn("bc_serving_take_native_config", bridge)
             self.assertIn("v2::read_sealed_document(fd,", bridge)
-            self.assertIn("v3 native offline quality starts are not available", bridge)
+            self.assertIn("v3 native offline quality cannot be combined with memory measurement", bridge)
             core_cmake = (root / "core" / "CMakeLists.txt").read_text(encoding="utf-8")
             self.assertIn('if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")', core_cmake)
             self.assertIn("BC_RAD_HOST_POOL_MIB_AGGREGATE=1", core_cmake)

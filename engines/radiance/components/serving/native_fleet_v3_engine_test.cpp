@@ -45,16 +45,16 @@ void reject_wrong_use(const std::string& path, wire::PlanUse use) {
           "v3 reader accepted a manifest for the wrong plan role");
 }
 
-bool serving_entry(const std::string& path, bool offline = false) {
+bool serving_entry(const std::string& path, const std::vector<std::string>& run_args = {}) {
     std::vector<std::string> storage = {"radiance", "--manifest", path, "--role", "engine"};
-    if (offline) storage.insert(storage.end(), {"--kld-out", "unused-kl.json"});
+    storage.insert(storage.end(), run_args.begin(), run_args.end());
     std::vector<char*> argv;
     for (std::string& arg : storage) argv.push_back(arg.data());
     int argc = static_cast<int>(argv.size());
     argv.push_back(nullptr);
     char** raw_argv = argv.data();
     if (!bc_serving_engine_argv(&argc, &raw_argv)) return false;
-    check(bc_plan_memory_take_flag(&argc, &raw_argv) == 0 && argc == 1,
+    check(bc_plan_memory_take_flag(&argc, &raw_argv) == 0 && argc == 1 + static_cast<int>(run_args.size()),
           "native serving left unexpected flags after rad0011 extraction");
     return true;
 }
@@ -115,7 +115,9 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
     check(!serving_entry(sealed_path), "v3 serving accepted an unsealed inherited descriptor");
     constexpr int seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
     check(::fcntl(descriptor.fd, F_ADD_SEALS, seals) == 0, "cannot seal the serving fixture descriptor");
-    check(!serving_entry(sealed_path, true), "sealed v3 serving manifest enabled offline quality flags");
+    check(!serving_entry(sealed_path, {"--plan-memory", "plan.json", "--plan-memory-ranks", "ranks.json",
+                                       "--kld-ref", "ref"}),
+          "sealed v3 manifest accepted mixed measuring and quality flags");
     // Replace the mutable artifact after sealing the exact admitted bytes.
     {
         std::ofstream changed(path, std::ios::binary | std::ios::trunc);
@@ -157,6 +159,30 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
               floor_ppm == admitted_view.value().kv_backing_floor_ppm &&
               bc_serving_engine_bdfs() == spec.processes.engine.device.gpus,
           "native serving changed the expected plan, KV floor, or ordered BDFs");
+
+    const auto quality_config = [&](const std::vector<std::string>& flags) {
+        rad::Config quality;
+        check(serving_entry(sealed_path, flags) && bc_serving_take_native_config(&quality) == 1 &&
+                  quality.kld() && bc_plan::mode() == bc_plan::Mode::none &&
+                  !bc_serving_expected_plan(&expected, &floor_ppm),
+              "native quality did not retain its offline plan role");
+        check(quality.given.at("--mixed-step-target-ms") == cfg.given.at("--mixed-step-target-ms") &&
+                  quality.mixed_step_target_ms == cfg.mixed_step_target_ms &&
+                  quality.devices == cfg.devices && quality.rank_devices == cfg.rank_devices &&
+                  quality.host_pool_mib == cfg.host_pool_mib,
+              "native quality overlay changed YAML provenance, ordered devices or per-rank pool");
+        return quality;
+    };
+    const auto recording = quality_config({"--kld-record", "/ref", "--kld-corpus", "/corpus.jsonl"});
+    check(recording.kld_record == "/ref" && recording.kld_corpus == "/corpus.jsonl",
+          "native quality lost reference recording paths");
+    const auto score = quality_config({"--kld-ref", "/ref", "--kld-out", "/result.json"});
+    check(score.kld_ref == "/ref" && score.kld_out == "/result.json" && score.kld_record.empty(),
+          "native quality lost score paths");
+    rad::Config invalid;
+    check(serving_entry(sealed_path, {"--kld-out", "/result.json"}) &&
+              bc_serving_take_native_config(&invalid) < 0 && !bc_serving_expected_plan(&expected, &floor_ppm),
+          "an invalid KL request could fall through to serving");
 }
 } // namespace
 

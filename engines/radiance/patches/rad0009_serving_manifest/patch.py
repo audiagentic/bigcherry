@@ -130,6 +130,7 @@ struct NativeEngineInputs {
     int64_t max_context = 0;
     int64_t max_sequences = 0;
     int64_t host_pool_mib_per_rank = 0;
+    bool offline_quality = false;
 };
 std::optional<NativeEngineInputs> g_native_engine;
 
@@ -247,8 +248,8 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     if (!heat_nonce.empty() && (!plan_memory.empty() || !rank_out.empty() || !run_flags.empty()))
         return fail("--bc-heat-launch-nonce is valid only for serving, not measurement or quality runs");
     const bool native = v2::kContractVersion == 3;
-    if (native && !run_flags.empty())
-        return fail("v3 native offline quality starts are not available");
+    if (native && !run_flags.empty() && !plan_memory.empty())
+        return fail("v3 native offline quality cannot be combined with memory measurement");
     std::string text;
     if (native && plan_memory.empty()) {
         if (role != "engine") return fail("v3 serving requires --role engine");
@@ -287,6 +288,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         auto admitted = native_engine_inputs(spec, *view);
         if (!complete_native_engine_inputs(admitted))
             return fail("v3 manifest has incomplete native engine admission inputs");
+        admitted.offline_quality = !run_flags.empty();
         g_native_engine = std::move(admitted);
     }
     g_have_expected = false;
@@ -487,12 +489,17 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
             reject_unless(canonical_under_root(cfg.radiance_home) == canonical_under_root(admitted.radiance_home),
                           "YAML runtime home differs from matched build") ||
             reject_unless(!cfg.kld() && !cfg.calib() && !cfg.diagnose_mode() && !cfg.debug_graph,
-                          "offline quality, diagnose and debug-graph modes are not managed serving roles"))
+                          "native YAML cannot select an offline or debug mode in a managed manifest"))
             return -1;
+        if (fleet.log_set) rad::log_set_level(fleet.log);
+        // The manifest bridge already stripped every option except verbosity
+        // and KL run paths. Use upstream's own CLI checks for that overlay.
+        if (admitted.offline_quality &&
+            (rad::config_parse(static_cast<int>(g_ptrs.size() - 1), g_ptrs.data(), &cfg) != RAD_OK || !cfg.kld()))
+            return fail("native offline run requires a valid KL record or score invocation"), -1;
         // Fleet card ordinals describe process-visible GPUs; rank_devices remains
         // the native BDF list used by rad0016 when the layout requires it.
         cfg.devices = fleet.cards;
-        if (fleet.log_set) rad::log_set_level(fleet.log);
         *out = std::move(cfg);
         return 1;
     } catch (const std::exception& error) {

@@ -1,10 +1,13 @@
 """MEN11: quality measurement inside the server comparison (KL per arm, sidecars up, gate against the control)."""
+import hashlib
 import json
+import os
 import sys
 import tempfile
 import unittest
 from pathlib import Path
 from dataclasses import replace
+from contextlib import contextmanager
 from unittest.mock import patch
 
 from bigcherry.campaign import quality_capture as qc
@@ -64,6 +67,63 @@ class QualityBlockTests(unittest.TestCase):
 
 class RadianceQualityCommandTests(unittest.TestCase):
     quality = {"reference_dir": "/ref", "corpus": "/c.jsonl", "args": ["--tp", "1"]}
+
+    def test_v3_quality_exec_uses_sealed_bytes_and_retained_working_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            run_dir = Path(tmp).resolve()
+            root = run_dir / "native-root"
+            root.mkdir()
+            manifest = run_dir / "manifest.json"
+            content = (json.dumps({"apiVersion": "bigcherry/v3", "spec": {"native_config": {
+                "resolution_root": str(root), "yaml_utf8": "# exact café\r\n",
+            }}}, ensure_ascii=False) + "\n").encode()
+            manifest.write_bytes(content)
+            binary = run_dir / "check-quality"
+            binary.write_text(f"""#!{sys.executable}
+import fcntl, hashlib, os, sys
+from pathlib import Path
+def arg(flag):
+    return sys.argv[sys.argv.index(flag) + 1]
+manifest = Path(arg("--manifest"))
+assert fcntl.fcntl(int(manifest.name), getattr(fcntl, "F_GET_SEALS", 1034)) & 0xf == 0xf
+assert hashlib.sha256(manifest.read_bytes()).hexdigest() == os.environ["EXPECTED_SHA"]
+assert Path.cwd() == Path(os.environ["EXPECTED_ROOT"])
+if "--kld-record" in sys.argv:
+    assert arg("--kld-record") == os.environ["EXPECTED_REF"]
+    assert arg("--kld-corpus") == os.environ["EXPECTED_CORPUS"]
+else:
+    assert arg("--kld-ref") == os.environ["EXPECTED_REF"]
+    assert arg("--kld-out") == os.environ["EXPECTED_OUT"]
+    Path(arg("--kld-out")).write_text(os.environ["FROZEN"])
+""")
+            binary.chmod(0o700)
+            relative_run_dir = Path(os.path.relpath(run_dir))
+            env = {"EXPECTED_SHA": hashlib.sha256(content).hexdigest(), "EXPECTED_ROOT": str(root),
+                   "EXPECTED_REF": str(Path("relative-ref").absolute()),
+                   "EXPECTED_CORPUS": str(Path("relative-corpus.jsonl").absolute()),
+                   "EXPECTED_OUT": str((relative_run_dir / "native.kld.json").absolute()), "FROZEN": "configured"}
+            arm = {"name": "native", "manifest": manifest}
+            settings = {"args": [], "reference_dir": "relative-ref", "corpus": "relative-corpus.jsonl"}
+            command = adapter("radiance").quality_command(
+                "score", arm, env, relative_run_dir, binary, Path("model"), settings)
+
+            @contextmanager
+            def replace_before_exec():
+                with command.prepare() as launch:
+                    manifest.write_text("{}\n")
+                    yield launch
+
+            result = qc._run(replace(command, prepare=replace_before_exec))
+            self.assertEqual(result["returncode"], 0, command.log_path.read_text())
+            self.assertEqual(result["manifest_sha256"], env["EXPECTED_SHA"])
+            self.assertEqual(command.result_path.read_text(), "configured")
+
+            manifest.write_bytes(content)
+            recorded = adapter("radiance").quality_command(
+                "record", arm, env, relative_run_dir, binary, Path("model"), settings)
+            result = qc._run(recorded)
+            self.assertEqual(result["returncode"], 0, recorded.log_path.read_text())
+            self.assertEqual(result["manifest_sha256"], env["EXPECTED_SHA"])
 
     def test_record_and_score_invocations(self):
         rad = adapter("radiance")

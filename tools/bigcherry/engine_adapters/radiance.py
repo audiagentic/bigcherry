@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import os
+from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -77,6 +78,7 @@ class RadianceAdapter(EngineAdapter):
         return QualityCommand(
             argv=tuple(argv), env=dict(env), log_path=run_dir / f"{arm['name']}.{kind}.log",
             result_path=result, timeout_s=float(quality.get("timeout_s", KLD_TIMEOUT_S)),
+            prepare=partial(radiance_manifest.quality_launch, tuple(argv)) if manifest is not None else None,
         )
 
     def cpu_smoke(self, context: ProjectContext, build_dir: Path, model_root: Path) -> CpuSmokeSpec | None:
