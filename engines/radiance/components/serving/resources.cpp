@@ -364,6 +364,47 @@ v2::Result<ResourceLedger> derive_launch(const LaunchDocuments& documents,
     }
 }
 
+v2::Status preflight_host_pool(const Json& values, const Json& facts) {
+    try {
+        const Json& memory = values.at("memory");
+        const uint64_t per_rank_mib = nonnegative_bytes(memory, "host_pool_mib");
+        const uint64_t ranks = positive_bytes(values.at("engine"), "tp");
+        const uint64_t kv_mib = nonnegative_bytes(memory, "host_kv_mib");
+        const uint64_t reserve_mib = nonnegative_bytes(memory, "host_reserve_mib");
+        const auto pool_total_mib = multiply(per_rank_mib, ranks);
+        const auto pinned_mib = pool_total_mib ? add(*pool_total_mib, kv_mib) : std::nullopt;
+        const auto committed_mib = pinned_mib ? add(*pinned_mib, reserve_mib) : std::nullopt;
+        const auto pinned_bytes = pinned_mib ? multiply(*pinned_mib, MiB) : std::nullopt;
+        const auto committed_bytes = committed_mib ? multiply(*committed_mib, MiB) : std::nullopt;
+        if (!pool_total_mib || !pinned_mib || !committed_mib || !pinned_bytes || !committed_bytes)
+            return invalid("per-rank host-pool preflight overflows measured byte range");
+
+        const Json& host = facts.at("host");
+        uint64_t available_mib = positive_bytes(host, "mem_available_mib");
+        for (const Json& group : host.value("memory_cgroups", Json::array()))
+            available_mib = std::min(available_mib, positive_bytes(group, "room_mib"));
+        const uint64_t pin_mib = host.at("amdgpu_pin").value("loaded", false) &&
+                                         !host.at("amdgpu_pin").value("lifted", false)
+                                     ? positive_bytes(host.at("amdgpu_pin"), "cap_mib")
+                                     : positive_bytes(host, "mem_total_mib");
+        const auto available_bytes = multiply(available_mib, MiB);
+        const auto pin_available_bytes = multiply(pin_mib, MiB);
+        if (!available_bytes || !pin_available_bytes)
+            return invalid("host-pool preflight room overflows measured byte range");
+        if (*committed_bytes > *available_bytes)
+            return refused("host RAM admission refused for host pool across " + std::to_string(ranks) +
+                           " engine ranks: " + std::to_string(*committed_bytes) + " bytes required, " +
+                           std::to_string(*available_bytes) + " bytes available including reserve");
+        if (*pinned_bytes > *pin_available_bytes)
+            return refused("pin admission refused for host pool across " + std::to_string(ranks) +
+                           " engine ranks: " + std::to_string(*pinned_bytes) + " bytes required, " +
+                           std::to_string(*pin_available_bytes) + " bytes available");
+        return std::nullopt;
+    } catch (const std::exception& error) {
+        return malformed(std::string("invalid host-pool preflight inputs: ") + error.what());
+    }
+}
+
 Json to_json(const ResourceLedger& ledger) {
     Json helpers = Json::array();
     for (const auto& helper : ledger.helpers) {

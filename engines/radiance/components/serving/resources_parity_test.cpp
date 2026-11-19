@@ -112,6 +112,24 @@ int main() {
         sample = base;
         sample.helpers.push_back(sample.helpers.at(0));
         refuses(sample, bc::serving::v2::ConfigErrorCode::invalid_value, "duplicate helper");
+        const Json tp3_values = Json::parse(R"json({
+            "engine": {"tp": 3},
+            "memory": {"host_pool_mib": 2048, "host_kv_mib": 256, "host_reserve_mib": 128}
+        })json");
+        const Json tp3_facts = Json::parse(R"json({
+            "host": {
+                "mem_total_mib": 16384,
+                "mem_available_mib": 5500,
+                "memory_cgroups": [{"room_mib": 5500}],
+                "amdgpu_pin": {"loaded": true, "lifted": false, "cap_mib": 8000}
+            }
+        })json");
+        const auto tp3_refusal = resources::preflight_host_pool(tp3_values, tp3_facts);
+        assert(tp3_refusal && tp3_refusal->code == bc::serving::v2::ConfigErrorCode::admission_refused &&
+               tp3_refusal->message.find("across 3 engine ranks") != std::string::npos);
+        Json tp1_values = tp3_values;
+        tp1_values["engine"]["tp"] = 1;
+        assert(!resources::preflight_host_pool(tp1_values, tp3_facts));
         std::cout << "RSC02: " << cases.size()
                   << " C++/Python config/profile derivations and refusals passed\n";
     } catch (const std::exception& error) {

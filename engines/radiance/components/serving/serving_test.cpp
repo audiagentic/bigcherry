@@ -3272,6 +3272,49 @@ void session_engine_plan(Fixture& t) {
     assert(s.runtime.at("RADIANCE_HOME") == home.string() && s.runtime.size() == 3);
     assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3-int8" &&
            s.summary.at("manifest_digest") == "0123abcd");
+    { // Engine-only TP3 cache miss refuses a pool that fits one rank but not all ranks, before power or child hooks.
+        ss::EnginePlanInputs limited = in;
+        const fs::path limited_root = t.root / "tp3-low-room-root";
+        fs::create_directories(limited_root);
+        for (const char* name : {"proc", "sys", "dev"})
+            fs::copy(t.root / name, limited_root / name, fs::copy_options::recursive);
+        write(limited_root / "proc/meminfo", "MemTotal:       134217728 kB\n"
+                                              "MemAvailable:     9216000 kB\n"
+                                              "SwapTotal:        8388608 kB\n");
+        limited.options.sys_root = limited_root;
+        limited.options.sets.insert(limited.options.sets.end(), {
+            "memory.host_pool_mib=2048", "memory.host_kv_mib=256"});
+        const Json low_room_facts = bc::serving::detect(limited_root);
+        const SessionManifestPair low_room_manifests = session_manifest_pair(
+            bc::serving::resolve(limited.options, session_facts), session_facts);
+        int writer_calls = 0;
+        limited.runner = [&](const std::vector<std::string>& argv) {
+            if (++writer_calls == 1)
+                return ss::ManifestRun{10, "", "uncached"};
+            assert(writer_calls == 2 && flag(argv, "--unmeasured"));
+            std::ofstream(argv[2]) << low_room_manifests.measuring.dump(2) << '\n';
+            return ss::ManifestRun{};
+        };
+        bool power_admitted = false;
+        bool child_started = false;
+        ss::Hooks preflight_hooks;
+        preflight_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        preflight_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+            power_admitted = true;
+            return bc::serving::v2::Status{};
+        };
+        preflight_hooks.started = [&](ss::ChildKind, const std::string&, pid_t, const fs::path&) {
+            child_started = true;
+        };
+        bool refused_all_ranks = false;
+        try {
+            (void)ss::plan_engine_only(limited, run / "tp3-low-room", preflight_hooks);
+        } catch (const ss::PlanFailed& error) {
+            refused_all_ranks = std::string(error.what()).find(
+                "host RAM admission refused for host pool across 3 engine ranks") != std::string::npos;
+        }
+        assert(refused_all_ranks && writer_calls == 2 && !power_admitted && !child_started);
+    }
     { // configs from BIGCHERRY_CONFIGS alone reach the manifest writer, whose environment has no BIGCHERRY_*:
       // as files
         ss::EnginePlanInputs env_only = in;

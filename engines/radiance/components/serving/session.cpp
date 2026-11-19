@@ -2200,6 +2200,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
             const auto measuring_snapshot = pin_manifest_file(measuring, v2::PlanUse::measuring);
             const fs::path measuring_execution = measuring_snapshot.pinned->path();
+            const Json current_facts = detect(in.options.sys_root);
+            if (const auto refusal = resources::preflight_host_pool(v, current_facts))
+                throw PlanFailed("resources: " + refusal->message);
             const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
             fs::remove(plan, ec);
             fs::remove(ranks, ec);
