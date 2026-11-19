@@ -254,6 +254,31 @@ reason to demote. A previously `rejected` patch must not be
 silently revived: either create a corrected patch identity or record an
 explicit review that resets it to `untested` before new validation.
 
+### Retired patches: archive, never delete
+
+A patch that is no longer part of any recipe is evidence of what was tried and
+what worked or failed, like lab and experiment records. Keep it; isolate it.
+
+- **When:** a patch whose final state is `rejected` or `superseded`, or one
+  replaced by a later patch (for example `rad0034`/`rad0035` replaced by the
+  `rad0036` prefill governor), once no recipe, experiment or other patch
+  references it. An `untested` patch that will not be qualified is first set
+  to `rejected` (tested and not accepted) or recorded as abandoned with the
+  reason; it is never archived silently.
+- **Where:** `engines/<engine>/patches/archive/<patch_id>/` for engine patches,
+  `patches/archive/<patch_id>/` for the llama.cpp package tree. Move the whole
+  package unchanged (`patch.toml`, code, tests, README/SUMMARY, evidence links);
+  do not edit its content, digest or state.
+- **Index:** `archive/ARCHIVE.md` gets one row per archived patch: id, final
+  state, date archived, reason, successor (patch id, upstream commit or
+  "none"), and links to its evidence and transition record.
+- **Isolation:** the registry, `patch-lint`, `pin-bump`, recipes and builds
+  never load or compose anything under `archive/`; an archived patch cannot be
+  revived in place. Reusing the idea means a new patch identity (or moving the
+  package back with an explicit review that resets it to `untested`).
+- **Record:** the move is a transition like any other (record above) plus a
+  ledger event. Deleting a patch package is not allowed.
+
 ## Fail-closed invariants
 
 Never weaken these rules to get a green report:
