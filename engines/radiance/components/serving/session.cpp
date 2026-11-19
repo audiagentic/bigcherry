@@ -3,6 +3,7 @@
 
 #include "calibration_lab.h"
 #include "config_loader.h"
+#include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
@@ -927,6 +928,15 @@ class Owner {
         std::error_code ec;
         if (fs::exists(s_.run_dir / "session.json"))
             fs::rename(s_.run_dir / "session.json", s_.run_dir / "session.previous.json", ec);
+        if (s_.publish_feature_states) {
+            const fs::path prior = s_.run_dir / feature_state::kFileName;
+            if (fs::exists(prior)) {
+                ec.clear();
+                fs::rename(prior, s_.run_dir / "feature-states.previous.json", ec);
+                if (ec)
+                    throw PlanFailed("cannot archive previous feature-state snapshot: " + ec.message());
+            }
+        }
         fs::remove(s_.run_dir / "session.sock", ec);
         record_ = {{"schema_version", 1},    {"owner_pid", ::getpid()}, {"started_at", utc_now()},
                    {"state", "created"},     {"events", Json::array()}, {"processes", Json::array()},
@@ -1052,7 +1062,19 @@ class Owner {
             }
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
-            event("planned");
+            if (s_.publish_feature_states) {
+                // The pinned descriptor is the exact authenticated replay; never
+                // reopen a replaceable stored-manifest pathname for this snapshot.
+                const fs::path admitted = plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest;
+                const Json document = Json::parse(read_file(admitted));
+                const auto observed = feature_state::from_manifest(document, utc_now());
+                write_atomic(s_.run_dir / feature_state::kFileName, observed.entries.dump(2) + "\n");
+                record_["feature_states"] = observed.entries;
+                for (const auto& warning : observed.warnings)
+                    std::cerr << "bc-serve: " << warning << '\n';
+            }
+            if (!event("planned") && s_.publish_feature_states)
+                throw PlanFailed("cannot persist the feature-state snapshot in the owner record");
             if (stop_requested())
                 throw Stop{};
             // No-process PWR06 floor, before any serving helper OR engine is
@@ -1255,9 +1277,17 @@ class Owner {
     }
     bool save_failed_ = false;
 
-    void track(const std::string& role, pid_t pid, const fs::path& log) {
+    void track(const std::string& role, pid_t pid, const fs::path& log,
+               const std::vector<std::string>* exact_argv = nullptr) {
         children_.push_back({role, pid, log});
         Json p = {{"role", role}, {"pid", pid}, {"pgid", pid}, {"log", log.string()}};
+        if (exact_argv) {
+            // Native measurement facts: capture the exact argv that fork/exec
+            // received, including its ephemeral heat nonce. Only the owner
+            // writes this receipt; no Python is loaded into the engine.
+            p["argv"] = *exact_argv;
+            p["env"] = plan_.runtime; // curated child overrides, never ambient secrets
+        }
         // the child waits behind its start gate until this returns, so it cannot have exited yet; its start
         // time is read whatever its state, so the record names it either way
         if (const auto st = proc_stat(pid))
@@ -1410,9 +1440,31 @@ class Owner {
             !spec.handoff->placement.live_policy || helper_logs_.empty())
             throw PlanFailed(
                 "calibration requires a lab-only live-policy manifest with helper0 and no experiment");
+        // These files influence the finite A/B/B/A measurements. Pin their
+        // bytes at the beginning rather than reconstruct them after the run.
+        for (const auto& source : {s_.laboratory->prompts_a, s_.laboratory->prompts_b}) {
+            if (!fs::is_regular_file(source))
+                throw PlanFailed("calibration: source prompts missing or not regular files");
+        }
+        const std::string prompt_a_bytes = read_file(s_.laboratory->prompts_a);
+        const std::string prompt_b_bytes = read_file(s_.laboratory->prompts_b);
+        const std::string admitted = read_file(plan_.manifest);
+        const Json admission = Json::parse(admitted);
+        const fs::path heat_file = admission.at("spec").at("handoff").at("placement")
+                                       .at("heat_file").get<std::string>();
+        if (heat_file.empty() || !fs::is_regular_file(heat_file))
+            throw PlanFailed("calibration: admitted manifest has no regular source heat file");
+        const std::string heat_bytes = read_file(heat_file);
         const auto prompts = read_calibration_prompts(s_.laboratory->prompts_a, s_.laboratory->prompts_b);
         if (!prompts)
             throw PlanFailed("calibration prompts: " + prompts.error().message);
+        if (read_file(s_.laboratory->prompts_a) != prompt_a_bytes ||
+            read_file(s_.laboratory->prompts_b) != prompt_b_bytes ||
+            read_file(heat_file) != heat_bytes)
+            throw PlanFailed("calibration: source inputs changed during admission");
+        write_atomic(s_.run_dir / "calibration-prompts-a.v1", prompt_a_bytes);
+        write_atomic(s_.run_dir / "calibration-prompts-b.v1", prompt_b_bytes);
+        write_atomic(s_.run_dir / "calibration-heat.v1", heat_bytes);
         const auto& workload = prompts.value();
         const auto& policy = *spec.handoff->placement.live_policy;
         if (!spec.handoff->telemetry.histogram_file || spec.handoff->telemetry.histogram_file->empty())
@@ -1495,9 +1547,37 @@ class Owner {
         if (s_.lab_evidence_gate)
             require_callback(s_.lab_evidence_gate.invoke("session.calibration.prove_live"),
                              "calibration final live evidence gate");
-        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store,
-                                            plan_.execution_manifest(),
-                                            plan_.summary.at("calibration_store_key").get<std::string>());
+        if (read_file(s_.laboratory->prompts_a) != prompt_a_bytes ||
+            read_file(s_.laboratory->prompts_b) != prompt_b_bytes ||
+            read_file(heat_file) != heat_bytes)
+            throw PlanFailed("calibration: source prompts/heat changed during workload");
+        const std::string key = plan_.summary.at("calibration_store_key").get<std::string>();
+        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store, plan_.execution_manifest(), key);
+
+        // The source TOML can be replaced by another calibration before an
+        // offline operator ingests this run. Snapshot exactly the bytes the
+        // native C++ parser just durably committed, and bind the helper log
+        // and the measured manifest by SHA-256. The MRC04 Python reader
+        // verifies this snapshot later; serving remains Python-free.
+        const std::string stored = read_file(s_.laboratory->calibration_store);
+        const std::string helper_evidence = read_file(helper_log);
+        const std::string admitted_manifest = read_file(plan_.execution_manifest());
+        const Json exact = Json::parse(admitted_manifest);
+        write_atomic(s_.run_dir / "calibration-store.v1.toml", stored);
+        const Json evidence = {
+            {"schema_version", 1},
+            {"session_id", exact.at("metadata").at("instance_id")},
+            {"calibration_store_key", key},
+            {"manifest_sha256", sha256_hex(admitted_manifest)},
+            {"calibration_store_sha256", sha256_hex(stored)},
+            {"helper_log_sha256", sha256_hex(helper_evidence)},
+            {"helper_log", helper_log.filename().string()},
+            {"prompts_a_sha256", sha256_hex(prompt_a_bytes)},
+            {"prompts_b_sha256", sha256_hex(prompt_b_bytes)},
+            {"heat_sha256", sha256_hex(heat_bytes)},
+            {"observed_at", utc_now()},
+        };
+        write_atomic(s_.run_dir / "calibration-evidence.v1.json", evidence.dump(2) + "\n");
     }
 
     void start_engine() {
@@ -1529,7 +1609,7 @@ class Owner {
         plan_.engine_launched_at = std::chrono::system_clock::now();
         (void)spawn(
             argv, native_launch ? native_launch->environment : child_environment(environ, plan_.runtime), log,
-            [&](pid_t pid) { track("engine", pid, log); },
+            [&](pid_t pid) { track("engine", pid, log, &argv); },
             plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1,
             native_launch ? native_launch->root.descriptor() : -1);
     }
@@ -1988,6 +2068,8 @@ std::vector<std::string> resolver_args(const Options& o) {
         a.insert(a.end(), {"--configs", c.string()});
     if (!o.model_root.empty())
         a.insert(a.end(), {"--model-root", o.model_root.string()});
+    if (!o.run_dir.empty())
+        a.insert(a.end(), {"--run-dir", o.run_dir.string()});
     if (!o.calibration_cache.empty())
         a.insert(a.end(), {"--calibration", o.calibration_cache.string()});
     for (const auto& s : o.sets)
@@ -2256,6 +2338,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     // configs or layouts that came from the environment are passed as arguments (load_layouts' rule: configs
     // replace the layout files unless --layouts is given).
     EnginePlanInputs in = given;
+    in.options.run_dir = run_dir;
     {
         const auto configs = config_sources(given.options.configs);
         in.options.configs = configs;
@@ -2967,7 +3050,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     throw PlanFailed("plan: no measured manifest after 5 rounds");
 }
 
-EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& /*run_dir*/,
+EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
                                    const Hooks& hooks) {
     if (given.native_admission)
         throw PlanFailed("replay: private native admission cannot be combined with legacy stored replay; "
@@ -3007,6 +3090,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         throw PlanFailed("replay: the engine, helper and runtime home must belong to this bc-serve build");
 
     EnginePlanInputs in = given;
+    in.options.run_dir = run_dir;
     const std::string name = m.spec.intent.layout;
     if (in.explicit_power_profile && in.power_profile != m.spec.intent.power.profile)
         throw ReplayFailed(ReplayRefusal::execution_projection,

@@ -95,6 +95,28 @@ Card-free tests: `bc_manifest_power_test`, `bc_session_guards_test` and
 `bc_session_test` (as well as existing `bc_power_transaction_test`).
 Every executable is a CMake target and declared in `component.toml`.
 
+## MRC03 native feature states
+
+At startup, after the exact measured or sealed strict-v2 manifest has been
+selected and before serving children launch, the `bc-serve` owner serializes
+`run_dir/feature-states.v1.json` (platform v1 JSON array). Its seven
+manifest-derived entries cover the live placement policy and its startup
+decision/provenance skip reason, MTP depth, prefix cache, host KV tier, helper
+combine, vision tower placement and maximum image patches. Each entry names
+the engine, observation time, state and reason; this is a configuration/start
+snapshot, **not** evidence that the engine's runtime activation was verified.
+
+The same entries are saved in `session.json` and returned by
+`bc-serve status --run-dir DIR --json`. For helper-backed production starts,
+inactive/degraded live placement emits a single-line `WARNING production
+feature live_policy` with reason code and detail to the owner log. An
+engine-only or otherwise not-applicable policy does not warn. The snapshot is
+archived on a subsequent owner start so an old run cannot masquerade as a
+new startup decision. Other optional features are reported without
+implicitly being declared production-required. The native mapping and
+file/status/warning paths have the card-free `bc_feature_state_test`
+and `bc_session_test` CTest targets.
+
 ## Callback boundary and source scanner
 
 Injected callbacks in the current serving component use private typed

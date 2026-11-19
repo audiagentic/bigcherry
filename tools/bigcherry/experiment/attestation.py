@@ -340,6 +340,34 @@ def compare_execution_identity(
     return tuple(reasons)
 
 
+
+def record_execution_evidence(
+    expected: ExecutionIdentity | None, observed: ExecutionAttestation | None
+) -> tuple[dict[str, object], dict[str, object]]:
+    """VA25 canonical verdict and by-content evidence for MRC06 records.
+
+    Missing expected or observed process evidence is invalid, never neutral.
+    This does not discard failed measurements; the immutable record retains
+    invalidity and the exact observation for diagnosis, never for gating.
+    """
+    if expected is None:
+        reasons = (ATTESTATION_MISSING,)
+    else:
+        reasons = compare_execution_identity(expected, observed)
+    evidence = {
+        "expected": None if expected is None else {
+            "backend": expected.backend,
+            "architectures": list(expected.architectures),
+            "locators": list(expected.locators) if expected.locators is not None else None,
+        },
+        "observed": observed.document() if observed is not None else None,
+        "reason_codes": list(reasons),
+    }
+    validity = {"state": "invalid" if reasons else "valid",
+                "reason_codes": list(reasons)}
+    return evidence, validity
+
+
 def require_execution_identity(
     expected: ExecutionIdentity, observed: ExecutionAttestation | None, *, context: str,
 ) -> None:

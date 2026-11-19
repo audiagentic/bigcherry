@@ -38,8 +38,21 @@ host pool, helper VRAM budgets, memory-plan identity, engine flags and local pat
 The move-byte cap is re-derived from the current helper budgets and expert stride at each start;
 drift, lane service times and noise remain measured quantities, never guessed constants.
 
-New records retain `calibration_inputs` (the exact scope), `source_plan_key` (the full strict
-measured-plan identity) and `source_engine_build` as provenance. The reader verifies that
+MRC04 v1 records retain `calibration_inputs` (the exact scope),
+`calibration_key_fields` (the platform's declared narrow inputs), `source_plan_key`
+(the full strict measured-plan identity), `source_engine_build`,
+`source_revision`, `run_id`, `host_facts_digest` and `seeded` as provenance.
+A source revision is recorded as `source_slice:<hash>` when immutable build
+metadata is available, otherwise `unavailable` is recorded explicitly.
+Records written after #1169 with `calibration_inputs`, `source_plan_key` and
+`source_engine_build` remain **current and activatable** when the declared scope
+hash and measured quantities validate, even if `record_schema_version` is absent.
+The native reader maps these rows to v1 activation in memory only; it does not
+invent the later revision/run/host-facts provenance or rewrite the TOML store.
+Only genuinely hash-only rows lacking `calibration_inputs` are legacy and
+receive `legacy_record_schema` as their non-activation reason.
+The platform's `bigcherry calibration list|show|validate` reads the native
+TOML store; the production reader/writer remain native C++. The reader verifies that
 the scope hashes to the record key; production matches the current model/cards/layout and
 service inputs before enabling. Changing model, physical cards/architectures, layout, histogram
 period, power profile or helper execution behavior still requires compatible evidence.

@@ -8,6 +8,7 @@ Each arm owns a fresh lease and must fully stop before the next lease is taken.
 from __future__ import annotations
 
 import argparse
+import base64
 import hashlib
 import json
 import os
@@ -141,6 +142,9 @@ def capture(processes: dict[str, int]) -> tuple[dict, dict[str, tuple[int, str]]
         "schema_version": 1,
         "manifest_path": str(path),
         "manifest_file_sha256": hashlib.sha256(before).hexdigest(),
+        # Original bytes, not a JSON reserialization. The platform publisher
+        # refuses legacy snapshots that cannot prove this exact identity.
+        "manifest_raw_base64": base64.b64encode(before).decode("ascii"),
         "manifest": manifest,
         "processes": {"roles": observed},
     }
@@ -240,7 +244,7 @@ def arm(cfg: dict) -> int:
     if cfg["expected_build"] != identity_before:
         raise Refusal("immutable build/model identity changed since preflight")
     record = {"cohort": cohort, "arm": which, "build_identity": identity_before,
-              "state": "admitting"}
+              "run_dir": str(run_dir), "state": "admitting"}
     save(out, record)
     owner = None
     status = None
@@ -413,7 +417,18 @@ def accept(args: argparse.Namespace) -> int:
                 result = json.loads(Path(cell["out"]).read_text())
                 if result["state"] != "stopped" or not result["clean_stop"]:
                     raise Refusal(f"{label}: clean shutdown not verified")
-                results.append((which, result, Path(cell["out"]).with_suffix(".snapshot.json")))
+                # This operator-runner is still an active leased S15
+                # acceptance tool, not a retired historical report.
+                sys.path.insert(0, str(REPO / "tools"))
+                from bigcherry.bench.radiance_lab_records import publish_rsc02_arm
+
+                snapshot_file = Path(cell["out"]).with_suffix(".snapshot.json")
+                snapshot = json.loads(snapshot_file.read_text(encoding="utf-8"))
+                record_digest = publish_rsc02_arm(
+                    result, snapshot, work_root=Path(cell["work_root"]),
+                )
+                (out / f"{label}.record.sha256").write_text(record_digest + "\n")
+                results.append((which, result, snapshot_file))
             snaps = dict((which, json.loads(snap.read_text())) for which, _, snap in results)
             report = compare(snaps["A"], snaps["B"])
             hashes = {which: result["completion_sha256"] for which, result, _ in results}

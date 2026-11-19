@@ -2,7 +2,7 @@
 id: MRC04
 order: 4
 plan: run-measurement-records
-state: pending
+state: in_progress
 created-at: '2026-11-19T00:50:37.155384+00:00'
 breadth: ''
 skill: advanced
@@ -70,3 +70,19 @@ First user landed (#1169, 2026-11-19): the Radiance live policy's calibration re
 - 2026-11-19T00:50:37.155384+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:17.503543+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-19T07:39:03.286068+00:00 (updated-by): Updated: section:notes
+
+
+## Slice 1 implementation note (2026-11-20)
+
+The platform defines calibration-record v1 and declared key input names under
+`tools/bigcherry/core/schemas/`. Native Radiance TOML rows remain the
+production format, with a versioned adapter and no change to key v2 from #1169.
+Platform JSON store write operations are lock-serialised, atomic and durable,
+and genuinely hash-only legacy TOML rows are inspectable but never
+activatable. Post-#1169 scoped rows with `calibration_inputs` and source
+plan/build identities remain current and activatable via an in-memory adapter
+even without the new MRC04 fields; the TOML store is never rewritten on read.
+Platform `bigcherry calibration list|show|validate` is read-only.
+The remaining MRC04 slices are MRC01 quantity-blob interop for large evidence,
+run-record `calibration_record` reference migration, and device activation
+proof across separate builds; these are not claimed by the CPU-only slice 1.

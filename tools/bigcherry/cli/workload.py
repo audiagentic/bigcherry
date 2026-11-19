@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import argparse
-import json
 import sys
 from pathlib import Path
 
@@ -25,18 +24,21 @@ def cmd_workload(args: argparse.Namespace) -> int:
                                     layout=args.layout, since=args.since))
             return 0
         if args.workload_action == "seed":
-            from ..bench.seed_workloads import seed
-            count = seed(args.index, args.work_root, specs)
-            print(f"seeded {count} new rows into {args.index}")
-            return 0
+            raise workloads.WorkloadError(
+                "legacy results index is read-only; historical seeds remain listable via results list"
+            )
         cfg = specs.get(args.id)
         if cfg is None:
             raise workloads.WorkloadError(f"unknown workload {args.id!r}")
         if args.manifest and not args.manifest.is_file():
             raise workloads.WorkloadError(f"manifest does not exist: {args.manifest}")
         run = args.runs_root / f"{workloads.timestamp()[:10]}-{args.id}-{__import__('uuid').uuid4().hex[:8]}"
-        # Read-only metadata snapshots: no power writes, GPU queries, or leases.
+        # Pin native manifest content while it exists. Historical paths alone
+        # cannot reconstitute deleted manifests from the 2026-11-17 purge.
         info = workloads.live_info(args.url, args.work_root, args.manifest)
+        if not info.get("manifest"):
+            raise workloads.WorkloadError("verified live manifest required for v1 measurement")
+        manifest_bytes = Path(info["manifest"]).read_bytes()
         before = workloads.power_state()
         metrics, details = workloads.execute(args.id, args.url, args.repo_root, cfg)
         after = workloads.power_state()
@@ -49,13 +51,21 @@ def cmd_workload(args: argparse.Namespace) -> int:
             print("WARNING: server manifest unverified; build/layout/policy not inferred", file=sys.stderr)
         run.mkdir(parents=True, exist_ok=False)
         row = workloads.make_row(args.id, cfg, metrics, details, info, run_folder=str(run), power=before)
-        (run / "result.json").write_text(json.dumps(row, indent=2, sort_keys=True) + "\n")
-        workloads.append_index(args.index, row)
+        import os
+
+        env_keys = ("ROCM_PATH", "HIP_PATH", "HIP_VISIBLE_DEVICES", "ROCR_VISIBLE_DEVICES")
+        digest = workloads.publish_record(
+            row, manifest_bytes=manifest_bytes, work_root=args.work_root,
+            argv=list(sys.argv),
+            environment={name: os.environ[name] for name in env_keys if name in os.environ},
+            host_snapshot=workloads.host_facts.collect_host_facts(),
+        )
+        (run / "record.sha256").write_text(digest + "\n")
         print(f"{args.id}@{cfg['version']} {row['row_id']} -> {run}")
         for name, metric in metrics.items():
             if name != "board_watts":
                 print(f"  {name}: {metric['median']:.3f} {metric['unit']}")
-        print(f"index: {args.index}")
+        print(f"run-record v1: {digest}")
         return 0
     except (ValueError, OSError, KeyError) as exc:
         print(f"workload: {exc}", file=sys.stderr)

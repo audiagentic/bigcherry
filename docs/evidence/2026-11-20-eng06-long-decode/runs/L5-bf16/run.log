@@ -1,0 +1,4 @@
+config=qwen27b-tp3-int8-556-long-bf16 owner pid=2463177 start=2026-11-20T00:49:09+11:00
+state=running after 181s
+BENCH DONE 2026-11-20T00:59:48+11:00
+owner exit=0 at 2026-11-20T00:59:49+11:00
