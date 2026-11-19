@@ -121,8 +121,7 @@ and `bc_session_test` CTest targets.
 
 Injected callbacks in the current serving component use private typed
 `callback::Guarded` / `GuardedSymbol` storage or private virtual methods
-dispatched by guarded adapters. The `bc_callback_boundary_guard` CTest
-scanner is a **best-effort pattern tripwire, not proof** that a future
+dispatched by guarded adapters. The callback source scanner (`tools/tests/core/serving_callback_guard.py`, a platform test: the component is C++ only) is a **best-effort pattern tripwire, not proof** that a future
 callable type cannot bypass this boundary.
 
 REVIEW4 found two compiling **known gaps** (both missed by the scanner,

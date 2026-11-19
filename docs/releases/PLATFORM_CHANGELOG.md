@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.55.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.54.0...bc-platform-1.55.0) (2026-11-19)
+
+
+### New and changed
+
+* **core:** link verified run records and expose results put query ([#1213](https://github.com/audiagentic/bigcherry/issues/1213)) ([75b63ba](https://github.com/audiagentic/bigcherry/commit/75b63ba62210e989ad59d8993d955412f586e381))
+* **results:** make parity baseline compare portable record consumers ([#1214](https://github.com/audiagentic/bigcherry/issues/1214)) ([d611e79](https://github.com/audiagentic/bigcherry/commit/d611e79970a2296ef6904e56592fc5b468c9d1d7))
+
+## [1.54.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.53.0...bc-platform-1.54.0) (2026-11-19)
+
+
+### New and changed
+
+* **calibration:** platform calibration-record store v1 (MRC04 slice 1) ([#1199](https://github.com/audiagentic/bigcherry/issues/1199)) ([84b2065](https://github.com/audiagentic/bigcherry/commit/84b2065ef6387aca6bf667a0292f6b42d3658211))
+* **measurement:** migrate workload, llama.cpp and experiment producers to run records ([#1205](https://github.com/audiagentic/bigcherry/issues/1205)) ([1a8d9a8](https://github.com/audiagentic/bigcherry/commit/1a8d9a87904244cfe4f38465aec461d9c643a3d0))
+* **measurement:** native calibration and lab probes as run records (MRC06 slice 3) ([#1209](https://github.com/audiagentic/bigcherry/issues/1209)) ([82fa90e](https://github.com/audiagentic/bigcherry/commit/82fa90e0f90403f98272d430c6c903c77610822e))
+* **measurement:** publish parity launches as v1 run records ([#1203](https://github.com/audiagentic/bigcherry/issues/1203)) ([98581ad](https://github.com/audiagentic/bigcherry/commit/98581ad61c1cb5db7f7817db2c9eedaa4548d758))
+
+
+### Fixes
+
+* **radiance:** measure the combine thread knee and derive from the affinity set ([#1206](https://github.com/audiagentic/bigcherry/issues/1206)) ([d90c57e](https://github.com/audiagentic/bigcherry/commit/d90c57e40c711e9408a2d0544520a39d77c4124f))
+
 ## [1.53.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.52.0...bc-platform-1.53.0) (2026-11-19)
 
 

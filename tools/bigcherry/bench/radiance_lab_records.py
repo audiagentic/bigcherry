@@ -158,13 +158,11 @@ def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _native_argv(session: dict, *, fallback: list[str] | None = None) -> list[str]:
+def _native_argv(session: dict) -> list[str]:
     processes = session.get("processes", [])
     for p in processes:
         if p.get("role") == "engine" and isinstance(p.get("argv"), list) and p["argv"]:
             return p["argv"]
-    if fallback:
-        return fallback
     raise run_records.RecordError(
         "native session does not record measured process argv"
     )
@@ -198,7 +196,7 @@ def _selected_calibration(path: Path, key: str) -> dict:
     ]
     if len(rows) != 1 or rows[0]["status"] != "current":
         raise run_records.RecordError(
-            "calibration key is missing, legacy or invalid in MRC04 reader"
+            "calibration key is missing or invalid in MRC04 reader"
         )
     if rows[0]["format"] != "native_v1":
         raise run_records.RecordError(
@@ -355,6 +353,14 @@ def publish_calibration_run(
         inputs=inputs,
         host_facts=_host(c["host_start"]),
         feature_states=c["feature_states"],
+        calibration_selection={
+            "status": "selected", "record": selected,
+            "quantity_blobs": {
+                "native_calibration_quantities": measurement_producers.canonical_blob(
+                    selected["quantities"]
+                )
+            },
+        },
         validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
         session_id=c["run_id"],
     )

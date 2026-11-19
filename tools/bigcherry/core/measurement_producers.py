@@ -11,9 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import engines
+from . import engines, run_records, calibration_records
 from . import host_facts as host_capture
-from . import run_records
 
 
 def canonical_blob(value: object) -> bytes:
@@ -48,6 +47,7 @@ def publish(
     metric_specs: dict | None = None,
     validity: dict | None = None,
     session_id: str | None = None,
+    calibration_selection: dict[str, Any] | None = None,
 ) -> str:
     """Publish one complete immutable record, verifying every source blob."""
     if not isinstance(effective_config, bytes) or not effective_config:
@@ -98,6 +98,28 @@ def publish(
         "host_facts": host_facts,
         "feature_states": feature_states,
     }
+    if calibration_selection is not None:
+        if not isinstance(calibration_selection, dict):
+            raise run_records.RecordError("calibration selection must be an object")
+        status = calibration_selection.get("status")
+        if status == "selected":
+            if set(calibration_selection) != {"status", "record", "quantity_blobs"}:
+                raise run_records.RecordError("calibration selected needs record and quantities")
+            source = calibration_records.validate_record(calibration_selection["record"])
+            quantities = calibration_selection["quantity_blobs"]
+            if not isinstance(quantities, dict):
+                raise run_records.RecordError("calibration quantities must be named")
+            record["calibration_record"] = {
+                "status": "selected", "kind": source["kind"],
+                "key_sha256": source["key"]["sha256"],
+                "record_blob": store.put_blob(canonical_blob(source)),
+                "quantity_blobs": [{"name": name, "blob": source_blob(raw)}
+                                   for name, raw in sorted(quantities.items())],
+            }
+        elif status == "none":
+            record["calibration_record"] = dict(calibration_selection)
+        else:
+            raise run_records.RecordError("unknown calibration selection status")
     if metric_specs is not None:
         record["metric_specs"] = metric_specs
     if validity is not None:

@@ -199,6 +199,18 @@ def validate_record(record: Any) -> dict[str, Any]:
         validity = record["validity"]
         if (validity["state"] == "valid") != (not validity["reason_codes"]):
             raise RecordError("validity: reason_codes disagree with execution verdict")
+    if "calibration_record" in record:
+        selection = record["calibration_record"]
+        if selection["status"] == "none":
+            if set(selection) != {"status", "reason_code", "reason_detail"}:
+                raise RecordError("calibration none requires only a reason code and detail")
+        elif selection["status"] == "selected":
+            required = {"status", "kind", "key_sha256", "record_blob", "quantity_blobs"}
+            if set(selection) != required:
+                raise RecordError("calibration selected requires kind, key, record_blob and quantity_blobs")
+            names = [entry["name"] for entry in selection["quantity_blobs"]]
+            if len(names) != len(set(names)):
+                raise RecordError("calibration has duplicate quantity blob names")
     return record
 
 
@@ -209,6 +221,11 @@ def blob_references(record: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield bundle[name]
     for item in bundle["inputs"]:
         yield item["blob"]
+    if record.get("calibration_record", {}).get("status") == "selected":
+        selected = record["calibration_record"]
+        yield selected["record_blob"]
+        for item in selected["quantity_blobs"]:
+            yield item["blob"]
 
 
 def _digest(data: bytes) -> str:
@@ -337,10 +354,28 @@ class RunRecordStore:
             raise RecordError(f"blob size mismatch for {digest}")
         return raw
 
+    def _check_calibration_record(self, record: dict[str, Any]) -> None:
+        selection = record.get("calibration_record", {})
+        if selection.get("status") != "selected":
+            return
+        from . import calibration_records
+        try:
+            raw = self.get_blob(selection["record_blob"])
+            payload = json.loads(
+                raw.decode("utf-8"), object_pairs_hook=_pairs_no_duplicates
+            )
+            calibration_records.validate_record(payload)
+        except (ValueError, UnicodeError, KeyError, TypeError) as exc:
+            raise RecordError(f"calibration record blob is invalid: {exc}") from exc
+        if (selection["kind"] != payload["kind"] or
+                selection["key_sha256"] != payload["key"]["sha256"]):
+            raise RecordError("calibration record selected key/kind differs from blob")
+
     def put_record(self, record: dict[str, Any]) -> str:
         data = canonical_record_bytes(record)
         for ref in blob_references(record):
             self.get_blob(ref)
+        self._check_calibration_record(record)
         digest = _digest(data)
         self._put(self.record_path(digest), data, digest)
         return digest
@@ -350,6 +385,7 @@ class RunRecordStore:
         record = _decode_record(raw)
         for ref in blob_references(record):
             self.get_blob(ref)
+        self._check_calibration_record(record)
         return record
 
     def _objects(self, kind: str) -> Iterator[Path]:
@@ -387,6 +423,7 @@ class RunRecordStore:
         self,
         *,
         engine: str | None = None,
+        run_id: str | None = None,
         layout: str | None = None,
         workload: str | None = None,
         metric: str | None = None,
@@ -417,7 +454,9 @@ class RunRecordStore:
             digest = _check_digest(path.stem)
             doc = self.get_record(digest)
             if (
-                engine is not None
+                run_id is not None
+                and doc["run_id"] != run_id
+                or engine is not None
                 and doc["identity"]["engine"] != engine
                 or layout is not None
                 and doc["identity"]["layout"] != layout

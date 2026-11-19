@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "dd64d9c3e3860d314169eb7e58a256462d1071a555067e1d483b26eeb84b3544"
+  ],
+  "prompt_tokens": 153373,
+  "prompt_tokens_target": 256000,
+  "prompt_words": 153373,
+  "reps": 2,
+  "seed": 7,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18454"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 2.427,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 74.776,
+    "event_gap_ms_p50": 30.599,
+    "event_gap_ms_p95": 36.996,
+    "event_gap_ms_p99": 74.776,
+    "mean_stream_decode_tps_est": 111.333,
+    "tokens": 256,
+    "ttft_ms_max": 103118.35,
+    "ttft_ms_p50": 103118.35,
+    "ttft_ms_p95": 103118.35
+   },
+   "engine": {
+    "decode_ms_per_step": 32.5447,
+    "decode_tokens_per_step": 3.5833,
+    "decode_tokens_total": 258.0,
+    "decode_tps_engine": 110.105,
+    "draft_acceptance": 0.5167,
+    "draft_accepted_total": 186.0,
+    "draft_tokens_total": 360.0,
+    "engine_step_seconds_decode_total": 2.343216,
+    "engine_steps_decode_total": 72.0,
+    "engine_steps_prefill_total": 126.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 255403.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.995,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 111.333,
+     "error": "",
+     "events": 73,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 253675,
+     "response_tail_ms": 63.68,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nember willow zephyr ...\" huge list. Need likely continue list of words with a short story. Need infer task: They provide a long list of words, maybe want us to continue the list of words with a short story. Could mean take the list and continue it by writing a short story using those words? Or continue the list o",
+     "text_sha256": "0f27ff4e96649b55730197b21715f00095b0e56ef5e5154c4ba2f12d5be53b83",
+     "tokens": 256,
+     "ttft_ms": 103118.35,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 15.078,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795123475143430924,
+   "wall_s": 105.4725,
+   "wall_start_ns": 1795123369655128461
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 83.21,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 40.441,
+    "event_gap_ms_p50": 39.586,
+    "event_gap_ms_p95": 40.34,
+    "event_gap_ms_p99": 40.441,
+    "mean_stream_decode_tps_est": 88.813,
+    "tokens": 256,
+    "ttft_ms_max": 155.32,
+    "ttft_ms_p50": 155.32,
+    "ttft_ms_p95": 155.32
+   },
+   "engine": {
+    "decode_ms_per_step": 35.9869,
+    "decode_tokens_per_step": 3.2278,
+    "decode_tokens_total": 255.0,
+    "decode_tps_engine": 89.695,
+    "draft_acceptance": 0.4456,
+    "draft_accepted_total": 176.0,
+    "draft_tokens_total": 395.0,
+    "engine_step_seconds_decode_total": 2.842969,
+    "engine_steps_decode_total": 79.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 43.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.857,
+    "requests_waiting_max": 0.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 88.813,
+     "error": "",
+     "events": 80,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 253675,
+     "response_tail_ms": 50.04,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nember willow zephyr ...\" huge list. Need likely continue list of words with a short story. Need infer task: They provide a long list of words, maybe want us to continue the list of words with a short story. Could mean use the words to continue? Maybe they want a short story composed from the list? Need produce co",
+     "text_sha256": "1cfc6a1fbb2d13cad129a38aa186a9b49e07d14cd9dfaf8c8555a00bd4c9986b",
+     "tokens": 256,
+     "ttft_ms": 155.32,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 14.852,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795123478236638678,
+   "wall_s": 3.0765,
+   "wall_start_ns": 1795123475144264511
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 42.8185,
+   "decode_ms_per_step_median": 34.2658,
+   "decode_tokens_per_step_median": 3.40555,
+   "decode_tps_engine_median": 99.9,
+   "draft_acceptance_median": 0.48115,
+   "event_gap_ms_p95_median": 38.668000000000006,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.9259999999999999,
+   "ttft_ms_max_median": 51636.83500000001
+  }
+ }
+}

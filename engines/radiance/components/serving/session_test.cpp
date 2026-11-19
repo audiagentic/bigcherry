@@ -245,6 +245,8 @@ void feature_state_start_status_and_warning() {
     assert(features.at(0).at("feature_id") == "live_policy");
     assert(features.at(0).at("state") == "inactive");
     assert(features.at(0).at("reason_code") == "calibration_key_absent");
+    assert(reply->at("calibration_record").at("status") == "none");
+    assert(reply->at("calibration_record").at("reason_code") == "calibration_key_absent");
     assert(features.at(0).at("reason_detail").get<std::string>().find("orphaned key") != std::string::npos);
     assert(text(c.run / "owner.log").find("WARNING production feature live_policy inactive") != std::string::npos);
     assert(text(c.run / "owner.log").find("calibration_key_absent") != std::string::npos);

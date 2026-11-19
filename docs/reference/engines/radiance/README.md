@@ -20,12 +20,12 @@ Patches modify upstream Radiance source.
 
 | Patch | Simple purpose | State |
 | --- | --- | --- |
-| [rad0001_drain_mover_before_arena_free](../../../../engines/radiance/patches/rad0001_drain_mover_before_arena_free/SUMMARY.md) | Drain GPU transfers before freeing memory | `superseded` |
+| [rad0001_drain_mover_before_arena_free](../../../../engines/radiance/patches/archive/rad0001_drain_mover_before_arena_free/SUMMARY.md) | Drain GPU transfers before freeing memory | `superseded` |
 | [rad0002_moe_remote_handoff](../../../../engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md) | Send expert work to helper GPUs | `validated` |
 | [rad0003_mtp_full_head_switch](../../../../engines/radiance/patches/rad0003_mtp_full_head_switch/SUMMARY.md) | Optionally draft with the full model head | `untested` |
 | [rad0004_moe_remote_diagnostics](../../../../engines/radiance/patches/rad0004_moe_remote_diagnostics/SUMMARY.md) | Diagnose remote expert routing | `diagnostic` |
 | [rad0005_mp4_ffmpeg6_writer](../../../../engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/SUMMARY.md) | Support FFmpeg 6 builds | `validated` |
-| [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `superseded` |
+| [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/archive/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `superseded` |
 | [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/rad0007_hc_pf2_fp8_down/SUMMARY.md) | Unused experimental FP8 HyperConn kernels | `untested` |
 | [rad0008_hc_upmix_rt_sweep](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) | Tune HyperConn launch size | `validated` |
 | [rad0009_serving_manifest](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md) | Start engine from a serving manifest | `validated` |
@@ -51,8 +51,8 @@ Patches modify upstream Radiance source.
 | [rad0031_ts_timeline](../../../../engines/radiance/patches/rad0031_ts_timeline/SUMMARY.md) | Trace two-shot reduction timings | `validated` |
 | [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | Use both link directions in reductions | `validated` |
 | [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | Avoid duplicate reduction writes | `validated` |
-| [rad0034_prefill_concurrency](../../../../engines/radiance/patches/rad0034_prefill_concurrency/SUMMARY.md) | Earlier long-prefill concurrency limit | `superseded` |
-| [rad0035_prefill_order](../../../../engines/radiance/patches/rad0035_prefill_order/SUMMARY.md) | Earlier prefill ordering and ageing controls | `superseded` |
+| [rad0034_prefill_concurrency](../../../../engines/radiance/patches/archive/rad0034_prefill_concurrency/SUMMARY.md) | Earlier long-prefill concurrency limit | `superseded` |
+| [rad0035_prefill_order](../../../../engines/radiance/patches/archive/rad0035_prefill_order/SUMMARY.md) | Earlier prefill ordering and ageing controls | `superseded` |
 | [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | Unified prefill admission and ordering | `validated` |
 
 | [rad0037_bf16_fp8_kv](../../../../engines/radiance/patches/rad0037_bf16_fp8_kv/SUMMARY.md) | Keep BF16 keys; compress cache values to FP8 | `validated` |
