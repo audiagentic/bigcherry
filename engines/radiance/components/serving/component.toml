@@ -17,7 +17,7 @@ targets = ["bc_helper_vram_test", "bc_serving_test", "bc_session_test", "bc_sess
 # checks literals and source inventory; RUM02-07 own the eventual migration.
 [coupling]
 upstream-headers = ["rad_encoding.h", "rad_format.h", "rad_types.h"]
-upstream-files = ["abi/rad_encoding.h", "abi/rad_format.h", "abi/rad_types.h", "vendor/nlohmann/json.hpp"]
+upstream-files = ["abi/rad_encoding.h", "abi/rad_format.h", "abi/rad_types.h"]
 upstream-source-globs = []
 patch-provided-files = []
 protocol-flags = ["--bc-heat-launch-nonce", "--manifest", "--measuring", "--plan-memory", "--plan-memory-ranks", "--role"]

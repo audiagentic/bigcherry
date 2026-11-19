@@ -362,12 +362,11 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
 # The shared library comes from the BigCherry tree, never a copy: the lane passes its .cmake (components/serving).
 _CORE_LINK = r"""
 # BigCherry rad0009 (RSC08 S2b): the engine reads its manifest and (rad0011) checks its plan through the shared serving manifest v1 library, built here from
-# its one source list (BigCherry's components/serving/bc_serving_v2.cmake) with this tree's abi and vendored JSON.
+# its one source list (BigCherry's components/serving/bc_serving_v2.cmake) against this tree's ABI.
 if(NOT DEFINED BC_SERVING_V2_CMAKE)
   message(FATAL_ERROR "rad0009: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "
                       "is required (the shared serving manifest v1 library); the BigCherry lane passes it")
 endif()
-set(BC_SERVING_V2_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")
 include("${BC_SERVING_V2_CMAKE}")
 target_link_libraries(rad_core PUBLIC bc_serving_v2)"""
 

@@ -12,3 +12,6 @@ noreply@anthropic.com
 # Third-party copyright holders in vendored toml++ (engines/radiance/components/serving/third_party)
 mark.gillard@outlook.com.au
 bjoern@hoehrmann.de
+
+# Third-party copyright attribution in vendored nlohmann/json (Hedley)
+evan@nemerson.com

@@ -725,7 +725,6 @@ class TestServingManifestPatch(unittest.TestCase):
                 'message(FATAL_ERROR "rad0009: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "',
                 '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
                 "endif()",
-                'set(BC_SERVING_V2_NLOHMANN_INCLUDE "${CMAKE_SOURCE_DIR}/vendor")',
                 'include("${BC_SERVING_V2_CMAKE}")',
                 "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
             ])
@@ -737,10 +736,9 @@ class TestServingManifestPatch(unittest.TestCase):
         registry) under radiance's own warning flags plus -Werror, against a stub of config_option_names, and run the
         card-free test on a real v1 manifest."""
         compiler = shutil.which("g++") or shutil.which("c++")
-        candidates = [os.environ.get("BC_NLOHMANN_INCLUDE", ""), str(REPO / "vendor" / "llama.cpp" / "vendor")]
-        include = next((c for c in candidates if c and (Path(c) / "nlohmann" / "json.hpp").is_file()), None)
-        if compiler is None or include is None:
-            message = "needs a C++ compiler and nlohmann/json.hpp (set BC_NLOHMANN_INCLUDE to its parent dir)"
+        include = str(REPO / "engines/radiance/components/serving/third_party")
+        if compiler is None:
+            message = "needs a C++ compiler"
             if os.environ.get("CI"):
                 self.fail(message)   # in CI the test must run, never skip
             self.skipTest(message)
@@ -969,10 +967,9 @@ class TestPlanMemoryPatch(unittest.TestCase):
         (-Wall -Wextra, C++20) plus -Werror, and run its card-free test: the flags, the expected plan read, the one
         start-up line and its refusals."""
         compiler = shutil.which("g++") or shutil.which("c++")
-        candidates = [os.environ.get("BC_NLOHMANN_INCLUDE", ""), str(REPO / "vendor" / "llama.cpp" / "vendor")]
-        include = next((c for c in candidates if c and (Path(c) / "nlohmann" / "json.hpp").is_file()), None)
-        if compiler is None or include is None:
-            message = "needs a C++ compiler and nlohmann/json.hpp (set BC_NLOHMANN_INCLUDE to its parent dir)"
+        include = str(REPO / "engines/radiance/components/serving/third_party")
+        if compiler is None:
+            message = "needs a C++ compiler"
             if os.environ.get("CI"):
                 self.fail(message)   # in CI the test must run, never skip
             self.skipTest(message)
