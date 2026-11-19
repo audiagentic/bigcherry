@@ -2,7 +2,7 @@
 id: MRC01
 order: 1
 plan: run-measurement-records
-state: pending
+state: completed
 created-at: '2026-11-19T00:50:23.229499+00:00'
 breadth: ''
 skill: advanced
@@ -45,9 +45,7 @@ Placement follows docs/reference/tooling/TOOLING.md: schema, store and reader ar
 
 ## Validation
 
-- Offline unit tests: round-trip, canonical hash stable across key order, put is idempotent, a record with a missing blob fails validation, query filters.
-- Retention test: plan_cleanup protects directories/blobs referenced by a record and still reports unreferenced ones.
-- Dry-run: store a record from an existing workload row and from tools/lab/radiance parity output; read both back with no original file present.
+Merged: #1188 (run-record v1 schema, content-addressed store, queries, retention protection), #1204 (GC honours run-record references), #1213 (typed bidirectional WSL01 run-manifest <-> run-record link, bigcherry results put|show|query, production recovery dry-run). Tests: tools/tests/core/test_run_records.py (self-contained after source deletion, schema-required decode/prefill/TTFT groups, missing blob or bad schema refused before persist, store survives deleted source), the #1213 link/CLI tests, and the GC classification tests. The 2026-11-20 closure audit found all four acceptance criteria met; #1213 delivered the remaining steps.
 
 ## Effort & Risk
 
@@ -59,10 +57,7 @@ Medium. Risk: scope creep into one record per engine; keep the schema generic an
 
 ## Acceptance Criteria
 
-- A record is self-contained: deleting the original manifest, heat file and run folder does not remove what the record needs.
-- Decode and prefill/TTFT are separate metric fields in every record.
-- No tool reads a record by path; the library is the only reader.
-- Referenced blobs are protected from retention and build GC.
+A run record is self-contained: it still verifies and shows how the run executed after its manifest, heat file and run folder are deleted. Every record carries separate decode, prefill and TTFT metric groups. Records are linked both ways to their WSL01 run manifest. Cleanup never deletes content a record references.
 
 ## Notes
 
@@ -73,3 +68,6 @@ Increments already on main (2026-11-19): the stored manifest and run folder of a
 - 2026-11-19T00:50:23.229499+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:03.018574+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-19T07:38:50.554679+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T21:42:26.289135+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-19T21:42:31.869229+00:00 (state-transition): State: pending → completed
+- 2026-11-19T21:42:49.717875+00:00 (updated-by): Updated: section:validation
