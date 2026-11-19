@@ -109,6 +109,8 @@ C13 (2026-11-19): added candidate-only `rad0047_mtp_verify_replay_summary`. Agai
 
 2026-11-19: historical parity launch manifests show num_speculative_tokens=3 and no prefill-interleave. ABI43 turns absent interleave into auto:1, so the flashnext-4gpu profile now pins 0 (alias inherits it). Resolver and native argv projection tests assert the named value and exact `--prefill-interleave 0`; the rad_core native-YAML fixture asserts explicit zero sets the option/provenance. Review and update the two affected layout-manifest golden hashes after running bc_serving_test. Keep depth 3 and rad0036 governor policy unchanged.
 
+Radiance 2.2.0 (b6b8751c) adds scheduler behavior that needs explicit disposition against the existing BigCherry scheduling patches. Review d42b7440 (prefill room gate defaults off), af1557b1 (fresh prefill waits for whole prompt), 67cf57b8 (serial span admission with no decode), c3491905 (tail timing), and f9dd69db (window-relative bidi_used). Retain upstream semantics where equivalent, and qualify preserved local scheduling defaults explicitly in the existing focused prefill and mixed TP fixtures. The upstream RAD_DRAFT_HISTORY value is calibration-only at depth zero. Keep its evidence separate from serving MTP acceptance.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
@@ -129,3 +131,4 @@ C13 (2026-11-19): added candidate-only `rad0047_mtp_verify_replay_summary`. Agai
 - 2026-11-19T08:59:55.589700+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T09:00:55.776384+00:00 (state-transition): State: pending → in_progress
 - 2026-11-19T09:02:24.106483+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T21:54:34.526893+00:00 (updated-by): Updated: section:notes
