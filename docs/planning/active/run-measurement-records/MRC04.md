@@ -78,8 +78,11 @@ The platform defines calibration-record v1 and declared key input names under
 `tools/bigcherry/core/schemas/`. Native Radiance TOML rows remain the
 production format, with a versioned adapter and no change to key v2 from #1169.
 Platform JSON store write operations are lock-serialised, atomic and durable,
-and legacy TOML rows are inspectable but never activatable by the native
-reader. Platform `bigcherry calibration list|show|validate` is read-only.
+and genuinely hash-only legacy TOML rows are inspectable but never
+activatable. Post-#1169 scoped rows with `calibration_inputs` and source
+plan/build identities remain current and activatable via an in-memory adapter
+even without the new MRC04 fields; the TOML store is never rewritten on read.
+Platform `bigcherry calibration list|show|validate` is read-only.
 The remaining MRC04 slices are MRC01 quantity-blob interop for large evidence,
 run-record `calibration_record` reference migration, and device activation
 proof across separate builds; these are not claimed by the CPU-only slice 1.

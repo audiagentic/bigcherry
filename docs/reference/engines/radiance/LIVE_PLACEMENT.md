@@ -44,8 +44,13 @@ MRC04 v1 records retain `calibration_inputs` (the exact scope),
 `source_revision`, `run_id`, `host_facts_digest` and `seeded` as provenance.
 A source revision is recorded as `source_slice:<hash>` when immutable build
 metadata is available, otherwise `unavailable` is recorded explicitly.
-Records without `record_schema_version = 1` remain readable for audit but
-receive `legacy_record_schema` as the production non-activation reason.
+Records written after #1169 with `calibration_inputs`, `source_plan_key` and
+`source_engine_build` remain **current and activatable** when the declared scope
+hash and measured quantities validate, even if `record_schema_version` is absent.
+The native reader maps these rows to v1 activation in memory only; it does not
+invent the later revision/run/host-facts provenance or rewrite the TOML store.
+Only genuinely hash-only rows lacking `calibration_inputs` are legacy and
+receive `legacy_record_schema` as their non-activation reason.
 The platform's `bigcherry calibration list|show|validate` reads the native
 TOML store; the production reader/writer remain native C++. The reader verifies that
 the scope hashes to the record key; production matches the current model/cards/layout and

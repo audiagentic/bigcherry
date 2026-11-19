@@ -86,6 +86,16 @@ int main() {
     assert(scoped_record->source_revision == "revision-test" && scoped_record->run_id == "run-abc");
     assert(scoped_record->host_facts_digest == std::string(64,'3'));
     assert(rec->record_schema_version == 0); // historic records are audit-only
+    // Verbatim native 2026-11-19 store, including earlier hash-only entries.
+    constexpr const char* prod_key =
+        "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
+    const auto production = sv::read_live_policy_record(BC_CALIBRATION_PRODUCTION_FIXTURE, prod_key);
+    assert(production && production->record_schema_version == 1);
+    assert(production->calibration_inputs &&
+           sv::policy_calibration_key(*production->calibration_inputs) == prod_key);
+    assert(sv::live_policy_record_complete(*production));
+    assert(production->source_revision.empty() && production->run_id.empty() &&
+           production->host_facts_digest.empty()); // no invented provenance
     assert(sv::policy_calibration_key(scope) == stable_key);
     auto changed_build = scope;
     changed_build["engine_build"] = std::string(64,'5');

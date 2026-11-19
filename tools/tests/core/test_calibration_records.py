@@ -196,7 +196,7 @@ class CalibrationRecordsTests(unittest.TestCase):
             + "}\n"
         )
         rows = cr.read_native_toml(toml)
-        self.assertEqual(rows[0]["status"], "valid")
+        self.assertEqual(rows[0]["status"], "current")
         self.assertEqual(rows[0]["record"]["key"], self.record["key"])
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
@@ -205,7 +205,7 @@ class CalibrationRecordsTests(unittest.TestCase):
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             self.assertEqual(main(["calibration", "list", "--store", str(toml)]), 0)
-        self.assertEqual(json.loads(output.getvalue())[0]["status"], "valid")
+        self.assertEqual(json.loads(output.getvalue())[0]["status"], "current")
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             self.assertEqual(
@@ -224,7 +224,22 @@ class CalibrationRecordsTests(unittest.TestCase):
                 0,
             )
         self.assertEqual(json.loads(output.getvalue())["record"], self.record)
-        old = toml.read_text().replace("record_schema_version = 1", "")
+        # Genuine hash-only history, not scoped post-#1169 evidence.
+        old = toml.read_text()
+        for field in (
+            "record_schema_version",
+            "calibration_kind",
+            "calibration_key_fields",
+            "calibration_inputs",
+            "source_plan_key",
+            "source_engine_build",
+            "source_revision",
+            "run_id",
+            "host_facts_digest",
+        ):
+            old = "\n".join(
+                line for line in old.split("\n") if not line.startswith(field + " = ")
+            )
         toml.write_text(old)
         rows = cr.read_native_toml(toml)
         self.assertEqual(rows[0]["status"], "legacy")
@@ -236,6 +251,42 @@ class CalibrationRecordsTests(unittest.TestCase):
             json.loads(output.getvalue())["records"][0]["reason"],
             "legacy_record_schema",
         )
+
+    def test_production_post_1169_record_stays_current_without_store_rewrite(self):
+        # Verbatim 2026-11-19 production calibration-store snapshot.
+        fixture = Path(__file__).resolve().parents[1] / (
+            "fixtures/calibration/production-2026-11-19.toml"
+        )
+        before = fixture.read_bytes()
+        key = "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b"
+        entries = cr.read_native_toml(fixture)
+        row = next(item for item in entries if item["key"] == key)
+        self.assertEqual(row["status"], "current")
+        self.assertIsNone(row["reason"])
+        self.assertEqual(row["record"]["key"]["sha256"], key)
+        self.assertEqual(
+            row["record"]["provenance"]["build_id"],
+            "3ebb390d5e1a5ba6ca4d05c7118cf7cc809935cbf962ba55fa7b9d78d15e63c8",
+        )
+        # Missing newer provenance is not invented by the compatibility reader.
+        self.assertNotIn("host_facts_digest", row["record"]["provenance"])
+        self.assertTrue(any(item["status"] == "legacy" for item in entries))
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            self.assertEqual(main(["calibration", "list", "--store", str(fixture)]), 0)
+        listing = json.loads(output.getvalue())
+        self.assertEqual(
+            next(item for item in listing if item["key"] == key)["status"], "current"
+        )
+        self.assertEqual(fixture.read_bytes(), before)
+
+        # A carried scope must still hash to the stored key.
+        corrupted = self.root / "corrupted.toml"
+        corrupted.write_bytes(before.replace(key.encode(), ("f" * 64).encode()))
+        bad = next(
+            item for item in cr.read_native_toml(corrupted) if item["key"] == "f" * 64
+        )
+        self.assertEqual(bad["status"], "invalid")
 
 
 if __name__ == "__main__":

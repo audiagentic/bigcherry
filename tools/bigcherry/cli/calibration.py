@@ -53,7 +53,7 @@ def cmd_calibration(args) -> int:
                 raise CalibrationError(f"no record for {args.kind} / {args.key}")
             payload = matches[0]
         elif args.calibration_action == "validate":
-            invalid = [r for r in rows if r["status"] != "valid"]
+            invalid = [r for r in rows if r["status"] not in ("valid", "current")]
             payload = {
                 "store": str(store),
                 "total": len(rows),

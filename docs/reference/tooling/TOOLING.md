@@ -56,9 +56,13 @@ contract. New rows declare `record_schema_version = 1`,
 and `calibration_inputs` (canonical JSON) along with source build identity,
 plan key, run ID, host-facts digest, source-slice identity (or explicitly
 `unavailable`), date, evidence, and measured/absent quantities. A native
-reader enforces the declaration before activation and rejects legacy records
-with `legacy_record_schema`, but leaves serving available with the policy
-off. The production key itself is unchanged from #1169: `sha256` over
+reader enforces the narrow key before activation. Earlier post-#1169 rows
+with `calibration_inputs` and source plan/build but without the extra MRC04
+v1 fields stay **current** and activatable through a read-only, in-memory
+compatibility mapping; missing run/source-revision/host digests are not made up.
+Only genuinely hash-only records lack activation provenance and are rejected
+with `legacy_record_schema`, leaving serving available with the policy off.
+The production key itself is unchanged from #1169: `sha256` over
 Radiance's sorted `policy_calibration_inputs` JSON.
 
 The operator commands are read-only (no hardware lease, no activation):
@@ -71,9 +75,11 @@ PYTHONPATH=tools python -m bigcherry calibration validate --store /path/to/live-
 
 An omitted `--store` defaults to `$BC_WORK_ROOT/live-policy-calibration.toml`
 when `BC_WORK_ROOT` is set. A JSON-store directory can be supplied instead.
-`list` and `show` display legacy evidence and its explicit refusal reason;
-`validate` returns a nonzero status if any legacy or malformed row is
-unusable. Source facts are hashed from the **verified source manifest's
+`list` and `show` mark both native v1 and verified post-#1169 rows as
+`current`; genuinely hash-only entries are `legacy` with their explicit refusal
+reason. `validate` accepts current rows, and returns nonzero when any legacy or
+malformed row is unusable. Source facts for newly written v1 rows are hashed
+from the **verified source manifest's
 `spec.facts`**, not guessed from the machine at query time; source revision
 comes from installed build metadata's `source_slice_id` when present,
 otherwise is explicitly `unavailable`. A rebuild changes provenance, not

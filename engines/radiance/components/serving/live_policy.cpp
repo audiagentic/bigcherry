@@ -162,6 +162,7 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             Json parsed = Json::parse(json, nullptr, false);
             if (parsed.is_discarded()) bad(where + ": calibration_inputs is not strict JSON");
             try {
+                require_declared_policy_calibration_inputs(parsed);
                 if (policy_calibration_key(parsed) != row.key)
                     bad(where + ": calibration_inputs digest disagrees with plan_cache_key");
             } catch (const std::exception& e) {
@@ -173,9 +174,24 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             for (const std::string& hex : {row.source_plan_key, row.source_engine_build})
                 if (hex.size() != 64 || hex.find_first_not_of("0123456789abcdef") != std::string::npos)
                     bad(where + ": source plan/build identities must be lowercase SHA-256");
+            // #1169 records bind the typed narrow policy scope and source
+            // plan/build. Map them to v1 activation in memory only.
+            row.record_schema_version = 1;
+            row.calibration_kind = "radiance.live_policy";
+            row.calibration_key_fields = policy_calibration_key_fields();
         } else if (t->contains("source_plan_key") || t->contains("source_engine_build")) {
             bad(where + ": provenance needs calibration_inputs, source_plan_key and source_engine_build together");
         }
+        if (!has_inputs && (t->contains("record_schema_version") ||
+            t->contains("calibration_kind") || t->contains("calibration_key_fields") ||
+            t->contains("source_revision") || t->contains("run_id") ||
+            t->contains("host_facts_digest")))
+            bad(where + ": scoped metadata without calibration_inputs");
+        if (has_inputs && !t->contains("record_schema_version") &&
+            (t->contains("calibration_kind") || t->contains("calibration_key_fields") ||
+             t->contains("source_revision") || t->contains("run_id") ||
+             t->contains("host_facts_digest")))
+            bad(where + ": v1 metadata requires record_schema_version");
         if (t->contains("record_schema_version")) {
             const auto* version = (*t)["record_schema_version"].as_integer();
             if (!version || version->get() != 1)
