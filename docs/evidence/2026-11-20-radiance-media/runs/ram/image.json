@@ -1,0 +1,8 @@
+{
+ "format": "bmp",
+ "expected": "answered",
+ "verdict": "answered",
+ "http_status": 200,
+ "seconds": 1.18,
+ "text": "The round shape is red, and the square is green."
+}
