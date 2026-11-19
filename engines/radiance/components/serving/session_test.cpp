@@ -213,11 +213,12 @@ void feature_state_start_status_and_warning() {
     c.helpers = 1;
     c.session.publish_feature_states = true;
     c.behaviour["spec"] = {
-        {"intent", {{"service", {{"profile", "production"}}}}},
-        {"resources", {{"host", {{"kv_mib", 4096}}}}},
+        {"intent", {{"service", {{"profile", "production"}, {"max_context_tokens", 32768}}}}},
+        {"resources", {{"host", {{"pool_mib", 1024}, {"kv_mib", 4096}}}}},
         {"processes", {
             {"helpers", Json::array({{{"role", "helper0"}}})},
-            {"engine", {{"execution", {{"num_speculative_tokens", 2}}},
+            {"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}},
+                        {"execution", {{"num_speculative_tokens", 2}, {"ngram_placement", "disk"}}},
                         {"vision", {{"vision_tower_placement", "gpu"}, {"mm_max_patches", 64}}}}},
             {"helper_common", {{"combine", {{"enabled", false}}}}},
         }},
