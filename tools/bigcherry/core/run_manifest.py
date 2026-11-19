@@ -59,9 +59,15 @@ def utc_stamp(now: float | None = None) -> str:
 def new_manifest(*, run_id: str, kind: str, purpose: str, plan_item: str | None, engine: str, argv: list, owner: dict,
                  inputs: list | None = None, references: list | None = None, git_commit: str | None = None,
                  git_dirty: bool | None = None, host: dict | None = None, subkind: str | None = None,
-                 now: float | None = None) -> dict[str, Any]:
+                 now: float | None = None, collect_host_facts: bool = False) -> dict[str, Any]:
     if kind not in RUN_KINDS:
         raise ManifestError(f"unknown run kind {kind!r}; kinds are {sorted(RUN_KINDS)}")
+    if collect_host_facts:
+        if host is not None:
+            raise ManifestError("cannot supply host and request collected host facts")
+        from .host_facts import collect_host_facts as collect_snapshot
+
+        host = collect_snapshot()
     return {
         "schema_version": SCHEMA_VERSION,
         "run_id": run_id,
@@ -74,7 +80,7 @@ def new_manifest(*, run_id: str, kind: str, purpose: str, plan_item: str | None,
         "started_at": None,
         "ended_at": None,
         "execution": {"argv": list(argv), "git_commit": git_commit, "git_dirty": git_dirty, "exit_code": None},
-        "host": host or {},
+        "host": dict(host or {}),
         "owner": dict(owner),
         "inputs": list(inputs or []),         # [{"role", "uri", "sha256"}]
         "references": list(references or []),  # [{"type": run|build|source|object, "id", "role"}] typed GC edges

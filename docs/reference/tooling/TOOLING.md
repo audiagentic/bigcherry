@@ -33,7 +33,7 @@ bigcherry CLI -> cli/main.py parser -> cli/<domain>.py handler
               -> tests, receipts, evidence, or artifacts owned by that workflow
 ```
 
-### Platform measurement records (MRC01 slice 1)
+### Platform measurement records (MRC01–MRC03)
 
 `bigcherry.core.run_records.RunRecordStore` owns v1 immutable run records at
 `$BC_WORK_ROOT/run-records/v1/`, with SHA-256 blobs under
@@ -48,11 +48,24 @@ and TTFT are separate fields; an empty phase means it was not measured.
 
 An input path is only an optional hint: effective configuration, exact argv,
 environment, power settings and result-affecting inputs are stored as blob
-references. `host_facts` and `feature_states` are platform record fields
-populated by independent collectors/adapters; native engine runtimes remain
-Python-free. The WSL01 run manifest
-continues to own lifecycle. MRC01's manifest edges and results CLI, and MRC06's
-producer migrations, are **not part of this first slice**.
+references. `host_facts` is populated by the MRC02 platform collector, and
+`feature_states` by MRC03's native snapshot/reader. Engines supply adapters,
+not schema or store logic; a native runtime remains Python-free. The WSL01
+run manifest continues to own lifecycle. The platform's
+`bigcherry.core.host_facts` collector returns per-fact
+`{value, readable, reason?}` structures over injectable sysfs and procfs
+roots. Its read-only probes include kernel, ROCm, amdgpu/firmware, VRAM,
+PCIe card/bridge links, clock state and OD max, power cap and bounds,
+host memory/DIMMs, environment-file SHA-256 and GPU lease status. A reported
+zero current power cap is flagged `zero_cap_suspect`, never interpreted as
+a valid cap. Use `run_records.with_host_facts(record)` in Python platform
+adapters and `run_manifest.new_manifest(host=...)` or
+`run_manifest.new_manifest(collect_host_facts=True)` for an explicit
+snapshot; callers opt in to collection at run creation rather than
+performing extra sysfs/tool queries on unrelated lifecycle operations.
+The workloads tool imports its card/power sampling readers from this core
+module. MRC01's manifest edges and results CLI, and MRC06's producer
+migrations, are outside these slices.
 
 MRC03's feature-state v1 JSON contract lives at
 `tools/bigcherry/core/schemas/feature-state-v1.schema.json`: a list of
