@@ -1,0 +1,22 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_005537_candidate-radiance-checkpoints_3818",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/patch.py",
+    "tools/lab/radiance/flashnext-parity.sh",
+    "tools/lab/radiance/flashnext_parity.py",
+    "tools/tests/lab/test_flashnext_parity.py"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM04",
+    "RUM05",
+    "RUM06",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Stage the measured startup boundary, ranked provider and rendezvous adaptation on ABI 43. Record checkpoint runtime member digests and archive native session logs for comparison and failures.",
+  "timestamp-utc": "2026-11-19T00:55:37.893102Z",
+  "user-summary-candidate": "Candidate Radiance checkpoints preserve the existing measured startup and capture exact runtime identity for later regression comparison."
+}

@@ -2,7 +2,7 @@
 id: RUM03
 order: 2
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-18T01:28:07.390588+00:00'
 breadth: ''
 skill: advanced
@@ -91,6 +91,8 @@ Astra source review ASTRA-CONSOLIDATION.md: execute after RUM01 and before nativ
 
 RCS15–18 now own native libr3d replacement. A matched comparison build retains libr3 until native qualification; this does not change the initial bump's acceptance. See docs/reviews/radiance-native-libr3d/INTEGRATION.md.
 
+Candidate changed from reviewed ABI 41 to exact upstream 3deabdaeca17b58bad90d332f4b204cf7bb8a10e (ABI 43). C1 dependency and C2 native parser compile checkpoint recorded in docs/evidence/radiance-latest-bump.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -101,3 +103,5 @@ RCS15–18 now own native libr3d replacement. A matched comparison build retains
 - 2026-11-18T02:22:32.511127+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:25:34.495094+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T08:49:24.938096+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T00:54:06.118974+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T00:54:15.725512+00:00 (state-transition): State: pending → in_progress
