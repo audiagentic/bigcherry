@@ -1,0 +1,14 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_204202_rechecked-the-retained-e4m3-pa_5674",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Repeated the rad0046_retained_moe_rows exact-source apply/replay test against pinned Radiance SHA 3deabdaeca17b58bad90d332f4b204cf7bb8a10. The focused test passed 1/1, including compile/run coverage for the shared block-E4M3 width predicate at aligned, split-boundary, and legacy-format cases. The result verifies patch mechanics and CPU-side geometry only; it does not qualify GPU numerical behavior or by itself authorize lifecycle promotion.",
+  "timestamp-utc": "2026-11-19T20:42:02.519554Z",
+  "user-summary-candidate": "Rechecked the retained E4M3 patch on the pinned Radiance source. Its focused apply/replay and geometry test passed; GPU activation remains a separate qualification gate."
+}

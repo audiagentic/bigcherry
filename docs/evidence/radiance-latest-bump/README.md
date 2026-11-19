@@ -313,3 +313,7 @@ The owner captures the canonical runtime-home target before native inspection an
 Added a native v3 session regression that retargets the runtime-home symlink after inspection to an empty, byte-identical directory. The session refuses after measurement and before owner-cache or measured-manifest publication. The normal one-shot owner-measurement case still verifies one exact owner receipt, sealed measuring-manifest digest, final plan and P1 resident bytes.
 
 Verification: generated-v3 `bc_native_v3_session_test` passed (1/1), including both successful owner verification and symlink-retarget refusal; default-v2 `bc_serving_test` and `bc_session_stored_test` passed (2/2). No GPU was used. Physical rank-order verification, strict recipe state resolution, stored/offline replay and production admission remain open.
+
+## C61 — Recheck the retained E4M3 patch fixture on the pinned source (2026-11-20)
+
+Repeated the focused `rad0046_retained_moe_rows` exact-source apply/replay test against pinned Radiance source `3deabdaeca17b58bad90d332f4b204cf7bb8a10`. The test passed (1/1), including compilation and execution of the shared block-E4M3 geometry predicate for aligned classes, the 192-column split boundary, and non-block-E4M3 legacy behavior. This confirms the patch mechanics and CPU-side boundary rule. It does not itself establish GPU numerical activation or authorize lifecycle promotion; the ABI44 build/row-probe evidence is C29 and hardware qualification remains in RUM09.
