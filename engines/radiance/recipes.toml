@@ -135,10 +135,12 @@ patches = ["rad0003_mtp_full_head_switch"]
 [experiment.moe-heat-observer]
 patches = ["rad0039_moe_heat_observer"]
 
-# VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
-# bf16_i8 requires bf16_fp8; rad0040 (VTP44) makes the packed layouts one table and requires bf16_i8; rad0041 (VTP44 B) adds
-# Flash-Next's geometry (gqa 12, and gqa 6 with 4-token pages) and requires rad0040; rad0042 adds their selftest cases.
-# Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
+# VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8). rad0037, rad0038, rad0040 and rad0041 are
+# promoted into serving-core (#1033, 2026-11-17: opt-in, the default caches unchanged); only rad0042, their selftest
+# cases, remains an experiment. bf16_i8 requires bf16_fp8; rad0040 (VTP44) makes the packed layouts one table and requires
+# bf16_i8; rad0041 (VTP44 B) adds Flash-Next's geometry (gqa 12, and gqa 6 with 4-token pages) and requires rad0040.
+# bf16_i8 is served by the configs qwen27b-tp3-int8-556-long-bf16i8 and flashnext-4gpu-bf16i8 (ENG06, 2026-11-19).
+# Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md, docs/evidence/2026-11-19-eng06-bf16i8/README.md.
 [experiment.kv-bf16-packed]
 patches = ["rad0042_kv_b16_selftest"]
 
