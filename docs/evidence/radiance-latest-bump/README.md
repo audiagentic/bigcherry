@@ -325,3 +325,7 @@ The rad0009 bridge shares native YAML replay between measurement and serving Con
 ## C63 — Retain native launch inputs across the session owner handoff
 
 Commit `5539f42fb` carries the working directory descriptor and frozen environment from native measurement into the serving owner. The owner verifies the strict serving manifest, sealed descriptor, launch arguments, and directory identity before using that context. The generated v3 session fixture passed (1/1). Default v2 serving and stored manifest fixtures passed (2/2). These checks cover measurement and existing v2 behavior. Native serving execution still stops at the post-measure gate at this checkpoint. Ledger event `chg_20261119_213343_preserve-the-admitted-native-c_6376`.
+
+## C64 — Start and stop an engine-only native session
+
+Commit `a4af18f3e` connects the generated v3 session owner to sealed native engine startup. Before combining with main, the owner fixture passed (1/1), covering inspect, measure, start, health, canary, verified shutdown, a drop in available host memory after measurement, and runtime-home drift. The pinned ABI44 consumer fixture passed (1/1), including measured plan admission. Both default v2 session checks and all 14 patch checks passed. The built engine refused an unsealed direct serving start with exit 2. No GPU execution was performed. The combined source is `9ab98f7de`, which includes main through `d611e7997`. Its session checks are tracked separately.
