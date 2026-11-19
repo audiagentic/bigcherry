@@ -32,7 +32,13 @@ _TEMP_STATE = "_bigcherry_exec_temp_state"
 def pytest_configure(config) -> None:
     work_root = os.environ.get("BC_WORK_ROOT")
     if not work_root:
-        return
+        # Not set (a shell that did not source tools/env/bigcherry-env.sh): the project's own work root, as the pin-bump
+        # gate resolves it, so a noexec system temp directory still gets an exec-capable fallback.
+        try:
+            from bigcherry.core.context import ProjectContext
+            work_root = str(ProjectContext.resolve(engine="radiance").work_root)
+        except Exception:
+            return
     parent = Path(work_root) / "test-tmp"
     previous_env = os.environ.get("TMPDIR")
     previous_cached = tempfile.tempdir
