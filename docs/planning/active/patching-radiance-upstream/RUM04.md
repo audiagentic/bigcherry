@@ -185,6 +185,8 @@ C47 exact-recipe follow-up (2026-11-20): corrected candidate provenance to a fre
 
 C48 (2026-11-20): build_manifest now recomputes the complete v3 plan key from resolved values/facts, admitted YAML snapshot, and measured model/build/engine-argument identities; requires owner provenance and the cache record key to match. This fixes the former SHA/root-only check that rejected production `rank_devices`. The real v3 writer fixture now publishes and reloads the plan/rank-demand via plan_cache_store_owned/lookup using the measuring-manifest digest, feeds that exact cache entry into P1 and final writer, and verifies real identities plus refusal of changed digest/root/device BDF. Focused `bc_serving_v3_writer_test`, exact-recipe ABI44 `bc_native_v3_engine_test` (writer child included), and default v2 `bc_serving_test` passed (1/1 each); single generated manifest archive confirmed; diff check clean. Evidence C48 in docs/evidence/radiance-latest-bump/README.md. No GPU or production gate change. Next remaining seam is session-owned native snapshot measurement and real cache receipt propagation through stored/offline replay; keep production admission closed.
 
+C49 (2026-11-20): factored sealed memfd validation/snapshot reconstruction into `NativeConfigSnapshot::from_sealed_fd()` and reused it in Radiance's native inspector. The private v3-only `bc-serve --bc-native-config-fd` writer input populates `ManifestInputs.native_config` before both key calculations. Round-trip coverage passes in `bc_serving_v3_writer_test`; exact-recipe ABI44 consumer CTest and default v2 `bc_serving_test` pass; real `bc-serve` compiles against the isolated generated v3 codec and rejects the private fd option outside write-manifest mode. Evidence C49. No session caller or native measurement path is enabled; session admission still fails closed in default v2, and named/stored/offline replay and GPU start remain open.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -228,3 +230,4 @@ C48 (2026-11-20): build_manifest now recomputes the complete v3 plan key from re
 - 2026-11-19T16:59:55.010146+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T17:20:24.644470+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T17:30:20.876923+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T17:47:58.678450+00:00 (updated-by): Updated: section:notes

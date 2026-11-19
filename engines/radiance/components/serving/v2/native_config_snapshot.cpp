@@ -2,10 +2,16 @@
 
 #include "../sha256.h"
 #include "document_bytes.h"
+#include "strict_json.h"
 
+#include <cerrno>
 #include <fstream>
 #include <stdexcept>
 #include <utility>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace bc::serving {
 namespace {
@@ -77,6 +83,30 @@ NativeConfigSnapshot NativeConfigSnapshot::from_manifest(const nlohmann::json& f
     return NativeConfigSnapshot(field.at("yaml_utf8").get_ref<const std::string&>(),
                                 field.at("resolution_root").get_ref<const std::string&>(),
                                 field.at("sha256").get_ref<const std::string&>());
+}
+
+NativeConfigSnapshot NativeConfigSnapshot::from_sealed_fd(int fd) {
+    if (fd < 3) throw std::invalid_argument("native snapshot descriptor must be greater than 2");
+    constexpr int required_seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+    const int seals = ::fcntl(fd, F_GET_SEALS);
+    if (seals < 0 || (seals & required_seals) != required_seals)
+        throw std::invalid_argument("native snapshot descriptor must be a fully sealed memfd");
+    struct stat info {};
+    if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size <= 0 ||
+        static_cast<uintmax_t>(info.st_size) > v2::kMaxDocumentBytes)
+        throw std::invalid_argument("native snapshot descriptor must be a bounded regular file");
+    std::string bytes(static_cast<size_t>(info.st_size), '\0');
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        const ssize_t count = ::pread(fd, bytes.data() + offset, bytes.size() - offset,
+                                      static_cast<off_t>(offset));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) throw std::runtime_error("could not read the complete native snapshot descriptor");
+        offset += static_cast<size_t>(count);
+    }
+    const auto parsed = v2::parse_strict_json(bytes, "native snapshot descriptor");
+    if (!parsed) throw std::invalid_argument(v2::render_human("native snapshot descriptor", parsed.error()));
+    return from_manifest(parsed.value());
 }
 
 nlohmann::json NativeConfigSnapshot::manifest_field() const {

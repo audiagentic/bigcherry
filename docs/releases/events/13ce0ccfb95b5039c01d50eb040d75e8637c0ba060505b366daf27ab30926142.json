@@ -1,0 +1,20 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_174801_unified-sealed-native-snapshot_2619",
+  "files": [
+    "engines/radiance/components/serving/v2/native_config_snapshot.h",
+    "engines/radiance/components/serving/v2/native_config_snapshot.cpp",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Factored sealed memfd verification and strict NativeConfigSnapshot reconstruction into a shared NativeConfigSnapshot::from_sealed_fd function; the native engine inspector now reuses it. Added a private v3-only --bc-native-config-fd bc-serve writer option that loads the snapshot before draft and measured plan-key generation and populates ManifestInputs. The v3 writer fixture round-trips its snapshot through a sealed fd. bc_serving_v3_writer_test, exact-recipe ABI44 consumer CTest, and ordinary v2 bc_serving_test pass (1/1 each); standalone bc-serve compiled against generated v3 and rejected the private fd option outside write-manifest mode. No session caller, production gate, GPU use or performance claim.",
+  "timestamp-utc": "2026-11-19T17:48:01.855594Z",
+  "user-summary-candidate": "Unified sealed native snapshot reading and added a private v3 writer handoff path. Focused v2/v3 checks pass; session and production native admission remain fail-closed."
+}

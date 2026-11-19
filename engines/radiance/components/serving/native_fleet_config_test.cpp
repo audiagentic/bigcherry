@@ -188,6 +188,9 @@ int main() {
                                        "  tiny:\n    model: tiny.rad\n    mixed-step-target-ms: 17\n";
     const Json inspected_field = config_field(inspected_yaml);
     const int sealed_fd = sealed_memfd(inspected_field.dump());
+    const auto received = NativeConfigSnapshot::from_sealed_fd(sealed_fd);
+    check(received.manifest_field() == inspected_field,
+          "shared sealed-fd receiver changed native snapshot bytes or identity");
     const std::string fd_text = std::to_string(sealed_fd);
     char command[] = "radiance";
     char inspect[] = "--bc-inspect-native-config";

@@ -2,19 +2,12 @@
 #include "native_fleet_config.h"
 
 #include "fleet/fleet.h"
-#include "v2/document_bytes.h"
-#include "v2/strict_json.h"
 
-#include <cerrno>
 #include <charconv>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <utility>
-
-#include <fcntl.h>
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace bc::serving {
 
@@ -64,29 +57,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
         if (error != std::errc{} || ptr != end || fd < 3)
             throw std::invalid_argument("descriptor must be an integer greater than 2");
 
-        constexpr int required_seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
-        const int seals = ::fcntl(fd, F_GET_SEALS);
-        if (seals < 0 || (seals & required_seals) != required_seals)
-            throw std::invalid_argument("descriptor must be a fully sealed memfd");
-
-        struct stat info {};
-        if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size <= 0 ||
-            static_cast<uintmax_t>(info.st_size) > v2::kMaxDocumentBytes)
-            throw std::invalid_argument("descriptor must be a bounded regular file");
-
-        std::string bytes(static_cast<size_t>(info.st_size), '\0');
-        size_t offset = 0;
-        while (offset < bytes.size()) {
-            const ssize_t count = ::pread(fd, bytes.data() + offset, bytes.size() - offset,
-                                          static_cast<off_t>(offset));
-            if (count < 0 && errno == EINTR) continue;
-            if (count <= 0) throw std::runtime_error("could not read the complete descriptor");
-            offset += static_cast<size_t>(count);
-        }
-
-        const auto parsed = v2::parse_strict_json(bytes, command);
-        if (!parsed) throw std::invalid_argument(v2::render_human(command, parsed.error()));
-        NativeFleetConfig managed = NativeFleetConfig::replay(NativeConfigSnapshot::from_manifest(parsed.value()));
+        NativeFleetConfig managed = NativeFleetConfig::replay(NativeConfigSnapshot::from_sealed_fd(fd));
         const auto& fleet = managed.fleet();
         const auto& cfg = fleet.models.front().cfg;
         auto source = [&](const char* key) -> nlohmann::json {

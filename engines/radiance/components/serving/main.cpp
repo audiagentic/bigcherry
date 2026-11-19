@@ -14,6 +14,7 @@
 #include "v2/p1_producer.h"
 #include "v2/s8_rules.h"
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
 #include <ctime>
 
@@ -642,6 +643,7 @@ int main(int argc, char** argv) {
         std::optional<uint64_t> helpers_resident_mib, engine_resident_mib;
         std::string plan_extra;
         std::string expected_plan_key;
+        int native_config_fd = -1;
         fs::path plan_cache, engine_binary;
         fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file,
             s8_replay_evidence_file;
@@ -707,6 +709,12 @@ int main(int argc, char** argv) {
                 plan_extra = need_arg("--plan-extra");
             else if (arg == "--expected-plan-key")
                 expected_plan_key = need_arg("--expected-plan-key");
+            else if (arg == "--bc-native-config-fd") {
+                const std::string value = need_arg("--bc-native-config-fd");
+                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), native_config_fd);
+                if (error != std::errc{} || end != value.data() + value.size() || native_config_fd < 3)
+                    throw std::runtime_error("--bc-native-config-fd requires a descriptor greater than 2");
+            }
             else if (arg == "--rank-demand")
                 rank_demand_file = need_arg("--rank-demand");
             else if (arg == "--expected-owner-attempt")
@@ -746,6 +754,10 @@ int main(int argc, char** argv) {
                           int(!write_manifest.empty()) + int(publish_v2_live_room) +
                           int(!publish_v2_p1.empty());
         const bool plan_mode = !write_manifest.empty();
+        if (native_config_fd >= 0 && !plan_mode)
+            throw std::runtime_error("--bc-native-config-fd is an internal --write-manifest input");
+        if (native_config_fd >= 0 && bc::serving::v2::kContractVersion != 3)
+            throw std::runtime_error("--bc-native-config-fd requires the isolated v3 manifest edition");
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())
@@ -903,17 +915,24 @@ int main(int argc, char** argv) {
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto r = bc::serving::resolve(opts, facts);
             const auto& v = r.values;
+            const std::optional<bc::serving::NativeConfigSnapshot> native_config =
+                native_config_fd >= 0
+                    ? std::optional<bc::serving::NativeConfigSnapshot>(
+                          bc::serving::NativeConfigSnapshot::from_sealed_fd(native_config_fd))
+                    : std::nullopt;
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
             // Prepare the selected configuration once. P1 consumes this same
             // input as the final writer so a native snapshot can flow through
             // both without reopening or reconstructing engine configuration.
             bc::serving::ManifestInputs in;
             in.resolved = r;
+            in.native_config = native_config;
             if (unmeasured) {
                 if (!expected_plan_key.empty()) {
                     const Json effective_key = bc::serving::plan_key_inputs(
                         v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
-                        bc::serving::engine_identity(engine_binary, home), plan_extra);
+                        bc::serving::engine_identity(engine_binary, home), plan_extra,
+                        in.native_config ? &*in.native_config : nullptr);
                     if (bc::serving::plan_key(effective_key) != expected_plan_key)
                         throw std::runtime_error(
                             "the effective measuring-manifest inputs differ from the session's frozen plan key");
@@ -935,7 +954,8 @@ int main(int argc, char** argv) {
             }
             const auto key_inputs = bc::serving::plan_key_inputs(
                 v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
-                bc::serving::engine_identity(engine_binary, home), plan_extra);
+                bc::serving::engine_identity(engine_binary, home), plan_extra,
+                in.native_config ? &*in.native_config : nullptr);
             // The v1 manifest for this configuration from its measured plan: given by a measuring start
             // (--measured-plan, checked against the configuration and stored in the cache under this key) or
             // found in the cache. A miss is exit 10: a manifest without a measured plan is not written.
