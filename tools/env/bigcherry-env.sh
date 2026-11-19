@@ -70,4 +70,15 @@ PY
 
 }
 
+# FFmpeg for the radiance engine's image and video decoder (RAD_WITH_FFMPEG=ON in engines/radiance/recipes.toml): on the agent
+# container it lives under /opt/ffmpeg6 (FFmpeg 6.1, pkg-config files included), which pkg-config does not search; CMake's
+# pkg-config lookup follows CMAKE_PREFIX_PATH. Where FFmpeg is a system package this does nothing.
+_bc_ffmpeg_prefix() {
+    local p=/opt/ffmpeg6
+    [ -d "$p/lib/pkgconfig" ] || return 0
+    case ":${CMAKE_PREFIX_PATH:-}:" in *":$p:"*) return 0 ;; esac
+    export CMAKE_PREFIX_PATH="${CMAKE_PREFIX_PATH:+$CMAKE_PREFIX_PATH:}$p"
+}
+_bc_ffmpeg_prefix
+
 _bc_env_load "${1:-}"
