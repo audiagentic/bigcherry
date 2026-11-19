@@ -57,7 +57,13 @@ class RadianceSourceClassesTests(unittest.TestCase):
         self.assertEqual(recipes.patch_sets["moe-remote-diag"].patches, ("rad0004_moe_remote_diagnostics",))
         self.assertEqual(recipes.patch_sets["moe-remote-diag"].required_state, "diagnostic")
         self.assertEqual(recipes.patch_sets["routing-evidence"].required_state, "diagnostic")
-        self.assertEqual(set(records), {"rad0004_moe_remote_diagnostics", "rad0010_routing_evidence"})
+        self.assertEqual(set(records), {
+            "rad0004_moe_remote_diagnostics", "rad0010_routing_evidence",
+            "rad0042_kv_b16_selftest", "rad0043_expert_stats_protected",
+            "rad0044_expert_route_record", "rad0045_expert_route_replay",
+        })
+        for patch_id in records:
+            self.assertEqual(states[patch_id], "diagnostic")
         for patch_id, record in records.items():
             self.assertEqual(record.patch_id, patch_id)
             self.assertEqual(record.tier, profile_evidence.DIAGNOSTIC_TIER)

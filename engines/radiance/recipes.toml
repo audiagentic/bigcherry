@@ -96,12 +96,24 @@ required-state = "untested"
 # docs/evidence/2026-11-20-prq06-diagnostic-evidence/.
 [patch-set.vtp44-evidence]
 patches = [
-  "rad0042_kv_b16_selftest",
-  "rad0043_expert_stats_protected",
-  "rad0044_expert_route_record",
-  "rad0045_expert_route_replay",
 ]
 required-state = "untested"
+
+[patch-set.rad0042-diagnostic]
+patches = ["rad0042_kv_b16_selftest"]
+required-state = "diagnostic"
+
+[patch-set.rad0043-diagnostic]
+patches = ["rad0043_expert_stats_protected"]
+required-state = "diagnostic"
+
+[patch-set.rad0044-diagnostic]
+patches = ["rad0044_expert_route_record"]
+required-state = "diagnostic"
+
+[patch-set.rad0045-diagnostic]
+patches = ["rad0045_expert_route_replay"]
+required-state = "diagnostic"
 
 [source.radiance-native]
 class = "production"
@@ -131,7 +143,19 @@ patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-eviden
 class = "diagnostic"
 description = "Production Radiance plus the VTP44 evidence tools (KV selftest cases, complete expert stats, expert route record and replay); not a production source."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp", "vtp44-evidence"]
+patch-sets = [
+  "serving-core",
+  "host-compat",
+  "serving-manifest",
+  "helper-config",
+  "mtp-pass-replay",
+  "vtp14-mixed-tp",
+  "vtp44-evidence",
+  "rad0042-diagnostic",
+  "rad0043-diagnostic",
+  "rad0044-diagnostic",
+  "rad0045-diagnostic",
+]
 
 [build.stock]
 description = "radiance's own release build of the engine binary."

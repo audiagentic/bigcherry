@@ -1,6 +1,6 @@
 # rad0044_expert_route_record
 
-**Status:** untested
+**Status:** diagnostic
 **Plan item:** VTP44
 
 ## Summary
@@ -9,7 +9,7 @@
 
 ## Outcome
 
-Not yet run. Expected on Flash-Next (hcbf16) over the 4,163-token run: a complete file of 4,163 rows x 48 layers x top-10, whose per-layer expert counts equal the `--expert-stats` counts of the same run.
+Qualified as a diagnostic tool (2026-11-20, record in `evidence/promotion.json`). Run on Flash-Next (hcbf16, TP2): `--expert-route-record` writes the experts each token chose (4,163 tokens x 48 layers x top-10) and the file's per-layer histogram equals the `--expert-stats` counts of the same run in all 48 layers (docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-REPLAY.md, flashnext-replay/). Lab tool for scoring KV caches; it adds nothing unless the flag is given.
 
 ## Detail
 

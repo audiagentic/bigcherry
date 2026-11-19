@@ -1,0 +1,13 @@
+{
+  "schema": 1,
+  "tier": "diagnostic",
+  "patch-id": "rad0043_expert_stats_protected",
+  "pinned": "v1.17.0",
+  "subject-digest": "c1714eacf33a8e8032574bc05d5247a6dc37fa7f257462afc8d27c6cce5c13d1",
+  "default-on": false,
+  "models": [],
+  "checks": {
+    "activation": "on Flash-Next (qwen3.8-next-flash-hcbf16, two 7900 XTX TP2, deterministic) the --expert-stats tally counts the protected bf16 experts too: the run counts 1,998,240 routed selections over 48 layers and 4,163 tokens (top-10), and two repeat runs give identical per-layer counts. See docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-ROUTING.md.",
+    "mechanics": "card-free patch-package tests (apply, anchors, idempotence) and patch-lint."
+  }
+}
