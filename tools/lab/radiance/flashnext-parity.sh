@@ -117,6 +117,8 @@ NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BU
 HEAT="${FLASHNEXT_PARITY_HEAT:-$REPO/tools/lab/radiance/heat/perf51.rank0.hot-first}"
 [ -f "$HEAT" ] || { echo "flashnext-parity: heat file $HEAT not found" >&2; exit 2; }
 NATIVE_ARGS+=(--set "handoff.heat=$HEAT")
+# FLASHNEXT_PARITY_SETS: extra space-separated dotted.key=value settings for an experiment arm; the owner log records them.
+for s in ${FLASHNEXT_PARITY_SETS:-}; do NATIVE_ARGS+=(--set "$s"); done
 if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
   NATIVE_ARGS+=(--calibration "$BC_WORK_ROOT/live-policy-calibration.toml")
 fi
