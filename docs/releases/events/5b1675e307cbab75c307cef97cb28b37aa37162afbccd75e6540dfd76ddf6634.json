@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_021809_the-abi43-patch-chain-now-incl_9486",
+  "files": [
+    "engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/patch.py",
+    "engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/patch.py",
+    "tools/tests/patch/test_vtp14_n2_tp_ownership.py",
+    "tools/tests/patch/test_vtp14_tp3_pipelined_prefill.py",
+    "docs/planning/active/patching-radiance-upstream/RUM03.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM03/RV4235.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added ABI_FIELD rows for the local RadBuildCtx fields introduced by rad0018 and rad0020. Extended the focused patch tests to assert exact ABI43 composition and the layout rows. Updated RUM03 to target ABI43 and include the missing fingerprint gate; closed review RV4235 after the 8 focused tests passed.",
+  "timestamp-utc": "2026-11-19T02:18:09.828696Z",
+  "user-summary-candidate": "The ABI43 patch chain now includes explicit layout fingerprint rows for the BigCherry RadBuildCtx fields, with exact-candidate replay tests passing."
+}

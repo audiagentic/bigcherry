@@ -63,6 +63,9 @@ class Tp3PipelinedPrefillTests(unittest.TestCase):
             self.assertNotIn("g.max_tok >= kPipeMinRows", qwen)
             self.assertNotIn("T < kPipeMinRows", qwen)
             self.assertIn("int64_t pipelined_prefill_min_rows;", (root / "abi/rad_builder.h").read_text())
+            layout = (root / "abi/rad_abi_layout_rows.h").read_text()
+            for field in ("tp_ownership", "pipelined_prefill", "pipelined_prefill_min_rows"):
+                self.assertEqual(layout.count(f"ABI_FIELD(RadBuildCtx, {field})"), 1, field)
 
 
 if __name__ == "__main__":

@@ -22,8 +22,9 @@ Decouple BigCherry nlohmann dependency from removed upstream vendor header. Rebu
 - Replace the serving CMake requirement for ${RADIANCE_SRC}/vendor/nlohmann/json.hpp with one separately pinned dependency target supplied by the build lane. Share it with helper and contract generation builds.
 - Declare the JSON package version/hash and any new owned source directory as build identity inputs; use the existing build plan rather than a second cache mechanism.
 - Port rad0016 registry changes from code_device_/rows_/plugins_ to the upstream shared set. Preserve row.chain and row.chain_fenced when assigning per-rank code eligibility.
-- Rebuild libr3, libr2, moe-remote, ngram-helper and bc-gfx12 against the same migrated headers as the engine. Update rad_abi_layout_rows for local added fields and audit all exported fingerprints.
-- Inspect package/runtime home to exclude stale plugin .so files. Keep the existing release/SDK verification path from RSP01.
+- Extend abi/rad_abi_layout_rows.h from the owning patch whenever it adds a RadBuildCtx field. Currently add tp_ownership in rad0018 and pipelined_prefill plus pipelined_prefill_min_rows in rad0020, with exact-prefix idempotent edits.
+- Rebuild libr3, libr2, moe-remote, ngram-helper and bc-gfx12 against the same migrated headers as the engine. Update all local ABI layout rows and audit exported fingerprints.
+- Inspect package/runtime home to exclude stale plugin .so files. Reuse the existing component coupling, radiance-bump and release/SDK verification checks; do not create a parallel ABI verifier.
 
 ## Detailed Solution & Technical Design
 
@@ -62,12 +63,19 @@ Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-1
 - engines/radiance/components/serving/bc_serving_v2.cmake
 - engines/radiance/components/moe-remote/CMakeLists.txt
 - engines/radiance/patches/rad0016_vtp14_rank_code_selection/patch.py
+- engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/patch.py
+- engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/patch.py
+- tools/tests/patch/test_vtp14_n2_tp_ownership.py
+- tools/tests/patch/test_vtp14_tp3_pipelined_prefill.py
+- tools/bigcherry/engine_adapters/radiance_bump.py
+- tools/bigcherry/campaign/lane.py
 - engines/radiance/engine.toml
+- engines/radiance/recipes.toml
 - tools/bigcherry/release/runtime_assets.py
 
 ## Validation
 
-One configure/build of the touched engine and components, existing bc_callback_boundary_cpp17_test and bc_callback_boundary_abi_test, SDK check, one deliberate stale ABI/fingerprint plugin rejection and one per-device eligibility fixture. Do not run all GPU kernel selftests here; RUM07/RUM09 own activated-path checks.
+Apply and replay the ABI43 VTP14 patch prefix to the exact candidate; assert every local RadBuildCtx field has a matching ABI_FIELD row. Run the focused rad0018/rad0020 patch tests. Run the existing upstream plugin_test wrong-ABI and wrong-layout cases and the existing per-device rank eligibility fixture. At the recipe migration checkpoint, run the existing component-coupling and radiance-bump ABI/layout checks, build each packaged plugin against one generated SDK, and inspect the staged runtime for stale shared objects. Do not run all GPU kernel selftests here; RUM07/RUM09 own activated-path checks.
 
 ## Effort & Risk
 
@@ -79,7 +87,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-No component reads the removed upstream JSON include location; dependency and local source bytes affect build identity. Engine and all packaged plugins agree on ABI/layout. Chain-fenced row semantics survive mixed-device filtering. A stale plugin is refused with an actionable error.
+No component reads the removed upstream JSON include location; dependency and local source bytes affect build identity. Engine and all packaged plugins agree on ABI/layout. The local RadBuildCtx fields tp_ownership, pipelined_prefill and pipelined_prefill_min_rows each have ABI_FIELD coverage in the layout fingerprint source. Chain-fenced row semantics survive mixed-device filtering. A stale ABI or layout plugin is refused with an actionable error.
 
 ## Notes
 
@@ -110,3 +118,5 @@ Candidate changed from reviewed ABI 41 to exact upstream 3deabdaeca17b58bad90d33
 
 - RV4234
 - 2026-11-19T02:09:24.234699+00:00 (updated-by): Updated: section:title, section:detailed_solution
+- RV4235
+- 2026-11-19T02:15:39.669409+00:00 (updated-by): Updated: section:steps, section:files, section:validation, section:acceptance_criteria

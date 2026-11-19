@@ -71,6 +71,16 @@ ABI = FilePatch(path="abi/rad_builder.h", language="none", description="VTP14 N2
     ),
 ))
 
+ABI_LAYOUT = FilePatch(path="abi/rad_abi_layout_rows.h", language="none", description="VTP14 N2 ABI layout fingerprint", edits=(
+    _edit(
+        "n2-layout-tp-ownership",
+        "ABI_FIELD(RadBuildCtx, span_pass_step)\n",
+        "ABI_FIELD(RadBuildCtx, span_pass_step)\n"
+        "ABI_FIELD(RadBuildCtx, tp_ownership)\n",
+        guard="ABI_FIELD(RadBuildCtx, tp_ownership)\n",
+    ),
+))
+
 RAD_CORE = FilePatch(path="core/rad_core.h", language="none", description="VTP14 N2 config", edits=(
     _edit(
         "n2-config",
@@ -449,4 +459,4 @@ MLP = FilePatch(path="arch/common/rad_block_mlp.h", language="none", description
     ),
 ))
 
-PATCHES = (ABI, RAD_CORE, CONFIG, CONFIG_TEST, ENGINE, RAD_ARCH, QWEN, ATTN, GDN, MLP)
+PATCHES = (ABI, ABI_LAYOUT, RAD_CORE, CONFIG, CONFIG_TEST, ENGINE, RAD_ARCH, QWEN, ATTN, GDN, MLP)
