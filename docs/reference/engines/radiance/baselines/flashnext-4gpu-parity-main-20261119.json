@@ -7,7 +7,7 @@
   "runtime_bundle_hash": "f48d9c56659ba4f6a4148ec495bf4dd1",
   "source_slice_id": "36aef34754713df1487f4e97febd74bb"
  },
- "date": "2026-11-18T20:55:19+00:00",
+ "date": "2026-11-19T01:29:05+00:00",
  "kind": "flashnext-parity-baseline",
  "launches": 2,
  "metrics": {
@@ -15,111 +15,111 @@
    "direction": "lower",
    "gated": true,
    "launches": [
-    11.74598125,
-    11.83804
+    10.086665,
+    10.141795
    ],
-   "spread_across_launches": 0.007806874749996219,
+   "spread_across_launches": 0.005450736239931277,
    "spread_repeats": null,
-   "tolerance": 0.007806874749996219,
-   "value": 11.792010625
+   "tolerance": 0.005450736239931277,
+   "value": 10.11423
   },
   "decode1_acceptance": {
    "direction": "higher",
    "gated": false,
-   "value": 0.8030999999999999
+   "value": 0.51595
   },
   "decode1_ms_per_step": {
    "direction": "lower",
    "gated": true,
    "launches": [
-    25.7322,
-    25.719749999999998
+    25.78,
+    25.87885
    ],
-   "spread_across_launches": 0.0004839466725751379,
-   "spread_repeats": 0.03292800279940519,
-   "tolerance": 0.03292800279940519,
-   "value": 25.725975
+   "spread_across_launches": 0.003827030605598025,
+   "spread_repeats": 0.02605602644630663,
+   "tolerance": 0.02605602644630663,
+   "value": 25.829425
   },
   "decode6_acceptance": {
    "direction": "higher",
    "gated": false,
-   "value": 0.7013499999999999
+   "value": 0.6723
   },
   "decode6_ms_per_step": {
    "direction": "lower",
    "gated": true,
    "launches": [
-    48.6738,
-    47.52415
+    48.2191,
+    48.57065
    ],
-   "spread_across_launches": 0.023901756742217506,
-   "spread_repeats": 0.045099175892677645,
-   "tolerance": 0.045099175892677645,
-   "value": 48.098974999999996
+   "spread_across_launches": 0.007264198946686052,
+   "spread_repeats": 0.02833317088041874,
+   "tolerance": 0.02833317088041874,
+   "value": 48.394875
   },
   "doc_prefill_tps": {
    "direction": "higher",
    "gated": true,
    "launches": [
-    3703.8260471184335,
-    3718.7484037840313
+    3753.246471479453,
+    3706.352978053117
    ],
-   "spread_across_launches": 0.004020803499999519,
+   "spread_across_launches": 0.012572657216675111,
    "spread_repeats": null,
-   "tolerance": 0.004020803499999519,
-   "value": 3711.287225451232
+   "tolerance": 0.012572657216675111,
+   "value": 3729.799724766285
   },
   "long7_acceptance": {
    "direction": "higher",
    "gated": false,
-   "value": 0.5928
+   "value": 0.5975
   },
   "long7_ms_per_step": {
    "direction": "lower",
    "gated": false,
    "note": "informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one launch, 28 in the other). The greedy text differs between launches, and with it where the live policy moves experts; in the slow mode the text routes to experts that are not resident. Long-context decode is gated on long8_ms_per_step.",
-   "value": 29.555149999999998
+   "value": 29.70065
   },
   "long7_prefill_tps": {
    "direction": "higher",
    "gated": true,
    "launches": [
-    2215.5033443685647,
-    2162.053944002313
+    2397.8851158991197,
+    2440.522633099519
    ],
-   "spread_across_launches": 0.02441973769629091,
+   "spread_across_launches": 0.017624606859239524,
    "spread_repeats": null,
-   "tolerance": 0.02441973769629091,
-   "value": 2188.7786441854387
+   "tolerance": 0.017624606859239524,
+   "value": 2419.2038744993197
   },
   "long8_acceptance": {
    "direction": "higher",
    "gated": false,
-   "value": 0.71565
+   "value": 0.59055
   },
   "long8_ms_per_step": {
    "direction": "lower",
    "gated": true,
    "launches": [
-    28.327849999999998,
-    28.742800000000003
+    28.612000000000002,
+    28.928649999999998
    ],
-   "spread_across_launches": 0.014541625161094349,
-   "spread_repeats": 0.09383345365073598,
-   "tolerance": 0.09383345365073598,
-   "value": 28.535325
+   "spread_across_launches": 0.011006132186549706,
+   "spread_repeats": 0.08371312735914997,
+   "tolerance": 0.08371312735914997,
+   "value": 28.770325
   },
   "long8_prefill_tps": {
    "direction": "higher",
    "gated": true,
    "launches": [
-    2159.1257826281126,
-    2206.5835878101548
+    2479.749004721405,
+    2448.354059244316
    ],
-   "spread_across_launches": 0.021741165595399205,
+   "spread_across_launches": 0.012741188676287584,
    "spread_repeats": null,
-   "tolerance": 0.021741165595399205,
-   "value": 2182.854685219134
+   "tolerance": 0.012741188676287584,
+   "value": 2464.0515319828605
   },
   "policy_transactions": {
    "direction": "higher",
@@ -130,41 +130,41 @@
    "direction": "lower",
    "gated": true,
    "launches": [
-    29.5664,
-    29.7205
+    30.7215,
+    31.3657
    ],
-   "spread_across_launches": 0.005198450247862502,
+   "spread_across_launches": 0.020751459237975025,
    "spread_repeats": null,
-   "tolerance": 0.005198450247862502,
-   "value": 29.64345
+   "tolerance": 0.020751459237975025,
+   "value": 31.043599999999998
   },
   "sess8_ttft_s": {
    "direction": "lower",
    "gated": true,
    "launches": [
-    31.87332,
-    32.1208
+    27.31058,
+    27.33653
    ],
-   "spread_across_launches": 0.007734460603568047,
+   "spread_across_launches": 0.0009497300040202727,
    "spread_repeats": null,
-   "tolerance": 0.007734460603568047,
-   "value": 31.99706
+   "tolerance": 0.0009497300040202727,
+   "value": 27.323555
   },
   "sess8_warm_ms_per_step": {
    "direction": "lower",
    "gated": false,
-   "value": 60.00345
+   "value": 60.02375000000001
   }
  },
- "name": "main-2026-11-19 (no live policy)",
+ "name": "main-2026-11-19 (no live policy, flashnext-mixed heat)",
  "policy": false,
  "radiance_pin": {
   "pinned": "v1.17.0",
   "pinned_version": "1.17.0"
  },
- "revision": "738a48d6e7a028c70f301cc1a7434dc0ef0ce7b3",
+ "revision": "f605d2c5619e3f86692a870567cbf97ead89b60c+dirty",
  "schema": 1,
- "source_run": "${BC_WORK_ROOT}/runs/parity-main-20261119/out",
+ "source_run": "${BC_WORK_ROOT}/runs/parity-main-20261119-mixed/out",
  "workload": {
   "COLD_FILLS": 8,
   "COLD_MAX_TOKENS": 8,
