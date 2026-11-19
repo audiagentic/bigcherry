@@ -2764,7 +2764,7 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
         throw std::runtime_error("cli test: child wait failed");
     return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, output};
 }
-void v3_writer_cli_rejects_unowned_imports() {
+void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
     const auto no_snapshot = run_bc_serve(
         {"--write-manifest", "unused.json", "--measured-plan", "missing-plan.json", "--rank-demand",
          "missing-ranks.json"});
@@ -2787,10 +2787,20 @@ void v3_writer_cli_rejects_unowned_imports() {
     // A native v3 measured writer must accept the frozen-key guard too. Use an
     // invalid descriptor so the CLI reaches sealed-snapshot loading without
     // opening cache files or starting any process.
+    const char* layouts_dir = std::getenv("BIGCHERRY_LAYOUTS");
+    if (!layouts_dir)
+        throw std::runtime_error("v3 measured-key CLI test requires BIGCHERRY_LAYOUTS");
+    const fs::path configs_dir = fs::path(layouts_dir).parent_path() / "configs";
+    const fs::path model = t.root / "v3-measured-key-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const fs::path site = t.file("v3-measured-key-site.toml", "[engine]\nmodel = \"" + model.string() +
+                                                                   "\"\nradiance_home = \"/runtime\"\n");
     const auto measured_key = run_bc_serve(
         {"--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
          std::string(64, '0'), "--plan-cache", "missing-cache", "--engine-binary", "/missing/radiance",
-         "--power-profile", "stock"});
+         "--power-profile", "stock", "--configs", configs_dir.string(), "--site", site.string(), "--model-root",
+         (t.root / "model-root").string(), "--sys-root", t.root.string(), "--set",
+         "layout.name=\"qwen27b-tp3-int8\""});
     if (measured_key.output.find("native snapshot descriptor must be a fully sealed memfd") == std::string::npos)
         throw std::runtime_error("v3 measured writer rejected the frozen-key guard before snapshot loading: " +
                                  measured_key.output);
@@ -3236,14 +3246,29 @@ void session_engine_plan(Fixture& t) {
         const std::string native_yaml_bytes = "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: " +
                                                Json(model.string()).dump() + "}\r\n";
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
-        gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root,
-                                                            {{"TEST_NATIVE_INSPECT_TP", "3"},
-                                                             {"TEST_NATIVE_INSPECT_RANK_DEVICES",
-                                                              session_resolved.values.at("layout")
-                                                                  .at("engine_cards").dump()},
-                                                             {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"},
-                                                             {"TEST_NATIVE_INSPECT_MODEL", model.string()},
-                                                             {"TEST_NATIVE_INSPECT_EXPECT_YAML", native_yaml_bytes}}};
+        Json expected_kernels = Json::array();
+        const std::string kernel_text = session_resolved.values.at("engine").at("kernels").get<std::string>();
+        for (size_t begin = 0; begin < kernel_text.size();) {
+            const size_t end = kernel_text.find(',', begin);
+            expected_kernels.push_back(kernel_text.substr(begin, end == std::string::npos
+                                                                    ? std::string::npos
+                                                                    : end - begin));
+            if (end == std::string::npos) break;
+            begin = end + 1;
+        }
+        ss::Env native_overrides = {
+            {"TEST_NATIVE_INSPECT_TP", "3"},
+            {"TEST_NATIVE_INSPECT_RANK_DEVICES", session_resolved.values.at("layout").at("engine_cards").dump()},
+            {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"},
+            {"TEST_NATIVE_INSPECT_MODEL", model.string()},
+            {"TEST_NATIVE_INSPECT_EXPECT_YAML", native_yaml_bytes},
+            {"TEST_NATIVE_INSPECT_PORT", std::to_string(session_resolved.values.at("engine").at("port").get<int>())},
+            {"TEST_NATIVE_INSPECT_MAX_CONTEXT",
+             std::to_string(session_resolved.values.at("service").at("max_context").get<int>())},
+            {"TEST_NATIVE_INSPECT_MAX_SEQUENCES",
+             std::to_string(session_resolved.values.at("service").at("max_sessions").get<int>())},
+            {"TEST_NATIVE_INSPECT_KERNELS", expected_kernels.dump()}};
+        gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root, std::move(native_overrides)};
         gated.named_config = "qwen27b-tp3-int8";
         const fs::path gated_run = run / "native-admission";
         fs::create_directories(gated_run);
@@ -4303,7 +4328,7 @@ int main(int argc, char** argv) {
     (void)argv;
     try {
         Fixture t;
-        v3_writer_cli_rejects_unowned_imports();
+        v3_writer_cli_rejects_unowned_imports(t);
         session_engine_plan(t);
         std::cout << "PASS: native v3 sealed snapshot session draft and pre-cache gate\n";
         return 0;

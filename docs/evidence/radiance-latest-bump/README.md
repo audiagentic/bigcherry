@@ -272,10 +272,16 @@ A card-free session test renames and replaces the root path while the child wait
 
 The v3 writer CLI now accepts `--expected-plan-key` for a measured, sealed-snapshot cache read in addition to its existing unmeasured draft use. After reconstructing the effective key from the resolver output and the admitted snapshot, it compares the owner-frozen key before measured-plan cache lookup or publication. Other editions and non-owner modes retain the existing restriction. Added a real-CLI test that confirms the v3 measured invocation passes argument validation and reaches sealed-snapshot descriptor loading before cache access.
 
-Verification is pending: the existing `native-v3-measuring-c51-build` configuration has no `bc_native_v3_session_test` target, so it did not build or run this test. Refresh the isolated candidate build from the current worktree before treating this slice as accepted. No GPU was used; production v3 admission remains closed.
+The earlier C51 build did not contain `bc_native_v3_session_test`; a fresh isolated candidate build was configured from this worktree against the installed ABI44 SDK. The rebuilt `bc_native_v3_session_test` passed (1/1), including this measured-key CLI assertion. No GPU was used; production v3 admission remains closed.
 
 ## C55 — Refuse direct stored v3 replay (2026-11-20)
 
 `replay_stored_manifest()` now inspects the bounded JSON envelope and explicitly refuses a `bigcherry/v3` stored manifest before passing it to the legacy v2 reader. The refusal applies even when the caller did not supply the private `NativeAdmissionRequest`, preventing a direct stored-manifest caller from relying on the incidental v2 schema rejection. Added card-free session coverage using a minimal v3 envelope and the real replay entry point.
 
-Focused `bc_session_stored_test` execution is pending; candidate build refresh is still required. No GPU was used; stored/offline native replay remains intentionally closed until the owner/cache/replay chain is complete.
+The default-v2 `bc_session_stored_test` was built separately from this worktree and passed (1/1), covering both existing v2 replay and the direct-v3 refusal. The isolated generated-v3 session build passed `bc_native_v3_session_test` (1/1). No GPU was used; stored/offline native replay remains intentionally closed until the owner/cache/replay chain is complete.
+
+## C56 — Reconcile inspector values with the native measuring draft (2026-11-20)
+
+The owner now retains the strict native inspection report and compares the emitted measuring draft's listener port, max context, max sequences and ordered runtime kernels against the parsed YAML values before any power admission or GPU child. The card-free inspector fixture now reports those values from the selected local profile, so the test checks the equality gate instead of relying on unrelated constants.
+
+Verification: configured a fresh generated-v3 serving build from this task worktree against the installed ABI44 SDK; built and passed `bc_native_v3_session_test` (1/1). Separately configured and built the default-v2 serving path; `bc_session_stored_test` passed (1/1). `git diff --check` passed. No GPU was used. Native measurement, owner cache publication, P1 and production start remain gated.

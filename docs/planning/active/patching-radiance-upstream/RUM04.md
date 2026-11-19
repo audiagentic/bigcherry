@@ -201,6 +201,8 @@ C54 (2026-11-20): the isolated v3 writer now accepts an owner-frozen `--expected
 
 C55 (2026-11-20): `replay_stored_manifest()` explicitly rejects `bigcherry/v3` envelopes even when callers omit `NativeAdmissionRequest`; a direct call can no longer rely on incidental v2 reader rejection. Added a card-free `bc_session_stored_test` case. Runtime test pending because the available candidate build needs refreshing. See evidence C55.
 
+C56 (2026-11-20): retained the strict inspector result and now reconcile its listener port, context, sequence limit and ordered runtime kernels against the pinned native measuring draft before power admission or GPU child startup. Refreshed candidate builds from this task worktree: generated-v3 `bc_native_v3_session_test` passes (1/1); default-v2 `bc_session_stored_test` passes (1/1). C54 measured-key and C55 direct-v3-replay coverage are included in those verified targets. See evidence C54-C56. Production admission remains closed pending actual owner measurement/cache/P1/replay chain.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -254,3 +256,4 @@ C55 (2026-11-20): `replay_stored_manifest()` explicitly rejects `bigcherry/v3` e
 - 2026-11-19T19:13:03.651665+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:18:49.935154+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:21:04.806627+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T19:35:09.573526+00:00 (updated-by): Updated: section:notes

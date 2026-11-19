@@ -2383,7 +2383,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             runtime[name_key] = value; // verified build and local device selection take precedence
         native_complete_environment = current_child_environment(runtime);
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
-        (void)inspect_and_reconcile_native_config(
+        const NativeConfigInspection native_inspection = inspect_and_reconcile_native_config(
             engine, snapshot, home, v.at("engine").at("model").get<std::string>(), native_complete_environment,
             selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, native_execution_root->descriptor());
         if (v2::kContractVersion != 3)
@@ -2416,6 +2416,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const auto verified = pin_manifest_file(draft, v2::PlanUse::measuring);
         const auto native_view = v2::native_config_view(verified.parsed);
         const auto emitted_devices = verified.parsed.spec.processes.engine.device.gpus;
+        const auto& emitted_engine = verified.parsed.spec.processes.engine;
+        const auto& emitted_service = verified.parsed.spec.intent.service;
         std::error_code remove_error;
         fs::remove(draft, remove_error);
         if (remove_error || !native_view || native_view->yaml_utf8 != snapshot.yaml_utf8() ||
@@ -2423,6 +2425,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             native_view->identity.resolution_root != snapshot.resolution_root() ||
             emitted_devices != selected_bdfs || verified.parsed.spec.plan.engine_memory)
             throw PlanFailed("native v3 draft did not preserve the admitted snapshot, root, rank order and measuring role");
+        if (native_inspection.listener_port != emitted_engine.server.port ||
+            native_inspection.max_context != emitted_service.max_context_tokens ||
+            native_inspection.max_sequences != emitted_service.max_sessions ||
+            native_inspection.kernels != emitted_engine.runtime.kernels)
+            throw PlanFailed("native v3 draft differs from the admitted YAML listener, limits or kernel order");
         throw PlanFailed("native v3 measuring draft verified; P1, owner-cache measurement/reuse, stored replay, "
                          "power admission and GPU startup remain gated");
     }

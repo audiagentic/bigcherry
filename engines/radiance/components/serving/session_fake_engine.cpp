@@ -165,6 +165,19 @@ int main(int argc, char** argv) {
         if (!reported_home) reported_home = "runtime";
         const char* reported_model = std::getenv("TEST_NATIVE_INSPECT_MODEL");
         if (!reported_model) reported_model = "tiny.rad";
+        auto configured_integer = [](const char* name, int fallback) {
+            const char* value = std::getenv(name);
+            return value ? std::atoi(value) : fallback;
+        };
+        json kernels = json::array({"k0"});
+        if (const char* configured_kernels = std::getenv("TEST_NATIVE_INSPECT_KERNELS")) {
+            const json parsed = json::parse(configured_kernels, nullptr, false);
+            if (!parsed.is_array()) {
+                std::fprintf(stderr, "fake inspector: invalid test kernel list\n");
+                return 19;
+            }
+            kernels = parsed;
+        }
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v1"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", input.at("resolution_root")}}},
@@ -172,14 +185,15 @@ int main(int argc, char** argv) {
                                     {"model", reported_model},
                                     {"radiance_home", reported_home},
                                     {"radiance_home_source", nullptr},
-                                    {"kernels", json::array({"k0"})},
+                                    {"kernels", kernels},
                                     {"kernels_source", nullptr},
-                                    {"listener", {{"host", "127.0.0.1"}, {"port", 8123}}},
+                                    {"listener", {{"host", "127.0.0.1"},
+                                                   {"port", configured_integer("TEST_NATIVE_INSPECT_PORT", 8123)}}},
                                     {"tp", tp},
                                     {"cards", cards},
                                     {"rank_devices", rank_devices},
-                                    {"max_context", 4096},
-                                    {"max_sequences", 1}}}};
+                                    {"max_context", configured_integer("TEST_NATIVE_INSPECT_MAX_CONTEXT", 4096)},
+                                    {"max_sequences", configured_integer("TEST_NATIVE_INSPECT_MAX_SEQUENCES", 1)}}}};
         if (mode && std::strcmp(mode, "cards") == 0) report["engine"]["cards"] = json::array({"0"});
         std::cout << report.dump() << '\n';
         return 0;
