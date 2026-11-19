@@ -1335,7 +1335,7 @@ void manifest_writer_step(Fixture& t) {
         scope["engine_build_digest"] = sv::engine_identity(binary, home);
         scope["helper_build_digest"] = sv::file_sha256(binary);
         scope["layout_digest"] = sv::sha256_hex(current.values.at("layout").dump());
-        scope["inventory_digest"] = sv::sha256_hex(t.facts.at("gpus").dump());
+        scope["inventory_digest"] = sv::gpu_inventory_digest(t.facts.at("gpus"));
         scope["context_target_tokens"] = current.values.at("service").at("max_context");
         native["resource_inputs"]["context_target_tokens"] = scope["context_target_tokens"];
         const int64_t same_seed = current.values.at("handoff").at("small_rows").get<int64_t>();
@@ -1443,6 +1443,31 @@ void manifest_writer_step(Fixture& t) {
         if (before)
             throw std::runtime_error("valid native S8 replay failed: " +
                                      v2::render_human("valid before expiry", *before));
+        { // The stored inventory scope is an identity snapshot (selected card, BDF, architecture, VRAM total). Live VRAM
+          // use and the PCIe link state differ from one start to the next (the previous engine's pages are still being
+          // released), and must never refuse the replay of an unchanged configuration.
+            Json drifted = t.facts;
+            for (Json& g : drifted["gpus"]) {
+                g["vram_used_mib"] = g.value("vram_used_mib", 0) + 7;
+                g["vram_available_mib"] = std::max<int64_t>(0, g.value("vram_available_mib", 0) - 7);
+                g["current_link_speed"] = "2.5 GT/s PCIe";
+                g["current_link_width"] = 1;
+            }
+            const auto drift = ss::verify_stored_s8(typed.value(), producer_config, drifted, room, measured, binary,
+                                                    binary, expiry - 1);
+            if (drift)
+                throw std::runtime_error("replay refused for live VRAM drift: " + v2::render_human("drift", *drift));
+            // ... while a changed card identity still refuses.
+            Json moved = t.facts;
+            moved["gpus"][0]["arch"] = "gfx-foreign";
+            const auto changed = ss::verify_stored_s8(typed.value(), producer_config, moved, room, measured, binary,
+                                                      binary, expiry - 1);
+            assert(changed.has_value());
+            Json resized = t.facts;
+            resized["gpus"][0]["vram_total_mib"] = resized["gpus"][0].at("vram_total_mib").get<int64_t>() + 1024;
+            assert(ss::verify_stored_s8(typed.value(), producer_config, resized, room, measured, binary, binary,
+                                        expiry - 1).has_value());
+        }
         const auto after = ss::verify_stored_s8(typed.value(), producer_config, t.facts, room, measured, binary,
                                                 binary, expiry);
         assert(after.has_value());

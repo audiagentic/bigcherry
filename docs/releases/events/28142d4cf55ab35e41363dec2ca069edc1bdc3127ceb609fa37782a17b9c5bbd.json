@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_083730_a-second-start-of-an-unchanged_3598",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/plan_cache.h",
+    "engines/radiance/components/serving/s8_replay.cpp",
+    "engines/radiance/components/serving/v2/p1_producer.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/2026-11-19-tp3-27b-noregress/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The second start of an unchanged config in the same run directory was refused with 'bc-serve replay S8: BC_CFG_CALIBRATION_INVALID ... p1.scope ... inventory scope differs from S8 evidence'. Both the P1 producer and the S8 replay check hashed the whole detected GPU facts, which include live vram_used_mib/vram_available_mib and the negotiated PCIe link; these drift by tens of MiB while the previous engine's pages are released. The inventory digest now covers identity fields only (architecture, BDF, HIP ordinal, total VRAM, gfx target, KFD node, NUMA node, SIMD count, DRM minor, max link) through one shared gpu_inventory_digest(); a replay with drifted VRAM verifies and a changed architecture or total VRAM still refuses. Hardware: dense qwen27b-tp3-int8-556-long-bf16, two starts 20 s apart in one run directory, the second replayed (running after 51 s against 518 s cold). Also adds the dense TP3 no-regression evidence page: new vs pre-2026-11-19 bc-serve on the same engine agree within run-to-run spread; prefill matches the recorded RAD52 rate.",
+  "timestamp-utc": "2026-11-19T08:37:30.009887Z",
+  "user-summary-candidate": "A second start of an unchanged config no longer fails on GPU memory use that drifted since the first start, and the dense TP3 configs show no performance regression."
+}

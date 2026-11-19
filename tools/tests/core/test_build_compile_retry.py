@@ -59,7 +59,10 @@ class BuildRetryTests(unittest.TestCase):
     def run_build(self, *argv: str) -> str:
         out = io.StringIO()
         with contextlib.redirect_stdout(out):
-            process.run_checked(["cmake", "--build", str(self.build), *argv], self.root)
+            try:
+                process.run_checked(["cmake", "--build", str(self.build), *argv], self.root)
+            finally:
+                self.last_output = out.getvalue()   # the fake compiler's output stays out of the test run's stdout
         return out.getvalue()
 
     def receipts(self, where: Path) -> list[dict]:
@@ -84,7 +87,7 @@ class BuildRetryTests(unittest.TestCase):
     def test_a_second_crash_fails_the_build_and_says_so(self) -> None:
         self.fake_cmake((CRASH, 1), (CRASH, 1))
         with self.assertRaises(subprocess.CalledProcessError):
-            self.run_build()
+            self.run_build()  # run_build captures stdout
         self.assertEqual(2, self.n_calls())                # exactly one retry
         mine = self.receipts(self.build / "bigcherry-compile-retries.jsonl")
         self.assertEqual(["crash", "retry"], [r["event"] for r in mine])
@@ -113,7 +116,7 @@ class BuildRetryTests(unittest.TestCase):
 
     def test_other_commands_never_retry(self) -> None:
         self.fake_cmake((CRASH, 1), ("ok\n", 0))
-        with self.assertRaises(subprocess.CalledProcessError):
+        with contextlib.redirect_stdout(io.StringIO()), self.assertRaises(subprocess.CalledProcessError):
             process.run_checked(["cmake", "--install", str(self.build)], self.root)
         self.assertEqual(1, self.n_calls())
 

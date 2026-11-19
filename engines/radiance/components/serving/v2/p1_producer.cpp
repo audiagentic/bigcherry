@@ -235,7 +235,7 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
   native.engine_build_digest = engine_id;
   native.helper_build_digest = helper_id;
   native.layout_digest = bc::serving::sha256_hex(resolved.values.at("layout").dump());
-  native.inventory_digest = bc::serving::sha256_hex(facts.at("gpus").dump());
+  native.inventory_digest = bc::serving::gpu_inventory_digest(facts.at("gpus"));
   native.planning_key = bc::serving::sha256_hex(
       model_id + engine_id + helper_id + native.layout_digest + native.inventory_digest +
       native.owner_map.owner_map_sha256 + std::to_string(ctx) +
