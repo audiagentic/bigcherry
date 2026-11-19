@@ -203,19 +203,14 @@ Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
 0 for a clean gate. MRC06 continues to migrate the remaining producers.
 
 **MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
-measure` now publishes one immutable run-record v1 per completed native launch
-by default under `$BC_WORK_ROOT/run-records/v1/`. `--records` is explicit on;
-`--no-records` opts out of record publication and therefore disables
-portable baseline/compare for that cohort; `parity.json` remains only a
-measured summary view. Each `OUT/launch-N/record.sha256` contains a digest
-verified against the immutable MRC01 store. `flashnext-parity.sh baseline
---out OUT --name NAME [--to FILE]` now delegates to `core.results.make_baseline`
-and defaults to `OUT/baseline.mrc05.json`, never the tracked historical
-baseline. `flashnext-parity.sh compare --out OUT --baseline FILE` delegates
-to `core.results.compare_records`, printing host/feature/config/policy
-provenance differences before gates. Both refuse missing launch receipts;
-neither reads `parity.json` for a verdict or converts old path-only data
-into an immutable record. The record carries
+measure` publishes one immutable run-record v1 per completed native launch under
+`$BC_WORK_ROOT/run-records/v1/`; the record is the result (there is no summary
+file). Each `OUT/launch-N/record.sha256` contains a digest verified against the
+immutable MRC01 store. `flashnext-parity.sh baseline --out OUT --name NAME --to
+FILE` and `compare --out OUT --baseline FILE` are `bigcherry results baseline`
+and `bigcherry results compare` over those receipts, with the host, feature,
+config and policy provenance differences printed before the gates; both refuse
+missing launch receipts and path-only data. The record carries
 `engine=radiance`, build ID and binary hash from the build metadata, Git
 revision, measured model/layout, the exact harness workload definition,
 phase-separated cold/sess8 TTFT, document/long-context prefill, decode step
@@ -237,7 +232,7 @@ producer migrations and legacy-writer retirement are separate slices.
 
 **MRC06 slice 2 — producer migration and legacy listing.** The parity producer now reads the selected current calibration with MRC04's shared native-TOML reader, without duplicating its key verification.
 
-"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. The legacy "results/index.jsonl" and old workload rows are read-only; "bigcherry results list --engine radiance --work-root ROOT --json" shows older rows as "legacy" / "missing_content_provenance". Neither deleted manifest paths nor seeded rows are silently promoted into the record store. "workload seed" is disabled and the historical "workload compare" remains a read-only reader.
+"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. There is no results index and no reader of pre-record rows; "bigcherry results list" shows verified run records only.
 
 The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
 

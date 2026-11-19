@@ -61,8 +61,8 @@ B/A for **each** dense Qwen 27B and helper Flash-Next cohort; A is the
 existing Bash launcher and B the foreground native owner. It refuses
 unleased startup or any unclean stop, and halts the sequence at the first
 failure. To test only the fake-engine/card-free path, run
-`python3 tools/lab/radiance/rsc02_s15_ab.py dry-run --native-test BUILD-TEST/bc_session_stored_test`;
-this is also the `bc_s15_dry_run_test` CTest entrypoint.
+`python3 tools/lab/radiance/rsc02_s15_ab.py dry-run --native-test BUILD-TEST/bc_session_stored_test`
+(a lab command; it is no longer a CTest target, the engine component is C++ only).
 
 Every paired short run **passes** only if the same build/engine/helper/model
 digests remain unchanged, both start/health/canary succeed, all manifest
@@ -109,8 +109,7 @@ native typed mode is **BLOCKED**, not equivalent.
 
 ## Automated admission, observations and schedule
 
-1. **Card-free prerequisite:** build the declared component target
-   `bc_s15_dry_run_test` and run `ctest -R '^bc_s15_dry_run_test$'`.
+1. **Card-free prerequisite:** build `bc_session_stored_test` and run the lab `dry-run` command above.
    It runs the production native stored-manifest owner/fake engine and its
    comparator injects differences in speculation, histogram, helpers and
    role identity.

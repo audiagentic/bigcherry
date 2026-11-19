@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Best-effort source tripwire for common unguarded serving callbacks.
 
 This regex/line-based CTest guard recognizes common injection spellings only;
@@ -23,7 +22,7 @@ import pathlib
 import re
 import sys
 
-ROOT = pathlib.Path(__file__).resolve().parent
+ROOT = pathlib.Path(__file__).resolve().parents[3] / "engines" / "radiance" / "components" / "serving"
 ALLOWED_FUNCTIONS = {
     "callback_boundary.h": [
         "std::function<R(Args...)> function_;",

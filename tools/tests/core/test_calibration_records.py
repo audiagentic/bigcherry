@@ -161,7 +161,7 @@ class CalibrationRecordsTests(unittest.TestCase):
         with self.assertRaises(cr.CalibrationError):
             cr.validate_record(bad)
 
-    def test_native_toml_v1_legacy_and_cli(self):
+    def test_native_toml_v1_and_cli(self):
         toml = self.root / "calibration.toml"
         scope = json.dumps(self.inputs, sort_keys=True, separators=(",", ":"))
         columns = json.dumps(
@@ -241,19 +241,22 @@ class CalibrationRecordsTests(unittest.TestCase):
                 line for line in old.split("\n") if not line.startswith(field + " = ")
             )
         toml.write_text(old)
-        rows = cr.read_native_toml(toml)
-        self.assertEqual(rows[0]["status"], "legacy")
-        self.assertEqual(rows[0]["reason"], "legacy_record_schema")
+        # A row without calibration_inputs is a format this reader does not know: refused, never classified.
+        with self.assertRaisesRegex(cr.CalibrationError, "unsupported record format"):
+            cr.read_native_toml(toml)
         output = io.StringIO()
-        with contextlib.redirect_stdout(output):
+        with contextlib.redirect_stdout(output), contextlib.redirect_stderr(io.StringIO()):
             self.assertEqual(main(["calibration", "validate", "--store", str(toml)]), 1)
-        self.assertEqual(
-            json.loads(output.getvalue())["records"][0]["reason"],
-            "legacy_record_schema",
+
+    def test_store_with_hash_only_rows_is_refused(self):
+        fixture = Path(__file__).resolve().parents[1] / (
+            "fixtures/calibration/production-2026-11-19-with-hash-only.toml"
         )
+        with self.assertRaisesRegex(cr.CalibrationError, "unsupported record format"):
+            cr.read_native_toml(fixture)
 
     def test_production_post_1169_record_stays_current_without_store_rewrite(self):
-        # Verbatim 2026-11-19 production calibration-store snapshot.
+        # The 2026-11-19 production calibration store with its hash-only rows pruned (bc-serve calibration-prune).
         fixture = Path(__file__).resolve().parents[1] / (
             "fixtures/calibration/production-2026-11-19.toml"
         )
@@ -270,7 +273,7 @@ class CalibrationRecordsTests(unittest.TestCase):
         )
         # Missing newer provenance is not invented by the compatibility reader.
         self.assertNotIn("host_facts_digest", row["record"]["provenance"])
-        self.assertTrue(any(item["status"] == "legacy" for item in entries))
+        self.assertEqual([item["status"] for item in entries], ["current"])
         output = io.StringIO()
         with contextlib.redirect_stdout(output):
             self.assertEqual(main(["calibration", "list", "--store", str(fixture)]), 0)

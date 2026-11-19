@@ -199,11 +199,11 @@ def _nonduplicate(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def read_native_toml(path: Path) -> list[dict[str, Any]]:
-    """Translate the native v1 TOML index to platform records.
+    """Translate the native TOML index to platform records.
 
-    Legacy rows remain inspectable, but are reported with a non-activation
-    verdict. Malformed v1 rows get an invalid verdict rather than activating.
-    No native cache is mutated by this read.
+    Every row must carry calibration_inputs; a row without them is a format this reader does not know and the read
+    is refused (the native ``bc-serve calibration-prune`` removes such rows). Malformed rows that do carry them get an invalid verdict
+    rather than activating. No native cache is mutated by this read.
     """
     path = Path(path)
     if not path.is_file() or path.is_symlink():
@@ -249,37 +249,20 @@ def read_native_toml(path: Path) -> list[dict[str, Any]]:
                 f"live_policy_record[{index}]: duplicate plan_cache_key"
             )
         seen.add(digest)
+        if "calibration_inputs" not in entry:
+            raise CalibrationError(
+                f"live_policy_record[{index}]: unsupported record format (no calibration_inputs); "
+                "remove it with `bc-serve calibration-prune`"
+            )
         info = {
             "kind": "radiance.live_policy",
             "key": digest,
             "index": index,
-            "status": "legacy",
-            "reason": "legacy_record_schema",
+            "status": "invalid",
+            "reason": "unchecked",
             "record": None,
-            "legacy": dict(entry),
+            "native": dict(entry),
         }
-        if "calibration_inputs" not in entry:
-            # Only genuinely hash-only records are legacy. A partially
-            # specified scoped record is invalid, never silently downgraded.
-            if any(
-                field in entry
-                for field in (
-                    "source_plan_key",
-                    "source_engine_build",
-                    "record_schema_version",
-                    "calibration_kind",
-                    "calibration_key_fields",
-                    "source_revision",
-                    "run_id",
-                    "host_facts_digest",
-                )
-            ):
-                info.update(
-                    status="invalid",
-                    reason="scoped provenance without calibration_inputs",
-                )
-            rows.append(info)
-            continue
         try:
             kind = "radiance.live_policy"
             v1 = "record_schema_version" in entry
@@ -484,3 +467,4 @@ class CalibrationStore:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
         return path
+
