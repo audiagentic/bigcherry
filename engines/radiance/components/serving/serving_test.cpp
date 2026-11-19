@@ -3091,7 +3091,10 @@ void installed_site_defaults(Fixture& t) {
     const auto site = t.file("installed-site.toml",
         "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
         "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
-        "\"\n[layout]\nname = \"flashnext-4gpu\"\n");
+        "\"\n[layout]\nname = \"flashnext-4gpu\"\n"
+        // One combine thread: the native writer below discovers the real CPU count, and a small CI runner
+        // has fewer CPUs than the layout's default.
+        "[helper]\ncombine_threads = 1\n");
     Options opts;
     opts.site = site;
     opts.configs = {prefix / "configs"};
