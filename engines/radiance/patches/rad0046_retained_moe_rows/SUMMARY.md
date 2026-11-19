@@ -5,7 +5,7 @@
 
 ## What it does
 
-Restores the `had_quant_act_fp8` and `moe_gemm_fp8a8` rows on retained ABI43 implementations. The grouped GEMM keeps 64-column fallback tiling unless every expert class and part aligns to the 128-column block-scale grid.
+Restores the `had_quant_act_fp8` and `moe_gemm_fp8a8` rows on the retained implementations. The grouped GEMM keeps 64-column fallback tiling unless every expert class and part aligns to the 128-column block-scale grid. The shared pure width predicate lives in `libr4d/r4d_moe_block_fp8_geometry.h` so the launcher and card-free boundary fixture exercise the same rule.
 
 ## Why
 

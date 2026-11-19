@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_124601_made-the-e4m3-scale-boundary-r_8302",
+  "files": [
+    "engines/radiance/patches/rad0046_retained_moe_rows/patch.py",
+    "engines/radiance/patches/rad0046_retained_moe_rows/SUMMARY.md",
+    "tools/tests/patch/test_radiance_rad0046.py",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM03.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Extracted rad0046's E4M3 wide-tile decision into a dependency-free constexpr helper that the production HIP launcher calls. The exact-source replay test compiles/runs the real helper with aligned classes (wide allowed), a 192-column split (wide refused), and non-block-E4M3 formats (legacy selection preserved). The full production source prefix through rad0048 composed cleanly at upstream SHA 3deabdaeca17b58bad90d332f4b204cf7bb8a10e and ABI44. On that exact composition, the card-free ABI44 KV layout/fingerprint fixture passed; a narrow libr3 ABI44 plugin built and a no-GPU row probe found both helper rows with live launches; native libr4d row and MoE objects compiled for gfx1201; and the ABI44 moe-remote worker plus mailbox plugin built. Package lifecycle remains untested pending qualifying activation/correctness evidence and review under PATCH_SYSTEM; numerical qualification remains RUM09.",
+  "timestamp-utc": "2026-11-19T12:46:01.483676Z",
+  "user-summary-candidate": "Made the E4M3 scale-boundary rule directly testable by having both the real launcher and the card-free fixture call the same helper. Rebuilt the relevant ABI44 RDNA3 plugin and helper, compiled the native RDNA4 objects, and confirmed both required rows load; actual GPU correctness/activation is still pending."
+}

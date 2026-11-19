@@ -119,6 +119,10 @@ Required helper-row compatibility finding (RV4247, 2026-11-19): the pinned ABI43
 
 C28 (2026-11-19): exact rad0046 ABI43 apply/replay passed; an isolated `R3_ONLY` libr3 plugin build with the restored quantizer and grouped-MoE HIP units succeeded, and a no-GPU dlopen probe confirmed both helper rows survive real `r3_registry` filtering with live launch callbacks. The existing `r3_rad46_rows_policy_test` is a separate dispatch policy test, not this patch's boundary guard. Current build source is ABI43, so rad0046 remains `untested` until the same build/row check runs against composed ABI44. Hardware/numerical activation is RUM09. Evidence C28; Ledger event `chg_20261119_122726_verified-that-both-restored-he_3927`.
 
+
+
+C29 (2026-11-19): extracted the actual block-E4M3 width decision into a dependency-free constexpr helper used by the HIP launcher and exact-source C++ fixture. The fixture proves `{512,256}` at parts=2 selects wide, `{512,384}` falls back because one class splits at 192, and non-block-E4M3 formats preserve legacy selection. The 27-package production prefix through rad0048 composed from pinned SHA 3deabdaeca17b58bad90d332f4b204cf7bb8a10 at ABI44. The ABI44 KV/fingerprint fixture passed; narrow ABI44 libr3 plugin built and its row probe found both callbacks; native libr4d row/MoE objects compiled for gfx1201; ABI44 moe-remote worker and mailbox plugin built on the same composition/SDK. Package remains untested pending formal activation/correctness evidence and review; GPU/numerical qualification is RUM09. Evidence C29; Ledger event `chg_20261119_124601_made-the-e4m3-scale-boundary-r_8302`.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -151,3 +155,4 @@ C28 (2026-11-19): exact rad0046 ABI43 apply/replay passed; an isolated `R3_ONLY`
 - RV4247
 - 2026-11-19T08:34:34.698229+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:28:01.492650+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T12:46:32.419552+00:00 (updated-by): Updated: section:notes

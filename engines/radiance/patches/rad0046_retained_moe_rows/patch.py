@@ -11,6 +11,42 @@ def before(edit_id: str, line: str, text: str, rationale: str) -> Edit:
 
 
 PATCHES = (
+    FilePatch(
+        language="none",
+        path="libr4d/r4d_moe_block_fp8_geometry.h",
+        description="Expose the block-E4M3 wide-tile predicate for production and the card-free fixture.",
+        create=True,
+        edits=(
+            Edit(
+                id="create-fp8-wide-tile-helper",
+                anchor=r"\A",
+                text="""#ifndef R4D_MOE_BLOCK_FP8_GEOMETRY_H
+#define R4D_MOE_BLOCK_FP8_GEOMETRY_H
+
+namespace r4d_moe_block_fp8 {
+
+template <int W4, bool I8>
+constexpr bool wide_n(long long n, int parts, const long long* class_widths,
+                      int class_count, long long tile_columns) {
+    bool wide = (n / parts) % tile_columns == 0;
+    if constexpr (W4 == 0 && !I8) {
+        for (int q = 0; q < class_count; ++q)
+            wide = wide && class_widths[q] % parts == 0 &&
+                   (class_widths[q] / parts) % tile_columns == 0;
+    }
+    return wide;
+}
+
+}  // namespace r4d_moe_block_fp8
+
+#endif  // R4D_MOE_BLOCK_FP8_GEOMETRY_H
+""",
+                guard=r"^namespace r4d_moe_block_fp8 \{",
+                expect_matches=1,
+                rationale="Created header centralizes the exact pure width decision used by production and the card-free fixture.",
+            ),
+        ),
+    ),
     FilePatch(language="none", path="libr4d/r4d_rows.cpp", description="Register the retained E4M3 rows.", edits=(
         before("rotated-schema", '    SCHEMA("quant_act_fp8",',
                '''    SCHEMA("had_quant_act_fp8", pQuantActFp8, oQuantActFp8,
@@ -42,6 +78,9 @@ PATCHES = (
 ''', "The current templated quantiser retains the E4M3 rotation."),
     )),
     FilePatch(language="none", path="libr4d/r4d_moe.hip", description="Expose the original block-scaled GEMM form.", edits=(
+        before("include-fp8-geometry-helper", '#include "r4d_plugin.h"',
+               '#include "r4d_moe_block_fp8_geometry.h"',
+               "Use the same pure block-scale geometry decision in production and its CPU fixture."),
         before("grouped-launch", 'extern "C" int r4d_rad_moe_gemm_w4a8(',
                '''extern "C" int r4d_rad_moe_gemm_q(const RadArgs* a, RadStream stream) {
     return moe_gemm_launch<0>(a, stream);
@@ -52,14 +91,9 @@ PATCHES = (
             anchor=(r"        /\* The 128-column tile where no column tile straddles two parts of the weight\. \*/"
                     r"\n        const bool wide_n = \(N / parts\) % kPrefillCols == 0;"),
             mode="replace",
-            text="""        /* The 128-column tile where no column tile straddles two parts of the weight. */
-        bool wide_n = (N / parts) % kPrefillCols == 0;
-        /* Block-E4M3 carries one scale per 128x128 tile. Each class and each part
-         * must start on that column grid before the wide kernel may reuse a scale. */
-        if constexpr (W4 == 0 && !I8)
-            for (int q = 0; q < ncls; ++q)
-                wide_n = wide_n && Nc[q] % parts == 0 && (Nc[q] / parts) % kPrefillCols == 0;""",
-            guard=r"Block-E4M3 carries one scale per 128x128 tile",
+            text="""        /* The 128-column tile where no class or part crosses a block-E4M3 scale boundary. */
+        const bool wide_n = r4d_moe_block_fp8::wide_n<W4, I8>(N, parts, Nc, ncls, kPrefillCols);""",
+            guard=r"const bool wide_n = r4d_moe_block_fp8::wide_n",
             expect_matches=1,
             max_span_lines=2,
             rationale="An unequal expert class can start its part at row 192; a 128-column block would cross the next scale boundary at row 256.",

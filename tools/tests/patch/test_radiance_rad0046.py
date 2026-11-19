@@ -4,6 +4,7 @@ from __future__ import annotations
 import importlib.util
 import os
 from pathlib import Path
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -39,9 +40,12 @@ def test_retained_rows_apply_and_replay_on_reviewed_abi43_source():
 
     patches = _patches()
     files = [edit.path for edit in patches]
+    created = {patch.path for patch in patches if patch.create}
     with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as temp:
         root = Path(temp)
         for rel in files:
+            if rel in created:
+                continue
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(subprocess.check_output(
@@ -56,8 +60,29 @@ def test_retained_rows_apply_and_replay_on_reviewed_abi43_source():
         moe = (root / "libr4d/r4d_moe.hip").read_text()
         assert '"had_quant_act_fp8", "had_quant_act_fp8", "quant"' in rows
         assert '"moe_gemm_fp8a8", "moe_gemm_q", "moe"' in rows
-        assert "if constexpr (W4 == 0 && !I8)" in moe
-        assert "Nc[q] % parts == 0 && (Nc[q] / parts) % kPrefillCols == 0" in moe
+        assert "r4d_moe_block_fp8::wide_n<W4, I8>(N, parts, Nc, ncls, kPrefillCols)" in moe
+
+        cxx = shutil.which("c++")
+        assert cxx is not None
+        fixture = root / "rad0046_geometry_test.cpp"
+        fixture.write_text(r'''#include "r4d_moe_block_fp8_geometry.h"
+int main() {
+    constexpr long long aligned[] = {512, 256};
+    constexpr long long split_at_192[] = {512, 384};
+    if (!r4d_moe_block_fp8::wide_n<0, false>(512, 2, aligned, 2, 128)) return 1;
+    if (r4d_moe_block_fp8::wide_n<0, false>(512, 2, split_at_192, 2, 128)) return 2;
+    // Non-block-E4M3 formats preserve the existing max-width-only decision.
+    if (!r4d_moe_block_fp8::wide_n<0, true>(512, 2, split_at_192, 2, 128)) return 3;
+    if (!r4d_moe_block_fp8::wide_n<1, false>(512, 2, split_at_192, 2, 128)) return 4;
+    return 0;
+}
+''', encoding="utf-8")
+        executable = root / "rad0046_geometry_test"
+        subprocess.run(
+            [cxx, "-std=c++17", "-I", str(root / "libr4d"), str(fixture), "-o", str(executable)],
+            check=True,
+        )
+        subprocess.run([str(executable)], check=True)
 
         snapshot = {rel: (root / rel).read_bytes() for rel in files}
         second = apply_all(patches, root)
