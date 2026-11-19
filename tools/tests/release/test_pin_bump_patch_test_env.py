@@ -19,7 +19,9 @@ class ExecCapableTempdirTests(unittest.TestCase):
         self.addCleanup(lambda: shutil.rmtree(self.root, ignore_errors=True))
 
     def test_a_system_tmp_that_allows_execution_is_used_as_it_is(self):
-        with patch.object(pin_bump.tempfile, "gettempdir", return_value=str(self.root)):
+        allowed = subprocess.CompletedProcess([], 0, b"", b"")  # the probe ran: not the host's mount options
+        with patch.object(pin_bump.tempfile, "gettempdir", return_value=str(self.root)), \
+                patch.object(pin_bump.subprocess, "run", return_value=allowed):
             self.assertIsNone(pin_bump.exec_capable_tempdir(self.root / "work-tmp"))
         self.assertFalse((self.root / "work-tmp").exists(), "nothing is created when nothing is needed")
 

@@ -1,0 +1,16 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_031154_the-offline-test-suites-pass-a_2939",
+  "files": [
+    "engines/radiance/components/serving/release_install_test.cpp",
+    "tools/tests/campaign/test_build_identity_inputs.py",
+    "tools/tests/campaign/test_ccache_paths.py",
+    "tools/tests/campaign/test_server_benchmark_capture.py",
+    "tools/tests/release/test_bump_gates.py",
+    "tools/tests/release/test_pin_bump_patch_test_env.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Fixed the failing tests in the release and campaign suites and bc_release_install_test. Environment: tests that execute a compiled program or load a shared object now use an exec-capable scratch directory when /tmp is noexec; the 'system tmp allows execution' test no longer depends on the host mount; the install test clears LD_LIBRARY_PATH (the sdk-check guard it exercises refuses ambient ROCm paths). Stale tests: the worker activation test used the removed R3_MOE_WORKER setting and now uses a declared one; the build-identity test lists the three test-only reads (BUILD_TESTING targets) and no longer keeps a backslash in an escaped path.",
+  "timestamp-utc": "2026-11-19T03:11:54.374343Z",
+  "user-summary-candidate": "The offline test suites pass again, including in containers with a noexec /tmp."
+}
