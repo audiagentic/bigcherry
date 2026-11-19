@@ -62,3 +62,7 @@ Changed the native YAML fixture to set `mixed-step-target-ms: 17` and assert bot
 ## C17 — Latest-main cache and component-test gate (2026-11-19)
 
 Merged `origin/main` through `f47633e91` (`1b9902703`) before continuing; it changes the S8 GPU inventory digest to exclude live VRAM. Removed `bc_native_fleet_config_test` from the serving component target roster because the package creates it in the Radiance root build. Strengthened the cache identity test to compare bytes and path fingerprints on a multi-megabyte input and serialize the named index from the bytes-derived digest. Rebuilt and passed `bc_stored_manifest_cache_test`, `bc_serving_test`, and `bc_session_stored_test`; `git diff --check` passed. Ledger event `chg_20261119_103151_fixed-a-component-test-gate-th_3585` records the correction.
+
+## C18 — Planner-produced named-cache identity (2026-11-19)
+
+Extended the real session-owner planner fixture to use production `bc-serve` named-cache inputs, emit synthetic S8 replay evidence, and verify the persisted manifest index resolves to the expected chunked file identity after both cache miss and hit paths. The partial power-admission refusal path asserts that no cache index is published. The first run exposed that the refusal case correctly has no index; the assertion was scoped to successful paths and the test then passed. Rebuilt `bc_serving_test`; the focused CTest passed. No GPU behavior or performance claim is attached. Ledger event `chg_20261119_103807_added-regression-coverage-for_2467` records the test.

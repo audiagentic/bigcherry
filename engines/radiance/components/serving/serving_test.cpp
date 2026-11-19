@@ -3649,7 +3649,8 @@ void session_owner_real_planner_admission(Fixture& t) {
         in.options.configs = {config_dir};
         in.options.model_root = t.root / "model-root";
         in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
-        in.self = "/build/radiance_home/bin/bc-serve";
+        in.named_config = "qwen27b-tp3-int8";
+        in.self = BC_SERVE_EXE;
         in.engine_binary = BC_FAKE_ENGINE;
         const Json facts = bc::serving::detect(t.root);
         const SessionManifestPair manifests = session_manifest_pair(bc::serving::resolve(in.options, facts), facts);
@@ -3679,6 +3680,14 @@ void session_owner_real_planner_admission(Fixture& t) {
                     const auto output = fs::path(argv.at(2));
                     const bool unmeasured = std::find(argv.begin(), argv.end(), "--unmeasured") != argv.end();
                     std::ofstream(output) << (unmeasured ? manifests.measuring : manifests.serving).dump(2) << '\n';
+                    if (!unmeasured) {
+                        for (size_t i = 0; i + 1 < argv.size(); ++i) {
+                            if (argv[i] == "--s8-replay-evidence") {
+                                std::ofstream(argv[i + 1]) << "synthetic named-cache S8 evidence\n";
+                                break;
+                            }
+                        }
+                    }
                 }
                 return result;
             };
@@ -3753,6 +3762,16 @@ void session_owner_real_planner_admission(Fixture& t) {
             throw std::runtime_error("real planner owner failed to persist its terminal record");
         terminal = *completed;
         assert(terminal.value("state", std::string()) == (mode == "partial" ? "failed" : "stopped"));
+
+        const auto cache_index = ss::stored_index_path(run, "qwen27b-tp3-int8");
+        if (mode == "partial") {
+            assert(!fs::exists(cache_index));
+        } else {
+            const auto cache_entry = ss::read_stored_index(cache_index);
+            const auto named_hit = ss::stored_manifest_for(run, "qwen27b-tp3-int8", cache_entry.key);
+            assert(named_hit && named_hit->filename() == cache_entry.manifest_filename &&
+                   ss::complete_file_identity(*named_hit) == cache_entry.digest);
+        }
 
         size_t first_writer = SIZE_MAX, admit = SIZE_MAX, first_gpu = SIZE_MAX;
         size_t writer_count = 0, gpu_count = 0;
