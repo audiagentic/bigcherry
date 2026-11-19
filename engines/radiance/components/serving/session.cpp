@@ -7,6 +7,7 @@
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
+#include "plan_cache.h"
 #include "resources.h"
 #include "s8_replay.h"
 #include "sha256.h"
@@ -940,6 +941,26 @@ class Owner {
                 const auto observed = feature_state::from_manifest(document, utc_now());
                 write_atomic(s_.run_dir / feature_state::kFileName, observed.entries.dump(2) + "\n");
                 record_["feature_states"] = observed.entries;
+                const auto& spec = document.at("spec");
+                const auto& helpers = spec.at("processes").at("helpers");
+                if (helpers.empty()) {
+                    record_["calibration_record"] = Json{
+                        {"status", "none"}, {"reason_code", "no_helpers"},
+                        {"reason_detail", "engine-only session has no live policy calibration"}};
+                } else {
+                    const auto& selected = spec.at("handoff").at("placement").at("live_policy_state");
+                    if (selected.at("configured").get<bool>()) {
+                        const auto key = policy_calibration_key(policy_calibration_inputs(spec));
+                        record_["calibration_record"] = Json{
+                            {"status", "selected"}, {"kind", "radiance.live_policy"},
+                            {"key_sha256", key}};
+                    } else {
+                        record_["calibration_record"] = Json{
+                            {"status", "none"},
+                            {"reason_code", selected.at("reason_code")},
+                            {"reason_detail", selected.at("reason_detail")}};
+                    }
+                }
                 for (const auto& warning : observed.warnings)
                     std::cerr << "bc-serve: " << warning << '\n';
             }

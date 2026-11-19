@@ -124,6 +124,9 @@
     },
     "validity": {
       "$ref": "#/$defs/validity"
+    },
+    "calibration_record": {
+      "$ref": "#/$defs/calibration_selection"
     }
   },
   "$defs": {
@@ -344,6 +347,61 @@
             "type": "string",
             "minLength": 1
           }
+        }
+      }
+    },
+    "quantity_blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "blob"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blob": {
+          "$ref": "#/$defs/blob_reference"
+        }
+      }
+    },
+    "calibration_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "selected",
+            "none"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "record_blob": {
+          "$ref": "#/$defs/blob_reference"
+        },
+        "quantity_blobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quantity_blob"
+          }
+        },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_detail": {
+          "type": "string"
         }
       }
     }

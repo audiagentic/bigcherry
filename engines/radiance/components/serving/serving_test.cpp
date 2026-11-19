@@ -1762,8 +1762,20 @@ void manifest_writer_step(Fixture& t) {
           // with a distinct strict memory-plan identity and a new manifest digest.
             sv::ManifestInputs rebuilt = calibrated;
             rebuilt.measured->key_inputs["engine_build"] = std::string(64, 'f');
+            // Native cross-build activation: fixture was written by build A,
+            // the effective measured plan on build B has a different identity.
+            const auto persisted_a = sv::read_live_policy_record(calibrated.calibration_cache, key);
+            assert(persisted_a && persisted_a->calibration_inputs &&
+                   persisted_a->source_engine_build ==
+                       calibrated.measured->key_inputs.at("engine_build").get<std::string>());
+            assert(persisted_a->source_engine_build !=
+                   rebuilt.measured->key_inputs.at("engine_build").get<std::string>());
             const auto carried = sv::build_manifest(rebuilt);
+            assert(sv::policy_calibration_key(
+                       sv::policy_calibration_inputs(carried.document.at("spec"))) == key);
             assert(carried.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            assert(carried.document.at("spec").at("handoff").at("placement").at("live_policy") ==
+                   with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy"));
             assert(carried.document.at("spec").at("plan").at("engine_memory").at("engine_identity") !=
                    with_calibration.document.at("spec").at("plan").at("engine_memory").at("engine_identity"));
             assert(carried.digest != with_calibration.digest);
