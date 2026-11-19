@@ -1,5 +1,19 @@
 # Changelog
 
+## [1170.34.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.33.0...bc-radiance-1170.34.0) (2026-11-19)
+
+
+### New and changed
+
+* **calibration:** platform calibration-record store v1 (MRC04 slice 1) ([#1199](https://github.com/audiagentic/bigcherry/issues/1199)) ([84b2065](https://github.com/audiagentic/bigcherry/commit/84b2065ef6387aca6bf667a0292f6b42d3658211))
+* **measurement:** native calibration and lab probes as run records (MRC06 slice 3) ([#1209](https://github.com/audiagentic/bigcherry/issues/1209)) ([82fa90e](https://github.com/audiagentic/bigcherry/commit/82fa90e0f90403f98272d430c6c903c77610822e))
+
+
+### Fixes
+
+* **radiance:** derive helper.combine_threads from the discovered CPUs ([#1200](https://github.com/audiagentic/bigcherry/issues/1200)) ([fccaceb](https://github.com/audiagentic/bigcherry/commit/fccaceb12a476c2ceddb9fbd75e7699bada31b26))
+* **radiance:** measure the combine thread knee and derive from the affinity set ([#1206](https://github.com/audiagentic/bigcherry/issues/1206)) ([d90c57e](https://github.com/audiagentic/bigcherry/commit/d90c57e40c711e9408a2d0544520a39d77c4124f))
+
 ## [1170.33.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.5...bc-radiance-1170.33.0) (2026-11-19)
 
 
