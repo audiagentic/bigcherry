@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_202206_benchmarks-across-engines-shar_6084",
+  "files": [
+    "tools/lab/radiance/flashnext-parity.sh",
+    "tools/bigcherry/bench/workloads.py",
+    "tools/bigcherry/bench/radiance_lab_records.py",
+    "tools/bigcherry/bench/llamacpp_runner.py",
+    "tools/bigcherry/experiment/bundle.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "MRC06 producer migration: #1203 parity launches publish run records; #1205 Radiance workload store, llama.cpp bench wrapper and experiment bundles (VA25 attestation in provenance) write run records, old rows read-only/legacy; #1209 calibration-run ingest and needle/image probes publish records, bigcherry results list/show.",
+  "timestamp-utc": "2026-11-19T20:22:06.146062Z",
+  "user-summary-candidate": "Benchmarks across engines share one run-history format."
+}
