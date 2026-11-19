@@ -57,6 +57,8 @@ Decode ms/step at 1 and 6 streams within the v1.17.0 baseline allowance (or bett
 
 2026-11-20 (AEDT): helper combine thread knee measured, docs/evidence/2026-11-20-eng05-combine-threads (PR #1206). flashnext-4gpu, helper.combine_threads 2/4/8/12/16, two launches each (8 repeated for drift), placement policy off in every arm (the calibration key hashes the thread count). The helper's own combine stage costs about 920 us a step at 2 threads, 700 at 4, 580 at 8, 591 at 12 and 670-750 at 16, so the knee is 8. Decode step time does not move with it: 1 stream 25.74-25.87 ms in all ten launches, 6 streams and 8 sessions within +-1.2 ms with no trend. The CPU combine is therefore off the step's critical path and is not part of the v1.17 step-time gap; suspect 1 (GEMV capability cache) was ruled out earlier, suspect 2 is the v26 mailbox hand-off (branch agent/eng05-mailbox-trace). calibration.combine_threads.max=8 is now a measured seed and helper.combine_threads resolves as min(8, affinity-set CPUs).
 
+2026-11-20 (AEDT): step 2 MTP depth sweep, docs/evidence/2026-11-20-eng05-mtp-depth. flashnext-4gpu, num_speculative_tokens 2/3/4, two launches each (order 3 2 4 4 2 3), policy off (the calibration key hashes the depth), 3 prompt seeds at 1 and 6 streams, sess8, 256K. Aggregate tok/s, depth 2/3/4: 1 stream 91.6/107.2/110.6; 6 streams 225.9/233.2/230.7; 8 sessions 98.9/108.5/103.6; 256K 40.7/42.4/46.5. Depth 2 loses everywhere. Depth 4 is +3.1% at 1 stream (consistent over seeds and launches) and +9.7% at 256K but ties or loses from six streams up (step 54.8 vs 49.0 ms at 6 streams), so the best depth differs by load. The engine already has --draft-window adaptive (depth follows measured acceptance and step cost, no hand-picked thresholds); the serving layer has no key for it (draft_window is in the manifest contract but unset by the resolver, the writer and the engine arguments). Next slice: engine.draft_window (fixed default), then adaptive at ceilings 4 and 5 against fixed 3 and 4 on the same loads.
+
 
 ## Change Log
 
@@ -64,3 +66,4 @@ Decode ms/step at 1 and 6 streams within the v1.17.0 baseline allowance (or bett
 - 2026-11-19T07:31:25.516109+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
 - 2026-11-19T07:34:30.174287+00:00 (updated-by): Updated: section:steps
 - 2026-11-19T19:16:17.344315+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T20:58:34.971866+00:00 (updated-by): Updated: section:notes
