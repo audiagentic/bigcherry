@@ -43,3 +43,16 @@ Against the real file it checked **123 selected model rows** (video 63; audio 60
 **New concrete admissibility constraint:** the actual video output projection is 4096x4096 (32 heads x 128) and its 10/10/12 split gives 1280/1280/1536 K channels, all 256-aligned. The actual audio output projection is 2048x2048 (32 heads x 64); its 10/10/12 split gives 640/640/768 K channels, *not* 256-aligned. The 8/8/16 and 12/12/8 splits are safe for K-group slicing on **both** streams. A head split is not automatically a legal IQ8R output-projection column split; production admission must check both. A native C++ reference test now explicitly refuses audio 640/640/768.
 
 The pure-Python reference reads selected rows only, checks each file section against known encoding metadata, and is test tooling rather than engine runtime. Its normal CI suite uses synthetic FWHT/codec/negative K-boundary fixtures and skips real-file access unless an opt-in path is supplied. It does **not** establish model SHA identity, a full numerical fixture for all rows, exact GPU BF16 rounding, rotary/attention output parity, liveness, or functional TP3 inference.
+
+
+## Full 48-block DiT projection inventory
+
+The real model has the same **20 IQ8R linear projection names and shapes in each of its 48 DiT blocks**: 960 source entries were checked for their expected encoder and row/column geometry. Of these, **eight output/FFN-down projections per block** require row-parallel K cuts (384 per split). Group-width checks yielded:
+
+| Proposed head split | IQ8R K cuts rejected across all 48 blocks |
+| --- | ---: |
+| 8/8/16 | 0 |
+| 12/12/8 | 0 |
+| 10/10/12 | **192** (4 per block) |
+
+The four affected names are **audio_attn1.out.weight**, **audio_attn2.out.weight**, **a2v.out.weight**, and **v2a.out.weight**. All have K=2048, and the 10/10/12 head split yields K spans of 640/640/768, which split the 256-column scale groups. By contrast, audio_ff_down.weight has K=8192 and proportional K spans of 2560/2560/3072, all group-aligned. For an actual production TP3 implementation, head-only admission and output K-sharding admission must therefore be separate per operator. These are geometry/plane rules only: kernel coverage, inter-rank reductions and activation quantization remain untested.

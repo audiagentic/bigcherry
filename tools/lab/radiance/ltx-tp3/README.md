@@ -26,7 +26,7 @@ For the standard tooling test suite (Python test harness only, never engine runt
 
     PYTHONPATH=tools python3 -m pytest tools/tests/lab/test_ltx_tp3_reference.py -q
 
-## Mutation/safety
+The model-aware numeric tool also audits all 48 DiT blocks: 960 required IQ8R projection entries share expected shapes; audio 10/10/12 would break scale-group K cuts for four output projections per block (192 invalid). Audio FFN-down remains aligned because its K width is four times the audio head-inner width. This is an admission oracle only, not kernel or TP3 execution coverage.\n\n## Mutation/safety
 
 Writes only the explicitly selected CMake build directory or pytest temporary directory. Does not touch GPUs, allocate model weights, mutate engine source, weaken the TP1 guard, or hold a hardware lease. No background processes. A mock 16-GiB gfx1030 memory budget is not a residency proof: the real Gemma workspace, allocator and connector placement must be measured separately.
 

@@ -182,6 +182,63 @@ class SelectedImageRows:
         return bf16(struct.unpack("<H", self.read_plane_row(e, 0, row, 2))[0])
 
 
+
+def audit_all_dit_projections(image: SelectedImageRows) -> dict[str, object]:
+    """Real container shape contract for all 48 DiT blocks, not just block 0."""
+    required = (
+        "a2v.q.weight", "a2v.kv.weight", "a2v.out.weight",
+        "attn1.qkv.weight", "attn1.out.weight",
+        "attn2.q.weight", "attn2.kv.weight", "attn2.out.weight",
+        "audio_attn1.qkv.weight", "audio_attn1.out.weight",
+        "audio_attn2.q.weight", "audio_attn2.kv.weight", "audio_attn2.out.weight",
+        "v2a.q.weight", "v2a.kv.weight", "v2a.out.weight",
+        "ff_up.weight", "ff_down.weight", "audio_ff_up.weight", "audio_ff_down.weight",
+    )
+    out_or_down = tuple(x for x in required if x.endswith(("out.weight", "ff_down.weight")))
+    shapes = {}
+    for suffix in required:
+        entry = image.entries["dit.blk.0." + suffix]
+        assert entry[3] == 1 and entry[4] == 2 and entry[14] == 3
+        shapes[suffix] = entry[5:7]
+
+    blocked = {"/".join(map(str, s)): set() for s in SPLITS}
+    totals = {key: 0 for key in blocked}
+    count = 0
+    for block in range(48):
+        for suffix in required:
+            entry = image.entries["dit.blk." + str(block) + "." + suffix]
+            if entry[3] != 1 or entry[4] != 2 or entry[14] != 3 or entry[5:7] != shapes[suffix]:
+                raise AssertionError("DiT IQ8R projection shape differs across blocks")
+            count += 1
+        for suffix in out_or_down:
+            n, k = shapes[suffix]
+            if k % HEADS:
+                raise AssertionError("output K not head-partitionable")
+            for shares in SPLITS:
+                key = "/".join(map(str, shares))
+                totals[key] += 1
+                try:
+                    cuts = shard_columns(k // HEADS, shares)
+                    assert cuts[-1][1] == k
+                except ValueError:
+                    blocked[key].add(suffix)
+    assert count == 48 * len(required) == 960
+    assert len(out_or_down) == 8
+    assert totals == {key: 384 for key in blocked}
+    invalid_audio = {
+        "audio_attn1.out.weight", "audio_attn2.out.weight",
+        "a2v.out.weight", "v2a.out.weight",
+    }
+    assert blocked["8/8/16"] == set() and blocked["12/12/8"] == set()
+    assert blocked["10/10/12"] == invalid_audio
+    return {
+        "checked_dit_blocks": 48, "iq8r_projection_entries": count,
+        "output_k_shard_checks_per_split": 384,
+        "rejected_10_10_12_ops_per_block": sorted(invalid_audio),
+        "rejected_10_10_12_total": 48 * len(invalid_audio),
+    }
+
+
 def run_real_model(path: Path) -> dict[str, object]:
     inspected = inspect_iq8r_planes(path)
     image = SelectedImageRows(path)
@@ -241,7 +298,8 @@ def run_real_model(path: Path) -> dict[str, object]:
                                "valid_k_splits": valid, "refused_k_splits": refused}
         assert verified["video"]["refused_k_splits"] == []
         assert verified["audio"]["refused_k_splits"] == ["10/10/12"]
-        return {"iq8r_entries_structurally_valid": inspected["count"], "results": verified}
+        return {"iq8r_entries_structurally_valid": inspected["count"], "results": verified,
+                "dit_inventory": audit_all_dit_projections(image)}
     finally:
         image.close()
 
@@ -272,6 +330,8 @@ def test_actual_ltx_iq8r_numeric_when_supplied() -> None:
         pytest.skip("requires opt-in BC_LTX_IQ8R_MODEL")
     result = run_real_model(Path(p))
     assert result["iq8r_entries_structurally_valid"] > 1000
+    assert result["dit_inventory"]["iq8r_projection_entries"] == 960
+    assert result["dit_inventory"]["rejected_10_10_12_total"] == 192
 
 
 if __name__ == "__main__":

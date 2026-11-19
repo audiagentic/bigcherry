@@ -82,6 +82,10 @@ void test_iq8r_alignment() {
     const auto audio_other = iq8r_input_slices(2048, {768, 768, 512});
     assert(audio_other[2].offset == 1536);
     must_refuse([] { iq8r_input_slices(2048, {640, 640, 768}); });
+    // Audio FFN-down uses 8192 input channels, four times the audio
+    // attention width. Its 10/10/12 K cuts are whole 256-wide groups.
+    const auto audio_ff = iq8r_input_slices(8192, {2560, 2560, 3072});
+    assert(audio_ff[2].offset == 5120);
     must_refuse([] { iq8r_input_slices(4096, {128, 1920, 2048}); });
     must_refuse([] { iq8r_input_slices(4096, {1024, 1024, 1792}); });
     must_refuse([] { iq8r_input_slices(4032, {1024, 1024, 1984}); });
