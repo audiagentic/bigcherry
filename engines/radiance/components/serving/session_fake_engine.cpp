@@ -87,6 +87,14 @@ int main(int argc, char** argv) {
         std::stringstream s;
         s << in.rdbuf();
         const json parsed = json::parse(s.str(), nullptr, false);
+        // Fresh and measuring launches deliberately pass the manifest as an
+        // inherited sealed descriptor. Fail loudly if spawn omitted it; a
+        // default fake-engine response would otherwise hide the broken handoff.
+        if (manifest.rfind("/proc/self/fd/", 0) == 0 &&
+            (!parsed.is_object() || !parsed.contains("spec"))) {
+            std::fprintf(stderr, "fake engine: inherited manifest descriptor is not readable\n");
+            return 9;
+        }
         if (parsed.is_object() && !parsed.contains("spec")) {
             m = parsed;
         } else if (parsed.is_object() && parsed.contains("spec")) {
