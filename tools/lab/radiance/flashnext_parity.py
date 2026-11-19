@@ -528,10 +528,9 @@ def capture_launch_provenance(
 
 
 def selected_calibration(path: Path, key: str) -> dict:
-    """Use the platform MRC04 strict current/legacy/invalid classifications.
+    """Use the platform MRC04 strict current/invalid classifications.
 
-    This reader verifies the full declared key and quantities. Hash-only
-    history can be listed but cannot serve as active measurement evidence.
+    This reader verifies the full declared key and quantities; a row it does not know is refused.
     """
     from bigcherry.core.calibration_records import read_native_toml
 
@@ -541,7 +540,7 @@ def selected_calibration(path: Path, key: str) -> dict:
     item = selected[0]
     if item["status"] != "current":
         raise ParityError(f"selected calibration is {item['status']}: {item['reason']}")
-    return item["legacy"]
+    return item["native"]
 
 
 def publish_launch_record(

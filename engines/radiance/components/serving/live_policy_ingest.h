@@ -5,6 +5,7 @@
 #include <optional>
 #include <nlohmann/json.hpp>
 #include <string>
+#include <vector>
 
 namespace bc::serving {
 // Card-free verified-identity ingestion primitive; the CLI wrapper also checks
@@ -20,9 +21,13 @@ void ingest_live_policy_record(const std::filesystem::path& log,
                                const std::string& key, const std::string& layout,
                                const std::string& objective,
                                const std::string& target_store_key,
-                               const std::optional<LivePolicyProvenance>& provenance = std::nullopt);
+                               const LivePolicyProvenance& provenance);
 void ingest_live_policy_log(const std::filesystem::path& log,
                             const std::filesystem::path& cache,
                             const std::filesystem::path& manifest,
                             const std::string& target_store_key);
+// Remove the rows the strict reader refuses (no calibration_inputs: hash-only evidence from before scoped keys) from a
+// calibration store. Returns the plan_cache_key of each row that is, or with apply was, removed. Takes the store's lock,
+// keeps every other byte, validates the result with the strict reader, and replaces the file atomically.
+std::vector<std::string> prune_live_policy_store(const std::filesystem::path& cache, bool apply);
 } // namespace bc::serving

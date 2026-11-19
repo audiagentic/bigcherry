@@ -219,7 +219,7 @@ producer migrations and legacy-writer retirement are separate slices.
 
 **MRC06 slice 2 — producer migration and legacy listing.** The parity producer now reads the selected current calibration with MRC04's shared native-TOML reader, without duplicating its key verification.
 
-"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. The legacy "results/index.jsonl" and old workload rows are read-only; "bigcherry results list --engine radiance --work-root ROOT --json" shows older rows as "legacy" / "missing_content_provenance". Neither deleted manifest paths nor seeded rows are silently promoted into the record store. "workload seed" is disabled and the historical "workload compare" remains a read-only reader.
+"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. There is no results index and no reader of pre-record rows; "bigcherry results list" shows verified run records only.
 
 The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
 

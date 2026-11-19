@@ -186,7 +186,7 @@ def _selected_calibration(path: Path, key: str) -> dict:
     ]
     if len(rows) != 1 or rows[0]["status"] != "current":
         raise run_records.RecordError(
-            "calibration key is missing, legacy or invalid in MRC04 reader"
+            "calibration key is missing or invalid in MRC04 reader"
         )
     if rows[0]["format"] != "native_v1":
         raise run_records.RecordError(

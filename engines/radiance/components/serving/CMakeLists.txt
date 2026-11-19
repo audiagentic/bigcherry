@@ -145,7 +145,8 @@ if(BUILD_TESTING)
   add_executable(bc_live_policy_ingest_test EXCLUDE_FROM_ALL live_policy_ingest_test.cpp)
   target_link_libraries(bc_live_policy_ingest_test PRIVATE bc_serving)
   target_compile_definitions(bc_live_policy_ingest_test PRIVATE
-    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml")
+    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml"
+    BC_CALIBRATION_HASH_ONLY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19-with-hash-only.toml")
   add_test(NAME bc_live_policy_ingest_test COMMAND bc_live_policy_ingest_test)
 
   # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
