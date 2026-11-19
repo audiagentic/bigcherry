@@ -428,6 +428,12 @@ class ReadPluginAbiTests(unittest.TestCase):
     """read_plugin_abi on a real shared object (no mock): a plugin that calls functions only the engine executable
     exports (libr3moe uses rad_event_*) must still report its ABI version outside the engine."""
 
+    def setUp(self) -> None:
+        # The shared object is loaded, which a noexec /tmp (a hardened container) refuses: use an exec-capable scratch.
+        self.scratch = pin_bump.exec_capable_tempdir(Path(os.environ.get("BC_WORK_ROOT") or tempfile.gettempdir()) / "test-tmp")
+        if self.scratch is not None:
+            self.addCleanup(shutil.rmtree, self.scratch, ignore_errors=True)
+
     def _plugin(self, tmp: Path, body: str) -> Path:
         cc = shutil.which("cc") or shutil.which("gcc") or shutil.which("clang")
         if cc is None:
@@ -438,7 +444,7 @@ class ReadPluginAbiTests(unittest.TestCase):
         return so
 
     def test_reads_version_of_plugin_with_engine_only_symbols(self):
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+        with tempfile.TemporaryDirectory(dir=self.scratch) as tmp:
             so = self._plugin(Path(tmp),
                               "void rad_event_destroy(void* e);\n"
                               "unsigned rad_plugin_abi_version(void) { return 33u; }\n"
@@ -446,7 +452,7 @@ class ReadPluginAbiTests(unittest.TestCase):
             self.assertEqual(radiance_bump.read_plugin_abi(so), (33, None))
 
     def test_missing_version_export_is_a_check_error(self):
-        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as tmp:
+        with tempfile.TemporaryDirectory(dir=self.scratch) as tmp:
             so = self._plugin(Path(tmp), "unsigned other(void) { return 1u; }\n")
             with self.assertRaises(BumpCheckError):
                 radiance_bump.read_plugin_abi(so)
