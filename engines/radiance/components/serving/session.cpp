@@ -6,6 +6,7 @@
 #include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
+#include "lab_trace_experiment.h"
 #include "manifest_writer.h"
 #include "resources.h"
 #include "s8_replay.h"
@@ -1983,12 +1984,15 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (in.calibration_run || !in.live_policy_file.empty())
             throw PlanFailed("lab experiment: a calibration/live-policy run is a separate mode");
         const Json experiment = Json::parse(read_file(in.experiment_file), nullptr, false);
-        if (!experiment.is_object() || experiment.size() != 1 || !experiment.contains("placement") ||
-            !experiment.at("placement").is_object() ||
-            experiment.at("placement").value("mode", std::string()) != "observe" ||
-            experiment.at("placement").contains("forced"))
+        const bool observe_only =
+            experiment.is_object() && experiment.size() == 1 && experiment.contains("placement") &&
+            experiment.at("placement").is_object() &&
+            experiment.at("placement").value("mode", std::string()) == "observe" &&
+            !experiment.at("placement").contains("forced");
+        if (!observe_only && !lab_lane_trace_only(experiment))
             throw PlanFailed(
-                "lab experiment: observe-only placement is supported until RSC12 binds experiment inputs");
+                "lab experiment: only observe placement or a single diagnostics.lanes.trace_level "
+                "is supported until RSC12 binds experiment inputs");
     }
     const Json facts = detect(in.options.sys_root);
     const Resolved r = resolve(in.options, facts);

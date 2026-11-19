@@ -220,6 +220,10 @@ if(BUILD_TESTING)
   add_dependencies(bc_session_test bc_fake_engine)
   target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_session_test COMMAND bc_session_test)
+  add_executable(bc_lab_trace_experiment_test EXCLUDE_FROM_ALL lab_trace_experiment_test.cpp)
+  target_include_directories(bc_lab_trace_experiment_test PRIVATE "${RADIANCE_SRC}/vendor")
+  set_target_properties(bc_lab_trace_experiment_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME bc_lab_trace_experiment_test COMMAND bc_lab_trace_experiment_test)
   # A build target so the component test gate can declare it; building it runs the tripwire.
   add_custom_target(bc_session_callback_guard
     COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake"

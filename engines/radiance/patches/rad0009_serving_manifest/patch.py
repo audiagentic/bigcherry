@@ -290,6 +290,12 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         settings.shadow = e.shadow.value_or(false) ? 1u : 0u;
         settings.mask_only = static_cast<uint32_t>(e.mask_only.value_or(0));
     }
+    if (spec.experiment && spec.experiment->diagnostics &&
+        spec.experiment->diagnostics->lanes &&
+        spec.experiment->diagnostics->lanes->trace_level) {
+        settings.mailbox_trace_every = static_cast<uint32_t>(
+            *spec.experiment->diagnostics->lanes->trace_level);
+    }
     if (!heat_nonce.empty()) {
         g_heat_launch_nonce = std::move(heat_nonce);
         settings.heat_launch_nonce = g_heat_launch_nonce.c_str();
