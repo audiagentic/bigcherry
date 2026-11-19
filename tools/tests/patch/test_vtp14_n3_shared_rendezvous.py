@@ -1,6 +1,6 @@
 """VTP14 N3 (rad0017): one all-reduce rendezvous shared by libr3 and libr4d, as a managed source patch.
 
-Card-free. Applies rad0016 then rad0017 to the pinned radiance v1.17.0 source when a checkout carrying that tag is
+Card-free. Applies rad0016 then rad0017 to the pinned Radiance source when a checkout carrying that tag is
 reachable (RADIANCE_SRC or the workspace's vendor/radiance), and checks that libr3's rewrite of the patched libr4d
 source still matches. The shared slot itself is tested in C++ by tests/bc_shared_slot_test.cpp, which the patch adds.
 """
@@ -53,11 +53,11 @@ class SharedRendezvousTests(unittest.TestCase):
     def test_applies_over_n1_to_pinned_source_and_libr3_rewrite_matches(self):
         checkout = radiance_checkout()
         if checkout is None:
-            self.skipTest("no radiance checkout with the pinned v1.17.0 commit; set RADIANCE_SRC")
+            self.skipTest("no Radiance checkout with the declared pin; set RADIANCE_SRC")
         with patched_pinned_source(checkout, N3.name, full_checkout=True) as root:
             entry = (root / "libr4d/r4d_ar_entry.hip").read_text()
             self.assertIn('dlsym(RTLD_DEFAULT, "rad_bc_shared_slot")', entry)
-            self.assertIn("#define g_rv (rv_slot())", entry)
+            self.assertIn("Rendezvous& rv_for(long long group)", entry)
             self.assertNotRegex(entry, r"(?m)^Rendezvous g_rv;$")
             # libr3's literal anchors in this file must survive the patch.
             self.assertIn("#include <condition_variable>\n#include <cstdio>\n", entry)

@@ -1,6 +1,6 @@
 """VTP31 (rad0027): the pipelined prefill over a mixed step of decode rows and one prefill sequence.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0026 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0026 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
@@ -51,7 +51,7 @@ class MixedOnePipeTests(unittest.TestCase):
         self.assertIn("praw2(table + oD * tpitch, RAD_I32, 1, tpitch)", edits["mx1-attn-launch"])
         self.assertIn("p == 0 ? n - oDT : n", edits["mx1-attn-launch"])
         self.assertIn("praw(batch->positions + r0 + o0, RAD_I32, 1)", edits["mx1-gdn-prep"])
-        self.assertIn("st_idx + mD * st_w", edits["mx1-gdn-state"])
+        self.assertIn("st_idx + mD * st_w", edits["mx1-gdn-prefill-piece"])
 
     def test_applies_to_pinned_radiance_source(self):
         checkout = radiance_checkout()

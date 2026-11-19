@@ -1,6 +1,6 @@
 """VTP31 (rad0022): `--tune-pin SPEC`, radiance's kernel tune pin as an engine option.
 
-Card-free. The pinned-source test applies rad0022 to radiance v1.17.0 when a checkout with that tag is reachable
+Card-free. The pinned-source test applies rad0022 to the pinned Radiance source when a checkout with that tag is reachable
 (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations

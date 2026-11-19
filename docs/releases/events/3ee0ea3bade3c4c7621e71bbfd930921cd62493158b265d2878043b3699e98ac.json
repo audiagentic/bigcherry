@@ -1,0 +1,31 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_011236_added-a-reproducible-candidate_2680",
+  "files": [
+    "tools/tests/patch/_vtp_promotion_support.py",
+    "tools/tests/patch/test_vtp14_n1_rank_code_selection.py",
+    "tools/tests/patch/test_vtp14_n2_tp_ownership.py",
+    "tools/tests/patch/test_vtp14_n3_shared_rendezvous.py",
+    "tools/tests/patch/test_vtp14_tp3_pipelined_prefill.py",
+    "tools/tests/patch/test_vtp14_weighted_twoshot_3rank.py",
+    "tools/tests/patch/test_vtp31_ar_timeline.py",
+    "tools/tests/patch/test_vtp31_mixed_one_pipe.py",
+    "tools/tests/patch/test_vtp31_mixed_pipe.py",
+    "tools/tests/patch/test_vtp31_multiseq_pipe.py",
+    "tools/tests/patch/test_vtp31_rank_consistent_drafts.py",
+    "tools/tests/patch/test_vtp31_ts3_decode.py",
+    "tools/tests/patch/test_vtp31_tune_pin.py",
+    "tools/tests/patch/test_vtp33_rank_own_split.py",
+    "tools/tests/patch/test_vtp36_ts3_allreduce.py",
+    "tools/tests/patch/test_vtp37_int8_pipelined_prefill.py",
+    "tools/tests/patch/test_vtp42_prefill_governor.py",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Promotion patch replay fixtures now target exact reviewed ABI43 commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e. Candidate composition omits rad0013_mtp_pass_replay because upstream Qwen4-Exp and core now key decode, verify, and MTP draft passes by keyed context bound and QSA exactness side. Production v1.17 recipe membership remains. Corrected retired edit-id fixture. Focused candidate suite passed 58 tests, with no GPU execution.",
+  "timestamp-utc": "2026-11-19T01:12:36.265988Z",
+  "user-summary-candidate": "Added a reproducible candidate-specific replay check and verified 58 focused card-free patch tests against the exact upstream commit. Upstream now supplies the MTP replay geometry logic, so the candidate test composition leaves that old patch out while preserving the current production pin until replay qualification."
+}

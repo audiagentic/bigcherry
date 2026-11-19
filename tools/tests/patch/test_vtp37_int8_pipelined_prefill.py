@@ -1,6 +1,6 @@
 """VTP37 (rad0030): the pipelined prefill on a rotated-int8 trunk, under --pipelined-prefill on.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0030 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0030 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations

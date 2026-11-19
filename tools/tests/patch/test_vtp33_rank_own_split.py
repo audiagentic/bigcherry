@@ -1,6 +1,6 @@
 """VTP33 (rad0029): in an uneven dense world, every rank gets its own VRAM split.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0029 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0029 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
