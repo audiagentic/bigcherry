@@ -225,6 +225,56 @@ PATCHES = (
         _replace("abi44-layout-probe", "ABI_FIELD(RadArchProbe, ckpt_snap_ok)\n",
                  "ABI_FIELD(RadArchProbe, ckpt_snap_ok)\n"
                  "ABI_FIELD(RadArchProbe, kv_layout_ok)\n", "ABI_FIELD(RadArchProbe, kv_layout_ok)"),
+        _replace("abi44-layout-batch", "ABI_FIELD(RadBatch, ckpt_cu)\n",
+                 "ABI_FIELD(RadBatch, ckpt_cu)\n"
+                 "ABI_FIELD(RadBatch, cu_seqlens_h)\n", "ABI_FIELD(RadBatch, cu_seqlens_h)"),
+    )),
+    FilePatch(path="tests/abi_layout_test.cpp", language="none", description="Check the complete ABI44 layout", edits=(
+        _replace("abi44-test-doc", "taken at RAD_ABI_VERSION 38 and RAD_FORMAT_VER 2",
+                 "taken at RAD_ABI_VERSION 44 and RAD_FORMAT_VER 2",
+                 "taken at RAD_ABI_VERSION 44 and RAD_FORMAT_VER 2"),
+        _replace("abi44-test-version", "/* The layout at RAD_ABI_VERSION 43 / RAD_FORMAT_VER 2 (see the file header). */\n"
+                 "constexpr uint32_t kTableAbi = 43, kTableFormat = 2;",
+                 "/* The layout at RAD_ABI_VERSION 44 / RAD_FORMAT_VER 2 (see the file header). */\n"
+                 "constexpr uint32_t kTableAbi = 44, kTableFormat = 2;", "constexpr uint32_t kTableAbi = 44,"),
+        _replace("abi44-test-context-size", "CHECK_EQ(sizeof(RadBuildCtx), (size_t)208);",
+                 "CHECK_EQ(sizeof(RadBuildCtx), (size_t)240);", "CHECK_EQ(sizeof(RadBuildCtx), (size_t)240);"),
+        _replace("abi44-test-probe-size", "CHECK_EQ(sizeof(RadArchProbe), (size_t)128);",
+                 "CHECK_EQ(sizeof(RadArchProbe), (size_t)136);", "CHECK_EQ(sizeof(RadArchProbe), (size_t)136);"),
+        _replace("abi44-test-batch-size", "CHECK_EQ(sizeof(RadBatch), (size_t)496);",
+                 "CHECK_EQ(sizeof(RadBatch), (size_t)504);", "CHECK_EQ(sizeof(RadBatch), (size_t)504);"),
+    )),
+    FilePatch(path="tests/abi_layout_table.h", language="none", description="Pin the complete ABI44 layout", edits=(
+        _replace("abi44-table-doc", "at RAD_ABI_VERSION 43 and", "at RAD_ABI_VERSION 44 and",
+                 "at RAD_ABI_VERSION 44 and"),
+        _replace("abi44-table-probe-size", '{ "RadArchProbe", "", 0, 128 },',
+                 '{ "RadArchProbe", "", 0, 136 },', '{ "RadArchProbe", "", 0, 136 },'),
+        _replace("abi44-table-probe", '{ "RadArchProbe", "ckpt_snap_ok", 124, 4 },\n',
+                 '{ "RadArchProbe", "ckpt_snap_ok", 124, 4 },\n'
+                 '{ "RadArchProbe", "kv_layout_ok", 128, 4 },\n',
+                 '{ "RadArchProbe", "kv_layout_ok", 128, 4 },'),
+        _replace("abi44-table-batch-size", '{ "RadBatch", "", 0, 496 },',
+                 '{ "RadBatch", "", 0, 504 },', '{ "RadBatch", "", 0, 504 },'),
+        _replace("abi44-table-batch", '{ "RadBatch", "ckpt_cu", 488, 8 },\n',
+                 '{ "RadBatch", "ckpt_cu", 488, 8 },\n'
+                 '{ "RadBatch", "cu_seqlens_h", 496, 8 },\n',
+                 '{ "RadBatch", "cu_seqlens_h", 496, 8 },'),
+        _replace("abi44-table-context-size", '{ "RadBuildCtx", "", 0, 208 },',
+                 '{ "RadBuildCtx", "", 0, 240 },', '{ "RadBuildCtx", "", 0, 240 },'),
+        _replace("abi44-table-context", '{ "RadBuildCtx", "span_pass_step", 200, 4 },\n',
+                 '{ "RadBuildCtx", "span_pass_step", 200, 4 },\n'
+                 '{ "RadBuildCtx", "tp_ownership", 208, 8 },\n'
+                 '{ "RadBuildCtx", "pipelined_prefill", 216, 4 },\n'
+                 '{ "RadBuildCtx", "pipelined_prefill_min_rows", 224, 8 },\n'
+                 '{ "RadBuildCtx", "kv_layout", 232, 4 },\n'
+                 '{ "RadBuildCtx", "attn_prefill_fp8", 236, 4 },\n',
+                 '{ "RadBuildCtx", "attn_prefill_fp8", 236, 4 },'),
+        _replace("abi44-table-group-size", '{ "RadKVGroupDecl", "", 0, 56 },',
+                 '{ "RadKVGroupDecl", "", 0, 64 },', '{ "RadKVGroupDecl", "", 0, 64 },'),
+        _replace("abi44-table-group", '{ "RadKVGroupDecl", "conv_width", 48, 8 },\n',
+                 '{ "RadKVGroupDecl", "conv_width", 48, 8 },\n'
+                 '{ "RadKVGroupDecl", "kv_layout", 56, 4 },\n',
+                 '{ "RadKVGroupDecl", "kv_layout", 56, 4 },'),
     )),
     FilePatch(path="abi/rad_abi.h", language="none", description="Advance the local plugin ABI from 43 to 44", edits=(
         _replace("abi44-version", "#define RAD_ABI_VERSION 43u\n", "#define RAD_ABI_VERSION 44u\n",

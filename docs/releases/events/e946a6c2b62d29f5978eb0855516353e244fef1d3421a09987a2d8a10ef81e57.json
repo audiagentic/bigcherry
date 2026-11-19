@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_221213_complete-the-abi44-validation_7037",
+  "files": [
+    "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py",
+    "engines/radiance/patches/rad0054_attn_prefill_fp8/patch.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Include the existing host sequence bounds in the ABI44 plugin fingerprint, pin the complete ABI44 C/C++ layout without moving any fields, and cover a valid prefill precision mode in the configuration inventory fixture.",
+  "timestamp-utc": "2026-11-19T22:12:13.707110Z",
+  "user-summary-candidate": "Complete the ABI44 validation checks and cover the prefill precision setting in the engine configuration tests."
+}

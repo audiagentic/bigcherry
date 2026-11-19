@@ -338,6 +338,9 @@ PATCHES = (
                 _ARCH_TEST, "TEST(qwen35_prefill_fp8_modes_follow_only_supported_trunk_caches)"),
     )),
     FilePatch(path="tests/config_test.cpp", language="none", edits=(
+        _before("prefill-mode-config-inventory", '        { "--state-cache-dtype", { "f16" } },',
+                '        { "--attn-prefill-fp8", { "both" } },\n',
+                '{ "--attn-prefill-fp8", { "both" } },'),
         _before("prefill-mode-config-checks", "TEST(the_kv_cache_dtype_uses_canonical_names)",
                 _CONFIG_TEST, "TEST(attn_prefill_fp8_option_round_trips_independently_of_cache_format)"),
     )),
