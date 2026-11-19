@@ -124,6 +124,8 @@ C24 (2026-11-19): merged current origin/main at 5e814a1d8; merge base matches or
 
 C25 (2026-11-19): measuring preflight now reads host pool/KV/reserve/TP from the exact strict parsed measuring manifest and uses freshly detected host room. A session regression drives exit-11 to raise pool to 2048 MiB/rank, forces a second cache miss, and verifies TP3 refusal before a second measuring child. bc_resources_parity_test and bc_serving_test passed. Evidence: docs/evidence/radiance-latest-bump/README.md C25; Ledger event chg_20261119_120029_fixed-measuring-start-memory-a_1732.
 
+C26 (2026-11-19): removed worker_policy_config.h's hard-coded generated/v2 header include and rebuilt/reran r3_policy_config_test successfully with the current v2 target selected. This is an edition-neutral include seam, not a full v3 worker build. Evidence: docs/evidence/radiance-latest-bump/README.md C26; Ledger event chg_20261119_120946_removed-the-helper-workers-ha_3343.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -145,3 +147,4 @@ C25 (2026-11-19): measuring preflight now reads host pool/KV/reserve/TP from the
 - 2026-11-19T10:09:03.548031+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T10:09:50.104454+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:01:22.900750+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T12:10:17.693225+00:00 (updated-by): Updated: section:notes

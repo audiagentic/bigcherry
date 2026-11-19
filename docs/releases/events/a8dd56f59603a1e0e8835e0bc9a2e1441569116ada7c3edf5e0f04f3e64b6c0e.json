@@ -1,0 +1,15 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_120946_removed-the-helper-workers-ha_3343",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_policy_config.h",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Removed the helper worker's remaining direct include of generated/v2/serving_types.h and made it consume the generated header selected through the linked manifest target's public include path. The focused r3_policy_config_test rebuilt and passed against the current v2 selection; this proves include-path ownership only, not a complete v3 worker/runtime build.",
+  "timestamp-utc": "2026-11-19T12:09:46.628695Z",
+  "user-summary-candidate": "Removed the helper worker's hard-coded generated-v2 header path and verified the policy configuration test under the current manifest target."
+}
