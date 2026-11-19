@@ -57,3 +57,36 @@ measured here, at ceiling 4, before it can be trusted on this layout. The servin
 manifest writer and the engine arguments do not set it, so every launch is `fixed`. Next slice: an `engine.draft_window`
 setting (fixed or adaptive, fixed by default), then adaptive at ceilings 4 and 5 against fixed 3 and fixed 4 on this
 sweep's loads, policy off and (once calibrated) on.
+
+## Adaptive draft window and a fixed-3 control (same day, 07:59-08:45 AEDT)
+
+`tuning.draft_window` is already a resolver key (the generic tuning options derive from the manifest contract), so no
+knob was needed: `--set tuning.draft_window=adaptive --set engine.num_speculative_tokens=N` puts `--draft-window
+adaptive` and the ceiling N on the engine (engine log: `draft depth: adaptive, 1..N`). Two launches each at ceilings 4
+and 5, plus one more fixed-3 launch as the drift control, same harness and loads, policy off. (The earlier version of
+this page said the key did not exist; that was wrong.)
+
+| arm | 1 stream tok/s | 6 streams | 256K | 1 stream ms/step | acceptance (1 stream) |
+|---|---|---|---|---|---|
+| fixed 3 (two sessions) | 107.2, 104.4 | 233.2, 227.4 | 42.4, 42.5 | 25.8, 25.9 | 0.765 |
+| fixed 4 | 110.6 | 230.7 | 46.5 | 27.5 | 0.666 |
+| adaptive, ceiling 4 | 110.4 | 231.1 | 46.5 | 27.6 | 0.666 |
+| adaptive, ceiling 5 | 101.2 | 210.3 | 42.5 | 29.8 | 0.508 |
+
+- Adaptive at ceiling 4 is fixed 4: same step time and the same acceptance at 1 stream, 6 streams and 256K, so its
+  back-off never engages on these loads, and it adds nothing. At ceiling 5 it is worse everywhere (the engine's own
+  note about it losing under load holds here, and it also loses at 1 stream).
+- Fixed 4 against fixed 3 (average of the two sessions, 105.8 at 1 stream): +4.5% at 1 stream, +9.5% at 256K, a tie at
+  6 streams (230.7 against 230.3). The two fixed-3 sessions differ by up to 6 tok/s at 6 streams, which is also why the
+  first page's "depth 4 loses at 6 streams" is inside the noise.
+- sess8 is not a usable tok/s comparison here: it is the median of two reps and one of them is a cold 36-41 s prefill
+  whenever the prefix cache missed (adaptive-4 launch 1: both reps cold, 6.7 tok/s aggregate; launch 4: second rep
+  1.3 s, 99.6). Its decode ms/step is steadier: fixed 3 44.3-44.8, fixed 4 49.3, adaptive-4 48.2, adaptive-5 51.0.
+
+## Decision
+
+A fixed depth 4 is the lever on this layout (+4.5% one stream, +9.5% at 256K, no loss at 6 streams), but it is not
+shippable as a default change yet: the live-policy calibration key hashes the depth, so a depth-4 launch has no
+calibration record and runs with the policy inactive until one is calibrated (every arm above ran policy-off for
+that reason). The default change therefore needs a depth-4 calibration record, then a policy-on A/B of 3 against 4 on
+these loads (including prefill/TTFT, which must not regress). That is plan item ENG08; adaptive is closed.
