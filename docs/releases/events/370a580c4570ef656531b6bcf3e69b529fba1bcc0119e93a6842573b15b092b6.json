@@ -1,0 +1,23 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_165938_the-native-yaml-snapshot-now-p_9902",
+  "files": [
+    "engines/radiance/components/serving/bc_serving_v2.cmake",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "engines/radiance/components/serving/native_fleet_v3_engine_test.cpp",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config.h",
+    "engines/radiance/components/serving/v2/native_config_snapshot.cpp",
+    "engines/radiance/components/serving/v2/native_config_snapshot.h",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added an isolated ABI44 successor consumer test path that uses the shared strict manifest reader with the generated v3 codec, then replays its admitted native YAML snapshot through Radiance's fleet parser. The real v3 writer emits measuring and serving fixtures after source YAML removal; the consumer confirms the native-only mixed-step setting and cfg.given provenance, snapshot identity, and role mismatch refusals. Default v2 selection and production gating remain unchanged. Fresh card-free ABI44 build and consumer CTest pass; patch suite passes when temporary binaries use an executable filesystem.",
+  "timestamp-utc": "2026-11-19T16:59:38.453280Z",
+  "user-summary-candidate": "The native YAML snapshot now passes through the real v3 writer, strict v3 reader, and ABI44 Radiance parser in a card-free test, including the measuring and serving roles and native option provenance."
+}

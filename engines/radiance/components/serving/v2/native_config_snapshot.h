@@ -16,6 +16,7 @@ class NativeConfigSnapshot final {
   public:
     static NativeConfigSnapshot read(const std::filesystem::path& authored,
                                      const std::filesystem::path& resolution_root);
+    static NativeConfigSnapshot admitted(std::string yaml, std::string sha256, std::string resolution_root);
     static NativeConfigSnapshot from_manifest(const nlohmann::json& field);
     static void verify(std::string_view yaml, std::string_view sha256, std::string_view resolution_root);
     nlohmann::json manifest_field() const;

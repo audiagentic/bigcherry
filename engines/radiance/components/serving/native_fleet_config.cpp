@@ -27,6 +27,12 @@ NativeFleetConfig NativeFleetConfig::replay(NativeConfigSnapshot snapshot) {
     return NativeFleetConfig(std::move(snapshot), "spec.native_config.yaml_utf8");
 }
 
+NativeFleetConfig NativeFleetConfig::replay(const v2::NativeConfigView& admitted) {
+    return replay(NativeConfigSnapshot::admitted(std::string(admitted.yaml_utf8),
+                                                 std::string(admitted.identity.sha256),
+                                                 std::string(admitted.identity.resolution_root)));
+}
+
 NativeFleetConfig::NativeFleetConfig(NativeConfigSnapshot snapshot, const std::string& origin)
     : snapshot_(std::move(snapshot)) {
     snapshot_.require_execution_root();

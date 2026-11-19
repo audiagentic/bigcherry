@@ -1,6 +1,7 @@
 #pragma once
 
 #include "fleet/config.h"
+#include "v2/manifest.h"
 #include "v2/native_config_snapshot.h"
 
 #include <optional>
@@ -18,6 +19,7 @@ class NativeFleetConfig final {
     // Replay takes a snapshot from the strictly decoded, identity-verified
     // spec.native_config field.
     static NativeFleetConfig replay(NativeConfigSnapshot snapshot);
+    static NativeFleetConfig replay(const v2::NativeConfigView& admitted);
 
     const NativeConfigSnapshot& snapshot() const { return snapshot_; }
     const rad::fleet::FleetConfig& fleet() const { return fleet_; }

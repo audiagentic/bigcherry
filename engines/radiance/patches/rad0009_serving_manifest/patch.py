@@ -394,6 +394,11 @@ if(NOT DEFINED BC_SERVING_V2_CMAKE)
   message(FATAL_ERROR "rad0009: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "
                       "is required (the shared serving manifest v1 library); the BigCherry lane passes it")
 endif()
+if(BC_SERVING_V3_NATIVE_TEST)
+  if(NOT RAD_BUILD_TESTS OR NOT DEFINED BC_SERVING_GENERATED_DIR)
+    message(FATAL_ERROR "rad0009: v3 native consumer test requires RAD_BUILD_TESTS and BC_SERVING_GENERATED_DIR")
+  endif()
+endif()
 include("${BC_SERVING_V2_CMAKE}")
 target_link_libraries(rad_core PUBLIC bc_serving_v2)
 if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")
@@ -404,7 +409,10 @@ if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
   get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)
   target_sources(rad_core PRIVATE "${_bc_serving}/native_fleet_config.cpp")
   target_include_directories(rad_core PUBLIC "${_bc_serving}")
-  if(RAD_BUILD_TESTS)
+  if(RAD_BUILD_TESTS AND BC_SERVING_V3_NATIVE_TEST)
+    add_executable(bc_native_v3_engine_test "${_bc_serving}/native_fleet_v3_engine_test.cpp")
+    target_link_libraries(bc_native_v3_engine_test PRIVATE rad_core)
+  elseif(RAD_BUILD_TESTS)
     add_executable(bc_native_fleet_config_test
         "${_bc_serving}/native_fleet_config_test.cpp")
     target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)
@@ -415,7 +423,13 @@ endif()
 """
 
 _CORE_TEST_REGISTRATION = r"""
-add_test(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test)
+if(TARGET bc_native_fleet_config_test)
+  add_test(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test)
+endif()
+if(TARGET bc_native_v3_engine_test AND DEFINED BC_V3_WRITER_TEST_EXECUTABLE AND DEFINED BC_V3_WRITER_CONFIG)
+  add_test(NAME bc_native_v3_engine_test COMMAND "${BC_V3_WRITER_TEST_EXECUTABLE}"
+    "${BC_V3_WRITER_CONFIG}" "$<TARGET_FILE:bc_native_v3_engine_test>")
+endif()
 """
 
 
@@ -469,9 +483,9 @@ PATCHES = (
             anchor=r"^get_property\(RAD_ALL_TESTS DIRECTORY PROPERTY TESTS\)$",
             text=_CORE_TEST_REGISTRATION,
             mode="insert_before",
-            guard=r"^add_test\(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test\)$",
+            guard=r"^if\(TARGET bc_native_fleet_config_test\)$",
             expect_matches=1,
-            rationale="tests/CMakeLists is included after enable_testing; register before the suite's final test-label pass.",
+            rationale="tests/CMakeLists is included after enable_testing; register whichever isolated reader test exists before the final test-label pass.",
         ),),
     ),
     FilePatch(

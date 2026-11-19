@@ -61,6 +61,11 @@ NativeConfigSnapshot NativeConfigSnapshot::read(const std::filesystem::path& aut
     return NativeConfigSnapshot(std::move(bytes), canonical_resolution_root(resolution_root), std::nullopt);
 }
 
+NativeConfigSnapshot NativeConfigSnapshot::admitted(std::string yaml, std::string sha256,
+                                                     std::string resolution_root) {
+    return NativeConfigSnapshot(std::move(yaml), std::move(resolution_root), sha256);
+}
+
 NativeConfigSnapshot NativeConfigSnapshot::from_manifest(const nlohmann::json& field) {
     constexpr const char* shape = "spec.native_config requires exactly the string fields yaml_utf8, sha256 and resolution_root";
     if (!field.is_object() || field.size() != 3)

@@ -5,10 +5,13 @@
 #include "v2/p1_producer.h"
 
 #include <cstdlib>
+#include <cerrno>
 #include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <stdexcept>
+#include <sys/wait.h>
+#include <unistd.h>
 
 namespace {
 namespace fs = std::filesystem;
@@ -70,11 +73,38 @@ void check_snapshot(const sv::BuiltManifest& manifest, wire::PlanUse use,
               record.at("confidence") == "exact" && record.at("source") == "admitted native fleet YAML",
           "the real writer lost native snapshot provenance");
 }
+
+void run_engine_consumer(const fs::path& consumer, const fs::path& root,
+                         const sv::BuiltManifest& measuring, const sv::BuiltManifest& serving) {
+    const fs::path measuring_path = root / "measuring.v3.json";
+    const fs::path serving_path = root / "serving.v3.json";
+    for (const auto& [path, bytes] : {std::pair{measuring_path, measuring.text},
+                                      std::pair{serving_path, serving.text}}) {
+        std::ofstream out(path, std::ios::binary);
+        out.exceptions(std::ios::failbit | std::ios::badbit);
+        out << bytes;
+        out.close();
+    }
+    const pid_t child = ::fork();
+    if (child < 0) throw std::runtime_error("cannot start v3 engine consumer");
+    if (child == 0) {
+        if (::chdir(root.c_str()) != 0) _exit(126);
+        ::execl(consumer.c_str(), consumer.c_str(), measuring_path.c_str(), serving_path.c_str(), nullptr);
+        _exit(127);
+    }
+    int status = 0;
+    pid_t waited;
+    do {
+        waited = ::waitpid(child, &status, 0);
+    } while (waited < 0 && errno == EINTR);
+    check(waited == child, "could not reap v3 engine consumer");
+    check(WIFEXITED(status) && WEXITSTATUS(status) == 0, "v3 engine consumer rejected writer output");
+}
 } // namespace
 
 int main(int argc, char** argv) {
     try {
-        check(argc == 2, "expected the engine-only named config fixture source");
+        check(argc == 2 || argc == 3, "expected the engine-only named config fixture source and optional consumer");
         TempDirectory temporary;
         const fs::path model = temporary.path / "tiny.rad";
         bc::test::write_rad(model, 0, 0, 128, 128, {});
@@ -114,7 +144,7 @@ int main(int argc, char** argv) {
         inputs.s10.calibration_records = Json::array();
         check_snapshot_required(inputs);
 
-        const std::string yaml = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+        const std::string yaml = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny:\r\n    model: tiny.rad\r\n    mixed-step-target-ms: 17\r\n";
         const fs::path authored = temporary.path / "fleet.yaml";
         {
             std::ofstream out(authored, std::ios::binary);
@@ -197,6 +227,7 @@ int main(int argc, char** argv) {
               "the real writer accepted a measured plan from a different execution root");
         const auto serving = sv::build_manifest(inputs);
         check_snapshot(serving, wire::PlanUse::serving, *inputs.native_config, yaml, temporary.path);
+        if (argc == 3) run_engine_consumer(argv[2], temporary.path, measuring, serving);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

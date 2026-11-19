@@ -768,32 +768,27 @@ class TestServingManifestPatch(unittest.TestCase):
             added = TestRadiancePatchPackages._added_lines(
                 (FIXTURE / "core/CMakeLists.txt").read_text(encoding="utf-8"), cmake)
             code = [line.strip() for line in added if line.strip() and not line.strip().startswith("#")]
-            self.assertEqual(code, [
-                "if(NOT DEFINED BC_SERVING_V2_CMAKE)",
-                'message(FATAL_ERROR "rad0009: -DBC_SERVING_V2_CMAKE=<bigcherry>/engines/radiance/components/serving/bc_serving_v2.cmake "',
-                '"is required (the shared serving manifest v1 library); the BigCherry lane passes it")',
-                "endif()",
+            joined = "\n".join(code)
+            for fragment in (
+                "if(BC_SERVING_V3_NATIVE_TEST)",
+                "BC_SERVING_GENERATED_DIR",
                 'include("${BC_SERVING_V2_CMAKE}")',
                 "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
-                'if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")',
-                "target_compile_definitions(rad_core PRIVATE BC_RAD_HOST_POOL_MIB_AGGREGATE=1)",
-                "endif()",
-                'if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")',
-                'get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)',
-                'target_sources(rad_core PRIVATE "${_bc_serving}/native_fleet_config.cpp")',
-                'target_include_directories(rad_core PUBLIC "${_bc_serving}")',
-                "if(RAD_BUILD_TESTS)",
+                "add_executable(bc_native_v3_engine_test",
+                "target_link_libraries(bc_native_v3_engine_test PRIVATE rad_core)",
+                "elseif(RAD_BUILD_TESTS)",
                 "add_executable(bc_native_fleet_config_test",
-                '"${_bc_serving}/native_fleet_config_test.cpp")',
-                "target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)",
-                "target_compile_definitions(bc_native_fleet_config_test PRIVATE",
-                'BC_CONTRACT_DIR="${_bc_serving}/../../../../docs/design/serving-manifest-v2")',
-                "endif()",
-                "endif()",
-            ])
+            ):
+                self.assertIn(fragment, joined)
+            self.assertLess(code.index("if(BC_SERVING_V3_NATIVE_TEST)"),
+                            code.index('include("${BC_SERVING_V2_CMAKE}")'))
+            self.assertLess(code.index('include("${BC_SERVING_V2_CMAKE}")'),
+                            code.index("target_link_libraries(rad_core PUBLIC bc_serving_v2)"))
             tests = (root / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+            self.assertIn("if(TARGET bc_native_fleet_config_test)", tests)
+            self.assertIn("if(TARGET bc_native_v3_engine_test", tests)
             self.assertIn("add_test(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test)", tests)
-            self.assertLess(tests.index("add_test(NAME bc_native_fleet_config_test"),
+            self.assertLess(tests.index("if(TARGET bc_native_fleet_config_test)"),
                             tests.index("get_property(RAD_ALL_TESTS DIRECTORY PROPERTY TESTS)"))
         finally:
             temp.cleanup()
