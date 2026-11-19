@@ -1,0 +1,15 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_142745_the-matched-abi44-radiance-ins_3564",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Built the ABI44 candidate Radiance executable with the current rad0009 native inspect hook and invoked the actual pre-argv-rewrite command on a sealed YAML snapshot. Verified exact snapshot identity, ABI, model, listener, card order and native TP default; unsealed and wrong-digest descriptors both failed closed with exit 2 and no stdout. No GPU or serving launch.",
+  "timestamp-utc": "2026-11-19T14:27:45.907199Z",
+  "user-summary-candidate": "The matched ABI44 Radiance inspector command now has a card-free end-to-end probe: valid sealed YAML produces the expected closed report, while unsealed or wrong-digest inputs are rejected before runtime startup."
+}

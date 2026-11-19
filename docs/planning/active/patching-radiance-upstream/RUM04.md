@@ -143,6 +143,10 @@ C31 clarification: `inspect_native_config` takes an explicit native-environment 
 
 C32 (2026-11-20, Sol/GPT review follow-up): the owner inspector now returns a closed `NativeConfigInspection` value, not raw JSON. It rejects unknown/missing keys, wrong array item types, invalid card ordinals, ABI mismatch versus compiled Radiance ABI, nonpositive TP/sequences, invalid listener ports, negative context, and empty model/listener. The positive fake-engine session test proves explicit native environment overrides supersede deliberately wrong inherited runtime-home and kernel environment values; negative tests require the actual digest refusal and malformed-card diagnostic before power admission/engine start and verify child reap. `bc_session_test` passes. Next RUM04 production slice: capture a single effective sanitized environment and reuse it for inspection and engine execution; add a BC-only native named-profile/YAML input with canonical root only after verified executable selection; reconcile the native model, runtime location, listener, TP, card ordinals and rank order to local BDF admission; carry the same snapshot through writer/P1/measure/replay and both cache identities. Do not advertise public YAML launch yet: current main still builds the TOML/v2 plan and v2 writer rejects native snapshot fields. The matched engine CLI probe remains unverified.
 
+
+
+C33 (2026-11-20): the rad0009 inspection hook is now freshly linked into the ABI44 candidate `radiance` executable and exercised through the actual `main.cpp` command boundary. A sealed native snapshot produced a closed report with exact identity, ABI 44, parsed model/listener/cards and native TP default; unsealed and wrong-digest descriptor probes both exited 2 with no stdout. The temporary source/build remains task-local and was not installed. This closes only the matched parser-command probe; the production bc-serve planner is still TOML/v2 and does not select a YAML snapshot, pass one effective environment from inspection into execution, or bind native bytes into writer/P1/measurement/replay/cache. No GPU/runtime launch was made.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -170,3 +174,4 @@ C32 (2026-11-20, Sol/GPT review follow-up): the owner inspector now returns a cl
 - 2026-11-19T14:04:37.285506+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:06:54.254829+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:19:49.888198+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T14:27:34.787625+00:00 (updated-by): Updated: section:notes
