@@ -50,9 +50,9 @@ void write(const fs::path& file, const std::string& bytes) {
 
 int main() {
     const std::string original = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny:\r\n"
-                                 "    model: tiny.rad\r\n    mixed-step-target-ms: 0\r\n"
+                                 "    model: tiny.rad\r\n    mixed-step-target-ms: 17\r\n"
                                  "    prefill-interleave: 0\r\n";
-    const std::string expected = "31c54f93dd2d358632dff77f70cc90909b15d98932d0163139742f90900c013d";
+    const std::string expected = "70e3e90e6f05596a0f84f078437ec8b0c2e68811bd6d9e77c87bdf4b4255fb77";
     std::string directory = (fs::temp_directory_path() / "bc-native-fleet-XXXXXX").string();
     check(::mkdtemp(directory.data()) != nullptr, "cannot create test directory");
     const fs::path path = fs::path(directory) / "fleet.yaml";
@@ -62,7 +62,7 @@ int main() {
     check(first.snapshot().sha256() == expected && first.snapshot().yaml_utf8() == original,
           "original bytes or digest changed");
     const auto& model = first.fleet().models.at(0);
-    check(model.cfg.mixed_step_target_ms == 0 && model.cfg.prefill_interleave == 0 &&
+    check(model.cfg.mixed_step_target_ms == 17 && model.cfg.prefill_interleave == 0 &&
               model.cfg.prefill_interleave_set &&
               model.cfg.given.at("--mixed-step-target-ms") == "models.tiny.mixed-step-target-ms" &&
               model.cfg.given.at("--prefill-interleave") == "models.tiny.prefill-interleave",
