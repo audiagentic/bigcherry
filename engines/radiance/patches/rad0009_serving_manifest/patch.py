@@ -478,8 +478,6 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
                           "YAML max-model-len differs from admitted context limit") ||
             reject_unless(cfg.max_seqs == admitted.max_sequences,
                           "YAML max-num-seqs differs from admitted session limit") ||
-            reject_unless(cfg.host_pool_mib == admitted.host_pool_mib_per_rank,
-                          "YAML host-pool-mib differs from admitted per-rank pool") ||
             reject_unless(cfg.kernel_hierarchy == admitted.kernels,
                           "YAML kernel hierarchy differs from admitted runtime kernels") ||
             reject_unless(cfg.rank_devices == admitted.rank_devices.value_or(std::vector<std::string>{}),
@@ -491,6 +489,16 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
             reject_unless(!cfg.kld() && !cfg.calib() && !cfg.diagnose_mode() && !cfg.debug_graph,
                           "native YAML cannot select an offline or debug mode in a managed manifest"))
             return -1;
+        if (cfg.given.contains("--host-pool-mib")) {
+            if (reject_unless(cfg.host_pool_mib == admitted.host_pool_mib_per_rank,
+                              "YAML host-pool-mib differs from admitted per-rank pool"))
+                return -1;
+        } else {
+            // The typed plan and Config already hold per-rank MiB. Only
+            // argv/YAML inputs are aggregate and divided by the parser.
+            cfg.host_pool_mib = admitted.host_pool_mib_per_rank;
+            cfg.given.emplace("--host-pool-mib", "manifest spec.resources.host.pool_mib");
+        }
         if (fleet.log_set) rad::log_set_level(fleet.log);
         // The manifest bridge already stripped every option except verbosity
         // and KL run paths. Use upstream's own CLI checks for that overlay.

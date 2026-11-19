@@ -2,13 +2,16 @@
 #include "bc_serving_manifest.h"
 #include "bc_plan_check.h"
 #include "bc_plan_memory.h"
+#include "sha256.h"
 #include "v2/manifest.h"
+#include "v2/s10_resolver.h"
 #include "serving_codec.h"
 
 #include <fstream>
 #include <filesystem>
 #include <iostream>
 #include <iterator>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -63,6 +66,38 @@ void reject_direct_v3_serving_start(const std::string& path) {
     check(!serving_entry(path), "direct engine startup accepted an unsealed v3 serving manifest");
 }
 
+struct Descriptor {
+    int fd = ::memfd_create("v3-fixture", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    ~Descriptor() { if (fd >= 0) ::close(fd); }
+    void write_bytes(const std::string& bytes) const {
+        check(fd >= 3 && !bytes.empty() &&
+                  ::write(fd, bytes.data(), bytes.size()) == static_cast<ssize_t>(bytes.size()),
+              "cannot prepare exact manifest bytes in the fixture descriptor");
+    }
+    void seal() const {
+        constexpr int seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+        check(::fcntl(fd, F_ADD_SEALS, seals) == 0, "cannot seal the fixture descriptor");
+    }
+    std::string path() const { return "/proc/self/fd/" + std::to_string(fd); }
+};
+
+std::string with_yaml_host_pool(wire::Manifest manifest, std::optional<int64_t> total_mib) {
+    auto& native = manifest.spec.native_config;
+    auto& yaml = native.yaml_utf8;
+    const auto begin = yaml.find("\r\n    host-pool-mib:");
+    check(begin != std::string::npos, "fixture YAML lost its explicit host-pool");
+    const auto end = yaml.find("\r\n", begin + 2);
+    check(end != std::string::npos, "fixture YAML lost its line ending");
+    yaml.replace(begin, end - begin,
+                 total_mib ? "\r\n    host-pool-mib: " + std::to_string(*total_mib) : "");
+    native.sha256 = bc::serving::sha256_hex(yaml);
+    if (manifest.spec.plan.engine_memory)
+        manifest.spec.plan.engine_memory->cache_key = wire::plan_cache_key(manifest);
+    const auto encoded = wire::write_s10(manifest);
+    if (!encoded) throw std::runtime_error(wire::render_human("host pool fixture", encoded.error()));
+    return encoded.value();
+}
+
 void check_native_measuring_main(const std::string& path, const wire::Manifest& manifest) {
     const auto native = wire::native_config_view(manifest);
     check(native.has_value(), "measuring manifest has no native YAML view");
@@ -96,6 +131,11 @@ void check_native_measuring_main(const std::string& path, const wire::Manifest& 
               cfg.max_seqs == spec.intent.service.max_sessions &&
               cfg.host_pool_mib == spec.resources.host.pool_mib,
           "native measuring Config differs from the independent admitted engine settings");
+    const auto yaml_config = replay(manifest).fleet().models.front().cfg;
+    const auto given = yaml_config.given.find("--host-pool-mib");
+    const std::string pool_source = given == yaml_config.given.end() ?
+        "manifest spec.resources.host.pool_mib" : given->second;
+    check(cfg.given.at("--host-pool-mib") == pool_source, "measuring Config lost host-pool provenance");
 }
 
 void check_native_serving_main(const std::string& path, const wire::Manifest& manifest) {
@@ -104,17 +144,11 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
     std::filesystem::current_path(native->identity.resolution_root);
     std::ifstream authored(path, std::ios::binary);
     const std::string bytes((std::istreambuf_iterator<char>(authored)), std::istreambuf_iterator<char>());
-    struct Descriptor {
-        int fd = ::memfd_create("v3-fixture", MFD_CLOEXEC | MFD_ALLOW_SEALING);
-        ~Descriptor() { if (fd >= 0) ::close(fd); }
-    } descriptor;
-    check(descriptor.fd >= 3 && !bytes.empty() &&
-              ::write(descriptor.fd, bytes.data(), bytes.size()) == static_cast<ssize_t>(bytes.size()),
-          "cannot prepare exact serving manifest bytes in the fixture descriptor");
-    const std::string sealed_path = "/proc/self/fd/" + std::to_string(descriptor.fd);
+    const Descriptor descriptor;
+    descriptor.write_bytes(bytes);
+    const std::string sealed_path = descriptor.path();
     check(!serving_entry(sealed_path), "v3 serving accepted an unsealed inherited descriptor");
-    constexpr int seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
-    check(::fcntl(descriptor.fd, F_ADD_SEALS, seals) == 0, "cannot seal the serving fixture descriptor");
+    descriptor.seal();
     check(!serving_entry(sealed_path, {"--plan-memory", "plan.json", "--plan-memory-ranks", "ranks.json",
                                        "--kld-ref", "ref"}),
           "sealed v3 manifest accepted mixed measuring and quality flags");
@@ -140,6 +174,8 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
     check(cfg.mixed_step_target_ms == 17 &&
               cfg.given.at("--mixed-step-target-ms") == "models.tiny.mixed-step-target-ms",
           "serving Config lost its upstream-only YAML value or provenance");
+    check(cfg.given.at("--host-pool-mib") == "models.tiny.host-pool-mib",
+          "serving Config lost an explicit YAML host-pool provenance");
     check(cfg.devices.size() == static_cast<size_t>(cfg.tp) && cfg.tp == spec.processes.engine.scheduler.tp &&
               cfg.rank_devices == spec.processes.engine.device.rank_devices.value_or(std::vector<std::string>{}),
           "serving Config device ordinals or admitted rank-device order changed");
@@ -183,6 +219,27 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
     check(serving_entry(sealed_path, {"--kld-out", "/result.json"}) &&
               bc_serving_take_native_config(&invalid) < 0 && !bc_serving_expected_plan(&expected, &floor_ppm),
           "an invalid KL request could fall through to serving");
+
+    const Descriptor without_pool;
+    without_pool.write_bytes(with_yaml_host_pool(manifest, std::nullopt));
+    without_pool.seal();
+    check(spec.resources.host.pool_mib > 0, "fixture needs a nonzero admitted per-rank pool");
+    for (const auto& flags : {std::vector<std::string>{},
+                              std::vector<std::string>{"--kld-ref", "/ref", "--kld-out", "/result.json"}}) {
+        rad::Config derived;
+        check(serving_entry(without_pool.path(), flags) && bc_serving_take_native_config(&derived) == 1 &&
+                  derived.host_pool_mib == spec.resources.host.pool_mib &&
+                  derived.given.at("--host-pool-mib") == "manifest spec.resources.host.pool_mib" &&
+                  derived.kld() == !flags.empty(),
+              "omitted YAML host pool did not retain the admitted per-rank value and provenance");
+    }
+
+    const Descriptor explicit_zero;
+    explicit_zero.write_bytes(with_yaml_host_pool(manifest, 0));
+    explicit_zero.seal();
+    check(serving_entry(explicit_zero.path()) && bc_serving_take_native_config(&invalid) < 0 &&
+              !bc_serving_expected_plan(&expected, &floor_ppm) && bc_serving_engine_bdfs().empty(),
+          "explicit mismatched YAML host pool must refuse and clear measured admission");
 }
 } // namespace
 
@@ -211,6 +268,11 @@ int main(int argc, char** argv) {
                   "native YAML bytes were not preserved exactly");
         }
         check_native_measuring_main(argv[1], measuring);
+        const Descriptor measuring_without_pool;
+        measuring_without_pool.write_bytes(with_yaml_host_pool(measuring, std::nullopt));
+        measuring_without_pool.seal();
+        check_native_measuring_main(measuring_without_pool.path(),
+                                    read(measuring_without_pool.path(), wire::PlanUse::measuring));
         reject_wrong_use(argv[1], wire::PlanUse::serving);
         reject_wrong_use(argv[2], wire::PlanUse::measuring);
         reject_direct_v3_serving_start(argv[2]);
