@@ -72,8 +72,8 @@ in tracked files fails the check and names the file and line.
   the primary checkout as well, so it applies in every worktree.
 - **Branch and tag names** are scanned too, because a pull request keeps its head branch name on GitHub.
   `.githooks/pre-push` blocks a push that publishes one with a forbidden term, and `pr-title.yml` fails a pull
-  request whose head branch has one. CI reads the terms from the repository secrets `FORBIDDEN_TERMS` (machine
-  names) and `FORBIDDEN_ACCOUNT_TERMS` (account names), both required; neither is written into the repository.
+  request whose head branch has one. CI reads the terms (machine and account names) from the repository secret
+  `FORBIDDEN_TERMS`, required and never written into the repository; keep it equal to the local list.
   Name a branch for its topic (`feat/topic`), never for the account.
 - **Generic patterns** (absolute mount and home paths, drive-letter paths, private addresses,
   email addresses) are fixed in `tools/bigcherry/forbidden_terms.py`. Reserved example domains
