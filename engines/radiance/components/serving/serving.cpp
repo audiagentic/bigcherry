@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <sys/statvfs.h>
+#include <sched.h>
 #include <thread>
 #include <utility>
 
@@ -906,6 +907,16 @@ const std::vector<OptionField>& engine_option_fields() {
 }
 
 
+// The CPUs this process may run on: its affinity set (a cpuset or taskset narrows it, hardware_concurrency does not).
+// The helpers are children of bc-serve and inherit it.
+unsigned available_cpus() {
+    cpu_set_t allowed;
+    CPU_ZERO(&allowed);
+    if (sched_getaffinity(0, sizeof allowed, &allowed) == 0 && CPU_COUNT(&allowed) > 0)
+        return unsigned(CPU_COUNT(&allowed));
+    return std::max(1u, std::thread::hardware_concurrency());
+}
+
 Json detect(const fs::path& root) {
     const auto kfd = root / "sys/class/kfd/kfd/topology/nodes";
     if (!fs::is_directory(kfd))
@@ -979,7 +990,7 @@ Json detect(const fs::path& root) {
             {"swap_total_mib", mem.at("SwapTotal")},
             {"shm_total_mib", (uint64_t(st.f_blocks) * st.f_frsize) / 1048576},
             {"shm_available_mib", (uint64_t(st.f_bavail) * st.f_frsize) / 1048576},
-            {"cpu_count", std::max(1u, std::thread::hardware_concurrency())},
+            {"cpu_count", available_cpus()},
             {"memory_cgroups", memory_cgroups(root)},
             {"memlock", memlock(root)},
             {"amdgpu_pin", amdgpu_pin_cap(root, mem.at("MemTotal_kB").get<uint64_t>())}
