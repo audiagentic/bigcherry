@@ -141,10 +141,11 @@ if(BUILD_TESTING)
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
+  set(bc_calibration_fixture BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml")
   add_executable(bc_live_policy_ingest_test EXCLUDE_FROM_ALL live_policy_ingest_test.cpp)
   target_link_libraries(bc_live_policy_ingest_test PRIVATE bc_serving)
   target_compile_definitions(bc_live_policy_ingest_test PRIVATE
-    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml")
+    ${bc_calibration_fixture})
   add_test(NAME bc_live_policy_ingest_test COMMAND bc_live_policy_ingest_test)
 
   # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
@@ -158,7 +159,7 @@ if(BUILD_TESTING)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
   target_compile_definitions(bc_serving_test PRIVATE
-    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml")
+    ${bc_calibration_fixture})
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
@@ -169,7 +170,7 @@ if(BUILD_TESTING)
     target_link_libraries(bc_native_v3_session_test PRIVATE bc_serving bc_serving_v2_p1_producer)
     add_dependencies(bc_native_v3_session_test bc_fake_engine bc-serve)
     target_compile_definitions(bc_native_v3_session_test PRIVATE
-      BC_NATIVE_V3_SESSION_ONLY BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
+      ${bc_calibration_fixture} BC_NATIVE_V3_SESSION_ONLY BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
       BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
     add_test(NAME bc_native_v3_session_test COMMAND bc_native_v3_session_test)
     set_tests_properties(bc_native_v3_session_test PROPERTIES
