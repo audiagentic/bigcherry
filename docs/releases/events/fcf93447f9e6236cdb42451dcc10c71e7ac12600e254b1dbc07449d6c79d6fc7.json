@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_044635_verified-the-candidate-runtime_4453",
+  "files": [
+    "engines/radiance/patches/rad0050_b16_kv_runtime_contract/patch.toml",
+    "engines/radiance/patches/rad0050_b16_kv_runtime_contract/patch.py",
+    "tools/tests/patch/test_radiance_rad0050.py",
+    "docs/planning/active/patching-radiance-upstream/RUM07.md"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added candidate-only ABI44 B16F8/B16I8 runtime plumbing from CLI and native YAML through typed capability and cache group declaration, checked packed planner and fallback sizing, binding and resident fallback. Exact apply/reapply and an NDEBUG host CTest passed (6144/6272 bytes per H256 page4 layer with two local KV heads). Ship-time recipe and plugin capability advertisement remain pending the paired device implementation.",
+  "timestamp-utc": "2026-11-19T04:46:35.388924Z",
+  "user-summary-candidate": "Verified the candidate runtime groundwork for both BF16-key cache formats, including resident sizing and handling of streaming requests. Device stores and attention kernels remain pending."
+}

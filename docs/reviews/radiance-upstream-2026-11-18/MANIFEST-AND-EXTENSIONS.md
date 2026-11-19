@@ -242,3 +242,11 @@ engine-scoped ownership and helper lifetimes are validated.
 
 This is a proposed design for review, not authorization to replace runtime
 configuration, change live ownership, or claim fleet-safe remote execution.
+# Historical proposal — superseded by the ABI43 worktree plan
+
+This document records an earlier architecture proposal based on intermediate
+Radiance source. Its proposed `x-bigcherry` intent namespace and derived YAML
+flow are not the implementation plan. RUM01/RUM04 and
+[IMPLEMENTATION-HANDOFF.md](IMPLEMENTATION-HANDOFF.md) govern: preserve the
+original native YAML bytes in the existing measured BigCherry contract, use
+upstream parsing, and retain only the existing local admission contract.

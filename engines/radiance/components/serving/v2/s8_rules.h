@@ -1,7 +1,7 @@
 #pragma once
 // RSC11 S8: card-free, inactive v2 derivations. S10 is the first consumer.
 // No v1 reader, writer, engine, or launcher is linked to this module.
-#include "generated/v2/serving_types.h"
+#include "serving_types.h"
 #include "v2/error.h"
 
 #include <cstdint>

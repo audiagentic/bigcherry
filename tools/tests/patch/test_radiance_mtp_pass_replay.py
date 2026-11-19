@@ -141,12 +141,14 @@ struct AttnGatedFP8 {
 struct Layer { bool full=true; AttnGatedFP8 attn{}; };
 struct Model {
     Geom g{};
+    struct { int64_t budget=1000, ratio=16; } qsacfg;
     std::vector<Layer> layers{Layer{}};
     int kv_full=7; bool have_mtp=true;
     struct { AttnGatedFP8 attn{}; } mtp;
 };
 Model g_model[1];
 int rad_rank(RadCtx*) { return 0; }
+int rad_slot(RadCtx*) { return 0; }
 int rad_ctx_wgp_count(RadCtx*) { return 32; }
 int rad_prefill_splits_for_live(int, int, int, int, int, int, int, int, int) { return 1; }
 uint64_t rad_prefill_grid_key(int, int, int, int, int, int) { return 9; }

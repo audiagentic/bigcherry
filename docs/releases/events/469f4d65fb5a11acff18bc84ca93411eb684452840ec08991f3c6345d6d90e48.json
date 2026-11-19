@@ -1,0 +1,31 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_035437_addressed-ci-failures-in-manif_1435",
+  "files": [
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/components/serving/generated/v2/contract.fingerprint",
+    "engines/radiance/components/serving/generated/v2/serving-fields.md",
+    "engines/radiance/components/serving/generated/v2/serving-v2.schema.json",
+    "engines/radiance/components/serving/generated/v2/serving_codec.cpp",
+    "engines/radiance/components/serving/generated/v2/serving_codec.py",
+    "engines/radiance/components/serving/generated/v2/serving_types.h",
+    "engines/radiance/components/serving/generated/v3/contract.fingerprint",
+    "docs/design/serving-manifest-v2/serving-manifest.v2.schema.json",
+    "engines/radiance/model_constant_guard.toml",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Fixed the confirmed CI failures: bound the PF2 up-mix tile through the typed manifest registry and regenerated v2/v3 contract fingerprints and schema; replaced stale model-constant audit anchors with exact owned entries; updated package mechanics tests to verify conditional N/A edits and the shared target-parameterized CMake source-list pattern; refreshed the pinned output digest.",
+  "timestamp-utc": "2026-11-19T03:54:37.339977Z",
+  "user-summary-candidate": "Addressed CI failures in manifest configuration, policy checks and Radiance patch-package validation while preserving the existing runtime controls.",
+  "validation": [
+    "Focused policy and manifest suites: 21 tests passed.",
+    "Radiance patch-package suite: 24 tests passed.",
+    "Generated v2 artifacts match the generator output.",
+    "git diff --check passed; pending diff scan found no machine-local paths."
+  ]
+}

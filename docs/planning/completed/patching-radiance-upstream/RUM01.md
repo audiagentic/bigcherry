@@ -2,7 +2,7 @@
 id: RUM01
 order: 1
 plan: patching-radiance-upstream
-state: pending
+state: completed
 created-at: '2026-11-18T01:27:53.871983+00:00'
 breadth: ''
 skill: advanced
@@ -79,6 +79,10 @@ Prerequisites: none. RUM02/RUM03 follow this gate; RUM04 then feeds RUM05/RUM06;
 
 Execution decisions: use the named TP1 Flash-Next production lane for first native canary, and separately use helper-off for functional/KL control. This does not qualify mixed engine ranks. Follow docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md for frozen names, inputs and ownership inventory; record installed artifact identities before beginning gates.
 
+Frozen-source correction (2026-11-19): active candidate is Radiance v2.1.0 commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e (ABI43); production remains v1.17.0. The prior source review target b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e is an intermediate ABI41 candidate, and the v2.1.0 tag preflight at ABI40 is a different source. The frozen branch candidate delta from b8bca is 71 files (+7,179/-324). README and implementation handoff now identify historical source-specific claims as leads requiring candidate verification. Compatibility acceptance uses both ABI version and exported layout fingerprint. Plain Flash-Next E4M3 remains a separate RUM07/RUM09 runtime gate; no candidate production qualification is implied. The candidate baseline for matched policy-off comparison is docs/reference/engines/radiance/baselines/flashnext-4gpu-parity-main-20261119.json.
+
+RUM01 execution decision is now tied to frozen endpoints: BigCherry baseline patch set at 1f1547e72953; Radiance production v1.17.0 source 19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d (ABI35); frozen candidate 3deabdaeca17b58bad90d332f4b204cf7bb8a10e (ABI43). Exact ordered serving-core composition dry-run used resolve_exact/load_resolved/apply_patch with shared in-memory texts: 30 packages, base 474 applied / 0 failed; candidate 334 applied, 1 not applicable, 6 already applied, 141 failed edits across rad0013 (1), rad0037 (56), rad0038 (60), rad0040 (10), rad0041 (14). See evidence checkpoint C8. This remains patch applicability only; no pin movement or runtime qualification. rad0013 retirement proof belongs RUM08; KV package rework/retirement belongs RUM07. The first lane uses the current-main policy-off baseline as an old-pin control reference only; its two launches do not qualify ABI43. Normal Fleet and offline Engine entry points require the same ordered Config.devices explicitly; parse origin becomes FleetConfig.path, so managed reload must refuse both admin and SIGHUP before reopening config. Current handoff, README authority banners and PIN_BUMP ABI/layout wording reflect these decisions.
+
 ## Change Log
 
 - 2026-11-18T01:27:53.871983+00:00 (created-by): Created by codex
@@ -93,3 +97,7 @@ Execution decisions: use the named TP1 Flash-Next production lane for first nati
 - 2026-11-18T02:16:19.600984+00:00 (updated-by): Updated: section:title, section:steps, section:detailed_solution, section:code_samples, section:acceptance_criteria
 - RV4232
 - 2026-11-18T03:39:43.858967+00:00 (updated-by): Updated: section:notes
+- RV4236
+- 2026-11-19T02:29:07.618375+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T02:43:15.359892+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T02:44:07.245775+00:00 (state-transition): State: pending → completed

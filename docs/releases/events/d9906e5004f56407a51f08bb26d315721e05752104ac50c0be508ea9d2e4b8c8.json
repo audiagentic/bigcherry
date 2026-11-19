@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_061940_the-radiance-migration-gate-no_5908",
+  "files": [
+    "tools/bigcherry/engine_adapters/radiance_bump.py",
+    "tools/tests/release/test_bump_gates.py"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Expanded the Radiance bump ABI gate from kernels/ to all plugin runtime directories (kernels/, architectures/, quantizers/), verifies declared outputs in those locations, and reports runtime-relative plugin paths. Added focused ABI mismatch coverage for architecture and quantizer plugins.",
+  "timestamp-utc": "2026-11-19T06:19:40.630336Z",
+  "user-summary-candidate": "The Radiance migration gate now checks ABI44 and layout fingerprints for kernel, architecture, and quantizer plugins, with the focused component-gate suite passing."
+}

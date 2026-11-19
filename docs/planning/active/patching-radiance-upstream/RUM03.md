@@ -11,7 +11,7 @@ priority: P0
 work: M
 ---
 
-# Port build dependencies and plugin ABI 43 with a consistent runtime SDK
+# Port build dependencies and compose local ABI44 from upstream ABI43
 
 ## Description
 
@@ -19,12 +19,12 @@ Decouple BigCherry nlohmann dependency from removed upstream vendor header. Rebu
 
 ## Steps
 
-- Replace the serving CMake requirement for ${RADIANCE_SRC}/vendor/nlohmann/json.hpp with one separately pinned dependency target supplied by the build lane. Share it with helper and contract generation builds.
-- Declare the JSON package version/hash and any new owned source directory as build identity inputs; use the existing build plan rather than a second cache mechanism.
-- Port rad0016 registry changes from code_device_/rows_/plugins_ to the upstream shared set. Preserve row.chain and row.chain_fenced when assigning per-rank code eligibility.
-- Extend abi/rad_abi_layout_rows.h from the owning patch whenever it adds a RadBuildCtx field. Currently add tp_ownership in rad0018 and pipelined_prefill plus pipelined_prefill_min_rows in rad0020, with exact-prefix idempotent edits.
-- Rebuild libr3, libr2, moe-remote, ngram-helper and bc-gfx12 against the same migrated headers as the engine. Update all local ABI layout rows and audit exported fingerprints.
-- Inspect package/runtime home to exclude stale plugin .so files. Reuse the existing component coupling, radiance-bump and release/SDK verification checks; do not create a parallel ABI verifier.
+- Replace the serving CMake requirement for upstream's removed vendor JSON header with one separately pinned dependency target, shared with helper and contract-generation builds.
+- Declare the JSON package version/hash and owned source bytes as build identity inputs; retain the existing build plan rather than adding another cache layer.
+- Port rad0016 registry changes to the upstream shared set. Preserve row.chain and row.chain_fenced while assigning per-rank code eligibility.
+- Use upstream ABI43 as the frozen source baseline. Compose existing local tp_ownership, pipelined_prefill and pipelined_prefill_min_rows fields with RUM07's kv_layout fields in one local ABI44 extension. Append fields, bump RAD_ABI_VERSION once to 44, and add every field in abi/rad_abi_layout_rows.h; never change exported struct shape while retaining version 43.
+- Rebuild libr3, libr2, moe-remote, ngram-helper, bc-gfx12 and every shipped plugin against the same ABI44 headers and SDK. Update component build identity and verify all staged shared objects; do not copy stale plugins from a prior installation.
+- Keep the frozen ABI43 loader refusal fixture as an upstream-baseline check, then add local ABI44 checks proving ABI43 plugins are refused and matching ABI44/layout plugins load. Reuse existing component-coupling and release/SDK verification.
 
 ## Detailed Solution & Technical Design
 
@@ -33,6 +33,8 @@ Actual blockers: serving/CMakeLists.txt explicitly checks vendor/nlohmann/json.h
 Upstream Registry::commit_ now fills set_->rows and records chain_fenced from rad_kernel_chain==2. The rad0016 patch's old singleton fields and loader insertion anchors fail. Reapply per-device masks after the new row is fully classified, without discarding upstream fields or altering chain semantics. Keep one plugin eligibility decision shared by loader/planner/runtime.
 
 The selected transition is ABI 35 -> ABI 43 at upstream commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e. This is not solved by updating a numeric constant. The layout fingerprint covers RadBatch, RadBuildCtx and probe fields. Rebuild all consumers; keep custom field rows in the fingerprint source. Do not copy installed old plugins into the target radiance_home.
+
+Local ABI extension: ABI43 is the exact upstream source baseline. Append kv_layout to RadBuildCtx and RadKVGroupDecl plus a per-format capability mask to RadArchProbe. Combine those fields with the existing local tp_ownership, pipelined_prefill and pipelined_prefill_min_rows additions and bump RAD_ABI_VERSION to 44 once. Add each new field to rad_abi_layout_rows.h; the loader fingerprint covers version, structure size, offsets and sizes. Do not mutate the exported struct shape while still reporting ABI43.
 
 ## Code Samples & Guidance
 
@@ -65,17 +67,25 @@ Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-1
 - engines/radiance/patches/rad0016_vtp14_rank_code_selection/patch.py
 - engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/patch.py
 - engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/patch.py
+- engines/radiance/patches/rad0040_kv_layout_table/patch.py
+- engines/radiance/engine.toml
+- engines/radiance/recipes.toml
+- abi/rad_abi.h
+- abi/rad_builder.h
+- abi/rad_abi_layout_rows.h
 - tools/tests/patch/test_vtp14_n2_tp_ownership.py
 - tools/tests/patch/test_vtp14_tp3_pipelined_prefill.py
 - tools/bigcherry/engine_adapters/radiance_bump.py
 - tools/bigcherry/campaign/lane.py
-- engines/radiance/engine.toml
-- engines/radiance/recipes.toml
 - tools/bigcherry/release/runtime_assets.py
 
 ## Validation
 
-Apply and replay the ABI43 VTP14 patch prefix to the exact candidate; assert every local RadBuildCtx field has a matching ABI_FIELD row. Run the focused rad0018/rad0020 patch tests. Run the existing upstream plugin_test wrong-ABI and wrong-layout cases and the existing per-device rank eligibility fixture. At the recipe migration checkpoint, run the existing component-coupling and radiance-bump ABI/layout checks, build each packaged plugin against one generated SDK, and inspect the staged runtime for stale shared objects. Do not run all GPU kernel selftests here; RUM07/RUM09 own activated-path checks.
+- Apply and replay the ABI43 VTP14 source patch prefix against the exact frozen commit; verify its upstream baseline and existing edits before the local ABI extension.
+- Always-on ABI fixture proves ABI44 and the layout fingerprint include tp_ownership, pipelined_prefill, pipelined_prefill_min_rows, KV layout IDs/capabilities, and all new exported fields in exact order.
+- Loader tests refuse an ABI43 plugin against local ABI44 and refuse a same-version foreign fingerprint or missing fingerprint; matching ABI44 plugins pass. Preserve the existing upstream wrong-ABI and wrong-layout checks.
+- Run focused rad0018/rad0020 tests and existing rank eligibility tests. At recipe migration, build every shipped plugin and engine against one SDK, verify all runtime assets report ABI44 and the expected fingerprint, and inspect staged roots for stale plugin binaries.
+- RUM07/RUM09 own activated cache-kernel and GPU correctness gates; do not expand this item into a full GPU selftest run.
 
 ## Effort & Risk
 
@@ -87,19 +97,15 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-No component reads the removed upstream JSON include location; dependency and local source bytes affect build identity. Engine and all packaged plugins agree on ABI/layout. The local RadBuildCtx fields tp_ownership, pipelined_prefill and pipelined_prefill_min_rows each have ABI_FIELD coverage in the layout fingerprint source. Chain-fenced row semantics survive mixed-device filtering. A stale ABI or layout plugin is refused with an actionable error.
+The frozen upstream source remains pinned to ABI43, while every local exported-struct extension is composed once into ABI44. RAD_ABI_VERSION and rad_abi_layout_rows.h agree for all added fields; stale ABI43 or foreign-layout plugins are refused. The engine and every shipped plugin are rebuilt against one SDK and report ABI44 with the same layout fingerprint. No stale plugin binary ships. The nlohmann dependency is pinned and included in build identity, registry rank/device eligibility preserves chain semantics, and the shared source list is compiled consistently.
 
 ## Notes
 
-Imported stable roadmap identity from the reviewed design. Prerequisites: RUM01. Review: docs/reviews/radiance-upstream-2026-11-18/README.md; proposal: MANIFEST-AND-EXTENSIONS.md. This initial item is the first-pass execution skeleton; detailed code guidance follows after the plan merge.
+Local ABI boundary correction (2026-11-19): ABI43 remains the exact frozen upstream input and the C9 wrong-ABI/layout check proves only that upstream loader baseline. RUM07 must append local KV layout fields to RadBuildCtx, RadKVGroupDecl and RadArchProbe. Those join the existing rad0018/rad0020 struct additions in one ABI44 bump; never mutate the exported shape while still reporting 43. All shipped plugin kinds must rebuild with ABI44 before the candidate can be packaged or released. This increases the final same-SDK build gate but avoids a second conflicting ABI bump.
 
-Prerequisite RUM01; can proceed alongside RUM02 after design approval. Keep dependency cleanup limited to the actual removed header and duplicated include plumbing.
+RV4242 resolution (2026-11-19): preserve rad0018/rad0020 as their established ABI43 field extensions. Candidate-only rad0048_abi44_kv_contract runs after rad0020, advances ABI43 to ABI44 once, fingerprints ownership/pipeline fields plus KV layout, capability and prefill-mode fields, and includes an always-on Release CPU fixture. It remains untested and absent from recipe composition until RUM07 runtime wiring and the full same-SDK plugin/loader gate pass. Focused test: tools/tests/patch/test_radiance_rad0048.py.
 
-Astra source review ASTRA-CONSOLIDATION.md: execute after RUM01 and before native-config slice RUM04. Build only the minimum rank eligibility required by the selected lane; keep SDK/fingerprint inputs. No strict JSON-to-YAML rewrite.
-
-RCS15–18 now own native libr3d replacement. A matched comparison build retains libr3 until native qualification; this does not change the initial bump's acceptance. See docs/reviews/radiance-native-libr3d/INTEGRATION.md.
-
-Candidate changed from reviewed ABI 41 to exact upstream 3deabdaeca17b58bad90d332f4b204cf7bb8a10e (ABI 43). C1 dependency and C2 native parser compile checkpoint recorded in docs/evidence/radiance-latest-bump.
+User reaffirmation (2026-11-19): B16F8 and B16I8 are required legacy cache features for this bump. ABI44's canonical descriptor must preserve IDs, widths, offsets, and capability bits for both formats; it does not itself port or validate runtime support. Keep rad0048 as sole ABI/descriptor owner and make rad0040 a consumer, then rebuild every plugin against the one ABI44 fingerprint. RUM07 carries the complete B16 runtime and focused correctness gates.
 
 ## Change Log
 
@@ -120,3 +126,9 @@ Candidate changed from reviewed ABI 41 to exact upstream 3deabdaeca17b58bad90d33
 - 2026-11-19T02:09:24.234699+00:00 (updated-by): Updated: section:title, section:detailed_solution
 - RV4235
 - 2026-11-19T02:15:39.669409+00:00 (updated-by): Updated: section:steps, section:files, section:validation, section:acceptance_criteria
+- 2026-11-19T02:48:21.302296+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T04:02:01.528340+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
+- 2026-11-19T04:20:06.571659+00:00 (updated-by): Updated: section:title
+- RV4242
+- 2026-11-19T04:26:05.437126+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T04:33:41.862009+00:00 (updated-by): Updated: section:notes

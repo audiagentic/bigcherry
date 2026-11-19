@@ -25,6 +25,41 @@ title = "BigCherry ServingManifest v2 (wire)"
 namespace = "bc::serving::v2"
 lifecycle = "startup_only"
 
+# The same registry emits an explicit successor for the ABI43 migration.
+# Current builds continue to generate the closed v2 artifacts.
+[successor]
+contract_version = 3
+schema_id = "urn:bigcherry:serving-manifest:v3"
+title = "BigCherry ServingManifest v3 (wire)"
+
+[[successor.class_default]]
+path = "/spec/native_config"
+class = "fact"
+
+[[successor.field]]
+path = "/spec/native_config"
+kind = "object"
+cpp = "NativeConfig"
+doc = "The admitted source YAML, bound to its byte digest and execution root."
+
+[[successor.field]]
+path = "/spec/native_config/yaml_utf8"
+kind = "string"
+min_length = 1
+doc = "Original UTF-8 bytes of the admitted YAML, including comments and line endings. Secret values are excluded."
+
+[[successor.field]]
+path = "/spec/native_config/sha256"
+kind = "ref"
+ref = "hex64"
+doc = "SHA-256 of exactly the decoded yaml_utf8 bytes."
+
+[[successor.field]]
+path = "/spec/native_config/resolution_root"
+kind = "string"
+min_length = 1
+doc = "Absolute working directory used by planning, the engine and exact stored replay."
+
 # Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
 # identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
 
@@ -3321,6 +3356,14 @@ optional = true
 kind = "boolean"
 env_setting = "RAD_MTP_FULL_HEAD"
 doc = "Draft through the trunk head instead of the 2-bit copy (`RAD_MTP_FULL_HEAD`, patch rad0003)."
+
+[[field]]
+path = "/spec/experiment/engine/hc_pf2_upmix_rt"
+optional = true
+kind = "int_enum"
+values = [128, 256, 384]
+env_setting = "RAD_HC_UPMIX_RT"
+doc = "PF2 wide hyper-convolution up-mix row tile (`RAD_HC_UPMIX_RT`; defaults to the existing production tile, with one larger diagnostic choice)."
 
 [[field]]
 path = "/spec/experiment/engine/hc_pf2_fp8_down"

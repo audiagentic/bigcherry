@@ -3,9 +3,9 @@
 # here are engines/radiance/patches/<id>/ packages; they never mix with llama.cpp's.
 version = 2
 engine = "radiance"
-# radiance 1.14.0 (codeberg StillDeadcode/radiance; exact-SHA mirror Quackster/radiance). v1.14.0 is commit 4a61d72.
-pinned = "v1.17.0"
-pinned-version = "1.17.0"
+# Radiance 2.1.0 migration candidate: ABI44, frozen source commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e.
+pinned = "v2.1.0"
+pinned-version = "2.1.0"
 
 # Validated serving patches, including the production remote-MoE hand-off.
 [patch-set.serving-core]
@@ -13,7 +13,6 @@ patches = [
   "rad0008_hc_upmix_rt_sweep",
   "rad0002_moe_remote_handoff",
   "rad0011_plan_memory",
-  "rad0013_mtp_pass_replay",
   "rad0009_serving_manifest",
   "rad0016_vtp14_rank_code_selection",
   "rad0017_vtp14_n3_shared_rendezvous",
@@ -36,10 +35,13 @@ patches = [
   "rad0030_int8_pipelined_prefill",
   "rad0036_prefill_governor",
   "rad0005_mp4_ffmpeg6_writer",
-  "rad0037_bf16_fp8_kv",
-  "rad0038_bf16_i8_kv",
-  "rad0040_kv_layout_table",
-  "rad0041_kv_b16_flashnext",
+  "rad0048_abi44_kv_contract",
+  "rad0049_qwen4exp_e4m3_kv",
+  "rad0050_b16_kv_runtime_contract",
+  "rad0051_b16_kv_kernels",
+  "rad0052_b16_kv_geometries",
+  "rad0053_v4_kv_layouts",
+  "rad0054_attn_prefill_fp8",
 ]
 
 # Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
@@ -70,13 +72,6 @@ patches = ["rad0010_routing_evidence"]
 required-state = "diagnostic"
 
 # Required by the helper and kernel ports; engine behavior remains unchanged until RSC07.
-# MTP draft/verify recorded-pass replay restored on the v1.17 pin (rad0013): v1.17's qwen4exp pass_key refuses every draft and
-# verify pass, so each speculation round issues them live (~1.7% decode step). Untested until the decode-step A/B, output identity
-# and KLD on hardware, then moved to serving-core.
-[patch-set.mtp-pass-replay]
-patches = []
-required-state = "untested"
-
 [patch-set.helper-config]
 patches = []
 required-state = "untested"
@@ -92,19 +87,19 @@ required-state = "untested"
 
 [source.radiance-native]
 class = "production"
-description = "radiance 1.14.0 as released: no overlay, no patches."
+description = "Radiance 2.1.0 as released: no overlay, no patches."
 overlay = false
 patch-sets = []
 
 [source.radiance]
 class = "production"
-description = "radiance 1.14.0 with BigCherry's validated engine patch sets."
+description = "Radiance 2.1.0 with BigCherry's migrated production patch sets."
 overlay = false
 patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
 
 [source.radiance-diag]
 class = "diagnostic"
-description = "radiance 1.14.0 with the validated engine patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
+description = "Radiance 2.1.0 with the migrated production patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
 
@@ -134,13 +129,6 @@ patches = ["rad0003_mtp_full_head_switch"]
 # untested, therefore experiment-only until a consumer (RHP02 B) exercises it.
 [experiment.moe-heat-observer]
 patches = ["rad0039_moe_heat_observer"]
-
-# VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
-# bf16_i8 requires bf16_fp8; rad0040 (VTP44) makes the packed layouts one table and requires bf16_i8; rad0041 (VTP44 B) adds
-# Flash-Next's geometry (gqa 12, and gqa 6 with 4-token pages) and requires rad0040; rad0042 adds their selftest cases.
-# Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
-[experiment.kv-bf16-packed]
-patches = ["rad0042_kv_b16_selftest"]
 
 # VTP44: --expert-stats also counts a layer's protected (bf16) experts, so the routing tallies of Flash-Next are complete.
 # Untested, therefore experiment-only.

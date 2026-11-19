@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0049_qwen4exp_e4m3_kv"
+order = 49
+state = "validated"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["RUM07"]
+requires = ["rad0048_abi44_kv_contract"]
+conflicts = []
+tags = ["kv-cache"]

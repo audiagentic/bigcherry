@@ -5,7 +5,7 @@
  * (kMaxDepth, derived by the contract generator). Nothing that fails here reaches hashing. */
 #include "document_bytes.h"
 #include "error.h"
-#include "../generated/v2/serving_types.h"   // kMaxDepth (spec §11 amendment 8)
+#include "serving_types.h"   // kMaxDepth (spec §11 amendment 8)
 
 #include <cstddef>
 #include <string>

@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_025512_the-candidate-passes-focused-h_1454",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md",
+    "docs/planning/active/patching-radiance-upstream/RUM08.md"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Recorded exact-source host-side ABI43 QSA bound/key and runtime effective-pass tests (36 checks total) while retaining the unproven missing-summary edge. Recorded the completed RUM04 NativeConfigSnapshot identity/parser seam and its focused candidate-parser test; fresh/stored v3 wire, cache, launch, and sealed descriptor integration remain.",
+  "timestamp-utc": "2026-11-19T02:55:12.653361Z",
+  "user-summary-candidate": "The candidate passes focused host-side ABI, layout, and MTP bound checks. The first native-config snapshot test also passes, but stored serving/replay integration and one MTP boundary case remain open."
+}

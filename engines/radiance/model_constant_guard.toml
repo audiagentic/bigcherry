@@ -228,57 +228,51 @@ reason = "error message names the container extension"
 
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "fill, which is already ample at this shape (n/kWideCH = 2560/16 = 160 column tiles, so even the"
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
+anchor = "return (rt == 256 || rt == 384) ? rt : 128;"
+category = "D"
+reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
+owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "production value), RT=256 (== kPf2UpRT, today's unconditional default), and RT=384 (one and a half)."
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
+anchor = "else if (rad18_upmix_rt == 384)"
+category = "D"
+reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
+owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "(65536)\") when actually compiling that instantiation standalone. RT=384 is the largest legal value"
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
+anchor = "_launch(384)"
+category = "D"
+reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
+owner = "RUM04"
 
 [[allow]]
-path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "original launch), 384 is diagnostic only. No new kernel body, no new scratch allocation, no numerics"
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
+path = "engines/radiance/components/serving/contract/serving-v2.toml"
+anchor = "values = [128, 256, 384]"
+category = "D"
+reason = "the PF2 up-mix kernel supports only these bounded row tile choices"
+owner = "RUM04"
 
 [[allow]]
-path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "\"     * RAD_HC_UPMIX_RT=256 restores the original launch; 384 is kept for diagnostics. The\\n\""
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
+path = "engines/radiance/components/serving/generated/v2/serving_codec.cpp"
+anchor = "return int_enum_in(j, at, C::invalid_type, C::invalid_value, {128, 256, 384}, out);"
+category = "D"
+reason = "generated validator enforces the explicit PF2 up-mix tile enum"
+owner = "RUM04"
 
 [[allow]]
-path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "\"        return (rt == 256 || rt == 384) ? rt : 128;\\n\""
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
+path = "engines/radiance/patches/rad0040_kv_layout_table/patch.py"
+anchor = "X(B16I8, \"bf16_i8\", 49, 32)"
+category = "D"
+reason = "B16I8 row bytes and scale group are one typed KV layout descriptor"
+owner = "RUM07"
 
 [[allow]]
-path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "\"    case 384:\\n\""
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
-
-[[allow]]
-path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "\"        hipLaunchKernelGGL((hc_up_mix_wide_kernel<4, false, 384>),\\n\""
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
-
-[[allow]]
-path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
-anchor = "\"                           dim3((unsigned)(n / kWideCH), (unsigned)((rows + 384 - 1) / 384)),\\n\""
-category = "A"
-reason = "kernel row-tile variants; any other value takes the default launch"
+path = "engines/radiance/patches/rad0042_kv_b16_selftest/patch.py"
+anchor = "assert(rad_kvq_row16(RAD_KVQ_B16I8) == 49);"
+category = "B"
+reason = "fixed H256 descriptor fixture oracle for B16I8 row sizing"
 
 [[allow]]
 path = "tools/lab/radiance/capture_upgrade.py"

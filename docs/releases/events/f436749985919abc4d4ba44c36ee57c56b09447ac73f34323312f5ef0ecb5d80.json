@@ -1,0 +1,18 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_041939_clarified-that-the-radiance-bu_6533",
+  "files": [
+    "docs/reviews/radiance-upstream-2026-11-18/SERVING-OPTION-INVENTORY.md",
+    "docs/planning/active/patching-radiance-upstream/RUM07.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM07/RV4241.md",
+    "tools/tests/patch/test_radiance_rad0047.py"
+  ],
+  "plan-item-ids": [
+    "RUM07",
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Corrected the inventory and RUM07 guidance for the v1.17.0 attn_prefill_fp8 contract versus its removal in the ABI43 candidate, including the exact historical supported row matrix. Moved the candidate replay test's compiled shared library out of the system temp directory so it runs on noexec hosts.",
+  "timestamp-utc": "2026-11-19T04:19:39.318028Z",
+  "user-summary-candidate": "Clarified that the Radiance bump must preserve the existing attention-prefill FP8 modes and fixed a focused replay test that could not load its compiled fixture on this host."
+}

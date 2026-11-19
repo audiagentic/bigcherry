@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_024918_the-migration-plan-now-identif_9450",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM01.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM01/RV4236.md",
+    "docs/planning/active/patching-radiance-upstream/RUM03.md",
+    "docs/reference/build/PIN_BUMP.md",
+    "docs/reviews/radiance-upstream-2026-11-18/README.md",
+    "docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md",
+    "docs/reviews/radiance-upstream-2026-11-18/ASTRA-CONSOLIDATION.md",
+    "docs/reviews/radiance-upstream-2026-11-18/MANIFEST-AND-EXTENSIONS.md"
+  ],
+  "plan-item-ids": [
+    "RUM01",
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Closed RUM01 after fixing the ABI43 candidate/ABI41 review drift, correcting immutable YAML parser-origin/reload guidance, recording the exact v1.17.0-to-ABI43 serving-core patch composition, and clarifying the old-pin policy-off baseline. Ran the frozen candidate's host-only plugin loader tests for wrong ABI and wrong exported layout; both passed. Recorded checkpoints C8 and C9. Full matched plugin package and runtime qualification remain open.",
+  "timestamp-utc": "2026-11-19T02:49:18.204238Z",
+  "user-summary-candidate": "The migration plan now identifies the exact ABI43 source and preserves the old v1.17 release until the 141 candidate patch failures are resolved. Focused host-side ABI and layout refusal checks pass; full plugin packaging and runtime gates remain."
+}

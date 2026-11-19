@@ -193,3 +193,10 @@ semantic call-graph coverage. Before deleting a path, use RSC13's callable inven
 and search its concrete consumers, then perform only that path's proof gate.
 Compilation, device memory visibility and approximate-format parity remain future
 implementation gates, not claims made by this static review.
+# Historical target review — current work targets ABI43
+
+This source-level consolidation review uses the intermediate ABI41 candidate
+`b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e`. The active migration target is
+ABI43 `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`. Use RUM01–RUM10 and the
+[implementation handoff](IMPLEMENTATION-HANDOFF.md) for current decisions;
+recheck candidate-specific patch and API claims before applying them.

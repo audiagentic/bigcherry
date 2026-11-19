@@ -59,3 +59,79 @@ PATCHES = (
               "BC_VTP44_B16I8_PIN"),
     )),
 )
+
+
+# RUM07: target-only ABI43 card-free contract fixture. This does not imply a
+# functional GPU reader, fused-store or a numerically qualified hybrid cache.
+_ABI43_CPU_FIXTURE = r"""/* BC_RUM07_ABI43_TEST -- KV row bytes and refusal boundaries without cards.
+ * This tests the descriptor, NOT hardware store/attention correctness.
+ */
+#include "rad_builder.h"
+#include <assert.h>
+#include <string.h>
+
+int main(void) {
+    const int64_t hd = 256;
+    assert(RAD_ABI_VERSION == 43);
+    assert(rad_kv_row_elems(RAD_F8E4M3, hd) == 512);
+    assert(rad_kv_row_elems(RAD_I8, hd) == 516);
+    assert(rad_kvq_row_bytes(RAD_KVQ_B16F8, hd) == 768);
+    assert(rad_kvq_row_bytes(RAD_KVQ_B16I8, hd) == 784);
+    assert(rad_kvq_value_offset(RAD_KVQ_B16F8, hd) == 512);
+    assert(rad_kvq_value_offset(RAD_KVQ_B16I8, hd) == 512);
+    assert(rad_kvq_scale_offset(RAD_KVQ_B16F8, hd) == -1);
+    assert(rad_kvq_scale_offset(RAD_KVQ_B16I8, hd) == 768);
+    assert(rad_kvq_row16(RAD_KVQ_B16F8) == 48);
+    assert(rad_kvq_row16(RAD_KVQ_B16I8) == 49);
+    assert(strcmp(rad_kvq_name(RAD_KVQ_B16F8), "bf16_fp8") == 0);
+    assert(strcmp(rad_kvq_name(RAD_KVQ_B16I8), "bf16_i8") == 0);
+    assert(rad_kvq_from_name("bf16_fp8") == RAD_KVQ_B16F8);
+    assert(rad_kvq_from_name("bf16_i8") == RAD_KVQ_B16I8);
+    assert(rad_kvq_from_name("i8") == RAD_KVQ_NONE);
+    assert(rad_kvq_from_name("fp8") == RAD_KVQ_NONE);
+    assert(rad_kvq_from_name("fp8_v4") == RAD_KVQ_NONE);
+    assert(rad_kvq_geometry_ok(RAD_KVQ_B16F8, hd, 12, 4));
+    assert(rad_kvq_geometry_ok(RAD_KVQ_B16I8, hd, 12, 4));
+    assert(!rad_kvq_geometry_ok(RAD_KVQ_B16F8, hd, 6, 4));
+    assert(!rad_kvq_geometry_ok(RAD_KVQ_B16I8, hd, 12, 16));
+    assert(!rad_kvq_geometry_ok(RAD_KVQ_B16F8, 128, 12, 4));
+    assert(rad_kvq_row_bytes(RAD_KVQ_NONE, hd) == 0);
+    assert(rad_kvq_row_bytes(RAD_KVQ_B16F8, 128) == 0);
+    return 0;
+}
+"""
+PATCHES += (
+    FilePatch(
+        path="tests/bc_kv_layout_contract_test.c",
+        language="none", create=True,
+        description="RUM07 ABI43: card-free local hybrid row-format and refusal fixture",
+        edits=(Edit(
+            id="rum07-abi43-cpu-contract-fixture",
+            anchor=r"\A", mode="insert_after", text=_ABI43_CPU_FIXTURE,
+            guard="BC_RUM07_ABI43_TEST",
+            rationale="New CPU contract fixture: no GPU runtime or kernel activation",
+        ),),
+    ),
+    FilePatch(
+        path="tests/CMakeLists.txt", language="none",
+        description="RUM07 ABI43: register card-free KV descriptor contract CTest",
+        edits=(Edit(
+            id="rum07-abi43-register-cpu-contract",
+            anchor=r"\Z", mode="insert_after",
+            text="""\n# RUM07 ABI43: descriptor-level CPU test; kernel and model proof remain separate.
+# Keep the v1.17 pin's test build unchanged. This fixture uses the ABI43
+# descriptor and runs only against the exact reviewed checkpoint's ABI.
+file(STRINGS "${CMAKE_SOURCE_DIR}/abi/rad_abi.h" BC_RUM07_ABI43_LINE
+     REGEX "^#define RAD_ABI_VERSION 43u$")
+if(BC_RUM07_ABI43_LINE)
+  add_executable(bc_kv_layout_contract_test bc_kv_layout_contract_test.c)
+  target_include_directories(bc_kv_layout_contract_test PRIVATE ${CMAKE_SOURCE_DIR}/abi)
+  add_test(NAME bc_kv_layout_contract_test COMMAND bc_kv_layout_contract_test)
+  set_tests_properties(bc_kv_layout_contract_test PROPERTIES LABELS "unit;fast")
+endif()
+""",
+            guard=r"add_executable\(bc_kv_layout_contract_test",
+            rationale="Keep native KV contract rejection tested on CPU with no hardware",
+        ),),
+    ),
+)

@@ -243,6 +243,26 @@ if(BUILD_TESTING)
     BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2"
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
+
+  # Exercise the successor using the production manifest source list with a
+  # generated v3 codec. Current runtime targets keep their v2 codec.
+  set(successor_registry "${CMAKE_CURRENT_SOURCE_DIR}/contract/serving-v2.toml")
+  set(successor_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/v3")
+  add_custom_command(
+    OUTPUT "${successor_dir}/serving_types.h" "${successor_dir}/serving_codec.h"
+           "${successor_dir}/serving_codec.cpp"
+    BYPRODUCTS "${successor_dir}/serving-v3.schema.json" "${successor_dir}/serving-fields.md"
+               "${successor_dir}/contract.fingerprint"
+    COMMAND bc_contract_gen --successor "${successor_registry}" "${successor_dir}"
+    DEPENDS bc_contract_gen "${successor_registry}" VERBATIM)
+  bc_add_manifest_library(bc_serving_v3_wire radiance::abi "${successor_dir}")
+  set_target_properties(bc_serving_v3_wire PROPERTIES EXCLUDE_FROM_ALL TRUE)
+  add_executable(bc_serving_v3_wire_test EXCLUDE_FROM_ALL v2/native_config_manifest_test.cpp)
+  target_link_libraries(bc_serving_v3_wire_test PRIVATE bc_serving_v3_wire)
+  add_test(NAME bc_serving_v3_wire_test COMMAND bc_serving_v3_wire_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2/example.flashnext-4gpu.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/generated/v3/contract.fingerprint")
+
   # S9: compile and test the inactive generated v2 codec, never production linked.
   # S8: inactive typed resource and handoff rules, linked only by card-free tests.
   add_executable(bc_v2_s8_test EXCLUDE_FROM_ALL v2/s8_rules_test.cpp)

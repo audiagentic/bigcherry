@@ -2441,6 +2441,14 @@
                   "description": "Draft through the trunk head instead of the 2-bit copy (`RAD_MTP_FULL_HEAD`, patch rad0003).",
                   "type": "boolean"
                 },
+                "hc_pf2_upmix_rt": {
+                  "description": "PF2 wide hyper-convolution up-mix row tile (`RAD_HC_UPMIX_RT`; defaults to the existing production tile, with one larger diagnostic choice).",
+                  "enum": [
+                    128,
+                    256,
+                    384
+                  ]
+                },
                 "hc_pf2_fp8_down": {
                   "description": "FP8 PF2 down-product (`RAD_HC_PF2_FP8_DOWN`, patch rad0007).",
                   "type": "boolean"

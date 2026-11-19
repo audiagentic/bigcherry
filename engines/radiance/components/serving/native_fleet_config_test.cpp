@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <string>
 
+using bc::serving::NativeConfigSnapshot;
 using bc::serving::NativeFleetConfig;
 namespace fs = std::filesystem;
 namespace v2 = bc::serving::v2;
@@ -24,7 +25,7 @@ void check(bool condition, const char* message) {
 
 void refused(const Json& field, const std::string& diagnostic) {
     try {
-        (void)NativeFleetConfig::replay(field);
+        (void)NativeFleetConfig::replay(NativeConfigSnapshot::from_manifest(field));
     } catch (const std::invalid_argument& error) {
         check(std::string(error.what()).find(diagnostic) != std::string::npos, error.what());
         return;
@@ -56,7 +57,8 @@ int main() {
     const fs::path path = fs::path(directory) / "fleet.yaml";
     write(path, original);
     const auto first = NativeFleetConfig::read(path);
-    check(first.sha256() == expected && first.yaml_utf8() == original, "original bytes or digest changed");
+    check(first.snapshot().sha256() == expected && first.snapshot().yaml_utf8() == original,
+          "original bytes or digest changed");
     const auto& model = first.fleet().models.at(0);
     check(model.cfg.mixed_step_target_ms == 0 &&
               model.cfg.given.at("--mixed-step-target-ms") == "models.tiny.mixed-step-target-ms",
@@ -64,11 +66,13 @@ int main() {
 
     write(fs::path(directory) / "next", "# replaced\n" + original);
     fs::rename(fs::path(directory) / "next", path);
-    check(NativeFleetConfig::read(path).sha256() != expected, "formatting edit reused the old identity");
+    check(NativeConfigSnapshot::read(path).sha256() != expected, "formatting edit reused the old identity");
     fs::remove(path);
-    const Json field = first.manifest_field();
+    const Json field = first.snapshot().manifest_field();
     const auto execution_root = fs::current_path();
     fs::current_path(directory);
+    check(NativeConfigSnapshot::from_manifest(field).manifest_field() == field,
+          "decoding rewrote the recorded execution root");
     refused(field, "resolution_root differs");
     fs::current_path(execution_root);
     fs::remove(directory);
@@ -97,8 +101,9 @@ int main() {
     std::string oversize = recorded;
     oversize.resize(v2::kMaxDocumentBytes + 1, ' ');
     check(!v2::parse_strict_json(oversize, "oversize manifest"), "complete manifest exceeded the byte limit");
-    const auto saved = NativeFleetConfig::replay(strict.value().at("spec").at("native_config"));
-    check(saved.yaml_utf8() == original && saved.fleet().models.at(0).cfg.given == model.cfg.given,
+    const auto saved = NativeFleetConfig::replay(
+        NativeConfigSnapshot::from_manifest(strict.value().at("spec").at("native_config")));
+    check(saved.snapshot().manifest_field() == field && saved.fleet().models.at(0).cfg.given == model.cfg.given,
           "replay lost the recorded native bytes or provenance");
     const Json outer_digest = measured.at("metadata").at("content_digest");
     Json& embedded = measured.at("spec").at("native_config");
@@ -115,6 +120,8 @@ int main() {
     Json malformed = field;
     malformed["resolution_root"] = 1;
     refused(malformed, "requires exactly");
+    malformed["resolution_root"] = "relative-root";
+    refused(malformed, "absolute UTF-8 path");
     malformed = field;
     malformed["sha256"] = "";
     refused(malformed, "SHA-256 mismatch");
@@ -138,8 +145,8 @@ int main() {
 
     check(::setenv("BC_TEST_FLEET_API_KEY", "local-fixture-value", 1) == 0, "cannot set fixture environment");
     const std::string referenced = "server: {api-key-env: BC_TEST_FLEET_API_KEY}\n" + original;
-    const auto env = NativeFleetConfig::replay(config_field(referenced));
-    check(env.manifest_field().dump().find("local-fixture-value") == std::string::npos &&
+    const auto env = NativeFleetConfig::replay(NativeConfigSnapshot::from_manifest(config_field(referenced)));
+    check(env.snapshot().manifest_field().dump().find("local-fixture-value") == std::string::npos &&
               env.fleet().models.front().cfg.api_key_env == "BC_TEST_FLEET_API_KEY",
           "snapshot lost the native credential reference");
 }

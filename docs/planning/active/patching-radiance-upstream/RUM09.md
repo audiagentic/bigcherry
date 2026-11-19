@@ -15,18 +15,17 @@ work: M
 
 ## Description
 
-Run only the matrix needed for the changed production configuration: composition/build/SDK, launch/stop/admission, helper-off control and representative helper-on mixed TP, short quality and paired performance checks. Tie evidence to exact source/build/data identities. Switch pin and publish after gates pass; retain previous verified release as recovery artifact, not a legacy code path.
+Run only the matrix needed for the changed production configuration: composition/build/SDK, launch/stop/admission, helper-off control, the selected helper-on TP1 canary, short quality and paired performance checks. Qualify mixed-rank profiles only if they are included in the candidate roster. Tie evidence to exact source/build/data identities. Switch pin and publish after gates pass; retain the previous verified release as a recovery artifact, not a legacy code path.
 
 ## Steps
 
-- Freeze one release candidate with exact upstream/local patch, component, SDK, model, power/layout and native/extension configuration identities. Use the same control workload and explicit defaults.
-- Gate A: dependency-resolved patch apply plus one build/SDK check for actual production targets. Run only touched local unit targets; don't rebuild all targets repeatedly for documentation changes.
-- Gate B: one fake/CPU launch-stop case, exact stored snapshot replay, stale-build/topology/digest refusal and fresh resource admission. Use existing session fixtures.
-- Gate C: on leased hardware run the helper-off control and one currently deployed helper-on mixed-TP layout with short prefill/decode and fixed-depth speculation. Check helper death/drain with an existing bounded fixture, not a long chaos run.
-- Gate D: run one short paired quality sample using current project thresholds/noise handling and a small matched performance comparison (three interleaved pairs). Add repetitions only if a failure/noise question remains; otherwise stop.
-- If the selected path passes, update recipes pin/version and actual runtime launch/package metadata together. Remove retired patch set entries and dead code after coverage is established; keep history/evidence.
-- Build/install/relocate one Python-free runtime bundle through existing RSP01 release checks, verify one plugin ABI generation and health/stop, then publish the version.
-- Record exactly which formats/layouts/modes passed. Broader optional configurations are explicitly not qualified by this cutover and cannot quietly enter production.
+- Freeze one release candidate with exact upstream/local patch, component, SDK, model, power/layout and native/extension configuration identities. For the old-pin control, use the current-main policy-off baseline only as workload/input reference; it does not qualify the candidate. Use the same explicit defaults on both arms.
+- Gate A: run canonical dependency-resolved patch composition against the candidate, then one build/SDK/component pass for the actual selected production target. Reuse the build to inspect every packaged plugin's ABI version and exported layout against libr4d; run only touched component unit targets. Do not repeat the full build after documentation-only changes.
+- Gate B: one card-free named fresh-start -> measurement -> stored replay -> stop path using identical sealed native YAML bytes/digest/root and explicit ordered `Config.devices`. Check stale build, changed digest/root/topology, wrong-level native key and fresh-room refusal before any child/power mutation. Keep this gate on the fake fixture.
+- Gate C: acquire the GPU lease. First activation is the documented helper-on TP1 `flashnext-4gpu` lane with disjoint heterogeneous helper cards and the exact E4M3 format, fixed MTP depth and policy settings in the handoff. Run the helper-off `flashnext-r9700` arm only as a functional/KL quality control. Check admission/stop and one bounded helper-death/drain fixture. Do not require a mixed-engine-rank canary for this TP1-only release. If any TP2/TP3 or custom mixed-rank profile is included in the actual runtime roster, that profile must pass its own rank-order/code-object/collective and activation gate before packaging.
+- Gate D: run the existing short quality sample and thresholds, then three interleaved old/new performance pairs on the same helper-on TP1 deployment, prompts, contexts, weights, topology, speculation, interleave, heat and power. Use current policy-off comparison inputs. Repeat only to resolve a failure or material noise.
+- Gate E: make the actual runtime bundle enforce the candidate roster and mode allowlist. Install and relocate it through existing RSP01 checks; verify exactly the qualified config names/formats are shipped, plugin ABI generation is uniform, and health/start/stop work. The current packer requires both shipped TOML profiles, so add an explicit roster input and migrate its callers/tests together before claiming unqualified profiles withheld.
+- Only after Gates A-E pass, update recipes pin/version, all six component built-against declarations, native config metadata and package roster together. Record exactly supported names/modes; keep old release artifacts available for rollback. Never silently include an unqualified profile.
 
 ## Detailed Solution & Technical Design
 
@@ -66,7 +65,7 @@ Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-1
 
 ## Validation
 
-Gate A-D above, each once on a fixed candidate. Re-run a gate only after code/config affecting it changes or a result remains unexplained. No full model-family, layout, quantization or long-soak matrix is required for the first single-model bump.
+Run each gate once on the frozen candidate and exact runtime roster. Re-run only when a code/config input consumed by that gate changes or its result is unresolved. Required evidence is: canonical patch report; matched SDK build, plugin ABI/layout and component tests; fake immutable-config round trip and refusal checks; leased TP1 helper-on activation plus helper-off quality arm; current quality threshold result; three paired same-topology performance comparisons; and installed/relocated Python-free package inventory. No full model-family, quantization or long-soak sweep for a TP1-only release. A mixed-rank profile in the actual candidate roster adds its specific compatibility and activation gate.
 
 ## Effort & Risk
 
@@ -78,7 +77,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-One documented production configuration passes source/build/ABI, strict launch/admission/lifecycle, activated helper/KV/spec quality and bounded paired performance gates, and its runtime bundle installs cleanly. Pin and source metadata match that candidate; incomplete optional work stays pending.
+One explicitly enumerated runtime roster passes source, same-SDK build/plugin ABI+layout, strict config/admission/lifecycle, selected TP1 helper-on activation, helper-off functional quality, short quality, bounded paired performance and install/relocate gates. The package actually withholds every unqualified profile/mode. Recipe, component declarations, native config and runtime roster refer to one exact candidate. No production pin change occurs before all gates pass.
 
 ## Notes
 
@@ -90,6 +89,8 @@ Astra source review ASTRA-CONSOLIDATION.md adds installed normal, measure/KL and
 
 Stage Gate C: first run the TP1 Flash-Next production canary with disjoint heterogeneous helpers. This is first launch/parity evidence only. Run required mixed-rank qualification separately before any common-pin release claiming that support; if unavailable retain the previous release for those lanes. The helper-off profile is functional/KL control, not a throughput comparator; compare same layout and workload across old/new builds. Exact gate recipes: docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md.
 
+RV4240: original Gate C required a helper-on mixed-TP canary despite the selected first lane being TP1; packer profile allowlist also needed enforcement. The corrected sequence qualifies the named TP1 lane first and makes mixed-rank proof conditional on inclusion in the candidate roster. RUM09 still owns release execution. The current runtime asset packer must be changed before claiming other names are withheld. Policy-off baseline file is an old-pin workload reference, not candidate evidence. See docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md and docs/evidence/radiance-latest-bump/README.md.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -100,3 +101,10 @@ Stage Gate C: first run the TP1 Flash-Next production canary with disjoint heter
 - 2026-11-18T02:24:08.970577+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:27:05.771137+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T03:40:35.424079+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4240
+- 2026-11-19T03:00:58.377857+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- RV4243
+- 2026-11-19T04:28:00.455200+00:00 (updated-by): Updated: section:description

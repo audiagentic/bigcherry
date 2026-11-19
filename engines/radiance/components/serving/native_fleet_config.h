@@ -1,13 +1,7 @@
 #pragma once
 
 #include "fleet/config.h"
-
-#include <nlohmann/json.hpp>
-
-#include <filesystem>
-#include <optional>
-#include <string>
-#include <string_view>
+#include "v2/native_config_snapshot.h"
 
 namespace bc::serving {
 
@@ -18,22 +12,17 @@ namespace bc::serving {
 class NativeFleetConfig final {
   public:
     static NativeFleetConfig read(const std::filesystem::path& authored);
-    // The spec.native_config field of the successor manifest. Replay takes the
-    // field from a strictly decoded, identity-verified document.
-    nlohmann::json manifest_field() const;
-    static NativeFleetConfig replay(const nlohmann::json& native_config);
+    // Replay takes a snapshot from the strictly decoded, identity-verified
+    // spec.native_config field.
+    static NativeFleetConfig replay(NativeConfigSnapshot snapshot);
 
-    const std::string& yaml_utf8() const { return yaml_; }
-    const std::string& sha256() const { return sha256_; }
+    const NativeConfigSnapshot& snapshot() const { return snapshot_; }
     const rad::fleet::FleetConfig& fleet() const { return fleet_; }
 
   private:
-    NativeFleetConfig(std::string yaml_utf8, std::string resolution_root, const std::string& origin,
-                      std::optional<std::string_view> expected_sha256);
+    NativeFleetConfig(NativeConfigSnapshot snapshot, const std::string& origin);
 
-    std::string yaml_;
-    std::string sha256_;
-    std::string resolution_root_;
+    NativeConfigSnapshot snapshot_;
     rad::fleet::FleetConfig fleet_;
 };
 

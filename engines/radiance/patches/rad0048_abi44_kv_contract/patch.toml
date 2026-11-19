@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0048_abi44_kv_contract"
+order = 48
+state = "validated"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["RUM03", "RUM07"]
+requires = ["rad0020_vtp14_tp3_pipelined_prefill"]
+conflicts = []
+tags = ["kv-cache"]

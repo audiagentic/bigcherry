@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_051059_extended-candidate-radiance-su_8923",
+  "files": [
+    "engines/radiance/patches/rad0052_b16_kv_geometries/patch.toml",
+    "engines/radiance/patches/rad0052_b16_kv_geometries/patch.py",
+    "tools/tests/patch/test_radiance_rad0052.py"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added the remaining resident B16F8/B16I8 readers and matching stores for Qwen4exp H256/GQA6/page4 and Qwen35 H256/GQA6/page16. Preserved a separate native E4M3 H128/GQA4/page16 DFlash2 cache. Exact restore and byte-identical reapply over frozen Radiance 3deabdaeca17b58bad90d332f4b204cf7bb8a10e plus prerequisites, both focused Python tests, four Release NDEBUG architecture fixtures (356 checks), and four selected gfx1201 objects passed. Device execution and numerical parity, runtime serving, broader ABI44 qualification, and production recipe selection remain pending.",
+  "timestamp-utc": "2026-11-19T05:10:59.111128Z",
+  "user-summary-candidate": "Extended candidate Radiance support for both BF16-key cache formats to the remaining Qwen4exp and Qwen35 geometries, with a separate native E4M3 cache for DFlash2. Host checks and targeted GPU compilation passed. Device numerical and serving validation remain pending."
+}

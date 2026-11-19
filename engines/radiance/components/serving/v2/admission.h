@@ -4,7 +4,7 @@
  * live split that cannot hold what the plan requires BC_CFG_ADMISSION_REFUSED. The shared vectors in
  * docs/design/serving-manifest-v2/admission-vectors.json are the cases it must reproduce. */
 #include "error.h"
-#include "../generated/v2/serving_types.h"
+#include "serving_types.h"
 
 #include <cstdint>
 #include <string_view>

@@ -93,7 +93,7 @@ Every row currently passes through rad0009's `bc_serving_engine_argv`. The write
 | `/spec/processes/engine/vision/video_min_frames` | `--video-min-frames` | Native | `models.<id>.video-min-frames` | `core/engine.cpp:3611` |
 | `/spec/processes/engine/vision/video_min_pixels` | `--video-min-pixels` | Native | `models.<id>.video-min-pixels` | `core/engine.cpp:3611` |
 | `/spec/processes/engine/vision/vision_tower_placement` | `--vision-tower-placement` | Native | `models.<id>.vision-tower-placement` | `core/engine.cpp:2972` |
-| `/spec/processes/engine/tuning/attn_prefill_fp8` | `--attn-prefill-fp8` | Obsolete | `removed` | `v1.17 core/config.cpp:620` — Explicitly reject old values. No selected named config sets it. |
+| `/spec/processes/engine/tuning/attn_prefill_fp8` | `--attn-prefill-fp8` | Local feature, lost in ABI43 candidate | `off`, `qk`, `pv`, `both` in the v1.17.0 baseline; candidate parser currently has no control | Restore the exact mode contract and route it to `prefill_fp8` row matching. Historical lossy rows exist only at H256/GQA6/page16 for E4M3, fp8_v4 and k6_v4 (nine mode/format rows); unsupported geometry or B16 combinations must refuse, not fall through. See RUM07 review RV4241. |
 | `/spec/processes/engine/tuning/busy_prefill_chunk` | `--busy-prefill-chunk` | Native | `models.<id>.busy-prefill-chunk` | `core/sched/scheduler.cpp:165` |
 | `/spec/processes/engine/tuning/checkpoint_policy` | `--checkpoint-policy` | Native | `models.<id>.checkpoint-policy` | `core/engine_bringup.cpp:4255` |
 | `/spec/processes/engine/tuning/draft_coupling` | `--draft-coupling` | Native | `models.<id>.draft-coupling` | `core/engine.cpp:883` |
@@ -129,3 +129,11 @@ Every row currently passes through rad0009's `bc_serving_engine_argv`. The write
 | `/spec/experiment/engine/kv_resident` | `--kv-resident` | Diagnostic | `models.<id>.kv-resident` | `core/engine.cpp:3311` — Lab key under the old contract. Keep the managed experiment gate. |
 
 For an input audit, parse the TOML and compare all `(path, radiance_option)` pairs with columns one and two. Include fields under `spec.experiment`. Recheck target field levels in [fleet/config.cpp](https://codeberg.org/StillDeadcode/radiance/src/commit/b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e/core/fleet/config.cpp), which also allows certain per-model card-memory overrides. Recheck actual values and readers when changing either SHA.
+# Historical source inventory — not ABI43 implementation guidance
+
+This inventory maps BigCherry's prior serving-v2 fields to intermediate
+Radiance candidate `b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e` (ABI41). The
+frozen migration target is `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`
+(ABI43). Revalidate upstream field names and levels against the frozen source;
+RUM04 and the [implementation handoff](IMPLEMENTATION-HANDOFF.md) govern the
+current native YAML and caller migration. This is not runtime acceptance.

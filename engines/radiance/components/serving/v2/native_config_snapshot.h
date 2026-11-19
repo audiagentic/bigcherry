@@ -1,0 +1,33 @@
+#pragma once
+
+#include <nlohmann/json.hpp>
+
+#include <filesystem>
+#include <optional>
+#include <string>
+#include <string_view>
+
+namespace bc::serving {
+
+// The byte identity carried by a managed manifest. Native option validation
+// belongs to the matched engine and takes these exact bytes as its input.
+class NativeConfigSnapshot final {
+  public:
+    static NativeConfigSnapshot read(const std::filesystem::path& authored);
+    static NativeConfigSnapshot from_manifest(const nlohmann::json& field);
+    static void verify(std::string_view yaml, std::string_view sha256, std::string_view resolution_root);
+    nlohmann::json manifest_field() const;
+
+    const std::string& yaml_utf8() const { return yaml_; }
+    const std::string& sha256() const { return sha256_; }
+    void require_execution_root() const;
+
+  private:
+    NativeConfigSnapshot(std::string yaml, std::string root, std::optional<std::string_view> sha256);
+
+    std::string yaml_;
+    std::string sha256_;
+    std::string resolution_root_;
+};
+
+}  // namespace bc::serving

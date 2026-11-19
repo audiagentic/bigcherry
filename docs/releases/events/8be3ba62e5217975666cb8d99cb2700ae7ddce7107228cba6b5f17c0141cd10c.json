@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_032422_rum07-now-includes-both-bigche_1183",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream/RUM07.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM07/RV4238.md"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Updated RUM07 to require complete B16F8/B16I8 feature migration after the first plain-E4M3 deployment checkpoint, preserving the staged implementation order.",
+  "timestamp-utc": "2026-11-19T03:24:22.317519Z",
+  "user-summary-candidate": "RUM07 now includes both BigCherry B16 cache formats as required migration work, staged after the deployed E4M3 path."
+}

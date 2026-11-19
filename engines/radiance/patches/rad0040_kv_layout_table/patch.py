@@ -48,3 +48,93 @@ PATCHES = (
         _edit('config_test_cpp-0', '    CHECK_EQ(parse({ "--state-cache-dtype" }, &c), RAD_E_INVAL);\n}\n\nTEST(the_kv_cache_dtype_is_one_of_six_names) {\n    Config c;\n    CHECK_EQ(parse({ "--kv-cache-dtype", "bf16" }, &c), RAD_OK);\n', '    CHECK_EQ(parse({ "--state-cache-dtype" }, &c), RAD_E_INVAL);\n}\n\nTEST(the_packed_kv_layouts_come_from_one_table) {\n    /* The enum\'s values are ABI (a plugin built against an older header passes them), so the table\n     * only appends; the row sizes are the bytes per 16 dims rad_builder.h documents. */\n    CHECK_EQ((int)RAD_KVQ_NONE, 0);\n    CHECK_EQ((int)RAD_KVQ_V4, 1);\n    CHECK_EQ((int)RAD_KVQ_K6V4, 2);\n    CHECK_EQ((int)RAD_KVQ_B16F8, 3);\n    CHECK_EQ((int)RAD_KVQ_B16I8, 4);\n    CHECK_EQ((int)RAD_KVQ_COUNT, 5);\n    CHECK_EQ(rad_kvq_row16(RAD_KVQ_NONE), 32);\n    CHECK_EQ(rad_kvq_row16(RAD_KVQ_V4), 25);\n    CHECK_EQ(rad_kvq_row16(RAD_KVQ_K6V4), 22);\n    CHECK_EQ(rad_kvq_row16(RAD_KVQ_B16F8), 48);\n    CHECK_EQ(rad_kvq_row16(RAD_KVQ_B16I8), (int)RAD_KVQ_B16I8_ROW16);   /* the ABI\'s own constant; arch_test holds the bytes */\n    CHECK_EQ(rad_kvq_row16(RAD_KVQ_COUNT), 0);\n    CHECK(rad_kvq_name(RAD_KVQ_NONE) == nullptr);\n    CHECK(rad_kvq_name(RAD_KVQ_COUNT) == nullptr);\n    CHECK(rad_kvq_name(-1) == nullptr);\n    CHECK_EQ(rad_kvq_from_name("bf16"), (int)RAD_KVQ_NONE);\n    CHECK_EQ(rad_kvq_from_name(nullptr), (int)RAD_KVQ_NONE);\n    const std::string listed = RAD_KV_LAYOUT_NAMES;\n    for (int k = 1; k < (int)RAD_KVQ_COUNT; ++k) {\n        const char* name = rad_kvq_name(k);\n        CHECK(name != nullptr);\n        if (!name) continue;\n        /* every layout round-trips, is accepted by the flag and is in the list the help prints */\n        CHECK_EQ(rad_kvq_from_name(name), k);\n        CHECK_EQ(bc_kv_quant_of(name), k);\n        CHECK(listed.find(std::string(" | ") + name) != std::string::npos);\n        Config c;\n        CHECK_EQ(parse({ "--kv-cache-dtype", name }, &c), RAD_OK);\n    }\n}\n\nTEST(the_kv_cache_dtype_is_one_of_six_names) {\n    Config c;\n    CHECK_EQ(parse({ "--kv-cache-dtype", "bf16" }, &c), RAD_OK);\n', 'TEST(the_packed_kv_layouts_come_from_one_table) {'),
     )),
 )
+
+
+from dataclasses import replace as _rum07_replace
+
+# RUM07 ABI43: retained hybrid byte contract. The original VTP44 patch remains
+# intact for the current v1.17 production pin; the exact ABI43 anchoring below
+# is a separately verifiable first migration slice. The old anchors must be
+# retired/ported as a subsequent integrated migration, not silently skipped.
+_ABI43_BASE = """static inline int64_t rad_kv_row_elems(uint32_t dtype, int64_t head_dim) {
+    return 2 * head_dim + (dtype == RAD_I8 ? 4 : 0);
+}"""
+_ABI43_LAYOUT = """
+/* RUM07 ABI43: only the retained local hybrid formats. A plain E4M3 cache
+ * uses RAD_F8E4M3 and rad_kv_row_elems; it has no scale bytes. Native RAD_I8
+ * uses K/V int8 and TWO per-head f16 scales (2*HD+4 bytes), not bf16_i8.
+ *
+ * Local B16F8: [0, 2HD) bf16 K, [2HD, 3HD) E4M3 V, no scales.
+ * Local B16I8: the same bf16 K, int8 V at [2HD, 3HD), followed by
+ * HD/32 f16 scales for 32-value groups of V at [3HD, 3HD+HD/16).
+ * Each of these layouts needs its own reader AND writer. These descriptors
+ * DO NOT advertise runtime support, nor rename RAD_I8 as bf16_i8.
+ *
+ * The following retains rad0040's one-table approach; no redundant dtype
+ * registry or per-element dispatch. Layout IDs preserve the historical
+ * on-wire values 3/4; discontinued V4/K6V4 IDs 1/2 are not registered.
+ */
+#define RAD_KV_LAYOUTS(X) \\
+    X(B16F8, "bf16_fp8", 48, 0) \\
+    X(B16I8, "bf16_i8", 49, 32)
+enum { RAD_KVQ_NONE = 0, RAD_KVQ_B16F8 = 3, RAD_KVQ_B16I8 = 4 };
+#define RAD_KVQ_B16I8_GROUP 32
+#define RAD_KVQ_B16F8_ROW16 48
+#define RAD_KVQ_B16I8_ROW16 49
+static inline const char* rad_kvq_name(int fmt) {
+    switch (fmt) {
+#define RAD_KV_LAYOUT_NAME(id, name, row16, group) case RAD_KVQ_##id: return name;
+        RAD_KV_LAYOUTS(RAD_KV_LAYOUT_NAME)
+#undef RAD_KV_LAYOUT_NAME
+        default: return 0;
+    }
+}
+static inline int rad_kvq_from_name(const char* name) {
+    if (!name) return RAD_KVQ_NONE;
+#define RAD_KV_LAYOUT_PARSE(id, spelling, row16, group) \\
+    if (!strcmp(name, spelling)) return RAD_KVQ_##id;
+    RAD_KV_LAYOUTS(RAD_KV_LAYOUT_PARSE)
+#undef RAD_KV_LAYOUT_PARSE
+    return RAD_KVQ_NONE;
+}
+static inline int rad_kvq_row16(int fmt) {
+    switch (fmt) {
+#define RAD_KV_LAYOUT_ROW(id, name, row16, group) case RAD_KVQ_##id: return row16;
+        RAD_KV_LAYOUTS(RAD_KV_LAYOUT_ROW)
+#undef RAD_KV_LAYOUT_ROW
+        default: return 0;
+    }
+}
+static inline int64_t rad_kvq_row_bytes(int fmt, int64_t hd) {
+    /* This migration initially admits only the shipped Flash-Next head width.
+     * Do not accidentally expose other heads before their kernel rows exist. */
+    return hd == 256 ? hd * rad_kvq_row16(fmt) / 16 : 0;
+}
+static inline int64_t rad_kvq_value_offset(int fmt, int64_t hd) {
+    return rad_kvq_row_bytes(fmt, hd) ? 2 * hd : -1;
+}
+static inline int64_t rad_kvq_scale_offset(int fmt, int64_t hd) {
+    return rad_kvq_row_bytes(fmt, hd) && fmt == RAD_KVQ_B16I8 ? 3 * hd : -1;
+}
+static inline int rad_kvq_geometry_ok(int fmt, int64_t hd, int64_t gqa, int64_t page) {
+    /* TP1 Flash-Next QSA: only (h256, gqa12, page4) is in this first
+     * descriptor slice. GQA6 and other pages require independent rows. */
+    return rad_kvq_row_bytes(fmt, hd) > 0 && gqa == 12 && page == 4;
+}
+"""
+PATCHES += (
+    FilePatch(
+        path="abi/rad_builder.h", language="none",
+        description="RUM07 ABI43: native E4M3 vs scaled I8 and retained hybrid KV row contract",
+        edits=(
+            _edit("rum07-abi43-string-header",
+                  '#include "rad_abi.h"\n',
+                  '#include "rad_abi.h"\n#include <string.h>\n',
+                  '#include <string.h>'),
+            _rum07_replace(_edit("rum07-abi43-kv-descriptors",
+                  _ABI43_BASE, _ABI43_BASE + _ABI43_LAYOUT,
+                  'RUM07 ABI43: only the retained local hybrid formats.'),
+                  applies_if=r"rad_kv_row_elems"),
+        ),
+    ),
+)

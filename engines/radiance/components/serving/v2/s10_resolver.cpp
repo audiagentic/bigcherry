@@ -1,8 +1,9 @@
 #include "v2/s10_resolver.h"
 
-#include "generated/v2/serving_codec.h"
+#include "serving_codec.h"
 #include "jcs.h"
 #include "sha256.h"
+#include "v2/manifest.h"
 #include "v2/strict_json.h"
 
 #include <algorithm>
@@ -432,9 +433,10 @@ Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
 }
 
 Result<std::string> write_s10(const Manifest &m) {
-  if (m.api_version != "bigcherry/v2" || m.metadata.contract_version != 2)
+  if (m.api_version != kApiVersion || m.metadata.contract_version != kContractVersion)
     return fail(ConfigErrorCode::unsupported_version, "apiVersion",
-                "writer accepts only v2");
+                "writer accepts only " + std::string(kApiVersion));
+  if (auto error = validate_native_config(m)) return *error;
   auto json_doc = encode(m);
   std::string digest, why;
   if (!bc::serving::manifest_content_digest(json_doc, &digest, &why))
@@ -442,6 +444,9 @@ Result<std::string> write_s10(const Manifest &m) {
   json_doc["metadata"]["content_digest"] = digest;
   Manifest decoded;
   if (auto error = decode(json_doc, "", &decoded)) return *error;
-  return json_doc.dump();
+  std::string bytes = json_doc.dump();
+  if (bytes.size() > kMaxDocumentBytes)
+    return fail(ConfigErrorCode::invalid_format, "", "manifest exceeds the document byte limit");
+  return bytes;
 }
 } // namespace bc::serving::v2

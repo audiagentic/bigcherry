@@ -88,6 +88,10 @@ First prove YAML transport and entry points using a supported fixture. The v1.17
 
 C3 exact native parser fixture and C4 managed bootstrap marker recorded under docs/evidence/radiance-latest-bump. Full persisted successor contract and native exec remains open.
 
+C11 (2026-11-19): extracted NativeConfigSnapshot into the existing strict/GPU-free manifest library and made ABI43 NativeFleetConfig consume the validated snapshot before fleet::parse. The standalone library configured/built against the candidate SDK and focused manifest_snapshot_roundtrip CTest passed 1/1, covering exact CRLF/UTF-8 bytes, author-file removal replay, cfg.given, digest/root and malformed-wire refusal. See evidence C11 and Ledger event d77203d03d59e805ac04c299da2a12972d67be682327b88e56dfa22a3645cf47. Remaining RUM04: generated successor wire identity, strict writer/reader role views, measured plan and stored cache identity, actual main/session/offline/KL callers, sealed config descriptor for fresh and stored exec, root/device-order propagation, reload refusal and native mirror deletion. This seam alone does not change production behavior.
+
+C12 (2026-11-19, Sol): the explicit generated v3 edition now carries required native_config bytes/digest/root through shared writer and reader validation; measured-plan identity and role views bind snapshot identity, with exact bytes only in engine view. The card-free test verifies measured write/read, old-wire refusal, role views and plan invalidation. Existing v2 reader passes and all seven regenerated v2 artifacts are byte-identical. Production still selects v2; named fresh/measure/stored launch through matched ABI43 parser and existing sealed descriptor is still open. Full CTest output remains in task-local build scratch; Ledger event 6ae8508eaead1f703b22358b34d55d84991366f6250726ff9d9fef469abbf5f8.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -102,3 +106,5 @@ C3 exact native parser fixture and C4 managed bootstrap marker recorded under do
 - 2026-11-18T03:41:39.090024+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T00:54:27.126833+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T00:54:34.826531+00:00 (state-transition): State: pending → in_progress
+- 2026-11-19T02:54:58.912371+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T03:06:59.128634+00:00 (updated-by): Updated: section:notes

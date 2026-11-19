@@ -1543,7 +1543,8 @@ Status int_enum_in(const Json& j, const std::string& at, C tc, C vc, std::initia
 
 }  // namespace
 
-bool load_registry(const std::string& toml_text, const std::string& source_name, Registry* out, std::string* why) {
+bool load_registry(const std::string& toml_text, const std::string& source_name, Registry* out, std::string* why,
+                   Edition edition) {
     try {
         toml::table doc;
         try { doc = toml::parse(toml_text, source_name); }
@@ -1553,7 +1554,7 @@ bool load_registry(const std::string& toml_text, const std::string& source_name,
             fault(source_name, m.str());
         }
         refuse_floats(doc, source_name);
-        only_keys(doc, {"contract", "class_default", "calibration_key", "def", "field"}, source_name);
+        only_keys(doc, {"contract", "class_default", "calibration_key", "def", "field", "successor"}, source_name);
         Loader l;
         const auto* c = doc["contract"].as_table();
         if (!c) fault(source_name, "missing [contract]");
@@ -1584,6 +1585,31 @@ bool load_registry(const std::string& toml_text, const std::string& source_name,
         l.r.contract_version = *version;
         if (l.r.api_version != "bigcherry/v" + std::to_string(*version))
             fault("[contract]", "api_version must end in the contract_version");
+        const auto* successor = doc["successor"].as_table();
+        if (doc.contains("successor") && !successor)
+            fault("[successor]", "must be a table");
+        if (successor)
+            only_keys(*successor, {"contract_version", "schema_id", "title", "field", "class_default"}, "[successor]");
+        if (edition == Edition::successor) {
+            if (!successor) fault(source_name, "missing [successor]");
+            const auto next = integer(*successor, "contract_version", "[successor]");
+            if (!next || *next <= *version || *next - *version != 1)
+                fault("[successor]", "contract_version must immediately follow [contract]");
+            l.r.contract_version = *next;
+            l.r.api_version = "bigcherry/v" + std::to_string(*next);
+            l.r.schema_id = str(*successor, "schema_id", "[successor]");
+            l.r.title = str(*successor, "title", "[successor]");
+            for (const char* key : {"field", "class_default"}) {
+                const auto* additions = (*successor)[key].as_array();
+                auto* values = doc[key].as_array();
+                if (!additions || !values) fault("[successor]", std::string(key) + " must be an array of tables");
+                for (const auto& entry : *additions) {
+                    const auto* table = entry.as_table();
+                    if (!table) fault("[successor]", std::string(key) + " must be an array of tables");
+                    values->push_back(*table);
+                }
+            }
+        }
         auto each = [&](const char* name, auto&& fn) {
             const auto* a = doc[name].as_array();
             if (!a) return;
@@ -1597,6 +1623,17 @@ bool load_registry(const std::string& toml_text, const std::string& source_name,
         each("calibration_key", [&](const toml::table& t, const std::string& at) { l.calibration_key(t, at); });
         each("def", [&](const toml::table& t, const std::string& at) { l.def(t, at); });
         each("field", [&](const toml::table& t, const std::string& at) { l.field(t, at); });
+        if (edition == Edition::successor) {
+            Node& api = l.r.nodes.at(l.r.by_path.at("/apiVersion"));
+            Node& wire = l.r.nodes.at(l.r.by_path.at("/metadata/contract_version"));
+            if (api.constant != Json("bigcherry/v" + std::to_string(*version)) || wire.constant != Json(*version))
+                fault("[contract]", "the base fields must match its identity before deriving the successor");
+            api.constant = l.r.api_version;
+            api.doc = "Contract identity; exactly `" + l.r.api_version + "`.";
+            wire.constant = l.r.contract_version;
+            wire.doc = "Contract version; exactly " + std::to_string(l.r.contract_version) + ", matching the apiVersion suffix.";
+            l.r.nodes.at(l.r.root).doc = "A serving manifest " + l.r.api_version + " document.";
+        }
         l.finish();
         for (const Node& n : l.r.nodes) {   // every default fits the scalar it is a default of (a ref field: the def's scalar)
             if (!n.default_value) continue;

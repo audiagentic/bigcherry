@@ -96,7 +96,12 @@ For the exact-ref rewrite check, extract only target `libr4d` from the
 shared bare mirror into project-local scratch and run `r3_rewrite.py --check`
 against checked-in `rewrites.txt` and `native/`. Do not move
 `vendor/radiance` during read-only triage. The 2026-11-18 `v2.1.0` preflight
-found 19 rewrite failures and ABI 40 (not RUM03's ABI-41 candidate).
+found 19 rewrite failures and ABI 40. The frozen RUM01/RUM03 implementation
+candidate is commit `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`, which reports
+ABI 43. Do not use the earlier ABI-40 preflight or intermediate ABI-41 review
+candidate as evidence for this target. The managed compatibility gate checks
+both ABI version and exported layout fingerprint; a version match alone is
+insufficient.
 
 RUM04 replaces native-only BigCherry option mirroring with upstream
 `fleet::parse` of **the exact admitted immutable original YAML bytes**,
@@ -452,8 +457,9 @@ them without any patch anchor failing. The compile phase runs three checks in or
    with `SOURCE_COMPILE_FAILED`. It is saved in `state.json` (`compile.platform`); a `--resume` with none reuses it and a
    different one is refused (`RESUME_PLATFORM_MISMATCH`).
 2. `component-plugin-abi` (`PLUGIN_ABI_MISMATCH`): every `*.so` in the build's `radiance_home/kernels` (the engine's own and
-   the components') is loaded in a child process and its exported `rad_plugin_abi_version()` must equal `RAD_ABI_VERSION`
-   from the bumped source's `abi/rad_abi.h`. This is the engine's own load handshake; `nm` could show the symbol but not its value.
+   the components') is loaded in a child process. Its exported `rad_plugin_abi_version()` must equal `RAD_ABI_VERSION`
+   from the bumped source's `abi/rad_abi.h`, and its exported `rad_plugin_abi_layout()` must match the layout fingerprint
+   from the engine's own `libr4d`. The loader enforces both; `nm` could show symbols but not their values or agreement.
 3. `component-tests` (`COMPONENT_TEST_FAILED`; needs `ctest`): each component's `[test] targets` in `component.toml` are
    built and run with `ctest` in the component's build tree.
 

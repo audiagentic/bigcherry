@@ -2,6 +2,10 @@
 
 > **Astra refinement:** [ASTRA-CONSOLIDATION.md](ASTRA-CONSOLIDATION.md) and the current Planning items govern execution. They supersede earlier proposals for a normalized YAML writer, bundle index, parser-tree extension API, full native option mirror and initial fleet-broker reservations. Keep original YAML bytes bound to existing admission, delete native-only duplication before extracting survivors, and use disjoint helper cards initially. Earlier source inventories remain evidence, not implementation acceptance.
 
+> **Frozen implementation candidate (2026-11-19):** the active bump worktree is testing Radiance v2.1.0 commit `3deabdaeca17b58bad90d332f4b204cf7bb8a10e` (ABI 43), not the earlier `b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e` source reviewed below. That intervening delta is 71 files (+7,179/-324). Treat source-specific findings, patch anchors and line references below as historical leads until revalidated against the frozen source. The implementation handoff records the current lane and its outstanding runtime gates. Candidate readiness remains unproven: ABI/layout, package, format, numerical and performance gates are separate.
+
+> **Execution authority:** this report, its option inventory, the Astra consolidation scan and the manifest proposal are historical design evidence. They do not override the current ABI43 worktree plan. Use RUM01–RUM10 and [IMPLEMENTATION-HANDOFF.md](IMPLEMENTATION-HANDOFF.md) for current decisions. In particular, the old `x-bigcherry`/derived-YAML alternatives and ABI41 instructions below are superseded.
+
 ## Decision and scope
 
 Do not perform a pin-only update. Moving from BigCherry's v1.17.0 source to
@@ -13,7 +17,7 @@ GPU state or acceptance status.
 Reviewed BigCherry snapshot: `98d481cc836d71685ee9c0e57214dde7a9ba6529`.
 Pinned upstream v1.17.0 resolves to `19d4e8fe` (the mirror's annotated tag object
 is `8ac9a79c99b0f9cb5fe3a9283d3c402a71bd8378`; it is not the source commit).
-Target upstream main: `b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e`, fetched from
+Target upstream main reviewed in this report: `b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e`, fetched from
 https://codeberg.org/StillDeadcode/radiance.git. Target identifies itself as
 2.1.0 but includes subsequent commits; pin the SHA rather than assuming the
 2.1.0 tag contains all reviewed changes.
@@ -55,17 +59,20 @@ The roadmap merged in PR #1094. See [the execution guide](EXECUTION-GUIDE.md)
 for RUM01-RUM10 dependency order, ownership reuse and a deliberately bounded
 validation budget. Detailed implementation guidance lives in the Planning MCP items.
 
-## Manifest and extension redesign proposal
+## Manifest and extension redesign proposal (historical; superseded)
 
-See [the concrete YAML, placement and extension proposal](MANIFEST-AND-EXTENSIONS.md).
-Recommendation: reuse native upstream YAML for authoring, add a closed top-level
-`x-bigcherry` intent namespace, and retain generated immutable runtime contracts.
-Move injected implementations into owned components with narrow typed hooks;
-share one placement plan and upstream allocator instead of duplicating policy.
+The archived [proposal](MANIFEST-AND-EXTENSIONS.md) records alternatives considered
+before the ABI43 source and current worktree plan were fixed. Current implementation
+reuses the original native YAML bytes with the existing measured BigCherry contract;
+it does not add the proposed `x-bigcherry` schema or a derived YAML writer.
 
 ## Findings requiring design decisions first
 
-### P0 — server entry point is incompatible with our manifest-to-argv bridge
+### Historical P0 — server entry point is incompatible with our manifest-to-argv bridge
+
+This source-specific section was written against the earlier ABI41 candidate.
+Use RUM04 and the implementation handoff for the frozen ABI43 parser and launch
+path; the old choose-between-manifest-or-derived-YAML recommendation is superseded.
 
 Upstream `core/main.cpp` now accepts `--config FILE` and optional `--check`;
 old server flags are refused with a YAML translation. It loads `FleetConfig`
@@ -75,16 +82,12 @@ and `docs/MULTIMODEL.md` §4. BigCherry rad0009 currently translates its typed
 manifest into engine argv and marks supplied options. That behavior no longer
 launches the upstream server correctly, even if most insertions find anchors.
 
-Choose explicitly: retain BigCherry's manifest as authority and adapt it to
-upstream `Config`/`FleetConfig`, or emit validated YAML as a derived artifact.
-Do not add a second independently editable policy file. Preserve strict unknown
-key rejection, CLI/config precedence, model paths, stable device ordering,
-helper role binding and measuring/serving separation. Port every typed option
-mapping and the engine plan exporter before enabling fleet serving. Update
-`engine.toml` serve metadata, smoke/accept arguments, native bc-serve launch,
-release fake engine fixtures, scripts and documentation that still use old flags.
-Keep helper configuration on its existing contract; upstream YAML does not
-replace the external helper transport or BigCherry placement plan.
+The current decision is recorded in RUM01/RUM04: keep the existing strict
+measured BigCherry contract for local admission and persist the original
+immutable native YAML bytes for upstream parsing. Do not add a derived YAML
+writer or second native field mirror. Preserve strict input validation, exact
+ordered device binding, helper-role admission and measuring/serving separation.
+This replaces the earlier either/or proposal above.
 
 ### P0 — fleet lifetime conflicts with process-global extension state
 
@@ -199,7 +202,7 @@ apply, not that a patch is ready to ship. Patch IDs link to source packages.
 | [rad0002_moe_remote_handoff](../../../engines/radiance/patches/rad0002_moe_remote_handoff/patch.toml) | validated | 0 | Keep remote-MoE functionality. Scope plugin registration, layer maps, cached policy and parent tickets per engine/TP group; audit new draft/verify paths and unload drains despite zero anchor failures. |
 | [rad0005_mp4_ffmpeg6_writer](../../../engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/patch.toml) | validated | 0 | Retain callback signature compatibility if the new media writer still needs it on FFmpeg 6. Compile both callback signatures; remove only after checking upstream minimum FFmpeg version. |
 | [rad0008_hc_upmix_rt_sweep](../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.toml) | validated | 0 | Recalibrate the retained upmix sweep against changed kernel/launch behavior. Keep tuning choices manifest-owned and per engine. |
-| [rad0009_serving_manifest](../../../engines/radiance/patches/rad0009_serving_manifest/patch.toml) | validated | 1 | Replace manifest-to-argv startup with typed Config/FleetConfig bridge or derived YAML. Update supplied-option tracking and offline-mode handling; old CLI is refused. |
+| [rad0009_serving_manifest](../../../engines/radiance/patches/rad0009_serving_manifest/patch.toml) | validated | 1 | Replace manifest-to-argv startup with the RUM04 native YAML byte handoff. Update supplied-option tracking and offline device selection; old CLI is refused. |
 | [rad0011_plan_memory](../../../engines/radiance/patches/rad0011_plan_memory/patch.toml) | validated | 1 | Port explicit embedding host-room handling to new bringup, queue/staging costs and fleet budget reservations. Preserve measuring-mode semantics through new startup; invalidate old plan-cache entries. |
 | [rad0012_helper_kernel_config](../../../engines/radiance/patches/rad0012_helper_kernel_config/patch.toml) | validated | 0 | Keep helper kernel-config contract but scope its install-once behavior to the intended plugin/engine lifetime. Revalidate supported encodings and new ABI. |
 | [rad0013_mtp_pass_replay](../../../engines/radiance/patches/rad0013_mtp_pass_replay/patch.toml) | validated | 1 | Candidate retirement: upstream records draft/verify/decode passes. Compare split-cap, QSA-bound and grid key semantics, instrument replay coverage, then remove the override if equivalent. |
@@ -207,7 +210,7 @@ apply, not that a patch is ready to ship. Patch IDs link to source packages.
 | [rad0017_vtp14_n3_shared_rendezvous](../../../engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/patch.toml) | validated | 2 | Replace singleton rendezvous injection with per-tp_group shared libr3/libr4d rendezvous. Carry group keys through init/fini; preserve timeout arrival rollback and poison propagation. |
 | [rad0018_vtp14_n2_tp_ownership](../../../engines/radiance/patches/rad0018_vtp14_n2_tp_ownership/patch.toml) | validated | 1 | Reinsert uneven TP ownership fields into the new build context and ABI fingerprint. Keep ownership sums, zero-width slices and per-instance slot identity coherent. |
 | [rad0019_vtp14_n2_tp_ownership_fp8](../../../engines/radiance/patches/rad0019_vtp14_n2_tp_ownership_fp8/patch.toml) | validated | 2 | Update Qwen/DFlash2 geometry hooks for new build slots, replicated KV heads and split gather/head layout. Preserve coverage for heterogeneous rank widths. |
-| [rad0020_vtp14_tp3_pipelined_prefill](../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/patch.toml) | validated | 1 | Port pipelining context fields to ABI 41 and group-scoped buffers. Recheck launch barriers and fixed/flex scratch accounting. |
+| [rad0020_vtp14_tp3_pipelined_prefill](../../../engines/radiance/patches/rad0020_vtp14_tp3_pipelined_prefill/patch.toml) | validated | 1 | Port pipelining context fields to ABI 43 and group-scoped buffers. Recheck launch barriers and fixed/flex scratch accounting. |
 | [rad0021_vtp14_weighted_twoshot_3rank](../../../engines/radiance/patches/rad0021_vtp14_weighted_twoshot_3rank/patch.toml) | validated | 0 | Revalidate link-weighted two-shot slices with group rendezvous and updated wake-store/acquire semantics. Rebench three-rank imbalance; no anchor repair currently observed. |
 | [rad0022_tune_pin](../../../engines/radiance/patches/rad0022_tune_pin/patch.toml) | validated | 0 | Retain tuning pin interface only after checking new kernel names, geometries and model lifetime. Old selected variants require new performance evidence. |
 | [rad0023_ar_timeline](../../../engines/radiance/patches/rad0023_ar_timeline/patch.toml) | validated | 0 | Scope AR timeline records by engine/TP group, preserve sampling overhead controls, and include new chained/fenced ordering in interpretation. |
@@ -246,7 +249,7 @@ apply, not that a patch is ready to ship. Patch IDs link to source packages.
 
 ## Component and enhancement migration beyond patch anchors
 
-- **libr3 / libr2 / bc-gfx12:** rebuild against ABI 41 and recompute exported
+- **libr3 / libr2 / bc-gfx12:** rebuild against ABI 43 and recompute exported
   layout fingerprints. Audit init parameters, `tp_group`, chain/fence declarations,
   RadBatch additions and row schemas. Validate per-device code filtering across
   gfx1100/gfx1201/gfx1030; a plugin that loads is not proof every rank has code.

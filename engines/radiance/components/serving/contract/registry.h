@@ -76,7 +76,9 @@ struct Registry {
 /* Parse and check a registry. False with `why` naming the first fault (and its path) on: any non-integer number, an
  * unknown table or key, a missing doc, a duplicate or orphaned path, a child before its parent, an unknown kind, def or
  * class, a "number" type, a non-identifier C++ name, duplicate C++ type names, or kinds and keys that do not fit. */
-bool load_registry(const std::string& toml_text, const std::string& source_name, Registry* out, std::string* why);
+enum class Edition { current, successor };
+bool load_registry(const std::string& toml_text, const std::string& source_name, Registry* out, std::string* why,
+                   Edition edition = Edition::current);
 
 /* The JSON Schema 2020-12 document, canonical key order, two-space indent, trailing newline. */
 std::string emit_schema(const Registry& r);

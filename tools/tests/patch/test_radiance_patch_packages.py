@@ -90,7 +90,7 @@ PIN_BLOBS = {
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "532725c"),
         "core/bc_serving_manifest.cpp": (None, "bb02d82"),
-        "core/CMakeLists.txt": ("921debd", "e763864"),
+        "core/CMakeLists.txt": ("921debd", "9a24bef"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
     },
 }
@@ -157,6 +157,11 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 temp, root = self._prepared(package_id)
                 try:
                     patches = _load(package_id)
+                    before = {
+                        patch.path: (root / patch.path).read_text(encoding="utf-8")
+                        for patch in patches
+                        if (root / patch.path).exists()
+                    }
                     self.assertEqual({patch.path for patch in patches}, set(PIN_BLOBS[package_id]))
                     for relative, (pin_blob, _) in PIN_BLOBS[package_id].items():
                         target = root / relative
@@ -166,13 +171,22 @@ class TestRadiancePatchPackages(unittest.TestCase):
                             self.assertEqual(_git_blob_prefix(target.read_bytes()), pin_blob, relative)
                     first = apply_all(list(patches), root)
                     self.assertTrue(all(result.ok for result in first), first)
-                    self.assertTrue(
-                        all(edit.status == "applied" for result in first for edit in result.results),
-                        first,
-                    )
+                    first_status = {}
+                    for patch, result in zip(patches, first):
+                        self.assertEqual(patch.path, result.path)
+                        for edit, outcome in zip(patch.edits, result.results):
+                            expected = (
+                                "not-applicable"
+                                if edit.applies_if and not re.search(edit.applies_if, before.get(patch.path, ""), re.MULTILINE)
+                                else "applied"
+                            )
+                            self.assertEqual(outcome.status, expected, f"{package_id}:{patch.path}:{edit.id}")
+                            first_status[(patch.path, edit.id)] = outcome.status
                     for patch in patches:
                         text = (root / patch.path).read_text(encoding="utf-8")
                         for edit in patch.edits:
+                            if first_status[(patch.path, edit.id)] == "not-applicable":
+                                continue
                             self.assertRegex(
                                 text,
                                 re.compile(edit.guard_pattern(), re.MULTILINE),
@@ -193,10 +207,15 @@ class TestRadiancePatchPackages(unittest.TestCase):
                     after_first = _snapshot(root)
                     second = apply_all(list(patches), root)
                     self.assertTrue(all(result.ok for result in second), second)
-                    self.assertTrue(
-                        all(edit.status == "already-applied" for result in second for edit in result.results),
-                        second,
-                    )
+                    for patch, result in zip(patches, second):
+                        self.assertEqual(patch.path, result.path)
+                        for edit, outcome in zip(patch.edits, result.results):
+                            expected = (
+                                "already-applied"
+                                if first_status[(patch.path, edit.id)] == "applied"
+                                else "not-applicable"
+                            )
+                            self.assertEqual(outcome.status, expected, f"{package_id}:{patch.path}:{edit.id}")
                     self.assertEqual(_snapshot(root), after_first)
                 finally:
                     temp.cleanup()
@@ -920,8 +939,10 @@ class TestPlanMemoryPatch(unittest.TestCase):
         for cmake in (self.SERVING / "CMakeLists.txt", *self.SERVING.glob("*.cmake")):
             text = cmake.read_text(encoding="utf-8")
             if cmake.name == "bc_serving_v2.cmake":
-                self.assertEqual(text.count("add_library(bc_serving_v2 "), 1)
+                self.assertEqual(text.count("function(bc_add_manifest_library target abi generated)"), 1)
+                self.assertEqual(text.count("add_library(${target} STATIC"), 1)
                 self.assertEqual(text.count("add_library(bc_jcs "), 1)
+                self.assertEqual(text.count("bc_add_manifest_library(bc_serving_v2 "), 1)
             else:
                 self.assertNotIn("add_library(bc_serving_v2 ", text, cmake.name)
                 self.assertNotIn("add_library(bc_jcs", text, cmake.name)
@@ -930,7 +951,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
         engine = tomllib.loads((REPO / "engines" / "radiance" / "engine.toml").read_text(encoding="utf-8"))
         self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V2_CMAKE"],
                          "engines/radiance/components/serving/bc_serving_v2.cmake")
-        listed = re.findall(r'"\$\{_bc_v2_dir\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8"))
+        listed = re.findall(r'"\$\{src\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8"))
         self.assertTrue(listed and all((self.SERVING / f).is_file() for f in listed), listed)
 
     def test_second_apply_is_a_no_op(self):
