@@ -181,6 +181,8 @@ C45 (2026-11-20): exposed `v2::native_config_view(const Manifest&)`, returning t
 
 C46 (2026-11-20): added a typed strict-reader snapshot replay seam and a separate ABI44 consumer linked to the generated v3 reader only. The real v3 writer fixture supplies measuring and serving documents after authored YAML removal; the upstream fleet parser preserves the native-only mixed-step-target-ms value and cfg.given source, exact snapshot identity, and refuses role swaps. Fresh card-free ABI44 build and CTest pass; rad0009 patch class passes with TMPDIR on an executable filesystem. Evidence C46 in docs/evidence/radiance-latest-bump/README.md; Ledger event chg_20261119_165938_the-native-yaml-snapshot-now-p_9902. This remains an isolated consumer proof. Next, migrate one real owner path at a time (native P1, measuring/session/cache receipt, stored/offline replay), retain the v2 default, and keep the native session gate closed until all consumers consume the same admitted snapshot and role contract.
 
+C47 exact-recipe follow-up (2026-11-20): corrected candidate provenance to a fresh current `recipes.toml` materialization: upstream `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`, source tree `8ca1308f23c0eaef5fdaa0ce29b9cfa7225925fd`, all 33 selected serving-core patches including rad0050–rad0053. Hardened candidate CMake overrides to require explicit test-only v3 mode and required writer/config/upstream parser. Serial ABI44 candidate build and exact-composition `bc_native_v3_engine_test` passed (1/1); link has one manifest archive. Focused rad0009 patch tests passed (5/5); diff check clean. Evidence: `docs/evidence/radiance-latest-bump/README.md` C47. This supersedes manually staged candidate provenance, without changing C46 behavioral scope. Next slice: use the actual production v3 plan key including ordered rank_devices and owner cache receipt/store/lookup, then exercise P1 and writer against that owner record. Keep production gate closed.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -222,3 +224,4 @@ C46 (2026-11-20): added a typed strict-reader snapshot replay seam and a separat
 - 2026-11-19T16:33:33.967028+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T16:38:19.396059+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T16:59:55.010146+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T17:20:24.644470+00:00 (updated-by): Updated: section:notes

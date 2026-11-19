@@ -774,6 +774,8 @@ class TestServingManifestPatch(unittest.TestCase):
                 "BC_SERVING_GENERATED_DIR",
                 'include("${BC_SERVING_V2_CMAKE}")',
                 "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
+                'if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")',
+                "target_compile_definitions(rad_core PRIVATE BC_RAD_HOST_POOL_MIB_AGGREGATE=1)",
                 "add_executable(bc_native_v3_engine_test",
                 "target_link_libraries(bc_native_v3_engine_test PRIVATE rad_core)",
                 "elseif(RAD_BUILD_TESTS)",

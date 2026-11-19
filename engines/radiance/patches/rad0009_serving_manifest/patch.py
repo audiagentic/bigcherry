@@ -395,8 +395,11 @@ if(NOT DEFINED BC_SERVING_V2_CMAKE)
                       "is required (the shared serving manifest v1 library); the BigCherry lane passes it")
 endif()
 if(BC_SERVING_V3_NATIVE_TEST)
-  if(NOT RAD_BUILD_TESTS OR NOT DEFINED BC_SERVING_GENERATED_DIR)
-    message(FATAL_ERROR "rad0009: v3 native consumer test requires RAD_BUILD_TESTS and BC_SERVING_GENERATED_DIR")
+  if(NOT RAD_BUILD_TESTS OR NOT DEFINED BC_SERVING_GENERATED_DIR OR
+     NOT DEFINED BC_V3_WRITER_TEST_EXECUTABLE OR NOT EXISTS "${BC_V3_WRITER_TEST_EXECUTABLE}" OR
+     NOT DEFINED BC_V3_WRITER_CONFIG OR NOT EXISTS "${BC_V3_WRITER_CONFIG}" OR
+     NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
+    message(FATAL_ERROR "rad0009: v3 native consumer test requires RAD_BUILD_TESTS, the v3 codec, writer, config and fleet parser")
   endif()
 endif()
 include("${BC_SERVING_V2_CMAKE}")
