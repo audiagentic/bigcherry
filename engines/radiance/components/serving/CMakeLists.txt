@@ -51,7 +51,7 @@ target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
 set(bc_manifest_writer_sources
-  manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp
+  manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp rank_demand.cpp
   live_policy.cpp live_policy_manifest.cpp plan_cache.cpp v2/s10_inputs.cpp)
 add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
 

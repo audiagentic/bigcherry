@@ -926,6 +926,23 @@ void measured_plan_cache(Fixture& t) {
     native_ranks["gpu"].push_back({{"bdf", r.values.at("layout").at("engine_cards").at(0)},
                                    {"required_bytes", 10}, {"fixed_bytes", 1}, {"claimable_bytes", 10},
                                    {"evidence", "rad0011 test rank"}});
+    auto refuse_owned_ranks = [&](Json bad_ranks, const std::string& expected) {
+        try {
+            (void)sv::plan_cache_store_owned(
+                native_dir, native_key, native_plan, bad_ranks, r.values, sv::HostResident{2304, 1536},
+                sv::OwnerMeasurementEvidence{"invalid-native-attempt", sv::sha256_hex("measuring-manifest")});
+        } catch (const std::runtime_error& error) {
+            assert(std::string(error.what()).find(expected) != std::string::npos);
+            return;
+        }
+        assert(false && "invalid owned rank demand must refuse");
+    };
+    Json bad_bdf = native_ranks;
+    bad_bdf["gpu"][0]["bdf"] = "0000:ff:00.0";
+    refuse_owned_ranks(bad_bdf, "differs from selected ordered engine devices");
+    Json bad_bytes = native_ranks;
+    bad_bytes["gpu"][0]["required_bytes"] = 0;
+    refuse_owned_ranks(bad_bytes, "out of measured wire range");
     const auto native_stored = sv::plan_cache_store_owned(
         native_dir, native_key, native_plan, native_ranks, r.values, sv::HostResident{2304, 1536},
         sv::OwnerMeasurementEvidence{"native-test-attempt", sv::sha256_hex("measuring-manifest")});

@@ -1,6 +1,7 @@
 #include "admission.h"
 #include "calibration.h"
 #include "plan_cache.h"
+#include "rank_demand.h"
 #include "serving_codec.h"
 #include "sha256.h"
 #include "strict_json.h"
@@ -107,10 +108,6 @@ bool is_sha256(const Json& value) {
     return digest.size() == 64 && std::all_of(digest.begin(), digest.end(), [](char c) {
         return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
     });
-}
-
-bool is_nonnegative_integer(const Json& value) {
-    return value.is_number_integer() && value.get<int64_t>() >= 0;
 }
 
 std::string owner_measurement_digest(const Json& owner, const std::string& key) {
@@ -439,27 +436,12 @@ CachedPlan plan_cache_store_owned(const fs::path& dir, const Json& key_inputs, c
     const int version = plan_cache_version(key_inputs);
     if (resident.engine_mib == 0 || owner.attempt_id.empty() || !is_sha256(owner.measuring_manifest_sha256))
         throw std::runtime_error("owner measurement publication requires an attempt, manifest digest, and resident memory");
-    if (!rank_demand.is_object() || rank_demand.size() != 4 ||
-        rank_demand.value("kind", "") != "radiance_p1_rank_demand" ||
-        !rank_demand.contains("gpu") || !rank_demand.at("gpu").is_array())
-        throw std::runtime_error("owner measurement requires the engine rank-demand record");
+    const std::vector<std::string> selected_bdfs =
+        values.at("layout").at("engine_cards").get<std::vector<std::string>>();
+    const EngineRankDemand decoded_ranks =
+        decode_engine_rank_demand(rank_demand, selected_bdfs, "owner rank demand");
     std::vector<std::string> engine_bdfs;
-    for (const Json& gpu : rank_demand.at("gpu"))
-        if (gpu.is_object() && gpu.contains("bdf") && gpu.at("bdf").is_string())
-            engine_bdfs.push_back(gpu.at("bdf").get<std::string>());
-    if (rank_demand.value("schema_version", 0) != 1 ||
-        !rank_demand.contains("resident_other_bytes") || !is_nonnegative_integer(rank_demand.at("resident_other_bytes")))
-        throw std::runtime_error("owner rank demand has an invalid schema");
-    for (const Json& gpu : rank_demand.at("gpu"))
-        if (!gpu.is_object() || gpu.size() != 5 || !gpu.contains("bdf") || !gpu.at("bdf").is_string() ||
-            !gpu.contains("required_bytes") || !is_nonnegative_integer(gpu.at("required_bytes")) ||
-            !gpu.contains("fixed_bytes") || !is_nonnegative_integer(gpu.at("fixed_bytes")) ||
-            !gpu.contains("claimable_bytes") || !is_nonnegative_integer(gpu.at("claimable_bytes")) ||
-            !gpu.contains("evidence") || !gpu.at("evidence").is_string() ||
-            gpu.at("evidence").get<std::string>().find("rad0011") == std::string::npos ||
-            gpu.at("fixed_bytes").get<uint64_t>() > gpu.at("required_bytes").get<uint64_t>() ||
-            gpu.at("required_bytes").get<uint64_t>() > gpu.at("claimable_bytes").get<uint64_t>())
-            throw std::runtime_error("owner rank demand contains an invalid GPU row");
+    for (const EngineRankGpuDemand& gpu : decoded_ranks.gpu) engine_bdfs.push_back(gpu.bdf);
     if (engine_bdfs.empty() || rank_demand.at("gpu").size() != engine_bdfs.size())
         throw std::runtime_error("owner rank demand does not match the engine-device count");
     if (version == 3) {

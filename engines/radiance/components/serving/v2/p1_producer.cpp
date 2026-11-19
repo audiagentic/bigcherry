@@ -4,6 +4,7 @@
 #include "manifest_writer.h"
 #include "owner_map.h"
 #include "plan_cache.h"
+#include "rank_demand.h"
 #include "sha256.h"
 #include "serving_codec.h"
 #include "v2/p1_live_room.h"
@@ -151,25 +152,11 @@ json produce_p1(const bc::serving::ManifestInputs& manifest_inputs, const json& 
   const json& plan = request.at("engine_plan");
   if (const auto e = decode(plan, "rad0011 engine plan", &native.engine_plan))
     refuse("engine_plan", e->message);
-  const json& ranks = request.at("rank_demand");
-  fields(ranks, {"schema_version", "kind", "gpu", "resident_other_bytes"}, "rank demand");
-  if (ranks.at("schema_version") != 1 || ranks.at("kind") != "radiance_p1_rank_demand" ||
-      !ranks.at("gpu").is_array() || ranks.at("gpu").size() != selected.engine_cards.size())
-    refuse("rank demand", "invalid source identity or rank count");
-  native.resident_other_bytes = integral(ranks.at("resident_other_bytes"), "resident_other_bytes");
-  for (size_t i = 0; i < selected.engine_cards.size(); ++i) {
-    const auto& g = ranks.at("gpu").at(i);
-    fields(g, {"bdf", "required_bytes", "fixed_bytes", "claimable_bytes", "evidence"}, "GPU");
-    if (g.at("bdf") != selected.engine_cards[i] ||
-        nonempty(g.at("evidence"), "GPU evidence").find("rad0011") == std::string::npos)
-      refuse("GPU", "post-rank-split BDF/source mismatch");
-    const int64_t required = integral(g.at("required_bytes"), "GPU required", true);
-    const int64_t fixed = integral(g.at("fixed_bytes"), "GPU fixed", true);
-    const int64_t claimable = integral(g.at("claimable_bytes"), "GPU claimable", true);
-    if (fixed > required || required > claimable)
-      refuse("GPU", "native fixed/required demand exceeds measured claimable room");
-    native.gpu.push_back({selected.engine_cards[i], required, fixed, claimable});
-  }
+  const json& rank_record = request.at("rank_demand");
+  const EngineRankDemand ranks = decode_engine_rank_demand(rank_record, selected.engine_cards, "rank demand");
+  native.resident_other_bytes = ranks.resident_other_bytes;
+  for (const EngineRankGpuDemand& gpu : ranks.gpu)
+    native.gpu.push_back({gpu.bdf, gpu.required_bytes, gpu.fixed_bytes, gpu.claimable_bytes});
   if (native.engine_plan.vram.cards.size() != native.gpu.size())
     refuse("GPU", "engine plan rank count differs from demand sidecar");
 
@@ -244,7 +231,7 @@ json produce_p1(const bc::serving::ManifestInputs& manifest_inputs, const json& 
   native.planning_key = bc::serving::sha256_hex(
       model_id + engine_id + helper_id + native.layout_digest + native.inventory_digest +
       native.owner_map.owner_map_sha256 + std::to_string(ctx) +
-      std::to_string(native.retention_target_tokens) + ranks.dump() + plan.dump());
+      std::to_string(native.retention_target_tokens) + rank_record.dump() + plan.dump());
   native.provenance = run_id + "; " + room.value().evidence +
       "; verified container identity and owner planner; rank split";
   const auto published = publish_p1_measurement(native);
