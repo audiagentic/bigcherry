@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import sys
 import tempfile
+import tomllib
 
 import pytest
 
@@ -17,7 +18,7 @@ sys.path.insert(0, str(REPO / "tools"))
 from bigcherry.patcher import apply_all
 
 PACKAGE = REPO / "engines/radiance/patches/rad0046_retained_moe_rows/patch.py"
-CANDIDATE_COMMIT = "3deabdaeca17b58bad90d332f4b204cf7bb8a10e"
+RECIPE = REPO / "engines/radiance/recipes.toml"
 
 
 def _patches():
@@ -33,10 +34,11 @@ def test_retained_rows_apply_and_replay_on_reviewed_abi43_source():
     if not checkout or not Path(checkout).is_dir():
         pytest.skip("set RADIANCE_SRC to the reviewed ABI43 source checkout")
 
+    candidate_commit = tomllib.loads(RECIPE.read_text(encoding="utf-8"))["pinned"]
     resolved = subprocess.check_output(
-        ["git", "-C", checkout, "rev-parse", "--verify", f"{CANDIDATE_COMMIT}^{{commit}}"], text=True,
+        ["git", "-C", checkout, "rev-parse", "--verify", f"{candidate_commit}^{{commit}}"], text=True,
     ).strip()
-    assert resolved == CANDIDATE_COMMIT
+    assert resolved == candidate_commit
 
     patches = _patches()
     files = [edit.path for edit in patches]
@@ -49,7 +51,7 @@ def test_retained_rows_apply_and_replay_on_reviewed_abi43_source():
             target = root / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(subprocess.check_output(
-                ["git", "-C", checkout, "show", f"{CANDIDATE_COMMIT}:{rel}"],
+                ["git", "-C", checkout, "show", f"{candidate_commit}:{rel}"],
             ))
 
         first = apply_all(patches, root)

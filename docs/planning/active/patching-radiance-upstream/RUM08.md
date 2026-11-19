@@ -111,6 +111,8 @@ C13 (2026-11-19): added candidate-only `rad0047_mtp_verify_replay_summary`. Agai
 
 Radiance 2.2.0 (b6b8751c) adds scheduler behavior that needs explicit disposition against the existing BigCherry scheduling patches. Review d42b7440 (prefill room gate defaults off), af1557b1 (fresh prefill waits for whole prompt), 67cf57b8 (serial span admission with no decode), c3491905 (tail timing), and f9dd69db (window-relative bidi_used). Retain upstream semantics where equivalent, and qualify preserved local scheduling defaults explicitly in the existing focused prefill and mixed TP fixtures. The upstream RAD_DRAFT_HISTORY value is calibration-only at depth zero. Keep its evidence separate from serving MTP acceptance.
 
+Checkpoint 9e74425b8: host-only generated v3 owner test passed 1/1 and v2 serving, session-stored, stored-manifest and cache tests passed 4/4. Fresh, named replay and explicit replay reacquire the original helper segment and bind the worker build to stored measurement identity. Occupied segment and worker identity drift refuse before power admission. This is lifecycle evidence; selected fixed-depth hardware acceptance remains open.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
@@ -132,3 +134,4 @@ Radiance 2.2.0 (b6b8751c) adds scheduler behavior that needs explicit dispositio
 - 2026-11-19T09:00:55.776384+00:00 (state-transition): State: pending → in_progress
 - 2026-11-19T09:02:24.106483+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T21:54:34.526893+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:46:29.186651+00:00 (updated-by): Updated: section:notes

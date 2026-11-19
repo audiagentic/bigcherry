@@ -125,6 +125,8 @@ C29 (2026-11-19): extracted the actual block-E4M3 width decision into a dependen
 
 Codeberg main advanced by 40 commits from the frozen 3deabda candidate to Radiance 2.2.0 at b6b8751cccb0e834a13ae9e5afca824ee9a487aa. The new upstream header still declares ABI43. A separate upstream review ref holds that exact source. Recheck ordered apply/replay and semantic overlaps before changing the candidate pin or carrying forward compatibility evidence. Keep the existing ABI44 candidate available for comparison.
 
+Codeberg refs/heads/main matched the frozen Radiance 2.2.0 recipe SHA b6b8751cccb0e834a13ae9e5afca824ee9a487aa. The rad0046 fixture now reads the recipe pin; retained E4M3 row apply, byte-identical replay and compiled host geometry predicate passed on that exact source (1/1). This proves apply and host geometry. Device activation and numerical evidence remain open.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -159,3 +161,4 @@ Codeberg main advanced by 40 commits from the frozen 3deabda candidate to Radian
 - 2026-11-19T12:28:01.492650+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:46:32.419552+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T21:53:59.253973+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:48:19.649691+00:00 (updated-by): Updated: section:notes
