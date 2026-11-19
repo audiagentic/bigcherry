@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_021113_corrected-the-rum03-plan-to-ta_2330",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream/RUM03.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM03/RV4234.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Created and closed review RV4234 after correcting RUM03's selected migration from ABI 41 to the frozen ABI 43 candidate; preserved layout-fingerprint, shared registry and stale-plugin acceptance requirements.",
+  "timestamp-utc": "2026-11-19T02:11:13.547016Z",
+  "user-summary-candidate": "Corrected the RUM03 plan to target ABI 43 and recorded the review."
+}

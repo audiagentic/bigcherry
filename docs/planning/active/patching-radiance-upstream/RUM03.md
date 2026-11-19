@@ -11,7 +11,7 @@ priority: P0
 work: M
 ---
 
-# Port build dependencies and plugin ABI 41 with a consistent runtime SDK
+# Port build dependencies and plugin ABI 43 with a consistent runtime SDK
 
 ## Description
 
@@ -31,7 +31,7 @@ Actual blockers: serving/CMakeLists.txt explicitly checks vendor/nlohmann/json.h
 
 Upstream Registry::commit_ now fills set_->rows and records chain_fenced from rad_kernel_chain==2. The rad0016 patch's old singleton fields and loader insertion anchors fail. Reapply per-device masks after the new row is fully classified, without discarding upstream fields or altering chain semantics. Keep one plugin eligibility decision shared by loader/planner/runtime.
 
-ABI 35 -> 41 is not solved by updating a numeric constant. The layout fingerprint covers RadBatch, RadBuildCtx and probe fields. Rebuild all consumers; keep custom field rows in the fingerprint source. Do not copy installed old plugins into the target radiance_home.
+The selected transition is ABI 35 -> ABI 43 at upstream commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e. This is not solved by updating a numeric constant. The layout fingerprint covers RadBatch, RadBuildCtx and probe fields. Rebuild all consumers; keep custom field rows in the fingerprint source. Do not copy installed old plugins into the target radiance_home.
 
 ## Code Samples & Guidance
 
@@ -105,3 +105,8 @@ Candidate changed from reviewed ABI 41 to exact upstream 3deabdaeca17b58bad90d33
 - 2026-11-18T08:49:24.938096+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T00:54:06.118974+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T00:54:15.725512+00:00 (state-transition): State: pending → in_progress
+
+## Reviews
+
+- RV4234
+- 2026-11-19T02:09:24.234699+00:00 (updated-by): Updated: section:title, section:detailed_solution
