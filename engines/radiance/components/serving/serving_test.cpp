@@ -30,7 +30,9 @@
 #include <arpa/inet.h>
 #include <csignal>
 #include <cstdio>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -863,12 +865,15 @@ void measured_plan_cache(Fixture& t) {
     assert(k.at("engine").contains("host_pool_mib") && k.at("engine").contains("max_num_seqs"));
     const auto native_file = t.file("plan-key-fleet.yaml", "cards: [0]\nmodels: {tiny: {model: tiny.rad}}\n");
     const auto native = sv::NativeConfigSnapshot::read(native_file, t.root);
-    const Json native_key = sv::plan_key_inputs(r.values, t.facts, id, eid, "", &native);
+    const auto worker = t.file("engine/runtime-home/helpers/r3_moe_worker", "helper-binary-v1");
+    Json native_values = r.values;
+    native_values["engine"]["radiance_home"] = (t.root / "engine/runtime-home").string();
+    const Json native_key = sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native);
     assert(native_key.at("cache_version") == 3 && native_key.at("native_config").at("sha256") == native.sha256() &&
            native_key.at("native_config").at("resolution_root") == t.root.string());
     assert(native_key.at("native_config").at("rank_devices").size() == r.values.at("layout").at("engine_cards").size() +
                                                                           r.values.at("layout").at("helper_cards").size());
-    Json reordered_values = r.values;
+    Json reordered_values = native_values;
     assert(reordered_values.at("layout").at("helper_cards").size() > 1);
     std::swap(reordered_values["layout"]["helper_cards"][0],
               reordered_values["layout"]["helper_cards"][1]);
@@ -878,7 +883,10 @@ void measured_plan_cache(Fixture& t) {
     const auto other_root = t.root / "other-root";
     std::filesystem::create_directories(other_root);
     const auto same_bytes_other_root = sv::NativeConfigSnapshot::read(native_file, other_root);
-    assert(sv::plan_key(sv::plan_key_inputs(r.values, t.facts, id, eid, "", &same_bytes_other_root)) !=
+    assert(sv::plan_key(sv::plan_key_inputs(native_values, t.facts, id, eid, "", &same_bytes_other_root)) !=
+           sv::plan_key(native_key));
+    write(worker, "helper-binary-v2");
+    assert(sv::plan_key(sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native)) !=
            sv::plan_key(native_key));
     Json v = r.values;
     for (const char* moved : {"prefix_cache_mib", "host_headroom_mib", "port"}) {
@@ -4790,6 +4798,7 @@ void helper_vram_owner_graph(Fixture& t) {
         static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
     fs::create_directories(home / "helpers");
     fs::create_symlink(BC_FAKE_ENGINE, home / "helpers/r3_moe_worker");
+    in.named_config = "flashnext-2xtx";
     in.options.sets.insert(in.options.sets.end(),
                           {"memory.helper_budgets_mib=[1,1]", "memory.host_pool_mib=1024", "memory.host_kv_mib=0"});
     const auto selected = bc::serving::resolve(in.options, bc::serving::detect(t.root));
@@ -4826,11 +4835,15 @@ void helper_vram_owner_graph(Fixture& t) {
     owner.timing.stop_grace = std::chrono::seconds(1);
     owner.timing.poll = std::chrono::milliseconds(20);
     owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
-        return ss::plan_engine_only(in, dir, hooks);
+        return in.stored_manifest.empty() ? ss::plan_engine_only(in, dir, hooks)
+                                          : ss::replay_stored_manifest(in, dir, hooks);
     };
+    std::vector<bc::serving::v2::PlanUse> admissions;
     owner.power_hook.begin_manifest = [&](const fs::path& manifest, bc::serving::v2::PlanUse use) {
-        assert(use == bc::serving::v2::PlanUse::measuring && bc::serving::v2::load_manifest(manifest, use));
-        fs::remove(authored);
+        assert(bc::serving::v2::load_manifest(manifest, use));
+        admissions.push_back(use);
+        if (use == bc::serving::v2::PlanUse::measuring)
+            fs::remove(authored);
         return bc::serving::v2::Status{};
     };
     owner.power_hook.verify_serving = [](const fs::path& manifest) {
@@ -4841,35 +4854,40 @@ void helper_vram_owner_graph(Fixture& t) {
     };
     owner.power_hook.verified_exit = [] {};
     owner.power_hook.restore = [] { return bc::serving::v2::Status{}; };
-    auto stop = std::async(std::launch::async, [&] {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
-        while (std::chrono::steady_clock::now() < deadline) {
-            const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
-            const auto state = record.value("state", std::string{});
-            if (state == "failed") return false;
-            if (state == "running") {
-                const auto reply = ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
-                return reply && reply->value("ok", false);
+    const auto serve_and_stop = [&](const std::vector<std::string>& expected_roles) {
+        auto stop = std::async(std::launch::async, [&] {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline) {
+                const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+                const auto state = record.value("state", std::string{});
+                if (state == "failed") return false;
+                if (state == "running") {
+                    const auto reply = ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
+                    return reply && reply->value("ok", false);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            (void)ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
+            return false;
+        });
+        const int code = ss::serve(owner);
+        const bool stopped = stop.get();
+        const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+        if (code != 0 || !stopped || record.value("state", std::string{}) != "stopped" ||
+            !ss::alive_recorded(record).empty())
+            throw std::runtime_error("native helper owner did not serve and stop: " + record.dump());
+        std::vector<std::string> roles;
+        for (const auto& child : record.at("processes")) {
+            assert(child.at("exited") == true);
+            roles.push_back(child.at("role").get<std::string>());
         }
-        (void)ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
-        return false;
-    });
-    const int code = ss::serve(owner);
-    const bool stopped = stop.get();
-    const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
-    if (code != 0 || !stopped || record.value("state", std::string{}) != "stopped" ||
-        !ss::alive_recorded(record).empty())
-        throw std::runtime_error("native helper owner did not serve and stop: " + record.dump());
-    std::vector<std::string> roles;
-    for (const auto& child : record.at("processes")) {
-        assert(child.at("exited") == true);
-        roles.push_back(child.at("role").get<std::string>());
-    }
-    assert(roles == std::vector<std::string>({"native config inspector", "native v3 measuring draft writer",
+        if (roles != expected_roles)
+            throw std::runtime_error("native helper owner started unexpected roles: " + record.dump());
+        return record;
+    };
+    const auto fresh = serve_and_stop({"native config inspector", "native v3 measuring draft writer",
         "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "native v3 measured writer",
-        "helper0", "helper1", "engine"}));
+        "helper0", "helper1", "engine"});
     assert(samples.size() == 2 && !fs::exists(authored));
     for (const auto& [bdf, count] : samples) {
         assert(count >= 4);
@@ -4877,6 +4895,42 @@ void helper_vram_owner_graph(Fixture& t) {
                          value.at("layout").at("engine_cards").end(), bdf) ==
                value.at("layout").at("engine_cards").end());
     }
+    const auto measured_samples = samples;
+    const auto stored = fs::path(fresh.at("manifest").get<std::string>());
+    const auto attempt = fresh.at("selection").at("plan_measurement_attempt");
+    const std::vector<std::string> replay_roles{"native config inspector", "helper0", "helper1", "engine"};
+    const auto check_replay = [&](const Json& replayed) {
+        assert(replayed.at("selection").at("replay") == true);
+        assert(replayed.at("manifest") == stored.string());
+        assert(replayed.at("handoff_shm") == fresh.at("handoff_shm"));
+        assert(replayed.at("selection").at("plan_measurement_attempt") == attempt);
+        assert(replayed.at("selection").at("manifest_digest") == fresh.at("selection").at("manifest_digest"));
+        assert(samples == measured_samples);
+    };
+    write(authored, yaml);
+    check_replay(serve_and_stop(replay_roles));
+    fs::remove(authored);
+    in.stored_manifest = stored;
+    check_replay(serve_and_stop(replay_roles));
+    using PlanUse = bc::serving::v2::PlanUse;
+    assert(admissions == std::vector<PlanUse>({PlanUse::measuring, PlanUse::serving, PlanUse::serving}));
+
+    const std::string segment = fresh.at("handoff_shm");
+    const int occupied = ::shm_open(segment.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    assert(occupied >= 0);
+    ::close(occupied);
+    const int conflict = ss::serve(owner);
+    const auto refused = ss::read_record(owner.run_dir).value_or(Json::object());
+    const int still_occupied = ::shm_open(segment.c_str(), O_RDONLY | O_CLOEXEC, 0);
+    if (still_occupied >= 0)
+        ::close(still_occupied);
+    const int cleaned = ::shm_unlink(segment.c_str());
+    assert(conflict != 0 && still_occupied >= 0 && cleaned == 0);
+    assert(admissions.size() == 3 && samples == measured_samples);
+    assert(refused.at("errors").dump().find("still exists after an unverified stop") != std::string::npos);
+    assert(refused.at("processes").size() == 1 &&
+           refused.at("processes").at(0).at("role") == "native config inspector" &&
+           ss::alive_recorded(refused).empty());
 #else
     int writers = 0;
     std::vector<fs::path> measuring_histograms;

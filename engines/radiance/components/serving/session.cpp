@@ -2575,8 +2575,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (v2::kContractVersion == 3) {
             if (in.runner || in.calibration_run || !in.experiment_file.empty())
                 throw PlanFailed("native v3 admission requires the real writer and a production config");
-            if (processes.empty())
-                cache = named_cache(in, r, facts, engine, helper_binary, run_dir, &snapshot);
+            cache = named_cache(in, r, facts, engine, helper_binary, run_dir, &snapshot);
             if (cache) {
                 if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache->key)) {
                     EnginePlanInputs replay = in;
@@ -3143,9 +3142,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     const auto& m = verified.value();
     std::optional<NativeConfigSnapshot> native_snapshot;
     if (const auto native = v2::native_config_view(m)) {
-        if (given.replay_evidence || given.calibration_run || !given.experiment_file.empty() ||
-            m.spec.handoff || !m.spec.processes.helpers.empty())
-            throw PlanFailed("replay: native v3 requires current production engine-only inputs");
+        if (given.replay_evidence || given.calibration_run || !given.experiment_file.empty())
+            throw PlanFailed("replay: native v3 requires current production inputs");
         native_snapshot = NativeConfigSnapshot::admitted(std::string(native->yaml_utf8),
             std::string(native->identity.sha256), std::string(native->identity.resolution_root));
         if (expected_native && expected_native->manifest_field() != native_snapshot->manifest_field())
@@ -3163,6 +3161,9 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (::access(engine.c_str(), X_OK) != 0 ||
         (!m.spec.processes.helpers.empty() && ::access(helper_binary.c_str(), X_OK) != 0))
         throw PlanFailed("replay: matching engine/helper binaries must be executable");
+    if (native_snapshot && !m.spec.processes.helpers.empty() &&
+        fs::canonical(helper_binary) != fs::canonical(native_runtime_home / "helpers" / "r3_moe_worker"))
+        throw PlanFailed("replay: native v3 helpers must use the worker that the measured writer verifies");
     const fs::path own_home = given.self.parent_path().parent_path();
     const fs::path own_engine = own_home.parent_path() / "bin" / "radiance";
     if (given.self.parent_path().filename() == "bin" && own_home.filename() == "radiance_home" &&
@@ -3283,19 +3284,25 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
                 ReplayRefusal::execution_projection,
                 "replay: RSC12 static resolution key changed (config, inputs, calibration or power)");
     }
+    std::string native_helper_build;
     if (native_snapshot) {
         if (!bound || !bound->native_measurement || !current_config)
             throw ReplayFailed(ReplayRefusal::missing_gate,
                                "replay: native v3 requires the manifest-bound owner measurement");
         const auto& receipt = *bound->native_measurement;
         const auto& current = current_config->values;
+        check_native_helper_roles(accepted, current_config->manifest.at("process_helpers"),
+                                  current.at("layout").at("engine_cards").get<std::vector<std::string>>(),
+                                  accepted.spec.handoff ? accepted.spec.handoff->transport.shm : std::string{});
         const Json key_inputs = plan_key_inputs(current, facts, evidence.model_identity, evidence.engine_identity,
                                                 "budgets: default", &*native_snapshot);
+        native_helper_build = key_inputs.at("native_config").value("helper_build", std::string{});
         const auto owner_dir = stored.parent_path() / "measurement-attempts" / receipt.attempt_id / "plan-cache";
         const auto cached = plan_cache_lookup(owner_dir, key_inputs);
         if (!cached || !cached->owner || cached->owner->attempt_id != receipt.attempt_id ||
             cached->owner_sha256 != receipt.sha256 ||
             v2::encode(accepted.spec.plan.engine_memory->expected) != cached->plan_json ||
+            (cached->resident.helpers_mib > 0) != !accepted.spec.processes.helpers.empty() ||
             !accepted.spec.plan.resource_inputs)
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                "replay: native owner measurement no longer matches the exact final manifest");
@@ -3392,25 +3399,32 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
             fs::canonical(home) != native_runtime_home ||
             engine_identity(engine, native_runtime_home) != evidence.engine_identity)
             throw PlanFailed("replay: native parser or build differs from the stored engine inputs");
-    }
-    for (const auto& h : accepted.spec.processes.helpers) {
-        const Json* gpu = nullptr;
-        for (const auto& g : facts.at("gpus"))
-            if (g.at("bdf") == h.gpu)
-                gpu = &g;
-        if (!gpu)
-            throw PlanFailed("replay: helper BDF vanished after live admission: " + h.gpu);
-        HelperStart helper;
-        helper.role = h.role;
-        helper.argv = {helper_binary.string(), "--manifest", out.pinned_manifest->path().string(), "--role",
-                       h.role};
-        helper.runtime = {{"RADIANCE_HOME", home.string()},
-                          {"ROCR_VISIBLE_DEVICES", std::to_string(gpu->at("hip_ordinal").get<int>())},
-                          {"HIP_VISIBLE_DEVICES", "0"}};
-        out.helpers.push_back(std::move(helper));
+        if (!native_helper_build.empty() && file_sha256(helper_binary) != native_helper_build)
+            throw PlanFailed("replay: native helper build changed during admission");
+        out.helpers = helper_starts({current_config->manifest.at("process_helpers"), facts}, native_runtime_home,
+                                    fs::absolute(helper_binary), out.execution_manifest(), false);
+    } else {
+        for (const auto& h : accepted.spec.processes.helpers) {
+            const Json* gpu = nullptr;
+            for (const auto& g : facts.at("gpus"))
+                if (g.at("bdf") == h.gpu)
+                    gpu = &g;
+            if (!gpu)
+                throw PlanFailed("replay: helper BDF vanished after live admission: " + h.gpu);
+            HelperStart helper;
+            helper.role = h.role;
+            helper.argv = {helper_binary.string(), "--manifest", out.execution_manifest().string(), "--role",
+                           h.role};
+            helper.runtime = {{"RADIANCE_HOME", home.string()},
+                              {"ROCR_VISIBLE_DEVICES", std::to_string(gpu->at("hip_ordinal").get<int>())},
+                              {"HIP_VISIBLE_DEVICES", "0"}};
+            out.helpers.push_back(std::move(helper));
+        }
     }
     if (accepted.spec.handoff) {
         out.handoff_shm = accepted.spec.handoff->transport.shm;
+        if (native_snapshot && !hooks.selected_segment)
+            throw PlanFailed("replay: native v3 helpers require an owner-held segment");
         if (hooks.selected_segment)
             require_callback(hooks.selected_segment.invoke("session.hooks.selected_segment", out.handoff_shm),
                              "replay handoff namespace");

@@ -249,6 +249,10 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
         key["native_config"] = {{"sha256", native_config->sha256()},
                                  {"resolution_root", native_config->resolution_root()},
                                  {"rank_devices", std::move(devices)}};
+        if (!values.at("layout").at("helper_cards").empty()) {
+            const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
+            key["native_config"]["helper_build"] = sha256_hex(read_file(home / "helpers" / "r3_moe_worker"));
+        }
     }
     if (!uniform) key["rank_cards"] = rank_cards;
     // The tuning settings bind to engine flags, and several change what the plan measures (tp_ownership moves each rank's
