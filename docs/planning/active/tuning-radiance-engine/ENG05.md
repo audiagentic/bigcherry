@@ -55,6 +55,7 @@ Decode ms/step at 1 and 6 streams within the v1.17.0 baseline allowance (or bett
 
 ## Notes
 
+2026-11-20 (AEDT): helper combine thread knee measured, docs/evidence/2026-11-20-eng05-combine-threads (PR #1206). flashnext-4gpu, helper.combine_threads 2/4/8/12/16, two launches each (8 repeated for drift), placement policy off in every arm (the calibration key hashes the thread count). The helper's own combine stage costs about 920 us a step at 2 threads, 700 at 4, 580 at 8, 591 at 12 and 670-750 at 16, so the knee is 8. Decode step time does not move with it: 1 stream 25.74-25.87 ms in all ten launches, 6 streams and 8 sessions within +-1.2 ms with no trend. The CPU combine is therefore off the step's critical path and is not part of the v1.17 step-time gap; suspect 1 (GEMV capability cache) was ruled out earlier, suspect 2 is the v26 mailbox hand-off (branch agent/eng05-mailbox-trace). calibration.combine_threads.max=8 is now a measured seed and helper.combine_threads resolves as min(8, affinity-set CPUs).
 
 
 ## Change Log
@@ -62,3 +63,4 @@ Decode ms/step at 1 and 6 streams within the v1.17.0 baseline allowance (or bett
 - 2026-11-19T07:30:54.932992+00:00 (created-by): Created by agent
 - 2026-11-19T07:31:25.516109+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
 - 2026-11-19T07:34:30.174287+00:00 (updated-by): Updated: section:steps
+- 2026-11-19T19:16:17.344315+00:00 (updated-by): Updated: section:notes

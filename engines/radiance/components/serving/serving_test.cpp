@@ -52,6 +52,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <sched.h>
 #include <thread>
 #include <vector>
 
@@ -212,6 +213,21 @@ void detection_limits(const Fixture& t) {
     write(root / "proc/self/status", "CapEff:\t0000000000004000\n");
     write(root / "sys/module/amdgpu/parameters/no_system_mem_limit", "Y\n");
     const Json h = bc::serving::detect(root).at("host");
+    {   // cpu_count is the CPUs this process may run on (its affinity set), which is what the helper inherits
+        cpu_set_t allowed;
+        CPU_ZERO(&allowed);
+        assert(sched_getaffinity(0, sizeof allowed, &allowed) == 0);
+        assert(h.at("cpu_count") == uint64_t(CPU_COUNT(&allowed)));
+        cpu_set_t one;
+        CPU_ZERO(&one);
+        int first = 0;
+        while (first < CPU_SETSIZE && !CPU_ISSET(first, &allowed)) ++first;
+        CPU_SET(first, &one);
+        assert(sched_setaffinity(0, sizeof one, &one) == 0);   // pinned to one CPU: detect must report one
+        const Json pinned = bc::serving::detect(root).at("host");
+        assert(sched_setaffinity(0, sizeof allowed, &allowed) == 0);
+        assert(pinned.at("cpu_count") == 1);
+    }
     assert(h.at("memory_cgroups").size() == 1);
     assert(h.at("memory_cgroups")[0].at("version") == 1);
     assert(h.at("memory_cgroups")[0].at("room_mib") == 31 * 1024); // 32 GiB - (3 - 2 total_cache)
