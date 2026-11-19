@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "0d7908905af19522e1c49f40b8d3e79da4d32f79664444da14b46a8d2f7022ee"
+  ],
+  "prompt_tokens": 504,
+  "prompt_tokens_target": 900,
+  "prompt_words": 504,
+  "reps": 2,
+  "seed": 21,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18454"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 121.959,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 67.35,
+    "event_gap_ms_p50": 27.217,
+    "event_gap_ms_p95": 28.135,
+    "event_gap_ms_p99": 67.35,
+    "mean_stream_decode_tps_est": 147.211,
+    "tokens": 256,
+    "ttft_ms_max": 366.62,
+    "ttft_ms_p50": 366.62,
+    "ttft_ms_p95": 366.62
+   },
+   "engine": {
+    "decode_ms_per_step": 27.8841,
+    "decode_tokens_per_step": 4.1311,
+    "decode_tokens_total": 252.0,
+    "decode_tps_engine": 148.154,
+    "draft_acceptance": 0.7828,
+    "draft_accepted_total": 191.0,
+    "draft_tokens_total": 244.0,
+    "engine_step_seconds_decode_total": 1.700932,
+    "engine_steps_decode_total": 61.0,
+    "engine_steps_prefill_total": 2.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 2651.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.7,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 147.211,
+     "error": "",
+     "events": 63,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 923,
+     "response_tail_ms": 0.23,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\njuniper delta ember lantern summit zephyr onyx lantern harbor garnet prairie valley harbor garnet lantern garnet garnet nectar harbor nectar yarrow lantern kestrel harbor xenon ridge quartz nectar indigo onyx onyx onyx basalt ember ember nectar basalt summit garnet summit ridge summit prairie quartz nectar xenon ",
+     "text_sha256": "4750cc1e18fa8093a6b3fe92cca69852600e92c4b93fac39fde1b357e9241043",
+     "tokens": 256,
+     "ttft_ms": 366.62,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.126,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795122249128713524,
+   "wall_s": 2.0991,
+   "wall_start_ns": 1795122247028780826
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 125.632,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 30.059,
+    "event_gap_ms_p50": 27.099,
+    "event_gap_ms_p95": 27.683,
+    "event_gap_ms_p99": 30.059,
+    "mean_stream_decode_tps_est": 151.642,
+    "tokens": 256,
+    "ttft_ms_max": 355.87,
+    "ttft_ms_p50": 355.87,
+    "ttft_ms_p95": 355.87
+   },
+   "engine": {
+    "decode_ms_per_step": 27.0605,
+    "decode_tokens_per_step": 4.1452,
+    "decode_tokens_total": 257.0,
+    "decode_tps_engine": 153.181,
+    "draft_acceptance": 0.7863,
+    "draft_accepted_total": 195.0,
+    "draft_tokens_total": 248.0,
+    "engine_step_seconds_decode_total": 1.677749,
+    "engine_steps_decode_total": 62.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 923.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.8,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 151.642,
+     "error": "",
+     "events": 63,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 923,
+     "response_tail_ms": 0.24,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\njuniper delta ember lantern summit zephyr onyx lantern harbor garnet prairie valley harbor garnet lantern garnet garnet nectar harbor nectar yarrow lantern kestrel harbor xenon ridge quartz nectar indigo onyx onyx onyx basalt ember ember nectar basalt summit garnet summit ridge summit prairie quartz nectar xenon ",
+     "text_sha256": "4750cc1e18fa8093a6b3fe92cca69852600e92c4b93fac39fde1b357e9241043",
+     "tokens": 256,
+     "ttft_ms": 355.87,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.111,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795122251168027516,
+   "wall_s": 2.0377,
+   "wall_start_ns": 1795122249129529976
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 123.7955,
+   "decode_ms_per_step_median": 27.4723,
+   "decode_tokens_per_step_median": 4.1381499999999996,
+   "decode_tps_engine_median": 150.66750000000002,
+   "draft_acceptance_median": 0.7845500000000001,
+   "event_gap_ms_p95_median": 27.909,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.75,
+   "ttft_ms_max_median": 361.245
+  }
+ }
+}

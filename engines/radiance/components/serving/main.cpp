@@ -315,6 +315,17 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             std::cout << "port     " << reply->at("port") << '\n';
         if (reply->contains("manifest"))
             std::cout << "manifest " << reply->at("manifest").get<std::string>() << '\n';
+        if (reply->contains("calibration_record")) {
+            const auto& selected = reply->at("calibration_record");
+            std::cout << "calibration " << selected.at("status").get<std::string>();
+            if (selected.value("status", std::string()) == "selected")
+                std::cout << " " << selected.value("kind", std::string())
+                          << " key=" << selected.value("key_sha256", std::string());
+            else
+                std::cout << " " << selected.value("reason_code", std::string())
+                          << ": " << selected.value("reason_detail", std::string());
+            std::cout << '\n';
+        }
         for (const auto& p : reply->value("processes", Json::array()))
             if (!p.value("exited", false))
                 std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0)
