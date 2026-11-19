@@ -2,7 +2,7 @@
 id: ENG05
 order: 0
 plan: tuning-radiance-engine
-state: pending
+state: completed
 created-at: '2026-11-19T07:30:54.932992+00:00'
 breadth: ''
 skill: advanced
@@ -59,6 +59,8 @@ Decode ms/step at 1 and 6 streams within the v1.17.0 baseline allowance (or bett
 
 2026-11-20 (AEDT): step 2 MTP depth sweep, docs/evidence/2026-11-20-eng05-mtp-depth. flashnext-4gpu, num_speculative_tokens 2/3/4, two launches each (order 3 2 4 4 2 3), policy off (the calibration key hashes the depth), 3 prompt seeds at 1 and 6 streams, sess8, 256K. Aggregate tok/s, depth 2/3/4: 1 stream 91.6/107.2/110.6; 6 streams 225.9/233.2/230.7; 8 sessions 98.9/108.5/103.6; 256K 40.7/42.4/46.5. Depth 2 loses everywhere. Depth 4 is +3.1% at 1 stream (consistent over seeds and launches) and +9.7% at 256K but ties or loses from six streams up (step 54.8 vs 49.0 ms at 6 streams), so the best depth differs by load. The engine already has --draft-window adaptive (depth follows measured acceptance and step cost, no hand-picked thresholds); the serving layer has no key for it (draft_window is in the manifest contract but unset by the resolver, the writer and the engine arguments). Next slice: engine.draft_window (fixed default), then adaptive at ceilings 4 and 5 against fixed 3 and 4 on the same loads.
 
+2026-11-20 (AEDT) close-out: adaptive draft window measured (same evidence page, addendum). tuning.draft_window is already a resolver key; adaptive at ceiling 4 equals fixed 4 (same step time and acceptance at 1 stream, 6 streams and 256K), at ceiling 5 it is worse everywhere, so adaptive is closed. Fixed depth 4 is the one lever left: +4.5% at one stream, +9.5% at 256K, tie at 6 streams, policy off; it needs a depth-4 policy calibration record before it can be a default, moved to ENG08. Step-time gap attribution at close: the CPU combine is not part of it (knee 8, step time flat), suspect 1 (GEMV capability cache) ruled out in ABBA, suspect 2 (v26 mailbox) costs an absolute 2.75 ms (10.6%) a step by engine-clock stamps with no dominant stage and is parked by the lead because decode tok/s already equals v1.17; the stamps are the baseline if it is reopened.
+
 
 ## Change Log
 
@@ -67,3 +69,5 @@ Decode ms/step at 1 and 6 streams within the v1.17.0 baseline allowance (or bett
 - 2026-11-19T07:34:30.174287+00:00 (updated-by): Updated: section:steps
 - 2026-11-19T19:16:17.344315+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T20:58:34.971866+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T21:44:59.641920+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T21:45:08.844101+00:00 (state-transition): State: pending → completed

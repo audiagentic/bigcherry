@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "2a4aa182f0961add4f41a8ae7bc3d88f4d0adde2eda5182941ecb102de880a69"
+  ],
+  "prompt_tokens": 504,
+  "prompt_tokens_target": 900,
+  "prompt_words": 504,
+  "reps": 2,
+  "seed": 33,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18454"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 92.564,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 70.503,
+    "event_gap_ms_p50": 29.573,
+    "event_gap_ms_p95": 30.667,
+    "event_gap_ms_p99": 70.503,
+    "mean_stream_decode_tps_est": 106.836,
+    "tokens": 256,
+    "ttft_ms_max": 378.44,
+    "ttft_ms_p50": 378.44,
+    "ttft_ms_p95": 378.44
+   },
+   "engine": {
+    "decode_ms_per_step": 30.1769,
+    "decode_tokens_per_step": 3.1923,
+    "decode_tokens_total": 249.0,
+    "decode_tps_engine": 105.787,
+    "draft_acceptance": 0.4385,
+    "draft_accepted_total": 171.0,
+    "draft_tokens_total": 390.0,
+    "engine_step_seconds_decode_total": 2.353795,
+    "engine_steps_decode_total": 78.0,
+    "engine_steps_prefill_total": 2.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 2628.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.769,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 106.836,
+     "error": "",
+     "events": 80,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 900,
+     "response_tail_ms": 0.38,
+     "stream": 0,
+     "text_head": "We need answer user's request. Need continue list of words with a short story. User provided a long list of words, likely wants continuation? \"Continue this list of words with a short story.\" Could mean take the list and continue it by writing a short story using those words? Need infer. They gave a sequence of words: xenon zephyr valley valley harbor yarrow meadow lantern ... etc. Maybe they want",
+     "text_sha256": "a68586bb4459facbe443cd4f924e443afa99d0f060bf8a660163f60cf8533086",
+     "tokens": 256,
+     "ttft_ms": 378.44,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.233,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795122858346659992,
+   "wall_s": 2.7657,
+   "wall_start_ns": 1795122855580171112
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 94.627,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 32.547,
+    "event_gap_ms_p50": 29.454,
+    "event_gap_ms_p95": 30.199,
+    "event_gap_ms_p99": 32.547,
+    "mean_stream_decode_tps_est": 109.29,
+    "tokens": 256,
+    "ttft_ms_max": 371.94,
+    "ttft_ms_p50": 371.94,
+    "ttft_ms_p95": 371.94
+   },
+   "engine": {
+    "decode_ms_per_step": 29.486,
+    "decode_tokens_per_step": 3.2278,
+    "decode_tokens_total": 255.0,
+    "decode_tps_engine": 109.471,
+    "draft_acceptance": 0.4456,
+    "draft_accepted_total": 176.0,
+    "draft_tokens_total": 395.0,
+    "engine_step_seconds_decode_total": 2.32939,
+    "engine_steps_decode_total": 79.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 900.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.833,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 109.29,
+     "error": "",
+     "events": 80,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 900,
+     "response_tail_ms": 0.15,
+     "stream": 0,
+     "text_head": "We need answer user's request. Need continue list of words with a short story. User provided a long list of words, likely wants continuation? \"Continue this list of words with a short story.\" Could mean take the list and continue it by writing a short story using those words? Need infer. They gave a sequence of words: xenon zephyr valley valley harbor yarrow meadow lantern ... etc. Maybe they want",
+     "text_sha256": "a68586bb4459facbe443cd4f924e443afa99d0f060bf8a660163f60cf8533086",
+     "tokens": 256,
+     "ttft_ms": 371.94,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.113,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795122861053567806,
+   "wall_s": 2.7053,
+   "wall_start_ns": 1795122858347321386
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 93.59549999999999,
+   "decode_ms_per_step_median": 29.83145,
+   "decode_tokens_per_step_median": 3.21005,
+   "decode_tps_engine_median": 107.629,
+   "draft_acceptance_median": 0.44205,
+   "event_gap_ms_p95_median": 30.433,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.8009999999999999,
+   "ttft_ms_max_median": 375.19
+  }
+ }
+}
