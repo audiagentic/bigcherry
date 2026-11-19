@@ -1,5 +1,7 @@
 # RSC02 S15 — same-build Bash-to-native acceptance
 
+> **Archived 2026-11-20.** The S15 tools moved unchanged to `tools/lab/radiance/archive/rsc02_s15/` (see `tools/lab/radiance/archive/ARCHIVE.md`): they compared the native owner with the retired Bash launcher, which no longer exists, so nothing here can be re-run. The text below is the record of how the equivalence was tested.
+
 **State: operator hardware acceptance attempted 2026-11-18; dense passed, helper blocked.** This is the RSC11 S15 gate for retiring
 `launch-flashnext-best.sh`, `lib/plan-check.sh` and the Python supervisor at
 S16. S13 must have merged, S14 must provide attributable serving/campaign
@@ -33,14 +35,14 @@ or lease was used to develop these changes.
 
 ## One-command leased short A/B acceptance (operator only)
 
-The lab-only `tools/lab/radiance/rsc02_s15_ab.py` driver is **not a
+The lab-only `tools/lab/radiance/archive/rsc02_s15/rsc02_s15_ab.py` driver is **not a
 production dependency** and is **not run by CI or by this agent on GPUs**.
 Run from the repository root, with the completed build, the archived control and absolute inputs
 recorded first. Replace the example paths with the real paths of **one**
 immutable build and selected model; all paths must already exist:
 
 ```bash
-python3 tools/lab/radiance/rsc02_s15_ab.py accept \
+python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_ab.py accept \
   --build /absolute/completed/BUILD \
   --legacy-runner /absolute/archived-control.sh \
   --bc-serve /absolute/completed/BUILD/radiance_home/bin/bc-serve \
@@ -61,7 +63,7 @@ B/A for **each** dense Qwen 27B and helper Flash-Next cohort; A is the
 existing Bash launcher and B the foreground native owner. It refuses
 unleased startup or any unclean stop, and halts the sequence at the first
 failure. To test only the fake-engine/card-free path, run
-`python3 tools/lab/radiance/rsc02_s15_ab.py dry-run --native-test BUILD-TEST/bc_session_stored_test`
+`python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_ab.py dry-run --native-test BUILD-TEST/bc_session_stored_test`
 (a lab command; it is no longer a CTest target, the engine component is C++ only).
 
 Every paired short run **passes** only if the same build/engine/helper/model
@@ -115,12 +117,12 @@ native typed mode is **BLOCKED**, not equivalent.
    role identity.
    Run the two longer real Bash launcher/fake-engine paths separately on a
    suitable card-free host with
-   `python3 tools/lab/radiance/rsc02_s15_projection.py dry-run --native-test
+   `python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_projection.py dry-run --native-test
    BUILD/bc_session_stored_test --legacy-launch-tests`. They hang under
    the CI build-container launcher environment, so no Bash success is
    inferred from the component CTest. The card-free prerequisite
    **cannot** assert hardware, latency, power or equal end-to-end owner
-   behaviour. The unit test `tools/tests/lab/test_rsc02_s15_projection.py`
+   behaviour. The unit test `tools/lab/radiance/archive/rsc02_s15/test_rsc02_s15_projection.py`
    checks byte-binding and semantic tampering.
 2. **Before every GPU cell:** verify identical build SHA, model SHA and
    ordered device facts; record a signed/verified active lease and current
@@ -149,7 +151,7 @@ native typed mode is **BLOCKED**, not equivalent.
    argument must refer to captured bytes; a missing, substituted or mutable
    manifest fails closed. Use the same selection rules on both arms.
 4. **Compare the two captures before measurements:**
-   `python3 tools/lab/radiance/rsc02_s15_projection.py compare --legacy
+   `python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_projection.py compare --legacy
    A-snapshot.json --native B-snapshot.json --output projection.json`.
    It requires full equality of the execution spec, model/producer identity,
    measured host resources, plan, power, calibration, ordered cards, owner map,

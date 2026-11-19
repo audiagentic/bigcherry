@@ -14,7 +14,8 @@
     "metrics",
     "provenance",
     "host_facts",
-    "feature_states"
+    "feature_states",
+    "metric_specs"
   ],
   "properties": {
     "schema_version": {
