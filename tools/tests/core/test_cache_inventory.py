@@ -939,6 +939,7 @@ class CacheInventory(unittest.TestCase):
                          "model": "model", "layout": "layout"},
             "workload": {"name": "decode", "definition": {}},
             "metrics": {"decode": {}, "prefill": {}, "ttft": {}},
+            "metric_specs": {"decode": {}, "prefill": {}, "ttft": {}},
             "provenance": {"effective_config": blob, "argv": blob,
                            "environment": blob, "power_settings": blob, "inputs": []},
             "host_facts": {}, "feature_states": [],
