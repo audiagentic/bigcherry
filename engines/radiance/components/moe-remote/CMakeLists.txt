@@ -49,7 +49,6 @@ if(NOT RAD_HSA_RUNTIME)
 endif()
 # The helper reads its manifest section through the shared strict v1 reader (bc_serving_v2, the one the engine and bc-serve
 # link): no second parser, no environment settings.
-set(BC_SERVING_V2_NLOHMANN_INCLUDE "${RADIANCE_SRC}/vendor")
 include("${CMAKE_CURRENT_SOURCE_DIR}/../serving/bc_serving_v2.cmake")
 # Expert ownership and the container reader are bc_experts, the one implementation (the serving component builds and tests
 # it; bc-serve's planning will use it in a later slice).

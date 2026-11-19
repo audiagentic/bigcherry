@@ -14,3 +14,4 @@ mark.gillard@outlook.com.au
 bjoern@hoehrmann.de
 # The absolute-mount-path pattern in tools/bigcherry/forbidden_terms.py and check.py (the regex text, not a host path)
 /mnt/[A-Za-z0-9]
+evan@nemerson.com

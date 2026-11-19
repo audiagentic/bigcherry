@@ -3,14 +3,10 @@ project(bc_serving_component LANGUAGES CXX)
 find_package(radiance REQUIRED)
 rad_plugin_defaults()
 
-set(RADIANCE_SRC "" CACHE PATH "Radiance source tree, for the engine's vendored nlohmann/json")
-if(NOT EXISTS "${RADIANCE_SRC}/vendor/nlohmann/json.hpp")
-  message(FATAL_ERROR "serving: -DRADIANCE_SRC must contain vendor/nlohmann/json.hpp")
-endif()
+set(RADIANCE_SRC "" CACHE PATH "Radiance source tree for contract source checks")
 
 # RFC 8785 JCS, SHA-256 and the shared strict v1 reader (RSC08 slice 2): one source list, bc_serving_v2.cmake, which
 # radiance's core also builds (managed patch rad0011).
-set(BC_SERVING_V2_NLOHMANN_INCLUDE "${RADIANCE_SRC}/vendor")
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")
 
 # The serving manifest v2 contract (contract/README.md): the field registry contract/serving-v2.toml and its generator.
@@ -51,14 +47,14 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_
 add_library(bc_serving_v2_runtime_receipt STATIC v2/runtime_receipt.cpp)
 target_link_libraries(bc_serving_v2_runtime_receipt PUBLIC bc_serving_v2)
 target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${BC_SERVING_V2_NLOHMANN_INCLUDE}")
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
 add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
-target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${BC_SERVING_V2_NLOHMANN_INCLUDE}")
 target_link_libraries(bc_serving PUBLIC radiance::abi)
 target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
                            "${CMAKE_CURRENT_BINARY_DIR}/generated")
@@ -69,7 +65,7 @@ add_library(bc_serving_v2_p1_live STATIC v2/p1_live_room.cpp v2/error.cpp)
 target_link_libraries(bc_serving_v2_p1_live PUBLIC radiance::abi)
 target_compile_features(bc_serving_v2_p1_live PUBLIC cxx_std_20)
 target_include_directories(bc_serving_v2_p1_live PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${BC_SERVING_V2_NLOHMANN_INCLUDE}")
 
 target_link_libraries(bc_serving PUBLIC bc_serving_v2_p1_live)
 add_library(bc_serving_v2_p1 STATIC v2/p1_measurement.cpp)
@@ -100,7 +96,7 @@ target_link_libraries(bc-serve PRIVATE bc_release_core)
 target_compile_features(bc_release_core PUBLIC cxx_std_20)
 target_link_libraries(bc_release_core PUBLIC ZLIB::ZLIB)
 target_include_directories(bc_release_core PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${BC_SERVING_V2_NLOHMANN_INCLUDE}")
 add_executable(bc-release release_cli.cpp)
 target_link_libraries(bc-release PRIVATE bc_release_core)
 set_target_properties(bc-release PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -144,7 +140,7 @@ if(BUILD_TESTING)
 
   # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
   add_executable(bc_fake_engine EXCLUDE_FROM_ALL session_fake_engine.cpp)
-  target_include_directories(bc_fake_engine PRIVATE "${RADIANCE_SRC}/vendor")
+  target_include_directories(bc_fake_engine PRIVATE "${BC_SERVING_V2_NLOHMANN_INCLUDE}")
   target_compile_features(bc_fake_engine PRIVATE cxx_std_20)
   add_dependencies(bc_release_install_test bc-serve bc-release bc_fake_engine)
   add_executable(bc_helper_vram_test EXCLUDE_FROM_ALL helper_vram_test.cpp)
@@ -277,7 +273,7 @@ if(BUILD_TESTING)
   target_link_libraries(bc_serving_v2_native_measurement PUBLIC bc_serving_v2)
   target_include_directories(bc_serving_v2_native_measurement PUBLIC
     "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote"
-    "${RADIANCE_SRC}/vendor")
+    "${BC_SERVING_V2_NLOHMANN_INCLUDE}")
   target_compile_features(bc_serving_v2_native_measurement PUBLIC cxx_std_20)
   add_executable(bc_v2_native_measurement_test EXCLUDE_FROM_ALL v2/native_measurement_test.cpp)
   target_link_libraries(bc_v2_native_measurement_test PRIVATE bc_serving_v2_native_measurement)

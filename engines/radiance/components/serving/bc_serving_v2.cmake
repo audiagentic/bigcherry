@@ -2,13 +2,11 @@
 # component, by moe-remote's helper and by radiance's core (managed patch rad0011 passes this file's path as
 # BC_SERVING_V2_CMAKE), so every build compiles the same files.
 #
-# The including project provides: a radiance::abi or rad_abi target for rad_types.h, and the nlohmann/json include
-# directory in BC_SERVING_V2_NLOHMANN_INCLUDE. Nothing here is copied from either tree.
+# The including project provides a radiance::abi or rad_abi target for rad_types.h.
+# The serving component owns the pinned JSON header for all three consumers.
+set(BC_SERVING_V2_NLOHMANN_INCLUDE "${CMAKE_CURRENT_LIST_DIR}/third_party")
 if(NOT TARGET bc_serving_v2)
   set(_bc_v2_dir "${CMAKE_CURRENT_LIST_DIR}")
-  if(NOT DEFINED BC_SERVING_V2_NLOHMANN_INCLUDE)
-    message(FATAL_ERROR "bc_serving_v2.cmake: set BC_SERVING_V2_NLOHMANN_INCLUDE to the directory holding nlohmann/json.hpp")
-  endif()
   if(TARGET radiance::abi)
     set(_bc_v2_abi radiance::abi)
   elseif(TARGET rad_abi)

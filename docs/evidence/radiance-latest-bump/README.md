@@ -1,0 +1,14 @@
+# Radiance bump checkpoints
+
+BigCherry baseline: `f605d2c5619e3f86692a870567cbf97ead89b60c`. Current production Radiance: `19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d` (v1.17.0, ABI 35). Candidate: `3deabdaeca17b58bad90d332f4b204cf7bb8a10e` (2.1.0, ABI 43), verified from Codeberg `refs/heads/main` at kickoff. This candidate postdates the prior ABI 41 source review.
+
+Use individual commits as source checkpoints. For a later GPU comparison, build each qualifying checkpoint into an isolated runtime. Record exact BigCherry and upstream commits, build and installed runtime member digests, ABI and layout fingerprints, selected model/content and config hashes, physical rank/helper order, power policy, and the same workload. Keep raw run output under the project work root.
+
+| Stage | Meaning | Gate |
+| --- | --- | --- |
+| C0 | Existing production control | Use the current-main Flash-Next parity baseline and retained qualified asset. No new measurement at this stage. |
+| C1 | Standalone serving JSON dependency | Reuse nlohmann 3.12.0 bytes from v1.17.0, SHA-256 `aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63`. Run the existing card-free manifest-to-argv and plan-memory fixture tests against that include. Pin and runtime behavior stay at C0. |
+| C2 | Native upstream control | Record exact upstream-only composition, build/CLI and available harness scope. A native control without BigCherry helper/layout support cannot replace the matched C0 comparison. |
+| C3+ | Reviewed implementation slices | Record applicability, compilation, ABI, activation, numerical checks and timings separately. A retired patch needs evidence of replacement or an explicit unsupported mode. |
+
+Initial direct patch audit against the candidate reported 18 drifted, 8 blocked by dependency, and 4 clean out of 30 production patches. Dependency-blocked patches must be rechecked after their parents are ported. GPU parity remains a separate gate and will use the existing Flash-Next parity harness; a stored cross-day difference needs a same-session paired check before attributing a regression.

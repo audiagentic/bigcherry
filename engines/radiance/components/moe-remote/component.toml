@@ -322,7 +322,7 @@ manifest = "/spec/processes/helper_common/cpu/affinity"
 # checks literals and source inventory; RUM02-07 own the eventual migration.
 [coupling]
 upstream-headers = ["r4d_args.h", "r4d_fwht.h", "r4d_plugin.h", "r4d_q8.h", "rad_abi.h", "rad_abi_layout.h", "rad_device.h", "rad_encoding.h", "rad_format.h"]
-upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "abi/rad_device.h", "abi/rad_encoding.h", "abi/rad_format.h", "libr4d/CMakeLists.txt", "libr4d/r4d_args.h", "libr4d/r4d_fwht.h", "libr4d/r4d_plugin.h", "libr4d/r4d_q8.h", "vendor/nlohmann/json.hpp"]
+upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "abi/rad_device.h", "abi/rad_encoding.h", "abi/rad_format.h", "libr4d/CMakeLists.txt", "libr4d/r4d_args.h", "libr4d/r4d_fwht.h", "libr4d/r4d_plugin.h", "libr4d/r4d_q8.h"]
 upstream-source-globs = []
 patch-provided-files = ["libr4d/bc_helper_config.h"]
 protocol-flags = ["--manifest", "--measuring", "--role"]
