@@ -9,6 +9,7 @@ or components (llama.cpp) gets nothing here.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import re
 import shutil
@@ -28,9 +29,32 @@ TestLister = Callable[[Path, Path], dict[str, list[str]]]
 GPU_LABEL = "gpu"
 
 
-def component_build_dir(build_dir: Path, name: str) -> Path:
-    """Where ``build_runtime`` configures and builds component ``name``."""
-    return build_dir / "components" / name
+def _cache_source(tree: Path) -> str | None:
+    """The source directory a CMake tree was configured from (its cache's CMAKE_HOME_DIRECTORY), or None."""
+    try:
+        for line in (tree / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
+            if line.startswith("CMAKE_HOME_DIRECTORY:"):
+                return line.split("=", 1)[1].strip()
+    except OSError:
+        pass
+    return None
+
+
+def component_build_dir(build_dir: Path, name: str, source: Path | None = None) -> Path:
+    """Where ``build_runtime`` configures and builds component ``name`` from ``source`` (its CMakeLists directory).
+
+    A build dir is content-addressed, so every checkout with the same sources shares it, but a component's CMake cache
+    pins the source path it was first configured from and CMake refuses another. The plain ``components/<name>`` tree
+    serves the first path (and any later run from it); a run from a different path gets its own
+    ``components/<name>@<hash of the path>`` tree beside it. The existing tree is never reconfigured or removed: another
+    run may be building in it. Without ``source`` the plain directory is returned."""
+    plain = build_dir / "components" / name
+    if source is None:
+        return plain
+    pinned = _cache_source(plain)
+    if pinned is None or Path(pinned).resolve() == Path(source).resolve():
+        return plain
+    return build_dir / "components" / f"{name}@{hashlib.sha256(str(Path(source).resolve()).encode()).hexdigest()[:10]}"
 
 
 class RuntimeBundleError(RuntimeError):
@@ -73,7 +97,7 @@ def build_runtime(
         shutil.rmtree(prefix)
     runner(["cmake", "--install", str(build_dir), "--prefix", str(prefix)], source_root)
     for name, component in sorted(declared.items()):
-        component_build = component_build_dir(build_dir, name)
+        component_build = component_build_dir(build_dir, name, component.root)
         values = {"engine_source": str(source_root), "targets": ";".join(component.targets)}
         options = {key: value.format(**values) for key, value in component.configure}
         for key, value in launcher_options:
@@ -98,9 +122,9 @@ def build_runtime(
     return built
 
 
-def component_test_log(build_dir: Path, name: str) -> Path:
+def component_test_log(build_dir: Path, name: str, source: Path | None = None) -> Path:
     """Where ``run_component_tests`` writes component ``name``'s ctest log."""
-    return component_build_dir(build_dir, name) / "ctest-component-tests.log"
+    return component_build_dir(build_dir, name, source) / "ctest-component-tests.log"
 
 
 def ctest_tests(tree: Path, cwd: Path) -> dict[str, list[str]]:
@@ -132,8 +156,8 @@ def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runn
         if repeated:
             failures.append(f"{name}: test target(s) {', '.join(repeated)} declared more than once in component.toml")
             continue
-        tree = component_build_dir(build_dir, name)
-        log = component_test_log(build_dir, name)
+        tree = component_build_dir(build_dir, name, component.root)
+        log = component_test_log(build_dir, name, component.root)
         build = ["cmake", "--build", str(tree), "-j", "--target", *declared]
         try:
             runner(build, source_root)

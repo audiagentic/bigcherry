@@ -18,6 +18,7 @@ sys.path.insert(0, str(REPO / "tools"))
 
 from bigcherry.campaign import ccache_paths  # noqa: E402
 from bigcherry.campaign import build as campaign_build  # noqa: E402
+from bigcherry.release import pin_bump  # noqa: E402
 
 LAUNCHER = REPO / "tools" / "bigcherry" / "bin" / "bc-ccache"
 CC = shutil.which("cc") or shutil.which("gcc") or shutil.which("g++")
@@ -56,7 +57,11 @@ def _build_one(args: tuple[str, str, str, str, str, int]) -> tuple[int | None, s
 
 class StableSlotTests(unittest.TestCase):
     def setUp(self) -> None:
-        self.temp = tempfile.TemporaryDirectory()
+        # The fake launcher is executed, which a noexec /tmp (a hardened container) refuses: use an exec-capable scratch.
+        scratch = pin_bump.exec_capable_tempdir(Path(os.environ.get("BC_WORK_ROOT") or tempfile.gettempdir()) / "test-tmp")
+        if scratch is not None:
+            self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
+        self.temp = tempfile.TemporaryDirectory(dir=scratch)
         self.addCleanup(self.temp.cleanup)
         self.root = Path(self.temp.name)
         self.saved = {name: os.environ.get(name) for name in ccache_paths.VARIABLES}

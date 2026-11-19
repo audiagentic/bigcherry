@@ -23,8 +23,13 @@ RADIANCE = engines.load(ROOT, engines.RADIANCE)
 #: out-of-tree paths a component may name without declaring them: the manifest contract directory is passed to the component
 #: TESTS only (BC_CONTRACT_DIR / BC_CONTRACT_DOCS_DIR), and nothing built into a runtime reads it
 # Read by tests only: the v2 contract docs, and the example layouts (run-time data the tests resolve; no binary embeds them).
-TEST_ONLY = ("docs/design/serving-manifest-v2", "engines/radiance/layouts")
-_PATH = re.compile(r"\$\{CMAKE_(?:CURRENT_SOURCE_DIR|CURRENT_LIST_DIR)\}/((?:\.\./)+[^\s\"')]*)")
+# Also test targets inside if(BUILD_TESTING), never built into a runtime: the config directory a test resolves
+# (bc_typed_settings_test), the S15 dry-run script (bc_s15_dry_run_test) and the heat observer package whose registry
+# source a host-only ABI test compiles (r3_heat_observer_abi_test).
+TEST_ONLY = ("docs/design/serving-manifest-v2", "engines/radiance/layouts", "engines/radiance/configs",
+             "tools/lab/radiance/rsc02_s15_ab.py", "engines/radiance/patches/rad0039_moe_heat_observer")
+# A path ends at whitespace, a quote, a parenthesis or the backslash of an escaped quote (\"...\").
+_PATH = re.compile(r"\$\{CMAKE_(?:CURRENT_SOURCE_DIR|CURRENT_LIST_DIR)\}/((?:\.\./)+[^\s\"')\\]*)")
 
 
 def _out_of_tree_reads() -> list[tuple[str, str]]:

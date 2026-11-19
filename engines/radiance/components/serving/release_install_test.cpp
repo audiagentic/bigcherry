@@ -453,6 +453,9 @@ int run_cli(const fs::path& exe, const std::vector<std::string>& args, const fs:
         // Do not inherit the host's ROCm override into a synthetic release.
         ::unsetenv("ROCM_PATH");
         ::unsetenv("HIP_PATH");
+        // The same guard refuses an LD_LIBRARY_PATH entry that carries ROCm libraries outside the recorded SDK (a build
+        // container exports its own SDK's lib directory there), so the host's search path is not inherited either.
+        ::unsetenv("LD_LIBRARY_PATH");
         std::vector<std::string> owned = {exe.string()};
         owned.insert(owned.end(), args.begin(), args.end());
         if (!installed_engine.empty()) {

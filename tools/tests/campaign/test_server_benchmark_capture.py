@@ -658,8 +658,10 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             benchmark.run_server_comparison_capture(self.config, self.output / "e", rounds=2, seed=0, settle_seconds=0)
 
     def test_setting_activation_is_recorded_from_server_and_sidecar_logs(self):
-        self.radiance_config({}, {"R3_MOE_WORKER": "1", "R3_MOE_WORKER_DEVICES": "0"})
-        marker = "r3_moe_worker: runtime map owns 12 experts, 3.500 GiB\n"
+        # R3_MOE_WORKER (the on/off flag) is gone since the helper is always started; a setting the components still
+        # declare with an activation marker (R3_MOE_WORKER_PLACEMENT: "r3_moe_worker: tail placement:") stands in for it.
+        self.radiance_config({}, {"R3_MOE_WORKER_PLACEMENT": "tail", "R3_MOE_WORKER_DEVICES": "0"})
+        marker = "r3_moe_worker: tail placement: 12 experts, 3.500 GiB\n"
 
         def fake(**kwargs):
             cell = kwargs["output"] / f"pair-{kwargs['pair'] + 1:03d}-{kwargs['side']}"
@@ -677,7 +679,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         self.assertEqual(rc, 0)
         summary = json.loads((self.output / "capture" / "run.json").read_text())
         evidence = summary["setting_activation"][self.arms[1]["name"]]
-        self.assertEqual(evidence["R3_MOE_WORKER"]["status"], "executed")
+        self.assertEqual(evidence["R3_MOE_WORKER_PLACEMENT"]["status"], "executed")
         self.assertEqual(evidence["R3_MOE_WORKER_DEVICES"]["status"], "unobservable")
 
 
