@@ -24,6 +24,27 @@ The config's `model` is its lowest `engine.model` setting: a relative path is un
 no environment variable for it); a site file, profile or `--set` that names a model wins. A config with a relative
 model and no root is refused when it is selected.
 
+## Release-owned heat and session recording
+
+Helper configs may set `handoff.heat = "@bundle/heat/<name>.hot-first"`.
+The native config loader resolves this narrow token relative to the source
+config's directory: `<prefix>/configs/flashnext.toml` refers to
+`<prefix>/heat/<name>.hot-first`, regardless of the current working directory.
+Variants inherit the value from the defining base config. Path traversal and
+non-`heat/` bundle references are refused. The source heat files remain under
+`tools/lab/radiance/heat/` in Git; release CI copies the approved seeds to
+`heat/` and binds their content to the archive's digests, receipt and
+payload-reuse key. The release bundle is sufficient to resolve the production
+seed, without exposing a repository path.
+
+A session with helpers and no configured `handoff.histogram` records under
+`<run-dir>/heat.live`. If no period is otherwise selected, the owner chooses
+`handoff.histogram_period_s = 1` for live placement freshness. Site, profile
+and `--set` overrides win in normal order, including explicit
+`handoff.histogram = "off"`. `bc-serve explain` outside a session has no
+run directory and does not invent one; the session owner propagates the same
+run root to its subprocess manifest writer and stored-manifest replay.
+
 ## Serving a config
 
 `bc-serve` of the build that serves (`<build>/radiance_home/bin/bc-serve`; RSC02) owns the whole session: it makes the

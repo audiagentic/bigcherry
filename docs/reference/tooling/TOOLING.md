@@ -135,6 +135,44 @@ when live placement is inactive or degraded, including the reason code and
 the preflight/provenance reason; other default-off options are diagnostic
 rather than automatically required. MRC06 still owns producer migration.
 
+### Portable results: baseline, compare, history (MRC05 slice 1)
+
+`bigcherry.core.results` owns offline baseline gates, comparisons and history
+over verified MRC01 run records. Records may include `session_id` for
+same-session A/B and `metric_specs` for each phase-qualified metric:
+`direction: higher|lower`, `gated: true|false`, optional `repeat_groups`
+(samples of the **same prompt**, not distinct prompts). Existing records without
+these optional fields remain readable but cannot create a gated baseline.
+
+A baseline requires at least two distinct launch `run_id` values, identical
+engine/model/layout/workload definitions, and intact provenance blobs. It stores
+per-launch medians and a one-sided tolerance from the larger of across-launch
+relative spread and true-repeat relative spread. Missing gated metrics fail
+comparison; informational metrics are never gated. Baseline JSON embeds
+canonical record contents and all referenced input blobs by value (base64
+with SHA-256) and validates them without original run folders or source files.
+**Treat baseline files as sensitive**: embedded environment/configuration
+blobs may contain secrets; do not commit them without inspection.
+
+`results compare` requires at least two candidate launches; host-facts and
+feature-state differences appear before verdicts, alongside config, heat,
+policy, kernel, power, argv, environment and build differences. Different or
+unknown sessions warn to prefer same-session A/B. A provenance difference
+does not itself fail a one-sided metric gate. `results history` requires an
+engine, layout, workload and phase-qualified metric; baseline and trailing
+drift flags use two launches, not a single-launch verdict.
+
+```bash
+PYTHONPATH=tools python -m bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload parity --name reference --to reference.json
+PYTHONPATH=tools python -m bigcherry results compare --baseline reference.json --since 2026-11-20T00:00:00Z
+PYTHONPATH=tools python -m bigcherry results history --engine radiance --layout flashnext-4gpu --workload parity --metric decode.tokens_per_second --baseline reference.json --json
+```
+
+For controlled cohorts, repeat `--record SHA256` on baseline/compare, or
+filter with `--since`/`--until`. `--work-root` selects the record store.
+Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
+0 for a clean gate. MRC06 will migrate producers; the Radiance lab CLI stays.
+
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be
 verified. Unreferenced blobs are informational, not deletion candidates; the

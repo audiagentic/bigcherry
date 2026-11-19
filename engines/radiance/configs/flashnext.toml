@@ -20,6 +20,8 @@ count = "all"
 placement = "head"
 
 [config.flashnext-2xtx.handoff]
+# Shipped under the same release root as configs/; independent of cwd or repository.
+heat = "@bundle/heat/perf51.rank0.hot-first"
 # The route-heat histogram every second: the live placement policy (RHP16) judges heat younger than about 10 s and
 # evaluates about every 5 s, so the 60 s default leaves it with a feed it calls stale (no move in 15 minutes of traffic).
 histogram_period_s = 1
@@ -77,6 +79,10 @@ description = "All four cards: the R9700 engine, the XTX pair (head) and the RX 
 
 [config.flashnext-4gpu.helper]
 combine = true
+
+[config.flashnext-4gpu.handoff]
+# The production mixed-workload ranking (the committed lab source ships in prefix/heat).
+heat = "@bundle/heat/flashnext-mixed.hot-first"
 
 # NOT the default: flashnext-4gpu serves an fp8 cache for 8 sessions of 262,144 tokens. bf16 keys and int8 values
 # (bf16_i8, rad0038) keep the keys exact (KLD against bf16 0.00269 against fp8's 0.00495) at 1.283x the bf16 capacity
@@ -159,6 +165,7 @@ max_sessions = 6
 host_pool_mib = 4096
 
 [config.flashnext-tp2xtx-r9700.handoff]
+heat = "@bundle/heat/flashnext-mixed.hot-first"
 histogram_period_s = 1   # as flashnext-2xtx
 
 [config.flashnext-tp2xtx-r9700.tuning]

@@ -116,6 +116,28 @@ retain their precedence, but cannot bypass release verification or substitute
 a different build's engine/home. A development binary not inside a verified
 release requires explicit configs. The native verifier is linked directly
 into `bc-serve`, not reimplemented or launched through Python/shell.
+For an installed production Flash-Next start, only the model location and
+run directory need host paths (plus any host-specific site/calibration inputs):
+
+```sh
+PREFIX=/path/to/installed-radiance/releases/bc-radiance-X.Y.Z
+"$PREFIX/radiance_home/bin/bc-serve" serve flashnext-4gpu \
+  --model-root /path/to/models --run-dir /path/to/runs/flashnext-production \
+  --power-profile stock
+```
+
+The released `configs/flashnext.toml` selects the reviewed
+`@bundle/heat/flashnext-mixed.hot-first` seed under the same verified prefix.
+Both this seed and `perf51.rank0.hot-first` ship as immutable, manifest-digested
+`heat/` files copied from their tagged repository sources. No repository
+pathname or `--set handoff.heat` is needed. With helpers, the session owner
+defaults recording to `<run-dir>/heat.live` at a 1-second interval, and passes
+the same effective path through planning and the manifest writer. A site,
+profile or `--set` may explicitly override either path; `handoff.histogram
+= "off"` explicitly disables recording. These defaults do not replace
+hardware acceptance, the installed-verification gate or a separately selected
+live-policy calibration input.
+
 The card-free install test also runs the real detached session owner against
 the fake engine **installed by `bc-release`**, while actual GPU acceptance
 remains gated on leased S15.
@@ -127,7 +149,7 @@ by the real production `runtime_assets.pack()` writer, rather than merely
 testing its own synthetic tar format. No GPU or chmod/permission inference
 is required. Release CI additionally checks a newly packed **or reused**
 archive's exact member file set, every digest and mode, the two RSC12
-configs against the selected tag, the tag's engine/config/build-input trees,
+configs and both reviewed heat seeds against the selected tag, the tag's engine/config/build-input trees,
 the payload contract and absence of Python/shell/interpreter dependencies
 before attaching its three files (`.tar.gz`, `.sha256`, `.receipt.json`).
 Python is needed only by the CI-side builder and publisher, never in the
@@ -142,7 +164,7 @@ The extracted prefix has `configs/` without a source checkout, platform
 package or launcher. This is an **asset invariant**; hardware dense/helper acceptance is still separate from offline installation verification. An archive from an older tag without
 these files is not a valid new phase-2 engine asset.
 
-The scoped release asset contains only engine **binaries and data**: `bin/radiance`, matching engine-built `radiance_home/bin/bc-serve`, MoE helper, kernel/architecture/quantizer plugins, required runtime libraries and metadata, plus `configs/flashnext.toml` and `configs/qwen27b.toml` at the archive root (copied from the tagged `engines/radiance/configs/` source) and their tested data dependencies. `engines/radiance/archs.toml` is an **engine build input compiled into `bc-serve`** (`components/serving/CMakeLists.txt`); the current `engines/radiance/layouts/*.toml` become RSC12 configs in the bundle, not a platform-supplied layout overlay. Exclude Python, the Python supervisor, shell launcher, build/patch/campaign tools, `rad-*` diagnostics, `r4d_selftest`, tests and mutable/private host files. The independent `bc-platform-*` release is never selected or installed to run this asset.
+The scoped release asset contains only engine **binaries and data**: `bin/radiance`, matching engine-built `radiance_home/bin/bc-serve`, MoE helper, kernel/architecture/quantizer plugins, required runtime libraries and metadata, plus `configs/flashnext.toml` and `configs/qwen27b.toml` at the archive root (copied from the tagged `engines/radiance/configs/` source) and the reviewed, digest-bound `heat/` seeds. `engines/radiance/archs.toml` is an **engine build input compiled into `bc-serve`** (`components/serving/CMakeLists.txt`); the current `engines/radiance/layouts/*.toml` become RSC12 configs in the bundle, not a platform-supplied layout overlay. Exclude Python, the Python supervisor, shell launcher, build/patch/campaign tools, `rad-*` diagnostics, `r4d_selftest`, tests and mutable/private host files. The independent `bc-platform-*` release is never selected or installed to run this asset.
 
 **Architecture-plugin retention (RSP01 F2c review, 2026-11-18).** The upstream loader scans and stages every `architectures/*.so` and does not apply the `--kernels` filter to architecture or quantizer plugins. The shipped configs identify external `.rad` model files, not their embedded architecture-plugin and quantization IDs. Without checking all pinned model headers and their supported fallback IDs, no smaller architecture allowlist is proven to preserve loading. Retain the complete architecture plugin directory rather than infer a family from a model filename. This is a deliberate compatibility reservation, **not** a claim that the bundle is model-minimal; shrinking it requires a reviewed model-to-plugin inventory and a coverage test for every shipped config. `kernels.rkb` and `kernels_moe.rkb` are benchmark-only fixtures and are excluded from the runtime manifest and native installer.
 
