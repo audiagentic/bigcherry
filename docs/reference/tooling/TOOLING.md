@@ -48,11 +48,26 @@ and TTFT are separate fields; an empty phase means it was not measured.
 
 An input path is only an optional hint: effective configuration, exact argv,
 environment, power settings and result-affecting inputs are stored as blob
-references. `host_facts` and `feature_states` are explicit empty fields until
-MRC02/MRC03 supply those collectors. Engines supply adapters, not schema or
-store logic; a native runtime must remain Python-free. The WSL01 run manifest
+references. `host_facts` and `feature_states` are platform record fields
+populated by independent collectors/adapters; native engine runtimes remain
+Python-free. The WSL01 run manifest
 continues to own lifecycle. MRC01's manifest edges and results CLI, and MRC06's
 producer migrations, are **not part of this first slice**.
+
+MRC03's feature-state v1 JSON contract lives at
+`tools/bigcherry/core/schemas/feature-state-v1.schema.json`: a list of
+`{feature_id, state, reason_code, reason_detail, engine, observed_at}` entries,
+with state `active`, `inactive` or `degraded`. The platform-only API
+`bigcherry.core.feature_states.read_feature_states(path)` validates a native
+`feature-states.v1.json` snapshot (no symlinks, duplicate feature IDs,
+or invalid states), and `with_feature_states(record, path)` copies it into
+a run record after checking the engine identity. The native Radiance
+`bc-serve` publishes this file from its admitted manifest before starting
+serving children; its durable owner session record and `status --json` expose
+the same entries. A helper-backed production run warns in the owner log
+when live placement is inactive or degraded, including the reason code and
+the preflight/provenance reason; other default-off options are diagnostic
+rather than automatically required. MRC06 still owns producer migration.
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be
