@@ -13,16 +13,15 @@ from bigcherry.patch import patchset, registry
 
 REPO = Path(__file__).resolve().parents[3]
 PATCHES = REPO / "engines/radiance/patches"
-CANDIDATE_COMMIT = "3deabdaeca17b58bad90d332f4b204cf7bb8a10e"
-# ABI43 keys decode verification and MTP drafts in upstream Qwen4Exp. The
-# measured geometry guard remains in the v1.17 pin and is omitted only when
-# replaying the production prefix against this candidate.
-CANDIDATE_UPSTREAM_PATCHES = {"rad0013_mtp_pass_replay"}
+
 
 
 def recipe():
     with (REPO / "engines/radiance/recipes.toml").open("rb") as handle:
         return tomllib.load(handle)
+
+
+CANDIDATE_COMMIT = recipe()["pinned"]
 
 
 def serving_chain_to(target: str) -> list[str]:
@@ -36,11 +35,11 @@ def serving_chain_to(target: str) -> list[str]:
     selected = tuple(dict.fromkeys(
         patch for name in source_sets for patch in data["patch-set"][name]["patches"]
     ))
-    resolved = patchset.resolve_exact(
-        "radiance", selected, directory=PATCHES, required_state="validated"
-    )
+    # Resolve the build order for the focal mechanics test. The source policy
+    # suite checks release eligibility, and assert_promoted_recipe checks the
+    # focal packages' states.
+    resolved = patchset.resolve_exact("radiance", selected, directory=PATCHES)
     ordered = [module.patch_id for module in resolved.modules]
-    ordered = [patch for patch in ordered if patch not in CANDIDATE_UPSTREAM_PATCHES]
     assert ordered.count(target) == 1
     return ordered[:ordered.index(target) + 1]
 

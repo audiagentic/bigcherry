@@ -18,6 +18,7 @@ from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PACKAGE = "rad0048_abi44_kv_contract"
 PIPELINE = "rad0020_vtp14_tp3_pipelined_prefill"
+BATCH = "rad0025_multiseq_pipelined_prefill"
 OWNERSHIP = "rad0018_vtp14_n2_tp_ownership"
 
 ABI_FIELDS = {
@@ -56,7 +57,8 @@ class Abi44ContractTests(unittest.TestCase):
         resolved = patchset.resolve_exact("radiance", closure.expanded, directory=PATCHES)
         ordered = [module.patch_id for module in resolved.modules]
         self.assertLess(ordered.index(OWNERSHIP), ordered.index(PIPELINE))
-        self.assertLess(ordered.index(PIPELINE), ordered.index(PACKAGE))
+        self.assertLess(ordered.index(PIPELINE), ordered.index(BATCH))
+        self.assertLess(ordered.index(BATCH), ordered.index(PACKAGE))
         assert_promoted_recipe(self, PACKAGE)
 
     def test_frozen_abi43_prefix_extends_once_and_release_fixture_runs(self):
@@ -67,7 +69,7 @@ class Abi44ContractTests(unittest.TestCase):
         if cc is None:
             self.skipTest("a C compiler is required for the header fixture")
 
-        with patched_pinned_source(checkout, PIPELINE, full_checkout=True) as root:
+        with patched_pinned_source(checkout, BATCH, full_checkout=True) as root:
             fingerprint_probe = root / "fingerprint_probe.c"
             fingerprint_probe.write_text(FINGERPRINT_PROBE, encoding="utf-8")
             executable = compile_release_probe(cc, root, fingerprint_probe)
