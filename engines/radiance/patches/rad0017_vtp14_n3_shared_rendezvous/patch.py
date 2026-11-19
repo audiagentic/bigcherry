@@ -38,7 +38,7 @@ SRC = Path(__file__).resolve().parent / "src"
 # The build identity hashes this file's bytes only (patch_implementation_digest), so the src/ files it
 # creates are pinned here: a src/ change must update these digests, which changes this file and the build.
 SRC_SHA256 = {
-    "bc_shared_slot.cpp": "58a1c4d2ec042d309db151a713dc738b6d6146a13b6b026cf68618b71a303f46",
+    "bc_shared_slot.cpp": "de4ea6a2e6001a34e00cec18b96a7951daa88eaad740031e68ce81c4aed7e3e4",
     "bc_shared_slot.h": "e1ca434a4ec14bddac2c91a5f924a5557c9a39220c9714506846fff85c4c9a46",
     "bc_shared_slot_test.cpp": "e820233bf87f51ea8b038e07cb81612be4b226280e1d8424865d74fb62480492",
 }
@@ -51,7 +51,7 @@ def _src_text(name: str) -> str:
         raise RuntimeError(f"{name}: sha256 {got} is not the pinned {SRC_SHA256.get(name)}; update SRC_SHA256")
     return data.decode("utf-8")
 
-RV_KEY_PREFIX = "libr4d.ar.rendezvous/v1"
+RV_KEY_PREFIX = "libr4d.ar.rendezvous/v2"
 
 
 def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None = None) -> Edit:
@@ -98,81 +98,111 @@ AR_ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", descriptio
         max_span=2,
     ),
     _edit(
+        "n3-rv-owner",
+        r"""    int  failed = 0;""",
+        r"""    int  failed = 0;
+    int  owner = 0;  /* BC_VTP14_N3_OWNER: engine lifetime within this group */""",
+        guard="BC_VTP14_N3_OWNER",
+    ),
+    _edit(
         "n3-shared-rv",
-        "Rendezvous g_rv;\n",
-        "/* BC_VTP14_N3_SHARED_RV (BigCherry rad0017): ranks of one world may run different kernel\n"
-        " * libraries (libr3 on gfx1100, libr4d on gfx1201), each dlopened RTLD_LOCAL with its own statics,\n"
-        " * so the rendezvous lives in a process-wide slot the engine exports (rad_bc_shared_slot) and every\n"
-        " * library built from this source resolves the same one. A host without the service (selftest,\n"
-        " * kbench, test binaries) runs one library and keeps a local rendezvous. A host with it that\n"
-        " * refuses the slot gets a poisoned rendezvous: every barrier fails at once, with the reason. */\n"
-        "typedef int (*BcSharedSlotFn)(const char*, size_t, size_t, void (*)(void*), void**, char*, size_t);\n"
-        "\n"
-        "void rv_construct(void* p) { new (p) Rendezvous(); }\n"
-        "\n"
-        "Rendezvous& rv_slot() {\n"
-        "    static Rendezvous* const slot = [] {\n"
-        "        static Rendezvous local;\n"
-        "        static Rendezvous poisoned;\n"
-        "        const auto fn = reinterpret_cast<BcSharedSlotFn>(dlsym(RTLD_DEFAULT, \"rad_bc_shared_slot\"));\n"
-        "        if (!fn) return &local;\n"
-        "        char key[192];\n"
-        "        std::snprintf(key, sizeof key, \"" + RV_KEY_PREFIX + "/size=%zu/align=%zu/ranks=%d/mutex=%zu/cv=%zu/link=%zu\",\n"
-        "                      sizeof(Rendezvous), alignof(Rendezvous), (int)R4D_MAX_RANKS, sizeof(std::mutex),\n"
-        "                      sizeof(std::condition_variable), sizeof(R4DArLink));\n"
-        "        void* p = nullptr;\n"
-        "        char why[320] = { 0 };\n"
-        "        const int rc = fn(key, sizeof(Rendezvous), alignof(Rendezvous), rv_construct, &p, why, sizeof why);\n"
-        "        if (rc != RAD_OK || !p) {\n"
-        "            std::fprintf(stderr, \"[r4d] all-reduce rendezvous: the engine's shared slot refused %s: %s. \"\n"
-        "                                 \"Every all-reduce init on this library fails rather than wait for \"\n"
-        "                                 \"peers it cannot meet.\\n\", key, why[0] ? why : \"no reason given\");\n"
-        "            poisoned.failed = 1;\n"
-        "            return &poisoned;\n"
-        "        }\n"
-        "        return static_cast<Rendezvous*>(p);\n"
-        "    }();\n"
-        "    return *slot;\n"
-        "}\n"
-        "\n"
-        "#define g_rv (rv_slot())\n",
+        r"""Rendezvous& rv_for(long long group) {
+    std::lock_guard<std::mutex> lk(g_rv_mu);
+    std::unique_ptr<Rendezvous>& r = g_rvs[group];
+    if (!r) r.reset(new Rendezvous());
+    return *r;
+}
+
+""",
+        r"""Rendezvous& rv_for(long long group) {
+    using SlotFn = int (*)(const char*, size_t, size_t, void (*)(void*), void**, char*, size_t);
+    using OwnerFn = int (*)();
+    static const auto slot = reinterpret_cast<SlotFn>(dlsym(RTLD_DEFAULT, "rad_bc_shared_slot"));
+    static const auto current_owner =
+        reinterpret_cast<OwnerFn>(dlsym(RTLD_DEFAULT, "rad_bc_rendezvous_owner"));
+    // BC_VTP14_N3_SHARED_RV: standalone tools use their local per-group rendezvous.
+    if (slot && current_owner) {
+        char key[96], why[320] = {};
+        std::snprintf(key, sizeof key, "libr4d.ar.rendezvous/v2/group=%lld", group);
+        void* storage = nullptr;
+        if (slot(key, sizeof(Rendezvous), alignof(Rendezvous),
+                 [](void* p) { new (p) Rendezvous(); }, &storage, why, sizeof why) == RAD_OK && storage) {
+            auto& rv = *static_cast<Rendezvous*>(storage);
+            const int owner = current_owner();
+            std::lock_guard<std::mutex> lk(rv.m);
+            if (rv.owner != owner) {
+                // A slot base can be claimed again after all prior ranks have joined.
+                rv.owner = owner;
+                rv.failed = 0;
+                rv.arrived = 0;
+                rv.epoch = 0;
+            }
+            return rv;
+        }
+        std::fprintf(stderr, "[r4d] shared all-reduce group %lld: %s\n", group, why);
+    }
+    std::lock_guard<std::mutex> lk(g_rv_mu);
+    std::unique_ptr<Rendezvous>& r = g_rvs[group];
+    if (!r) {
+        r.reset(new Rendezvous());
+        if (slot || current_owner) r->failed = 1;
+    }
+    return *r;
+}
+
+""",
         guard="BC_VTP14_N3_SHARED_RV",
-        max_span=2,
     ),
     _edit(
         "n3-barrier-poison",
-        "    std::unique_lock<std::mutex> lk(g_rv.m);\n"
-        "    const int e = g_rv.epoch;\n"
-        "    if (++g_rv.arrived == world) {\n"
-        "        g_rv.arrived = 0;\n"
-        "        g_rv.epoch++;\n"
-        "        g_rv.cv.notify_all();\n"
-        "        return RAD_OK;\n"
-        "    }\n"
-        "    const bool ok = g_rv.cv.wait_for(lk, std::chrono::seconds(60),\n"
-        "                                     [&] { return g_rv.epoch != e; });\n"
-        "    return ok ? RAD_OK : RAD_E_STATE;\n",
-        "    std::unique_lock<std::mutex> lk(g_rv.m);\n"
-        "    /* BC_VTP14_N3_POISON: a rendezvous that timed out or could not be shared fails every later\n"
-        "     * barrier at once, and a timeout wakes every waiter, so no rank waits out its own 60 s. */\n"
-        "    if (g_rv.failed) return RAD_E_STATE;\n"
-        "    const int e = g_rv.epoch;\n"
-        "    if (++g_rv.arrived == world) {\n"
-        "        g_rv.arrived = 0;\n"
-        "        g_rv.epoch++;\n"
-        "        g_rv.cv.notify_all();\n"
-        "        return RAD_OK;\n"
-        "    }\n"
-        "    const bool ok = g_rv.cv.wait_for(lk, std::chrono::seconds(60),\n"
-        "                                     [&] { return g_rv.epoch != e || g_rv.failed; });\n"
-        "    if (ok && g_rv.epoch != e) return RAD_OK;\n"
-        "    if (!g_rv.failed)\n"
-        "        std::fprintf(stderr, \"[r4d] all-reduce rendezvous: %d of %d rank(s) arrived within 60 s; \"\n"
-        "                             \"the world's ranks do not meet here (a rank declares a different graph, or \"\n"
-        "                             \"runs a library that does not share this rendezvous)\\n\", g_rv.arrived, world);\n"
-        "    g_rv.failed = 1;\n"
-        "    g_rv.cv.notify_all();\n"
-        "    return RAD_E_STATE;\n",
+        r"""int rv_barrier(Rendezvous& rv, int world) {
+    std::unique_lock<std::mutex> lk(rv.m);
+    const int e = rv.epoch;
+    if (++rv.arrived == world) {
+        rv.arrived = 0;
+        rv.epoch++;
+        rv.cv.notify_all();
+        return RAD_OK;
+    }
+    const bool ok = rv.cv.wait_for(lk, std::chrono::seconds(60),
+                                   [&] { return rv.epoch != e; });
+    /* A rank that gave up takes its arrival back: a peer that failed before arriving would
+     * otherwise leave it counted, and the group's next engine (its id is reused) would be released
+     * one rank early. */
+    if (!ok) --rv.arrived;
+    return ok ? RAD_OK : RAD_E_STATE;
+}
+
+""",
+        r"""int rv_barrier(Rendezvous& rv, int world) {
+    std::unique_lock<std::mutex> lk(rv.m);
+    if (rv.failed) return RAD_E_STATE;  /* BC_VTP14_N3_POISON */
+    const int e = rv.epoch;
+    if (++rv.arrived == world) {
+        rv.arrived = 0;
+        rv.epoch++;
+        rv.cv.notify_all();
+        return RAD_OK;
+    }
+    const bool ok = rv.cv.wait_for(lk, std::chrono::seconds(60),
+                                   [&] { return rv.epoch != e || rv.failed; });
+    /* A rank that gave up takes its arrival back: a peer that failed before arriving would
+     * otherwise leave it counted, and the group's next engine (its id is reused) would be released
+     * one rank early. */
+    if (rv.failed) return RAD_E_STATE;
+    if (!ok) {
+        --rv.arrived;
+        if (rv.owner != 0) {
+            std::fprintf(stderr, "[r4d] all-reduce group timed out at %d of %d ranks\n",
+                         rv.arrived + 1, world);
+            rv.failed = 1;
+            rv.cv.notify_all();
+        }
+    }
+    return ok ? RAD_OK : RAD_E_STATE;
+}
+
+""",
         guard="BC_VTP14_N3_POISON",
     ),
 ))
@@ -199,8 +229,8 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
         "        /* BC_VTP14_N3_ENGINE_RECEIPT: which libraries met at the shared all-reduce rendezvous. */\n"
         "        {\n"
         "            std::string users;\n"
-        "            for (const std::string& k : bc_shared_slot_keys(\"" + RV_KEY_PREFIX + "/\"))\n"
-        "                for (const std::string& u : bc_shared_slot_users(k))\n"
+        "            const std::string k = \"" + RV_KEY_PREFIX + "/group=\" + std::to_string(slot_base_);\n"
+        "            for (const std::string& u : bc_shared_slot_users(k))\n"
         "                    users += (users.empty() ? \"\" : \", \") + u;\n"
         "            RAD_INFO(\"rank receipt: all-reduce rendezvous shared by %s\",\n"
         "                     users.empty() ? \"no library (no all-reduce was initialised)\" : users.c_str());\n"
