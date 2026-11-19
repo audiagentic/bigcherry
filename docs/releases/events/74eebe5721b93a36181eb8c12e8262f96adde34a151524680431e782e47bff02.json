@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_004803_radiance-bump-groundwork-prese_4427",
+  "files": [
+    "engines/radiance/components/serving/bc_serving_v2.cmake",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Start the candidate Radiance bump with pinned shared JSON and a native YAML exact-byte parser/replay fixture. Record recoverable source checkpoints and separate card-free verification from later runtime and parity gates.",
+  "timestamp-utc": "2026-11-19T00:48:03.532048Z",
+  "user-summary-candidate": "Radiance bump groundwork preserves existing serving JSON and verifies native YAML admission and replay against the candidate parser."
+}

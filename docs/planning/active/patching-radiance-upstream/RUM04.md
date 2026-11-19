@@ -2,7 +2,7 @@
 id: RUM04
 order: 3
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-18T01:28:13.721371+00:00'
 breadth: ''
 skill: advanced
@@ -86,6 +86,8 @@ Executable guidance: docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HA
 
 First prove YAML transport and entry points using a supported fixture. The v1.17 Flash-Next `fp8` spelling is not equivalent to target native `fp8`; use RUM07 disposition before starting the real production-format lane. Target host-pool capacity is aggregate before division by TP; preserve actual admitted bytes and validate this in a multi-rank negative test.
 
+C3 exact native parser fixture and C4 managed bootstrap marker recorded under docs/evidence/radiance-latest-bump. Full persisted successor contract and native exec remains open.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -98,3 +100,5 @@ First prove YAML transport and entry points using a supported fixture. The v1.17
 - 2026-11-18T02:28:11.086931+00:00 (updated-by): Updated: section:validation, section:effort_risk, section:notes
 - 2026-11-18T03:39:58.662306+00:00 (updated-by): Updated: section:steps, section:notes
 - 2026-11-18T03:41:39.090024+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T00:54:27.126833+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T00:54:34.826531+00:00 (state-transition): State: pending → in_progress
