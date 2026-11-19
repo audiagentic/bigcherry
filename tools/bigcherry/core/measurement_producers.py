@@ -43,7 +43,7 @@ def publish(
     inputs: dict[str, bytes | Path],
     host_facts: dict[str, Any],
     feature_states: list[dict],
-    metric_specs: dict | None = None,
+    metric_specs: dict,
     validity: dict | None = None,
     session_id: str | None = None,
     calibration_selection: dict[str, Any] | None = None,
@@ -112,8 +112,7 @@ def publish(
             record["calibration_record"] = dict(calibration_selection)
         else:
             raise run_records.RecordError("unknown calibration selection status")
-    if metric_specs is not None:
-        record["metric_specs"] = metric_specs
+    record["metric_specs"] = metric_specs
     if validity is not None:
         record["validity"] = validity
     if session_id:
