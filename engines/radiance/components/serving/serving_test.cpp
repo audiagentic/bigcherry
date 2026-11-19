@@ -3171,7 +3171,8 @@ void session_engine_plan(Fixture& t) {
     in.options.configs = {configs};
     in.options.model_root = t.root / "model-root"; // the site's model wins; the root is still required
     in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
-    in.self = "/build/radiance_home/bin/bc-serve";
+    in.self = t.root / "bc-serve-test";
+    fs::create_symlink(BC_SERVE_EXE, in.self);
     in.engine_binary = BC_FAKE_ENGINE;
     const Json session_facts = bc::serving::detect(t.root);
     const auto session_resolved = bc::serving::resolve(in.options, session_facts);
@@ -3267,7 +3268,7 @@ void session_engine_plan(Fixture& t) {
             break; // no measured plan
         case 2:
             assert(flag(argv, "--unmeasured"));
-            std::ofstream(argv[2]) << session_manifests.measuring.dump(2) << '\n';
+            r = ss::run_to_completion(argv, ss::child_environment(environ, {}));
             break;
         case 3:
             r.exit = 11;
@@ -3278,11 +3279,7 @@ void session_engine_plan(Fixture& t) {
             break; // the changed pool has a different measured-plan key
         case 5: {
             assert(flag(argv, "--unmeasured"));
-            Options changed = in.options;
-            changed.sets.push_back("memory.host_pool_mib=2048");
-            const auto changed_pair = session_manifest_pair(
-                bc::serving::resolve(changed, session_facts), session_facts);
-            std::ofstream(argv[2]) << changed_pair.measuring.dump(2) << '\n';
+            r = ss::run_to_completion(argv, ss::child_environment(environ, {}));
             break;
         }
         case 6:
@@ -3320,8 +3317,9 @@ void session_engine_plan(Fixture& t) {
         assert(has(calls[i], "--plan-extra", "budgets: default") &&
                has(calls[i], "--engine-binary", BC_FAKE_ENGINE) &&
                has(calls[i], "--plan-cache", (run / "plan-cache").string()));
-    assert(!flag(calls[1], "--plan-extra") && !flag(calls[1], "--plan-cache") &&
-           !flag(calls[4], "--plan-extra") && !flag(calls[4], "--plan-cache"));
+    for (size_t i : {size_t(1), size_t(4)})
+        assert(flag(calls[i], "--plan-extra") && has(calls[i], "--engine-binary", BC_FAKE_ENGINE) &&
+               flag(calls[i], "--expected-plan-key") && !flag(calls[i], "--plan-cache"));
     // The owner publishes exact artifacts from the tracked attempt, then the writer reads cache-only and checks its attempt receipt.
     assert(flag(calls[2], "--expected-owner-attempt") && !flag(calls[2], "--measured-plan") &&
            !flag(calls[2], "--rank-demand") && flag(calls[5], "--expected-owner-attempt"));
@@ -3357,6 +3355,31 @@ void session_engine_plan(Fixture& t) {
     assert(s.runtime.at("RADIANCE_HOME") == home.string() && s.runtime.size() == 3);
     assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3-int8" &&
            s.summary.at("manifest_digest") == "0123abcd");
+    { // A profile changed only while the unmeasured child resolves must not slip behind the frozen cache key.
+        ss::EnginePlanInputs drifting = in;
+        const fs::path profile = t.file("transient-profile.toml", "[engine]\nnum_speculative_tokens = 2\n");
+        drifting.options.profile = profile;
+        const fs::path drift_run = run / "transient-drift";
+        fs::create_directories(drift_run);
+        int writer_calls = 0;
+        drifting.runner = [&](const std::vector<std::string>& argv) {
+            if (++writer_calls == 1)
+                return ss::ManifestRun{10, "", "cache miss"};
+            assert(writer_calls == 2 && flag(argv, "--expected-plan-key"));
+            std::ofstream(profile, std::ios::trunc) << "[engine]\nnum_speculative_tokens = 1\n";
+            return ss::run_to_completion(argv, ss::child_environment(environ, {}));
+        };
+        bool drift_refused = false;
+        try {
+            (void)ss::plan_engine_only(drifting, drift_run, {});
+        } catch (const ss::PlanFailed& error) {
+            drift_refused = std::string(error.what()).find(
+                                "effective measuring-manifest inputs differ from the session's frozen plan key") !=
+                            std::string::npos;
+        }
+        assert(drift_refused && writer_calls == 2 &&
+               !fs::exists(drift_run / "measurement-attempts"));
+    }
     { // Engine-only TP3 cache miss refuses a pool that fits one rank but not all ranks, before power or child hooks.
         ss::EnginePlanInputs limited = in;
         const fs::path limited_root = t.root / "tp3-low-room-root";

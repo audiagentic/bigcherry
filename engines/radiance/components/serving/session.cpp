@@ -2407,7 +2407,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     };
     int pool_changes = 0;
     bool power_admitted = false;
+    std::optional<std::string> final_measurement_attempt;
     for (int round = 0; round < 5; ++round) {
+        final_measurement_attempt.reset();
         const auto frozen_round = round_key();
         const Resolved& round_resolved = frozen_round.first.first;
         const Json& frozen_key = frozen_round.second;
@@ -2434,10 +2436,23 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     run_dir / ("histogram-measuring-" + id + "-" + std::to_string(round));
                 measuring_histogram = "handoff.histogram=" + Json(private_prefix.string()).dump();
             }
-            const ManifestRun u = write(measuring, {"--unmeasured"}, measuring_histogram);
+            const std::vector<std::string> measuring_guard = {
+                "--unmeasured", "--expected-plan-key", plan_key(frozen_key), "--engine-binary", engine.string(),
+                "--plan-extra", "budgets: default"};
+            const ManifestRun u = write(measuring, measuring_guard, measuring_histogram);
             if (u.exit != 0)
                 throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
             const auto measuring_snapshot = pin_manifest_file(measuring, v2::PlanUse::measuring);
+            const auto& measuring_manifest = measuring_snapshot.parsed;
+            const auto& selected_engine_bdfs = round_resolved.values.at("layout").at("engine_cards");
+            if (measuring_manifest.spec.intent.layout !=
+                    round_resolved.values.at("layout").at("name").get<std::string>() ||
+                measuring_manifest.spec.intent.model !=
+                    round_resolved.values.at("engine").at("model").get<std::string>() ||
+                measuring_manifest.spec.processes.engine.device.gpus !=
+                    selected_engine_bdfs.get<std::vector<std::string>>())
+                throw PlanFailed("plan: the pinned measuring manifest's model, config or ordered engine devices "
+                                 "differ from the frozen session selection");
             const fs::path measuring_execution = measuring_snapshot.pinned->path();
             const Json current_facts = detect(in.options.sys_root);
             if (const auto refusal = resources::preflight_host_pool(measuring_snapshot.parsed, current_facts))
@@ -2582,7 +2597,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                      "tracked measurement; refusing to re-key its result");
                 const Json measured_plan = parse_plan_json(read_file(plan), plan.string());
                 const Json rank_demand = parse_plan_json(read_file(ranks), ranks.string());
-                const auto selected_bdfs = round_resolved.values.at("layout").at("engine_cards");
+                const auto& selected_bdfs = round_resolved.values.at("layout").at("engine_cards");
                 if (!rank_demand.is_object() || !rank_demand.contains("gpu") ||
                     !rank_demand.at("gpu").is_array() || rank_demand.at("gpu").size() != selected_bdfs.size())
                     throw PlanFailed("plan: measured rank demand does not match the selected engine ranks");
@@ -2597,7 +2612,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     OwnerMeasurementEvidence{attempt_id, measuring_snapshot.sha256});
                 if (!owned.owner || owned.owner->attempt_id != attempt_id || owned.key != plan_key(frozen_key))
                     throw PlanFailed("plan: owner cache publication did not return the tracked measurement receipt");
-                out.summary["plan_measurement_attempt"] = attempt_id;
+                final_measurement_attempt = attempt_id;
                 std::vector<std::string> stored = measured_args;
                 stored.insert(stored.end(), {"--expected-owner-attempt", attempt_id});
                 fs::remove(manifest, ec);
@@ -2605,6 +2620,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             }
         }
         if (w.exit == 0) {
+            if (final_measurement_attempt)
+                out.summary["plan_measurement_attempt"] = *final_measurement_attempt;
             auto final_snapshot = pin_manifest_file(manifest, v2::PlanUse::serving);
             const fs::path execution_manifest = final_snapshot.pinned->path();
             if (hooks.admit_power && !power_admitted) {

@@ -641,6 +641,7 @@ int main(int argc, char** argv) {
         fs::path measured_plan_file;
         std::optional<uint64_t> helpers_resident_mib, engine_resident_mib;
         std::string plan_extra;
+        std::string expected_plan_key;
         fs::path plan_cache, engine_binary;
         fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file,
             s8_replay_evidence_file;
@@ -704,6 +705,8 @@ int main(int argc, char** argv) {
                 experiment_file = need_arg("--experiment");
             else if (arg == "--plan-extra")
                 plan_extra = need_arg("--plan-extra");
+            else if (arg == "--expected-plan-key")
+                expected_plan_key = need_arg("--expected-plan-key");
             else if (arg == "--rank-demand")
                 rank_demand_file = need_arg("--rank-demand");
             else if (arg == "--expected-owner-attempt")
@@ -756,6 +759,8 @@ int main(int argc, char** argv) {
                                      "--plan-memory and --plan-memory-ranks)");
         if (!expected_owner_attempt.empty() && !measured_plan_file.empty())
             throw std::runtime_error("--expected-owner-attempt is for cache-only writer reads");
+        if (!expected_plan_key.empty() && !unmeasured)
+            throw std::runtime_error("--expected-plan-key is for the session-owned unmeasured writer call");
         if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
             throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab "
                                      "profile, or --calibration-run");
@@ -866,9 +871,14 @@ int main(int argc, char** argv) {
             if (!positional.empty())
                 throw std::runtime_error(
                     "--write-manifest takes --site, --profile, --set and --calibration only");
-            if (unmeasured && (!plan_cache.empty() || !engine_binary.empty() || !plan_extra.empty()))
+            if (unmeasured && !plan_cache.empty())
+                throw std::runtime_error("--unmeasured has no plan: it takes no --plan-cache");
+            if (unmeasured && expected_plan_key.empty() && (!engine_binary.empty() || !plan_extra.empty()))
                 throw std::runtime_error(
-                    "--unmeasured has no plan: it takes no --plan-cache, --engine-binary or --plan-extra");
+                    "--unmeasured takes --engine-binary and --plan-extra only with --expected-plan-key");
+            if (unmeasured && !expected_plan_key.empty() && (engine_binary.empty() || plan_extra.empty()))
+                throw std::runtime_error(
+                    "session-owned --unmeasured requires --expected-plan-key, --engine-binary and --plan-extra");
             if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
                 throw std::runtime_error("--write-manifest needs --plan-cache DIR and --engine-binary PATH");
             if (power_profile.empty())
@@ -900,6 +910,14 @@ int main(int argc, char** argv) {
             bc::serving::ManifestInputs in;
             in.resolved = r;
             if (unmeasured) {
+                if (!expected_plan_key.empty()) {
+                    const Json effective_key = bc::serving::plan_key_inputs(
+                        v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
+                        bc::serving::engine_identity(engine_binary, home), plan_extra);
+                    if (bc::serving::plan_key(effective_key) != expected_plan_key)
+                        throw std::runtime_error(
+                            "the effective measuring-manifest inputs differ from the session's frozen plan key");
+                }
                 in.instance_id = bc::serving::new_instance_id();
                 in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
                 in.calibration_cache = opts.calibration_cache;

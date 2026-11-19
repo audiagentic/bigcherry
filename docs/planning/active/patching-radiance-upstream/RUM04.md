@@ -171,6 +171,8 @@ C41 (2026-11-20): native inspection now reconciles the parser-reported model wit
 
 C42 (2026-11-20): moved measured-plan publication from CLI raw-file import into the tracked session owner after engine exit, helper reap and VRAM release. The owner freezes resolver values, model/build identity and key before measurement, recomputes before publish and refuses drift rather than re-keying. Unique attempt paths/IDs, strict plan/rank/config validation, owner receipt digests (including resident memory and optional native snapshot identity), unique atomic cache publication, and expected-attempt cache-only writer checks are implemented. Focused ABI44 `bc_serving_test` and `bc_session_test` passed (2/2), including two measured rounds after exit-11 pool adjustment and refusal after tampering with resident memory. Evidence C42 is in docs/evidence/radiance-latest-bump/README.md; Ledger event recorded for RUM04. Production remains v2 and the private native admission gate remains closed before writer/P1/measurement/replay. No GPU execution or performance claim.
 
+C43 (2026-11-20): closed the gap where the session froze a plan key before invoking a writer that independently resolved mutable files. The session now supplies `--expected-plan-key`; the real `bc-serve` child recomputes it from the same `Resolved` object passed to the unmeasured manifest builder and refuses drift before writing. The session verifies the pinned draft's config name, model and ordered engine BDFs against the frozen selection. The reported attempt is assigned only after final-round success. `bc_serving_test` invokes the real built writer for both successful pool rounds and changes `engine.num_speculative_tokens` between freeze and draft; the child refuses and no measurement-attempt directory is created. `bc_serving_test` and `bc_session_test` passed (2/2); `git diff --check` passed. Evidence C43 and Ledger event recorded. This closes owner-key-to-v2-draft binding only; native writer/P1/replay production migration remains open.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -208,3 +210,4 @@ C42 (2026-11-20): moved measured-plan publication from CLI raw-file import into 
 - 2026-11-19T15:32:53.989125+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:43:06.516924+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T16:11:28.537296+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T16:24:38.328581+00:00 (updated-by): Updated: section:notes
