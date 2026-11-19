@@ -135,6 +135,8 @@ class TpOwnershipTests(unittest.TestCase):
             self.assertIn("rad_weight_shard_span(b, m.w_tok, g.vocab_off", qwen)
             self.assertIn("rad_weight_shard_span(b, m.w_lm_head, g.vocab_off", qwen)
             self.assertIn("const char* tp_ownership;\n} RadBuildCtx;", (root / "abi/rad_builder.h").read_text())
+            layout = (root / "abi/rad_abi_layout_rows.h").read_text()
+            self.assertIn("ABI_FIELD(RadBuildCtx, tp_ownership)", layout)
             fp8 = (root / "arch/qwen35_fp8/qwen35_fp8.cpp").read_text()
             self.assertIn("gc.k_first      = g.own_gdn_k_lo;", fp8)
             self.assertIn("rad_weight_shard_span(b, m.w_lm_head, g.vocab_off", fp8)
