@@ -126,6 +126,8 @@ void check_native_serving_stage(const std::string& path, const wire::Manifest& m
     rad::Config wrong_role;
     check(bc_serving_prepare_native_engine_config(&manifest, wire::PlanUse::measuring, &wrong_role) < 0,
           "serving Config staging accepted the measuring role");
+    check(!bc_serving_expected_plan(&expected, &floor_ppm) && bc_serving_engine_bdfs().empty(),
+          "rejected native Config staging retained measured plan or device admission");
 }
 } // namespace
 
