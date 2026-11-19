@@ -154,6 +154,47 @@ class DiscoveryTests(unittest.TestCase):
         self.assertEqual(registry.descriptors, ())
 
 
+class ArchiveIsolationTests(unittest.TestCase):
+    """Retired patches live under archive/<id>/ as evidence; nothing in the patch system ever loads them."""
+
+    def setUp(self) -> None:
+        self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-registry-")
+        self.addCleanup(self._tmp.cleanup)
+        self.root = Path(self._tmp.name) / "patches"
+        self.root.mkdir()
+
+    def test_archived_package_is_never_discovered_or_composed(self) -> None:
+        write(self.root, "0100_foo/patch.toml", PACKAGE_TOML.format(patch_id="0100_foo", order=100, extra=""))
+        write(self.root, "0100_foo/patch.py", NO_CONTRACT_PY)
+        # The same id archived: it would be a duplicate patch ID if the archive were read.
+        write(self.root, "archive/0100_foo/patch.toml", PACKAGE_TOML.format(patch_id="0100_foo", order=100, extra=""))
+        write(self.root, "archive/0100_foo/patch.py", NO_CONTRACT_PY)
+        registry = patch_registry.load_registry("llamacpp", self.root)
+        self.assertEqual([d.patch_id for d in registry.descriptors], ["0100_foo"])
+        self.assertEqual(patch_registry.discover_packaged_patches(self.root), [self.root.resolve() / "0100_foo/patch.toml"])
+
+    def test_a_broken_archived_package_cannot_break_the_registry(self) -> None:
+        write(self.root, "0100_foo/patch.toml", PACKAGE_TOML.format(patch_id="0100_foo", order=100, extra=""))
+        write(self.root, "0100_foo/patch.py", NO_CONTRACT_PY)
+        write(self.root, "archive/0002_old/patch.toml", "this is not toml = = =\n")
+        write(self.root, "archive/0002_old/patch.py", "raise SystemExit('never loaded')\n")
+        registry = patch_registry.load_registry("llamacpp", self.root)
+        self.assertEqual([d.patch_id for d in registry.descriptors], ["0100_foo"])
+
+    def test_archived_modules_are_not_listed_by_the_module_catalog(self) -> None:
+        from bigcherry.patch import patchset
+
+        write(self.root, "0100_foo.py", SIMPLE_PY)
+        write(self.root, "archive/0002_old/patch.py", NO_CONTRACT_PY)
+        write(self.root, "archive/0003_old.py", SIMPLE_PY)
+        self.assertEqual([p.name for p in patchset.discover_modules(self.root)], ["0100_foo.py"])
+
+    def test_archive_is_a_reserved_component_like_underscore(self) -> None:
+        self.assertTrue(patch_registry.is_reserved_part("archive"))
+        self.assertTrue(patch_registry.is_reserved_part("_template"))
+        self.assertFalse(patch_registry.is_reserved_part("rad0001_drain_mover_before_arena_free"))
+
+
 class DuplicateIdentityTests(unittest.TestCase):
     def setUp(self) -> None:
         self._tmp = tempfile.TemporaryDirectory(prefix="bigcherry-registry-")

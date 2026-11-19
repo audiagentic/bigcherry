@@ -18,6 +18,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from ..core import engines
+from ..patch.registry import is_reserved_part
 
 
 class ReleaseNotesError(RuntimeError):
@@ -140,7 +141,7 @@ class PatchChanges:
 
 def _patch_ids(repo_root: Path, config: ReleaseConfig, ref: str) -> set[str]:
     listing = _git(repo_root, "ls-tree", "-d", "--name-only", f"{ref}:{config.patches}").split()
-    return {name for name in listing if not name.startswith("_")}
+    return {name for name in listing if not is_reserved_part(name)}
 
 
 def _patch_file(config: ReleaseConfig, patch_id: str, name: str) -> str:

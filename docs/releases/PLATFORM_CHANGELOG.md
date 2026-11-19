@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.55.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.54.0...bc-platform-1.55.0) (2026-11-19)
+
+
+### New and changed
+
+* **core:** link verified run records and expose results put query ([#1213](https://github.com/audiagentic/bigcherry/issues/1213)) ([75b63ba](https://github.com/audiagentic/bigcherry/commit/75b63ba62210e989ad59d8993d955412f586e381))
+* **results:** make parity baseline compare portable record consumers ([#1214](https://github.com/audiagentic/bigcherry/issues/1214)) ([d611e79](https://github.com/audiagentic/bigcherry/commit/d611e79970a2296ef6904e56592fc5b468c9d1d7))
+
 ## [1.54.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.53.0...bc-platform-1.54.0) (2026-11-19)
 
 

@@ -18,7 +18,6 @@ class EngineRegistryIsolationTests(unittest.TestCase):
         llama = registry.load_registry("llamacpp", llama_root)
         radiance = registry.load_registry("radiance", radiance_root)
         expected = {
-            "rad0001_drain_mover_before_arena_free",
             "rad0002_moe_remote_handoff",
             "rad0003_mtp_full_head_switch",
             "rad0004_moe_remote_diagnostics",
