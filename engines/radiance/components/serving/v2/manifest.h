@@ -54,6 +54,8 @@ struct EngineView {
 };
 /* BC_CFG_INVALID_STATE for an unmeasured manifest: only a measured one has an engine plan to check. */
 Result<EngineView> engine_view(const Manifest& m);
+/* The immutable native snapshot for any admitted role, including unmeasured measuring manifests. */
+std::optional<NativeConfigView> native_config_view(const Manifest& m);
 
 /* One helper's typed view: its process entry, owned set, the shared handoff, and its effective settings
  * (helper_common, then its role patch, then lab experiment.shape common and role patches; spec §2.2). */

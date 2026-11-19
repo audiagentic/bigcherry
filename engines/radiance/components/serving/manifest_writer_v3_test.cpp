@@ -55,8 +55,13 @@ void check_snapshot(const sv::BuiltManifest& manifest, wire::PlanUse use,
     if (!read)
         throw std::runtime_error(wire::render_human("v3 writer test", read.error()));
     const auto& native = read.value().spec.native_config;
+    const auto native_view = wire::native_config_view(read.value());
     check(read.value().api_version == "bigcherry/v3" && read.value().metadata.contract_version == 3,
           "the real writer emitted another contract edition");
+    check(native_view && native_view->yaml_utf8 == yaml &&
+              native_view->identity.sha256 == snapshot.sha256() &&
+              native_view->identity.resolution_root == root.string(),
+          "role-neutral native snapshot view is unavailable for this manifest state");
     check(native.yaml_utf8 == yaml && native.sha256 == snapshot.sha256() &&
               native.resolution_root == root.string(),
           "the real writer changed the admitted native YAML bytes, digest or root");

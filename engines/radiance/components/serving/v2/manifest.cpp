@@ -693,6 +693,10 @@ Result<EngineView> engine_view(const Manifest& m) {
                       *m.spec.plan.engine_memory, ppm, native_config_view(m.spec)};
 }
 
+std::optional<NativeConfigView> native_config_view(const Manifest& m) {
+    return native_config_view(m.spec);
+}
+
 Result<HelperView> helper_view(const Manifest& m, std::string_view role) {
     const auto& helpers = m.spec.processes.helpers;
     for (size_t i = 0; i < helpers.size(); ++i)

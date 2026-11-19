@@ -201,3 +201,9 @@ Closed a race between the session's pre-measurement key and the independently re
 Extracted rad0011's ordered GPU rank-demand checks into one decoder used by both owner cache publication and the P1 producer. It enforces the exact wire fields, selected engine BDF order, rad0011 evidence, positive required/fixed/claimable values within the measured integer range, and `fixed <= required <= claimable`. This removes the previous gap where the cache publisher accepted records that P1 would later refuse, and it removes a second handwritten validation block.
 
 Rebuilt `bc_serving_test`, `bc_v2_p1_producer_test`, and their library dependencies. Focused CTests passed: `bc_serving_test` and `bc_v2_p1_producer_test` (2/2); serving coverage includes wrong-BDF and zero-byte refusal. `git diff --check` passed. This is shared validation for v2 owner publication and P1; it does not open native v3 session admission. No GPU or performance claim is attached.
+
+## C45 — Role-neutral native snapshot view (2026-11-20)
+
+Exposed `native_config_view(const Manifest&)` from the shared strict reader so an engine consumer can obtain the admitted YAML bytes, digest and resolution root after either measuring or serving role validation. The measured-only `engine_view` still requires `EngineMemory`; callers preparing an unmeasured measuring manifest now have a narrow typed accessor instead of parsing the document again.
+
+Extended the isolated v3 real-writer test to assert this accessor returns the exact snapshot for both unmeasured and measured documents after the authored YAML file has been deleted. Rebuilt both the normal v2 serving test and isolated v3 writer test; `bc_serving_test` and `bc_serving_v3_writer_test` passed (2/2). This is a reader API seam only; it does not link the upstream `NativeFleetConfig` parser, migrate stored replay or enable the production session gate. No GPU or performance claim is attached.

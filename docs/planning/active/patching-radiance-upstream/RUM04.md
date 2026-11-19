@@ -177,6 +177,8 @@ C44 (2026-11-20): extracted rad0011 engine rank-demand parsing into shared `rank
 
 Astra's ABI44 review (2026-11-20) sets the next RUM04 implementation boundary: keep v2 and v3 generated readers isolated because they export identical symbols with incompatible `Spec` layouts; create a separate candidate engine build selecting the single v3 reader via `bc_add_manifest_library` and successor-generated codec, never link `bc_serving_v3_wire` alongside the existing v2 `rad_core`. Expose a typed `native_config_view(const Manifest&)` that works after strict `read_manifest` for both measuring and serving roles; `engine_view` is measured-only because it requires `EngineMemory`. Then prepare `rad::Config` from that admitted snapshot through `NativeFleetConfig::replay` under its verified root/environment, preserving YAML provenance (`cfg.given`) and role/device order. Test actual v3 writer outputs for both states after deleting/replacing authored YAML; verify an upstream-only option/provenance, ordered devices, and `plan_mismatch` when roles/documents are swapped. Keep production admission closed until the complete session/P1/cache/stored/offline chain uses that v3 reader; managed reload must refuse before reopening `FleetConfig.path`. Astra checked candidate source compatibility with v3 headers using syntax-only compilation; that is not a link/runtime or production-enable result.
 
+C45 (2026-11-20): exposed `v2::native_config_view(const Manifest&)`, returning the generated edition's exact admitted YAML bytes and SHA/root identity after `read_manifest` for any role. The real isolated v3 writer test asserts this typed view for unmeasured measuring and measured serving outputs after the authored file is deleted; the existing `engine_view` remains measured-only because it requires EngineMemory. Rebuilt v2 serving and isolated v3 writer targets; `bc_serving_test` and `bc_serving_v3_writer_test` passed (2/2). Evidence C45 and Ledger event recorded. This API does not yet call upstream `NativeFleetConfig::replay`, migrate session/stored/offline consumers or open native production admission.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -216,3 +218,4 @@ Astra's ABI44 review (2026-11-20) sets the next RUM04 implementation boundary: k
 - 2026-11-19T16:11:28.537296+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T16:24:38.328581+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T16:33:33.967028+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T16:38:19.396059+00:00 (updated-by): Updated: section:notes
