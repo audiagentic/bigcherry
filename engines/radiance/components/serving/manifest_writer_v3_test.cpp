@@ -1,6 +1,8 @@
 #include "manifest_writer.h"
 #include "test_manifest_fixture.h"
 #include "test_rad_fixture.h"
+#include "plan_cache.h"
+#include "sha256.h"
 #include "v2/manifest.h"
 #include "v2/p1_producer.h"
 
@@ -107,6 +109,8 @@ int main(int argc, char** argv) {
         check(argc == 2 || argc == 3, "expected the engine-only named config fixture source and optional consumer");
         TempDirectory temporary;
         const fs::path model = temporary.path / "tiny.rad";
+        const fs::path runtime_home = temporary.path / "runtime-home";
+        fs::create_directories(runtime_home);
         bc::test::write_rad(model, 0, 0, 128, 128, {});
         const Json facts = Json::parse(R"json({
             "source": "v3 writer fixture",
@@ -133,7 +137,7 @@ int main(int argc, char** argv) {
         options.model_root = temporary.path;
         options.sets = {"layout.name=\"flashnext-r9700\"", "memory.host_pool_mib=9216",
                         "engine.model=" + Json(model.string()).dump(),
-                        "engine.radiance_home=" + Json(temporary.path.string()).dump()};
+                        "engine.radiance_home=" + Json(runtime_home.string()).dump()};
         sv::ManifestInputs inputs;
         inputs.resolved = sv::resolve(options, facts);
         inputs.profile = "production";
@@ -189,8 +193,24 @@ int main(int argc, char** argv) {
                                   {"fixed_bytes", 1}, {"claimable_bytes", 10},
                                   {"evidence", "rad0011 v3 writer fixture rank split"}}})},
             {"resident_other_bytes", 0}};
+        const std::string model_identity = sv::container_identity(model);
+        const std::string engine_identity = sv::engine_identity(binary, runtime_home);
+        const Json native_key = sv::plan_key_inputs(inputs.resolved.values, facts, model_identity,
+                                                     engine_identity, "", &*inputs.native_config);
+        const fs::path cache_dir = temporary.path / "plan-cache";
+        const sv::OwnerMeasurementEvidence owner{"v3-writer-attempt", sv::sha256_hex(measuring.text)};
+        const auto stored = sv::plan_cache_store_owned(cache_dir, native_key, native_plan, rank_demand,
+                                                       inputs.resolved.values,
+                                                       sv::HostResident{1536, 1024}, owner);
+        const auto cached = sv::plan_cache_lookup(cache_dir, native_key);
+        check(cached && cached->key == stored.key && cached->owner &&
+                  cached->owner->attempt_id == owner.attempt_id &&
+                  cached->owner->measuring_manifest_sha256 == owner.measuring_manifest_sha256,
+              "the measured native plan did not round-trip through its owner cache receipt");
+        inputs.measured->plan = *cached;
+        inputs.measured->key_inputs = native_key;
         const Json native_sources = {
-            {"engine_plan", native_plan}, {"rank_demand", rank_demand},
+            {"engine_plan", cached->plan_json}, {"rank_demand", cached->rank_demand},
             {"engine_binary", binary.string()}, {"helper_binary", ""},
             {"retention_target_tokens", 0},
             {"margin", {{"key", "host_ledger_margin.mib"}, {"source", "cache"},
@@ -199,15 +219,12 @@ int main(int argc, char** argv) {
         inputs.s10.p1_record = wire::produce_p1(inputs, facts, temporary.path, native_sources);
         check(inputs.s10.p1_record.at("kind") == "bc_serve_v2_measured_inputs",
               "real P1 producer did not emit the expected measured input record");
-        inputs.measured->key_inputs["native_config"] = {
-            {"sha256", inputs.native_config->sha256()},
-            {"resolution_root", inputs.native_config->resolution_root()}};
         const Json measured_key = inputs.measured->key_inputs;
         inputs.measured->key_inputs["native_config"]["sha256"] = std::string(64, 'f');
         try {
             (void)sv::build_manifest(inputs);
         } catch (const std::runtime_error& error) {
-            check(std::string_view(error.what()).find("not keyed to this native fleet YAML snapshot") !=
+            check(std::string_view(error.what()).find("key differs from the resolved native YAML") !=
                       std::string_view::npos,
                   error.what());
             inputs.measured->key_inputs = measured_key;
@@ -218,15 +235,33 @@ int main(int argc, char** argv) {
         try {
             (void)sv::build_manifest(inputs);
         } catch (const std::runtime_error& error) {
-            check(std::string_view(error.what()).find("not keyed to this native fleet YAML snapshot") !=
+            check(std::string_view(error.what()).find("key differs from the resolved native YAML") !=
                       std::string_view::npos,
                   error.what());
             inputs.measured->key_inputs = measured_key;
         }
         check(inputs.measured->key_inputs == measured_key,
               "the real writer accepted a measured plan from a different execution root");
+        Json wrong_devices = measured_key;
+        wrong_devices["native_config"]["rank_devices"][0]["bdf"] = "0000:ff:00.0";
+        inputs.measured->key_inputs = wrong_devices;
+        inputs.measured->plan.key = sv::plan_key(wrong_devices);
+        try {
+            (void)sv::build_manifest(inputs);
+        } catch (const std::runtime_error& error) {
+            check(std::string_view(error.what()).find("ordered device identity") != std::string_view::npos,
+                  error.what());
+            inputs.measured->key_inputs = measured_key;
+            inputs.measured->plan.key = cached->key;
+        }
+        check(inputs.measured->key_inputs == measured_key && inputs.measured->plan.key == cached->key,
+              "the real writer accepted a measured plan keyed to a different ordered GPU identity");
         const auto serving = sv::build_manifest(inputs);
         check_snapshot(serving, wire::PlanUse::serving, *inputs.native_config, yaml, temporary.path);
+        check(serving.document.at("spec").at("plan").at("engine_memory").at("expected") == cached->plan_json &&
+                  serving.document.at("spec").at("plan").at("engine_memory").at("model_identity") == model_identity &&
+                  serving.document.at("spec").at("plan").at("engine_memory").at("engine_identity") == engine_identity,
+              "the final serving manifest did not carry the owner-cached plan and real build identities");
         if (argc == 3) run_engine_consumer(argv[2], temporary.path, measuring, serving);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

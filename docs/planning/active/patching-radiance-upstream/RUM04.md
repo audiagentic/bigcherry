@@ -183,6 +183,8 @@ C46 (2026-11-20): added a typed strict-reader snapshot replay seam and a separat
 
 C47 exact-recipe follow-up (2026-11-20): corrected candidate provenance to a fresh current `recipes.toml` materialization: upstream `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`, source tree `8ca1308f23c0eaef5fdaa0ce29b9cfa7225925fd`, all 33 selected serving-core patches including rad0050–rad0053. Hardened candidate CMake overrides to require explicit test-only v3 mode and required writer/config/upstream parser. Serial ABI44 candidate build and exact-composition `bc_native_v3_engine_test` passed (1/1); link has one manifest archive. Focused rad0009 patch tests passed (5/5); diff check clean. Evidence: `docs/evidence/radiance-latest-bump/README.md` C47. This supersedes manually staged candidate provenance, without changing C46 behavioral scope. Next slice: use the actual production v3 plan key including ordered rank_devices and owner cache receipt/store/lookup, then exercise P1 and writer against that owner record. Keep production gate closed.
 
+C48 (2026-11-20): build_manifest now recomputes the complete v3 plan key from resolved values/facts, admitted YAML snapshot, and measured model/build/engine-argument identities; requires owner provenance and the cache record key to match. This fixes the former SHA/root-only check that rejected production `rank_devices`. The real v3 writer fixture now publishes and reloads the plan/rank-demand via plan_cache_store_owned/lookup using the measuring-manifest digest, feeds that exact cache entry into P1 and final writer, and verifies real identities plus refusal of changed digest/root/device BDF. Focused `bc_serving_v3_writer_test`, exact-recipe ABI44 `bc_native_v3_engine_test` (writer child included), and default v2 `bc_serving_test` passed (1/1 each); single generated manifest archive confirmed; diff check clean. Evidence C48 in docs/evidence/radiance-latest-bump/README.md. No GPU or production gate change. Next remaining seam is session-owned native snapshot measurement and real cache receipt propagation through stored/offline replay; keep production admission closed.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -225,3 +227,4 @@ C47 exact-recipe follow-up (2026-11-20): corrected candidate provenance to a fre
 - 2026-11-19T16:38:19.396059+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T16:59:55.010146+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T17:20:24.644470+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T17:30:20.876923+00:00 (updated-by): Updated: section:notes

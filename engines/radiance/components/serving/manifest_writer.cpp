@@ -6,6 +6,7 @@
 #include "ledger.h"
 #include "live_policy.h"
 #include "owner_map.h"
+#include "plan_cache.h"
 #include "serving_codec.h"
 #include "sha256.h"
 #include "third_party/toml.hpp"
@@ -407,11 +408,20 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         if (!in.native_config)
             fail("the v3 serving manifest requires an admitted native fleet YAML snapshot");
         if (in.measured) {
-            const Json expected = {{"sha256", in.native_config->sha256()},
-                                   {"resolution_root", in.native_config->resolution_root()}};
             const auto& key = in.measured->key_inputs;
-            if (!key.is_object() || !key.contains("native_config") || key.at("native_config") != expected)
-                fail("the measured plan was not keyed to this native fleet YAML snapshot and resolution root");
+            if (!key.is_object() || !key.contains("model") || !key.at("model").is_string() ||
+                !key.contains("engine_build") || !key.at("engine_build").is_string() ||
+                !key.contains("engine_args") || !key.at("engine_args").is_string() ||
+                !in.measured->plan.owner)
+                fail("the native measured plan is missing its exact key or owner measurement receipt");
+            const Json expected = plan_key_inputs(in.resolved.values, in.resolved.facts,
+                                                  key.at("model").get<std::string>(),
+                                                  key.at("engine_build").get<std::string>(),
+                                                  key.at("engine_args").get<std::string>(), &*in.native_config);
+            if (key != expected)
+                fail("the measured plan key differs from the resolved native YAML, root or ordered device identity");
+            if (in.measured->plan.key != plan_key(key))
+                fail("the cached native measured plan key does not match its key inputs");
         }
     } else if (in.native_config) {
         fail("the v2 serving manifest cannot carry a native fleet YAML snapshot");
