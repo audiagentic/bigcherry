@@ -66,9 +66,10 @@ Medium. Risk: scope creep into one record per engine; keep the schema generic an
 
 ## Notes
 
-
+Increments already on main (2026-11-19): the stored manifest and run folder of a native `bc-serve serve` are the provenance a record must hold by content (the replay key hashes the binary, engine, model, heat file, calibration store and every operator `--set`, `named_cache` in `session.cpp`); the evidence of 2026-11-19 (Flash-Next regression, TP3 no-regression) was assembled by hand from run folders, which is the use case. Build-flake receipts (`bigcherry-compile-retries.jsonl`, #1175) are the first append-only machine-readable run facts written beside a build.
 
 ## Change Log
 
 - 2026-11-19T00:50:23.229499+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:03.018574+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-19T07:38:50.554679+00:00 (updated-by): Updated: section:notes

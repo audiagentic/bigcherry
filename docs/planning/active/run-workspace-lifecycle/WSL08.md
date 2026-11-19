@@ -55,6 +55,13 @@ No GPU process started by the launcher is ever reported outside a lease, and no 
 
 Source: gateway prior-work audit 2026-11-10 (missing item 1) and power review (defect 1). Related PWR04, RHP18.
 
+
+
+## Status 2026-11-19
+
+The launcher that detached serving processes is retired (S16 #1131); `bc-serve serve` is a foreground owner and `agent-lease acquire gpu ... -- <command>` holds the lease for exactly the owner's lifetime (used for every hardware run on 2026-11-19: the lease was held until the owner had stopped its children and restored power, and was free afterwards). What remains of this item is the case of a start that is left running on purpose (`bc-serve start` detached): decide whether the lease should then belong to the owner process, with `bc-serve stop` releasing it.
+
 ## Change Log
 
 - 2026-11-10T13:12:48.345318+00:00 (created-by): Created by agent
+- 2026-11-19T07:38:29.670825+00:00 (updated-by): Updated: section:notes

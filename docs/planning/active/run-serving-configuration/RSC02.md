@@ -179,6 +179,15 @@ newer than its engine was refused by the engine (BC_CFG_PLAN_MISMATCH): the reas
 req_rsc02-session-owner_f98e1286bafc (2 P0, 5 P1, 1 P2, all fixed). Next: step 2 (helpers); the remaining layouts become
 configs first (owner order 2026-11-14).
 
+
+
+## Status 2026-11-19 (after S15 and S16)
+
+- Done: `bc-serve serve|start|stop|status|explain` is the only start path. S13 switched serving to manifest v2 and deleted v1 (#891); S15 hardware acceptance passed (`docs/evidence/2026-11-19-rsc02-s15-acceptance/`: dense `qwen27b-tp3-int8` equal projection and greedy hash, helper cohort equal hash, `flashnext-4gpu` 538 requests with 0 errors); S16 deleted the bash launcher, `lib/plan-check.sh`, `lib/sdk-check.sh`, the Python serving supervisor and the installer (#1131). Steps 1-6 above are met.
+- Fixed since, all found on hardware and each with a test first: a stored policy-on manifest replays for an unchanged config (#1177); the runtime receipt accepts the boot placement (#1176); the heat guard waits for the first counted snapshot and names the failing check (#1174); a calibration run files its record under the key production looks up (#1169); calibration policy refusals (#1162); build tooling: per-source-path component trees (#1172) and a bounded retry of a signal-crashed compile with receipts (#1175).
+- Known sharp edge: the stored-manifest replay key hashes every operator `--set`, so two starts that differ in any `--set` (for example a per-run histogram path) never replay and quietly plan afresh.
+- Remaining: the RHP12 gate with at least four clean ABBA pairs per layout (one pair per cohort was run; today's dense TP3 no-regression run is separate evidence), release-installed configs (`config_sources()` from the verified prefix), and the RSC04 inventory leftovers.
+
 ## Change Log
 
 - 2026-11-02T00:53:02.723581+00:00 (created-by): Created by agent
@@ -192,7 +201,6 @@ configs first (owner order 2026-11-14).
 - 2026-11-02T03:54:04.045012+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T03:47:55.795874+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:45:47.730785+00:00 (updated-by): Updated: section:notes
-
 
 ## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
 
@@ -269,3 +277,4 @@ No resource fallback is permitted. Python stays in tests only until RSC11 S16.
 **Explicit non-claims:** step 2 is not GPU hardware acceptance, power/lease
 transactional completion, MTP/heat/lab guard completion or release/caller
 retirement. Those remain steps 3, 4, S15 and S16 respectively.
+- 2026-11-19T07:36:59.107423+00:00 (updated-by): Updated: section:notes

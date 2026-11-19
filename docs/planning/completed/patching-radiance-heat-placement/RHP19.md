@@ -2,7 +2,7 @@
 id: RHP19
 order: 0
 plan: patching-radiance-heat-placement
-state: in_progress
+state: completed
 created-at: '2026-11-10T04:35:36.821205+00:00'
 breadth: ''
 skill: advanced
@@ -12,10 +12,6 @@ work: M
 ---
 
 # Calibration that always terminates with a usable record: bounded loop, periodic waiting report, and a deliberate tail-lane move to measure the tail-lane quantities
-
-## Current evidence reconciliation (2026-11-10)
-
-PR #801 repaired report newlines and the original 30-minute run had a COMPLETE record, not a stuck tail watchdog. The finite/partial lifecycle and passive event measurement gates remain open.
 
 ## Description
 
@@ -46,6 +42,10 @@ launch-flashnext-best.sh --calibrate loops until the helper prints RHP16_CALIBRA
 
 worker_policy_calibration_test and replay cases: (a) tail move never proposed -> probe commits it and the record completes; (b) feed never opens -> bounded error naming heat_watermarked; (c) normal run unchanged. Hardware: flashnext-4gpu calibration ends by itself with a complete record under the current key and a plain start carries live_policy.
 
+
+
+Validation 2026-11-19: native `bc-serve serve flashnext-4gpu --calibration-run` with two distinct prompt files (filler and document) and a policy with `accept_unwatermarked_heat=true` converged (accepted heat deltas above 100) and filed a complete record under the production key; a policy that cannot converge is refused up front instead of waiting a no-feed bound of about 67 h (#1162); the record is carried across rebuilds because its key is build-independent (#1169). flashnext-4gpu is calibrated under the current key by that path and a production start used the record (see RHP16 status).
+
 ## Effort & Risk
 
 
@@ -66,6 +66,16 @@ Every --calibrate run ends with a complete record or an error that names the mis
 Evidence: runs/recalibrate-4gpu (2026-11-10), helper0 log tail. Related RHP18 (observability), RHP20 (card-type matrix).
 
 CORRECTION 2026-11-10 (gateway review, verified in the raw log): the 80-minute calibration run did not hang on the tail-lane watchdog. The helper emitted a COMPLETE record at about +30 min (8 committed moves, all planner and tail-lane quantities, only abort_quiescent_ns absent) but the 'calibration waiting' line was printed with a literal backslash-n (worker_policy_driver.h), so RHP16_CALIBRATION_JSON ended up mid-line and the launcher's anchored grep never matched. FIXED in #801 (calibration_report_line + framing test); re-run through the supported path: runs/recalibrate-4gpu-v2. The earlier hypothesis (no tail-involved move, so no timer) is a real liveness gap in CalibrationProgressTimeout (worker_policy_calibration.h:112-203: the transaction timer arms on the first commit, the tail-lane timer on the first tail-involved commit) but it was not what stalled this run. Remaining RHP19 work, in order: (1) launcher validates the marker (complete, once, bound to this manifest) and bounds the loop independently; (2) decouple passive quantities (tail-lane service ns/s, ns/routed row) from commits; the quiesce/reopen loss needs an epoch cycle (Controller::begin_epoch_cycle, no ownership change) and the copy bandwidth/transaction time need a real transaction; (3) finite lifecycle INITIALISING -> COLLECTING -> MEASURING_EVENTS -> SETTLED | PARTIAL | FAILED with per-quantity deadlines derived from measured cadence, partial records listing the missing quantities and never accepted as production-calibrated; (4) optional lab-only forced compatible swap probe through the production epoch path with proven restoration. Design question for a Fable-class session: gateway-drafted, held until the re-run shows whether the newline fix is enough.
+
+
+
+## Closed 2026-11-19
+
+The calibration terminates with a usable record or a named refusal on the native path (#1162, #1169). Generalising the record store beyond Radiance's live policy (declared narrow keys, provenance in the record, platform reader) is plan run-measurement-records MRC04.
+
+## Current evidence reconciliation (2026-11-10)
+
+PR #801 repaired report newlines and the original 30-minute run had a COMPLETE record, not a stuck tail watchdog. The finite/partial lifecycle and passive event measurement gates remain open.
 
 ## Card-free execution status and lease-only acceptance (2026-11-10)
 
@@ -106,7 +116,8 @@ Cause: calibration_watchdog.py covered minimum samples, heat age and residency, 
 
 Acceptance still hardware-pending: rebuild engine/helper from this slice, re-run same flashnext-4gpu calibration within lease, save progress/deadline/COMPLETE marker, verify manifest+store key and subsequent ON + live epochs. Card-free unit and C++ syntax checks are the slice gate, not proof of hardware convergence.
 
-
 ## 2026-11-11 follow-up to merged PR #833
 
 RHP19 follow-up, 2026-11-11: The merged PR #833 locked the first measured helper drift extension, but DriftTracker can thin/re-space the retained ring after that first sample, so locking can still fail before a half-overlap crossing. The launcher now re-derives the measured horizon from helper progress at each completed request, never shortens a deadline, and caps total time by the policy-only baseline plus two complete A/B/B/A traversals, counted from the real nonblank prompt lines and the same bounded request timeout used by curl. An absent feed independently fails by the original policy-only deadline. The helper emits progress every policy cadence rather than only when the waiting-reason text changes. Python card-free regression tests check later drift growth, the fixed ceiling, malformed and missing feed, and CLI parsing. This is not a hardware success claim: rebuild, calibrate with the current key, validate exactly one COMPLETE record with strict ingest, and verify plain-start ON and actual migrations.
+- 2026-11-19T07:36:17.837080+00:00 (updated-by): Updated: section:validation, section:notes
+- 2026-11-19T07:36:36.235689+00:00 (state-transition): State: in_progress → completed
