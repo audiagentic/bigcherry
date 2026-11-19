@@ -370,6 +370,7 @@ class RunRecordStore:
         self,
         *,
         engine: str | None = None,
+        run_id: str | None = None,
         layout: str | None = None,
         workload: str | None = None,
         metric: str | None = None,
@@ -400,7 +401,9 @@ class RunRecordStore:
             digest = _check_digest(path.stem)
             doc = self.get_record(digest)
             if (
-                engine is not None
+                run_id is not None
+                and doc["run_id"] != run_id
+                or engine is not None
                 and doc["identity"]["engine"] != engine
                 or layout is not None
                 and doc["identity"]["layout"] != layout

@@ -6,11 +6,11 @@ import argparse
 import json
 import os
 import sys
-from datetime import UTC, datetime
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
-from ..core import engines, results, run_records
+from ..core import engines, results, run_manifest, run_records
 from ..core.context import resolve_work_root
 
 
@@ -106,6 +106,45 @@ def _show_history(report: dict) -> None:
 def cmd_results(args: argparse.Namespace) -> int:
     try:
         store = run_records.RunRecordStore(args.work_root)
+        if args.results_action == "put":
+            # Input files are operator-supplied transport only; the store
+            # remains the exclusive reader and validates all SHA references.
+            with args.record.open("r", encoding="utf-8") as stream:
+                doc = json.load(stream, object_pairs_hook=run_records._pairs_no_duplicates)
+            run_records.validate_record(doc)
+            for entry in args.blob:
+                sha, separator, raw_path = entry.partition("=")
+                if not separator or not raw_path:
+                    raise run_records.RecordError("--blob must be SHA256=PATH")
+                run_records._check_digest(sha)
+                path = Path(raw_path)
+                if path.is_symlink() or not path.is_file():
+                    raise run_records.RecordError(f"unsafe blob input: {path}")
+                ref = store.put_blob_file(path)
+                if ref["sha256"] != sha:
+                    raise run_records.RecordError(f"sha256 mismatch in supplied blob: {sha}")
+            digest = store.put_record(doc)
+            if args.run_dir is not None:
+                run_manifest.link_measurement_record(args.run_dir, store, digest)
+            if args.json:
+                print(json.dumps({"sha256": digest}, sort_keys=True))
+            else:
+                print(f"run-record v1: {digest}")
+            return 0
+        if args.results_action == "query":
+            rows = store.query(
+                run_id=args.run_id, engine=args.engine, layout=args.layout,
+                workload=args.workload, metric=args.metric, since=args.since, until=args.until
+            )
+            if args.json:
+                print(json.dumps(rows, indent=2, sort_keys=True))
+            else:
+                for item in rows:
+                    rec = item["record"]
+                    print(f"{rec['recorded_at']} {rec['run_id']} "
+                          f"{rec['identity']['engine']} {rec['identity']['layout']} "
+                          f"{rec['workload']['name']} {item['sha256']}")
+            return 0
         if args.results_action == "show":
             rec = store.get_record(args.sha256)
             result = {"sha256": args.sha256, "record": rec}
@@ -221,7 +260,8 @@ def cmd_results(args: argparse.Namespace) -> int:
                 _show_history(report)
             return 0
         raise results.ResultsError(f"unknown results command {args.results_action}")
-    except (results.ResultsError, run_records.RecordError, OSError, ValueError, KeyError, TypeError) as exc:
+    except (results.ResultsError, run_records.RecordError, run_manifest.ManifestError,
+            OSError, ValueError, KeyError, TypeError) as exc:
         print(f"results: {exc}", file=sys.stderr)
         return 2
 
@@ -240,6 +280,20 @@ def register(sub) -> None:
         command.add_argument("--until", help="inclusive UTC YYYY-MM-DDTHH:MM:SSZ")
         command.add_argument("--json", action="store_true", help="emit structured JSON")
         command.set_defaults(func=cmd_results)
+
+    putting = actions.add_parser("put", help="publish a complete record with SHA-verified input blobs")
+    putting.add_argument("--record", type=Path, required=True, help="record JSON input")
+    putting.add_argument("--blob", action="append", default=[], metavar="SHA256=PATH",
+                         help="exact source bytes (repeat for all blobs not already in the store)")
+    putting.add_argument("--run-dir", type=Path, help="atomically add a typed edge to its WSL01 manifest")
+    putting.add_argument("--work-root", type=Path, default=None)
+    putting.add_argument("--json", action="store_true")
+    putting.set_defaults(func=cmd_results)
+
+    querying = actions.add_parser("query", help="filter only SHA-verified v1 records")
+    common(querying)
+    querying.add_argument("--run-id", help="WSL01 run identity")
+    querying.add_argument("--metric", help="phase-qualified metric, e.g. decode.tokens_per_second")
 
     listing = actions.add_parser("list", help="list verified run records and read-only legacy workload rows")
     common(listing)

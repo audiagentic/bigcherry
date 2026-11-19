@@ -117,8 +117,19 @@ adapters and `run_manifest.new_manifest(host=...)` or
 snapshot; callers opt in to collection at run creation rather than
 performing extra sysfs/tool queries on unrelated lifecycle operations.
 The workloads tool imports its card/power sampling readers from this core
-module. MRC01's manifest edges and results CLI, and MRC06's producer
-migrations, are outside these slices.
+module. WSL01 manifests carry `references: [{type: measurement_record, id: SHA256,
+role: measurement}]` linked with `run_manifest.link_measurement_record`.
+`resolve_measurement_records(run_dir, store)` and
+`find_run_for_record(runs_root, store, SHA256)` verify both identities and
+content; links never change lifecycle/harvest/retention state. The SHA store
+query accepts `run_id` as well as engine/layout/workload/metric/time.
+Operators use `bigcherry results put --record FILE --blob SHA256=PATH
+--run-dir RUN_DIR` to copy/validate all supplied content and link WSL01;
+`bigcherry results show SHA256` and `bigcherry results query --run-id RUN_ID
+--metric prefill.tokens_per_second --json` read exclusively through the store.
+`results list` retains the explicit read-only legacy-row bridge. Never
+promote missing historical provenance by guessing file bytes.
+MRC06 owns remaining producer migrations.
 
 MRC03's feature-state v1 JSON contract lives at
 `tools/bigcherry/core/schemas/feature-state-v1.schema.json`: a list of
