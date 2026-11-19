@@ -135,6 +135,18 @@ int main(int argc, char** argv) {
         const std::string reported_digest = mode && std::strcmp(mode, "digest") == 0
                                                 ? std::string(64, '0')
                                                 : input.at("sha256").get<std::string>();
+        int tp = 1;
+        if (const char* configured_tp = std::getenv("TEST_NATIVE_INSPECT_TP"))
+            tp = std::atoi(configured_tp);
+        json rank_devices = json::array({"0000:01:00.0"});
+        if (const char* configured_devices = std::getenv("TEST_NATIVE_INSPECT_RANK_DEVICES")) {
+            const json parsed = json::parse(configured_devices, nullptr, false);
+            if (!parsed.is_array()) {
+                std::fprintf(stderr, "fake inspector: invalid test rank-device list\n");
+                return 17;
+            }
+            rank_devices = parsed;
+        }
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v1"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", input.at("resolution_root")}}},
@@ -145,9 +157,9 @@ int main(int argc, char** argv) {
                                     {"kernels", json::array({"k0"})},
                                     {"kernels_source", nullptr},
                                     {"listener", {{"host", "127.0.0.1"}, {"port", 8123}}},
-                                    {"tp", 1},
+                                    {"tp", tp},
                                     {"cards", json::array({0})},
-                                    {"rank_devices", json::array({"0000:01:00.0"})},
+                                    {"rank_devices", rank_devices},
                                     {"max_context", 4096},
                                     {"max_sequences", 1}}}};
         if (mode && std::strcmp(mode, "cards") == 0) report["engine"]["cards"] = json::array({"0"});

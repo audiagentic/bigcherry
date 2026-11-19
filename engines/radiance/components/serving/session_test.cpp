@@ -16,6 +16,7 @@
 #include <set>
 #include <sstream>
 #include <thread>
+#include <tuple>
 #include <type_traits>
 #include <utility>
 
@@ -1214,10 +1215,27 @@ void native_config_inspector_before_admission() {
         std::ofstream(authored, std::ios::binary | std::ios::trunc) << "changed after snapshot\n";
         const ss::Env native_environment = {{"RADIANCE_HOME", "/selected-native-home"},
                                             {"RADIANCE_KERNELS", "selected-native-kernels"}};
-        const auto report = ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, native_environment, hooks);
+        const ss::Env complete_environment = ss::current_child_environment(native_environment);
+        const auto report = ss::inspect_and_reconcile_native_config(
+            BC_FAKE_ENGINE, snapshot, complete_environment, {"0000:01:00.0"}, 1, hooks);
         assert(report.snapshot_sha256 == snapshot.sha256());
         assert(report.abi_version == 44 && report.tp == 1 && report.cards == std::vector<int>{0});
         assert(report.rank_devices == std::vector<std::string>{"0000:01:00.0"});
+        for (const auto& [bdfs, tp, expected] :
+             std::array<std::tuple<std::vector<std::string>, int, const char*>, 2>{{
+                 {{{"0000:02:00.0"}}, 1,
+                  "native rank-device order differs from the selected local BDF order"},
+                 {{{"0000:01:00.0"}}, 2,
+                  "tensor parallelism differs from the selected local profile"}}}) {
+            bool refused = false;
+            try {
+                (void)ss::inspect_and_reconcile_native_config(BC_FAKE_ENGINE, snapshot, complete_environment,
+                                                             bdfs, tp, hooks);
+            } catch (const ss::PlanFailed& error) {
+                refused = std::string_view(error.what()).find(expected) != std::string_view::npos;
+            }
+            assert(refused);
+        }
         assert(fs::current_path() == owner_cwd);
         std::ofstream(trace, std::ios::app) << "inspected\n";
         const fs::path provisional = run / "native-provisional-v2.json";
@@ -1287,7 +1305,7 @@ void native_config_inspector_invalid_report_refused() {
         const auto snapshot = bc::serving::NativeConfigSnapshot::read(authored, root);
         ::setenv("TEST_INSPECTOR_MISMATCH", mode, 1);
         c.session.plan = [snapshot](const fs::path&, const ss::Hooks& hooks) {
-            (void)ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, {}, hooks);
+            (void)ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, ss::current_child_environment({}), hooks);
             throw ss::PlanFailed("inspector refusal gate did not fire");
             return ss::EngineStart{};
         };

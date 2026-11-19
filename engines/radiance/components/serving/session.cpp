@@ -532,6 +532,8 @@ Env child_environment(char** inherited, const Env& runtime) {
     return env;
 }
 
+Env current_child_environment(const Env& runtime) { return child_environment(environ, runtime); }
+
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
             const Callback<void(pid_t)>& recorded, int inherited_manifest_fd) {
     if (argv.empty() || argv[0].empty())
@@ -1731,7 +1733,7 @@ std::string tail_text(const std::string& s, size_t n = 2000);
 }
 
 NativeConfigInspection inspect_native_config(const fs::path& engine, const NativeConfigSnapshot& snapshot,
-                                             const Env& native_environment, const Hooks& hooks) {
+                                             const Env& complete_environment, const Hooks& hooks) {
     const fs::path absolute_engine = fs::absolute(engine).lexically_normal();
     if (::access(absolute_engine.c_str(), X_OK) != 0)
         throw PlanFailed("native config inspector: matched engine is not executable: " + absolute_engine.string());
@@ -1752,7 +1754,7 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
 
     const ManifestRun result = run_planning_child(
         {absolute_engine.string(), "--bc-inspect-native-config", std::to_string(input->descriptor())},
-        child_environment(environ, native_environment), hooks, ChildKind::native_config_inspector,
+        complete_environment, hooks, ChildKind::native_config_inspector,
         "native config inspector",
         input->descriptor(), root_fd);
     if (result.exit != 0)
@@ -1845,6 +1847,21 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
     out.max_context = context;
     out.max_sequences = sequences;
     return out;
+}
+
+NativeConfigInspection inspect_and_reconcile_native_config(
+    const fs::path& engine, const NativeConfigSnapshot& snapshot, const Env& complete_environment,
+    const std::vector<std::string>& selected_engine_bdfs, int selected_tp, const Hooks& hooks) {
+    const NativeConfigInspection report = inspect_native_config(engine, snapshot, complete_environment, hooks);
+    if (selected_tp <= 0 || report.tp != selected_tp)
+        throw PlanFailed("native config admission: tensor parallelism differs from the selected local profile");
+    if (report.rank_devices != selected_engine_bdfs)
+        throw PlanFailed("native config admission: native rank-device order differs from the selected local BDF order");
+    if (report.rank_devices.size() != static_cast<size_t>(report.tp))
+        throw PlanFailed("native config admission: native TP and resolved rank-device count differ");
+    if (report.listener_host != "127.0.0.1")
+        throw PlanFailed("native config admission: only the loopback listener is supported by the managed owner");
+    return report;
 }
 
 namespace {
@@ -2226,17 +2243,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                              " must come from this bc-serve's build");
     }
 
-    // RSC12 has no lab experiment static key: never replay a different experiment.
-    const auto cache_selection =
-        in.experiment_file.empty() ? named_cache(in, r, facts, engine, helper_binary, run_dir) : std::nullopt;
-    if (cache_selection) {
-        if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache_selection->key)) {
-            EnginePlanInputs replay = in;
-            replay.stored_manifest = *saved;
-            return replay_stored_manifest(replay, run_dir, hooks);
-        }
-    }
-
     // Rank order is the resolver's card order; the process sees its cards as HIP devices 0..n-1.
     std::string rocr, hip;
     const Json& cards = v.at("layout").at("engine_cards");
@@ -2260,6 +2266,32 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                    {"engine_cards", cards},
                    {"engine", engine.string()},
                    {"helper_cards", v.at("layout").at("helper_cards")}};
+
+    if (in.native_admission) {
+        const NativeConfigSnapshot snapshot =
+            NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
+        Env runtime = in.native_admission->runtime_overrides;
+        for (const auto& [name_key, value] : out.runtime)
+            runtime[name_key] = value; // verified build and local device selection take precedence
+        const Env complete_environment = current_child_environment(runtime);
+        const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
+        (void)inspect_and_reconcile_native_config(engine, snapshot, complete_environment, selected_bdfs,
+                                                 v.at("engine").at("tp").get<int>(), hooks);
+        throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
+                         "integration is incomplete; refusing before cache reuse, manifest writing, power "
+                         "admission, or GPU child startup");
+    }
+
+    // RSC12 has no lab experiment static key: never replay a different experiment.
+    const auto cache_selection =
+        in.experiment_file.empty() ? named_cache(in, r, facts, engine, helper_binary, run_dir) : std::nullopt;
+    if (cache_selection) {
+        if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache_selection->key)) {
+            EnginePlanInputs replay = in;
+            replay.stored_manifest = *saved;
+            return replay_stored_manifest(replay, run_dir, hooks);
+        }
+    }
 
     const ManifestRunner runner = in.runner ? in.runner : [&hooks](const std::vector<std::string>& argv) {
         return run_to_completion(argv, child_environment(environ, {}), hooks);

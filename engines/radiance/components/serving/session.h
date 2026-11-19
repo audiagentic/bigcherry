@@ -54,6 +54,8 @@ template <class Signature> using Callback = callback::Guarded<Signature>;
 /* The environment a child starts with: `inherited` (the owner's, NAME=VALUE) without any bigcherry setting or
  * device-visibility variable, then `runtime` on top. */
 Env child_environment(char** inherited, const Env& runtime);
+// Capture the filtered owner environment plus explicit overrides once, for a multi-stage native admission path.
+Env current_child_environment(const Env& runtime);
 
 /* Start argv[0] (a path, never searched) in a new session and process group with exactly `env`, stdin from
  * /dev/null, stdout and stderr appended to `log`. The child waits before exec until `recorded(pid)` has
@@ -279,7 +281,19 @@ struct NativeConfigInspection {
  * it is never inferred from a mutable authored path. The inspector is owner-tracked and reaped before return. */
 NativeConfigInspection inspect_native_config(const std::filesystem::path& engine,
                                              const NativeConfigSnapshot& snapshot,
-                                             const Env& native_environment, const Hooks& hooks = {});
+                                             const Env& complete_environment, const Hooks& hooks = {});
+NativeConfigInspection inspect_and_reconcile_native_config(
+    const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
+    const Env& complete_environment, const std::vector<std::string>& selected_engine_bdfs,
+    int selected_tp, const Hooks& hooks = {});
+
+// Private planner input. This deliberately has no CLI spelling: the current writer/P1 chain cannot yet persist
+// and consume this snapshot, so a successful inspection is followed by a fail-closed stop before cache or GPU work.
+struct NativeAdmissionRequest {
+    std::filesystem::path authored_yaml;
+    std::filesystem::path resolution_root;
+    Env runtime_overrides;
+};
 
 struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
@@ -298,6 +312,7 @@ struct EnginePlanInputs {
 
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
+    std::optional<NativeAdmissionRequest> native_admission; // internal migration gate; never enables a launch
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default

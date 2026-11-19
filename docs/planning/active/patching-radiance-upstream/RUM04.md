@@ -151,6 +151,10 @@ C33 (2026-11-20): the rad0009 inspection hook is now freshly linked into the ABI
 
 C34 (2026-11-20): native snapshot SHA-256 and canonical resolution root now enter the operational measured-plan key when a NativeConfigSnapshot is provided (cache version 3); existing non-native version-2 keys remain unchanged. The real v3 writer refuses measured finalization unless that key carries the exact snapshot identity it persists. `bc_serving_test` and `bc_serving_v3_writer_test` both passed (1/1 each). Evidence C34 in `docs/evidence/radiance-latest-bump/README.md`; Ledger event `chg_20261119_143902_bound-successor-measured-plan_8730`. Still open: owner-attest the measured plan source rather than trusting the CLI `--measured-plan` import path; carry one prepared snapshot through P1's owner-map writer, native inspection, fresh measurement, final writer, stored replay and native-aware static/cache keys; production remains TOML/v2 until that chain is complete.
 
+
+
+C35 (2026-11-20): added the internal-only `NativeAdmissionRequest` planner gate. `plan_engine_only` selects/verifies the matched engine and local devices, reads one immutable YAML snapshot, composes the filtered child environment once, invokes the tracked inspector with that complete environment, reconciles TP and ordered native rank BDFs to the selected local profile, and requires loopback listener compatibility. A successful inspection deliberately refuses before named-cache lookup, writer/P1, power admission, measuring or serving child. ABI44 `bc_serving_test` and `bc_session_test` pass (1/1 each); the planner fixture proves zero writer calls, zero power admission and no measuring/serving launch. Evidence C35 in `docs/evidence/radiance-latest-bump/README.md`; Ledger event `chg_20261119_145235_added-and-verified-a-private-f_1489`. This is not a public native launch path. Next: shared prepared ManifestInputs and edition-selected P1 owner-map producer, then native measurement/stored replay/cache identity coupling.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -180,3 +184,4 @@ C34 (2026-11-20): native snapshot SHA-256 and canonical resolution root now ente
 - 2026-11-19T14:19:49.888198+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:27:34.787625+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:39:17.405809+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T14:52:50.038889+00:00 (updated-by): Updated: section:notes

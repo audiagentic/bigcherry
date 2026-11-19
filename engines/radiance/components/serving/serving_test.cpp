@@ -3118,6 +3118,48 @@ void session_engine_plan(Fixture& t) {
     const Json session_facts = bc::serving::detect(t.root);
     const auto session_resolved = bc::serving::resolve(in.options, session_facts);
     const SessionManifestPair session_manifests = session_manifest_pair(session_resolved, session_facts);
+    { // A private native admission request inspects and reconciles exact bytes, then stops before all v2-only side effects.
+        ss::EnginePlanInputs gated = in;
+        const fs::path native_root = t.root / "native-admission-root";
+        fs::create_directories(native_root);
+        const fs::path native_yaml = native_root / "fleet.yaml";
+        std::ofstream(native_yaml, std::ios::binary)
+            << "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+        gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root,
+                                                            {{"TEST_NATIVE_INSPECT_TP", "3"},
+                                                             {"TEST_NATIVE_INSPECT_RANK_DEVICES",
+                                                              session_resolved.values.at("layout")
+                                                                  .at("engine_cards").dump()}}};
+        int writer_calls = 0;
+        gated.runner = [&](const std::vector<std::string>&) {
+            ++writer_calls;
+            return ss::ManifestRun{};
+        };
+        bool power_admitted = false;
+        std::vector<std::string> inspector_roles;
+        std::vector<pid_t> reaped;
+        ss::Hooks admission_hooks;
+        admission_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        admission_hooks.started = [&](ss::ChildKind kind, const std::string& role, pid_t,
+                                      const fs::path&) {
+            assert(kind == ss::ChildKind::native_config_inspector);
+            inspector_roles.push_back(role);
+        };
+        admission_hooks.ended = [&](pid_t pid) { reaped.push_back(pid); };
+        admission_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+            power_admitted = true;
+            return bc::serving::v2::Status{};
+        };
+        bool stopped_before_v2 = false;
+        try {
+            (void)ss::plan_engine_only(gated, run / "native-admission", admission_hooks);
+        } catch (const ss::PlanFailed& error) {
+            stopped_before_v2 = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
+                                std::string_view::npos;
+        }
+        assert(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
+               inspector_roles[0] == "native config inspector" && reaped.size() == 1);
+    }
     std::vector<std::vector<std::string>> calls;
     auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
         for (size_t i = 0; i + 1 < argv.size(); ++i)
