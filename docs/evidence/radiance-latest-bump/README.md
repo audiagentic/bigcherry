@@ -333,3 +333,7 @@ Commit `a4af18f3e` connects the generated v3 session owner to sealed native engi
 Post-merge verification: the generated v3 owner fixture passed (1/1) with main integrated and the shared calibration fixture definition fixed in `51f396787`. The ledger validated on that revision.
 
 The isolated default v2 serving and stored replay checks passed (2/2) at committed revision `71f00e155`. The separate checkout kept this result independent of the in-progress native replay edits.
+
+## Radiance 2.2 source replay
+
+The ordered 33-package serving roster applies and reapplies on upstream `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`. This used the explicit patch list. Canonical production resolution still requires qualification of rad0046. The separate rad0004 remote MoE diagnostic needs its post-down hook adapted to the new upstream branch structure. The same-SDK build and hardware checks remain open.
