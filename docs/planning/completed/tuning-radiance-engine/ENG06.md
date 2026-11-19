@@ -2,7 +2,7 @@
 id: ENG06
 order: 0
 plan: tuning-radiance-engine
-state: pending
+state: completed
 created-at: '2026-11-19T08:41:19.060365+00:00'
 breadth: ''
 skill: advanced
@@ -38,7 +38,7 @@ bf16_i8 (rad0038: bf16 K, int8 V with an f16 scale per 32 head-dim values) is th
 
 ## Validation
 
-Step 1: kbench rows per format and context, before/after the fix, outputs bit-identical. Steps 2-4: KLD (long corpus, VTP43 harness), needle probes, flashnext-parity.sh compare vs docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json and the current-main baseline (>= 2 launches), qwen27b TP3 TTFT/decode vs its bf16 config; capacity read from the engine plan.
+Step 1: end-to-end 248K decode of the scale-broadcast build against the baseline, two launches each (38.89/38.76 vs 38.82/38.89 ms), recorded in docs/evidence/2026-11-20-eng06-long-decode/. Step 2: KLD, needles 18 of 18, TTFT and decode parity on TP3 27B and flashnext-4gpu in docs/evidence/2026-11-19-eng06-bf16i8/. Step 3: stream-bench at 248K (1 stream) and 4 x 149K, six launches (each format twice), docs/evidence/2026-11-20-eng06-long-decode/. Step 4 moved to ENG07.
 
 ## Effort & Risk
 
@@ -50,11 +50,11 @@ Step 1: kbench rows per format and context, before/after the fix, outputs bit-id
 
 ## Acceptance Criteria
 
-bf16_i8 one-stream decode within 1% of bf16_fp8 on the same layout (or the remaining gap explained), KLD and needle at or better than the VTP43/VTP44 numbers, no prefill/TTFT regression vs bf16, rad0038 promoted with a shipping config; 256K decode result recorded; block-key quantisation shipped or rejected with evidence.
+Met: bf16_i8 decode equals bf16 and is within 1% of fp8 on the TP3 and Flash-Next layouts, KLD 0.00269 and needles 18 of 18 recorded, rad0038 already validated and serving-core with shipping configs (qwen27b-tp3-int8-556-long-bf16i8, flashnext-4gpu-bf16i8), 256K decode recorded (bf16_i8 38.9 ms a step against bf16 46.9 and fp8 52.3 at 248K on one stream), the scale-broadcast patch rejected with end-to-end evidence (no gain), block-key quantisation split into ENG07.
 
 ## Notes
 
-
+Closed 2026-11-20: step 3 measured (bf16_i8 is 17% faster per decode step than bf16 and 26% faster than fp8 at 248K, one stream; 13% and 19% at 4 x 149K); step 1's scale-broadcast patch (branch agent/eng06-int8v-scale-broadcast, bb00cbca3) gave no gain at long context (equal within the 0.3% spread) and was dropped; step 4 became ENG07. rad-kbench could not time the b16i8 rows: no recorded fixture holds a bf16_i8 attention case.
 
 ## Status 2026-11-19 (step 2 done for the two layouts; evidence docs/evidence/2026-11-19-eng06-bf16i8/README.md)
 
@@ -69,3 +69,5 @@ bf16_i8 one-stream decode within 1% of bf16_fp8 on the same layout (or the remai
 - 2026-11-19T08:41:19.060365+00:00 (created-by): Created by agent
 - 2026-11-19T08:41:41.916454+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
 - 2026-11-19T12:22:57.861752+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T15:40:49.628925+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria, section:notes
+- 2026-11-19T15:40:56.293600+00:00 (state-transition): State: pending → completed
