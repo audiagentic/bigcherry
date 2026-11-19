@@ -1785,6 +1785,12 @@ void manifest_writer_step(Fixture& t) {
         calibration_run.live_policy_from = "--live-policy policy.json";
         const auto cr = sv::build_manifest(calibration_run);
         assert(!cr.document.at("spec").contains("experiment"));
+        // The record a calibration run files must be the one a production start of the same configuration looks up:
+        // the lab and production manifests carry the same calibrated scope.
+        assert(sv::policy_calibration_key(sv::policy_calibration_inputs(cr.document.at("spec"))) ==
+                   sv::policy_calibration_key(sv::policy_calibration_inputs(built.document.at("spec"))) &&
+               sv::policy_calibration_inputs(cr.document.at("spec")) ==
+                   sv::policy_calibration_inputs(built.document.at("spec")));
         const auto cr_path = t.root / "calibration-run-manifest.json";
         const auto prod_path = t.root / "production-manifest.json";
         sv::write_manifest_file(cr_path, cr.text);
@@ -3171,6 +3177,45 @@ void session_engine_plan(Fixture& t) {
             ::unsetenv("BIGCHERRY_CONFIGS");
         assert(calls.size() == 1 && has(calls[0], "--configs", (configs / "qwen27b.toml").string()) &&
                !flag(calls[0], "--layouts"));
+    }
+    { // A calibration run files its record under the key of the manifest it served with: the one production looks
+      // up. The host pool is re-measured between the two writes (1033 -> 2247 MiB on flashnext-4gpu), so a key that
+      // depended on it, or on the engine args, could never match; the written manifest's own scope is the key.
+        namespace sv = bc::serving;
+        using Json = nlohmann::json;
+        auto scope_manifest = [](int pool_mib) {
+            return Json{{"facts", {{"gpus", Json::array({{{"bdf", "0000:03:00.0"}, {"arch", "gfx1201"},
+                                                            {"vram", {{"total_mib", 32624}}}}})}}},
+                        {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}}}},
+                                       {"helpers", Json::array()}, {"helper_common", Json::object()}}},
+                        {"handoff", {{"transport", {{"max_rows", 64}, {"small_rows", 4}, {"gemv_large_rows", 16},
+                                                    {"skip_owned", true}}},
+                                     {"kernels", {{"moe_down_tile", 8}}}, {"telemetry", {{"period_s", 5}}}}},
+                        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'm')}}}}},
+                        {"intent", {{"layout", "flashnext-4gpu"}, {"service", {{"objective", "balanced"}}},
+                                    {"power", {{"profile", "stock"}}}}},
+                        {"resources", {{"host", {{"pool_mib", pool_mib}}}}}};
+        };
+        ss::EnginePlanInputs cal = in;
+        cal.calibration_run = true;
+        cal.live_policy_file = t.file("session-cal-policy.json", "{\"accept_unwatermarked_heat\": true}\n");
+        cal.calibration_prompts_a = t.file("session-cal-a.txt", "prompt a\n");
+        cal.calibration_prompts_b = t.file("session-cal-b.txt", "prompt b\n");
+        cal.calibration_store = t.file("session-cal-store.toml", "");
+        std::string keys[2];
+        int i = 0;
+        for (const int pool : {1033, 2247}) {
+            const Json written = {{"spec", scope_manifest(pool)}};
+            cal.runner = [&](const std::vector<std::string>& argv) {
+                ss::ManifestRun r;
+                std::ofstream(argv[2]) << written.dump();
+                return r;
+            };
+            const ss::EngineStart cs = ss::plan_engine_only(cal, run, wait);
+            keys[i++] = cs.summary.at("calibration_store_key").get<std::string>();
+            assert(keys[i - 1] == sv::policy_calibration_key(sv::policy_calibration_inputs(written.at("spec"))));
+        }
+        assert(keys[0] == keys[1]); // a re-measured host pool does not move the record
     }
     // a failed manifest write and a layout (server-args are the bash launcher's) are refused before any engine
     // starts
