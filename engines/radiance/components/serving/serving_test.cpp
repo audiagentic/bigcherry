@@ -286,10 +286,30 @@ void type_range_required(Fixture& t) {
     fail(opts, t.facts, "unknown named layout");
     opts.profile = t.file("derived.toml", "[engine]\nmax_num_seqs = 99\n");
     fail(opts, t.facts, "derived and cannot be overridden");
-    { // the standard profile's 8 combine threads on a 4-CPU host
+    { // the combine thread count is derived from the discovered CPUs, never a literal the host may not have
+        namespace sv = bc::serving;
+        const auto threads_on = [&](uint64_t cpus, Options o) {
+            Json host = t.facts;
+            host["host"]["cpu_count"] = cpus;
+            return sv::resolve(o, host);
+        };
+        const Options standard = t.standard();
+        const auto four = threads_on(4, standard);
+        assert(four.values.at("helper").at("combine_threads") == 4);   // a 4-CPU host resolves instead of refusing
+        assert(four.provenance.at("helper.combine_threads").at("origin") == "derived");
+        const auto twenty = threads_on(20, standard);
+        assert(twenty.values.at("helper").at("combine_threads") == 8);  // the calibrated ceiling on a larger host
+        assert(twenty.provenance.at("helper.combine_threads").at("origin") == "derived");
+        assert(threads_on(1, standard).values.at("helper").at("combine_threads") == 1);
+        // an explicit value is the operator's: it keeps its origin, and one above the CPU count is still refused
+        Options explicit_set = standard;
+        explicit_set.sets.push_back("helper.combine_threads=6");
+        const auto six = threads_on(20, explicit_set);
+        assert(six.values.at("helper").at("combine_threads") == 6);
+        assert(six.provenance.at("helper.combine_threads").at("origin") != "derived");
         Json few = t.facts;
         few["host"]["cpu_count"] = 4;
-        fail(t.standard(), few, "helper.combine_threads exceeds discovered CPU count");
+        fail(explicit_set, few, "helper.combine_threads exceeds discovered CPU count");
     }
 }
 
