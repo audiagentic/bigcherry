@@ -151,6 +151,22 @@ int main() {
         room.cgroup_headroom_bytes = one_rank_room;
         require(ss::check_replay_live_room(multirank, evidence.fresh_facts, room).has_value(),
                 "stored TP3 replay must refuse room that only admits one rank's host pool");
+        auto retained = manifest;
+        retained.spec.resources.host.kv_mib = 64;
+        const int64_t with_kv = one_rank_room + retained.spec.resources.host.kv_mib * (1024LL * 1024LL);
+        room.mem_available_bytes = with_kv;
+        room.cgroup_headroom_bytes = with_kv;
+        require(!ss::check_replay_live_room(retained, evidence.fresh_facts, room),
+                "stored replay with retained KV must admit the exact host and cgroup allocation");
+        room.mem_available_bytes = with_kv - 1;
+        const auto short_ram = ss::check_replay_live_room(retained, evidence.fresh_facts, room);
+        require(short_ram && short_ram->path == "replay.live.host",
+                "stored replay must count retained KV against MemAvailable even with ample pin room");
+        room.mem_available_bytes = with_kv;
+        room.cgroup_headroom_bytes = with_kv - 1;
+        const auto short_cgroup = ss::check_replay_live_room(retained, evidence.fresh_facts, room);
+        require(short_cgroup && short_cgroup->path == "replay.live.host",
+                "stored replay must count retained KV against cgroup headroom even with ample pin room");
         room.mem_available_bytes = 281474976710656LL;
         room.cgroup_headroom_bytes = 281474976710656LL;
         room.mem_available_bytes = 1;

@@ -155,10 +155,13 @@ v2::Status check_replay_live_room(const v2::Manifest& m, const Json& fresh, cons
     if (room.mem_available_bytes <= 0 || room.cgroup_headroom_bytes <= 0 || room.pin_available_bytes <= 0)
         return no_room("replay.live.host", "fresh host, cgroup or pin measurement absent");
 
-    int64_t allocated = 0, pinned = 0;
+    int64_t pinned = 0;
     const int64_t engine_ranks = m.spec.processes.engine.scheduler.tp;
-    if (!add_ranked_mib(host.pool_mib, engine_ranks, &allocated) || !add_mib(host.reserve_mib, &allocated) ||
-        !add_ranked_mib(host.pool_mib, engine_ranks, &pinned) || !add_mib(host.kv_mib, &pinned))
+    if (!add_ranked_mib(host.pool_mib, engine_ranks, &pinned) || !add_mib(host.kv_mib, &pinned))
+        return no_room("replay.live.host", "stored allocation overflows checked byte arithmetic");
+    // The pinned weight pool and retained KV tier both occupy host RAM.
+    int64_t allocated = pinned;
+    if (!add_mib(host.reserve_mib, &allocated))
         return no_room("replay.live.host", "stored allocation overflows checked byte arithmetic");
     // The measured P1 producer is the authority for the host allocations
     // still to come, not a guessed constant or stale MemAvailable.
