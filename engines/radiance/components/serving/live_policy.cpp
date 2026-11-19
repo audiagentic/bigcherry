@@ -157,7 +157,9 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             bad(where + ": plan_cache_key must be lowercase SHA-256 hex");
         if (!seen.insert(row.key).second) bad(where + ": duplicate plan_cache_key " + row.key);
         const bool has_inputs = t->contains("calibration_inputs");
-        if (has_inputs) {
+        if (!has_inputs)
+            bad(where + ": unsupported record format (no calibration_inputs); remove it with bc-serve calibration-prune");
+        {
             const std::string json = required(*t, "calibration_inputs", where);
             Json parsed = Json::parse(json, nullptr, false);
             if (parsed.is_discarded()) bad(where + ": calibration_inputs is not strict JSON");
@@ -179,15 +181,8 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
             row.record_schema_version = 1;
             row.calibration_kind = "radiance.live_policy";
             row.calibration_key_fields = policy_calibration_key_fields();
-        } else if (t->contains("source_plan_key") || t->contains("source_engine_build")) {
-            bad(where + ": provenance needs calibration_inputs, source_plan_key and source_engine_build together");
         }
-        if (!has_inputs && (t->contains("record_schema_version") ||
-            t->contains("calibration_kind") || t->contains("calibration_key_fields") ||
-            t->contains("source_revision") || t->contains("run_id") ||
-            t->contains("host_facts_digest")))
-            bad(where + ": scoped metadata without calibration_inputs");
-        if (has_inputs && !t->contains("record_schema_version") &&
+        if (!t->contains("record_schema_version") &&
             (t->contains("calibration_kind") || t->contains("calibration_key_fields") ||
              t->contains("source_revision") || t->contains("run_id") ||
              t->contains("host_facts_digest")))

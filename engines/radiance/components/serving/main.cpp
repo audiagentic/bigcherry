@@ -55,6 +55,7 @@ void usage() {
            "                     read only from --layouts\n"
            "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
            "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
+           "  calibration-prune --calibration FILE [--apply]   (drop rows the strict reader refuses)\n"
            "  calibration-ingest --from-log FILE --calibration FILE --manifest LAB_MANIFEST\n"
            "      validates one settled helper record against the strict lab manifest and atomically appends "
            "it\n"
@@ -318,6 +319,17 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             std::cout << "port     " << reply->at("port") << '\n';
         if (reply->contains("manifest"))
             std::cout << "manifest " << reply->at("manifest").get<std::string>() << '\n';
+        if (reply->contains("calibration_record")) {
+            const auto& selected = reply->at("calibration_record");
+            std::cout << "calibration " << selected.at("status").get<std::string>();
+            if (selected.value("status", std::string()) == "selected")
+                std::cout << " " << selected.value("kind", std::string())
+                          << " key=" << selected.value("key_sha256", std::string());
+            else
+                std::cout << " " << selected.value("reason_code", std::string())
+                          << ": " << selected.value("reason_detail", std::string());
+            std::cout << '\n';
+        }
         for (const auto& p : reply->value("processes", Json::array()))
             if (!p.value("exited", false))
                 std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0)
@@ -554,6 +566,23 @@ int main(int argc, char** argv) {
                 return explain_command(argc, argv);
             if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status")
                 return session_command(cmd, argc, argv);
+        }
+        if (argc > 1 && std::string(argv[1]) == "calibration-prune") {
+            // Remove the rows the strict reader refuses (hash-only, no calibration_inputs). Dry run unless --apply.
+            fs::path cache;
+            bool apply = false;
+            for (int i = 2; i < argc; ++i) {
+                const std::string arg(argv[i]);
+                if (arg == "--apply") apply = true;
+                else if (arg == "--calibration" && i + 1 < argc) cache = argv[++i];
+                else throw std::runtime_error("calibration-prune: unknown or incomplete option " + arg);
+            }
+            if (cache.empty()) throw std::runtime_error("calibration-prune: --calibration FILE is required");
+            const auto removed = bc::serving::prune_live_policy_store(cache, apply);
+            for (const auto& key : removed) std::cout << (apply ? "removed " : "would remove ") << key << "\n";
+            std::cout << "calibration-prune: " << removed.size() << (apply ? " removed" : " to remove (dry run; --apply removes)")
+                      << " from " << cache.string() << "\n";
+            return 0;
         }
         if (argc > 1 && std::string(argv[1]) == "calibration-ingest") {
             // The helper has only the *typed v1 manifest* cache key. It is

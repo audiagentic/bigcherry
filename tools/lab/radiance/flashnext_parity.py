@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Flash-Next performance parity: the before/after measurement of a Radiance pin bump (bump-radiance section 4).
 
 flashnext-parity.sh drives the launches and writes raw files under OUT/launch-<i>/; this module does everything that is
@@ -9,13 +8,11 @@ not process control, so it can be tested without cards:
   doc-calibrate --url U --tokens T --out FILE   chars per token of the docs corpus, measured with one probe request
   doc-prefill --url U --calibration FILE --slot measure:K|warmup:K --out FILE   one long document prefill, max_tokens 1
   policy-line LOG                       the helper's last `policy placement` line as JSON (committed, bytes_moved)
-  summarise OUT                         OUT/parity.json: per metric the per-launch values and their median
-  baseline OUT --name NAME [--to FILE]  a baseline from a measured parity.json, tolerances derived from the spread
-  compare OUT --baseline FILE           table against a baseline; exit 1 on a gated regression beyond its allowance
+  record-launch OUT --launch N          commit one completed launch into a run-record v1 (the record is the result;
+                                        baseline and compare are `bigcherry results baseline|compare`)
 
 Tokens/s is never gated across builds (MTP draft acceptance differs per build): the gated metrics are cold prefill and
-engine step time; acceptance and the live policy's transactions are reported only. Baseline/compare use only the
-standard library; record-launch calls the platform's MRC01/MRC03 readers and immutable store, never native engine Python.
+engine step time; acceptance and the live policy's transactions are reported only. The native engine never imports Python; this file is a lab-side wrapper.
 """
 
 from __future__ import annotations
@@ -36,8 +33,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 SCHEMA = 1
-BASELINE_SCHEMA = 1
-DEFAULT_BASELINE = REPO / "docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json"
 RECIPES = REPO / "engines/radiance/recipes.toml"
 
 # name -> (direction, gated). direction: which way is better.
@@ -51,6 +46,9 @@ METRICS = {
     "sess8_warm_ms_per_step": ("lower", False),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
+    # Informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one launch, 28 in the other).
+    # The greedy text differs between launches, and with it where the live policy moves experts; long-context decode is
+    # gated on long8_ms_per_step.
     "long7_ms_per_step": ("lower", False),
     "long8_ms_per_step": ("lower", True),
     "decode1_acceptance": ("higher", False),
@@ -61,15 +59,6 @@ METRICS = {
 }
 # The long-context seeds (flashnext-parity.sh LONG_SEEDS): each seed is its own prompt, so its own metrics.
 LONG_SEEDS = (7, 8)
-# What a reader of a baseline must know about a metric, carried into parity.json and the baseline.
-NOTES = {
-    "long7_ms_per_step": "informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one "
-                         "launch, 28 in the other). The greedy text differs between launches, and with it where the live "
-                         "policy moves experts; in the slow mode the text routes to experts that are not resident. "
-                         "Long-context decode is gated on long8_ms_per_step.",
-}
-
-
 class ParityError(RuntimeError):
     pass
 
@@ -129,7 +118,7 @@ def cmd_run_info(args) -> int:
     _write(out / "run.json", {
         "schema": SCHEMA, "build": str(Path(args.build).resolve()), "build_identity": build_identity(Path(args.build)),
         "revision": git_revision(), "radiance_pin": radiance_pin(),
-        "date": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+        "date": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "launches": args.launches, "port": args.port, "workload": workload})
     return 0
 
@@ -364,119 +353,6 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
     return value, repeats, detail
 
 
-def _median(values):
-    vals = [v for v in values if v is not None]
-    return statistics.median(vals) if vals else None
-
-
-def summarise(out: Path) -> dict:
-    out = Path(out)
-    run = _load(out / "run.json")
-    launches = sorted((p for p in out.glob("launch-*") if p.is_dir()), key=lambda p: int(p.name.split("-")[1]))
-    if not launches:
-        raise ParityError(f"{out}: no launch-* directories")
-    per_launch, metrics = [], {name: {"direction": d, "gated": g, "launches": [], "repeats": []}
-                               for name, (d, g) in METRICS.items()}
-    for name, note in NOTES.items():
-        metrics[name]["note"] = note
-    for launch in launches:
-        info = _load(launch / "launch.json")
-        value, repeats, detail = launch_metrics(launch, run.get("workload") or {})
-        per_launch.append({"launch": launch.name, "policy": info["policy"], "warmup_s": info["warmup_s"],
-                           "detail": detail})
-        for name in METRICS:
-            metrics[name]["launches"].append(value.get(name))
-            metrics[name]["repeats"].append(repeats.get(name, []))
-    for m in metrics.values():
-        m["median"] = _median(m["launches"])
-    policies = {p["policy"] for p in per_launch}
-    if len(policies) != 1:
-        raise ParityError(f"{out}: the launches disagree on whether the live policy was on")
-    return {"schema": SCHEMA, "kind": "flashnext-parity", "build": run["build"], "build_identity": run.get("build_identity"),
-            "revision": run["revision"], "radiance_pin": run["radiance_pin"], "date": run["date"],
-            "workload": run.get("workload") or {}, "policy": policies.pop(),
-            "warmup_s": [p["warmup_s"] for p in per_launch], "launches": per_launch, "metrics": metrics}
-
-
-def cmd_summarise(args) -> int:
-    parity = summarise(Path(args.out))
-    _write(Path(args.out) / "parity.json", parity)
-    for name, m in parity["metrics"].items():
-        vals = ", ".join("-" if v is None else f"{v:.4g}" for v in m["launches"])
-        med = "-" if m["median"] is None else f"{m['median']:.4g}"
-        print(f"{name:22s} median {med:>10s}  launches [{vals}]  ({m['direction']} better"
-              f"{'' if m['gated'] else ', informational'})")
-    return 0
-
-
-# ---------------------------------------------------------------------------------------------------------------- baseline
-
-def _rel_spread(values) -> float:
-    vals = [v for v in values if v is not None]
-    if len(vals) < 2:
-        return 0.0
-    centre = statistics.fmean(vals)
-    return (max(vals) - min(vals)) / abs(centre) if centre else 0.0
-
-
-def _parity_file(path: Path) -> Path:
-    path = Path(path)
-    return path / "parity.json" if path.is_dir() else path
-
-
-def make_baseline(parity: dict, name: str, source: str) -> dict:
-    """Per gated metric: the median as the value; the tolerance is the larger of (a) the relative spread of the per-launch
-    values across launches and (b) the largest relative spread among true repeats (rounds of one prompt) in any launch;
-    a metric without true repeats takes (a) alone. Distinct prompts are content, not noise, and never widen it. Nothing is
-    picked by hand, so one launch is refused."""
-    count = len(parity["launches"])
-    if count < 2:
-        raise ParityError(f"a baseline needs at least two launches to measure their spread; {source} has {count}")
-    metrics = {}
-    for metric, m in parity["metrics"].items():
-        entry = {"direction": m["direction"], "gated": m["gated"], "value": m["median"]}
-        if m["gated"]:
-            if m["median"] is None or any(v is None for v in m["launches"]):
-                raise ParityError(f"{source}: gated metric {metric} is missing in a launch")
-            across = _rel_spread(m["launches"])
-            groups = [g for launch in m["repeats"] for g in launch if len(g) > 1]
-            repeat = max((_rel_spread(g) for g in groups), default=None)
-            entry.update({"tolerance": max(across, repeat or 0.0), "spread_across_launches": across,
-                          "spread_repeats": repeat, "launches": m["launches"]})
-        if "note" in m:
-            entry["note"] = m["note"]
-        metrics[metric] = entry
-    return {"schema": BASELINE_SCHEMA, "kind": "flashnext-parity-baseline", "name": name, "source_run": source,
-            "build": parity["build"], "build_identity": parity.get("build_identity"), "revision": parity["revision"],
-            "radiance_pin": parity["radiance_pin"], "date": parity["date"], "policy": parity["policy"],
-            "launches": count, "workload": parity["workload"], "metrics": metrics}
-
-
-def portable_path(path: str) -> str:
-    """A path for a tracked file: under $BC_WORK_ROOT it is written as ${BC_WORK_ROOT}/..., and any other absolute path is
-    refused (a local path never goes into the repository)."""
-    root = os.environ.get("BC_WORK_ROOT", "").rstrip("/")
-    resolved = str(Path(path).resolve())
-    if root and (resolved == root or resolved.startswith(root + "/")):
-        return "${BC_WORK_ROOT}" + resolved[len(root):]
-    raise ParityError(f"{path} is not under $BC_WORK_ROOT ({root or 'unset'}): a baseline names its build and run that way")
-
-
-def cmd_baseline(args) -> int:
-    src = _parity_file(Path(args.out))
-    parity = _load(src)
-    parity["build"] = portable_path(parity["build"])
-    baseline = make_baseline(parity, args.name, portable_path(str(src.parent)))
-    to = Path(args.to) if args.to else DEFAULT_BASELINE
-    to.parent.mkdir(parents=True, exist_ok=True)
-    _write(to, baseline)
-    print(f"baseline {args.name}: {to}")
-    for metric, e in baseline["metrics"].items():
-        if e["gated"]:
-            print(f"  {metric:22s} {e['value']:.4g}  tolerance {e['tolerance'] * 100:.2f}%")
-    return 0
-
-
 # ------------------------------------------------------------------------------------------------------------- MRC06 v1
 
 def record_metric_phase(name: str) -> str:
@@ -492,7 +368,7 @@ def record_metric_phase(name: str) -> str:
 
 def _platform():
     # The standalone harness is invoked by path; platform imports only inside
-    # the producer, leaving baseline/compare and existing readers unchanged.
+    # the producer and portable baseline/compare, leaving the engine native.
     tools = str(REPO / "tools")
     if tools not in sys.path:
         sys.path.insert(0, tools)
@@ -529,15 +405,14 @@ def capture_launch_provenance(
         "heat_path": str(heat.resolve()),
         "calibration_store": str(calibration.resolve()) if calibration else None,
         "power_profile": power_profile,
-        "recorded_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "recorded_at": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
 
 def selected_calibration(path: Path, key: str) -> dict:
-    """Use the platform MRC04 strict current/legacy/invalid classifications.
+    """Use the platform MRC04 strict current/invalid classifications.
 
-    This reader verifies the full declared key and quantities. Hash-only
-    history can be listed but cannot serve as active measurement evidence.
+    This reader verifies the full declared key and quantities; a row it does not know is refused.
     """
     from bigcherry.core.calibration_records import read_native_toml
 
@@ -547,7 +422,7 @@ def selected_calibration(path: Path, key: str) -> dict:
     item = selected[0]
     if item["status"] != "current":
         raise ParityError(f"selected calibration is {item['status']}: {item['reason']}")
-    return item["legacy"]
+    return item["native"]
 
 
 def publish_launch_record(
@@ -690,56 +565,6 @@ def cmd_record_launch(args) -> int:
     return 0
 
 
-# ----------------------------------------------------------------------------------------------------------------- compare
-
-def compare(parity: dict, baseline: dict) -> tuple[list, bool]:
-    """Rows (metric, baseline, now, change %, allowance %, verdict) and whether any gated metric regressed beyond its
-    allowance. One-sided: a change in the better direction is never a failure. A gated metric without a value now fails."""
-    if parity.get("workload") != baseline.get("workload"):
-        raise ParityError("the run's workload definition differs from the baseline's: they do not measure the same thing")
-    rows, failed = [], False
-    for metric, base in baseline["metrics"].items():
-        now = (parity["metrics"].get(metric) or {}).get("median")
-        ref = base["value"]
-        change = (now - ref) / ref * 100.0 if now is not None and ref else None
-        if not base["gated"]:
-            rows.append((metric, ref, now, change, None, "info"))
-            continue
-        allowance = base["tolerance"] * 100.0
-        if now is None:
-            verdict = "MISSING"
-        else:
-            worse = change if base["direction"] == "lower" else -change
-            verdict = "REGRESSION" if worse > allowance else ("better" if worse < 0 else "ok")
-        failed |= verdict in ("REGRESSION", "MISSING")
-        rows.append((metric, ref, now, change, allowance, verdict))
-    return rows, failed
-
-
-def render(rows) -> str:
-    def num(v, fmt):
-        return "-" if v is None else format(v, fmt)
-    lines = [f"{'metric':22s} {'baseline':>12s} {'now':>12s} {'change %':>9s} {'allowance':>10s}  verdict"]
-    for metric, ref, now, change, allowance, verdict in rows:
-        lines.append(f"{metric:22s} {num(ref, '.4g'):>12s} {num(now, '.4g'):>12s} {num(change, '+.2f'):>9s} "
-                     f"{('±' + num(allowance, '.2f')) if allowance is not None else '-':>10s}  {verdict}")
-    return "\n".join(lines)
-
-
-def cmd_compare(args) -> int:
-    parity = _load(_parity_file(Path(args.out)))
-    baseline = _load(Path(args.baseline))
-    rows, failed = compare(parity, baseline)
-    print(f"baseline {baseline.get('name')} (pin {baseline['radiance_pin'].get('pinned')}, rev {baseline['revision'][:12]}) "
-          f"-> now (pin {parity['radiance_pin'].get('pinned')}, rev {parity['revision'][:12]})")
-    if parity.get("policy") != baseline.get("policy"):
-        print(f"note: live policy {'on' if parity.get('policy') else 'off'} now, "
-              f"{'on' if baseline.get('policy') else 'off'} in the baseline")
-    print(render(rows))
-    print("FAIL: a gated metric regressed beyond its allowance (investigate; do not waive)" if failed else "PASS")
-    return 1 if failed else 0
-
-
 # -------------------------------------------------------------------------------------------------------------------- main
 
 def build_parser() -> argparse.ArgumentParser:
@@ -774,9 +599,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("log")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_policy_line)
-    p = sub.add_parser("summarise")
-    p.add_argument("out")
-    p.set_defaults(fn=cmd_summarise)
     p = sub.add_parser("capture-host-facts", help="passive native-session host snapshot")
     p.add_argument("launch")
     p.set_defaults(fn=cmd_capture_host_facts)
@@ -792,15 +614,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--launch", type=int, required=True)
     p.add_argument("--work-root")
     p.set_defaults(fn=cmd_record_launch)
-    p = sub.add_parser("baseline")
-    p.add_argument("out", help="a measure OUT directory or its parity.json")
-    p.add_argument("--name", required=True)
-    p.add_argument("--to", help=f"default {DEFAULT_BASELINE.relative_to(REPO)}")
-    p.set_defaults(fn=cmd_baseline)
-    p = sub.add_parser("compare")
-    p.add_argument("out", help="a measure OUT directory or its parity.json")
-    p.add_argument("--baseline", required=True)
-    p.set_defaults(fn=cmd_compare)
     return ap
 
 

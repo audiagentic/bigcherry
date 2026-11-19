@@ -130,40 +130,15 @@ def test_workload_missing_manifest_refused_without_publishing(tmp_path):
     assert run_records.RunRecordStore(tmp_path).query() == []
 
 
-def test_legacy_rows_list_read_only_and_never_become_baselines(tmp_path, capsys):
+def test_results_list_reads_run_records_only(tmp_path, capsys):
+    # A stray pre-record JSONL index is not a results source: nothing lists it, nothing classifies it.
     index = tmp_path / "results" / "index.jsonl"
     index.parent.mkdir()
-    legacy = {
-        "schema": workloads.SCHEMA,
-        "row_id": "old-1",
-        "timestamp": "2026-11-17T12:00:00+00:00",
-        "workload_id": "prefill-doc-44k",
-        "workload_version": 1,
-        "layout": "flashnext-4gpu",
-        "manifest": "/deleted/manifests/old.json",
-        "metrics": {"prefill_tps": {"median": 3312.0}},
-    }
-    original = json.dumps(legacy) + "\n"
-    index.write_text(original)
-    status = main(
-        [
-            "results",
-            "list",
-            "--work-root",
-            str(tmp_path),
-            "--engine",
-            "radiance",
-            "--json",
-        ]
-    )
+    index.write_text(json.dumps({"schema": "bigcherry.workload-result.v1", "row_id": "old-1"}) + "\n")
+    status = main(["results", "list", "--work-root", str(tmp_path), "--engine", "radiance", "--json"])
     assert status == 0
-    listing = json.loads(capsys.readouterr().out)
-    assert listing[0]["status"] == "legacy"
-    assert listing[0]["row_id"] == "old-1"
-    assert listing[0]["reason"] == "missing_content_provenance"
-    assert index.read_text() == original
-    with pytest.raises((ValueError, RuntimeError), match="read.only|legacy"):
-        workloads.append_index(index, legacy)
+    assert json.loads(capsys.readouterr().out) == []
+    assert not hasattr(workloads, "read_index") and not hasattr(workloads, "append_index")
 
 
 def test_llama_row_publishes_phase_metrics_and_attestation(tmp_path):

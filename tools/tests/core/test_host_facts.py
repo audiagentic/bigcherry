@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 from pathlib import Path
 
-from bigcherry.bench import workloads
 from bigcherry.core import host_facts, run_manifest, run_records
 
 
@@ -144,7 +143,7 @@ def test_zero_cap_is_unreadable_not_zero_and_other_bounds_survive(tmp_path):
     assert cap["cap_uw"]["readable"] is False
     assert cap["cap_uw"]["reason"] == "zero_cap_suspect"
     assert cap["cap_default_uw"]["value"] == 280000000
-    assert workloads.power_state(sys)["0000:03:00.0"]["power1_cap_uw"] is None
+    assert host_facts.power_state(sys)["0000:03:00.0"]["power1_cap_uw"] is None
 
 
 def test_missing_unreadable_fact_does_not_infer_value(tmp_path):
@@ -172,15 +171,11 @@ def test_missing_unreadable_fact_does_not_infer_value(tmp_path):
         assert fact["readable"] is False and fact["value"] is None
 
 
-def test_power_legacy_parity_and_board_watts(tmp_path):
+def test_card_paths_power_state_and_board_watts(tmp_path):
     sys, _, _, _ = host_fixture(tmp_path)
-    assert host_facts.card_paths(sys) == workloads.card_paths(sys)
-    assert host_facts.power_state(sys) == workloads.power_state(sys)
-    assert (
-        host_facts.board_watts(sys)
-        == workloads._board_watts(sys)
-        == {"0000:03:00.0": 155.0}
-    )
+    assert [bdf for bdf, _ in host_facts.card_paths(sys)] == ["0000:03:00.0"]
+    assert host_facts.power_state(sys)["0000:03:00.0"]["power1_cap_uw"] == 272000000
+    assert host_facts.board_watts(sys) == {"0000:03:00.0": 155.0}
 
 
 def test_record_and_run_manifest_host_facts_round_trip(tmp_path, monkeypatch):
