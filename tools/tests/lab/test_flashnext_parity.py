@@ -277,6 +277,241 @@ class HelperTests(unittest.TestCase):
         self.assertTrue(pin["pinned"])
 
 
+
+class RunRecordsTests(unittest.TestCase):
+    """Two fixture harness launches, content-pinned production inputs, MRC05 verdict."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.build = self.root / "build"
+        self.build.mkdir()
+        self.metadata = {
+            "build_id": "b" * 32,
+            "build_plan_id": "a" * 32,
+            "binary_hash": "c" * 64,
+            "source_slice_id": "d" * 32,
+        }
+        (self.build / "bigcherry-build-metadata-radiance.json").write_text(
+            json.dumps(self.metadata)
+        )
+        self.heat = self.root / "heat.hot-first"
+        self.heat.write_bytes(b"real heat bytes" + bytes([0, 255]))
+        self.calibration = self.root / "calibration.toml"
+        self.calibration.write_text(
+            'schema_version = 1\n[[live_policy_record]]\nplan_cache_key = "' +
+            "e" * 64 + '"\nlayout = "flashnext-4gpu"\nobjective = "balanced"\n'
+        )
+
+    def run_fixture(self, name, scales):
+        out = self.root / name
+        make_run(out, scales)
+        info = json.loads((out / "run.json").read_text())
+        info["build"] = str(self.build)
+        info["build_identity"] = fp.build_identity(self.build)
+        (out / "run.json").write_text(json.dumps(info))
+        for i, _ in enumerate(scales, 1):
+            launch = out / f"launch-{i}"
+            manifest = {
+                "metadata": {"instance_id": f"{name}-launch-{i}"},
+                "spec": {
+                    "plan": {"engine_memory": {"model_identity": "m" * 64}},
+                    "intent": {"layout": "flashnext-4gpu"},
+                    "handoff": {"placement": {"live_policy_state": {
+                        "configured": False, "requested": "off",
+                        "reason_code": "no_calibration", "calibration_key": ""
+                    }}},
+                    "power": {"profile": "stock"}
+                }
+            }
+            (launch / "manifest.json").write_text(json.dumps(manifest))
+            (launch / "feature-states.v1.json").write_text(json.dumps([{
+                "feature_id": "live_policy", "state": "inactive",
+                "reason_code": "no_calibration", "reason_detail": "not configured",
+                "engine": "radiance", "observed_at": "2026-11-19T00:00:00Z"
+            }]))
+            (launch / "host-facts.json").write_text(json.dumps({"kernel_release": {
+                "value": "fixture", "readable": True
+            }}))
+            (launch / "launch-provenance.json").write_text(json.dumps({
+                "argv": ["bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450"],
+                "environment": {"ROCM_PATH": "fixture-rocm"},
+                "heat_path": str(self.heat),
+                "calibration_store": None,
+                "power_profile": "stock",
+                "recorded_at": "2026-11-19T00:00:00Z",
+            }))
+            # Real warmup duration, not only the planner's minimum.
+            (launch / "launch.json").write_text(json.dumps({
+                "policy": False, "warmup_s": 0.0, "actual_warmup_s": 0.0,
+                "warmup_rounds": 0,
+            }))
+        return out
+
+    def test_two_harness_records_match_results_compare_verdict(self):
+        from bigcherry.core import results, run_records
+        from bigcherry.__main__ import main as bigcherry_main
+
+        base = self.run_fixture("base", [1.0, 1.04])
+        now = self.run_fixture("now", [1.30, 1.30])
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            base_ids = [
+                fp.publish_launch_record(base, base / f"launch-{i}")
+                for i in (1, 2)
+            ]
+            now_ids = [
+                fp.publish_launch_record(now, now / f"launch-{i}")
+                for i in (1, 2)
+            ]
+            store = run_records.RunRecordStore(self.root)
+            self.assertEqual(len(set(base_ids + now_ids)), 4)
+            for digest in base_ids + now_ids:
+                rec = store.get_record(digest)
+                self.assertEqual(rec["workload"]["definition"], WORKLOAD)
+                self.assertEqual(rec["identity"]["engine"], "radiance")
+                self.assertEqual(rec["identity"]["build_id"], self.metadata["build_id"])
+                self.assertEqual(rec["identity"]["source_revision"], "abc123")
+                self.assertEqual(rec["identity"]["model"], "m" * 64)
+                self.assertIn("decode1_ms_per_step", rec["metrics"]["decode"])
+                self.assertIn("long8_prefill_tps", rec["metrics"]["prefill"])
+                self.assertIn("cold_ttft_s", rec["metrics"]["ttft"])
+                self.assertFalse(rec["metric_specs"]["decode"]["long7_acceptance"]["gated"])
+                self.assertEqual(rec["feature_states"][0]["feature_id"], "live_policy")
+                inputs = {v["role"]: store.get_blob(v["blob"])
+                          for v in rec["provenance"]["inputs"]}
+                self.assertEqual(inputs["heat"], self.heat.read_bytes())
+                self.assertEqual(json.loads(inputs["policy_state"])["configured"], False)
+                self.assertIn("warmup", inputs)
+                self.assertEqual(store.get_blob(rec["provenance"]["effective_config"]),
+                                 (base if digest in base_ids else now).joinpath(
+                                     "launch-1" if digest in (base_ids[0], now_ids[0]) else "launch-2",
+                                     "manifest.json").read_bytes())
+            reference = results.make_baseline(
+                store, [{"sha256": x, "record": store.get_record(x)} for x in base_ids], "parity"
+            )
+            reference_file = self.root / "reference.json"
+            reference_file.write_text(json.dumps(reference))
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                rc = bigcherry_main([
+                    "results", "compare", "--work-root", str(self.root),
+                    "--baseline", str(reference_file),
+                    "--json", "--record", now_ids[0], "--record", now_ids[1],
+                ])
+            self.assertEqual(rc, 1)
+            report = json.loads(stdout.getvalue())
+            old_base = fp.make_baseline(fp.summarise(base), "parity", "fixture")
+            old_rows, old_failed = fp.compare(fp.summarise(now), old_base)
+            self.assertEqual(report["failed"], old_failed)
+            mapped = {f"{fp.record_metric_phase(name)}.{name}": verdict
+                      for name, _, _, _, _, verdict in old_rows}
+            for key, verdict in mapped.items():
+                self.assertEqual(report["metrics"][key]["verdict"], verdict, key)
+            self.assertTrue(report["failed"])
+
+    def test_record_launch_cli_and_passive_host_snapshot(self):
+        from bigcherry.core import run_records
+
+        out = self.run_fixture("cli", [1.0])
+        launch = out / "launch-1"
+        fake_facts = {"kernel_build": {"value": "fixture-host", "readable": True}}
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}), patch(
+            "bigcherry.core.host_facts.collect_host_facts", return_value=fake_facts
+        ):
+            self.assertEqual(fp.main(["capture-host-facts", str(launch)]), 0)
+            self.assertEqual(json.loads((launch / "host-facts.json").read_text()), fake_facts)
+            self.assertEqual(fp.main([
+                "capture-provenance", "--heat", str(self.heat),
+                "--power-profile", "stock", str(launch), "--",
+                "bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450",
+            ]), 0)
+            captured = json.loads((launch / "launch-provenance.json").read_text())
+            self.assertEqual(captured["argv"][-2:], ["--set", "engine.port=18450"])
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(fp.main([
+                    "record-launch", str(out), "--launch", "1",
+                    "--work-root", str(self.root),
+                ]), 0)
+            digest = output.getvalue().strip()
+            self.assertEqual(len(digest), 64)
+            store = run_records.RunRecordStore(self.root)
+            rec = store.get_record(digest)
+            self.assertEqual(rec["host_facts"], fake_facts)
+            self.assertEqual(
+                json.loads(store.get_blob(rec["provenance"]["argv"]))[-2:],
+                ["--set", "engine.port=18450"],
+            )
+
+    def test_missing_required_native_provenance_does_not_publish(self):
+        from bigcherry.core import run_records
+
+        out = self.run_fixture("missing", [1.0])
+        (out / "launch-1" / "feature-states.v1.json").unlink()
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            with self.assertRaises((fp.ParityError, ValueError, OSError)):
+                fp.publish_launch_record(out, out / "launch-1")
+            self.assertEqual(run_records.RunRecordStore(self.root).query(), [])
+
+
+    def test_active_policy_snapshots_only_verified_selected_calibration(self):
+        import hashlib
+
+        from bigcherry.core import run_records
+
+        out = self.run_fixture("active", [1.0])
+        launch = out / "launch-1"
+        from bigcherry.core import calibration_records
+
+        # MRC04's production snapshot includes the complete narrow key and
+        # all quantities. Synthetic partial keys are correctly invalid.
+        fixture = ROOT / "tools/tests/fixtures/calibration/production-2026-11-19.toml"
+        self.calibration.write_bytes(fixture.read_bytes())
+        current = [item for item in calibration_records.read_native_toml(self.calibration)
+                   if item["status"] == "current"]
+        self.assertEqual(len(current), 1)
+        key = current[0]["key"]
+        manifest = json.loads((launch / "manifest.json").read_text())
+        manifest["spec"]["handoff"]["placement"]["live_policy_state"] = {
+            "configured": True, "requested": "on",
+            "reason_code": "configured", "calibration_key": key,
+        }
+        manifest["spec"]["handoff"]["placement"]["live_policy"] = {
+            "cadence_ns": 1000000000, "min_samples": 1
+        }
+        (launch / "manifest.json").write_text(json.dumps(manifest))
+        provenance = json.loads((launch / "launch-provenance.json").read_text())
+        provenance["calibration_store"] = str(self.calibration)
+        (launch / "launch-provenance.json").write_text(json.dumps(provenance))
+        (launch / "launch.json").write_text(json.dumps({"policy": True, "warmup_s": 3.0}))
+        states = json.loads((launch / "feature-states.v1.json").read_text())
+        states[0]["state"] = "active"
+        states[0]["reason_code"] = "configured"
+        (launch / "feature-states.v1.json").write_text(json.dumps(states))
+
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            digest = fp.publish_launch_record(out, launch)
+            store = run_records.RunRecordStore(self.root)
+            rec = store.get_record(digest)
+            self.assertEqual(rec["feature_states"][0]["state"], "active")
+            inputs = {v["role"]: store.get_blob(v["blob"])
+                      for v in rec["provenance"]["inputs"]}
+            self.assertEqual(json.loads(inputs["calibration_record"])["plan_cache_key"], key)
+            self.assertEqual(json.loads(inputs["policy_state"])["calibration_key"], key)
+            self.assertEqual(json.loads(inputs["warmup"])["warmup_s"], 3.0)
+
+            # Valid data under the wrong key must never become live evidence.
+            # A changed scoped quantity is not silently accepted.
+            original = self.calibration.read_text()
+            self.calibration.write_text(original.replace(
+                'plan_cache_key = "' + key + '"', 'plan_cache_key = "' + "e" * 64 + '"'
+            ))
+            with self.assertRaises((fp.ParityError, ValueError)):
+                fp.publish_launch_record(out, launch)
+            self.assertEqual(len(store.query()), 1)
+
+
 class ScriptTests(unittest.TestCase):
     def test_bash_syntax(self):
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)

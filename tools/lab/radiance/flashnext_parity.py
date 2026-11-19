@@ -14,7 +14,8 @@ not process control, so it can be tested without cards:
   compare OUT --baseline FILE           table against a baseline; exit 1 on a gated regression beyond its allowance
 
 Tokens/s is never gated across builds (MTP draft acceptance differs per build): the gated metrics are cold prefill and
-engine step time; acceptance and the live policy's transactions are reported only. Standard library only.
+engine step time; acceptance and the live policy's transactions are reported only. Baseline/compare use only the
+standard library; record-launch calls the platform's MRC01/MRC03 readers and immutable store, never native engine Python.
 """
 
 from __future__ import annotations
@@ -476,6 +477,219 @@ def cmd_baseline(args) -> int:
     return 0
 
 
+# ------------------------------------------------------------------------------------------------------------- MRC06 v1
+
+def record_metric_phase(name: str) -> str:
+    """Keep parity metric names intact, but separate their measured phases."""
+    if name in ("cold_ttft_s", "sess8_ttft_s"):
+        return "ttft"
+    if name == "doc_prefill_tps" or name.startswith(("long7_prefill_", "long8_prefill_")):
+        return "prefill"
+    if name in METRICS:
+        return "decode"
+    raise ParityError(f"unknown parity metric {name}")
+
+
+def _platform():
+    # The standalone harness is invoked by path; platform imports only inside
+    # the producer, leaving baseline/compare and existing readers unchanged.
+    tools = str(REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from bigcherry.core import feature_states, run_records
+    return feature_states, run_records
+
+
+def _json_bytes(obj) -> bytes:
+    return (json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+
+
+def capture_host_facts(launch: Path) -> None:
+    """Snapshot passive host readings while the measured session is active."""
+    tools = str(REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from bigcherry.core.host_facts import collect_host_facts
+    _write(launch / "host-facts.json", collect_host_facts())
+
+
+def capture_launch_provenance(
+    launch: Path, argv: list[str], *, heat: Path,
+    calibration: Path | None, power_profile: str
+) -> None:
+    """Capture precisely the owner invocation, not a reconstructed CLI."""
+    if not argv or not heat.is_file():
+        raise ParityError("missing native owner argv or the selected heat file")
+    # Intentional allowlist: do not persist ambient credentials or whole env.
+    keys = ("ROCM_PATH", "HIP_PATH", "BC_WORK_ROOT", "BC_MODEL_ROOT",
+            "FLASHNEXT_PARITY_POWER_PROFILE", "FLASHNEXT_PARITY_HEAT",
+            "FLASHNEXT_PARITY_SETS", "FLASHNEXT_PARITY_WARMUP_S")
+    _write(launch / "launch-provenance.json", {
+        "argv": list(argv), "environment": {k: os.environ[k] for k in keys if k in os.environ},
+        "heat_path": str(heat.resolve()),
+        "calibration_store": str(calibration.resolve()) if calibration else None,
+        "power_profile": power_profile,
+        "recorded_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+
+
+def selected_calibration(path: Path, key: str) -> dict:
+    """Use the platform MRC04 strict current/legacy/invalid classifications.
+
+    This reader verifies the full declared key and quantities. Hash-only
+    history can be listed but cannot serve as active measurement evidence.
+    """
+    from bigcherry.core.calibration_records import read_native_toml
+
+    selected = [item for item in read_native_toml(path) if item["key"] == key]
+    if len(selected) != 1:
+        raise ParityError("selected native calibration key is missing or ambiguous")
+    item = selected[0]
+    if item["status"] != "current":
+        raise ParityError(f"selected calibration is {item['status']}: {item['reason']}")
+    return item["legacy"]
+
+
+def publish_launch_record(
+    out: Path, launch: Path, *, work_root: Path | None = None
+) -> str:
+    """Publish one completed launch by content; never change parity.json.
+
+    Missing native feature state, build identity, or selected calibration is a
+    producer error. None of those can be manufactured from the measurements.
+    """
+    feature_states, run_records = _platform()
+    out, launch = Path(out), Path(launch)
+    run = _load(out / "run.json")
+    manifest_file = launch / "manifest.json"
+    manifest = _load(manifest_file)
+    snapshot = _load(launch / "launch-provenance.json")
+    warmup = _load(launch / "launch.json")
+    facts = _load(launch / "host-facts.json")
+    states = feature_states.read_feature_states(launch / feature_states.FILE_NAME)
+    if any(item["engine"] != "radiance" for item in states):
+        raise ParityError("native feature-state engine differs from Radiance")
+    build = run.get("build_identity") or {}
+    meta_file = Path(run["build"]) / "bigcherry-build-metadata-radiance.json"
+    metadata = _load(meta_file)
+    for name in ("build_id", "binary_hash", "source_slice_id", "build_plan_id"):
+        if not isinstance(metadata.get(name), str) or not metadata[name]:
+            raise ParityError(f"build metadata lacks required {name}")
+    if any(build.get(k) != metadata.get(k) for k in
+           ("build_id", "binary_hash", "source_slice_id", "build_plan_id")):
+        raise ParityError("run.json build identity differs from build metadata")
+    if not re.fullmatch(r"[0-9a-f]{64}", metadata["binary_hash"]):
+        raise ParityError("build metadata has no SHA-256 binary identity")
+    spec = manifest["spec"]
+    placement = spec["handoff"]["placement"]
+    state = placement["live_policy_state"]
+    if type(state.get("configured")) is not bool or state["configured"] != bool(placement.get("live_policy")):
+        raise ParityError("manifest live policy and policy state disagree")
+    if bool(warmup["policy"]) != state["configured"]:
+        raise ParityError("warmup and manifest disagree about live policy")
+    if not isinstance(snapshot.get("argv"), list) or not snapshot["argv"] or not isinstance(snapshot.get("environment"), dict):
+        raise ParityError("missing captured native argv/environment")
+    values, repeats, _ = launch_metrics(launch, run["workload"])
+    metrics = {phase: {} for phase in ("decode", "prefill", "ttft")}
+    metric_specs = {phase: {} for phase in metrics}
+    for name, (direction, gated) in METRICS.items():
+        phase = record_metric_phase(name)
+        value = values.get(name)
+        if value is None:
+            if gated:
+                raise ParityError(f"required gated metric {name} is missing")
+            continue
+        metrics[phase][name] = value
+        definition = {"direction": direction, "gated": gated}
+        groups = [group for group in repeats.get(name, []) if len(group) >= 2]
+        if groups:
+            definition["repeat_groups"] = groups
+        metric_specs[phase][name] = definition
+
+    store = run_records.RunRecordStore(work_root)
+    def blob_obj(obj):
+        return store.put_blob(_json_bytes(obj))
+    def named_blob(role, data):
+        return {"role": role, "blob": data}
+    inputs = [
+        named_blob("run_info", store.put_blob_file(out / "run.json")),
+        named_blob("heat", store.put_blob_file(Path(snapshot["heat_path"]))),
+        named_blob("policy_state", blob_obj(state)),
+        named_blob("warmup", store.put_blob_file(launch / "launch.json")),
+        named_blob("native_feature_states", store.put_blob_file(launch / feature_states.FILE_NAME)),
+        named_blob("build_metadata", store.put_blob_file(meta_file)),
+    ]
+    # Raw corpus calibration and helper policy counters, when produced by the
+    # existing harness, are result-affecting evidence; keep their original bytes.
+    for role, filename in (("doc_calibration", "doc-calibration.json"),
+                           ("policy_placement", "policy.json")):
+        path = launch / filename
+        if path.is_file():
+            inputs.append(named_blob(role, store.put_blob_file(path)))
+    if state["configured"]:
+        cal = snapshot.get("calibration_store")
+        key = state.get("calibration_key")
+        if not cal or not isinstance(key, str) or not key:
+            raise ParityError("active policy lacks selected calibration store/key")
+        inputs.append(named_blob("calibration_record",
+                                 blob_obj(selected_calibration(Path(cal), key))))
+    identity = {
+        "engine": "radiance", "build_id": metadata["build_id"],
+        "binary_sha256": metadata["binary_hash"],
+        "source_revision": run["revision"],
+        "model": spec["plan"]["engine_memory"]["model_identity"],
+        "layout": spec["intent"]["layout"],
+    }
+    record = {
+        "schema_version": 1, "run_id": manifest["metadata"]["instance_id"],
+        "recorded_at": snapshot["recorded_at"],
+        "identity": identity, "workload": {
+            "name": "flashnext-parity", "definition": run["workload"],
+        },
+        "metrics": metrics, "metric_specs": metric_specs,
+        "provenance": {
+            "effective_config": store.put_blob_file(manifest_file),
+            "argv": blob_obj(snapshot["argv"]),
+            "environment": blob_obj(snapshot["environment"]),
+            "power_settings": blob_obj({
+                "effective": spec.get("power", {}),
+                "requested_profile": snapshot["power_profile"],
+            }),
+            "inputs": inputs,
+        },
+        "host_facts": facts, "feature_states": states,
+    }
+    digest = store.put_record(record)
+    if store.get_record(digest) != record:
+        raise ParityError("new run record failed content-addressed round trip")
+    return digest
+
+
+def cmd_capture_host_facts(args) -> int:
+    capture_host_facts(Path(args.launch))
+    return 0
+
+
+def cmd_capture_provenance(args) -> int:
+    if not args.argv:
+        raise ParityError("capture-provenance requires the real native argv after --")
+    capture_launch_provenance(
+        Path(args.launch), args.argv, heat=Path(args.heat),
+        calibration=Path(args.calibration) if args.calibration else None,
+        power_profile=args.power_profile,
+    )
+    return 0
+
+
+def cmd_record_launch(args) -> int:
+    digest = publish_launch_record(
+        Path(args.out), Path(args.out) / f"launch-{args.launch}",
+        work_root=Path(args.work_root) if args.work_root else None,
+    )
+    print(digest)
+    return 0
+
+
 # ----------------------------------------------------------------------------------------------------------------- compare
 
 def compare(parity: dict, baseline: dict) -> tuple[list, bool]:
@@ -563,6 +777,21 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("summarise")
     p.add_argument("out")
     p.set_defaults(fn=cmd_summarise)
+    p = sub.add_parser("capture-host-facts", help="passive native-session host snapshot")
+    p.add_argument("launch")
+    p.set_defaults(fn=cmd_capture_host_facts)
+    p = sub.add_parser("capture-provenance", help="capture native argv and input selection")
+    p.add_argument("launch")
+    p.add_argument("--heat", required=True)
+    p.add_argument("--calibration")
+    p.add_argument("--power-profile", required=True)
+    p.add_argument("argv", nargs=argparse.REMAINDER)
+    p.set_defaults(fn=cmd_capture_provenance)
+    p = sub.add_parser("record-launch", help="commit one completed launch into run-record v1")
+    p.add_argument("out")
+    p.add_argument("--launch", type=int, required=True)
+    p.add_argument("--work-root")
+    p.set_defaults(fn=cmd_record_launch)
     p = sub.add_parser("baseline")
     p.add_argument("out", help="a measure OUT directory or its parity.json")
     p.add_argument("--name", required=True)
@@ -579,7 +808,7 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.fn(args)
-    except (ParityError, KeyError, ValueError) as exc:
+    except (ParityError, KeyError, ValueError, OSError, TypeError) as exc:
         print(f"flashnext-parity: ERROR: {exc}", file=sys.stderr)
         return 2
 

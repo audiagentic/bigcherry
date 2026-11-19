@@ -1,0 +1,62 @@
+{
+  "kinds": {
+    "radiance.live_policy": {
+      "excluded_inputs": [
+        "engine_build",
+        "cache_version",
+        "plan_key",
+        "host_pool_mib",
+        "host_kv_mib",
+        "helper_budgets_mib",
+        "engine_args",
+        "kernel_build",
+        "heat_file",
+        "histogram_file",
+        "shm",
+        "source_revision",
+        "run_id",
+        "host_facts_digest"
+      ],
+      "key_fields": [
+        "engine_cards",
+        "helper_cards",
+        "helper_runtime",
+        "histogram_period_s",
+        "layout",
+        "model",
+        "objective",
+        "policy_key_version",
+        "power_profile",
+        "remote_service"
+      ],
+      "key_version": 2,
+      "quantity_fields": [
+        "txn_p50_ns",
+        "txn_p95_ns",
+        "copy_bytes_per_s",
+        "heat_gap_max_ns",
+        "heat_watermarked",
+        "hot_set_k",
+        "marginal_error_ppm",
+        "marginal_observations",
+        "drift_half_life_observations",
+        "observation_rate_per_s",
+        "tail_share_gain_ppm",
+        "tail_lane_service_ns_per_s",
+        "tail_lane_row_ns",
+        "lane_lost_ns",
+        "effect_rows_per_s",
+        "effect_noise_max_ns",
+        "effect_row_noise_ns",
+        "effect_window_noise_ladder",
+        "abort_quiescent_ns"
+      ],
+      "storage": "native-toml",
+      "zero_allowed": [
+        "lane_lost_ns",
+        "heat_watermarked"
+      ]
+    }
+  },
+  "schema_version": 1
+}

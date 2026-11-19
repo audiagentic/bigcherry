@@ -42,6 +42,12 @@ class RuntimeAssetsTests(unittest.TestCase):
             (component / "component.toml").write_text('built-against = "v1.17.0"\n')
         for name in assets.SHIPPED_CONFIGS:
             (config_dir / name).write_text(f"schema = 1\n# {name}\n")
+        for name in assets.SHIPPED_HEAT_SEEDS:
+            seed = self.root / "tools/lab/radiance/heat" / name
+            seed.parent.mkdir(parents=True, exist_ok=True)
+            seed.write_bytes(("heat fixture: " + name).encode())
+        self.committed_heat = mock.patch.object(assets, "check_committed_heat")
+        self.committed_heat.start()
         self.committed_config = mock.patch.object(assets, "check_committed_config")
         self.committed_config.start()
         self.sdk = self.path / "sdk"
@@ -79,6 +85,7 @@ class RuntimeAssetsTests(unittest.TestCase):
     def tearDown(self):
         self.patch.stop()
         self.committed_config.stop()
+        self.committed_heat.stop()
         self.temp.cleanup()
 
     def packaged(self):
@@ -324,9 +331,10 @@ class RuntimeAssetsTests(unittest.TestCase):
         for pattern, required in assets.RUN_MANIFEST:
             if not required:
                 continue
-            if pattern.startswith("configs/"):
-                members = [self.root / "engines/radiance" / pattern]
-                refusal = "RSC12 config closure changed"
+            if pattern.startswith(("configs/", "heat/")):
+                members = ([self.root / "engines/radiance" / pattern] if pattern.startswith("configs/")
+                           else [self.root / "tools/lab/radiance" / pattern])
+                refusal = "RSC12 config closure changed" if pattern.startswith("configs/") else "heat"
             else:
                 members = list(self.build.glob(pattern))
                 refusal = "missing runtime requirement"
@@ -355,6 +363,46 @@ class RuntimeAssetsTests(unittest.TestCase):
         # Two source TOMLs, no source tree, scripts or layouts in the payload.
         self.assertFalse((installed / "engines").exists())
         self.assertFalse((installed / "tools").exists())
+
+    def test_heat_seeds_are_source_bound_and_in_installed_manifest(self):
+        asset, archive, checksum = self.packaged()
+        with tarfile.open(archive, "r:gz") as tar:
+            manifest = json.load(tar.extractfile("bundle.json"))
+            for name in assets.SHIPPED_HEAT_SEEDS:
+                member = f"heat/{name}"
+                content = (self.root / "tools/lab/radiance/heat" / name).read_bytes()
+                self.assertIn(member, asset["file_names"])
+                self.assertEqual(tar.extractfile(member).read(), content)
+                self.assertEqual(manifest["files"][member]["sha256"],
+                                 assets.digest(self.root / "tools/lab/radiance/heat" / name))
+        installed = assets.restore(archive, checksum, asset, self.root,
+                                   self.path / "heat-install", self.sdk)
+        for name in assets.SHIPPED_HEAT_SEEDS:
+            self.assertEqual((installed / "heat" / name).read_bytes(),
+                             (self.root / "tools/lab/radiance/heat" / name).read_bytes())
+
+    def test_real_heat_seeds_match_reviewed_committed_digests(self):
+        for name in assets.SHIPPED_HEAT_SEEDS:
+            seed = ROOT.parent / "tools/lab/radiance/heat" / name
+            self.assertEqual(assets.digest(seed), assets.SHIPPED_HEAT_DIGESTS[name])
+            assets.check_committed_heat(ROOT.parent, name, seed.read_bytes())
+
+    def test_heat_digest_changes_invalidate_bundle_reuse_key(self):
+        original = assets.payload_contract_key()
+        with mock.patch.dict(assets.SHIPPED_HEAT_DIGESTS,
+                             {assets.SHIPPED_HEAT_SEEDS[0]: "0" * 64}):
+            self.assertNotEqual(original, assets.payload_contract_key())
+
+    def test_heat_source_missing_or_not_committed_refuses_pack(self):
+        seed = self.root / "tools/lab/radiance/heat" / assets.SHIPPED_HEAT_SEEDS[0]
+        seed.unlink()
+        with self.assertRaisesRegex(assets.BundleError, "heat"):
+            self.packaged()
+        seed.write_bytes(b"changed")
+        with mock.patch.object(assets, "check_committed_heat",
+                               side_effect=assets.BundleError("uncommitted heat seed")):
+            with self.assertRaisesRegex(assets.BundleError, "uncommitted heat"):
+                self.packaged()
 
     def test_changed_or_extra_rsc12_source_config_refuses_pack(self):
         extra = self.root / "engines/radiance/configs/unreviewed.toml"

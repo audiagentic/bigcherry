@@ -1669,6 +1669,8 @@ std::vector<std::string> resolver_args(const Options& o) {
         a.insert(a.end(), {"--configs", c.string()});
     if (!o.model_root.empty())
         a.insert(a.end(), {"--model-root", o.model_root.string()});
+    if (!o.run_dir.empty())
+        a.insert(a.end(), {"--run-dir", o.run_dir.string()});
     if (!o.calibration_cache.empty())
         a.insert(a.end(), {"--calibration", o.calibration_cache.string()});
     for (const auto& s : o.sets)
@@ -1937,6 +1939,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     // configs or layouts that came from the environment are passed as arguments (load_layouts' rule: configs
     // replace the layout files unless --layouts is given).
     EnginePlanInputs in = given;
+    in.options.run_dir = run_dir;
     {
         const auto configs = config_sources(given.options.configs);
         in.options.configs = configs;
@@ -2367,7 +2370,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     throw PlanFailed("plan: no measured manifest after 5 rounds");
 }
 
-EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& /*run_dir*/,
+EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
                                    const Hooks& hooks) {
     if (!hooks.admit_power || !hooks.wait)
         throw PlanFailed("replay: missing required durable power admission or owner stop gate");
@@ -2401,6 +2404,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         throw PlanFailed("replay: the engine, helper and runtime home must belong to this bc-serve build");
 
     EnginePlanInputs in = given;
+    in.options.run_dir = run_dir;
     const std::string name = m.spec.intent.layout;
     if (in.explicit_power_profile && in.power_profile != m.spec.intent.power.profile)
         throw ReplayFailed(ReplayRefusal::execution_projection,

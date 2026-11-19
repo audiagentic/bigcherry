@@ -120,6 +120,7 @@ def _check_schema(value: Any, spec: dict, root: dict, where: str) -> None:
             "string": lambda: isinstance(value, str),
             "integer": lambda: type(value) is int,
             "number": lambda: type(value) in (int, float) and math.isfinite(value),
+            "boolean": lambda: type(value) is bool,
         }
         if kind not in matches or not matches[kind]():
             raise RecordError(f"{where}: expected {kind}")
@@ -166,6 +167,21 @@ def validate_record(record: Any) -> dict[str, Any]:
     _check_schema(record, schema, schema, "record")
     # Arbitrary workload/host details must still be JSON, with no NaN/Infinity.
     _json_bytes(record)
+    # Optional MRC05 metric metadata is strict when supplied. Legacy MRC01
+    # records remain readable but cannot be used to create measured gates.
+    if "metric_specs" in record:
+        for phase in ("decode", "prefill", "ttft"):
+            if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
+                raise RecordError(f"metric_specs.{phase}: direction missing or extra metric")
+            for spec in record["metric_specs"][phase].values():
+                if type(spec["gated"]) is not bool:
+                    raise RecordError("metric gate must be a boolean")
+    # VA25 validity must not have internally contradictory verdict metadata.
+    # Absence is supported for pre-MRC06 v1 records; such records remain readable.
+    if "validity" in record:
+        validity = record["validity"]
+        if (validity["state"] == "valid") != (not validity["reason_codes"]):
+            raise RecordError("validity: reason_codes disagree with execution verdict")
     return record
 
 

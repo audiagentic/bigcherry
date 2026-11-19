@@ -71,6 +71,37 @@ Large across six PRs. Risk: a half-migrated state with two stores; mitigate by r
 
 Producers added on 2026-11-19 that already write their own receipts and should migrate: the compile-crash retry receipts (`bigcherry-compile-retries.jsonl` in the build dir and `<work-root>/build-compile-retries.jsonl`, #1175) and the ad hoc hardware-proof scripts of the day (two-start replay proof, dense TP3 sweep) that stream-bench JSON and `session.json` were stitched together for.
 
+## Slice 1: Flash-Next parity producer (2026-11-20)
+
+The hardware harness now produces one immutable MRC01 record per completed
+launch by default (`--records`; `--no-records` is an explicit opt-out).
+The native engine remains Python-free; Python consumes the run's strict
+manifest, feature-state snapshot, per-launch measurements, source heat and
+selected calibration evidence after the owner has stopped the session.
+The platform store independently validates every content-addressed blob and
+record. Its MRC05 direction/gate/repeat metadata matches the parity harness
+exactly; the card-free fixture runs both results compare and the harness's
+unchanged compare across two baseline and two candidate launches.
+
+Retained transition boundary: `OUT/parity.json` is still written and existing
+`baseline` / `compare` readers remain live, as explicitly required for this
+slice. It is a compatibility summary, not the canonical measurement writer.
+Do not retire it before consumer scanning. The origin/main base for this slice
+contains MRC05 but not the newly pushed MRC04 reader, so selected calibration
+TOML was independently verified in that slice; slice 2 replaces the
+temporary reader with MRC04's shared validator.
+Other producer migrations and hardware activation remain pending.
+
+## Slice 2: workload, llama.cpp, experiment producers, MRC04 consolidation (2026-11-20)
+
+- Replace the temporary parity calibration digest logic with MRC04's strict current/legacy/invalid TOML reader. Only the selected current calibration row can become measured evidence.
+- A native Radiance workload run now publishes immutable MRC01 content, with manifest bytes captured while the source exists. Historical index paths were invalidated by the November 17 purge: the old results/index.jsonl is read-only. "results list" exposes historical rows as legacy / missing_content_provenance, with no baseline activation and no automatic conversion.
+- The BigCherry-owned llama.cpp wrapper invokes the unmodified external bench/run_bench.py and intercepts its canonical result append calls. This preserves the benchmark process and measured quantities, writing a single MRC01 record rather than new JSON/family/SQLite results. Direct upstream invocations still write their own legacy stores, so operators must use the managed wrapper.
+- HI47 experiment bundles publish a result record only when a typed measured-results sidecar exists. The current experiment.json and measured values are content blobs. VA25 canonical execution evidence supplies the optional MRC01 validity field and invalid/missing evidence blocks results baseline, compare and history activation.
+- Tests use synthetic hosts/manifests/llama rows/external run_bench and actual MRC04 calibration fixtures; no GPU needed.
+
+Remaining separate slices: bc-serve calibration/lab producers, RSC02 S15, other campaign/compile receipts and migration of consumers still reading old stores. No historic row is rewritten; unrepresentable llama PPL/standard deviation metrics remain verbatim in source-row provenance until a schema extension can represent those phases faithfully.
+
 ## Change Log
 
 - 2026-11-19T00:50:46.203067+00:00 (created-by): Created by agent
