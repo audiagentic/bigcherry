@@ -1,6 +1,7 @@
 """Card-free tests of the Flash-Next parity harness (flashnext-parity.sh, flashnext_parity.py) with synthetic raw files."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import subprocess
@@ -74,6 +75,58 @@ def quiet(fn, *a):
     with redirect_stdout(buf):
         rc = fn(*a)
     return rc, buf.getvalue()
+
+
+class ProvenanceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.out = self.dir / "out"
+        self.out.mkdir()
+
+    def write(self, name, content):
+        path = self.dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path
+
+    def test_captures_actual_runtime_bytes_and_build_metadata(self):
+        files = {
+            "bin/radiance": b"engine",
+            "radiance_home/bin/bc-serve": b"owner",
+            "radiance_home/helpers/r3_moe_worker": b"worker",
+            "radiance_home/kernels/libr3.so": b"kernels",
+            "configs/flashnext.toml": b"# installed catalogue\n",
+            "bigcherry-build-metadata-radiance.json": b'{"build_id":"checkpoint","runtime_artifacts":{}}\n',
+        }
+        for name, content in files.items():
+            self.write(f"build/{name}", content)
+        fp.capture_build(self.dir / "build", self.out)
+        members = json.loads((self.out / "runtime-members.json").read_bytes())
+        self.assertEqual(members, {name: hashlib.sha256(content).hexdigest() for name, content in files.items()})
+        self.assertEqual((self.out / "bigcherry-build-metadata-radiance.json").read_bytes(),
+                         files["bigcherry-build-metadata-radiance.json"])
+
+    def test_archives_failed_session_logs_only_for_the_launch_owner(self):
+        manifest = self.write("native/manifest.json", b"{}\n")
+        processes = [
+            {"role": role, "log": str(self.write(f"native/{role}-1.log", role.encode()))}
+            for role in ("engine", "helper0", "helper1")
+        ]
+        record = json.dumps({"owner_pid": 91, "state": "failed", "processes": processes,
+                             "manifest": str(manifest)}).encode()
+        session = self.write("native/session.json", record)
+        def archive(pid):
+            return fp.main(["archive-session", str(session), "--owner-pid", str(pid), "--out", str(self.out)])
+
+        self.assertEqual(archive(92), 0)
+        self.assertEqual(list(self.out.iterdir()), [])
+        self.assertEqual(archive(91), 0)
+        self.assertEqual((self.out / "session.json").read_bytes(), record)
+        self.assertEqual((self.out / "manifest.json").read_bytes(), b"{}\n")
+        self.assertEqual((self.out / "native-logs/helper1-1.log").read_bytes(), b"helper1")
+        self.assertEqual((self.out / "helper0.log").read_bytes(), b"helper0")
 
 
 class SummariseTests(unittest.TestCase):

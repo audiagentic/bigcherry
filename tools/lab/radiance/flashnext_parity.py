@@ -5,6 +5,7 @@ flashnext-parity.sh drives the launches and writes raw files under OUT/launch-<i
 not process control, so it can be tested without cards:
 
   run-info OUT --build DIR --launches N --port P --set NAME=VALUE...   OUT/run.json: build, revision, pin, date, workload
+  archive-session SESSION --owner-pid PID --out DIR   native session record and per-process logs
   warmup-plan MANIFEST                  {"policy": bool, "warmup_s": float, ...} from spec.handoff.placement.live_policy
   doc-calibrate --url U --tokens T --out FILE   chars per token of the docs corpus, measured with one probe request
   doc-prefill --url U --calibration FILE --slot measure:K|warmup:K --out FILE   one long document prefill, max_tokens 1
@@ -14,7 +15,7 @@ not process control, so it can be tested without cards:
   compare OUT --baseline FILE           table against a baseline; exit 1 on a gated regression beyond its allowance
 
 Tokens/s is never gated across builds (MTP draft acceptance differs per build): the gated metrics are cold prefill and
-engine step time; acceptance and the live policy's transactions are reported only. Standard library only.
+engine step time; acceptance and the live policy's transactions are reported only.
 """
 
 from __future__ import annotations
@@ -25,6 +26,7 @@ import hashlib
 import json
 import os
 import re
+import shutil
 import statistics
 import subprocess
 import sys
@@ -116,6 +118,22 @@ def build_identity(build: Path) -> dict:
     return {k: data.get(k) for k in ("build_id", "build_plan_id", "source_slice_id", "binary_hash", "runtime_bundle_hash")}
 
 
+def capture_build(build: Path, out: Path) -> None:
+    """Hash the runtime closure as measured, using the Radiance release member layout."""
+    from bigcherry.release.runtime_assets import BUILD_METADATA, RUN_MANIFEST, digest
+
+    config_dir = build if (build / "configs/flashnext.toml").is_file() else REPO / "engines/radiance"
+    members = {}
+    for pattern, _ in RUN_MANIFEST:
+        base = config_dir if pattern.startswith("configs/") else build
+        for path in sorted(base.glob(pattern)):
+            if path.is_file():
+                members[path.relative_to(base).as_posix()] = digest(path)
+    if (build / BUILD_METADATA).is_file():
+        shutil.copyfile(build / BUILD_METADATA, out / BUILD_METADATA)
+    _write(out / "runtime-members.json", members)
+
+
 def cmd_run_info(args) -> int:
     workload = {}
     for item in args.set or []:
@@ -125,11 +143,36 @@ def cmd_run_info(args) -> int:
         workload[name] = int(value) if re.fullmatch(r"-?\d+", value) else value
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
+    capture_build(Path(args.build), out)
     _write(out / "run.json", {
         "schema": SCHEMA, "build": str(Path(args.build).resolve()), "build_identity": build_identity(Path(args.build)),
         "revision": git_revision(), "radiance_pin": radiance_pin(),
         "date": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
         "launches": args.launches, "port": args.port, "workload": workload})
+    return 0
+
+
+def cmd_archive_session(args) -> int:
+    path, out = Path(args.session), Path(args.out)
+    if not path.is_file():
+        return 0
+    raw = path.read_bytes()
+    session = json.loads(raw)
+    if session["owner_pid"] != args.owner_pid:
+        return 0
+    (out / "session.json").write_bytes(raw)
+    manifest = session.get("manifest")
+    if manifest and not (out / "manifest.json").is_file() and Path(manifest).is_file():
+        shutil.copyfile(manifest, out / "manifest.json")
+    logs = out / "native-logs"
+    logs.mkdir(exist_ok=True)
+    for process in session["processes"]:
+        source = Path(process["log"])
+        if source.is_file():
+            saved = logs / source.name
+            shutil.copyfile(source, saved)
+            if process["role"] in ("engine", "helper0"):
+                shutil.copyfile(saved, out / f"{process['role']}.log")
     return 0
 
 
@@ -538,6 +581,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--port", type=int, required=True)
     p.add_argument("--set", action="append", help="a workload constant NAME=VALUE (repeat)")
     p.set_defaults(fn=cmd_run_info)
+    p = sub.add_parser("archive-session")
+    p.add_argument("session")
+    p.add_argument("--owner-pid", type=int, required=True)
+    p.add_argument("--out", required=True)
+    p.set_defaults(fn=cmd_archive_session)
     p = sub.add_parser("warmup-plan")
     p.add_argument("manifest")
     p.add_argument("--out")
@@ -579,7 +627,7 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.fn(args)
-    except (ParityError, KeyError, ValueError) as exc:
+    except (ParityError, KeyError, OSError, ValueError) as exc:
         print(f"flashnext-parity: ERROR: {exc}", file=sys.stderr)
         return 2
 
