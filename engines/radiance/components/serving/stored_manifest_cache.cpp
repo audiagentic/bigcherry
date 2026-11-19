@@ -109,7 +109,28 @@ Json write_stamp(const FileStamp& stamp) {
             {"ctime_ns", std::to_string(stamp.ctime_ns)}};
 }
 
+void seed_file_identity(Sha256& accumulator, uint64_t size) {
+    accumulator.update("bytes=" + std::to_string(size) + "\n");
+    accumulator.update("bigcherry/rsc12/chunked-file-v1\n");
+}
+
+void add_file_identity_chunk(Sha256& accumulator, std::string_view chunk) {
+    accumulator.update(std::to_string(chunk.size()));
+    accumulator.update(":");
+    accumulator.update(sha256_hex(std::string(chunk)));
+    accumulator.update("\n");
+}
+
 } // namespace
+
+std::string complete_file_identity_bytes(std::string_view bytes) {
+    Sha256 accumulator;
+    seed_file_identity(accumulator, bytes.size());
+    constexpr size_t chunk_bytes = 1024ULL * 1024ULL;
+    for (size_t offset = 0; offset < bytes.size(); offset += chunk_bytes)
+        add_file_identity_chunk(accumulator, bytes.substr(offset, std::min(chunk_bytes, bytes.size() - offset)));
+    return accumulator.hex_digest();
+}
 
 std::string complete_file_identity(const std::filesystem::path& path) {
     // The historical v1 chunked-file digest is kept BYTE FOR BYTE: only the
@@ -120,8 +141,7 @@ std::string complete_file_identity(const std::filesystem::path& path) {
     if (!in)
         throw std::runtime_error("cannot open static input file " + path.string());
     Sha256 accumulator;
-    accumulator.update("bytes=" + std::to_string(before.size) + "\n");
-    accumulator.update("bigcherry/rsc12/chunked-file-v1\n");
+    seed_file_identity(accumulator, before.size);
     std::string chunk(1024ULL * 1024ULL, '\0');
     uint64_t read_bytes = 0;
     for (;;) {
@@ -134,10 +154,7 @@ std::string complete_file_identity(const std::filesystem::path& path) {
         if (read_bytes > UINT64_MAX - static_cast<uint64_t>(count))
             throw std::runtime_error("static input file size overflows");
         read_bytes += static_cast<uint64_t>(count);
-        accumulator.update(std::to_string(static_cast<uint64_t>(count)));
-        accumulator.update(":");
-        accumulator.update(sha256_hex(std::string(chunk.data(), static_cast<size_t>(count))));
-        accumulator.update("\n");
+        add_file_identity_chunk(accumulator, std::string_view(chunk.data(), static_cast<size_t>(count)));
         if (in.eof())
             break;
     }

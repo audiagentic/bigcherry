@@ -9,6 +9,7 @@
 #include <nlohmann/json.hpp>
 #include <optional>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace bc::serving::session {
@@ -52,6 +53,8 @@ ModelIdentity cached_model_identity(const std::filesystem::path& model, const st
 // A bounded-memory, domain-separated SHA-256 fingerprint over every file byte.
 // Each ordered 1 MiB chunk contributes its hash, count and exact byte length.
 std::string complete_file_identity(const std::filesystem::path& path);
+// Same persisted chunked-file-v1 identity over bytes already read and authenticated.
+std::string complete_file_identity_bytes(std::string_view bytes);
 
 std::string static_resolution_key(const StaticResolutionInputs& in);
 

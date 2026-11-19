@@ -116,6 +116,7 @@ struct PinnedManifestSnapshot {
     std::shared_ptr<PinnedManifest> pinned;
     v2::Manifest parsed;
     std::string sha256;
+    std::string file_identity;
 };
 
 PinnedManifestSnapshot pin_manifest_file(const fs::path& path, v2::PlanUse use) {
@@ -151,7 +152,8 @@ PinnedManifestSnapshot pin_manifest_file(const fs::path& path, v2::PlanUse use) 
     if (!parsed)
         throw PlanFailed(v2::render_human("bc-serve manifest admission", parsed.error()));
     auto pinned = std::make_shared<PinnedManifest>(bytes);
-    return {std::move(pinned), std::move(parsed.value()), sha256_hex(bytes)};
+    const std::string file_identity = complete_file_identity_bytes(bytes);
+    return {std::move(pinned), std::move(parsed.value()), sha256_hex(bytes), file_identity};
 }
 
 } // namespace
@@ -2361,7 +2363,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     throw PlanFailed("writer failed to publish its original native P1/P2 replay evidence");
                 const StoredManifestIndex entry{cache_selection->key,
                                                 manifest.filename().string(),
-                                                final_snapshot.sha256,
+                                                final_snapshot.file_identity,
                                                 cache_selection->model_digest,
                                                 cache_selection->model_stamp,
                                                 complete_file_identity(s8_source)};
@@ -2528,7 +2530,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
                                std::string("replay: stored attestation is corrupt: ") + e.what());
         }
         if (bound.manifest_filename != stored.filename().string() ||
-            bound.digest != sha256_hex(bytes))
+            bound.digest != complete_file_identity_bytes(bytes))
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                "replay: stored attestation no longer binds the original manifest bytes");
         if (bound.model_digest.empty() || bound.model_digest != attestation->model_digest)

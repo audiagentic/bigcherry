@@ -164,6 +164,8 @@ int main() {
 
         write(saved, "unchanged strict-v2 manifest bytes\n");
         const std::string digest = ss::complete_file_identity(saved);
+        expect(digest == ss::complete_file_identity_bytes("unchanged strict-v2 manifest bytes\n"),
+               "fingerprint over authenticated bytes must preserve the persisted chunked identity");
         // RED P2-6: the actual config-index writer stores a full model digest
         // keyed by stat identity, and the replay lookup must not even call the
         // counting full-file reader when all identity fields are unchanged.
@@ -177,6 +179,8 @@ int main() {
                "first start fingerprints all model bytes");
         ss::write_stored_index(
             index, {original, saved.filename().string(), digest, model_first.digest, model_first.stamp});
+        expect(ss::stored_manifest_for(t.root, "fixture", original) == saved,
+               "a freshly serialized named index must resolve using the existing on-disk fingerprint format");
         const ss::ModelIdentity model_hit = ss::cached_model_identity(model, index, counting_model_reader);
         expect(full_model_reads == 1 && model_hit.digest == model_first.digest,
                "unchanged model must be a true cache hit with zero model reader calls");
