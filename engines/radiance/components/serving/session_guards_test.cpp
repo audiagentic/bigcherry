@@ -145,6 +145,31 @@ void producer_contract_case(std::string_view which) {
         publish_like_engine(rank, counts);
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), container, nullptr, &why) == HistogramVerdict::unsafe,
                "a count beyond the 49th layer is still padding");
+    } else if (which == "proof_lag") {
+        // A heavily loaded disk stretches the gap between the producer's two renames (raw file, then its proof): a poll
+        // inside the gap sees the new raw file beside the previous generation's proof. Within the grace it is re-read
+        // and qualifies; past it the pair is unsafe and the reason names what differs.
+        HistogramExpectation model{49, 2, launch, {}, std::string(kLaunchNonce)};
+        counts[0] = 9;
+        publish_like_engine(rank, counts);                       // generation 1: raw + matching proof
+        counts[0] = 10;
+        publish_like_engine(rank, counts, kOtherNonce);          // generation 2 raw, a proof of another launch: the gap
+        std::thread producer([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            publish_like_engine(rank, counts);                   // the proof catches up
+        });
+        std::string why;
+        model.proof_grace = std::chrono::seconds(5);
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, nullptr, &why) == HistogramVerdict::fresh,
+               "a proof that catches up within the grace qualifies");
+        producer.join();
+        publish_like_engine(rank, counts, kOtherNonce);
+        model.proof_grace = std::chrono::milliseconds(60);
+        const auto t0 = std::chrono::steady_clock::now();
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, nullptr, &why) == HistogramVerdict::unsafe &&
+                   why.find("launch nonce") != std::string::npos && why.find("grace") != std::string::npos &&
+                   std::chrono::steady_clock::now() - t0 >= std::chrono::milliseconds(60),
+               "a proof that never catches up is unsafe after the grace and the reason says which field differs");
     } else if (which == "startup_wait") {
         const HistogramExpectation model{49, 2, launch, {}, std::string(kLaunchNonce)};
         std::vector<uint32_t> zero(static_cast<size_t>(kMaxLayers) * 2, 0);
@@ -204,7 +229,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         expect(argc == 1, "invalid test arguments");
-        for (const char* check : {"layers", "rename", "reset", "foreign", "mtp_layer", "startup_wait"})
+        for (const char* check : {"layers", "rename", "reset", "foreign", "mtp_layer", "startup_wait", "proof_lag"})
             producer_contract_case(check);
         using bc::serving::v2::LivePolicy;
         expect(replay_verdict(1, false, "") == ReplayVerdict::disabled, "MTP depth <= 1 is exempt");

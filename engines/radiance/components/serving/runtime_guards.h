@@ -34,6 +34,10 @@ struct HistogramExpectation {
     std::chrono::system_clock::time_point launched_at{};
     std::optional<HistogramIdentity> identity;
     std::string launch_nonce;
+    // The producer renames the raw file and then its proof, so a poll can see the new raw file beside the old proof
+    // for as long as the producer takes between the two renames (microseconds, but a loaded disk stretches it). A
+    // mismatch is re-read for this long before it is called unsafe; the guards derive it from the declared period.
+    std::chrono::nanoseconds proof_grace{std::chrono::milliseconds(100)};
 };
 // `reason`, when given, names the check that decided a non-fresh verdict (the refusal text carries it).
 HistogramVerdict histogram_verdict(const std::filesystem::path& rank_file,

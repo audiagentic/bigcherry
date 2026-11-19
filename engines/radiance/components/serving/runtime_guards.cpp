@@ -146,7 +146,8 @@ HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::syste
     // The producer must rename the raw histogram, then rename its companion.
     // A poll in that small gap may see two different generations. Re-read
     // briefly rather than mistaking normal atomic publication for degradation.
-    for (int attempt = 0; attempt != 6; ++attempt) {
+    const auto grace_end = std::chrono::steady_clock::now() + expected.proof_grace;
+    for (;;) {
         const Descriptor fd(::open(rank_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
         if (fd.get() < 0)
             return errno == ENOENT ? verdict(HistogramVerdict::missing, "the histogram file does not exist")
@@ -192,21 +193,26 @@ HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::syste
             return verdict(HistogramVerdict::unsafe, "the histogram file changed while it was read");
 
         r3::heat_publication::Proof proof{};
-        const bool matched =
-            read_heat_proof(rank_file, &proof) &&
-            std::string_view(proof.launch_nonce.data(), proof.launch_nonce.size()) == expected.launch_nonce &&
-            proof.device == static_cast<uint64_t>(before.st_dev) &&
-            proof.inode == static_cast<uint64_t>(before.st_ino) &&
-            proof.size_bytes == static_cast<uint64_t>(required) &&
-            proof.modified_sec == static_cast<int64_t>(before.st_mtim.tv_sec) &&
-            proof.modified_nsec == static_cast<int64_t>(before.st_mtim.tv_nsec);
-        if (!matched) {
-            if (attempt != 5) {
+        const bool proof_read = read_heat_proof(rank_file, &proof);
+        std::string mismatch;
+        if (!proof_read) mismatch = "no readable proof file";
+        else {
+            const auto add = [&](const char* what) { mismatch += (mismatch.empty() ? "" : ", "); mismatch += what; };
+            if (std::string_view(proof.launch_nonce.data(), proof.launch_nonce.size()) != expected.launch_nonce) add("launch nonce");
+            if (proof.device != static_cast<uint64_t>(before.st_dev) || proof.inode != static_cast<uint64_t>(before.st_ino)) add("file identity");
+            if (proof.size_bytes != static_cast<uint64_t>(required)) add("size");
+            if (proof.modified_sec != static_cast<int64_t>(before.st_mtim.tv_sec) ||
+                proof.modified_nsec != static_cast<int64_t>(before.st_mtim.tv_nsec)) add("modification time");
+        }
+        if (!mismatch.empty()) {
+            if (std::chrono::steady_clock::now() < grace_end) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 continue;
             }
             return verdict(HistogramVerdict::unsafe,
-                           "the launch-bound proof beside the histogram does not match this launch and file");
+                           ("the launch-bound proof beside the histogram does not match this launch and file (" + mismatch +
+                            ") for longer than the publication grace")
+                               .c_str());
         }
 
         bool demand = false;
@@ -332,6 +338,9 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
                     ? handoff.telemetry.period_s * 1000000000LL
                     : 0;
             heat_startup_wait_ = std::chrono::nanoseconds(std::max(declared_period_ns, age_ns));
+            // The raw file and its proof are two renames apart: a poll that lands between them re-reads for up to
+            // one declared publication period (never less than the default) before it calls the pair unsafe.
+            heat_expectation_.proof_grace = std::chrono::nanoseconds(std::max<int64_t>(declared_period_ns, 100000000LL));
         }
         if (policy_enabled_ && !histogram_)
             return refuse("policy", "live placement needs a recorded engine heat stream");
