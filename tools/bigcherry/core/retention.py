@@ -62,6 +62,7 @@ class CleanupPlan:
     decisions: list
     unknown: list
     blocked: str | None = None      # a maintenance condition that stops any mutation (active measurement, lock)
+    content_decisions: list = field(default_factory=list)  # report-only: never sent to run quarantine
 
     def totals(self) -> dict:
         out = {"candidate": [0, 0], "protected": [0, 0]}
@@ -155,7 +156,7 @@ def inspect_workspace(root: Path, *, measure: bool = True) -> Inventory:
         for path in sorted(logs.iterdir()):
             inv.build_logs.append(Entry(path, "build-log", path.name,
                                         size_bytes=dir_size(path) if measure else 0))
-    known = {"build-logs", "runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", "cleanup-records", ".locks"}
+    known = {"build-logs", "runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", "cleanup-records", ".locks", "run-records"}
     if root.is_dir():
         inv.unknown += [p for p in sorted(root.iterdir()) if p.name not in known and not p.name.startswith(".")]
     return inv
@@ -243,7 +244,36 @@ def plan_cleanup(inv: Inventory, *, now: float | None = None, policy: Policy | N
             entry.path, entry.kind, entry.run_id, "protected", entry.size_bytes,
             ["build diagnostics retained indefinitely; explicit removal required"],
         ))
-    return CleanupPlan(decisions, list(inv.unknown), blocked)
+    # Run-record content lives outside runs/. Never pass these objects to the
+    # run-quarantine path. Report orphan blobs only: deletion is not implemented.
+    # Corrupt records prevent a safe reachability proof: protect everything and
+    # block run cleanup until the store is repaired.
+    from .run_records import RecordError, RunRecordStore
+
+    content = []
+    store = RunRecordStore(inv.root)
+    objects = []
+    failure = None
+    try:
+        objects = store.object_paths()
+        rooted = store.protected_paths()
+    except (RecordError, OSError) as exc:
+        rooted = set()
+        failure = f"run records unreadable: {exc}"
+        blocked = f"{blocked}; {failure}" if blocked else failure
+    for path in objects:
+        if failure or path in rooted:
+            action, reason = "protected", failure or "record root or referenced provenance blob"
+        else:
+            action, reason = "unreferenced", "unreferenced blob; inspection only (no content GC)"
+        content.append(Decision(path, "record-object", path.name, action,
+                                path.lstat().st_size, [reason]))
+    if failure:
+        for decision in decisions:
+            if decision.action == "candidate":
+                decision.action = "protected"
+                decision.reasons = [f"cleanup blocked: {blocked}"]
+    return CleanupPlan(decisions, list(inv.unknown), blocked, content)
 
 
 def render(plan: CleanupPlan, root: Path, *, verbose: bool = False) -> str:
@@ -261,6 +291,10 @@ def render(plan: CleanupPlan, root: Path, *, verbose: bool = False) -> str:
             reasons[d.reasons[0].split(":")[0].split("(")[0].strip()] = reasons.get(d.reasons[0].split(":")[0].split("(")[0].strip(), 0) + 1
     for r, n in sorted(reasons.items(), key=lambda kv: -kv[1]):
         lines.append(f"  protected, first reason: {r}: {n}")
+    if plan.content_decisions:
+        roots = sum(d.action == "protected" for d in plan.content_decisions)
+        orphan = sum(d.action == "unreferenced" for d in plan.content_decisions)
+        lines.append(f"run-record objects: {roots} protected, {orphan} unreferenced (no deletion)")
     if plan.unknown:
         lines.append(f"not part of the layout, reported and never touched: {len(plan.unknown)}")
         for p in plan.unknown[:20]:

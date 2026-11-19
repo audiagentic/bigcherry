@@ -131,6 +131,14 @@ patches = ["rad0003_mtp_full_head_switch"]
 [experiment.moe-heat-observer]
 patches = ["rad0039_moe_heat_observer"]
 
+# VTP43/VTP44: preserve the historical bf16_fp8/bf16_i8 cache behavior through the ABI44 runtime port rad0050-rad0053
+# in serving-core; the old-base rad0037/38/40/41 implementations remain historical evidence. Only rad0042's selftest
+# cases remain experiment-only. bf16_i8 is served by the named configs qwen27b-tp3-int8-556-long-bf16i8 and
+# flashnext-4gpu-bf16i8 (ENG06, 2026-11-19).
+# Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md, docs/evidence/2026-11-19-eng06-bf16i8/README.md.
+[experiment.kv-bf16-packed]
+patches = ["rad0042_kv_b16_selftest"]
+
 # VTP44: --expert-stats also counts a layer's protected (bf16) experts, so the routing tallies of Flash-Next are complete.
 # Untested, therefore experiment-only.
 [experiment.expert-stats-protected]
@@ -191,6 +199,12 @@ stack = "rocm-7-2"
 # unconditional here since ccache is present on every host this platform builds on (dev and the
 # CI image both have it); if a future host lacks it, configure fails loudly rather than silently
 # rebuilding everything, which is the right failure mode to notice and fix.
-options = { RAD_BUILD_TESTS = "OFF", CMAKE_C_COMPILER_LAUNCHER = "bc-ccache", CMAKE_CXX_COMPILER_LAUNCHER = "bc-ccache", CMAKE_HIP_COMPILER_LAUNCHER = "bc-ccache" }
+# RAD_WITH_FFMPEG = ON: the engine decodes images and video through libavformat/libavcodec/libavutil/libswscale/libswresample.
+# Left on its default (AUTO) a build that cannot find them compiles without a decoder and the engine logs "the 'vision' encoder
+# is loaded but this build has no media decoder, so every media part will be refused" while the vision tower still sits in VRAM
+# (879 MiB a rank): released builds shipped that way until 2026-11-19. ON makes a missing FFmpeg a configure error. FFmpeg 6.1 is
+# enough (rad0005 covers its avio signature). CI installs the -dev packages in its build image; on the agent container export
+# CMAKE_PREFIX_PATH=/opt/ffmpeg6 (tools/env/bigcherry-env.sh does when /opt/ffmpeg6 exists).
+options = { RAD_BUILD_TESTS = "OFF", RAD_WITH_FFMPEG = "ON", CMAKE_C_COMPILER_LAUNCHER = "bc-ccache", CMAKE_CXX_COMPILER_LAUNCHER = "bc-ccache", CMAKE_HIP_COMPILER_LAUNCHER = "bc-ccache" }
 c-compiler = "${RADIANCE_HOST_CC}"
 cxx-compiler = "${RADIANCE_HOST_CXX}"
