@@ -82,3 +82,7 @@ Added a fresh host-room preflight for cache-miss measuring starts, where no meas
 ## C22 — S10 generated-edition resolver boundary (2026-11-19)
 
 Changed `resolve_s10` to validate against the selected generated `kApiVersion` and `kContractVersion`, removing a hardcoded v2-only guard that prevented reuse of the same resolver with the explicit v3 codec. Extended the card-free successor test to resolve an unmeasured v3 manifest through S10 and verify that a v2-edition document is still refused. `bc_serving_v3_wire_test` and `bc_v2_s10_test` both built and passed. This proves the shared resolver's edition boundary only; the production writer, component runtime switch, and native YAML launch path remain open under RUM04. Ledger event `chg_20261119_113851_unblocked-the-shared-s10-resol_2647` records this slice.
+
+## C23 — Generated-edition include seam (2026-11-19)
+
+Changed serving runtime owners from explicit `generated/v2/...` includes to the generated header names exported by their linked manifest target. Removed the duplicate explicit v2 codec include in the P1 producer. The existing v2 component build succeeded, and the focused v2 S10 and generated-v3 wire tests passed. The build still selected v2 for `bc-serve`; this removes a source-level edition lock but does not prove a full v3 component build or activate native YAML launch. Ledger event `chg_20261119_114329_reduced-generated-v2-hardcodin_1790` records this refactor.

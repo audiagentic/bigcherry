@@ -6,7 +6,6 @@
 #include "plan_cache.h"
 #include "sha256.h"
 #include "serving_codec.h"
-#include "generated/v2/serving_codec.h"
 #include "v2/p1_live_room.h"
 #include "v2/p1_measurement.h"
 #include "worker_footprint.h"

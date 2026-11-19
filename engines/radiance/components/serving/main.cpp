@@ -1,6 +1,6 @@
 #include "serving.h"
 
-#include "generated/v2/serving_codec.h"
+#include "serving_codec.h"
 #include "live_policy_ingest.h"
 #include "manifest_power.h"
 #include "manifest_writer.h"

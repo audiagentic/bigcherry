@@ -1,6 +1,6 @@
 #include "v2/s10_inputs.h"
 
-#include "generated/v2/serving_codec.h"
+#include "serving_codec.h"
 
 #include <algorithm>
 
