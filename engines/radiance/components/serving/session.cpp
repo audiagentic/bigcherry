@@ -942,6 +942,8 @@ class Owner {
                 record_["feature_states"] = observed.entries;
                 for (const auto& warning : observed.warnings)
                     std::cerr << "bc-serve: " << warning << '\n';
+                if (s_.strict_production_features && !observed.warnings.empty())
+                    throw PlanFailed("strict production feature refusal: " + observed.warnings.front());
             }
             if (!event("planned") && s_.publish_feature_states)
                 throw PlanFailed("cannot persist the feature-state snapshot in the owner record");

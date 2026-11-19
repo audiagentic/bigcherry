@@ -146,6 +146,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records, lab_experiment;
     bool calibration_run = false;
     bool allow_power_apply = false;
+    bool strict_production_features = false;
     bool json = false;
     std::vector<std::string> passed; // the options as given, for `start` to hand to its detached `serve`
     for (int i = 2; i < argc; ++i) {
@@ -215,6 +216,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             calibration_store = need();
         } else if (arg == "--allow-power-apply") {
             allow_power_apply = true;
+            passed.push_back(arg);
+        } else if (arg == "--strict-production-features") {
+            strict_production_features = true;
             passed.push_back(arg);
         } else {
             std::string message = cmd;
@@ -417,6 +421,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
     session.publish_feature_states = true;
+    session.strict_production_features = strict_production_features;
     if (calibration_run)
         session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
     session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {

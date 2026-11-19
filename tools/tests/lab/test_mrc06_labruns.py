@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 from bigcherry.cli.main import main
-from bigcherry.core import measurement_producers, run_records
+from bigcherry.core import engines, feature_registry, measurement_producers, run_records
 
 FAKE_HOST = {"kernel_release": {"value": "fixture", "readable": True}}
 STATES = [
@@ -23,6 +23,11 @@ STATES = [
         "observed_at": "2026-11-20T00:00:00Z",
     }
 ]
+STATES.extend({
+    "engine": engines.RADIANCE, "feature_id": name, "state": "inactive",
+    "reason_code": "fixture_not_configured", "reason_detail": "",
+    "observed_at": "2026-11-20T00:00:00Z",
+} for name in feature_registry.feature_ids(engines.RADIANCE) if name != "live_policy")
 
 
 def make_run(root: Path, *, state="running", events=None):
