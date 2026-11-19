@@ -197,6 +197,7 @@ def test_bundle_measurement_marks_missing_attestation_invalid(tmp_path):
     digest = bundle.publish_measurement(
         location,
         metrics={"decode": {"tokens_per_second": 10.0}, "prefill": {}, "ttft": {}},
+        metric_specs={"decode": {"tokens_per_second": {"direction": "higher", "gated": False}}, "prefill": {}, "ttft": {}},
         identity={
             "engine": "llama.cpp",
             "build_id": "b1",
@@ -312,6 +313,8 @@ def test_bundle_typed_sidecar_cli_and_content_validation(tmp_path, capsys):
         },
         "workload": {"name": "fixture", "definition": {"prompt": 512}},
         "metrics": {"decode": {"tokens_per_second": 12.3}, "prefill": {}, "ttft": {}},
+        "metric_specs": {"decode": {"tokens_per_second": {"direction": "higher", "gated": False}},
+                         "prefill": {}, "ttft": {}},
         "metric_specs": {
             "decode": {"tokens_per_second": {"direction": "higher", "gated": True}},
             "prefill": {},
@@ -349,6 +352,7 @@ def test_bundle_typed_sidecar_cli_and_content_validation(tmp_path, capsys):
         bundle.publish_measurement(
             root,
             metrics=doc["metrics"],
+            metric_specs=doc["metric_specs"],
             identity=doc["identity"],
             workload=doc["workload"],
             expected=None,
@@ -395,6 +399,7 @@ def test_bundle_cannot_trust_observed_claim_without_process_evidence(tmp_path):
         },
         workload={"name": "fixture", "definition": {"prompt": 512}},
         metrics={"decode": {"tokens_per_second": 12.0}, "prefill": {}, "ttft": {}},
+        metric_specs={"decode": {"tokens_per_second": {"direction": "higher", "gated": False}}, "prefill": {}, "ttft": {}},
     )
     store = run_records.RunRecordStore(tmp_path)
     record = store.get_record(digest)
