@@ -8,7 +8,7 @@ breadth: ''
 skill: advanced
 created-by: agent
 work: M
-priority: P2
+priority: P3
 ---
 
 # Quantise the QSA block-key group of the bf16_i8 KV layout (design first, retrieval and KLD gates)
@@ -54,9 +54,10 @@ Either the block-key quantisation ships as an opt-in layout row with the whole-c
 
 ## Notes
 
-
+Design done 2026-11-20 (docs/evidence/2026-11-20-eng07-qsa-design/README.md). Recommended format: signed int8 QSA block keys with one f16 scale per 32 dims (alternatives: int8 + scale per 128-dim block, unscaled E4M3). Saving at one 262,144-token sequence over 12 QSA layers: bf16 192 MiB -> ~102 MiB (108 MiB with 16-byte page alignment); whole-cache bf16_i8 ratio ~1.283x -> ~1.33x bf16 (to be measured). It does not close Flash-Next bf16_i8's 5.47 GB eight-session shortfall. Risks: QSA group is not an ordinary KV layout (page pitch, residency, restore), top-k block-selection reversals (primary gate: selected-block overlap vs bf16 on recorded query tensors; KLD alone is insufficient), fused dequant register pressure on gfx1100, speculative rollback/MTP/prefix-reuse state. Priority lowered to P3 (owner direction 2026-11-20: finish items; gain is a few percent of capacity at retrieval-correctness risk); revisit if long-context capacity on Flash-Next becomes the binding constraint.
 
 ## Change Log
 
 - 2026-11-19T15:40:13.822474+00:00 (created-by): Created by agent
 - 2026-11-19T15:40:32.803620+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-19T19:42:34.688293+00:00 (updated-by): Updated: priority='P3', section:notes
