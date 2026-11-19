@@ -8,6 +8,7 @@
  * planner's (verify_owner_map). A document that does not is an error carrying the reader's own message, never a file. */
 #include "plan_cache.h"
 #include "serving.h"
+#include "v2/native_config_snapshot.h"
 #include "v2/s10_inputs.h"
 
 #include <filesystem>
@@ -27,6 +28,7 @@ struct MeasuredPlan {
 
 struct ManifestInputs {
     Resolved resolved;
+    std::optional<NativeConfigSnapshot> native_config; // Required by the generated v3 edition.
     std::string profile;                     // spec.intent.service.profile: "production" or "lab", named by the caller
     std::string instance_id;                 // UUID v4
     std::string producer_sha256;             // SHA-256 of the running bc-serve executable

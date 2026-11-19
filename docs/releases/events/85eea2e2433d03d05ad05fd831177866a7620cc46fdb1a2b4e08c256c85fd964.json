@@ -1,0 +1,21 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_122249_added-a-verified-successor-man_4213",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/manifest_writer.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "engines/radiance/components/serving/test_manifest_fixture.h",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added generated-edition-aware native YAML snapshot handling to the shared manifest writer. Contract v3 requires an admitted NativeConfigSnapshot and serializes exact snapshot bytes, digest, root and provenance; v2 rejects snapshots. Extracted the shared synthetic measured-manifest fixture and added an isolated v3 writer test target that links only the v3 wire codec plus JCS. The test passed after deleting the author file before real writer invocation; focused CTest passed 1/1 under the approved launcher, and direct rerun exited 0. Production still selects v2; native YAML consumer migration remains open.",
+  "timestamp-utc": "2026-11-19T12:22:49.138271Z",
+  "user-summary-candidate": "Added a verified successor-manifest writer checkpoint for carrying the original admitted YAML snapshot, with an isolated test proving replay still works after the authored file is removed. Production remains on the existing contract until the remaining launch-path migration is complete."
+}

@@ -403,6 +403,13 @@ std::string new_instance_id() {
 std::string file_sha256(const fs::path& file) { return sha256_hex(slurp(file)); }
 
 BuiltManifest build_manifest(const ManifestInputs& in) {
+    if constexpr (v2::kContractVersion == 3) {
+        if (!in.native_config)
+            fail("the v3 serving manifest requires an admitted native fleet YAML snapshot");
+    } else if (in.native_config) {
+        fail("the v2 serving manifest cannot carry a native fleet YAML snapshot");
+    }
+
     const Json& values = in.resolved.values;
     const Json calibration = calibration_entries(in.resolved, in.calibration_cache);
     const std::string model = values.at("engine").at("model");
@@ -477,11 +484,16 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         if (in.profile != "lab") fail("an experiment needs the lab profile");
         spec["experiment"] = in.experiment;
     }
+    Json provenance = provenance_of(in, derived_provenance, engine_only);
+    if (in.native_config) {
+        spec["native_config"] = in.native_config->manifest_field();
+        provenance["/spec/native_config"] = record("detected", "admitted native fleet YAML", "fact", "exact");
+    }
     Json doc = {{"apiVersion", v2::kApiVersion}, {"kind", v2::kKind},
                 {"metadata",
                  {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
                   {"contract_version", v2::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
-                {"spec", std::move(spec)}, {"provenance", provenance_of(in, derived_provenance, engine_only)}};
+                {"spec", std::move(spec)}, {"provenance", std::move(provenance)}};
 
     // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
     // map, ask the shared planner (the policies come from the draft), write its sets and digests into the document.

@@ -50,7 +50,10 @@ target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+set(bc_manifest_writer_sources
+  manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp
+  live_policy.cpp live_policy_manifest.cpp plan_cache.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -261,6 +264,16 @@ if(BUILD_TESTING)
   add_test(NAME bc_serving_v3_wire_test COMMAND bc_serving_v3_wire_test
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2/example.flashnext-4gpu.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/v3/contract.fingerprint")
+
+  # Compile the real writer and its owner planner with just the successor
+  # codec. Both editions export the same C++ symbols with different types.
+  add_executable(bc_serving_v3_writer_test EXCLUDE_FROM_ALL
+    manifest_writer_v3_test.cpp ${bc_manifest_writer_sources} owner_map.cpp experts.cpp)
+  target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving_v3_wire)
+  target_include_directories(bc_serving_v3_writer_test PRIVATE
+    "${CMAKE_CURRENT_BINARY_DIR}/generated" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+  add_test(NAME bc_serving_v3_writer_test COMMAND bc_serving_v3_writer_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../configs/flashnext.toml")
 
   # S9: compile and test the inactive generated v2 codec, never production linked.
   # S8: inactive typed resource and handoff rules, linked only by card-free tests.
