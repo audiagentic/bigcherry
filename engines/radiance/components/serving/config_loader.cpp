@@ -218,7 +218,7 @@ ConfigSet load_configs(const std::vector<fs::path>& files) {
     return out;
 }
 
-Json config_as_layout(const Json& c, const fs::path& model_root) {
+Json config_as_layout(const Json& c, const fs::path& model_root, const fs::path& heat_source) {
     Json l = Json::object();
     l["description"] = c.at("description");
     l["model"] = c.at("model");
@@ -239,6 +239,24 @@ Json config_as_layout(const Json& c, const fs::path& model_root) {
     Json settings = Json::object();
     for (const auto& t : kSettingsTables)
         if (c.contains(t) && !c.at(t).empty()) settings[t] = c.at(t);
+    // @bundle/heat/... is a config-only reference to the runtime data
+    // sibling of prefix/configs. Resolve it from the defining config's file,
+    // not the caller's cwd; a site/profile/--set may still override the seed.
+    if (settings.contains("handoff") && settings.at("handoff").contains("heat") &&
+        settings.at("handoff").at("heat").is_string()) {
+        const std::string seed = settings.at("handoff").at("heat").get<std::string>();
+        if (seed.starts_with("@bundle/")) {
+            const fs::path rel(seed.substr(std::string("@bundle/").size()));
+            if (heat_source.empty() || rel.is_absolute() || rel.empty() ||
+                rel.begin() == rel.end() || *rel.begin() != "heat" ||
+                std::any_of(rel.begin(), rel.end(), [](const auto& part) {
+                    return part == ".." || part == ".";
+                }) || rel.filename().empty() || rel.filename() == "heat")
+                throw std::runtime_error("config handoff.heat: unsafe @bundle/heat path");
+            settings["handoff"]["heat"] =
+                (fs::absolute(heat_source).parent_path().parent_path() / rel).lexically_normal().string();
+        }
+    }
     // The model is the config's lowest setting (engine.model; a site, profile or --set still wins). A relative path is
     // under the model root; without one the config cannot be served, which the resolver says when it is selected.
     const fs::path model = c.at("model").get<std::string>();

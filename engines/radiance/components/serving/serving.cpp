@@ -116,8 +116,8 @@ const std::vector<Field>& schema_fields() {
             "launcher COMMON R3_MOE_WORKER_MOE_DOWN_TILE=1");
         add("handoff.skip_owned", "boolean", true,
             "launcher COMMON R3_MOE_WORKER_SKIP_OWNED=1");
-        add_optional("handoff.heat", "string", "required with helpers: workload heat file has no portable path", 0, 0);
-        add_optional("handoff.histogram", "string", "required with helpers: launcher RECORD path or off, no portable path", 0, 0);
+        add_optional("handoff.heat", "string", "required with helpers: config bundle seed or site override", 0, 0);
+        add_optional("handoff.histogram", "string", "required with helpers outside a session: run-dir/heat.live or off", 0, 0);
         add("handoff.histogram_period_s", "integer", 60,
             "launcher RECORD_PERIOD=60; RHP02", "policy", "live", 0);
         add("handoff.placement", "string", nullptr,
@@ -517,7 +517,11 @@ Json load_layouts(const Options& options) {
             if (out["layout"].contains(it.key()))
                 throw std::runtime_error("config " + it.key() + " (" + configs.source.at(it.key()).get<std::string>() +
                                          ") has the name of a layout in " + out["source"][it.key()].get<std::string>());
-            out["layout"][it.key()] = config_as_layout(it.value(), options.model_root);
+            // The heat path belongs to its defining base/config, even when a
+            // variant resides in a different file.
+            const std::string heat_owner = configs.origin.at(it.key()).value("handoff.heat", it.key());
+            const fs::path heat_source = configs.source.at(heat_owner).get<std::string>();
+            out["layout"][it.key()] = config_as_layout(it.value(), options.model_root, heat_source);
             out["source"][it.key()] = configs.source.at(it.key());
             out["kind"][it.key()] = "config";
         }
@@ -1152,6 +1156,21 @@ Resolved resolve(const Options& options, const Json& facts) {
             throw std::runtime_error("--set " + key + ": derived, cannot override");
         put(values, provenance, *f, parse_set(key, set.substr(eq + 1)),
             "cli", "--set", Json::array({set}));
+    }
+    // Mutable telemetry is session state, never runtime-bundle data. The
+    // owner supplies run_dir; derive only when the effective config/site/
+    // profile/CLI did not state a histogram (including explicit "off").
+    if (!engine_only && !exists(values, "handoff.histogram") && !options.run_dir.empty()) {
+        const fs::path histogram = fs::absolute(options.run_dir) / "heat.live";
+        put(values, provenance, *field_for("handoff.histogram"), histogram.lexically_normal().string(),
+            "derived", "session run directory (portable heat.live default)",
+            Json::array({"session.run_dir"}));
+        // The live policy needs fresh heat; never overwrite a period from
+        // the config, site, profile or CLI.
+        if (provenance.at("handoff.histogram_period_s").at("origin") == "schema-default")
+            put(values, provenance, *field_for("handoff.histogram_period_s"), 1,
+                "derived", "1-second recording for live heat policy",
+                Json::array({"handoff.histogram"}));
     }
     if (value_at(values, "layout.name") != name)
         throw std::runtime_error("layout.name: resolution inconsistency");

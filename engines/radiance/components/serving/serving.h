@@ -76,6 +76,9 @@ struct Options {
     std::vector<std::filesystem::path> configs;
     // The root a config's relative model path is under (--model-root); bc-serve reads no environment for it.
     std::filesystem::path model_root;
+    // Internal session-owner context: no CLI flag. Only serve/replay populates
+    // it, to derive mutable handoff.histogram under the run directory.
+    std::filesystem::path run_dir;
     // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
     std::filesystem::path calibration_cache;
     std::vector<std::string> sets;
