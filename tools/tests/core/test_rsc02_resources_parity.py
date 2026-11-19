@@ -42,7 +42,7 @@ def test_native_python_parity_all_checked_in_configs():
         configs.update(tomllib.loads((CONFIGS / name).read_text())["config"])
     assert {c["name"] for c in fixture["cases"]} == set(configs)
     assert all(sum(c["name"] == name for c in fixture["cases"]) == 2 for name in configs)
-    assert len(fixture["cases"]) == 32
+    assert len(fixture["cases"]) == 36
     assert {c["hardware_profile"] for c in fixture["cases"]} == {
         "test_rsc11_inventory.FACTS", "test_power_plan.layout.FACTS"
     }

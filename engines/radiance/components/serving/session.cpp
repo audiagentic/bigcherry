@@ -1147,9 +1147,17 @@ class Owner {
     }
     bool save_failed_ = false;
 
-    void track(const std::string& role, pid_t pid, const fs::path& log) {
+    void track(const std::string& role, pid_t pid, const fs::path& log,
+               const std::vector<std::string>* exact_argv = nullptr) {
         children_.push_back({role, pid, log});
         Json p = {{"role", role}, {"pid", pid}, {"pgid", pid}, {"log", log.string()}};
+        if (exact_argv) {
+            // Native measurement facts: capture the exact argv that fork/exec
+            // received, including its ephemeral heat nonce. Only the owner
+            // writes this receipt; no Python is loaded into the engine.
+            p["argv"] = *exact_argv;
+            p["env"] = plan_.runtime; // curated child overrides, never ambient secrets
+        }
         // the child waits behind its start gate until this returns, so it cannot have exited yet; its start
         // time is read whatever its state, so the record names it either way
         if (const auto st = proc_stat(pid))
@@ -1302,9 +1310,31 @@ class Owner {
             !spec.handoff->placement.live_policy || helper_logs_.empty())
             throw PlanFailed(
                 "calibration requires a lab-only live-policy manifest with helper0 and no experiment");
+        // These files influence the finite A/B/B/A measurements. Pin their
+        // bytes at the beginning rather than reconstruct them after the run.
+        for (const auto& source : {s_.laboratory->prompts_a, s_.laboratory->prompts_b}) {
+            if (!fs::is_regular_file(source))
+                throw PlanFailed("calibration: source prompts missing or not regular files");
+        }
+        const std::string prompt_a_bytes = read_file(s_.laboratory->prompts_a);
+        const std::string prompt_b_bytes = read_file(s_.laboratory->prompts_b);
+        const std::string admitted = read_file(plan_.manifest);
+        const Json admission = Json::parse(admitted);
+        const fs::path heat_file = admission.at("spec").at("handoff").at("placement")
+                                       .at("heat_file").get<std::string>();
+        if (heat_file.empty() || !fs::is_regular_file(heat_file))
+            throw PlanFailed("calibration: admitted manifest has no regular source heat file");
+        const std::string heat_bytes = read_file(heat_file);
         const auto prompts = read_calibration_prompts(s_.laboratory->prompts_a, s_.laboratory->prompts_b);
         if (!prompts)
             throw PlanFailed("calibration prompts: " + prompts.error().message);
+        if (read_file(s_.laboratory->prompts_a) != prompt_a_bytes ||
+            read_file(s_.laboratory->prompts_b) != prompt_b_bytes ||
+            read_file(heat_file) != heat_bytes)
+            throw PlanFailed("calibration: source inputs changed during admission");
+        write_atomic(s_.run_dir / "calibration-prompts-a.v1", prompt_a_bytes);
+        write_atomic(s_.run_dir / "calibration-prompts-b.v1", prompt_b_bytes);
+        write_atomic(s_.run_dir / "calibration-heat.v1", heat_bytes);
         const auto& workload = prompts.value();
         const auto& policy = *spec.handoff->placement.live_policy;
         if (!spec.handoff->telemetry.histogram_file || spec.handoff->telemetry.histogram_file->empty())
@@ -1387,8 +1417,37 @@ class Owner {
         if (s_.lab_evidence_gate)
             require_callback(s_.lab_evidence_gate.invoke("session.calibration.prove_live"),
                              "calibration final live evidence gate");
-        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store, plan_.manifest,
-                                            plan_.summary.at("calibration_store_key").get<std::string>());
+        if (read_file(s_.laboratory->prompts_a) != prompt_a_bytes ||
+            read_file(s_.laboratory->prompts_b) != prompt_b_bytes ||
+            read_file(heat_file) != heat_bytes)
+            throw PlanFailed("calibration: source prompts/heat changed during workload");
+        const std::string key = plan_.summary.at("calibration_store_key").get<std::string>();
+        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store, plan_.manifest, key);
+
+        // The source TOML can be replaced by another calibration before an
+        // offline operator ingests this run. Snapshot exactly the bytes the
+        // native C++ parser just durably committed, and bind the helper log
+        // and the measured manifest by SHA-256. The MRC04 Python reader
+        // verifies this snapshot later; serving remains Python-free.
+        const std::string stored = read_file(s_.laboratory->calibration_store);
+        const std::string helper_evidence = read_file(helper_log);
+        const std::string admitted_manifest = read_file(plan_.manifest);
+        const Json exact = Json::parse(admitted_manifest);
+        write_atomic(s_.run_dir / "calibration-store.v1.toml", stored);
+        const Json evidence = {
+            {"schema_version", 1},
+            {"session_id", exact.at("metadata").at("instance_id")},
+            {"calibration_store_key", key},
+            {"manifest_sha256", sha256_hex(admitted_manifest)},
+            {"calibration_store_sha256", sha256_hex(stored)},
+            {"helper_log_sha256", sha256_hex(helper_evidence)},
+            {"helper_log", helper_log.filename().string()},
+            {"prompts_a_sha256", sha256_hex(prompt_a_bytes)},
+            {"prompts_b_sha256", sha256_hex(prompt_b_bytes)},
+            {"heat_sha256", sha256_hex(heat_bytes)},
+            {"observed_at", utc_now()},
+        };
+        write_atomic(s_.run_dir / "calibration-evidence.v1.json", evidence.dump(2) + "\n");
     }
 
     void start_engine() {
@@ -1407,7 +1466,7 @@ class Owner {
         }
         plan_.engine_launched_at = std::chrono::system_clock::now();
         (void)spawn(
-            argv, child_environment(environ, plan_.runtime), log, [&](pid_t pid) { track("engine", pid, log); },
+            argv, child_environment(environ, plan_.runtime), log, [&](pid_t pid) { track("engine", pid, log, &argv); },
             plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
     }
 
