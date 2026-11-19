@@ -376,6 +376,8 @@ if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
       "${_bc_serving}/native_fleet_config.cpp"
       "${_bc_serving}/native_fleet_config_test.cpp")
   target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)
+  target_compile_definitions(bc_native_fleet_config_test PRIVATE
+      BC_CONTRACT_DIR="${_bc_serving}/../../../../docs/design/serving-manifest-v2")
 endif()
 """
 
