@@ -69,9 +69,10 @@ Large across six PRs. Risk: a half-migrated state with two stores; mitigate by r
 
 ## Notes
 
-
+Producers added on 2026-11-19 that already write their own receipts and should migrate: the compile-crash retry receipts (`bigcherry-compile-retries.jsonl` in the build dir and `<work-root>/build-compile-retries.jsonl`, #1175) and the ad hoc hardware-proof scripts of the day (two-start replay proof, dense TP3 sweep) that stream-bench JSON and `session.json` were stitched together for.
 
 ## Change Log
 
 - 2026-11-19T00:50:46.203067+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:27.377473+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-19T07:39:11.871195+00:00 (updated-by): Updated: section:notes

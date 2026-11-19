@@ -2,7 +2,7 @@
 id: RSC08
 order: 8
 plan: run-serving-configuration
-state: pending
+state: superseded
 created-at: '2026-11-02T12:14:33.492000+00:00'
 breadth: ''
 skill: advanced
@@ -122,15 +122,17 @@ Decisions: v1 numbers are integers only (fractions as *_ppm / *_milli); one site
 
 Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11-02): duplicate JSON member names must be rejected while parsing. nlohmann::json::parse silently keeps the last of duplicate members, but I-JSON/JCS input must have none, and a duplicate must never reach hashing. The v1 reader therefore parses with a parser callback or SAX handler that tracks the member names of each open object and fails on the first repeat with BC_CFG_DUPLICATE_FIELD (RAD_E_DUPLICATE, -11) and the JSON Pointer of the object holding it. Before any digest check, a duplicate fails at parse time (errors.md: duplicate-member tests fail at parsing, before hashing). Tests: a duplicate at the top level, inside a nested object, and inside an array element, each naming its pointer; the same member name in sibling objects is not a duplicate; a document whose only fault is a duplicate fails with BC_CFG_DUPLICATE_FIELD, not BC_CFG_DIGEST_MISMATCH.
 
+
+
+## Superseded 2026-11-19
+
+This item's v1 manifest cutover never shipped as a v1 cutover: RSC11 replaced it with exactly one v2 contract, activated once (S13 #891, which deleted v1). Its cutover criteria were carried into RSC11's gates and the S15 acceptance (`docs/evidence/2026-11-19-rsc02-s15-acceptance/`); the strict-reader negative tests and the admission-vector agreement live in the v2 serving component tests (serving CTest 34/34 on 2026-11-19). The open hand-picked-literal inventory continues in RSC09/RSC10.
+
 ## Change Log
 
 - 2026-11-02T12:14:33.492000+00:00 (created-by): Created by agent
 
 ## Ledger-events
-
-
-
-
 
 - chg_20261102_121239_the-serving-manifest-v2-format_6543
 - chg_20261102_121824_the-serving-component-can-prod_8129
@@ -158,3 +160,5 @@ Slice 2 (shared strict reader) requirement, from the lead's #530 review (2026-11
 - 2026-11-04T07:54:42.951709+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261104_101409_the-engine-can-start-from-the_9485
 - 2026-11-04T10:14:13.356828+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-19T07:37:38.032666+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:37:46.869575+00:00 (state-transition): State: pending → superseded

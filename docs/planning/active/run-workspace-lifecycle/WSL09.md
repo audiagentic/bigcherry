@@ -60,8 +60,18 @@ Progress (2026-11-17): implemented and merged in #1017 (tools/bigcherry/core/bui
 
 Progress (2026-11-17): implemented and merged in #1017, #1020, #1021 (tools/bigcherry/core/build_gc.py, docs/reference/build/BUILD_CACHE_GC.md): candidacy, finite policy, references from processes, run manifests, build-plan locks and installed release receipts, fail-closed inspection, quarantine-rename deletion, journal under cleanup-records; process scan scoped to the work root owner. Six independent reviews; every finding has a regression test. Direction change (owner): old runs are not adopted wholesale. A run is either migrated to docs/evidence as small result files and deleted, or deleted; nothing stays unmanaged. The legacy-run adoption (#1026) stays as the mechanism for any run that must remain. Work root cleanup done 2026-11-17 (#1027, #1030, #1034): 5,752 entries removed, runs/ from 337 to 23 entries, evidence on main. Real-root read-only result after the cleanup: 80 builds, all protected, every one by a single unadopted flat run (runs/histogram-period-default) plus age and newest-K rules; 66 unclassified roots are non-content-addressed recipe directories (rad42-bar-push 60, rsc11-s13-switch 3, hl02-attributes 1). Remaining for completion: migrate and delete histogram-period-default, classify or retire the 64 non-content-addressed recipe directories, rerun the read-only listing and show the candidates, then run --apply once and compare with the manual 2026-11-16 deletion list. Do not weaken the guards.
 
+
+
+## Status 2026-11-19 (what the GC must now know)
+
+- A content-addressed build dir is shared by every checkout with the same sources, so a component's CMake cache pins the first checkout's source path; a different checkout now gets its own tree `components/<name>@<hash of the source path>` beside the original (#1172). These extra trees, and the original that another run may be building in, must be candidates only together with their build dir; the GC must never reconfigure or wipe a tree a run references.
+- Each build dir may hold `bigcherry-compile-retries.jsonl` (a compiler crash and its retry; #1175) and the work root `build-compile-retries.jsonl` is an append-only host log: keep both out of cleanup; they count the flake rate.
+- Lane builds made only to prove a branch on hardware (for example `builds/36aef347.../3ce9e00e...` and `.../6cdd2755...` on 2026-11-19) are ordinary candidates once the branch is merged.
+- `test-tmp` recurrence: `<work-root>/test-tmp/pin-bump-tests-*` directories are left behind by a pytest session that was hard-killed (two from 2026-11-17 were found on 2026-11-19). #1173 made the tests that need an executable scratch dir clean it, but the orphans need a sweep keyed by the conftest's session ownership; do not blanket-delete.
+
 ## Change Log
 
 - 2026-11-16T06:37:50.072802+00:00 (created-by): Created by claude
 - 2026-11-16T19:22:30.159084+00:00 (updated-by): Updated: section:notes
 - 2026-11-17T03:19:15.618493+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:38:25.388659+00:00 (updated-by): Updated: section:notes

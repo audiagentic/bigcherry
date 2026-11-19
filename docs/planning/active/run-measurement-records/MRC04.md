@@ -63,9 +63,10 @@ Medium. Depends on the Radiance key fix landing first; risk of two parallel key 
 
 ## Notes
 
-
+First user landed (#1169, 2026-11-19): the Radiance live policy's calibration record is keyed by the narrow policy-calibration key v2 (`policy_calibration_inputs`: model, layout, objective, power profile, engine and helper cards, histogram period, helper runtime, remote service) and stores `calibration_inputs`, `source_plan_key` and `source_engine_build` as provenance; engine build, host pool, helper budgets and flags are excluded, so records carry across rebuilds and bumps; legacy hash-only records are refused. This generalises into the platform store: keep that declared-key shape, move the TOML record behind the platform reader, and make 'which record did this run use' a field of the run record. Tests to reuse: the calibration-run key equals the production lookup key, including a re-measured host pool (`serving_test.cpp`).
 
 ## Change Log
 
 - 2026-11-19T00:50:37.155384+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:17.503543+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-19T07:39:03.286068+00:00 (updated-by): Updated: section:notes

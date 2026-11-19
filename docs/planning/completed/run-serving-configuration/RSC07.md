@@ -2,7 +2,7 @@
 id: RSC07
 order: 13
 plan: run-serving-configuration
-state: pending
+state: superseded
 created-at: '2026-11-02T03:52:04.869272+00:00'
 breadth: ''
 skill: advanced
@@ -56,13 +56,17 @@ The engine starts with only `--manifest` (and `--role`). The parsed configuratio
 
 A patch on upstream is a carried cost that we accept, so that no command-line converter remains. Keep the patch thin: reuse the option table, add no second schema in C++.
 
+
+
+## Superseded 2026-11-19
+
+The engine now starts with only `--manifest FILE --role engine` (the native owner's engine argv, S15 evidence `2026-11-19-rsc02-s15-acceptance`), loading the strict v2 manifest through the managed `rad0009_serving_manifest` patch and the generated field registry (#1132); this was delivered by RSC11's engine lane (S1/S5) and the single v2 cutover (S13), not by a separate v1 patch. Nothing in this item is left to do.
+
 ## Change Log
 
 - 2026-11-02T03:52:04.869272+00:00 (created-by): Created by agent
 
 ## Ledger-events
-
-
 
 - chg_20261102_035356_serving-start-up-plan-one-str_4985
 - 2026-11-02T03:54:15.306393+00:00 (updated-by): Updated: section:ledger-events
@@ -70,3 +74,5 @@ A patch on upstream is a carried cost that we accept, so that no command-line co
 - 2026-11-02T06:26:11.482128+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_083154_fixed-the-engines---manifest_6959
 - 2026-11-02T08:31:58.528730+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-19T07:37:33.564228+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:37:42.632549+00:00 (state-transition): State: pending → superseded

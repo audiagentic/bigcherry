@@ -13,10 +13,6 @@ work: L
 
 # Live expert swapping and its observability verified on every card type and layout (gfx1201, gfx1100, gfx1030; head, tail, TP and engine-resident placement)
 
-## Current evidence reconciliation (2026-11-10)
-
-PR #805 rejects incompatible helper arrangements; it is not proof of supported movement on each card. The last-helper-as-tail heuristic must be replaced by the actual placement role.
-
 ## Description
 
 Live migration (RHP11) and the policy (RHP16) were developed and measured on flashnext-4gpu: R9700 engine (gfx1201), two 7900 XTX helpers (gfx1100, head) and the RX 6900 XT tail (gfx1030, rows kernel, w4nl64 only, PCIe 3.0 x4). Nothing establishes that swapping and the policy hold on the other layouts (flashnext-2xtx, -2xtx-rdna2-tail, -2xtx-rdna2-head, -tp2xtx-r9700 where the R9700 is a helper and the XTX cards are the engine, -tp2xtx), nor which cards can receive which expert formats (gfx1030 holds w4nl64 only, so a swap between a tail and a head helper must not move fp8 experts to it). Observability must be per card: which device owns what, moves committed and rejected with reasons, bytes and time, and the policy state.
@@ -63,6 +59,16 @@ Every supported layout either runs live swapping with a passing forced-move run 
 Card types: engines/radiance/archs.toml (gfx1201 libr4d, gfx1100 libr3, gfx1030 libr2 rows-kernel). Layouts: engines/radiance/layouts.toml. Related RHP18, RHP19, RHP12, RHP11.
 
 GATEWAY REVIEW 2026-11-10: (1) worker_heat.h:125-149 treats the LAST helper as the tail (worker_share::plan_tail) - right for flashnext-4gpu and -2xtx-rdna2-tail, wrong for flashnext-2xtx (no tail: the last XTX would become one), -2xtx-rdna2-head (head-share strategy overridden), -tp2xtx-r9700 (single head helper) and -tp2xtx. Until the planner is topology-aware the policy must refuse those layouts at start with a reason. (2) v1/manifest.cpp:384-397 rejects live policy on any TP engine (tp != 1) although live_policy_manifest.cpp:22-25 says the rank-0 histogram supports TP: validate rank-0 heat completeness and both ranks' generation/consumption, then lift deliberately. (3) Destination eligibility is checked optimistically at proposal time (worker_policy_driver.h:245-265); resolve format/arch/budget compatibility before proposing (fp8_e4m3_block cannot move to gfx1030, which holds w4nl64 only) and keep the receiver's authoritative checks. (4) Cross-architecture moves are not bit-identical (different kernels): require the KL/numerical gates, not bit-identity. (5) Engine-resident experts (the engine's 'heat engine' movable units) are NOT candidates of the helper-to-helper policy (worker_policy_input.h:165-175 fixes engine-local owners); engine<->helper movement needs its own ownership/residency design. (6) Existing hardware evidence: 131 paced swaps committed during scoring, 0 aborts, KL passing, on flashnext-4gpu only (RHP06.md); gfx1201-as-helper and TP2 transitions are untested. Matrix rows needed: flashnext-4gpu, -2xtx-rdna2-tail, -2xtx-rdna2-head, -2xtx, -tp2xtx-r9700 (helper-to-helper not applicable), -tp2xtx, engine-only (not applicable).
+
+
+
+## Status 2026-11-19
+
+Verified live swapping on hardware, native path: flashnext-4gpu (gfx1201 engine, gfx1100 heads, gfx1030 tail), policy on, 14 committed placement transactions in one run (14.6 GB moved, no aborts) and a 2-launch parity run (PR #1179). Not yet verified: the other layouts and card types in the matrix (flashnext-2xtx-rdna2-tail, flashnext-tp2xtx-r9700, TP engine-resident placement); dense TP3 has no live policy. The start path blockers that hid the policy on a production start are fixed (#1174, #1176, #1177), so a per-layout forced-move run is now the remaining work; use the native `--calibration-run` and a calibration record per layout (key v2, #1169).
+
+## Current evidence reconciliation (2026-11-10)
+
+PR #805 rejects incompatible helper arrangements; it is not proof of supported movement on each card. The last-helper-as-tail heuristic must be replaced by the actual placement role.
 
 ## Reconciled card-free status (2026-11-10)
 
@@ -187,3 +193,4 @@ per-card epoch/MTP in-flight receipts, RHP12 latency, fresh KLD and
 the separate flashnext-4gpu stress arm remain hardware work.
 RHP20 stays in_progress; RHP11 stays in_progress; RHP06's old
 pending marker is progress-stale but must not be changed to done.
+- 2026-11-19T07:36:22.044355+00:00 (updated-by): Updated: section:notes

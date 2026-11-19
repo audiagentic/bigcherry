@@ -64,9 +64,10 @@ Medium. Risk: a warning noisy enough to be ignored; only features marked product
 
 ## Notes
 
-
+First increments on main (2026-11-19): the heat guard and runtime receipt refusals now name the failing check instead of an enum number (#1174), the manifest's `live_policy_state` reason_code/reason_detail is printed at start, and a start without a usable calibration record prints `WARNING live policy OFF: policy-calibration key <key>; <reason_code>: <detail>` (#1169). These are the Radiance adapter's inputs for the platform feature-state file; the platform consumer (status, records, production-start warning) is still to build. RHP18 (the native-side observability) closed on this basis.
 
 ## Change Log
 
 - 2026-11-19T00:50:32.612787+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:13.072249+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-19T07:38:59.061941+00:00 (updated-by): Updated: section:notes

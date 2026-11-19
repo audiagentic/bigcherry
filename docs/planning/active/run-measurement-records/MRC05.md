@@ -66,9 +66,10 @@ Medium. Risk: tolerances too tight on noisy metrics; derive them from measured s
 
 ## Notes
 
-
+On main 2026-11-19: `baselines/flashnext-4gpu-parity-main-20261119.json` (a current-main parity file) and the parity harness warmup override for policy-on arms (#1178); the dense TP3 no-regression run the same day compares against baselines recorded only in evidence prose (RAD52, VTP37), which is the gap this item closes: those numbers have no machine-readable baseline, host facts or provenance bundle.
 
 ## Change Log
 
 - 2026-11-19T00:50:41.670049+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:22.108305+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:effort_risk, section:acceptance_criteria
+- 2026-11-19T07:39:07.531890+00:00 (updated-by): Updated: section:notes

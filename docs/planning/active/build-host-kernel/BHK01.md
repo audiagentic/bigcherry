@@ -17,6 +17,48 @@ work: M
 
 The original 7.0.13-gfxoff source tree and GFXOFF edit scripts were lost in the 2026-11-17 work-root purge. Keep the evidenced upstream GFX12 compute-queue GFXOFF fix, source-reference file, recovery config, ordered patch series, build recipe, and cross-release comparison under `host/kernel/7.0.13-gfxoff/`. Generated sources and modules remain in project scratch and never in Git.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+
+
+## Status 2026-11-19 (step 7 still open)
+
+Step 7 needs two separate confirmations: kernel latency, and long-running serving acceptance. Not done as specified, but there is now serving evidence on the running kernel (`uname -r` = 7.0.13-gfxoff): flashnext-4gpu native starts with the live policy on (a 9-minute warmup run with 14 placement commits, a 2-launch parity run with 256K prefill 3085/3183 tok/s, PR #1179) and a dense TP3 no-regression run the same day (`docs/evidence/2026-11-19-tp3-27b-noregress/` when merged), none with a GPU fault. That is evidence for the serving half; the latency measurement is still to do.
+
+Host checks requested of the user on 2026-11-19 after a random compiler-crash investigation (clang `Segmentation fault` in code generation at about 1 in 160 identical compiles, a GNU `as` junk-byte failure, with 75 GB free, no OOM kills, no ccache involvement, `HardwareCorrupted` 0, a 7.7 TiB memory write-and-verify and CPU check clean): `journalctl -k | grep -iE 'mce|machine check|edac|hardware error|segfault|general protection|out of memory'`, `ras-mc-ctl --errors` or `mcelog --client`, `dmidecode -t memory` (configured speed against rated, XMP/EXPO state), BIOS CPU/memory overclock and curve-optimizer settings, and an overnight memtest86+. EDAC is not exposed in the container and dmesg is unreadable there. Results belong in `docs/evidence/` and in the receipt counts (`<work-root>/build-compile-retries.jsonl`, plan run-measurement-records MRC02).
+
 ## Steps and acceptance
 
 1. [x] Record upstream archive URL and SHA-256, downloaded detached signature (cryptographic signature verification remains open), upstream commit identity, and Ubuntu mainline source-commit provenance.
@@ -38,3 +80,7 @@ The installed `7.0.13-gfxoff` kernel, modules, boot records and the read-only `<
 PWR06 measured the R9700 loaded-HIP idle change from stock 20.6 W, 3% busy, 612 mV to patched 15.0 W, 0% busy, 29 mV (MES 0x81 unchanged; three 60-second repetitions). This validates behavior, **not** the full installed source diff. The original `_gfxoff_edit*.py` scripts are missing, so additional historical edits remain uncertain.
 
 Reference: `host/kernel/7.0.13-gfxoff/README.md`; `docs/reference/serving-host-prerequisites.md`; `docs/evidence/2026-11-18-gfxoff-kernel-recovery/README.md`.
+
+## Change Log
+
+- 2026-11-19T07:38:16.846140+00:00 (updated-by): Updated: section:notes
