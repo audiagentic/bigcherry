@@ -169,6 +169,8 @@ def _stream(argv: list[str], cwd: Path) -> tuple[int, str, str]:
         process.kill()  # as subprocess.run does when the parent is interrupted: no orphaned build
         process.wait()
         raise
+    finally:
+        process.stdout.close()
 
 
 def run_checked(argv: list[str], cwd: Path) -> None:

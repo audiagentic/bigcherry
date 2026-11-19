@@ -297,7 +297,7 @@ path = "tools/lab/radiance/fn-helper.sh"
 anchor = "model=${MODEL:?set MODEL to the Flash-Next .rad container}"
 category = "D"
 reason = "hard-coded container path belongs in the layout's model entry"
-owner = "RSC08"
+owner = "RSC12"
 
 [[allow]]
 path = "tools/lab/radiance/gfx1030/rowsk.hip"
@@ -342,14 +342,14 @@ path = "tools/lab/radiance/helper-long-rows.sh"
 anchor = "M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4"
 category = "D"
 reason = "hard-coded container path belongs in the layout's model entry"
-owner = "RSC08"
+owner = "RSC12"
 
 [[allow]]
 path = "tools/lab/radiance/helper-sweep.sh"
 anchor = "M=${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4"
 category = "D"
 reason = "hard-coded container path belongs in the layout's model entry"
-owner = "RSC08"
+owner = "RSC12"
 
 [[allow]]
 path = "tools/lab/radiance/idle-gap-bench.hip"
@@ -362,7 +362,7 @@ path = "tools/lab/radiance/rad32-perf.sh"
 anchor = "MODEL=${MODEL_27B:-${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad}"
 category = "D"
 reason = "hard-coded container path belongs in the layout's model entry"
-owner = "RSC08"
+owner = "RSC12"
 
 [[allow]]
 path = "tools/lab/radiance/rdna2-draft-bench.hip"
