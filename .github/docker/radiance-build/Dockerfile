@@ -19,7 +19,8 @@ RUN set -eux; \
     apt-get update; \
     DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
         rocm-hip-runtime-dev rocwmma-dev \
-        git cmake ninja-build python3 python3-pip g++-14 gcc-14 ccache zlib1g-dev; \
+        git cmake ninja-build python3 python3-pip g++-14 gcc-14 ccache zlib1g-dev \
+        pkg-config libavformat-dev libavcodec-dev libavutil-dev libswscale-dev libswresample-dev; \
     apt-get purge -y --auto-remove curl gnupg; \
     rm -rf /var/lib/apt/lists/*; \
     test -x /opt/rocm-${ROCM_VERSION}/lib/llvm/bin/clang++; \
