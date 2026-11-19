@@ -810,6 +810,17 @@ void measured_plan_cache(Fixture& t) {
     for (const char* absent : {"prefix_cache_mib", "host_headroom_mib", "port", "radiance_home", "model"})
         assert(!k.at("engine").contains(absent));
     assert(k.at("engine").contains("host_pool_mib") && k.at("engine").contains("max_num_seqs"));
+    const auto native_file = t.file("plan-key-fleet.yaml", "cards: [0]\nmodels: {tiny: {model: tiny.rad}}\n");
+    const auto native = sv::NativeConfigSnapshot::read(native_file, t.root);
+    const Json native_key = sv::plan_key_inputs(r.values, t.facts, id, eid, "", &native);
+    assert(native_key.at("cache_version") == 3 && native_key.at("native_config").at("sha256") == native.sha256() &&
+           native_key.at("native_config").at("resolution_root") == t.root.string());
+    assert(sv::plan_key(native_key) != sv::plan_key(k));
+    const auto other_root = t.root / "other-root";
+    std::filesystem::create_directories(other_root);
+    const auto same_bytes_other_root = sv::NativeConfigSnapshot::read(native_file, other_root);
+    assert(sv::plan_key(sv::plan_key_inputs(r.values, t.facts, id, eid, "", &same_bytes_other_root)) !=
+           sv::plan_key(native_key));
     Json v = r.values;
     for (const char* moved : {"prefix_cache_mib", "host_headroom_mib", "port"}) {
         v = r.values;

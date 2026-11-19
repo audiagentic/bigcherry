@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_143902_bound-successor-measured-plan_8730",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.h",
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added native snapshot SHA-256 and resolution root to operational measured-plan cache keys when a native snapshot is supplied, preserving v2 keys for existing paths. The v3 writer refuses measured finalization unless the measured key is bound to the exact snapshot it will persist. Focused key and writer regressions pass. This does not attest arbitrary imported plans or complete production migration.",
+  "timestamp-utc": "2026-11-19T14:39:02.888556Z",
+  "user-summary-candidate": "Bound successor measured-plan cache identity to the exact native YAML digest and resolution root, and made the v3 writer refuse mismatched measured plans. Focused CPU tests pass; owner-attested measurement and production P1/launch integration remain open."
+}

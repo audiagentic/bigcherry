@@ -111,7 +111,7 @@ std::string engine_identity(const fs::path& binary, const fs::path& radiance_hom
 }
 
 Json plan_key_inputs(const Json& values, const Json& facts, const std::string& model_id, const std::string& engine_id,
-                     const std::string& engine_args) {
+                     const std::string& engine_args, const NativeConfigSnapshot* native_config) {
     // When every rank is the same card type the first stands for them, and the rank count is part of the key through
     // engine.tp. A world of more than one card type (a layout with several engine groups) keys every rank's card.
     Json rank_cards = Json::array();
@@ -129,7 +129,7 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
     Json engine = Json::object();
     for (auto it = values.at("engine").begin(); it != values.at("engine").end(); ++it)
         if (!kNonPlanEngineKeys.count(it.key())) engine[it.key()] = it.value();
-    Json key = {{"cache_version", 2},
+    Json key = {{"cache_version", native_config ? 3 : 2},
             {"model", model_id},
             {"engine_build", engine_id},
             {"card", {{"arch", gpu->at("arch")}, {"vram_total_mib", gpu->at("vram_total_mib")}}},
@@ -140,6 +140,9 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
                                        ? values.at("memory").at("helper_budgets_mib") : Json::array()},
             {"engine_args", engine_args},
             {"engine", engine}};
+    if (native_config)
+        key["native_config"] = {{"sha256", native_config->sha256()},
+                                 {"resolution_root", native_config->resolution_root()}};
     if (!uniform) key["rank_cards"] = rank_cards;
     // The tuning settings bind to engine flags, and several change what the plan measures (tp_ownership moves each rank's
     // KV and weight shares; state_cache_dtype, embedding_placement, draft_model, ... move memory too), so all of them are

@@ -147,6 +147,10 @@ C32 (2026-11-20, Sol/GPT review follow-up): the owner inspector now returns a cl
 
 C33 (2026-11-20): the rad0009 inspection hook is now freshly linked into the ABI44 candidate `radiance` executable and exercised through the actual `main.cpp` command boundary. A sealed native snapshot produced a closed report with exact identity, ABI 44, parsed model/listener/cards and native TP default; unsealed and wrong-digest descriptor probes both exited 2 with no stdout. The temporary source/build remains task-local and was not installed. This closes only the matched parser-command probe; the production bc-serve planner is still TOML/v2 and does not select a YAML snapshot, pass one effective environment from inspection into execution, or bind native bytes into writer/P1/measurement/replay/cache. No GPU/runtime launch was made.
 
+
+
+C34 (2026-11-20): native snapshot SHA-256 and canonical resolution root now enter the operational measured-plan key when a NativeConfigSnapshot is provided (cache version 3); existing non-native version-2 keys remain unchanged. The real v3 writer refuses measured finalization unless that key carries the exact snapshot identity it persists. `bc_serving_test` and `bc_serving_v3_writer_test` both passed (1/1 each). Evidence C34 in `docs/evidence/radiance-latest-bump/README.md`; Ledger event `chg_20261119_143902_bound-successor-measured-plan_8730`. Still open: owner-attest the measured plan source rather than trusting the CLI `--measured-plan` import path; carry one prepared snapshot through P1's owner-map writer, native inspection, fresh measurement, final writer, stored replay and native-aware static/cache keys; production remains TOML/v2 until that chain is complete.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -175,3 +179,4 @@ C33 (2026-11-20): the rad0009 inspection hook is now freshly linked into the ABI
 - 2026-11-19T14:06:54.254829+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:19:49.888198+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:27:34.787625+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T14:39:17.405809+00:00 (updated-by): Updated: section:notes

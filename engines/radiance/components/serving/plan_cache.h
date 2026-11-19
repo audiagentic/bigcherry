@@ -1,6 +1,7 @@
 #pragma once
 #include "ledger.h"
 #include "serving_types.h"   // bc::serving::v2::EnginePlan, the generated v1 type
+#include "v2/native_config_snapshot.h"
 
 #include <filesystem>
 #include <optional>
@@ -32,7 +33,8 @@ std::string engine_identity(const std::filesystem::path& binary, const std::file
  * planning inputs: every engine.* value except the memory outputs the plan itself feeds (host pool, host KV tier,
  * host headroom), every tuning.* value (e.g. tp_ownership), plus layout.name. Any change is a miss. */
 nlohmann::json plan_key_inputs(const nlohmann::json& values, const nlohmann::json& facts, const std::string& model_id,
-                               const std::string& engine_id, const std::string& engine_args);
+                               const std::string& engine_id, const std::string& engine_args,
+                               const NativeConfigSnapshot* native_config = nullptr);
 std::string plan_key(const nlohmann::json& key_inputs);
 // Separate policy-calibration scope taken from a strictly structured measured serving manifest.
 // Includes model, role-specific card identity/architectures, layout, objective, histogram period,

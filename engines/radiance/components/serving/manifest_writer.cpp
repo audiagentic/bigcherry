@@ -406,6 +406,13 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
     if constexpr (v2::kContractVersion == 3) {
         if (!in.native_config)
             fail("the v3 serving manifest requires an admitted native fleet YAML snapshot");
+        if (in.measured) {
+            const Json expected = {{"sha256", in.native_config->sha256()},
+                                   {"resolution_root", in.native_config->resolution_root()}};
+            const auto& key = in.measured->key_inputs;
+            if (!key.is_object() || !key.contains("native_config") || key.at("native_config") != expected)
+                fail("the measured plan was not keyed to this native fleet YAML snapshot and resolution root");
+        }
     } else if (in.native_config) {
         fail("the v2 serving manifest cannot carry a native fleet YAML snapshot");
     }

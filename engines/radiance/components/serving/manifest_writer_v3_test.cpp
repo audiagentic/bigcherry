@@ -122,6 +122,32 @@ int main(int argc, char** argv) {
         const auto measuring = sv::build_manifest(inputs);
         check_snapshot(measuring, wire::PlanUse::measuring, *inputs.native_config, yaml, temporary.path);
         bc::test::set_measured_manifest_fixture(inputs, measuring, facts);
+        inputs.measured->key_inputs["native_config"] = {
+            {"sha256", inputs.native_config->sha256()},
+            {"resolution_root", inputs.native_config->resolution_root()}};
+        const Json measured_key = inputs.measured->key_inputs;
+        inputs.measured->key_inputs["native_config"]["sha256"] = std::string(64, 'f');
+        try {
+            (void)sv::build_manifest(inputs);
+        } catch (const std::runtime_error& error) {
+            check(std::string_view(error.what()).find("not keyed to this native fleet YAML snapshot") !=
+                      std::string_view::npos,
+                  error.what());
+            inputs.measured->key_inputs = measured_key;
+        }
+        check(inputs.measured->key_inputs == measured_key,
+              "the real writer accepted a measured plan from a different native YAML snapshot");
+        inputs.measured->key_inputs["native_config"]["resolution_root"] = temporary.path.parent_path().string();
+        try {
+            (void)sv::build_manifest(inputs);
+        } catch (const std::runtime_error& error) {
+            check(std::string_view(error.what()).find("not keyed to this native fleet YAML snapshot") !=
+                      std::string_view::npos,
+                  error.what());
+            inputs.measured->key_inputs = measured_key;
+        }
+        check(inputs.measured->key_inputs == measured_key,
+              "the real writer accepted a measured plan from a different execution root");
         const auto serving = sv::build_manifest(inputs);
         check_snapshot(serving, wire::PlanUse::serving, *inputs.native_config, yaml, temporary.path);
     } catch (const std::exception& error) {
