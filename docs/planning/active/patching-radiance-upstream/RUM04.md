@@ -189,6 +189,10 @@ C49 (2026-11-20): factored sealed memfd validation/snapshot reconstruction into 
 
 C50 (2026-11-20): isolated generated-v3 session now carries the owner-admitted NativeConfigSnapshot through a sealed fd to the real `bc-serve --write-manifest --unmeasured` child, with a frozen expected native plan key. It strictly pins measuring-role output, verifies snapshot bytes/SHA/root and ordered engine devices, confirms no engine_memory, then refuses before named cache/P1/power/GPU. Test deletes authored YAML after inspector exit, verifies writer success from sealed bytes, both children reaped, cache tripwire untouched and no plan cache. Focused `bc_native_v3_session_test`, `bc_serving_v3_writer_test` and default v2 `bc_serving_test` pass (1/1 each). Evidence C50. Still no native GPU measurement/cache publication/stored replay; default v2 behavior remains inspector-only refusal. Follow-up gates: route native plan-memory through NativeFleetConfig; reconcile native context/sequences/pool and parser-affecting environment; check the frozen key on first measured lookup and owner retry; define relationship between manifest integrity cache key and owner plan-cache v3 key for stored/offline replay; make managed reload refuse or require fresh admission; only then consider production gate.
 
+
+
+C51 (2026-11-20): Astra review RV4248 found that the isolated v3 writer could accept raw `--measured-plan`/`--rank-demand` inputs before enforcing the sealed native snapshot, allowing a legacy v2 key/cache touch before later v3 refusal. The writer now requires `--bc-native-config-fd` for every v3 write and rejects both raw imports at CLI argument validation before file access. Added real `bc-serve` card-free refusal coverage. Rebuilt and directly ran `bc_native_v3_session_test` and ordinary `bc_serving_test`; both passed. Evidence C51 in `docs/evidence/radiance-latest-bump/README.md`. This closes only the writer ingress gap; native `--plan-memory`, owner cache publication and production admission remain open.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -234,3 +238,8 @@ C50 (2026-11-20): isolated generated-v3 session now carries the owner-admitted N
 - 2026-11-19T17:30:20.876923+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T17:47:58.678450+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T18:02:50.675833+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4248
+- 2026-11-19T18:12:45.949208+00:00 (updated-by): Updated: section:notes

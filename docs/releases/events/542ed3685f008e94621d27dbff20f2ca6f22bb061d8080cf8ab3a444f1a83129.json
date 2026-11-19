@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_181308_closed-an-unowned-v3-measured_2537",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM04/RV4248.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Require the sealed native snapshot descriptor for every v3 manifest write and reject raw measured-plan/rank-demand CLI imports before file access; add real bc-serve card-free refusal tests. Focused v3 session and v2 serving tests passed.",
+  "timestamp-utc": "2026-11-19T18:13:08.581161Z",
+  "user-summary-candidate": "Closed an unowned v3 measured-plan import path and recorded focused v3/v2 verification. Production native measurement remains gated."
+}

@@ -758,6 +758,18 @@ int main(int argc, char** argv) {
             throw std::runtime_error("--bc-native-config-fd is an internal --write-manifest input");
         if (native_config_fd >= 0 && bc::serving::v2::kContractVersion != 3)
             throw std::runtime_error("--bc-native-config-fd requires the isolated v3 manifest edition");
+        if (plan_mode && bc::serving::v2::kContractVersion == 3) {
+            // The v3 measuring/writing path is owner-bound to the sealed native
+            // YAML snapshot. Never fall back to the v2 key or import caller-
+            // supplied plan files: that would create an unowned cache entry
+            // before the strict v3 writer can reject the missing snapshot.
+            if (native_config_fd < 3)
+                throw std::runtime_error("v3 --write-manifest requires --bc-native-config-fd");
+            if (!measured_plan_file.empty() || !rank_demand_file.empty())
+                throw std::runtime_error(
+                    "v3 --write-manifest does not import --measured-plan or --rank-demand; "
+                    "measurement results must come from the session-owned attempt");
+        }
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())

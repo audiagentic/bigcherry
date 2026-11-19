@@ -2764,6 +2764,26 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
         throw std::runtime_error("cli test: child wait failed");
     return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, output};
 }
+void v3_writer_cli_rejects_unowned_imports() {
+    const auto no_snapshot = run_bc_serve(
+        {"--write-manifest", "unused.json", "--measured-plan", "missing-plan.json", "--rank-demand",
+         "missing-ranks.json"});
+    if (no_snapshot.exit_code != 2 ||
+        no_snapshot.output.find("v3 --write-manifest requires --bc-native-config-fd") == std::string::npos ||
+        no_snapshot.output.find("cannot read missing-plan.json") != std::string::npos)
+        throw std::runtime_error("v3 writer did not reject a missing sealed snapshot before plan-file access: " +
+                                 no_snapshot.output);
+
+    const auto raw_import = run_bc_serve(
+        {"--write-manifest", "unused.json", "--bc-native-config-fd", "3", "--measured-plan",
+         "missing-plan.json", "--rank-demand", "missing-ranks.json"});
+    if (raw_import.exit_code != 2 ||
+        raw_import.output.find("v3 --write-manifest does not import --measured-plan or --rank-demand") ==
+            std::string::npos ||
+        raw_import.output.find("cannot read missing-plan.json") != std::string::npos)
+        throw std::runtime_error("v3 writer did not refuse raw measured-plan imports before file access: " +
+                                 raw_import.output);
+}
 void native_explain_cli(Fixture& t) {
     const char* env = std::getenv("BIGCHERRY_LAYOUTS");
     if (!env || !fs::is_directory(env))
@@ -4272,6 +4292,7 @@ int main(int argc, char** argv) {
     (void)argv;
     try {
         Fixture t;
+        v3_writer_cli_rejects_unowned_imports();
         session_engine_plan(t);
         std::cout << "PASS: native v3 sealed snapshot session draft and pre-cache gate\n";
         return 0;
