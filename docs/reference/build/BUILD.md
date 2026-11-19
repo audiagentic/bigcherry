@@ -56,6 +56,13 @@ age-based deletion of central logs is not implemented; run cleanup remains read-
 Copies in build directories follow those directories' retention. The
 build-run-cleanup group currently provides no destructive log GC.
 
+A `cmake --build` whose compiler dies from a signal (clang or gcc printing "unable to execute command: Segmentation
+fault" or "internal compiler error: ...") is run once more: on this host such crashes are random, about 1 in 160 identical
+compiles, with memory free and no ccache involvement. Only a signal crash is retried, never a compile error or an
+interrupt, and never any other command. Each crash and its retry is one JSON line (unit, signal, attempt, result) in
+`bigcherry-compile-retries.jsonl` in the build directory and in `<work-root>/build-compile-retries.jsonl`, whose line count over
+time is the flake rate. The build-metadata file that guards reuse is not changed.
+
 Build cache candidates and explicit deletion are documented in
 [Build cache GC](BUILD_CACHE_GC.md); materialised sources remain read-only.
 

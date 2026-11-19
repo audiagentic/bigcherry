@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_045926_builds-now-retry-once-when-the_3409",
+  "files": [
+    "tools/bigcherry/core/process.py",
+    "tools/tests/core/test_build_compile_retry.py",
+    "tools/tests/core/test_process.py",
+    "docs/reference/build/BUILD.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A cmake --build whose compiler dies from a signal (clang 'unable to execute command: Segmentation fault', gcc 'internal compiler error: <signal>', 'Killed signal terminated program') is run once more; a real compile error, an interrupt and every other command are never retried. Each crash and its retry is recorded as a JSON line (unit, signal, attempt, result) in bigcherry-compile-retries.jsonl in the build directory and in <work-root>/build-compile-retries.jsonl so the flake rate can be counted over time. The build output is passed through unchanged and the reuse-guarding build metadata file is not modified.",
+  "timestamp-utc": "2026-11-19T04:59:26.724818Z",
+  "user-summary-candidate": "Builds now retry once when the compiler randomly crashes, and record every such crash."
+}

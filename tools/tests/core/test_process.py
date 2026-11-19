@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import sys
+import subprocess
 import unittest
 from unittest import mock
 from pathlib import Path
@@ -43,11 +44,27 @@ class DescribeReturncodeTests(unittest.TestCase):
 
 class CheckedRunnerTests(unittest.TestCase):
     def test_preserves_checked_subprocess_contract(self):
+        # every command but a cmake build: unchanged arguments, cwd and check=True
         cwd = Path("/build")
-        argv = ["cmake", "--build", "out"]
+        argv = ["cmake", "--install", "out"]
         with mock.patch("bigcherry.core.process.subprocess.run") as run:
             self.assertIsNone(run_checked(argv, cwd))
         run.assert_called_once_with(argv, cwd=cwd, check=True)
+
+    def test_a_cmake_build_keeps_its_arguments_and_cwd_and_checks_the_exit(self):
+        # a build is streamed (so a compiler crash can be recognised); its arguments and cwd are unchanged
+        cwd = Path("/build")
+        argv = ["cmake", "--build", "out", "-j"]
+        with mock.patch("bigcherry.core.process.subprocess.Popen") as popen:
+            popen.return_value.stdout = iter([b"[1/1] done\n"])
+            popen.return_value.wait.return_value = 0
+            self.assertIsNone(run_checked(argv, cwd))
+        self.assertEqual(argv, popen.call_args.args[0])
+        self.assertEqual(cwd, popen.call_args.kwargs["cwd"])
+        popen.return_value.wait.return_value = 2
+        popen.return_value.stdout = iter([b"error: expected ;\n"])
+        with mock.patch("bigcherry.core.process.subprocess.Popen", popen), self.assertRaises(subprocess.CalledProcessError):
+            run_checked(argv, cwd)
 
 
 if __name__ == "__main__":
