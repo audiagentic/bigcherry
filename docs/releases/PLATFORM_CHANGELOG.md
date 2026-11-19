@@ -1,5 +1,23 @@
 # Changelog
 
+## [1.53.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.52.0...bc-platform-1.53.0) (2026-11-19)
+
+
+### New and changed
+
+* **core:** add platform run-record v1 store and queries ([#1188](https://github.com/audiagentic/bigcherry/issues/1188)) ([dec549f](https://github.com/audiagentic/bigcherry/commit/dec549f8d4efa5565190dfd5d245574508a490ac))
+* **core:** collect platform host facts for run records (MRC02) ([#1191](https://github.com/audiagentic/bigcherry/issues/1191)) ([0687764](https://github.com/audiagentic/bigcherry/commit/0687764388d71adf6b7623d56e1cdc051c1d9457))
+* **radiance:** build with the FFmpeg media decoder; image input modes measured ([#1189](https://github.com/audiagentic/bigcherry/issues/1189)) ([5820391](https://github.com/audiagentic/bigcherry/commit/5820391c817571a66033d27e8981afeee8c08b42))
+* **radiance:** ship bf16_i8 KV as named configs (TP3 27B, Flash-Next at 4 sessions) with evidence ([#1184](https://github.com/audiagentic/bigcherry/issues/1184)) ([358ddd1](https://github.com/audiagentic/bigcherry/commit/358ddd197de6e96310033ae69e6ff90b4ef17b29))
+* **results:** add portable baselines compare and history (MRC05) ([#1198](https://github.com/audiagentic/bigcherry/issues/1198)) ([78c1b86](https://github.com/audiagentic/bigcherry/commit/78c1b8629acfb017ff4aa5d0875c6f5b8db27fc5))
+* **serving:** publish native feature states at startup ([#1195](https://github.com/audiagentic/bigcherry/issues/1195)) ([7c73af9](https://github.com/audiagentic/bigcherry/commit/7c73af98fb5b23a32a1309cc2b4b5551dfda371a))
+
+
+### Fixes
+
+* **radiance:** ship release heat seeds and default session recording ([#1197](https://github.com/audiagentic/bigcherry/issues/1197)) ([bf27b43](https://github.com/audiagentic/bigcherry/commit/bf27b433839cdbed161f301c564b7893b398b407))
+* **release:** keep ELF debug symbols outside bundle staging ([#1187](https://github.com/audiagentic/bigcherry/issues/1187)) ([84e12a1](https://github.com/audiagentic/bigcherry/commit/84e12a17fe87ae0dbb6fbcc3cf7c6db56c41b718))
+
 ## [1.52.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.3...bc-platform-1.52.0) (2026-11-19)
 
 
