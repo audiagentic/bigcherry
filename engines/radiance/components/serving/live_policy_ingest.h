@@ -2,16 +2,23 @@
 // RHP16: ingest the helper's one-line, measured calibration evidence into the TOML cache.
 // No GPU or manifest-contract changes; caller supplies a strict v1 lab manifest.
 #include <filesystem>
+#include <optional>
+#include <nlohmann/json.hpp>
 #include <string>
 
 namespace bc::serving {
 // Card-free verified-identity ingestion primitive; the CLI wrapper also checks
 // the strict v1 lab manifest before supplying these identity values.
+struct LivePolicyProvenance {
+    nlohmann::json inputs;
+    std::string source_plan_key, source_engine_build;
+};
 void ingest_live_policy_record(const std::filesystem::path& log,
                                const std::filesystem::path& cache,
                                const std::string& key, const std::string& layout,
                                const std::string& objective,
-                               const std::string& target_store_key);
+                               const std::string& target_store_key,
+                               const std::optional<LivePolicyProvenance>& provenance = std::nullopt);
 void ingest_live_policy_log(const std::filesystem::path& log,
                             const std::filesystem::path& cache,
                             const std::filesystem::path& manifest,

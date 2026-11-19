@@ -1,5 +1,6 @@
 #include "live_policy_ingest.h"
 #include "live_policy.h"
+#include "plan_cache.h"
 #include "v2/manifest.h"
 
 #include <nlohmann/json.hpp>
@@ -127,13 +128,23 @@ void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
     if (key.size() != 64) invalid("manifest has no measured plan-cache key");
     if (target_store_key.size() != 64 || target_store_key.find_first_not_of("0123456789abcdef") != std::string::npos)
         invalid("missing or invalid validated plan-store key");
-    ingest_live_policy_record(log, cache, key, layout, objective, target_store_key);
+    const Json raw = Json::parse(read_text(manifest));
+    const Json policy_inputs = policy_calibration_inputs(raw.at("spec"));
+    const std::string expected = policy_calibration_key(policy_inputs);
+    if (target_store_key != expected)
+        invalid("target policy key differs from the verified measured manifest scope");
+    if (!m.spec.plan.engine_memory)
+        invalid("manifest has no measured engine plan provenance");
+    ingest_live_policy_record(log, cache, key, layout, objective, target_store_key,
+                              LivePolicyProvenance{policy_inputs, v2::plan_cache_key(m),
+                                                   m.spec.plan.engine_memory->engine_identity});
 }
 
 void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
                                const std::string& key, const std::string& layout,
                                 const std::string& objective,
-                               const std::string& target_store_key) {
+                               const std::string& target_store_key,
+                               const std::optional<LivePolicyProvenance>& provenance) {
     if (log.empty() || cache.empty()) invalid("log and calibration cache are required");
     std::istringstream lines(read_text(log));
     std::string line;
@@ -148,14 +159,24 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
     }
     if (!found) invalid("no settled calibration record in helper log");
     check_record(record, key, layout, objective);
-    // Production reads records only at the RSC03 plan-store key; the helper's v1 key alone is never a store key.
+    // Store by the independently scoped policy key, never the helper's legacy plan key.
     const std::string& store_key = target_store_key;
     if (store_key.size() != 64 || store_key.find_first_not_of("0123456789abcdef") != std::string::npos)
-        invalid("invalid target plan-store key");
-    // Only after validating the helper's authentic, manifest-backed key is
-    // the record mapped to the distinct RSC03 plan-cache identity that the
-    // serving manifest writer uses for calibration lookup.
+        invalid("invalid target policy-calibration key");
+    // Validate the helper's measured plan key first, then store the observation
+    // under the policy scope. The original full plan/build identities survive
+    // separately in provenance and never affect lookup.
     record["plan_cache_key"] = store_key;
+    if (provenance) {
+        if (policy_calibration_key(provenance->inputs) != store_key)
+            invalid("policy scope digest differs from requested store key");
+        for (const std::string& hex : {provenance->source_plan_key, provenance->source_engine_build})
+            if (hex.size() != 64 || hex.find_first_not_of("0123456789abcdef") != std::string::npos)
+                invalid("missing or invalid source plan/build provenance");
+        record["calibration_inputs"] = provenance->inputs.dump();
+        record["source_plan_key"] = provenance->source_plan_key;
+        record["source_engine_build"] = provenance->source_engine_build;
+    }
     if (!cache.parent_path().empty() && !fs::exists(cache.parent_path()))
         invalid("calibration cache parent directory does not exist");
     Lock lock(cache.string() + ".lock");
@@ -177,6 +198,9 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
             out << "\n[[live_policy_record]]\n";
             for (const auto& field : {"plan_cache_key", "layout", "objective", "seeded", "evidence"})
                 out << field << " = " << toml_string(record.at(field)) << '\n';
+            if (provenance)
+                for (const auto& field : {"calibration_inputs", "source_plan_key", "source_engine_build"})
+                    out << field << " = " << toml_string(record.at(field)) << '\n';
             for (auto it = record.at("measurements").begin();
                  it != record.at("measurements").end(); ++it)
                 out << it.key() << " = " << it.value().dump() << '\n';

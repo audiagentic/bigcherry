@@ -2286,12 +2286,17 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     "measured manifest power admission");
                 power_admitted = true;
             }
-            if (in.calibration_run)
+            if (in.calibration_run) {
+                // Use the strict manifest we actually launched, not the memory-plan identity.
+                std::ifstream calibration_manifest(manifest);
+                if (!calibration_manifest)
+                    throw PlanFailed("calibration: cannot read the written measured manifest");
+                Json written;
+                calibration_manifest >> written;
                 out.summary["calibration_store_key"] =
-                    bc::serving::calibration_key(bc::serving::plan_key_inputs(
-                        v, facts,
-                        bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
-                        bc::serving::engine_identity(engine, home), "budgets: default"));
+                    bc::serving::policy_calibration_key(
+                        bc::serving::policy_calibration_inputs(written.at("spec")));
+            }
             if (cache_selection) {
                 if (!fs::is_regular_file(s8_source))
                     throw PlanFailed("writer failed to publish its original native P1/P2 replay evidence");

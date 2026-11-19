@@ -10,7 +10,8 @@
 
 namespace bc::serving {
 std::optional<DerivedLivePolicy> derive_manifest_live_policy(
-    const ManifestInputs& in, const bc::experts::Container& container, std::string* skipped_reason) {
+    const ManifestInputs& in, const bc::experts::Container& container, const Json& spec,
+    std::string* skipped_reason) {
     // An unmeasured manifest is never what a start uses (the measured one follows), so it carries no reason.
     if (!in.measured) return std::nullopt;
     // The placement planner (worker_heat.h, worker_share::plan_tail) takes the LAST helper to be the tail and every other helper a head.
@@ -37,19 +38,22 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
         if (skipped_reason) *skipped_reason = "no calibration store was given (bc-serve --calibration)";
         return std::nullopt;
     }
-    const std::string key = calibration_key(in.measured->key_inputs);
+    const Json policy_inputs = policy_calibration_inputs(spec);
+    const std::string key = policy_calibration_key(policy_inputs);
     const auto record = read_live_policy_record(in.calibration_cache, key);
     if (!record) {
         // Silence here once left every start of a layout without a policy after a plan-key change orphaned its record.
         if (skipped_reason)
             *skipped_reason = "no calibration record for key=" + key + " in " + in.calibration_cache.string() +
-                              " (a changed layout, helper budget or engine argument is a new key: calibrate again)";
+                              " (legacy hash-only records lack model/card provenance and need verified migration)";
         return std::nullopt;
     }
     const auto skip = [&](const std::string& why) -> std::optional<DerivedLivePolicy> {
         if (skipped_reason) *skipped_reason = "record key=" + key + ": " + why;
         return std::nullopt;
     };
+    if (!record->calibration_inputs || *record->calibration_inputs != policy_inputs)
+        return skip("record has no matching model/card/service calibration provenance; not activating legacy or incompatible evidence");
     // Behind a TP engine (RAD49) every rank counts every routed row of a handed-off pass (the router is replicated), so rank
     // 0's histogram covers the layers either rank consumes, and the helpers store and move full-width experts: the policy
     // applies to any engine width. The histogram counts only passes the remote row gate admits (the publish op runs only

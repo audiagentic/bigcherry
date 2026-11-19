@@ -13,6 +13,10 @@ struct ManifestInputs;
 struct LivePolicyRecord {
     std::string key, layout, objective, seeded, evidence, source;
     nlohmann::json measurements;
+    // New-format records bind source evidence to the narrow, typed hardware/service scope.
+    // Historical hash-only records may be parsed for audit but cannot be auto-activated.
+    std::optional<nlohmann::json> calibration_inputs;
+    std::string source_plan_key, source_engine_build;
     // Partial evidence has explicit missing reasons; never derive from it.
     nlohmann::json absent = nlohmann::json::object();
 };
@@ -34,5 +38,6 @@ DerivedLivePolicy derive_live_policy(const LivePolicyRecord& record, const Calib
                                      const CalibrationMatch& match, uint64_t expert_stride_bytes,
                                      const std::vector<uint64_t>& helper_budget_bytes);
 std::optional<DerivedLivePolicy> derive_manifest_live_policy(const ManifestInputs& in,
-    const bc::experts::Container& container, std::string* skipped_reason = nullptr);
+    const bc::experts::Container& container, const nlohmann::json& spec,
+    std::string* skipped_reason = nullptr);
 } // namespace bc::serving

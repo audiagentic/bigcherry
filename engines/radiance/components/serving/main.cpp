@@ -628,7 +628,10 @@ int main(int argc, char** argv) {
             const Json raw = Json::parse(in);
             if (raw.at("spec").at("plan").at("engine_memory").at("expected") != plan->plan_json)
                 throw std::runtime_error("calibration-ingest: cached measured plan differs from lab manifest");
-            bc::serving::ingest_live_policy_log(log, cache, manifest, bc::serving::calibration_key(inputs));
+            bc::serving::ingest_live_policy_log(
+                log, cache, manifest,
+                bc::serving::policy_calibration_key(
+                    bc::serving::policy_calibration_inputs(raw.at("spec"))));
             std::cout << "calibration: " << cache << '\n';
             return 0;
         }
@@ -992,7 +995,8 @@ int main(int argc, char** argv) {
             const auto placement =
                 has_handoff ? spec.at("handoff").at("placement") : bc::serving::Json::object();
             if (has_handoff && !placement.contains("live_policy"))
-                std::cerr << "live policy: no calibration for key " << bc::serving::calibration_key(key_inputs)
+                std::cerr << "WARNING live policy OFF: policy-calibration key " << bc::serving::policy_calibration_key(
+                                 bc::serving::policy_calibration_inputs(spec))
                           << "; " << placement.at("live_policy_state").at("reason_code").get<std::string>()
                           << ": " << placement.at("live_policy_state").at("reason_detail").get<std::string>()
                           << '\n';

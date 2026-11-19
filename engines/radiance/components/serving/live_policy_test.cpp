@@ -299,23 +299,45 @@ static void derive_says_why() {
     bc::experts::Container container;
     sv::ManifestInputs in;
     std::string why;
-    assert(!sv::derive_manifest_live_policy(in, container, &why) && why.empty());   // unmeasured: no reason
     sv::MeasuredPlan measured;
     measured.key_inputs = Json{{"engine_build", "x"}, {"layout", "flashnext-4gpu"}};
+    const Json policy_spec = {
+        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'a')}}}}},
+        {"intent", {{"layout", "flashnext-4gpu"},
+                    {"service", {{"objective", "balanced"}}}, {"power", {{"profile", "stock"}}}}},
+        {"facts", {{"gpus", Json::array({
+            Json{{"bdf", "0000:03:00.0"}, {"arch", "gfx1100"}, {"vram", {{"total_mib", 24560}}}},
+            Json{{"bdf", "0000:06:00.0"}, {"arch", "gfx1030"}, {"vram", {{"total_mib", 16368}}}},
+            Json{{"bdf", "0000:09:00.0"}, {"arch", "gfx1201"}, {"vram", {{"total_mib", 32624}}}}
+        })}}},
+        {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:09:00.0"})}}}}},
+                       {"helpers", Json::array({
+                            Json{{"gpu", "0000:03:00.0"}, {"tier", "head"},
+                                 {"formats", Json::array({"w4nl64"})}, {"rows_kernel", "gemm"}},
+                            Json{{"gpu", "0000:06:00.0"}, {"tier", "tail"},
+                                 {"formats", Json::array({"w4nl64"})}, {"rows_kernel", "gemm"}}
+                       })},
+                       {"helper_common", Json::object()}}},
+        {"handoff", {{"transport", {{"max_rows", 4096}, {"small_rows", 8},
+                                  {"gemv_large_rows", 32}, {"skip_owned", true}}},
+                     {"kernels", {{"moe_down_tile", 1}}},
+                     {"telemetry", {{"period_s", 1}}}}}
+    };
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why) && why.empty()); // unmeasured
     in.measured = measured;
     why.clear();
-    assert(!sv::derive_manifest_live_policy(in, container, &why));                   // no store given
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why));                   // no store given
     assert(why.find("no calibration store") != std::string::npos);
     // Helper arrangement the planner is not built for: no tail (flashnext-2xtx) is refused with the arrangement named.
     in.resolved.manifest = Json{{"process_helpers", Json::array({Json{{"placement", "head"}}, Json{{"placement", "head"}}})}};
     why.clear();
-    assert(!sv::derive_manifest_live_policy(in, container, &why));
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why));
     assert(why.find("exactly one tail helper") != std::string::npos && why.find("[head,head]") != std::string::npos);
     in.resolved.manifest = Json{{"process_helpers", Json::array({Json{{"placement", "head"}}, Json{{"placement", "tail"}}})}};
     const fs::path store = write_fixture("schema_version = 1\n");
     in.calibration_cache = store;
     why.clear();
-    assert(!sv::derive_manifest_live_policy(in, container, &why));                   // store without this key
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why));                   // store without this key
     assert(why.find("no calibration record for key=") != std::string::npos);
     assert(why.find(store.string()) != std::string::npos);
     fs::remove(store);

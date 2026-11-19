@@ -1540,22 +1540,44 @@ void manifest_writer_step(Fixture& t) {
     // This synthetic tiny model has synthetic additional effect/lanes/drift readings.
     {
         sv::ManifestInputs calibrated = in;
-        const std::string key = sv::calibration_key(calibrated.measured->key_inputs);
-        { // The calibration key ignores the pinned engine commit (records carry across bumps) and nothing else.
-            auto bumped = calibrated.measured->key_inputs;
-            bumped["engine_build"] = std::string(64, 'f');
-            assert(sv::calibration_key(bumped) == key &&
-                   sv::plan_key(bumped) != sv::plan_key(calibrated.measured->key_inputs));
-            auto other = calibrated.measured->key_inputs;
-            other["layout"] = "another-layout";
-            assert(sv::calibration_key(other) != key);
+        const Json policy_inputs = sv::policy_calibration_inputs(built.document.at("spec"));
+        const std::string key = sv::policy_calibration_key(policy_inputs);
+        { // Rebuilds, helper VRAM budgets and host memory do not change measured policy scope.
+            auto changed = built.document.at("spec");
+            changed["plan"]["engine_memory"]["engine_identity"] = std::string(64, 'f');
+            changed["processes"]["helpers"][0]["vram_budget_mib"] = 1234;
+            changed["resources"]["host"]["pool_mib"] = 1234;
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) == key);
+            changed = built.document.at("spec");
+            changed["intent"]["layout"] = "another-layout";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["intent"]["service"]["objective"] = "latency";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["handoff"]["telemetry"]["period_s"] = 1;
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["processes"]["helpers"][0]["gpu"] = "0000:06:00.0";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["plan"]["engine_memory"]["model_identity"] = std::string(64, 'f');
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["facts"]["gpus"][0]["arch"] = "gfx1030";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
         }
         calibrated.calibration_cache =
             t.file("live-policy-record.toml",
                    "schema_version = 1\n[[live_policy_record]]\n"
                    "plan_cache_key = \"" +
                        key +
-                       "\"\n"
+                       "\"\n" +
+
+                       "calibration_inputs = " + Json(policy_inputs.dump()).dump() + "\n" +
+                       "source_plan_key = \"" + sv::plan_key(calibrated.measured->key_inputs) + "\"\n" +
+                       "source_engine_build = \"" +
+                       calibrated.measured->key_inputs.at("engine_build").get<std::string>() + "\"\n" +
                        "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
                        "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic "
                        "noise/drift/lane readings\"\n"
@@ -1572,6 +1594,18 @@ void manifest_writer_step(Fixture& t) {
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
         const auto with_calibration = sv::build_manifest(calibrated);
+        { // A different engine build consumes the SAME qualified hardware evidence,
+          // with a distinct strict memory-plan identity and a new manifest digest.
+            sv::ManifestInputs rebuilt = calibrated;
+            rebuilt.measured->key_inputs["engine_build"] = std::string(64, 'f');
+            const auto carried = sv::build_manifest(rebuilt);
+            assert(carried.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            assert(carried.document.at("spec").at("plan").at("engine_memory").at("engine_identity") !=
+                   with_calibration.document.at("spec").at("plan").at("engine_memory").at("engine_identity"));
+            assert(carried.digest != with_calibration.digest);
+            assert(bc::serving::v2::read_manifest(carried.text, "carried calibration",
+                                                  bc::serving::v2::PlanUse::serving).ok());
+        }
         { // A policy-enabled manifest must STILL refuse missing live heat.
             namespace ss = bc::serving::session;
             const fs::path document = t.root / "policy-enabled-guard-manifest.json";
@@ -1751,6 +1785,12 @@ void manifest_writer_step(Fixture& t) {
         calibration_run.live_policy_from = "--live-policy policy.json";
         const auto cr = sv::build_manifest(calibration_run);
         assert(!cr.document.at("spec").contains("experiment"));
+        // The record a calibration run files must be the one a production start of the same configuration looks up:
+        // the lab and production manifests carry the same calibrated scope.
+        assert(sv::policy_calibration_key(sv::policy_calibration_inputs(cr.document.at("spec"))) ==
+                   sv::policy_calibration_key(sv::policy_calibration_inputs(built.document.at("spec"))) &&
+               sv::policy_calibration_inputs(cr.document.at("spec")) ==
+                   sv::policy_calibration_inputs(built.document.at("spec")));
         const auto cr_path = t.root / "calibration-run-manifest.json";
         const auto prod_path = t.root / "production-manifest.json";
         sv::write_manifest_file(cr_path, cr.text);
@@ -1825,7 +1865,8 @@ void manifest_writer_step(Fixture& t) {
             out << "RHP16_CALIBRATION_JSON " << row.dump() << "\n";
         }
         const auto store = t.root / "calibration-run-store.toml";
-        const std::string store_key(64, 'e');
+        const std::string store_key = sv::policy_calibration_key(
+            sv::policy_calibration_inputs(cr.document.at("spec")));
         try {
             sv::ingest_live_policy_log(helper_log, store, prod_path, store_key);
             assert(false);
@@ -1833,10 +1874,19 @@ void manifest_writer_step(Fixture& t) {
             assert(std::string(e.what()).find("calibration-run manifest") != std::string::npos);
         }
         assert(!fs::exists(store));
+        bool bad_scope_rejected = false;
+        try {
+            sv::ingest_live_policy_log(helper_log, store, cr_path, std::string(64, 'e'));
+        } catch (const std::runtime_error& e) {
+            bad_scope_rejected = std::string(e.what()).find("target policy key") != std::string::npos;
+        }
+        assert(bad_scope_rejected && !fs::exists(store));
         sv::ingest_live_policy_log(helper_log, store, cr_path, store_key);
         const auto ingested = sv::read_live_policy_record(store, store_key);
         assert(ingested && sv::live_policy_record_complete(*ingested) &&
-               ingested->layout == crm.spec.intent.layout);
+               ingested->layout == crm.spec.intent.layout &&
+               ingested->calibration_inputs &&
+               *ingested->calibration_inputs == sv::policy_calibration_inputs(cr.document.at("spec")));
     }
     // The unmeasured manifest of the measuring start: owner map and settings, no plan and nothing derived from
     // one. A serving start refuses it, a measuring start reads it, and the measured manifest is the reverse.
@@ -3127,6 +3177,45 @@ void session_engine_plan(Fixture& t) {
             ::unsetenv("BIGCHERRY_CONFIGS");
         assert(calls.size() == 1 && has(calls[0], "--configs", (configs / "qwen27b.toml").string()) &&
                !flag(calls[0], "--layouts"));
+    }
+    { // A calibration run files its record under the key of the manifest it served with: the one production looks
+      // up. The host pool is re-measured between the two writes (1033 -> 2247 MiB on flashnext-4gpu), so a key that
+      // depended on it, or on the engine args, could never match; the written manifest's own scope is the key.
+        namespace sv = bc::serving;
+        using Json = nlohmann::json;
+        auto scope_manifest = [](int pool_mib) {
+            return Json{{"facts", {{"gpus", Json::array({{{"bdf", "0000:03:00.0"}, {"arch", "gfx1201"},
+                                                            {"vram", {{"total_mib", 32624}}}}})}}},
+                        {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}}}},
+                                       {"helpers", Json::array()}, {"helper_common", Json::object()}}},
+                        {"handoff", {{"transport", {{"max_rows", 64}, {"small_rows", 4}, {"gemv_large_rows", 16},
+                                                    {"skip_owned", true}}},
+                                     {"kernels", {{"moe_down_tile", 8}}}, {"telemetry", {{"period_s", 5}}}}},
+                        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'm')}}}}},
+                        {"intent", {{"layout", "flashnext-4gpu"}, {"service", {{"objective", "balanced"}}},
+                                    {"power", {{"profile", "stock"}}}}},
+                        {"resources", {{"host", {{"pool_mib", pool_mib}}}}}};
+        };
+        ss::EnginePlanInputs cal = in;
+        cal.calibration_run = true;
+        cal.live_policy_file = t.file("session-cal-policy.json", "{\"accept_unwatermarked_heat\": true}\n");
+        cal.calibration_prompts_a = t.file("session-cal-a.txt", "prompt a\n");
+        cal.calibration_prompts_b = t.file("session-cal-b.txt", "prompt b\n");
+        cal.calibration_store = t.file("session-cal-store.toml", "");
+        std::string keys[2];
+        int i = 0;
+        for (const int pool : {1033, 2247}) {
+            const Json written = {{"spec", scope_manifest(pool)}};
+            cal.runner = [&](const std::vector<std::string>& argv) {
+                ss::ManifestRun r;
+                std::ofstream(argv[2]) << written.dump();
+                return r;
+            };
+            const ss::EngineStart cs = ss::plan_engine_only(cal, run, wait);
+            keys[i++] = cs.summary.at("calibration_store_key").get<std::string>();
+            assert(keys[i - 1] == sv::policy_calibration_key(sv::policy_calibration_inputs(written.at("spec"))));
+        }
+        assert(keys[0] == keys[1]); // a re-measured host pool does not move the record
     }
     // a failed manifest write and a layout (server-args are the bash launcher's) are refused before any engine
     // starts

@@ -416,21 +416,6 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         fail("an engine-only configuration has no helpers: no live placement policy or helper shape applies");
     Json live_policy = in.live_policy;
     Json derived_provenance = Json::object();
-    if (live_policy.is_null() && in.profile == "production" && !engine_only) {
-        std::string skipped_reason;
-        if (const auto derived = derive_manifest_live_policy(in, container, &skipped_reason)) {
-            live_policy = derived->policy;
-            derived_provenance = derived->provenance;
-        } else if (!skipped_reason.empty()) {
-            std::fprintf(stderr, "live policy calibration skipped: %s; serving without live_policy\n",
-                         skipped_reason.c_str());
-            // The absent live_policy has no JSON pointer. Record the decision
-            // on its existing placement parent, which survives strict reading.
-            derived_provenance["/spec/handoff/placement"] =
-                record("derived", ("live policy disabled: " + skipped_reason).c_str(),
-                       "derived", "measured", Json::array({"/spec/calibration"}));
-        }
-    }
 
 
     Json spec = {{"intent",
@@ -470,6 +455,23 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                                          {"model_identity", in.measured->key_inputs.at("model")},
                                          {"engine_identity", in.measured->key_inputs.at("engine_build")},
                                          {"expected", in.measured->plan.plan_json}};
+    if (live_policy.is_null() && in.profile == "production" && !engine_only) {
+        std::string skipped_reason;
+        if (const auto derived = derive_manifest_live_policy(in, container, spec, &skipped_reason)) {
+            live_policy = derived->policy;
+            spec["handoff"]["placement"]["live_policy"] = live_policy;
+            derived_provenance = derived->provenance;
+        } else if (!skipped_reason.empty()) {
+            std::fprintf(stderr, "live policy calibration skipped: %s; serving without live_policy\n",
+                         skipped_reason.c_str());
+            // The absent live_policy has no JSON pointer. Record the decision
+            // on its existing placement parent, which survives strict reading.
+            derived_provenance["/spec/handoff/placement"] =
+                record("derived", ("live policy disabled: " + skipped_reason).c_str(),
+                       "derived", "measured", Json::array({"/spec/calibration"}));
+        }
+    }
+
     if (!in.experiment.is_null()) {
         if (in.profile != "lab") fail("an experiment needs the lab profile");
         spec["experiment"] = in.experiment;
