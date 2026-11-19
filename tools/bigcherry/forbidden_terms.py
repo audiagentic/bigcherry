@@ -67,11 +67,26 @@ GENERIC = (
 )
 
 
+def _local_lists(root: Path) -> list[Path]:
+    """The untracked local config of this checkout and, in a linked worktree, of the primary checkout (an untracked
+    file is not copied into a worktree, so without this the list would apply only where it was written)."""
+    found = [root / LOCAL_FILE]
+    common = subprocess.run(["git", "-C", str(root), "rev-parse", "--path-format=absolute", "--git-common-dir"],
+                            capture_output=True, text=True, check=False).stdout.strip()
+    if common:
+        primary = Path(common).parent
+        if primary != root:
+            found.append(primary / LOCAL_FILE)
+    return [p for p in found if p.is_file()]
+
+
 def configured_terms(root: Path) -> list[str]:
-    """Terms from the untracked local config and the environment; never from tracked files."""
+    """Terms from the untracked local config(s) and the environment; never from tracked files.
+
+    A term may end in ``*``, which stands for any digits after it (``name*`` is name, name2, name17).
+    """
     terms: list[str] = []
-    local = root / LOCAL_FILE
-    if local.is_file():
+    for local in _local_lists(root):
         data = tomllib.loads(local.read_text(encoding="utf-8"))
         terms += [str(t) for t in data.get("forbidden", {}).get("terms", [])]
     terms += [t.strip() for t in os.environ.get("BIGCHERRY_FORBIDDEN_TERMS", "").split(",") if t.strip()]
@@ -87,7 +102,8 @@ def _allowed_phrases(root: Path) -> list[str]:
 
 
 def _term_pattern(term: str) -> re.Pattern[str]:
-    return re.compile(rf"(?<![A-Za-z]){re.escape(term)}(?![A-Za-z])", re.IGNORECASE)
+    stem, numbered = (term[:-1], True) if term.endswith("*") else (term, False)
+    return re.compile(rf"(?<![A-Za-z]){re.escape(stem)}{'[0-9]*' if numbered else ''}(?![A-Za-z])", re.IGNORECASE)
 
 
 def scan_line(line: str, term_patterns: list[re.Pattern[str]], allowed: list[str]) -> list[str]:
