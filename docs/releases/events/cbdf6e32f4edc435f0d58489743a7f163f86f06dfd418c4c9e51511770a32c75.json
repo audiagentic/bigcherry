@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_012958_added-the-exact-abi43-integrat_9612",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream/RUM07.md"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Updated RUM07 with ABI43 code-level implementation guidance for retaining BigCherry B16F8/B16I8 KV layouts. The first integrated slice is resident h256/GQA12/page4 with explicit format routing, consistent physical row sizing, paired store/read support, shared MTP group handling, and streaming refusal until mirror/ring support exists. Descriptor-only source edits are explicitly deferred from candidate composition.",
+  "timestamp-utc": "2026-11-19T01:29:58.791274Z",
+  "user-summary-candidate": "Added the exact ABI43 integration path for hybrid KV formats to RUM07, including the first supported geometry and the storage, admission, and validation gates."
+}
