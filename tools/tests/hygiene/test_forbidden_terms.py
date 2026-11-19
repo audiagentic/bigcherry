@@ -46,6 +46,33 @@ class ForbiddenTermsTests(unittest.TestCase):
         self._stage("docs/a.md", "Ran on zeta-box yesterday.\n")
         self.assertTrue(any(label == "machine name" for _, _, label in ft.findings(self.root, staged=True)))
 
+    def test_star_suffix_matches_numbered_names_but_not_longer_words(self) -> None:
+        # "acct*" stands for acct, acct2, acct17 (numbered accounts); a longer word is not the name.
+        os.environ["BIGCHERRY_FORBIDDEN_TERMS"] = "acct*"
+        for text, hit in (("acct\n", True), ("acct2/work\n", True), ("user acct17 ran\n", True),
+                          ("account\n", False), ("acctual\n", False), ("xacct2\n", False)):
+            self._stage("docs/n.md", text)
+            self.assertEqual(hit, bool(ft.findings(self.root, staged=True)), text)
+
+    def test_list_in_the_primary_checkout_applies_in_a_linked_worktree(self) -> None:
+        # The list is untracked, so a linked worktree has no copy of it: it is read from the primary checkout.
+        (self.root / "config" / "environment.local.toml").write_text(
+            '[forbidden]\nterms = ["zeta-box"]\n', encoding="utf-8")
+        (self.root / "README.md").write_text("x\n", encoding="utf-8")
+        _git(self.root, "add", "README.md")
+        _git(self.root, "commit", "-q", "-m", "init")
+        linked = self.root.parent / (self.root.name + "-linked")
+        _git(self.root, "worktree", "add", "-q", "-b", "b", str(linked))
+        try:
+            self.assertFalse((linked / "config" / "environment.local.toml").exists())
+            self.assertEqual(["zeta-box"], ft.configured_terms(linked))
+            (linked / "docs").mkdir()
+            (linked / "docs" / "a.md").write_text("ran on zeta-box\n", encoding="utf-8")
+            _git(linked, "add", "docs/a.md")
+            self.assertTrue(ft.findings(linked, staged=True))
+        finally:
+            _git(self.root, "worktree", "remove", "--force", str(linked))
+
     def test_generic_patterns_are_reported_by_label(self) -> None:
         # Built from parts so this file holds no literal host path or address of its own.
         mount_path = "/" + "mnt" + "/data/work"
