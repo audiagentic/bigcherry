@@ -102,6 +102,8 @@ int main() {
         std::string contents((2U * 1024U * 1024U) + 5U, 'm');
         write(model, contents);
         const std::string first = ss::complete_file_identity(model);
+        expect(first == ss::complete_file_identity_bytes(contents),
+               "identity from authenticated multi-megabyte bytes must match the streamed path identity");
         // Compare with the original chunk-accumulator wire digest, not a new
         // similarly named hash; persisted static keys must remain compatible.
         std::string old_accumulator = "bigcherry/rsc12/chunked-file-v1\n";
@@ -163,8 +165,8 @@ int main() {
         s = base();
 
         write(saved, "unchanged strict-v2 manifest bytes\n");
-        const std::string digest = ss::complete_file_identity(saved);
-        expect(digest == ss::complete_file_identity_bytes("unchanged strict-v2 manifest bytes\n"),
+        const std::string digest = ss::complete_file_identity_bytes("unchanged strict-v2 manifest bytes\n");
+        expect(digest == ss::complete_file_identity(saved),
                "fingerprint over authenticated bytes must preserve the persisted chunked identity");
         // RED P2-6: the actual config-index writer stores a full model digest
         // keyed by stat identity, and the replay lookup must not even call the

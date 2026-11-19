@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_103151_fixed-a-component-test-gate-th_3585",
+  "files": [
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/components/serving/stored_manifest_cache_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove bc_native_fleet_config_test from the serving component's test target list because rad0009 registers it in the Radiance root build, not the component build. Strengthen the stored fingerprint equivalence regression across the existing >2 MiB fixture and serialize the named index from the bytes-based fingerprint. After merge of latest main f47633e91, rebuilt and passed bc_stored_manifest_cache_test, bc_serving_test and bc_session_stored_test.",
+  "timestamp-utc": "2026-11-19T10:31:51.856072Z",
+  "user-summary-candidate": "Fixed a component test gate that referenced a target owned by the Radiance root build and strengthened the cache fingerprint check."
+}

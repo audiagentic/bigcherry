@@ -58,3 +58,7 @@ Stored-cache follow-up: new index entries and authenticated replay now use the e
 ## C16 — Native parser value transport (2026-11-19)
 
 Changed the native YAML fixture to set `mixed-step-target-ms: 17` and assert both the parsed value and its native YAML provenance. The non-default sentinel makes this a value transport check, not a default-equivalence check. Rebuilt and ran `bc_native_fleet_config_test` linked to `rad_core` from the exact pinned Radiance v2.1.0 source; it exited 0. This still exercises the parser fixture, not the production managed launch path. Ledger event `chg_20261119_102412_made-the-upstream-parser-fixtu_9474` records the check.
+
+## C17 — Latest-main cache and component-test gate (2026-11-19)
+
+Merged `origin/main` through `f47633e91` (`1b9902703`) before continuing; it changes the S8 GPU inventory digest to exclude live VRAM. Removed `bc_native_fleet_config_test` from the serving component target roster because the package creates it in the Radiance root build. Strengthened the cache identity test to compare bytes and path fingerprints on a multi-megabyte input and serialize the named index from the bytes-derived digest. Rebuilt and passed `bc_stored_manifest_cache_test`, `bc_serving_test`, and `bc_session_stored_test`; `git diff --check` passed. Ledger event `chg_20261119_103151_fixed-a-component-test-gate-th_3585` records the correction.
