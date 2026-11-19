@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_110445_a-busy-disk-no-longer-makes-a_1741",
+  "files": [
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/runtime_guards.h",
+    "engines/radiance/components/serving/session_guards_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A production start with the live policy on stopped itself 15 s after reaching running: the steady-state heat guard found 'the launch-bound proof beside the histogram does not match this launch and file' for all six of its re-reads (a fixed 100 ms window). The engine publishes the raw histogram and then its proof with two renames; a poll between them sees the new file beside the previous proof, and a loaded disk can stretch the gap past 100 ms. The re-read window is now time-bounded and derived from the manifest's declared histogram period (never below the old 100 ms), and a persistent mismatch names the fields that differ (launch nonce, file identity, size, modification time, or no readable proof) so a recurrence is diagnosable. The cause of the one observed failure is not proven (no trace of the transient survives); this removes the race as an explanation and records the evidence next time.",
+  "timestamp-utc": "2026-11-19T11:04:45.181644Z",
+  "user-summary-candidate": "A busy disk no longer makes a policy-on production start stop itself over a momentarily mismatched heat proof, and a real mismatch says what differs."
+}
