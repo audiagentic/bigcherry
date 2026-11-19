@@ -127,6 +127,20 @@ class CiBundleTests(unittest.TestCase):
         self.assertEqual(self.verify_staged(TAG, stage), receipt)
         self.assertTrue((stage / receipt["name"]).is_file())
 
+    def test_elf_debug_sidecar_is_outside_upload_staging(self):
+        # A real ELF exercises the debug-split branch (unlike the byte fixtures).
+        source = self.path / "engine.c"
+        source.write_text("int main(void) { return 0; }\n")
+        subprocess.run(["cc", "-g", "-o", str(self.build / "bin/radiance"), str(source)],
+                       check=True)
+        receipt = cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
+        stage = self.work / "release-assets" / TAG
+        self.assertEqual({item.name for item in stage.iterdir()},
+                         {receipt["name"], receipt["checksum_name"],
+                          receipt["name"][:-len(".tar.gz")] + assets.CI_RECEIPT_SUFFIX})
+        self.assertTrue((self.work / "release-debug" / TAG / "bin/radiance.debug").is_file())
+        self.assertEqual(self.verify_staged(TAG, stage), receipt)
+
     def test_final_upload_gate_refuses_script_files_checksum_and_tag_confusion(self):
         receipt = cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
         stage = self.work / "release-assets" / TAG

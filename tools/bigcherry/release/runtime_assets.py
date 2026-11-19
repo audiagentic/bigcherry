@@ -376,8 +376,10 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict
         if old is not None and old != asset:
             staged.unlink()
             raise BundleError("release record asset changed; refusing to replace existing verified digest")
+        # Keep optional debug symbols alongside the work root, not inside the
+        # release upload staging directory (which must contain exactly three files).
         for item_name, symbol_file in debug.items():
-            sidecar = out / "debug" / (item_name + ".debug")
+            sidecar = work_root / "release-debug" / tag / (item_name + ".debug")
             sidecar.parent.mkdir(parents=True, exist_ok=True)
             shutil.copyfile(symbol_file, sidecar)
         staged.replace(dest)

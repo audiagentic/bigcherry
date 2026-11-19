@@ -209,7 +209,7 @@ class RuntimeAssetsTests(unittest.TestCase):
         self.assertNotEqual(assets.digest(shipped), original_digest)
         self.assertEqual(assets.digest(shipped), asset["binary_sha256"])
         self.assertEqual(asset["source_binary_sha256"], original_digest)
-        debug = archive.parent / "debug" / "bin/radiance.debug"
+        debug = self.work / "release-debug" / TAG / "bin/radiance.debug"
         self.assertTrue(debug.is_file(), debug)
         self.assertIn(".debug_info", subprocess.check_output(
             ["readelf", "-SW", str(debug)]).decode())
@@ -225,7 +225,7 @@ class RuntimeAssetsTests(unittest.TestCase):
             self.assertNotIn(".debug_info", section_names)
             self.assertNotIn(".symtab", section_names)
             self.assertIn(".dynsym", section_names)
-            self.assertTrue((archive.parent / "debug" / (name + ".debug")).is_file())
+            self.assertTrue((self.work / "release-debug" / TAG / (name + ".debug")).is_file())
         self.assertEqual(subprocess.run([str(restored / "radiance_home/bin/bc-serve")],
                                         check=False).returncode, 0)
 
