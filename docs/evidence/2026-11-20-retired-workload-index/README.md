@@ -2,8 +2,9 @@
 
 Before run records (MRC01-MRC06) `bigcherry workload run` wrote one `result.json` per run under the work root's
 `results/workloads/` and an index row. The manifests those rows named were purged on 2026-11-17, so the rows cannot
-be turned into run records with content provenance, and the project rule is no legacy readers. This page keeps what
-they showed; the folders and the listing code were then deleted.
+be turned into run records with content provenance, and the project rule is no legacy readers. The raw rows are kept in
+`workload-results-2026-11-11-12.tgz` (138 `result.json` files, one per run folder) and this page summarises them; the
+folders under the work root and the code that listed them were then deleted.
 
 Rows: 138, 2026-11-11 to 2026-11-12 (dates of the run folders), all `source=measured`, all on kernel
 7.0.13-gfxoff, layouts flashnext-4gpu (the stock four-card Flash-Next) and flashnext-2xtx-rdna2-tail. Policy is the

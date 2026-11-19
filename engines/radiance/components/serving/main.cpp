@@ -562,7 +562,7 @@ int main(int argc, char** argv) {
                 else throw std::runtime_error("calibration-prune: unknown or incomplete option " + arg);
             }
             if (cache.empty()) throw std::runtime_error("calibration-prune: --calibration FILE is required");
-            const auto removed = prune_live_policy_store(cache, apply);
+            const auto removed = bc::serving::prune_live_policy_store(cache, apply);
             for (const auto& key : removed) std::cout << (apply ? "removed " : "would remove ") << key << "\n";
             std::cout << "calibration-prune: " << removed.size() << (apply ? " removed" : " to remove (dry run; --apply removes)")
                       << " from " << cache.string() << "\n";
