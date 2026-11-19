@@ -6,8 +6,8 @@ schema = 1
 name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
-# radiance source 3deabdaeca17b58bad90d332f4b204cf7bb8a10e: rewrite rules target the pinned libr4d source and reject unmatched revisions.
-built-against = "3deabdaeca17b58bad90d332f4b204cf7bb8a10e"
+# radiance source b6b8751cccb0e834a13ae9e5afca824ee9a487aa: rewrite rules target the pinned libr4d source and reject unmatched revisions.
+built-against = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
 outputs = ["kernels/libr3.so"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
