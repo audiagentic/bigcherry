@@ -112,9 +112,11 @@ NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BU
 # A build directory (not an installed bundle) has no site file naming the engine home: say it, or the owner refuses
 # with "missing required key: engine.radiance_home".
 [ -d "$BUILD/radiance_home" ] && NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
-# The helpers need the workload heat file (it has no portable path). The measurement pins the recorded heat the stored
-# baseline was taken with; FLASHNEXT_PARITY_HEAT overrides it for a run that compares heat files on purpose.
-HEAT="${FLASHNEXT_PARITY_HEAT:-$REPO/tools/lab/radiance/heat/perf51.rank0.hot-first}"
+# The helpers need the workload heat file (it has no portable path). The default is the Flash-Next mixed-workload heat,
+# the launcher's default when the v1.17.0 baseline was taken (that run's own copy was lost; this is the 2026-11-18
+# re-recording). perf51 (a different layout's recording) costs ~10% of 256K prefill on flashnext-4gpu
+# (docs/evidence/2026-11-19-flashnext-4gpu-regression). FLASHNEXT_PARITY_HEAT overrides it for a heat comparison.
+HEAT="${FLASHNEXT_PARITY_HEAT:-$REPO/tools/lab/radiance/heat/flashnext-mixed.hot-first}"
 [ -f "$HEAT" ] || { echo "flashnext-parity: heat file $HEAT not found" >&2; exit 2; }
 NATIVE_ARGS+=(--set "handoff.heat=$HEAT")
 # FLASHNEXT_PARITY_SETS: extra space-separated dotted.key=value settings for an experiment arm; the owner log records them.
