@@ -81,11 +81,26 @@ int main(int argc, char** argv) {
     auto* generation = shm::generation_header(map, 0);
     auto* journal = shm::placement_journal(map);
     control->seq = 2;
-    control->transaction_id = 42;
+    control->transaction_id = 0;   // the boot placement: no transaction has begun, the journal is empty
     control->active_epoch = 7;
     control->journal_index = 0;
     generation->epoch = 7;
     generation->ready_helpers = 1;
+    assert(shm::valid_self(header, layout.bytes));
+    { std::ofstream output(manifest_path);
+      assert(output);
+      output << manifest.dump();
+    }
+    {
+        const std::string boot_directory = root.string();
+        assert(capture(argv[1], manifest_path.string(), "run-boot", dev, ino, digest, boot_directory) == 0);
+        std::ifstream boot_saved(root / "run-boot.runtime.json");
+        assert(boot_saved);
+        const Json boot = Json::parse(boot_saved);
+        assert(boot.at("runtime_status") == "active");
+        assert(boot.at("snapshots").at(0).at("transaction_id") == 0);
+    }
+    control->transaction_id = 42;
     journal->entry[0].transaction_id = 42;
     journal->entry[0].before_epoch = 7;
     journal->entry[0].before_digest = control->active_digest;
