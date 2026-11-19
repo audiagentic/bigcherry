@@ -187,6 +187,8 @@ C48 (2026-11-20): build_manifest now recomputes the complete v3 plan key from re
 
 C49 (2026-11-20): factored sealed memfd validation/snapshot reconstruction into `NativeConfigSnapshot::from_sealed_fd()` and reused it in Radiance's native inspector. The private v3-only `bc-serve --bc-native-config-fd` writer input populates `ManifestInputs.native_config` before both key calculations. Round-trip coverage passes in `bc_serving_v3_writer_test`; exact-recipe ABI44 consumer CTest and default v2 `bc_serving_test` pass; real `bc-serve` compiles against the isolated generated v3 codec and rejects the private fd option outside write-manifest mode. Evidence C49. No session caller or native measurement path is enabled; session admission still fails closed in default v2, and named/stored/offline replay and GPU start remain open.
 
+C50 (2026-11-20): isolated generated-v3 session now carries the owner-admitted NativeConfigSnapshot through a sealed fd to the real `bc-serve --write-manifest --unmeasured` child, with a frozen expected native plan key. It strictly pins measuring-role output, verifies snapshot bytes/SHA/root and ordered engine devices, confirms no engine_memory, then refuses before named cache/P1/power/GPU. Test deletes authored YAML after inspector exit, verifies writer success from sealed bytes, both children reaped, cache tripwire untouched and no plan cache. Focused `bc_native_v3_session_test`, `bc_serving_v3_writer_test` and default v2 `bc_serving_test` pass (1/1 each). Evidence C50. Still no native GPU measurement/cache publication/stored replay; default v2 behavior remains inspector-only refusal. Follow-up gates: route native plan-memory through NativeFleetConfig; reconcile native context/sequences/pool and parser-affecting environment; check the frozen key on first measured lookup and owner retry; define relationship between manifest integrity cache key and owner plan-cache v3 key for stored/offline replay; make managed reload refuse or require fresh admission; only then consider production gate.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -231,3 +233,4 @@ C49 (2026-11-20): factored sealed memfd validation/snapshot reconstruction into 
 - 2026-11-19T17:20:24.644470+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T17:30:20.876923+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T17:47:58.678450+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T18:02:50.675833+00:00 (updated-by): Updated: section:notes

@@ -3193,7 +3193,10 @@ void session_engine_plan(Fixture& t) {
     in.engine_binary = BC_FAKE_ENGINE;
     const Json session_facts = bc::serving::detect(t.root);
     const auto session_resolved = bc::serving::resolve(in.options, session_facts);
-    const SessionManifestPair session_manifests = session_manifest_pair(session_resolved, session_facts);
+    SessionManifestPair session_manifests;
+#ifndef BC_NATIVE_V3_SESSION_ONLY
+    session_manifests = session_manifest_pair(session_resolved, session_facts);
+#endif
     { // A private native admission request inspects and reconciles exact bytes, then stops before all v2-only side effects.
         ss::EnginePlanInputs gated = in;
         const fs::path native_root = t.root / "native-admission-root";
@@ -3217,10 +3220,12 @@ void session_engine_plan(Fixture& t) {
             ("stored-" + bc::serving::sha256_hex(gated.named_config) + ".index.json");
         std::ofstream(cache_tripwire) << "deliberately malformed cache index";
         int writer_calls = 0;
+#ifndef BC_NATIVE_V3_SESSION_ONLY
         gated.runner = [&](const std::vector<std::string>&) {
             ++writer_calls;
             return ss::ManifestRun{};
         };
+#endif
         bool power_admitted = false;
         std::vector<std::string> inspector_roles;
         std::vector<pid_t> reaped;
@@ -3228,10 +3233,17 @@ void session_engine_plan(Fixture& t) {
         admission_hooks.wait = [](std::chrono::milliseconds) { return true; };
         admission_hooks.started = [&](ss::ChildKind kind, const std::string& role, pid_t,
                                       const fs::path&) {
-            assert(kind == ss::ChildKind::native_config_inspector);
+            assert(kind == ss::ChildKind::native_config_inspector || kind == ss::ChildKind::manifest_writer);
             inspector_roles.push_back(role);
         };
-        admission_hooks.ended = [&](pid_t pid) { reaped.push_back(pid); };
+        admission_hooks.ended = [&](pid_t pid) {
+            if (reaped.empty()) {
+                std::error_code remove_error;
+                fs::remove(native_yaml, remove_error);
+                if (remove_error) throw std::runtime_error("cannot remove authored YAML after inspection");
+            }
+            reaped.push_back(pid);
+        };
         admission_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
             power_admitted = true;
             return bc::serving::v2::Status{};
@@ -3242,13 +3254,28 @@ void session_engine_plan(Fixture& t) {
             (void)ss::plan_engine_only(gated, gated_run, admission_hooks);
         } catch (const ss::PlanFailed& error) {
             native_gate_error = error.what();
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+            stopped_before_v2 = std::string_view(error.what()).find("native v3 measuring draft verified") !=
+                                std::string_view::npos;
+#else
             stopped_before_v2 = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
                                 std::string_view::npos;
+#endif
         }
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+        if (!(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 2 &&
+              inspector_roles[0] == "native config inspector" &&
+              inspector_roles[1] == "native v3 measuring draft writer" && reaped.size() == 2 &&
+              !fs::exists(gated_run / "plan-cache") && !fs::exists(native_yaml) &&
+              fs::exists(cache_tripwire)))
+            throw std::runtime_error("native v3 session did not verify a real writer draft before its closed gate: " +
+                                     native_gate_error);
+#else
         if (!(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
               inspector_roles[0] == "native config inspector" && reaped.size() == 1))
             throw std::runtime_error("native admission did not reach its expected fail-closed gate: " +
                                      native_gate_error);
+#endif
 
         ss::EnginePlanInputs reserved_override = gated;
         reserved_override.native_admission->runtime_overrides["CUDA_VISIBLE_DEVICES"] = "0";
@@ -3266,6 +3293,9 @@ void session_engine_plan(Fixture& t) {
         }
         assert(selector_refused && forbidden_inspector_calls == 0 && !power_admitted);
     }
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+    return;
+#endif
     std::vector<std::vector<std::string>> calls;
     auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
         for (size_t i = 0; i + 1 < argv.size(); ++i)
@@ -4237,6 +4267,19 @@ void helper_vram_owner_graph(Fixture& t) {
 }
 
 int main(int argc, char** argv) {
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+    (void)argc;
+    (void)argv;
+    try {
+        Fixture t;
+        session_engine_plan(t);
+        std::cout << "PASS: native v3 sealed snapshot session draft and pre-cache gate\n";
+        return 0;
+    } catch (const std::exception& e) {
+        std::cerr << "FAIL: " << e.what() << '\n';
+        return 1;
+    }
+#else
     bool write_golden = false;
     const char* dump_dir = nullptr;
     for (int i = 1; i < argc; ++i) {
@@ -4288,4 +4331,5 @@ int main(int argc, char** argv) {
         std::cerr << "FAIL: " << e.what() << '\n';
         return 1;
     }
+#endif
 }

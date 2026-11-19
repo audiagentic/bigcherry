@@ -239,6 +239,8 @@ int main(int argc, char** argv) {
               "the measured native plan did not round-trip through its owner cache receipt");
         inputs.measured->plan = *cached;
         inputs.measured->key_inputs = native_key;
+        inputs.engine_binary = binary;
+        inputs.plan_engine_args = "";
         const Json native_sources = {
             {"engine_plan", cached->plan_json}, {"rank_demand", cached->rank_demand},
             {"engine_binary", binary.string()}, {"helper_binary", ""},
@@ -272,20 +274,33 @@ int main(int argc, char** argv) {
         }
         check(inputs.measured->key_inputs == measured_key,
               "the real writer accepted a measured plan from a different execution root");
+        const auto refuses_rekeyed_input = [&](Json changed, const char* why) {
+            inputs.measured->key_inputs = std::move(changed);
+            inputs.measured->plan.key = sv::plan_key(inputs.measured->key_inputs);
+            try {
+                (void)sv::build_manifest(inputs);
+            } catch (const std::runtime_error& error) {
+                check(std::string_view(error.what()).find("key differs from the resolved native YAML") !=
+                          std::string_view::npos,
+                      error.what());
+                inputs.measured->key_inputs = measured_key;
+                inputs.measured->plan.key = cached->key;
+                return;
+            }
+            throw std::runtime_error(why);
+        };
+        Json wrong_model = measured_key;
+        wrong_model["model"] = std::string(64, 'c');
+        refuses_rekeyed_input(wrong_model, "writer accepted a plan with a re-keyed model identity");
+        Json wrong_build = measured_key;
+        wrong_build["engine_build"] = std::string(64, 'd');
+        refuses_rekeyed_input(wrong_build, "writer accepted a plan with a re-keyed engine build identity");
+        Json wrong_args = measured_key;
+        wrong_args["engine_args"] = "--kv-resident 1234";
+        refuses_rekeyed_input(wrong_args, "writer accepted a plan with re-keyed engine arguments");
         Json wrong_devices = measured_key;
         wrong_devices["native_config"]["rank_devices"][0]["bdf"] = "0000:ff:00.0";
-        inputs.measured->key_inputs = wrong_devices;
-        inputs.measured->plan.key = sv::plan_key(wrong_devices);
-        try {
-            (void)sv::build_manifest(inputs);
-        } catch (const std::runtime_error& error) {
-            check(std::string_view(error.what()).find("ordered device identity") != std::string_view::npos,
-                  error.what());
-            inputs.measured->key_inputs = measured_key;
-            inputs.measured->plan.key = cached->key;
-        }
-        check(inputs.measured->key_inputs == measured_key && inputs.measured->plan.key == cached->key,
-              "the real writer accepted a measured plan keyed to a different ordered GPU identity");
+        refuses_rekeyed_input(wrong_devices, "writer accepted a plan keyed to another ordered GPU identity");
         const auto serving = sv::build_manifest(inputs);
         check_snapshot(serving, wire::PlanUse::serving, *inputs.native_config, yaml, temporary.path);
         check(serving.document.at("spec").at("plan").at("engine_memory").at("expected") == cached->plan_json &&

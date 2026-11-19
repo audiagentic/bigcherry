@@ -155,6 +155,17 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
   set_tests_properties(bc_serving_test PROPERTIES TIMEOUT 180)
+  if(BC_SERVING_V3_NATIVE_TEST)
+    add_executable(bc_native_v3_session_test EXCLUDE_FROM_ALL serving_test.cpp)
+    target_link_libraries(bc_native_v3_session_test PRIVATE bc_serving bc_serving_v2_p1_producer)
+    add_dependencies(bc_native_v3_session_test bc_fake_engine bc-serve)
+    target_compile_definitions(bc_native_v3_session_test PRIVATE
+      BC_NATIVE_V3_SESSION_ONLY BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
+      BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
+    add_test(NAME bc_native_v3_session_test COMMAND bc_native_v3_session_test)
+    set_tests_properties(bc_native_v3_session_test PROPERTIES
+      TIMEOUT 60 ENVIRONMENT "BIGCHERRY_LAYOUTS=${CMAKE_CURRENT_SOURCE_DIR}/../../layouts")
+  endif()
   # RSC04: real named resolver and strict-v2 writer with only fake OS hardware facts.
   add_executable(bc_typed_settings_test EXCLUDE_FROM_ALL typed_settings_test.cpp)
   target_link_libraries(bc_typed_settings_test PRIVATE bc_serving)

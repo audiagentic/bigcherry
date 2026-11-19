@@ -29,6 +29,8 @@ struct MeasuredPlan {
 struct ManifestInputs {
     Resolved resolved;
     std::optional<NativeConfigSnapshot> native_config; // Required by the generated v3 edition.
+    std::filesystem::path engine_binary; // Selected matching engine whose bytes were keyed for a measured plan.
+    std::string plan_engine_args;        // Exact arguments the launcher supplied to Radiance's measuring plan.
     std::string profile;                     // spec.intent.service.profile: "production" or "lab", named by the caller
     std::string instance_id;                 // UUID v4
     std::string producer_sha256;             // SHA-256 of the running bc-serve executable

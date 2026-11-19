@@ -927,6 +927,8 @@ int main(int argc, char** argv) {
             bc::serving::ManifestInputs in;
             in.resolved = r;
             in.native_config = native_config;
+            in.engine_binary = engine_binary;
+            in.plan_engine_args = plan_extra;
             if (unmeasured) {
                 if (!expected_plan_key.empty()) {
                     const Json effective_key = bc::serving::plan_key_inputs(

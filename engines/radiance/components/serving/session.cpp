@@ -2308,9 +2308,45 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         (void)inspect_and_reconcile_native_config(
             engine, snapshot, home, v.at("engine").at("model").get<std::string>(), complete_environment,
             selected_bdfs, v.at("engine").at("tp").get<int>(), hooks);
-        throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
-                         "integration is incomplete; refusing before cache reuse, manifest writing, power "
-                         "admission, or GPU child startup");
+        if (v2::kContractVersion != 3)
+            throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
+                             "integration is incomplete; refusing before cache reuse, manifest writing, power "
+                             "admission, or GPU child startup");
+
+        // The candidate v3 lane proves only the sealed native snapshot to a real
+        // writer draft. It deliberately stops before cache selection, P1, power,
+        // measurement, helper startup or the serving engine.
+        if (in.runner)
+            throw PlanFailed("native v3 draft admission requires the real sealed-fd manifest writer child");
+        const Json frozen_key = plan_key_inputs(
+            v, facts, container_identity(v.at("engine").at("model").get<std::string>()),
+            engine_identity(engine, home), "budgets: default", &snapshot);
+        const auto snapshot_handoff = std::make_shared<PinnedManifest>(snapshot.manifest_field().dump());
+        const fs::path draft = run_dir / ("manifest-native-draft-" + stamp() + ".json");
+        std::vector<std::string> argv = {
+            in.self.string(), "--write-manifest", draft.string(), "--power-profile", in.power_profile,
+            "--unmeasured", "--expected-plan-key", plan_key(frozen_key), "--engine-binary", engine.string(),
+            "--plan-extra", "budgets: default", "--bc-native-config-fd",
+            std::to_string(snapshot_handoff->descriptor())};
+        const std::vector<std::string> resolver = resolver_args(in.options);
+        argv.insert(argv.end(), resolver.begin(), resolver.end());
+        const ManifestRun writer = run_planning_child(
+            argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
+            "native v3 measuring draft writer", snapshot_handoff->descriptor());
+        if (writer.exit != 0)
+            throw PlanFailed("native v3 draft writer failed: " + tail_text(writer.err));
+        const auto verified = pin_manifest_file(draft, v2::PlanUse::measuring);
+        const auto native_view = v2::native_config_view(verified.parsed);
+        const auto emitted_devices = verified.parsed.spec.processes.engine.device.gpus;
+        std::error_code remove_error;
+        fs::remove(draft, remove_error);
+        if (remove_error || !native_view || native_view->yaml_utf8 != snapshot.yaml_utf8() ||
+            native_view->identity.sha256 != snapshot.sha256() ||
+            native_view->identity.resolution_root != snapshot.resolution_root() ||
+            emitted_devices != selected_bdfs || verified.parsed.spec.plan.engine_memory)
+            throw PlanFailed("native v3 draft did not preserve the admitted snapshot, root, rank order and measuring role");
+        throw PlanFailed("native v3 measuring draft verified; P1, owner-cache measurement/reuse, stored replay, "
+                         "power admission and GPU startup remain gated");
     }
 
     // RSC12 has no lab experiment static key: never replay a different experiment.
