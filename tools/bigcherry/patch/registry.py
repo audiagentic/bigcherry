@@ -196,8 +196,18 @@ def _safe_resolve(base: Path, candidate: Path, *, what: str) -> Path:
     return resolved
 
 
-def _is_reserved(part: str) -> bool:
-    return part.startswith("_")
+# Retired patches are kept as evidence under ``<patches root>/archive/<patch_id>/`` (PATCH_SYSTEM.md, "Retired patches:
+# archive, never delete"). Nothing under it is ever discovered, composed, linted or built: it is reserved like a ``_``
+# directory.
+ARCHIVE_DIR = "archive"
+
+
+def is_reserved_part(part: str) -> bool:
+    """A path component the patch tree never looks inside: helpers (``_x``, ``__pycache__``) and the archive."""
+    return part.startswith("_") or part == ARCHIVE_DIR
+
+
+_is_reserved = is_reserved_part
 
 
 # ---------------------------------------------------------------- discovery
