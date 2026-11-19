@@ -155,6 +155,10 @@ C34 (2026-11-20): native snapshot SHA-256 and canonical resolution root now ente
 
 C35 (2026-11-20): added the internal-only `NativeAdmissionRequest` planner gate. `plan_engine_only` selects/verifies the matched engine and local devices, reads one immutable YAML snapshot, composes the filtered child environment once, invokes the tracked inspector with that complete environment, reconciles TP and ordered native rank BDFs to the selected local profile, and requires loopback listener compatibility. A successful inspection deliberately refuses before named-cache lookup, writer/P1, power admission, measuring or serving child. ABI44 `bc_serving_test` and `bc_session_test` pass (1/1 each); the planner fixture proves zero writer calls, zero power admission and no measuring/serving launch. Evidence C35 in `docs/evidence/radiance-latest-bump/README.md`; Ledger event `chg_20261119_145235_added-and-verified-a-private-f_1489`. This is not a public native launch path. Next: shared prepared ManifestInputs and edition-selected P1 owner-map producer, then native measurement/stored replay/cache identity coupling.
 
+
+
+C36 (2026-11-20): hardened C35 with matched runtime-home validation, exact local ordinal-card order checks, reserved device selector variables (`RADIANCE_HOME`, ROCR/HIP/CUDA visibility and GPU_DEVICE_ORDINAL), and a direct legacy stored-replay refusal when the private native request is present. The native planner test now sets a named config and malformed cache-index tripwire and proves the gate stops before cache parsing. Negative cases cover card order, home, selector override and replay bypass. ABI44 `bc_serving_test`, `bc_session_test`, and `bc_session_stored_test` pass (1/1 each). Evidence C36; Ledger event `chg_20261119_150725_hardened-the-private-native-ad_5410`. Still no public native launch: P1 must accept the same prepared snapshot, and writer/measurement/stored replay/native-aware cache paths must be migrated together.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -185,3 +189,4 @@ C35 (2026-11-20): added the internal-only `NativeAdmissionRequest` planner gate.
 - 2026-11-19T14:27:34.787625+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:39:17.405809+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:52:50.038889+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T15:07:40.385146+00:00 (updated-by): Updated: section:notes

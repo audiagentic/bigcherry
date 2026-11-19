@@ -400,6 +400,18 @@ int main(int argc, char** argv) {
         ss::Hooks pin_hooks;
         pin_hooks.wait = [](std::chrono::milliseconds) { return true; };
         pin_hooks.admit_power = [](const fs::path&, v2::PlanUse) -> v2::Status { return std::nullopt; };
+        ss::EnginePlanInputs conflicting = pinned.inputs;
+        conflicting.native_admission = ss::NativeAdmissionRequest{"unused.yaml", "unused-root", {}};
+        bool native_replay_refused = false;
+        try {
+            (void)ss::replay_stored_manifest(conflicting, pinned.run, pin_hooks);
+        } catch (const ss::PlanFailed& error) {
+            native_replay_refused = std::string_view(error.what()).find(
+                                        "private native admission cannot be combined with legacy stored replay") !=
+                                    std::string_view::npos;
+        }
+        check(native_replay_refused,
+              "legacy stored replay must refuse an unsupported private native admission request");
         const ss::EngineStart admitted = ss::replay_stored_manifest(pinned.inputs, pinned.run, pin_hooks);
         check(!admitted.stored_sha256.empty(), "stored bytes must have an admission digest");
         const std::string alternate_bytes =

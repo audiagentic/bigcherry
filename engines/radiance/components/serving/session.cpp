@@ -1850,15 +1850,30 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
 }
 
 NativeConfigInspection inspect_and_reconcile_native_config(
-    const fs::path& engine, const NativeConfigSnapshot& snapshot, const Env& complete_environment,
+    const fs::path& engine, const NativeConfigSnapshot& snapshot, const fs::path& selected_radiance_home,
+    const Env& complete_environment,
     const std::vector<std::string>& selected_engine_bdfs, int selected_tp, const Hooks& hooks) {
     const NativeConfigInspection report = inspect_native_config(engine, snapshot, complete_environment, hooks);
+    fs::path reported_home(report.radiance_home);
+    if (reported_home.is_relative())
+        reported_home = snapshot.resolution_root() / reported_home;
+    std::error_code home_error, selected_home_error;
+    const fs::path resolved_home = fs::weakly_canonical(reported_home, home_error);
+    const fs::path verified_home = fs::weakly_canonical(selected_radiance_home, selected_home_error);
+    if (home_error || selected_home_error || resolved_home != verified_home)
+        throw PlanFailed("native config admission: YAML runtime home differs from the verified matched build home");
     if (selected_tp <= 0 || report.tp != selected_tp)
         throw PlanFailed("native config admission: tensor parallelism differs from the selected local profile");
     if (report.rank_devices != selected_engine_bdfs)
         throw PlanFailed("native config admission: native rank-device order differs from the selected local BDF order");
     if (report.rank_devices.size() != static_cast<size_t>(report.tp))
         throw PlanFailed("native config admission: native TP and resolved rank-device count differ");
+    std::vector<int> expected_cards;
+    expected_cards.reserve(selected_engine_bdfs.size());
+    for (size_t i = 0; i < selected_engine_bdfs.size(); ++i)
+        expected_cards.push_back(static_cast<int>(i));
+    if (report.cards != expected_cards)
+        throw PlanFailed("native config admission: YAML card ordinals differ from the local rank visibility order");
     if (report.listener_host != "127.0.0.1")
         throw PlanFailed("native config admission: only the loopback listener is supported by the managed owner");
     return report;
@@ -2268,6 +2283,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                    {"helper_cards", v.at("layout").at("helper_cards")}};
 
     if (in.native_admission) {
+        static const std::array<const char*, 5> reserved_environment = {
+            "RADIANCE_HOME", "ROCR_VISIBLE_DEVICES", "HIP_VISIBLE_DEVICES", "CUDA_VISIBLE_DEVICES",
+            "GPU_DEVICE_ORDINAL"};
+        for (const char* key : reserved_environment)
+            if (in.native_admission->runtime_overrides.count(key))
+                throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
         const NativeConfigSnapshot snapshot =
             NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
         Env runtime = in.native_admission->runtime_overrides;
@@ -2275,8 +2296,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             runtime[name_key] = value; // verified build and local device selection take precedence
         const Env complete_environment = current_child_environment(runtime);
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
-        (void)inspect_and_reconcile_native_config(engine, snapshot, complete_environment, selected_bdfs,
-                                                 v.at("engine").at("tp").get<int>(), hooks);
+        (void)inspect_and_reconcile_native_config(engine, snapshot, home, complete_environment,
+                                                 selected_bdfs, v.at("engine").at("tp").get<int>(), hooks);
         throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
                          "integration is incomplete; refusing before cache reuse, manifest writing, power "
                          "admission, or GPU child startup");
@@ -2602,6 +2623,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
 
 EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& /*run_dir*/,
                                    const Hooks& hooks) {
+    if (given.native_admission)
+        throw PlanFailed("replay: private native admission cannot be combined with legacy stored replay; "
+                         "replay must consume the embedded native snapshot");
     if (!hooks.admit_power || !hooks.wait)
         throw PlanFailed("replay: missing required durable power admission or owner stop gate");
     if (given.stored_manifest.empty())

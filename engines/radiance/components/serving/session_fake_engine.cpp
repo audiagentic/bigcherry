@@ -147,18 +147,30 @@ int main(int argc, char** argv) {
             }
             rank_devices = parsed;
         }
+        json cards = json::array({0});
+        if (const char* configured_cards = std::getenv("TEST_NATIVE_INSPECT_CARDS")) {
+            const json parsed = json::parse(configured_cards, nullptr, false);
+            if (!parsed.is_array()) {
+                std::fprintf(stderr, "fake inspector: invalid test card list\n");
+                return 18;
+            }
+            cards = parsed;
+        }
+        const char* reported_home = std::getenv("TEST_NATIVE_INSPECT_REPORTED_HOME");
+        if (!reported_home) reported_home = std::getenv("RADIANCE_HOME");
+        if (!reported_home) reported_home = "runtime";
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v1"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", input.at("resolution_root")}}},
                        {"engine", {{"abi_version", 44},
                                     {"model", "tiny"},
-                                    {"radiance_home", "runtime"},
+                                    {"radiance_home", reported_home},
                                     {"radiance_home_source", nullptr},
                                     {"kernels", json::array({"k0"})},
                                     {"kernels_source", nullptr},
                                     {"listener", {{"host", "127.0.0.1"}, {"port", 8123}}},
                                     {"tp", tp},
-                                    {"cards", json::array({0})},
+                                    {"cards", cards},
                                     {"rank_devices", rank_devices},
                                     {"max_context", 4096},
                                     {"max_sequences", 1}}}};

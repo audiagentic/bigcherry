@@ -3129,7 +3129,14 @@ void session_engine_plan(Fixture& t) {
                                                             {{"TEST_NATIVE_INSPECT_TP", "3"},
                                                              {"TEST_NATIVE_INSPECT_RANK_DEVICES",
                                                               session_resolved.values.at("layout")
-                                                                  .at("engine_cards").dump()}}};
+                                                                  .at("engine_cards").dump()},
+                                                             {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"}}};
+        gated.named_config = "qwen27b-tp3-int8";
+        const fs::path gated_run = run / "native-admission";
+        fs::create_directories(gated_run);
+        const fs::path cache_tripwire = gated_run /
+            ("stored-" + bc::serving::sha256_hex(gated.named_config) + ".index.json");
+        std::ofstream(cache_tripwire) << "deliberately malformed cache index";
         int writer_calls = 0;
         gated.runner = [&](const std::vector<std::string>&) {
             ++writer_calls;
@@ -3152,13 +3159,29 @@ void session_engine_plan(Fixture& t) {
         };
         bool stopped_before_v2 = false;
         try {
-            (void)ss::plan_engine_only(gated, run / "native-admission", admission_hooks);
+            (void)ss::plan_engine_only(gated, gated_run, admission_hooks);
         } catch (const ss::PlanFailed& error) {
             stopped_before_v2 = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
                                 std::string_view::npos;
         }
         assert(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
                inspector_roles[0] == "native config inspector" && reaped.size() == 1);
+
+        ss::EnginePlanInputs reserved_override = gated;
+        reserved_override.native_admission->runtime_overrides["CUDA_VISIBLE_DEVICES"] = "0";
+        int forbidden_inspector_calls = 0;
+        reserved_override.runner = [&](const std::vector<std::string>&) {
+            ++forbidden_inspector_calls;
+            return ss::ManifestRun{};
+        };
+        bool selector_refused = false;
+        try {
+            (void)ss::plan_engine_only(reserved_override, gated_run, admission_hooks);
+        } catch (const ss::PlanFailed& error) {
+            selector_refused = std::string_view(error.what()).find("runtime override cannot select CUDA_VISIBLE_DEVICES") !=
+                               std::string_view::npos;
+        }
+        assert(selector_refused && forbidden_inspector_calls == 0 && !power_admitted);
     }
     std::vector<std::vector<std::string>> calls;
     auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
