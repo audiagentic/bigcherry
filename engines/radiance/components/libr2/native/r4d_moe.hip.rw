@@ -1,0 +1,29 @@
+# The qualified RDNA2 helper serves E4M3 activations.
+# Its gfx10.3 tile has no integer WMMA. Leave the int8 entry points unresolved
+# so the stub generator and registry omit precisely those rows.
+@@ find 1
+/* The int8 activation's rows. `i8a8` and `i8a8h`: int8 experts, row-major codes with a bf16 scale
+ * per (row, 128 of K). The four-bit experts keep their stored planes: `w4a8i8` and `w4a8i8h` the
+ * integer grid with a bf16 scale per (row, 128), `w4nl64a8i8h` and `w4nl32a8i8h` the w4nl codebook
+ * with an E4M3 scale per (row, 64 or 32 of K). */
+static int moe_gemm_w4a8i8(const RadArgs* a, RadStream stream, int ncls) {
+    const char* wdt = r4d_gets(a, "dtype");
+    if (wdt && !std::strcmp(wdt, "w4nl64a8i8h")) return moe_gemm_launch<2, true>(a, stream, ncls);
+    if (wdt && !std::strcmp(wdt, "w4nl32a8i8h")) return moe_gemm_launch<3, true>(a, stream, ncls);
+    return moe_gemm_launch<1, true>(a, stream, ncls);
+}
+extern "C" int r4d_rad_moe_gemm_i8a8(const RadArgs* a, RadStream s) {
+    return moe_gemm_launch<0, true>(a, s);
+}
+extern "C" int r4d_rad_moe_gemm_i8a8_mod4(const RadArgs* a, RadStream s) {
+    return moe_gemm_launch<0, true>(a, s, 4);
+}
+extern "C" int r4d_rad_moe_gemm_w4a8i8(const RadArgs* a, RadStream s) {
+    return moe_gemm_w4a8i8(a, s, 2);
+}
+extern "C" int r4d_rad_moe_gemm_w4a8i8_mod4(const RadArgs* a, RadStream s) {
+    return moe_gemm_w4a8i8(a, s, 4);
+}
+@@ replace
+// libr2 has no integer WMMA tile.
+@@ end

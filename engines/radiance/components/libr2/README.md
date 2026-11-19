@@ -18,7 +18,9 @@ self-test suite yet.
 
 The `r3_mma16.h` compatibility tile uses shared-memory permutation and
 FP32 operations where RDNA2 lacks WMMA. `r2_registry.cpp` registers only
-built rows; `rewrites.txt` holds the necessary source rewrite. The build
+built rows. `rewrites.txt` adapts the store-wait instruction. The block rule in
+`native/r4d_moe.hip.rw` omits integer WMMA entry points from the shared MoE unit, preserving the
+E4M3 activation forms used by the helper. The build
 reuses the shared rewriter and compatibility headers from `../libr3`.
 
 The [remote-MoE component](../moe-remote/README.md) is its main consumer.

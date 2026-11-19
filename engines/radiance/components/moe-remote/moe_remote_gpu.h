@@ -1409,7 +1409,6 @@ private:
             std::fprintf(stderr, "r3_moe_worker: dlopen %s: %s\n", path.c_str(), dlerror());
             return false;
         }
-        if (!r3_serving::configure_plugin(so_, r3_serving::settings())) return false;
         uint32_t (*abi)() = nullptr;
         const RadPluginInfo* (*info)() = nullptr;
         int (*count)() = nullptr;
@@ -1439,28 +1438,28 @@ private:
             std::fprintf(stderr, "r3_moe_worker: %s is not a %s plugin\n", path.c_str(), arch_.c_str());
             return false;
         }
+        if (!r3_serving::configure_plugin(so_, r3_serving::settings())) return false;
         if (open_fn && open_fn() != RAD_OK) {
             std::fprintf(stderr, "r3_moe_worker: libr4d rad_plugin_open refused this device\n");
             return false;
         }
         plugin_opened_ = true;
-        auto find = [&](const char* op, const char* preferred) -> const RadKernelInfo* {
-            const RadKernelInfo* fallback = nullptr;
+        // A shared op name can select different stored weights and activation encodings.
+        // The helper prepares its buffers for these exact rows.
+        auto find = [&](const char* op, const char* name) -> const RadKernelInfo* {
             for (int i = 0; i < count(); ++i) {
                 const RadKernelInfo* r = at(i);
-                if (!r || !r->op || std::strcmp(r->op, op) != 0) continue;
-                if (!fallback) fallback = r;
-                if (preferred && r->name && std::strcmp(r->name, preferred) == 0) return r;
+                if (r && r->op && r->name && std::strcmp(r->op, op) == 0 &&
+                    std::strcmp(r->name, name) == 0) return r;
             }
-            return fallback;
+            return nullptr;
         };
         moe_ = find("moe_gemm_q", "moe_gemm_w4a8");
         had_quant_ = find("had_quant_act_fp8", "had_quant_act_fp8");
         gated_quant_ = find("gated_had_quant_fp8", "gated_had_quant_fp8");
         gated_had_ = gated_quant_;
         gather_ = find("moe_gather", "moe_gather_bf16");
-        if (const RadKernelInfo* r = find("moe_gemm_q", "moe_gemm_fp8a8"); r && r->name && std::strcmp(r->name, "moe_gemm_fp8a8") == 0)
-            moe_fp8_ = r;
+        moe_fp8_ = find("moe_gemm_q", "moe_gemm_fp8a8");
         quant_plain_ = find("quant_act_fp8", "quant_act_fp8");
         gated_plain_ = find("gated_quant_fp8", "gated_quant_fp8");
         if (!moe_ || !moe_->layout || !moe_->relayout || !had_quant_ || !gated_quant_ || !gather_) {
