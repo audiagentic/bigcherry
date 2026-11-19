@@ -18,6 +18,7 @@ from typing import Iterable
 from ..core import engines
 from ..patch import evidence as patch_evidence
 from ..patch import profile_evidence
+from ..patch.registry import is_reserved_part
 from . import notes as release_notes
 from . import pin_release
 
@@ -286,7 +287,7 @@ def _refresh_generated_docs(root: Path, engine: str) -> list[Path]:
     """Regenerate what a promotion changes in the docs: the enhancement catalogs, and the validated-patch count in
     the root README (both checked by tools/tests/test_docs_catalog.py in CI)."""
     _check_command(root, [sys.executable, "tools/docs/generate_engine_enhancement_summaries.py"], "enhancement catalogs")
-    patches = [p for p in (root / "engines" / engine / "patches").glob("*/patch.toml") if not p.parent.name.startswith("_")]
+    patches = [p for p in (root / "engines" / engine / "patches").glob("*/patch.toml") if not is_reserved_part(p.parent.name)]
     validated = sum(tomllib.loads(p.read_text(encoding="utf-8"))["state"] == "validated" for p in patches)
     readme = root / "README.md"
     text = readme.read_text(encoding="utf-8")

@@ -52,9 +52,8 @@ class RadianceSourceClassesTests(unittest.TestCase):
         _, recipes, patches, states, records = _data()
         self.assertEqual(states["rad0004_moe_remote_diagnostics"], "diagnostic")
         self.assertEqual(states["rad0010_routing_evidence"], "diagnostic")
-        self.assertEqual(states["rad0006_heat_freeze_diagnostic"], "superseded")
+        self.assertNotIn("rad0006_heat_freeze_diagnostic", states)    # archived, never loaded
         self.assertEqual(patches.get("rad0010_routing_evidence").kind, "diagnostic")
-        self.assertIn("RAD14", patches.get("rad0006_heat_freeze_diagnostic").retirement)
         self.assertEqual(recipes.patch_sets["moe-remote-diag"].patches, ("rad0004_moe_remote_diagnostics",))
         self.assertEqual(recipes.patch_sets["moe-remote-diag"].required_state, "diagnostic")
         self.assertEqual(recipes.patch_sets["routing-evidence"].required_state, "diagnostic")

@@ -1,0 +1,22 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_223152_four-retired-radiance-patches_8747",
+  "files": [
+    "engines/radiance/patches/archive/ARCHIVE.md",
+    "engines/radiance/patches/archive/rad0001_drain_mover_before_arena_free",
+    "engines/radiance/patches/archive/rad0006_heat_freeze_diagnostic",
+    "engines/radiance/patches/archive/rad0034_prefill_concurrency",
+    "engines/radiance/patches/archive/rad0035_prefill_order",
+    "tools/bigcherry/patch/registry.py",
+    "tools/bigcherry/patch/patchset.py",
+    "tools/bigcherry/release/notes.py",
+    "tools/bigcherry/release/patch_promote.py"
+  ],
+  "plan-item-ids": [
+    "PRQ06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PRQ06 steps 1 and 2. The patch registry, module catalog, release notes and patch-promote now treat engines/<engine>/patches/archive/ as reserved (never discovered, linted, composed or built; tested). rad0001, rad0006, rad0034 and rad0035 (all final state superseded, no dependents, no recipe references; rad0034/rad0035 replaced by rad0036_prefill_governor) moved unchanged into archive/ with ARCHIVE.md rows (reason, successor, evidence). Decision owner: owner direction 2026-11-20 (retired patches are evidence, never deleted). No patch.toml state, content or digest changed; no source recipe or pin affected.",
+  "timestamp-utc": "2026-11-19T22:31:52.190583Z",
+  "user-summary-candidate": "Four retired Radiance patches are kept as archived evidence instead of in the active patch set."
+}
