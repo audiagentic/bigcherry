@@ -12,6 +12,8 @@ Inputs are synthetic fixed-seed values and the *source-declared* LTX-2.5 geometr
 
 The separate ltx_tp3_protocol.h and ltx_tp3_protocol_test.cpp also test identical collective schedules for conditional, STG and isolated guidance, leader-only non-DiT writes, bias-once reductions, and an in-memory conditioning mailbox that refuses stale epochs, mismatched shapes, overwrites and consumed/cancelled requests. The mailbox is intentionally not a GPU transfer or production wire format.
 
+The ltx_tp3_numerical_test.cpp independently compares multi-row dense self-attention and cross-attention with three uneven rank slices across six cases: fused projection banks, global Q/K RMS, per-head softmax and 2*sigmoid gate, and bias-once output reduction. Uses f64 tiny data and omits RoPE, IQ8R encoding and BF16 rounding; it does not establish real GPU parity. Shape/transfer mock arithmetic now refuses integer overflow.
+
 Outputs are process exit status and the CTest result. No generated evidence receipts or recordings are claimed. Requires a C++20 compiler and CMake 3.21+; no ROCm/GPU/model/network access. The reusable header deliberately has no imported production entrypoint, and this lab must not appear in an engine release.
 
 From the repository root, for a direct native CTest run:

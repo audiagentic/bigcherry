@@ -8,6 +8,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdint>
+#include <limits>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -53,9 +54,13 @@ inline std::array<Slice, kRanks> split(int total, Shares shares, int granularity
 // A caller specifies whole heads, never fractions of a head.
 // This also works for the audio-driven cross-modal attention (32 x 64).
 inline std::array<Slice, kRanks> attention_slices(int heads, int head_dim, Shares head_shares) {
-    if (heads <= 0 || head_dim <= 0)
+    if (heads <= 0 || head_dim <= 0 || int64_t(heads)*head_dim > std::numeric_limits<int>::max())
         throw std::invalid_argument("bad attention geometry");
-    for (int& s : head_shares) s *= head_dim;
+    for (int& s : head_shares) {
+        if (s <= 0 || int64_t(s)*head_dim > std::numeric_limits<int>::max())
+            throw std::invalid_argument("invalid or overflowing head share");
+        s *= head_dim;
+    }
     return split(heads * head_dim, head_shares, head_dim);
 }
 
@@ -69,8 +74,9 @@ struct FusedPiece {
 // three-way split of the *fused tensor* is wrong: each rank needs all 3 banks.
 inline std::array<FusedPiece, 3> fused_qkv_pieces(
         int total_inner, Slice owned) {
-    if (total_inner <= 0 || owned.offset < 0 || owned.width <= 0 ||
-        owned.offset + owned.width > total_inner)
+    if (total_inner <= 0 || total_inner > std::numeric_limits<int>::max()/3 ||
+        owned.offset < 0 || owned.width <= 0 ||
+        int64_t(owned.offset) + owned.width > total_inner)
         throw std::invalid_argument("bad fused projection ownership");
     return {{
         {owned.offset, 0, owned.width},
@@ -173,6 +179,12 @@ inline void validate_four_card_plan(const FourCardPlan& p) {
         throw std::invalid_argument("text card cannot hold weights and working set");
 }
 
+// No wrapped byte extents in mock admission.
+inline int64_t checked_product(int64_t a,int64_t b) {
+    if (a<=0 || b<=0 || a>std::numeric_limits<int64_t>::max()/b)
+        throw std::invalid_argument("invalid or overflowing extent");
+    return a*b;
+}
 // LTX2 Gemma stores every hidden layer plus the embedding: the connector
 // input is [T, C * (L + 1)] bf16, not the much smaller connector output.
 // If connectors execute on the fast ranks, this *stack* must move from gfx1030.
@@ -181,7 +193,8 @@ inline int64_t gemma_stack_bytes(int rows_per_prompt, int prompts,
     if (rows_per_prompt <= 0 || prompts <= 0 || hidden <= 0 ||
         layers <= 0 || dtype_bytes <= 0)
         throw std::invalid_argument("invalid Gemma stack shape");
-    return int64_t(rows_per_prompt) * prompts * hidden * (layers + 1) * dtype_bytes;
+    return checked_product(checked_product(checked_product(
+        checked_product(rows_per_prompt,prompts),hidden),int64_t(layers)+1),dtype_bytes);
 }
 
 // Both prompts' video/audio connector rows, as declared by LTX2. The
@@ -191,8 +204,8 @@ inline int64_t conditioning_bytes(int rows_per_prompt, int prompts,
     if (rows_per_prompt <= 0 || prompts <= 0 || video_width <= 0 ||
         audio_width <= 0 || dtype_bytes <= 0)
         throw std::invalid_argument("invalid text-conditioning geometry");
-    return int64_t(rows_per_prompt) * prompts *
-           (int64_t(video_width) + audio_width) * dtype_bytes;
+    return checked_product(checked_product(
+        checked_product(rows_per_prompt,prompts),int64_t(video_width)+audio_width),dtype_bytes);
 }
 
 } // namespace bc_ltx_tp3_reference

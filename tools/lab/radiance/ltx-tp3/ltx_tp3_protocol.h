@@ -6,6 +6,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <optional>
+#include <limits>
 #include <stdexcept>
 #include <utility>
 #include <vector>
@@ -106,7 +107,11 @@ inline std::uint64_t payload_bytes(const Ticket& t) {
     if (!t.request || !t.epoch || t.rows<=0 || t.columns<=0 ||
         t.element_bytes<=0)
         throw std::invalid_argument("invalid transfer identity or dimensions");
-    return std::uint64_t(t.rows)*t.columns*t.element_bytes;
+    const auto r=std::uint64_t(t.rows), c=std::uint64_t(t.columns), b=std::uint64_t(t.element_bytes);
+    if (r > std::numeric_limits<std::uint64_t>::max()/c ||
+        r*c > std::numeric_limits<std::uint64_t>::max()/b)
+        throw std::invalid_argument("overflowing transfer shape");
+    return r*c*b;
 }
 inline std::uint32_t checksum(const std::vector<std::uint8_t>& v) {
     // FNV-1a is for this mock only, NOT cryptographic identity/authentication.
