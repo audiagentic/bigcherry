@@ -1,6 +1,7 @@
 #include "live_policy_ingest.h"
 #include "live_policy.h"
 #include "plan_cache.h"
+#include "sha256.h"
 #include "v2/manifest.h"
 
 #include <nlohmann/json.hpp>
@@ -135,9 +136,38 @@ void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
         invalid("target policy key differs from the verified measured manifest scope");
     if (!m.spec.plan.engine_memory)
         invalid("manifest has no measured engine plan provenance");
+    // Prefer the build's immutable source-slice identity when available.
+    // Native release metadata is read-only; absence is recorded explicitly,
+    // never replaced by a fabricated Git commit or an activation refusal.
+    std::string revision = "unavailable";
+    const fs::path home = raw.at("spec").at("processes").at("engine")
+                             .at("runtime").at("radiance_home").get<std::string>();
+    const fs::path build_metadata = home.parent_path() / "bigcherry-build-metadata-radiance.json";
+    std::error_code ec;
+    // Provenance enrichment must never turn a valid calibration observation
+    // into an ingest failure just because optional build metadata is absent
+    // or corrupt; the explicit "unavailable" value remains auditable.
+    try {
+        if (fs::is_regular_file(build_metadata, ec) &&
+            fs::file_size(build_metadata, ec) < (1u << 20)) {
+            const Json metadata = Json::parse(read_text(build_metadata), nullptr, false);
+            if (metadata.is_object() && metadata.contains("source_slice_id") &&
+                metadata.at("source_slice_id").is_string()) {
+                const std::string slice = metadata.at("source_slice_id").get<std::string>();
+                if (std::regex_match(slice, std::regex("[0-9a-f]{32}")))
+                    revision = "source_slice:" + slice;
+            }
+        }
+    } catch (const std::exception&) {
+        revision = "unavailable";
+    }
+    require_declared_policy_calibration_inputs(policy_inputs);
     ingest_live_policy_record(log, cache, key, layout, objective, target_store_key,
                               LivePolicyProvenance{policy_inputs, v2::plan_cache_key(m),
-                                                   m.spec.plan.engine_memory->engine_identity});
+                                                   m.spec.plan.engine_memory->engine_identity,
+                                                   revision,
+                                                   raw.at("metadata").at("instance_id").get<std::string>(),
+                                                   sha256_hex(raw.at("spec").at("facts").dump())});
 }
 
 void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
@@ -168,14 +198,25 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
     // separately in provenance and never affect lookup.
     record["plan_cache_key"] = store_key;
     if (provenance) {
+        require_declared_policy_calibration_inputs(provenance->inputs);
         if (policy_calibration_key(provenance->inputs) != store_key)
             invalid("policy scope digest differs from requested store key");
+        if (provenance->source_revision.empty() || provenance->run_id.empty() ||
+            provenance->host_facts_digest.size() != 64 ||
+            provenance->host_facts_digest.find_first_not_of("0123456789abcdef") != std::string::npos)
+            invalid("missing or invalid source revision, run or host-facts provenance");
         for (const std::string& hex : {provenance->source_plan_key, provenance->source_engine_build})
             if (hex.size() != 64 || hex.find_first_not_of("0123456789abcdef") != std::string::npos)
                 invalid("missing or invalid source plan/build provenance");
         record["calibration_inputs"] = provenance->inputs.dump();
         record["source_plan_key"] = provenance->source_plan_key;
         record["source_engine_build"] = provenance->source_engine_build;
+        record["record_schema_version"] = 1;
+        record["calibration_kind"] = "radiance.live_policy";
+        record["calibration_key_fields"] = policy_calibration_key_fields();
+        record["source_revision"] = provenance->source_revision;
+        record["run_id"] = provenance->run_id;
+        record["host_facts_digest"] = provenance->host_facts_digest;
     }
     if (!cache.parent_path().empty() && !fs::exists(cache.parent_path()))
         invalid("calibration cache parent directory does not exist");
@@ -198,9 +239,14 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
             out << "\n[[live_policy_record]]\n";
             for (const auto& field : {"plan_cache_key", "layout", "objective", "seeded", "evidence"})
                 out << field << " = " << toml_string(record.at(field)) << '\n';
-            if (provenance)
-                for (const auto& field : {"calibration_inputs", "source_plan_key", "source_engine_build"})
+            if (provenance) {
+                out << "record_schema_version = 1\n";
+                out << "calibration_kind = " << toml_string(record.at("calibration_kind")) << '\n';
+                out << "calibration_key_fields = " << record.at("calibration_key_fields").dump() << '\n';
+                for (const auto& field : {"calibration_inputs", "source_plan_key", "source_engine_build",
+                                          "source_revision", "run_id", "host_facts_digest"})
                     out << field << " = " << toml_string(record.at(field)) << '\n';
+            }
             for (auto it = record.at("measurements").begin();
                  it != record.at("measurements").end(); ++it)
                 out << it.key() << " = " << it.value().dump() << '\n';
@@ -226,6 +272,14 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
         }
         ::close(fd);
         fs::rename(temp, cache); // single atomic replacement, never a partial TOML
+        // Make directory entry durable as well as the synced TOML content.
+        const fs::path parent = cache.parent_path().empty() ? fs::path(".") : cache.parent_path();
+        const int directory = ::open(parent.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+        if (directory < 0 || ::fsync(directory) != 0) {
+            if (directory >= 0) ::close(directory);
+            invalid("cannot sync calibration cache directory");
+        }
+        ::close(directory);
     } catch (...) {
         std::error_code ec;
         fs::remove(temp, ec);

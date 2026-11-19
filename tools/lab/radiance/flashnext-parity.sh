@@ -4,7 +4,7 @@
 # Tokens/s is never compared across builds (MTP draft acceptance differs per build); acceptance is reported, never gated.
 #
 # Usage:
-#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P]
+#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P] [--records|--no-records]
 #   bash tools/lab/radiance/flashnext-parity.sh baseline --out DIR --name NAME [--to FILE]
 #   bash tools/lab/radiance/flashnext-parity.sh compare --out DIR --baseline FILE
 #
@@ -62,7 +62,7 @@ usage() {
 
 CMD=${1:-}
 [ $# -gt 0 ] && shift
-BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO=""
+BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO="" RECORDS=1
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) [ $# -ge 2 ] || usage; BUILD=$2; shift 2 ;;
@@ -72,6 +72,8 @@ while [ $# -gt 0 ]; do
     --baseline) [ $# -ge 2 ] || usage; BASELINE=$2; shift 2 ;;
     --name) [ $# -ge 2 ] || usage; NAME=$2; shift 2 ;;
     --to) [ $# -ge 2 ] || usage; TO=$2; shift 2 ;;
+    --records) RECORDS=1; shift ;;
+    --no-records) RECORDS=0; shift ;;
     *) echo "flashnext-parity: unknown argument: $1" >&2; usage ;;
   esac
 done
@@ -121,8 +123,10 @@ HEAT="${FLASHNEXT_PARITY_HEAT:-$REPO/tools/lab/radiance/heat/flashnext-mixed.hot
 NATIVE_ARGS+=(--set "handoff.heat=$HEAT")
 # FLASHNEXT_PARITY_SETS: extra space-separated dotted.key=value settings for an experiment arm; the owner log records them.
 for s in ${FLASHNEXT_PARITY_SETS:-}; do NATIVE_ARGS+=(--set "$s"); done
+CALIBRATION_FILE=""
 if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
-  NATIVE_ARGS+=(--calibration "$BC_WORK_ROOT/live-policy-calibration.toml")
+  CALIBRATION_FILE="$BC_WORK_ROOT/live-policy-calibration.toml"
+  NATIVE_ARGS+=(--calibration "$CALIBRATION_FILE")
 fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
@@ -203,6 +207,17 @@ elapsed() { awk -v a="$t0" -v b="$EPOCHREALTIME" -v w="$WARMUP_S" 'BEGIN { exit 
 for i in $(seq 1 "$LAUNCHES"); do
   L=$OUT/launch-$i
   mkdir -p "$L/warmup"
+  if [ "$RECORDS" = 1 ]; then
+    # Pin inputs before the native owner starts; verify they did not mutate.
+    cp "$HEAT" "$L/heat-input.hot-first" || fail "cannot snapshot selected heat"
+    if [ -n "$CALIBRATION_FILE" ]; then
+      cp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "cannot snapshot calibration store"
+    fi
+    CAPTURE_ARGS=(--heat "$L/heat-input.hot-first" --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}")
+    if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
+    python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" ||
+      fail "cannot capture native owner invocation"
+  fi
   echo "flashnext-parity: launch $i/$LAUNCHES -> $L" >&2
   "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" > "$L/owner.log" 2>&1 &
   NATIVE_PID=$!
@@ -211,6 +226,16 @@ for i in $(seq 1 "$LAUNCHES"); do
   MANIFEST=$(session_value manifest) || fail "native session has no committed manifest"
   [ -f "$MANIFEST" ] || fail "native session did not commit a strict-v2 manifest"
   cp "$MANIFEST" "$L/manifest.json"
+  if [ "$RECORDS" = 1 ]; then
+    cp "$RUN/feature-states.v1.json" "$L/feature-states.v1.json" ||
+      fail "native MRC03 feature-state snapshot is absent"
+    cmp "$HEAT" "$L/heat-input.hot-first" ||
+      fail "selected heat mutated before measurement"
+    if [ -n "$CALIBRATION_FILE" ]; then
+      cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
+        fail "selected calibration changed before measurement"
+    fi
+  fi
   python3 "$PARITY" warmup-plan "$L/manifest.json" --out "$L/launch.json" >&2 || fail "cannot read the manifest's live policy"
   WARMUP_S=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["warmup_s"])' "$L/launch.json")
   # FLASHNEXT_PARITY_WARMUP_S: an experiment arm's warmup in seconds, used only when the policy is on and only if it is
@@ -230,7 +255,19 @@ for i in $(seq 1 "$LAUNCHES"); do
     doc_prefill "warmup:$k" "$L/warmup/doc-$k.json"
     k=$((k + 1))
   done
-  echo "flashnext-parity: launch $i warmup ${WARMUP_S}s, $k rounds" >&2
+  WARMUP_ELAPSED_S=$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.6f", b-a }')
+  echo "flashnext-parity: launch $i warmup ${WARMUP_S}s, $k rounds (elapsed ${WARMUP_ELAPSED_S}s)" >&2
+  if [ "$RECORDS" = 1 ]; then
+    # Actual completed warmup, including any longer experimental override.
+    python3 -c 'import json,sys; from pathlib import Path
+p=Path(sys.argv[1]); data=json.loads(p.read_text())
+data["actual_warmup_s"]=float(sys.argv[2]); data["warmup_target_s"]=float(sys.argv[3])
+data["warmup_rounds"]=int(sys.argv[4])
+p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP_ELAPSED_S" "$WARMUP_S" "$k" ||
+      fail "cannot record actual warmup"
+    python3 "$PARITY" capture-host-facts "$L" ||
+      fail "cannot snapshot measurement-time host facts"
+  fi
 
   # a. cold prefill
   for s in $(seq "$COLD_SEED0" $((COLD_SEED0 + COLD_FILLS - 1))); do
@@ -256,6 +293,17 @@ for i in $(seq 1 "$LAUNCHES"); do
     grep 'policy placement' "$L/helper0.log" | tail -1 > "$L/policy-placement.txt" || :
   fi
   python3 "$PARITY" policy-line "$L/helper0.log" --out "$L/policy.json" >&2
+  if [ "$RECORDS" = 1 ]; then
+    cmp "$HEAT" "$L/heat-input.hot-first" ||
+      fail "selected heat changed during measurement"
+    if [ -n "$CALIBRATION_FILE" ]; then
+      cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
+        fail "selected calibration changed during measurement"
+    fi
+    python3 "$PARITY" record-launch "$OUT" --launch "$i" --work-root "$BC_WORK_ROOT" > "$L/record.sha256" ||
+      fail "run-record v1 publication failed"
+    echo "flashnext-parity: launch $i record $(cat "$L/record.sha256")" >&2
+  fi
 done
 trap - EXIT INT TERM HUP
 

@@ -33,6 +33,59 @@ bigcherry CLI -> cli/main.py parser -> cli/<domain>.py handler
               -> tests, receipts, evidence, or artifacts owned by that workflow
 ```
 
+### Calibration records (MRC04 slice 1)
+
+The engine-agnostic JSON contract is
+`tools/bigcherry/core/schemas/calibration-record-v1.schema.json`;
+the **per-kind key declaration** is
+`tools/bigcherry/core/schemas/calibration-kinds-v1.json`.
+`bigcherry.core.calibration_records` validates strict records, computes the
+declared SHA-256 key, and offers `CalibrationStore.get/put/list` for platform
+JSON records under `records/<kind>/<key>.json`. `put` serialises writes with
+a persistent `.lock`, fsyncs temp file and directory and atomically publishes
+with rename; a duplicate refuses unless `replace=True` is explicitly
+requested. Provenance is not in the key. The store does not activate or
+generate a policy. Large MRC01 quantity blobs and run-record linkage are
+future producer migrations.
+
+Radiance **continues to read and write TOML natively**, without Python at
+runtime: `bc-serve calibration-ingest` writes `[[live_policy_record]]` entries
+into `live-policy-calibration.toml` under its native flock/atomic-rename
+contract. New rows declare `record_schema_version = 1`,
+`calibration_kind = "radiance.live_policy"`, `calibration_key_fields`,
+and `calibration_inputs` (canonical JSON) along with source build identity,
+plan key, run ID, host-facts digest, source-slice identity (or explicitly
+`unavailable`), date, evidence, and measured/absent quantities. A native
+reader enforces the narrow key before activation. Earlier post-#1169 rows
+with `calibration_inputs` and source plan/build but without the extra MRC04
+v1 fields stay **current** and activatable through a read-only, in-memory
+compatibility mapping; missing run/source-revision/host digests are not made up.
+Only genuinely hash-only records lack activation provenance and are rejected
+with `legacy_record_schema`, leaving serving available with the policy off.
+The production key itself is unchanged from #1169: `sha256` over
+Radiance's sorted `policy_calibration_inputs` JSON.
+
+The operator commands are read-only (no hardware lease, no activation):
+
+```sh
+PYTHONPATH=tools python -m bigcherry calibration list --store /path/to/live-policy-calibration.toml
+PYTHONPATH=tools python -m bigcherry calibration show --store /path/to/live-policy-calibration.toml --kind radiance.live_policy --key <sha256>
+PYTHONPATH=tools python -m bigcherry calibration validate --store /path/to/live-policy-calibration.toml
+```
+
+An omitted `--store` defaults to `$BC_WORK_ROOT/live-policy-calibration.toml`
+when `BC_WORK_ROOT` is set. A JSON-store directory can be supplied instead.
+`list` and `show` mark both native v1 and verified post-#1169 rows as
+`current`; genuinely hash-only entries are `legacy` with their explicit refusal
+reason. `validate` accepts current rows, and returns nonzero when any legacy or
+malformed row is unusable. Source facts for newly written v1 rows are hashed
+from the **verified source manifest's
+`spec.facts`**, not guessed from the machine at query time; source revision
+comes from installed build metadata's `source_slice_id` when present,
+otherwise is explicitly `unavailable`. A rebuild changes provenance, not
+the key. Changes to model, card identities, layout, objective, power
+profile, histogram cadence, helper execution or remote service do change it.
+
 ### Platform measurement records (MRC01–MRC03)
 
 `bigcherry.core.run_records.RunRecordStore` owns v1 immutable run records at
@@ -118,7 +171,32 @@ PYTHONPATH=tools python -m bigcherry results history --engine radiance --layout 
 For controlled cohorts, repeat `--record SHA256` on baseline/compare, or
 filter with `--since`/`--until`. `--work-root` selects the record store.
 Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
-0 for a clean gate. MRC06 will migrate producers; the Radiance lab CLI stays.
+0 for a clean gate. MRC06 continues to migrate the remaining producers.
+
+**MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
+measure` now publishes one immutable run-record v1 per completed native launch
+by default under `$BC_WORK_ROOT/run-records/v1/`. `--records` is explicit on;
+`--no-records` opts out without changing the legacy measured `parity.json`
+summary, or the harness's `baseline` / `compare` commands. Each
+`OUT/launch-N/record.sha256` contains the record digest. The record carries
+`engine=radiance`, build ID and binary hash from the build metadata, Git
+revision, measured model/layout, the exact harness workload definition,
+phase-separated cold/sess8 TTFT, document/long-context prefill, decode step
+times and ungated draft acceptance. `metric_specs` keeps the harness's
+one-sided gate and real same-prompt repeats (distinct prompts are not noise
+samples). No GPU tests are needed for the adapter's fixture/compare parity.
+
+The native strict manifest, source heat bytes, the selected calibration row
+when the policy is configured, full `live_policy_state`, owner argv/sets,
+a curated environment snapshot, effective power state and actual
+warmup are SHA-256 content blobs, not mutable paths. Heat and calibration
+inputs are snapshotted before launch and checked for mutation; feature states
+are read from the native run directory using MRC03. Passive MRC02 host facts
+are captured immediately before measurement. Incomplete state, metadata,
+or mismatched key aborts **record publication**, rather than fabricate
+provenance. The old `parity.json` remains for existing consumers only and is
+not ingested as a source of run-record metric truth. The remaining MRC06
+producer migrations and legacy-writer retirement are separate slices.
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be

@@ -93,3 +93,12 @@ evidence = "RHP16 service objective: false revert in 1 percent of quiet comparis
 # inline table of measurement-name -> explicit unmeasured reason. The lab helper
 # emits a JSON evidence line; bc-serve calibration-ingest validates and atomically
 # appends the TOML record. Partial records never enable production live policy.
+
+# Helper combine threads: the ceiling of the pool that adds every helper's rows on helper 0. bc-serve resolves
+# helper.combine_threads as min(this, the CPUs it discovers) unless a layer sets it, and refuses an explicit value above
+# the CPU count. Inherited, not measured: the knee has no run behind it yet.
+[[entry]]
+key = "calibration.combine_threads.max"
+value = 8
+seeded = "2026-11-02"
+evidence = "inherited from the launcher's WorkerConfig combine_threads=8; no run measured a thread-count knee for the combine, so this is a ceiling, not an optimum (the worker clamps to hardware_concurrency); refit by writing this key to the calibration cache once measured"

@@ -71,6 +71,27 @@ Large across six PRs. Risk: a half-migrated state with two stores; mitigate by r
 
 Producers added on 2026-11-19 that already write their own receipts and should migrate: the compile-crash retry receipts (`bigcherry-compile-retries.jsonl` in the build dir and `<work-root>/build-compile-retries.jsonl`, #1175) and the ad hoc hardware-proof scripts of the day (two-start replay proof, dense TP3 sweep) that stream-bench JSON and `session.json` were stitched together for.
 
+## Slice 1: Flash-Next parity producer (2026-11-20)
+
+The hardware harness now produces one immutable MRC01 record per completed
+launch by default (`--records`; `--no-records` is an explicit opt-out).
+The native engine remains Python-free; Python consumes the run's strict
+manifest, feature-state snapshot, per-launch measurements, source heat and
+selected calibration evidence after the owner has stopped the session.
+The platform store independently validates every content-addressed blob and
+record. Its MRC05 direction/gate/repeat metadata matches the parity harness
+exactly; the card-free fixture runs both results compare and the harness's
+unchanged compare across two baseline and two candidate launches.
+
+Retained transition boundary: `OUT/parity.json` is still written and existing
+`baseline` / `compare` readers remain live, as explicitly required for this
+slice. It is a compatibility summary, not the canonical measurement writer.
+Do not retire it before consumer scanning. The origin/main base for this slice
+contains MRC05 but not the newly pushed MRC04 reader, so selected calibration
+TOML is independently verified by digest in the lab adapter; replace that
+reader with MRC04's shared operator implementation once PR #1199 lands.
+Other producer migrations and hardware activation remain pending.
+
 ## Change Log
 
 - 2026-11-19T00:50:46.203067+00:00 (created-by): Created by agent

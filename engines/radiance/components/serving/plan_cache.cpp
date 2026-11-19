@@ -226,6 +226,21 @@ Json policy_calibration_inputs(const Json& spec) {
             {"helper_runtime", spec.at("processes").at("helper_common")},
             {"remote_service", service}};
 }
+Json policy_calibration_key_fields() {
+    return Json::array({"engine_cards", "helper_cards", "helper_runtime", "histogram_period_s",
+                        "layout", "model", "objective", "policy_key_version",
+                        "power_profile", "remote_service"});
+}
+void require_declared_policy_calibration_inputs(const Json& inputs) {
+    const Json fields = policy_calibration_key_fields();
+    if (!inputs.is_object() || inputs.size() != fields.size())
+        throw std::runtime_error("policy calibration declaration: undeclared or absent key inputs");
+    for (const Json& field : fields)
+        if (!inputs.contains(field.get<std::string>()))
+            throw std::runtime_error("policy calibration declaration: missing " + field.get<std::string>());
+    if (inputs.at("policy_key_version") != 2)
+        throw std::runtime_error("policy calibration declaration: key version must be 2");
+}
 std::string policy_calibration_key(const Json& inputs) {
     if (!inputs.is_object() || inputs.value("policy_key_version", 0) != 2)
         throw std::runtime_error("policy calibration key: not version 2 inputs");
