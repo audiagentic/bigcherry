@@ -2,6 +2,7 @@
 #include "bc_shared_slot.h"
 
 #include "rad_abi.h"
+#include "rad_internal.h"
 
 #include <dlfcn.h>
 
@@ -103,3 +104,5 @@ extern "C" int rad_bc_shared_slot(const char* key, size_t size, size_t align, vo
     if (rc != RAD_OK && why && why_len) std::snprintf(why, why_len, "%s", w.c_str());
     return rc;
 }
+
+extern "C" int rad_bc_rendezvous_owner() { return rad::engine_owner(); }
