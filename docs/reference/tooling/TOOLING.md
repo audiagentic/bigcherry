@@ -175,9 +175,11 @@ Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
 
 **MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
 measure` now publishes one immutable run-record v1 per completed native launch
-by default under `$BC_WORK_ROOT/run-records/v1/`. `--records` is explicit on;
-`--no-records` opts out without changing the legacy measured `parity.json`
-summary, or the harness's `baseline` / `compare` commands. Each
+on every completed launch under `$BC_WORK_ROOT/run-records/v1/`.
+`--records` is a backwards-compatible explicit-on spelling; `--no-records`
+is refused. The legacy `parity.json` summary remains a generated compatibility
+view for historic readers and the harness's transitional baseline/compare;
+its producer/consumer retirement is still required for MRC06 closure. Each
 `OUT/launch-N/record.sha256` contains the record digest. The record carries
 `engine=radiance`, build ID and binary hash from the build metadata, Git
 revision, measured model/layout, the exact harness workload definition,
@@ -204,11 +206,11 @@ producer migrations and legacy-writer retirement are separate slices.
 
 The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
 
-    module bigcherry.bench.llamacpp_runner (repository tools on PYTHONPATH): --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
+    bigcherry results run-bench --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
 
 It drives the original benchmark and intercepts the existing result append boundary to write exactly one content-addressed record per measured row; duplicate per-family JSON and legacy SQLite sync are suppressed. Direct external invocations are outside the managed migration. Numeric "pp*_tps" and "tg*_tps" metrics map to prefill/decode without changing values. Unmapped quantities such as PPL or standard deviation remain byte-for-byte as the provenance source row, not falsely relabeled as prefill or decode.
 
-Typed HI47 measurement sidecars can be published with "python -m bigcherry.experiment.bundle record BUNDLE --measurement-file BUNDLE/measurement.json" or with the managed "run --measurement-file measurement.json" option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
+Typed HI47 measurement sidecars can be published with `bigcherry results ingest-experiment --bundle BUNDLE --measurement-file BUNDLE/measurement.json --work-root ROOT` or the managed experiment run `--measurement-file measurement.json` option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
 
 The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; old v1 records without the new optional field remain readable. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
 
@@ -242,8 +244,28 @@ bigcherry results list --today --engine radiance --workload parity --json
 bigcherry results show RECORD_SHA256 --json
 ```
 
+Non-calibration native lab measurements with an explicitly recorded typed
+sidecar can be ingested after a *cleanly stopped* native owner:
+
+```sh
+bigcherry results ingest-native-lab --run-dir RUN --measurement-file RUN/lab-measurement.json --work-root ROOT
+```
+
+The sidecar requires `schema_version: 1`, matching `run_id` and exact
+`manifest_sha256`, UTC `recorded_at`, `workload: {name, definition}`,
+and phase-qualified `metrics: {decode, prefill, ttft}`. The platform pins
+the original sidecar and owner evidence, refuses active/failed owners or
+mismatched manifests, and marks the record `VA25_NOT_ATTESTED` unless
+independently qualified. It never infers results from a session log.
+This is a post-run ingestion interface, not evidence that every independent
+S8/TP3/replay/campaign script now invokes it.
+
 These are read-only SHA-verified store views; missing historic manifest
-paths are never rebuilt. MRC06 global writer retirement remains open.
+paths are never rebuilt. MRC06 global writer retirement remains open:
+parity.json baseline/compare remain transitional; external upstream direct
+bench runs can bypass the managed wrapper; some historical GPU experiment
+scripts and dual compile-retry diagnostic receipts still need retirement
+or explicit non-measurement disposition.
 
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately

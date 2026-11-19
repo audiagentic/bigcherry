@@ -4,7 +4,7 @@
 # Tokens/s is never compared across builds (MTP draft acceptance differs per build); acceptance is reported, never gated.
 #
 # Usage:
-#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P] [--records|--no-records]
+#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P] [--records]
 #   bash tools/lab/radiance/flashnext-parity.sh baseline --out DIR --name NAME [--to FILE]
 #   bash tools/lab/radiance/flashnext-parity.sh compare --out DIR --baseline FILE
 #
@@ -62,7 +62,7 @@ usage() {
 
 CMD=${1:-}
 [ $# -gt 0 ] && shift
-BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO="" RECORDS=1
+BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) [ $# -ge 2 ] || usage; BUILD=$2; shift 2 ;;
@@ -72,8 +72,7 @@ while [ $# -gt 0 ]; do
     --baseline) [ $# -ge 2 ] || usage; BASELINE=$2; shift 2 ;;
     --name) [ $# -ge 2 ] || usage; NAME=$2; shift 2 ;;
     --to) [ $# -ge 2 ] || usage; TO=$2; shift 2 ;;
-    --records) RECORDS=1; shift ;;
-    --no-records) RECORDS=0; shift ;;
+    --records) shift ;;  # historical explicit-on alias; publication is mandatory
     *) echo "flashnext-parity: unknown argument: $1" >&2; usage ;;
   esac
 done
@@ -293,8 +292,8 @@ p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP
     grep 'policy placement' "$L/helper0.log" | tail -1 > "$L/policy-placement.txt" || :
   fi
   python3 "$PARITY" policy-line "$L/helper0.log" --out "$L/policy.json" >&2
-  if [ "$RECORDS" = 1 ]; then
-    cmp "$HEAT" "$L/heat-input.hot-first" ||
+  # Every measured launch must create a validated immutable record.
+  cmp "$HEAT" "$L/heat-input.hot-first" ||
       fail "selected heat changed during measurement"
     if [ -n "$CALIBRATION_FILE" ]; then
       cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
@@ -303,7 +302,6 @@ p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP
     python3 "$PARITY" record-launch "$OUT" --launch "$i" --work-root "$BC_WORK_ROOT" > "$L/record.sha256" ||
       fail "run-record v1 publication failed"
     echo "flashnext-parity: launch $i record $(cat "$L/record.sha256")" >&2
-  fi
 done
 trap - EXIT INT TERM HUP
 

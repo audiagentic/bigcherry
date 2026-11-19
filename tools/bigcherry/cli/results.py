@@ -105,6 +105,32 @@ def _show_history(report: dict) -> None:
 
 def cmd_results(args: argparse.Namespace) -> int:
     try:
+        if args.results_action == "ingest-native-lab":
+            from ..bench import radiance_lab_records
+            sha = radiance_lab_records.publish_native_lab(
+                args.run_dir, args.measurement_file, work_root=args.work_root,
+            )
+            print(f"native lab run-record v1: {sha}")
+            return 0
+        if args.results_action == "ingest-experiment":
+            from ..experiment import bundle
+            sha = bundle.record_measurement_file(
+                args.bundle, args.measurement_file, work_root=args.work_root,
+            )
+            print(f"experiment run-record v1: {sha}")
+            return 0
+        if args.results_action == "run-bench":
+            from ..bench import llamacpp_runner
+            passed = list(args.bench_argv)
+            if passed and passed[0] == "--":
+                passed.pop(0)
+            command = ["--runner-root", str(args.runner_root),
+                       "--expected-identity", str(args.expected_identity)]
+            if args.binary_path is not None:
+                command.extend(["--binary-path", str(args.binary_path)])
+            if args.work_root is not None:
+                command.extend(["--work-root", str(args.work_root)])
+            return llamacpp_runner.main([*command, "--", *passed])
         store = run_records.RunRecordStore(args.work_root)
         if args.results_action == "show":
             rec = store.get_record(args.sha256)
@@ -258,6 +284,33 @@ def register(sub) -> None:
     ingest.add_argument("--work-root", type=Path, default=None)
     ingest.add_argument("--json", action="store_true")
     ingest.set_defaults(func=cmd_results)
+
+    native_lab = actions.add_parser(
+        "ingest-native-lab", help="ingest sealed native owner with explicit measured sidecar"
+    )
+    native_lab.add_argument("--run-dir", type=Path, required=True)
+    native_lab.add_argument("--measurement-file", type=Path, required=True)
+    native_lab.add_argument("--work-root", type=Path)
+    native_lab.set_defaults(func=cmd_results)
+
+    experiment = actions.add_parser(
+        "ingest-experiment", help="ingest a typed HI47/VA25 measurement sidecar"
+    )
+    experiment.add_argument("--bundle", type=Path, required=True)
+    experiment.add_argument("--measurement-file", type=Path, required=True)
+    experiment.add_argument("--work-root", type=Path)
+    experiment.set_defaults(func=cmd_results)
+
+    managed = actions.add_parser(
+        "run-bench", help="managed upstream benchmark; suppress legacy result writers"
+    )
+    managed.add_argument("--runner-root", type=Path, required=True)
+    managed.add_argument("--expected-identity", type=Path, required=True)
+    managed.add_argument("--binary-path", type=Path)
+    managed.add_argument("--work-root", type=Path)
+    managed.add_argument("bench_argv", nargs=argparse.REMAINDER,
+                         help="pass external run_bench arguments after --")
+    managed.set_defaults(func=cmd_results)
 
     baseline = actions.add_parser("baseline", help="create portable spread-derived baseline (two or more launches)")
     common(baseline, require_scope=True)

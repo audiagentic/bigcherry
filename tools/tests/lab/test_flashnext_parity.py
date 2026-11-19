@@ -349,6 +349,22 @@ class RunRecordsTests(unittest.TestCase):
             }))
         return out
 
+    def test_record_launch_must_use_shared_producer(self):
+        from bigcherry.core import measurement_producers, run_records
+        out = self.run_fixture("sole-writer", [1.0])
+        old_view = (out / "parity.json").read_bytes()
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}), patch(
+            "bigcherry.core.measurement_producers.publish",
+            wraps=measurement_producers.publish,
+        ) as publish:
+            digest = fp.publish_launch_record(out, out / "launch-1", work_root=self.root)
+        self.assertEqual(publish.call_count, 1)
+        self.assertEqual(
+            run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
+            "sole-writer-launch-1",
+        )
+        self.assertEqual((out / "parity.json").read_bytes(), old_view)
+
     def test_two_harness_records_match_results_compare_verdict(self):
         from bigcherry.core import results, run_records
         from bigcherry.__main__ import main as bigcherry_main
@@ -513,6 +529,14 @@ class RunRecordsTests(unittest.TestCase):
 
 
 class ScriptTests(unittest.TestCase):
+    def test_measured_parity_cannot_opt_out_of_records(self):
+        r = subprocess.run(
+            ["bash", str(SCRIPT), "measure", "--no-records"],
+            capture_output=True, text=True,
+        )
+        self.assertEqual(r.returncode, 2)
+        self.assertIn("unknown argument: --no-records", r.stderr)
+
     def test_bash_syntax(self):
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
 
