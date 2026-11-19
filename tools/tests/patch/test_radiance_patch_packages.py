@@ -90,7 +90,7 @@ PIN_BLOBS = {
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "532725c"),
         "core/bc_serving_manifest.cpp": (None, "bb02d82"),
-        "core/CMakeLists.txt": ("921debd", "9a24bef"),
+        "core/CMakeLists.txt": ("921debd", "e16a9a5"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
         "tests/CMakeLists.txt": ("9531405", "8c36206"),
     },
@@ -714,6 +714,33 @@ class TestServingManifestPatch(unittest.TestCase):
         finally:
             temp.cleanup()
 
+    def test_fleet_native_inspection_precedes_manifest_rewriting(self):
+        temp = tempfile.TemporaryDirectory()
+        root = Path(temp.name)
+        shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+        main_path = root / "core/main.cpp"
+        main = main_path.read_text(encoding="utf-8")
+        main = main.replace('#include "engine.h"\n', '#include "engine.h"\n#include "fleet/config.h"\n', 1)
+        main = main.replace(
+            "int main(int argc, char** argv) {\n    rad::Config cfg;\n",
+            "int main(int argc, char** argv) {\n    std::string path;\n"
+            "    rad::fleet::FleetConfig fleet;\n"
+            "    rad::Config cfg = std::move(fleet.models[0].cfg);\n",
+            1,
+        )
+        main_path.write_text(main, encoding="utf-8")
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0009)), root)))
+            patched = main_path.read_text(encoding="utf-8")
+            inspect = patched.index("inspect_native_fleet_config_command(argc, argv)")
+            marker = patched.index("char** const bc_original_argv = argv;")
+            rewrite = patched.index("bc_serving_engine_argv(&argc, &argv)")
+            self.assertIn('#include "native_fleet_config.h"', patched)
+            self.assertLess(inspect, marker)
+            self.assertLess(marker, rewrite)
+        finally:
+            temp.cleanup()
+
     def test_manifest_is_loaded_before_config_parse_and_marked_after_it(self):
         temp, root = self._applied()
         try:
@@ -748,14 +775,20 @@ class TestServingManifestPatch(unittest.TestCase):
                 "endif()",
                 'include("${BC_SERVING_V2_CMAKE}")',
                 "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
-                'if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")',
+                'if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")',
+                "target_compile_definitions(rad_core PRIVATE BC_RAD_HOST_POOL_MIB_AGGREGATE=1)",
+                "endif()",
+                'if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")',
                 'get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)',
+                'target_sources(rad_core PRIVATE "${_bc_serving}/native_fleet_config.cpp")',
+                'target_include_directories(rad_core PUBLIC "${_bc_serving}")',
+                "if(RAD_BUILD_TESTS)",
                 "add_executable(bc_native_fleet_config_test",
-                '"${_bc_serving}/native_fleet_config.cpp"',
                 '"${_bc_serving}/native_fleet_config_test.cpp")',
                 "target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)",
                 "target_compile_definitions(bc_native_fleet_config_test PRIVATE",
                 'BC_CONTRACT_DIR="${_bc_serving}/../../../../docs/design/serving-manifest-v2")',
+                "endif()",
                 "endif()",
             ])
             tests = (root / "tests/CMakeLists.txt").read_text(encoding="utf-8")

@@ -22,6 +22,7 @@ class NativeConfigSnapshot final {
 
     const std::string& yaml_utf8() const { return yaml_; }
     const std::string& sha256() const { return sha256_; }
+    const std::string& resolution_root() const { return resolution_root_; }
     void require_execution_root() const;
 
   private:

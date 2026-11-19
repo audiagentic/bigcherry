@@ -3,6 +3,8 @@
 #include "fleet/config.h"
 #include "v2/native_config_snapshot.h"
 
+#include <optional>
+
 namespace bc::serving {
 
 // One managed, single-model fleet document. The site supplies non-secret YAML,
@@ -26,5 +28,9 @@ class NativeFleetConfig final {
     NativeConfigSnapshot snapshot_;
     rad::fleet::FleetConfig fleet_;
 };
+
+// Handle the engine's read-only inspection command. A disengaged result means
+// this is an ordinary Radiance invocation; otherwise the value is its exit code.
+std::optional<int> inspect_native_fleet_config_command(int argc, char** argv);
 
 }  // namespace bc::serving

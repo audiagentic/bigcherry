@@ -130,6 +130,9 @@ C26 (2026-11-19): removed worker_policy_config.h's hard-coded generated/v2 heade
 
 C27 (2026-11-19): shared writer requires NativeConfigSnapshot for generated v3 and rejects it for v2; v3 records exact bytes/digest/root/provenance before strict decode. An isolated real-writer test removes the author file and covers measuring/serving outputs plus missing-snapshot refusal; focused CTest passed 1/1 and direct rerun exited 0. Production still selects v2; native consumer and launch integration remain open. Evidence C27; Ledger event `chg_20261119_122249_added-a-verified-successor-man_4213`.
 
+
+C30 (2026-11-20): added the matched-engine read-only native YAML inspect seam. rad0009 now compiles `native_fleet_config.cpp` once into `rad_core`, propagates its header to `radiance`, and handles `--bc-inspect-native-config FD` before manifest argv rewriting. The handler requires a bounded regular file with all four memfd seals, strict-decodes the existing three-field snapshot payload, checks its digest and execution root through NativeConfigSnapshot, and runs the exact upstream fleet parser plus `fleet::unsupported`. The closed report emits the snapshot identity and admission inputs without raw YAML or credentials, with provenance for runtime-home/kernel values. Focused rad0009 tests passed 5/5; both C++ units compiled with warnings-as-errors against pinned ABI44 headers; exact pinned-source apply and replay were byte-identical. A fresh engine link/runtime invocation is still pending, as are session descriptor inheritance and consumer migration. Evidence: C30 in docs/evidence/radiance-latest-bump/README.md.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -153,3 +156,4 @@ C27 (2026-11-19): shared writer requires NativeConfigSnapshot for generated v3 a
 - 2026-11-19T12:01:22.900750+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:10:17.693225+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:28:07.874455+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T13:39:26.821638+00:00 (updated-by): Updated: section:notes

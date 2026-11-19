@@ -400,14 +400,17 @@ if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")
   target_compile_definitions(rad_core PRIVATE BC_RAD_HOST_POOL_MIB_AGGREGATE=1)
 endif()
 
-if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
   get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)
-  add_executable(bc_native_fleet_config_test
-      "${_bc_serving}/native_fleet_config.cpp"
-      "${_bc_serving}/native_fleet_config_test.cpp")
-  target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)
-  target_compile_definitions(bc_native_fleet_config_test PRIVATE
-      BC_CONTRACT_DIR="${_bc_serving}/../../../../docs/design/serving-manifest-v2")
+  target_sources(rad_core PRIVATE "${_bc_serving}/native_fleet_config.cpp")
+  target_include_directories(rad_core PUBLIC "${_bc_serving}")
+  if(RAD_BUILD_TESTS)
+    add_executable(bc_native_fleet_config_test
+        "${_bc_serving}/native_fleet_config_test.cpp")
+    target_link_libraries(bc_native_fleet_config_test PRIVATE rad_core bc_jcs)
+    target_compile_definitions(bc_native_fleet_config_test PRIVATE
+        BC_CONTRACT_DIR="${_bc_serving}/../../../../docs/design/serving-manifest-v2")
+  endif()
 endif()
 """
 
@@ -476,6 +479,15 @@ PATCHES = (
         description="Load the engine's configuration from a serving manifest before config_parse and relabel its sources after.",
         edits=(
             Edit(
+                id="include-bc-native-fleet-config",
+                anchor=r'^#include "fleet/config\.h"$',
+                text='\n#include "native_fleet_config.h"',
+                guard=r'^#include "native_fleet_config\.h"$',
+                applies_if=r'^#include "fleet/config\.h"$',
+                expect_matches=1,
+                rationale="The matched fleet parser is part of rad_core; expose its owner only on fleet-capable sources.",
+            ),
+            Edit(
                 id="include-bc-serving-manifest",
                 anchor=r'^#include "util/stallwatch\.h"$',
                 text='\n#include "bc_serving_manifest.h"',
@@ -499,6 +511,16 @@ PATCHES = (
                 applies_if=r'#include "fleet/config\.h"',
                 expect_matches=1,
                 rationale="Identify an admitted manifest by the argv replacement, before the flag extractor runs.",
+            ),
+            Edit(
+                id="bc-inspect-native-fleet-config",
+                anchor=r"^    char\*\* const bc_original_argv = argv;$",
+                text="\n    if (const auto rc = bc::serving::inspect_native_fleet_config_command(argc, argv); rc.has_value()) return *rc;",
+                mode="insert_before",
+                guard=r"inspect_native_fleet_config_command\(argc, argv\)",
+                applies_if=r'#include "fleet/config\.h"',
+                expect_matches=1,
+                rationale="Inspect a sealed native snapshot in the matched engine before manifest argv rewriting, planning, or device initialization.",
             ),
             Edit(
                 id="bc-skip-native-cli-for-measured-manifest",

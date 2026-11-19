@@ -1,3 +1,4 @@
+#define _GNU_SOURCE 1
 #include "native_fleet_config.h"
 #include "jcs.h"
 #include "sha256.h"
@@ -8,8 +9,14 @@
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
+#include <iostream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
+
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 using bc::serving::NativeConfigSnapshot;
 using bc::serving::NativeFleetConfig;
@@ -45,6 +52,27 @@ void write(const fs::path& file, const std::string& bytes) {
     out << bytes;
     out.close();
 }
+
+#if defined(__linux__)
+int sealed_memfd(const std::string& bytes) {
+    const int fd = ::memfd_create("bc-native-config-test", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    if (fd < 0) throw std::runtime_error("cannot create sealed-config fixture");
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        const ssize_t count = ::write(fd, bytes.data() + offset, bytes.size() - offset);
+        if (count <= 0) {
+            ::close(fd);
+            throw std::runtime_error("cannot write sealed-config fixture");
+        }
+        offset += static_cast<size_t>(count);
+    }
+    if (::fcntl(fd, F_ADD_SEALS, F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL) != 0) {
+        ::close(fd);
+        throw std::runtime_error("cannot seal config fixture");
+    }
+    return fd;
+}
+#endif
 
 }  // namespace
 
@@ -140,6 +168,7 @@ int main() {
     };
     invalid(original + "    port: 8123\n", "Radiance refused");
     invalid(original + "  second: {model: other.rad}\n", "exactly one model");
+    invalid(original + "    park: {vram: statics}\n", "does not support managed fleet settings");
     invalid("x-server: &auth {api-key: fixture-key}\nserver: {<<: *auth}\n" + original, "api-key-env");
     invalid(original + std::string("#\xff", 2), "UTF-8");
     invalid(original + std::string(1, '\0'), "embedded NUL");
@@ -153,4 +182,75 @@ int main() {
     check(env.snapshot().manifest_field().dump().find("local-fixture-value") == std::string::npos &&
               env.fleet().models.front().cfg.api_key_env == "BC_TEST_FLEET_API_KEY",
           "snapshot lost the native credential reference");
+
+#if defined(__linux__)
+    const std::string inspected_yaml = "server: {host: 127.0.0.1, port: 8123}\ncards: [2, 0]\nmodels:\n"
+                                       "  tiny:\n    model: tiny.rad\n    mixed-step-target-ms: 17\n";
+    const Json inspected_field = config_field(inspected_yaml);
+    const int sealed_fd = sealed_memfd(inspected_field.dump());
+    const std::string fd_text = std::to_string(sealed_fd);
+    char command[] = "radiance";
+    char inspect[] = "--bc-inspect-native-config";
+    char* inspect_argv[] = {command, inspect, const_cast<char*>(fd_text.c_str()), nullptr};
+    std::ostringstream output;
+    std::streambuf* old_out = std::cout.rdbuf(output.rdbuf());
+    const auto result = bc::serving::inspect_native_fleet_config_command(3, inspect_argv);
+    std::cout.rdbuf(old_out);
+    ::close(sealed_fd);
+    check(result && *result == 0, "sealed native config inspection failed");
+    const Json report = Json::parse(output.str());
+    check(report.at("protocol") == "bigcherry.native-fleet-inspect/v1" &&
+              report.at("snapshot").at("sha256") == inspected_field.at("sha256") &&
+              report.at("snapshot").at("resolution_root") == execution_root.string() &&
+              report.at("engine").at("listener").at("port") == 8123 &&
+              report.at("engine").at("cards") == Json::array({2, 0}) &&
+              report.at("engine").at("model") == "tiny.rad" &&
+              report.at("engine").at("max_context") == 0 &&
+              report.dump().find(inspected_yaml) == std::string::npos,
+          "native inspect report changed identity, ordering, parsed values or exposed source YAML");
+
+    const int unsealed_fd = ::memfd_create("bc-native-config-unsealed-test", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+    check(unsealed_fd >= 0, "cannot create unsealed-config fixture");
+    const std::string unsealed_bytes = inspected_field.dump();
+    check(::write(unsealed_fd, unsealed_bytes.data(), unsealed_bytes.size()) ==
+              static_cast<ssize_t>(unsealed_bytes.size()),
+          "cannot write unsealed-config fixture");
+    const std::string unsealed_text = std::to_string(unsealed_fd);
+    char* unsealed_argv[] = {command, inspect, const_cast<char*>(unsealed_text.c_str()), nullptr};
+    std::ostringstream errors;
+    std::streambuf* old_err = std::cerr.rdbuf(errors.rdbuf());
+    const auto unsealed_result = bc::serving::inspect_native_fleet_config_command(3, unsealed_argv);
+    std::cerr.rdbuf(old_err);
+    ::close(unsealed_fd);
+    check(unsealed_result && *unsealed_result == 2 && errors.str().find("fully sealed memfd") != std::string::npos,
+          "native inspect accepted an unsealed descriptor");
+
+    Json wrong_root = inspected_field;
+    wrong_root["resolution_root"] = "/tmp";
+    const int wrong_root_fd = sealed_memfd(wrong_root.dump());
+    const std::string wrong_root_text = std::to_string(wrong_root_fd);
+    char* wrong_root_argv[] = {command, inspect, const_cast<char*>(wrong_root_text.c_str()), nullptr};
+    errors.str("");
+    old_err = std::cerr.rdbuf(errors.rdbuf());
+    const auto wrong_root_result = bc::serving::inspect_native_fleet_config_command(3, wrong_root_argv);
+    std::cerr.rdbuf(old_err);
+    ::close(wrong_root_fd);
+    check(wrong_root_result && *wrong_root_result == 2 &&
+              errors.str().find("resolution_root differs") != std::string::npos,
+          "native inspect accepted a changed execution root");
+
+    Json wrong_digest = inspected_field;
+    wrong_digest["yaml_utf8"] = inspected_yaml + "# changed\n";
+    const int wrong_digest_fd = sealed_memfd(wrong_digest.dump());
+    const std::string wrong_digest_text = std::to_string(wrong_digest_fd);
+    char* wrong_digest_argv[] = {command, inspect, const_cast<char*>(wrong_digest_text.c_str()), nullptr};
+    errors.str("");
+    old_err = std::cerr.rdbuf(errors.rdbuf());
+    const auto wrong_digest_result = bc::serving::inspect_native_fleet_config_command(3, wrong_digest_argv);
+    std::cerr.rdbuf(old_err);
+    ::close(wrong_digest_fd);
+    check(wrong_digest_result && *wrong_digest_result == 2 &&
+              errors.str().find("SHA-256 mismatch") != std::string::npos,
+          "native inspect accepted a changed YAML digest");
+#endif
 }
