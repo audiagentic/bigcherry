@@ -22,8 +22,13 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+from ..core import host_facts
 from ..core.context import resolve_work_root
 from . import stream_bench
+
+card_paths = host_facts.card_paths
+power_state = host_facts.power_state
+_board_watts = host_facts.board_watts
 
 CATALOG = Path(__file__).with_name("workloads.toml")
 DEFAULT_INDEX = resolve_work_root() / "results/index.jsonl"
@@ -155,42 +160,6 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
-def card_paths(sys_root: Path = Path("/sys")) -> list[tuple[str, Path]]:
-    cards = []
-    for card in (sys_root / "class/drm").glob("card[0-9]*"):
-        device = card / "device"
-        if not device.is_dir():
-            continue
-        # sysfs symlink target ends in the PCI device address.
-        bdf = device.resolve().name
-        if re.fullmatch(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]", bdf):
-            cards.append((bdf.lower(), device))
-    return sorted(cards)
-
-
-def power_state(sys_root: Path = Path("/sys")) -> dict:
-    """Read-only per-BDF snapshot; missing controls stay null, never inferred as stock."""
-    result = {}
-    for bdf, dev in card_paths(sys_root):
-        hwmon = list((dev / "hwmon").glob("hwmon*/power1_cap"))
-        cap = _read_text(hwmon[0]) if hwmon else None
-        od = _read_text(dev / "pp_od_clk_voltage") or ""
-        vo = re.search(r"OD_VDDGFX_OFFSET:\s*\n?\s*(-?\d+)\s*m?V", od)
-        # OD_SCLK formats differ across driver revisions: never infer a maximum if absent.
-        sclk = re.search(r"OD_SCLK:[\s\S]*?(?=OD_[A-Z]+:|$)", od)
-        freqs = re.findall(r"\b\d+:\s*(\d+)\s*M?Hz", sclk.group(0)) if sclk else []
-        mclk = re.search(r"OD_MCLK:[\s\S]*?(?=OD_[A-Z]+:|$)", od)
-        mclk_row = re.search(r"(?m)^\s*1:\s*(\d+)\s*MHz\s*$", mclk.group(0), re.IGNORECASE) if mclk else None
-        result[bdf] = {
-            "power1_cap_uw": int(cap) if cap and cap.isdecimal() else None,
-            "vddgfx_offset_mv": int(vo.group(1)) if vo else None,
-            "od_sclk_max_mhz": max(map(int, freqs)) if freqs else None,
-            "od_mclk_max_mhz": int(mclk_row.group(1)) if mclk_row else None,
-            "perf_level": _read_text(dev / "power_dpm_force_performance_level"),
-        }
-    return result
-
-
 def _manifest_for_server(url: str, work_root: Path) -> Path | None:
     """Use live engine cmdline's exact --manifest, never newest historical manifest."""
     port = urllib.parse.urlparse(url).port
@@ -248,16 +217,6 @@ def manifest_info(path: Path | None) -> dict:
             "kv_dtype": e.get("execution", {}).get("kv_cache_dtype"),
         },
     }
-
-
-def _board_watts(sys_root: Path = Path("/sys")) -> dict:
-    readings = {}
-    for bdf, dev in card_paths(sys_root):
-        power = next(iter((dev / "hwmon").glob("hwmon*/power1_average")), None)
-        val = _read_text(power) if power else None
-        if val and val.isdecimal():
-            readings[bdf] = int(val) / 1e6
-    return readings
 
 
 def _run_power(cfg: dict, url: str) -> tuple[dict, dict]:

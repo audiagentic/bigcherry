@@ -49,6 +49,22 @@ def _json_bytes(value: object) -> bytes:
         raise RecordError(f"not canonical JSON: {exc}") from exc
 
 
+def with_host_facts(record: dict[str, Any], facts: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return an independent v1 record populated from the platform collector.
+
+    Adapters call this before `put_record`; existing stored records are immutable.
+    A caller may inject a fixture snapshot, avoiding host access in unit tests.
+    """
+    from copy import deepcopy
+
+    from .host_facts import collect_host_facts
+
+    updated = deepcopy(record)
+    updated["host_facts"] = deepcopy(facts if facts is not None else collect_host_facts())
+    validate_record(updated)
+    return updated
+
+
 def canonical_record_bytes(record: dict[str, Any]) -> bytes:
     validate_record(record)
     return _json_bytes(record)
