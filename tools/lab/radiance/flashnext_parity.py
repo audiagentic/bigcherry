@@ -8,13 +8,11 @@ not process control, so it can be tested without cards:
   doc-calibrate --url U --tokens T --out FILE   chars per token of the docs corpus, measured with one probe request
   doc-prefill --url U --calibration FILE --slot measure:K|warmup:K --out FILE   one long document prefill, max_tokens 1
   policy-line LOG                       the helper's last `policy placement` line as JSON (committed, bytes_moved)
-  summarise OUT                         OUT/parity.json: per metric the per-launch values and their median
-  baseline OUT --name NAME [--to FILE]  portable baseline over SHA-verified MRC01 launch records
-  compare OUT --baseline FILE           platform MRC05 comparison; refuses historical path-only baselines
+  record-launch OUT --launch N          commit one completed launch into a run-record v1 (the record is the result;
+                                        baseline and compare are `bigcherry results baseline|compare`)
 
 Tokens/s is never gated across builds (MTP draft acceptance differs per build): the gated metrics are cold prefill and
-engine step time; acceptance and the live policy's transactions are reported only. Baseline/compare call core.results over immutable MRC01 launch records, never parity.json.
-The native engine never imports Python; this file is a lab-side wrapper.
+engine step time; acceptance and the live policy's transactions are reported only. The native engine never imports Python; this file is a lab-side wrapper.
 """
 
 from __future__ import annotations
@@ -48,6 +46,9 @@ METRICS = {
     "sess8_warm_ms_per_step": ("lower", False),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
+    # Informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one launch, 28 in the other).
+    # The greedy text differs between launches, and with it where the live policy moves experts; long-context decode is
+    # gated on long8_ms_per_step.
     "long7_ms_per_step": ("lower", False),
     "long8_ms_per_step": ("lower", True),
     "decode1_acceptance": ("higher", False),
@@ -58,15 +59,6 @@ METRICS = {
 }
 # The long-context seeds (flashnext-parity.sh LONG_SEEDS): each seed is its own prompt, so its own metrics.
 LONG_SEEDS = (7, 8)
-# What a reader of a baseline must know about a metric, carried into parity.json and the baseline.
-NOTES = {
-    "long7_ms_per_step": "informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one "
-                         "launch, 28 in the other). The greedy text differs between launches, and with it where the live "
-                         "policy moves experts; in the slow mode the text routes to experts that are not resident. "
-                         "Long-context decode is gated on long8_ms_per_step.",
-}
-
-
 class ParityError(RuntimeError):
     pass
 
@@ -361,116 +353,6 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
     return value, repeats, detail
 
 
-def _median(values):
-    vals = [v for v in values if v is not None]
-    return statistics.median(vals) if vals else None
-
-
-def summarise(out: Path) -> dict:
-    out = Path(out)
-    run = _load(out / "run.json")
-    launches = sorted((p for p in out.glob("launch-*") if p.is_dir()), key=lambda p: int(p.name.split("-")[1]))
-    if not launches:
-        raise ParityError(f"{out}: no launch-* directories")
-    per_launch, metrics = [], {name: {"direction": d, "gated": g, "launches": [], "repeats": []}
-                               for name, (d, g) in METRICS.items()}
-    for name, note in NOTES.items():
-        metrics[name]["note"] = note
-    for launch in launches:
-        info = _load(launch / "launch.json")
-        value, repeats, detail = launch_metrics(launch, run.get("workload") or {})
-        per_launch.append({"launch": launch.name, "policy": info["policy"], "warmup_s": info["warmup_s"],
-                           "detail": detail})
-        for name in METRICS:
-            metrics[name]["launches"].append(value.get(name))
-            metrics[name]["repeats"].append(repeats.get(name, []))
-    for m in metrics.values():
-        m["median"] = _median(m["launches"])
-    policies = {p["policy"] for p in per_launch}
-    if len(policies) != 1:
-        raise ParityError(f"{out}: the launches disagree on whether the live policy was on")
-    return {"schema": SCHEMA, "kind": "flashnext-parity", "build": run["build"], "build_identity": run.get("build_identity"),
-            "revision": run["revision"], "radiance_pin": run["radiance_pin"], "date": run["date"],
-            "workload": run.get("workload") or {}, "policy": policies.pop(),
-            "warmup_s": [p["warmup_s"] for p in per_launch], "launches": per_launch, "metrics": metrics}
-
-
-def cmd_summarise(args) -> int:
-    parity = summarise(Path(args.out))
-    _write(Path(args.out) / "parity.json", parity)
-    for name, m in parity["metrics"].items():
-        vals = ", ".join("-" if v is None else f"{v:.4g}" for v in m["launches"])
-        med = "-" if m["median"] is None else f"{m['median']:.4g}"
-        print(f"{name:22s} median {med:>10s}  launches [{vals}]  ({m['direction']} better"
-              f"{'' if m['gated'] else ', informational'})")
-    return 0
-
-
-# -------------------------------------------------------------------------------------- MRC05 portable results
-
-def _stored_launch_rows(out: Path, *, work_root: Path | None = None):
-    """Read SHA-only launch receipts through the platform store.
-
-    No parity.json conversion and no re-ingest: missing per-launch evidence is
-    an error, not an excuse to manufacture source config or host snapshots.
-    """
-    _, run_records = _platform()
-    store = run_records.RunRecordStore(work_root)
-    out = Path(out)
-    if not out.is_dir() or out.is_symlink():
-        raise ParityError("portable results require the measured OUT directory and launch SHA receipts")
-    launches = sorted(out.glob("launch-*"))
-    if not launches:
-        raise ParityError("no measured launch directories")
-    rows = []
-    for launch in launches:
-        if not launch.is_dir() or launch.is_symlink():
-            raise ParityError(f"unsafe launch directory {launch}")
-        pointer = launch / "record.sha256"
-        if not pointer.is_file() or pointer.is_symlink():
-            raise ParityError(f"{pointer}: missing verified launch SHA receipt; historical parity.json cannot substitute")
-        digest = pointer.read_text(encoding="utf-8").strip()
-        if re.fullmatch(r"[0-9a-f]{64}", digest) is None:
-            raise ParityError(f"{pointer}: invalid run-record SHA-256")
-        record = store.get_record(digest)
-        # An existing launch directory must not point to a different run.
-        native = launch / "manifest.json"
-        if native.is_file() and not native.is_symlink():
-            run_id = _load(native).get("metadata", {}).get("instance_id")
-            if run_id != record["run_id"]:
-                raise ParityError(f"{pointer}: run record is not the measured launch")
-        rows.append({"sha256": digest, "record": record})
-    return store, rows
-
-
-def cmd_baseline(args) -> int:
-    _, _ = _platform()
-    from bigcherry.cli.results import _write_baseline
-    from bigcherry.core import results
-
-    store, rows = _stored_launch_rows(Path(args.out), work_root=args.work_root)
-    baseline = results.make_baseline(store, rows, args.name)
-    to = Path(args.to) if args.to else Path(args.out) / "baseline.mrc05.json"
-    _write_baseline(to, baseline)
-    print(f"portable results baseline {baseline['name']}: {to} ({len(rows)} verified launches)")
-    for metric, entry in baseline["metrics"].items():
-        if entry["gated"]:
-            print(f"  {metric:35s} {entry['value']:.4g}  tolerance {entry['tolerance'] * 100:.2f}%")
-    return 0
-
-
-def cmd_compare(args) -> int:
-    _, _ = _platform()
-    from bigcherry.cli.results import _show_comparison
-    from bigcherry.core import results
-
-    baseline = results.validate_baseline(_load(Path(args.baseline)))
-    store, rows = _stored_launch_rows(Path(args.out), work_root=args.work_root)
-    report = results.compare_records(store, baseline, rows)
-    _show_comparison(report)  # provenance differences before gate verdicts
-    return 1 if report["failed"] else 0
-
-
 # ------------------------------------------------------------------------------------------------------------- MRC06 v1
 
 def record_metric_phase(name: str) -> str:
@@ -528,10 +410,9 @@ def capture_launch_provenance(
 
 
 def selected_calibration(path: Path, key: str) -> dict:
-    """Use the platform MRC04 strict current/legacy/invalid classifications.
+    """Use the platform MRC04 strict current/invalid classifications.
 
-    This reader verifies the full declared key and quantities. Hash-only
-    history can be listed but cannot serve as active measurement evidence.
+    This reader verifies the full declared key and quantities; a row it does not know is refused.
     """
     from bigcherry.core.calibration_records import read_native_toml
 
@@ -541,7 +422,7 @@ def selected_calibration(path: Path, key: str) -> dict:
     item = selected[0]
     if item["status"] != "current":
         raise ParityError(f"selected calibration is {item['status']}: {item['reason']}")
-    return item["legacy"]
+    return item["native"]
 
 
 def publish_launch_record(
@@ -718,9 +599,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("log")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_policy_line)
-    p = sub.add_parser("summarise")
-    p.add_argument("out")
-    p.set_defaults(fn=cmd_summarise)
     p = sub.add_parser("capture-host-facts", help="passive native-session host snapshot")
     p.add_argument("launch")
     p.set_defaults(fn=cmd_capture_host_facts)
@@ -736,17 +614,6 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--launch", type=int, required=True)
     p.add_argument("--work-root")
     p.set_defaults(fn=cmd_record_launch)
-    p = sub.add_parser("baseline")
-    p.add_argument("out", help="measured OUT directory with launch-N/record.sha256 receipts")
-    p.add_argument("--name", required=True)
-    p.add_argument("--to", help="default OUT/baseline.mrc05.json (never overwrite a historical baseline)")
-    p.add_argument("--work-root", type=Path)
-    p.set_defaults(fn=cmd_baseline)
-    p = sub.add_parser("compare")
-    p.add_argument("out", help="measured OUT directory with launch-N/record.sha256 receipts")
-    p.add_argument("--baseline", required=True)
-    p.add_argument("--work-root", type=Path)
-    p.set_defaults(fn=cmd_compare)
     return ap
 
 

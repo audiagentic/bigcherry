@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import json
 import os
+import statistics
 import subprocess
 import sys
 import tempfile
@@ -16,6 +17,7 @@ ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools" / "lab" / "radiance" / "flashnext-parity.sh"
 sys.path.insert(0, str(ROOT / "tools" / "lab" / "radiance"))
 import flashnext_parity as fp
+from bigcherry.__main__ import main as bigcherry_main
 
 WORKLOAD = {"COLD_FILLS": 8, "DOC_FILLS": 6, "LONG_SEEDS": "7 8", "LONG_SEEDS_COUNT": 2, "DECODE_STREAMS": "1 6"}
 # seed 7 is a different workload from seed 8: slower decode and prefill, by content (identical in every launch)
@@ -64,9 +66,7 @@ def make_run(out: Path, scales, policy=True):
                                               "date": "2026-11-07T00:00:00+00:00"}))
     for i, s in enumerate(scales, 1):
         write_launch(out, i, s, policy)
-    parity = fp.summarise(out)
-    (out / "parity.json").write_text(json.dumps(parity))
-    return parity
+    return out
 
 
 def quiet(fn, *a):
@@ -76,55 +76,53 @@ def quiet(fn, *a):
     return rc, buf.getvalue()
 
 
-class SummariseTests(unittest.TestCase):
+class LaunchMetricsTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.addCleanup(self.tmp.cleanup)
         self.dir = Path(self.tmp.name)
 
-    def test_medians_from_raw_files(self):
-        p = make_run(self.dir / "run", [1.0, 1.1, 1.2])
-        m = p["metrics"]
-        self.assertAlmostEqual(m["cold_ttft_s"]["median"], 2.05 * 1.1)                     # mean of the 8 fills
-        self.assertAlmostEqual(m["doc_prefill_tps"]["median"], 4020.0 / 1.1)
-        self.assertAlmostEqual(m["decode1_ms_per_step"]["median"], 20.1 * 1.1)
-        self.assertAlmostEqual(m["decode6_ms_per_step"]["median"], 30.0 * 1.1)
-        self.assertAlmostEqual(m["sess8_ttft_s"]["median"], 3.0 * 1.1)                     # the cold round only
-        self.assertAlmostEqual(m["sess8_ms_per_step"]["median"], 40.0 * 1.1)
-        self.assertAlmostEqual(m["long7_prefill_tps"]["median"], 256000 / (120.0 * 1.1))    # cold round only
-        self.assertAlmostEqual(m["long8_prefill_tps"]["median"], 256000 / (100.0 * 1.1))
-        self.assertAlmostEqual(m["long7_ms_per_step"]["median"], 43.0 * 1.005 * 1.1)        # both reps of seed 7
-        self.assertAlmostEqual(m["long8_ms_per_step"]["median"], 27.0 * 1.005 * 1.1)
+    def medians(self, out, launches):
+        rows = [fp.launch_metrics(out / f"launch-{i}", WORKLOAD) for i in range(1, launches + 1)]
+        return {name: statistics.median(v[name] for v, _, _ in rows if v.get(name) is not None)
+                for name in fp.METRICS if any(v.get(name) is not None for v, _, _ in rows)}, rows
+
+    def test_metrics_from_raw_files(self):
+        out = make_run(self.dir / "run", [1.0, 1.1, 1.2])
+        m, rows = self.medians(out, 3)
+        self.assertAlmostEqual(m["cold_ttft_s"], 2.05 * 1.1)                     # mean of the 8 fills
+        self.assertAlmostEqual(m["doc_prefill_tps"], 4020.0 / 1.1)
+        self.assertAlmostEqual(m["decode1_ms_per_step"], 20.1 * 1.1)
+        self.assertAlmostEqual(m["decode6_ms_per_step"], 30.0 * 1.1)
+        self.assertAlmostEqual(m["sess8_ttft_s"], 3.0 * 1.1)                     # the cold round only
+        self.assertAlmostEqual(m["sess8_ms_per_step"], 40.0 * 1.1)
+        self.assertAlmostEqual(m["long7_prefill_tps"], 256000 / (120.0 * 1.1))    # cold round only
+        self.assertAlmostEqual(m["long8_prefill_tps"], 256000 / (100.0 * 1.1))
+        self.assertAlmostEqual(m["long7_ms_per_step"], 43.0 * 1.005 * 1.1)        # both reps of seed 7
+        self.assertAlmostEqual(m["long8_ms_per_step"], 27.0 * 1.005 * 1.1)
         self.assertNotIn("long_ms_per_step", m)
-        self.assertIn("note", m["long7_ms_per_step"])
-        self.assertEqual(len(m["long7_ms_per_step"]["repeats"][0]), 1)                      # one group: seed 7's reps
-        self.assertAlmostEqual(m["decode1_acceptance"]["median"], 0.71)
-        self.assertEqual(m["policy_transactions"]["median"], 5)
-        self.assertEqual(len(p["launches"][0]["detail"]["cold_ttft_s"]), 8)
-        self.assertEqual(m["cold_ttft_s"]["repeats"], [[], [], []])                          # distinct prompts: no repeats
-        self.assertTrue(p["policy"])
-        self.assertEqual(p["warmup_s"], [61.0, 61.0, 61.0])
-        self.assertEqual(m["decode1_ms_per_step"]["direction"], "lower")
-        self.assertEqual(m["long8_prefill_tps"]["direction"], "higher")
-        self.assertFalse(m["long7_acceptance"]["gated"])
-        self.assertEqual(p["revision"], "abc123")
-        self.assertEqual(p["radiance_pin"]["pinned"], "v1.17.0")
+        self.assertEqual(len(rows[0][1]["long7_ms_per_step"]), 1)                  # one group: seed 7's reps
+        self.assertAlmostEqual(m["decode1_acceptance"], 0.71)
+        self.assertEqual(m["policy_transactions"], 5)
+        self.assertEqual(len(rows[0][2]["cold_ttft_s"]), 8)
+        self.assertNotIn("cold_ttft_s", rows[0][1])                                # distinct prompts: no repeats
+        self.assertEqual(fp.METRICS["decode1_ms_per_step"], ("lower", True))
+        self.assertEqual(fp.METRICS["long8_prefill_tps"], ("higher", True))
+        self.assertFalse(fp.METRICS["long7_acceptance"][1])
 
     def test_missing_engine_block_fails(self):
-        out = self.dir / "run"
-        make_run(out, [1.0, 1.0])
+        out = make_run(self.dir / "run", [1.0, 1.0])
         rec = json.loads((out / "launch-1" / "decode1.json").read_text())
         rec["rounds"][0]["engine"] = None
         (out / "launch-1" / "decode1.json").write_text(json.dumps(rec))
         with self.assertRaises(fp.ParityError):
-            fp.summarise(out)
+            fp.launch_metrics(out / "launch-1", WORKLOAD)
 
     def test_wrong_fill_count_fails(self):
-        out = self.dir / "run"
-        make_run(out, [1.0, 1.0])
+        out = make_run(self.dir / "run", [1.0, 1.0])
         (out / "launch-2" / "cold-fill-508.json").unlink()
         with self.assertRaises(fp.ParityError):
-            fp.summarise(out)
+            fp.launch_metrics(out / "launch-2", WORKLOAD)
 
 
 class HelperTests(unittest.TestCase):
@@ -230,7 +228,6 @@ class RunRecordsTests(unittest.TestCase):
         return out
 
     def test_two_harness_records_match_results_compare_verdict(self):
-        from bigcherry.__main__ import main as bigcherry_main
         from bigcherry.core import results, run_records
 
         base = self.run_fixture("base", [1.0, 1.04])
@@ -386,49 +383,52 @@ class RunRecordsTests(unittest.TestCase):
                 fp.publish_launch_record(out, launch)
             self.assertEqual(len(store.query()), 1)
 
-    def test_portable_cli_baseline_compare_reads_only_published_records(self):
+    def test_results_baseline_compare_over_published_launch_records(self):
         from bigcherry.core import results, run_records
 
         base = self.run_fixture("base-new", [1.0, 1.04])
         now = self.run_fixture("now-new", [1.3, 1.3])
         with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            ids = {}
             for out in (base, now):
-                for i in (1, 2):
-                    digest = fp.publish_launch_record(out, out / f"launch-{i}")
-                    (out / f"launch-{i}" / "record.sha256").write_text(digest + "\n")
+                ids[out] = [fp.publish_launch_record(out, out / f"launch-{i}") for i in (1, 2)]
             path = self.root / "portable.json"
-            rc, output = quiet(fp.main, ["baseline", str(base), "--name", "mrc05", "--to", str(path)])
-            self.assertEqual(rc, 0, output)
+            scope = ["--work-root", str(self.root), "--engine", "radiance", "--layout", "flashnext-4gpu",
+                     "--workload", "flashnext-parity"]
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                rc = bigcherry_main(["results", "baseline", *scope, "--name", "mrc05", "--to", str(path),
+                                     "--record", ids[base][0], "--record", ids[base][1]])
+            self.assertEqual(rc, 0, stdout.getvalue())
             baseline = json.loads(path.read_text())
             results.validate_baseline(baseline)
             self.assertEqual(baseline["kind"], results.BASELINE_KIND)
             self.assertEqual(len(baseline["records"]), 2)
             self.assertGreater(len(baseline["blobs"]), 4)
-            # parity.json is a view only. Altering it must not affect the compare.
-            summary = json.loads((now / "parity.json").read_text())
-            for metric in summary["metrics"].values():
-                metric["median"] = 0
-            (now / "parity.json").write_text(json.dumps(summary))
-            rc, output = quiet(fp.main, ["compare", str(now), "--baseline", str(path)])
-            self.assertEqual(rc, 1, output)
-            self.assertIn("REGRESSION", output)
-            self.assertLess(output.index("provenance differences"), output.index("cold_ttft_s"))
-            (now / "launch-2" / "record.sha256").unlink()
-            self.assertEqual(fp.main(["compare", str(now), "--baseline", str(path)]), 2)
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                rc = bigcherry_main(["results", "compare", "--work-root", str(self.root), "--baseline", str(path),
+                                     "--record", ids[now][0], "--record", ids[now][1]])
+            self.assertEqual(rc, 1, stdout.getvalue())
+            self.assertIn("REGRESSION", stdout.getvalue())
+            self.assertLess(stdout.getvalue().index("provenance differences"), stdout.getvalue().index("cold_ttft_s"))
             self.assertEqual(len(run_records.RunRecordStore(self.root).query()), 4)
 
-    def test_portable_cli_refuses_legacy_baseline_and_single_launch(self):
+    def test_results_refuse_a_path_only_baseline_and_a_single_launch(self):
         one = self.run_fixture("single-new", [1.0])
         with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
             digest = fp.publish_launch_record(one, one / "launch-1")
-            (one / "launch-1" / "record.sha256").write_text(digest)
-            self.assertEqual(fp.main(["baseline", str(one), "--name", "bad", "--to",
-                                      str(self.root / "bad.json")]), 2)
-            self.assertFalse((self.root / "bad.json").exists())
-            legacy = self.root / "legacy.json"
-            legacy.write_text(json.dumps({"schema": 1, "kind": "flashnext-parity-baseline",
-                                          "source_run": "deleted", "name": "historical"}))
-            self.assertEqual(fp.main(["compare", str(one), "--baseline", str(legacy)]), 2)
+            scope = ["--work-root", str(self.root), "--engine", "radiance", "--layout", "flashnext-4gpu",
+                     "--workload", "flashnext-parity"]
+            with redirect_stdout(StringIO()), patch("sys.stderr", new=StringIO()):
+                self.assertEqual(bigcherry_main(["results", "baseline", *scope, "--name", "bad", "--to",
+                                                 str(self.root / "bad.json"), "--record", digest]), 2)
+                self.assertFalse((self.root / "bad.json").exists())
+                legacy = self.root / "legacy.json"
+                legacy.write_text(json.dumps({"schema": 1, "kind": "flashnext-parity-baseline",
+                                              "source_run": "deleted", "name": "historical"}))
+                self.assertEqual(bigcherry_main(["results", "compare", "--work-root", str(self.root),
+                                                 "--baseline", str(legacy), "--record", digest]), 2)
 
 
 class ScriptTests(unittest.TestCase):
@@ -441,6 +441,13 @@ class ScriptTests(unittest.TestCase):
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("measure --build DIR --out DIR", r.stderr)
         self.assertFalse(Path("/nonexistent-parity-out").exists())
+
+    def test_compare_needs_the_launch_records(self):
+        with tempfile.TemporaryDirectory() as out:
+            r = subprocess.run(["bash", str(SCRIPT), "compare", "--out", out, "--baseline", "b.json"],
+                               check=False, capture_output=True, text=True)
+            self.assertEqual(r.returncode, 2)
+            self.assertIn("no launch records", r.stderr)
 
     def test_unknown_command_is_usage(self):
         r = subprocess.run(["bash", str(SCRIPT)], check=False, capture_output=True, text=True)
