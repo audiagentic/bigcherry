@@ -117,26 +117,41 @@ int main(int argc, char** argv) {
                 return 14;
             }
         }
-        const std::string reported_digest = std::getenv("TEST_INSPECTOR_MISMATCH") != nullptr
+        if (const char* expected_home = std::getenv("TEST_EXPECT_RADIANCE_HOME")) {
+            const char* actual = std::getenv("RADIANCE_HOME");
+            if (!actual || std::strcmp(actual, expected_home) != 0) {
+                std::fprintf(stderr, "fake inspector: explicit native environment was not applied\n");
+                return 15;
+            }
+        }
+        if (const char* expected_kernels = std::getenv("TEST_EXPECT_RADIANCE_KERNELS")) {
+            const char* actual = std::getenv("RADIANCE_KERNELS");
+            if (!actual || std::strcmp(actual, expected_kernels) != 0) {
+                std::fprintf(stderr, "fake inspector: native kernel environment differs\n");
+                return 16;
+            }
+        }
+        const char* mode = std::getenv("TEST_INSPECTOR_MISMATCH");
+        const std::string reported_digest = mode && std::strcmp(mode, "digest") == 0
                                                 ? std::string(64, '0')
                                                 : input.at("sha256").get<std::string>();
-        std::cout << json{{"protocol", "bigcherry.native-fleet-inspect/v1"},
-                          {"snapshot", {{"sha256", reported_digest},
-                                        {"resolution_root", input.at("resolution_root")}}},
-                          {"engine", {{"abi_version", 44},
-                                       {"model", "tiny"},
-                                       {"radiance_home", "runtime"},
-                                       {"radiance_home_source", nullptr},
-                                       {"kernels", json::array({"k0"})},
-                                       {"kernels_source", nullptr},
-                                       {"listener", {{"host", "127.0.0.1"}, {"port", 8123}}},
-                                       {"tp", 1},
-                                       {"cards", json::array({0})},
-                                       {"rank_devices", json::array({0})},
-                                       {"max_context", 4096},
-                                       {"max_sequences", 1}}}}
-                         .dump()
-                  << '\n';
+        json report = {{"protocol", "bigcherry.native-fleet-inspect/v1"},
+                       {"snapshot", {{"sha256", reported_digest},
+                                     {"resolution_root", input.at("resolution_root")}}},
+                       {"engine", {{"abi_version", 44},
+                                    {"model", "tiny"},
+                                    {"radiance_home", "runtime"},
+                                    {"radiance_home_source", nullptr},
+                                    {"kernels", json::array({"k0"})},
+                                    {"kernels_source", nullptr},
+                                    {"listener", {{"host", "127.0.0.1"}, {"port", 8123}}},
+                                    {"tp", 1},
+                                    {"cards", json::array({0})},
+                                    {"rank_devices", json::array({"0000:01:00.0"})},
+                                    {"max_context", 4096},
+                                    {"max_sequences", 1}}}};
+        if (mode && std::strcmp(mode, "cards") == 0) report["engine"]["cards"] = json::array({"0"});
+        std::cout << report.dump() << '\n';
         return 0;
     }
     const std::string manifest = arg_after(argc, argv, "--manifest");

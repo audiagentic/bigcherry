@@ -139,6 +139,10 @@ C31 (2026-11-20): added `session::inspect_native_config` using the existing capt
 
 C31 clarification: `inspect_native_config` takes an explicit native-environment overlay so the production planner can use the exact admitted environment-backed values for parsing and subsequent launch; it does not silently derive a second environment. The test uses an empty overlay.
 
+
+
+C32 (2026-11-20, Sol/GPT review follow-up): the owner inspector now returns a closed `NativeConfigInspection` value, not raw JSON. It rejects unknown/missing keys, wrong array item types, invalid card ordinals, ABI mismatch versus compiled Radiance ABI, nonpositive TP/sequences, invalid listener ports, negative context, and empty model/listener. The positive fake-engine session test proves explicit native environment overrides supersede deliberately wrong inherited runtime-home and kernel environment values; negative tests require the actual digest refusal and malformed-card diagnostic before power admission/engine start and verify child reap. `bc_session_test` passes. Next RUM04 production slice: capture a single effective sanitized environment and reuse it for inspection and engine execution; add a BC-only native named-profile/YAML input with canonical root only after verified executable selection; reconcile the native model, runtime location, listener, TP, card ordinals and rank order to local BDF admission; carry the same snapshot through writer/P1/measure/replay and both cache identities. Do not advertise public YAML launch yet: current main still builds the TOML/v2 plan and v2 writer rejects native snapshot fields. The matched engine CLI probe remains unverified.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -165,3 +169,4 @@ C31 clarification: `inspect_native_config` takes an explicit native-environment 
 - 2026-11-19T13:39:26.821638+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:04:37.285506+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:06:54.254829+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T14:19:49.888198+00:00 (updated-by): Updated: section:notes

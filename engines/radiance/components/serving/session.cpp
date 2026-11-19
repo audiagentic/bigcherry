@@ -22,8 +22,11 @@
 #include <cstring>
 #include <ctime>
 #include <fstream>
+#include <initializer_list>
 #include <iostream>
 #include <linux/memfd.h>
+#include <limits>
+#include <rad_abi.h>
 #include <regex>
 #include <sstream>
 #include <stdexcept>
@@ -1727,8 +1730,8 @@ namespace {
 std::string tail_text(const std::string& s, size_t n = 2000);
 }
 
-nlohmann::json inspect_native_config(const fs::path& engine, const NativeConfigSnapshot& snapshot,
-                                     const Env& native_environment, const Hooks& hooks) {
+NativeConfigInspection inspect_native_config(const fs::path& engine, const NativeConfigSnapshot& snapshot,
+                                             const Env& native_environment, const Hooks& hooks) {
     const fs::path absolute_engine = fs::absolute(engine).lexically_normal();
     if (::access(absolute_engine.c_str(), X_OK) != 0)
         throw PlanFailed("native config inspector: matched engine is not executable: " + absolute_engine.string());
@@ -1761,6 +1764,11 @@ nlohmann::json inspect_native_config(const fs::path& engine, const NativeConfigS
     if (!report || !report.value().is_object())
         throw PlanFailed("native config inspector: report failed strict protocol or snapshot identity validation");
     const Json& doc = report.value();
+    const auto exact_keys = [](const Json& object, std::initializer_list<const char*> keys) {
+        if (!object.is_object() || object.size() != keys.size())
+            return false;
+        return std::all_of(keys.begin(), keys.end(), [&](const char* key) { return object.contains(key); });
+    };
     const auto string_field = [](const Json& object, const char* key) {
         return object.contains(key) && object.at(key).is_string();
     };
@@ -1770,15 +1778,20 @@ nlohmann::json inspect_native_config(const fs::path& engine, const NativeConfigS
     const auto integer_field = [](const Json& object, const char* key) {
         return object.contains(key) && object.at(key).is_number_integer();
     };
-    if (!string_field(doc, "protocol") || doc.at("protocol") != "bigcherry.native-fleet-inspect/v1" ||
-        !doc.contains("snapshot") || !doc.at("snapshot").is_object() ||
+    if (!exact_keys(doc, {"protocol", "snapshot", "engine"}) || !string_field(doc, "protocol") ||
+        doc.at("protocol") != "bigcherry.native-fleet-inspect/v1" ||
+        !exact_keys(doc.value("snapshot", Json::object()), {"sha256", "resolution_root"}) ||
         !string_field(doc.at("snapshot"), "sha256") || doc.at("snapshot").at("sha256") != snapshot.sha256() ||
         !string_field(doc.at("snapshot"), "resolution_root") ||
         doc.at("snapshot").at("resolution_root") != snapshot.resolution_root() ||
-        !doc.contains("engine") || !doc.at("engine").is_object())
+        !doc.at("engine").is_object())
         throw PlanFailed("native config inspector: report failed strict protocol or snapshot identity validation");
     const Json& engine_report = doc.at("engine");
-    if (!integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
+    const Json& listener = engine_report.value("listener", Json::object());
+    if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "radiance_home_source", "kernels",
+                                    "kernels_source", "listener", "tp", "cards", "rank_devices",
+                                    "max_context", "max_sequences"}) ||
+        !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
         !nullable_string_field(engine_report, "radiance_home_source") ||
         !engine_report.contains("kernels") || !engine_report.at("kernels").is_array() ||
@@ -1786,11 +1799,52 @@ nlohmann::json inspect_native_config(const fs::path& engine, const NativeConfigS
         !engine_report.contains("cards") || !engine_report.at("cards").is_array() ||
         !engine_report.contains("rank_devices") || !engine_report.at("rank_devices").is_array() ||
         !integer_field(engine_report, "max_context") || !integer_field(engine_report, "max_sequences") ||
-        !engine_report.contains("listener") || !engine_report.at("listener").is_object() ||
-        !string_field(engine_report.at("listener"), "host") ||
-        !integer_field(engine_report.at("listener"), "port"))
+        !exact_keys(listener, {"host", "port"}) || !string_field(listener, "host") ||
+        !integer_field(listener, "port"))
         throw PlanFailed("native config inspector: report omitted typed engine admission fields");
-    return report.value();
+
+    NativeConfigInspection out;
+    const int64_t abi = engine_report.at("abi_version").get<int64_t>();
+    const int64_t tp = engine_report.at("tp").get<int64_t>();
+    const int64_t port = listener.at("port").get<int64_t>();
+    const int64_t context = engine_report.at("max_context").get<int64_t>();
+    const int64_t sequences = engine_report.at("max_sequences").get<int64_t>();
+    if (abi != static_cast<int64_t>(RAD_ABI_VERSION) || tp <= 0 || tp > std::numeric_limits<int>::max() ||
+        port <= 0 || port > std::numeric_limits<uint16_t>::max() || context < 0 || sequences <= 0 ||
+        engine_report.at("model").get_ref<const std::string&>().empty() ||
+        listener.at("host").get_ref<const std::string&>().empty())
+        throw PlanFailed("native config inspector: report contains out-of-range or mismatched admission values");
+    out.snapshot_sha256 = snapshot.sha256();
+    out.resolution_root = snapshot.resolution_root();
+    out.abi_version = static_cast<std::uint32_t>(abi);
+    out.model = engine_report.at("model").get<std::string>();
+    out.radiance_home = engine_report.at("radiance_home").get<std::string>();
+    if (engine_report.at("radiance_home_source").is_string())
+        out.radiance_home_source = engine_report.at("radiance_home_source").get<std::string>();
+    for (const Json& kernel : engine_report.at("kernels"))
+        if (!kernel.is_string())
+            throw PlanFailed("native config inspector: kernels must contain only strings");
+    out.kernels = engine_report.at("kernels").get<std::vector<std::string>>();
+    if (engine_report.at("kernels_source").is_string())
+        out.kernels_source = engine_report.at("kernels_source").get<std::string>();
+    for (const Json& card : engine_report.at("cards")) {
+        if (!card.is_number_integer())
+            throw PlanFailed("native config inspector: cards must contain nonnegative integer ordinals");
+        const int64_t ordinal = card.get<int64_t>();
+        if (ordinal < 0 || ordinal > std::numeric_limits<int>::max())
+            throw PlanFailed("native config inspector: card ordinal is out of range");
+        out.cards.push_back(static_cast<int>(ordinal));
+    }
+    for (const Json& device : engine_report.at("rank_devices"))
+        if (!device.is_string() || device.get_ref<const std::string&>().empty())
+            throw PlanFailed("native config inspector: rank devices must contain nonempty strings");
+    out.rank_devices = engine_report.at("rank_devices").get<std::vector<std::string>>();
+    out.listener_host = listener.at("host").get<std::string>();
+    out.listener_port = static_cast<std::uint16_t>(port);
+    out.tp = static_cast<int>(tp);
+    out.max_context = context;
+    out.max_sequences = sequences;
+    return out;
 }
 
 namespace {

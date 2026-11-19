@@ -6,6 +6,7 @@
 #include "power_transaction.h"
 #include "session.h"
 
+#include <array>
 #include <cassert>
 #include <csignal>
 #include <cstdio>
@@ -16,6 +17,7 @@
 #include <sstream>
 #include <thread>
 #include <type_traits>
+#include <utility>
 
 #include <cerrno>
 #include <fcntl.h>
@@ -1194,14 +1196,28 @@ void native_config_inspector_before_admission() {
     const int sentinel = ::open("/dev/null", O_RDONLY);
     assert(sentinel >= 3);
     const std::string sentinel_value = std::to_string(sentinel);
+    const auto saved_environment = [](const char* key) -> std::optional<std::string> {
+        const char* value = std::getenv(key);
+        return value == nullptr ? std::nullopt : std::optional<std::string>(value);
+    };
+    const auto saved_home = saved_environment("RADIANCE_HOME");
+    const auto saved_kernels = saved_environment("RADIANCE_KERNELS");
     ::setenv("TEST_SENTINEL_FD", sentinel_value.c_str(), 1);
+    ::setenv("RADIANCE_HOME", "/inherited-wrong-home", 1);
+    ::setenv("RADIANCE_KERNELS", "inherited-wrong-kernels", 1);
+    ::setenv("TEST_EXPECT_RADIANCE_HOME", "/selected-native-home", 1);
+    ::setenv("TEST_EXPECT_RADIANCE_KERNELS", "selected-native-kernels", 1);
     const fs::path owner_cwd = fs::current_path();
     const fs::path trace = c.run / "native-inspector.trace";
     const auto prior = c.session.plan;
     c.session.plan = [prior, snapshot, authored, trace, owner_cwd](const fs::path& run, const ss::Hooks& hooks) {
         std::ofstream(authored, std::ios::binary | std::ios::trunc) << "changed after snapshot\n";
-        const Json report = ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, {}, hooks);
-        assert(report.at("snapshot").at("sha256") == snapshot.sha256());
+        const ss::Env native_environment = {{"RADIANCE_HOME", "/selected-native-home"},
+                                            {"RADIANCE_KERNELS", "selected-native-kernels"}};
+        const auto report = ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, native_environment, hooks);
+        assert(report.snapshot_sha256 == snapshot.sha256());
+        assert(report.abi_version == 44 && report.tp == 1 && report.cards == std::vector<int>{0});
+        assert(report.rank_devices == std::vector<std::string>{"0000:01:00.0"});
         assert(fs::current_path() == owner_cwd);
         std::ofstream(trace, std::ios::app) << "inspected\n";
         const fs::path provisional = run / "native-provisional-v2.json";
@@ -1231,6 +1247,16 @@ void native_config_inspector_before_admission() {
     assert(reply && reply->value("ok", false));
     assert(exit_code(owner) == 0);
     ::unsetenv("TEST_SENTINEL_FD");
+    ::unsetenv("TEST_EXPECT_RADIANCE_HOME");
+    ::unsetenv("TEST_EXPECT_RADIANCE_KERNELS");
+    if (saved_home)
+        ::setenv("RADIANCE_HOME", saved_home->c_str(), 1);
+    else
+        ::unsetenv("RADIANCE_HOME");
+    if (saved_kernels)
+        ::setenv("RADIANCE_KERNELS", saved_kernels->c_str(), 1);
+    else
+        ::unsetenv("RADIANCE_KERNELS");
     ::close(sentinel);
     assert(fs::current_path() == owner_cwd);
     const std::string entries = text(trace);
@@ -1247,43 +1273,53 @@ void native_config_inspector_before_admission() {
     assert(inspector_recorded);
 }
 
-void native_config_inspector_identity_mismatch_refused() {
-    Case c("native-config-inspector-mismatch");
-    const fs::path root = c.run / "yaml-root";
-    fs::create_directories(root);
-    const fs::path authored = root / "fleet.yaml";
-    std::ofstream(authored, std::ios::binary)
-        << "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
-    const auto snapshot = bc::serving::NativeConfigSnapshot::read(authored, root);
-    ::setenv("TEST_INSPECTOR_MISMATCH", "1", 1);
-    c.session.plan = [snapshot](const fs::path&, const ss::Hooks& hooks) {
-        (void)ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, {}, hooks);
-        throw ss::PlanFailed("mismatched inspector response was accepted");
-        return ss::EngineStart{};
-    };
-    c.session.power_hook.begin_manifest = [](const fs::path&,
-                                             bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
-        assert(false && "power admission ran after a mismatched native inspector report");
-        return std::nullopt;
-    };
-    c.session.power_hook.restore = []() -> bc::serving::v2::Status { return std::nullopt; };
-    c.session.power_hook.verify_serving = [](const fs::path&) -> bc::serving::v2::Status {
-        return std::nullopt;
-    };
-    c.session.power_hook.verified_exit = [] {};
-    const pid_t owner = c.owner();
-    c.wait_state({"failed"});
-    assert(exit_code(owner) == 97);
-    ::unsetenv("TEST_INSPECTOR_MISMATCH");
-    const Json record = c.record();
-    assert(!record.contains("power_admission"));
-    bool inspector_reaped = false;
-    for (const auto& process : record.at("processes")) {
-        assert(process.value("role", std::string()) != "engine");
-        if (process.value("role", std::string()) == "native config inspector")
-            inspector_reaped = process.value("exited", false) && gone(process.at("pid").get<pid_t>());
+void native_config_inspector_invalid_report_refused() {
+    for (const auto& [mode, expected_error] :
+         std::array<std::pair<const char*, const char*>, 2>{{
+             {"digest", "report failed strict protocol or snapshot identity validation"},
+             {"cards", "cards must contain nonnegative integer ordinals"}}}) {
+        Case c(std::string("native-config-inspector-") + mode);
+        const fs::path root = c.run / "yaml-root";
+        fs::create_directories(root);
+        const fs::path authored = root / "fleet.yaml";
+        std::ofstream(authored, std::ios::binary)
+            << "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+        const auto snapshot = bc::serving::NativeConfigSnapshot::read(authored, root);
+        ::setenv("TEST_INSPECTOR_MISMATCH", mode, 1);
+        c.session.plan = [snapshot](const fs::path&, const ss::Hooks& hooks) {
+            (void)ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, {}, hooks);
+            throw ss::PlanFailed("inspector refusal gate did not fire");
+            return ss::EngineStart{};
+        };
+        c.session.power_hook.begin_manifest = [](const fs::path&,
+                                                 bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
+            assert(false && "power admission ran after an invalid native inspector report");
+            return std::nullopt;
+        };
+        c.session.power_hook.restore = []() -> bc::serving::v2::Status { return std::nullopt; };
+        c.session.power_hook.verify_serving = [](const fs::path&) -> bc::serving::v2::Status {
+            return std::nullopt;
+        };
+        c.session.power_hook.verified_exit = [] {};
+        const pid_t owner = c.owner();
+        c.wait_state({"failed"});
+        assert(exit_code(owner) == 97);
+        ::unsetenv("TEST_INSPECTOR_MISMATCH");
+        const Json record = c.record();
+        assert(!record.contains("power_admission"));
+        bool expected_refusal = false;
+        for (const auto& error : record.at("errors"))
+            if (error.is_string() && error.get<std::string>().find(expected_error) != std::string::npos)
+                expected_refusal = true;
+        assert(expected_refusal);
+        bool inspector_reaped = false;
+        for (const auto& process : record.at("processes")) {
+            assert(process.value("role", std::string()) != "engine");
+            if (process.value("role", std::string()) == "native config inspector")
+                inspector_reaped = process.value("exited", false) && gone(process.at("pid").get<pid_t>());
+        }
+        assert(inspector_reaped);
     }
-    assert(inspector_reaped);
 }
 
 void premeasurement_manifest_hook_integration() {
@@ -1414,7 +1450,7 @@ int test_main(int argc, char** argv) {
     real_session_power_returned_errors();
     manifest_writer_before_durable_admission();
     native_config_inspector_before_admission();
-    native_config_inspector_identity_mismatch_refused();
+    native_config_inspector_invalid_report_refused();
     premeasurement_manifest_hook_integration();
     callback_nonstandard_regression();
     callback_exception_matrix();

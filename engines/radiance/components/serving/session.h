@@ -16,6 +16,7 @@
  * the lab modes and guards are step 3. The Python supervisor remains the behavioural reference through RSC11
  * S16. */
 #include <chrono>
+#include <cstdint>
 #include <filesystem>
 #include <map>
 #include <memory>
@@ -255,11 +256,30 @@ using ManifestRunner = Callback<ManifestRun(const std::vector<std::string>& argv
  * cannot verify leaves the child the owner's to stop). */
 ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks = {});
 
+struct NativeConfigInspection {
+    std::string snapshot_sha256;
+    std::filesystem::path resolution_root;
+    std::uint32_t abi_version = 0;
+    std::string model;
+    std::string radiance_home;
+    std::optional<std::string> radiance_home_source;
+    std::vector<std::string> kernels;
+    std::optional<std::string> kernels_source;
+    std::string listener_host;
+    std::uint16_t listener_port = 0;
+    int tp = 0;
+    std::vector<int> cards;
+    std::vector<std::string> rank_devices;
+    int64_t max_context = 0;
+    int64_t max_sequences = 0;
+};
+
 /* Ask the matched Radiance binary to parse and resolve the admitted native YAML snapshot under its recorded
  * root. `native_environment` supplies the same explicit configuration environment selected for the later child;
  * it is never inferred from a mutable authored path. The inspector is owner-tracked and reaped before return. */
-nlohmann::json inspect_native_config(const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
-                                     const Env& native_environment, const Hooks& hooks = {});
+NativeConfigInspection inspect_native_config(const std::filesystem::path& engine,
+                                             const NativeConfigSnapshot& snapshot,
+                                             const Env& native_environment, const Hooks& hooks = {});
 
 struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set
