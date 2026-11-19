@@ -3074,6 +3074,89 @@ void config_files(Fixture& t) {
     }
 }
 
+
+// Release layout: configs and heat live in an immutable prefix, while mutable
+// histogram telemetry is confined to this session's run directory.
+void installed_site_defaults(Fixture& t) {
+    namespace sv = bc::serving;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path prefix = t.root / "installed-release";
+    fs::create_directories(prefix / "configs");
+    fs::create_directories(prefix / "heat");
+    fs::copy_file(configs / "flashnext.toml", prefix / "configs/flashnext.toml");
+    // Reuse the valid synthetic RAD and route heat made by manifest_writer_step.
+    // This tests the real S10 writer without requiring a card or model download.
+    fs::copy_file(t.root / "writer.hot-first", prefix / "heat/flashnext-mixed.hot-first");
+    write(prefix / "heat/perf51.rank0.hot-first", "1\n");
+    const auto site = t.file("installed-site.toml",
+        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
+        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
+        "\"\n[layout]\nname = \"flashnext-4gpu\"\n"
+        // One combine thread: the native writer below discovers the real CPU count, and a small CI runner
+        // has fewer CPUs than the layout's default.
+        "[helper]\ncombine_threads = 1\n");
+    Options opts;
+    opts.site = site;
+    opts.configs = {prefix / "configs"};
+    opts.model_root = t.root;
+    opts.run_dir = t.root / "sessions/production";
+    assert(opts.sets.empty());  // production site, no --set flags
+    const auto r = sv::resolve(opts, t.facts);
+    const auto heat = (prefix / "heat/flashnext-mixed.hot-first").string();
+    const auto histogram = (opts.run_dir / "heat.live").string();
+    assert(r.values.at("handoff").at("heat") == heat);
+    assert(r.values.at("handoff").at("histogram") == histogram);
+    assert(r.values.at("handoff").at("histogram_period_s") == 1);
+    sv::ManifestInputs in;
+    in.resolved = r;
+    in.instance_id = "11111111-1111-4111-8111-111111111111";
+    in.producer_sha256 = std::string(64, 'a');
+    in.profile = "production";
+    in.s10.power_profile = "stock";
+    in.s10.now_unix_s = 1800000000;
+    in.s10.calibration_records = Json::array();
+    const auto built = sv::build_manifest(in);
+    const auto& handoff = built.document.at("spec").at("handoff");
+    assert(handoff.at("placement").at("heat_file") == heat);
+    assert(handoff.at("telemetry").at("histogram_file") == histogram);
+    assert(handoff.at("telemetry").at("period_s") == 1);
+    assert(r.provenance.at("handoff.histogram").at("origin") == "derived");
+    // The session owner passes --run-dir to this actual separate native
+    // manifest writer. No --set flags, no checkout path or hardware needed.
+    const fs::path writer_output = t.root / "installed-unmeasured-manifest.json";
+    const auto result = run_bc_serve({
+        "--write-manifest", writer_output.string(), "--unmeasured",
+        "--power-profile", "stock", "--sys-root", t.root.string(),
+        "--site", site.string(), "--configs", (prefix / "configs").string(),
+        "--model-root", t.root.string(), "--run-dir", opts.run_dir.string()
+    });
+    if (result.exit_code != 0)
+        throw std::runtime_error("installed native manifest writer: " + result.output);
+    const Json cli_doc = Json::parse(std::ifstream(writer_output));
+    assert(cli_doc.at("spec").at("handoff").at("placement").at("heat_file") == heat);
+    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("histogram_file") == histogram);
+    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("period_s") == 1);
+
+    // Every layer can override the bundled seed; explicit off must stay off.
+    opts.site = t.file("installed-site-override.toml",
+        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
+        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
+        "\"\n[layout]\nname = \"flashnext-4gpu\"\n[handoff]\nheat = \"/site/seed\"\nhistogram = \"off\"\nhistogram_period_s = 7\n");
+    const auto overridden = sv::resolve(opts, t.facts);
+    assert(overridden.values.at("handoff").at("heat") == "/site/seed");
+    assert(overridden.values.at("handoff").at("histogram") == "off");
+    assert(overridden.values.at("handoff").at("histogram_period_s") == 7);
+    opts.sets.push_back("handoff.histogram=\"/cli/histogram\"");
+    assert(sv::resolve(opts, t.facts).values.at("handoff").at("histogram") == "/cli/histogram");
+
+    // The run-directory default is a session-owner choice, not a fabricated
+    // default in general resolver/explain calls that lack a run directory.
+    opts.site = site;
+    opts.sets.pop_back();
+    opts.run_dir.clear();
+    fail(opts, t.facts, "missing required key: handoff.histogram");
+}
+
 #ifndef BC_FAKE_ENGINE
 #error "BC_FAKE_ENGINE must name the fake engine binary (session_fake_engine.cpp)"
 #endif
@@ -3922,6 +4005,7 @@ int main(int argc, char** argv) {
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
         config_files(t);
+        installed_site_defaults(t);
         native_explain_cli(t);
         native_static_resolution_identity(t);
         session_engine_plan(t);
