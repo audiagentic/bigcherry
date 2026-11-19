@@ -2419,8 +2419,7 @@ void check_native_helper_roles(const v2::Manifest& manifest, const Json& workers
 struct NamedCache {
     std::string key;
     fs::path index;
-    std::string model_digest;
-    FileStamp model_stamp;
+    ModelIdentity model;
 };
 
 static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
@@ -2442,7 +2441,8 @@ static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
 
 std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved& resolved, const Json& facts,
                                       const fs::path& engine, const fs::path& helper, const fs::path& run_dir,
-                                      const NativeConfigSnapshot* native = nullptr) {
+                                      const NativeConfigSnapshot* native = nullptr,
+                                      const ModelIdentity* verified_model = nullptr) {
     if (in.named_config.empty())
         return std::nullopt; // preserve the existing --set/layout serve path
     const Json& values = resolved.values;
@@ -2468,7 +2468,7 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
     const fs::path index = stored_index_path(run_dir, name);
     const ModelIdentity artifact =
-        cached_model_identity(values.at("engine").at("model").get<std::string>(), index);
+        cached_model_identity(values.at("engine").at("model").get<std::string>(), index, {}, verified_model);
     static_inputs.model_digest = artifact.digest;
     static_inputs.power_profile = in.power_profile;
 
@@ -2508,7 +2508,7 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         values.at("handoff").at("heat").is_string() &&
         !values.at("handoff").at("heat").get<std::string>().empty())
         file(values.at("handoff").at("heat").get<std::string>());
-    return NamedCache{static_resolution_key(static_inputs), index, artifact.digest, artifact.stamp};
+    return NamedCache{static_resolution_key(static_inputs), index, artifact};
 }
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
@@ -2866,14 +2866,15 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             final_spec.plan.resource_inputs->resident_other_bytes != decoded_ranks.resident_other_bytes)
             throw PlanFailed("native v3 measured serving artifact changed the owner plan or frozen model/build identities");
         if (cache) {
-            const auto current = named_cache(in, after_resolve, after_facts, engine, helper_binary, run_dir, &snapshot);
+            const auto current =
+                named_cache(in, after_resolve, after_facts, engine, helper_binary, run_dir, &snapshot, &cache->model);
             if (!current || current->key != cache->key)
                 throw PlanFailed("native v3 static inputs changed during measurement; refusing named cache publication");
             if (!fs::is_regular_file(s8_source) || fs::is_symlink(s8_source))
                 throw PlanFailed("native v3 measured writer did not publish ordinary S8 replay evidence");
             const StoredManifestIndex entry{
-                cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model_digest,
-                current->model_stamp, complete_file_identity(s8_source),
+                cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model.digest,
+                current->model.stamp, complete_file_identity(s8_source),
                 StoredManifestIndex::NativeMeasurement{attempt_id, owned.owner_sha256}};
             write_stored_index(measured_manifest.string() + ".replay-index.json", entry);
             write_stored_index(cache->index, entry);
@@ -3155,8 +3156,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 const StoredManifestIndex entry{cache_selection->key,
                                                 manifest.filename().string(),
                                                 final_snapshot.file_identity,
-                                                cache_selection->model_digest,
-                                                cache_selection->model_stamp,
+                                                cache_selection->model.digest,
+                                                cache_selection->model.stamp,
                                                 complete_file_identity(s8_source)};
                 // Each manifest carries an adjacent immutable replay attestation;
                 // the per-config index may point to another manifest on the next
@@ -3353,7 +3354,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
             bound->digest != complete_file_identity_bytes(bytes))
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                "replay: stored attestation no longer binds the original manifest bytes");
-        if (bound->model_digest.empty() || bound->model_digest != attestation->model_digest)
+        if (bound->model_digest.empty() || bound->model_digest != attestation->model.digest)
             throw ReplayFailed(ReplayRefusal::model,
                                "replay: complete model artifact bytes no longer match the original");
         if (bound->key != attestation->key)

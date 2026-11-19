@@ -9,6 +9,7 @@
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
@@ -136,7 +137,9 @@ void seed_file_identity(Sha256& accumulator, uint64_t size) {
 void add_file_identity_chunk(Sha256& accumulator, std::string_view chunk) {
     accumulator.update(std::to_string(chunk.size()));
     accumulator.update(":");
-    accumulator.update(sha256_hex(std::string(chunk)));
+    Sha256 chunk_hash;
+    chunk_hash.update(chunk);
+    accumulator.update(chunk_hash.hex_digest());
     accumulator.update("\n");
 }
 
@@ -183,7 +186,7 @@ std::string complete_file_identity(const std::filesystem::path& path) {
 }
 
 ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
-                                    const FullFileReader& full_reader) {
+                                    const FullFileReader& full_reader, const ModelIdentity* verified) {
     // ctime_ns cannot be restored by normal in-place writes: even a same-size
     // write followed by a manual mtime reset changes this identity. An actor
     // capable of forging kernel inode/ctime fields is outside the threat model.
@@ -195,6 +198,12 @@ ModelIdentity cached_model_identity(const std::filesystem::path& model, const st
         if (recorded.model_stamp && recorded.model_stamp.value() == before && !recorded.model_digest.empty())
             return {recorded.model_digest, before};
     }
+    if (verified && verified->stamp == before) {
+        check_digest(verified->digest, "verified model identity");
+        return *verified;
+    }
+    if (!full_reader)
+        std::cerr << "plan: fingerprinting " << before.size << " bytes of model content\n";
     const std::string digest = full_reader ? full_reader.require("stored.model.full_fingerprint", model)
                                            : complete_file_identity(model);
     check_digest(digest, "full model identity");

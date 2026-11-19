@@ -50,10 +50,12 @@ struct ModelIdentity {
 
 // Cache only the full artifact digest; no omitted chunk, header-only shortcut
 // or trust in a stale stat identity. The optional full reader is injected at
-// the OS file boundary so a test can assert zero reads on an index hit.
+// the OS file boundary so a test can assert zero reads on a hit. The owner can
+// also reuse a verified identity from the same measurement attempt.
 using FullFileReader = callback::Guarded<std::string(const std::filesystem::path&)>;
 ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
-                                    const FullFileReader& full_reader = {});
+                                    const FullFileReader& full_reader = {},
+                                    const ModelIdentity* verified = nullptr);
 
 // SHA-256 over RFC8785/JCS of these typed static inputs, with a version.
 // Independent of the stored manifest's own digest and per-start execution record.

@@ -179,6 +179,9 @@ int main() {
         const ss::ModelIdentity model_first = ss::cached_model_identity(model, index, counting_model_reader);
         expect(full_model_reads == 1 && model_first.digest == second,
                "first start fingerprints all model bytes");
+        const auto same_attempt = ss::cached_model_identity(model, index, counting_model_reader, &model_first);
+        expect(full_model_reads == 1 && same_attempt.digest == model_first.digest,
+               "the same measurement attempt should not reread an unchanged model before publishing the index");
         ss::write_stored_index(
             index, {original, saved.filename().string(), digest, model_first.digest, model_first.stamp});
         expect(ss::stored_manifest_for(t.root, "fixture", original) == saved,
@@ -188,7 +191,7 @@ int main() {
                "unchanged model must be a true cache hit with zero model reader calls");
         // A size (or inode, device, mtime_ns, ctime_ns) change must invalidate.
         write(model, contents + "changed");
-        const ss::ModelIdentity model_changed = ss::cached_model_identity(model, index, counting_model_reader);
+        const ss::ModelIdentity model_changed = ss::cached_model_identity(model, index, counting_model_reader, &model_first);
         expect(full_model_reads == 2 && model_changed.digest != model_first.digest,
                "changed model stat identity must invalidate full digest");
         ss::write_stored_index(index, {original, saved.filename().string(), digest});
