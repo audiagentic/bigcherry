@@ -130,7 +130,7 @@ OUT=$(cd "$OUT" && pwd)
 NATIVE_ARGS+=(--set "handoff.histogram=$OUT/heat.live" --set "handoff.histogram_period_s=1")
 
 LONG_COUNT=$(wc -w <<< "$LONG_SEEDS")
-python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port "$PORT" \
+PYTHONPATH=tools python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port "$PORT" \
   --set COLD_FILLS=$COLD_FILLS --set COLD_SEED0=$COLD_SEED0 --set COLD_PROMPT_TOKENS=$COLD_PROMPT_TOKENS \
   --set COLD_MAX_TOKENS=$COLD_MAX_TOKENS --set DOC_FILLS=$DOC_FILLS --set DOC_PROMPT_TOKENS=$DOC_PROMPT_TOKENS \
   --set "DECODE_STREAMS=$DECODE_STREAMS" --set DECODE_PROMPT_TOKENS=$DECODE_PROMPT_TOKENS \
@@ -146,11 +146,17 @@ NATIVE_PID=
 stop_native() {
   [ "$LAUNCHED" = 1 ] || return 0
   # Native stop verifies exit of each child; never kill a recorded PID.
-  "$BC_SERVE" stop --run-dir "$RUN" >> "$L/owner.log" 2>&1 ||
-    { echo "flashnext-parity: native stop failed (see $L/owner.log)" >&2; return 1; }
-  wait "$NATIVE_PID" ||
-    { echo "flashnext-parity: owner exited with error (see $L/owner.log)" >&2; return 1; }
-  LAUNCHED=0
+  local result=0
+  if "$BC_SERVE" stop --run-dir "$RUN" >> "$L/owner.log" 2>&1; then
+    wait "$NATIVE_PID" ||
+      { echo "flashnext-parity: owner exited with error (see $L/owner.log)" >&2; result=1; }
+    LAUNCHED=0
+  else
+    echo "flashnext-parity: native stop failed (see $L/owner.log)" >&2
+    result=1
+  fi
+  python3 "$PARITY" archive-session "$RUN/session.json" --owner-pid "$NATIVE_PID" --out "$L" || result=1
+  return "$result"
 }
 trap 'stop_native' EXIT
 trap 'stop_native; exit 130' INT TERM HUP
@@ -172,18 +178,16 @@ except (ValueError,AssertionError):
   done
   return 1
 }
-# Native session record owns the committed manifest and precise per-role log paths.
-session_value() {
-  python3 - "$RUN/session.json" "$1" <<'PY'
+# Native session record owns the committed manifest path.
+session_manifest() {
+  python3 - "$RUN/session.json" "$NATIVE_PID" <<'PYTHON'
 import json,sys
 with open(sys.argv[1], encoding="utf-8") as f:
     r=json.load(f)
-if sys.argv[2]=="manifest":
-    print(r["manifest"])
-else:
-    paths=[p["log"] for p in r["processes"] if p.get("role")==sys.argv[2]]
-    if paths: print(paths[-1])
-PY
+if r["owner_pid"] != int(sys.argv[2]):
+    sys.exit(1)
+print(r["manifest"])
+PYTHON
 }
 # stream-bench NAME STREAMS PROMPT_TOKENS MAX_TOKENS REPS SEED: one record, raw JSON in $L/NAME.json, log in $L/NAME.log
 stream_bench() {
@@ -208,9 +212,9 @@ for i in $(seq 1 "$LAUNCHES"); do
   NATIVE_PID=$!
   LAUNCHED=1
   wait_native_ready || fail "native bc-serve refused or exited (see $L/owner.log)"
-  MANIFEST=$(session_value manifest) || fail "native session has no committed manifest"
+  MANIFEST=$(session_manifest) || fail "native session has no committed manifest"
   [ -f "$MANIFEST" ] || fail "native session did not commit a strict-v2 manifest"
-  cp "$MANIFEST" "$L/manifest.json"
+  cp "$MANIFEST" "$L/manifest.json" || fail "cannot archive the manifest"
   python3 "$PARITY" warmup-plan "$L/manifest.json" --out "$L/launch.json" >&2 || fail "cannot read the manifest's live policy"
   WARMUP_S=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["warmup_s"])' "$L/launch.json")
 
@@ -243,11 +247,8 @@ for i in $(seq 1 "$LAUNCHES"); do
     stream_bench "long-$s" 1 "$LONG_PROMPT_TOKENS" "$LONG_MAX_TOKENS" "$LONG_REPS" "$s"
   done
 
-  ENGINE_LOG=$(session_value engine) || fail "native session has no engine log"
-  HELPER_LOG=$(session_value helper0) || fail "native session has no helper0 log"
-  stop_native || fail "native stop did not verify every child exited"
-  [ -z "$ENGINE_LOG" ] || cp "$ENGINE_LOG" "$L/engine.log" 2>/dev/null
-  if [ -n "$HELPER_LOG" ] && cp "$HELPER_LOG" "$L/helper0.log" 2>/dev/null; then
+  stop_native || fail "native session shutdown or evidence collection failed"
+  if [ -f "$L/helper0.log" ]; then
     grep 'policy placement' "$L/helper0.log" | tail -1 > "$L/policy-placement.txt" || :
   fi
   python3 "$PARITY" policy-line "$L/helper0.log" --out "$L/policy.json" >&2
