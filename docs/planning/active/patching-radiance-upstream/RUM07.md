@@ -74,6 +74,8 @@ Astra source review ASTRA-CONSOLIDATION.md: evaluate this slice early and indepe
 
 Production-format implementation blocker: target's native FP8 opt-in is absent on Qwen4exp and native i8 has different scale bytes; a copied Flash-Next YAML is not sufficient. Resolve local E4M3 retention or explicitly qualify a replacement before RUM09 real production canary. Refer to docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md.
 
+ABI43 port assessment (2026-11-19): keep the current appended rad0040/rad0042 descriptor-only edits out of the candidate composition. Their arithmetic is correct (head_dim 256: B16F8=768 B/head, B16I8=784 B/head; plain E4M3=512 B/head, native I8=516 B/head), but the fixture is assert-only under NDEBUG and no runtime callers connect the table to allocation or kernels. The first integrated candidate slice is resident head_dim=256, GQA=12, page=4. Carry the hybrid format distinctly through native config advice/parser and argv/engine admission; don't map it silently to BF16/I8 or change ABI sizes unnoticed. Keep logical head_dim 256 separate from physical page row bytes in planning, group/page allocation and binding. Port standalone store with prefill/decode readers as one slice, retain MTP shared KV group, use existing unfused resident attention where valid, and reject streaming until mirror/ring transfer is ported. QSA block-key storage remains separate. Add always-on refusal and byte/shape checks, then compare store bytes plus dense, QSA, MTP draft/verify output against reference before adding GQA6 or page16. Plain fp8 parity remains separate.
+
 ## Change Log
 
 - 2026-11-18T01:28:34.138312+00:00 (created-by): Created by codex
@@ -85,3 +87,4 @@ Production-format implementation blocker: target's native FP8 opt-in is absent o
 - 2026-11-18T02:26:37.220559+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:28:24.920139+00:00 (updated-by): Updated: section:code_samples
 - 2026-11-18T03:41:48.679183+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T01:28:36.142111+00:00 (updated-by): Updated: section:notes
