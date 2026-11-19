@@ -35,6 +35,7 @@
 #include <utility>
 
 #include <nlohmann/json.hpp>
+#include <rad_abi.h>
 
 extern char** environ;
 
@@ -167,7 +168,7 @@ int main(int argc, char** argv) {
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v1"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", input.at("resolution_root")}}},
-                       {"engine", {{"abi_version", 44},
+                       {"engine", {{"abi_version", RAD_ABI_VERSION},
                                     {"model", reported_model},
                                     {"radiance_home", reported_home},
                                     {"radiance_home_source", nullptr},

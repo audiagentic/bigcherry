@@ -6,6 +6,8 @@
 #include "power_transaction.h"
 #include "session.h"
 
+#include <rad_abi.h>
+
 #include <array>
 #include <cassert>
 #include <csignal>
@@ -452,6 +454,54 @@ void spawn_and_environment() {
                 typed = err.error().code == bc::serving::v2::ConfigErrorCode::io_failure;
             }
             assert(typed && !fs::exists(forbidden));
+        }
+        // A retained root descriptor pins the child cwd even if its pathname is replaced after registration.
+        // Output paths remain absolute in the owner's attempt directory, and the root descriptor is CLOEXEC.
+        {
+            const fs::path root = g_root / "native-execution-root";
+            const fs::path moved = g_root / "native-execution-root-moved";
+            const fs::path attempt = g_root / "native-attempt";
+            fs::create_directories(root);
+            fs::create_directories(attempt);
+            std::ofstream(root / "identity") << "original";
+            const int root_fd = ::open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+            assert(root_fd >= 3);
+            const fs::path owner_cwd = fs::current_path();
+            const fs::path cwd_output = attempt / "child-cwd";
+            const fs::path plan_output = attempt / "plan.json";
+            const fs::path ranks_output = attempt / "rank-demand.json";
+            const std::string command =
+                "pwd > \"$CWD_OUTPUT\" && test \"$(cat identity)\" = original && "
+                "touch child-ran && printf plan > \"$PLAN_OUTPUT\" && "
+                "printf ranks > \"$RANKS_OUTPUT\" && "
+                "test ! -e \"/proc/self/fd/$ROOT_FD\"";
+            bool moved_before_child = false;
+            const pid_t pid = ss::spawn(
+                {"/bin/sh", "-c", command},
+                {{"PATH", "/bin:/usr/bin"}, {"CWD_OUTPUT", cwd_output.string()},
+                 {"PLAN_OUTPUT", plan_output.string()}, {"RANKS_OUTPUT", ranks_output.string()},
+                 {"ROOT_FD", std::to_string(root_fd)}},
+                g_root / "spawn.log",
+                [&](pid_t) {
+                    fs::rename(root, moved);
+                    fs::create_directories(root);
+                    std::ofstream(root / "identity") << "replacement";
+                    moved_before_child = true;
+                }, -1, root_fd);
+            int st = 0;
+            assert(::waitpid(pid, &st, 0) == pid && WIFEXITED(st) && WEXITSTATUS(st) == 0);
+            assert(moved_before_child && fs::current_path() == owner_cwd);
+            std::ifstream cwd_in(cwd_output);
+            std::string child_cwd;
+            std::getline(cwd_in, child_cwd);
+            assert(fs::path(child_cwd) == moved && fs::exists(moved / "child-ran"));
+            assert(!fs::exists(root / "child-ran"));
+            std::ifstream plan_in(plan_output), ranks_in(ranks_output);
+            std::string plan_text, ranks_text;
+            plan_in >> plan_text;
+            ranks_in >> ranks_text;
+            assert(plan_text == "plan" && ranks_text == "ranks");
+            ::close(root_fd);
         }
         // a writer that exits at once is registered before it can exit (the gate), so registration never
         // fails
@@ -1194,6 +1244,8 @@ void native_config_inspector_before_admission() {
     const std::string yaml = "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
     std::ofstream(authored, std::ios::binary) << yaml;
     const auto snapshot = bc::serving::NativeConfigSnapshot::read(authored, root);
+    const int resolution_root_fd = ::open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC);
+    assert(resolution_root_fd >= 3);
     const int sentinel = ::open("/dev/null", O_RDONLY);
     assert(sentinel >= 3);
     const std::string sentinel_value = std::to_string(sentinel);
@@ -1211,7 +1263,7 @@ void native_config_inspector_before_admission() {
     const fs::path owner_cwd = fs::current_path();
     const fs::path trace = c.run / "native-inspector.trace";
     const auto prior = c.session.plan;
-    c.session.plan = [prior, snapshot, authored, trace, owner_cwd](const fs::path& run, const ss::Hooks& hooks) {
+    c.session.plan = [prior, snapshot, authored, trace, owner_cwd, resolution_root_fd](const fs::path& run, const ss::Hooks& hooks) {
         std::ofstream(authored, std::ios::binary | std::ios::trunc) << "changed after snapshot\n";
         const ss::Env native_environment = {{"RADIANCE_HOME", "/selected-native-home"},
                                             {"RADIANCE_KERNELS", "selected-native-kernels"}};
@@ -1219,11 +1271,19 @@ void native_config_inspector_before_admission() {
         const auto report = ss::inspect_and_reconcile_native_config(
             BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
             complete_environment,
-            {"0000:01:00.0"}, 1, hooks);
+            {"0000:01:00.0"}, 1, hooks, resolution_root_fd);
         assert(report.snapshot_sha256 == snapshot.sha256());
         assert(report.model == "tiny.rad");
-        assert(report.abi_version == 44 && report.tp == 1 && report.cards == std::vector<int>{0});
+        assert(report.abi_version == RAD_ABI_VERSION && report.tp == 1 && report.cards == std::vector<int>{0});
         assert(report.rank_devices == std::vector<std::string>{"0000:01:00.0"});
+        const ss::Env implicit_rank_devices = ss::current_child_environment(
+            {{"RADIANCE_HOME", "/selected-native-home"},
+             {"RADIANCE_KERNELS", "selected-native-kernels"},
+             {"TEST_NATIVE_INSPECT_RANK_DEVICES", "[]"}});
+        const auto implicit_report = ss::inspect_and_reconcile_native_config(
+            BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
+            implicit_rank_devices, {"0000:01:00.0"}, 1, hooks, resolution_root_fd);
+        assert(implicit_report.rank_devices.empty());
         for (const auto& [bdfs, tp, expected] :
              std::array<std::tuple<std::vector<std::string>, int, const char*>, 2>{{
                  {{{"0000:02:00.0"}}, 1,
@@ -1234,7 +1294,7 @@ void native_config_inspector_before_admission() {
             try {
                 (void)ss::inspect_and_reconcile_native_config(
                     BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
-                    complete_environment, bdfs, tp, hooks);
+                    complete_environment, bdfs, tp, hooks, resolution_root_fd);
             } catch (const ss::PlanFailed& error) {
                 refused = std::string_view(error.what()).find(expected) != std::string_view::npos;
             }
@@ -1248,7 +1308,7 @@ void native_config_inspector_before_admission() {
                  {"TEST_NATIVE_INSPECT_CARDS", "[1,0]"}});
             (void)ss::inspect_and_reconcile_native_config(
                 BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
-                wrong_cards, {"0000:01:00.0"}, 1, hooks);
+                wrong_cards, {"0000:01:00.0"}, 1, hooks, resolution_root_fd);
         } catch (const ss::PlanFailed& error) {
             card_order_refused = std::string_view(error.what()).find(
                                      "YAML card ordinals differ from the local rank visibility order") !=
@@ -1263,7 +1323,7 @@ void native_config_inspector_before_admission() {
                  {"TEST_NATIVE_INSPECT_REPORTED_HOME", "/unverified-radiance-home"}});
             (void)ss::inspect_and_reconcile_native_config(
                 BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
-                wrong_home, {"0000:01:00.0"}, 1, hooks);
+                wrong_home, {"0000:01:00.0"}, 1, hooks, resolution_root_fd);
         } catch (const ss::PlanFailed& error) {
             unverified_home_refused = std::string_view(error.what()).find(
                                           "YAML runtime home differs from the verified matched build home") !=
@@ -1278,7 +1338,7 @@ void native_config_inspector_before_admission() {
                  {"TEST_NATIVE_INSPECT_MODEL", "other.rad"}});
             (void)ss::inspect_and_reconcile_native_config(
                 BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
-                wrong_model, {"0000:01:00.0"}, 1, hooks);
+                wrong_model, {"0000:01:00.0"}, 1, hooks, resolution_root_fd);
         } catch (const ss::PlanFailed& error) {
             model_mismatch_refused = std::string_view(error.what()).find(
                                          "YAML model differs from the selected local model") !=
@@ -1313,6 +1373,7 @@ void native_config_inspector_before_admission() {
     const auto reply = ss::control(c.run, "stop", 10s);
     assert(reply && reply->value("ok", false));
     assert(exit_code(owner) == 0);
+    ::close(resolution_root_fd);
     ::unsetenv("TEST_SENTINEL_FD");
     ::unsetenv("TEST_EXPECT_RADIANCE_HOME");
     ::unsetenv("TEST_EXPECT_RADIANCE_KERNELS");

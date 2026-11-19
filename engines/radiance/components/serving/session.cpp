@@ -55,6 +55,70 @@ using Json = nlohmann::json;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
+namespace {
+class NativeExecutionRoot final {
+  public:
+    explicit NativeExecutionRoot(const fs::path& root) {
+        std::error_code error;
+        path_ = fs::canonical(root, error);
+        if (error || !fs::is_directory(path_, error) || error)
+            throw PlanFailed("native config admission: resolution root is not an existing directory");
+        fd_ = ::open(path_.c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+        if (fd_ < 0)
+            throw PlanFailed(std::string("native config admission: cannot retain the resolution root: ") +
+                             std::strerror(errno));
+        if (fd_ < 3) {
+            ::close(fd_);
+            fd_ = -1;
+            throw PlanFailed("native config admission: root descriptor must be greater than 2");
+        }
+        try {
+            require_matches(path_);
+        } catch (...) {
+            ::close(fd_);
+            fd_ = -1;
+            throw;
+        }
+    }
+    ~NativeExecutionRoot() { if (fd_ >= 0) ::close(fd_); }
+    NativeExecutionRoot(const NativeExecutionRoot&) = delete;
+    NativeExecutionRoot& operator=(const NativeExecutionRoot&) = delete;
+    NativeExecutionRoot(NativeExecutionRoot&& other) noexcept : fd_(other.fd_), path_(std::move(other.path_)) {
+        other.fd_ = -1;
+    }
+    NativeExecutionRoot& operator=(NativeExecutionRoot&& other) noexcept {
+        if (this != &other) {
+            if (fd_ >= 0) ::close(fd_);
+            fd_ = other.fd_;
+            path_ = std::move(other.path_);
+            other.fd_ = -1;
+        }
+        return *this;
+    }
+    int descriptor() const noexcept { return fd_; }
+
+    static void require_descriptor_matches(int fd, const fs::path& expected_root) {
+        std::error_code error;
+        const fs::path canonical = fs::canonical(expected_root, error);
+        struct stat held{}, named{};
+        if (fd < 3 || error || ::fstat(fd, &held) != 0 || ::stat(canonical.c_str(), &named) != 0 ||
+            !S_ISDIR(held.st_mode) || held.st_dev != named.st_dev || held.st_ino != named.st_ino)
+            throw PlanFailed("native config admission: retained resolution root no longer matches its recorded path");
+    }
+
+    void require_matches(const fs::path& expected_root) const {
+        require_descriptor_matches(fd_, expected_root);
+        std::error_code error;
+        if (fs::canonical(expected_root, error) != path_ || error)
+            throw PlanFailed("native config admission: retained resolution root no longer matches its recorded path");
+    }
+
+  private:
+    int fd_ = -1;
+    fs::path path_;
+};
+} // namespace
+
 // An admitted v2 document or native config snapshot is held in a kernel-sealed
 // anonymous file. The path is only a view of these exact bytes; it does not
 // reopen the operator's replaceable pathname. The owner retains its descriptor
@@ -535,9 +599,12 @@ Env child_environment(char** inherited, const Env& runtime) {
 Env current_child_environment(const Env& runtime) { return child_environment(environ, runtime); }
 
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path& log,
-            const Callback<void(pid_t)>& recorded, int inherited_manifest_fd) {
+            const Callback<void(pid_t)>& recorded, int inherited_manifest_fd, int working_directory_fd) {
     if (argv.empty() || argv[0].empty())
         throw std::runtime_error("spawn: an empty command");
+    if ((inherited_manifest_fd >= 0 && inherited_manifest_fd < 3) ||
+        (working_directory_fd >= 0 && working_directory_fd < 3))
+        throw std::runtime_error("spawn: inherited descriptors must be greater than 2");
     std::vector<std::string> envs;
     for (const auto& [k, v] : env) {
         std::string setting;
@@ -607,6 +674,11 @@ pid_t spawn(const std::vector<std::string>& argv, const Env& env, const fs::path
         }
         if (!gate->wait_in_child())
             ::_exit(126); // never recorded: run nothing
+        if (working_directory_fd >= 0 && ::fchdir(working_directory_fd) != 0) {
+            const int e = errno;
+            (void)!::write(report[1], &e, sizeof e);
+            ::_exit(127);
+        }
         ::execve(cargv[0], cargv.data(), cenv.data());
         const int e = errno;
         (void)!::write(report[1], &e, sizeof e);
@@ -1733,30 +1805,27 @@ std::string tail_text(const std::string& s, size_t n = 2000);
 }
 
 NativeConfigInspection inspect_native_config(const fs::path& engine, const NativeConfigSnapshot& snapshot,
-                                             const Env& complete_environment, const Hooks& hooks) {
+                                             const Env& complete_environment, const Hooks& hooks,
+                                             int resolution_root_fd) {
     const fs::path absolute_engine = fs::absolute(engine).lexically_normal();
     if (::access(absolute_engine.c_str(), X_OK) != 0)
         throw PlanFailed("native config inspector: matched engine is not executable: " + absolute_engine.string());
 
     const std::string payload = snapshot.manifest_field().dump();
     auto input = std::make_shared<PinnedManifest>(payload);
-    const int root_fd = ::open(snapshot.resolution_root().c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
-    if (root_fd < 0)
-        throw PlanFailed("native config inspector: cannot open the recorded resolution root: " + errno_text());
-    if (root_fd < 3) {
-        ::close(root_fd);
-        throw PlanFailed("native config inspector: root descriptor must be greater than 2");
+    std::optional<NativeExecutionRoot> owned_root;
+    if (resolution_root_fd < 0) {
+        owned_root.emplace(snapshot.resolution_root());
+        resolution_root_fd = owned_root->descriptor();
     }
-    struct CloseFd {
-        int fd;
-        ~CloseFd() { if (fd >= 0) ::close(fd); }
-    } close_root{root_fd};
+    NativeExecutionRoot::require_descriptor_matches(resolution_root_fd, snapshot.resolution_root());
 
     const ManifestRun result = run_planning_child(
         {absolute_engine.string(), "--bc-inspect-native-config", std::to_string(input->descriptor())},
         complete_environment, hooks, ChildKind::native_config_inspector,
         "native config inspector",
-        input->descriptor(), root_fd);
+        input->descriptor(), resolution_root_fd);
+    NativeExecutionRoot::require_descriptor_matches(resolution_root_fd, snapshot.resolution_root());
     if (result.exit != 0)
         throw PlanFailed("native config inspector: matched Radiance rejected the admitted YAML snapshot: " +
                          tail_text(result.err));
@@ -1811,11 +1880,14 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
     const int64_t port = listener.at("port").get<int64_t>();
     const int64_t context = engine_report.at("max_context").get<int64_t>();
     const int64_t sequences = engine_report.at("max_sequences").get<int64_t>();
-    if (abi != static_cast<int64_t>(RAD_ABI_VERSION) || tp <= 0 || tp > std::numeric_limits<int>::max() ||
-        port <= 0 || port > std::numeric_limits<uint16_t>::max() || context < 0 || sequences <= 0 ||
-        engine_report.at("model").get_ref<const std::string&>().empty() ||
+    if (abi != static_cast<int64_t>(RAD_ABI_VERSION))
+        throw PlanFailed("native config inspector: report ABI differs from the matched engine");
+    if (tp <= 0 || tp > std::numeric_limits<int>::max() || port <= 0 ||
+        port > std::numeric_limits<uint16_t>::max() || context < 0 || sequences <= 0)
+        throw PlanFailed("native config inspector: report contains out-of-range admission values");
+    if (engine_report.at("model").get_ref<const std::string&>().empty() ||
         listener.at("host").get_ref<const std::string&>().empty())
-        throw PlanFailed("native config inspector: report contains out-of-range or mismatched admission values");
+        throw PlanFailed("native config inspector: report contains empty model or listener host");
     out.snapshot_sha256 = snapshot.sha256();
     out.resolution_root = snapshot.resolution_root();
     out.abi_version = static_cast<std::uint32_t>(abi);
@@ -1853,8 +1925,10 @@ NativeConfigInspection inspect_and_reconcile_native_config(
     const fs::path& engine, const NativeConfigSnapshot& snapshot, const fs::path& selected_radiance_home,
     const fs::path& selected_model,
     const Env& complete_environment,
-    const std::vector<std::string>& selected_engine_bdfs, int selected_tp, const Hooks& hooks) {
-    const NativeConfigInspection report = inspect_native_config(engine, snapshot, complete_environment, hooks);
+    const std::vector<std::string>& selected_engine_bdfs, int selected_tp, const Hooks& hooks,
+    int resolution_root_fd) {
+    const NativeConfigInspection report =
+        inspect_native_config(engine, snapshot, complete_environment, hooks, resolution_root_fd);
     fs::path reported_home(report.radiance_home);
     if (reported_home.is_relative())
         reported_home = snapshot.resolution_root() / reported_home;
@@ -1873,10 +1947,10 @@ NativeConfigInspection inspect_and_reconcile_native_config(
         throw PlanFailed("native config admission: YAML model differs from the selected local model");
     if (selected_tp <= 0 || report.tp != selected_tp)
         throw PlanFailed("native config admission: tensor parallelism differs from the selected local profile");
-    if (report.rank_devices != selected_engine_bdfs)
-        throw PlanFailed("native config admission: native rank-device order differs from the selected local BDF order");
-    if (report.rank_devices.size() != static_cast<size_t>(report.tp))
-        throw PlanFailed("native config admission: native TP and resolved rank-device count differ");
+    if (!report.rank_devices.empty() && report.rank_devices != selected_engine_bdfs)
+        throw PlanFailed("native config admission: explicit native rank-device order differs from the selected local BDF order");
+    if (selected_engine_bdfs.size() != static_cast<size_t>(report.tp))
+        throw PlanFailed("native config admission: selected TP and local BDF count differ");
     std::vector<int> expected_cards;
     expected_cards.reserve(selected_engine_bdfs.size());
     for (size_t i = 0; i < selected_engine_bdfs.size(); ++i)
@@ -2168,6 +2242,8 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
     const Wait& wait = hooks.wait;
+    std::optional<NativeExecutionRoot> native_execution_root;
+    Env native_complete_environment;
     // The sources as files, frozen: the manifest writer runs with BIGCHERRY_* removed from its environment, so
     // configs or layouts that came from the environment are passed as arguments (load_layouts' rule: configs
     // replace the layout files unless --layouts is given).
@@ -2298,16 +2374,18 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         for (const char* key : reserved_environment)
             if (in.native_admission->runtime_overrides.count(key))
                 throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
+        native_execution_root.emplace(in.native_admission->resolution_root);
         const NativeConfigSnapshot snapshot =
             NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
+        native_execution_root->require_matches(snapshot.resolution_root());
         Env runtime = in.native_admission->runtime_overrides;
         for (const auto& [name_key, value] : out.runtime)
             runtime[name_key] = value; // verified build and local device selection take precedence
-        const Env complete_environment = current_child_environment(runtime);
+        native_complete_environment = current_child_environment(runtime);
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
         (void)inspect_and_reconcile_native_config(
-            engine, snapshot, home, v.at("engine").at("model").get<std::string>(), complete_environment,
-            selected_bdfs, v.at("engine").at("tp").get<int>(), hooks);
+            engine, snapshot, home, v.at("engine").at("model").get<std::string>(), native_complete_environment,
+            selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, native_execution_root->descriptor());
         if (v2::kContractVersion != 3)
             throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
                              "integration is incomplete; refusing before cache reuse, manifest writing, power "
@@ -2530,10 +2608,18 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 const uint64_t measured_helpers_mib = helper_resident_mib(group.pids);
                 require_segment(handoff);
                 const fs::path log = run_dir / ("engine-measure-" + id + "-" + std::to_string(round) + ".log");
+                const bool native_rooted_measurement = native_execution_root.has_value();
+                const fs::path child_engine = native_rooted_measurement ? fs::absolute(engine) : engine;
+                const fs::path child_plan = native_rooted_measurement ? fs::absolute(plan) : plan;
+                const fs::path child_ranks = native_rooted_measurement ? fs::absolute(ranks) : ranks;
+                const Env& measuring_environment =
+                    native_rooted_measurement ? native_complete_environment : child_environment(environ, out.runtime);
+                if (native_rooted_measurement)
+                    native_execution_root->require_matches(in.native_admission->resolution_root);
                 const pid_t pid =
-                    spawn({engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
-                           "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
-                          child_environment(environ, out.runtime), log,
+                    spawn({child_engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
+                           "--plan-memory", child_plan.string(), "--plan-memory-ranks", child_ranks.string()},
+                          measuring_environment, log,
                           // registered with the owner before it runs: should its exit not be verified here,
                           // the owner stops it and the session is never reported stopped while it lives
                           [&](pid_t p) {
@@ -2542,7 +2628,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                                         ChildKind::measuring_engine,
                                                                         "measuring engine", p, log),
                                                    "hooks.started");
-                          }, measuring_snapshot.pinned->descriptor());
+                          }, measuring_snapshot.pinned->descriptor(),
+                          native_rooted_measurement ? native_execution_root->descriptor() : -1);
                 int st = 0;
                 const auto deadline = Clock::now() + std::chrono::minutes(30);
                 bool stopped_early = false, helper_died = false;

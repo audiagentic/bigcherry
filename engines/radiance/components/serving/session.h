@@ -60,10 +60,11 @@ Env current_child_environment(const Env& runtime);
 /* Start argv[0] (a path, never searched) in a new session and process group with exactly `env`, stdin from
  * /dev/null, stdout and stderr appended to `log`. The child waits before exec until `recorded(pid)` has
  * returned (the caller makes it durable there); when `recorded` throws, or this process dies first, the child
- * exits without running anything and the exception is rethrown. Throws, naming the program, when it cannot be
- * started (exec failure included). */
+ * exits without running anything and the exception is rethrown. An optional working-directory fd is used with
+ * fchdir only after registration; it remains close-on-exec. Throws, naming the program, on launch failure. */
 pid_t spawn(const std::vector<std::string>& argv, const Env& env, const std::filesystem::path& log,
-            const Callback<void(pid_t)>& recorded = {}, int inherited_manifest_fd = -1);
+            const Callback<void(pid_t)>& recorded = {}, int inherited_manifest_fd = -1,
+            int working_directory_fd = -1);
 
 /* A child of this process: whether it is still running (reaps it when it has exited; its status goes to
  * `status`). */
@@ -278,15 +279,17 @@ struct NativeConfigInspection {
 
 /* Ask the matched Radiance binary to parse and resolve the admitted native YAML snapshot under its recorded
  * root. `native_environment` supplies the same explicit configuration environment selected for the later child;
- * it is never inferred from a mutable authored path. The inspector is owner-tracked and reaped before return. */
+ * it is never inferred from a mutable authored path. A supplied root fd is borrowed from the planner and checked
+ * against the recorded path before and after the child. The inspector is owner-tracked and reaped before return. */
 NativeConfigInspection inspect_native_config(const std::filesystem::path& engine,
                                              const NativeConfigSnapshot& snapshot,
-                                             const Env& complete_environment, const Hooks& hooks = {});
+                                             const Env& complete_environment, const Hooks& hooks = {},
+                                             int resolution_root_fd = -1);
 NativeConfigInspection inspect_and_reconcile_native_config(
     const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
     const std::filesystem::path& selected_radiance_home, const std::filesystem::path& selected_model,
     const Env& complete_environment, const std::vector<std::string>& selected_engine_bdfs,
-    int selected_tp, const Hooks& hooks = {});
+    int selected_tp, const Hooks& hooks = {}, int resolution_root_fd = -1);
 
 // Private planner input. This deliberately has no CLI spelling: the current writer/P1 chain cannot yet persist
 // and consume this snapshot, so a successful inspection is followed by a fail-closed stop before cache or GPU work.
