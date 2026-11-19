@@ -57,7 +57,6 @@ using Json = nlohmann::json;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
-namespace {
 class NativeExecutionRoot final {
   public:
     explicit NativeExecutionRoot(const fs::path& root) {
@@ -85,18 +84,6 @@ class NativeExecutionRoot final {
     ~NativeExecutionRoot() { if (fd_ >= 0) ::close(fd_); }
     NativeExecutionRoot(const NativeExecutionRoot&) = delete;
     NativeExecutionRoot& operator=(const NativeExecutionRoot&) = delete;
-    NativeExecutionRoot(NativeExecutionRoot&& other) noexcept : fd_(other.fd_), path_(std::move(other.path_)) {
-        other.fd_ = -1;
-    }
-    NativeExecutionRoot& operator=(NativeExecutionRoot&& other) noexcept {
-        if (this != &other) {
-            if (fd_ >= 0) ::close(fd_);
-            fd_ = other.fd_;
-            path_ = std::move(other.path_);
-            other.fd_ = -1;
-        }
-        return *this;
-    }
     int descriptor() const noexcept { return fd_; }
 
     static void require_descriptor_matches(int fd, const fs::path& expected_root) {
@@ -119,7 +106,14 @@ class NativeExecutionRoot final {
     int fd_ = -1;
     fs::path path_;
 };
-} // namespace
+
+struct NativeEngineLaunch {
+    NativeEngineLaunch(const fs::path& resolution_root, Env complete_environment)
+        : root(resolution_root), environment(std::move(complete_environment)) {}
+
+    NativeExecutionRoot root;
+    Env environment;
+};
 
 // An admitted v2 document or native config snapshot is held in a kernel-sealed
 // anonymous file. The path is only a view of these exact bytes; it does not
@@ -1513,7 +1507,19 @@ class Owner {
         // engine with manifest-declared heat. Measuring engines, standalone
         // engines and helpers never receive it; no ambient environment read.
         std::vector<std::string> argv = plan_.argv;
-        const auto manifest = v2::load_manifest(plan_.execution_manifest(), v2::PlanUse::serving);
+        const fs::path execution_manifest = plan_.execution_manifest();
+        const auto manifest = v2::load_manifest(execution_manifest, v2::PlanUse::serving);
+        const auto& native_launch = plan_.native_launch;
+        if (v2::kContractVersion == 3 || native_launch) {
+            if (!native_launch || !plan_.pinned_manifest || !manifest)
+                throw PlanFailed("native serving: missing admitted launch inputs or sealed manifest");
+            const auto native = v2::native_config_view(manifest.value());
+            if (!native || argv.empty() || !fs::path(argv.front()).is_absolute() ||
+                argv != std::vector<std::string>{argv.front(), "--manifest", execution_manifest.string(),
+                                                 "--role", "engine"})
+                throw PlanFailed("native serving: launch does not match the admitted engine manifest");
+            native_launch->root.require_matches(native->identity.resolution_root);
+        }
         if (manifest && manifest.value().spec.handoff &&
             manifest.value().spec.handoff->telemetry.histogram_file) {
             plan_.heat_session_nonce = heat_launch_nonce();
@@ -1522,8 +1528,10 @@ class Owner {
         }
         plan_.engine_launched_at = std::chrono::system_clock::now();
         (void)spawn(
-            argv, child_environment(environ, plan_.runtime), log, [&](pid_t pid) { track("engine", pid, log); },
-            plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1);
+            argv, native_launch ? native_launch->environment : child_environment(environ, plan_.runtime), log,
+            [&](pid_t pid) { track("engine", pid, log); },
+            plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1,
+            native_launch ? native_launch->root.descriptor() : -1);
     }
 
     std::optional<std::string> exited_child() {
@@ -2244,8 +2252,6 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
     const Wait& wait = hooks.wait;
-    std::optional<NativeExecutionRoot> native_execution_root;
-    Env native_complete_environment;
     // The sources as files, frozen: the manifest writer runs with BIGCHERRY_* removed from its environment, so
     // configs or layouts that came from the environment are passed as arguments (load_layouts' rule: configs
     // replace the layout files unless --layouts is given).
@@ -2376,21 +2382,21 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         for (const char* key : reserved_environment)
             if (in.native_admission->runtime_overrides.count(key))
                 throw PlanFailed(std::string("native config admission: runtime override cannot select ") + key);
-        native_execution_root.emplace(in.native_admission->resolution_root);
         const fs::path frozen_runtime_home = fs::canonical(home);
-        const NativeConfigSnapshot snapshot =
-            NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
-        native_execution_root->require_matches(snapshot.resolution_root());
         Env runtime = in.native_admission->runtime_overrides;
         for (const auto& [name_key, value] : out.runtime)
             runtime[name_key] = value; // verified build and local device selection take precedence
         runtime["RADIANCE_HOME"] = frozen_runtime_home.string();
-        native_complete_environment = current_child_environment(runtime);
+        out.native_launch = std::make_shared<const NativeEngineLaunch>(in.native_admission->resolution_root,
+                                                                       current_child_environment(runtime));
+        const auto& launch = *out.native_launch;
+        const NativeConfigSnapshot snapshot =
+            NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
+        launch.root.require_matches(snapshot.resolution_root());
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
         const NativeConfigInspection native_inspection = inspect_and_reconcile_native_config(
             engine, snapshot, frozen_runtime_home, v.at("engine").at("model").get<std::string>(),
-            native_complete_environment,
-            selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, native_execution_root->descriptor());
+            launch.environment, selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, launch.root.descriptor());
         if (v2::kContractVersion != 3)
             throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
                              "integration is incomplete; refusing before cache reuse, manifest writing, power "
@@ -2454,18 +2460,18 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const fs::path ranks_path = attempt_dir / "rank-demand.json";
         const fs::path measurement_log = attempt_dir / "engine-measuring.log";
         const fs::path absolute_engine = fs::absolute(engine);
-        native_execution_root->require_matches(snapshot.resolution_root());
+        launch.root.require_matches(snapshot.resolution_root());
         const pid_t measuring_pid = spawn(
             {absolute_engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
              "--plan-memory", plan_path.string(), "--plan-memory-ranks", ranks_path.string()},
-            native_complete_environment, measurement_log,
+            launch.environment, measurement_log,
             [&](pid_t pid) {
                 if (hooks.started)
                     require_callback(hooks.started.invoke("session.hooks.started", ChildKind::measuring_engine,
                                                           "native v3 measuring engine", pid, measurement_log),
                                      "native v3 measuring engine registration");
             },
-            verified.pinned->descriptor(), native_execution_root->descriptor());
+            verified.pinned->descriptor(), launch.root.descriptor());
         int measuring_status = 0;
         bool stopped = false;
         const auto deadline = Clock::now() + std::chrono::minutes(30);
@@ -2526,7 +2532,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             if (decoded_plan.vram.cards[i].free != decoded_ranks.gpu[i].claimable_bytes)
                 throw PlanFailed("native v3 measured plan and rank receipt disagree on same-rank free VRAM");
 
-        native_execution_root->require_matches(snapshot.resolution_root());
+        launch.root.require_matches(snapshot.resolution_root());
         const Json after_facts = detect(in.options.sys_root);
         const Resolved after_resolve = resolve(in.options, after_facts);
         const fs::path after_home = after_resolve.values.at("engine").at("radiance_home").get<std::string>();
@@ -2769,18 +2775,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 const uint64_t measured_helpers_mib = helper_resident_mib(group.pids);
                 require_segment(handoff);
                 const fs::path log = run_dir / ("engine-measure-" + id + "-" + std::to_string(round) + ".log");
-                const bool native_rooted_measurement = native_execution_root.has_value();
-                const fs::path child_engine = native_rooted_measurement ? fs::absolute(engine) : engine;
-                const fs::path child_plan = native_rooted_measurement ? fs::absolute(plan) : plan;
-                const fs::path child_ranks = native_rooted_measurement ? fs::absolute(ranks) : ranks;
-                const Env& measuring_environment =
-                    native_rooted_measurement ? native_complete_environment : child_environment(environ, out.runtime);
-                if (native_rooted_measurement)
-                    native_execution_root->require_matches(in.native_admission->resolution_root);
                 const pid_t pid =
-                    spawn({child_engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
-                           "--plan-memory", child_plan.string(), "--plan-memory-ranks", child_ranks.string()},
-                          measuring_environment, log,
+                    spawn({engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
+                           "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
+                          child_environment(environ, out.runtime), log,
                           // registered with the owner before it runs: should its exit not be verified here,
                           // the owner stops it and the session is never reported stopped while it lives
                           [&](pid_t p) {
@@ -2789,8 +2787,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                                         ChildKind::measuring_engine,
                                                                         "measuring engine", p, log),
                                                    "hooks.started");
-                          }, measuring_snapshot.pinned->descriptor(),
-                          native_rooted_measurement ? native_execution_root->descriptor() : -1);
+                          }, measuring_snapshot.pinned->descriptor());
                 int st = 0;
                 const auto deadline = Clock::now() + std::chrono::minutes(30);
                 bool stopped_early = false, helper_died = false;

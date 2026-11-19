@@ -1,0 +1,15 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_213343_preserve-the-admitted-native-c_6376",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Carry the retained native execution root and frozen environment in EngineStart, use them for native measurement, and require the sealed strict serving manifest and matching launch arguments before native serving spawn. Generated v3 session fixture passed; actual native serving remains gated.",
+  "timestamp-utc": "2026-11-19T21:33:43.485004Z",
+  "user-summary-candidate": "Preserve the admitted native configuration environment and working directory when handing control to the serving owner."
+}
