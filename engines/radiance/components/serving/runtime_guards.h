@@ -16,7 +16,9 @@
 namespace bc::serving::session {
 
 enum class ReplayVerdict : uint8_t { disabled, profiled, observed, absent };
-enum class HistogramVerdict : uint8_t { fresh, missing, unsafe, stale, future };
+// `pending`: the file is authentic (launch nonce, proof, shape, no padded counts) but holds no route counts yet, which
+// is what the engine publishes until its first routed pass has been counted. It is not evidence and not a fault.
+enum class HistogramVerdict : uint8_t { fresh, missing, unsafe, stale, future, pending };
 // A successful sample carries full cumulative counts across atomic file
 // replacements, not a pinned inode. The producer stamps each publication with
 // the owner-only per-launch nonce in a versioned sidecar.
@@ -33,9 +35,17 @@ struct HistogramExpectation {
     std::optional<HistogramIdentity> identity;
     std::string launch_nonce;
 };
+// `reason`, when given, names the check that decided a non-fresh verdict (the refusal text carries it).
 HistogramVerdict histogram_verdict(const std::filesystem::path& rank_file,
                                    std::chrono::system_clock::time_point now, std::chrono::nanoseconds max_age,
-                                   const HistogramExpectation& expected, HistogramIdentity* observed = nullptr);
+                                   const HistogramExpectation& expected, HistogramIdentity* observed = nullptr,
+                                   std::string* reason = nullptr);
+
+// The startup form: re-reads while the verdict is `pending` (authentic, no counts yet) for at most `wait`; any other
+// verdict, including every kind of unsafe, is returned at once. A zero `wait` is histogram_verdict itself.
+HistogramVerdict histogram_verdict_startup(const std::filesystem::path& rank_file, std::chrono::nanoseconds max_age,
+                                           const HistogramExpectation& expected, std::chrono::nanoseconds wait,
+                                           HistogramIdentity* observed = nullptr, std::string* reason = nullptr);
 
 // A purely decoded signal, useful for card-free regression fixtures.
 // The typed manifest depth decides whether evidence is required; text cannot
@@ -71,6 +81,8 @@ class RuntimeGuards final {
     std::string segment_;
     std::optional<SegmentIdentity> segment_identity_;
     std::chrono::steady_clock::time_point next_poll_;
+    // Start-up only: how long a pending (authentic, still all-zero) histogram is waited for before it is refused.
+    std::chrono::nanoseconds heat_startup_wait_{0};
     bool policy_enabled_ = false;
     bool lab_pending_ = false;
 };
