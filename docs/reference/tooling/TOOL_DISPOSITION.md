@@ -599,6 +599,8 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/ltx-tp3/CMakeLists.txt` | **TRANSITIONAL** | LTX-2.5 TP3 native card-free reference and mock-test evidence only; see docs/design/ltx25-iq8r-tp3.md. |
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_reference.h` | **TRANSITIONAL** | LTX-2.5 TP3 native card-free reference and mock-test evidence only; see docs/design/ltx25-iq8r-tp3.md. |
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_reference_test.cpp` | **TRANSITIONAL** | LTX-2.5 TP3 native card-free reference and mock-test evidence only; see docs/design/ltx25-iq8r-tp3.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_protocol.h` | **TRANSITIONAL** | LTX-2.5 TP3 card-free schedule, leader and stale-conditioning mock; see docs/design/ltx25-iq8r-tp3.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_protocol_test.cpp` | **TRANSITIONAL** | LTX-2.5 TP3 card-free schedule, leader and stale-conditioning mock; see docs/design/ltx25-iq8r-tp3.md. |
 | `tools/lab/radiance/hostread-idle-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: does a kernel reading host-mapped memory slow down when the host CPU is idle versus busy-looping. |
 | `tools/lab/radiance/idle-gap-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: VRAM-streaming kernel with an idle gap, host waiting by event polling vs blocking-sync event. |
 | `tools/lab/radiance/ipc-signal-bench.cpp` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 experiment B: can a helper process sleep in the driver (blocked HSA signal wait) until another process's GPU work completes. |

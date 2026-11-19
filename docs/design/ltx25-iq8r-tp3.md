@@ -184,6 +184,7 @@ Each slice must undergo its CTests/patch tests, patch-lint/forbidden-terms, revi
 
 - tools/lab/radiance/ltx-tp3/ltx_tp3_reference.h and its C++ CTest cover: nonuniform 32-head maps, fused QKV bank source offsets, IQ8R 256-K boundaries, all-head normalization vs dense reference and a deliberately wrong local-RMS negative control, uniqueness/memory refusal for four mock cards, and both conditioning shapes.
 - tools/tests/lab/test_ltx_tp3_reference.py runs the native CMake test through the existing tooling tests; **Python is never in the engine**.
+- The second native CTest exercises guidance-specific per-rank collective schedule equality, STG block-28 and isolated-branch omissions, leader-only execution ownership, bias-once projection reduction, and a conditioning mailbox that refuses stale epochs, requests, mismatched shapes, replay, pending overwrite and cancellation. This is a test protocol, not a production GPU IPC mechanism.
 - This reference neither changes production execution nor establishes actual IQ8R encoding-plane parity, GPU kernels, TP3 execution, 6900 memory fit, video/audio quality or end-to-end speed.
 
 ## Required Planning and Ledger handoff

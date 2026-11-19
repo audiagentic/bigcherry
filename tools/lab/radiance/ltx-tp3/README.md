@@ -10,6 +10,8 @@ Before changing upstream Radiance's LTX TP1 refusal, can three uneven ranks pres
 
 Inputs are synthetic fixed-seed values and the *source-declared* LTX-2.5 geometries (32 x 128 video heads, 32 x 64 audio heads; Gemma 3840 channels and 48 layers; maximum two 1024-row prompts), not checkpoint weights. The reference includes IQ8R alignment constraints (128-K FWHT, 256-K scales) but **does not parse or execute real IQ8R files**.
 
+The separate ltx_tp3_protocol.h and ltx_tp3_protocol_test.cpp also test identical collective schedules for conditional, STG and isolated guidance, leader-only non-DiT writes, bias-once reductions, and an in-memory conditioning mailbox that refuses stale epochs, mismatched shapes, overwrites and consumed/cancelled requests. The mailbox is intentionally not a GPU transfer or production wire format.
+
 Outputs are process exit status and the CTest result. No generated evidence receipts or recordings are claimed. Requires a C++20 compiler and CMake 3.21+; no ROCm/GPU/model/network access. The reusable header deliberately has no imported production entrypoint, and this lab must not appear in an engine release.
 
 From the repository root, for a direct native CTest run:
