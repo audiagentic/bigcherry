@@ -20,7 +20,7 @@ outside the production package until it has an explicit disposition.
 | Campaigns | `bigcherry.campaign` | Build/smoke/comparison/benchmark orchestration and campaign lanes |
 | Experiments | `bigcherry.experiment` | Contracts, identities, bundles, and experiment state transitions |
 | Tuning/replay | `bigcherry.tuning` | Catalog, journal, measurement, correctness, promotion, ranking, and replay |
-| Core | `bigcherry.core` | Paths, context, configuration, artifacts, provenance, and pipeline foundations |
+| Core | `bigcherry.core` | Paths, context, configuration, artifacts, provenance, platform run-record v1 store/query, and pipeline foundations |
 | Analysis | `bigcherry.analysis` | Reusable offline reports and derived views; not production selection logic |
 | Profiling/diagnostics | `bigcherry.profiling` | Real-hardware diagnostic harnesses such as rocprofv3 capture and RCCL qualification |
 | Permanent tests | `tools/tests/<domain>/` | Deterministic offline tests organized with the implementation owner |
@@ -32,6 +32,32 @@ bigcherry CLI -> cli/main.py parser -> cli/<domain>.py handler
               -> <domain>/workflow.py or <domain> implementation
               -> tests, receipts, evidence, or artifacts owned by that workflow
 ```
+
+### Platform measurement records (MRC01 slice 1)
+
+`bigcherry.core.run_records.RunRecordStore` owns v1 immutable run records at
+`$BC_WORK_ROOT/run-records/v1/`, with SHA-256 blobs under
+`blobs/<first-two-hex>/<sha256>` and canonical JSON records under
+`records/<first-two-hex>/<sha256>.json`. The platform JSON Schema lives in
+`tools/bigcherry/core/schemas/run-record-v1.schema.json`.
+`put_blob`, `put_blob_file`, `put_record`, `get_blob`, `get_record` and
+`query` are the supported platform APIs; all reads verify content hashes and
+required blobs. Query supports engine, layout, workload, phase-qualified metric
+(e.g. `decode.tokens_per_second`) and UTC time. Metrics for decode, prefill
+and TTFT are separate fields; an empty phase means it was not measured.
+
+An input path is only an optional hint: effective configuration, exact argv,
+environment, power settings and result-affecting inputs are stored as blob
+references. `host_facts` and `feature_states` are explicit empty fields until
+MRC02/MRC03 supply those collectors. Engines supply adapters, not schema or
+store logic; a native runtime must remain Python-free. The WSL01 run manifest
+continues to own lifecycle. MRC01's manifest edges and results CLI, and MRC06's
+producer migrations, are **not part of this first slice**.
+
+`bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
+in `content_decisions` and blocks cleanup if store reachability cannot be
+verified. Unreferenced blobs are informational, not deletion candidates; the
+current run quarantine never deletes content-store objects.
 
 `tools/bigcherry/__main__.py` remains a supported compatibility entrypoint.
 It delegates the public command surface to `bigcherry.cli`, but it still has
