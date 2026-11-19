@@ -9,7 +9,7 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ..core import results, run_records
+from ..core import engines, results, run_records
 from ..core.context import resolve_work_root
 
 
@@ -122,7 +122,7 @@ def cmd_results(args: argparse.Namespace) -> int:
             # Explicit read-only bridge for the one retired Radiance index.
             # Do not recreate a manifest, promote its metrics or import it into
             # the verified record store.
-            if args.engine in (None, "radiance"):
+            if args.engine in (None, engines.RADIANCE):
                 index = resolve_work_root(args.work_root) / "results/index.jsonl"
                 for legacy in workloads.read_index(index):
                     if args.layout and legacy.get("layout") != args.layout:
@@ -137,7 +137,7 @@ def cmd_results(args: argparse.Namespace) -> int:
                     rows.append({
                         "status": "legacy",
                         "reason": "missing_content_provenance",
-                        "row_id": legacy["row_id"], "engine": "radiance",
+                        "row_id": legacy["row_id"], "engine": engines.RADIANCE,
                         "layout": legacy.get("layout"),
                         "workload": legacy["workload_id"],
                         "recorded_at": stamp,

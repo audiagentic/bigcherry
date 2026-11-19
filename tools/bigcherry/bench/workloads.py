@@ -23,6 +23,7 @@ from typing import Any
 
 from ..core import feature_states, host_facts, measurement_producers
 from ..core.context import resolve_work_root
+from ..core import engines
 from . import stream_bench
 
 card_paths = host_facts.card_paths
@@ -334,7 +335,7 @@ def publish_record(
     spec = manifest["spec"]
     build = spec["processes"]["engine"]["runtime"]["radiance_home"]
     build_root = Path(build).parent
-    metadata_file = build_root / "bigcherry-build-metadata-radiance.json"
+    metadata_file = build_root / f"bigcherry-build-metadata-{engines.RADIANCE}.json"
     meta = json.loads(metadata_file.read_text(encoding="utf-8"))
     for name in ("build_id", "binary_hash", "source_slice_id", "build_plan_id"):
         if not isinstance(meta.get(name), str) or not meta[name]:
@@ -359,7 +360,7 @@ def publish_record(
     # from the current time or an unrelated previous session.
     state_path = manifest_path.parent / feature_states.FILE_NAME
     states = feature_states.read_feature_states(state_path)
-    if any(state["engine"] != "radiance" for state in states):
+    if any(state["engine"] != engines.RADIANCE for state in states):
         raise WorkloadError("feature states and engine identity differ")
 
     phase_metrics: dict[str, dict[str, float]] = {p: {} for p in ("decode", "prefill", "ttft")}
@@ -396,7 +397,7 @@ def publish_record(
         run_id=row["row_id"],
         recorded_at=stamp,
         identity={
-            "engine": "radiance", "build_id": meta["build_id"],
+            "engine": engines.RADIANCE, "build_id": meta["build_id"],
             "binary_sha256": meta["binary_hash"],
             "source_revision": row.get("runner_commit") or meta.get("source_commit") or row.get("build_commit") or "",
             "model": spec["intent"]["model"],

@@ -28,6 +28,7 @@ def _manifest(root: Path):
         "build_plan_id": "d" * 32,
         "source_commit": "e" * 40,
     }
+    meta["runtime_artifacts"] = {binary.name: meta["binary_hash"]}
     (build / "bigcherry-build-metadata-radiance.json").write_text(json.dumps(meta))
     path.write_text(
         json.dumps(
