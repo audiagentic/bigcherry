@@ -139,9 +139,9 @@ const std::vector<Field>& schema_fields() {
             "WorkerConfig combine=false, the layout may enable combine");
         add("helper.combine_min_rows", "integer", 256,
             "WorkerConfig combine_min_rows=256", "tuned", "startup-only", 1);
-        add("helper.combine_threads", "integer", 8,
-            "WorkerConfig combine_threads=8 (also capped by discovered CPUs)",
-            "tuned", "startup-only", 1, 1024);
+        add_optional("helper.combine_threads", "integer",
+                     "derived unless set: min(calibration.combine_threads.max, discovered CPUs); an explicit value "
+                     "above the CPU count is refused", 1, 1024);
         add("helper.cpu_set_auto", "boolean", true,
             "WorkerConfig cpu_set_auto=true (auto vs all)");
         add("engine.model", "string", nullptr,
@@ -1332,6 +1332,21 @@ Resolved resolve(const Options& options, const Json& facts) {
     if (value_at(values, "helper.engine_ranks").get<size_t>() !=
         value_at(values, "engine.tp").get<size_t>())
         throw std::runtime_error("helper.engine_ranks must equal engine.tp");
+    if (!exists(values, "helper.combine_threads")) {
+        // Not set by any layer: the calibrated ceiling, held to the CPUs this host has (the worker clamps to the same
+        // count), so a smaller host resolves instead of refusing a literal it never chose.
+        const Calibration calibration = Calibration::standard(options.calibration_cache);
+        const Calibrated ceiling = calibration.get("calibration.combine_threads.max",
+            CalibrationMatch{"", name, value_at(values, "service.objective").get<std::string>()});
+        if (!ceiling.value.is_number_integer() || ceiling.value.get<int64_t>() < 1)
+            throw std::runtime_error("calibration.combine_threads.max: expected a positive integer");
+        const uint64_t cpus = facts.at("host").at("cpu_count").get<uint64_t>();
+        const uint64_t threads = std::max<uint64_t>(1, std::min(ceiling.value.get<uint64_t>(), cpus));
+        put(values, provenance, *field_for("helper.combine_threads"), threads, "derived",
+            "min(" + std::to_string(ceiling.value.get<uint64_t>()) + ", " + std::to_string(cpus) + " discovered CPUs); " +
+            ceiling.describe("calibration.combine_threads.max"),
+            Json::array({"facts.host.cpu_count", "calibration.combine_threads.max"}));
+    }
     // the combine runs in a helper: an engine-only configuration starts no combine threads
     if (!engine_only && value_at(values, "helper.combine_threads").get<uint64_t>() >
         facts.at("host").at("cpu_count").get<uint64_t>())
