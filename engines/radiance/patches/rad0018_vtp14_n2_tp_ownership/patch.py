@@ -57,11 +57,9 @@ def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None 
 ABI = FilePatch(path="abi/rad_builder.h", language="none", description="VTP14 N2 build context", edits=(
     _edit(
         "n2-ctx-field",
-        "    int64_t  gen_max_pixels;\n"
-        "    int64_t  gen_max_refs;\n"
+        "    int      span_pass_step;\n"
         "} RadBuildCtx;",
-        "    int64_t  gen_max_pixels;\n"
-        "    int64_t  gen_max_refs;\n"
+        "    int      span_pass_step;\n"
         "\n"
         "    /* ---- BC_VTP14_N2_CTX (BigCherry rad0018) */\n"
         "    /* --tp-ownership NAME: an asymmetric tensor-parallel ownership profile (rad_arch.h geom_from), or\n"

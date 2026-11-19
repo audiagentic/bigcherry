@@ -207,28 +207,30 @@ GDN = FilePatch(path="arch/common/rad_block_gdn_fp8.h", language="none", descrip
         guard="BC_VTP31_MX1_GDN_PREP",
     ),
     _edit(
-        "mx1-gdn-kkt",
+        "mx1-gdn-prefill-piece",
         """            RAD_ISSUE_N(c, op_kkt, n,
+                        brows(w.k, T), brows(w.beta, T), brows(w.gdec, T),
+                        praw(cu, RAD_I32, 2), brows(w.kkt, T));
+            RAD_ISSUE_N(c, op_scan, n,
+                        brows(w.q, T), brows(w.k, T), brows(w.v, T), brows(w.kkt, T),
+                        brows(w.gdec, T), brows(w.beta, T),
+                        kv_cache(kv_state, layer), praw(cu, RAD_I32, 2),
+                        brows(w.o.x, T), kv_cache(kv_state, layer),
+                        praw2(st_idx, RAD_I32, 1, st_w));
+            } /* BC_VTP31_MSP_GDN_CLOSE (rad0025) */
 """,
         """            RAD_ISSUE_N(c, op_kkt, n - o0, /* BC_VTP31_MX1_GDN_KKT */
+                        brows(w.k, T), brows(w.beta, T), brows(w.gdec, T),
+                        praw(cu, RAD_I32, 2), brows(w.kkt, T));
+            RAD_ISSUE_N(c, op_scan, n - o0,
+                        brows(w.q, T), brows(w.k, T), brows(w.v, T), brows(w.kkt, T),
+                        brows(w.gdec, T), brows(w.beta, T),
+                        kv_cache(kv_state, layer), praw(cu, RAD_I32, 2),
+                        brows(w.o.x, T), kv_cache(kv_state, layer),
+                        praw2(st_idx ? st_idx + mD * st_w : nullptr, RAD_I32, 1, st_w));
+            } /* BC_VTP31_MSP_GDN_CLOSE (rad0025) */
 """,
         guard="BC_VTP31_MX1_GDN_KKT",
-    ),
-    _edit(
-        "mx1-gdn-scan",
-        """            RAD_ISSUE_N(c, op_scan, n,
-""",
-        """            RAD_ISSUE_N(c, op_scan, n - o0, /* BC_VTP31_MX1_GDN_SCAN */
-""",
-        guard="BC_VTP31_MX1_GDN_SCAN",
-    ),
-    _edit(
-        "mx1-gdn-state",
-        """                        praw2(st_idx, RAD_I32, 1, st_w));
-""",
-        """                        praw2(st_idx ? st_idx + mD * st_w : nullptr, RAD_I32, 1, st_w)); /* BC_VTP31_MX1_GDN_ST */
-""",
-        guard="BC_VTP31_MX1_GDN_ST",
     ),
 ))
 
