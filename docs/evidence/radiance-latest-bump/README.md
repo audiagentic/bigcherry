@@ -385,3 +385,16 @@ At `e58a35b43` the native owner repeats S8 checks with a fresh host and device
 inventory after power admission and before forking serving children. This
 includes measured helper RSS. The v3 owner and S8 fixtures passed 2/2 and
 focused v2 serving, session, stored and S8 fixtures passed 4/4.
+
+## C69 — First leased admission and host-pool retry
+
+The first Flash-Next run measured the helpers, then the engine refused an
+omitted YAML host pool when the admitted per-rank pool was nonzero. The
+measurement log records the exact refusal. No serving or replay ran.
+
+Checkpoint `1d1ce5be7` gives an omitted YAML value the admitted per-rank pool
+and records its provenance. An explicit mismatch still refuses. The exact
+2.2 ABI44 host fixture passed for measurement, serving and offline preparation.
+The separate retry runtime preserves the original plugins and worker, and
+includes the owner model-digest reuse from `4a03a8172`. The retry is running
+with the same YAML and stock power.

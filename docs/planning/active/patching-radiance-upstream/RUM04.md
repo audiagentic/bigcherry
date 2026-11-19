@@ -217,6 +217,8 @@ The tracked native-serving build selects wire edition 3. Engine, bc-serve and th
 
 Checkpoint 4a03a8172 reuses the full model digest within one cold measurement when the complete file stamp still matches. It logs the initial full-content scan and avoids copying the hashing buffer. Existing digest bytes and drift checks are retained; v3 owner and stored cache tests passed 2/2.
 
+The first live RUM09 attempt reached measurement and refused a missing YAML host-pool value because it differed from the admitted per-rank pool. Checkpoint 1d1ce5be7 uses the admitted pool when the YAML omits it and rejects an explicitly conflicting pool. Exact 2.2 ABI44 fixture passed measuring, serving and offline preparation. A separate incremental runtime is retrying the original YAML under the GPU lease.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -280,3 +282,4 @@ Checkpoint 4a03a8172 reuses the full model digest within one cold measurement wh
 - 2026-11-19T22:03:18.923273+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T22:58:09.531280+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:20:19.446517+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T23:49:40.807569+00:00 (updated-by): Updated: section:notes
