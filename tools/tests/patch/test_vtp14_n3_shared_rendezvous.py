@@ -6,8 +6,13 @@ source still matches. The shared slot itself is tested in C++ by tests/bc_shared
 """
 from __future__ import annotations
 
+import io
+import os
+import shutil
 import subprocess
 import sys
+import tarfile
+import tempfile
 import tomllib
 import unittest
 from pathlib import Path
@@ -17,6 +22,7 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from _vtp_promotion_support import assert_focal_guards_unique, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_vtp14_n1_rank_code_selection import radiance_checkout
+from bigcherry.patcher import apply_all
 
 PATCHES = REPO / "engines/radiance/patches"
 N1 = PATCHES / "rad0016_vtp14_rank_code_selection"
@@ -66,6 +72,61 @@ class SharedRendezvousTests(unittest.TestCase):
                                 "--check"], capture_output=True, text=True)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertNotRegex(r.stdout, r'"failures": \{\s*"')
+
+
+    def test_rank_buffer_allocation_failures_release_unpublished_storage(self):
+        checkout = radiance_checkout()
+        compiler = shutil.which("c++")
+        if checkout is None or compiler is None:
+            self.skipTest("requires a Radiance source checkout and a C++ compiler")
+        with (REPO / "engines/radiance/recipes.toml").open("rb") as config:
+            pin = tomllib.load(config)["pinned"]
+        if subprocess.run(
+            ["git", "-C", checkout, "cat-file", "-e", f"{pin}^{{commit}}"],
+            capture_output=True,
+        ).returncode:
+            self.skipTest("Radiance checkout does not contain the current recipe pin")
+
+        with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as temp:
+            root = Path(temp)
+            archive = subprocess.check_output(
+                ["git", "-C", checkout, "archive", pin, "abi", "libr4d"],
+            )
+            with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
+                tar.extractall(root, filter="data")
+
+            patches = [file for file in load(N3) if file.path.startswith("libr4d/")]
+            results = apply_all(patches, root)
+            self.assertTrue(all(result.ok for result in results), results)
+            hip = root / "hip"
+            hip.mkdir()
+            (hip / "hip_runtime.h").write_text(
+                "#pragma once\n"
+                "#define __host__\n"
+                "#define __device__\n"
+                "#define __forceinline__ inline\n"
+                "using hipStream_t = void*;\n"
+                "constexpr int hipSuccess = 0;\n"
+                "inline int hipGetDevice(int* out) { *out = 0; return hipSuccess; }\n"
+                "inline int hipDeviceGetPCIBusId(char*, int, int) { return 1; }\n"
+            )
+            # The IPC allocator lives in a HIP kernel translation unit. Compile its
+            # actual function body with the fake runtime, alongside the full init shim.
+            ipc = (root / "libr4d/r4d_ar_oneshot_2rank_exact.hip").read_text()
+            start = ipc.index("long r4d_ar_ipc_alloc(")
+            end = ipc.index("\n}", start) + 2
+            (root / "ar_ipc_alloc.inc").write_text(ipc[start:end] + "\n")
+            fixture = Path(__file__).parent / "fixtures/radiance_ar_allocation_test.cpp"
+            executable = root / "ar_allocation_test"
+            compiled = subprocess.run(
+                [compiler, "-std=c++17", "-ffunction-sections", "-fdata-sections",
+                 "-Wl,--gc-sections", "-pthread", "-I", str(root), "-I", str(root / "abi"),
+                 "-I", str(root / "libr4d"), str(fixture), "-ldl", "-o", str(executable)],
+                capture_output=True, text=True, timeout=30,
+            )
+            self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
+            executed = subprocess.run([executable], capture_output=True, text=True, timeout=5)
+            self.assertEqual(executed.returncode, 0, executed.stdout + executed.stderr)
 
 
 if __name__ == "__main__":

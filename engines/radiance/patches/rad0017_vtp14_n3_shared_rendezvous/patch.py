@@ -54,7 +54,8 @@ def _src_text(name: str) -> str:
 RV_KEY_PREFIX = "libr4d.ar.rendezvous/v2"
 
 
-def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None = None) -> Edit:
+def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None = None,
+          rationale: str = "VTP14 N3: one all-reduce rendezvous across kernel libraries") -> Edit:
     return Edit(
         id=id,
         anchor=re.escape(before),
@@ -63,7 +64,7 @@ def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None 
         guard=re.escape(guard),
         expect_matches=1,
         max_span_lines=max_span or max(6, before.count("\n") + 1),
-        rationale="VTP14 N3: one all-reduce rendezvous across kernel libraries",
+        rationale=rationale,
     )
 
 
@@ -205,6 +206,180 @@ AR_ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", descriptio
 """,
         guard="BC_VTP14_N3_POISON",
     ),
+    _edit(
+        "n3-rank-buffer-cleanup",
+        r"""/* Build the world. `max_numel` is the largest message any launch on this instance carries.""",
+        r"""void free_rank_buffers(ArInst* in) {  /* BC_VTP14_N3_RANK_FREE */
+    /* Free only this rank's own allocations; peer pointers belong to the peer. */
+    if (in->host) {
+        r4d_ar_host_free(in->my_scratch);
+        r4d_ar_host_free(in->my_flags);
+    } else {
+        r4d_ar_ipc_free(in->my_scratch);
+        r4d_ar_ipc_free(in->my_flags);
+    }
+    r4d_ar_ipc_free(in->my_seq);
+    r4d_ar_ipc_free(in->locpack);
+    r4d_ar_ipc_free(in->my_stage);
+}
+
+/* Build the world. `max_numel` is the largest message any launch on this instance carries.""",
+        guard="BC_VTP14_N3_RANK_FREE",
+        rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
+    ),
+    _edit(
+        "n3-own-buffers-before-publication",
+        r"""    char handle[R4D_AR_HANDLE_BYTES];
+    int  hlen = 0;
+    long sc = 0, fl = 0, sq = 0, lp = 0;
+    int  dev = 0;
+
+    /* Fine-grained: the peer writes the scratch and this rank reads it bypassing L2, so a
+     * coarse-grained allocation could leave the peer's bytes in a cache this rank never
+     * invalidates, and the launches run without an acquire fence. r4d_ar_ipc_alloc throws when it
+     * cannot allocate fine-grained memory; there is no coarse fallback.
+     *
+     * Without peer access the scratch and flags move to pinned host memory and nothing else
+     * changes: kernels touch other ranks only through those two, so no card addresses another's
+     * VRAM. A message then crosses two links instead of one; only rows requiring device.p2p == 0
+     * take this path (r4d_rows.cpp). Sequence counters stay in VRAM, since only their own rank
+     * reads them, and coarse-grained: only this rank's kernels touch them, with device- and
+     * agent-scope atomics, which then complete in L2 rather than past it -- the first returning
+     * atomic of every launch (r4d_ar_seq_take) is on the push's path. */
+    R4D_TRY("ar_ipc_alloc",
+        if (hipGetDevice(&dev) != hipSuccess) return RAD_E_DEVICE;
+        if (host) {
+            sc = r4d_ar_host_alloc((long)nslots * in->slot_bytes);
+            fl = r4d_ar_host_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes);
+        } else {
+            sc = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 1, handle, &hlen);
+            fl = r4d_ar_ipc_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes, 1, handle, &hlen);
+        }
+        sq = r4d_ar_ipc_alloc(kSeqWords(maxb) * 4, 0, handle, &hlen));
+
+    /* A host mailbox is read over the link past every cache, so the 2-rank kernels' push check
+     * copies what it reads into this VRAM mirror for the reduce, crossing the link once
+     * (r4d_ar_seq.h). Coarse-grained: only this rank's kernels touch it, each block its own words.
+     * The wide family has no push check and reads its slots once. Host-memory slots free the same
+     * VRAM over P2P, so the mirror keeps the footprint where the P2P instance has it. */
+    long stg = 0;
+    if (host && world == 2) {
+        R4D_TRY("ar_ipc_alloc(stage)",
+            stg = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 0, handle, &hlen));
+    }
+
+    /* This rank's own packed copy, for the rotated 6-bit wire only: the reduce must fold exactly
+     * the bytes it sent. The 6-bit payload is 3/8 of the bf16 message and the f32 scales 1/32 of
+     * it, laid out from half the slot; a row padded to whole 512-element chunks
+     * (ar_rmsnorm_quant_fp8) adds up to 7 groups' scales a row, so the scales get a sixteenth
+     * (enough for any row of 512 or more) plus a page. ar_rmsnorm_quant checks the fit. */
+    if (in->dtype != 2) {
+        R4D_TRY("ar_ipc_alloc(locpack)",
+            lp = r4d_ar_ipc_alloc(in->slot_bytes / 2 + in->slot_bytes / 16 + 4096, 0,
+                                  handle, &hlen));
+    }
+
+    in->my_scratch = sc;
+    in->my_flags   = fl;
+    in->my_seq     = sq;
+    in->locpack    = lp;
+    in->my_stage   = stg;
+    in->gate_ctr   = sq + 2L * maxb * 4;   /* the word after the sequence counters (r4d_ar_seq.h) */
+
+    Rendezvous& rv = rv_for(group);
+    {
+        std::lock_guard<std::mutex> lk(rv.m);
+        rv.scratch[rank] = sc;
+        rv.flags[rank]   = fl;
+        rv.seq[rank]     = sq;
+        rv.dev[rank]     = dev;
+    }
+""",
+        r"""    char handle[R4D_AR_HANDLE_BYTES];
+    int  hlen = 0;
+    int  dev = 0;
+
+    /* Fine-grained: the peer writes the scratch and this rank reads it bypassing L2, so a
+     * coarse-grained allocation could leave the peer's bytes in a cache this rank never
+     * invalidates, and the launches run without an acquire fence. r4d_ar_ipc_alloc throws when it
+     * cannot allocate fine-grained memory; there is no coarse fallback.
+     *
+     * Without peer access the scratch and flags move to pinned host memory and nothing else
+     * changes: kernels touch other ranks only through those two, so no card addresses another's
+     * VRAM. A message then crosses two links instead of one; only rows requiring device.p2p == 0
+     * take this path (r4d_rows.cpp). Sequence counters stay in VRAM, since only their own rank
+     * reads them, and coarse-grained: only this rank's kernels touch them, with device- and
+     * agent-scope atomics, which then complete in L2 rather than past it -- the first returning
+     * atomic of every launch (r4d_ar_seq_take) is on the push's path. */
+    // BC_VTP14_N3_UNPUBLISHED: clean up any acquired buffers if allocation or setup fails.
+    std::unique_ptr<ArInst, decltype(&free_rank_buffers)> unpublished(in, &free_rank_buffers);
+    R4D_TRY("ar_ipc_alloc",
+        if (hipGetDevice(&dev) != hipSuccess) return RAD_E_DEVICE;
+        if (host) {
+            in->my_scratch = r4d_ar_host_alloc((long)nslots * in->slot_bytes);
+            in->my_flags = r4d_ar_host_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes);
+        } else {
+            in->my_scratch = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 1, handle, &hlen);
+            in->my_flags = r4d_ar_ipc_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes, 1, handle, &hlen);
+        }
+        in->my_seq = r4d_ar_ipc_alloc(kSeqWords(maxb) * 4, 0, handle, &hlen));
+
+    /* A host mailbox is read over the link past every cache, so the 2-rank kernels' push check
+     * copies what it reads into this VRAM mirror for the reduce, crossing the link once
+     * (r4d_ar_seq.h). Coarse-grained: only this rank's kernels touch it, each block its own words.
+     * The wide family has no push check and reads its slots once. Host-memory slots free the same
+     * VRAM over P2P, so the mirror keeps the footprint where the P2P instance has it. */
+    if (host && world == 2) {
+        R4D_TRY("ar_ipc_alloc(stage)",
+            in->my_stage = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 0, handle, &hlen));
+    }
+
+    /* This rank's own packed copy, for the rotated 6-bit wire only: the reduce must fold exactly
+     * the bytes it sent. The 6-bit payload is 3/8 of the bf16 message and the f32 scales 1/32 of
+     * it, laid out from half the slot; a row padded to whole 512-element chunks
+     * (ar_rmsnorm_quant_fp8) adds up to 7 groups' scales a row, so the scales get a sixteenth
+     * (enough for any row of 512 or more) plus a page. ar_rmsnorm_quant checks the fit. */
+    if (in->dtype != 2) {
+        R4D_TRY("ar_ipc_alloc(locpack)",
+            in->locpack = r4d_ar_ipc_alloc(in->slot_bytes / 2 + in->slot_bytes / 16 + 4096, 0,
+                                  handle, &hlen));
+    }
+
+    in->gate_ctr   = in->my_seq + 2L * maxb * 4;   /* the word after the sequence counters (r4d_ar_seq.h) */
+
+    Rendezvous& rv = rv_for(group);
+    {
+        std::lock_guard<std::mutex> lk(rv.m);
+        rv.scratch[rank] = in->my_scratch;
+        rv.flags[rank]   = in->my_flags;
+        rv.seq[rank]     = in->my_seq;
+        rv.dev[rank]     = dev;
+        // Published peer pointers require group-level unwind on failure.
+        unpublished.release();
+    }
+""",
+        guard="BC_VTP14_N3_UNPUBLISHED",
+        rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
+    ),
+    _edit(
+        "n3-release-rank-buffers",
+        r"""    /* Free only this rank's own allocations; peer pointers belong to the peer. */
+    if (in->host) {
+        r4d_ar_host_free(in->my_scratch);
+        r4d_ar_host_free(in->my_flags);
+    } else {
+        r4d_ar_ipc_free(in->my_scratch);
+        r4d_ar_ipc_free(in->my_flags);
+    }
+    r4d_ar_ipc_free(in->my_seq);
+    r4d_ar_ipc_free(in->locpack);
+    r4d_ar_ipc_free(in->my_stage);
+    delete in;""",
+        r"""    free_rank_buffers(in);  /* BC_VTP14_N3_RELEASE */
+    delete in;""",
+        guard="BC_VTP14_N3_RELEASE",
+        rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
+    ),
 ))
 
 ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description="VTP14 N3 receipt", edits=(
@@ -239,8 +414,33 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
     ),
 ))
 
+AR_IPC = FilePatch(path="libr4d/r4d_ar_oneshot_2rank_exact.hip", language="none",
+                   description="Release the all-reduce IPC buffer after initialization failure", edits=(
+    _edit(
+        "n3-ipc-init-cleanup",
+        r"""  HIPOK(hipMemset(p, 0, size));
+  // The zeroes must land before the pointer reaches a peer, or its first push or flag store could
+  // race the queued memset.
+  HIPOK(hipStreamSynchronize(nullptr));
+  // The handle is for an out-of-process peer.""",
+        r"""  try {  // BC_VTP14_N3_IPC_INIT: ownership passes to ArInst only on return.
+    HIPOK(hipMemset(p, 0, size));
+    // The zeroes must land before the pointer reaches a peer, or its first push or flag store could
+    // race the queued memset.
+    HIPOK(hipStreamSynchronize(nullptr));
+  } catch (...) {
+    (void)hipFree(p);
+    throw;
+  }
+  // The handle is for an out-of-process peer.""",
+        guard="BC_VTP14_N3_IPC_INIT",
+        rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
+    ),
+))
+
 PATCHES = (
     AR_ENTRY,
+    AR_IPC,
     ENGINE,
     _created("core/plugin/bc_shared_slot.h", "bc_shared_slot.h", "BC_VTP14_N3: one process-wide named slot"),
     _created("core/plugin/bc_shared_slot.cpp", "bc_shared_slot.cpp", "BC_VTP14_N3: see bc_shared_slot.h"),
