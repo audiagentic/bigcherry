@@ -12,6 +12,7 @@
 - Design/backlog: docs/design/ltx25-iq8r-tp3.md. This file carries 15 LT3 engineering gap IDs, proposed files, no-card and device proofs, and ordered slices.
 - This handoff: docs/design/ltx25-iq8r-tp3-handoff.md
 - Lab README: tools/lab/radiance/ltx-tp3/README.md
+- Model preflight (real container verified read-only): docs/design/ltx25-iq8r-model-preflight.md; model test is opt-in and uses BC_LTX_IQ8R_MODEL; no container bytes committed.
 - Three native C++ CTests under tools/lab/radiance/ltx-tp3:
   1. ltx_tp3_reference_test.cpp — head ownership, fused QKV mapping, IQ8R K-boundary checks, dense global RMS, conservative four-card memory admission, two text-handoff sizes.
   2. ltx_tp3_protocol_test.cpp — deterministic guidance collective schedules, STG and isolated skip patterns, leader pass ownership, exactly-once output bias, epoch/shape/cancelled conditioning mailbox.

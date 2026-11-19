@@ -14,6 +14,8 @@
 - The existing Flash-Next four-card remote-MoE layout is a separate, mutually exclusive deployment. No GPU may be owned by both sessions.
 - This work must use the RUM01–RUM10 frozen native-YAML/ABI migration as its target, not rebase new functionality onto obsolete v1.17.0 ABI.
 
+**2026-11-20 model availability:** the local IQ8R container is present and was checked with a bounded format-v2 header read (ltx2, 6,114 directory entries, 8,726 planes); see docs/design/ltx25-iq8r-model-preflight.md. This unlocks real-container CPU inspection but does not qualify any GPU path.
+
 ## Source-grounded findings
 
 - Upstream arch/ltx2/ltx2.cpp:3153–3166 explicitly refuses world_size > 1. At 3183–3199 it constructs the text geometry with world=1.
