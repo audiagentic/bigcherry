@@ -118,6 +118,17 @@ int main() {
   assert(result.evidence_by_path.at("/spec/handoff/transport/max_rows")
              .find("maxrows-run") != std::string::npos);
 
+  auto multirank = fixture_input;
+  multirank.engine_ranks = 3;
+  multirank.resource_inputs.mem_available_bytes = 30 * MiB;
+  multirank.resource_inputs.cgroup_headroom_bytes = 30 * MiB;
+  multirank.resource_inputs.pin_available_bytes = 100 * MiB;
+  const auto multirank_refusal = s8::resolve_s8(multirank, calibrated, now);
+  assert(!multirank_refusal &&
+         multirank_refusal.error().code == s8::ConfigErrorCode::admission_refused);
+  multirank.engine_ranks = 0;
+  assert(!s8::resolve_s8(multirank, calibrated, now));
+
   auto changed = fixture_input;
   changed.resource_inputs.host_embedding_bytes += 3 * MiB;
   solved = s8::resolve_s8(changed, calibrated, now);

@@ -6,10 +6,12 @@
 #include "bc_serving_manifest.h"
 #include "bc_engine_settings.h"
 #include "jcs.h"
+#include "sha256.h"
 #include "serving_codec.h"
 
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -145,12 +147,59 @@ int main(int, char** argv) {
 
     // This is the arithmetic used at the adapter boundary: per-rank 2048 MiB at TP3
     // must become the aggregate 6144 MiB accepted by Radiance 2.1's parser.
-    uint64_t aggregate_pool_mib = 0;
+    int64_t aggregate_pool_mib = 0;
     CHECK(bc_serving_manifest_host_pool_total(2048, 3, &aggregate_pool_mib));
     CHECK(aggregate_pool_mib == 6144);
-    CHECK(!bc_serving_manifest_host_pool_total(static_cast<uint64_t>(std::numeric_limits<int64_t>::max()), 2,
+    CHECK(!bc_serving_manifest_host_pool_total(std::numeric_limits<int64_t>::max(), 2,
                                                &aggregate_pool_mib));
     CHECK(!bc_serving_manifest_host_pool_total(2048, 0, &aggregate_pool_mib));
+
+    // Exercise the production projection with a valid TP3 measuring manifest. The strict reader admits these three
+    // engine BDFs; the actual argv emitted by the adapter must carry the aggregate Radiance 2.1 value.
+    {
+        nlohmann::json tp3 = nlohmann::json::parse(slurp(example));
+        auto& spec = tp3["spec"];
+        spec["plan"]["state"] = "unmeasured";
+        spec["plan"].erase("engine_memory");
+        spec["plan"].erase("resource_inputs");
+        spec["plan"]["owner_map"]["helpers"] = nlohmann::json::array();
+        spec["plan"]["owner_map"]["owner_map_sha256"] = bc::serving::sha256_hex("");
+        spec["processes"]["engine"]["scheduler"]["tp"] = 3;
+        const auto& facts = spec["facts"]["gpus"];
+        spec["processes"]["engine"]["device"]["gpus"] =
+            nlohmann::json::array({facts.at(0).at("bdf"), facts.at(1).at("bdf"), facts.at(2).at("bdf")});
+        spec["plan"]["power"]["devices"] = nlohmann::json::array(
+            {{{"role", "engine"}, {"bdf", facts.at(0).at("bdf")}, {"settings", nlohmann::json::object()}},
+             {{"role", "engine"}, {"bdf", facts.at(1).at("bdf")}, {"settings", nlohmann::json::object()}},
+             {{"role", "engine"}, {"bdf", facts.at(2).at("bdf")}, {"settings", nlohmann::json::object()}}});
+        spec["processes"]["helpers"] = nlohmann::json::array();
+        spec["processes"].erase("helper_common");
+        spec.erase("handoff");
+        spec["resources"]["host"]["pool_mib"] = 2048;
+        spec["resources"]["host"].erase("checkpoint_slots");
+        auto& resource_inputs = tp3["provenance"]["/spec/resources"]["inputs"];
+        resource_inputs.erase(std::remove(resource_inputs.begin(), resource_inputs.end(),
+                                          nlohmann::json("/spec/plan/engine_memory/expected")),
+                              resource_inputs.end());
+        for (auto it = tp3["provenance"].begin(); it != tp3["provenance"].end();) {
+            const auto& path = it.key();
+            if (path.rfind("/spec/handoff", 0) == 0 || path.rfind("/spec/processes/helpers/", 0) == 0 ||
+                path == "/spec/processes/helper_common" || path.rfind("/spec/plan/engine_memory", 0) == 0 ||
+                path.rfind("/spec/plan/resource_inputs", 0) == 0 || path == "/spec/resources/host/checkpoint_slots")
+                it = tp3["provenance"].erase(it);
+            else
+                ++it;
+        }
+        std::string digest, why;
+        CHECK(bc::serving::manifest_content_digest(tp3, &digest, &why));
+        tp3["metadata"]["content_digest"] = digest;
+        const std::string tp3_path = g_dir + "/tp3-host-pool.json";
+        std::ofstream(tp3_path) << tp3.dump(2) << '\n';
+        const std::string tp3_argv = run({"--manifest", tp3_path, "--plan-memory", "measuring-plan.json"});
+        CHECK(tp3_argv != "ERROR" && g_parsed);
+        CHECK(tp3_argv.find("--host-pool-mib 6144") != std::string::npos);
+        CHECK(tp3_argv.find("--tp 3") != std::string::npos);
+    }
 
     // RSC02: the production launch owner passes one authenticated heat
     // publication identity as an ephemeral flag, *outside* the signed manifest.

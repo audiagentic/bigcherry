@@ -785,11 +785,14 @@ class TestServingManifestPatch(unittest.TestCase):
             bridge = (root / "core" / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
             self.assertIn('v2::project_native_options(doc, v2::kFields, known)', bridge)
             self.assertIn('const auto native_argv = projected.argv();', bridge)
+            core_cmake = (root / "core" / "CMakeLists.txt").read_text(encoding="utf-8")
+            self.assertIn('if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")', core_cmake)
+            self.assertIn("BC_RAD_HOST_POOL_MIB_AGGREGATE=1", core_cmake)
             scratch = work / "scratch"
             scratch.mkdir()
             test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
-                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
+                     "-Werror", "-DBC_RAD_HOST_POOL_MIB_AGGREGATE=1", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
                      f"-I{serving / 'generated' / 'v2'}", f"-I{include}"]
             sources = [root / "core" / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
                        *(serving / "v2" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp", "s8_rules.cpp", "s10_resolver.cpp")),

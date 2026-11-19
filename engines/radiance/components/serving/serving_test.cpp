@@ -1257,6 +1257,18 @@ void manifest_writer_step(Fixture& t) {
                                                       .get<std::string>());
         assert(ledger.value().host_pool_mib > 0 && ledger.value().host_kv_mib > 0);
         {
+            auto tp3_values = r.values;
+            tp3_values["engine"]["tp"] = 3;
+            auto one_rank_room = t.facts;
+            const uint64_t room_mib = (ledger.value().committed_bytes + (1ULL << 20) - 1) >> 20;
+            one_rank_room["host"]["mem_available_mib"] = room_mib;
+            for (auto& group : one_rank_room["host"]["memory_cgroups"])
+                group["room_mib"] = room_mib;
+            const auto denied = sv::resources::derive_launch(
+                {tp3_values, r.manifest.at("process_helpers"), one_rank_room, unmeasured.document});
+            assert(!denied.ok() && denied.error().code == bc::serving::v2::ConfigErrorCode::admission_refused);
+        }
+        {
             auto altered = r.manifest.at("process_helpers");
             altered[0]["bdf"] = "0000:fe:00.0";
             assert(!sv::resources::derive_launch({r.values, altered, t.facts, unmeasured.document}));

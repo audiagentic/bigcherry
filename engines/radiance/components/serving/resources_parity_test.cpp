@@ -6,6 +6,7 @@
 #include <cstdint>
 #include <fstream>
 #include <iostream>
+#include <limits>
 #include <string>
 
 #ifndef BC_RSC02_PARITY_FIXTURE
@@ -96,6 +97,14 @@ int main() {
         sample = base;
         sample.host.pin_available_bytes = MiB;
         refuses(sample, bc::serving::v2::ConfigErrorCode::admission_refused, "pin admission");
+        const auto one_rank = resources::calculate(base);
+        assert(one_rank.ok());
+        sample = base;
+        sample.engine_ranks = 3;
+        sample.host.mem_available_bytes = one_rank.value().committed_bytes;
+        sample.host.cgroup_headroom_bytes = one_rank.value().committed_bytes;
+        sample.host.pin_available_bytes = std::numeric_limits<uint64_t>::max();
+        refuses(sample, bc::serving::v2::ConfigErrorCode::admission_refused, "host RAM admission");
         sample = base;
         assert(!sample.helpers.empty());
         sample.helpers.at(0).worker_footprint_bytes = 0;

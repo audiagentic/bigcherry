@@ -54,6 +54,7 @@ struct ResourceRequest {
     RetentionTarget target;
     HostCapacity host;
     std::vector<HelperCapacity> helpers;
+    uint64_t engine_ranks = 1; // host_pool_mib is allocated once per selected engine rank
 };
 
 enum class Allocation : uint8_t {

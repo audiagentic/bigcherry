@@ -51,7 +51,7 @@ bool bc_serving_expected_plan(bc::serving::v2::EnginePlan* expected, int64_t* fl
 std::vector<std::string> bc_serving_engine_bdfs();
 
 /* Convert the manifest's per-rank host-pool budget to Radiance 2.1's aggregate CLI value. */
-bool bc_serving_manifest_host_pool_total(uint64_t per_rank_mib, uint64_t tp, uint64_t* total_mib);
+bool bc_serving_manifest_host_pool_total(int64_t per_rank_mib, int64_t tp, int64_t* total_mib);
 
 #endif /* BC_SERVING_MANIFEST_H */
 """
@@ -111,8 +111,8 @@ bool fail(const std::string& why) {
 
 }  // namespace
 
-bool bc_serving_manifest_host_pool_total(uint64_t per_rank_mib, uint64_t tp, uint64_t* total_mib) {
-    if (!total_mib || tp == 0 || per_rank_mib > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) / tp)
+bool bc_serving_manifest_host_pool_total(int64_t per_rank_mib, int64_t tp, int64_t* total_mib) {
+    if (!total_mib || tp <= 0 || per_rank_mib < 0 || per_rank_mib > std::numeric_limits<int64_t>::max() / tp)
         return false;
     *total_mib = per_rank_mib * tp;
     return true;
@@ -229,15 +229,17 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     // Radiance option names. This narrow hook is replaced by RUM04's immutable
     // upstream runtime bundle; neither the manifest writer nor the engine
     // maintains an independent option-name map.
-    const auto projected = v2::project_native_options(doc, v2::kFields, known);
+    auto projected = v2::project_native_options(doc, v2::kFields, known);
     if (!projected.error.empty()) return fail(projected.error);
-    auto flags = projected.flags;
+    auto& flags = projected.flags;
+#ifdef BC_RAD_HOST_POOL_MIB_AGGREGATE
     /* The manifest records the admitted host-pool budget per rank, while Radiance 2.1's --host-pool-mib
      * parser accepts the aggregate and divides it by TP. Convert at this adapter boundary so config_parse
      * reconstructs the exact per-rank value that BigCherry admitted. */
-    const uint64_t tp = doc.at("spec").at("processes").at("engine").at("scheduler").at("tp").get<uint64_t>();
-    const uint64_t host_pool_per_rank = doc.at("spec").at("resources").at("host").at("pool_mib").get<uint64_t>();
-    uint64_t host_pool_total = 0;
+    const auto& typed_spec = manifest.value().spec;
+    const int64_t tp = typed_spec.processes.engine.scheduler.tp;
+    const int64_t host_pool_per_rank = typed_spec.resources.host.pool_mib;
+    int64_t host_pool_total = 0;
     if (!bc_serving_manifest_host_pool_total(host_pool_per_rank, tp, &host_pool_total))
         return fail("resources.host.pool_mib x engine.tp exceeds Radiance's signed MiB limit");
     const auto host_pool_flag = std::find_if(flags.begin(), flags.end(), [](const auto& flag) {
@@ -245,6 +247,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     });
     if (host_pool_flag == flags.end()) return fail("resources.host.pool_mib has no --host-pool-mib projection");
     host_pool_flag->second = std::to_string(host_pool_total);
+#endif
     for (const char* required : {"--radiance-home", "--kernels"}) {
         bool found = false;
         for (const auto& kv : flags)
@@ -393,6 +396,9 @@ if(NOT DEFINED BC_SERVING_V2_CMAKE)
 endif()
 include("${BC_SERVING_V2_CMAKE}")
 target_link_libraries(rad_core PUBLIC bc_serving_v2)
+if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")
+  target_compile_definitions(rad_core PRIVATE BC_RAD_HOST_POOL_MIB_AGGREGATE=1)
+endif()
 
 if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
   get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)

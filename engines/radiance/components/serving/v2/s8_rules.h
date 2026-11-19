@@ -65,6 +65,7 @@ struct S8Setting {
 
 struct S8Measured {
   MeasuredResourceInputs resource_inputs; // S9 typed v2 wire members
+  int64_t engine_ranks = 1; // host_pool_mib is allocated once for each rank in the selected engine TP
   S8Scope scope;
   std::string
       actual_owner_map_digest; // from the engine's real owner-map publisher

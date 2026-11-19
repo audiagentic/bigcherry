@@ -106,6 +106,7 @@ Result<S10Inputs> s10_inputs(const Manifest &m, const bc::serving::Resolved &r, 
   if (!p1.is_object() || text(p1, "kind") != "bc_serve_v2_measured_inputs")
     return fail("p1_record", "a measured manifest needs the native P1 measurement record (bc-serve --publish-v2-p1)");
   S8Measured &s = in.measured;
+  s.engine_ranks = m.spec.processes.engine.scheduler.tp;
   if (auto e = decode(p1.at("resource_inputs"), "p1.resource_inputs", &s.resource_inputs)) return *e;
   auto scope = scope_of(p1.contains("scope") ? p1.at("scope") : json());
   if (!scope) return scope.error();

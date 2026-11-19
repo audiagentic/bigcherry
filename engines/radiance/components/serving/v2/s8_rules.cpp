@@ -122,7 +122,7 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
                 "histogram");
   if (!positive(r.mem_available_bytes) || !positive(r.cgroup_headroom_bytes) ||
       !positive(r.pin_available_bytes) || !count(m.host_reserve_bytes) ||
-      m.host_reserve_evidence.empty() || !count(m.checkpoint_slots) ||
+      m.host_reserve_evidence.empty() || !count(m.checkpoint_slots) || !positive(m.engine_ranks) ||
       (has_helpers &&
        (!positive(m.dispatch_row_capacity) || m.transport_shm.empty()))) {
     return fail(ConfigErrorCode::invalid_value, scope_path,
@@ -202,9 +202,11 @@ Result<S8Resolution> resolve_s8(const S8Measured &m,
   const int64_t pool_mib = *pool;
   const int64_t kv_mib = ceil_mib(retained_bytes);
   const int64_t reserve_mib = ceil_mib(m.host_reserve_bytes);
-  int64_t reserve_rounded_bytes;
+  int64_t reserve_rounded_bytes, pool_total_mib, pinned_mib;
   if (!mul(reserve_mib, kMiB, &reserve_rounded_bytes) ||
-      !mul(pool_mib + kv_mib, kMiB, &pinned) ||
+      !mul(pool_mib, m.engine_ranks, &pool_total_mib) ||
+      !add(pool_total_mib, kv_mib, &pinned_mib) ||
+      !mul(pinned_mib, kMiB, &pinned) ||
       !add(pinned, r.ngram_bytes, &committed) ||
       !mul(m.checkpoint_slot_bytes, m.checkpoint_slots, &checkpoint_bytes) ||
       !add(committed, checkpoint_bytes, &committed) ||

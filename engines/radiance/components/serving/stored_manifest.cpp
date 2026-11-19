@@ -33,6 +33,11 @@ bool add_bytes(int64_t n, int64_t* total) {
 bool add_mib(int64_t n, int64_t* total) {
     return n >= 0 && n <= MaxBytes / MiB && add_bytes(n * MiB, total);
 }
+bool add_ranked_mib(int64_t n, int64_t ranks, int64_t* total) {
+    if (n < 0 || ranks <= 0 || n > MaxBytes / MiB / ranks)
+        return false;
+    return add_bytes(n * ranks * MiB, total);
+}
 
 const Json* find_gpu(const Json& gpus, const std::string& bdf) {
     if (!gpus.is_array())
@@ -149,8 +154,9 @@ v2::Status check_replay_live_room(const v2::Manifest& m, const Json& fresh, cons
         return no_room("replay.live.host", "fresh host, cgroup or pin measurement absent");
 
     int64_t allocated = 0, pinned = 0;
-    if (!add_mib(host.pool_mib, &allocated) || !add_mib(host.reserve_mib, &allocated) ||
-        !add_mib(host.pool_mib, &pinned) || !add_mib(host.kv_mib, &pinned))
+    const int64_t engine_ranks = m.spec.processes.engine.scheduler.tp;
+    if (!add_ranked_mib(host.pool_mib, engine_ranks, &allocated) || !add_mib(host.reserve_mib, &allocated) ||
+        !add_ranked_mib(host.pool_mib, engine_ranks, &pinned) || !add_mib(host.kv_mib, &pinned))
         return no_room("replay.live.host", "stored allocation overflows checked byte arithmetic");
     // The measured P1 producer is the authority for the host allocations
     // still to come, not a guessed constant or stale MemAvailable.

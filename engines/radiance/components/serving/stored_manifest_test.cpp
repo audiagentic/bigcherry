@@ -138,6 +138,21 @@ int main() {
         room.pin_available_bytes = 281474976710656LL;
         require(!ss::check_replay_live_room(manifest, evidence.fresh_facts, room),
                 "fresh ample room must admit the stored plan");
+        auto multirank = manifest;
+        multirank.spec.processes.engine.scheduler.tp = 3;
+        int64_t one_rank_room =
+            (manifest.spec.resources.host.pool_mib + manifest.spec.resources.host.reserve_mib) * (1024LL * 1024LL);
+        const auto& resource_inputs = *manifest.spec.plan.resource_inputs;
+        for (int64_t bytes : {resource_inputs.host_embedding_bytes, resource_inputs.unowned_expert_bytes,
+                              resource_inputs.staging_bytes, resource_inputs.ngram_bytes,
+                              resource_inputs.checkpoint_bytes, resource_inputs.resident_other_bytes})
+            one_rank_room += bytes;
+        room.mem_available_bytes = one_rank_room;
+        room.cgroup_headroom_bytes = one_rank_room;
+        require(ss::check_replay_live_room(multirank, evidence.fresh_facts, room).has_value(),
+                "stored TP3 replay must refuse room that only admits one rank's host pool");
+        room.mem_available_bytes = 281474976710656LL;
+        room.cgroup_headroom_bytes = 281474976710656LL;
         room.mem_available_bytes = 1;
         require(ss::check_replay_live_room(manifest, evidence.fresh_facts, room).has_value(),
                 "stored manifest cannot skip current MemAvailable");

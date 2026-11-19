@@ -183,7 +183,8 @@ v2::Result<ResourceLedger> calculate(const ResourceRequest& request) {
         return invalid("owner_map_digest must identify the actual ownership plan (sha256)");
     }
     if (model.kv_bytes_per_token == 0 || target.context_tokens == 0 || target.concurrent_sessions == 0 ||
-        host.mem_available_bytes == 0 || host.cgroup_headroom_bytes == 0 || host.pin_available_bytes == 0) {
+        host.mem_available_bytes == 0 || host.cgroup_headroom_bytes == 0 || host.pin_available_bytes == 0 ||
+        request.engine_ranks == 0) {
         return invalid("resource measurements and cardinalities must be positive");
     }
     const auto total_tokens = multiply(target.context_tokens, target.concurrent_sessions);
@@ -227,7 +228,8 @@ v2::Result<ResourceLedger> calculate(const ResourceRequest& request) {
         return invalid("resource byte count overflow");
     result.host_pool_mib = mib(*pool_bytes);
     result.host_kv_mib = mib(*kv_bytes);
-    const auto pinned_mib = add(result.host_pool_mib, result.host_kv_mib);
+    const auto pool_total_mib = multiply(result.host_pool_mib, request.engine_ranks);
+    const auto pinned_mib = pool_total_mib ? add(*pool_total_mib, result.host_kv_mib) : std::nullopt;
     if (!pinned_mib)
         return invalid("resource byte count overflow");
     const auto pinned_bytes = multiply(*pinned_mib, MiB);
@@ -255,8 +257,14 @@ v2::Result<ResourceLedger> calculate(const ResourceRequest& request) {
                        " bytes required, " + std::to_string(result.pin_available_bytes) + " bytes available");
     }
     result.remaining_bytes = result.available_bytes - result.committed_bytes;
-    result.allocations = {model.embedding_bytes,    model.unowned_expert_bytes,
-                          model.staging_bytes,      target.pool_margin_bytes,
+    const auto embedding_bytes = multiply(model.embedding_bytes, request.engine_ranks);
+    const auto unowned_bytes = multiply(model.unowned_expert_bytes, request.engine_ranks);
+    const auto staging_bytes = multiply(model.staging_bytes, request.engine_ranks);
+    const auto margin_bytes = multiply(target.pool_margin_bytes, request.engine_ranks);
+    if (!embedding_bytes || !unowned_bytes || !staging_bytes || !margin_bytes)
+        return invalid("per-rank host-pool component overflow");
+    result.allocations = {*embedding_bytes,        *unowned_bytes,
+                          *staging_bytes,         *margin_bytes,
                           model.ngram_bytes,        model.checkpoint_bytes,
                           model.other_engine_bytes, *kv_bytes,
                           target.host_reserve_bytes};
@@ -279,6 +287,7 @@ v2::Result<ResourceLedger> derive_launch(const LaunchDocuments& documents,
         const uint64_t kv_target = calibration_mib(calibration, "host_kv_tier.target_mib", layout);
         const uint64_t margin = calibration_mib(calibration, "host_ledger_margin.mib", layout);
         ResourceRequest request;
+        request.engine_ranks = positive_bytes(values.at("engine"), "tp");
         request.target.context_tokens = positive_bytes(values.at("service"), "max_context");
         request.target.concurrent_sessions = positive_bytes(values.at("service"), "max_sessions");
         const auto total = multiply(request.target.context_tokens, request.target.concurrent_sessions);
