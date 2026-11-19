@@ -1,6 +1,6 @@
 """VTP31 (rad0025): the pipelined prefill over a step of several whole sequences, cut between them.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0024 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0024 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
@@ -64,7 +64,7 @@ class MultiseqPipeTests(unittest.TestCase):
             gdn = (root / "arch/common/rad_block_gdn_fp8.h").read_text()
             self.assertEqual(gdn.count("BC_VTP31_MSP_GDN_CLOSE"), 1)
             ctx = (root / "core/runtime/ctx.cpp").read_text()
-            self.assertIn("sizeof(RadBatch) == 480", ctx)
+            self.assertIn("sizeof(RadBatch) == 504", ctx)
             self.assertIn("mix(cu_key);", ctx)
             self.assertIn("uint64_t cu_key = 0;", ctx)
             again = apply_all(load(PKG), root)

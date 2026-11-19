@@ -1,7 +1,7 @@
 """VTP14 N2 (rad0018/rad0019): --tp-ownership SPEC, an uneven tensor-parallel split checked against the model.
 
 Card-free. Checks the ownership tables sum to the model and keep whole heads, and applies rad0016, rad0017 and rad0018
-to the pinned radiance v1.17.0 source when a checkout carrying that tag is reachable.
+to the pinned Radiance source when a checkout carrying that tag is reachable.
 """
 from __future__ import annotations
 
@@ -126,7 +126,7 @@ class TpOwnershipTests(unittest.TestCase):
     def test_applies_after_n1_and_n3_to_pinned_source(self):
         checkout = radiance_checkout()
         if checkout is None:
-            self.skipTest("no radiance checkout with the pinned v1.17.0 commit; set RADIANCE_SRC")
+            self.skipTest("no Radiance checkout with the declared pin; set RADIANCE_SRC")
         with patched_pinned_source(checkout, N2F.name, full_checkout=True) as root:
             arch = (root / "arch/common/rad_arch.h").read_text()
             self.assertIn("if (!g.tp_owned_ok)", arch)

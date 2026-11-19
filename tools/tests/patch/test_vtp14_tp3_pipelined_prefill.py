@@ -1,6 +1,6 @@
 """VTP14 (rad0020): the fp8 Qwen plugin's pipelined prefill as configuration (--pipelined-prefill, --pipelined-prefill-min-rows).
 
-Card-free. The pinned-source test applies rad0018, rad0019 and rad0020 in order to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies rad0018, rad0019 and rad0020 in order to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations

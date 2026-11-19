@@ -1,6 +1,6 @@
 """VTP31 (rad0026): the pipelined prefill over a mixed step, its decode sequences in the first piece.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0026 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0026 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
