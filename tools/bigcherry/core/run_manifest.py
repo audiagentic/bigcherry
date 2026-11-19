@@ -11,9 +11,13 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
-from typing import Any, Self
+from typing import TYPE_CHECKING, Any, Self
+
+if TYPE_CHECKING:
+    from .run_records import RunRecordStore
 
 SCHEMA_VERSION = 1
 MANIFEST_NAME = "run.manifest.json"
@@ -83,7 +87,7 @@ def new_manifest(*, run_id: str, kind: str, purpose: str, plan_item: str | None,
         "host": dict(host or {}),
         "owner": dict(owner),
         "inputs": list(inputs or []),         # [{"role", "uri", "sha256"}]
-        "references": list(references or []),  # [{"type": run|build|source|object, "id", "role"}] typed GC edges
+        "references": list(references or []),  # typed GC edges, including measurement_record SHA
         "state": "created",
         "generation": 1,
         "size_bytes": None,
@@ -111,9 +115,19 @@ def validate_manifest(m: Any) -> dict[str, Any]:
         raise ManifestError(f"unknown retention state {m['retention'].get('state')!r}")
     if not isinstance(m["generation"], int) or m["generation"] < 1:
         raise ManifestError("generation must be a positive integer")
+    if not isinstance(m["references"], list):
+        raise ManifestError("references must be a list")
     for ref in m["references"]:
-        if not isinstance(ref, dict) or ref.get("type") not in {"run", "build", "source", "object"} or not ref.get("id"):
+        if not isinstance(ref, dict) or ref.get("type") not in {
+            "run", "build", "source", "object", "measurement_record"
+        } or not isinstance(ref.get("id"), str) or not ref["id"]:
             raise ManifestError(f"malformed reference {ref!r}")
+        if ref["type"] == "measurement_record" and (
+            re.fullmatch(r"[0-9a-f]{64}", ref["id"]) is None
+            or ref.get("role") != "measurement"
+            or set(ref) != {"type", "id", "role"}
+        ):
+            raise ManifestError("measurement_record reference must contain a SHA256 id and measurement role")
     return m
 
 
@@ -227,3 +241,70 @@ def update_manifest(run_dir: Path, *, expected_generation: int, state: str | Non
         m["generation"] += 1
         write_manifest(run_dir, m)
         return m
+
+
+def link_measurement_record(run_dir: Path, store: RunRecordStore, digest: str) -> dict[str, Any]:
+    """Atomically link a validated immutable MRC01 record to its WSL01 lifecycle run.
+
+    The store remains the record owner and the WSL01 manifest remains the
+    lifecycle owner. Verify identity before publishing the typed edge.
+    Repeated linking is idempotent and does not change manifest generation.
+    """
+    record = store.get_record(digest)  # checks SHA, shape, and every required blob
+    with _Lock(run_dir):
+        manifest = read_manifest(run_dir)
+        if manifest["run_id"] != record["run_id"]:
+            raise ManifestError("record run_id does not match lifecycle manifest")
+        if manifest["engine"] != record["identity"]["engine"]:
+            raise ManifestError("record engine does not match lifecycle manifest")
+        edge = {"type": "measurement_record", "id": digest, "role": "measurement"}
+        if edge in manifest["references"]:
+            return manifest
+        manifest["references"].append(edge)
+        manifest["generation"] += 1
+        write_manifest(run_dir, manifest)
+        return manifest
+
+
+def resolve_measurement_records(run_dir: Path, store: RunRecordStore) -> list[dict[str, Any]]:
+    """Resolve only typed, content-verified record edges from a lifecycle run."""
+    manifest = read_manifest(run_dir)
+    rows = []
+    for ref in manifest["references"]:
+        if ref["type"] != "measurement_record":
+            continue
+        record = store.get_record(ref["id"])
+        if record["run_id"] != manifest["run_id"] or record["identity"]["engine"] != manifest["engine"]:
+            raise ManifestError("measurement_record edge points to another run or engine")
+        rows.append({"sha256": ref["id"], "record": record})
+    return rows
+
+
+def find_run_for_record(runs_root: Path, store: RunRecordStore, digest: str) -> tuple[Path, dict[str, Any]]:
+    """Resolve record -> manifest inside an explicitly supplied runs root.
+
+    Never trust a path from record provenance as a directory locator; require
+    a matching typed backlink and fail on ambiguous or unlinked run identities.
+    """
+    record = store.get_record(digest)
+    root = Path(runs_root)
+    if root.is_symlink() or not root.is_dir():
+        raise ManifestError("unsafe or missing runs root")
+    matches = []
+    found_identity = False
+    for path in root.rglob(MANIFEST_NAME):
+        if path.is_symlink() or not path.is_file() or not path.resolve().is_relative_to(root.resolve()):
+            raise ManifestError(f"unsafe run manifest: {path}")
+        manifest = read_manifest(path.parent)
+        if manifest["run_id"] != record["run_id"]:
+            continue
+        found_identity = True
+        if manifest["engine"] != record["identity"]["engine"]:
+            raise ManifestError("run_id matches manifest with a different engine")
+        if {"type": "measurement_record", "id": digest, "role": "measurement"} in manifest["references"]:
+            matches.append((path.parent, manifest))
+    if len(matches) > 1:
+        raise ManifestError("ambiguous manifests for measurement record")
+    if not matches:
+        raise ManifestError("unlinked measurement record" if found_identity else "no lifecycle run for record")
+    return matches[0]
