@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_055500_production-starts-with-the-liv_5474",
+  "files": [
+    "engines/radiance/components/serving/v2/runtime_receipt.cpp",
+    "engines/radiance/components/serving/v2/runtime_receipt_test.cpp",
+    "engines/radiance/components/serving/v2/runtime_receipt_live_test.cpp",
+    "docs/reference/engines/radiance/LIVE_PLACEMENT.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A production start with the live placement policy on refused at the runtime policy guard with 'placement control transaction_id is required': the worker numbers a placement transaction only when it begins one, so a freshly started engine's sealed placement has transaction 0 and an empty journal, which the runtime receipt rejected. The receipt now accepts exactly that boot state (active, no fault, no transaction under way, both journal slots empty) and still refuses transaction 0 with a transaction under way, a journal record without a control transaction, or a missing sealed owner map. Proven on hardware: flashnext-4gpu with the policy on reaches running and serves, and a longer run committed 14 placement transactions with the guards polling throughout and a clean stop.",
+  "timestamp-utc": "2026-11-19T05:55:00.483677Z",
+  "user-summary-candidate": "Production starts with the live placement policy on now pass the runtime policy guard and run with the policy committing placements."
+}
