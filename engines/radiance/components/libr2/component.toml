@@ -21,7 +21,7 @@ configure = { RADIANCE_SRC = "{engine_source}", R2_TARGETS = "{targets}" }
 # checks literals and source inventory; RUM02-07 own the eventual migration.
 [coupling]
 upstream-headers = ["rad_abi.h"]
-upstream-files = ["abi/rad_abi.h", "libr4d/CMakeLists.txt"]
+upstream-files = ["abi/rad_abi.h", "cmake/RadSimdLevels.cmake", "libr4d/CMakeLists.txt"]
 upstream-source-globs = ["libr4d/r4d_*.cpp", "libr4d/r4d_*.hip"]
 patch-provided-files = []
 protocol-flags = []

@@ -1,3 +1,4 @@
+# Shelved at the 2.x bump. Upstream retired the grouped canonical-MXFP4 unit.
 # Native gfx11 matrix products for r4d_moe_mxfp4 (radiance 1.13.0's canonical-MXFP4 MoE, five kernel forms).
 #
 # libr4d stages E4M3 bytes in shared memory and calls the gfx12 fp8 WMMA: each 32-wide group's two 16x16x16 products

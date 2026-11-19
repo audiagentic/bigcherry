@@ -941,11 +941,12 @@ PATCHES = (
             ),
             Edit(
                 id="bc-remote-ahead-try-admit",
-                anchor=r"^    if \(!pipelining_\) return RAD_OK;$",
-                text="\n    if (!bc_remote_admission_.try_ahead((int)ranks_.size())) return bc_remote_admission_.ahead_status();",
+                anchor=r"^    for \(int i = 0; i < serial_rows_ && serial_done_ > 0; \+\+i\)$",
+                mode="insert_before",
+                text="    if (!bc_remote_admission_.try_ahead((int)ranks_.size())) return bc_remote_admission_.ahead_status();\n",
                 guard=r"bc_remote_admission_\.try_ahead\(",
                 expect_matches=1,
-                rationale="Nonblocking call before step_next, advance_all and prepare_release.",
+                rationale="Reserve only after upstream's flex/quiet early exits and before expect_draft or step_next mutates scheduler state.",
             ),
             Edit(
                 id="bc-remote-ahead-bind",
