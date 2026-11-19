@@ -13,7 +13,7 @@
 - This handoff: docs/design/ltx25-iq8r-tp3-handoff.md
 - Lab README: tools/lab/radiance/ltx-tp3/README.md
 - Model preflight (real container verified read-only): docs/design/ltx25-iq8r-model-preflight.md; model test is opt-in and uses BC_LTX_IQ8R_MODEL; no container bytes committed.
-- Real IQ8R plane evidence: docs/design/ltx25-iq8r-model-plane-evidence.md; tools/tests/lab/test_ltx_iq8r_planes.py provides a CI fixture, a negative extent test, and permitted explicit-path verification of 1,306 actual IQ8R planes without running blocked rad-info.
+- Real-model CPU numerical oracle: tools/tests/lab/test_ltx_iq8r_numeric.py runs in explicit-path mode against the local IQ8R container, reading 123 real video/audio QKV and out rows. It checks two FWHT formulations, three-rank output reductions, real BF16 bias-once and group-boundary refusal. Model-specific result: audio 10/10/12 K slicing is not admissible at IQ8R group 256. Full proof/limitations in docs/design/ltx25-iq8r-model-plane-evidence.md. It is not a production TP3 path.\n- Real IQ8R plane evidence: docs/design/ltx25-iq8r-model-plane-evidence.md; tools/tests/lab/test_ltx_iq8r_planes.py provides a CI fixture, a negative extent test, and permitted explicit-path verification of 1,306 actual IQ8R planes without running blocked rad-info.
 - Three native C++ CTests under tools/lab/radiance/ltx-tp3:
   1. ltx_tp3_reference_test.cpp — head ownership, fused QKV mapping, IQ8R K-boundary checks, dense global RMS, conservative four-card memory admission, two text-handoff sizes.
   2. ltx_tp3_protocol_test.cpp — deterministic guidance collective schedules, STG and isolated skip patterns, leader pass ownership, exactly-once output bias, epoch/shape/cancelled conditioning mailbox.

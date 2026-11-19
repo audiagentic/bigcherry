@@ -72,6 +72,16 @@ void test_fused_qkv_bank_mapping() {
 void test_iq8r_alignment() {
     const auto good = iq8r_input_slices(4096, {1024, 1024, 2048});
     assert(good[1].offset == 1024 && good[2].offset == 2048);
+    // The same 32 heads are not the same K-scale partition in video/audio.
+    // Video 10/10/12 is 1280/1280/1536 and valid, audio is
+    // 640/640/768 and splits IQ8R scales even though heads are whole.
+    const auto video_uneven = iq8r_input_slices(4096, {1280, 1280, 1536});
+    assert(video_uneven[2].offset == 2560);
+    const auto audio_good = iq8r_input_slices(2048, {512, 512, 1024});
+    assert(audio_good[2].offset == 1024);
+    const auto audio_other = iq8r_input_slices(2048, {768, 768, 512});
+    assert(audio_other[2].offset == 1536);
+    must_refuse([] { iq8r_input_slices(2048, {640, 640, 768}); });
     must_refuse([] { iq8r_input_slices(4096, {128, 1920, 2048}); });
     must_refuse([] { iq8r_input_slices(4096, {1024, 1024, 1792}); });
     must_refuse([] { iq8r_input_slices(4032, {1024, 1024, 1984}); });

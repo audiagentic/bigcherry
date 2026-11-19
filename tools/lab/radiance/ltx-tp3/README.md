@@ -33,3 +33,8 @@ Writes only the explicitly selected CMake build directory or pytest temporary di
 ## Disposition
 
 Experimental lab proof for LT3-03/04/05/07/11/12. Do not promote to shared tooling or production until its ownership/ABI is designed against the RUM-migrated upstream LTX builder and a real device implementation passes numerical parity. Delete only through the tooling disposition/retirement process after an accepted replacement; preserve this reference while cited by the design.
+
+
+## Optional real-model validation (separate test tooling)
+
+The corresponding Python test tooling can inspect the actual local IQ8R container with bounded disk reads, without running Radiance or modifying production: `tools/tests/lab/test_ltx_iq8r_planes.py` checks every declared IQ8R plane extent and `tools/tests/lab/test_ltx_iq8r_numeric.py` performs sampled row-level BF16/U8/I8/FWHT128 dense-versus-TP3 arithmetic. Both accept an explicit model-file positional argument and have CPU-only synthetic pytest fixtures. Evidence and limitations: `docs/design/ltx25-iq8r-model-plane-evidence.md`. The former's pure header/plane validation and latter's f64 oracle do not qualify the native HIP kernel. A 10/10/12 audio **K** split is forbidden at group 256 even though it owns whole attention heads.

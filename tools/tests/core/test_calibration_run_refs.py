@@ -16,6 +16,7 @@ def record(store):
                      "model": "model", "layout": "3gpu"},
         "workload": {"name": "calibration", "definition": {}},
         "metrics": {"decode": {}, "prefill": {}, "ttft": {}},
+        "metric_specs": {"decode": {}, "prefill": {}, "ttft": {}},
         "provenance": {"effective_config": blob, "argv": blob,
                        "environment": blob, "power_settings": blob, "inputs": []},
         "host_facts": {}, "feature_states": [],
@@ -92,7 +93,7 @@ def test_platform_producer_pins_selected_calibration_blob_and_quantities(tmp_pat
         work_root=tmp_path, run_id=row["run_id"], recorded_at=row["recorded_at"],
         identity=row["identity"], workload=row["workload"], metrics=row["metrics"],
         effective_config=b"manifest", argv=["bc-serve"], environment={},
-        power_settings={}, inputs={}, host_facts={}, feature_states=[],
+        power_settings={}, inputs={}, host_facts={}, feature_states=[], metric_specs=row["metric_specs"],
         calibration_selection={
             "status": "selected", "record": calibration,
             "quantity_blobs": {"sample_times": b"sample" * 100},
