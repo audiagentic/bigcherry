@@ -784,7 +784,9 @@ int main(int argc, char** argv) {
             const auto request = bc::serving::parse_plan_json(bytes, publish_v2_p1);
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto resolved = bc::serving::resolve(opts, facts);
-            const auto record = bc::serving::v2::produce_p1_inputs(resolved, facts, opts.sys_root, request);
+            bc::serving::ManifestInputs manifest_inputs;
+            manifest_inputs.resolved = resolved;
+            const auto record = bc::serving::v2::produce_p1_inputs(manifest_inputs, facts, opts.sys_root, request);
             std::cout << record.dump(2) << '\n';
             return 0;
         }
@@ -887,14 +889,17 @@ int main(int argc, char** argv) {
             const auto r = bc::serving::resolve(opts, facts);
             const auto& v = r.values;
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
+            // Prepare the selected configuration once. P1 consumes this same
+            // input as the final writer so a native snapshot can flow through
+            // both without reopening or reconstructing engine configuration.
+            bc::serving::ManifestInputs in;
+            in.resolved = r;
             if (unmeasured) {
-                bc::serving::ManifestInputs in;
-                in.resolved = r;
-                in.s10 = s10;
-                in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
                 in.instance_id = bc::serving::new_instance_id();
                 in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
                 in.calibration_cache = opts.calibration_cache;
+                in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
+                in.s10 = s10;
                 load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
                 load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
                 const auto built = bc::serving::build_manifest(in);
@@ -937,6 +942,10 @@ int main(int argc, char** argv) {
                           << "); the launcher measures it on a start with the helpers up\n";
                 return 10;
             }
+            in.instance_id = bc::serving::new_instance_id();
+            in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
+            in.calibration_cache = opts.calibration_cache;
+            in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
             {
                 // P1: measure now, at every manifest written: the cached plan and per-rank demand, the owner
                 // map, and the host's live room. The retention target is the host KV tier the launcher runs
@@ -958,7 +967,7 @@ int main(int argc, char** argv) {
                     {"retention_target_tokens", retention},
                     {"margin", bc::serving::host_ledger_margin(r, opts.calibration_cache)},
                     {"run_id", "bc-serve --write-manifest " + write_manifest.filename().string()}};
-                s10.p1_record = bc::serving::v2::produce_p1(r, facts, opts.sys_root, sources);
+                s10.p1_record = bc::serving::v2::produce_p1(in, facts, opts.sys_root, sources);
                 // The plan echoes the host pool it was measured with; S8 derives the pool from what was
                 // measured. When they differ, the plan is for another pool: exit 11 with the derived one, and
                 // the launcher measures once more with it (that configuration has its own cache key, so this
@@ -977,12 +986,6 @@ int main(int argc, char** argv) {
                     return 11;
                 }
             }
-            bc::serving::ManifestInputs in;
-            in.resolved = r;
-            in.instance_id = bc::serving::new_instance_id();
-            in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
-            in.calibration_cache = opts.calibration_cache;
-            in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
             in.measured = bc::serving::MeasuredPlan{*plan, key_inputs};
             in.s10 = s10;
             load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);

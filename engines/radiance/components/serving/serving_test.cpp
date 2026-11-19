@@ -1347,7 +1347,9 @@ void manifest_writer_step(Fixture& t) {
         for (const auto& gpu : t.facts.at("gpus"))
             write(t.root / "sys/bus/pci/devices" / gpu.at("bdf").get<std::string>() / "mem_info_gtt_used",
                   "0\n");
-        const Json published = v2::produce_p1(producer_config, t.facts, t.root, native_sources);
+        sv::ManifestInputs producer_inputs;
+        producer_inputs.resolved = producer_config;
+        const Json published = v2::produce_p1(producer_inputs, t.facts, t.root, native_sources);
         assert(published.at("kind") == "bc_serve_v2_measured_inputs");
         assert(published.at("resource_inputs").at("helper_footprints").size() == 2);
         assert(published.at("resource_inputs").at("owner_map_digest") ==

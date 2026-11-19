@@ -159,6 +159,8 @@ C35 (2026-11-20): added the internal-only `NativeAdmissionRequest` planner gate.
 
 C36 (2026-11-20): hardened C35 with matched runtime-home validation, exact local ordinal-card order checks, reserved device selector variables (`RADIANCE_HOME`, ROCR/HIP/CUDA visibility and GPU_DEVICE_ORDINAL), and a direct legacy stored-replay refusal when the private native request is present. The native planner test now sets a named config and malformed cache-index tripwire and proves the gate stops before cache parsing. Negative cases cover card order, home, selector override and replay bypass. ABI44 `bc_serving_test`, `bc_session_test`, and `bc_session_stored_test` pass (1/1 each). Evidence C36; Ledger event `chg_20261119_150725_hardened-the-private-native-ad_5410`. Still no public native launch: P1 must accept the same prepared snapshot, and writer/measurement/stored replay/native-aware cache paths must be migrated together.
 
+C37 (2026-11-20): both P1 entry points now accept the caller's prepared ManifestInputs. The measured write flow constructs the selected resolved config once and passes it to both P1 owner planning and final writer; P1's temporary owner-map document copies only resolved plus native_config and retains its production/fresh-identity/stock-power projection. The standalone --publish-v2-p1 keeps its request JSON unchanged. Built bc-serve, bc_serving_test, bc_v2_p1_producer_test; focused CTest passed bc_serving_test and bc_v2_p1_producer_test (1/1 each). This transports a future admitted snapshot through P1 but does not enable native production selection, v3 writer, measurement attestation, or stored replay. Evidence C37.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -190,3 +192,4 @@ C36 (2026-11-20): hardened C35 with matched runtime-home validation, exact local
 - 2026-11-19T14:39:17.405809+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T14:52:50.038889+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:07:40.385146+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T15:15:51.751252+00:00 (updated-by): Updated: section:notes

@@ -66,7 +66,7 @@ void check_margin_and_run(const json& request) {
 }
 } // namespace
 
-json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
+json produce_p1_inputs(const bc::serving::ManifestInputs& manifest_inputs, const json& facts,
                        const fs::path& sys_root, const json& request) {
   fields(request, {"engine_plan_file", "rank_demand_file", "engine_binary",
                    "helper_binary", "retention_target_tokens", "margin", "run_id"}, "request");
@@ -76,10 +76,10 @@ json produce_p1_inputs(const bc::serving::Resolved& resolved, const json& facts,
   sources["rank_demand"] = read_strict(nonempty(request.at("rank_demand_file"), "rank_demand_file"));
   sources.erase("engine_plan_file");
   sources.erase("rank_demand_file");
-  return produce_p1(resolved, facts, sys_root, sources);
+  return produce_p1(manifest_inputs, facts, sys_root, sources);
 }
 
-json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
+json produce_p1(const bc::serving::ManifestInputs& manifest_inputs, const json& facts,
                 const fs::path& sys_root, const json& request) {
   fields(request, {"engine_plan", "rank_demand", "engine_binary",
                    "helper_binary", "retention_target_tokens", "margin", "run_id"}, "sources");
@@ -88,6 +88,7 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
   const std::string evidence = margin.at("evidence").get<std::string>();
   const int64_t margin_mib = margin.at("mib").get<int64_t>();
   const std::string run_id = request.at("run_id").get<std::string>();
+  const auto& resolved = manifest_inputs.resolved;
   const auto& selected = resolved.typed.layout;
   const auto& service = resolved.typed.service;
   if (selected.engine_cards.empty() || !service.max_context || !service.max_sessions)
@@ -114,13 +115,18 @@ json produce_p1(const bc::serving::Resolved& resolved, const json& facts,
       ? bc::serving::sha256_hex(json::array().dump())
       : file_sha(helper_path);
 
-  bc::serving::ManifestInputs inputs{};
-  inputs.resolved = resolved;
-  inputs.profile = "production";
-  inputs.instance_id = bc::serving::new_instance_id();
-  inputs.producer_sha256 = file_sha("/proc/self/exe");
-  inputs.s10.power_profile = "stock";   // only the owner plan is read from this manifest
-  const bc::serving::BuiltManifest owned = bc::serving::build_manifest(inputs);
+  // Reuse the exact selected configuration and native snapshot for owner
+  // planning, while retaining P1's established production/stock projection.
+  // Other caller fields describe the final manifest and must not leak into
+  // this temporary owner-map build.
+  bc::serving::ManifestInputs owner_inputs{};
+  owner_inputs.resolved = manifest_inputs.resolved;
+  owner_inputs.native_config = manifest_inputs.native_config;
+  owner_inputs.profile = "production";
+  owner_inputs.instance_id = bc::serving::new_instance_id();
+  owner_inputs.producer_sha256 = file_sha("/proc/self/exe");
+  owner_inputs.s10.power_profile = "stock";
+  const bc::serving::BuiltManifest owned = bc::serving::build_manifest(owner_inputs);
   const auto checked = bc::serving::v2::read_manifest(
       owned.text, "native P1 owner-plan", bc::serving::v2::PlanUse::measuring);
   if (!checked.ok()) refuse("owner_map", "actual selected owner-plan failed strict validation");

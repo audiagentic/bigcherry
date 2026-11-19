@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_151603_p1-owner-planning-now-receives_2277",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/v2/p1_producer.cpp",
+    "engines/radiance/components/serving/v2/p1_producer.h",
+    "engines/radiance/components/serving/v2/p1_producer_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "P1 producer APIs now consume the prepared ManifestInputs object shared with the final writer. The P1 owner-map projection copies only resolved config and native snapshot while retaining existing production identity and stock-power behavior. CLI request shape remains unchanged. Built bc-serve and focused tests; bc_serving_test and bc_v2_p1_producer_test passed. Native production selection remains gated.",
+  "timestamp-utc": "2026-11-19T15:16:03.483424Z",
+  "user-summary-candidate": "P1 owner planning now receives the same prepared configuration and future admitted YAML snapshot as the writer, without changing the current v2 calculation. Focused serving and P1 checks pass; native launch is still gated."
+}
