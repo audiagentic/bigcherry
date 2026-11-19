@@ -321,3 +321,7 @@ Repeated the focused `rad0046_retained_moe_rows` exact-source apply/replay test 
 ## C62 — Prepare native Config from a measured serving manifest
 
 The rad0009 bridge shares native YAML replay between measurement and serving Config preparation. The exact-pin ABI44 host fixture passed (1/1), preserving YAML provenance and the measured plan after replacement of the artifact path, rejecting a wrong role and confirming direct startup refusal. Two focused patch checks passed. Session launch still needs to carry the retained execution root and environment. Ledger event: chg_20261119_212559_verified-native-yaml-and-measu_7390.
+
+## C63 — Retain native launch inputs across the session owner handoff
+
+Commit `5539f42fb` carries the working directory descriptor and frozen environment from native measurement into the serving owner. The owner verifies the strict serving manifest, sealed descriptor, launch arguments, and directory identity before using that context. The generated v3 session fixture passed (1/1). Default v2 serving and stored manifest fixtures passed (2/2). These checks cover measurement and existing v2 behavior. Native serving execution still stops at the post-measure gate at this checkpoint. Ledger event `chg_20261119_213343_preserve-the-admitted-native-c_6376`.
