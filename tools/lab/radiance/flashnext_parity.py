@@ -534,44 +534,20 @@ def capture_launch_provenance(
 
 
 def selected_calibration(path: Path, key: str) -> dict:
-    """Select one verified native TOML row without depending on unmerged MRC04.
+    """Use the platform MRC04 strict current/legacy/invalid classifications.
 
-    Only the selected record is copied by value; unrelated historical rows are
-    never used as calibration evidence for this launch.
+    This reader verifies the full declared key and quantities. Hash-only
+    history can be listed but cannot serve as active measurement evidence.
     """
-    raw = tomllib.loads(path.read_text(encoding="utf-8"))
-    if raw.get("schema_version") != 1:
-        raise ParityError("unsupported native calibration-store version")
-    entries = raw.get("live_policy_record")
-    if not isinstance(entries, list):
-        raise ParityError("native calibration store lacks live_policy_record")
-    selected = [entry for entry in entries if entry.get("plan_cache_key") == key]
+    from bigcherry.core.calibration_records import read_native_toml
+
+    selected = [item for item in read_native_toml(path) if item["key"] == key]
     if len(selected) != 1:
-        raise ParityError("missing or ambiguous selected calibration record")
-    row = selected[0]
-    for field in ("calibration_inputs", "source_plan_key", "source_engine_build"):
-        if not isinstance(row.get(field), str) or not row[field]:
-            raise ParityError(f"selected calibration lacks {field}")
-    scope = json.loads(row["calibration_inputs"])
-    if not isinstance(scope, dict) or scope.get("policy_key_version") != 2:
-        raise ParityError("selected calibration lacks v2 scope")
-    digest = hashlib.sha256(
-        json.dumps(scope, sort_keys=True, separators=(",", ":"), allow_nan=False).encode()
-    ).hexdigest()
-    if digest != key:
-        raise ParityError("selected calibration inputs do not hash to manifest key")
-    if (row.get("layout"), row.get("objective")) != (
-        scope.get("layout"), scope.get("objective")
-    ):
-        raise ParityError("selected calibration layout/objective disagree")
-    for field in ("source_plan_key", "source_engine_build"):
-        if not re.fullmatch(r"[0-9a-f]{64}", row[field]):
-            raise ParityError(f"selected calibration {field} not SHA-256")
-    if "record_schema_version" in row and row["record_schema_version"] != 1:
-        raise ParityError("unrecognized selected calibration schema")
-    if row.get("calibration_kind", "radiance.live_policy") != "radiance.live_policy":
-        raise ParityError("selected calibration kind differs")
-    return row
+        raise ParityError("selected native calibration key is missing or ambiguous")
+    item = selected[0]
+    if item["status"] != "current":
+        raise ParityError(f"selected calibration is {item['status']}: {item['reason']}")
+    return item["legacy"]
 
 
 def publish_launch_record(

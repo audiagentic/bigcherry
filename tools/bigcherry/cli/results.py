@@ -9,7 +9,8 @@ import sys
 import tempfile
 from pathlib import Path
 
-from ..core import results, run_records
+from ..core import engines, results, run_records
+from ..core.context import resolve_work_root
 
 
 def _read_baseline(path: Path) -> dict:
@@ -104,6 +105,52 @@ def _show_history(report: dict) -> None:
 def cmd_results(args: argparse.Namespace) -> int:
     try:
         store = run_records.RunRecordStore(args.work_root)
+        if args.results_action == "list":
+            from ..bench import workloads
+            rows = []
+            for item in store.query(engine=args.engine, layout=args.layout,
+                                    workload=args.workload, since=args.since, until=args.until):
+                rec = item["record"]
+                rows.append({
+                    "status": rec.get("validity", {}).get("state", "current"),
+                    "sha256": item["sha256"], "run_id": rec["run_id"],
+                    "engine": rec["identity"]["engine"],
+                    "layout": rec["identity"]["layout"],
+                    "workload": rec["workload"]["name"],
+                    "recorded_at": rec["recorded_at"],
+                })
+            # Explicit read-only bridge for the one retired Radiance index.
+            # Do not recreate a manifest, promote its metrics or import it into
+            # the verified record store.
+            if args.engine in (None, engines.RADIANCE):
+                index = resolve_work_root(args.work_root) / "results/index.jsonl"
+                for legacy in workloads.read_index(index):
+                    if args.layout and legacy.get("layout") != args.layout:
+                        continue
+                    if args.workload and legacy.get("workload_id") != args.workload:
+                        continue
+                    stamp = str(legacy.get("timestamp", "")).replace("+00:00", "Z")
+                    if args.since and stamp < args.since:
+                        continue
+                    if args.until and stamp > args.until:
+                        continue
+                    rows.append({
+                        "status": "legacy",
+                        "reason": "missing_content_provenance",
+                        "row_id": legacy["row_id"], "engine": engines.RADIANCE,
+                        "layout": legacy.get("layout"),
+                        "workload": legacy["workload_id"],
+                        "recorded_at": stamp,
+                    })
+            rows.sort(key=lambda row: (row["recorded_at"], row.get("sha256", row.get("row_id", ""))))
+            if args.json:
+                print(json.dumps(rows, indent=2, sort_keys=True))
+            else:
+                for row in rows:
+                    print(f"{row['recorded_at']} {row['status']:<12} "
+                          f"{row['engine']} {row['layout']} {row['workload']} "
+                          f"{row.get('sha256', row.get('row_id'))}")
+            return 0
         if args.results_action == "baseline":
             baseline = results.make_baseline(
                 store, _select(args, store), args.name
@@ -159,6 +206,9 @@ def register(sub) -> None:
         command.add_argument("--until", help="inclusive UTC YYYY-MM-DDTHH:MM:SSZ")
         command.add_argument("--json", action="store_true", help="emit structured JSON")
         command.set_defaults(func=cmd_results)
+
+    listing = actions.add_parser("list", help="list verified run records and read-only legacy workload rows")
+    common(listing)
 
     baseline = actions.add_parser("baseline", help="create portable spread-derived baseline (two or more launches)")
     common(baseline, require_scope=True)

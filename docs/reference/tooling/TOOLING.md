@@ -198,6 +198,20 @@ provenance. The old `parity.json` remains for existing consumers only and is
 not ingested as a source of run-record metric truth. The remaining MRC06
 producer migrations and legacy-writer retirement are separate slices.
 
+**MRC06 slice 2 — producer migration and legacy listing.** The parity producer now reads the selected current calibration with MRC04's shared native-TOML reader, without duplicating its key verification.
+
+"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. The legacy "results/index.jsonl" and old workload rows are read-only; "bigcherry results list --engine radiance --work-root ROOT --json" shows older rows as "legacy" / "missing_content_provenance". Neither deleted manifest paths nor seeded rows are silently promoted into the record store. "workload seed" is disabled and the historical "workload compare" remains a read-only reader.
+
+The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
+
+    module bigcherry.bench.llamacpp_runner (repository tools on PYTHONPATH): --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
+
+It drives the original benchmark and intercepts the existing result append boundary to write exactly one content-addressed record per measured row; duplicate per-family JSON and legacy SQLite sync are suppressed. Direct external invocations are outside the managed migration. Numeric "pp*_tps" and "tg*_tps" metrics map to prefill/decode without changing values. Unmapped quantities such as PPL or standard deviation remain byte-for-byte as the provenance source row, not falsely relabeled as prefill or decode.
+
+Typed HI47 measurement sidecars can be published with "python -m bigcherry.experiment.bundle record BUNDLE --measurement-file BUNDLE/measurement.json" or with the managed "run --measurement-file measurement.json" option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
+
+The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; old v1 records without the new optional field remain readable. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
+
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be
 verified. Unreferenced blobs are informational, not deletion candidates; the
