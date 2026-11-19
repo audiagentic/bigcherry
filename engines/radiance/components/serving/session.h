@@ -33,6 +33,7 @@
 #include "serving.h"
 #include "stored_manifest.h"
 #include "v2/manifest.h"
+#include "v2/native_config_snapshot.h"
 
 namespace bc::serving::power {
 class SessionPower;
@@ -148,10 +149,10 @@ struct Canary {
 using Wait = Callback<bool(std::chrono::milliseconds)>;
 
 // A role is a compile-time authority class, distinct from the event/ledger
-// label. Only the in-process manifest writer is allowed before power admission.
-enum class ChildKind : uint8_t { manifest_writer, measuring_helper, measuring_engine };
+// label. Only CPU-only planning children are allowed before power admission.
+enum class ChildKind : uint8_t { manifest_writer, native_config_inspector, measuring_helper, measuring_engine };
 
-/* The owner registers every planner child (including the CPU-only writer)
+/* The owner registers every planner child (including the CPU-only writer and native inspector)
  * before its pre-exec gate is released. Every child is reaped and journalled;
  * measuring and serving processes require durable power admission. */
 struct Hooks {
@@ -253,6 +254,12 @@ using ManifestRunner = Callback<ManifestRun(const std::vector<std::string>& argv
  * request ends the child and throws PlanFailed) and registered through `hooks.started`/`ended` (an exit it
  * cannot verify leaves the child the owner's to stop). */
 ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks = {});
+
+/* Ask the matched Radiance binary to parse and resolve the admitted native YAML snapshot under its recorded
+ * root. `native_environment` supplies the same explicit configuration environment selected for the later child;
+ * it is never inferred from a mutable authored path. The inspector is owner-tracked and reaped before return. */
+nlohmann::json inspect_native_config(const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
+                                     const Env& native_environment, const Hooks& hooks = {});
 
 struct EnginePlanInputs {
     Options options;            // the resolver's inputs: site, profile, configs, layouts, model root, --set

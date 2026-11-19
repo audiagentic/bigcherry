@@ -12,6 +12,7 @@
 #include "stored_manifest.h"
 #include "stored_manifest_cache.h"
 #include "v2/document_bytes.h"
+#include "v2/strict_json.h"
 
 #include <algorithm>
 #include <array>
@@ -51,10 +52,10 @@ using Json = nlohmann::json;
 using namespace std::chrono_literals;
 using Clock = std::chrono::steady_clock;
 
-// An authenticated stored v2 document is held in a kernel-sealed anonymous
-// file. The path is only a view of this exact descriptor; it does not reopen
-// the operator's replaceable pathname. This execution envelope owns its
-// descriptor until the last child has verified its exit.
+// An admitted v2 document or native config snapshot is held in a kernel-sealed
+// anonymous file. The path is only a view of these exact bytes; it does not
+// reopen the operator's replaceable pathname. The owner retains its descriptor
+// until the last child has verified its exit.
 class PinnedManifest final {
   public:
     explicit PinnedManifest(std::string_view admitted) {
@@ -898,7 +899,8 @@ class Owner {
                 // Register first, even on forbidden starts; cleanup must
                 // reap a child that never passed its pre-exec gate.
                 track(role, pid, log);
-                if (kind != ChildKind::manifest_writer && s_.power_hook.begin_manifest && !power_admitted_)
+                if (kind != ChildKind::manifest_writer && kind != ChildKind::native_config_inspector &&
+                    s_.power_hook.begin_manifest && !power_admitted_)
                     throw PlanFailed("planner started a measuring child before durable power admission");
             };
             hooks.ended = [this](pid_t pid) { untrack(pid); };
@@ -1575,7 +1577,17 @@ int start_detached(const std::vector<std::string>& self_argv, const fs::path& ru
 /* --- the engine-only plan step
  * --------------------------------------------------------------------------------------- */
 
-ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks) {
+namespace {
+
+ManifestRun run_planning_child(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks,
+                               ChildKind kind, const std::string& role, int inherited_input_fd = -1,
+                               int working_directory_fd = -1,
+                               size_t max_output_bytes = v2::kMaxDocumentBytes) {
+    if (argv.empty() || argv.front().empty())
+        throw std::runtime_error("planning child: empty command");
+    if ((inherited_input_fd >= 0 && inherited_input_fd < 3) ||
+        (working_directory_fd >= 0 && working_directory_fd < 3))
+        throw std::runtime_error("planning child: inherited descriptors must be greater than 2");
     const Wait& wait = hooks.wait;
     const fs::path dir = fs::temp_directory_path();
     const std::string tag = stamp() + "-" + std::to_string(Clock::now().time_since_epoch().count());
@@ -1615,6 +1627,13 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
             cloexec_above_stderr();
             if (!gate.wait_in_child())
                 ::_exit(126); // never recorded: run nothing
+            if (working_directory_fd >= 0 && ::fchdir(working_directory_fd) != 0)
+                ::_exit(126);
+            if (inherited_input_fd >= 0) {
+                const int flags = ::fcntl(inherited_input_fd, F_GETFD);
+                if (flags < 0 || ::fcntl(inherited_input_fd, F_SETFD, flags & ~FD_CLOEXEC) != 0)
+                    ::_exit(126);
+            }
             ::execve(cargv[0], cargv.data(), cenv.data());
             ::_exit(127);
         }
@@ -1628,8 +1647,7 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         // never reported stopped while it lives
         record_then_release(gate, p, [&](pid_t q) {
             if (hooks.started)
-                hooks.started.require("session.hooks.started", ChildKind::manifest_writer, "manifest writer", q,
-                                      out);
+                hooks.started.require("session.hooks.started", kind, role, q, out);
         });
         return p;
     }();
@@ -1645,8 +1663,11 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         fs::remove(out, ec);
         fs::remove(err, ec);
         if (!exited)
-            throw std::runtime_error("plan: the manifest writer (pid " + std::to_string(pid) +
-                                     ") is still alive after SIGKILL");
+            throw std::runtime_error(role == "manifest writer"
+                                         ? "plan: the manifest writer (pid " + std::to_string(pid) +
+                                               ") is still alive after SIGKILL"
+                                         : "plan: " + role + " (pid " + std::to_string(pid) +
+                                               ") is still alive after SIGKILL");
         notify_ended();
     };
     int st = 0;
@@ -1654,7 +1675,8 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
         while (running(pid, &st)) {
             if (wait && !wait.require("session.hooks.wait", 100ms)) {
                 finish(stop_child(pid, SIGTERM, 10s));
-                throw PlanFailed("plan: stopped while bc-serve wrote a manifest");
+                throw PlanFailed(role == "manifest writer" ? "plan: stopped while bc-serve wrote a manifest"
+                                                             : "plan: stopped while " + role + " was running");
             }
             if (!wait)
                 std::this_thread::sleep_for(20ms);
@@ -1667,7 +1689,7 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
             try {
                 notify_ended();
             } catch (const std::exception& secondary) {
-                std::cerr << "manifest writer: secondary exit notification failed after reap: "
+                std::cerr << role << ": secondary exit notification failed after reap: "
                           << secondary.what() << '\n';
             }
         }
@@ -1678,12 +1700,97 @@ ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& e
     notify_ended();
     ManifestRun r;
     r.exit = WIFEXITED(st) ? WEXITSTATUS(st) : 128 + (WIFSIGNALED(st) ? WTERMSIG(st) : 0);
+    std::error_code output_error, stderr_error;
+    const uintmax_t output_size = fs::file_size(out, output_error);
+    const uintmax_t error_size = fs::file_size(err, stderr_error);
+    if (output_error || stderr_error || output_size > max_output_bytes || error_size > max_output_bytes) {
+        std::error_code ignored;
+        fs::remove(out, ignored);
+        fs::remove(err, ignored);
+        throw PlanFailed("plan: " + role + " output exceeds the bounded capture limit");
+    }
     r.out = read_file(out);
     r.err = read_file(err);
     std::error_code ec;
     fs::remove(out, ec);
     fs::remove(err, ec);
     return r;
+}
+
+} // namespace
+
+ManifestRun run_to_completion(const std::vector<std::string>& argv, const Env& env, const Hooks& hooks) {
+    return run_planning_child(argv, env, hooks, ChildKind::manifest_writer, "manifest writer");
+}
+
+namespace {
+std::string tail_text(const std::string& s, size_t n = 2000);
+}
+
+nlohmann::json inspect_native_config(const fs::path& engine, const NativeConfigSnapshot& snapshot,
+                                     const Env& native_environment, const Hooks& hooks) {
+    const fs::path absolute_engine = fs::absolute(engine).lexically_normal();
+    if (::access(absolute_engine.c_str(), X_OK) != 0)
+        throw PlanFailed("native config inspector: matched engine is not executable: " + absolute_engine.string());
+
+    const std::string payload = snapshot.manifest_field().dump();
+    auto input = std::make_shared<PinnedManifest>(payload);
+    const int root_fd = ::open(snapshot.resolution_root().c_str(), O_RDONLY | O_DIRECTORY | O_NOFOLLOW | O_CLOEXEC);
+    if (root_fd < 0)
+        throw PlanFailed("native config inspector: cannot open the recorded resolution root: " + errno_text());
+    if (root_fd < 3) {
+        ::close(root_fd);
+        throw PlanFailed("native config inspector: root descriptor must be greater than 2");
+    }
+    struct CloseFd {
+        int fd;
+        ~CloseFd() { if (fd >= 0) ::close(fd); }
+    } close_root{root_fd};
+
+    const ManifestRun result = run_planning_child(
+        {absolute_engine.string(), "--bc-inspect-native-config", std::to_string(input->descriptor())},
+        child_environment(environ, native_environment), hooks, ChildKind::native_config_inspector,
+        "native config inspector",
+        input->descriptor(), root_fd);
+    if (result.exit != 0)
+        throw PlanFailed("native config inspector: matched Radiance rejected the admitted YAML snapshot: " +
+                         tail_text(result.err));
+    if (result.out.empty() || result.out.size() > v2::kMaxDocumentBytes)
+        throw PlanFailed("native config inspector: report is empty or exceeds the strict JSON limit");
+    const auto report = v2::parse_strict_json(result.out, "native config inspector report");
+    if (!report || !report.value().is_object())
+        throw PlanFailed("native config inspector: report failed strict protocol or snapshot identity validation");
+    const Json& doc = report.value();
+    const auto string_field = [](const Json& object, const char* key) {
+        return object.contains(key) && object.at(key).is_string();
+    };
+    const auto nullable_string_field = [&](const Json& object, const char* key) {
+        return object.contains(key) && (object.at(key).is_null() || object.at(key).is_string());
+    };
+    const auto integer_field = [](const Json& object, const char* key) {
+        return object.contains(key) && object.at(key).is_number_integer();
+    };
+    if (!string_field(doc, "protocol") || doc.at("protocol") != "bigcherry.native-fleet-inspect/v1" ||
+        !doc.contains("snapshot") || !doc.at("snapshot").is_object() ||
+        !string_field(doc.at("snapshot"), "sha256") || doc.at("snapshot").at("sha256") != snapshot.sha256() ||
+        !string_field(doc.at("snapshot"), "resolution_root") ||
+        doc.at("snapshot").at("resolution_root") != snapshot.resolution_root() ||
+        !doc.contains("engine") || !doc.at("engine").is_object())
+        throw PlanFailed("native config inspector: report failed strict protocol or snapshot identity validation");
+    const Json& engine_report = doc.at("engine");
+    if (!integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
+        !string_field(engine_report, "radiance_home") ||
+        !nullable_string_field(engine_report, "radiance_home_source") ||
+        !engine_report.contains("kernels") || !engine_report.at("kernels").is_array() ||
+        !nullable_string_field(engine_report, "kernels_source") || !integer_field(engine_report, "tp") ||
+        !engine_report.contains("cards") || !engine_report.at("cards").is_array() ||
+        !engine_report.contains("rank_devices") || !engine_report.at("rank_devices").is_array() ||
+        !integer_field(engine_report, "max_context") || !integer_field(engine_report, "max_sequences") ||
+        !engine_report.contains("listener") || !engine_report.at("listener").is_object() ||
+        !string_field(engine_report.at("listener"), "host") ||
+        !integer_field(engine_report.at("listener"), "port"))
+        throw PlanFailed("native config inspector: report omitted typed engine admission fields");
+    return report.value();
 }
 
 namespace {
@@ -1709,7 +1816,7 @@ std::vector<std::string> resolver_args(const Options& o) {
     return a;
 }
 
-std::string tail_text(const std::string& s, size_t n = 2000) {
+std::string tail_text(const std::string& s, size_t n) {
     return s.size() > n ? s.substr(s.size() - n) : s;
 }
 

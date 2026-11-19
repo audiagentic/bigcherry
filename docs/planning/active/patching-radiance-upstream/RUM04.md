@@ -133,6 +133,12 @@ C27 (2026-11-19): shared writer requires NativeConfigSnapshot for generated v3 a
 
 C30 (2026-11-20): added the matched-engine read-only native YAML inspect seam. rad0009 now compiles `native_fleet_config.cpp` once into `rad_core`, propagates its header to `radiance`, and handles `--bc-inspect-native-config FD` before manifest argv rewriting. The handler requires a bounded regular file with all four memfd seals, strict-decodes the existing three-field snapshot payload, checks its digest and execution root through NativeConfigSnapshot, and runs the exact upstream fleet parser plus `fleet::unsupported`. The closed report emits the snapshot identity and admission inputs without raw YAML or credentials, with provenance for runtime-home/kernel values. Focused rad0009 tests passed 5/5; both C++ units compiled with warnings-as-errors against pinned ABI44 headers; exact pinned-source apply and replay were byte-identical. A fresh engine link/runtime invocation is still pending, as are session descriptor inheritance and consumer migration. Evidence: C30 in docs/evidence/radiance-latest-bump/README.md.
 
+
+
+C31 (2026-11-20): added `session::inspect_native_config` using the existing captured-output planner child path. The typed child role is allowed before power admission, and stays registered/reaped through the owner; it receives the sealed snapshot memfd, uses a root directory fd plus child-local `fchdir`, and executes the absolute matched engine path. Both captured streams are bounded; the owner strict-decodes the closed report and checks protocol, snapshot digest/root, and typed admission fields. Card-free `bc_session_test` positive coverage proves exact CRLF/UTF-8 bytes after authored-file replacement, all seals, recorded-root cwd, unrelated-FD close-on-exec, parent/owner cwd preservation, journal/reap, and inspector-before-power ordering. Negative coverage returns a mismatched digest and proves refusal before power admission or serving-engine start, with inspector reaped. The focused build and CTest passed 1/1. This completes only the session-owner inspector boundary; production planning still selects the TOML/v2 path, so no YAML consumer/cache/manifest migration is claimed. Evidence C31 in `docs/evidence/radiance-latest-bump/README.md`; actual matched-engine invocation and GPU/runtime gates remain open.
+
+C31 clarification: `inspect_native_config` takes an explicit native-environment overlay so the production planner can use the exact admitted environment-backed values for parsing and subsequent launch; it does not silently derive a second environment. The test uses an empty overlay.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -157,3 +163,5 @@ C30 (2026-11-20): added the matched-engine read-only native YAML inspect seam. r
 - 2026-11-19T12:10:17.693225+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:28:07.874455+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T13:39:26.821638+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T14:04:37.285506+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T14:06:54.254829+00:00 (updated-by): Updated: section:notes

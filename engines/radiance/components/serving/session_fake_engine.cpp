@@ -22,10 +22,14 @@
 #include <dirent.h>
 
 #include <chrono>
+#include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
+#include <iostream>
+#include <cstdlib>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -80,6 +84,61 @@ void reply(int fd, int status, const std::string& body) {
 int main(int argc, char** argv) {
     using nlohmann::json;
     using Clock = std::chrono::steady_clock;
+    if (argc == 3 && std::strcmp(argv[1], "--bc-inspect-native-config") == 0) {
+        const int fd = std::atoi(argv[2]);
+        constexpr int seals_required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+        struct stat info {};
+        const int seals = fd < 3 ? -1 : ::fcntl(fd, F_GET_SEALS);
+        if (fd < 3 || seals < 0 || (seals & seals_required) != seals_required ||
+            ::fstat(fd, &info) != 0 || info.st_size <= 0 || info.st_size > 1024 * 1024) {
+            std::fprintf(stderr, "fake inspector: invalid sealed input descriptor\n");
+            return 10;
+        }
+        std::string bytes(static_cast<size_t>(info.st_size), '\0');
+        if (::pread(fd, bytes.data(), bytes.size(), 0) != static_cast<ssize_t>(bytes.size())) return 11;
+        const json input = json::parse(bytes, nullptr, false);
+        const std::string expected_yaml = "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+        if (!input.is_object() || input.value("yaml_utf8", std::string()) != expected_yaml ||
+            input.value("sha256", std::string()).empty() || !input.contains("resolution_root") ||
+            !input.at("resolution_root").is_string()) {
+            std::fprintf(stderr, "fake inspector: snapshot bytes did not match the sealed fixture\n");
+            return 12;
+        }
+        std::error_code ec;
+        const std::string cwd = std::filesystem::canonical(std::filesystem::current_path(), ec).string();
+        if (ec || cwd != input.at("resolution_root").get<std::string>()) {
+            std::fprintf(stderr, "fake inspector: execution root did not match snapshot\n");
+            return 13;
+        }
+        if (const char* sentinel = std::getenv("TEST_SENTINEL_FD")) {
+            errno = 0;
+            if (::fcntl(std::atoi(sentinel), F_GETFD) >= 0 || errno != EBADF) {
+                std::fprintf(stderr, "fake inspector: unrelated descriptor survived exec\n");
+                return 14;
+            }
+        }
+        const std::string reported_digest = std::getenv("TEST_INSPECTOR_MISMATCH") != nullptr
+                                                ? std::string(64, '0')
+                                                : input.at("sha256").get<std::string>();
+        std::cout << json{{"protocol", "bigcherry.native-fleet-inspect/v1"},
+                          {"snapshot", {{"sha256", reported_digest},
+                                        {"resolution_root", input.at("resolution_root")}}},
+                          {"engine", {{"abi_version", 44},
+                                       {"model", "tiny"},
+                                       {"radiance_home", "runtime"},
+                                       {"radiance_home_source", nullptr},
+                                       {"kernels", json::array({"k0"})},
+                                       {"kernels_source", nullptr},
+                                       {"listener", {{"host", "127.0.0.1"}, {"port", 8123}}},
+                                       {"tp", 1},
+                                       {"cards", json::array({0})},
+                                       {"rank_devices", json::array({0})},
+                                       {"max_context", 4096},
+                                       {"max_sequences", 1}}}}
+                         .dump()
+                  << '\n';
+        return 0;
+    }
     const std::string manifest = arg_after(argc, argv, "--manifest");
     json m = json::object();
     {

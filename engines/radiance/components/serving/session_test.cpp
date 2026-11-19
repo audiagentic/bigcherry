@@ -1182,6 +1182,110 @@ void manifest_writer_before_durable_admission() {
     assert(recorded);
 }
 
+void native_config_inspector_before_admission() {
+    Case c("native-config-inspector");
+    const fs::path root_path = c.run / "yaml-root";
+    fs::create_directories(root_path);
+    const fs::path root = fs::canonical(root_path);
+    const fs::path authored = root / "fleet.yaml";
+    const std::string yaml = "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+    std::ofstream(authored, std::ios::binary) << yaml;
+    const auto snapshot = bc::serving::NativeConfigSnapshot::read(authored, root);
+    const int sentinel = ::open("/dev/null", O_RDONLY);
+    assert(sentinel >= 3);
+    const std::string sentinel_value = std::to_string(sentinel);
+    ::setenv("TEST_SENTINEL_FD", sentinel_value.c_str(), 1);
+    const fs::path owner_cwd = fs::current_path();
+    const fs::path trace = c.run / "native-inspector.trace";
+    const auto prior = c.session.plan;
+    c.session.plan = [prior, snapshot, authored, trace, owner_cwd](const fs::path& run, const ss::Hooks& hooks) {
+        std::ofstream(authored, std::ios::binary | std::ios::trunc) << "changed after snapshot\n";
+        const Json report = ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, {}, hooks);
+        assert(report.at("snapshot").at("sha256") == snapshot.sha256());
+        assert(fs::current_path() == owner_cwd);
+        std::ofstream(trace, std::ios::app) << "inspected\n";
+        const fs::path provisional = run / "native-provisional-v2.json";
+        std::ofstream(provisional) << "{}";
+        const auto admission = hooks.admit_power.invoke("native-inspector.test.admit", provisional,
+                                                        bc::serving::v2::PlanUse::serving);
+        if (!admission)
+            throw ss::PlanFailed(admission.error().message);
+        if (admission.value())
+            throw ss::PlanFailed(admission.value()->message);
+        std::ofstream(trace, std::ios::app) << "admitted\n";
+        return prior.require("native-inspector.test.base-plan", run, hooks);
+    };
+    c.session.power_hook.begin_manifest = [trace](const fs::path&,
+                                                  bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
+        std::ofstream(trace, std::ios::app) << "power\n";
+        return std::nullopt;
+    };
+    c.session.power_hook.restore = []() -> bc::serving::v2::Status { return std::nullopt; };
+    c.session.power_hook.verify_serving = [](const fs::path&) -> bc::serving::v2::Status {
+        return std::nullopt;
+    };
+    c.session.power_hook.verified_exit = [] {};
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const auto reply = ss::control(c.run, "stop", 10s);
+    assert(reply && reply->value("ok", false));
+    assert(exit_code(owner) == 0);
+    ::unsetenv("TEST_SENTINEL_FD");
+    ::close(sentinel);
+    assert(fs::current_path() == owner_cwd);
+    const std::string entries = text(trace);
+    assert(entries.find("inspected\n") < entries.find("power\n"));
+    assert(entries.find("power\n") < entries.find("admitted\n"));
+    bool inspector_recorded = false;
+    const Json final_record = c.record();
+    for (const auto& process : final_record.at("processes")) {
+        if (process.value("role", std::string()) == "native config inspector") {
+            inspector_recorded = true;
+            assert(process.value("exited", false) && gone(process.at("pid").get<pid_t>()));
+        }
+    }
+    assert(inspector_recorded);
+}
+
+void native_config_inspector_identity_mismatch_refused() {
+    Case c("native-config-inspector-mismatch");
+    const fs::path root = c.run / "yaml-root";
+    fs::create_directories(root);
+    const fs::path authored = root / "fleet.yaml";
+    std::ofstream(authored, std::ios::binary)
+        << "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+    const auto snapshot = bc::serving::NativeConfigSnapshot::read(authored, root);
+    ::setenv("TEST_INSPECTOR_MISMATCH", "1", 1);
+    c.session.plan = [snapshot](const fs::path&, const ss::Hooks& hooks) {
+        (void)ss::inspect_native_config(BC_FAKE_ENGINE, snapshot, {}, hooks);
+        throw ss::PlanFailed("mismatched inspector response was accepted");
+        return ss::EngineStart{};
+    };
+    c.session.power_hook.begin_manifest = [](const fs::path&,
+                                             bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
+        assert(false && "power admission ran after a mismatched native inspector report");
+        return std::nullopt;
+    };
+    c.session.power_hook.restore = []() -> bc::serving::v2::Status { return std::nullopt; };
+    c.session.power_hook.verify_serving = [](const fs::path&) -> bc::serving::v2::Status {
+        return std::nullopt;
+    };
+    c.session.power_hook.verified_exit = [] {};
+    const pid_t owner = c.owner();
+    c.wait_state({"failed"});
+    assert(exit_code(owner) == 97);
+    ::unsetenv("TEST_INSPECTOR_MISMATCH");
+    const Json record = c.record();
+    assert(!record.contains("power_admission"));
+    bool inspector_reaped = false;
+    for (const auto& process : record.at("processes")) {
+        assert(process.value("role", std::string()) != "engine");
+        if (process.value("role", std::string()) == "native config inspector")
+            inspector_reaped = process.value("exited", false) && gone(process.at("pid").get<pid_t>());
+    }
+    assert(inspector_reaped);
+}
+
 void premeasurement_manifest_hook_integration() {
     // One owner, one run, and one manifest admission *before* measuring.
     // Explicit fake hooks record their sequencing without ever touching sysfs.
@@ -1309,6 +1413,8 @@ int test_main(int argc, char** argv) {
     injected_owner_plan_exception();
     real_session_power_returned_errors();
     manifest_writer_before_durable_admission();
+    native_config_inspector_before_admission();
+    native_config_inspector_identity_mismatch_refused();
     premeasurement_manifest_hook_integration();
     callback_nonstandard_regression();
     callback_exception_matrix();
