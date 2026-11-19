@@ -48,6 +48,10 @@ class CiBundleTests(unittest.TestCase):
         configs.mkdir(parents=True)
         for name in assets.SHIPPED_CONFIGS:
             (configs / name).write_text(f"schema = 1\n# {name}\n")
+        for name in assets.SHIPPED_HEAT_SEEDS:
+            seed = self.root / "tools/lab/radiance/heat" / name
+            seed.parent.mkdir(parents=True, exist_ok=True)
+            seed.write_bytes(("heat fixture: " + name).encode())
         # Minimal production-schema build identity for the synthetic repository.
         engine_dir = self.root / "engines/radiance"
         components = ("bc-gfx12", "libr2", "libr3", "moe-remote", "ngram-helper", "serving")
@@ -61,6 +65,9 @@ class CiBundleTests(unittest.TestCase):
             component_dir = engine_dir / "components" / name
             component_dir.mkdir(parents=True)
             (component_dir / "component.toml").write_text('built-against = "v1.17.0"\n')
+        committed_heat = mock.patch.object(assets, "check_committed_heat")
+        committed_heat.start()
+        self.addCleanup(committed_heat.stop)
         committed = mock.patch.object(assets, "check_committed_config")
         committed.start()
         self.addCleanup(committed.stop)
@@ -116,6 +123,9 @@ class CiBundleTests(unittest.TestCase):
 
     def verify_staged(self, release_tag: str, stage: Path) -> dict:
         with mock.patch.object(assets, "tag_identity", return_value=TREE_ID), \
+             mock.patch.object(cb, "tagged_heat",
+                               side_effect=lambda root, tag, name:
+                               (self.root / "tools/lab/radiance/heat" / name).read_bytes()), \
              mock.patch.object(cb, "tagged_config",
                                side_effect=lambda root, tag, name:
                                (self.root / "engines/radiance/configs" / name).read_bytes()):
@@ -195,6 +205,9 @@ class CiBundleTests(unittest.TestCase):
         def different_tree(root, tag):
             return TREE_ID if tag == TAG else {"engine_tree": "a" * 40, "config_tree": "c" * 40}
         with mock.patch.object(assets, "tag_identity", side_effect=different_tree), \
+             mock.patch.object(cb, "tagged_heat",
+                               side_effect=lambda root, tag, name:
+                               (self.root / "tools/lab/radiance/heat" / name).read_bytes()), \
              mock.patch.object(cb, "tagged_config",
                                side_effect=lambda root, tag, name:
                                (self.root / "engines/radiance/configs" / name).read_bytes()), \
@@ -208,6 +221,17 @@ class CiBundleTests(unittest.TestCase):
         with mock.patch.object(assets, "tag_identity", return_value=TREE_ID), \
              mock.patch.object(cb, "tagged_config", return_value=b"altered tagged config"), \
              self.assertRaisesRegex(cb.CiBundleError, "config differs from tagged source"):
+            cb.verify_publish_candidate(TAG, stage, root=self.root)
+
+    def test_final_upload_gate_rechecks_tagged_heat_bytes(self):
+        cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
+        stage = self.work / "release-assets" / TAG
+        with mock.patch.object(assets, "tag_identity", return_value=TREE_ID), \
+             mock.patch.object(cb, "tagged_config",
+                               side_effect=lambda root, tag, name:
+                               (self.root / "engines/radiance/configs" / name).read_bytes()), \
+             mock.patch.object(cb, "tagged_heat", return_value=b"altered tagged heat"), \
+             self.assertRaisesRegex(cb.CiBundleError, "heat seed differs from tagged source"):
             cb.verify_publish_candidate(TAG, stage, root=self.root)
 
     def test_a_tampered_archive_is_not_kept_silently(self):

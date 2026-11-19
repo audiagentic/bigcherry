@@ -557,12 +557,13 @@ class CacheInventory(unittest.TestCase):
         old = self.build("old")
         policy = retention.Policy(newest_k=0)
         for mount in (self.root, self.root.parent):
-            with self.subTest(mount=mount):
-                with patch.object(build_gc, "_mount_points", return_value={mount}):
-                    entry = next(item for item in build_gc.inspect(
-                        self.root, policy=policy, measure=False)
-                        if item["path"] == str(old))
-                    self.assertEqual(entry["action"], "candidate")
+            with self.subTest(mount=mount), patch.object(
+                build_gc, "_mount_points", return_value={mount}
+            ):
+                entry = next(item for item in build_gc.inspect(
+                    self.root, policy=policy, measure=False)
+                    if item["path"] == str(old))
+                self.assertEqual(entry["action"], "candidate")
         self.assertTrue(old.exists())
 
     def test_mountinfo_decodes_escaped_paths_and_traversal_protected(self):
@@ -774,7 +775,7 @@ class CacheInventory(unittest.TestCase):
                     reader = lambda: set()
                 else:
                     quarantine.mkdir(mode=0o700)
-                    reader = lambda: {quarantine}
+                    reader = lambda quarantine=quarantine: {quarantine}
                 with patch.object(build_gc, "_mount_points", side_effect=reader):
                     decision = next(e for e in build_gc.inspect(
                         self.root, policy=retention.Policy(newest_k=0)) if e["path"] == str(old))
@@ -892,6 +893,94 @@ class CacheInventory(unittest.TestCase):
         self.assertTrue(attempted)
         self.assertEqual(outcome["removed"], [])
         self.assertTrue((old / "binary").is_file())
+
+    def test_native_install_release_pins_exact_build(self):
+        pinned = self.build("a" * 32, recipe="b" * 32, age=40)
+        other = self.build("c" * 32, recipe="b" * 32, age=40)
+        release = self.root / "installed-radiance" / "releases" / "bc-radiance-1170.33.0"
+        release.mkdir(parents=True)
+        (release / "install.json").write_text(json.dumps({
+            "schema": "bc-radiance-installed-v1", "tag": release.name,
+            "record": {"source_slice_id": pinned.parent.name, "plan_id": pinned.name},
+        }))
+        self.assertIn("installed release", " ".join(self.decisions()[pinned.name]["reasons"]))
+        self.assertEqual(self.decisions()[other.name]["action"], "candidate")
+
+    def test_native_install_bad_receipts_block_all_gc(self):
+        old = self.build("a" * 32, age=30)
+        release = self.root / "installed-radiance" / "releases" / "bc-radiance-1170.33.0"
+        release.mkdir(parents=True)
+        receipt = release / "install.json"
+        for invalid in (None, "{broken", json.dumps({"tag": release.name, "record": {}})):
+            receipt.unlink(missing_ok=True)
+            if invalid is not None:
+                receipt.write_text(invalid)
+            self.assertEqual(self.decisions()[old.name]["action"], "protected")
+        receipt.unlink(missing_ok=True)
+        (self.root / "outside.json").write_text("{}")
+        receipt.symlink_to(self.root / "outside.json")
+        self.assertEqual(self.decisions()[old.name]["action"], "protected")
+
+    def test_immutable_run_record_build_identity_pins_build(self):
+        from bigcherry.core.run_records import RunRecordStore
+        pinned = self.build("a" * 32, age=30)
+        other = self.build("b" * 32, age=30)
+        store = RunRecordStore(self.root)
+        sidecar = pinned / "bigcherry-build-metadata-radiance.json"
+        sidecar.write_text(json.dumps({"build_id": "d" * 32,
+                                       "source_slice_id": pinned.parent.name,
+                                       "build_plan_id": pinned.name}))
+        os.utime(sidecar, (time.time() - 30 * DAY,) * 2)
+        blob = store.put_blob(b"sealed")
+        record = {
+            "schema_version": 1, "run_id": "measure-1", "recorded_at": "2026-11-18T12:00:00Z",
+            "identity": {"engine": "radiance",  "build_id": "d" * 32,
+                         "binary_sha256": "f" * 64, "source_revision": "rev",
+                         "model": "model", "layout": "layout"},
+            "workload": {"name": "decode", "definition": {}},
+            "metrics": {"decode": {}, "prefill": {}, "ttft": {}},
+            "provenance": {"effective_config": blob, "argv": blob,
+                           "environment": blob, "power_settings": blob, "inputs": []},
+            "host_facts": {}, "feature_states": [],
+        }
+        store.put_record(record)
+        self.assertIn("run record", " ".join(self.decisions()[pinned.name]["reasons"]))
+        self.assertEqual(self.decisions()[other.name]["action"], "candidate")
+        next(store.root.glob("records/*/*.json")).write_text("{broken")
+        self.assertIn("run-record", " ".join(self.decisions()[other.name]["reasons"]))
+
+    def test_stored_serving_manifest_runtime_build_is_pinned(self):
+        pinned = self.build("a" * 32, age=40)
+        other = self.build("b" * 32, age=40)
+        site = self.root / "flashnext"
+        site.mkdir()
+        saved = site / "manifest-123.json"
+        saved.write_text(json.dumps({
+            "apiVersion": "bigcherry/v2", "kind": "ServingManifest",
+            "spec": {"processes": {"engine": {"runtime": {
+                "radiance_home": str(pinned / "radiance_home")}}}},
+        }))
+        self.assertIn("stored serving manifest", " ".join(self.decisions()[pinned.name]["reasons"]))
+        self.assertEqual(self.decisions()[other.name]["action"], "candidate")
+        saved.write_text("{invalid")
+        self.assertIn("stored manifest", " ".join(self.decisions()[other.name]["reasons"]))
+
+    def test_symlinked_record_store_blocks_gc(self):
+        old = self.build("a" * 32, age=35)
+        elsewhere = self.root / "external"
+        elsewhere.mkdir()
+        (self.root / "run-records").symlink_to(elsewhere, target_is_directory=True)
+        self.assertEqual(self.decisions()[old.name]["action"], "protected")
+        self.assertIn("run-record", " ".join(self.decisions()[old.name]["reasons"]))
+
+    def test_hash_only_plan_cache_does_not_pin_build_tree(self):
+        old = self.build("a" * 32, age=35)
+        cache = self.root / "plan-cache"
+        cache.mkdir()
+        (cache / ("f" * 64 + ".json")).write_text(json.dumps({
+            "cache_version": 2, "key_inputs": {"engine_build": "e" * 64},
+        }))
+        self.assertEqual(self.decisions()[old.name]["action"], "candidate")
 
 
 if __name__ == "__main__":

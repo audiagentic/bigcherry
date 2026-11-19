@@ -49,6 +49,22 @@ def _json_bytes(value: object) -> bytes:
         raise RecordError(f"not canonical JSON: {exc}") from exc
 
 
+def with_host_facts(record: dict[str, Any], facts: dict[str, Any] | None = None) -> dict[str, Any]:
+    """Return an independent v1 record populated from the platform collector.
+
+    Adapters call this before `put_record`; existing stored records are immutable.
+    A caller may inject a fixture snapshot, avoiding host access in unit tests.
+    """
+    from copy import deepcopy
+
+    from .host_facts import collect_host_facts
+
+    updated = deepcopy(record)
+    updated["host_facts"] = deepcopy(facts if facts is not None else collect_host_facts())
+    validate_record(updated)
+    return updated
+
+
 def canonical_record_bytes(record: dict[str, Any]) -> bytes:
     validate_record(record)
     return _json_bytes(record)
@@ -104,6 +120,7 @@ def _check_schema(value: Any, spec: dict, root: dict, where: str) -> None:
             "string": lambda: isinstance(value, str),
             "integer": lambda: type(value) is int,
             "number": lambda: type(value) in (int, float) and math.isfinite(value),
+            "boolean": lambda: type(value) is bool,
         }
         if kind not in matches or not matches[kind]():
             raise RecordError(f"{where}: expected {kind}")
@@ -150,6 +167,21 @@ def validate_record(record: Any) -> dict[str, Any]:
     _check_schema(record, schema, schema, "record")
     # Arbitrary workload/host details must still be JSON, with no NaN/Infinity.
     _json_bytes(record)
+    # Optional MRC05 metric metadata is strict when supplied. Legacy MRC01
+    # records remain readable but cannot be used to create measured gates.
+    if "metric_specs" in record:
+        for phase in ("decode", "prefill", "ttft"):
+            if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
+                raise RecordError(f"metric_specs.{phase}: direction missing or extra metric")
+            for spec in record["metric_specs"][phase].values():
+                if type(spec["gated"]) is not bool:
+                    raise RecordError("metric gate must be a boolean")
+    # VA25 validity must not have internally contradictory verdict metadata.
+    # Absence is supported for pre-MRC06 v1 records; such records remain readable.
+    if "validity" in record:
+        validity = record["validity"]
+        if (validity["state"] == "valid") != (not validity["reason_codes"]):
+            raise RecordError("validity: reason_codes disagree with execution verdict")
     return record
 
 
@@ -338,6 +370,7 @@ class RunRecordStore:
         self,
         *,
         engine: str | None = None,
+        run_id: str | None = None,
         layout: str | None = None,
         workload: str | None = None,
         metric: str | None = None,
@@ -368,7 +401,9 @@ class RunRecordStore:
             digest = _check_digest(path.stem)
             doc = self.get_record(digest)
             if (
-                engine is not None
+                run_id is not None
+                and doc["run_id"] != run_id
+                or engine is not None
                 and doc["identity"]["engine"] != engine
                 or layout is not None
                 and doc["identity"]["layout"] != layout

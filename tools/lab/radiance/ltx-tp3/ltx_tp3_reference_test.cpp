@@ -6,6 +6,7 @@
 #include <cmath>
 #include <functional>
 #include <iostream>
+#include <limits>
 #include <numeric>
 #include <stdexcept>
 #include <vector>
@@ -65,6 +66,7 @@ void test_fused_qkv_bank_mapping() {
             assert(reconstructed[i] == i && "missing Q/K/V row");
     }
     must_refuse([] { fused_qkv_pieces(4096, {4000, 128}); });
+    must_refuse([] { fused_qkv_pieces(std::numeric_limits<int>::max(), {0, 1}); });
 }
 
 void test_iq8r_alignment() {
@@ -158,6 +160,10 @@ void test_conditioning_transfer() {
     must_refuse([] { gemma_stack_bytes(1024, 2, 3840, 0, 2); });
     assert(conditioning_bytes(1024, 2, 4096, 2048, 2) == 24LL * 1024 * 1024);
     must_refuse([] { conditioning_bytes(1024, 0, 4096, 2048, 2); });
+    const auto hi=std::numeric_limits<int>::max();
+    must_refuse([&] { gemma_stack_bytes(hi,hi,hi,hi,hi); });
+    must_refuse([&] { conditioning_bytes(hi,hi,hi,hi,hi); });
+    must_refuse([&] { attention_slices(hi,hi,{hi,hi,hi}); });
 }
 
 int main() {

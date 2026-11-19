@@ -14,6 +14,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from bigcherry.core.context import ProjectContext
 from bigcherry.core import process
 from bigcherry.release import pin_bump
 
@@ -27,7 +28,10 @@ GCC_CRASH = "FAILED: [code=1] CMakeFiles/s.dir/session.cpp.o \ng++: internal com
 
 class BuildRetryTests(unittest.TestCase):
     def setUp(self) -> None:
-        scratch = pin_bump.exec_capable_tempdir(Path(os.environ.get("BC_WORK_ROOT") or tempfile.gettempdir()) / "test-tmp")
+        # The work root when the shell did not set BC_WORK_ROOT: the system temp directory may be noexec, and the fake
+        # cmake scripts below are executed.
+        work_root = os.environ.get("BC_WORK_ROOT") or str(ProjectContext.resolve(engine="radiance").work_root)
+        scratch = pin_bump.exec_capable_tempdir(Path(work_root) / "test-tmp")
         if scratch is not None:
             self.addCleanup(shutil.rmtree, scratch, ignore_errors=True)
         self._tmp = tempfile.TemporaryDirectory(dir=scratch)

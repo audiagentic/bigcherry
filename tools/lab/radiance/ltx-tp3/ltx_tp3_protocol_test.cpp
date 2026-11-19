@@ -3,6 +3,7 @@
 #include <array>
 #include <cassert>
 #include <iostream>
+#include <limits>
 #include <stdexcept>
 #include <vector>
 using namespace bc_ltx_tp3_protocol;
@@ -80,6 +81,8 @@ void mailbox_test() {
     refuse([&]{ mb.receive(t); });
     refuse([&]{ mb.publish(Ticket{0,10,2,8,2},data); });
     refuse([&]{ mb.publish(t,std::vector<std::uint8_t>{1}); });
+    const auto hi=std::numeric_limits<int>::max();
+    refuse([&]{ payload_bytes(Ticket{1,1,hi,hi,hi}); });
 }
 
 int main() {

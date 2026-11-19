@@ -416,6 +416,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (calibration_run)
         session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
+    session.publish_feature_states = true;
     if (calibration_run)
         session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
     session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
@@ -689,6 +690,8 @@ int main(int argc, char** argv) {
                 opts.configs.emplace_back(need_arg("--configs"));
             else if (arg == "--model-root")
                 opts.model_root = need_arg("--model-root");
+            else if (arg == "--run-dir")
+                opts.run_dir = need_arg("--run-dir");
             else if (arg == "--calibration")
                 opts.calibration_cache = need_arg("--calibration");
             else if (arg == "--write-manifest")
@@ -740,6 +743,8 @@ int main(int argc, char** argv) {
                           int(!write_manifest.empty()) + int(publish_v2_live_room) +
                           int(!publish_v2_p1.empty());
         const bool plan_mode = !write_manifest.empty();
+        if (!plan_mode && !opts.run_dir.empty())
+            throw std::runtime_error("--run-dir in resolver mode is internal to --write-manifest");
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())

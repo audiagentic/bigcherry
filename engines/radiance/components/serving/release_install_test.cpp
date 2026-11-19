@@ -165,6 +165,8 @@ class Fixture {
         add("bigcherry-build-metadata-radiance.json", metadata);
         add("configs/flashnext.toml", "schema = 1\n");
         add("configs/qwen27b.toml", "schema = 1\n");
+        add("heat/flashnext-mixed.hot-first", "mixed production heat seed\n");
+        add("heat/perf51.rank0.hot-first", "baseline heat seed\n");
 
         if (fault == Fault::benchmark_catalog)
             add("radiance_home/kernels.rkb", "benchmark fixture");
@@ -272,6 +274,9 @@ void test_two_installs_and_rollback() {
     check(first["current"] == a.tag && first["previous"].is_null(), "first verified release not current");
     check(fs::is_regular_file(a.root / "releases" / a.tag / "configs/flashnext.toml"),
           "installed asset missing self-contained RSC12 config");
+    check(fs::is_regular_file(a.root / "releases" / a.tag / "heat/flashnext-mixed.hot-first") &&
+          fs::is_regular_file(a.root / "releases" / a.tag / "heat/perf51.rank0.hot-first"),
+          "installed asset missing verified heat seed closure");
     check(fs::is_regular_file(a.root / "releases" / a.tag / "radiance_home/bin/bc-release"),
           "installed asset missing native release tool");
     bc::release::install(b);
@@ -361,6 +366,10 @@ void test_tamper_refuses_rollback_without_switch() {
     const auto index = bc::release::read_json(a.root / "index.json");
     check(index["current"] == b.tag && index["previous"] == a.tag, "corrupt previous displaced active engine");
     refused(ErrorCode::digest_mismatch, [&] { bc::release::verify(a.root, a.sdk); });
+    // A different installed release's heat seed is as immutable as its
+    // engine and config: digest tampering must make verification fail closed.
+    write_file(b.root / "releases" / b.tag / "heat/flashnext-mixed.hot-first", "changed heat");
+    refused(ErrorCode::digest_mismatch, [&] { bc::release::verify(b.root, b.sdk); });
 }
 
 void test_refusal_matrix() {

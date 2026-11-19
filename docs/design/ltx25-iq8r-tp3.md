@@ -167,6 +167,10 @@ TP3 must be independently deliverable **without** the 6900 text worker.
 - **Transfer sizes:** 770,703,360 bytes is the **full Gemma intermediate stack** for two padded prompts, whereas 25,165,824 bytes is the **final connector context** for two prompts. The latter is possible only with connector placement and memory proof.
 - **Resource uncertainty:** a mock 6900 16 GiB minus 1 GiB reserve and 13 GiB weights is not evidence of fit. Require measured workspace and margin. No real GPU access without a lease.
 
+## Narrow next code implementation seam (verified against frozen candidate)
+
+Existing ABI already exports rad_weight_shard_span_parts (abi/rad_builder.h:553-572) and LinearFP8::span_parts (arch/common/rad_fp8.h:924-945), which slices the code and scale planes together. arch/gemma4/gemma4.cpp:866-890 demonstrates fused Q/K/V row-part spans. Do not add a second sharding ABI or manually slice IQ8R planes without proving the helper covers the rotated scale encoding. The LTX-specific owner must adapt arch/ltx2/ltx2.cpp Lin::declare (around 229-285) and attn_declare (around 1020-1115), retain the full metadata width for global Q/K norm, and use an opt-in guarded builder while TP1 remains unchanged. Source edits belong in a managed Radiance patch package, not a directly maintained upstream mirror.
+
 ## PR sequence and acceptance boundaries
 
 1. **Foundation:** this design plus isolated native card-free oracle and CI test. The oracle is not imported into production; no new LTX runtime flags, no weakening of TP1 refusal.
@@ -185,6 +189,7 @@ Each slice must undergo its CTests/patch tests, patch-lint/forbidden-terms, revi
 - tools/lab/radiance/ltx-tp3/ltx_tp3_reference.h and its C++ CTest cover: nonuniform 32-head maps, fused QKV bank source offsets, IQ8R 256-K boundaries, all-head normalization vs dense reference and a deliberately wrong local-RMS negative control, uniqueness/memory refusal for four mock cards, and both conditioning shapes.
 - tools/tests/lab/test_ltx_tp3_reference.py runs the native CMake test through the existing tooling tests; **Python is never in the engine**.
 - The second native CTest exercises guidance-specific per-rank collective schedule equality, STG block-28 and isolated-branch omissions, leader-only execution ownership, bias-once projection reduction, and a conditioning mailbox that refuses stale epochs, requests, mismatched shapes, replay, pending overwrite and cancellation. This is a test protocol, not a production GPU IPC mechanism.
+- The third native CTest simulates multirow self-attention and text cross-attention with all-head RMS, per-head softmax and gating, QKV bank ownership and row-parallel output across three asymmetric splits. Both alternatives agree within a strict f64 fixture tolerance. No RoPE, BF16 rounding, IQ8R codec or device kernel is exercised. Mock transfer/memory extents refuse overflowing arithmetic.
 - This reference neither changes production execution nor establishes actual IQ8R encoding-plane parity, GPU kernels, TP3 execution, 6900 memory fit, video/audio quality or end-to-end speed.
 
 ## Required Planning and Ledger handoff

@@ -107,8 +107,12 @@ class WorkloadsTest(unittest.TestCase):
                 run_folder="/tmp/2", kernel="k", power=base["power_state"])
             other = w.make_row("decode-1stream", cfg, {}, {}, base,
                                run_folder="/tmp/3", kernel="k", power={})
-            for row in (a, b, other):
-                w.append_index(path, row)
+            path.parent.mkdir(parents=True)
+            path.write_text("".join(
+                json.dumps(row) + "\n" for row in (a, b, other)
+            ))
+            with self.assertRaisesRegex(w.WorkloadError, "read-only"):
+                w.append_index(path, a)
             rows = w.read_index(path)
             self.assertEqual(len(rows), 3)
             lines = path.read_text().splitlines()
