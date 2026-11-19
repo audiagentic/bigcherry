@@ -763,7 +763,7 @@ def tooling_hygiene(root: Path) -> tuple[HygieneDiagnostic, ...]:
                 path.is_file()
                 and path.name != "README.md"
                 and not any(
-                    part in {"__pycache__", ".ruff_cache", "_template"}
+                    part in {"__pycache__", ".ruff_cache", "_template", "archive"}
                     or part.startswith(".")
                     for part in path.relative_to(lab_root).parts
                 )
