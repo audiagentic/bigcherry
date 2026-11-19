@@ -137,6 +137,29 @@ struct NativeEngineInputs {
 };
 std::optional<NativeEngineInputs> g_native_measuring;
 
+NativeEngineInputs native_engine_inputs(const v2::Spec& spec, const v2::NativeConfigView& snapshot) {
+    NativeEngineInputs admitted;
+    admitted.yaml_utf8.assign(snapshot.yaml_utf8);
+    admitted.sha256.assign(snapshot.identity.sha256);
+    admitted.resolution_root.assign(snapshot.identity.resolution_root);
+    admitted.model = spec.intent.model;
+    admitted.radiance_home = spec.processes.engine.runtime.radiance_home;
+    admitted.kernels = spec.processes.engine.runtime.kernels;
+    admitted.engine_bdfs = spec.processes.engine.device.gpus;
+    admitted.rank_devices = spec.processes.engine.device.rank_devices;
+    admitted.tp = spec.processes.engine.scheduler.tp;
+    admitted.port = spec.processes.engine.server.port;
+    admitted.max_context = spec.intent.service.max_context_tokens;
+    admitted.max_sequences = spec.intent.service.max_sessions;
+    admitted.host_pool_mib_per_rank = spec.resources.host.pool_mib;
+    return admitted;
+}
+
+bool complete_native_engine_inputs(const NativeEngineInputs& input) {
+    return input.tp > 0 && input.engine_bdfs.size() == static_cast<size_t>(input.tp) &&
+           input.max_context > 0 && input.max_sequences > 0 && input.host_pool_mib_per_rank >= 0;
+}
+
 bool fail(const std::string& why) {
     std::fprintf(stderr, "radiance: --manifest: %s\n", why.c_str());
     return false;
@@ -261,23 +284,8 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             return fail("v3 native measurement requires --plan-memory-ranks and no quality-run flags");
         const auto view = v2::native_config_view(manifest.value());
         if (!view) return fail("v3 measuring manifest has no admitted native YAML snapshot");
-        const auto& spec = manifest.value().spec;
-        NativeEngineInputs native;
-        native.yaml_utf8.assign(view->yaml_utf8);
-        native.sha256.assign(view->identity.sha256);
-        native.resolution_root.assign(view->identity.resolution_root);
-        native.model = spec.intent.model;
-        native.radiance_home = spec.processes.engine.runtime.radiance_home;
-        native.kernels = spec.processes.engine.runtime.kernels;
-        native.engine_bdfs = spec.processes.engine.device.gpus;
-        native.rank_devices = spec.processes.engine.device.rank_devices;
-        native.tp = spec.processes.engine.scheduler.tp;
-        native.port = spec.processes.engine.server.port;
-        native.max_context = spec.intent.service.max_context_tokens;
-        native.max_sequences = spec.intent.service.max_sessions;
-        native.host_pool_mib_per_rank = spec.resources.host.pool_mib;
-        if (native.engine_bdfs.size() != static_cast<size_t>(native.tp) || native.tp <= 0 ||
-            native.max_context <= 0 || native.max_sequences <= 0 || native.host_pool_mib_per_rank < 0)
+        auto native = native_engine_inputs(manifest.value().spec, *view);
+        if (!complete_native_engine_inputs(native))
             return fail("v3 measuring manifest has incomplete native engine admission inputs");
         g_native_measuring = std::move(native);
     }
@@ -506,23 +514,8 @@ int bc_serving_prepare_native_engine_config(const v2::Manifest* manifest, v2::Pl
         g_have_expected = false;
         g_engine_bdfs = manifest->spec.processes.engine.device.gpus;
     }
-    const auto& spec = manifest->spec;
-    NativeEngineInputs admitted;
-    admitted.yaml_utf8.assign(native_view->yaml_utf8);
-    admitted.sha256.assign(native_view->identity.sha256);
-    admitted.resolution_root.assign(native_view->identity.resolution_root);
-    admitted.model = spec.intent.model;
-    admitted.radiance_home = spec.processes.engine.runtime.radiance_home;
-    admitted.kernels = spec.processes.engine.runtime.kernels;
-    admitted.engine_bdfs = spec.processes.engine.device.gpus;
-    admitted.rank_devices = spec.processes.engine.device.rank_devices;
-    admitted.tp = spec.processes.engine.scheduler.tp;
-    admitted.port = spec.processes.engine.server.port;
-    admitted.max_context = spec.intent.service.max_context_tokens;
-    admitted.max_sequences = spec.intent.service.max_sessions;
-    admitted.host_pool_mib_per_rank = spec.resources.host.pool_mib;
-    if (admitted.engine_bdfs.size() != static_cast<size_t>(admitted.tp) || admitted.tp <= 0 ||
-        admitted.max_context <= 0 || admitted.max_sequences <= 0 || admitted.host_pool_mib_per_rank < 0)
+    const auto admitted = native_engine_inputs(manifest->spec, *native_view);
+    if (!complete_native_engine_inputs(admitted))
         return fail("native Config staging has incomplete engine admission inputs"), -1;
     return prepare_native_engine_config(admitted, out);
 }
