@@ -29,12 +29,18 @@ _BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up ex
 #include <string>
 #include <vector>
 
+namespace rad { struct Config; }
 namespace bc::serving::v2 { struct EnginePlan; }
 
 /* The argv radiance should parse. Without --manifest, argv is left unchanged and true is returned. With it, *argc
  * and *argv are replaced by a synthetic argv (storage lives for the process). On a malformed manifest or a stray
  * flag a message is printed to stderr and false is returned: the caller exits 2, as for any config error. */
 bool bc_serving_engine_argv(int* argc, char*** argv);
+
+/* After rad0011 takes the measuring flags and captures its MemAvailable baseline, prepare the
+ * single native Config from the strict v3 measuring snapshot. Returns 1 when prepared, 0 when
+ * this is not a native v3 measuring start, and -1 after a fail-closed diagnostic. */
+int bc_serving_take_native_measuring_config(rad::Config* out);
 
 /* After a successful parse: every option the manifest produced must be recorded in `given` as "command line" (an
  * option another option swallowed as its argument is not), else a message is printed and false is returned: the
@@ -64,6 +70,11 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include "manifest.h"
 #include "serving_types.h"
 #include "native_option_projection.h"
+#ifdef BC_RAD_NATIVE_FLEET_CONFIG
+#include "native_fleet_config.h"
+#include "fleet/fleet.h"
+#include <filesystem>
+#endif
 
 #include <nlohmann/json.hpp>
 
@@ -75,6 +86,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include <fstream>
 #include <iterator>
 #include <limits>
+#include <optional>
 #include <set>
 #include <string>
 #include <utility>
@@ -103,6 +115,22 @@ BcEngineSettings g_engine_settings{};
 std::string g_shm;
 std::string g_histogram;
 std::string g_heat_launch_nonce;
+struct NativeMeasuringInputs {
+    std::string yaml_utf8;
+    std::string sha256;
+    std::string resolution_root;
+    std::string model;
+    std::string radiance_home;
+    std::vector<std::string> kernels;
+    std::vector<std::string> engine_bdfs;
+    std::optional<std::vector<std::string>> rank_devices;
+    int64_t tp = 0;
+    int64_t port = 0;
+    int64_t max_context = 0;
+    int64_t max_sequences = 0;
+    int64_t host_pool_mib_per_rank = 0;
+};
+std::optional<NativeMeasuringInputs> g_native_measuring;
 
 bool fail(const std::string& why) {
     std::fprintf(stderr, "radiance: --manifest: %s\n", why.c_str());
@@ -119,6 +147,7 @@ bool bc_serving_manifest_host_pool_total(int64_t per_rank_mib, int64_t tp, int64
 }
 
 bool bc_serving_engine_argv(int* argc, char*** argv) {
+    g_native_measuring.reset();
     g_engine_bdfs.clear();
     g_have_expected = false;   /* each call starts from nothing: a start without --manifest holds no plan */
     g_engine_settings = BcEngineSettings{};
@@ -219,8 +248,40 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         g_have_expected = true;
     }
 
-    std::set<std::string> known;
-    for (const std::string& n : rad::diag::config_option_names()) known.insert(n);
+    const bool native_measuring = v2::kContractVersion == 3 && !plan_memory.empty();
+    if (v2::kContractVersion == 3 && !native_measuring)
+        return fail("v3 native serving and quality-run startup are not integrated in this candidate");
+    if (native_measuring) {
+        if (rank_out.empty() || !run_flags.empty())
+            return fail("v3 native measurement requires --plan-memory-ranks and no quality-run flags");
+        const auto view = v2::native_config_view(manifest.value());
+        if (!view) return fail("v3 measuring manifest has no admitted native YAML snapshot");
+        const auto& spec = manifest.value().spec;
+        NativeMeasuringInputs native;
+        native.yaml_utf8.assign(view->yaml_utf8);
+        native.sha256.assign(view->identity.sha256);
+        native.resolution_root.assign(view->identity.resolution_root);
+        native.model = spec.intent.model;
+        native.radiance_home = spec.processes.engine.runtime.radiance_home;
+        native.kernels = spec.processes.engine.runtime.kernels;
+        native.engine_bdfs = spec.processes.engine.device.gpus;
+        native.rank_devices = spec.processes.engine.device.rank_devices;
+        native.tp = spec.processes.engine.scheduler.tp;
+        native.port = spec.processes.engine.server.port;
+        native.max_context = spec.intent.service.max_context_tokens;
+        native.max_sequences = spec.intent.service.max_sessions;
+        native.host_pool_mib_per_rank = spec.resources.host.pool_mib;
+        if (native.engine_bdfs.size() != static_cast<size_t>(native.tp) || native.tp <= 0 ||
+            native.max_context <= 0 || native.max_sequences <= 0 || native.host_pool_mib_per_rank < 0)
+            return fail("v3 measuring manifest has incomplete native engine admission inputs");
+        g_native_measuring = std::move(native);
+    }
+
+    std::vector<std::pair<std::string, std::string>> flags;
+    std::vector<std::string> projected_argv;
+    if (!native_measuring) {
+      std::set<std::string> known;
+      for (const std::string& n : rad::diag::config_option_names()) known.insert(n);
 
     /* Every registry field bound to a radiance option, in registry order. A field the manifest leaves out is left to
      * radiance's own default. The argv shape follows the JSON type alone; a shape the option does not accept is left
@@ -229,9 +290,8 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     // Radiance option names. This narrow hook is replaced by RUM04's immutable
     // upstream runtime bundle; neither the manifest writer nor the engine
     // maintains an independent option-name map.
-    auto projected = v2::project_native_options(doc, v2::kFields, known);
-    if (!projected.error.empty()) return fail(projected.error);
-    auto& flags = projected.flags;
+      auto projected = v2::project_native_options(doc, v2::kFields, known);
+      if (!projected.error.empty()) return fail(projected.error);
 #ifdef BC_RAD_HOST_POOL_MIB_AGGREGATE
     /* The manifest records the admitted host-pool budget per rank, while Radiance 2.1's --host-pool-mib
      * parser accepts the aggregate and divides it by TP. Convert at this adapter boundary so config_parse
@@ -242,13 +302,15 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     int64_t host_pool_total = 0;
     if (!bc_serving_manifest_host_pool_total(host_pool_per_rank, tp, &host_pool_total))
         return fail("resources.host.pool_mib x engine.tp exceeds Radiance's signed MiB limit");
-    const auto host_pool_flag = std::find_if(flags.begin(), flags.end(), [](const auto& flag) {
+    const auto host_pool_flag = std::find_if(projected.flags.begin(), projected.flags.end(), [](const auto& flag) {
         return flag.first == "--host-pool-mib";
     });
-    if (host_pool_flag == flags.end()) return fail("resources.host.pool_mib has no --host-pool-mib projection");
+    if (host_pool_flag == projected.flags.end()) return fail("resources.host.pool_mib has no --host-pool-mib projection");
     host_pool_flag->second = std::to_string(host_pool_total);
 #endif
-    for (const char* required : {"--radiance-home", "--kernels"}) {
+      projected_argv = projected.argv();
+      flags = std::move(projected.flags);
+      for (const char* required : {"--radiance-home", "--kernels"}) {
         bool found = false;
         for (const auto& kv : flags)
             if (kv.first == required && !kv.second.empty()) found = true;
@@ -256,6 +318,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
             return fail(std::string(required) + " must be present and non-empty: it is required so that " +
                         (std::strcmp(required, "--kernels") == 0 ? "RADIANCE_KERNELS" : "RADIANCE_HOME") +
                         " cannot silently supply it");
+      }
     }
 
     g_store.clear();
@@ -275,8 +338,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     }
     g_emitted.clear();
     for (const auto& kv : flags) g_emitted.push_back(kv.first);
-    const auto native_argv = projected.argv();
-    g_store.insert(g_store.end(), native_argv.begin(), native_argv.end());
+    g_store.insert(g_store.end(), projected_argv.begin(), projected_argv.end());
     g_ptrs.clear();
     for (std::string& s : g_store) g_ptrs.push_back(&s[0]);
     g_ptrs.push_back(nullptr);
@@ -339,6 +401,78 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     const std::string digest = doc.at("metadata").at("content_digest").get<std::string>();   /* "sha256:<hex>" */
     g_label = "manifest " + digest.substr(digest.find(':') + 1, 12);
     return true;
+}
+
+int bc_serving_take_native_measuring_config(rad::Config* out) {
+    if (!g_native_measuring) return 0;
+    if (!out) {
+        fail("native measuring Config output is null");
+        return -1;
+    }
+#ifndef BC_RAD_NATIVE_FLEET_CONFIG
+    fail("this Radiance source has no native fleet parser for v3 measurement");
+    return -1;
+#else
+    namespace fs = std::filesystem;
+    const auto reject_unless = [](bool condition, const char* message) {
+        if (condition) return false;
+        std::fprintf(stderr, "radiance: --manifest: native measuring config: %s\n", message);
+        return true;
+    };
+    const auto canonical_under_root = [&](const std::string& value) {
+        fs::path path(value);
+        if (path.is_relative()) path = fs::path(g_native_measuring->resolution_root) / path;
+        std::error_code error;
+        const fs::path canonical = fs::weakly_canonical(path, error);
+        if (error) throw std::runtime_error("cannot resolve " + path.string());
+        return canonical;
+    };
+    try {
+        bc::serving::NativeConfigSnapshot snapshot = bc::serving::NativeConfigSnapshot::admitted(
+            g_native_measuring->yaml_utf8, g_native_measuring->sha256,
+            g_native_measuring->resolution_root);
+        bc::serving::NativeFleetConfig native = bc::serving::NativeFleetConfig::replay(std::move(snapshot));
+        const rad::fleet::FleetConfig& fleet = native.fleet();
+        if (fleet.models.size() != 1)
+            return fail("native measuring Config requires exactly one model"), -1;
+        rad::Config cfg = fleet.models.front().cfg;
+        std::vector<int> expected_cards;
+        expected_cards.reserve(g_native_measuring->engine_bdfs.size());
+        for (size_t i = 0; i < g_native_measuring->engine_bdfs.size(); ++i)
+            expected_cards.push_back(static_cast<int>(i));
+        if (reject_unless(fleet.cards == expected_cards, "YAML card ordinals differ from the selected rank order") ||
+            reject_unless(cfg.tp == g_native_measuring->tp, "YAML TP differs from the admitted engine TP") ||
+            reject_unless(cfg.host == "127.0.0.1", "only the managed loopback listener is supported") ||
+            reject_unless(cfg.port == g_native_measuring->port, "YAML listener port differs from the admitted port") ||
+            reject_unless(cfg.max_ctx == g_native_measuring->max_context,
+                    "YAML max-model-len differs from the admitted context limit") ||
+            reject_unless(cfg.max_seqs == g_native_measuring->max_sequences,
+                    "YAML max-num-seqs differs from the admitted session limit") ||
+            reject_unless(cfg.host_pool_mib == g_native_measuring->host_pool_mib_per_rank,
+                    "YAML host-pool-mib differs from the admitted per-rank pool") ||
+            reject_unless(cfg.kernel_hierarchy == g_native_measuring->kernels,
+                    "YAML kernel hierarchy differs from the admitted runtime kernels") ||
+            reject_unless(cfg.rank_devices == g_native_measuring->rank_devices.value_or(std::vector<std::string>{}),
+                    "YAML rank-devices differs from the admitted ordered BDF selection") ||
+            reject_unless(canonical_under_root(cfg.model) == canonical_under_root(g_native_measuring->model),
+                    "YAML model differs from the admitted local model") ||
+            reject_unless(canonical_under_root(cfg.radiance_home) == canonical_under_root(g_native_measuring->radiance_home),
+                    "YAML runtime home differs from the matched build") ||
+            reject_unless(!cfg.kld() && !cfg.calib() && !cfg.diagnose_mode() && !cfg.debug_graph,
+                    "offline quality, diagnose and debug-graph modes are not measuring roles"))
+            return -1;
+        // Fleet card ordinals describe the process-visible GPUs; rank_devices
+        // remains the native BDF list used by rad0016 when the layout requires it.
+        cfg.devices = fleet.cards;
+        if (fleet.log_set) rad::log_set_level(fleet.log);
+        *out = std::move(cfg);
+        g_native_measuring.reset();
+        return 1;
+    } catch (const std::exception& error) {
+        fail(std::string("native YAML replay failed: ") + error.what());
+        return -1;
+    }
+#endif
 }
 
 extern "C" int bc_serving_engine_settings(BcEngineSettings* out) {
@@ -409,6 +543,7 @@ if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
+  target_compile_definitions(rad_core PRIVATE BC_RAD_NATIVE_FLEET_CONFIG=1)
   get_filename_component(_bc_serving "${BC_SERVING_V2_CMAKE}" DIRECTORY)
   target_sources(rad_core PRIVATE "${_bc_serving}/native_fleet_config.cpp")
   target_include_directories(rad_core PUBLIC "${_bc_serving}")
@@ -542,9 +677,12 @@ PATCHES = (
             Edit(
                 id="bc-skip-native-cli-for-measured-manifest",
                 anchor=r"^    std::string path;$",
-                text="    rad::Config cfg;\n    if (argv == bc_original_argv) {\n",
+                text=("    rad::Config cfg;\n"
+                      "    const int bc_native_measuring = bc_serving_take_native_measuring_config(&cfg);\n"
+                      "    if (bc_native_measuring < 0) return 2;\n"
+                      "    if (bc_native_measuring == 0 && argv == bc_original_argv) {\n"),
                 mode="insert_before",
-                guard=r"if \(argv == bc_original_argv\)",
+                guard=r"bc_serving_take_native_measuring_config\(&cfg\)",
                 applies_if=r'#include "fleet/config\.h"',
                 expect_matches=1,
                 rationale="Managed admission already validated the input and extracted its launch flags.",
@@ -554,7 +692,7 @@ PATCHES = (
                 anchor=r"^    rad::Config cfg = std::move\(fleet\.models\[0\]\.cfg\);$",
                 text=(
                     "        cfg = std::move(fleet.models[0].cfg);\n"
-                    "    } else {\n"
+                    "    } else if (bc_native_measuring == 0) {\n"
                     "        if (rad::config_parse(argc, argv, &cfg) != RAD_OK ||\n"
                     "            !bc_serving_mark_given(&cfg.given)) return 2;\n"
                     "    }"

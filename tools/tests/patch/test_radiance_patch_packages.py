@@ -736,6 +736,12 @@ class TestServingManifestPatch(unittest.TestCase):
             marker = patched.index("char** const bc_original_argv = argv;")
             rewrite = patched.index("bc_serving_engine_argv(&argc, &argv)")
             self.assertIn('#include "native_fleet_config.h"', patched)
+            self.assertIn("bc_serving_take_native_measuring_config(&cfg)", patched)
+            take_config = patched.index("bc_serving_take_native_measuring_config(&cfg)")
+            parse = patched.index("rad::config_parse(argc, argv, &cfg)")
+            self.assertLess(rewrite, take_config)
+            self.assertLess(take_config, parse)
+            self.assertIn("bc_native_measuring == 0", patched[parse - 80:parse])
             self.assertLess(inspect, marker)
             self.assertLess(marker, rewrite)
         finally:
@@ -814,7 +820,9 @@ class TestServingManifestPatch(unittest.TestCase):
             # emitter exercised by the card-free C++ rename test.
             bridge = (root / "core" / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
             self.assertIn('v2::project_native_options(doc, v2::kFields, known)', bridge)
-            self.assertIn('const auto native_argv = projected.argv();', bridge)
+            self.assertIn("if (!native_measuring)", bridge)
+            self.assertIn("NativeFleetConfig::replay", bridge)
+            self.assertIn("bc_serving_take_native_measuring_config", bridge)
             core_cmake = (root / "core" / "CMakeLists.txt").read_text(encoding="utf-8")
             self.assertIn('if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")', core_cmake)
             self.assertIn("BC_RAD_HOST_POOL_MIB_AGGREGATE=1", core_cmake)

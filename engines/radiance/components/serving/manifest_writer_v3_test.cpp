@@ -173,7 +173,27 @@ int main(int argc, char** argv) {
         inputs.s10.calibration_records = Json::array();
         check_snapshot_required(inputs);
 
-        const std::string yaml = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny:\r\n    model: tiny.rad\r\n    mixed-step-target-ms: 17\r\n";
+        const Json& values = inputs.resolved.values;
+        const Json& engine_values = values.at("engine");
+        const int64_t tp = engine_values.at("tp").get<int64_t>();
+        const int64_t pool_total = inputs.resolved.typed.memory.host_pool_mib * tp;
+        std::string cards = "cards: [";
+        for (int64_t rank = 0; rank < tp; ++rank) {
+            if (rank) cards += ", ";
+            cards += std::to_string(rank);
+        }
+        cards += "]";
+        const std::string yaml =
+            "# café\r\nserver: {host: 127.0.0.1, port: " +
+            std::to_string(engine_values.at("port").get<int64_t>()) +
+            ", radiance-home: " + Json(runtime_home.string()).dump() +
+            ", kernels: " + Json(engine_values.at("kernels").get<std::string>()).dump() +
+            "}\r\n" + cards + "\r\nmodels:\r\n  tiny:\r\n    model: " + Json(model.string()).dump() +
+            "\r\n    tp: " + std::to_string(tp) +
+            "\r\n    max-num-seqs: " + std::to_string(inputs.resolved.typed.service.max_sessions) +
+            "\r\n    max-model-len: " + std::to_string(inputs.resolved.typed.service.max_context) +
+            "\r\n    host-pool-mib: " + std::to_string(pool_total) +
+            "\r\n    mixed-step-target-ms: 17\r\n";
         const fs::path authored = temporary.path / "fleet.yaml";
         {
             std::ofstream out(authored, std::ios::binary);
