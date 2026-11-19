@@ -33,6 +33,8 @@ This reads only the header and the two short strings. It checks magic, version, 
 
 When a sandbox permits the approved native binary, run the frozen-source `rad-info --meta`, `rad-info --recipe`, and targeted `rad-info --planes 'dit.blk.*.qkv.weight'` on the same file to inspect declared metadata and **actual** plane layout. `source/tools/rad_info.cpp` explicitly opens containers read-only, without loading plugins. At authoring time the remote shell's command allowlist denied `rad-info`; do not bypass that policy through a subprocess. These native inspections remain **not run**.
 
+**Further structural proof completed:** the actual IQ8R encoding planes were inspected with the approved development-only Python tool; 1,306 IQ8R entries passed exact codes/scale/secondary-scale extent and alignment checks. See docs/design/ltx25-iq8r-model-plane-evidence.md. No weight payload was decoded or GPU job run.
+
 ## Next evidence unlocked by local model availability
 
 1. Compare exact header and model metadata from `rad-info --meta` with the frozen LTX builder `arch/ltx2/ltx2.cpp`, including video/audio geometries, text layers, quantized linears and bias/gain dtypes.

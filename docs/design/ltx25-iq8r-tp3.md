@@ -16,6 +16,8 @@
 
 **2026-11-20 model availability:** the local IQ8R container is present and was checked with a bounded format-v2 header read (ltx2, 6,114 directory entries, 8,726 planes); see docs/design/ltx25-iq8r-model-preflight.md. This unlocks real-container CPU inspection but does not qualify any GPU path.
 
+**Actual model plane proof (2026-11-20):** a permitted, read-only development test verified shape/size/256-byte alignment of codes, U8 group scales and BF16 row scales for all 1,306 IQ8R entries in the local RAD2 container. See docs/design/ltx25-iq8r-model-plane-evidence.md. This does not establish decoded numerical or GPU execution correctness.
+
 ## Source-grounded findings
 
 - Upstream arch/ltx2/ltx2.cpp:3153–3166 explicitly refuses world_size > 1. At 3183–3199 it constructs the text geometry with world=1.

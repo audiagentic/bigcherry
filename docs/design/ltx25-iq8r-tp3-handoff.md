@@ -13,6 +13,7 @@
 - This handoff: docs/design/ltx25-iq8r-tp3-handoff.md
 - Lab README: tools/lab/radiance/ltx-tp3/README.md
 - Model preflight (real container verified read-only): docs/design/ltx25-iq8r-model-preflight.md; model test is opt-in and uses BC_LTX_IQ8R_MODEL; no container bytes committed.
+- Real IQ8R plane evidence: docs/design/ltx25-iq8r-model-plane-evidence.md; tools/tests/lab/test_ltx_iq8r_planes.py provides a CI fixture, a negative extent test, and permitted explicit-path verification of 1,306 actual IQ8R planes without running blocked rad-info.
 - Three native C++ CTests under tools/lab/radiance/ltx-tp3:
   1. ltx_tp3_reference_test.cpp — head ownership, fused QKV mapping, IQ8R K-boundary checks, dense global RMS, conservative four-card memory admission, two text-handoff sizes.
   2. ltx_tp3_protocol_test.cpp — deterministic guidance collective schedules, STG and isolated skip patterns, leader pass ownership, exactly-once output bias, epoch/shape/cancelled conditioning mailbox.
@@ -120,3 +121,7 @@ The protocol mock's ConditioningMailbox uses an in-memory FNV-1a checksum, no ac
 ## 9. Publication transport note (supersedes the potential conflict note above)
 
 The remote shell has no GitHub HTTPS credentials. The connected GitHub tool published the verified file tree using a new Git merge commit with the previous PR head and upstream main as parents. Thus local worktree HEAD and remote PR HEAD can have **different commit IDs and ancestry even when HEAD^{tree} is identical**. At resume, fetch both branches, inspect full commit/merge graphs, compare exact tree SHAs, and use normal no-force merge/ship procedures; never reset/rebase to make the two histories look identical. The remote PR was synchronized with upstream main after the earlier stale-branch observation. Its latest CI and draft status must be rechecked, not inferred from this note.
+
+### Tool-policy caveat for resumed tests
+
+The remote shell permits the pytest command but does not support a working-directory argument; attempting cd failed, and its jobs interface was denied. A broad lab run using an absolute test path from the shell default CWD failed only tools/tests/lab/test_flashnext_parity.py::ScriptTests::test_compare_needs_the_launch_records (107 passed, 2 skipped); its shell script sources tools/env/bigcherry-env.sh relative to the working directory and hides source failure output. This is **not** proof of an upstream code regression. The three native CTests, focused LTX pytest tests and 36 tooling/engine guards passed separately. A resumed agent should run the entire lab suite from the actual worktree CWD using an approved runner before merge.
