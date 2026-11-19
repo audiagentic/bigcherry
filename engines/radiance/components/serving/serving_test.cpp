@@ -47,6 +47,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <map>
 #include <regex>
@@ -63,6 +64,19 @@ using bc::serving::Json;
 using bc::serving::Options;
 using bc::serving::Resolved;
 Json g_session_manifest_template = Json::object();
+
+int select_free_port() {
+    const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    assert(sock >= 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
+    socklen_t len = sizeof addr;
+    assert(::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
+    ::close(sock);
+    return int(ntohs(addr.sin_port));
+}
 
 void write(const fs::path& path, const std::string& content) {
     fs::create_directories(path.parent_path());
@@ -3232,8 +3246,12 @@ void session_engine_plan(Fixture& t) {
     bc::test::write_rad(model, 0, 0, 128, 128, {});
     const fs::path home = t.root / "session-build" / "radiance_home";
     fs::create_directories(home);
-    const auto site = t.file("session-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                      "\"\nradiance_home = \"" + home.string() + "\"\n");
+    std::string site_text = "[engine]\nmodel = \"" + model.string() +
+                            "\"\nradiance_home = \"" + home.string() + "\"\n";
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+    site_text += "port = " + std::to_string(select_free_port()) + "\n";
+#endif
+    const auto site = t.file("session-site.toml", site_text);
     const fs::path run = t.root / "session-run";
     fs::create_directories(run);
     ss::EnginePlanInputs in;
@@ -3256,7 +3274,7 @@ void session_engine_plan(Fixture& t) {
 #ifndef BC_NATIVE_V3_SESSION_ONLY
     session_manifests = session_manifest_pair(session_resolved, session_facts);
 #endif
-    { // A private native admission request inspects and reconciles exact bytes, then stops before all v2-only side effects.
+    { // Private native admission inspects exact bytes before measurement; the v2 build refuses the v3 path.
         ss::EnginePlanInputs gated = in;
         const fs::path native_root = t.root / "native-admission-root";
         fs::create_directories(native_root);
@@ -3331,18 +3349,19 @@ void session_engine_plan(Fixture& t) {
             admitted_measurement_manifest_sha256 = bc::serving::sha256_hex(manifest_bytes);
             return bc::serving::v2::Status{};
         };
-        bool stopped_before_v2 = false;
+        bool admitted_expected_path = false;
         std::string native_gate_error;
         try {
-            (void)ss::plan_engine_only(gated, gated_run, admission_hooks);
+            const auto plan = ss::plan_engine_only(gated, gated_run, admission_hooks);
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+            admitted_expected_path = plan.native_launch && plan.pinned_manifest && plan.helpers.empty() &&
+                plan.execution_manifest() != plan.manifest;
+#endif
         } catch (const ss::PlanFailed& error) {
             native_gate_error = error.what();
-#ifdef BC_NATIVE_V3_SESSION_ONLY
-            stopped_before_v2 = std::string_view(error.what()).find("native v3 measured artifact verified") !=
-                                std::string_view::npos;
-#else
-            stopped_before_v2 = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
-                                std::string_view::npos;
+#ifndef BC_NATIVE_V3_SESSION_ONLY
+            admitted_expected_path = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
+                                     std::string_view::npos;
 #endif
         }
 #ifdef BC_NATIVE_V3_SESSION_ONLY
@@ -3395,15 +3414,134 @@ void session_engine_plan(Fixture& t) {
                 }
             }
         }
-        if (!(stopped_before_v2 && writer_calls == 0 && power_admitted && inspector_roles.size() == 4 &&
+        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 4 &&
               inspector_roles[0] == "native config inspector" &&
               inspector_roles[1] == "native v3 measuring draft writer" &&
               inspector_roles[2] == "native v3 measuring engine" &&
               inspector_roles[3] == "native v3 measured writer" && reaped.size() == 4 && owner_receipt_verified &&
               measured_artifact_verified && !fs::exists(native_yaml) && fs::exists(cache_tripwire)))
             throw std::runtime_error("native v3 session did not complete one owner-tracked measurement and measured "
-                                     "writer before its closed serving gate: " +
+                                     "writer with a sealed serving handoff: " +
                                      native_gate_error);
+
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        const fs::path owner_run = run / "native-serving-owner";
+        fs::create_directories(owner_run);
+        ss::EnginePlanInputs fresh = gated;
+        fresh.native_admission->runtime_overrides["TEST_NATIVE_EXPECT_FROZEN"] = "before";
+        assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
+        ss::Session owner;
+        owner.run_dir = owner_run;
+        owner.timing.health_timeout = std::chrono::seconds(6);
+        owner.timing.health_interval = std::chrono::milliseconds(30);
+        owner.timing.stop_grace = std::chrono::seconds(1);
+        owner.timing.poll = std::chrono::milliseconds(20);
+        owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
+            return ss::plan_engine_only(fresh, dir, hooks);
+        };
+        bool serving_power_verified = false;
+        bool cleared_children = false;
+        owner.power_hook.begin_manifest = [&](const fs::path& path, bc::serving::v2::PlanUse use) {
+            assert(use == bc::serving::v2::PlanUse::measuring);
+            assert(bc::serving::v2::load_manifest(path, use));
+            fs::remove(native_yaml);
+            return bc::serving::v2::Status{};
+        };
+        owner.power_hook.verify_serving = [&](const fs::path& path) {
+            const auto parsed = bc::serving::v2::load_manifest(path, bc::serving::v2::PlanUse::serving);
+            assert(parsed && parsed.value().spec.plan.engine_memory);
+            serving_power_verified = true;
+            return bc::serving::v2::Status{};
+        };
+        owner.power_hook.verified_exit = [&] { cleared_children = true; };
+        owner.power_hook.restore = [&] {
+            assert(cleared_children);
+            return bc::serving::v2::Status{};
+        };
+        owner.before_gpu_start = [&](const ss::EngineStart& plan) {
+            assert(serving_power_verified && plan.execution_manifest() != plan.manifest);
+            std::ofstream(plan.manifest, std::ios::trunc) << "{}\n";
+            assert(::setenv("TEST_NATIVE_FROZEN", "changed-after-admission", 1) == 0);
+            return bc::serving::v2::Status{};
+        };
+        bool serving_handoff_seen = false;
+        owner.runtime_guard = [&](const ss::EngineStart&, const fs::path& log) {
+            std::ifstream file(log);
+            const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            serving_handoff_seen = contents.find("native v3 serving snapshot, root and environment verified") !=
+                                   std::string::npos;
+            return bc::serving::v2::Status{};
+        };
+        auto stop_owner = std::async(std::launch::async, [&] {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+            while (std::chrono::steady_clock::now() < deadline) {
+                const auto record = ss::read_record(owner_run).value_or(Json::object());
+                const std::string state = record.value("state", std::string());
+                if (state == "failed" || state == "stopped") return false;
+                if (state == "running") {
+                    const auto reply = ss::control(owner_run, "stop", std::chrono::seconds(3));
+                    return reply && reply->value("ok", false);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
+            }
+            (void)ss::control(owner_run, "stop", std::chrono::seconds(3));
+            return false;
+        });
+        const int owner_result = ss::serve(owner);
+        const bool owner_stopped = stop_owner.get();
+        assert(::unsetenv("TEST_NATIVE_FROZEN") == 0);
+        const auto completed = ss::read_record(owner_run).value_or(Json::object());
+        if (!(owner_result == 0 && owner_stopped && serving_handoff_seen && cleared_children &&
+              completed.value("state", std::string()) == "stopped" && ss::alive_recorded(completed).empty()))
+            throw std::runtime_error("native v3 session did not complete sealed fresh serving and verified stop: " +
+                                     completed.dump());
+
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        const fs::path low_room_run = run / "native-low-room";
+        fs::create_directories(low_room_run);
+        const fs::path meminfo = t.root / "proc/meminfo";
+        std::ifstream prior_room_file(meminfo);
+        const std::string prior_room((std::istreambuf_iterator<char>(prior_room_file)), std::istreambuf_iterator<char>());
+        ss::Hooks low_room = admission_hooks;
+        pid_t measuring_child = -1;
+        int measured_children = 0;
+        low_room.started = [&](ss::ChildKind kind, const std::string&, pid_t pid, const fs::path&) {
+            if (kind == ss::ChildKind::measuring_engine) {
+                measuring_child = pid;
+                ++measured_children;
+            }
+        };
+        const auto& memory = session_resolved.values.at("memory");
+        const int64_t ranks = session_resolved.values.at("engine").at("tp").get<int64_t>();
+        const int64_t room_mib = memory.at("host_pool_mib").get<int64_t>() * ranks +
+            memory.at("host_kv_mib").get<int64_t>() + memory.at("host_reserve_mib").get<int64_t>();
+        std::string reduced_room = prior_room;
+        const size_t available = reduced_room.find("MemAvailable:");
+        assert(available != std::string::npos);
+        reduced_room.replace(available, reduced_room.find('\n', available) - available,
+                             "MemAvailable: " + std::to_string(room_mib * 1024) + " kB");
+        low_room.ended = [&](pid_t pid) {
+            if (pid == measuring_child)
+                write(meminfo, reduced_room);
+        };
+        std::string low_room_error;
+        try {
+            (void)ss::plan_engine_only(gated, low_room_run, low_room);
+        } catch (const ss::PlanFailed& error) {
+            low_room_error = error.what();
+        }
+        write(meminfo, prior_room);
+        const auto measured_attempts = low_room_run / "measurement-attempts";
+        const auto attempt = fs::is_directory(measured_attempts) ? fs::directory_iterator(measured_attempts)
+                                                                : fs::directory_iterator{};
+        if (measured_children != 1 ||
+            low_room_error.find("native v3 measured writer refused") == std::string::npos ||
+            low_room_error.find("host memory plan refused") == std::string::npos ||
+            low_room_error.find("MemAvailable (" + std::to_string(room_mib) + " MiB)") == std::string::npos ||
+            low_room_error.find("checkpoint floor") == std::string::npos ||
+            attempt == fs::directory_iterator{} ||
+            fs::exists(attempt->path() / "manifest-native-measured.json"))
+            throw std::runtime_error("native v3 post-measure admission did not refuse live host room: " + low_room_error);
 
         const fs::path home_alias = t.root / "native-runtime-home-link";
         const fs::path replacement_home = t.root / "native-runtime-home-identical";
@@ -3411,7 +3549,8 @@ void session_engine_plan(Fixture& t) {
         fs::create_directory_symlink(home, home_alias);
         const fs::path drift_site = t.file(
             "session-site-runtime-link.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" +
-                home_alias.string() + "\"\n");
+                home_alias.string() + "\"\nport = " +
+                std::to_string(session_resolved.values.at("engine").at("port").get<int>()) + "\n");
         const fs::path drift_yaml = native_root / "fleet-runtime-drift.yaml";
         std::ofstream(drift_yaml, std::ios::binary) << native_yaml_bytes;
         ss::EnginePlanInputs home_drift = gated;
@@ -3441,9 +3580,11 @@ void session_engine_plan(Fixture& t) {
             return bc::serving::v2::Status{};
         };
         bool runtime_home_drift_refused = false;
+        std::string runtime_home_drift_error;
         try {
             (void)ss::plan_engine_only(home_drift, drift_run, drift_hooks);
         } catch (const ss::PlanFailed& error) {
+            runtime_home_drift_error = error.what();
             runtime_home_drift_refused =
                 std::string_view(error.what()).find("runtime home changed during measurement") != std::string_view::npos;
         }
@@ -3459,9 +3600,9 @@ void session_engine_plan(Fixture& t) {
               !fs::exists(drift_attempt_dirs.front() / "plan-cache") &&
               !fs::exists(drift_attempt_dirs.front() / "manifest-native-measured.json")))
             throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
-                                     "publication");
+                                     "publication: " + runtime_home_drift_error);
 #else
-        if (!(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
+        if (!(admitted_expected_path && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
               inspector_roles[0] == "native config inspector" && reaped.size() == 1))
             throw std::runtime_error("native admission did not reach its expected fail-closed gate: " +
                                      native_gate_error);
@@ -4103,19 +4244,6 @@ void session_owner_real_planner_admission(Fixture& t) {
     bc::test::write_rad(model, 0, 0, 128, 128, {});
     const fs::path home = t.root / "owner-plan-home" / "radiance_home";
     fs::create_directories(home);
-    auto select_free_port = [] {
-        const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-        assert(sock >= 0);
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        assert(::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
-        socklen_t len = sizeof addr;
-        assert(::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
-        ::close(sock);
-        return int(ntohs(addr.sin_port));
-    };
-
     for (const std::string mode : {"miss", "hit", "partial"}) {
         const fs::path run = t.root / ("owner-plan-" + mode);
         fs::create_directories(run);

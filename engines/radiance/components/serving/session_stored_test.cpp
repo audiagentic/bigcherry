@@ -414,7 +414,7 @@ int main(int argc, char** argv) {
               "legacy stored replay must refuse an unsupported private native admission request");
         const fs::path direct_v3_path = pinned.tmp.root / "direct-native-v3.json";
         std::ofstream(direct_v3_path, std::ios::binary)
-            << R"({"api_version":"bigcherry/v3","metadata":{"contract_version":3}})";
+            << R"({"apiVersion":"bigcherry/v3","metadata":{"contract_version":3}})";
         ss::EnginePlanInputs direct_v3 = pinned.inputs;
         direct_v3.stored_manifest = direct_v3_path;
         bool direct_v3_refused = false;

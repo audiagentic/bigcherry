@@ -2403,8 +2403,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                              "admission, or GPU child startup");
 
         // This candidate owner path is deliberately engine-only and one-shot.
-        // Helper fleets, named-cache reuse, pool retries, serving startup and
-        // stored-index writes stay closed until their v3 identity chain exists.
+        // Helper fleets, named-cache reuse, pool retries and stored-index writes
+        // stay closed until their v3 identity chain exists.
         if (in.runner)
             throw PlanFailed("native v3 measuring admission requires the real sealed-fd manifest writer child");
         if (!processes.empty())
@@ -2566,7 +2566,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (final_writer.exit != 0)
             throw PlanFailed("native v3 measured writer refused its owner receipt (exit " +
                              std::to_string(final_writer.exit) + "): " + tail_text(final_writer.err));
-        const auto final_snapshot = pin_manifest_file(measured_manifest, v2::PlanUse::serving);
+        auto final_snapshot = pin_manifest_file(measured_manifest, v2::PlanUse::serving);
         const auto final_native = v2::native_config_view(final_snapshot.parsed);
         const auto& final_spec = final_snapshot.parsed.spec;
         if (!final_native || final_native->yaml_utf8 != snapshot.yaml_utf8() ||
@@ -2576,6 +2576,13 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (final_spec.intent.model != v.at("engine").at("model").get<std::string>() ||
             final_spec.processes.engine.device.gpus != selected_bdfs)
             throw PlanFailed("native v3 measured serving artifact changed the frozen model or ordered engine devices");
+        const auto& final_engine = final_spec.processes.engine;
+        if (final_spec.handoff || !final_spec.processes.helpers.empty() ||
+            native_inspection.listener_port != final_engine.server.port ||
+            native_inspection.max_context != final_spec.intent.service.max_context_tokens ||
+            native_inspection.max_sequences != final_spec.intent.service.max_sessions ||
+            native_inspection.kernels != final_engine.runtime.kernels)
+            throw PlanFailed("native v3 measured serving artifact differs from the admitted engine-only profile");
         const fs::path final_home = final_spec.processes.engine.runtime.radiance_home;
         if (fs::canonical(final_home) != frozen_runtime_home ||
             engine_identity(engine, frozen_runtime_home) != frozen_key.at("engine_build").get<std::string>())
@@ -2590,8 +2597,13 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             !final_spec.plan.resource_inputs ||
             final_spec.plan.resource_inputs->resident_other_bytes != decoded_ranks.resident_other_bytes)
             throw PlanFailed("native v3 measured serving artifact changed the owner plan or frozen model/build identities");
-        throw PlanFailed("native v3 measured artifact verified for owner attempt " + attempt_id +
-                         "; serving start, stored replay and index publication remain gated");
+        out.manifest = measured_manifest;
+        out.stored_sha256 = std::move(final_snapshot.sha256);
+        out.pinned_manifest = std::move(final_snapshot.pinned);
+        out.argv = {absolute_engine.string(), "--manifest", out.execution_manifest().string(), "--role", "engine"};
+        out.summary["plan_measurement_attempt"] = attempt_id;
+        out.summary["manifest_digest"] = final_snapshot.parsed.metadata.content_digest;
+        return out;
     }
 
     // RSC12 has no lab experiment static key: never replay a different experiment.
@@ -2981,7 +2993,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
         throw PlanFailed("replay: manifest must be an existing bounded regular file");
     const std::string bytes = read_file(stored);
     const Json source = Json::parse(bytes, nullptr, false);
-    if (source.is_object() && source.value("api_version", std::string()) == "bigcherry/v3")
+    if (const auto api = source.find("apiVersion"); api != source.end() && *api == "bigcherry/v3")
         throw PlanFailed("replay: native v3 stored manifests require fresh native admission; stored replay is "
                          "not available until the v3 owner/cache/replay chain is complete");
     const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);

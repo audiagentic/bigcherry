@@ -1,5 +1,6 @@
 #include "native_fleet_config.h"
 #include "bc_serving_manifest.h"
+#include "bc_plan_check.h"
 #include "bc_plan_memory.h"
 #include "v2/manifest.h"
 #include "serving_codec.h"
@@ -11,6 +12,10 @@
 #include <stdexcept>
 #include <string>
 #include <vector>
+
+#include <fcntl.h>
+#include <sys/mman.h>
+#include <unistd.h>
 
 #include "rad_abi.h"
 
@@ -40,15 +45,22 @@ void reject_wrong_use(const std::string& path, wire::PlanUse use) {
           "v3 reader accepted a manifest for the wrong plan role");
 }
 
-void reject_direct_v3_serving_start(const std::string& path) {
+bool serving_entry(const std::string& path, bool offline = false) {
     std::vector<std::string> storage = {"radiance", "--manifest", path, "--role", "engine"};
+    if (offline) storage.insert(storage.end(), {"--kld-out", "unused-kl.json"});
     std::vector<char*> argv;
     for (std::string& arg : storage) argv.push_back(arg.data());
     int argc = static_cast<int>(argv.size());
     argv.push_back(nullptr);
     char** raw_argv = argv.data();
-    check(!bc_serving_engine_argv(&argc, &raw_argv),
-          "direct engine startup accepted v3 serving while the owner start gate is closed");
+    if (!bc_serving_engine_argv(&argc, &raw_argv)) return false;
+    check(bc_plan_memory_take_flag(&argc, &raw_argv) == 0 && argc == 1,
+          "native serving left unexpected flags after rad0011 extraction");
+    return true;
+}
+
+void reject_direct_v3_serving_start(const std::string& path) {
+    check(!serving_entry(path), "direct engine startup accepted an unsealed v3 serving manifest");
 }
 
 void check_native_measuring_main(const std::string& path, const wire::Manifest& manifest) {
@@ -68,7 +80,7 @@ void check_native_measuring_main(const std::string& path, const wire::Manifest& 
           "rad0011 rejected the native measuring output flags");
     check(argc == 1, "native measuring argv retained flags that config_parse would consume");
     rad::Config cfg;
-    check(bc_serving_take_native_measuring_config(&cfg) == 1,
+    check(bc_serving_take_native_config(&cfg) == 1,
           "rad0009 did not replay the native Config after rad0011 captured its baseline");
     const auto& spec = manifest.spec;
     check(cfg.mixed_step_target_ms == 17 &&
@@ -86,20 +98,42 @@ void check_native_measuring_main(const std::string& path, const wire::Manifest& 
           "native measuring Config differs from the independent admitted engine settings");
 }
 
-void check_native_serving_stage(const std::string& path, const wire::Manifest& manifest) {
+void check_native_serving_main(const std::string& path, const wire::Manifest& manifest) {
     const auto native = wire::native_config_view(manifest);
     check(native.has_value(), "serving manifest has no native YAML view");
     std::filesystem::current_path(native->identity.resolution_root);
-    // The strict reader has already admitted this object. Destroy the mutable
-    // artifact path and prove staging consumes the retained admitted bytes.
+    std::ifstream authored(path, std::ios::binary);
+    const std::string bytes((std::istreambuf_iterator<char>(authored)), std::istreambuf_iterator<char>());
+    struct Descriptor {
+        int fd = ::memfd_create("v3-fixture", MFD_CLOEXEC | MFD_ALLOW_SEALING);
+        ~Descriptor() { if (fd >= 0) ::close(fd); }
+    } descriptor;
+    check(descriptor.fd >= 3 && !bytes.empty() &&
+              ::write(descriptor.fd, bytes.data(), bytes.size()) == static_cast<ssize_t>(bytes.size()),
+          "cannot prepare exact serving manifest bytes in the fixture descriptor");
+    const std::string sealed_path = "/proc/self/fd/" + std::to_string(descriptor.fd);
+    check(!serving_entry(sealed_path), "v3 serving accepted an unsealed inherited descriptor");
+    constexpr int seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+    check(::fcntl(descriptor.fd, F_ADD_SEALS, seals) == 0, "cannot seal the serving fixture descriptor");
+    check(!serving_entry(sealed_path, true), "sealed v3 serving manifest enabled offline quality flags");
+    // Replace the mutable artifact after sealing the exact admitted bytes.
     {
         std::ofstream changed(path, std::ios::binary | std::ios::trunc);
         check(static_cast<bool>(changed), "cannot mutate serving artifact path for replay fixture");
         changed << "{}\n";
     }
+    const auto root = std::filesystem::path(native->identity.resolution_root);
+    std::filesystem::current_path(root.parent_path());
+    rad::Config wrong_root;
+    wire::EnginePlan expected;
+    int64_t floor_ppm = 0;
+    check(serving_entry(sealed_path) && bc_serving_take_native_config(&wrong_root) < 0 &&
+              !bc_serving_expected_plan(&expected, &floor_ppm) && bc_serving_engine_bdfs().empty(),
+          "wrong-root native start retained measured plan or device admission");
+    std::filesystem::current_path(root);
     rad::Config cfg;
-    check(bc_serving_prepare_native_engine_config(&manifest, wire::PlanUse::serving, &cfg) == 1,
-          "real-engine staging hook did not prepare the measured serving Config");
+    check(serving_entry(sealed_path) && bc_serving_take_native_config(&cfg) == 1,
+          "real-engine entry did not prepare the sealed measured serving Config");
     const auto& spec = manifest.spec;
     check(cfg.mixed_step_target_ms == 17 &&
               cfg.given.at("--mixed-step-target-ms") == "models.tiny.mixed-step-target-ms",
@@ -113,21 +147,16 @@ void check_native_serving_stage(const std::string& path, const wire::Manifest& m
               cfg.max_ctx == spec.intent.service.max_context_tokens &&
               cfg.max_seqs == spec.intent.service.max_sessions &&
               cfg.host_pool_mib == spec.resources.host.pool_mib,
-          "staged serving Config differs from its independent measured manifest fields");
-    wire::EnginePlan expected;
-    int64_t floor_ppm = 0;
+          "serving Config differs from its independent measured manifest fields");
     check(bc_serving_expected_plan(&expected, &floor_ppm),
-          "serving Config staging did not retain the strict measured-plan admission");
+          "native serving did not retain the strict measured-plan admission");
+    check(bc_plan::mode() == bc_plan::Mode::check, "rad0011 did not arm live plan admission for native serving");
     const auto admitted_view = wire::engine_view(manifest);
     check(admitted_view.ok(), "serving fixture has no strict measured engine view");
     check(wire::encode(expected) == wire::encode(spec.plan.engine_memory->expected) &&
-              floor_ppm == admitted_view.value().kv_backing_floor_ppm,
-          "serving Config staging changed the measured engine plan or KV backing floor");
-    rad::Config wrong_role;
-    check(bc_serving_prepare_native_engine_config(&manifest, wire::PlanUse::measuring, &wrong_role) < 0,
-          "serving Config staging accepted the measuring role");
-    check(!bc_serving_expected_plan(&expected, &floor_ppm) && bc_serving_engine_bdfs().empty(),
-          "rejected native Config staging retained measured plan or device admission");
+              floor_ppm == admitted_view.value().kv_backing_floor_ppm &&
+              bc_serving_engine_bdfs() == spec.processes.engine.device.gpus,
+          "native serving changed the expected plan, KV floor, or ordered BDFs");
 }
 } // namespace
 
@@ -159,7 +188,7 @@ int main(int argc, char** argv) {
         reject_wrong_use(argv[1], wire::PlanUse::serving);
         reject_wrong_use(argv[2], wire::PlanUse::measuring);
         reject_direct_v3_serving_start(argv[2]);
-        check_native_serving_stage(argv[2], serving);
+        check_native_serving_main(argv[2], serving);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

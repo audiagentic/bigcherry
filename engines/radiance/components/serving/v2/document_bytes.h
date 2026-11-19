@@ -1,12 +1,41 @@
 #pragma once
 
+#include <cerrno>
 #include <cstddef>
 #include <cstdint>
+#include <stdexcept>
+#include <string>
 #include <string_view>
+
+#include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace bc::serving::v2 {
 
 inline constexpr size_t kMaxDocumentBytes = 16u * 1024u * 1024u;
+
+inline std::string read_sealed_document(int fd, std::string_view label) {
+    if (fd < 3) throw std::invalid_argument(std::string(label) + " must be greater than 2");
+    constexpr int required_seals = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+    const int seals = ::fcntl(fd, F_GET_SEALS);
+    if (seals < 0 || (seals & required_seals) != required_seals)
+        throw std::invalid_argument(std::string(label) + " must be a fully sealed memfd");
+    struct stat info {};
+    if (::fstat(fd, &info) != 0 || !S_ISREG(info.st_mode) || info.st_size <= 0 ||
+        static_cast<uintmax_t>(info.st_size) > kMaxDocumentBytes)
+        throw std::invalid_argument(std::string(label) + " must be a bounded regular file");
+    std::string bytes(static_cast<size_t>(info.st_size), '\0');
+    size_t offset = 0;
+    while (offset < bytes.size()) {
+        const ssize_t count = ::pread(fd, bytes.data() + offset, bytes.size() - offset,
+                                      static_cast<off_t>(offset));
+        if (count < 0 && errno == EINTR) continue;
+        if (count <= 0) throw std::runtime_error("could not read the complete " + std::string(label));
+        offset += static_cast<size_t>(count);
+    }
+    return bytes;
+}
 
 /* The offset of the first byte that is not well-formed UTF-8 (no overlongs, surrogates or code points past U+10FFFF),
  * or npos. */

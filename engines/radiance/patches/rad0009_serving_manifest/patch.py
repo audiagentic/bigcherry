@@ -37,15 +37,9 @@ namespace bc::serving::v2 { struct EnginePlan; struct Manifest; enum class PlanU
  * flag a message is printed to stderr and false is returned: the caller exits 2, as for any config error. */
 bool bc_serving_engine_argv(int* argc, char*** argv);
 
-/* After rad0011 takes the measuring flags and captures its MemAvailable baseline, prepare the
- * single native Config from the strict v3 measuring snapshot. Returns 1 when prepared, 0 when
- * this is not a native v3 measuring start, and -1 after a fail-closed diagnostic. */
-int bc_serving_take_native_measuring_config(rad::Config* out);
-
-/* Replay a strict-read v3 manifest into Radiance's native Config. This stages a serving Config
- * for owner validation only and does not authorize Engine::start(). */
-int bc_serving_prepare_native_engine_config(const bc::serving::v2::Manifest* manifest,
-                                             bc::serving::v2::PlanUse use, rad::Config* out);
+/* After rad0011 extracts launch flags, prepare the single native Config from the strict
+ * v3 snapshot. Returns 1 when prepared, 0 for other starts, and -1 on refusal. */
+int bc_serving_take_native_config(rad::Config* out);
 
 /* After a successful parse: every option the manifest produced must be recorded in `given` as "command line" (an
  * option another option swallowed as its argument is not), else a message is printed and false is returned: the
@@ -72,6 +66,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include "bc_serving_manifest.h"
 #include "bc_engine_settings.h"
 
+#include "document_bytes.h"
 #include "manifest.h"
 #include "serving_types.h"
 #include "native_option_projection.h"
@@ -84,6 +79,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <charconv>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -135,7 +131,7 @@ struct NativeEngineInputs {
     int64_t max_sequences = 0;
     int64_t host_pool_mib_per_rank = 0;
 };
-std::optional<NativeEngineInputs> g_native_measuring;
+std::optional<NativeEngineInputs> g_native_engine;
 
 NativeEngineInputs native_engine_inputs(const v2::Spec& spec, const v2::NativeConfigView& snapshot) {
     NativeEngineInputs admitted;
@@ -165,6 +161,18 @@ bool fail(const std::string& why) {
     return false;
 }
 
+std::string read_native_serving_manifest(std::string_view path) {
+    constexpr std::string_view prefix = "/proc/self/fd/";
+    if (path.substr(0, prefix.size()) != prefix)
+        throw std::invalid_argument("v3 serving requires an inherited sealed manifest descriptor");
+    path.remove_prefix(prefix.size());
+    int fd = -1;
+    const auto [end, err] = std::from_chars(path.data(), path.data() + path.size(), fd);
+    if (err != std::errc{} || end != path.data() + path.size())
+        throw std::invalid_argument("v3 serving manifest descriptor is invalid");
+    return v2::read_sealed_document(fd, "v3 serving manifest descriptor");
+}
+
 }  // namespace
 
 bool bc_serving_manifest_host_pool_total(int64_t per_rank_mib, int64_t tp, int64_t* total_mib) {
@@ -175,7 +183,7 @@ bool bc_serving_manifest_host_pool_total(int64_t per_rank_mib, int64_t tp, int64
 }
 
 bool bc_serving_engine_argv(int* argc, char*** argv) {
-    g_native_measuring.reset();
+    g_native_engine.reset();
     g_engine_bdfs.clear();
     g_have_expected = false;   /* each call starts from nothing: a start without --manifest holds no plan */
     g_engine_settings = BcEngineSettings{};
@@ -238,9 +246,22 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     if (!rank_out.empty() && plan_memory.empty()) return fail("--plan-memory-ranks requires --plan-memory");
     if (!heat_nonce.empty() && (!plan_memory.empty() || !rank_out.empty() || !run_flags.empty()))
         return fail("--bc-heat-launch-nonce is valid only for serving, not measurement or quality runs");
-    std::ifstream in(path, std::ios::binary);
-    if (!in) return fail("cannot read '" + path + "'");
-    const std::string text((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    const bool native = v2::kContractVersion == 3;
+    if (native && !run_flags.empty())
+        return fail("v3 native offline quality starts are not available");
+    std::string text;
+    if (native && plan_memory.empty()) {
+        if (role != "engine") return fail("v3 serving requires --role engine");
+        try {
+            text = read_native_serving_manifest(path);
+        } catch (const std::exception& error) {
+            return fail(error.what());
+        }
+    } else {
+        std::ifstream in(path, std::ios::binary);
+        if (!in) return fail("cannot read '" + path + "'");
+        text.assign(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+    }
     /* The shared strict reader: size, UTF-8, duplicate keys, integers, the contract identity, the content digest, the
      * generated structural decode, provenance and every semantic rule, with the same errors bc-serve gives. */
     const v2::Result<v2::Manifest> manifest =
@@ -255,6 +276,19 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         return fail("--bc-heat-launch-nonce requires an authenticated histogram publisher");
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
     if (doc.is_discarded()) return fail("'" + path + "' is not JSON");   /* unreachable after the strict reader */
+    if (native) {
+        if (!plan_memory.empty() && rank_out.empty())
+            return fail("v3 native measurement requires --plan-memory-ranks");
+        const auto& spec = manifest.value().spec;
+        if (plan_memory.empty() && (spec.handoff || !spec.processes.helpers.empty()))
+            return fail("v3 native serving currently admits engine-only layouts");
+        const auto view = v2::native_config_view(manifest.value());
+        if (!view) return fail("v3 manifest has no admitted native YAML snapshot");
+        auto admitted = native_engine_inputs(spec, *view);
+        if (!complete_native_engine_inputs(admitted))
+            return fail("v3 manifest has incomplete native engine admission inputs");
+        g_native_engine = std::move(admitted);
+    }
     g_have_expected = false;
     /* A quality run (the KL mode) scores the trunk's own rows and never serves: it holds no checkpoint slots and a smaller
      * static VRAM set, so the serving plan's admission check does not describe it and none is armed. */
@@ -276,23 +310,9 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         g_have_expected = true;
     }
 
-    const bool native_measuring = v2::kContractVersion == 3 && !plan_memory.empty();
-    if (v2::kContractVersion == 3 && !native_measuring)
-        return fail("v3 native serving and quality-run startup are not integrated in this candidate");
-    if (native_measuring) {
-        if (rank_out.empty() || !run_flags.empty())
-            return fail("v3 native measurement requires --plan-memory-ranks and no quality-run flags");
-        const auto view = v2::native_config_view(manifest.value());
-        if (!view) return fail("v3 measuring manifest has no admitted native YAML snapshot");
-        auto native = native_engine_inputs(manifest.value().spec, *view);
-        if (!complete_native_engine_inputs(native))
-            return fail("v3 measuring manifest has incomplete native engine admission inputs");
-        g_native_measuring = std::move(native);
-    }
-
     std::vector<std::pair<std::string, std::string>> flags;
     std::vector<std::string> projected_argv;
-    if (!native_measuring) {
+    if (!native) {
       std::set<std::string> known;
       for (const std::string& n : rad::diag::config_option_names()) known.insert(n);
 
@@ -483,43 +503,15 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
 }
 } // namespace
 
-int bc_serving_take_native_measuring_config(rad::Config* out) {
-    if (!g_native_measuring) return 0;
-    const int result = prepare_native_engine_config(*g_native_measuring, out);
-    if (result > 0) g_native_measuring.reset();
-    return result;
-}
-
-int bc_serving_prepare_native_engine_config(const v2::Manifest* manifest, v2::PlanUse use,
-                                             rad::Config* out) {
-    g_have_expected = false;
-    g_engine_bdfs.clear();
-    if (!manifest || !out) return fail("native Config staging requires a manifest and output"), -1;
-    if (use != v2::PlanUse::measuring && use != v2::PlanUse::serving)
-        return fail("native Config staging supports only measuring and serving roles"), -1;
-    const auto native_view = v2::native_config_view(*manifest);
-    if (!native_view) return fail("native Config staging requires an admitted v3 YAML snapshot"), -1;
-    const bool serving = use == v2::PlanUse::serving;
-    if (serving != manifest->spec.plan.engine_memory.has_value())
-        return fail("native Config staging role differs from strict manifest role"), -1;
-    const auto admitted = native_engine_inputs(manifest->spec, *native_view);
-    if (!complete_native_engine_inputs(admitted))
-        return fail("native Config staging has incomplete engine admission inputs"), -1;
-    if (prepare_native_engine_config(admitted, out) < 0) return -1;
-    if (serving) {
-        const auto view = v2::engine_view(*manifest);
-        if (!view.ok()) {
-            std::fputs(v2::render_human("radiance", view.error()).c_str(), stderr);
-            return -1;
-        }
-        g_expected = view.value().memory.expected;
-        g_engine_bdfs = view.value().engine.device.gpus;
-        g_floor_ppm = view.value().kv_backing_floor_ppm;
-        g_have_expected = true;
-    } else {
-        g_engine_bdfs = manifest->spec.processes.engine.device.gpus;
+int bc_serving_take_native_config(rad::Config* out) {
+    if (!g_native_engine) return 0;
+    const int result = prepare_native_engine_config(*g_native_engine, out);
+    g_native_engine.reset();
+    if (result < 0) {
+        g_have_expected = false;
+        g_engine_bdfs.clear();
     }
-    return 1;
+    return result;
 }
 
 extern "C" int bc_serving_engine_settings(BcEngineSettings* out) {
@@ -725,11 +717,11 @@ PATCHES = (
                 id="bc-skip-native-cli-for-measured-manifest",
                 anchor=r"^    std::string path;$",
                 text=("    rad::Config cfg;\n"
-                      "    const int bc_native_measuring = bc_serving_take_native_measuring_config(&cfg);\n"
-                      "    if (bc_native_measuring < 0) return 2;\n"
-                      "    if (bc_native_measuring == 0 && argv == bc_original_argv) {\n"),
+                      "    const int bc_native_config = bc_serving_take_native_config(&cfg);\n"
+                      "    if (bc_native_config < 0) return 2;\n"
+                      "    if (bc_native_config == 0 && argv == bc_original_argv) {\n"),
                 mode="insert_before",
-                guard=r"bc_serving_take_native_measuring_config\(&cfg\)",
+                guard=r"bc_serving_take_native_config\(&cfg\)",
                 applies_if=r'#include "fleet/config\.h"',
                 expect_matches=1,
                 rationale="Managed admission already validated the input and extracted its launch flags.",
@@ -739,7 +731,7 @@ PATCHES = (
                 anchor=r"^    rad::Config cfg = std::move\(fleet\.models\[0\]\.cfg\);$",
                 text=(
                     "        cfg = std::move(fleet.models[0].cfg);\n"
-                    "    } else if (bc_native_measuring == 0) {\n"
+                    "    } else if (bc_native_config == 0) {\n"
                     "        if (rad::config_parse(argc, argv, &cfg) != RAD_OK ||\n"
                     "            !bc_serving_mark_given(&cfg.given)) return 2;\n"
                     "    }"

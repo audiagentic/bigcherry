@@ -217,9 +217,25 @@ int main(int argc, char** argv) {
         if (parsed.is_object() && !parsed.contains("spec")) {
             m = parsed;
         } else if (parsed.is_object() && parsed.contains("spec")) {
-            // The actual owner replay path consumes a strict v2 file. This
-            // card-free engine reads ONLY its fixture port and mailbox.
+            // The card-free engine uses the manifest's fixture port and mailbox.
             const auto& spec = parsed.at("spec");
+            if (parsed.value("apiVersion", std::string()) == "bigcherry/v3") {
+                const auto& native = spec.at("native_config");
+                const char* expected_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
+                const char* expected_frozen = std::getenv("TEST_NATIVE_EXPECT_FROZEN");
+                const char* frozen = std::getenv("TEST_NATIVE_FROZEN");
+                const bool measuring = !arg_after(argc, argv, "--plan-memory").empty();
+                if (manifest.rfind("/proc/self/fd/", 0) != 0 ||
+                    std::filesystem::current_path() != native.at("resolution_root").get<std::string>() ||
+                    (expected_yaml && native.at("yaml_utf8") != expected_yaml) ||
+                    (expected_frozen && (!frozen || std::strcmp(frozen, expected_frozen) != 0)) ||
+                    spec.at("plan").contains("engine_memory") == measuring) {
+                    std::fprintf(stderr, "fake engine: v3 manifest, execution root, environment or role mismatch\n");
+                    return 9;
+                }
+                std::printf("fake engine: native v3 %s snapshot, root and environment verified\n",
+                            measuring ? "measuring" : "serving");
+            }
             m["port"] = spec.at("processes").at("engine").at("server").at("port");
             m["engine_cards"] = spec.at("processes").at("engine").at("device").at("gpus");
             m["host_pool_mib"] = spec.at("resources").at("host").at("pool_mib");
