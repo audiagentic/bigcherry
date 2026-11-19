@@ -67,6 +67,8 @@ Prerequisite RUM09. Priority P3 deliberately excludes this from minimum bump del
 
 Astra source review ASTRA-CONSOLIDATION.md: optional after RUM09; engine/helper cards stay disjoint initially. Hot reload, shared resource accounting and cross-engine qualification are deferred capabilities, not initial bump gates.
 
+The current managed owner starts one engine. Its upstream-parsed configuration now rejects non-default lifecycle fields reserved for Fleet, including fleet budgets, parking, TTL and aliases; ordinary model settings retain upstream provenance. Exact 2.2 CPU parser test passed. After RUM09, the minimum positive fleet case is two named models on fixed, disjoint engine and helper BDFs with aggregate host/pin room, independent sealed settings/owner maps/transports and per-engine collective identities. Verify concurrent starts, live ownership, drain and group/rank reuse on leased cards before enabling it.
+
 ## Change Log
 
 - 2026-11-18T01:28:59.863720+00:00 (created-by): Created by codex
@@ -76,3 +78,4 @@ Astra source review ASTRA-CONSOLIDATION.md: optional after RUM09; engine/helper 
 - 2026-11-18T02:20:26.900308+00:00 (updated-by): Updated: section:code_samples, section:notes
 - 2026-11-18T02:24:22.080593+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:27:21.643448+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T23:16:11.862203+00:00 (updated-by): Updated: section:notes

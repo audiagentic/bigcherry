@@ -35,9 +35,32 @@ NativeFleetConfig::NativeFleetConfig(NativeConfigSnapshot snapshot, const std::s
         throw std::invalid_argument("managed native fleet YAML requires exactly one model");
     if (const std::string unsupported = rad::fleet::unsupported(fleet_); !unsupported.empty())
         throw std::invalid_argument("Radiance build does not support managed fleet settings: " + unsupported);
+    // Managed manifests construct one Engine from the model Config. These
+    // settings have no effect without the upstream Fleet lifecycle.
+    const auto& model = fleet_.models.front();
+    const rad::fleet::FleetConfig defaults;
+    const std::pair<bool, const char*> fleet_only[] = {
+        {fleet_.host_mib != defaults.host_mib, "memory.host-mib"},
+        {fleet_.disk_tier != defaults.disk_tier, "memory.disk-tier"},
+        {fleet_.load_timeout_ms != defaults.load_timeout_ms, "scheduler.load-timeout"},
+        {fleet_.drain_timeout_ms != defaults.drain_timeout_ms, "scheduler.drain-timeout"},
+        {fleet_.keepalive_ms != defaults.keepalive_ms, "scheduler.keepalive"},
+        {fleet_.stuck_exit_ms != defaults.stuck_exit_ms, "scheduler.stuck-exit"},
+        {fleet_.warm_up != defaults.warm_up, "scheduler.warm-up"},
+        {!model.aliases.empty(), "aliases"},
+        {model.priority != 0, "priority"},
+        {model.pin, "pin"},
+        {model.ttl_ms != 0, "ttl"},
+        {model.flex != rad::fleet::FlexSpec{}, "flex"},
+        {model.park != rad::fleet::ParkSpec{}, "park"},
+    };
+    for (const auto& [configured, option] : fleet_only)
+        if (configured)
+            throw std::invalid_argument(std::string("managed single-engine YAML cannot apply fleet-only setting: ") +
+                                        option);
     // Native provenance includes inherited and aliased server options. Checking
     // the option, not its resolved value, also permits environment references.
-    if (fleet_.models.front().cfg.given.contains("--api-key"))
+    if (model.cfg.given.contains("--api-key"))
         throw std::invalid_argument("managed native fleet YAML requires server.api-key-env for credentials");
 }
 

@@ -169,6 +169,24 @@ int main() {
     invalid(original + "    port: 8123\n", "Radiance refused");
     invalid(original + "  second: {model: other.rad}\n", "exactly one model");
     invalid(original + "    park: {vram: statics}\n", "does not support managed fleet settings");
+    invalid("memory: {host-mib: 65536}\n" + original, "fleet-only setting: memory.host-mib");
+    invalid("memory: {disk-tier: local-cache}\n" + original, "fleet-only setting: memory.disk-tier");
+    invalid("scheduler: {load-timeout: 10s}\n" + original, "fleet-only setting: scheduler.load-timeout");
+    invalid("scheduler: {drain-timeout: 10s}\n" + original, "fleet-only setting: scheduler.drain-timeout");
+    invalid("scheduler: {keepalive: 5s}\n" + original, "fleet-only setting: scheduler.keepalive");
+    invalid("scheduler: {stuck-exit: 0s}\n" + original, "fleet-only setting: scheduler.stuck-exit");
+    invalid("scheduler: {warm-up: false}\n" + original, "fleet-only setting: scheduler.warm-up");
+    invalid(original + "    aliases: [tiny-alias]\n", "fleet-only setting: aliases");
+    invalid(original + "    priority: 1\n", "fleet-only setting: priority");
+    invalid(original + "    pin: true\n", "fleet-only setting: pin");
+    invalid("defaults: {ttl: 30s}\n" + original, "fleet-only setting: ttl");
+    invalid(original + "    flex: {kv: {max-tokens: 8192}}\n", "fleet-only setting: flex");
+    invalid(original + "    park: {ram: required}\n", "fleet-only setting: park");
+    const auto defaults_replay = NativeFleetConfig::replay(NativeConfigSnapshot::from_manifest(config_field(
+        "memory: {gpu-headroom-mib: 512}\nscheduler: {warm-up: true}\n" +
+        original + "    park: {ram: allowed}\n    pin: false\n")));
+    check(defaults_replay.fleet().models.front().cfg.given.at("--gpu-headroom-mib") == "memory.gpu-headroom-mib",
+          "managed admission lost ordinary engine memory settings");
     invalid("x-server: &auth {api-key: fixture-key}\nserver: {<<: *auth}\n" + original, "api-key-env");
     invalid(original + std::string("#\xff", 2), "UTF-8");
     invalid(original + std::string(1, '\0'), "embedded NUL");

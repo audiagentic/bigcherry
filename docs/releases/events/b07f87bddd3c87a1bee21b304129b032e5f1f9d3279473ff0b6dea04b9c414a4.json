@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_231559_managed-starts-report-unsuppor_7111",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM10"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reject non-default fleet-only lifecycle options for the one-engine managed native manifest while retaining upstream Config values and provenance. Pinned Radiance 2.2 host parser fixture passed.",
+  "timestamp-utc": "2026-11-19T23:15:59.032666Z",
+  "user-summary-candidate": "Managed starts report unsupported fleet lifecycle settings before loading the engine."
+}
