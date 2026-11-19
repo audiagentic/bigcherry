@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, load_patch_files, patched_pinned_source, recipe
+from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PACKAGE = "rad0049_qwen4exp_e4m3_kv"
@@ -22,13 +22,11 @@ PREFIX = "rad0036_prefill_governor"
 
 
 class Qwen4expNativeFp8Tests(unittest.TestCase):
-    def test_candidate_depends_on_abi44(self):
+    def test_promoted_package_depends_on_abi44(self):
         composition = patchset.expand_composition("radiance", (PACKAGE,), directory=PATCHES)
         resolved = patchset.resolve_exact("radiance", composition.expanded, directory=PATCHES)
         self.assertEqual([patch.patch_id for patch in resolved.modules[-2:]], [ABI44, PACKAGE])
-        self.assertEqual(resolved.modules[-1].state, "untested")
-        for patch_set in recipe()["patch-set"].values():
-            self.assertNotIn(PACKAGE, patch_set["patches"])
+        assert_promoted_recipe(self, ABI44, PACKAGE)
 
     def test_exact_candidate_replay_and_registry_at_both_geometries(self):
         checkout = radiance_checkout()

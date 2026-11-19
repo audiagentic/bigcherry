@@ -2,7 +2,7 @@
 id: RUM09
 order: 9
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-18T01:28:48.655352+00:00'
 breadth: ''
 skill: advanced
@@ -19,13 +19,14 @@ Run only the matrix needed for the changed production configuration: composition
 
 ## Steps
 
-- Freeze one release candidate with exact upstream/local patch, component, SDK, model, power/layout and native/extension configuration identities. For the old-pin control, use the current-main policy-off baseline only as workload/input reference; it does not qualify the candidate. Use the same explicit defaults on both arms.
-- Gate A: run canonical dependency-resolved patch composition against the candidate, then one build/SDK/component pass for the actual selected production target. Reuse the build to inspect every packaged plugin's ABI version and exported layout against libr4d; run only touched component unit targets. Do not repeat the full build after documentation-only changes.
-- Gate B: one card-free named fresh-start -> measurement -> stored replay -> stop path using identical sealed native YAML bytes/digest/root and explicit ordered `Config.devices`. Check stale build, changed digest/root/topology, wrong-level native key and fresh-room refusal before any child/power mutation. Keep this gate on the fake fixture.
-- Gate C: acquire the GPU lease. First activation is the documented helper-on TP1 `flashnext-4gpu` lane with disjoint heterogeneous helper cards and the exact E4M3 format, fixed MTP depth and policy settings in the handoff. Run the helper-off `flashnext-r9700` arm only as a functional/KL quality control. Check admission/stop and one bounded helper-death/drain fixture. Do not require a mixed-engine-rank canary for this TP1-only release. If any TP2/TP3 or custom mixed-rank profile is included in the actual runtime roster, that profile must pass its own rank-order/code-object/collective and activation gate before packaging.
-- Gate D: run the existing short quality sample and thresholds, then three interleaved old/new performance pairs on the same helper-on TP1 deployment, prompts, contexts, weights, topology, speculation, interleave, heat and power. Use current policy-off comparison inputs. Repeat only to resolve a failure or material noise.
-- Gate E: make the actual runtime bundle enforce the candidate roster and mode allowlist. Install and relocate it through existing RSP01 checks; verify exactly the qualified config names/formats are shipped, plugin ABI generation is uniform, and health/start/stop work. The current packer requires both shipped TOML profiles, so add an explicit roster input and migrate its callers/tests together before claiming unqualified profiles withheld.
-- Only after Gates A-E pass, update recipes pin/version, all six component built-against declarations, native config metadata and package roster together. Record exactly supported names/modes; keep old release artifacts available for rollback. Never silently include an unqualified profile.
+- Freeze the exact release candidate source/build/model/config identities and explicit defaults. Retain the previous verified release artifact for rollback.
+- Gate A: run canonical production composition resolution and ordered apply/reapply, one same-SDK build, plugin ABI/layout inspection, and focused host/component tests for the selected targets. Reuse the build; do not repeat it for documentation-only edits.
+- After Gate A and RUM07's feature migration gates pass, update the candidate recipe pin/version, all six component built-against declarations, native config metadata, and package roster together. Promote every retained, historically tested BigCherry feature to the bumped production composition. Record historical behavior evidence as carried forward and new-base compatibility evidence separately. This source promotion does not mean the runtime/release gates below have passed.
+- Gate B: one card-free named fresh-start -> measurement -> stored replay -> stop path using identical sealed native YAML bytes/digest/root and explicit ordered Config.devices. Check stale build, changed digest/root/topology, wrong-level native key and fresh-room refusal before any child/power mutation. Keep this gate on the fake fixture.
+- Gate C: acquire the GPU lease. Run the documented helper-on TP1 canary with the exact E4M3 format and fixed MTP/policy settings, plus the helper-off quality control. Check admission/stop and one bounded helper-death/drain fixture. Qualify any mixed-rank profile only if it is included in the candidate runtime roster.
+- Gate D: run the existing short quality sample and thresholds, then three interleaved old/new performance pairs on the same helper-on deployment. Repeat only to resolve a failure or material noise. This remains the final regression/performance gate requested by the user.
+- Gate E: enforce the actual runtime bundle roster and mode allowlist, then install/relocate through existing checks and verify the qualified profiles, uniform plugin ABI, health/start/stop.
+- Publish only after Gates B-E pass, the ledger is synchronized, and required CI succeeds. Do not describe source/package promotion as runtime qualification or as completion of the whole release item.
 
 ## Detailed Solution & Technical Design
 
@@ -65,7 +66,11 @@ Source evidence and removal conditions: docs/reviews/radiance-upstream-2026-11-1
 
 ## Validation
 
-Run each gate once on the frozen candidate and exact runtime roster. Re-run only when a code/config input consumed by that gate changes or its result is unresolved. Required evidence is: canonical patch report; matched SDK build, plugin ABI/layout and component tests; fake immutable-config round trip and refusal checks; leased TP1 helper-on activation plus helper-off quality arm; current quality threshold result; three paired same-topology performance comparisons; and installed/relocated Python-free package inventory. No full model-family, quantization or long-soak sweep for a TP1-only release. A mixed-rank profile in the actual candidate roster adds its specific compatibility and activation gate.
+- Gate A and RUM07 migration evidence: exact production closure resolves to validated states; all retained cache packages apply and reapply byte-identically on the frozen 2.1.0 source; focused host format/runtime/geometry/prefill tests, selected target object builds, complete component build, ABI44 checks, and serving/libr3 component tests pass.
+- Reuse historical BigCherry device, codec, KLD, serving and performance evidence for behavior already established on the old base. Record new-base port checks as compatibility evidence, not as a claim that old behavior was untested.
+- Latest-main additions are covered by focused stored-manifest and runtime-receipt tests and parity harness tests.
+- Gates B-E remain required for runtime/release completion: immutable-config lifecycle and refusals, leased hardware activation, short quality gate, paired regression/performance comparison, and installed/relocated runtime roster.
+- Run each gate once on the frozen candidate. Re-run only if an input changes or a result is unresolved. No broad model-family or long-soak sweep.
 
 ## Effort & Risk
 
@@ -91,6 +96,8 @@ Stage Gate C: first run the TP1 Flash-Next production canary with disjoint heter
 
 RV4240: original Gate C required a helper-on mixed-TP canary despite the selected first lane being TP1; packer profile allowlist also needed enforcement. The corrected sequence qualifies the named TP1 lane first and makes mixed-rank proof conditional on inclusion in the candidate roster. RUM09 still owns release execution. The current runtime asset packer must be changed before claiming other names are withheld. Policy-off baseline file is an old-pin workload reference, not candidate evidence. See docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md and docs/evidence/radiance-latest-bump/README.md.
 
+User direction (2026-11-19): migrate all retained, historically tested BigCherry features onto the new Radiance base and include them in the production recipe. After Gate A and RUM07's exact compatibility gates pass, update the candidate pin and promote the packages together; do not leave them candidate-only while waiting for the final paired performance comparison. The final RUM09 deployment/runtime qualification and performance comparison remain pending and must gate release/publish. The latest origin/main commits through 31bd5b9e9 are merged into the task branch; their stored-manifest replay, boot-placement receipt, and parity warmup changes are part of the candidate.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -108,3 +115,6 @@ RV4240: original Gate C required a helper-on mixed-TP canary despite the selecte
 - 2026-11-19T03:00:58.377857+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
 - RV4243
 - 2026-11-19T04:28:00.455200+00:00 (updated-by): Updated: section:description
+- RV4245
+- 2026-11-19T07:30:08.804115+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
+- 2026-11-19T07:35:45.850777+00:00 (state-transition): State: pending → in_progress

@@ -1,6 +1,6 @@
 # rad0054_attn_prefill_fp8
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RUM07
 
 Scope: Restore independent E4M3 prefill precision modes for historical rows.
@@ -11,4 +11,4 @@ The patch restores off, QK, PV and combined prefill modes on the supported Qwen3
 
 ## Outcome
 
-The old-base behavior is covered by the retained BigCherry evidence. ABI44 attachment checks and the final production validation remain part of RUM07/RUM09 before this package enters the bumped production recipe.
+The retained behavior was tested on the old Radiance base and its historical device, codec, KLD, serving, and performance evidence remains authoritative for those semantics. On Radiance 2.1.0, this port passed ordered exact apply/reapply, focused host and architecture fixtures, selected object builds, the complete component build, ABI44 plugin checks, and the serving/libr3 component suites. This validated migration is included in the production recipe. The final paired deployment quality/performance gate remains RUM09.

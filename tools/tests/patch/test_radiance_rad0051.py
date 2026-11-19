@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, load_patch_files, patched_pinned_source, recipe
+from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PACKAGE = "rad0051_b16_kv_kernels"
@@ -53,13 +53,11 @@ int main() {
 
 
 class Qwen4expB16Tests(unittest.TestCase):
-    def test_candidate_requires_both_composition_prerequisites(self):
+    def test_promoted_package_requires_both_composition_prerequisites(self):
         expanded = patchset.expand_composition("radiance", (PACKAGE,), directory=PATCHES)
         resolved = patchset.resolve_exact("radiance", expanded.expanded, directory=PATCHES)
         self.assertEqual([module.patch_id for module in resolved.modules[-4:]], [*PREREQUISITES, PACKAGE])
-        self.assertEqual(resolved.modules[-1].state, "untested")
-        for patch_set in recipe()["patch-set"].values():
-            self.assertNotIn(PACKAGE, patch_set["patches"])
+        assert_promoted_recipe(self, *PREREQUISITES, PACKAGE)
 
     def test_exact_candidate_apply_and_selected_rows(self):
         checkout = radiance_checkout()

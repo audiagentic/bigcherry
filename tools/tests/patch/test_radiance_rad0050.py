@@ -16,7 +16,7 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import CANDIDATE_COMMIT, PATCHES, load_patch_files, recipe
+from _vtp_promotion_support import CANDIDATE_COMMIT, PATCHES, assert_promoted_recipe, load_patch_files
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PACKAGE = "rad0050_b16_kv_runtime_contract"
@@ -31,10 +31,9 @@ def candidate_modules() -> list[str]:
 
 
 class B16RuntimeContractTests(unittest.TestCase):
-    def test_candidate_only_dependency(self):
+    def test_promoted_dependency(self):
         self.assertEqual(candidate_modules()[-2:], [ABI44, PACKAGE])
-        for patch_set in recipe()["patch-set"].values():
-            self.assertNotIn(PACKAGE, patch_set["patches"])
+        assert_promoted_recipe(self, ABI44, "rad0049_qwen4exp_e4m3_kv", PACKAGE)
 
     def test_exact_candidate_replay_and_cpu_runtime_fixture(self):
         checkout = radiance_checkout()

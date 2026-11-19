@@ -2,7 +2,7 @@
 id: RUM07
 order: 7
 plan: patching-radiance-upstream
-state: in_progress
+state: completed
 created-at: '2026-11-18T01:28:34.138312+00:00'
 breadth: ''
 skill: advanced
@@ -152,6 +152,8 @@ rad0051 first vertical gate (2026-11-19): exact apply/reapply and required-row h
 
 User correction (2026-11-19): treat B16F8/B16I8, V4/K6 and prefill-FP8 as tested, existing BigCherry features on the old Radiance base. This bump's task is to port their behavior to the new APIs, not to requalify or drop them. Reuse the historical device selftest, byte-codec, KLD and serving evidence owned by rad0037/38/40/41/42; test only the changed integration/attachment surface needed to establish compatibility on the new base (exact patch replay, ABI/layout fingerprint, host declarations/sizing/rows, selected target object compile, and focused parity vectors for changed codec/staging code). The final full performance comparison remains RUM09 as already planned. Once those port gates pass, promote every retained feature package into the bumped serving-core production recipe together; do not leave it permanently candidate-only or imply the old feature is untested just because the new-base adaptation is being checked.
 
+New-base migration completed (2026-11-19): the task branch now targets Radiance v2.1.0 / ABI44 source commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10. The ordered production recipe carries rad0048 through rad0054 together, all seven packages are `validated`, and the old rad0037/rad0038/rad0040/rad0041/rad0042 experiment-only chain and empty MTP replay set are no longer selected. Historical old-base behavior evidence remains the feature evidence; new-base compatibility is supported by exact ordered apply/replay, focused runtime/geometry/codec/prefill fixtures, selected object builds, full component build, ABI44 checks, and component tests. Production closure resolves to 32 validated packages; patch-lint passes. Latest `origin/main` through 31bd5b9e9 is merged, and the new stored-manifest/runtime-receipt tests pass 3/3. No GPU numerical or performance run was performed; RUM09 owns the final paired comparison and runtime gates.
+
 ## Ownership and order
 
 Use the selected source commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10 as frozen ABI43 input. Order candidate work as rad0018 → rad0020 → rad0048 → rad0049 → rad0050 → rad0051 → focused selftests. rad0048 is the only owner of the ABI44 append and fingerprint plus the packed format IDs/descriptor; rad0050 consumes it for runtime plumbing. Do not make rad0040 a second descriptor owner. Keep all candidate packages out of production recipes until ordered apply/reapply, focused gates and same-SDK plugin checks pass.
@@ -230,3 +232,5 @@ Use always-on CPU checks for descriptor fields, names, row widths/offsets, page 
 - 2026-11-19T05:53:54.253241+00:00 (updated-by): Updated: section:validation
 - RV4244
 - 2026-11-19T05:59:50.084969+00:00 (updated-by): Updated: section:validation
+- 2026-11-19T07:31:11.696666+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:35:34.813970+00:00 (state-transition): State: in_progress → completed

@@ -6,7 +6,7 @@ schema = 1
 name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
-# radiance v1.14.0: rewrite rules target the pinned libr4d source and reject unmatched revisions.
+# radiance v2.1.0: rewrite rules target the pinned libr4d source and reject unmatched revisions.
 built-against = "v2.1.0"
 outputs = ["kernels/libr3.so"]
 

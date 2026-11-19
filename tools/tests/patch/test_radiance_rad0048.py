@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, load_patch_files, patched_pinned_source, recipe
+from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PACKAGE = "rad0048_abi44_kv_contract"
@@ -51,15 +51,13 @@ def compile_release_probe(cc: str, root: Path, source: Path) -> Path:
 
 
 class Abi44ContractTests(unittest.TestCase):
-    def test_candidate_package_dependency_and_recipe_membership(self):
+    def test_promoted_package_dependency_and_recipe_membership(self):
         closure = patchset.expand_composition("radiance", (PACKAGE,), directory=PATCHES)
         resolved = patchset.resolve_exact("radiance", closure.expanded, directory=PATCHES)
         ordered = [module.patch_id for module in resolved.modules]
         self.assertLess(ordered.index(OWNERSHIP), ordered.index(PIPELINE))
         self.assertLess(ordered.index(PIPELINE), ordered.index(PACKAGE))
-        self.assertEqual(resolved.modules[-1].state, "untested")
-        for patch_set in recipe()["patch-set"].values():
-            self.assertNotIn(PACKAGE, patch_set["patches"])
+        assert_promoted_recipe(self, PACKAGE)
 
     def test_frozen_abi43_prefix_extends_once_and_release_fixture_runs(self):
         checkout = radiance_checkout()

@@ -95,19 +95,19 @@ patch-sets = []
 class = "production"
 description = "Radiance 2.1.0 with BigCherry's migrated production patch sets."
 overlay = false
-patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
+patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "vtp14-mixed-tp"]
 
 [source.radiance-diag]
 class = "diagnostic"
 description = "Radiance 2.1.0 with the migrated production patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config", "vtp14-mixed-tp"]
 
 [source.radiance-routing-evidence]
 class = "diagnostic"
 description = "Production Radiance plus RHP01 opt-in host histogram coverage diagnostics; not a production source."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
+patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "vtp14-mixed-tp"]
 
 [build.stock]
 description = "radiance's own release build of the engine binary."

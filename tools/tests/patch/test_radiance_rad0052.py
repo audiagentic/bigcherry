@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, load_patch_files, patched_pinned_source, recipe
+from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_radiance_rad0051 import PACKAGE as BASE_PACKAGE, PREREQUISITES
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
@@ -21,12 +21,11 @@ PACKAGE = "rad0052_b16_kv_geometries"
 
 
 class B16GeometryTests(unittest.TestCase):
-    def test_candidate_geometry_requires_the_paired_b16_kernels(self):
+    def test_promoted_geometry_requires_the_paired_b16_kernels(self):
         closure = patchset.expand_composition("radiance", (PACKAGE,), directory=PATCHES)
         resolved = patchset.resolve_exact("radiance", closure.expanded, directory=PATCHES)
         self.assertEqual([module.patch_id for module in resolved.modules[-2:]], [BASE_PACKAGE, PACKAGE])
-        for patch_set in recipe()["patch-set"].values():
-            self.assertNotIn(PACKAGE, patch_set["patches"])
+        assert_promoted_recipe(self, "rad0048_abi44_kv_contract", "rad0049_qwen4exp_e4m3_kv", "rad0050_b16_kv_runtime_contract", "rad0051_b16_kv_kernels", PACKAGE)
 
     def test_exact_source_replay_and_remaining_row_bindings(self):
         checkout = radiance_checkout()

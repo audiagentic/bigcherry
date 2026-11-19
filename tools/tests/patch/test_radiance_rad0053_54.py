@@ -13,7 +13,7 @@ sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, load_patch_files, patched_pinned_source
+from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_radiance_rad0051 import PACKAGE as B16_KERNELS, PREREQUISITES
 from test_radiance_rad0052 import PACKAGE as B16_GEOMETRIES
 from test_vtp14_n1_rank_code_selection import radiance_checkout
@@ -25,6 +25,9 @@ LIBR3 = REPO / "engines/radiance/components/libr3"
 
 class RetainedKVTests(unittest.TestCase):
     def test_composition_uses_the_existing_abi44_descriptor_owner(self):
+        assert_promoted_recipe(
+            self, *PREREQUISITES, B16_KERNELS, B16_GEOMETRIES, V4_PACKAGE, PREFILL_PACKAGE,
+        )
         request = patchset.expand_composition("radiance", (PREFILL_PACKAGE,), directory=PATCHES)
         modules = patchset.resolve_exact("radiance", request.expanded, directory=PATCHES).modules
         self.assertEqual(
