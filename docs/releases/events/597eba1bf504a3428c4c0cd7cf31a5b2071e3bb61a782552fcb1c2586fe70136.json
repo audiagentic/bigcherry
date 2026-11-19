@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_the-release-campaign-and-buil_5905",
+  "files": [
+    "tools/tests/release",
+    "tools/tests/campaign",
+    "engines/radiance/components/serving"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1173: five release/campaign suite failures (noexec /tmp in the container, two stale tests) and bc_release_install_test (LD_LIBRARY_PATH not cleared) fixed; release 388, campaign 907, build 118 pass under unittest discover.",
+  "timestamp-utc": "2026-11-19T07:11:11.406331Z",
+  "user-summary-candidate": "The release, campaign and build test suites pass in the agent container."
+}

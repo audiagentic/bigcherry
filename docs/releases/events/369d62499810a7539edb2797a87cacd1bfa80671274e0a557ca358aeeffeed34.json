@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_the-flash-next-live-expert-pla_9584",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/live_policy_manifest.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/live_policy_ingest.cpp",
+    "docs/reference/engines/radiance/LIVE_PLACEMENT.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1169: live-policy calibration has its own key (policy_calibration_inputs of the written manifest), shared by the calibration run and the production manifest writer; host pool, helper budgets, engine args and engine build are provenance, not key. Fixes production serving without the policy since Nov 9 (record orphaned by #790) and a calibration run filing its record under a key production never looked up. Legacy hash-only records are refused with a reason.",
+  "timestamp-utc": "2026-11-19T07:11:11.352377Z",
+  "user-summary-candidate": "The Flash-Next live expert-placement policy turns on again after calibration and survives rebuilds."
+}
