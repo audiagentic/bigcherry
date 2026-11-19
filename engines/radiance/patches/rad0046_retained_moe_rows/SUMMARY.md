@@ -1,5 +1,16 @@
-# Retain the helper’s E4M3 MoE rows
+# rad0046_retained_moe_rows
 
-Flash-Next’s W4 helper looks up `had_quant_act_fp8` at startup. The 35B helper and the gfx1201 decode plugin use `moe_gemm_fp8a8` and its block-scaled row-major layout. Upstream removed the two row declarations in its 2.0 release, while retaining the templated launches, constraints and operand descriptions. This patch registers the E4M3 forms on those implementations. The layout validates the exact code and scale planes for each expert class before serving the container’s existing bytes.
+**Status:** untested
+**Plan item:** RUM03
 
-The native RDNA3 provider has separate row coverage. Hardware numerics, selection and throughput on the new upstream revision require separate qualification.
+## What it does
+
+Restores the `had_quant_act_fp8` and `moe_gemm_fp8a8` rows on retained ABI43 implementations. The grouped GEMM keeps 64-column fallback tiling unless every expert class and part aligns to the 128-column block-scale grid.
+
+## Why
+
+The Flash-Next and gfx1201 helper paths resolve these exact row names and their existing E4M3 code and scale planes. Unequal class widths can cross a block-scale boundary in a wide tile.
+
+## Upstream
+
+Radiance 2.1.0 candidate `3deabdaeca17b58bad90d332f4b204cf7bb8a10e` removed the row declarations while retaining their launch templates, constraints and operand descriptions. Candidate source replay passed. Plugin build, hardware selection and numerical qualification remain pending.

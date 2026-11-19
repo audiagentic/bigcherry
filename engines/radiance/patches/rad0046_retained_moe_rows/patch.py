@@ -7,7 +7,7 @@ from bigcherry.patcher import Edit, FilePatch
 def before(edit_id: str, line: str, text: str, rationale: str) -> Edit:
     return Edit(id=edit_id, anchor="^" + re.escape(line), mode="insert_before",
                 text=text + "\n", guard="^" + re.escape(text.splitlines()[0]),
-                expect_matches=1, rationale=rationale)
+                expect_matches=1, max_span_lines=1, rationale=rationale)
 
 
 PATCHES = (
@@ -61,6 +61,7 @@ PATCHES = (
                 wide_n = wide_n && Nc[q] % parts == 0 && (Nc[q] / parts) % kPrefillCols == 0;""",
             guard=r"Block-E4M3 carries one scale per 128x128 tile",
             expect_matches=1,
+            max_span_lines=2,
             rationale="An unequal expert class can start its part at row 192; a 128-column block would cross the next scale boundary at row 256.",
         ),
     )),
