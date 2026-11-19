@@ -343,7 +343,12 @@ def publish_record(
         meta["build_id"], spec["intent"]["layout"], spec["intent"]["model"]
     ):
         raise WorkloadError("result identity differs from captured strict manifest and build metadata")
-    binary = build_root / "bin" / "radiance"
+    # The engine binary is the runtime artifact whose recorded hash is the build's binary hash (no engine name here).
+    artifacts = meta.get("runtime_artifacts")
+    named = [n for n, h in artifacts.items() if h == meta.get("binary_hash")] if isinstance(artifacts, dict) else []
+    if len(named) != 1:
+        raise WorkloadError("build metadata does not name exactly one runtime artifact for its binary hash")
+    binary = build_root / "bin" / named[0]
     # The build's metadata is the record-of-build; if the binary is present,
     # enforce that its actual contents still match that metadata.
     if not isinstance(meta["binary_hash"], str) or len(meta["binary_hash"]) != 64:

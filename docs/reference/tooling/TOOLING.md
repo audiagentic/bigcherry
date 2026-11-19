@@ -204,7 +204,7 @@ producer migrations and legacy-writer retirement are separate slices.
 
 The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
 
-    PYTHONPATH=tools python3 -m bigcherry.bench.llamacpp_runner --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
+    module bigcherry.bench.llamacpp_runner (repository tools on PYTHONPATH): --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
 
 It drives the original benchmark and intercepts the existing result append boundary to write exactly one content-addressed record per measured row; duplicate per-family JSON and legacy SQLite sync are suppressed. Direct external invocations are outside the managed migration. Numeric "pp*_tps" and "tg*_tps" metrics map to prefill/decode without changing values. Unmapped quantities such as PPL or standard deviation remain byte-for-byte as the provenance source row, not falsely relabeled as prefill or decode.
 
