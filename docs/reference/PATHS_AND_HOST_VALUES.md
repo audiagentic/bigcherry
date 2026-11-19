@@ -70,6 +70,11 @@ in tracked files fails the check and names the file and line.
   placeholder. Account names are listed the same way. A trailing `*` stands for any digits after the
   name (`name*` matches name, name2, name17, not a longer word). A linked worktree reads the list from
   the primary checkout as well, so it applies in every worktree.
+- **Branch and tag names** are scanned too, because a pull request keeps its head branch name on GitHub.
+  `.githooks/pre-push` blocks a push that publishes one with a forbidden term, and `pr-title.yml` fails a pull
+  request whose head branch has one. CI reads the terms from the repository secrets `FORBIDDEN_TERMS` (machine
+  names) and `FORBIDDEN_ACCOUNT_TERMS` (account names), both required; neither is written into the repository.
+  Name a branch for its topic (`feat/topic`), never for the account.
 - **Generic patterns** (absolute mount and home paths, drive-letter paths, private addresses,
   email addresses) are fixed in `tools/bigcherry/forbidden_terms.py`. Reserved example domains
   and version numbers are not reported.

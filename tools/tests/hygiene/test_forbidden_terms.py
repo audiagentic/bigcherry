@@ -73,6 +73,18 @@ class ForbiddenTermsTests(unittest.TestCase):
         finally:
             _git(self.root, "worktree", "remove", "--force", str(linked))
 
+    def test_branch_and_tag_names_are_scanned_without_printing_the_name(self) -> None:
+        os.environ["BIGCHERRY_FORBIDDEN_TERMS"] = "acct*"
+        self.assertEqual([("branch or tag name", 1, "machine name")], ft.ref_findings(self.root, ["acct2/topic"]))
+        self.assertEqual([], ft.ref_findings(self.root, ["feat/topic", "fix/account-names"]))
+
+    def test_pre_push_input_gives_the_published_ref_names_and_skips_deletions(self) -> None:
+        sha, zero = "a" * 40, "0" * 40
+        text = (f"refs/heads/x {sha} refs/heads/acct2/topic {zero}\n"
+                f"(delete) {zero} refs/heads/acct3/old {sha}\n"
+                f"refs/tags/v1 {sha} refs/tags/v1 {zero}\n")
+        self.assertEqual(["acct2/topic", "v1"], ft.pre_push_refs(text))
+
     def test_generic_patterns_are_reported_by_label(self) -> None:
         # Built from parts so this file holds no literal host path or address of its own.
         mount_path = "/" + "mnt" + "/data/work"

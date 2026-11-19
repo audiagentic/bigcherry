@@ -2,8 +2,9 @@ name: Forbidden terms
 
 # Blocks machine names and host-specific paths, addresses and identities in changed files and commit messages
 # (pr-title.yml scans the pull request title and description).
-# The machine names come from the repository secret FORBIDDEN_TERMS (comma-separated), so
-# they are never written into this repository. The workflow fails if the secret is missing.
+# The machine names come from the repository secrets FORBIDDEN_TERMS and FORBIDDEN_ACCOUNT_TERMS (comma-separated;
+# a trailing * stands for digits), so they are never written into this repository. The workflow fails if either is
+# missing.
 # The same scan runs locally as the pre-commit hook (python3 -m bigcherry.forbidden_terms).
 
 on:
@@ -25,18 +26,19 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Require the forbidden-term secret
+      - name: Require the forbidden-term secrets
         env:
           FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+          FORBIDDEN_ACCOUNT_TERMS: ${{ secrets.FORBIDDEN_ACCOUNT_TERMS }}
         run: |
-          if [ -z "$FORBIDDEN_TERMS" ]; then
-            echo "::error::repository secret FORBIDDEN_TERMS is not set; the scan cannot run" >&2
+          if [ -z "$FORBIDDEN_TERMS" ] || [ -z "$FORBIDDEN_ACCOUNT_TERMS" ]; then
+            echo "::error::repository secrets FORBIDDEN_TERMS and FORBIDDEN_ACCOUNT_TERMS must both be set; the scan cannot run" >&2
             exit 1
           fi
 
       - name: Scan files changed by this push or pull request
         env:
-          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+          FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }},${{ secrets.FORBIDDEN_ACCOUNT_TERMS }}
           IS_PR: ${{ github.event_name == 'pull_request' }}
           PUSH_BEFORE: ${{ github.event.before }}
         run: |

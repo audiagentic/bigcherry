@@ -188,6 +188,27 @@ def message_findings(root: Path, base: str) -> list[tuple[str, int, str]]:
     return out
 
 
+def ref_findings(root: Path, names: list[str]) -> list[tuple[str, int, str]]:
+    """Branch and tag names: they are published on GitHub (a pull request keeps its head branch name), so the same
+    terms apply. Only the label is reported, never the name."""
+    terms = [_term_pattern(t) for t in configured_terms(root)]
+    allowed = _allowed_phrases(root)
+    return [("branch or tag name", number, hit) for number, name in enumerate(names, start=1)
+            for hit in scan_line(name, terms, allowed)]
+
+
+def pre_push_refs(stdin_text: str) -> list[str]:
+    """The remote ref names a push creates or updates (git's pre-push input: local ref, local sha, remote ref, remote
+    sha per line); a deletion publishes nothing."""
+    zero = "0" * 40
+    names = []
+    for line in stdin_text.splitlines():
+        parts = line.split()
+        if len(parts) == 4 and set(parts[1]) != {"0"} and not parts[1].startswith(zero):
+            names.append(parts[2].removeprefix("refs/heads/").removeprefix("refs/tags/"))
+    return names
+
+
 def install_hook(root: Path) -> None:
     subprocess.run(["git", "-C", str(root), "config", "core.hooksPath", HOOKS_DIR], check=True)
     print(f"core.hooksPath set to {HOOKS_DIR}; pre-commit now runs the forbidden-term scan")
@@ -200,12 +221,23 @@ def main(argv: list[str] | None = None) -> int:
     mode.add_argument("--all", action="store_true", help="scan every tracked file")
     mode.add_argument("--base", metavar="REV", help="scan files changed and commit messages between REV and HEAD (CI)")
     mode.add_argument("--text", metavar="FILE", help="scan a text file: a commit message (commit-msg hook) or a PR's title and description (CI)")
+    mode.add_argument("--ref", action="append", metavar="NAME", help="scan a branch or tag name (CI: a pull request's head branch); repeatable")
+    mode.add_argument("--pre-push", action="store_true", help="scan the ref names a push publishes (git's pre-push input on stdin)")
     mode.add_argument("--install-hook", action="store_true", help="point core.hooksPath at .githooks")
     args = parser.parse_args(argv)
     root = Path(subprocess.run(["git", "rev-parse", "--show-toplevel"], capture_output=True,
                                text=True, check=True).stdout.strip())
     if args.install_hook:
         install_hook(root)
+        return 0
+    if args.ref or args.pre_push:
+        hits = ref_findings(root, args.ref if args.ref else pre_push_refs(sys.stdin.read()))
+        for _, number, label in hits:
+            print(f"ref name #{number}: {label}")
+        if hits:
+            print("forbidden term in a branch or tag name: it is published on GitHub. Rename it "
+                  "(git branch -m) and push the new name.", file=sys.stderr)
+            return 1
         return 0
     if args.text:
         hits = text_findings(root, Path(args.text).name, Path(args.text).read_text(encoding="utf-8", errors="replace"))

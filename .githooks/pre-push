@@ -1,0 +1,7 @@
+#!/bin/sh
+# Blocks a push that publishes a branch or tag name containing a forbidden term (a pull request keeps its head
+# branch name on GitHub). Terms: see .githooks/pre-commit. Reads git's pre-push input on stdin.
+set -e
+root="$(git rev-parse --show-toplevel)"
+cd "$root"
+PYTHONPATH=tools exec python3 -m bigcherry.forbidden_terms --pre-push

@@ -15,20 +15,24 @@ jobs:
       - uses: actions/checkout@v4
 
       # A squash merge puts the title and description on main as the commit message; runs on every edit.
-      - name: No machine names or host-specific values in the title and description
+      # The head branch name stays on GitHub with the pull request, so it is scanned like the text.
+      - name: No machine names or host-specific values in the title, description and branch name
         env:
           FORBIDDEN_TERMS: ${{ secrets.FORBIDDEN_TERMS }}
+          FORBIDDEN_ACCOUNT_TERMS: ${{ secrets.FORBIDDEN_ACCOUNT_TERMS }}
           PR_TITLE: ${{ github.event.pull_request.title }}
           PR_BODY: ${{ github.event.pull_request.body }}
+          PR_HEAD_REF: ${{ github.event.pull_request.head.ref }}
         run: |
           set -eu
-          if [ -z "$FORBIDDEN_TERMS" ]; then
-            echo "::error::repository secret FORBIDDEN_TERMS is not set; the scan cannot run" >&2
+          if [ -z "$FORBIDDEN_TERMS" ] || [ -z "$FORBIDDEN_ACCOUNT_TERMS" ]; then
+            echo "::error::repository secrets FORBIDDEN_TERMS and FORBIDDEN_ACCOUNT_TERMS must both be set; the scan cannot run" >&2
             exit 1
           fi
           printf '%s\n\n%s\n' "$PR_TITLE" "$PR_BODY" > "$RUNNER_TEMP/pull-request.txt"
-          BIGCHERRY_FORBIDDEN_TERMS="$FORBIDDEN_TERMS" PYTHONPATH=tools \
-            python3 -m bigcherry.forbidden_terms --text "$RUNNER_TEMP/pull-request.txt"
+          export BIGCHERRY_FORBIDDEN_TERMS="$FORBIDDEN_TERMS,$FORBIDDEN_ACCOUNT_TERMS" PYTHONPATH=tools
+          python3 -m bigcherry.forbidden_terms --text "$RUNNER_TEMP/pull-request.txt"
+          python3 -m bigcherry.forbidden_terms --ref "$PR_HEAD_REF"
 
       - name: Validate conventional commit title
         env:
