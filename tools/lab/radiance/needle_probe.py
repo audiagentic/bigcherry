@@ -22,6 +22,7 @@ import urllib.request
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
+ANSWER_KEPT = 120   # characters of the model's answer kept in a row
 WORDS = ("amber", "birch", "cobalt", "delta", "ember", "falcon", "garnet", "harbor", "indigo", "juniper", "kestrel",
          "lantern", "meadow", "nectar", "onyx", "pewter", "quartz", "raven", "saffron", "tundra", "umber", "velvet",
          "willow", "zephyr")
@@ -87,7 +88,7 @@ def case(url: str, model: str, text: str, cpt: float, tokens: int, depth: float,
         break
     answer = (reply["choices"][0]["message"].get("content") or "").strip()
     return {"tokens_target": tokens, "prompt_tokens": actual, "depth": depth, "rep": rep, "code": code,
-            "hit": code in answer, "answer": answer[:160], "seconds": round(seconds, 2), "attempts": attempts}
+            "hit": code in answer, "answer": answer[:ANSWER_KEPT], "seconds": round(seconds, 2), "attempts": attempts}
 
 
 def main(argv: list[str] | None = None) -> int:
