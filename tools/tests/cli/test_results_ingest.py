@@ -1,27 +1,8 @@
-"""MRC06 typed native and experiment result ingestion commands."""
+"""MRC06 typed native Radiance measurement ingestion."""
 
 from pathlib import Path
 
-from bigcherry.__main__ import main
-
-
-def test_results_ingest_experiment_routes_to_typed_bundle_api(monkeypatch, tmp_path, capsys):
-    from bigcherry.experiment import bundle
-
-    seen = []
-    def capture(root, measurement, *, work_root=None):
-        seen.append((root, measurement, work_root))
-        return "e" * 64
-    monkeypatch.setattr(bundle, "record_measurement_file", capture)
-    folder = tmp_path / "bundle"
-    sidecar = folder / "measurement.json"
-    rc = main([
-        "results", "ingest-experiment", "--bundle", str(folder),
-        "--measurement-file", str(sidecar), "--work-root", str(tmp_path),
-    ])
-    assert rc == 0
-    assert seen == [(folder, sidecar, tmp_path)]
-    assert "e" * 64 in capsys.readouterr().out
+from bigcherry.cli.main import main
 
 
 def test_results_ingest_native_lab_routes_to_sealed_owner_adapter(monkeypatch, tmp_path, capsys):

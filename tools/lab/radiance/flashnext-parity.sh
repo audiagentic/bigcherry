@@ -5,20 +5,26 @@
 #
 # Usage:
 #   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P]
+#   bash tools/lab/radiance/flashnext-parity.sh baseline --out DIR --name NAME --to FILE
+#   bash tools/lab/radiance/flashnext-parity.sh compare --out DIR --baseline FILE
 #
 # measure: N launches (default 2) of native bc-serve serve flashnext-4gpu with production defaults (layout flashnext-4gpu, 262144
 #   context, 8 sessions; the live expert-placement policy is on when $BC_WORK_ROOT/live-policy-calibration.toml exists),
 #   handoff.histogram_period_s=1 from RSC12. Each launch warms up (only with the policy on:
 #   (min_samples + 1) heat windows plus a second, from the native strict-v2 manifest), then measures cold prefill, decode step time at 1 and 6 streams, 8 sessions and a 256K
 #   context, stops the native session (always, also on failure) and keeps the helper's `policy placement` line. Raw records go
-#   to OUT/launch-<i>/ and one immutable record per launch. It uses all four cards: hold the
+#   to OUT/launch-<i>/ and each launch is committed as a run record (the SHA is OUT/launch-<i>/record.sha256; there is no
+#   summary file). It uses all four cards: hold the
 #   gpu lease (agent-lease acquire gpu ... -- bash tools/lab/radiance/flashnext-parity.sh measure ...). It runs in the
 #   foreground for about 20 minutes a launch (measured 2026-11-08: ~7.5 min policy warmup, ~3.5 min cold/doc/decode/sess8,
 #   ~3 min for the two 256K long rounds, plus start and stop); run it detached (setsid nohup ... > OUT.log 2>&1 &).
 #   To isolate one change (a launcher, a flag) compare two arms of the SAME build in one session, A B A B with --launches 1
 #   each: a stored baseline drifts a few percent from day to day (cold sess8: 28.9 vs 30.4 ms for one build a day apart).
 #   For kernels without a model use tools/lab/radiance/kbench_ab.py (rad-kbench per row, two builds).
-# For baselines/comparisons use bigcherry results baseline|compare over immutable record SHA digests.
+# baseline: `bigcherry results baseline` over the OUT's launch records into --to (e.g.
+#   docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json); the baseline embeds each SHA-verified launch.
+# compare: `bigcherry results compare` of the OUT's launch records with a baseline: one-sided gates and provenance
+#   differences.
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 REPO=$(pwd)
@@ -58,18 +64,39 @@ usage() {
 
 CMD=${1:-}
 [ $# -gt 0 ] && shift
-BUILD="" OUT="" LAUNCHES=2 PORT=18450
+BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) [ $# -ge 2 ] || usage; BUILD=$2; shift 2 ;;
     --out) [ $# -ge 2 ] || usage; OUT=$2; shift 2 ;;
     --launches) [ $# -ge 2 ] || usage; LAUNCHES=$2; shift 2 ;;
     --port) [ $# -ge 2 ] || usage; PORT=$2; shift 2 ;;
+    --baseline) [ $# -ge 2 ] || usage; BASELINE=$2; shift 2 ;;
+    --name) [ $# -ge 2 ] || usage; NAME=$2; shift 2 ;;
+    --to) [ $# -ge 2 ] || usage; TO=$2; shift 2 ;;
     *) echo "flashnext-parity: unknown argument: $1" >&2; usage ;;
   esac
 done
 
 case "$CMD" in
+  baseline|compare)
+    # The run records are the result. These two are `bigcherry results baseline|compare` over this OUT's launch receipts.
+    [ -n "$OUT" ] || usage
+    if [ "$CMD" = baseline ]; then [ -n "$NAME" ] && [ -n "$TO" ] || usage; else [ -n "$BASELINE" ] || usage; fi
+    source tools/env/bigcherry-env.sh >/dev/null 2>&1 || exit 2
+    compgen -G "$OUT/launch-*/record.sha256" >/dev/null || { echo "flashnext-parity: $OUT has no launch records" >&2; exit 2; }
+    RECORD_ARGS=()
+    for receipt in "$OUT"/launch-*/record.sha256; do
+      [ -s "$receipt" ] || { echo "flashnext-parity: $receipt: no run record for this launch" >&2; exit 2; }
+      RECORD_ARGS+=(--record "$(cat "$receipt")")
+    done
+    [ "${#RECORD_ARGS[@]}" -gt 0 ] || { echo "flashnext-parity: $OUT has no launch records" >&2; exit 2; }
+    if [ "$CMD" = baseline ]; then
+      exec env PYTHONPATH=tools python3 -m bigcherry results baseline --work-root "$BC_WORK_ROOT" --engine radiance \
+        --layout flashnext-4gpu --workload flashnext-parity --name "$NAME" --to "$TO" "${RECORD_ARGS[@]}"
+    fi
+    exec env PYTHONPATH=tools python3 -m bigcherry results compare --work-root "$BC_WORK_ROOT" \
+      --baseline "$BASELINE" "${RECORD_ARGS[@]}" ;;
   measure) ;;
   *) usage ;;
 esac
@@ -190,14 +217,14 @@ for i in $(seq 1 "$LAUNCHES"); do
   L=$OUT/launch-$i
   mkdir -p "$L/warmup"
   # Pin inputs before the native owner starts; verify they did not mutate.
-    cp "$HEAT" "$L/heat-input.hot-first" || fail "cannot snapshot selected heat"
-    if [ -n "$CALIBRATION_FILE" ]; then
-      cp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "cannot snapshot calibration store"
-    fi
-    CAPTURE_ARGS=(--heat "$L/heat-input.hot-first" --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}")
-    if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
-    python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" ||
-      fail "cannot capture native owner invocation"
+  cp "$HEAT" "$L/heat-input.hot-first" || fail "cannot snapshot selected heat"
+  if [ -n "$CALIBRATION_FILE" ]; then
+    cp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "cannot snapshot calibration store"
+  fi
+  CAPTURE_ARGS=(--heat "$L/heat-input.hot-first" --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}")
+  if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
+  python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" ||
+    fail "cannot capture native owner invocation"
   echo "flashnext-parity: launch $i/$LAUNCHES -> $L" >&2
   "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" > "$L/owner.log" 2>&1 &
   NATIVE_PID=$!
@@ -207,13 +234,13 @@ for i in $(seq 1 "$LAUNCHES"); do
   [ -f "$MANIFEST" ] || fail "native session did not commit a strict-v2 manifest"
   cp "$MANIFEST" "$L/manifest.json"
   cp "$RUN/feature-states.v1.json" "$L/feature-states.v1.json" ||
-      fail "native MRC03 feature-state snapshot is absent"
-    cmp "$HEAT" "$L/heat-input.hot-first" ||
-      fail "selected heat mutated before measurement"
-    if [ -n "$CALIBRATION_FILE" ]; then
-      cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
-        fail "selected calibration changed before measurement"
-    fi
+    fail "native MRC03 feature-state snapshot is absent"
+  cmp "$HEAT" "$L/heat-input.hot-first" ||
+    fail "selected heat mutated before measurement"
+  if [ -n "$CALIBRATION_FILE" ]; then
+    cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
+      fail "selected calibration changed before measurement"
+  fi
   python3 "$PARITY" warmup-plan "$L/manifest.json" --out "$L/launch.json" >&2 || fail "cannot read the manifest's live policy"
   WARMUP_S=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["warmup_s"])' "$L/launch.json")
   # FLASHNEXT_PARITY_WARMUP_S: an experiment arm's warmup in seconds, used only when the policy is on and only if it is
@@ -236,14 +263,14 @@ for i in $(seq 1 "$LAUNCHES"); do
   WARMUP_ELAPSED_S=$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.6f", b-a }')
   echo "flashnext-parity: launch $i warmup ${WARMUP_S}s, $k rounds (elapsed ${WARMUP_ELAPSED_S}s)" >&2
   # Actual completed warmup, including any longer experimental override.
-    python3 -c 'import json,sys; from pathlib import Path
+  python3 -c 'import json,sys; from pathlib import Path
 p=Path(sys.argv[1]); data=json.loads(p.read_text())
 data["actual_warmup_s"]=float(sys.argv[2]); data["warmup_target_s"]=float(sys.argv[3])
 data["warmup_rounds"]=int(sys.argv[4])
 p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP_ELAPSED_S" "$WARMUP_S" "$k" ||
-      fail "cannot record actual warmup"
-    python3 "$PARITY" capture-host-facts "$L" ||
-      fail "cannot snapshot measurement-time host facts"
+    fail "cannot record actual warmup"
+  python3 "$PARITY" capture-host-facts "$L" ||
+    fail "cannot snapshot measurement-time host facts"
 
   # a. cold prefill
   for s in $(seq "$COLD_SEED0" $((COLD_SEED0 + COLD_FILLS - 1))); do
@@ -269,10 +296,11 @@ p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP
     grep 'policy placement' "$L/helper0.log" | tail -1 > "$L/policy-placement.txt" || :
   fi
   python3 "$PARITY" policy-line "$L/helper0.log" --out "$L/policy.json" >&2
-  # Every measured launch must create a validated immutable record.
-  cmp "$HEAT" "$L/heat-input.hot-first" || fail "selected heat changed during measurement"
+  cmp "$HEAT" "$L/heat-input.hot-first" ||
+    fail "selected heat changed during measurement"
   if [ -n "$CALIBRATION_FILE" ]; then
-    cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "selected calibration changed during measurement"
+    cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
+      fail "selected calibration changed during measurement"
   fi
   python3 "$PARITY" record-launch "$OUT" --launch "$i" --work-root "$BC_WORK_ROOT" > "$L/record.sha256" ||
     fail "run-record v1 publication failed"
@@ -280,4 +308,5 @@ p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP
 done
 trap - EXIT INT TERM HUP
 
-echo "flashnext-parity: launch digests under $OUT/launch-*/record.sha256; inspect with bigcherry results" >&2
+echo "flashnext-parity: run records: $(cat "$OUT"/launch-*/record.sha256 | tr '\n' ' ')" >&2
+echo "flashnext-parity: compare with: bash tools/lab/radiance/flashnext-parity.sh compare --out $OUT --baseline FILE" >&2

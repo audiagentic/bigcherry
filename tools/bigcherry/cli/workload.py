@@ -1,4 +1,4 @@
-"""Radiance benchmark commands: measurements go solely to immutable run records."""
+"""Workload commands; 'run' sends traffic to an already-running server and publishes one run record."""
 from __future__ import annotations
 
 import argparse
@@ -28,9 +28,9 @@ def cmd_workload(args: argparse.Namespace) -> int:
         if not info.get("manifest"):
             raise workloads.WorkloadError("verified live manifest required for v1 measurement")
         manifest_bytes = Path(info["manifest"]).read_bytes()
-        before = workloads.power_state()
+        before = workloads.host_facts.power_state()
         metrics, details = workloads.execute(args.id, args.url, args.repo_root, cfg)
-        after = workloads.power_state()
+        after = workloads.host_facts.power_state()
         details["power_state_changed_during_run"] = before != after
         details["runner_commit"] = workloads.git_head(args.repo_root)
         details["workload_config"] = cfg
@@ -62,7 +62,7 @@ def cmd_workload(args: argparse.Namespace) -> int:
 
 
 def register(sub) -> None:
-    parser = sub.add_parser("workload", help="versioned Radiance inference workloads with immutable results")
+    parser = sub.add_parser("workload", help="versioned inference workloads, measured into run records")
     actions = parser.add_subparsers(dest="workload_action", required=True)
     actions.add_parser("list", help="list canonical workload ids and versions").set_defaults(func=cmd_workload)
     run = actions.add_parser("run", help="benchmark an already-running server (never starts/stops/leases a GPU)")

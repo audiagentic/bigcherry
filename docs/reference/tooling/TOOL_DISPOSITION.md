@@ -61,9 +61,6 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | Path | Disposition | Intended owner / rationale |
 | --- | --- | --- |
 | `tools/bigcherry/build/logs.py` | **KEEP** | Build-owned invocation/stage diagnostics and summary persistence (BRBC04); no artifact identity or campaign scheduling ownership. |
-| `tools/bigcherry/core/measurement_producers.py` | **KEEP** | MRC06 canonical immutable result producer; all owned measurement adapters must call `publish`, never append an independent result store. |
-| `tools/bigcherry/cli/results.py` | **KEEP** | Public MRC05/MRC06 immutable results queries and typed ingestion; no alternative result index. |
-| `tools/bigcherry/core/process.py` | **TRANSITIONAL** | Compiler crash-retry operational diagnostic receipts (`bigcherry-compile-retries.jsonl` and `build-compile-retries.jsonl`) are not model workload measurements; both append logs remain and require separate operational-receipt consolidation before declaring MRC06's old-writer retirement complete. |
 | `engines/llamacpp/patches/_template/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/0100_cmake_options/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
 | `engines/llamacpp/patches/0200_dispatch_hook/patch.py` | **PACKAGE-LOCAL** | Patch-owned implementation or validation; maintain package-only production layout and refine in TR06. |
@@ -548,9 +545,9 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/kbench_ab.py` | **TRANSITIONAL** | `radiance` lab topic file; runs `rad-kbench --timing-only` one op at a time for two sides (kernel libraries or builds) on one recorded fixture, with a caller-sized timeout and a flushed progress line per op, a one-op `probe` to size a run, `--resume`, and a `compare` that joins per-op reports on op, kernel, full geometry and step size, lists one-sided rows and missing ops, never counts a divergent or unverified case as a win and takes the noise bound from an A-again repeat (KAB01). Caller holds the gpu lease. |
 | `tools/lab/radiance/gfx1030/link_and_bandwidth.hip` | **TRANSITIONAL** | `radiance` lab topic file; measures a host round trip (5/30/300 KB) and read bandwidth on a card, used for the 6900 XT drafter assessment (RAD16). Build: hipcc --offload-arch=gfx1030 -O2. |
 | `tools/lab/radiance/gfx1030/rowsk.hip` | **TRANSITIONAL** | `radiance` lab topic file; microbenchmark of the gfx1030 few-rows w4nl MoE kernel (`lane_moe_rows_w4`) per tile shape on the live tail's rows-an-expert mix, synthetic weights, output checked against the shipped shape (RAD23). Build: hipcc --offload-arch=gfx1030 -O3 with the moe-remote and radiance include dirs. |
-| `tools/lab/radiance/flashnext-parity.sh` | **KEEP** | Native Flash-Next parity launcher; every completed measured launch publishes one MRC01 record, with no record-disable option or separate summary writer. Leased hardware gate remains outstanding. |
+| `tools/lab/radiance/flashnext-parity.sh` | **KEEP** | Native Flash-Next measurement launcher; publishes one immutable MRC01 record per completed launch with no record-disable option. Shell baseline and compare commands call `bigcherry results` over verified launch SHA receipts. No second summary writer. Hardware equivalence remains a leased gate. |
 | `tools/lab/radiance/needle_probe.py` | **KEEP** | MRC06 native-owner-scoped needle retrieval; full corpus and result are MRC01 blobs, --out is digest-only. |
-| `tools/lab/radiance/flashnext_parity.py` | **KEEP** | MRC06 raw Flash-Next metric parser and sole `core.measurement_producers.publish` adapter. Baseline/compare belong to `bigcherry results`; fixture test is `tools/tests/lab/test_flashnext_parity.py`. |
+| `tools/lab/radiance/flashnext_parity.py` | **KEEP** | Flash-Next raw metric parser and immutable run-record publisher. Baselines and comparisons use `bigcherry results`; no parity summary writer or reader remains. CPU fixture: `tools/tests/lab/test_flashnext_parity.py`. |
 | `tools/lab/radiance/host-link-bw.hip` | **TRANSITIONAL** | `radiance` lab topic file; one card's host-link bandwidth as the remote-MoE path uses it (kernel reads/writes of pinned mapped host memory, and hipMemcpy), 21 MiB = two result planes of a 2048-row step (RAD23). Build: hipcc -O3 --offload-arch=gfx1030,gfx1100,gfx1201. |
 | `tools/lab/radiance/host-link-duplex.hip` | **TRANSITIONAL** | `radiance` lab topic file; HL01: one card's host link in both directions at once (kernel and copy-engine pull/push, serial vs duplex) and beside a compute-bound kernel, to decide whether tail transfers can overlap its GEMM. Build: hipcc -O3 --offload-arch=gfx1030,gfx1100,gfx1201. |
 | `tools/lab/radiance/hl02-host-attributes/analyse_matrix.py` | **TRANSITIONAL** | HL02 strict offline normalization and matched-group/error gates for GPU-mapped-host contention and serial CPU-push evidence. |
@@ -670,7 +667,7 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/rocm-env.sh` | **MOVE** | Environment bootstrap; canonical destination tools/env/ in TR05. |
 | `tools/verify_slice_a.py` | **MOVE** | HI24 plan-specific verifier moved to non-package `tools/lab/hi24-slice-a/`; root wrapper retained for tests/legacy CLI. |
 
-| `tools/bigcherry/bench/radiance_lab_records.py` | **KEEP** | Python-free native `bc-serve` remains the evidence producer; platform post-run calibration, native lab sidecar, needle/image, and leased RSC02 adapters write MRC01 only, never imported by native runtime. |
+| `tools/bigcherry/bench/radiance_lab_records.py` | **KEEP** | Platform MRC06 adapter for native C++ calibration receipts, needle/image and leased RSC02 evidence; never imported into the C++ serving runtime. |
 
 ## Exit status
 

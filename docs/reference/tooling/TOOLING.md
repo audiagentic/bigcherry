@@ -45,8 +45,7 @@ JSON records under `records/<kind>/<key>.json`. `put` serialises writes with
 a persistent `.lock`, fsyncs temp file and directory and atomically publishes
 with rename; a duplicate refuses unless `replace=True` is explicitly
 requested. Provenance is not in the key. The store does not activate or
-generate a policy. Large MRC01 quantity blobs and run-record linkage are
-future producer migrations.
+generate a policy. MRC01 v1 now supports typed selected-calibration and quantity blob references.
 
 Radiance **continues to read and write TOML natively**, without Python at
 runtime: `bc-serve calibration-ingest` writes `[[live_policy_record]]` entries
@@ -68,9 +67,9 @@ Radiance's sorted `policy_calibration_inputs` JSON.
 The operator commands are read-only (no hardware lease, no activation):
 
 ```sh
-PYTHONPATH=tools python -m bigcherry calibration list --store /path/to/live-policy-calibration.toml
-PYTHONPATH=tools python -m bigcherry calibration show --store /path/to/live-policy-calibration.toml --kind radiance.live_policy --key <sha256>
-PYTHONPATH=tools python -m bigcherry calibration validate --store /path/to/live-policy-calibration.toml
+bigcherry calibration list --store /path/to/live-policy-calibration.toml
+bigcherry calibration show --store /path/to/live-policy-calibration.toml --kind radiance.live_policy --key <sha256>
+bigcherry calibration validate --store /path/to/live-policy-calibration.toml
 ```
 
 An omitted `--store` defaults to `$BC_WORK_ROOT/live-policy-calibration.toml`
@@ -85,6 +84,25 @@ comes from installed build metadata's `source_slice_id` when present,
 otherwise is explicitly `unavailable`. A rebuild changes provenance, not
 the key. Changes to model, card identities, layout, objective, power
 profile, histogram cadence, helper execution or remote service do change it.
+
+### Immutable selected calibration in run records (MRC04)
+
+An MRC01 run record may carry optional `calibration_record`:
+`status=selected` requires an exact SHA-256-verified calibration JSON
+`record_blob`, its narrow `key_sha256` and `kind`, and named
+`quantity_blobs` for large measurements. The platform checks selected
+key/identity and every referenced blob at write, read, and retention scans.
+`status=none` requires a nonselection `reason_code` and `reason_detail`.
+Old immutable v1 records without the optional field remain readable but do
+not assert which calibration was selected.
+
+Native `bc-serve status --json` reports the selected kind/key or a
+nonselection reason; the native runtime does not run Python. After native
+calibration finishes, `bigcherry results ingest-calibration` stores the
+complete selected record and quantity map through
+`measurement_producers.publish`. The serving CPU test activates a record
+from build A on build B when the same narrow scope matches; separate leased
+device activation proof must not be inferred from CPU-only testing.
 
 ### Platform measurement records (MRC01–MRC03)
 
@@ -117,8 +135,19 @@ adapters and `run_manifest.new_manifest(host=...)` or
 snapshot; callers opt in to collection at run creation rather than
 performing extra sysfs/tool queries on unrelated lifecycle operations.
 The workloads tool imports its card/power sampling readers from this core
-module. MRC01's manifest edges and results CLI, and MRC06's producer
-migrations, are outside these slices.
+module. WSL01 manifests carry `references: [{type: measurement_record, id: SHA256,
+role: measurement}]` linked with `run_manifest.link_measurement_record`.
+`resolve_measurement_records(run_dir, store)` and
+`find_run_for_record(runs_root, store, SHA256)` verify both identities and
+content; links never change lifecycle/harvest/retention state. The SHA store
+query accepts `run_id` as well as engine/layout/workload/metric/time.
+Operators use `bigcherry results put --record FILE --blob SHA256=PATH
+--run-dir RUN_DIR` to copy/validate all supplied content and link WSL01;
+`bigcherry results show SHA256` and `bigcherry results query --run-id RUN_ID
+--metric prefill.tokens_per_second --json` read exclusively through the store.
+`results list` retains the explicit read-only legacy-row bridge. Never
+promote missing historical provenance by guessing file bytes.
+MRC06 owns remaining producer migrations.
 
 MRC03's feature-state v1 JSON contract lives at
 `tools/bigcherry/core/schemas/feature-state-v1.schema.json`: a list of
@@ -173,31 +202,56 @@ filter with `--since`/`--until`. `--work-root` selects the record store.
 Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
 0 for a clean gate. MRC06 continues to migrate the remaining producers.
 
-**MRC06: Flash-Next measured records and producer ingestion.**
-The native Flash-Next parity harness publishes exactly one immutable MRC01 run
-record for each completed measured launch under `$BC_WORK_ROOT/run-records/v1/`.
-Publication cannot be disabled. The digest is stored at
-`OUT/launch-N/record.sha256`; the original measurements remain raw inputs
-to the record. No `parity.json` is produced or read. Baselines, one-sided
-comparisons and provenance differences are calculated only by the platform:
+**MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
+measure` publishes one immutable run-record v1 per completed native launch under
+`$BC_WORK_ROOT/run-records/v1/`; the record is the result (there is no summary
+file). Each `OUT/launch-N/record.sha256` contains a digest verified against the
+immutable MRC01 store. `flashnext-parity.sh baseline --out OUT --name NAME --to
+FILE` and `compare --out OUT --baseline FILE` are `bigcherry results baseline`
+and `bigcherry results compare` over those receipts, with the host, feature,
+config and policy provenance differences printed before the gates; both refuse
+missing launch receipts and path-only data. The record carries
+`engine=radiance`, build ID and binary hash from the build metadata, Git
+revision, measured model/layout, the exact harness workload definition,
+phase-separated cold/sess8 TTFT, document/long-context prefill, decode step
+times and ungated draft acceptance. `metric_specs` keeps the harness's
+one-sided gate and real same-prompt repeats (distinct prompts are not noise
+samples). No GPU tests are needed for the adapter's fixture/compare parity.
 
-```sh
-bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload flashnext-parity --name reference --to reference.json
-bigcherry results compare --baseline reference.json --engine radiance --layout flashnext-4gpu --workload flashnext-parity
-```
+The native strict manifest, source heat bytes, the selected calibration row
+when the policy is configured, full `live_policy_state`, owner argv/sets,
+a curated environment snapshot, effective power state and actual
+warmup are SHA-256 content blobs, not mutable paths. Heat and calibration
+inputs are snapshotted before launch and checked for mutation; feature states
+are read from the native run directory using MRC03. Passive MRC02 host facts
+are captured immediately before measurement. Incomplete state, metadata,
+or mismatched key aborts **record publication**, rather than fabricate
+provenance. There is no parity summary writer or reader. The shell baseline and
+compare commands delegate to `bigcherry results` over SHA-verified
+launch receipts; the platform store is the sole result view.
 
-The run record pins the build metadata, native manifest, source heat bytes,
-selected calibration, policy snapshot, native feature states, argv,
-environment and power state. Decode, prefill and TTFT metrics remain separate,
-and the measured repeat groups define tolerances. Missing inputs and failing
-measurements refuse publication rather than generate substitute values.
-`bigcherry workload run` also writes MRC01 records rather than a second
-measurement index; `bigcherry results list` enumerates SHA-verified records
-only. Existing experiment sidecar results use the same shared producer.
+**MRC06 slice 2 — producer migration and legacy listing.** The parity producer now reads the selected current calibration with MRC04's shared native-TOML reader, without duplicating its key verification.
 
-Typed HI47 measurement sidecars can be published with `bigcherry results ingest-experiment --bundle BUNDLE --measurement-file BUNDLE/measurement.json --work-root ROOT` or the managed experiment run `--measurement-file measurement.json` option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
+"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. There is no results index and no reader of pre-record rows; "bigcherry results list" shows verified run records only.
+
+The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
+
+    module bigcherry.bench.llamacpp_runner (repository tools on PYTHONPATH): --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
+
+It drives the original benchmark and intercepts the existing result append boundary to write exactly one content-addressed record per measured row; duplicate per-family JSON and legacy SQLite sync are suppressed. Direct external invocations are outside the managed migration. Numeric "pp*_tps" and "tg*_tps" metrics map to prefill/decode without changing values. Unmapped quantities such as PPL or standard deviation remain byte-for-byte as the provenance source row, not falsely relabeled as prefill or decode.
+
+Typed HI47 measurement sidecars can be published with "python -m bigcherry.experiment.bundle record BUNDLE --measurement-file BUNDLE/measurement.json" or with the managed "run --measurement-file measurement.json" option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
 
 The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; old v1 records without the new optional field remain readable. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
+
+**MRC06 native-lab sidecar ingestion.** Radiance operators can publish a typed
+non-calibration measurement from an explicitly *stopped* native owner with
+`bigcherry results ingest-native-lab --run-dir RUN --measurement-file RUN/lab-measurement.json --work-root ROOT`.
+The sidecar is within the stopped run directory and contains schema version
+1, matching run ID and manifest digest, UTC recorded time, typed workload and
+phase-qualified decode/prefill/TTFT metrics. Exact source evidence is pinned to
+one immutable MRC01 record; absent VA25 proof is marked unverified. No metrics
+are inferred from logs, no independent historical results reader is exposed.
 
 **MRC06 slice 3 — Radiance native lab results.** Native `bc-serve serve
 --calibration-run` saves admitted manifest, exact process argv, A/B prompt
@@ -225,30 +279,13 @@ remains read-only lifecycle/comparison evidence, not a measurement index.
 Today's parity records in **UTC** and one verified record by digest:
 
 ```sh
-bigcherry results list --today --engine radiance --workload flashnext-parity --json
+bigcherry results list --today --engine radiance --workload parity --json
 bigcherry results show RECORD_SHA256 --json
 ```
 
-Non-calibration native lab measurements with an explicitly recorded typed
-sidecar can be ingested after a *cleanly stopped* native owner:
+These are read-only SHA-verified store views; missing historic manifest
+paths are never rebuilt. MRC06 global writer retirement remains open.
 
-```sh
-bigcherry results ingest-native-lab --run-dir RUN --measurement-file RUN/lab-measurement.json --work-root ROOT
-```
-
-The sidecar requires `schema_version: 1`, matching `run_id` and exact
-`manifest_sha256`, UTC `recorded_at`, `workload: {name, definition}`,
-and phase-qualified `metrics: {decode, prefill, ttft}`. The platform pins
-the original sidecar and owner evidence, refuses active/failed owners or
-mismatched manifests, and marks the record `VA25_NOT_ATTESTED` unless
-independently qualified. It never infers results from a session log.
-This is a post-run ingestion interface, not evidence that every independent
-S8/TP3/replay/campaign script now invokes it.
-
-These are SHA-verified views of the immutable record store. The offline
-native sidecar ingestion is deliberately explicit; independent lab scripts
-must invoke it to publish a measured result. MRC07 owns llama.cpp producers,
-and non-measurement compiler diagnostics are tracked separately.
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be
@@ -441,3 +478,12 @@ For generated agent surfaces, edit the owning component/configuration and
 re-apply it. Do not edit managed blocks in `AGENTS.md` or `CLAUDE.md`
 directly.
 
+
+Historical Flash-Next v1.17.0 `flashnext-4gpu-parity.json` is **read-only
+and unreproducible**: its original manifest/heat bytes were never captured.
+The 2026-11-19 four-arm A/B evidence contains path-based parity summaries
+without the complete immutable v1 host/policy/feature provenance, so no
+MRC05 baseline or policy-confound verdict can be synthesized from it.
+Completion of MRC05 Step 6 requires a new qualified two-launch hardware
+reference and four newly recorded arms with provenance; do not claim the
+historical 2026-11-19 data satisfies that acceptance gate.

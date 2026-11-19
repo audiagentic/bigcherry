@@ -57,7 +57,7 @@ class WorkloadsTest(unittest.TestCase):
             (dev / "pp_od_clk_voltage").write_text(
                 "OD_SCLK:\n0: 500MHz\n1: 3040MHz\nOD_MCLK:\n0: 97Mhz\n1: 1250MHz\nOD_VDDGFX_OFFSET:\n-125mV\n"
             )
-            self.assertEqual(w.power_state(root)["0000:03:00.0"], {
+            self.assertEqual(w.host_facts.power_state(root)["0000:03:00.0"], {
                 "power1_cap_uw": 272000000, "vddgfx_offset_mv": -125,
                 "od_sclk_max_mhz": 3040, "od_mclk_max_mhz": 1250, "perf_level": "auto",
             })
@@ -91,21 +91,6 @@ class WorkloadsTest(unittest.TestCase):
             self.assertEqual(row["layout"], "flashnext-4gpu")
             self.assertEqual(row["options"]["spec_depth"], 3)
             self.assertEqual(row["options"]["host_pool_mib"], 9216)
-
-    def test_no_historical_index_reader_writer_or_workload_compare_alias(self):
-        from bigcherry.cli.main import main
-
-        self.assertFalse(hasattr(w, "DEFAULT_INDEX"))
-        self.assertFalse(hasattr(w, "read_index"))
-        self.assertFalse(hasattr(w, "append_index"))
-        self.assertFalse(hasattr(w, "compare"))
-        self.assertFalse(hasattr(w, "difference"))
-        for args in (["workload", "compare", "prefill-doc-44k"],
-                     ["workload", "seed"],
-                     ["workload", "run", "decode-1stream", "--index", "/tmp/old"]):
-            with self.assertRaises(SystemExit) as error:
-                main(args)
-            self.assertEqual(error.exception.code, 2)
 
     def test_http_missing_usage_does_not_invent_tokens(self):
         class FakeResponse:

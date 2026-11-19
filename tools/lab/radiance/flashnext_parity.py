@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Flash-Next performance parity: the before/after measurement of a Radiance pin bump (bump-radiance section 4).
 
 flashnext-parity.sh drives the launches and writes raw files under OUT/launch-<i>/; this module does everything that is
@@ -9,11 +8,11 @@ not process control, so it can be tested without cards:
   doc-calibrate --url U --tokens T --out FILE   chars per token of the docs corpus, measured with one probe request
   doc-prefill --url U --calibration FILE --slot measure:K|warmup:K --out FILE   one long document prefill, max_tokens 1
   policy-line LOG                       the helper's last `policy placement` line as JSON (committed, bytes_moved)
-  record-launch OUT --launch N          publish one verified MRC01 result for a native measurement
+  record-launch OUT --launch N          commit one completed launch into a run-record v1 (the record is the result;
+                                        baseline and compare are `bigcherry results baseline|compare`)
 
 Tokens/s is never gated across builds (MTP draft acceptance differs per build): the gated metrics are cold prefill and
-engine step time; acceptance and the live policy's transactions are reported only. Baseline/compare use only the
-standard library; record-launch calls the platform's MRC01/MRC03 readers and immutable store, never native engine Python.
+engine step time; acceptance and the live policy's transactions are reported only. The native engine never imports Python; this file is a lab-side wrapper.
 """
 
 from __future__ import annotations
@@ -47,6 +46,9 @@ METRICS = {
     "sess8_warm_ms_per_step": ("lower", False),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
+    # Informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one launch, 28 in the other).
+    # The greedy text differs between launches, and with it where the live policy moves experts; long-context decode is
+    # gated on long8_ms_per_step.
     "long7_ms_per_step": ("lower", False),
     "long8_ms_per_step": ("lower", True),
     "decode1_acceptance": ("higher", False),
@@ -116,7 +118,7 @@ def cmd_run_info(args) -> int:
     _write(out / "run.json", {
         "schema": SCHEMA, "build": str(Path(args.build).resolve()), "build_identity": build_identity(Path(args.build)),
         "revision": git_revision(), "radiance_pin": radiance_pin(),
-        "date": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+        "date": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "launches": args.launches, "port": args.port, "workload": workload})
     return 0
 
@@ -365,17 +367,13 @@ def record_metric_phase(name: str) -> str:
 
 
 def _platform():
-    # The standalone harness is invoked by path; platform imports only inside
-    # the producer, leaving baseline/compare and existing readers unchanged.
+    # This standalone harness imports the shared platform producer by path,
+    # never opening a second measurement-result write path.
     tools = str(REPO / "tools")
     if tools not in sys.path:
         sys.path.insert(0, tools)
     from bigcherry.core import engines, feature_states, measurement_producers
     return engines, feature_states, measurement_producers
-
-
-def _json_bytes(obj) -> bytes:
-    return (json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
 
 
 def capture_host_facts(launch: Path) -> None:
@@ -403,15 +401,14 @@ def capture_launch_provenance(
         "heat_path": str(heat.resolve()),
         "calibration_store": str(calibration.resolve()) if calibration else None,
         "power_profile": power_profile,
-        "recorded_at": _dt.datetime.now(_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "recorded_at": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
     })
 
 
 def selected_calibration(path: Path, key: str) -> dict:
-    """Use the platform MRC04 strict current/legacy/invalid classifications.
+    """Use the platform MRC04 strict current/invalid classifications.
 
-    This reader verifies the full declared key and quantities. Hash-only
-    history can be listed but cannot serve as active measurement evidence.
+    This reader verifies the full declared key and quantities; a row it does not know is refused.
     """
     from bigcherry.core.calibration_records import read_native_toml
 
@@ -421,13 +418,13 @@ def selected_calibration(path: Path, key: str) -> dict:
     item = selected[0]
     if item["status"] != "current":
         raise ParityError(f"selected calibration is {item['status']}: {item['reason']}")
-    return item["legacy"]
+    return item["native"]
 
 
 def publish_launch_record(
     out: Path, launch: Path, *, work_root: Path | None = None
 ) -> str:
-    """Publish one completed launch into the sole immutable record store.
+    """Publish exactly one complete parity launch through the platform producer.
 
     Missing native feature state, build identity, or selected calibration is a
     producer error. None of those can be manufactured from the measurements.
@@ -488,6 +485,7 @@ def publish_launch_record(
         "native_feature_states": launch / feature_states.FILE_NAME,
         "build_metadata": meta_file,
     }
+    # Raw source bytes remain content-addressed, never recreated from metrics.
     for role, filename in (("doc_calibration", "doc-calibration.json"),
                            ("policy_placement", "policy.json")):
         path = launch / filename

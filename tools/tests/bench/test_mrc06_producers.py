@@ -125,19 +125,15 @@ def test_workload_missing_manifest_refused_without_publishing(tmp_path):
     assert run_records.RunRecordStore(tmp_path).query() == []
 
 
-def test_retired_index_is_never_exposed_by_results_list(tmp_path, capsys):
-    # Retained outside-store lab rows are evidence, not read by the platform.
+def test_results_list_reads_run_records_only(tmp_path, capsys):
+    # A stray pre-record JSONL index is not a results source: nothing lists it, nothing classifies it.
     index = tmp_path / "results" / "index.jsonl"
     index.parent.mkdir()
-    index.write_text(json.dumps({
-        "schema": workloads.SCHEMA, "row_id": "evidence-only",
-        "timestamp": "2026-11-17T12:00:00+00:00",
-        "workload_id": "prefill-doc-44k", "metrics": {},
-    }) + "\n")
-    assert main(["results", "list", "--work-root", str(tmp_path), "--json"]) == 0
+    index.write_text(json.dumps({"schema": "bigcherry.workload-result.v1", "row_id": "old-1"}) + "\n")
+    status = main(["results", "list", "--work-root", str(tmp_path), "--engine", "radiance", "--json"])
+    assert status == 0
     assert json.loads(capsys.readouterr().out) == []
-    assert not hasattr(workloads, "read_index")
-    assert not hasattr(workloads, "append_index")
+    assert not hasattr(workloads, "read_index") and not hasattr(workloads, "append_index")
 
 
 def test_llama_row_publishes_phase_metrics_and_attestation(tmp_path):

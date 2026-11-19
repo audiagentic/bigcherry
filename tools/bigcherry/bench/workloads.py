@@ -26,10 +26,6 @@ from ..core.context import resolve_work_root
 from ..core import engines
 from . import stream_bench
 
-card_paths = host_facts.card_paths
-power_state = host_facts.power_state
-_board_watts = host_facts.board_watts
-
 CATALOG = Path(__file__).with_name("workloads.toml")
 DEFAULT_RUNS = resolve_work_root() / "results/workloads"
 SCHEMA = "bigcherry.workload-result.v1"
@@ -227,7 +223,7 @@ def _run_power(cfg: dict, url: str) -> tuple[dict, dict]:
 
     def poll():
         while not stop.is_set():
-            readings[active_phase[0]].append(_board_watts())
+            readings[active_phase[0]].append(host_facts.board_watts())
             stop.wait(1.0)
 
     thread = threading.Thread(target=poll, daemon=True)
@@ -296,7 +292,7 @@ def make_row(workload_id: str, cfg: dict, metrics: dict, detail: dict,
             "runner_commit": detail.get("runner_commit"),
             "layout": info.get("layout"), "kernel": kernel or platform.release(),
             "model": info.get("model"), "policy": info.get("policy", {"state": "unknown", "calibration_key": None}),
-            "power_state": power if power is not None else power_state(),
+            "power_state": power if power is not None else host_facts.power_state(),
             "options": info.get("options", {}), "manifest": info.get("manifest"),
             "manifest_digest": info.get("manifest_digest"), "run_folder": run_folder}
 
