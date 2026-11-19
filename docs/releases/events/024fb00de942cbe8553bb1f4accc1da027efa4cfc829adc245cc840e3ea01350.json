@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_202206_installed-radiance-releases-se_2357",
+  "files": [
+    "engines/radiance/components/serving/config_loader.cpp",
+    "engines/radiance/configs/flashnext.toml",
+    "tools/bigcherry/release/runtime_assets.py",
+    "docs/reference/build/RELEASES.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1197: an installed release starts production with no repository paths: the heat seeds ship in the bundle (signed digests), configs reference @bundle/heat/..., and helper sessions default the route histogram to <run-dir>/heat.live at 1 s. Proved by a no---set production smoke of the installed bc-radiance-1170.33.0 (policy active, canary correct).",
+  "timestamp-utc": "2026-11-19T20:22:06.128554Z",
+  "user-summary-candidate": "Installed Radiance releases serve production out of the box."
+}
