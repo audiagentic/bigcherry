@@ -543,13 +543,13 @@ PATCHES = (
             ),
             Edit(
                 id="s5-embedding-terminal-host-room",
-                anchor=r"^            if \(emb_asked\) \{$",
+                anchor=r"^            if \(emb_asked(?: \|\| broker_)?\) \{$",
                 text=('\n                if (int rc = bc_plan::report_host_room_if_short("host_ram", 0,'
      '\n                    {{"pending_pools_and_host_kv", pools_still}, {"embedding", emb_pin}})) {'
      ' std::fflush(nullptr); std::_Exit(rc); }'),
                 guard=r"pools_still\}, \{[^\n}]+, emb_pin\}\}",
                 max_span_lines=1, expect_matches=1,
-                rationale="Only an explicit RAM embedding that cannot fit is terminal; default placement may fall back.",
+                rationale="The upstream terminal branch covers explicit RAM placement and a fleet claim that already excluded the embedding from VRAM.",
             ),
             Edit(
                 id="s5-ngram-terminal-host-room",
