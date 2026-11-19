@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "2a4aa182f0961add4f41a8ae7bc3d88f4d0adde2eda5182941ecb102de880a69"
+  ],
+  "prompt_tokens": 504,
+  "prompt_tokens_target": 900,
+  "prompt_words": 504,
+  "reps": 2,
+  "seed": 33,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18453"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 119.023,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 67.399,
+    "event_gap_ms_p50": 27.365,
+    "event_gap_ms_p95": 27.936,
+    "event_gap_ms_p99": 67.399,
+    "mean_stream_decode_tps_est": 144.456,
+    "tokens": 256,
+    "ttft_ms_max": 385.37,
+    "ttft_ms_p50": 385.37,
+    "ttft_ms_p95": 385.37
+   },
+   "engine": {
+    "decode_ms_per_step": 27.9724,
+    "decode_tokens_per_step": 4.0968,
+    "decode_tokens_total": 254.0,
+    "decode_tps_engine": 146.458,
+    "draft_acceptance": 0.7742,
+    "draft_accepted_total": 192.0,
+    "draft_tokens_total": 248.0,
+    "engine_step_seconds_decode_total": 1.734288,
+    "engine_steps_decode_total": 62.0,
+    "engine_steps_prefill_total": 2.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 2628.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.7,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 144.456,
+     "error": "",
+     "events": 64,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 900,
+     "response_tail_ms": 0.23,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nxenon zephyr valley valley harbor yarrow meadow lantern xenon delta harbor willow zephyr cedar willow meadow meadow amber quartz valley nectar yarrow meadow prairie indigo delta summit juniper willow meadow umber delta prairie willow willow zephyr summit cedar onyx xenon zephyr delta meadow amber fjord delta juni",
+     "text_sha256": "3021707d177b918d51f3a00f98648a5271eeb333e7809cadace623cafe783a1a",
+     "tokens": 256,
+     "ttft_ms": 385.37,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.123,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795120638998787738,
+   "wall_s": 2.1509,
+   "wall_start_ns": 1795120636846983279
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 122.982,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 30.016,
+    "event_gap_ms_p50": 27.017,
+    "event_gap_ms_p95": 27.626,
+    "event_gap_ms_p99": 30.016,
+    "mean_stream_decode_tps_est": 149.491,
+    "tokens": 256,
+    "ttft_ms_max": 375.61,
+    "ttft_ms_p50": 375.61,
+    "ttft_ms_p95": 375.61
+   },
+   "engine": {
+    "decode_ms_per_step": 27.0147,
+    "decode_tokens_per_step": 4.1111,
+    "decode_tokens_total": 259.0,
+    "decode_tps_engine": 152.181,
+    "draft_acceptance": 0.7778,
+    "draft_accepted_total": 196.0,
+    "draft_tokens_total": 252.0,
+    "engine_step_seconds_decode_total": 1.701926,
+    "engine_steps_decode_total": 63.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 900.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.8,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 149.491,
+     "error": "",
+     "events": 64,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 900,
+     "response_tail_ms": 0.21,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nxenon zephyr valley valley harbor yarrow meadow lantern xenon delta harbor willow zephyr cedar willow meadow meadow amber quartz valley nectar yarrow meadow prairie indigo delta summit juniper willow meadow umber delta prairie willow willow zephyr summit cedar onyx xenon zephyr delta meadow amber fjord delta juni",
+     "text_sha256": "3021707d177b918d51f3a00f98648a5271eeb333e7809cadace623cafe783a1a",
+     "tokens": 256,
+     "ttft_ms": 375.61,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.116,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795120641081891421,
+   "wall_s": 2.0816,
+   "wall_start_ns": 1795120638999581759
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 121.0025,
+   "decode_ms_per_step_median": 27.49355,
+   "decode_tokens_per_step_median": 4.10395,
+   "decode_tps_engine_median": 149.3195,
+   "draft_acceptance_median": 0.776,
+   "event_gap_ms_p95_median": 27.781,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.75,
+   "ttft_ms_max_median": 380.49
+  }
+ }
+}
