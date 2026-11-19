@@ -92,8 +92,9 @@ endif()
 
 include(${CMAKE_CURRENT_SOURCE_DIR}/r4d_declaration.cmake)
 # libr4d's registry exports become r4d_up_*; libr3's own (r3_registry.cpp) take their place
+# Keep libr4d's gfx12-only open hook private to the upstream registry.
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
-  "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective;rad_kernel_chain=r4d_up_kernel_chain")
+  "rad_plugin_open=r4d_up_plugin_open;rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective;rad_kernel_chain=r4d_up_kernel_chain")
 
 rad_add_plugin(libr3 kernels
   SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp

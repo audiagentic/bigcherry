@@ -79,6 +79,8 @@ PIN_BLOBS = {
         "core/place/bc_moe_remote_place.h": (None, "da896b6"),
         "core/place/planner.cpp": ("2ea4220", "7944888"),
         "core/runtime/ctx.cpp": ("ff0f746", "2ff379e"),
+        # Only the upstream include block is needed for this test-only edit.
+        "tests/arch_fakes.h": ("2fd7c92", "128aaea"),
     },
     RAD0003: {
         "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
@@ -248,7 +250,11 @@ class TestRadiancePatchPackages(unittest.TestCase):
         temp, root = self._tree()
         try:
             patches = _load(RAD0002)
-            core_edits = {p.path: len(p.edits) for p in patches if not p.create}
+            core_edits = {
+                p.path: len(p.edits)
+                for p in patches
+                if not p.create and not p.path.startswith("tests/")
+            }
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
             self.assertEqual(sum(core_edits.values()), 28)
             self.assertEqual(sum(1 for p in patches if p.create), 5)

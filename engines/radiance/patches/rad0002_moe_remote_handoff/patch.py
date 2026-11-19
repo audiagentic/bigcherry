@@ -1019,4 +1019,28 @@ PATCHES = (
             ),
         ),
     ),
+    FilePatch(
+        path="tests/arch_fakes.h",
+        edits=(
+            Edit(
+                id="bc-remote-arch-fakes",
+                anchor=r'^#include "rad_runtime\.h"$',
+                mode="insert_after",
+                text='''
+
+#include "bc_moe_remote.h"
+
+/* Architecture fixtures run without a remote helper or the engine core. */
+extern "C" int bc_moe_remote_wanted(int64_t) { return 0; }
+extern "C" int bc_moe_remote_wanted_upto(int64_t) { return 0; }
+extern "C" int bc_moe_remote_shadow(void) { return 0; }
+extern "C" int bc_moe_remote_mask_only(void) { return 0; }
+extern "C" void bc_moe_remote_layer_map(int, int, const int32_t*) {}
+''',
+                guard=r'extern "C" int bc_moe_remote_wanted\(int64_t\)',
+                expect_matches=1,
+                rationale="Standalone architecture tests fake core entry points and declare no remote handoff.",
+            ),
+        ),
+    ),
 )
