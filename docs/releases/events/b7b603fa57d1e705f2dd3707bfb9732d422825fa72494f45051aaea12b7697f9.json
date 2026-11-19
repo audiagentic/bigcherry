@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_191813_added-the-v3-measured-writer-f_1596",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Allow the isolated v3 measured writer to receive the owner-frozen expected plan key and verify it immediately after reconstructing the key from the sealed native snapshot, before measured-plan cache lookup or publication. Preserve the v2/unmeasured-only restriction for all other calls. Added CLI coverage that the v3 measured path gets past argument validation and reaches snapshot descriptor loading; candidate build target was not present in the existing configured build directory, so runtime verification remains outstanding.",
+  "timestamp-utc": "2026-11-19T19:18:13.693695Z",
+  "user-summary-candidate": "Added the v3 measured-writer frozen-key guard before cache access. Focused candidate runtime verification remains to be run after refreshing the candidate build configuration."
+}

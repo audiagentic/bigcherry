@@ -783,8 +783,10 @@ int main(int argc, char** argv) {
                                      "--plan-memory and --plan-memory-ranks)");
         if (!expected_owner_attempt.empty() && !measured_plan_file.empty())
             throw std::runtime_error("--expected-owner-attempt is for cache-only writer reads");
-        if (!expected_plan_key.empty() && !unmeasured)
-            throw std::runtime_error("--expected-plan-key is for the session-owned unmeasured writer call");
+        if (!expected_plan_key.empty() && !unmeasured &&
+            !(plan_mode && bc::serving::v2::kContractVersion == 3 && native_config_fd >= 3))
+            throw std::runtime_error(
+                "--expected-plan-key is for a session-owned unmeasured call or v3 measured cache read");
         if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
             throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab "
                                      "profile, or --calibration-run");
@@ -970,6 +972,12 @@ int main(int argc, char** argv) {
                 v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
                 bc::serving::engine_identity(engine_binary, home), plan_extra,
                 in.native_config ? &*in.native_config : nullptr);
+            // A v3 owner pins the same native key at draft, measurement and
+            // measured-cache read. Check it before touching or publishing any
+            // cache entry so a changed resolver input cannot reuse the attempt.
+            if (!expected_plan_key.empty() && bc::serving::plan_key(key_inputs) != expected_plan_key)
+                throw std::runtime_error(
+                    "the effective measured-manifest inputs differ from the session's frozen plan key");
             // The v1 manifest for this configuration from its measured plan: given by a measuring start
             // (--measured-plan, checked against the configuration and stored in the cache under this key) or
             // found in the cache. A miss is exit 10: a manifest without a measured plan is not written.

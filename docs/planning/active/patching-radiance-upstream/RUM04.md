@@ -197,6 +197,8 @@ C51 (2026-11-20): Astra review RV4248 found that the isolated v3 writer could ac
 
 C53 (2026-11-20): retained the native resolution-root directory descriptor from before YAML snapshot read through owner inspection, rechecking path/inode identity after child completion and before future measuring spawn. Inspector and native measuring entry borrow the same CLOEXEC root fd; spawn fchdir occurs only after durable registration, while the sealed manifest remains the only explicitly inherited fd. Future native measurement argv uses absolute engine and plan/rank output paths and the inspector's captured environment. Reconciliation now permits omitted optional rank_devices while still checking selected TP/BDF count and card ordinals; any explicit native rank-device order must match local BDF order. Focused bc_session_test passed 1/1 and diff check passed. The v3 planner remains fail-closed before cache/P1/power/measurement; this is descriptor/reconciliation plumbing, not a launched native measurement. Evidence C53.
 
+C54 (2026-11-20): the isolated v3 writer now accepts an owner-frozen `--expected-plan-key` for measured sealed-snapshot cache reads and verifies it before lookup/publication. Added real-CLI regression coverage to `bc_native_v3_session_test`; execution is pending because the existing `native-v3-measuring-c51-build` does not define that target. Refresh the isolated candidate build from this worktree and run the focused target before accepting this slice. See evidence C54 and Ledger event `chg_20261119_191813_added-the-v3-measured-writer-f_1596`.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -248,3 +250,4 @@ C53 (2026-11-20): retained the native resolution-root directory descriptor from 
 - RV4248
 - 2026-11-19T18:12:45.949208+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:13:03.651665+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T19:18:49.935154+00:00 (updated-by): Updated: section:notes

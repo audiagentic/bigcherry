@@ -2783,6 +2783,17 @@ void v3_writer_cli_rejects_unowned_imports() {
         raw_import.output.find("cannot read missing-plan.json") != std::string::npos)
         throw std::runtime_error("v3 writer did not refuse raw measured-plan imports before file access: " +
                                  raw_import.output);
+
+    // A native v3 measured writer must accept the frozen-key guard too. Use an
+    // invalid descriptor so the CLI reaches sealed-snapshot loading without
+    // opening cache files or starting any process.
+    const auto measured_key = run_bc_serve(
+        {"--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
+         std::string(64, '0'), "--plan-cache", "missing-cache", "--engine-binary", "/missing/radiance",
+         "--power-profile", "stock"});
+    if (measured_key.output.find("native snapshot descriptor must be a fully sealed memfd") == std::string::npos)
+        throw std::runtime_error("v3 measured writer rejected the frozen-key guard before snapshot loading: " +
+                                 measured_key.output);
 }
 void native_explain_cli(Fixture& t) {
     const char* env = std::getenv("BIGCHERRY_LAYOUTS");
