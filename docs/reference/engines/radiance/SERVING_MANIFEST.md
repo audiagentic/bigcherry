@@ -17,6 +17,17 @@ are being retired in favour of it (RSC11). Status: native `bc-serve` owns produc
 | `radiance --manifest M --role engine` | The engine reads its whole configuration from `M`. |
 | `r3_moe_worker --manifest M --role helperN` | A helper reads its role from the same `M`. |
 
+For lab bc-serve serve CONFIG --calibration-run, the owner needs two distinct prompt files,
+an explicit live policy and an existing ordinary --calibration-store file (an empty file is
+valid for a new calibration). A file-based handoff.histogram source cannot satisfy
+accept_unwatermarked_heat=false: .bcproof authenticates the engine histogram publication
+but does not certify per-step coherence. The owner rejects this strict-policy mismatch before
+writing the lab manifest; to use this file source, the policy JSON must explicitly opt in with
+accept_unwatermarked_heat=true. The native owner injects --bc-heat-launch-nonce into the
+serving engine only when spec.handoff.telemetry.histogram_file exists, never as a manifest
+field or a helper argument. A bounded no-feed watchdog names missing helper deltas if
+the source remains silent; it does not stand in for full calibration convergence.
+
 ## Writing a manifest
 
 ```bash
