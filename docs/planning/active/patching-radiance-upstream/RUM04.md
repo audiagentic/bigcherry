@@ -203,6 +203,8 @@ C55 (2026-11-20): `replay_stored_manifest()` explicitly rejects `bigcherry/v3` e
 
 C56 (2026-11-20): retained the strict inspector result and now reconcile its listener port, context, sequence limit and ordered runtime kernels against the pinned native measuring draft before power admission or GPU child startup. Refreshed candidate builds from this task worktree: generated-v3 `bc_native_v3_session_test` passes (1/1); default-v2 `bc_session_stored_test` passes (1/1). C54 measured-key and C55 direct-v3-replay coverage are included in those verified targets. See evidence C54-C56. Production admission remains closed pending actual owner measurement/cache/P1/replay chain.
 
+C57 (2026-11-20): rad0011 now records rank demand only when each post-split `rad::Config.devices` ordinal resolves via `rad::dev_pci_address()` to the selected ordered BDF. `plan_cache_store_owned()` also requires each rank receipt's claimable bytes to equal the paired EnginePlan card's free-VRAM fact. Targeted verification passed: rad0011 patch composition (1/1), default-v2 serving + stored-session CTests (2/2), generated-v3 session + real writer CTests (2/2). See evidence C57. No GPU used.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -257,3 +259,4 @@ C56 (2026-11-20): retained the strict inspector result and now reconcile its lis
 - 2026-11-19T19:18:49.935154+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:21:04.806627+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:35:09.573526+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T19:43:56.206142+00:00 (updated-by): Updated: section:notes

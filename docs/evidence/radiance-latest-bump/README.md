@@ -285,3 +285,9 @@ The default-v2 `bc_session_stored_test` was built separately from this worktree 
 The owner now retains the strict native inspection report and compares the emitted measuring draft's listener port, max context, max sequences and ordered runtime kernels against the parsed YAML values before any power admission or GPU child. The card-free inspector fixture now reports those values from the selected local profile, so the test checks the equality gate instead of relying on unrelated constants.
 
 Verification: configured a fresh generated-v3 serving build from this task worktree against the installed ABI44 SDK; built and passed `bc_native_v3_session_test` (1/1). Separately configured and built the default-v2 serving path; `bc_session_stored_test` passed (1/1). `git diff --check` passed. No GPU was used. Native measurement, owner cache publication, P1 and production start remain gated.
+
+## C57 — Bind per-rank receipt facts to actual devices and plan facts (2026-11-20)
+
+The rad0011 post-split hook now checks each rank's actual process-visible device PCI address against the selected ordered BDF before emitting its rank-demand sidecar. The session owner cache publisher also verifies each sidecar `claimable_bytes` equals the same-rank `EnginePlan.vram.cards[].free` fact, rejecting internally inconsistent measurement pairs. Added focused patch-composition and cache mismatch coverage.
+
+Verification: `TestPlanMemoryPatch.test_p1_native_rank_demand_is_post_split_and_v1_plan_is_unchanged` passed (1/1); default-v2 `bc_serving_test` and `bc_session_stored_test` passed (2/2); generated-v3 `bc_native_v3_session_test` and `bc_serving_v3_writer_test` passed (2/2). `git diff --check` passed. No GPU was used; rank identity and receipt consistency are checked in CPU-side fixtures, not hardware behavior.

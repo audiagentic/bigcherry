@@ -230,6 +230,7 @@ int main(int argc, char** argv) {
         Json native_plan = inputs.measured->plan.plan_json;
         native_plan["kv_one_session"]["bytes"] = inputs.resolved.typed.service.max_context;
         native_plan["host_pool_mib"] = inputs.resolved.typed.memory.host_pool_mib;
+        native_plan["vram"]["cards"][0]["free"] = 10;
         // The derived pool is the measured host embedding plus the 1 MiB
         // margin, matching this fixture's configured 9216 MiB pool.
         native_plan["host"] = Json::array({{{"name", "embedding"},

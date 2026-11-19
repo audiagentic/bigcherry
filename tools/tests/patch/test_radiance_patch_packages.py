@@ -948,6 +948,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             assert "c.vram_weights_mib + (__int128)c.vram_kv_mib" in plan
             assert "f.n_queues * f.queue_bytes" in plan
             assert '"radiance_p1_rank_demand"' in plan
+            assert "rad::dev_pci_address(c.devices.front()) != bdfs[i]" in plan
             assert "g_rank_gpu" in plan
             assert "g_rank_facts = facts;" in plan
             assert "void bc_plan_memory_note_ranks(" in plan

@@ -366,6 +366,10 @@ void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg) {
         for (size_t i = 0; i < g_rank_facts.size(); ++i) {
             const auto& f = g_rank_facts[i];
             const auto& c = rank_cfg[i];
+            if (c.devices.size() != 1 || rad::dev_pci_address(c.devices.front()) != bdfs[i]) {
+                g_error = "P1 actual rank device BDF differs from the selected ordered engine BDFs";
+                return;
+            }
             const __int128 overhead = (__int128)f.arena + f.staging +
                 (__int128)f.n_queues * f.queue_bytes + g_rank_stage;
             const __int128 fixed = overhead + f.statics;

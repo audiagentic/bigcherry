@@ -943,6 +943,10 @@ void measured_plan_cache(Fixture& t) {
     Json bad_bytes = native_ranks;
     bad_bytes["gpu"][0]["required_bytes"] = 0;
     refuse_owned_ranks(bad_bytes, "out of measured wire range");
+    Json inconsistent_claimable = native_ranks;
+    inconsistent_claimable["gpu"][0]["claimable_bytes"] = 11;
+    refuse_owned_ranks(inconsistent_claimable,
+                       "owner rank claimable VRAM differs from the engine plan's same-rank free VRAM facts");
     const auto native_stored = sv::plan_cache_store_owned(
         native_dir, native_key, native_plan, native_ranks, r.values, sv::HostResident{2304, 1536},
         sv::OwnerMeasurementEvidence{"native-test-attempt", sv::sha256_hex("measuring-manifest")});

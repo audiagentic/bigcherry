@@ -456,6 +456,10 @@ CachedPlan plan_cache_store_owned(const fs::path& dir, const Json& key_inputs, c
     check_plan_for_configuration(values, decoded);
     if (decoded.vram.cards.size() != engine_bdfs.size())
         throw std::runtime_error("owner engine plan rank count differs from native ordered BDFs");
+    for (size_t i = 0; i < decoded_ranks.gpu.size(); ++i)
+        if (decoded.vram.cards[i].free != decoded_ranks.gpu[i].claimable_bytes)
+            throw std::runtime_error(
+                "owner rank claimable VRAM differs from the engine plan's same-rank free VRAM facts");
     if (owner.measuring_manifest_sha256.empty())
         throw std::runtime_error("owner measurement has no measuring-manifest digest");
     CachedPlan c{decoded, plan_json, rank_demand, plan_key(key_inputs), {}, resident};
