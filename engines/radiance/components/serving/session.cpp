@@ -1285,6 +1285,13 @@ class Owner {
             throw PlanFailed("calibration prompts: " + prompts.error().message);
         const auto& workload = prompts.value();
         const auto& policy = *spec.handoff->placement.live_policy;
+        if (!spec.handoff->telemetry.histogram_file || spec.handoff->telemetry.histogram_file->empty())
+            throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration: "
+                             "missing spec.handoff.telemetry.histogram_file for the helper heat source");
+        const auto feed_deadline =
+            calibration_heat_feed_deadline(policy, std::chrono::seconds(spec.handoff->telemetry.period_s));
+        if (!feed_deadline)
+            throw PlanFailed("calibration heat feed deadline: " + feed_deadline.error().message);
         const fs::path helper_log = helper_logs_.front();
         const auto begun = Clock::now();
         constexpr auto request_timeout = std::chrono::seconds(120);
@@ -1302,8 +1309,16 @@ class Owner {
                                                    : monotonic_calibration_envelope(envelope, next.value());
             have_feed = have_feed || envelope.accepted_feed;
             const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - begun);
-            if (!have_feed && elapsed >= envelope.prefeed)
-                throw PlanFailed("calibration: no measured heat feed within the policy-only bound");
+            if (!have_feed && (elapsed >= feed_deadline.value() || elapsed >= envelope.limit)) {
+                const uint64_t accepted = drift.value() ? drift.value()->accepted_heat_deltas : 0;
+                throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration: heat_watermarked "
+                                 "missing sufficient accepted heat deltas from helper0 (accepted_heat_deltas=" +
+                                 std::to_string(accepted) +
+                                 ", need at least 2); source is the engine histogram "
+                                 "without coherent observation watermarks; check accept_unwatermarked_heat "
+                                 "and histogram publication. Derived no-feed deadline " +
+                                 std::to_string(feed_deadline.value().count()) + "s");
+            }
             if (elapsed >= envelope.limit)
                 throw PlanFailed("calibration: finite measured workload/drift deadline exhausted");
             if (stop_requested())
@@ -1922,6 +1937,22 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (!policy.is_object())
             throw PlanFailed("calibration live policy: expected a JSON object in " +
                              in.live_policy_file.string());
+        // Only a true credited per-step source provides complete observations.
+        // The engine's .bcproof binds a published file to this launch; it
+        // cannot turn a periodically sampled file into a step watermark.
+        if (policy.contains("accept_unwatermarked_heat") &&
+            policy.at("accept_unwatermarked_heat").is_boolean() &&
+            !policy.at("accept_unwatermarked_heat").get<bool>())
+            throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration histogram source is "
+                             "unwatermarked; explicit accept_unwatermarked_heat=true is required in "
+                             "--live-policy for engine histogram calibration (or provide a coherent "
+                             "credited heat source); refusing to override strict policy");
+        std::error_code store_error;
+        if (!fs::is_regular_file(in.calibration_store, store_error))
+            throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration store " +
+                             in.calibration_store.string() +
+                             " does not exist as a regular file; create an empty calibration store "
+                             "file at this path before --calibration-run");
     }
     if (!in.experiment_file.empty()) {
         // RSC04 minimum: observe-only lab experiment. Until RSC12 binds a

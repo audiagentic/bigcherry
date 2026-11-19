@@ -88,6 +88,29 @@ Instrumented lab runs need explicit policy evidence; do not rely on retired laun
 
 ## How to restore it after a key change
 
+**Native calibration heat source (2026-11-19):** The serving engine writes the manifest-declared
+spec.handoff.telemetry.histogram_file every period_s seconds. The helper coordinator currently uses
+HistogramFileSource on <prefix>.rank0, not the per-step credited-heat ring. Those file deltas carry
+complete_observations=false: the .bcproof sidecar proves publication generation and file identity,
+**not** coherent per-step observation coverage. Consequently an explicit lab policy with
+accept_unwatermarked_heat=false is incompatible with this source and the native owner now refuses it
+before launching a manifest writer. For file-based calibration, the operator must explicitly set
+accept_unwatermarked_heat=true in the lab --live-policy JSON, preserving the policy's provenance
+and other safety checks; the owner never silently overrides false. This is not a claim that a
+calibration will converge or that the file is an equivalent replacement for a credited stream.
+
+The native owner also refuses absent --calibration-store paths by name; create an empty ordinary
+file at that path before starting a fresh calibration. The heat-input watchdog is distinct from
+the full four-phase convergence deadline: without two accepted deltas its bound is
+(min_samples + 1) * histogram_period + max(cadence, max_heat_age) (terms in seconds), so
+the recorded policy (1000, 1 s, 60 s, 120 s) fails without heat in 1,121 s instead of
+borrowing a multi-hour four-phase policy horizon. The error reports BC_CFG_CALIBRATION_INVALID,
+heat_watermarked, the accepted delta count and the derived limit. The archived launcher passed
+--record-heat PREFIX explicitly; native serving instead derives the engine's histogram
+path from the immutable manifest and binds publication to the launch nonce. The helper's file
+consumer does not interpret .bcproof as an observation watermark. Radiance 2.x migration should
+retain this typed source distinction rather than hard-code upstream flags.
+
 Re-calibrate only through the supported native `bc-serve` typed calibration workflow under the GPU lease. The prior CLI recipe belongs to archived pre-S16 evidence (`runs/rhp16-calib9`); do not replay its shell flags as a new native mode or edit the calibration key by hand. See the current RSC12 configuration and S10 producer/consumer contract.
 
 ## When measuring
