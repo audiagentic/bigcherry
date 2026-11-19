@@ -11,27 +11,27 @@ priority: P2
 work: L
 ---
 
-# Migrate producers onto run-record v1: Radiance workloads store, parity harness, bc-serve lab runs, llama.cpp bench rows and experiment bundles
+# Migrate Radiance measurement producers onto run-record v1
 
 ## Description
 
-Migrate every producer of measurement results onto the platform record (MRC01) so there is one store. Old stores become read-only readers; no new legacy fallbacks (the compatibility-shim rules in docs/reference/tooling/TOOLING.md apply: scan consumers, prove parity, record the retirement).
+Migrate every producer of measurement results onto the platform record (MRC01) so there is one store. Callers are migrated to the one immutable store and the old active result path is deleted; there are no aliases, summary writers, or old-index readers.
 
-Producers named today: the workload store (tools/bigcherry/bench/workloads.py, results/index.jsonl); the Flash-Next parity harness (tools/lab/radiance/flashnext_parity.py); bc-serve lab runs (--calibration-run and the measure runs); tools/lab/radiance/rsc02_s15_ab.py; llama.cpp bench rows (the run_bench.py results described in docs/planning/completed/tuning-hip-autotune/HI115.md and similar items); and the experiment bundles (tools/bigcherry/experiment/bundle.py, HI47) with execution attestation (tools/bigcherry/experiment/attestation.py, VA25).
+Producers named today: the workload store (tools/bigcherry/bench/workloads.py, results/index.jsonl); the Flash-Next parity harness (tools/lab/radiance/flashnext_parity.py); bc-serve lab runs (--calibration-run and the measure runs); tools/lab/radiance/rsc02_s15_ab.py; and experiment bundles (tools/bigcherry/experiment/bundle.py, HI47) with execution attestation (tools/bigcherry/experiment/attestation.py, VA25).
 
 ## Steps
 
-- 1. workloads.py: write records instead of index rows (manifest stored by content through the bundle, not a path); keep read_index() as a read-only reader for old rows.
+- 1. workloads.py: publish immutable records, pinning the exact manifest; remove the previous measurement-index writer and consumers.
 - 2. Parity harness: produce records and baselines through MRC05.
 - 3. bc-serve lab runs (--calibration-run, measure): emit a record with the provenance bundle (effective manifest, heat file, calibration record, argv, env, power).
 - 4. rsc02_s15_ab.py: write records.
-- 5. llama.cpp bench rows: the run_bench.py result appends go to the platform store (the engine supplies an adapter from its row to the record).
+- 5. Deferred to MRC07: llama.cpp bench rows, run-bench adapter and engine-specific producer migration.
 - 6. Experiment bundles: bundle.py provenance documents link to records; fold the VA25 execution attestation (ExecutionAttestation, require_execution_identity) into the record as a validity field, so an unattested measurement is marked invalid in the record itself.
-- 7. Retire each old writer per the shim rules once its consumers are scanned; list the old stores as read-only in TOOLING.md.
+- 7. Migrate consumers and delete retired writer, reader, CLI alias and output paths; list retained evidence artifacts in tooling documentation.
 
 ## Detailed Solution & Technical Design
 
-One producer per PR. Each step ends with the old writer removed (not dual-writing) and a reader that still opens old data. Evidence that carries across bumps is the rule, so old records are read and never rewritten.
+One producer per PR. Each migrated producer has a single record write path. Retained historical lab evidence is unchanged, but old measurement outputs are not active readers or public aliases.
 
 ## Code Samples & Guidance
 
@@ -64,43 +64,22 @@ Large across six PRs. Risk: a half-migrated state with two stores; mitigate by r
 ## Acceptance Criteria
 
 - There is exactly one write path for measurement results.
-- Old stores open read-only and have an entry in the disposition registry.
+- Migrated producers have no second measurement store or active old-data readers; disposition rows describe the surviving canonical path.
 - Attestation validity is a field of the record.
 
 ## Notes
 
 Producers added on 2026-11-19 that already write their own receipts and should migrate: the compile-crash retry receipts (`bigcherry-compile-retries.jsonl` in the build dir and `<work-root>/build-compile-retries.jsonl`, #1175) and the ad hoc hardware-proof scripts of the day (two-start replay proof, dense TP3 sweep) that stream-bench JSON and `session.json` were stitched together for.
 
-## Slice 1: Flash-Next parity producer (2026-11-20)
+## Radiance-only migration rule (2026-11-20)
 
-The hardware harness now produces one immutable MRC01 record per completed
-launch by default (`--records`; `--no-records` is an explicit opt-out).
-The native engine remains Python-free; Python consumes the run's strict
-manifest, feature-state snapshot, per-launch measurements, source heat and
-selected calibration evidence after the owner has stopped the session.
-The platform store independently validates every content-addressed blob and
-record. Its MRC05 direction/gate/repeat metadata matches the parity harness
-exactly; the card-free fixture runs both results compare and the harness's
-unchanged compare across two baseline and two candidate launches.
-
-Retained transition boundary: `OUT/parity.json` is still written and existing
-`baseline` / `compare` readers remain live, as explicitly required for this
-slice. It is a compatibility summary, not the canonical measurement writer.
-Do not retire it before consumer scanning. The origin/main base for this slice
-contains MRC05 but not the newly pushed MRC04 reader, so selected calibration
-TOML was independently verified in that slice; slice 2 replaces the
-temporary reader with MRC04's shared validator.
-Other producer migrations and hardware activation remain pending.
-
-## Slice 2: workload, llama.cpp, experiment producers, MRC04 consolidation (2026-11-20)
-
-- Replace the temporary parity calibration digest logic with MRC04's strict current/legacy/invalid TOML reader. Only the selected current calibration row can become measured evidence.
-- A native Radiance workload run now publishes immutable MRC01 content, with manifest bytes captured while the source exists. Historical index paths were invalidated by the November 17 purge: the old results/index.jsonl is read-only. "results list" exposes historical rows as legacy / missing_content_provenance, with no baseline activation and no automatic conversion.
-- The BigCherry-owned llama.cpp wrapper invokes the unmodified external bench/run_bench.py and intercepts its canonical result append calls. This preserves the benchmark process and measured quantities, writing a single MRC01 record rather than new JSON/family/SQLite results. Direct upstream invocations still write their own legacy stores, so operators must use the managed wrapper.
-- HI47 experiment bundles publish a result record only when a typed measured-results sidecar exists. The current experiment.json and measured values are content blobs. VA25 canonical execution evidence supplies the optional MRC01 validity field and invalid/missing evidence blocks results baseline, compare and history activation.
-- Tests use synthetic hosts/manifests/llama rows/external run_bench and actual MRC04 calibration fixtures; no GPU needed.
-
-Remaining separate slices: bc-serve calibration/lab producers, RSC02 S15, other campaign/compile receipts and migration of consumers still reading old stores. No historic row is rewritten; unrepresentable llama PPL/standard deviation metrics remain verbatim in source-row provenance until a schema extension can represent those phases faithfully.
+Parity writes a verified run record for every completed launch, and
+`bigcherry results` owns baseline/compare/list/show operations. The
+`parity.json` writer and readers, launcher baseline/compare commands,
+record-enablement flags, old results-index listing and llama.cpp run-bench
+CLI are removed. No historical raw lab evidence is rewritten. The platform
+registry and core producer remain engine-neutral, but llama.cpp adapters
+and acceptance are assigned to MRC07.
 
 ## Slice 3: native calibration, probes, RSC02 and results views (2026-11-20)
 

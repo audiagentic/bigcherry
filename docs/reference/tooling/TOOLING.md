@@ -163,9 +163,9 @@ engine, layout, workload and phase-qualified metric; baseline and trailing
 drift flags use two launches, not a single-launch verdict.
 
 ```bash
-PYTHONPATH=tools python -m bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload parity --name reference --to reference.json
-PYTHONPATH=tools python -m bigcherry results compare --baseline reference.json --since 2026-11-20T00:00:00Z
-PYTHONPATH=tools python -m bigcherry results history --engine radiance --layout flashnext-4gpu --workload parity --metric decode.tokens_per_second --baseline reference.json --json
+bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload flashnext-parity --name reference --to reference.json
+bigcherry results compare --baseline reference.json --since 2026-11-20T00:00:00Z
+bigcherry results history --engine radiance --layout flashnext-4gpu --workload flashnext-parity --metric decode.decode1_ms_per_step --baseline reference.json --json
 ```
 
 For controlled cohorts, repeat `--record SHA256` on baseline/compare, or
@@ -173,42 +173,27 @@ filter with `--since`/`--until`. `--work-root` selects the record store.
 Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
 0 for a clean gate. MRC06 continues to migrate the remaining producers.
 
-**MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
-measure` now publishes one immutable run-record v1 per completed native launch
-on every completed launch under `$BC_WORK_ROOT/run-records/v1/`.
-`--records` is a backwards-compatible explicit-on spelling; `--no-records`
-is refused. The legacy `parity.json` summary remains a generated compatibility
-view for historic readers and the harness's transitional baseline/compare;
-its producer/consumer retirement is still required for MRC06 closure. Each
-`OUT/launch-N/record.sha256` contains the record digest. The record carries
-`engine=radiance`, build ID and binary hash from the build metadata, Git
-revision, measured model/layout, the exact harness workload definition,
-phase-separated cold/sess8 TTFT, document/long-context prefill, decode step
-times and ungated draft acceptance. `metric_specs` keeps the harness's
-one-sided gate and real same-prompt repeats (distinct prompts are not noise
-samples). No GPU tests are needed for the adapter's fixture/compare parity.
+**MRC06: Flash-Next measured records and producer ingestion.**
+The native Flash-Next parity harness publishes exactly one immutable MRC01 run
+record for each completed measured launch under `$BC_WORK_ROOT/run-records/v1/`.
+Publication cannot be disabled. The digest is stored at
+`OUT/launch-N/record.sha256`; the original measurements remain raw inputs
+to the record. No `parity.json` is produced or read. Baselines, one-sided
+comparisons and provenance differences are calculated only by the platform:
 
-The native strict manifest, source heat bytes, the selected calibration row
-when the policy is configured, full `live_policy_state`, owner argv/sets,
-a curated environment snapshot, effective power state and actual
-warmup are SHA-256 content blobs, not mutable paths. Heat and calibration
-inputs are snapshotted before launch and checked for mutation; feature states
-are read from the native run directory using MRC03. Passive MRC02 host facts
-are captured immediately before measurement. Incomplete state, metadata,
-or mismatched key aborts **record publication**, rather than fabricate
-provenance. The old `parity.json` remains for existing consumers only and is
-not ingested as a source of run-record metric truth. The remaining MRC06
-producer migrations and legacy-writer retirement are separate slices.
+```sh
+bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload flashnext-parity --name reference --to reference.json
+bigcherry results compare --baseline reference.json --engine radiance --layout flashnext-4gpu --workload flashnext-parity
+```
 
-**MRC06 slice 2 — producer migration and legacy listing.** The parity producer now reads the selected current calibration with MRC04's shared native-TOML reader, without duplicating its key verification.
-
-"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. The legacy "results/index.jsonl" and old workload rows are read-only; "bigcherry results list --engine radiance --work-root ROOT --json" shows older rows as "legacy" / "missing_content_provenance". Neither deleted manifest paths nor seeded rows are silently promoted into the record store. "workload seed" is disabled and the historical "workload compare" remains a read-only reader.
-
-The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
-
-    bigcherry results run-bench --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
-
-It drives the original benchmark and intercepts the existing result append boundary to write exactly one content-addressed record per measured row; duplicate per-family JSON and legacy SQLite sync are suppressed. Direct external invocations are outside the managed migration. Numeric "pp*_tps" and "tg*_tps" metrics map to prefill/decode without changing values. Unmapped quantities such as PPL or standard deviation remain byte-for-byte as the provenance source row, not falsely relabeled as prefill or decode.
+The run record pins the build metadata, native manifest, source heat bytes,
+selected calibration, policy snapshot, native feature states, argv,
+environment and power state. Decode, prefill and TTFT metrics remain separate,
+and the measured repeat groups define tolerances. Missing inputs and failing
+measurements refuse publication rather than generate substitute values.
+`bigcherry workload run` also writes MRC01 records rather than a second
+measurement index; `bigcherry results list` enumerates SHA-verified records
+only. Existing experiment sidecar results use the same shared producer.
 
 Typed HI47 measurement sidecars can be published with `bigcherry results ingest-experiment --bundle BUNDLE --measurement-file BUNDLE/measurement.json --work-root ROOT` or the managed experiment run `--measurement-file measurement.json` option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
 
@@ -240,7 +225,7 @@ remains read-only lifecycle/comparison evidence, not a measurement index.
 Today's parity records in **UTC** and one verified record by digest:
 
 ```sh
-bigcherry results list --today --engine radiance --workload parity --json
+bigcherry results list --today --engine radiance --workload flashnext-parity --json
 bigcherry results show RECORD_SHA256 --json
 ```
 
@@ -260,13 +245,10 @@ independently qualified. It never infers results from a session log.
 This is a post-run ingestion interface, not evidence that every independent
 S8/TP3/replay/campaign script now invokes it.
 
-These are read-only SHA-verified store views; missing historic manifest
-paths are never rebuilt. MRC06 global writer retirement remains open:
-parity.json baseline/compare remain transitional; external upstream direct
-bench runs can bypass the managed wrapper; some historical GPU experiment
-scripts and dual compile-retry diagnostic receipts still need retirement
-or explicit non-measurement disposition.
-
+These are SHA-verified views of the immutable record store. The offline
+native sidecar ingestion is deliberately explicit; independent lab scripts
+must invoke it to publish a measured result. MRC07 owns llama.cpp producers,
+and non-measurement compiler diagnostics are tracked separately.
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be

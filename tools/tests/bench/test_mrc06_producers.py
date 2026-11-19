@@ -125,40 +125,19 @@ def test_workload_missing_manifest_refused_without_publishing(tmp_path):
     assert run_records.RunRecordStore(tmp_path).query() == []
 
 
-def test_legacy_rows_list_read_only_and_never_become_baselines(tmp_path, capsys):
+def test_retired_index_is_never_exposed_by_results_list(tmp_path, capsys):
+    # Retained outside-store lab rows are evidence, not read by the platform.
     index = tmp_path / "results" / "index.jsonl"
     index.parent.mkdir()
-    legacy = {
-        "schema": workloads.SCHEMA,
-        "row_id": "old-1",
+    index.write_text(json.dumps({
+        "schema": workloads.SCHEMA, "row_id": "evidence-only",
         "timestamp": "2026-11-17T12:00:00+00:00",
-        "workload_id": "prefill-doc-44k",
-        "workload_version": 1,
-        "layout": "flashnext-4gpu",
-        "manifest": "/deleted/manifests/old.json",
-        "metrics": {"prefill_tps": {"median": 3312.0}},
-    }
-    original = json.dumps(legacy) + "\n"
-    index.write_text(original)
-    status = main(
-        [
-            "results",
-            "list",
-            "--work-root",
-            str(tmp_path),
-            "--engine",
-            "radiance",
-            "--json",
-        ]
-    )
-    assert status == 0
-    listing = json.loads(capsys.readouterr().out)
-    assert listing[0]["status"] == "legacy"
-    assert listing[0]["row_id"] == "old-1"
-    assert listing[0]["reason"] == "missing_content_provenance"
-    assert index.read_text() == original
-    with pytest.raises((ValueError, RuntimeError), match="read.only|legacy"):
-        workloads.append_index(index, legacy)
+        "workload_id": "prefill-doc-44k", "metrics": {},
+    }) + "\n")
+    assert main(["results", "list", "--work-root", str(tmp_path), "--json"]) == 0
+    assert json.loads(capsys.readouterr().out) == []
+    assert not hasattr(workloads, "read_index")
+    assert not hasattr(workloads, "append_index")
 
 
 def test_llama_row_publishes_phase_metrics_and_attestation(tmp_path):

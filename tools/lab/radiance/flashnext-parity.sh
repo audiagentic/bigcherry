@@ -4,25 +4,21 @@
 # Tokens/s is never compared across builds (MTP draft acceptance differs per build); acceptance is reported, never gated.
 #
 # Usage:
-#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P] [--records]
-#   bash tools/lab/radiance/flashnext-parity.sh baseline --out DIR --name NAME [--to FILE]
-#   bash tools/lab/radiance/flashnext-parity.sh compare --out DIR --baseline FILE
+#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P]
 #
 # measure: N launches (default 2) of native bc-serve serve flashnext-4gpu with production defaults (layout flashnext-4gpu, 262144
 #   context, 8 sessions; the live expert-placement policy is on when $BC_WORK_ROOT/live-policy-calibration.toml exists),
 #   handoff.histogram_period_s=1 from RSC12. Each launch warms up (only with the policy on:
 #   (min_samples + 1) heat windows plus a second, from the native strict-v2 manifest), then measures cold prefill, decode step time at 1 and 6 streams, 8 sessions and a 256K
 #   context, stops the native session (always, also on failure) and keeps the helper's `policy placement` line. Raw records go
-#   to OUT/launch-<i>/, the summary to OUT/parity.json (flashnext_parity.py summarise). It uses all four cards: hold the
+#   to OUT/launch-<i>/ and one immutable record per launch. It uses all four cards: hold the
 #   gpu lease (agent-lease acquire gpu ... -- bash tools/lab/radiance/flashnext-parity.sh measure ...). It runs in the
 #   foreground for about 20 minutes a launch (measured 2026-11-08: ~7.5 min policy warmup, ~3.5 min cold/doc/decode/sess8,
 #   ~3 min for the two 256K long rounds, plus start and stop); run it detached (setsid nohup ... > OUT.log 2>&1 &).
 #   To isolate one change (a launcher, a flag) compare two arms of the SAME build in one session, A B A B with --launches 1
 #   each: a stored baseline drifts a few percent from day to day (cold sess8: 28.9 vs 30.4 ms for one build a day apart).
 #   For kernels without a model use tools/lab/radiance/kbench_ab.py (rad-kbench per row, two builds).
-# baseline: docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json (or --to) from a measured OUT, each
-#   gated metric's tolerance derived from the spread the run measured; refuses a single launch.
-# compare: the table against a baseline; exit 1 on a gated regression beyond its allowance.
+# For baselines/comparisons use bigcherry results baseline|compare over immutable record SHA digests.
 set -u
 cd "$(dirname "${BASH_SOURCE[0]}")/../../.." || exit 1
 REPO=$(pwd)
@@ -62,31 +58,18 @@ usage() {
 
 CMD=${1:-}
 [ $# -gt 0 ] && shift
-BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO=""
+BUILD="" OUT="" LAUNCHES=2 PORT=18450
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) [ $# -ge 2 ] || usage; BUILD=$2; shift 2 ;;
     --out) [ $# -ge 2 ] || usage; OUT=$2; shift 2 ;;
     --launches) [ $# -ge 2 ] || usage; LAUNCHES=$2; shift 2 ;;
     --port) [ $# -ge 2 ] || usage; PORT=$2; shift 2 ;;
-    --baseline) [ $# -ge 2 ] || usage; BASELINE=$2; shift 2 ;;
-    --name) [ $# -ge 2 ] || usage; NAME=$2; shift 2 ;;
-    --to) [ $# -ge 2 ] || usage; TO=$2; shift 2 ;;
-    --records) shift ;;  # historical explicit-on alias; publication is mandatory
     *) echo "flashnext-parity: unknown argument: $1" >&2; usage ;;
   esac
 done
 
 case "$CMD" in
-  baseline)
-    [ -n "$OUT" ] && [ -n "$NAME" ] || usage
-    [ -f "$OUT/parity.json" ] || python3 "$PARITY" summarise "$OUT" || exit
-    source tools/env/bigcherry-env.sh >/dev/null 2>&1   # BC_WORK_ROOT: the baseline names its build and run under it
-    exec python3 "$PARITY" baseline "$OUT" --name "$NAME" ${TO:+--to "$TO"} ;;
-  compare)
-    [ -n "$OUT" ] && [ -n "$BASELINE" ] || usage
-    [ -f "$OUT/parity.json" ] || python3 "$PARITY" summarise "$OUT" || exit
-    exec python3 "$PARITY" compare "$OUT" --baseline "$BASELINE" ;;
   measure) ;;
   *) usage ;;
 esac
@@ -206,8 +189,7 @@ elapsed() { awk -v a="$t0" -v b="$EPOCHREALTIME" -v w="$WARMUP_S" 'BEGIN { exit 
 for i in $(seq 1 "$LAUNCHES"); do
   L=$OUT/launch-$i
   mkdir -p "$L/warmup"
-  if [ "$RECORDS" = 1 ]; then
-    # Pin inputs before the native owner starts; verify they did not mutate.
+  # Pin inputs before the native owner starts; verify they did not mutate.
     cp "$HEAT" "$L/heat-input.hot-first" || fail "cannot snapshot selected heat"
     if [ -n "$CALIBRATION_FILE" ]; then
       cp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "cannot snapshot calibration store"
@@ -216,7 +198,6 @@ for i in $(seq 1 "$LAUNCHES"); do
     if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
     python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" ||
       fail "cannot capture native owner invocation"
-  fi
   echo "flashnext-parity: launch $i/$LAUNCHES -> $L" >&2
   "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" > "$L/owner.log" 2>&1 &
   NATIVE_PID=$!
@@ -225,8 +206,7 @@ for i in $(seq 1 "$LAUNCHES"); do
   MANIFEST=$(session_value manifest) || fail "native session has no committed manifest"
   [ -f "$MANIFEST" ] || fail "native session did not commit a strict-v2 manifest"
   cp "$MANIFEST" "$L/manifest.json"
-  if [ "$RECORDS" = 1 ]; then
-    cp "$RUN/feature-states.v1.json" "$L/feature-states.v1.json" ||
+  cp "$RUN/feature-states.v1.json" "$L/feature-states.v1.json" ||
       fail "native MRC03 feature-state snapshot is absent"
     cmp "$HEAT" "$L/heat-input.hot-first" ||
       fail "selected heat mutated before measurement"
@@ -234,7 +214,6 @@ for i in $(seq 1 "$LAUNCHES"); do
       cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
         fail "selected calibration changed before measurement"
     fi
-  fi
   python3 "$PARITY" warmup-plan "$L/manifest.json" --out "$L/launch.json" >&2 || fail "cannot read the manifest's live policy"
   WARMUP_S=$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["warmup_s"])' "$L/launch.json")
   # FLASHNEXT_PARITY_WARMUP_S: an experiment arm's warmup in seconds, used only when the policy is on and only if it is
@@ -256,8 +235,7 @@ for i in $(seq 1 "$LAUNCHES"); do
   done
   WARMUP_ELAPSED_S=$(awk -v a="$t0" -v b="$EPOCHREALTIME" 'BEGIN { printf "%.6f", b-a }')
   echo "flashnext-parity: launch $i warmup ${WARMUP_S}s, $k rounds (elapsed ${WARMUP_ELAPSED_S}s)" >&2
-  if [ "$RECORDS" = 1 ]; then
-    # Actual completed warmup, including any longer experimental override.
+  # Actual completed warmup, including any longer experimental override.
     python3 -c 'import json,sys; from pathlib import Path
 p=Path(sys.argv[1]); data=json.loads(p.read_text())
 data["actual_warmup_s"]=float(sys.argv[2]); data["warmup_target_s"]=float(sys.argv[3])
@@ -266,7 +244,6 @@ p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP
       fail "cannot record actual warmup"
     python3 "$PARITY" capture-host-facts "$L" ||
       fail "cannot snapshot measurement-time host facts"
-  fi
 
   # a. cold prefill
   for s in $(seq "$COLD_SEED0" $((COLD_SEED0 + COLD_FILLS - 1))); do
@@ -293,17 +270,14 @@ p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP
   fi
   python3 "$PARITY" policy-line "$L/helper0.log" --out "$L/policy.json" >&2
   # Every measured launch must create a validated immutable record.
-  cmp "$HEAT" "$L/heat-input.hot-first" ||
-      fail "selected heat changed during measurement"
-    if [ -n "$CALIBRATION_FILE" ]; then
-      cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" ||
-        fail "selected calibration changed during measurement"
-    fi
-    python3 "$PARITY" record-launch "$OUT" --launch "$i" --work-root "$BC_WORK_ROOT" > "$L/record.sha256" ||
-      fail "run-record v1 publication failed"
-    echo "flashnext-parity: launch $i record $(cat "$L/record.sha256")" >&2
+  cmp "$HEAT" "$L/heat-input.hot-first" || fail "selected heat changed during measurement"
+  if [ -n "$CALIBRATION_FILE" ]; then
+    cmp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "selected calibration changed during measurement"
+  fi
+  python3 "$PARITY" record-launch "$OUT" --launch "$i" --work-root "$BC_WORK_ROOT" > "$L/record.sha256" ||
+    fail "run-record v1 publication failed"
+  echo "flashnext-parity: launch $i record $(cat "$L/record.sha256")" >&2
 done
 trap - EXIT INT TERM HUP
 
-python3 "$PARITY" summarise "$OUT" || exit
-echo "flashnext-parity: $OUT/parity.json" >&2
+echo "flashnext-parity: launch digests under $OUT/launch-*/record.sha256; inspect with bigcherry results" >&2

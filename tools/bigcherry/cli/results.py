@@ -10,8 +10,7 @@ from datetime import UTC, datetime
 import tempfile
 from pathlib import Path
 
-from ..core import engines, results, run_records
-from ..core.context import resolve_work_root
+from ..core import results, run_records
 
 
 def _read_baseline(path: Path) -> dict:
@@ -119,18 +118,6 @@ def cmd_results(args: argparse.Namespace) -> int:
             )
             print(f"experiment run-record v1: {sha}")
             return 0
-        if args.results_action == "run-bench":
-            from ..bench import llamacpp_runner
-            passed = list(args.bench_argv)
-            if passed and passed[0] == "--":
-                passed.pop(0)
-            command = ["--runner-root", str(args.runner_root),
-                       "--expected-identity", str(args.expected_identity)]
-            if args.binary_path is not None:
-                command.extend(["--binary-path", str(args.binary_path)])
-            if args.work_root is not None:
-                command.extend(["--work-root", str(args.work_root)])
-            return llamacpp_runner.main([*command, "--", *passed])
         store = run_records.RunRecordStore(args.work_root)
         if args.results_action == "show":
             rec = store.get_record(args.sha256)
@@ -161,7 +148,6 @@ def cmd_results(args: argparse.Namespace) -> int:
                 print(f"calibration run-record v1: {sha}")
             return 0
         if args.results_action == "list":
-            from ..bench import workloads
             if args.today:
                 if args.since or args.until:
                     raise results.ResultsError("--today cannot combine with --since/--until")
@@ -179,37 +165,14 @@ def cmd_results(args: argparse.Namespace) -> int:
                     "workload": rec["workload"]["name"],
                     "recorded_at": rec["recorded_at"],
                 })
-            # Explicit read-only bridge for the one retired Radiance index.
-            # Do not recreate a manifest, promote its metrics or import it into
-            # the verified record store.
-            if args.engine in (None, engines.RADIANCE):
-                index = resolve_work_root(args.work_root) / "results/index.jsonl"
-                for legacy in workloads.read_index(index):
-                    if args.layout and legacy.get("layout") != args.layout:
-                        continue
-                    if args.workload and legacy.get("workload_id") != args.workload:
-                        continue
-                    stamp = str(legacy.get("timestamp", "")).replace("+00:00", "Z")
-                    if args.since and stamp < args.since:
-                        continue
-                    if args.until and stamp > args.until:
-                        continue
-                    rows.append({
-                        "status": "legacy",
-                        "reason": "missing_content_provenance",
-                        "row_id": legacy["row_id"], "engine": engines.RADIANCE,
-                        "layout": legacy.get("layout"),
-                        "workload": legacy["workload_id"],
-                        "recorded_at": stamp,
-                    })
-            rows.sort(key=lambda row: (row["recorded_at"], row.get("sha256", row.get("row_id", ""))))
+            rows.sort(key=lambda row: (row["recorded_at"], row["sha256"]))
             if args.json:
                 print(json.dumps(rows, indent=2, sort_keys=True))
             else:
                 for row in rows:
                     print(f"{row['recorded_at']} {row['status']:<12} "
                           f"{row['engine']} {row['layout']} {row['workload']} "
-                          f"{row.get('sha256', row.get('row_id'))}")
+                          f"{row['sha256']}")
             return 0
         if args.results_action == "baseline":
             baseline = results.make_baseline(
@@ -267,7 +230,7 @@ def register(sub) -> None:
         command.add_argument("--json", action="store_true", help="emit structured JSON")
         command.set_defaults(func=cmd_results)
 
-    listing = actions.add_parser("list", help="list verified run records and read-only legacy workload rows")
+    listing = actions.add_parser("list", help="list verified immutable run records")
     common(listing)
     listing.add_argument("--today", action="store_true",
                          help="restrict to today's UTC date (use --engine radiance --workload parity)")
@@ -300,17 +263,6 @@ def register(sub) -> None:
     experiment.add_argument("--measurement-file", type=Path, required=True)
     experiment.add_argument("--work-root", type=Path)
     experiment.set_defaults(func=cmd_results)
-
-    managed = actions.add_parser(
-        "run-bench", help="managed upstream benchmark; suppress legacy result writers"
-    )
-    managed.add_argument("--runner-root", type=Path, required=True)
-    managed.add_argument("--expected-identity", type=Path, required=True)
-    managed.add_argument("--binary-path", type=Path)
-    managed.add_argument("--work-root", type=Path)
-    managed.add_argument("bench_argv", nargs=argparse.REMAINDER,
-                         help="pass external run_bench arguments after --")
-    managed.set_defaults(func=cmd_results)
 
     baseline = actions.add_parser("baseline", help="create portable spread-derived baseline (two or more launches)")
     common(baseline, require_scope=True)

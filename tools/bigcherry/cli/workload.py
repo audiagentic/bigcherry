@@ -1,4 +1,4 @@
-"""Read-only benchmark index commands; 'run' sends traffic to an already-running server."""
+"""Radiance benchmark commands: measurements go solely to immutable run records."""
 from __future__ import annotations
 
 import argparse
@@ -16,17 +16,6 @@ def cmd_workload(args: argparse.Namespace) -> int:
             for key, cfg in specs.items():
                 print(f"{key}@{cfg['version']:<3} {cfg['description']}")
             return 0
-        if args.workload_action == "compare":
-            cfg = specs.get(args.id)
-            if cfg is None:
-                raise workloads.WorkloadError(f"unknown workload {args.id!r}")
-            print(workloads.compare(workloads.read_index(args.index), args.id, cfg["version"],
-                                    layout=args.layout, since=args.since))
-            return 0
-        if args.workload_action == "seed":
-            raise workloads.WorkloadError(
-                "legacy results index is read-only; historical seeds remain listable via results list"
-            )
         cfg = specs.get(args.id)
         if cfg is None:
             raise workloads.WorkloadError(f"unknown workload {args.id!r}")
@@ -73,7 +62,7 @@ def cmd_workload(args: argparse.Namespace) -> int:
 
 
 def register(sub) -> None:
-    parser = sub.add_parser("workload", help="versioned inference workloads and comparable indexed results")
+    parser = sub.add_parser("workload", help="versioned Radiance inference workloads with immutable results")
     actions = parser.add_subparsers(dest="workload_action", required=True)
     actions.add_parser("list", help="list canonical workload ids and versions").set_defaults(func=cmd_workload)
     run = actions.add_parser("run", help="benchmark an already-running server (never starts/stops/leases a GPU)")
@@ -84,15 +73,4 @@ def register(sub) -> None:
                      help="source checkout for document slices and runner commit")
     run.add_argument("--work-root", type=Path, default=resolve_work_root())
     run.add_argument("--runs-root", type=Path, default=workloads.DEFAULT_RUNS)
-    run.add_argument("--index", type=Path, default=workloads.DEFAULT_INDEX)
     run.set_defaults(func=cmd_workload)
-    compare = actions.add_parser("compare", help="compare indexed rows for exactly this id and version")
-    compare.add_argument("id")
-    compare.add_argument("--layout", help="filter to one layout")
-    compare.add_argument("--since", help="inclusive YYYY-MM-DD date")
-    compare.add_argument("--index", type=Path, default=workloads.DEFAULT_INDEX)
-    compare.set_defaults(func=cmd_workload)
-    seed = actions.add_parser("seed", help="idempotently import known historical logs (no GPU)")
-    seed.add_argument("--work-root", type=Path, default=resolve_work_root())
-    seed.add_argument("--index", type=Path, default=workloads.DEFAULT_INDEX)
-    seed.set_defaults(func=cmd_workload)
