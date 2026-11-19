@@ -31,6 +31,7 @@
 #include <limits>
 #include <rad_abi.h>
 #include <regex>
+#include <set>
 #include <sstream>
 #include <stdexcept>
 #include <thread>
@@ -2258,6 +2259,85 @@ class MeasuringHelpers {
     const Hooks& hooks_;
 };
 
+vram::Baseline measure_helper_baseline(const Json& helpers, const EnginePlanInputs& in) {
+    std::vector<std::string> bdfs;
+    for (const auto& helper : helpers)
+        bdfs.push_back(helper.at("bdf").get<std::string>());
+    try {
+        return vram::snapshot(bdfs, in.options.sys_root, in.helper_vram);
+    } catch (const vram::Refused& error) {
+        throw PlanFailed(error.what());
+    }
+}
+
+void release_measuring_helpers(MeasuringHelpers& group, const vram::Baseline& baseline,
+                               const EnginePlanInputs& in, const Hooks& hooks) {
+    group.stop();
+    // A reaped helper may still have pending VRAM accounting in the driver.
+    vram::Hardware io = in.helper_vram;
+    if (!io.wait && hooks.wait)
+        io.wait = [&](std::chrono::milliseconds delay) {
+            return require_callback(hooks.wait.invoke("session.hooks.wait", delay), "helper VRAM release wait");
+        };
+    try {
+        vram::await_release(baseline, in.options.sys_root, hooks.helper_stop_timeout, io);
+    } catch (const vram::Refused& error) {
+        throw PlanFailed(error.what());
+    }
+}
+
+int wait_measuring_engine(pid_t pid, const MeasuringHelpers& helpers, const Hooks& hooks) {
+    int status = 0;
+    std::string refusal;
+    const auto deadline = Clock::now() + std::chrono::minutes(30);
+    try {
+        while (running(pid, &status)) {
+            for (size_t i = 0; i < helpers.pids.size(); ++i) {
+                if (!running(helpers.pids[i])) {
+                    refusal = "plan: helper" + std::to_string(i) + " died during engine memory measurement";
+                    break;
+                }
+            }
+            if (!refusal.empty())
+                break;
+            if (Clock::now() > deadline ||
+                !require_callback(hooks.wait.invoke("session.hooks.wait", 200ms), "measuring wait")) {
+                refusal = "plan: the measuring start was stopped (a stop request or 30 min)";
+                break;
+            }
+        }
+    } catch (...) {
+        if (stop_child(pid, SIGINT, 60s) && hooks.ended)
+            require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
+        throw;
+    }
+    if (!stop_child(pid, refusal.empty() ? SIGKILL : SIGINT, refusal.empty() ? 10s : 60s))
+        throw PlanFailed("plan: a process of the measuring engine's group survived SIGKILL");
+    if (hooks.ended)
+        require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
+    if (!refusal.empty())
+        throw PlanFailed(refusal);
+    // A helper can exit between the last live-engine poll and the engine reap.
+    for (size_t i = 0; i < helpers.pids.size(); ++i)
+        if (!running(helpers.pids[i]))
+            throw PlanFailed("plan: helper" + std::to_string(i) + " died during engine memory measurement");
+    return status;
+}
+
+void check_native_helper_roles(const v2::Manifest& manifest, const Json& workers,
+                               const std::vector<std::string>& engine_bdfs, const std::string& handoff) {
+    const auto& helpers = manifest.spec.processes.helpers;
+    if (helpers.size() != workers.size() || bool(manifest.spec.handoff) != !handoff.empty() ||
+        (manifest.spec.handoff && manifest.spec.handoff->transport.shm != handoff))
+        throw PlanFailed("native v3 manifest changed the selected helpers or owner segment");
+    std::set<std::string> occupied(engine_bdfs.begin(), engine_bdfs.end());
+    for (size_t i = 0; i < helpers.size(); ++i)
+        if (helpers[i].role != "helper" + std::to_string(i) ||
+            helpers[i].gpu != workers.at(i).at("bdf").get<std::string>() ||
+            !occupied.insert(helpers[i].gpu).second)
+            throw PlanFailed("native v3 manifest changed helper BDF order or overlaps an engine/helper BDF");
+}
+
 } // namespace
 
 // A named RSC12 config may have a prior immutable manifest. Its key covers
@@ -2493,9 +2573,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
         std::optional<NamedCache> cache;
         if (v2::kContractVersion == 3) {
-            if (in.runner || !processes.empty() || in.calibration_run || !in.experiment_file.empty())
-                throw PlanFailed("native v3 admission requires the real writer and a production engine-only config");
-            cache = named_cache(in, r, facts, engine, helper_binary, run_dir, &snapshot);
+            if (in.runner || in.calibration_run || !in.experiment_file.empty())
+                throw PlanFailed("native v3 admission requires the real writer and a production config");
+            if (processes.empty())
+                cache = named_cache(in, r, facts, engine, helper_binary, run_dir, &snapshot);
             if (cache) {
                 if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache->key)) {
                     EnginePlanInputs replay = in;
@@ -2512,7 +2593,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                              "integration is incomplete; refusing before cache reuse, manifest writing, power "
                              "admission, or GPU child startup");
 
-        // The native measurement path currently makes one engine-only attempt.
+        // Native YAML is immutable, so a request for a different host pool
+        // requires a new admission instead of a measuring retry.
         if (!hooks.admit_power || !wait)
             throw PlanFailed("native v3 measurement requires durable power admission and the owner stop gate");
         const Json frozen_key = plan_key_inputs(
@@ -2525,8 +2607,25 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             "--unmeasured", "--expected-plan-key", plan_key(frozen_key), "--engine-binary", engine.string(),
             "--plan-extra", "budgets: default", "--bc-native-config-fd",
             std::to_string(snapshot_handoff->descriptor())};
-        const std::vector<std::string> resolver = resolver_args(in.options);
+        auto resolver = resolver_args(in.options);
+        const std::string handoff = processes.empty() ? std::string{} : "/r3-serve-" + new_instance_id();
+        std::string helper_identity;
+        if (!handoff.empty()) {
+            if (!hooks.selected_segment)
+                throw PlanFailed("native v3 helpers require an owner-held segment");
+            const fs::path expected_helper = frozen_runtime_home / "helpers" / "r3_moe_worker";
+            if (fs::canonical(helper_binary) != fs::canonical(expected_helper))
+                throw PlanFailed("native v3 helpers must use the worker that the measured writer verifies");
+            helper_identity = complete_file_identity(helper_binary);
+            require_callback(hooks.selected_segment.invoke("session.hooks.selected_segment", handoff),
+                             "native v3 measuring segment");
+            resolver.insert(resolver.end(), {"--set", "handoff.shm=" + handoff});
+        }
         argv.insert(argv.end(), resolver.begin(), resolver.end());
+        if (!handoff.empty() && !v.at("handoff").value("histogram", std::string{}).empty()) {
+            const fs::path histogram = fs::absolute(run_dir) / ("histogram-measuring-" + stamp());
+            argv.insert(argv.end(), {"--set", "handoff.histogram=" + Json(histogram.string()).dump()});
+        }
         const ManifestRun writer = run_planning_child(
             argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
             "native v3 measuring draft writer", snapshot_handoff->descriptor());
@@ -2549,10 +2648,15 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             native_inspection.max_sequences != emitted_service.max_sessions ||
             native_inspection.kernels != emitted_engine.runtime.kernels)
             throw PlanFailed("native v3 draft differs from the admitted YAML listener, limits or kernel order");
+        check_native_helper_roles(verified.parsed, processes, selected_bdfs, handoff);
 
         const fs::path measuring_execution = verified.pinned->path();
-        if (const auto refusal = resources::preflight_host_pool(verified.parsed, detect(in.options.sys_root)))
+        const Json current_facts = detect(in.options.sys_root);
+        if (const auto refusal = resources::preflight_host_pool(verified.parsed, current_facts))
             throw PlanFailed("native resources: " + refusal->message);
+        const auto measuring_helpers = helper_starts(
+            {processes, current_facts}, frozen_runtime_home, helper_binary, measuring_execution, true);
+        const auto baseline = measure_helper_baseline(processes, in);
         require_callback(hooks.admit_power.invoke("session.hooks.admit_power", measuring_execution,
                                                    v2::PlanUse::measuring),
                          "native v3 pre-measure power admission");
@@ -2564,6 +2668,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const fs::path ranks_path = attempt_dir / "rank-demand.json";
         const fs::path measurement_log = attempt_dir / "engine-measuring.log";
         const fs::path absolute_engine = fs::absolute(engine);
+        MeasuringHelpers group(hooks);
+        launch_measure_helpers(measuring_helpers, run_dir, hooks, &group.pids, verified.pinned->descriptor());
+        const uint64_t measured_helpers_mib = helper_resident_mib(group.pids);
+        require_segment(handoff);
         launch.root.require_matches(snapshot.resolution_root());
         const pid_t measuring_pid = spawn(
             {absolute_engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
@@ -2576,40 +2684,16 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                      "native v3 measuring engine registration");
             },
             verified.pinned->descriptor(), launch.root.descriptor());
-        int measuring_status = 0;
-        bool stopped = false;
-        const auto deadline = Clock::now() + std::chrono::minutes(30);
-        try {
-            while (running(measuring_pid, &measuring_status)) {
-                if (Clock::now() > deadline ||
-                    !require_callback(wait.invoke("session.hooks.wait", 200ms), "native measuring wait")) {
-                    stopped = true;
-                    break;
-                }
-            }
-        } catch (...) {
-            const auto original = std::current_exception();
-            if (stop_child(measuring_pid, SIGINT, 60s) && hooks.ended)
-                require_callback(hooks.ended.invoke("session.hooks.ended", measuring_pid), "hooks.ended");
-            std::rethrow_exception(original);
-        }
-        if (stopped) {
-            if (!stop_child(measuring_pid, SIGINT, 60s))
-                throw PlanFailed("native v3 measuring engine remained alive after its stop deadline");
-            if (hooks.ended)
-                require_callback(hooks.ended.invoke("session.hooks.ended", measuring_pid), "hooks.ended");
-            throw PlanFailed("native v3 measurement stopped by request or 30-minute deadline");
-        }
-        if (!stop_child(measuring_pid, SIGKILL, 10s))
-            throw PlanFailed("native v3 measuring engine process group remained alive after exit");
-        if (hooks.ended)
-            require_callback(hooks.ended.invoke("session.hooks.ended", measuring_pid), "hooks.ended");
+        const int measuring_status = wait_measuring_engine(measuring_pid, group, hooks);
         if (!WIFEXITED(measuring_status) || WEXITSTATUS(measuring_status) != 0 ||
             !fs::is_regular_file(plan_path) || !fs::is_regular_file(ranks_path) ||
             fs::file_size(plan_path) == 0 || fs::file_size(ranks_path) == 0 ||
             fs::file_size(plan_path) > v2::kMaxDocumentBytes || fs::file_size(ranks_path) > v2::kMaxDocumentBytes)
             throw PlanFailed("native v3 measuring engine failed or produced incomplete plan/rank output; see " +
                              measurement_log.string());
+        release_measuring_helpers(group, baseline, in, hooks);
+        if (!handoff.empty() && complete_file_identity(helper_binary) != helper_identity)
+            throw PlanFailed("native v3 helper worker changed during measurement");
 
         const std::string log_text = read_file(measurement_log);
         const Json measured_plan = parse_plan_json(read_file(plan_path), plan_path.string());
@@ -2652,7 +2736,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
 
         const fs::path owner_cache = attempt_dir / "plan-cache";
         const CachedPlan owned = plan_cache_store_owned(
-            owner_cache, frozen_key, measured_plan, rank_demand, v, HostResident{0, engine_resident_mib},
+            owner_cache, frozen_key, measured_plan, rank_demand, v,
+            HostResident{measured_helpers_mib, engine_resident_mib},
             OwnerMeasurementEvidence{attempt_id, verified.sha256});
         if (!owned.owner || owned.owner->attempt_id != attempt_id || owned.key != plan_key(frozen_key))
             throw PlanFailed("native v3 owner cache publication did not return the exact attempt receipt");
@@ -2684,15 +2769,16 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             final_spec.processes.engine.device.gpus != selected_bdfs)
             throw PlanFailed("native v3 measured serving artifact changed the frozen model or ordered engine devices");
         const auto& final_engine = final_spec.processes.engine;
-        if (final_spec.handoff || !final_spec.processes.helpers.empty() ||
-            native_inspection.listener_port != final_engine.server.port ||
+        check_native_helper_roles(final_snapshot.parsed, processes, selected_bdfs, handoff);
+        if (native_inspection.listener_port != final_engine.server.port ||
             native_inspection.max_context != final_spec.intent.service.max_context_tokens ||
             native_inspection.max_sequences != final_spec.intent.service.max_sessions ||
             native_inspection.kernels != final_engine.runtime.kernels)
-            throw PlanFailed("native v3 measured serving artifact differs from the admitted engine-only profile");
+            throw PlanFailed("native v3 measured serving artifact differs from the admitted profile");
         const fs::path final_home = final_spec.processes.engine.runtime.radiance_home;
         if (fs::canonical(final_home) != frozen_runtime_home ||
-            engine_identity(engine, frozen_runtime_home) != frozen_key.at("engine_build").get<std::string>())
+            engine_identity(engine, frozen_runtime_home) != frozen_key.at("engine_build").get<std::string>() ||
+            (!handoff.empty() && complete_file_identity(helper_binary) != helper_identity))
             throw PlanFailed("native v3 measured serving artifact changed the frozen runtime home or engine build");
         if (!final_spec.plan.engine_memory)
             throw PlanFailed("native v3 measured serving artifact has no engine memory receipt");
@@ -2721,6 +2807,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         out.stored_sha256 = std::move(final_snapshot.sha256);
         out.pinned_manifest = std::move(final_snapshot.pinned);
         out.argv = {absolute_engine.string(), "--manifest", out.execution_manifest().string(), "--role", "engine"};
+        out.helpers = helper_starts({processes, after_facts}, frozen_runtime_home, helper_binary,
+                                    out.execution_manifest(), false);
+        out.handoff_shm = handoff;
         out.summary["plan_measurement_attempt"] = attempt_id;
         out.summary["manifest_digest"] = final_snapshot.parsed.metadata.content_digest;
         return out;
@@ -2885,20 +2974,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             }
             const auto helper_measuring =
                 helper_starts({processes, facts}, home, helper_binary, measuring_execution, true);
-            // Native counterpart of radiance_plan._wait_for_helper_vram_release:\n            // strict writer
-            // admission is retained; the owner adds a guarded OS\n            // seam and binds the release
-            // deadline to its actual helper stop timeout.\n            // The resolver's immutable BDF
-            // selection is the measuring manifest's helper order. Capture idle counter noise before ANY
-            // measuring helper occupies its device.
-            std::vector<std::string> helper_bdfs;
-            for (const Json& helper : processes)
-                helper_bdfs.push_back(helper.at("bdf").get<std::string>());
-            vram::Baseline baseline;
-            try {
-                baseline = vram::snapshot(helper_bdfs, in.options.sys_root, in.helper_vram);
-            } catch (const vram::Refused& error) {
-                throw PlanFailed(error.what());
-            }
+            const auto baseline = measure_helper_baseline(processes, in);
             MeasuringHelpers group(hooks);
             {
                 launch_measure_helpers(helper_measuring, run_dir, hooks, &group.pids,
@@ -2920,50 +2996,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                                         "measuring engine", p, log),
                                                    "hooks.started");
                           }, measuring_snapshot.pinned->descriptor());
-                int st = 0;
-                const auto deadline = Clock::now() + std::chrono::minutes(30);
-                bool stopped_early = false, helper_died = false;
-                std::string failed_role;
-                try {
-                    while (running(pid, &st)) {
-                        // The measuring engine can take minutes: refuse immediately if a helper
-                        // vanished after readiness, not just if it fails before the engine starts.
-                        for (size_t i = 0; i < group.pids.size(); ++i)
-                            if (!running(group.pids[i])) {
-                                stopped_early = helper_died = true;
-                                failed_role = "helper" + std::to_string(i);
-                                break;
-                            }
-                        if (stopped_early)
-                            break;
-                        if (Clock::now() > deadline ||
-                            !require_callback(wait.invoke("session.hooks.wait", 200ms), "hooks.wait")) {
-                            stopped_early = true;
-                            break;
-                        }
-                    }
-                } catch (...) {
-                    if (stop_child(pid, SIGINT, 60s) && hooks.ended)
-                        require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
-                    throw;
-                }
-                if (stopped_early) {
-                    if (!stop_child(pid, SIGINT, 60s))
-                        throw std::runtime_error("plan: the measuring engine (pid " + std::to_string(pid) +
-                                                 ") is still alive after SIGKILL");
-                    if (hooks.ended)
-                        require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
-                    if (helper_died)
-                        throw PlanFailed("plan: " + failed_role +
-                                         " died during engine memory measurement; refusing this plan");
-                    throw PlanFailed("plan: the measuring start was stopped (a stop request or 30 min)");
-                }
-                // the engine exited by itself; anything it left in its group goes too
-                if (!stop_child(pid, SIGKILL, 10s))
-                    throw std::runtime_error(
-                        "plan: a process of the measuring engine's group is still alive after SIGKILL");
-                if (hooks.ended)
-                    require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
+                const int st = wait_measuring_engine(pid, group, hooks);
                 if (!WIFEXITED(st) || WEXITSTATUS(st) != 0 || !fs::exists(plan) || fs::file_size(plan) == 0 ||
                     !fs::exists(ranks) || fs::file_size(ranks) == 0) {
                     // The engine can reject pinned n-gram RAM before writing its plan.
@@ -2990,20 +3023,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     throw PlanFailed(
                         "plan: the measuring start did not report the engine's resident host memory; see " +
                         log.string());
-                group.stop(); // all helper groups have exited and been reaped
-                // waitpid alone is NOT the kernel's GPU VRAM accounting barrier. The writer
-                // next performs strict live S8/S10 admission; never feed it stale helper use.
-                vram::Hardware io = in.helper_vram;
-                if (!io.wait && hooks.wait)
-                    io.wait = [&](std::chrono::milliseconds delay) {
-                        return require_callback(hooks.wait.invoke("session.hooks.wait", delay),
-                                                "helper VRAM release wait");
-                    };
-                try {
-                    vram::await_release(baseline, in.options.sys_root, hooks.helper_stop_timeout, io);
-                } catch (const vram::Refused& error) {
-                    throw PlanFailed(error.what());
-                }
+                release_measuring_helpers(group, baseline, in, hooks);
                 const auto current_round = round_key();
                 if (current_round.second != frozen_key)
                     throw PlanFailed("plan: effective inputs, model, runtime or engine build changed during the "

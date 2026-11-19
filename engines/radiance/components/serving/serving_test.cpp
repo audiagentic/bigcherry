@@ -4762,9 +4762,13 @@ void helper_vram_owner_graph(Fixture& t) {
         rad.write(reinterpret_cast<const char*>(&header), sizeof header);
         assert(rad);
     }
-    const fs::path site =
-        t.file("helper-vram-graph.toml",
-               "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() + "\"\n");
+    std::string site_text = "[engine]\nmodel = \"" + model.string() +
+                            "\"\nradiance_home = \"" + home.string() + "\"\n";
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+    const int port = select_free_port();
+    site_text += "port = " + std::to_string(port) + "\n";
+#endif
+    const fs::path site = t.file("helper-vram-graph.toml", site_text);
     ss::EnginePlanInputs in;
     in.options.site = site;
     in.options.sys_root = t.root;
@@ -4776,6 +4780,104 @@ void helper_vram_owner_graph(Fixture& t) {
     in.self = BC_SERVE_EXE;
     in.engine_binary = BC_FAKE_ENGINE;
     in.helper_binary = BC_FAKE_ENGINE;
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+    const fs::path heat = t.root / "writer.hot-first";
+    std::vector<uint32_t> counts(128 * 16, 0);
+    for (uint32_t l = 0; l < 4; ++l)
+        for (uint32_t e = 0; e < 16; ++e)
+            counts[l * 16 + e] = (e * 7 + l * 3) % 16 + 1;
+    std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()),
+        static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
+    fs::create_directories(home / "helpers");
+    fs::create_symlink(BC_FAKE_ENGINE, home / "helpers/r3_moe_worker");
+    in.options.sets.insert(in.options.sets.end(),
+                          {"memory.helper_budgets_mib=[1,1]", "memory.host_pool_mib=1024", "memory.host_kv_mib=0"});
+    const auto selected = bc::serving::resolve(in.options, bc::serving::detect(t.root));
+    const auto& value = selected.values;
+    const auto& engine = value.at("engine");
+    const auto& service = value.at("service");
+    Json kernels = Json::array();
+    std::istringstream list(engine.at("kernels").get<std::string>());
+    for (std::string kernel; std::getline(list, kernel, ',');)
+        kernels.push_back(kernel);
+    for (const auto& gpu : t.facts.at("gpus"))
+        write(t.root / "sys/bus/pci/devices" / gpu.at("bdf").get<std::string>() / "mem_info_gtt_used", "0\n");
+    const std::string yaml = "cards: [0]\nmodels:\n  tiny: {model: " + Json(model.string()).dump() + "}\n";
+    const auto authored = t.file("native-helpers.yaml", yaml);
+    in.native_admission = ss::NativeAdmissionRequest{authored, t.root, {
+        {"TEST_NATIVE_INSPECT_EXPECT_YAML", yaml},
+        {"TEST_NATIVE_INSPECT_MODEL", model.string()},
+        {"TEST_NATIVE_INSPECT_RANK_DEVICES", value.at("layout").at("engine_cards").dump()},
+        {"TEST_NATIVE_INSPECT_PORT", std::to_string(port)},
+        {"TEST_NATIVE_INSPECT_MAX_CONTEXT", service.at("max_context").dump()},
+        {"TEST_NATIVE_INSPECT_MAX_SEQUENCES", service.at("max_sessions").dump()},
+        {"TEST_NATIVE_INSPECT_KERNELS", kernels.dump()},
+    }};
+    std::map<std::string, unsigned> samples;
+    in.helper_vram.read_used = [&](const fs::path& path) {
+        ++samples[path.parent_path().filename().string()];
+        return uint64_t{128} << 20;
+    };
+    ss::Session owner;
+    owner.run_dir = t.root / "native-helper-owner";
+    fs::create_directories(owner.run_dir);
+    owner.timing.health_timeout = owner.timing.helper_timeout = std::chrono::seconds(6);
+    owner.timing.health_interval = owner.timing.helper_interval = std::chrono::milliseconds(30);
+    owner.timing.stop_grace = std::chrono::seconds(1);
+    owner.timing.poll = std::chrono::milliseconds(20);
+    owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
+        return ss::plan_engine_only(in, dir, hooks);
+    };
+    owner.power_hook.begin_manifest = [&](const fs::path& manifest, bc::serving::v2::PlanUse use) {
+        assert(use == bc::serving::v2::PlanUse::measuring && bc::serving::v2::load_manifest(manifest, use));
+        fs::remove(authored);
+        return bc::serving::v2::Status{};
+    };
+    owner.power_hook.verify_serving = [](const fs::path& manifest) {
+        const auto measured = bc::serving::v2::load_manifest(manifest, bc::serving::v2::PlanUse::serving);
+        assert(measured && measured.value().spec.plan.resource_inputs &&
+               measured.value().spec.plan.resource_inputs->helper_footprints.size() == 2);
+        return bc::serving::v2::Status{};
+    };
+    owner.power_hook.verified_exit = [] {};
+    owner.power_hook.restore = [] { return bc::serving::v2::Status{}; };
+    auto stop = std::async(std::launch::async, [&] {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+        while (std::chrono::steady_clock::now() < deadline) {
+            const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+            const auto state = record.value("state", std::string{});
+            if (state == "failed") return false;
+            if (state == "running") {
+                const auto reply = ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
+                return reply && reply->value("ok", false);
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        }
+        (void)ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
+        return false;
+    });
+    const int code = ss::serve(owner);
+    const bool stopped = stop.get();
+    const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+    if (code != 0 || !stopped || record.value("state", std::string{}) != "stopped" ||
+        !ss::alive_recorded(record).empty())
+        throw std::runtime_error("native helper owner did not serve and stop: " + record.dump());
+    std::vector<std::string> roles;
+    for (const auto& child : record.at("processes")) {
+        assert(child.at("exited") == true);
+        roles.push_back(child.at("role").get<std::string>());
+    }
+    assert(roles == std::vector<std::string>({"native config inspector", "native v3 measuring draft writer",
+        "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "native v3 measured writer",
+        "helper0", "helper1", "engine"}));
+    assert(samples.size() == 2 && !fs::exists(authored));
+    for (const auto& [bdf, count] : samples) {
+        assert(count >= 4);
+        assert(std::find(value.at("layout").at("engine_cards").begin(),
+                         value.at("layout").at("engine_cards").end(), bdf) ==
+               value.at("layout").at("engine_cards").end());
+    }
+#else
     int writers = 0;
     std::vector<fs::path> measuring_histograms;
     std::vector<std::vector<std::string>> serving_writer_args;
@@ -4902,6 +5004,7 @@ void helper_vram_owner_graph(Fixture& t) {
         ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
                               std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
         throw std::runtime_error("later measuring publication affected the serving generation");
+#endif
 }
 
 int main(int argc, char** argv) {
@@ -4912,6 +5015,7 @@ int main(int argc, char** argv) {
         Fixture t;
         v3_writer_cli_rejects_unowned_imports(t);
         session_engine_plan(t);
+        helper_vram_owner_graph(t);
         std::cout << "PASS: native v3 sealed snapshot session draft and pre-cache gate\n";
         return 0;
     } catch (const std::exception& e) {

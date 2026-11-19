@@ -281,8 +281,8 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         if (!plan_memory.empty() && rank_out.empty())
             return fail("v3 native measurement requires --plan-memory-ranks");
         const auto& spec = manifest.value().spec;
-        if (plan_memory.empty() && (spec.handoff || !spec.processes.helpers.empty()))
-            return fail("v3 native serving currently admits engine-only layouts");
+        if (!run_flags.empty() && (spec.handoff || !spec.processes.helpers.empty()))
+            return fail("v3 native offline quality currently admits engine-only layouts");
         const auto view = v2::native_config_view(manifest.value());
         if (!view) return fail("v3 manifest has no admitted native YAML snapshot");
         auto admitted = native_engine_inputs(spec, *view);

@@ -200,6 +200,7 @@ int main(int argc, char** argv) {
         return 0;
     }
     const std::string manifest = arg_after(argc, argv, "--manifest");
+    const std::string role = arg_after(argc, argv, "--role");
     json m = json::object();
     {
         std::ifstream in(manifest);
@@ -224,14 +225,33 @@ int main(int argc, char** argv) {
                 const char* expected_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
                 const char* expected_frozen = std::getenv("TEST_NATIVE_EXPECT_FROZEN");
                 const char* frozen = std::getenv("TEST_NATIVE_FROZEN");
-                const bool measuring = !arg_after(argc, argv, "--plan-memory").empty();
+                const bool helper = role.rfind("helper", 0) == 0;
+                const bool measuring = !arg_after(argc, argv, "--plan-memory").empty() ||
+                    std::find_if(argv + 1, argv + argc, [](const char* arg) {
+                        return std::strcmp(arg, "--measuring") == 0;
+                    }) != argv + argc;
                 if (manifest.rfind("/proc/self/fd/", 0) != 0 ||
-                    std::filesystem::current_path() != native.at("resolution_root").get<std::string>() ||
+                    (!helper && std::filesystem::current_path() != native.at("resolution_root").get<std::string>()) ||
                     (expected_yaml && native.at("yaml_utf8") != expected_yaml) ||
                     (expected_frozen && (!frozen || std::strcmp(frozen, expected_frozen) != 0)) ||
                     spec.at("plan").contains("engine_memory") == measuring) {
                     std::fprintf(stderr, "fake engine: v3 manifest, execution root, environment or role mismatch\n");
                     return 9;
+                }
+                if (helper) {
+                    const auto& helpers = spec.at("processes").at("helpers");
+                    const auto worker = std::find_if(helpers.begin(), helpers.end(),
+                        [&](const json& h) { return h.at("role") == role; });
+                    const auto& gpus = spec.at("facts").at("gpus");
+                    const auto gpu = worker == helpers.end() ? gpus.end() : std::find_if(gpus.begin(), gpus.end(),
+                        [&](const json& card) { return card.at("bdf") == worker->at("gpu"); });
+                    const char* rocr = std::getenv("ROCR_VISIBLE_DEVICES");
+                    const char* hip = std::getenv("HIP_VISIBLE_DEVICES");
+                    if (gpu == gpus.end() || !rocr || !hip || std::strcmp(hip, "0") != 0 ||
+                        std::to_string(gpu->at("hip_ordinal").get<int>()) != rocr) {
+                        std::fprintf(stderr, "fake engine: helper visibility differs from its manifest BDF\n");
+                        return 9;
+                    }
                 }
                 std::printf("fake engine: native v3 %s snapshot, root and environment verified\n",
                             measuring ? "measuring" : "serving");
@@ -274,7 +294,6 @@ int main(int argc, char** argv) {
     }
     // A fake helper shares the same manifest fixture. It reports a fresh readiness line, holds its
     // process group until stopped, and can fail before/after readiness or ignore SIGINT.
-    const std::string role = arg_after(argc, argv, "--role");
     if (role.rfind("helper", 0) == 0) {
         const json h = m.value("helpers", json::object()).value(role, json::object());
         if (h.contains("env_dump")) {
