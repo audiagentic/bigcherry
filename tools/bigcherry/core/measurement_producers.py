@@ -40,7 +40,7 @@ def publish(
     argv: list[str],
     environment: dict[str, Any],
     power_settings: dict[str, Any],
-    inputs: dict[str, bytes],
+    inputs: dict[str, bytes | Path],
     host_facts: dict[str, Any],
     feature_states: list[dict],
     metric_specs: dict | None = None,
@@ -56,9 +56,16 @@ def publish(
         or any(not isinstance(a, str) for a in argv)
     ):
         raise run_records.RecordError("actual argv required")
-    if any(not isinstance(v, bytes) for v in inputs.values()):
-        raise run_records.RecordError("provenance input contents must be bytes")
+    if any(not isinstance(v, (bytes, Path)) for v in inputs.values()):
+        raise run_records.RecordError("provenance inputs must be exact bytes or readable files")
     store = run_records.RunRecordStore(work_root)
+
+    def source_blob(source: bytes | Path) -> dict:
+        if isinstance(source, bytes):
+            return store.put_blob(source)
+        if source.is_symlink() or not source.is_file():
+            raise run_records.RecordError(f"unsafe provenance source: {source}")
+        return store.put_blob_file(source)
     record: dict[str, Any] = {
         "schema_version": 1,
         "run_id": run_id,
@@ -72,7 +79,7 @@ def publish(
             "environment": store.put_blob(canonical_blob(environment)),
             "power_settings": store.put_blob(canonical_blob(power_settings)),
             "inputs": [
-                {"role": key, "blob": store.put_blob(raw)}
+                {"role": key, "blob": source_blob(raw)}
                 for key, raw in sorted(inputs.items())
             ],
         },

@@ -6,7 +6,7 @@ It is sent as a `data:` URL in an OpenAI chat message with two questions; the an
 without the media decoder, or started text-only (`vision.mm_max_patches = 0`), refuses the request: that is reported, with the
 server's own message, and is the expected result of those modes (`--expect refused`).
 
-  python3 tools/lab/radiance/image_probe.py --url http://127.0.0.1:18450 --expect answered
+  python3 tools/lab/radiance/image_probe.py --url http://127.0.0.1:18450 --run-dir RUN --expect answered
 """
 from __future__ import annotations
 
@@ -19,7 +19,9 @@ import time
 import urllib.error
 import urllib.request
 import zlib
+from pathlib import Path
 
+REPO = Path(__file__).resolve().parents[3]
 SIZE = 448
 
 
@@ -71,8 +73,10 @@ def png(width: int = SIZE, height: int = SIZE) -> bytes:
             + chunk(b"IDAT", zlib.compress(b"".join(rows), 9)) + chunk(b"IEND", b""))
 
 
-def ask(url: str, model: str, timeout: float, kind: str = "bmp") -> tuple[int, dict, float]:
-    data_url = f"data:image/{kind};base64," + base64.b64encode({"bmp": bmp, "jpeg": jpeg, "png": png}[kind]()).decode()
+def ask(url: str, model: str, timeout: float, kind: str = "bmp",
+        image_bytes: bytes | None = None) -> tuple[int, dict, float]:
+    raw = image_bytes if image_bytes is not None else {"bmp": bmp, "jpeg": jpeg, "png": png}[kind]()
+    data_url = f"data:image/{kind};base64," + base64.b64encode(raw).decode()
     body = {"model": model, "max_tokens": 64, "temperature": 0, "stream": False,
             "chat_template_kwargs": {"enable_thinking": False},
             "messages": [{"role": "user", "content": [
@@ -107,19 +111,41 @@ def judge(status: int, payload: dict) -> tuple[str, str]:
 def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     parser.add_argument("--url", required=True)
+    parser.add_argument("--run-dir", type=Path, required=True,
+                        help="native bc-serve run directory for immutable measurement identity")
+    parser.add_argument("--work-root", type=Path,
+                        help="BC_WORK_ROOT MRC01 record store (defaults to environment)")
     parser.add_argument("--model", default="default")
     parser.add_argument("--expect", choices=("answered", "refused"), default="answered")
     parser.add_argument("--format", dest="kind", choices=("bmp", "jpeg", "png"), default="bmp")
     parser.add_argument("--timeout", type=float, default=300.0)
     parser.add_argument("--out", help="write the result as JSON here")
     args = parser.parse_args(argv)
-    status, payload, seconds = ask(args.url, args.model, args.timeout, args.kind)
+    tools = str(REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from bigcherry.bench.radiance_lab_records import verify_live_target
+
+    verify_live_target(args.run_dir, args.url)
+    actual_image_bytes = {"bmp": bmp, "jpeg": jpeg, "png": png}[args.kind]()
+    status, payload, seconds = ask(args.url, args.model, args.timeout, args.kind,
+                                   image_bytes=actual_image_bytes)
     verdict, text = judge(status, payload)
     result = {"format": args.kind, "expected": args.expect, "verdict": verdict, "http_status": status, "seconds": round(seconds, 2), "text": text}
-    print(json.dumps(result))
+    from bigcherry.bench.radiance_lab_records import publish_probe
+
+    digest = publish_probe(
+        args.run_dir, kind="image", result=result,
+        definition={"format": args.kind, "expected": args.expect,
+                    "image_width": SIZE, "image_height": SIZE},
+        argv=[str(Path(__file__).resolve()), *(argv if argv is not None else sys.argv[1:])],
+        extra_inputs={"image_payload": actual_image_bytes},
+        work_root=args.work_root,
+    )
+    print(json.dumps({"result": result, "record_sha256": digest}))
     if args.out:
         with open(args.out, "w", encoding="utf-8") as handle:
-            json.dump(result, handle, indent=1)
+            json.dump({"record_sha256": digest}, handle)
     return 0 if verdict == args.expect else 1
 
 
