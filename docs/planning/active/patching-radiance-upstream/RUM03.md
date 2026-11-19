@@ -123,6 +123,8 @@ C28 (2026-11-19): exact rad0046 ABI43 apply/replay passed; an isolated `R3_ONLY`
 
 C29 (2026-11-19): extracted the actual block-E4M3 width decision into a dependency-free constexpr helper used by the HIP launcher and exact-source C++ fixture. The fixture proves `{512,256}` at parts=2 selects wide, `{512,384}` falls back because one class splits at 192, and non-block-E4M3 formats preserve legacy selection. The 27-package production prefix through rad0048 composed from pinned SHA 3deabdaeca17b58bad90d332f4b204cf7bb8a10 at ABI44. The ABI44 KV/fingerprint fixture passed; narrow ABI44 libr3 plugin built and its row probe found both callbacks; native libr4d row/MoE objects compiled for gfx1201; ABI44 moe-remote worker and mailbox plugin built on the same composition/SDK. Package remains untested pending formal activation/correctness evidence and review; GPU/numerical qualification is RUM09. Evidence C29; Ledger event `chg_20261119_124601_made-the-e4m3-scale-boundary-r_8302`.
 
+Codeberg main advanced by 40 commits from the frozen 3deabda candidate to Radiance 2.2.0 at b6b8751cccb0e834a13ae9e5afca824ee9a487aa. The new upstream header still declares ABI43. A separate upstream review ref holds that exact source. Recheck ordered apply/replay and semantic overlaps before changing the candidate pin or carrying forward compatibility evidence. Keep the existing ABI44 candidate available for comparison.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -156,3 +158,4 @@ C29 (2026-11-19): extracted the actual block-E4M3 width decision into a dependen
 - 2026-11-19T08:34:34.698229+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:28:01.492650+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:46:32.419552+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T21:53:59.253973+00:00 (updated-by): Updated: section:notes
