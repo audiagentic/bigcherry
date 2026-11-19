@@ -3153,14 +3153,17 @@ void session_engine_plan(Fixture& t) {
         const fs::path native_root = t.root / "native-admission-root";
         fs::create_directories(native_root);
         const fs::path native_yaml = native_root / "fleet.yaml";
-        std::ofstream(native_yaml, std::ios::binary)
-            << "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+        const std::string native_yaml_bytes = "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: " +
+                                               Json(model.string()).dump() + "}\r\n";
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root,
                                                             {{"TEST_NATIVE_INSPECT_TP", "3"},
                                                              {"TEST_NATIVE_INSPECT_RANK_DEVICES",
                                                               session_resolved.values.at("layout")
                                                                   .at("engine_cards").dump()},
-                                                             {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"}}};
+                                                             {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"},
+                                                             {"TEST_NATIVE_INSPECT_MODEL", model.string()},
+                                                             {"TEST_NATIVE_INSPECT_EXPECT_YAML", native_yaml_bytes}}};
         gated.named_config = "qwen27b-tp3-int8";
         const fs::path gated_run = run / "native-admission";
         fs::create_directories(gated_run);
@@ -3188,14 +3191,18 @@ void session_engine_plan(Fixture& t) {
             return bc::serving::v2::Status{};
         };
         bool stopped_before_v2 = false;
+        std::string native_gate_error;
         try {
             (void)ss::plan_engine_only(gated, gated_run, admission_hooks);
         } catch (const ss::PlanFailed& error) {
+            native_gate_error = error.what();
             stopped_before_v2 = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
                                 std::string_view::npos;
         }
-        assert(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
-               inspector_roles[0] == "native config inspector" && reaped.size() == 1);
+        if (!(stopped_before_v2 && writer_calls == 0 && !power_admitted && inspector_roles.size() == 1 &&
+              inspector_roles[0] == "native config inspector" && reaped.size() == 1))
+            throw std::runtime_error("native admission did not reach its expected fail-closed gate: " +
+                                     native_gate_error);
 
         ss::EnginePlanInputs reserved_override = gated;
         reserved_override.native_admission->runtime_overrides["CUDA_VISIBLE_DEVICES"] = "0";

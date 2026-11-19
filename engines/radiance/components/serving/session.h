@@ -284,7 +284,7 @@ NativeConfigInspection inspect_native_config(const std::filesystem::path& engine
                                              const Env& complete_environment, const Hooks& hooks = {});
 NativeConfigInspection inspect_and_reconcile_native_config(
     const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
-    const std::filesystem::path& selected_radiance_home,
+    const std::filesystem::path& selected_radiance_home, const std::filesystem::path& selected_model,
     const Env& complete_environment, const std::vector<std::string>& selected_engine_bdfs,
     int selected_tp, const Hooks& hooks = {});
 

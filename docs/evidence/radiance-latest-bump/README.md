@@ -177,3 +177,9 @@ Built `bc-serve` and `bc_serving_test`; focused CTest passed (1/1). This is cach
 ## C40 — Latest main integration (2026-11-20)
 
 Merged current `origin/main` at `224456e53`, including `068776438` and the intervening run-record/host-facts changes, into the isolated bump branch. Verified `origin/main` is an ancestor of the bump HEAD and the worktree is clean after the merge. Focused Python checks for host facts, run records, and benchmark workloads passed: 32 tests. Pytest emitted only the repository's existing `pytest-asyncio` fixture-scope deprecation warning. Radiance-specific work remains on the same task branch and its checkpoints are preserved.
+
+## C41 — Native model-path reconciliation (2026-11-20)
+
+The native inspector's reported model path is now reconciled against the selected model before any native admission can advance. Relative YAML paths resolve under the sealed snapshot's recorded root; both paths are weakly canonicalized and mismatches fail closed. The fake inspector can vary its reported model and expected YAML bytes, and tests cover a matching relative model plus a mismatched model. This closes an omission in the earlier home/TP/device/card checks without enabling native planning.
+
+Built `bc_serving_test` and `bc_session_test`; both focused CTests passed (1/1 each). The planner still refuses after successful inspection and before named-cache access, manifest writing, power admission, or engine startup. No GPU execution or performance claim is attached.

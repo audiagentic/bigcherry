@@ -97,7 +97,10 @@ int main(int argc, char** argv) {
         std::string bytes(static_cast<size_t>(info.st_size), '\0');
         if (::pread(fd, bytes.data(), bytes.size(), 0) != static_cast<ssize_t>(bytes.size())) return 11;
         const json input = json::parse(bytes, nullptr, false);
-        const std::string expected_yaml = "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+        const char* configured_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
+        const std::string expected_yaml = configured_yaml
+                                              ? configured_yaml
+                                              : "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
         if (!input.is_object() || input.value("yaml_utf8", std::string()) != expected_yaml ||
             input.value("sha256", std::string()).empty() || !input.contains("resolution_root") ||
             !input.at("resolution_root").is_string()) {
@@ -159,11 +162,13 @@ int main(int argc, char** argv) {
         const char* reported_home = std::getenv("TEST_NATIVE_INSPECT_REPORTED_HOME");
         if (!reported_home) reported_home = std::getenv("RADIANCE_HOME");
         if (!reported_home) reported_home = "runtime";
+        const char* reported_model = std::getenv("TEST_NATIVE_INSPECT_MODEL");
+        if (!reported_model) reported_model = "tiny.rad";
         json report = {{"protocol", "bigcherry.native-fleet-inspect/v1"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", input.at("resolution_root")}}},
                        {"engine", {{"abi_version", 44},
-                                    {"model", "tiny"},
+                                    {"model", reported_model},
                                     {"radiance_home", reported_home},
                                     {"radiance_home_source", nullptr},
                                     {"kernels", json::array({"k0"})},

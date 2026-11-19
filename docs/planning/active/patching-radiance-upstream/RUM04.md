@@ -167,6 +167,8 @@ C39 (2026-11-20): native version-3 measured-plan keys now bind ordered engine/he
 
 C40 (2026-11-20): integrated latest origin/main at 224456e53 (including 068776438) into the isolated bump branch; verified origin/main is an ancestor of HEAD and the worktree was clean after merge. Focused host_facts, run_records, and benchmark workloads Python tests passed (32). Only the existing pytest-asyncio fixture-loop-scope deprecation warning appeared. This keeps ongoing RUM04 work based on current main; no Radiance runtime behavior was changed by the merge. Evidence C40.
 
+C41 (2026-11-20): native inspection now reconciles the parser-reported model with the selected model before the fail-closed planner boundary. Relative authored model paths resolve under the sealed snapshot root; both selected/reported paths are weakly canonicalized. Fake inspector and negative fixture cover model mismatch. ABI44 bc_serving_test and bc_session_test passed (1/1 each). Production still stops before cache, writer, power, or child startup. Evidence C41.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -202,3 +204,4 @@ C40 (2026-11-20): integrated latest origin/main at 224456e53 (including 06877643
 - 2026-11-19T15:21:41.245162+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:30:30.513934+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:32:53.989125+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T15:43:06.516924+00:00 (updated-by): Updated: section:notes

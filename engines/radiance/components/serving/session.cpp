@@ -1851,6 +1851,7 @@ NativeConfigInspection inspect_native_config(const fs::path& engine, const Nativ
 
 NativeConfigInspection inspect_and_reconcile_native_config(
     const fs::path& engine, const NativeConfigSnapshot& snapshot, const fs::path& selected_radiance_home,
+    const fs::path& selected_model,
     const Env& complete_environment,
     const std::vector<std::string>& selected_engine_bdfs, int selected_tp, const Hooks& hooks) {
     const NativeConfigInspection report = inspect_native_config(engine, snapshot, complete_environment, hooks);
@@ -1862,6 +1863,14 @@ NativeConfigInspection inspect_and_reconcile_native_config(
     const fs::path verified_home = fs::weakly_canonical(selected_radiance_home, selected_home_error);
     if (home_error || selected_home_error || resolved_home != verified_home)
         throw PlanFailed("native config admission: YAML runtime home differs from the verified matched build home");
+    fs::path reported_model(report.model);
+    if (reported_model.is_relative())
+        reported_model = snapshot.resolution_root() / reported_model;
+    std::error_code model_error, selected_model_error;
+    const fs::path resolved_model = fs::weakly_canonical(reported_model, model_error);
+    const fs::path verified_model = fs::weakly_canonical(selected_model, selected_model_error);
+    if (model_error || selected_model_error || resolved_model != verified_model)
+        throw PlanFailed("native config admission: YAML model differs from the selected local model");
     if (selected_tp <= 0 || report.tp != selected_tp)
         throw PlanFailed("native config admission: tensor parallelism differs from the selected local profile");
     if (report.rank_devices != selected_engine_bdfs)
@@ -2296,8 +2305,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             runtime[name_key] = value; // verified build and local device selection take precedence
         const Env complete_environment = current_child_environment(runtime);
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
-        (void)inspect_and_reconcile_native_config(engine, snapshot, home, complete_environment,
-                                                 selected_bdfs, v.at("engine").at("tp").get<int>(), hooks);
+        (void)inspect_and_reconcile_native_config(
+            engine, snapshot, home, v.at("engine").at("model").get<std::string>(), complete_environment,
+            selected_bdfs, v.at("engine").at("tp").get<int>(), hooks);
         throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
                          "integration is incomplete; refusing before cache reuse, manifest writing, power "
                          "admission, or GPU child startup");

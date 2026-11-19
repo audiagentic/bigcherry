@@ -1217,9 +1217,11 @@ void native_config_inspector_before_admission() {
                                             {"RADIANCE_KERNELS", "selected-native-kernels"}};
         const ss::Env complete_environment = ss::current_child_environment(native_environment);
         const auto report = ss::inspect_and_reconcile_native_config(
-            BC_FAKE_ENGINE, snapshot, "/selected-native-home", complete_environment,
+            BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
+            complete_environment,
             {"0000:01:00.0"}, 1, hooks);
         assert(report.snapshot_sha256 == snapshot.sha256());
+        assert(report.model == "tiny.rad");
         assert(report.abi_version == 44 && report.tp == 1 && report.cards == std::vector<int>{0});
         assert(report.rank_devices == std::vector<std::string>{"0000:01:00.0"});
         for (const auto& [bdfs, tp, expected] :
@@ -1230,8 +1232,9 @@ void native_config_inspector_before_admission() {
                   "tensor parallelism differs from the selected local profile"}}}) {
             bool refused = false;
             try {
-                (void)ss::inspect_and_reconcile_native_config(BC_FAKE_ENGINE, snapshot, "/selected-native-home",
-                                                             complete_environment, bdfs, tp, hooks);
+                (void)ss::inspect_and_reconcile_native_config(
+                    BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
+                    complete_environment, bdfs, tp, hooks);
             } catch (const ss::PlanFailed& error) {
                 refused = std::string_view(error.what()).find(expected) != std::string_view::npos;
             }
@@ -1243,8 +1246,9 @@ void native_config_inspector_before_admission() {
                 {{"RADIANCE_HOME", "/selected-native-home"},
                  {"RADIANCE_KERNELS", "selected-native-kernels"},
                  {"TEST_NATIVE_INSPECT_CARDS", "[1,0]"}});
-            (void)ss::inspect_and_reconcile_native_config(BC_FAKE_ENGINE, snapshot, "/selected-native-home",
-                                                         wrong_cards, {"0000:01:00.0"}, 1, hooks);
+            (void)ss::inspect_and_reconcile_native_config(
+                BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
+                wrong_cards, {"0000:01:00.0"}, 1, hooks);
         } catch (const ss::PlanFailed& error) {
             card_order_refused = std::string_view(error.what()).find(
                                      "YAML card ordinals differ from the local rank visibility order") !=
@@ -1257,14 +1261,30 @@ void native_config_inspector_before_admission() {
                 {{"RADIANCE_HOME", "/selected-native-home"},
                  {"RADIANCE_KERNELS", "selected-native-kernels"},
                  {"TEST_NATIVE_INSPECT_REPORTED_HOME", "/unverified-radiance-home"}});
-            (void)ss::inspect_and_reconcile_native_config(BC_FAKE_ENGINE, snapshot, "/selected-native-home",
-                                                         wrong_home, {"0000:01:00.0"}, 1, hooks);
+            (void)ss::inspect_and_reconcile_native_config(
+                BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
+                wrong_home, {"0000:01:00.0"}, 1, hooks);
         } catch (const ss::PlanFailed& error) {
             unverified_home_refused = std::string_view(error.what()).find(
                                           "YAML runtime home differs from the verified matched build home") !=
                                       std::string_view::npos;
         }
         assert(unverified_home_refused);
+        bool model_mismatch_refused = false;
+        try {
+            const ss::Env wrong_model = ss::current_child_environment(
+                {{"RADIANCE_HOME", "/selected-native-home"},
+                 {"RADIANCE_KERNELS", "selected-native-kernels"},
+                 {"TEST_NATIVE_INSPECT_MODEL", "other.rad"}});
+            (void)ss::inspect_and_reconcile_native_config(
+                BC_FAKE_ENGINE, snapshot, "/selected-native-home", fs::path(snapshot.resolution_root()) / "tiny.rad",
+                wrong_model, {"0000:01:00.0"}, 1, hooks);
+        } catch (const ss::PlanFailed& error) {
+            model_mismatch_refused = std::string_view(error.what()).find(
+                                         "YAML model differs from the selected local model") !=
+                                     std::string_view::npos;
+        }
+        assert(model_mismatch_refused);
         assert(fs::current_path() == owner_cwd);
         std::ofstream(trace, std::ios::app) << "inspected\n";
         const fs::path provisional = run / "native-provisional-v2.json";
