@@ -211,6 +211,8 @@ C59 (2026-11-20): Sol review RV4249 found that the committed rad0011 check used 
 
 C60 (2026-11-20): incorporated RV4250's runtime-home identity finding. Freeze `fs::canonical(home)` before native inspection, use that canonical target for `RADIANCE_HOME`, inspector input and engine build identity, and compare both the post-measure resolved path and final manifest path to the frozen target. Extend `bc_native_v3_session_test` to retarget the selected home symlink after inspection to a byte-identical directory and prove refusal before owner-cache/measured-manifest publication. The fake sidecar now uses a valid resident byte count one KiB below an MiB boundary and its matching rounded-up log value, exercising rad0011's ceiling rule. After these changes, generated-v3 `bc_native_v3_session_test` passes (1/1), and default-v2 `bc_serving_test` plus `bc_session_stored_test` pass (2/2). Physical PCI BDF order still needs hardware evidence; recipe resolver still refuses selected rad0046's `untested` state, which was intentionally left unchanged. RV4250 findings are incorporated; no production/replay gate opens.
 
+C63–C65 verify the owner-held cwd/environment, engine-only native v3 fresh startup, and named plus explicit stored replay through the sealed owner path. See docs/evidence/radiance-latest-bump/README.md. The exact-byte manifest, S8 sidecar, owner receipt, current build/root, and fresh host room checks were exercised. Remaining work includes the existing offline KL caller using the same snapshot, helper-on integration, managed reload disposition, production generation selection, and deleting the duplicated native fields once their callers migrate.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -271,3 +273,4 @@ C60 (2026-11-20): incorporated RV4250's runtime-home identity finding. Freeze `f
 - 2026-11-19T20:23:36.088097+00:00 (updated-by): Updated: section:notes
 - RV4250
 - 2026-11-19T20:33:39.682508+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:03:18.923273+00:00 (updated-by): Updated: section:notes
