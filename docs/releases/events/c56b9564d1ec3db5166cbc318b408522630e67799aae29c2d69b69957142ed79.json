@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_the-flash-next-parity-benchmar_2590",
+  "files": [
+    "tools/lab/radiance/flashnext-parity.sh",
+    "docs/reference/engines/radiance/baselines/flashnext-4gpu-parity-main-20261119.json"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1165/#1168/#1178: parity harness extra --set hook, default heat flashnext-mixed.hot-first (the launcher's default when the v1.17.0 baseline was taken; perf51 cost ~10% of 256K prefill), current-main baseline re-recorded with it, and FLASHNEXT_PARITY_WARMUP_S to lengthen the derived policy warmup for experiment arms.",
+  "timestamp-utc": "2026-11-19T07:11:11.389066Z",
+  "user-summary-candidate": "The Flash-Next parity benchmark measures with the right heat file and can match the baseline's warmup."
+}

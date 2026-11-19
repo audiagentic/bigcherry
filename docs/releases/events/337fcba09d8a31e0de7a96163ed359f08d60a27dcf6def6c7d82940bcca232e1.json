@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_production-flash-next-starts-w_4696",
+  "files": [
+    "engines/radiance/components/serving/v2/runtime_receipt.cpp",
+    "engines/radiance/components/serving/v2/runtime_receipt_test.cpp",
+    "docs/reference/engines/radiance/LIVE_PLACEMENT.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1176: the live runtime receipt accepts exactly the worker's fresh-boot placement state (ACTIVE, transaction 0, empty journal); every other transaction-0 state still refuses. First native production start with the live policy on to reach serving (14 commits, 0 aborts on hardware).",
+  "timestamp-utc": "2026-11-19T07:11:11.372060Z",
+  "user-summary-candidate": "Production Flash-Next starts with the live placement policy on."
+}
