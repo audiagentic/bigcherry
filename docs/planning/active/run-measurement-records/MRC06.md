@@ -88,9 +88,19 @@ Retained transition boundary: `OUT/parity.json` is still written and existing
 slice. It is a compatibility summary, not the canonical measurement writer.
 Do not retire it before consumer scanning. The origin/main base for this slice
 contains MRC05 but not the newly pushed MRC04 reader, so selected calibration
-TOML is independently verified by digest in the lab adapter; replace that
-reader with MRC04's shared operator implementation once PR #1199 lands.
+TOML was independently verified in that slice; slice 2 replaces the
+temporary reader with MRC04's shared validator.
 Other producer migrations and hardware activation remain pending.
+
+## Slice 2: workload, llama.cpp, experiment producers, MRC04 consolidation (2026-11-20)
+
+- Replace the temporary parity calibration digest logic with MRC04's strict current/legacy/invalid TOML reader. Only the selected current calibration row can become measured evidence.
+- A native Radiance workload run now publishes immutable MRC01 content, with manifest bytes captured while the source exists. Historical index paths were invalidated by the November 17 purge: the old results/index.jsonl is read-only. "results list" exposes historical rows as legacy / missing_content_provenance, with no baseline activation and no automatic conversion.
+- The BigCherry-owned llama.cpp wrapper invokes the unmodified external bench/run_bench.py and intercepts its canonical result append calls. This preserves the benchmark process and measured quantities, writing a single MRC01 record rather than new JSON/family/SQLite results. Direct upstream invocations still write their own legacy stores, so operators must use the managed wrapper.
+- HI47 experiment bundles publish a result record only when a typed measured-results sidecar exists. The current experiment.json and measured values are content blobs. VA25 canonical execution evidence supplies the optional MRC01 validity field and invalid/missing evidence blocks results baseline, compare and history activation.
+- Tests use synthetic hosts/manifests/llama rows/external run_bench and actual MRC04 calibration fixtures; no GPU needed.
+
+Remaining separate slices: bc-serve calibration/lab producers, RSC02 S15, other campaign/compile receipts and migration of consumers still reading old stores. No historic row is rewritten; unrepresentable llama PPL/standard deviation metrics remain verbatim in source-row provenance until a schema extension can represent those phases faithfully.
 
 ## Change Log
 

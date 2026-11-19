@@ -56,6 +56,8 @@ def _verified_rows(store: run_records.RunRecordStore, rows: Sequence[dict]) -> l
             record = store.get_record(digest)
             if row.get("record") != record:
                 raise ResultsError(f"record sha256 {digest}: query row differs from verified store")
+            if record.get("validity", {}).get("state") in ("invalid", "unverified"):
+                raise ResultsError(f"record sha256 {digest}: invalid or unverified execution attestation")
         except (KeyError, TypeError, run_records.RecordError) as exc:
             raise ResultsError(f"invalid or unreadable record: {exc}") from exc
         checked.append({"sha256": digest, "record": record})
@@ -234,6 +236,9 @@ def validate_baseline(baseline: dict) -> dict:
             needed[ref["sha256"]] = True
     if set(known) != set(needed):
         raise ResultsError("unreferenced blobs in baseline")
+    if any(row["record"].get("validity", {}).get("state") in
+           ("invalid", "unverified") for row in rows):
+        raise ResultsError("baseline contains invalid or unverified execution attestation")
     if _context(rows) != baseline["identity"]:
         raise ResultsError("baseline identity/workload differs from source records")
     if _metrics(rows) != baseline["metrics"]:
@@ -440,6 +445,9 @@ def history(
     if not rows:
         return {"engine": engine, "layout": layout, "workload": workload,
                 "metric": metric, "points": []}
+    for row in rows:
+        if row["record"].get("validity", {}).get("state") in ("invalid", "unverified"):
+            raise ResultsError("history refuses invalid or unverified execution attestation")
     run_ids = [row["record"]["run_id"] for row in rows]
     if len(set(run_ids)) != len(run_ids):
         raise ResultsError("history contains duplicate launch run_id; cannot count one launch twice")

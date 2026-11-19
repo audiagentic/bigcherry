@@ -462,18 +462,16 @@ class RunRecordsTests(unittest.TestCase):
 
         out = self.run_fixture("active", [1.0])
         launch = out / "launch-1"
-        scope = {"policy_key_version": 2, "layout": "flashnext-4gpu",
-                 "objective": "balanced", "model": "m" * 64}
-        canonical = json.dumps(scope, sort_keys=True, separators=(",", ":"))
-        key = hashlib.sha256(canonical.encode()).hexdigest()
-        self.calibration.write_text(
-            'schema_version = 1\n[[live_policy_record]]\n'
-            + 'plan_cache_key = "' + key + '"\n'
-            + 'calibration_inputs = ' + json.dumps(canonical) + '\n'
-            + 'source_plan_key = "' + "a" * 64 + '"\n'
-            + 'source_engine_build = "' + "b" * 64 + '"\n'
-            + 'layout = "flashnext-4gpu"\nobjective = "balanced"\n'
-        )
+        from bigcherry.core import calibration_records
+
+        # MRC04's production snapshot includes the complete narrow key and
+        # all quantities. Synthetic partial keys are correctly invalid.
+        fixture = ROOT / "tools/tests/fixtures/calibration/production-2026-11-19.toml"
+        self.calibration.write_bytes(fixture.read_bytes())
+        current = [item for item in calibration_records.read_native_toml(self.calibration)
+                   if item["status"] == "current"]
+        self.assertEqual(len(current), 1)
+        key = current[0]["key"]
         manifest = json.loads((launch / "manifest.json").read_text())
         manifest["spec"]["handoff"]["placement"]["live_policy_state"] = {
             "configured": True, "requested": "on",
@@ -504,13 +502,11 @@ class RunRecordsTests(unittest.TestCase):
             self.assertEqual(json.loads(inputs["warmup"])["warmup_s"], 3.0)
 
             # Valid data under the wrong key must never become live evidence.
-            wrong_scope = dict(scope, model="n" * 64)
-            mutated = self.calibration.read_text().replace(
-                json.dumps(canonical),
-                json.dumps(json.dumps(wrong_scope, sort_keys=True, separators=(",", ":"))),
-            )
-            self.assertNotEqual(mutated, self.calibration.read_text())
-            self.calibration.write_text(mutated)
+            # A changed scoped quantity is not silently accepted.
+            original = self.calibration.read_text()
+            self.calibration.write_text(original.replace(
+                'plan_cache_key = "' + key + '"', 'plan_cache_key = "' + "e" * 64 + '"'
+            ))
             with self.assertRaises((fp.ParityError, ValueError)):
                 fp.publish_launch_record(out, launch)
             self.assertEqual(len(store.query()), 1)

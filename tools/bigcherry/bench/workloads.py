@@ -6,10 +6,8 @@ changes power, or acquires a GPU lease. Running a workload sends inference reque
 from __future__ import annotations
 
 import datetime as dt
-import fcntl
 import hashlib
 import json
-import os
 import platform
 import re
 import statistics
@@ -21,8 +19,9 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Any
 
-from ..core import host_facts
+from ..core import feature_states, host_facts, measurement_producers
 from ..core.context import resolve_work_root
 from . import stream_bench
 
@@ -302,19 +301,124 @@ def make_row(workload_id: str, cfg: dict, metrics: dict, detail: dict,
             "manifest_digest": info.get("manifest_digest"), "run_folder": run_folder}
 
 
+def _metric_phase(name: str) -> str | None:
+    if name.startswith("prefill") or name == "prefill_tps":
+        return "prefill"
+    if name.startswith("decode"):
+        return "decode"
+    if name == "ttft_ms":
+        return "ttft"
+    return None
+
+
+def publish_record(
+    row: dict,
+    *,
+    manifest_bytes: bytes | None = None,
+    work_root: Path | None = None,
+    argv: list[str] | None = None,
+    environment: dict[str, str] | None = None,
+    host_snapshot: dict | None = None,
+) -> str:
+    """MRC06 new writer; historical row payloads are kept only as source blobs.
+
+    The manifest's bytes must still exist at the time of capture. A historical
+    path or an unverified server is not enough to claim a valid build identity.
+    """
+    manifest_name = row.get("manifest")
+    if not manifest_name:
+        raise WorkloadError("verified active manifest required for run-record publication")
+    manifest_path = Path(manifest_name)
+    raw = manifest_bytes if manifest_bytes is not None else manifest_path.read_bytes()
+    manifest = json.loads(raw)
+    spec = manifest["spec"]
+    build = spec["processes"]["engine"]["runtime"]["radiance_home"]
+    build_root = Path(build).parent
+    metadata_file = build_root / "bigcherry-build-metadata-radiance.json"
+    meta = json.loads(metadata_file.read_text(encoding="utf-8"))
+    for name in ("build_id", "binary_hash", "source_slice_id", "build_plan_id"):
+        if not isinstance(meta.get(name), str) or not meta[name]:
+            raise WorkloadError(f"verified build metadata requires {name}")
+    if (row.get("build_id"), row.get("layout"), row.get("model")) != (
+        meta["build_id"], spec["intent"]["layout"], spec["intent"]["model"]
+    ):
+        raise WorkloadError("result identity differs from captured strict manifest and build metadata")
+    binary = build_root / "bin" / "radiance"
+    # The build's metadata is the record-of-build; if the binary is present,
+    # enforce that its actual contents still match that metadata.
+    if not isinstance(meta["binary_hash"], str) or len(meta["binary_hash"]) != 64:
+        raise WorkloadError("build binary SHA-256 missing")
+    if binary.is_file() and __import__("hashlib").sha256(binary.read_bytes()).hexdigest() != meta["binary_hash"]:
+        raise WorkloadError("build binary no longer matches build metadata")
+    # MRC03 is emitted in the native run folder. Never infer feature states
+    # from the current time or an unrelated previous session.
+    state_path = manifest_path.parent / feature_states.FILE_NAME
+    states = feature_states.read_feature_states(state_path)
+    if any(state["engine"] != "radiance" for state in states):
+        raise WorkloadError("feature states and engine identity differ")
+
+    phase_metrics: dict[str, dict[str, float]] = {p: {} for p in ("decode", "prefill", "ttft")}
+    metric_specs: dict[str, dict[str, dict[str, Any]]] = {p: {} for p in phase_metrics}
+    for name, entry in row["metrics"].items():
+        phase = _metric_phase(name)
+        if phase is None:
+            continue  # board_watts is structured data; retained in exact row blob
+        value = entry["median"]
+        if type(value) not in (float, int):
+            raise WorkloadError(f"non-numeric measured metric {name}")
+        phase_metrics[phase][name] = value
+        metric_specs[phase][name] = {
+            "direction": "lower" if name == "ttft_ms" else "higher",
+            "gated": name != "decode_engine_tps",
+        }
+        # Cold requests use distinct seeds, docs use different slices. Only
+        # same-seed stream repeats may enlarge baseline tolerance.
+        if row["workload_id"].startswith("decode-") and name in ("decode_aggregate_tps", "ttft_ms"):
+            reps = [rep.get(name) for rep in entry.get("per_rep", [])
+                    if isinstance(rep, dict) and type(rep.get(name)) in (int, float)]
+            if len(reps) >= 2:
+                metric_specs[phase][name]["repeat_groups"] = [reps]
+    if not any(phase_metrics.values()):
+        raise WorkloadError("no numeric workload metrics")
+    stamp = row["timestamp"]
+    config = row.get("details", {}).get("workload_config")
+    if not isinstance(config, dict):
+        raise WorkloadError("record requires exact workload config")
+
+    facts = host_snapshot if host_snapshot is not None else host_facts.collect_host_facts()
+    return measurement_producers.publish(
+        work_root=work_root,
+        run_id=row["row_id"],
+        recorded_at=stamp,
+        identity={
+            "engine": "radiance", "build_id": meta["build_id"],
+            "binary_sha256": meta["binary_hash"],
+            "source_revision": row.get("runner_commit") or meta.get("source_commit") or row.get("build_commit") or "",
+            "model": spec["intent"]["model"],
+            "layout": spec["intent"]["layout"],
+        },
+        workload={
+            "name": row["workload_id"],
+            "definition": {**config, "version": row["workload_version"]},
+        },
+        metrics=phase_metrics, metric_specs=metric_specs,
+        effective_config=raw,
+        argv=argv or ["bigcherry", "workload", "run", row["workload_id"]],
+        environment=environment or {},
+        power_settings=row.get("power_state") or {},
+        inputs={
+            "workload_result": measurement_producers.canonical_blob(row),
+            "build_metadata": metadata_file.read_bytes(),
+            "native_feature_states": state_path.read_bytes(),
+        },
+        host_facts=facts, feature_states=states,
+        validity={"state": "unverified", "reason_codes": ["ATTESTATION_MISSING"]},
+    )
+
+
 def append_index(path: Path, row: dict) -> None:
-    """One os.write under an advisory lock: no partial/interleaved JSONL records."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = (json.dumps(row, allow_nan=False, sort_keys=True) + "\n").encode()
-    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o664)
-    try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        if os.write(fd, data) != len(data):
-            raise OSError("short index write")
-        os.fsync(fd)
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
+    """Retired writer: legacy JSONL rows are a read-only source of history."""
+    raise WorkloadError("legacy results/index.jsonl is read-only; use run-record v1")
 
 
 def read_index(path: Path) -> list[dict]:

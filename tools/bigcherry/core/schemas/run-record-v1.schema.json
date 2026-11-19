@@ -121,6 +121,9 @@
     },
     "metric_specs": {
       "$ref": "#/$defs/metric_specs"
+    },
+    "validity": {
+      "$ref": "#/$defs/validity"
     }
   },
   "$defs": {
@@ -316,6 +319,30 @@
           },
           "additionalProperties": {
             "$ref": "#/$defs/metric_spec"
+          }
+        }
+      }
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reason_codes"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "valid",
+            "invalid",
+            "unverified"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
           }
         }
       }

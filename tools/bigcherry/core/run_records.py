@@ -176,6 +176,12 @@ def validate_record(record: Any) -> dict[str, Any]:
             for spec in record["metric_specs"][phase].values():
                 if type(spec["gated"]) is not bool:
                     raise RecordError("metric gate must be a boolean")
+    # VA25 validity must not have internally contradictory verdict metadata.
+    # Absence is supported for pre-MRC06 v1 records; such records remain readable.
+    if "validity" in record:
+        validity = record["validity"]
+        if (validity["state"] == "valid") != (not validity["reason_codes"]):
+            raise RecordError("validity: reason_codes disagree with execution verdict")
     return record
 
 
