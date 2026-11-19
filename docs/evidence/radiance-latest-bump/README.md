@@ -337,3 +337,7 @@ The isolated default v2 serving and stored replay checks passed (2/2) at committ
 ## Radiance 2.2 source replay
 
 The ordered 33-package serving roster applies and reapplies on upstream `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`. This used the explicit patch list. Canonical production resolution still requires qualification of rad0046. The separate rad0004 remote MoE diagnostic needs its post-down hook adapted to the new upstream branch structure. The same-SDK build and hardware checks remain open.
+
+## C65 — Replay measured native sessions
+
+Commit `ea62472e4` reuses the named cache and stored replay index for the generated v3 owner. The v3 session fixture passed (1/1) and the v2 serving, stored replay, and cache fixtures passed (3/3). Coverage includes a named cache hit and explicit replay after deletion of the authored YAML, without another measuring child. Changed manifest or S8 bytes, owner receipt, engine build, runtime root, and insufficient live room were refused. Replacing the artifact pathname before launch still used the already sealed bytes. The owner verified shutdown for fresh and stored sessions. GPU and offline qualification remain open.
