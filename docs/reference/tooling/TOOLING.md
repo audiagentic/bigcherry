@@ -33,7 +33,60 @@ bigcherry CLI -> cli/main.py parser -> cli/<domain>.py handler
               -> tests, receipts, evidence, or artifacts owned by that workflow
 ```
 
-### Platform measurement records (MRC01 slice 1)
+### Calibration records (MRC04 slice 1)
+
+The engine-agnostic JSON contract is
+`tools/bigcherry/core/schemas/calibration-record-v1.schema.json`;
+the **per-kind key declaration** is
+`tools/bigcherry/core/schemas/calibration-kinds-v1.json`.
+`bigcherry.core.calibration_records` validates strict records, computes the
+declared SHA-256 key, and offers `CalibrationStore.get/put/list` for platform
+JSON records under `records/<kind>/<key>.json`. `put` serialises writes with
+a persistent `.lock`, fsyncs temp file and directory and atomically publishes
+with rename; a duplicate refuses unless `replace=True` is explicitly
+requested. Provenance is not in the key. The store does not activate or
+generate a policy. Large MRC01 quantity blobs and run-record linkage are
+future producer migrations.
+
+Radiance **continues to read and write TOML natively**, without Python at
+runtime: `bc-serve calibration-ingest` writes `[[live_policy_record]]` entries
+into `live-policy-calibration.toml` under its native flock/atomic-rename
+contract. New rows declare `record_schema_version = 1`,
+`calibration_kind = "radiance.live_policy"`, `calibration_key_fields`,
+and `calibration_inputs` (canonical JSON) along with source build identity,
+plan key, run ID, host-facts digest, source-slice identity (or explicitly
+`unavailable`), date, evidence, and measured/absent quantities. A native
+reader enforces the narrow key before activation. Earlier post-#1169 rows
+with `calibration_inputs` and source plan/build but without the extra MRC04
+v1 fields stay **current** and activatable through a read-only, in-memory
+compatibility mapping; missing run/source-revision/host digests are not made up.
+Only genuinely hash-only records lack activation provenance and are rejected
+with `legacy_record_schema`, leaving serving available with the policy off.
+The production key itself is unchanged from #1169: `sha256` over
+Radiance's sorted `policy_calibration_inputs` JSON.
+
+The operator commands are read-only (no hardware lease, no activation):
+
+```sh
+PYTHONPATH=tools python -m bigcherry calibration list --store /path/to/live-policy-calibration.toml
+PYTHONPATH=tools python -m bigcherry calibration show --store /path/to/live-policy-calibration.toml --kind radiance.live_policy --key <sha256>
+PYTHONPATH=tools python -m bigcherry calibration validate --store /path/to/live-policy-calibration.toml
+```
+
+An omitted `--store` defaults to `$BC_WORK_ROOT/live-policy-calibration.toml`
+when `BC_WORK_ROOT` is set. A JSON-store directory can be supplied instead.
+`list` and `show` mark both native v1 and verified post-#1169 rows as
+`current`; genuinely hash-only entries are `legacy` with their explicit refusal
+reason. `validate` accepts current rows, and returns nonzero when any legacy or
+malformed row is unusable. Source facts for newly written v1 rows are hashed
+from the **verified source manifest's
+`spec.facts`**, not guessed from the machine at query time; source revision
+comes from installed build metadata's `source_slice_id` when present,
+otherwise is explicitly `unavailable`. A rebuild changes provenance, not
+the key. Changes to model, card identities, layout, objective, power
+profile, histogram cadence, helper execution or remote service do change it.
+
+### Platform measurement records (MRC01–MRC03)
 
 `bigcherry.core.run_records.RunRecordStore` owns v1 immutable run records at
 `$BC_WORK_ROOT/run-records/v1/`, with SHA-256 blobs under
@@ -48,11 +101,169 @@ and TTFT are separate fields; an empty phase means it was not measured.
 
 An input path is only an optional hint: effective configuration, exact argv,
 environment, power settings and result-affecting inputs are stored as blob
-references. `host_facts` and `feature_states` are explicit empty fields until
-MRC02/MRC03 supply those collectors. Engines supply adapters, not schema or
-store logic; a native runtime must remain Python-free. The WSL01 run manifest
-continues to own lifecycle. MRC01's manifest edges and results CLI, and MRC06's
-producer migrations, are **not part of this first slice**.
+references. `host_facts` is populated by the MRC02 platform collector, and
+`feature_states` by MRC03's native snapshot/reader. Engines supply adapters,
+not schema or store logic; a native runtime remains Python-free. The WSL01
+run manifest continues to own lifecycle. The platform's
+`bigcherry.core.host_facts` collector returns per-fact
+`{value, readable, reason?}` structures over injectable sysfs and procfs
+roots. Its read-only probes include kernel, ROCm, amdgpu/firmware, VRAM,
+PCIe card/bridge links, clock state and OD max, power cap and bounds,
+host memory/DIMMs, environment-file SHA-256 and GPU lease status. A reported
+zero current power cap is flagged `zero_cap_suspect`, never interpreted as
+a valid cap. Use `run_records.with_host_facts(record)` in Python platform
+adapters and `run_manifest.new_manifest(host=...)` or
+`run_manifest.new_manifest(collect_host_facts=True)` for an explicit
+snapshot; callers opt in to collection at run creation rather than
+performing extra sysfs/tool queries on unrelated lifecycle operations.
+The workloads tool imports its card/power sampling readers from this core
+module. WSL01 manifests carry `references: [{type: measurement_record, id: SHA256,
+role: measurement}]` linked with `run_manifest.link_measurement_record`.
+`resolve_measurement_records(run_dir, store)` and
+`find_run_for_record(runs_root, store, SHA256)` verify both identities and
+content; links never change lifecycle/harvest/retention state. The SHA store
+query accepts `run_id` as well as engine/layout/workload/metric/time.
+Operators use `bigcherry results put --record FILE --blob SHA256=PATH
+--run-dir RUN_DIR` to copy/validate all supplied content and link WSL01;
+`bigcherry results show SHA256` and `bigcherry results query --run-id RUN_ID
+--metric prefill.tokens_per_second --json` read exclusively through the store.
+`results list` retains the explicit read-only legacy-row bridge. Never
+promote missing historical provenance by guessing file bytes.
+MRC06 owns remaining producer migrations.
+
+MRC03's feature-state v1 JSON contract lives at
+`tools/bigcherry/core/schemas/feature-state-v1.schema.json`: a list of
+`{feature_id, state, reason_code, reason_detail, engine, observed_at}` entries,
+with state `active`, `inactive` or `degraded`. The platform-only API
+`bigcherry.core.feature_states.read_feature_states(path)` validates a native
+`feature-states.v1.json` snapshot (no symlinks, duplicate feature IDs,
+or invalid states), and `with_feature_states(record, path)` copies it into
+a run record after checking the engine identity. The native Radiance
+`bc-serve` publishes this file from its admitted manifest before starting
+serving children; its durable owner session record and `status --json` expose
+the same entries. A helper-backed production run warns in the owner log
+when live placement is inactive or degraded, including the reason code and
+the preflight/provenance reason; other default-off options are diagnostic
+rather than automatically required. MRC06 still owns producer migration.
+
+### Portable results: baseline, compare, history (MRC05 slice 1)
+
+`bigcherry.core.results` owns offline baseline gates, comparisons and history
+over verified MRC01 run records. Records may include `session_id` for
+same-session A/B and `metric_specs` for each phase-qualified metric:
+`direction: higher|lower`, `gated: true|false`, optional `repeat_groups`
+(samples of the **same prompt**, not distinct prompts). Existing records without
+these optional fields remain readable but cannot create a gated baseline.
+
+A baseline requires at least two distinct launch `run_id` values, identical
+engine/model/layout/workload definitions, and intact provenance blobs. It stores
+per-launch medians and a one-sided tolerance from the larger of across-launch
+relative spread and true-repeat relative spread. Missing gated metrics fail
+comparison; informational metrics are never gated. Baseline JSON embeds
+canonical record contents and all referenced input blobs by value (base64
+with SHA-256) and validates them without original run folders or source files.
+**Treat baseline files as sensitive**: embedded environment/configuration
+blobs may contain secrets; do not commit them without inspection.
+
+`results compare` requires at least two candidate launches; host-facts and
+feature-state differences appear before verdicts, alongside config, heat,
+policy, kernel, power, argv, environment and build differences. Different or
+unknown sessions warn to prefer same-session A/B. A provenance difference
+does not itself fail a one-sided metric gate. `results history` requires an
+engine, layout, workload and phase-qualified metric; baseline and trailing
+drift flags use two launches, not a single-launch verdict.
+
+```bash
+bigcherry results baseline --engine radiance --layout flashnext-4gpu --workload flashnext-parity --name reference --to reference.json
+bigcherry results compare --baseline reference.json --since 2026-11-20T00:00:00Z
+bigcherry results history --engine radiance --layout flashnext-4gpu --workload flashnext-parity --metric decode.decode1_ms_per_step --baseline reference.json --json
+```
+
+For controlled cohorts, repeat `--record SHA256` on baseline/compare, or
+filter with `--since`/`--until`. `--work-root` selects the record store.
+Compare exits 1 for regression/missing gated metrics, 2 for invalid input,
+0 for a clean gate. MRC06 continues to migrate the remaining producers.
+
+**MRC06 slice 1: Flash-Next parity.** `tools/lab/radiance/flashnext-parity.sh
+measure` now publishes one immutable run-record v1 per completed native launch
+by default under `$BC_WORK_ROOT/run-records/v1/`. `--records` is explicit on;
+`--no-records` opts out of record publication and therefore disables
+portable baseline/compare for that cohort; `parity.json` remains only a
+measured summary view. Each `OUT/launch-N/record.sha256` contains a digest
+verified against the immutable MRC01 store. `flashnext-parity.sh baseline
+--out OUT --name NAME [--to FILE]` now delegates to `core.results.make_baseline`
+and defaults to `OUT/baseline.mrc05.json`, never the tracked historical
+baseline. `flashnext-parity.sh compare --out OUT --baseline FILE` delegates
+to `core.results.compare_records`, printing host/feature/config/policy
+provenance differences before gates. Both refuse missing launch receipts;
+neither reads `parity.json` for a verdict or converts old path-only data
+into an immutable record. The record carries
+`engine=radiance`, build ID and binary hash from the build metadata, Git
+revision, measured model/layout, the exact harness workload definition,
+phase-separated cold/sess8 TTFT, document/long-context prefill, decode step
+times and ungated draft acceptance. `metric_specs` keeps the harness's
+one-sided gate and real same-prompt repeats (distinct prompts are not noise
+samples). No GPU tests are needed for the adapter's fixture/compare parity.
+
+The native strict manifest, source heat bytes, the selected calibration row
+when the policy is configured, full `live_policy_state`, owner argv/sets,
+a curated environment snapshot, effective power state and actual
+warmup are SHA-256 content blobs, not mutable paths. Heat and calibration
+inputs are snapshotted before launch and checked for mutation; feature states
+are read from the native run directory using MRC03. Passive MRC02 host facts
+are captured immediately before measurement. Incomplete state, metadata,
+or mismatched key aborts **record publication**, rather than fabricate
+provenance. The old `parity.json` remains a read-only summary view for existing consumers and is
+not ingested as a source of run-record metric truth. The remaining MRC06
+producer migrations and legacy-writer retirement are separate slices.
+
+**MRC06 slice 2 — producer migration and legacy listing.** The parity producer now reads the selected current calibration with MRC04's shared native-TOML reader, without duplicating its key verification.
+
+"bigcherry workload run" publishes one immutable record per run using manifest bytes captured before measurement, build metadata, a native feature-state snapshot, host facts, original measured values, power and argv. The legacy "results/index.jsonl" and old workload rows are read-only; "bigcherry results list --engine radiance --work-root ROOT --json" shows older rows as "legacy" / "missing_content_provenance". Neither deleted manifest paths nor seeded rows are silently promoted into the record store. "workload seed" is disabled and the historical "workload compare" remains a read-only reader.
+
+The external llama.cpp "bench/run_bench.py" is intentionally not changed in a different repository. The platform-managed entrypoint is:
+
+    module bigcherry.bench.llamacpp_runner (repository tools on PYTHONPATH): --runner-root "$BC_LLAMACPP_ROOT" --expected-identity admitted-va25.json --binary-path /path/to/llama-bench -- <run_bench arguments>
+
+It drives the original benchmark and intercepts the existing result append boundary to write exactly one content-addressed record per measured row; duplicate per-family JSON and legacy SQLite sync are suppressed. Direct external invocations are outside the managed migration. Numeric "pp*_tps" and "tg*_tps" metrics map to prefill/decode without changing values. Unmapped quantities such as PPL or standard deviation remain byte-for-byte as the provenance source row, not falsely relabeled as prefill or decode.
+
+Typed HI47 measurement sidecars can be published with "python -m bigcherry.experiment.bundle record BUNDLE --measurement-file BUNDLE/measurement.json" or with the managed "run --measurement-file measurement.json" option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
+
+The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; old v1 records without the new optional field remain readable. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
+
+**MRC06 slice 3 — Radiance native lab results.** Native `bc-serve serve
+--calibration-run` saves admitted manifest, exact process argv, A/B prompt
+and heat bytes, selected native calibration TOML and helper-log hashes
+without loading Python. After a **successfully completed and cleanly
+stopped** native calibration session, invoke the platform ingest:
+
+```sh
+bigcherry results ingest-calibration --run-dir /path/to/run --work-root ROOT --json
+```
+
+The platform's MRC04 reader requires one selected `native_v1` record and
+verifies its key/provenance and all source snapshots before producing an
+MRC01 run record. `RUN/calibration-record.sha256` is a pointer, not a new
+measurement store. Ingest before reusing the run directory. Host snapshots
+obtained during offline ingest are not claims about measurement-start state.
+
+`needle_probe.py` and `image_probe.py` now require a matching local native
+`--run-dir` and optional `--work-root`. Their `--out` is a digest-pointer
+JSON object; full results, exact corpus/image bytes and controls are MRC01
+content blobs. The leased S15 `rsc02_s15_ab.py` still runs; each cleanly
+stopped arm publishes one immutable record. Existing S15 comparator JSON
+remains read-only lifecycle/comparison evidence, not a measurement index.
+
+Today's parity records in **UTC** and one verified record by digest:
+
+```sh
+bigcherry results list --today --engine radiance --workload parity --json
+bigcherry results show RECORD_SHA256 --json
+```
+
+These are read-only SHA-verified store views; missing historic manifest
+paths are never rebuilt. MRC06 global writer retirement remains open.
+
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be
@@ -245,3 +456,12 @@ For generated agent surfaces, edit the owning component/configuration and
 re-apply it. Do not edit managed blocks in `AGENTS.md` or `CLAUDE.md`
 directly.
 
+
+Historical Flash-Next v1.17.0 `flashnext-4gpu-parity.json` is **read-only
+and unreproducible**: its original manifest/heat bytes were never captured.
+The 2026-11-19 four-arm A/B evidence contains path-based parity summaries
+without the complete immutable v1 host/policy/feature provenance, so no
+MRC05 baseline or policy-confound verdict can be synthesized from it.
+Completion of MRC05 Step 6 requires a new qualified two-launch hardware
+reference and four newly recorded arms with provenance; do not claim the
+historical 2026-11-19 data satisfies that acceptance gate.

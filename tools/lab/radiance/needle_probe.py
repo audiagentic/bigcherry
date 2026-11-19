@@ -94,6 +94,10 @@ def case(url: str, model: str, text: str, cpt: float, tokens: int, depth: float,
 def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--url", required=True)
+    ap.add_argument("--run-dir", type=Path, required=True,
+                    help="native bc-serve run directory; required for immutable measurement provenance")
+    ap.add_argument("--work-root", type=Path,
+                    help="BC_WORK_ROOT MRC01 record store (defaults to environment)")
     ap.add_argument("--model", default="default")
     ap.add_argument("--tokens", type=int, action="append", required=True, help="target prompt tokens (repeatable)")
     ap.add_argument("--depths", default="0.1,0.5,0.9")
@@ -102,6 +106,12 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--timeout", type=float, default=1800.0)
     ap.add_argument("--out", type=Path, required=True)
     args = ap.parse_args(argv)
+    tools = str(REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from bigcherry.bench.radiance_lab_records import verify_live_target
+
+    verify_live_target(args.run_dir, args.url)
     text = corpus()
     cpt = chars_per_token(args.url, args.model, text, args.timeout)
     rows = []
@@ -116,8 +126,22 @@ def main(argv: list[str] | None = None) -> int:
     for tokens in args.tokens:
         mine = [r for r in rows if r["tokens_target"] == tokens]
         summary[str(tokens)] = {"hits": sum(r["hit"] for r in mine), "of": len(mine)}
-    args.out.write_text(json.dumps({"chars_per_token": cpt, "summary": summary, "rows": rows}, indent=1), encoding="utf-8")
-    print(json.dumps(summary))
+    # Original rows are retained once in the immutable record, not rewritten
+    # to a second mutable JSON metrics store. --out is a digest-only pointer.
+    from bigcherry.bench.radiance_lab_records import publish_probe
+
+    result = {"chars_per_token": cpt, "summary": summary, "rows": rows}
+    digest = publish_probe(
+        args.run_dir, kind="needle", result=result,
+        definition={"tokens": args.tokens, "depths": [float(d) for d in args.depths.split(",")],
+                    "repeats": args.repeats, "seed": args.seed,
+                    "tolerance": 0.08, "max_tokens": 40},
+        argv=[str(Path(__file__).resolve()), *(argv if argv is not None else sys.argv[1:])],
+        extra_inputs={"corpus": text.encode("utf-8")},
+        work_root=args.work_root,
+    )
+    args.out.write_text(json.dumps({"record_sha256": digest}, sort_keys=True) + "\n", encoding="utf-8")
+    print(json.dumps({"summary": summary, "record_sha256": digest}))
     return 0 if all(r["hit"] for r in rows) else 1
 
 

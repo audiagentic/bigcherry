@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "e6fb5fb9a6699c6911c2b68097028a18da338328894f5f4d068ad9c48696fc9d"
+  ],
+  "prompt_tokens": 153373,
+  "prompt_tokens_target": 256000,
+  "prompt_words": 153373,
+  "reps": 2,
+  "seed": 8,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18454"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 2.43,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 54.978,
+    "event_gap_ms_p50": 30.606,
+    "event_gap_ms_p95": 31.366,
+    "event_gap_ms_p99": 54.978,
+    "mean_stream_decode_tps_est": 134.655,
+    "tokens": 256,
+    "ttft_ms_max": 103432.7,
+    "ttft_ms_p50": 103432.7,
+    "ttft_ms_p95": 103432.7
+   },
+   "engine": {
+    "decode_ms_per_step": 31.6797,
+    "decode_tokens_per_step": 4.2459,
+    "decode_tokens_total": 259.0,
+    "decode_tps_engine": 134.026,
+    "draft_acceptance": 0.6492,
+    "draft_accepted_total": 198.0,
+    "draft_tokens_total": 305.0,
+    "engine_step_seconds_decode_total": 1.93246,
+    "engine_steps_decode_total": 61.0,
+    "engine_steps_prefill_total": 126.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 255501.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.995,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 134.655,
+     "error": "",
+     "events": 62,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 253773,
+     "response_tail_ms": 44.16,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nlantern willow yarrow xenon indigo juniper lantern delta delta quartz harbor indigo delta prairie juniper thistle delta meadow nectar ember onyx onyx valley ember willow meadow juniper kestrel thistle juniper cedar umber amber xenon valley amber summit valley meadow xenon lantern garnet thistle nectar willow summ",
+     "text_sha256": "db1de7d2d4e3fe9632f79b0db39d374cde0ab2142bb137591af8ea87859d010b",
+     "tokens": 256,
+     "ttft_ms": 103432.7,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 24.618,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795123584788179303,
+   "wall_s": 105.3706,
+   "wall_start_ns": 1795123479392317007
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 90.042,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 40.494,
+    "event_gap_ms_p50": 39.517,
+    "event_gap_ms_p95": 40.098,
+    "event_gap_ms_p99": 40.494,
+    "mean_stream_decode_tps_est": 95.394,
+    "tokens": 256,
+    "ttft_ms_max": 134.71,
+    "ttft_ms_p50": 134.71,
+    "ttft_ms_p95": 134.71
+   },
+   "engine": {
+    "decode_ms_per_step": 36.2548,
+    "decode_tokens_per_step": 3.5068,
+    "decode_tokens_total": 256.0,
+    "decode_tps_engine": 96.728,
+    "draft_acceptance": 0.5014,
+    "draft_accepted_total": 183.0,
+    "draft_tokens_total": 365.0,
+    "engine_step_seconds_decode_total": 2.646603,
+    "engine_steps_decode_total": 73.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 13.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.846,
+    "requests_waiting_max": 0.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 95.394,
+     "error": "",
+     "events": 74,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 253773,
+     "response_tail_ms": 35.3,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nlantern willow ...\" huge list. Need likely continue list of words with a short story. Need infer task: They provide a long list of words, maybe want us to continue the list of words with a short story. Could mean take the list and continue it by writing a short story using those words? Or continue the list of wor",
+     "text_sha256": "27139000dbc65b72d2734bb76613d6625694890832f4fecfdee815e159c12301",
+     "tokens": 256,
+     "ttft_ms": 134.71,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 23.206,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795123587656317786,
+   "wall_s": 2.8431,
+   "wall_start_ns": 1795123584789088073
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 46.236000000000004,
+   "decode_ms_per_step_median": 33.96725,
+   "decode_tokens_per_step_median": 3.87635,
+   "decode_tps_engine_median": 115.37700000000001,
+   "draft_acceptance_median": 0.5752999999999999,
+   "event_gap_ms_p95_median": 35.732,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.9205,
+   "ttft_ms_max_median": 51783.705
+  }
+ }
+}

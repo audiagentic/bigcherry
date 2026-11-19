@@ -54,9 +54,13 @@ target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
+add_library(bc_feature_state STATIC feature_state.cpp)
+target_compile_features(bc_feature_state PUBLIC cxx_std_20)
+target_include_directories(bc_feature_state PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+
 add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
 
-target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt)
+target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt bc_feature_state)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
 target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
 target_link_libraries(bc_serving PUBLIC radiance::abi)
@@ -140,6 +144,8 @@ if(BUILD_TESTING)
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
   add_executable(bc_live_policy_ingest_test EXCLUDE_FROM_ALL live_policy_ingest_test.cpp)
   target_link_libraries(bc_live_policy_ingest_test PRIVATE bc_serving)
+  target_compile_definitions(bc_live_policy_ingest_test PRIVATE
+    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml")
   add_test(NAME bc_live_policy_ingest_test COMMAND bc_live_policy_ingest_test)
 
   # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
@@ -152,6 +158,8 @@ if(BUILD_TESTING)
   add_test(NAME bc_helper_vram_test COMMAND bc_helper_vram_test)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
+  target_compile_definitions(bc_serving_test PRIVATE
+    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml")
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
@@ -207,6 +215,10 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_manifest_power_test PRIVATE
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_manifest_power_test COMMAND bc_manifest_power_test)
+  add_executable(bc_feature_state_test EXCLUDE_FROM_ALL feature_state_test.cpp)
+  target_link_libraries(bc_feature_state_test PRIVATE bc_feature_state)
+  add_test(NAME bc_feature_state_test COMMAND bc_feature_state_test)
+
   add_executable(bc_session_test EXCLUDE_FROM_ALL session_test.cpp)
   target_link_libraries(bc_session_test PRIVATE bc_serving)
   add_dependencies(bc_session_test bc_fake_engine)

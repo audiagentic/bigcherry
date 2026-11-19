@@ -15,7 +15,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools" / "lab" / "radiance" / "flashnext-parity.sh"
 sys.path.insert(0, str(ROOT / "tools" / "lab" / "radiance"))
-import flashnext_parity as fp  # noqa: E402
+import flashnext_parity as fp
 
 WORKLOAD = {"COLD_FILLS": 8, "DOC_FILLS": 6, "LONG_SEEDS": "7 8", "LONG_SEEDS_COUNT": 2, "DECODE_STREAMS": "1 6"}
 # seed 7 is a different workload from seed 8: slower decode and prefill, by content (identical in every launch)
@@ -40,7 +40,7 @@ def write_launch(out: Path, i: int, scale: float, policy=True, committed=5):
     """One launch whose times are the reference numbers times `scale` (rates divided by it)."""
     d = out / f"launch-{i}"
     d.mkdir(parents=True)
-    w = lambda name, obj: (d / name).write_text(json.dumps(obj))  # noqa: E731
+    w = lambda name, obj: (d / name).write_text(json.dumps(obj))
     w("launch.json", {"policy": policy, "warmup_s": 61.0 if policy else 0.0})
     for k, s in enumerate(range(501, 509)):
         w(f"cold-fill-{s}.json", stream_record([([(2000.0 + 100 * (k % 2)) * scale], 27000, eng(30.0))]))
@@ -127,126 +127,6 @@ class SummariseTests(unittest.TestCase):
             fp.summarise(out)
 
 
-class BaselineTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.dir = Path(self.tmp.name)
-
-    def test_tolerance_is_the_larger_spread(self):
-        p = make_run(self.dir / "run", [1.0, 1.1])
-        b = fp.make_baseline(p, "v1.17.0", "src")
-        dec = b["metrics"]["decode6_ms_per_step"]                 # both rounds equal: the launches set the tolerance
-        self.assertAlmostEqual(dec["tolerance"], (33.0 - 30.0) / 31.5)
-        self.assertEqual(dec["spread_repeats"], 0.0)
-        self.assertNotIn("tolerance", b["metrics"]["long7_acceptance"])
-        self.assertEqual((b["revision"], b["radiance_pin"]["pinned"], b["source_run"]), ("abc123", "v1.17.0", "src"))
-
-    def test_true_repeats_widen_the_tolerance(self):
-        b = fp.make_baseline(make_run(self.dir / "same", [1.0, 1.0]), "x", "src")
-        dec = b["metrics"]["decode1_ms_per_step"]                 # reps of one prompt: 20.0 and 20.2 ms
-        self.assertEqual(dec["spread_across_launches"], 0.0)
-        self.assertAlmostEqual(dec["tolerance"], 0.2 / 20.1)
-        long8 = b["metrics"]["long8_ms_per_step"]                 # the two reps of seed 8: 1% apart
-        self.assertAlmostEqual(long8["tolerance"], 0.01 / 1.005)
-        long7 = b["metrics"]["long7_ms_per_step"]                 # bimodal between launches: informational
-        self.assertNotIn("tolerance", long7)
-        self.assertIn("note", long7)
-
-    def test_distinct_prompt_spread_does_not_widen_the_tolerance(self):
-        # identical launches whose distinct prompts differ a lot: cold fills 2000/2100 ms, doc slices 4000/4040 tok/s,
-        # seed 7 at 43 ms/step against seed 8 at 27: none of that is noise, so the tolerance is the launches' spread (0)
-        b = fp.make_baseline(make_run(self.dir / "same", [1.0, 1.0]), "x", "src")
-        for metric in ("cold_ttft_s", "doc_prefill_tps", "long7_prefill_tps", "long8_prefill_tps", "sess8_ttft_s"):
-            self.assertEqual(b["metrics"][metric]["tolerance"], 0.0, metric)
-            self.assertIsNone(b["metrics"][metric]["spread_repeats"], metric)
-        self.assertLess(b["metrics"]["long8_ms_per_step"]["tolerance"], 0.011)   # not the 43-vs-27 seed difference
-        p = make_run(self.dir / "apart", [1.0, 1.1])
-        cold = fp.make_baseline(p, "x", "src")["metrics"]["cold_ttft_s"]
-        self.assertAlmostEqual(cold["tolerance"], 0.1 / 1.05)                    # across launches alone
-
-    def test_one_launch_refused(self):
-        p = make_run(self.dir / "run", [1.0])
-        with self.assertRaises(fp.ParityError):
-            fp.make_baseline(p, "x", "src")
-        self.assertEqual(fp.main(["baseline", str(self.dir / "run"), "--name", "x", "--to", str(self.dir / "b.json")]), 2)
-        self.assertFalse((self.dir / "b.json").exists())
-
-    def test_cli_writes_file_with_portable_paths(self):
-        make_run(self.dir / "run", [1.0, 1.05])
-        p = json.loads((self.dir / "run" / "parity.json").read_text())
-        p["build"] = str(self.dir / "builds" / "x")
-        (self.dir / "run" / "parity.json").write_text(json.dumps(p))
-        args = ["baseline", str(self.dir / "run"), "--name", "n", "--to", str(self.dir / "b.json")]
-        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.dir.resolve())}):
-            rc, _ = quiet(fp.main, args)
-        self.assertEqual(rc, 0)
-        b = json.loads((self.dir / "b.json").read_text())
-        self.assertEqual((b["name"], b["build"], b["source_run"]), ("n", "${BC_WORK_ROOT}/builds/x", "${BC_WORK_ROOT}/run"))
-        with patch.dict(os.environ, {"BC_WORK_ROOT": "/elsewhere"}):
-            self.assertEqual(fp.main(args), 2)                    # a local path outside the work root is refused
-
-
-class CompareTests(unittest.TestCase):
-    def setUp(self):
-        self.tmp = tempfile.TemporaryDirectory()
-        self.addCleanup(self.tmp.cleanup)
-        self.dir = Path(self.tmp.name).resolve()
-        env = patch.dict(os.environ, {"BC_WORK_ROOT": str(self.dir)})
-        env.start()
-        self.addCleanup(env.stop)
-        make_run(self.dir / "base", [1.0, 1.04])
-        self.baseline = self.dir / "baseline.json"
-        quiet(fp.main, ["baseline", str(self.dir / "base"), "--name", "b", "--to", str(self.baseline)])
-
-    def run_compare(self, scales, mutate=None):
-        out = self.dir / f"now-{len(list(self.dir.iterdir()))}"
-        make_run(out, scales)
-        if mutate:
-            p = json.loads((out / "parity.json").read_text())
-            mutate(p)
-            (out / "parity.json").write_text(json.dumps(p))
-        return quiet(fp.main, ["compare", str(out), "--baseline", str(self.baseline)])
-
-    def test_within_allowance_passes(self):
-        rc, text = self.run_compare([1.01, 1.03])
-        self.assertEqual(rc, 0, text)
-        self.assertIn("PASS", text)
-
-    def test_regression_fails(self):
-        rc, text = self.run_compare([1.3, 1.3])
-        self.assertEqual(rc, 1)
-        self.assertIn("REGRESSION", text)
-
-    def test_improvement_passes(self):
-        rc, text = self.run_compare([0.6, 0.6])
-        self.assertEqual(rc, 0, text)
-        self.assertIn("better", text)
-        self.assertNotIn("REGRESSION", text)
-
-    def test_acceptance_never_gated(self):
-        def drop(p):
-            for name in ("decode1_acceptance", "decode6_acceptance", "long7_acceptance", "long8_acceptance",
-                         "policy_transactions"):
-                p["metrics"][name]["median"] = (p["metrics"][name]["median"] or 1) * 0.1
-        rc, text = self.run_compare([1.02, 1.02], drop)
-        self.assertEqual(rc, 0, text)
-        self.assertIn("info", text)
-
-    def test_missing_gated_metric_fails(self):
-        def drop(p):
-            p["metrics"]["long8_ms_per_step"]["median"] = None
-        rc, text = self.run_compare([1.02, 1.02], drop)
-        self.assertEqual(rc, 1)
-        self.assertIn("MISSING", text)
-
-    def test_workload_mismatch_refused(self):
-        def change(p):
-            p["workload"] = dict(p["workload"], COLD_FILLS=4)
-        rc, _ = self.run_compare([1.02, 1.02], change)
-        self.assertEqual(rc, 2)
-
-
 class HelperTests(unittest.TestCase):
     def test_warmup_plan(self):
         m = {"spec": {"handoff": {"placement": {"live_policy": {"cadence_ns": 2_000_000_000, "min_samples": 3}}}}}
@@ -263,7 +143,7 @@ class HelperTests(unittest.TestCase):
 
     def test_doc_slots_are_disjoint(self):
         chars, probe, n = 1000, 300, 6
-        offsets, warm_start, warm_len = fp.doc_slices(20000, chars, probe, n)
+        offsets, _warm_start, _warm_len = fp.doc_slices(20000, chars, probe, n)
         self.assertEqual(offsets, [0, 1000, 2000, 3000, 4000, 5000])
         for k in range(50):
             off = fp.doc_offset(f"warmup:{k}", chars, 20000, probe, n)
@@ -277,19 +157,293 @@ class HelperTests(unittest.TestCase):
         self.assertTrue(pin["pinned"])
 
 
+
+class RunRecordsTests(unittest.TestCase):
+    """Two fixture harness launches, content-pinned production inputs, MRC05 verdict."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.root = Path(self.tmp.name).resolve()
+        self.build = self.root / "build"
+        self.build.mkdir()
+        self.metadata = {
+            "build_id": "b" * 32,
+            "build_plan_id": "a" * 32,
+            "binary_hash": "c" * 64,
+            "source_slice_id": "d" * 32,
+        }
+        (self.build / "bigcherry-build-metadata-radiance.json").write_text(
+            json.dumps(self.metadata)
+        )
+        self.heat = self.root / "heat.hot-first"
+        self.heat.write_bytes(b"real heat bytes" + bytes([0, 255]))
+        self.calibration = self.root / "calibration.toml"
+        self.calibration.write_text(
+            'schema_version = 1\n[[live_policy_record]]\nplan_cache_key = "' +
+            "e" * 64 + '"\nlayout = "flashnext-4gpu"\nobjective = "balanced"\n'
+        )
+
+    def run_fixture(self, name, scales):
+        out = self.root / name
+        make_run(out, scales)
+        info = json.loads((out / "run.json").read_text())
+        info["build"] = str(self.build)
+        info["build_identity"] = fp.build_identity(self.build)
+        (out / "run.json").write_text(json.dumps(info))
+        for i, _ in enumerate(scales, 1):
+            launch = out / f"launch-{i}"
+            manifest = {
+                "metadata": {"instance_id": f"{name}-launch-{i}"},
+                "spec": {
+                    "plan": {"engine_memory": {"model_identity": "m" * 64}},
+                    "intent": {"layout": "flashnext-4gpu"},
+                    "handoff": {"placement": {"live_policy_state": {
+                        "configured": False, "requested": "off",
+                        "reason_code": "no_calibration", "calibration_key": ""
+                    }}},
+                    "power": {"profile": "stock"}
+                }
+            }
+            (launch / "manifest.json").write_text(json.dumps(manifest))
+            (launch / "feature-states.v1.json").write_text(json.dumps([{
+                "feature_id": "live_policy", "state": "inactive",
+                "reason_code": "no_calibration", "reason_detail": "not configured",
+                "engine": "radiance", "observed_at": "2026-11-19T00:00:00Z"
+            }]))
+            (launch / "host-facts.json").write_text(json.dumps({"kernel_release": {
+                "value": "fixture", "readable": True
+            }}))
+            (launch / "launch-provenance.json").write_text(json.dumps({
+                "argv": ["bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450"],
+                "environment": {"ROCM_PATH": "fixture-rocm"},
+                "heat_path": str(self.heat),
+                "calibration_store": None,
+                "power_profile": "stock",
+                "recorded_at": "2026-11-19T00:00:00Z",
+            }))
+            # Real warmup duration, not only the planner's minimum.
+            (launch / "launch.json").write_text(json.dumps({
+                "policy": False, "warmup_s": 0.0, "actual_warmup_s": 0.0,
+                "warmup_rounds": 0,
+            }))
+        return out
+
+    def test_two_harness_records_match_results_compare_verdict(self):
+        from bigcherry.__main__ import main as bigcherry_main
+        from bigcherry.core import results, run_records
+
+        base = self.run_fixture("base", [1.0, 1.04])
+        now = self.run_fixture("now", [1.30, 1.30])
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            base_ids = [
+                fp.publish_launch_record(base, base / f"launch-{i}")
+                for i in (1, 2)
+            ]
+            now_ids = [
+                fp.publish_launch_record(now, now / f"launch-{i}")
+                for i in (1, 2)
+            ]
+            store = run_records.RunRecordStore(self.root)
+            self.assertEqual(len(set(base_ids + now_ids)), 4)
+            for digest in base_ids + now_ids:
+                rec = store.get_record(digest)
+                self.assertEqual(rec["workload"]["definition"], WORKLOAD)
+                self.assertEqual(rec["identity"]["engine"], "radiance")
+                self.assertEqual(rec["identity"]["build_id"], self.metadata["build_id"])
+                self.assertEqual(rec["identity"]["source_revision"], "abc123")
+                self.assertEqual(rec["identity"]["model"], "m" * 64)
+                self.assertIn("decode1_ms_per_step", rec["metrics"]["decode"])
+                self.assertIn("long8_prefill_tps", rec["metrics"]["prefill"])
+                self.assertIn("cold_ttft_s", rec["metrics"]["ttft"])
+                self.assertFalse(rec["metric_specs"]["decode"]["long7_acceptance"]["gated"])
+                self.assertEqual(rec["feature_states"][0]["feature_id"], "live_policy")
+                inputs = {v["role"]: store.get_blob(v["blob"])
+                          for v in rec["provenance"]["inputs"]}
+                self.assertEqual(inputs["heat"], self.heat.read_bytes())
+                self.assertEqual(json.loads(inputs["policy_state"])["configured"], False)
+                self.assertIn("warmup", inputs)
+                self.assertEqual(store.get_blob(rec["provenance"]["effective_config"]),
+                                 (base if digest in base_ids else now).joinpath(
+                                     "launch-1" if digest in (base_ids[0], now_ids[0]) else "launch-2",
+                                     "manifest.json").read_bytes())
+            reference = results.make_baseline(
+                store, [{"sha256": x, "record": store.get_record(x)} for x in base_ids], "parity"
+            )
+            reference_file = self.root / "reference.json"
+            reference_file.write_text(json.dumps(reference))
+            stdout = StringIO()
+            with redirect_stdout(stdout):
+                rc = bigcherry_main([
+                    "results", "compare", "--work-root", str(self.root),
+                    "--baseline", str(reference_file),
+                    "--json", "--record", now_ids[0], "--record", now_ids[1],
+                ])
+            self.assertEqual(rc, 1)
+            report = json.loads(stdout.getvalue())
+            self.assertTrue(report["failed"])
+            self.assertEqual(report["metrics"]["decode.decode6_ms_per_step"]["verdict"], "REGRESSION")
+            self.assertEqual(report["metrics"]["ttft.cold_ttft_s"]["verdict"], "REGRESSION")
+            self.assertEqual(report["metrics"]["decode.decode1_acceptance"]["verdict"], "info")
+
+    def test_record_launch_cli_and_passive_host_snapshot(self):
+        from bigcherry.core import run_records
+
+        out = self.run_fixture("cli", [1.0])
+        launch = out / "launch-1"
+        fake_facts = {"kernel_build": {"value": "fixture-host", "readable": True}}
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}), patch(
+            "bigcherry.core.host_facts.collect_host_facts", return_value=fake_facts
+        ):
+            self.assertEqual(fp.main(["capture-host-facts", str(launch)]), 0)
+            self.assertEqual(json.loads((launch / "host-facts.json").read_text()), fake_facts)
+            self.assertEqual(fp.main([
+                "capture-provenance", "--heat", str(self.heat),
+                "--power-profile", "stock", str(launch), "--",
+                "bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450",
+            ]), 0)
+            captured = json.loads((launch / "launch-provenance.json").read_text())
+            self.assertEqual(captured["argv"][-2:], ["--set", "engine.port=18450"])
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(fp.main([
+                    "record-launch", str(out), "--launch", "1",
+                    "--work-root", str(self.root),
+                ]), 0)
+            digest = output.getvalue().strip()
+            self.assertEqual(len(digest), 64)
+            store = run_records.RunRecordStore(self.root)
+            rec = store.get_record(digest)
+            self.assertEqual(rec["host_facts"], fake_facts)
+            self.assertEqual(
+                json.loads(store.get_blob(rec["provenance"]["argv"]))[-2:],
+                ["--set", "engine.port=18450"],
+            )
+
+    def test_missing_required_native_provenance_does_not_publish(self):
+        from bigcherry.core import run_records
+
+        out = self.run_fixture("missing", [1.0])
+        (out / "launch-1" / "feature-states.v1.json").unlink()
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            with self.assertRaises((fp.ParityError, ValueError, OSError)):
+                fp.publish_launch_record(out, out / "launch-1")
+            self.assertEqual(run_records.RunRecordStore(self.root).query(), [])
+
+
+    def test_active_policy_snapshots_only_verified_selected_calibration(self):
+
+        from bigcherry.core import run_records
+
+        out = self.run_fixture("active", [1.0])
+        launch = out / "launch-1"
+        from bigcherry.core import calibration_records
+
+        # MRC04's production snapshot includes the complete narrow key and
+        # all quantities. Synthetic partial keys are correctly invalid.
+        fixture = ROOT / "tools/tests/fixtures/calibration/production-2026-11-19.toml"
+        self.calibration.write_bytes(fixture.read_bytes())
+        current = [item for item in calibration_records.read_native_toml(self.calibration)
+                   if item["status"] == "current"]
+        self.assertEqual(len(current), 1)
+        key = current[0]["key"]
+        manifest = json.loads((launch / "manifest.json").read_text())
+        manifest["spec"]["handoff"]["placement"]["live_policy_state"] = {
+            "configured": True, "requested": "on",
+            "reason_code": "configured", "calibration_key": key,
+        }
+        manifest["spec"]["handoff"]["placement"]["live_policy"] = {
+            "cadence_ns": 1000000000, "min_samples": 1
+        }
+        (launch / "manifest.json").write_text(json.dumps(manifest))
+        provenance = json.loads((launch / "launch-provenance.json").read_text())
+        provenance["calibration_store"] = str(self.calibration)
+        (launch / "launch-provenance.json").write_text(json.dumps(provenance))
+        (launch / "launch.json").write_text(json.dumps({"policy": True, "warmup_s": 3.0}))
+        states = json.loads((launch / "feature-states.v1.json").read_text())
+        states[0]["state"] = "active"
+        states[0]["reason_code"] = "configured"
+        (launch / "feature-states.v1.json").write_text(json.dumps(states))
+
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            digest = fp.publish_launch_record(out, launch)
+            store = run_records.RunRecordStore(self.root)
+            rec = store.get_record(digest)
+            self.assertEqual(rec["feature_states"][0]["state"], "active")
+            inputs = {v["role"]: store.get_blob(v["blob"])
+                      for v in rec["provenance"]["inputs"]}
+            self.assertEqual(json.loads(inputs["calibration_record"])["plan_cache_key"], key)
+            self.assertEqual(json.loads(inputs["policy_state"])["calibration_key"], key)
+            self.assertEqual(json.loads(inputs["warmup"])["warmup_s"], 3.0)
+
+            # Valid data under the wrong key must never become live evidence.
+            # A changed scoped quantity is not silently accepted.
+            original = self.calibration.read_text()
+            self.calibration.write_text(original.replace(
+                'plan_cache_key = "' + key + '"', 'plan_cache_key = "' + "e" * 64 + '"'
+            ))
+            with self.assertRaises((fp.ParityError, ValueError)):
+                fp.publish_launch_record(out, launch)
+            self.assertEqual(len(store.query()), 1)
+
+    def test_portable_cli_baseline_compare_reads_only_published_records(self):
+        from bigcherry.core import results, run_records
+
+        base = self.run_fixture("base-new", [1.0, 1.04])
+        now = self.run_fixture("now-new", [1.3, 1.3])
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            for out in (base, now):
+                for i in (1, 2):
+                    digest = fp.publish_launch_record(out, out / f"launch-{i}")
+                    (out / f"launch-{i}" / "record.sha256").write_text(digest + "\n")
+            path = self.root / "portable.json"
+            rc, output = quiet(fp.main, ["baseline", str(base), "--name", "mrc05", "--to", str(path)])
+            self.assertEqual(rc, 0, output)
+            baseline = json.loads(path.read_text())
+            results.validate_baseline(baseline)
+            self.assertEqual(baseline["kind"], results.BASELINE_KIND)
+            self.assertEqual(len(baseline["records"]), 2)
+            self.assertGreater(len(baseline["blobs"]), 4)
+            # parity.json is a view only. Altering it must not affect the compare.
+            summary = json.loads((now / "parity.json").read_text())
+            for metric in summary["metrics"].values():
+                metric["median"] = 0
+            (now / "parity.json").write_text(json.dumps(summary))
+            rc, output = quiet(fp.main, ["compare", str(now), "--baseline", str(path)])
+            self.assertEqual(rc, 1, output)
+            self.assertIn("REGRESSION", output)
+            self.assertLess(output.index("provenance differences"), output.index("cold_ttft_s"))
+            (now / "launch-2" / "record.sha256").unlink()
+            self.assertEqual(fp.main(["compare", str(now), "--baseline", str(path)]), 2)
+            self.assertEqual(len(run_records.RunRecordStore(self.root).query()), 4)
+
+    def test_portable_cli_refuses_legacy_baseline_and_single_launch(self):
+        one = self.run_fixture("single-new", [1.0])
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}):
+            digest = fp.publish_launch_record(one, one / "launch-1")
+            (one / "launch-1" / "record.sha256").write_text(digest)
+            self.assertEqual(fp.main(["baseline", str(one), "--name", "bad", "--to",
+                                      str(self.root / "bad.json")]), 2)
+            self.assertFalse((self.root / "bad.json").exists())
+            legacy = self.root / "legacy.json"
+            legacy.write_text(json.dumps({"schema": 1, "kind": "flashnext-parity-baseline",
+                                          "source_run": "deleted", "name": "historical"}))
+            self.assertEqual(fp.main(["compare", str(one), "--baseline", str(legacy)]), 2)
+
+
 class ScriptTests(unittest.TestCase):
     def test_bash_syntax(self):
         subprocess.run(["bash", "-n", str(SCRIPT)], check=True)
 
     def test_measure_without_build_is_usage(self):
         r = subprocess.run(["bash", str(SCRIPT), "measure", "--out", "/nonexistent-parity-out"],
-                           capture_output=True, text=True)
+                           check=False, capture_output=True, text=True)
         self.assertNotEqual(r.returncode, 0)
         self.assertIn("measure --build DIR --out DIR", r.stderr)
         self.assertFalse(Path("/nonexistent-parity-out").exists())
 
     def test_unknown_command_is_usage(self):
-        r = subprocess.run(["bash", str(SCRIPT)], capture_output=True, text=True)
+        r = subprocess.run(["bash", str(SCRIPT)], check=False, capture_output=True, text=True)
         self.assertEqual(r.returncode, 2)
         self.assertIn("Usage", r.stderr)
 

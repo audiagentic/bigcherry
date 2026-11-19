@@ -1,5 +1,33 @@
 # Changelog
 
+## [1170.34.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.33.0...bc-radiance-1170.34.0) (2026-11-19)
+
+
+### New and changed
+
+* **calibration:** platform calibration-record store v1 (MRC04 slice 1) ([#1199](https://github.com/audiagentic/bigcherry/issues/1199)) ([84b2065](https://github.com/audiagentic/bigcherry/commit/84b2065ef6387aca6bf667a0292f6b42d3658211))
+* **measurement:** native calibration and lab probes as run records (MRC06 slice 3) ([#1209](https://github.com/audiagentic/bigcherry/issues/1209)) ([82fa90e](https://github.com/audiagentic/bigcherry/commit/82fa90e0f90403f98272d430c6c903c77610822e))
+
+
+### Fixes
+
+* **radiance:** derive helper.combine_threads from the discovered CPUs ([#1200](https://github.com/audiagentic/bigcherry/issues/1200)) ([fccaceb](https://github.com/audiagentic/bigcherry/commit/fccaceb12a476c2ceddb9fbd75e7699bada31b26))
+* **radiance:** measure the combine thread knee and derive from the affinity set ([#1206](https://github.com/audiagentic/bigcherry/issues/1206)) ([d90c57e](https://github.com/audiagentic/bigcherry/commit/d90c57e40c711e9408a2d0544520a39d77c4124f))
+
+## [1170.33.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.5...bc-radiance-1170.33.0) (2026-11-19)
+
+
+### New and changed
+
+* **radiance:** build with the FFmpeg media decoder; image input modes measured ([#1189](https://github.com/audiagentic/bigcherry/issues/1189)) ([5820391](https://github.com/audiagentic/bigcherry/commit/5820391c817571a66033d27e8981afeee8c08b42))
+* **radiance:** ship bf16_i8 KV as named configs (TP3 27B, Flash-Next at 4 sessions) with evidence ([#1184](https://github.com/audiagentic/bigcherry/issues/1184)) ([358ddd1](https://github.com/audiagentic/bigcherry/commit/358ddd197de6e96310033ae69e6ff90b4ef17b29))
+* **serving:** publish native feature states at startup ([#1195](https://github.com/audiagentic/bigcherry/issues/1195)) ([7c73af9](https://github.com/audiagentic/bigcherry/commit/7c73af98fb5b23a32a1309cc2b4b5551dfda371a))
+
+
+### Fixes
+
+* **radiance:** ship release heat seeds and default session recording ([#1197](https://github.com/audiagentic/bigcherry/issues/1197)) ([bf27b43](https://github.com/audiagentic/bigcherry/commit/bf27b433839cdbed161f301c564b7893b398b407))
+
 ## [1170.32.5](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.4...bc-radiance-1170.32.5) (2026-11-19)
 
 

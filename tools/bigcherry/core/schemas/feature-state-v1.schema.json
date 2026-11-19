@@ -1,0 +1,50 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bigcherry:feature-states:v1",
+  "title": "BigCherry feature states v1 (one native start snapshot)",
+  "description": "Array of resolved engine feature decisions; one entry per feature ID. A native engine writes this file without Python.",
+  "type": "array",
+  "items": {
+    "type": "object",
+    "additionalProperties": false,
+    "required": [
+      "feature_id",
+      "state",
+      "reason_code",
+      "reason_detail",
+      "engine",
+      "observed_at"
+    ],
+    "properties": {
+      "feature_id": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "state": {
+        "enum": [
+          "active",
+          "inactive",
+          "degraded"
+        ]
+      },
+      "reason_code": {
+        "type": "string",
+        "minLength": 1,
+        "pattern": "^[a-z][a-z0-9_]*$"
+      },
+      "reason_detail": {
+        "type": "string"
+      },
+      "engine": {
+        "type": "string",
+        "minLength": 1
+      },
+      "observed_at": {
+        "type": "string",
+        "format": "date-time",
+        "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+      }
+    }
+  }
+}

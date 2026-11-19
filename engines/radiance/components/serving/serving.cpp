@@ -25,6 +25,7 @@
 #include <stdexcept>
 #include <string_view>
 #include <sys/statvfs.h>
+#include <sched.h>
 #include <thread>
 #include <utility>
 
@@ -116,8 +117,8 @@ const std::vector<Field>& schema_fields() {
             "launcher COMMON R3_MOE_WORKER_MOE_DOWN_TILE=1");
         add("handoff.skip_owned", "boolean", true,
             "launcher COMMON R3_MOE_WORKER_SKIP_OWNED=1");
-        add_optional("handoff.heat", "string", "required with helpers: workload heat file has no portable path", 0, 0);
-        add_optional("handoff.histogram", "string", "required with helpers: launcher RECORD path or off, no portable path", 0, 0);
+        add_optional("handoff.heat", "string", "required with helpers: config bundle seed or site override", 0, 0);
+        add_optional("handoff.histogram", "string", "required with helpers outside a session: run-dir/heat.live or off", 0, 0);
         add("handoff.histogram_period_s", "integer", 60,
             "launcher RECORD_PERIOD=60; RHP02", "policy", "live", 0);
         add("handoff.placement", "string", nullptr,
@@ -139,9 +140,9 @@ const std::vector<Field>& schema_fields() {
             "WorkerConfig combine=false, the layout may enable combine");
         add("helper.combine_min_rows", "integer", 256,
             "WorkerConfig combine_min_rows=256", "tuned", "startup-only", 1);
-        add("helper.combine_threads", "integer", 8,
-            "WorkerConfig combine_threads=8 (also capped by discovered CPUs)",
-            "tuned", "startup-only", 1, 1024);
+        add_optional("helper.combine_threads", "integer",
+                     "derived unless set: min(calibration.combine_threads.max, discovered CPUs); an explicit value "
+                     "above the CPU count is refused", 1, 1024);
         add("helper.cpu_set_auto", "boolean", true,
             "WorkerConfig cpu_set_auto=true (auto vs all)");
         add("engine.model", "string", nullptr,
@@ -517,7 +518,11 @@ Json load_layouts(const Options& options) {
             if (out["layout"].contains(it.key()))
                 throw std::runtime_error("config " + it.key() + " (" + configs.source.at(it.key()).get<std::string>() +
                                          ") has the name of a layout in " + out["source"][it.key()].get<std::string>());
-            out["layout"][it.key()] = config_as_layout(it.value(), options.model_root);
+            // The heat path belongs to its defining base/config, even when a
+            // variant resides in a different file.
+            const std::string heat_owner = configs.origin.at(it.key()).value("handoff.heat", it.key());
+            const fs::path heat_source = configs.source.at(heat_owner).get<std::string>();
+            out["layout"][it.key()] = config_as_layout(it.value(), options.model_root, heat_source);
             out["source"][it.key()] = configs.source.at(it.key());
             out["kind"][it.key()] = "config";
         }
@@ -902,6 +907,16 @@ const std::vector<OptionField>& engine_option_fields() {
 }
 
 
+// The CPUs this process may run on: its affinity set (a cpuset or taskset narrows it, hardware_concurrency does not).
+// The helpers are children of bc-serve and inherit it.
+unsigned available_cpus() {
+    cpu_set_t allowed;
+    CPU_ZERO(&allowed);
+    if (sched_getaffinity(0, sizeof allowed, &allowed) == 0 && CPU_COUNT(&allowed) > 0)
+        return unsigned(CPU_COUNT(&allowed));
+    return std::max(1u, std::thread::hardware_concurrency());
+}
+
 Json detect(const fs::path& root) {
     const auto kfd = root / "sys/class/kfd/kfd/topology/nodes";
     if (!fs::is_directory(kfd))
@@ -975,7 +990,7 @@ Json detect(const fs::path& root) {
             {"swap_total_mib", mem.at("SwapTotal")},
             {"shm_total_mib", (uint64_t(st.f_blocks) * st.f_frsize) / 1048576},
             {"shm_available_mib", (uint64_t(st.f_bavail) * st.f_frsize) / 1048576},
-            {"cpu_count", std::max(1u, std::thread::hardware_concurrency())},
+            {"cpu_count", available_cpus()},
             {"memory_cgroups", memory_cgroups(root)},
             {"memlock", memlock(root)},
             {"amdgpu_pin", amdgpu_pin_cap(root, mem.at("MemTotal_kB").get<uint64_t>())}
@@ -1153,8 +1168,38 @@ Resolved resolve(const Options& options, const Json& facts) {
         put(values, provenance, *f, parse_set(key, set.substr(eq + 1)),
             "cli", "--set", Json::array({set}));
     }
+    // Mutable telemetry is session state, never runtime-bundle data. The
+    // owner supplies run_dir; derive only when the effective config/site/
+    // profile/CLI did not state a histogram (including explicit "off").
+    if (!engine_only && !exists(values, "handoff.histogram") && !options.run_dir.empty()) {
+        const fs::path histogram = fs::absolute(options.run_dir) / "heat.live";
+        put(values, provenance, *field_for("handoff.histogram"), histogram.lexically_normal().string(),
+            "derived", "session run directory (portable heat.live default)",
+            Json::array({"session.run_dir"}));
+        // The live policy needs fresh heat; never overwrite a period from
+        // the config, site, profile or CLI.
+        if (provenance.at("handoff.histogram_period_s").at("origin") == "schema-default")
+            put(values, provenance, *field_for("handoff.histogram_period_s"), 1,
+                "derived", "1-second recording for live heat policy",
+                Json::array({"handoff.histogram"}));
+    }
     if (value_at(values, "layout.name") != name)
         throw std::runtime_error("layout.name: resolution inconsistency");
+    if (!exists(values, "helper.combine_threads")) {
+        // Not set by any layer: the calibrated ceiling, held to the CPUs this host has (the worker clamps to the same
+        // count), so a smaller host resolves instead of refusing a literal it never chose.
+        const Calibration calibration = Calibration::standard(options.calibration_cache);
+        const Calibrated ceiling = calibration.get("calibration.combine_threads.max",
+            CalibrationMatch{"", name, value_at(values, "service.objective").get<std::string>()});
+        if (!ceiling.value.is_number_integer() || ceiling.value.get<int64_t>() < 1)
+            throw std::runtime_error("calibration.combine_threads.max: expected a positive integer");
+        const uint64_t cpus = facts.at("host").at("cpu_count").get<uint64_t>();
+        const uint64_t threads = std::max<uint64_t>(1, std::min(ceiling.value.get<uint64_t>(), cpus));
+        put(values, provenance, *field_for("helper.combine_threads"), threads, "derived",
+            "min(" + std::to_string(ceiling.value.get<uint64_t>()) + ", " + std::to_string(cpus) + " discovered CPUs); " +
+            ceiling.describe("calibration.combine_threads.max"),
+            Json::array({"facts.host.cpu_count", "calibration.combine_threads.max"}));
+    }
     // An omitted budget-mib (RAD49): the EXPERT budget is the card's VRAM less its archs.toml reserve-mib less the helper's own
     // device memory besides its arena (its lanes, pointer banks, slot map and one incoming slot, worker_footprint.h, the
     // definition the worker checks its allocations against), so the owner planner (plan_owners) and the helper's arena agree.

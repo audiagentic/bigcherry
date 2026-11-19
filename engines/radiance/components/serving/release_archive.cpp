@@ -57,6 +57,8 @@ bool runtime_member(const std::string& name) {
         "bigcherry-build-metadata-radiance.json",
         "configs/flashnext.toml",
         "configs/qwen27b.toml",
+        "heat/flashnext-mixed.hot-first",
+        "heat/perf51.rank0.hot-first",
     };
     if (exact.contains(name))
         return true;

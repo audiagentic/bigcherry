@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "c1996e812de7f7f3be10cfcaaad00b0bf415b8afc9729373cc0ccc35aaa4f991"
+  ],
+  "prompt_tokens": 504,
+  "prompt_tokens_target": 900,
+  "prompt_words": 504,
+  "reps": 2,
+  "seed": 7,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18451"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 85.522,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 65.85,
+    "event_gap_ms_p50": 25.667,
+    "event_gap_ms_p95": 27.252,
+    "event_gap_ms_p99": 65.85,
+    "mean_stream_decode_tps_est": 97.429,
+    "tokens": 256,
+    "ttft_ms_max": 375.8,
+    "ttft_ms_p50": 375.8,
+    "ttft_ms_p95": 375.8
+   },
+   "engine": {
+    "decode_ms_per_step": 26.1326,
+    "decode_tokens_per_step": 2.5455,
+    "decode_tokens_total": 252.0,
+    "decode_tps_engine": 97.405,
+    "draft_acceptance": 0.5152,
+    "draft_accepted_total": 153.0,
+    "draft_tokens_total": 297.0,
+    "engine_step_seconds_decode_total": 2.58713,
+    "engine_steps_decode_total": 99.0,
+    "engine_steps_prefill_total": 2.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 2633.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.769,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 97.429,
+     "error": "",
+     "events": 101,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 905,
+     "response_tail_ms": 0.31,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nember willow ... valley harbor\" They provide a long list of words. Need continue list of words with a short story. Likely they want a short story composed using those words? \"Continue this list of words with a short story.\" Could mean after the list, write a short story. Need maybe use the words? Need infer. They",
+     "text_sha256": "eab629b0ea4a6c7f1ecdfae08a08939e5995bc4c220ebc4a4d942cd87b393d10",
+     "tokens": 256,
+     "ttft_ms": 375.8,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.118,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795111700754361214,
+   "wall_s": 2.9934,
+   "wall_start_ns": 1795111697760199505
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 87.291,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 28.216,
+    "event_gap_ms_p50": 25.388,
+    "event_gap_ms_p95": 26.356,
+    "event_gap_ms_p99": 28.216,
+    "mean_stream_decode_tps_est": 99.909,
+    "tokens": 256,
+    "ttft_ms_max": 380.23,
+    "ttft_ms_p50": 380.23,
+    "ttft_ms_p95": 380.23
+   },
+   "engine": {
+    "decode_ms_per_step": 25.4837,
+    "decode_tokens_per_step": 2.55,
+    "decode_tokens_total": 255.0,
+    "decode_tps_engine": 100.064,
+    "draft_acceptance": 0.5167,
+    "draft_accepted_total": 155.0,
+    "draft_tokens_total": 300.0,
+    "engine_step_seconds_decode_total": 2.548366,
+    "engine_steps_decode_total": 100.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 905.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.846,
+    "requests_waiting_max": 0.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 99.909,
+     "error": "",
+     "events": 101,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 905,
+     "response_tail_ms": 0.18,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nember willow ... valley harbor\" They provide a long list of words. Need continue list of words with a short story. Likely they want a short story composed using those words? \"Continue this list of words with a short story.\" Could mean after the list, write a short story. Need maybe use the words? Need infer. They",
+     "text_sha256": "eab629b0ea4a6c7f1ecdfae08a08939e5995bc4c220ebc4a4d942cd87b393d10",
+     "tokens": 256,
+     "ttft_ms": 380.23,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 0.105,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795111703688471701,
+   "wall_s": 2.9327,
+   "wall_start_ns": 1795111700755034839
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 86.4065,
+   "decode_ms_per_step_median": 25.808149999999998,
+   "decode_tokens_per_step_median": 2.5477499999999997,
+   "decode_tps_engine_median": 98.7345,
+   "draft_acceptance_median": 0.51595,
+   "event_gap_ms_p95_median": 26.804000000000002,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.8075,
+   "ttft_ms_max_median": 378.015
+  }
+ }
+}
