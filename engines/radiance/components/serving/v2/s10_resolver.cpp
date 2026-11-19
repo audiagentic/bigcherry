@@ -308,9 +308,10 @@ Status validate_s10_power_plan(const Manifest &m) {
 }
 
 Result<Manifest> resolve_s10(const Manifest &base, const S10Inputs &in) {
-  if (base.api_version != "bigcherry/v2" || base.metadata.contract_version != 2)
+  if (base.api_version != kApiVersion ||
+      base.metadata.contract_version != kContractVersion)
     return fail(ConfigErrorCode::unsupported_version, "apiVersion",
-                "S10 only resolves the inactive v2 typed manifest");
+                "S10 only resolves the selected generated manifest edition");
   const auto selected = targets(base);
   if (!selected) return selected.error();
   auto power_plan = power(base, in, selected.value());

@@ -118,6 +118,18 @@ int main(int argc, char** argv) {
     v3::Manifest measured;
     if (const auto error = v3::decode(doc, "", &measured))
         throw std::runtime_error(v3::render_human("fixture", *error));
+    v3::Manifest unmeasured = measured;
+    unmeasured.spec.plan.state = v3::PlanState::kUnmeasured;
+    v3::S10Inputs measuring_inputs;
+    measuring_inputs.profile.name = unmeasured.spec.intent.power.profile;
+    const auto resolved_unmeasured = v3::resolve_s10(unmeasured, measuring_inputs);
+    check(resolved_unmeasured.ok(), "S10 resolver rejected the selected generated v3 edition");
+    v3::Manifest wrong_edition = unmeasured;
+    wrong_edition.api_version = "bigcherry/v2";
+    wrong_edition.metadata.contract_version = 2;
+    const auto refused_edition = v3::resolve_s10(wrong_edition, measuring_inputs);
+    check(!refused_edition && refused_edition.error().code == Code::unsupported_version,
+          "S10 resolver accepted a manifest outside the selected generated edition");
     measured.spec.plan.engine_memory->cache_key = v3::plan_cache_key(measured);
     const auto written = v3::write_s10(measured);
     if (!written)
