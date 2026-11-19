@@ -1,4 +1,5 @@
 #include "live_policy.h"
+#include "plan_cache.h"
 #include "third_party/toml.hpp"
 
 #include <algorithm>
@@ -125,7 +126,8 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         return std::nullopt;
     }
     const std::set<std::string> fields = {
-        "plan_cache_key", "layout", "objective", "seeded",
+        "plan_cache_key", "calibration_inputs", "source_plan_key", "source_engine_build",
+        "layout", "objective", "seeded",
         "evidence", "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s",
         "heat_gap_max_ns", "heat_watermarked", "hot_set_k", "marginal_error_ppm", "marginal_observations",
         "drift_half_life_observations", "observation_rate_per_s", "tail_share_gain_ppm",
@@ -152,6 +154,26 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         if (row.key.size() != 64 || row.key.find_first_not_of("0123456789abcdef") != std::string::npos)
             bad(where + ": plan_cache_key must be lowercase SHA-256 hex");
         if (!seen.insert(row.key).second) bad(where + ": duplicate plan_cache_key " + row.key);
+        const bool has_inputs = t->contains("calibration_inputs");
+        if (has_inputs) {
+            const std::string json = required(*t, "calibration_inputs", where);
+            Json parsed = Json::parse(json, nullptr, false);
+            if (parsed.is_discarded()) bad(where + ": calibration_inputs is not strict JSON");
+            try {
+                if (policy_calibration_key(parsed) != row.key)
+                    bad(where + ": calibration_inputs digest disagrees with plan_cache_key");
+            } catch (const std::exception& e) {
+                bad(where + ": incompatible policy calibration inputs: " + e.what());
+            }
+            row.calibration_inputs = std::move(parsed);
+            row.source_plan_key = required(*t, "source_plan_key", where);
+            row.source_engine_build = required(*t, "source_engine_build", where);
+            for (const std::string& hex : {row.source_plan_key, row.source_engine_build})
+                if (hex.size() != 64 || hex.find_first_not_of("0123456789abcdef") != std::string::npos)
+                    bad(where + ": source plan/build identities must be lowercase SHA-256");
+        } else if (t->contains("source_plan_key") || t->contains("source_engine_build")) {
+            bad(where + ": provenance needs calibration_inputs, source_plan_key and source_engine_build together");
+        }
         row.layout = required(*t, "layout", where);
         row.objective = required(*t, "objective", where);
         row.seeded = required(*t, "seeded", where);

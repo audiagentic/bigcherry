@@ -30,17 +30,34 @@ The policy is a field of the serving manifest: `spec.handoff.placement.live_poli
 configuration's **calibration key** and the record is complete. Otherwise the field is absent and the policy is off. The native manifest and `bc-serve explain CONFIG` expose the selection and reason; a startup ON is not proof of effective migration.
 A helper-free start is NOT_APPLICABLE. RHP18 tracks the remaining per-epoch runtime/degraded status and audit identity.
 
-The calibration key is `sha256` of the plan key inputs without `engine_build` and `cache_version`
-(`calibration_key` in `engines/radiance/components/serving/plan_cache.cpp`). The inputs are `card`, `engine`, `engine_args`,
-`helper_budgets_mib`, `layout` and `model`. **Anything that changes one of them orphans the record**: a different layout, a changed
-helper budget (`--budget`), different engine arguments. #790 added `helper_budgets_mib` on 2026-11-09, which orphaned the
-flashnext-4gpu record seeded on 2026-11-07: from that point no production start of the layout carried a live policy until it was
-re-calibrated.
+The **policy-calibration key v2** is separate from the memory-plan key. Its SHA-256 input scope
+includes the model-container identity, layout, objective, engine and helper GPU identities/architectures/VRAM,
+helper roles/formats/kernels, heat-histogram period, named power profile, helper execution settings
+(including combine/lanes), and remote service geometry. It **excludes** the engine/plugin build hash,
+host pool, helper VRAM budgets, memory-plan identity, engine flags and local path names.
+The move-byte cap is re-derived from the current helper budgets and expert stride at each start;
+drift, lane service times and noise remain measured quantities, never guessed constants.
+
+New records retain `calibration_inputs` (the exact scope), `source_plan_key` (the full strict
+measured-plan identity) and `source_engine_build` as provenance. The reader verifies that
+the scope hashes to the record key; production matches the current model/cards/layout and
+service inputs before enabling. Changing model, physical cards/architectures, layout, histogram
+period, power profile or helper execution behavior still requires compatible evidence.
+
+**Legacy migration caveat:** historical records in `live-policy-calibration.toml` have only
+the old hash, layout, objective and measurements; they lack model and helper-card provenance.
+They remain readable for audit, but are not automatically promoted across budget or card changes.
+To reuse the observations without another GPU calibration, an operator must establish an
+authenticated matching historic strict calibration manifest and card inventory and migrate
+the record with full provenance. Without those inputs, fail closed rather than trust a
+layout-only match or hand-rename a hash. A missing record is an OFF startup decision with
+a conspicuous warning, never a serving-start gate.
 
 **Instrumented runs.** Any start with `--experiment` (lane trace, `profile_ops`, `kv_resident`, ...) gets the *lab* service profile, and the
 policy is derived only for the *production* profile: such a run never carries a policy unless one is passed explicitly with
-`--live-policy FILE` (the derived `live_policy` object of a production manifest is a valid file). The experiment file's hash is also part of
-the calibration key.
+`--live-policy FILE` (the derived `live_policy` object of a production manifest is a valid file).
+Lab experiment files are outside the production policy-calibration scope; explicit policy evidence is still
+required for every instrumented lab run.
 
 ## RHP20 card and layout policy eligibility (2026-11-10 card-free review)
 

@@ -1,5 +1,6 @@
 #include "live_policy_ingest.h"
 #include "live_policy.h"
+#include "plan_cache.h"
 #include <cassert>
 #ifdef NDEBUG
 #error "assert-based test built with NDEBUG: its assertions would not run"
@@ -63,6 +64,25 @@ int main() {
     const auto rec = sv::read_live_policy_record(cache, store_key);
     assert(!sv::read_live_policy_record(cache, key));
     assert(rec && sv::live_policy_record_complete(*rec));
+    assert(!rec->calibration_inputs);  // old hash-only evidence remains readable but unqualified
+    // Production records bind their scope and preserve measured-plan/build provenance.
+    const Json scope = {{"policy_key_version", 2}, {"model", "test-model"},
+                        {"layout", "flashnext-4gpu"}, {"objective", "balanced"}};
+    const std::string stable_key = sv::policy_calibration_key(scope);
+    const fs::path stable_store = dir / "scoped.toml";
+    sv::ingest_live_policy_record(log, stable_store, key, "flashnext-4gpu", "balanced", stable_key,
+                                  sv::LivePolicyProvenance{scope, std::string(64,'1'), std::string(64,'2')});
+    const auto scoped_record = sv::read_live_policy_record(stable_store, stable_key);
+    assert(scoped_record && scoped_record->calibration_inputs && *scoped_record->calibration_inputs == scope);
+    assert(scoped_record->source_plan_key == std::string(64,'1') &&
+           scoped_record->source_engine_build == std::string(64,'2'));
+    bool mismatched_provenance_refused = false;
+    try {
+        sv::ingest_live_policy_record(log, dir / "wrong-scope.toml", key, "flashnext-4gpu",
+                                      "balanced", std::string(64,'3'),
+                                      sv::LivePolicyProvenance{scope, std::string(64,'1'), std::string(64,'2')});
+    } catch (const std::runtime_error&) { mismatched_provenance_refused = true; }
+    assert(mismatched_provenance_refused);
     // Calib12: effect-only quantities absent, but all planner inputs
     // survived JSON -> strict ingest -> TOML -> strict reader.
     auto structural=row;
