@@ -18,6 +18,7 @@ ROOT = Path(__file__).resolve().parents[2]
 TAG = "bc-radiance-1170.12.0"
 PLAN = "d" * 32
 TREE_ID = {"engine_tree": "b" * 40, "config_tree": "c" * 40}
+NATIVE_PROFILE = "flashnext-4gpu.yaml"
 
 
 class CiBundleTests(unittest.TestCase):
@@ -136,6 +137,54 @@ class CiBundleTests(unittest.TestCase):
         stage = self.work / "release-assets" / TAG
         self.assertEqual(self.verify_staged(TAG, stage), receipt)
         self.assertTrue((stage / receipt["name"]).is_file())
+
+    def test_optional_native_profile_requires_explicit_selection_and_tagged_bytes(self):
+        config = self.root / "engines/radiance/configs" / NATIVE_PROFILE
+        config.write_bytes(b"cards: [0]\r\nmodels: {tiny: {model: tiny.rad}}\r\n")
+        opts = {"root": self.root, "work_root": self.work, "sdk": self.sdk}
+        default = cb.pack_and_verify(TAG, **opts)
+        member = f"configs/{NATIVE_PROFILE}"
+        self.assertNotIn(member, default["file_names"])
+
+        candidate = "bc-radiance-1170.13.0"
+        selected = cb.pack_and_verify(candidate, **opts, native_profiles=(NATIVE_PROFILE,))
+        self.assertEqual(set(selected["file_names"]) - set(default["file_names"]), {member})
+        self.assertNotEqual(selected["runtime_key"]["payload_contract"], default["runtime_key"]["payload_contract"])
+        stage = self.work / "release-assets" / candidate
+        self.assertEqual(self.verify_staged(candidate, stage), selected)
+
+        receipt_path = next(stage.glob("*.receipt.json"))
+        bad = {**selected, "runtime_key": default["runtime_key"]}
+        receipt_path.write_text(json.dumps(bad))
+        with self.assertRaisesRegex(cb.CiBundleError, "runtime key differs"):
+            self.verify_staged(candidate, stage)
+        receipt_path.write_text(json.dumps(selected))
+        config.write_bytes(config.read_bytes().replace(b"tiny.rad", b"other.rad"))
+        with self.assertRaisesRegex(cb.CiBundleError, "config differs from tagged source"):
+            self.verify_staged(candidate, stage)
+
+    def test_optional_native_profile_refuses_unknown_or_unsafe_files(self):
+        config = self.root / "engines/radiance/configs" / NATIVE_PROFILE
+        for bad in (("other.yaml",), (NATIVE_PROFILE, NATIVE_PROFILE)):
+            with self.assertRaisesRegex(assets.BundleError, "unapproved or repeated native profile"):
+                assets.runtime_files(self.build, self.root, native_profiles=bad)
+        with self.assertRaisesRegex(assets.BundleError, "missing or unsafe RSC12 config"):
+            assets.runtime_files(self.build, self.root, native_profiles=(NATIVE_PROFILE,))
+        config.symlink_to("flashnext.toml")
+        with self.assertRaisesRegex(assets.BundleError, "missing or unsafe RSC12 config"):
+            assets.runtime_files(self.build, self.root, native_profiles=(NATIVE_PROFILE,))
+        config.unlink()
+        for content, error in ((b"cards: [0]\n# python3\n", "interpreter reference"),
+                               (b"#\xff\ncards: [0]\n", "non-UTF8"),
+                               (b"#\0\ncards: [0]\n", "NUL in native profile")):
+            with self.subTest(error=error):
+                config.write_bytes(content)
+                with self.assertRaisesRegex(assets.BundleError, error):
+                    assets.runtime_files(self.build, self.root, native_profiles=(NATIVE_PROFILE,))
+        config.write_text("cards: [0]\n")
+        config.chmod(0o755)
+        with self.assertRaisesRegex(assets.BundleError, "native profile must be non-executable"):
+            assets.runtime_files(self.build, self.root, native_profiles=(NATIVE_PROFILE,))
 
     def test_elf_debug_sidecar_is_outside_upload_staging(self):
         # A real ELF exercises the debug-split branch (unlike the byte fixtures).
@@ -281,6 +330,15 @@ class CiBundleTests(unittest.TestCase):
         with mock.patch.object(cb, "_gh", fake_gh), mock.patch.object(cb, "verify_reusable_archive"):
             self.assertIsNone(cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4"))
         old_receipt["file_names"] = names
+        member = f"configs/{NATIVE_PROFILE}"
+        old_receipt["file_names"] = sorted([*names, member])
+        with mock.patch.object(cb, "_gh", fake_gh), mock.patch.object(cb, "verify_reusable_archive"):
+            self.assertIsNone(cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4"))
+            old_receipt["runtime_key"] = cb.runtime_key(self.root, "7.2.4", native_profiles=(NATIVE_PROFILE,))
+            found = cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4", native_profiles=(NATIVE_PROFILE,))
+            self.assertEqual(found[0], "bc-radiance-1170.10.0")
+        old_receipt["file_names"] = names
+        old_receipt["runtime_key"] = key
         old_receipt.pop("payload_scope")
         with mock.patch.object(cb, "_gh", fake_gh), mock.patch.object(cb, "verify_reusable_archive"):
             self.assertIsNone(cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4"))

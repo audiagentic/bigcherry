@@ -66,6 +66,10 @@ ELF_DEBUG_POLICY = "gnu-objcopy-split-debug-strip-all-v1"
 # Deliberately explicit: unknown RSC12 configurations must be reviewed and
 # added to the engine payload contract, not silently copied from a checkout.
 SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
+# Native profiles are selected by exact name. A checkout's other YAML is local input.
+OPTIONAL_NATIVE_PROFILES = ("flashnext-4gpu.yaml",)
+NATIVE_PROFILE_MEMBERS = frozenset(f"configs/{name}" for name in OPTIONAL_NATIVE_PROFILES)
+NATIVE_PROFILE_LIMIT = 16 * 1024 * 1024
 # Approved repo-owned heat seeds. Archive members live at prefix/heat; no
 # checkout, lab launcher, or host-specific seed path is shipped.
 SHIPPED_HEAT_SEEDS = ("flashnext-mixed.hot-first", "perf51.rank0.hot-first")
@@ -96,12 +100,24 @@ RUN_MANIFEST = (
 )
 
 
-def payload_contract_key() -> str:
+def selected_native_profiles(names: set[str]) -> tuple[str, ...]:
+    return tuple(name for name in OPTIONAL_NATIVE_PROFILES if f"configs/{name}" in names)
+
+
+def check_native_profile_selection(native_profiles: tuple[str, ...]) -> None:
+    if len(set(native_profiles)) != len(native_profiles) or set(native_profiles) - set(OPTIONAL_NATIVE_PROFILES):
+        raise BundleError("unapproved or repeated native profile selection")
+
+
+def payload_contract_key(*, native_profiles: tuple[str, ...] = ()) -> str:
     """Versioned payload schema and selection policy, including optional files."""
     policy = {"schema": SCHEMA, "scope": RUN_SCOPE, "manifest": RUN_MANIFEST,
               "build_metadata": BUILD_METADATA, "build_identity_schema": 2,
               "elf_debug_policy": ELF_DEBUG_POLICY,
               "shipped_heat_digests": SHIPPED_HEAT_DIGESTS}
+    if native_profiles:
+        check_native_profile_selection(native_profiles)
+        policy["native_profiles"] = sorted(native_profiles)
     return hashlib.sha256(json.dumps(policy, sort_keys=True,
                                       separators=(",", ":")).encode()).hexdigest()
 
@@ -217,6 +233,9 @@ def check_no_interpreter(name: str, path: Path) -> None:
     scanning arbitrary binary bytes as though they were source code.
     """
     rel = PurePosixPath(name)
+    native_profile = name in NATIVE_PROFILE_MEMBERS
+    if native_profile and not 0 < path.stat().st_size <= NATIVE_PROFILE_LIMIT:
+        raise BundleError(f"native profile must be bounded nonempty YAML: {name}")
     if (any(part == "__pycache__" for part in rel.parts)
             or rel.suffix.lower() in {".py", ".pyc", ".pyo", ".sh", ".bash", ".zsh"}
             or rel.name.startswith(("python", "pypy"))):
@@ -224,7 +243,7 @@ def check_no_interpreter(name: str, path: Path) -> None:
     with path.open("rb") as source:
         if source.read(2) == b"#!":
             raise BundleError(f"script shebang in runtime asset: {name}")
-        if rel.suffix.lower() in {".toml", ".json", ".txt", ".ini", ".conf"}:
+        if native_profile or rel.suffix.lower() in {".toml", ".json", ".txt", ".ini", ".conf"}:
             # Scan the complete text file, not just its first bytes. Text is
             # streamed one line at a time; large data files are not decoded.
             source.seek(0)
@@ -233,6 +252,8 @@ def check_no_interpreter(name: str, path: Path) -> None:
                     text = line.decode("utf-8")
                 except UnicodeDecodeError as exc:
                     raise BundleError(f"non-UTF8 runtime metadata: {name}") from exc
+                if native_profile and "\0" in text:
+                    raise BundleError(f"NUL in native profile: {name}")
                 if re.search(r"(?i)\b(?:python(?:[0-9]+(?:\.[0-9]+)*)?|pypy(?:[0-9]+)?)\b", text):
                     raise BundleError(f"interpreter reference in runtime asset: {name}")
 
@@ -268,19 +289,21 @@ def check_run_manifest(names: set[str]) -> None:
         if (any(part == "__pycache__" for part in rel.parts)
                 or rel.suffix.lower() in {".py", ".pyc", ".pyo", ".sh", ".bash", ".zsh"}):
             raise BundleError(f"interpreter or shell file in runtime asset: {name}")
-        if not any(fnmatch.fnmatchcase(name, pattern) for pattern, _ in RUN_MANIFEST):
+        if name not in NATIVE_PROFILE_MEMBERS and not any(
+                fnmatch.fnmatchcase(name, pattern) for pattern, _ in RUN_MANIFEST):
             raise BundleError(f"non-runtime file in scoped bundle: {name}")
     for pattern, required in RUN_MANIFEST:
         if required and not any(fnmatch.fnmatchcase(name, pattern) for name in names):
             raise BundleError(f"missing runtime requirement: {pattern}")
 
 
-def runtime_files(build: Path, root: Path) -> dict[str, Path]:
+def runtime_files(build: Path, root: Path, *, native_profiles: tuple[str, ...] = ()) -> dict[str, Path]:
     """Choose the binary build plus the *committed* engine config closure.
 
     Configs are source inputs, not generated build products or site overlays.
     The archive-relative paths are independent of the source checkout.
     """
+    check_native_profile_selection(native_profiles)
     files: dict[str, Path] = {}
     build_root = build.resolve()
     for pattern, _ in RUN_MANIFEST:
@@ -298,10 +321,14 @@ def runtime_files(build: Path, root: Path) -> dict[str, Path]:
         raise BundleError(f"RSC12 config closure changed: {actual!r}")
     if config_dir.is_symlink() or config_dir.parent.is_symlink():
         raise BundleError("symlink in RSC12 config source directory")
-    for name in SHIPPED_CONFIGS:
+    for name in (*SHIPPED_CONFIGS, *native_profiles):
         source = config_dir / name
         if not source.is_file() or source.is_symlink():
             raise BundleError(f"missing or unsafe RSC12 config: {name}")
+        if name in native_profiles:
+            if source.stat().st_mode & 0o111:
+                raise BundleError(f"native profile must be non-executable: {name}")
+            check_no_interpreter(f"configs/{name}", source)
         check_committed_config(root, name, source.read_bytes())
         files[f"configs/{name}"] = source
     heat_dir = root / "tools/lab/radiance/heat"
@@ -356,11 +383,12 @@ def split_elf_debug(files: dict[str, Path], scratch: Path
     return selected, debug
 
 
-def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str) -> dict:
+def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str,
+         *, native_profiles: tuple[str, ...] = ()) -> dict:
     if not re.fullmatch(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise BundleError("unsafe Radiance release tag")
     build, plan_id, binary_sha = select_build(record, work_root)
-    files = runtime_files(build, root)
+    files = runtime_files(build, root, native_profiles=native_profiles)
     identity = stock_identity(root)
     version = sdk_version(sdk)
     built_identity = built_from(root)
@@ -448,6 +476,8 @@ def verify_runtime_tree(target: Path, asset: dict, manifest: dict,
         raise BundleError("runtime file set differs from manifest")
     for name, receipt in checks.items():
         path = target.joinpath(*PurePosixPath(name).parts)
+        if name in NATIVE_PROFILE_MEMBERS and receipt["mode"] != 0o644:
+            raise BundleError(f"native profile must be non-executable: {name}")
         if (not path.is_file() or path.stat().st_size != receipt["size"]
                 or digest(path) != receipt["sha256"]):
             raise BundleError(f"runtime file SHA-256 mismatch: {name}")

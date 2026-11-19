@@ -121,6 +121,9 @@ enum class Fault : std::uint8_t {
     python_file,
     shebang,
     interpreter_reference,
+    native_profile_interpreter,
+    native_profile_executable,
+    unknown_profile,
     benchmark_catalog,
     moe_benchmark_catalog,
     entry_mode,
@@ -135,7 +138,8 @@ class Fixture {
         write_file(home_ / "sdk/.info/version", "7.2.4\n");
     }
 
-    InstallRequest make(const std::string& tag, Fault fault = Fault::none, bool executable = false) {
+    InstallRequest make(const std::string& tag, Fault fault = Fault::none, bool executable = false,
+                        bool native_profile = false) {
         const auto folder = home_ / "assets" / tag;
         fs::create_directories(folder);
         const std::string plan(32, 'a');
@@ -165,6 +169,12 @@ class Fixture {
         add("bigcherry-build-metadata-radiance.json", metadata);
         add("configs/flashnext.toml", "schema = 1\n");
         add("configs/qwen27b.toml", "schema = 1\n");
+        if (native_profile || fault == Fault::native_profile_interpreter || fault == Fault::native_profile_executable)
+            add("configs/flashnext-4gpu.yaml",
+                fault == Fault::native_profile_interpreter ? "# requires python3\ncards: [0]\n" : "cards: [0]\n",
+                fault == Fault::native_profile_executable ? 0755 : 0644);
+        if (fault == Fault::unknown_profile)
+            add("configs/unreviewed.yaml", "cards: [0]\n");
         add("heat/flashnext-mixed.hot-first", "mixed production heat seed\n");
         add("heat/perf51.rank0.hot-first", "baseline heat seed\n");
 
@@ -381,6 +391,9 @@ void test_refusal_matrix() {
         {Fault::python_file, ErrorCode::unsafe_archive},
         {Fault::shebang, ErrorCode::unsafe_archive},
         {Fault::interpreter_reference, ErrorCode::unsafe_archive},
+        {Fault::native_profile_interpreter, ErrorCode::unsafe_archive},
+        {Fault::native_profile_executable, ErrorCode::unsafe_archive},
+        {Fault::unknown_profile, ErrorCode::unsafe_archive},
         {Fault::entry_mode, ErrorCode::digest_mismatch},
         {Fault::wrong_manifest, ErrorCode::digest_mismatch},
         {Fault::wrong_source, ErrorCode::wrong_identity},
@@ -393,6 +406,19 @@ void test_refusal_matrix() {
         refused(faults[i].second, [&] { bc::release::install(request); });
         check(!fs::exists(request.root / "index.json"), "invalid archive published active release index");
     }
+}
+
+void test_optional_native_profile() {
+    ScopedDir d;
+    Fixture f(d.path);
+    const auto request = f.make("bc-radiance-1170.52.0", Fault::none, false, true);
+    bc::release::install(request);
+    const auto profile = request.root / "releases" / request.tag / "configs/flashnext-4gpu.yaml";
+    check(read_file(profile) == "cards: [0]\n", "native profile bytes changed during installation");
+    check(bc::release::verify(request.root, request.sdk)["current"] == request.tag,
+          "native profile bundle failed verification");
+    write_file(profile, "cards: [1]\n");
+    refused(ErrorCode::digest_mismatch, [&] { bc::release::verify(request.root, request.sdk); });
 }
 
 void test_digest_tag_sdk_and_existing_integrity_refuse() {
@@ -595,6 +621,7 @@ int main() {
         test_numeric_version_order();
         test_tamper_refuses_rollback_without_switch();
         test_refusal_matrix();
+        test_optional_native_profile();
         test_digest_tag_sdk_and_existing_integrity_refuse();
         test_benchmark_catalogs_are_not_native_runtime_members();
         test_interrupted_staging_refuses_install();

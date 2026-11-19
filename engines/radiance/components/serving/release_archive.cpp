@@ -1,6 +1,7 @@
 #include "release_archive.h"
 
 #include "sha256.h"
+#include "v2/document_bytes.h"
 
 #include <zlib.h>
 
@@ -27,6 +28,7 @@ constexpr size_t kMaxFiles = 10000;
 constexpr uint64_t kMaxManifest = 2ULL * kIoChunk;
 constexpr uint64_t kMaxPax = 64ULL * 1024;
 constexpr size_t kBlock = 512;
+constexpr std::string_view kOptionalNativeProfile = "configs/flashnext-4gpu.yaml";
 
 [[noreturn]] void refuse(ErrorCode code, const std::string& what) {
     throw Error(code, what);
@@ -60,7 +62,7 @@ bool runtime_member(const std::string& name) {
         "heat/flashnext-mixed.hot-first",
         "heat/perf51.rank0.hot-first",
     };
-    if (exact.contains(name))
+    if (exact.contains(name) || name == kOptionalNativeProfile)
         return true;
     if (prefix(name, "radiance_home/vectors/"))
         return name.size() > std::string("radiance_home/vectors/").size();
@@ -117,7 +119,9 @@ void check_interpreter(const fs::path& path, const std::string& name) {
     require(!(input.gcount() == 2 && shebang[0] == '#' && shebang[1] == '!'), ErrorCode::unsafe_archive,
             "script shebang: " + name);
     const auto suffix = fs::path(name).extension().string();
-    if (suffix != ".toml" && suffix != ".json" && suffix != ".txt" && suffix != ".ini" && suffix != ".conf")
+    const bool native_profile = name == kOptionalNativeProfile;
+    if (!native_profile && suffix != ".toml" && suffix != ".json" && suffix != ".txt" &&
+        suffix != ".ini" && suffix != ".conf")
         return;
     static const std::regex interpreter(R"(\b(?:python(?:[0-9]+(?:\.[0-9]+)*)?|pypy(?:[0-9]+)?)\b)",
                                         std::regex_constants::icase);
@@ -125,6 +129,10 @@ void check_interpreter(const fs::path& path, const std::string& name) {
     input.seekg(0);
     std::string line;
     while (std::getline(input, line)) {
+        if (native_profile)
+            require(line.find('\0') == std::string::npos &&
+                        bc::serving::v2::bad_utf8(line) == std::string_view::npos,
+                    ErrorCode::unsafe_archive, "invalid UTF-8 metadata: " + name);
         require(!std::regex_search(line, interpreter), ErrorCode::unsafe_archive,
                 "interpreter reference in metadata: " + name);
     }
@@ -178,7 +186,10 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
                 "invalid file digest: " + name);
         const auto mode = required_size(it.value(), "mode", ErrorCode::invalid_install);
         require(mode == 0644 || mode == 0755, ErrorCode::unsafe_archive, "disallowed file mode: " + name);
-        required_size(it.value(), "size", ErrorCode::invalid_install);
+        const auto size = required_size(it.value(), "size", ErrorCode::invalid_install);
+        if (name == kOptionalNativeProfile)
+            require(mode == 0644 && size > 0 && size <= bc::serving::v2::kMaxDocumentBytes,
+                    ErrorCode::unsafe_archive, "native profile must be bounded non-executable YAML: " + name);
         names.insert(name);
         sorted.push_back(name);
     }
