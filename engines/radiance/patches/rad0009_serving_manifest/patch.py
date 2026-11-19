@@ -50,6 +50,9 @@ bool bc_serving_expected_plan(bc::serving::v2::EnginePlan* expected, int64_t* fl
 /* BDFs are from the same strictly validated engine view, not device ordinals. */
 std::vector<std::string> bc_serving_engine_bdfs();
 
+/* Convert the manifest's per-rank host-pool budget to Radiance 2.1's aggregate CLI value. */
+bool bc_serving_manifest_host_pool_total(uint64_t per_rank_mib, uint64_t tp, uint64_t* total_mib);
+
 #endif /* BC_SERVING_MANIFEST_H */
 """
 
@@ -71,6 +74,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <set>
 #include <string>
 #include <utility>
@@ -106,6 +110,13 @@ bool fail(const std::string& why) {
 }
 
 }  // namespace
+
+bool bc_serving_manifest_host_pool_total(uint64_t per_rank_mib, uint64_t tp, uint64_t* total_mib) {
+    if (!total_mib || tp == 0 || per_rank_mib > static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) / tp)
+        return false;
+    *total_mib = per_rank_mib * tp;
+    return true;
+}
 
 bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_engine_bdfs.clear();
@@ -220,7 +231,20 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     // maintains an independent option-name map.
     const auto projected = v2::project_native_options(doc, v2::kFields, known);
     if (!projected.error.empty()) return fail(projected.error);
-    const auto& flags = projected.flags;
+    auto flags = projected.flags;
+    /* The manifest records the admitted host-pool budget per rank, while Radiance 2.1's --host-pool-mib
+     * parser accepts the aggregate and divides it by TP. Convert at this adapter boundary so config_parse
+     * reconstructs the exact per-rank value that BigCherry admitted. */
+    const uint64_t tp = doc.at("spec").at("processes").at("engine").at("scheduler").at("tp").get<uint64_t>();
+    const uint64_t host_pool_per_rank = doc.at("spec").at("resources").at("host").at("pool_mib").get<uint64_t>();
+    uint64_t host_pool_total = 0;
+    if (!bc_serving_manifest_host_pool_total(host_pool_per_rank, tp, &host_pool_total))
+        return fail("resources.host.pool_mib x engine.tp exceeds Radiance's signed MiB limit");
+    const auto host_pool_flag = std::find_if(flags.begin(), flags.end(), [](const auto& flag) {
+        return flag.first == "--host-pool-mib";
+    });
+    if (host_pool_flag == flags.end()) return fail("resources.host.pool_mib has no --host-pool-mib projection");
+    host_pool_flag->second = std::to_string(host_pool_total);
     for (const char* required : {"--radiance-home", "--kernels"}) {
         bool found = false;
         for (const auto& kv : flags)

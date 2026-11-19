@@ -15,6 +15,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <limits>
 #include <map>
 #include <string>
 #include <vector>
@@ -141,6 +142,15 @@ int main(int, char** argv) {
     for (const auto& kv : g_given) CHECK(kv.second == "manifest 8000b66b1472");   // "manifest <first 12 hex of the digest>"
     CHECK(run({"--manifest", example, "--role", "engine", "-v"}).rfind("engine -v --model ", 0) == 0);
     CHECK(run({"--manifest", example}) == got);   // deterministic
+
+    // This is the arithmetic used at the adapter boundary: per-rank 2048 MiB at TP3
+    // must become the aggregate 6144 MiB accepted by Radiance 2.1's parser.
+    uint64_t aggregate_pool_mib = 0;
+    CHECK(bc_serving_manifest_host_pool_total(2048, 3, &aggregate_pool_mib));
+    CHECK(aggregate_pool_mib == 6144);
+    CHECK(!bc_serving_manifest_host_pool_total(static_cast<uint64_t>(std::numeric_limits<int64_t>::max()), 2,
+                                               &aggregate_pool_mib));
+    CHECK(!bc_serving_manifest_host_pool_total(2048, 0, &aggregate_pool_mib));
 
     // RSC02: the production launch owner passes one authenticated heat
     // publication identity as an ephemeral flag, *outside* the signed manifest.
