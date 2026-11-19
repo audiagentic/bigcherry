@@ -18,7 +18,6 @@ from typing import Any
 
 _SYS = Path("/sys")
 _PROC = Path("/proc")
-_ROCM = Path("/opt/rocm")
 _BDF = re.compile(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]\Z")
 _FREQ = re.compile(r"(?im)^\s*\d+:\s*(\d+(?:\.\d+)?)\s*(M|G)Hz\b")
 _PCI_FIELDS = {
@@ -306,7 +305,7 @@ def collect_host_facts(
     *,
     sys_root: Path = _SYS,
     proc_root: Path = _PROC,
-    rocm_root: Path = _ROCM,
+    rocm_root: Path | None = None,
     environment_file: Path | None = None,
     command: Callable[[list[str]], str | None] = _command,
 ) -> dict[str, Any]:
@@ -316,7 +315,13 @@ def collect_host_facts(
     are injectable for offline fixtures. Never substitutes a current clock for
     an OD max or a zero power cap for a valid wattage.
     """
-    sys_root, proc_root, rocm_root = map(Path, (sys_root, proc_root, rocm_root))
+    sys_root, proc_root = map(Path, (sys_root, proc_root))
+    # The SDK the environment selected (a versioned stack, never the unversioned SDK link).
+    if rocm_root is None:
+        selected = os.environ.get("ROCM_PATH") or os.environ.get("HIP_PATH")
+        rocm_root = Path(selected) if selected else None
+    else:
+        rocm_root = Path(rocm_root)
     environment_file = Path(
         environment_file
         if environment_file is not None
@@ -333,7 +338,8 @@ def collect_host_facts(
     return {
         "kernel_release": fact(_text(proc_root / "sys/kernel/osrelease")),
         "kernel_build": fact(_text(proc_root / "version")),
-        "rocm_version": fact(_text(rocm_root / ".info/version")),
+        "rocm_version": fact(_text(rocm_root / ".info/version") if rocm_root else None,
+                             "unreadable" if rocm_root else "sdk_not_selected"),
         "amdgpu_version": fact(_text(sys_root / "module/amdgpu/version")),
         "amdgpu_srcversion": fact(_text(sys_root / "module/amdgpu/srcversion")),
         "cards": {
