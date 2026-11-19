@@ -815,6 +815,14 @@ void measured_plan_cache(Fixture& t) {
     const Json native_key = sv::plan_key_inputs(r.values, t.facts, id, eid, "", &native);
     assert(native_key.at("cache_version") == 3 && native_key.at("native_config").at("sha256") == native.sha256() &&
            native_key.at("native_config").at("resolution_root") == t.root.string());
+    assert(native_key.at("native_config").at("rank_devices").size() == r.values.at("layout").at("engine_cards").size() +
+                                                                          r.values.at("layout").at("helper_cards").size());
+    Json reordered_values = r.values;
+    assert(reordered_values.at("layout").at("helper_cards").size() > 1);
+    std::swap(reordered_values["layout"]["helper_cards"][0],
+              reordered_values["layout"]["helper_cards"][1]);
+    assert(sv::plan_key(sv::plan_key_inputs(reordered_values, t.facts, id, eid, "", &native)) !=
+           sv::plan_key(native_key));
     assert(sv::plan_key(native_key) != sv::plan_key(k));
     const auto other_root = t.root / "other-root";
     std::filesystem::create_directories(other_root);
@@ -900,6 +908,26 @@ void measured_plan_cache(Fixture& t) {
     const auto found = sv::plan_cache_lookup(dir, k);
     assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 &&
            !found->measured_at.empty());
+    const auto native_dir = t.root / "native-plan-cache";
+    const auto native_stored = sv::plan_cache_store(native_dir, native_key, plan, ranks,
+                                                     sv::HostResident{2304, 1536});
+    const auto native_found = sv::plan_cache_lookup(native_dir, native_key);
+    assert(native_found && native_found->key == native_stored.key);
+    const fs::path native_entry_path = native_dir / (native_stored.key + ".json");
+    Json native_entry;
+    {
+        std::ifstream in(native_entry_path, std::ios::binary);
+        in >> native_entry;
+    }
+    assert(native_entry.at("cache_version") == 3);
+    native_entry["cache_version"] = 2;
+    write(native_entry_path, native_entry.dump(2) + "\n");
+    try {
+        (void)sv::plan_cache_lookup(native_dir, native_key);
+        assert(false && "native cache entry with v2 envelope must be refused");
+    } catch (const std::runtime_error& error) {
+        assert(std::string(error.what()).find("cache_version differs from key inputs") != std::string::npos);
+    }
     // A plan is stored only for the configuration it belongs to: the host pool it echoes and the expected host
     // consumer list (the n-gram table exactly when it lives in RAM; nothing unknown).
     {

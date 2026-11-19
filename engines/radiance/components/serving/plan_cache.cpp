@@ -73,6 +73,32 @@ std::string read_file(const fs::path& p) {
 // plan echoes it (EnginePlan.host_pool_mib) and the check demands it equal, so a plan measured under one pool must never be
 // found under another.
 const std::set<std::string> kNonPlanEngineKeys = {"prefix_cache_mib", "host_headroom_mib", "port", "radiance_home", "model"};
+
+int plan_cache_version(const Json& key_inputs) {
+    if (!key_inputs.is_object() || !key_inputs.contains("cache_version") ||
+        !key_inputs.at("cache_version").is_number_integer())
+        throw std::runtime_error("plan cache key: missing integer cache_version");
+    const int version = key_inputs.at("cache_version").get<int>();
+    if (version == 2) {
+        if (key_inputs.contains("native_config"))
+            throw std::runtime_error("plan cache key: native snapshot requires cache version 3");
+        return version;
+    }
+    if (version == 3) {
+        if (!key_inputs.contains("native_config") || !key_inputs.at("native_config").is_object() ||
+            !key_inputs.at("native_config").contains("sha256") ||
+            !key_inputs.at("native_config").at("sha256").is_string() ||
+            key_inputs.at("native_config").at("sha256").get<std::string>().size() != 64 ||
+            !key_inputs.at("native_config").contains("resolution_root") ||
+            !key_inputs.at("native_config").at("resolution_root").is_string() ||
+            !key_inputs.at("native_config").contains("rank_devices") ||
+            !key_inputs.at("native_config").at("rank_devices").is_array() ||
+            key_inputs.at("native_config").at("rank_devices").empty())
+            throw std::runtime_error("plan cache key: native version 3 requires snapshot and ordered device identity");
+        return version;
+    }
+    throw std::runtime_error("plan cache key: unsupported cache version " + std::to_string(version));
+}
 }  // namespace
 
 std::string container_identity(const fs::path& model) {
@@ -140,9 +166,28 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
                                        ? values.at("memory").at("helper_budgets_mib") : Json::array()},
             {"engine_args", engine_args},
             {"engine", engine}};
-    if (native_config)
+    if (native_config) {
+        Json devices = Json::array();
+        for (const char* group : {"engine_cards", "helper_cards"}) {
+            const Json& selected = values.at("layout").at(group);
+            for (size_t rank = 0; rank < selected.size(); ++rank) {
+                const Json& bdf = selected.at(rank);
+                const Json* found = nullptr;
+                for (const Json& candidate : facts.at("gpus"))
+                    if (candidate.at("bdf") == bdf) found = &candidate;
+                if (!found)
+                    throw std::runtime_error("plan key: selected " + std::string(group) + " device " +
+                                             bdf.get<std::string>() + " is not in the inventory");
+                devices.push_back({{"role_group", group}, {"rank", rank}, {"bdf", bdf},
+                                   {"hip_ordinal", found->at("hip_ordinal")},
+                                   {"arch", found->at("arch")},
+                                   {"vram_total_mib", found->at("vram_total_mib")}});
+            }
+        }
         key["native_config"] = {{"sha256", native_config->sha256()},
-                                 {"resolution_root", native_config->resolution_root()}};
+                                 {"resolution_root", native_config->resolution_root()},
+                                 {"rank_devices", std::move(devices)}};
+    }
     if (!uniform) key["rank_cards"] = rank_cards;
     // The tuning settings bind to engine flags, and several change what the plan measures (tp_ownership moves each rank's
     // KV and weight shares; state_cache_dtype, embedding_placement, draft_model, ... move memory too), so all of them are
@@ -236,6 +281,7 @@ std::string policy_calibration_key(const Json& inputs) {
 }
 
 std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key_inputs) {
+    const int expected_version = plan_cache_version(key_inputs);
     const std::string key = plan_key(key_inputs);
     const fs::path file = dir / (key + ".json");
     if (!fs::exists(file)) return std::nullopt;
@@ -255,7 +301,8 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
         !res.at("helpers_mib").is_number_unsigned() || !res.at("engine_mib").is_number_unsigned() ||
         res.at("engine_mib").get<uint64_t>() == 0)
         throw std::runtime_error(where + ": resident must be {helpers_mib, engine_mib}: the engine's positive, the helpers' zero only for an engine-only layout");
-    if (e.at("cache_version") != 2) throw std::runtime_error(where + ": cache_version must be 2");
+    if (e.at("cache_version") != expected_version)
+        throw std::runtime_error(where + ": cache_version differs from key inputs");
     if (e.at("key") != key || e.at("key_inputs") != key_inputs)
         throw std::runtime_error(where + ": recorded key or key inputs differ from what it is filed under");
     CachedPlan c{decode_engine_plan(e.at("plan"), where), e.at("plan"), e.at("rank_demand"), key,
@@ -266,6 +313,7 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
 
 CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const Json& plan_json, const Json& rank_demand,
                             const HostResident& resident) {
+    const int version = plan_cache_version(key_inputs);
     if (resident.engine_mib == 0)
         throw std::runtime_error("the resident host memory of the helpers and of the engine must both be measured (positive MiB)");
     if (!rank_demand.is_object() || rank_demand.value("kind", "") != "radiance_p1_rank_demand")
@@ -276,7 +324,7 @@ CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const J
     std::strftime(at, sizeof at, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
     c.measured_at = at;
     fs::create_directories(dir);
-    const Json e = {{"cache_version", 2}, {"key", c.key}, {"key_inputs", key_inputs}, {"measured_at", c.measured_at},
+    const Json e = {{"cache_version", version}, {"key", c.key}, {"key_inputs", key_inputs}, {"measured_at", c.measured_at},
                     {"plan", plan_json}, {"rank_demand", rank_demand}, {"resident", {{"helpers_mib", resident.helpers_mib}, {"engine_mib", resident.engine_mib}}}};
     const fs::path file = dir / (c.key + ".json"), tmp = dir / (c.key + ".json.tmp");
     {

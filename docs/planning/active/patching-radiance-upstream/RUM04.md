@@ -163,6 +163,8 @@ C37 (2026-11-20): both P1 entry points now accept the caller's prepared Manifest
 
 C38 (2026-11-20): the isolated bc_serving_v3_writer_test now compiles v2/p1_producer.cpp, p1_measurement.cpp and p1_live_room.cpp against only the v3 wire library. After admitting and deleting authored YAML, the fixture runs real P1 using the same ManifestInputs and feeds its measured record into the real v3 writer; fake sysfs supplies live GTT usage and an embedding consumer plus margin matches the measured host-pool plan. Build and focused CTest passed (1/1). This is card-free v3 successor coverage only; production remains v2, and owner-attestation, cache/replay migration, and native GPU launch remain open. Evidence C38.
 
+C39 (2026-11-20): native version-3 measured-plan keys now bind ordered engine/helper devices (role, ordinal, BDF, HIP ordinal, architecture, VRAM) alongside exact snapshot SHA/root. Cache files persist the key's version and lookup requires the envelope version to match; native v3 and legacy v2 remain separate. Tests prove helper reordering invalidates the native key, v3 cache store/read succeeds, and a v2 envelope is refused under a v3 key. Built bc-serve and bc_serving_test; focused CTest passed 1/1. Still open: production native selection and owner publication must bind plan/ranks/resident data to the exact tracked measuring attempt before native cache use. Evidence C39.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -196,3 +198,4 @@ C38 (2026-11-20): the isolated bc_serving_v3_writer_test now compiles v2/p1_prod
 - 2026-11-19T15:07:40.385146+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:15:51.751252+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:21:41.245162+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T15:30:30.513934+00:00 (updated-by): Updated: section:notes
