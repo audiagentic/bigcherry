@@ -30,3 +30,16 @@ The new test has a CI-safe sparse RAD2 fixture with one IQ8R tensor, plus a nega
 The inspection **does not** decode a signed-I8 value, execute FWHT128, validate physical weights against the source checkpoint, confirm all RadFile::validate() constraints, hash the full model, or establish numerical parity. For production acceptance, validate actual decode/layout using the native model reader and mixed-card HIP kernels, with an explicit hardware lease. The latest CI may not have the gated model, so absence of the optional file must not cause CI failure.
 
 The native rad-info restriction should be solved by the normal allowlist authorization process if that exact tool is required. The existence of this read-only inspector is not permission to bypass executable restrictions.
+
+
+## Real-file numerical row oracle (2026-11-20)
+
+The separate, CI-safe `tools/tests/lab/test_ltx_iq8r_numeric.py` test and positional CLI now exercise **actual signed-I8 codes, U8 per-256-K group scales, BF16 per-row secondary scales and H128 transforms** from the local IQ8R model, without starting the engine or any GPU process:
+
+    python3 tools/tests/lab/test_ltx_iq8r_numeric.py "$BC_MODEL_ROOT"/ltx-2.5/ltx-2.5-iq8r.rad
+
+Against the real file it checked **123 selected model rows** (video 63; audio 60), including Q/K/V bank boundary rows, output-projection rows, real BF16 output biases and three candidate head partitions. For each sampled weight row the CPU oracle independently computes `(H128 * decoded_rotated_weights) dot x` and `decoded_rotated_weights dot (H128 * x)`; for representable output-column splits the three per-rank dot products sum to the dense result. The test also shows that adding the **real, nonzero** output bias on each rank (three times) is wrong; the bias belongs after the sum once. This is a double-precision algebraic test against real quantized weights, **not** the HIP i8a8h rounding/activation-quantizer comparison.
+
+**New concrete admissibility constraint:** the actual video output projection is 4096x4096 (32 heads x 128) and its 10/10/12 split gives 1280/1280/1536 K channels, all 256-aligned. The actual audio output projection is 2048x2048 (32 heads x 64); its 10/10/12 split gives 640/640/768 K channels, *not* 256-aligned. The 8/8/16 and 12/12/8 splits are safe for K-group slicing on **both** streams. A head split is not automatically a legal IQ8R output-projection column split; production admission must check both. A native C++ reference test now explicitly refuses audio 640/640/768.
+
+The pure-Python reference reads selected rows only, checks each file section against known encoding metadata, and is test tooling rather than engine runtime. Its normal CI suite uses synthetic FWHT/codec/negative K-boundary fixtures and skips real-file access unless an opt-in path is supplied. It does **not** establish model SHA identity, a full numerical fixture for all rows, exact GPU BF16 rounding, rotary/attention output parity, liveness, or functional TP3 inference.
