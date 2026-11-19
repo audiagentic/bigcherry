@@ -146,13 +146,11 @@ def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _native_argv(session: dict, *, fallback: list[str] | None = None) -> list[str]:
+def _native_argv(session: dict) -> list[str]:
     processes = session.get("processes", [])
     for p in processes:
         if p.get("role") == "engine" and isinstance(p.get("argv"), list) and p["argv"]:
             return p["argv"]
-    if fallback:
-        return fallback
     raise run_records.RecordError(
         "native session does not record measured process argv"
     )
