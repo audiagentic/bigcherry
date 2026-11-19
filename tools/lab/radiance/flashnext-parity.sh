@@ -4,7 +4,7 @@
 # Tokens/s is never compared across builds (MTP draft acceptance differs per build); acceptance is reported, never gated.
 #
 # Usage:
-#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P]
+#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P] [--native-config YAML]
 #   bash tools/lab/radiance/flashnext-parity.sh baseline --out DIR --name NAME --to FILE
 #   bash tools/lab/radiance/flashnext-parity.sh compare --out DIR --baseline FILE
 #
@@ -64,13 +64,14 @@ usage() {
 
 CMD=${1:-}
 [ $# -gt 0 ] && shift
-BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO=""
+BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO="" NATIVE_CONFIG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) [ $# -ge 2 ] || usage; BUILD=$2; shift 2 ;;
     --out) [ $# -ge 2 ] || usage; OUT=$2; shift 2 ;;
     --launches) [ $# -ge 2 ] || usage; LAUNCHES=$2; shift 2 ;;
     --port) [ $# -ge 2 ] || usage; PORT=$2; shift 2 ;;
+    --native-config) [ $# -ge 2 ] || usage; NATIVE_CONFIG=$2; shift 2 ;;
     --baseline) [ $# -ge 2 ] || usage; BASELINE=$2; shift 2 ;;
     --name) [ $# -ge 2 ] || usage; NAME=$2; shift 2 ;;
     --to) [ $# -ge 2 ] || usage; TO=$2; shift 2 ;;
@@ -225,17 +226,22 @@ for i in $(seq 1 "$LAUNCHES"); do
   if [ -n "$CALIBRATION_FILE" ]; then
     cp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "cannot snapshot calibration store"
   fi
+  OWNER_ARGS=("${NATIVE_ARGS[@]}")
+  if [ -n "$NATIVE_CONFIG" ]; then
+    cp -- "$NATIVE_CONFIG" "$L/native-input.yaml" || fail "cannot snapshot native YAML"
+    OWNER_ARGS+=(--native-config "$L/native-input.yaml")
+  fi
   CAPTURE_ARGS=(--heat "$L/heat-input.hot-first" --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}")
   if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
-  python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" ||
+  python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${OWNER_ARGS[@]}" ||
     fail "cannot capture native owner invocation"
   echo "flashnext-parity: launch $i/$LAUNCHES -> $L" >&2
-  "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" > "$L/owner.log" 2>&1 &
+  "$BC_SERVE" serve flashnext-4gpu "${OWNER_ARGS[@]}" > "$L/owner.log" 2>&1 &
   NATIVE_PID=$!
   LAUNCHED=1
   wait_native_ready || fail "native bc-serve refused or exited (see $L/owner.log)"
   MANIFEST=$(session_manifest) || fail "native session has no committed manifest"
-  [ -f "$MANIFEST" ] || fail "native session did not commit a strict-v2 manifest"
+  [ -f "$MANIFEST" ] || fail "native session did not commit a serving manifest"
   cp "$MANIFEST" "$L/manifest.json" || fail "cannot archive the manifest"
   cp "$RUN/feature-states.v1.json" "$L/feature-states.v1.json" ||
     fail "native MRC03 feature-state snapshot is absent"

@@ -100,6 +100,8 @@ User direction (2026-11-19): migrate all retained, historically tested BigCherry
 
 Main integration checkpoint 99ae7bfea incorporates origin/main d611e7997, with ledger acknowledgement 25dee8511 on the isolated integration branch. The merged v2 serving, stored manifest, and feature state checks passed 3/3. FlashNext parity harness passed 18/18. The integration branch is ready to combine with the native startup checkpoint. These checks establish compatibility of the merge, with the candidate release gates still open.
 
+A full 2.2 v3 runtime was staged for the ec28406a2 checkpoint. Engine, worker and serving use identical wire fingerprints. All ten kernel and 49 architecture plugins plus one quantizer reported ABI44 fingerprint 5cc71b9c5bb7ab40. A stock-power helper-on Flash-Next lifecycle check is queued on the GPU lease with fresh, named-cache and explicit stored replay stages. No GPU result yet. The strict recipe gate still requires retained E4M3 rad0046 qualification. Run final hardware quality and matched old/new parity on the final integrated runtime.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -121,3 +123,4 @@ Main integration checkpoint 99ae7bfea incorporates origin/main d611e7997, with l
 - 2026-11-19T07:30:08.804115+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
 - 2026-11-19T07:35:45.850777+00:00 (state-transition): State: pending → in_progress
 - 2026-11-19T21:41:03.879740+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T23:05:36.031221+00:00 (updated-by): Updated: section:notes

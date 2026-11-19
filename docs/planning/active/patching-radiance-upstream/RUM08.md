@@ -113,6 +113,8 @@ Radiance 2.2.0 (b6b8751c) adds scheduler behavior that needs explicit dispositio
 
 Checkpoint 9e74425b8: host-only generated v3 owner test passed 1/1 and v2 serving, session-stored, stored-manifest and cache tests passed 4/4. Fresh, named replay and explicit replay reacquire the original helper segment and bind the worker build to stored measurement identity. Occupied segment and worker identity drift refuse before power admission. This is lifecycle evidence; selected fixed-depth hardware acceptance remains open.
 
+Rechecked the selected upstream replay seam on the composed frozen 2.2 host build. The existing QSA exact-bound selector test passed 30 checks and the keyed runtime decode test passed 6. These verify selected bound and effective keyed issue arguments for their fixtures. Actual fixed-depth Flash-Next route/shape and paired performance evidence remain pending.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
@@ -135,3 +137,4 @@ Checkpoint 9e74425b8: host-only generated v3 owner test passed 1/1 and v2 servin
 - 2026-11-19T09:02:24.106483+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T21:54:34.526893+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T22:46:29.186651+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T23:07:28.977274+00:00 (updated-by): Updated: section:notes
