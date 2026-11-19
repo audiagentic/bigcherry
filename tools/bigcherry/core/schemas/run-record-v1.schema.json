@@ -114,6 +114,13 @@
       "items": {
         "$ref": "#/$defs/feature_state"
       }
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metric_specs": {
+      "$ref": "#/$defs/metric_specs"
     }
   },
   "$defs": {
@@ -240,6 +247,76 @@
           "type": "string",
           "format": "date-time",
           "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        }
+      }
+    },
+    "metric_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direction",
+        "gated"
+      ],
+      "properties": {
+        "direction": {
+          "enum": [
+            "lower",
+            "higher"
+          ]
+        },
+        "gated": {
+          "type": "boolean"
+        },
+        "repeat_groups": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2
+          }
+        }
+      }
+    },
+    "metric_specs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decode",
+        "prefill",
+        "ttft"
+      ],
+      "properties": {
+        "decode": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/metric_spec"
+          }
+        },
+        "prefill": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/metric_spec"
+          }
+        },
+        "ttft": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/metric_spec"
+          }
         }
       }
     }

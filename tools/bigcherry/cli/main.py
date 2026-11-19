@@ -699,6 +699,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     from . import workload
     workload.register(sub)
+    from . import results as results_cli
+    results_cli.register(sub)
 
     sources.register(sub)
 
