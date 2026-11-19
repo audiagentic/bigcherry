@@ -1,0 +1,22 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_122257_a-bf16-key--int8-value-kv-cac_1164",
+  "files": [
+    "engines/radiance/configs/qwen27b.toml",
+    "engines/radiance/configs/flashnext.toml",
+    "engines/radiance/recipes.toml",
+    "engines/radiance/patches/rad0038_bf16_i8_kv/README.md",
+    "releases/evidence/rad0038_bf16_i8_kv-promotion.md",
+    "tools/lab/radiance/needle_probe.py",
+    "tools/tests/lab/test_needle_probe.py",
+    "docs/evidence/2026-11-19-eng06-bf16i8/README.md",
+    "docs/planning/active/tuning-radiance-engine/ENG06.md"
+  ],
+  "plan-item-ids": [
+    "ENG06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Ships the bf16_i8 KV cache (rad0038, already in serving-core) as two named configs: qwen27b-tp3-int8-556-long-bf16i8 (818,896 tokens; decode equals bf16, first token of a 100K prompt fastest of fp8/bf16/bf16_i8, needles 18 of 18) and the non-default flashnext-4gpu-bf16i8 at 4 sessions (at the production 8 sessions the engine card is 5.47 GB short at admission); fp8 at 8 sessions stays the Flash-Next default. Adds the needle probe tool, the evidence page with the ABBA TP3 data and the Flash-Next production-layout parity (helpers, live policy, two launches, the second replaying), requalification text on the existing promotion record, a corrected recipes comment, and the ENG06 status.",
+  "timestamp-utc": "2026-11-19T12:22:57.924243Z",
+  "user-summary-candidate": "A bf16 key / int8 value KV cache is now available as a named config for the 27B on three cards and, at 4 sessions, for Flash-Next."
+}
