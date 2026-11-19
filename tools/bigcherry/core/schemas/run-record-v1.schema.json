@@ -206,12 +206,16 @@
       "required": [
         "feature_id",
         "state",
-        "reason_code"
+        "reason_code",
+        "reason_detail",
+        "engine",
+        "observed_at"
       ],
       "properties": {
         "feature_id": {
           "type": "string",
-          "minLength": 1
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$"
         },
         "state": {
           "enum": [
@@ -221,10 +225,21 @@
           ]
         },
         "reason_code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "reason_detail": {
           "type": "string"
         },
-        "detail": {
-          "type": "string"
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
         }
       }
     }

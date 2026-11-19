@@ -3,6 +3,7 @@
 
 #include "calibration_lab.h"
 #include "config_loader.h"
+#include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
 #include "manifest_writer.h"
@@ -798,6 +799,15 @@ class Owner {
         std::error_code ec;
         if (fs::exists(s_.run_dir / "session.json"))
             fs::rename(s_.run_dir / "session.json", s_.run_dir / "session.previous.json", ec);
+        if (s_.publish_feature_states) {
+            const fs::path prior = s_.run_dir / feature_state::kFileName;
+            if (fs::exists(prior)) {
+                ec.clear();
+                fs::rename(prior, s_.run_dir / "feature-states.previous.json", ec);
+                if (ec)
+                    throw PlanFailed("cannot archive previous feature-state snapshot: " + ec.message());
+            }
+        }
         fs::remove(s_.run_dir / "session.sock", ec);
         record_ = {{"schema_version", 1},    {"owner_pid", ::getpid()}, {"started_at", utc_now()},
                    {"state", "created"},     {"events", Json::array()}, {"processes", Json::array()},
@@ -922,7 +932,19 @@ class Owner {
             }
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
-            event("planned");
+            if (s_.publish_feature_states) {
+                // The pinned descriptor is the exact authenticated replay; never
+                // reopen a replaceable stored-manifest pathname for this snapshot.
+                const fs::path admitted = plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest;
+                const Json document = Json::parse(read_file(admitted));
+                const auto observed = feature_state::from_manifest(document, utc_now());
+                write_atomic(s_.run_dir / feature_state::kFileName, observed.entries.dump(2) + "\n");
+                record_["feature_states"] = observed.entries;
+                for (const auto& warning : observed.warnings)
+                    std::cerr << "bc-serve: " << warning << '\n';
+            }
+            if (!event("planned") && s_.publish_feature_states)
+                throw PlanFailed("cannot persist the feature-state snapshot in the owner record");
             if (stop_requested())
                 throw Stop{};
             // No-process PWR06 floor, before any serving helper OR engine is
