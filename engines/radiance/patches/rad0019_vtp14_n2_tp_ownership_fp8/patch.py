@@ -180,6 +180,20 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
     ),
 ))
 
+_EVEN_DRAFT_GEOMETRY = """    RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, "draft num_attention_heads", &dg.n_head));
+    /* The target's kv_off is the target's; the drafter's is set here or zero. */
+    dg.kv_off = 0;
+    if (kv_repl_ok && dg.world > dg.n_head_kv_all && dg.world % dg.n_head_kv_all == 0) {
+        dg.n_head_kv = 1;   /* world / n_head_kv_all ranks share each KV head */
+        dg.kv_off    = (dg.rank / (dg.world / dg.n_head_kv_all)) * dg.head_dim;
+    } else {
+        RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, "draft num_key_value_heads",
+                                    &dg.n_head_kv));
+    }
+    RAD_ARCH_TRY(divide_or_fail(dg.n_ff_all,      dg.world, "draft intermediate_size",   &dg.n_ff));
+"""
+
+
 DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", description="VTP14 N2 drafter ownership", edits=(
     _edit(
         "n2f-vocab-head-sharded",
@@ -200,9 +214,7 @@ DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", descripti
     ),
     _edit(
         "n2f-drafter-geom",
-        "    RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, \"draft num_attention_heads\", &dg.n_head));\n"
-        "    RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, \"draft num_key_value_heads\", &dg.n_head_kv));\n"
-        "    RAD_ARCH_TRY(divide_or_fail(dg.n_ff_all,      dg.world, \"draft intermediate_size\",   &dg.n_ff));\n",
+        _EVEN_DRAFT_GEOMETRY,
         "    if (target.tp_owned) {\n"
         "        /* BC_VTP14_N2F_DRAFTER_GEOM: under --tp-ownership the drafter follows its target's split: its KV\n"
         "         * heads in the target's KV proportions (target.own_kv_split), its query heads whole groups of them,\n"
@@ -240,11 +252,8 @@ DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", descripti
         "        dg.kv_off    = dg.own_kv_lo * dg.head_dim;\n"
         "        dg.n_ff      = ff[r];\n"
         "        dg.own_ff_lo = ff_lo;\n"
-        "    } else {\n"
-        "        RAD_ARCH_TRY(divide_or_fail(dg.n_head_all,    dg.world, \"draft num_attention_heads\", &dg.n_head));\n"
-        "        RAD_ARCH_TRY(divide_or_fail(dg.n_head_kv_all, dg.world, \"draft num_key_value_heads\", &dg.n_head_kv));\n"
-        "        RAD_ARCH_TRY(divide_or_fail(dg.n_ff_all,      dg.world, \"draft intermediate_size\",   &dg.n_ff));\n"
-        "    }\n",
+        "    } else {\n" + "".join("    " + line for line in _EVEN_DRAFT_GEOMETRY.splitlines(keepends=True))
+        + "    }\n",
         guard="BC_VTP14_N2F_DRAFTER_GEOM",
     ),
 ))
@@ -252,14 +261,15 @@ DRAFT_GEOM = FilePatch(path="arch/common/rad_arch.h", language="none", descripti
 DFLASH = FilePatch(path="arch/common/rad_block_dflash2.h", language="none", description="VTP14 N2 drafter spans", edits=(
     _edit(
         "n2f-dflash-head-span",
-        "    if (!w_dh || !w_dhs) return RAD_E_INVAL;\n",
-        "    if (!w_dh || !w_dhs) return RAD_E_INVAL;\n"
-        "    /* BC_VTP14_N2F_DFLASH_HEAD_SPAN: a ragged --tp-ownership share is not 1/tp, so the sharded draft head\n"
-        "     * reads this rank's rows [vocab_off, +n_vocab) of the stored head and of its scale planes. */\n"
-        "    if (dh_shard && g.tp_owned) {\n"
-        "        RAD_ARCH_TRY(rad_weight_shard_span(b, w_dh, g.vocab_off, g.vocab_off + g.n_vocab));\n"
-        "        RAD_ARCH_TRY(rad_weight_shard_span(b, w_dhs, g.vocab_off, g.vocab_off + g.n_vocab));\n"
-        "    }\n",
+        "        if (!w_dh || (!head_bf16 && !w_dhs)) return RAD_E_INVAL;\n",
+        """        if (!w_dh || (!head_bf16 && !w_dhs)) return RAD_E_INVAL;
+        /* BC_VTP14_N2F_DFLASH_HEAD_SPAN: BF16 has no scale plane. */
+        if (dh_shard && g.tp_owned) {
+            RAD_ARCH_TRY(rad_weight_shard_span(b, w_dh, g.vocab_off, g.vocab_off + g.n_vocab));
+            if (w_dhs)
+                RAD_ARCH_TRY(rad_weight_shard_span(b, w_dhs, g.vocab_off, g.vocab_off + g.n_vocab));
+        }
+""",
         guard="BC_VTP14_N2F_DFLASH_HEAD_SPAN",
         max_span=2,
     ),
