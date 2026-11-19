@@ -412,6 +412,21 @@ int main(int argc, char** argv) {
         }
         check(native_replay_refused,
               "legacy stored replay must refuse an unsupported private native admission request");
+        const fs::path direct_v3_path = pinned.tmp.root / "direct-native-v3.json";
+        std::ofstream(direct_v3_path, std::ios::binary)
+            << R"({"api_version":"bigcherry/v3","metadata":{"contract_version":3}})";
+        ss::EnginePlanInputs direct_v3 = pinned.inputs;
+        direct_v3.stored_manifest = direct_v3_path;
+        bool direct_v3_refused = false;
+        try {
+            (void)ss::replay_stored_manifest(direct_v3, pinned.run, pin_hooks);
+        } catch (const ss::PlanFailed& error) {
+            direct_v3_refused = std::string_view(error.what()).find(
+                                    "native v3 stored manifests require fresh native admission") !=
+                                std::string_view::npos;
+        }
+        check(direct_v3_refused,
+              "stored v3 replay must be explicitly refused even without a native-admission request");
         const ss::EngineStart admitted = ss::replay_stored_manifest(pinned.inputs, pinned.run, pin_hooks);
         check(!admitted.stored_sha256.empty(), "stored bytes must have an admission digest");
         const std::string alternate_bytes =

@@ -2822,11 +2822,14 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
     if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16ULL * 1024ULL * 1024ULL)
         throw PlanFailed("replay: manifest must be an existing bounded regular file");
     const std::string bytes = read_file(stored);
+    const Json source = Json::parse(bytes, nullptr, false);
+    if (source.is_object() && source.value("api_version", std::string()) == "bigcherry/v3")
+        throw PlanFailed("replay: native v3 stored manifests require fresh native admission; stored replay is "
+                         "not available until the v3 owner/cache/replay chain is complete");
     const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);
     if (!verified)
         throw PlanFailed(v2::render_human("bc-serve replay", verified.error()));
     const auto& m = verified.value();
-    const Json source = Json::parse(bytes);
     const fs::path home = m.spec.processes.engine.runtime.radiance_home;
     const fs::path engine =
         given.engine_binary.empty() ? home.parent_path() / "bin" / "radiance" : given.engine_binary;

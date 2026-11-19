@@ -199,6 +199,8 @@ C53 (2026-11-20): retained the native resolution-root directory descriptor from 
 
 C54 (2026-11-20): the isolated v3 writer now accepts an owner-frozen `--expected-plan-key` for measured sealed-snapshot cache reads and verifies it before lookup/publication. Added real-CLI regression coverage to `bc_native_v3_session_test`; execution is pending because the existing `native-v3-measuring-c51-build` does not define that target. Refresh the isolated candidate build from this worktree and run the focused target before accepting this slice. See evidence C54 and Ledger event `chg_20261119_191813_added-the-v3-measured-writer-f_1596`.
 
+C55 (2026-11-20): `replay_stored_manifest()` explicitly rejects `bigcherry/v3` envelopes even when callers omit `NativeAdmissionRequest`; a direct call can no longer rely on incidental v2 reader rejection. Added a card-free `bc_session_stored_test` case. Runtime test pending because the available candidate build needs refreshing. See evidence C55.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -251,3 +253,4 @@ C54 (2026-11-20): the isolated v3 writer now accepts an owner-frozen `--expected
 - 2026-11-19T18:12:45.949208+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:13:03.651665+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T19:18:49.935154+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T19:21:04.806627+00:00 (updated-by): Updated: section:notes

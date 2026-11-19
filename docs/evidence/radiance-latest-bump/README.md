@@ -273,3 +273,9 @@ A card-free session test renames and replaces the root path while the child wait
 The v3 writer CLI now accepts `--expected-plan-key` for a measured, sealed-snapshot cache read in addition to its existing unmeasured draft use. After reconstructing the effective key from the resolver output and the admitted snapshot, it compares the owner-frozen key before measured-plan cache lookup or publication. Other editions and non-owner modes retain the existing restriction. Added a real-CLI test that confirms the v3 measured invocation passes argument validation and reaches sealed-snapshot descriptor loading before cache access.
 
 Verification is pending: the existing `native-v3-measuring-c51-build` configuration has no `bc_native_v3_session_test` target, so it did not build or run this test. Refresh the isolated candidate build from the current worktree before treating this slice as accepted. No GPU was used; production v3 admission remains closed.
+
+## C55 — Refuse direct stored v3 replay (2026-11-20)
+
+`replay_stored_manifest()` now inspects the bounded JSON envelope and explicitly refuses a `bigcherry/v3` stored manifest before passing it to the legacy v2 reader. The refusal applies even when the caller did not supply the private `NativeAdmissionRequest`, preventing a direct stored-manifest caller from relying on the incidental v2 schema rejection. Added card-free session coverage using a minimal v3 envelope and the real replay entry point.
+
+Focused `bc_session_stored_test` execution is pending; candidate build refresh is still required. No GPU was used; stored/offline native replay remains intentionally closed until the owner/cache/replay chain is complete.
