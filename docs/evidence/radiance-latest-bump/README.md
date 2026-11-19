@@ -12,3 +12,9 @@ Use individual commits as source checkpoints. For a later GPU comparison, build 
 | C3+ | Reviewed implementation slices | Record applicability, compilation, ABI, activation, numerical checks and timings separately. A retired patch needs evidence of replacement or an explicit unsupported mode. |
 
 Initial direct patch audit against the candidate reported 18 drifted, 8 blocked by dependency, and 4 clean out of 30 production patches. Dependency-blocked patches must be rechecked after their parents are ported. GPU parity remains a separate gate and will use the existing Flash-Next parity harness; a stored cross-day difference needs a same-session paired check before attributing a regression.
+
+## Observed checks
+
+- C1 (`596c6b17a`): both manifest-to-argv and plan-memory fixture builds ran and passed. The local `/tmp` mount refused execution; rerun with an executable task-local `TMPDIR`.
+- C2: unmodified candidate configured with GCC 14, HIP and FFmpeg disabled. The exact native `fleet/config.cpp` object compiled. Upstream emits one comment warning. No full executable, native serving or hardware claim is attached to this control.
+- C3: the managed YAML byte fixture linked against the actual candidate parser and exited zero. It exercised exact original bytes and digest (including CRLF), native provenance, replay without the authored file, and refusal of malformed input, changed digest, multiple models and literal API keys. This establishes the parser seam. Measured manifest persistence, sealed exec handoff and native engine entry wiring are later checkpoints.
