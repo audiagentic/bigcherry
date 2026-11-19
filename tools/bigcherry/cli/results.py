@@ -6,6 +6,7 @@ import argparse
 import json
 import os
 import sys
+from datetime import UTC, datetime
 import tempfile
 from pathlib import Path
 
@@ -105,8 +106,41 @@ def _show_history(report: dict) -> None:
 def cmd_results(args: argparse.Namespace) -> int:
     try:
         store = run_records.RunRecordStore(args.work_root)
+        if args.results_action == "show":
+            rec = store.get_record(args.sha256)
+            result = {"sha256": args.sha256, "record": rec}
+            if args.json:
+                print(json.dumps(result, indent=2, sort_keys=True))
+            else:
+                print(f"sha256: {args.sha256}")
+                print(f"run: {rec['run_id']} ({rec['recorded_at']})")
+                print(f"identity: {rec['identity']['engine']} / {rec['identity']['layout']} / "
+                      f"{rec['identity']['model']}")
+                print(f"workload: {rec['workload']['name']}")
+                for phase, readings in rec["metrics"].items():
+                    for name, reading in sorted(readings.items()):
+                        print(f"  {phase}.{name}: {reading}")
+                print("provenance inputs:")
+                for item in rec["provenance"]["inputs"]:
+                    print(f"  {item['role']}: {item['blob']['sha256']}")
+                print(f"validity: {rec.get('validity', {'state':'unknown'})}")
+            return 0
+        if args.results_action == "ingest-calibration":
+            from ..bench.radiance_lab_records import publish_calibration_run
+
+            sha = publish_calibration_run(args.run_dir, work_root=args.work_root)
+            if args.json:
+                print(json.dumps({"sha256": sha}, sort_keys=True))
+            else:
+                print(f"calibration run-record v1: {sha}")
+            return 0
         if args.results_action == "list":
             from ..bench import workloads
+            if args.today:
+                if args.since or args.until:
+                    raise results.ResultsError("--today cannot combine with --since/--until")
+                day = datetime.now(UTC).strftime("%Y-%m-%d")
+                args.since, args.until = day + "T00:00:00Z", day + "T23:59:59Z"
             rows = []
             for item in store.query(engine=args.engine, layout=args.layout,
                                     workload=args.workload, since=args.since, until=args.until):
@@ -209,6 +243,21 @@ def register(sub) -> None:
 
     listing = actions.add_parser("list", help="list verified run records and read-only legacy workload rows")
     common(listing)
+    listing.add_argument("--today", action="store_true",
+                         help="restrict to today's UTC date (use --engine radiance --workload parity)")
+
+    show = actions.add_parser("show", help="read a verified immutable run record by SHA-256")
+    show.add_argument("sha256")
+    show.add_argument("--work-root", type=Path, default=None)
+    show.add_argument("--json", action="store_true")
+    show.set_defaults(func=cmd_results)
+
+    ingest = actions.add_parser("ingest-calibration",
+                                help="ingest completed native C++ calibration-run evidence as MRC01")
+    ingest.add_argument("--run-dir", type=Path, required=True)
+    ingest.add_argument("--work-root", type=Path, default=None)
+    ingest.add_argument("--json", action="store_true")
+    ingest.set_defaults(func=cmd_results)
 
     baseline = actions.add_parser("baseline", help="create portable spread-derived baseline (two or more launches)")
     common(baseline, require_scope=True)

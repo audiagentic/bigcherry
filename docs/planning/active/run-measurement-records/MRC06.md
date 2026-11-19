@@ -102,6 +102,50 @@ Other producer migrations and hardware activation remain pending.
 
 Remaining separate slices: bc-serve calibration/lab producers, RSC02 S15, other campaign/compile receipts and migration of consumers still reading old stores. No historic row is rewritten; unrepresentable llama PPL/standard deviation metrics remain verbatim in source-row provenance until a schema extension can represent those phases faithfully.
 
+## Slice 3: native calibration, probes, RSC02 and results views (2026-11-20)
+
+- `bc-serve --calibration-run` stays Python-free. The C++ session owner saves
+  actual child argv and curated overrides, plus exact A/B prompts, heat,
+  freshly ingested MRC04 TOML, helper evidence and native hashes/receipt.
+  Source mutation during measurement is refused. The post-run platform
+  `bigcherry results ingest-calibration --run-dir RUN` validates a completed
+  native session and the matching MRC04 `native_v1` selected record (run ID,
+  key, revision, engine, host-facts digest) and publishes one immutable
+  MRC01 record. A SHA-only pointer remains in the run directory. Collecting
+  host facts at ingest does NOT equate to measurement-start observations.
+- `needle_probe.py` and `image_probe.py` now check native owner and matching
+  local HTTP port before requesting, retain their scoring, and store exact
+  raw result and corpus/transmitted-image bytes as MRC01 blobs. `--out`
+  contains a digest pointer, not another result index.
+- `rsc02_s15_ab.py` remains an active leased RSC02 S15 acceptance driver,
+  not retired. Its original manifest bytes are snapshotted (base64 + SHA);
+  each cleanly stopped arm gets a v1 record with native feature states on
+  the B arm. Existing comparison/lifecycle JSON remains read-only source
+  evidence for the active comparator.
+- `results list --today --engine radiance --workload parity` displays today
+  in **UTC**; `results show SHA256` verifies the full MRC01 record and blobs
+  without reopening run folders. All new fixture gates are CPU-only.
+
+## MRC01–MRC06 acceptance audit: can the plan be closed?
+
+**No.** Several core contracts are implemented, but cross-producer and
+hardware acceptance criteria remain incomplete:
+
+| Item | Acceptance criteria met | Not met / still to prove |
+| --- | --- | --- |
+| **MRC01** | Content-addressed self-contained records (including deletion fixtures); mandatory distinct decode/prefill/TTFT groups; single MRC01 library reader; GC/retention reference protection tests (#1204) | WSL01 two-way typed lifecycle-record edge and original results put/query CLI are incomplete; production recovery proof pending |
+| **MRC02** | Engine-neutral host collector; unreadable/zero-cap markers; required record host facts; workloads delegate sysfs to core | Native calibration post-run collector records host state at ingest, not start; real host vs ROCm/sysfs validation remains |
+| **MRC03** | Native Radiance startup warnings/status, MRC03 files and populated Radiance record snapshots | llama.cpp and legacy RSC02 Bash arms can still have empty feature-state arrays; llama feature adapter and registry-only extension/real orphan-warning gate not finished |
+| **MRC04** | Declared narrow build-independent key and provenance, native TOML/platform reader/store, legacy refusal; fresh native calibration linked as an MRC01 content blob | Cross-build/pin-bump live activation, typed calibration-record reference and large quantity-blob interop pending |
+| **MRC05** | Portable baseline by value, one-sided spread gates, single-launch refusal, provenance diff, record-only drift history | Hardware-generated provenance-bearing replacement for historical v1.17.0 baseline missing; parity legacy baseline/compare consumers still in transition |
+| **MRC06** | Migrated parity, workloads, managed llama rows, HI47 typed bundles, native finite calibration, needle/image and active RSC02 adapters; VA25 validity and legacy workload read-only listing | **Global one-write-path criterion not met:** direct external run_bench still writes old stores if wrapper bypassed; non-calibration bc-serve lab measure, S8, TP3/replay and compile retry producers remain; some legacy result consumers/writers not retired or fully dispositioned |
+
+Remaining slices must inventory and migrate other producers, enforce the
+managed external llama entrypoint, complete cross-engine feature states and
+typed WSL01 edges, retire old writers after consumer scans, and run explicit
+leased hardware acceptance. Deleted 2026-11-17 manifest bytes must never be
+recreated or silently trusted as new evidence.
+
 ## Change Log
 
 - 2026-11-19T00:50:46.203067+00:00 (created-by): Created by agent

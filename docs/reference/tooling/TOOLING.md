@@ -212,6 +212,40 @@ Typed HI47 measurement sidecars can be published with "python -m bigcherry.exper
 
 The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; old v1 records without the new optional field remain readable. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
 
+**MRC06 slice 3 — Radiance native lab results.** Native `bc-serve serve
+--calibration-run` saves admitted manifest, exact process argv, A/B prompt
+and heat bytes, selected native calibration TOML and helper-log hashes
+without loading Python. After a **successfully completed and cleanly
+stopped** native calibration session, invoke the platform ingest:
+
+```sh
+bigcherry results ingest-calibration --run-dir /path/to/run --work-root ROOT --json
+```
+
+The platform's MRC04 reader requires one selected `native_v1` record and
+verifies its key/provenance and all source snapshots before producing an
+MRC01 run record. `RUN/calibration-record.sha256` is a pointer, not a new
+measurement store. Ingest before reusing the run directory. Host snapshots
+obtained during offline ingest are not claims about measurement-start state.
+
+`needle_probe.py` and `image_probe.py` now require a matching local native
+`--run-dir` and optional `--work-root`. Their `--out` is a digest-pointer
+JSON object; full results, exact corpus/image bytes and controls are MRC01
+content blobs. The leased S15 `rsc02_s15_ab.py` still runs; each cleanly
+stopped arm publishes one immutable record. Existing S15 comparator JSON
+remains read-only lifecycle/comparison evidence, not a measurement index.
+
+Today's parity records in **UTC** and one verified record by digest:
+
+```sh
+bigcherry results list --today --engine radiance --workload parity --json
+bigcherry results show RECORD_SHA256 --json
+```
+
+These are read-only SHA-verified store views; missing historic manifest
+paths are never rebuilt. MRC06 global writer retirement remains open.
+
+
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be
 verified. Unreferenced blobs are informational, not deletion candidates; the

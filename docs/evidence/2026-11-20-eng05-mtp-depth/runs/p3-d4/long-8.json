@@ -1,0 +1,153 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "e6fb5fb9a6699c6911c2b68097028a18da338328894f5f4d068ad9c48696fc9d"
+  ],
+  "prompt_tokens": 153373,
+  "prompt_tokens_target": 256000,
+  "prompt_words": 153373,
+  "reps": 2,
+  "seed": 8,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18453"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 2.442,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 52.668,
+    "event_gap_ms_p50": 28.394,
+    "event_gap_ms_p95": 29.051,
+    "event_gap_ms_p99": 52.668,
+    "mean_stream_decode_tps_est": 111.008,
+    "tokens": 256,
+    "ttft_ms_max": 102495.23,
+    "ttft_ms_p50": 102495.23,
+    "ttft_ms_p95": 102495.23
+   },
+   "engine": {
+    "decode_ms_per_step": 29.172,
+    "decode_tokens_per_step": 3.2125,
+    "decode_tokens_total": 257.0,
+    "decode_tps_engine": 110.123,
+    "draft_acceptance": 0.5531,
+    "draft_accepted_total": 177.0,
+    "draft_tokens_total": 320.0,
+    "engine_step_seconds_decode_total": 2.333757,
+    "engine_steps_decode_total": 80.0,
+    "engine_steps_prefill_total": 126.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 255501.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.995,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 111.008,
+     "error": "",
+     "events": 81,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 253773,
+     "response_tail_ms": 41.17,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nlantern willow ...\" huge list. Need likely continue list with a short story? They want continue this list of words with a short story. Need infer maybe produce a short story using the words? The list is enormous, maybe they want continuation of list? \"Continue this list of words with a short story.\" Could mean ta",
+     "text_sha256": "22ecc00987dbca2fd2a34dfa05d91ade9c9c3e8e68331e1d1313a791d972e4db",
+     "tokens": 256,
+     "ttft_ms": 102495.23,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 14.946,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795120469092613549,
+   "wall_s": 104.8335,
+   "wall_start_ns": 1795120364243377059
+  },
+  {
+   "aggregate": {
+    "aggregate_tps": 88.631,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 38.212,
+    "event_gap_ms_p50": 37.005,
+    "event_gap_ms_p95": 37.978,
+    "event_gap_ms_p99": 38.212,
+    "mean_stream_decode_tps_est": 94.364,
+    "tokens": 256,
+    "ttft_ms_max": 157.16,
+    "ttft_ms_p50": 157.16,
+    "ttft_ms_p95": 157.16
+   },
+   "engine": {
+    "decode_ms_per_step": 33.5752,
+    "decode_tokens_per_step": 3.1875,
+    "decode_tokens_total": 255.0,
+    "decode_tps_engine": 94.936,
+    "draft_acceptance": 0.5469,
+    "draft_accepted_total": 175.0,
+    "draft_tokens_total": 320.0,
+    "engine_step_seconds_decode_total": 2.686016,
+    "engine_steps_decode_total": 80.0,
+    "engine_steps_prefill_total": 1.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 13.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.846,
+    "requests_waiting_max": 0.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 94.364,
+     "error": "",
+     "events": 81,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 253773,
+     "response_tail_ms": 28.91,
+     "stream": 0,
+     "text_head": "We need answer user's request. User: \"Continue this list of words with a short story.\nlantern willow ...\" huge list. Need likely continue list of words with a short story. Need infer task: They provide a long list of words, likely want us to continue the list with a short story? Maybe generate a short story using the words? \"Continue this list of words with a short story.\" Could mean after the lis",
+     "text_sha256": "16283115b8e52cc51991b37b5befd7746ef311040fce7b8e822ebbb5604712c2",
+     "tokens": 256,
+     "ttft_ms": 157.16,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 22.645,
+   "rep": 1,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795120472005388077,
+   "wall_s": 2.8884,
+   "wall_start_ns": 1795120469093421344
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 45.536500000000004,
+   "decode_ms_per_step_median": 31.373600000000003,
+   "decode_tokens_per_step_median": 3.2,
+   "decode_tps_engine_median": 102.52950000000001,
+   "draft_acceptance_median": 0.55,
+   "event_gap_ms_p95_median": 33.5145,
+   "reps_ok": 2,
+   "requests_running_mean_median": 0.9205,
+   "ttft_ms_max_median": 51326.195
+  }
+ }
+}
