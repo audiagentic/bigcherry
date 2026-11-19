@@ -1,5 +1,19 @@
 # Changelog
 
+## [1170.33.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.5...bc-radiance-1170.33.0) (2026-11-19)
+
+
+### New and changed
+
+* **radiance:** build with the FFmpeg media decoder; image input modes measured ([#1189](https://github.com/audiagentic/bigcherry/issues/1189)) ([5820391](https://github.com/audiagentic/bigcherry/commit/5820391c817571a66033d27e8981afeee8c08b42))
+* **radiance:** ship bf16_i8 KV as named configs (TP3 27B, Flash-Next at 4 sessions) with evidence ([#1184](https://github.com/audiagentic/bigcherry/issues/1184)) ([358ddd1](https://github.com/audiagentic/bigcherry/commit/358ddd197de6e96310033ae69e6ff90b4ef17b29))
+* **serving:** publish native feature states at startup ([#1195](https://github.com/audiagentic/bigcherry/issues/1195)) ([7c73af9](https://github.com/audiagentic/bigcherry/commit/7c73af98fb5b23a32a1309cc2b4b5551dfda371a))
+
+
+### Fixes
+
+* **radiance:** ship release heat seeds and default session recording ([#1197](https://github.com/audiagentic/bigcherry/issues/1197)) ([bf27b43](https://github.com/audiagentic/bigcherry/commit/bf27b433839cdbed161f301c564b7893b398b407))
+
 ## [1170.32.5](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.4...bc-radiance-1170.32.5) (2026-11-19)
 
 
