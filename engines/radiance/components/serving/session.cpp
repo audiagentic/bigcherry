@@ -2393,9 +2393,24 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     }
     const std::vector<std::string> measured_args = {"--plan-cache",  cache.string(), "--engine-binary",
                                                     engine.string(), "--plan-extra", "budgets: default"};
+    auto round_key = [&]() {
+        Options options = in.options;
+        options.sets.insert(options.sets.end(), extra_sets.begin(), extra_sets.end());
+        const Json key_facts = detect(options.sys_root);
+        const Resolved effective = resolve(options, key_facts);
+        const fs::path effective_home = effective.values.at("engine").at("radiance_home").get<std::string>();
+        const std::string model_id = container_identity(
+            effective.values.at("engine").at("model").get<std::string>());
+        const std::string build_id = engine_identity(engine, effective_home);
+        const Json key = plan_key_inputs(effective.values, key_facts, model_id, build_id, "budgets: default");
+        return std::make_pair(std::make_pair(effective, key_facts), key);
+    };
     int pool_changes = 0;
     bool power_admitted = false;
     for (int round = 0; round < 5; ++round) {
+        const auto frozen_round = round_key();
+        const Resolved& round_resolved = frozen_round.first.first;
+        const Json& frozen_key = frozen_round.second;
         std::error_code ec;
         fs::remove(manifest, ec);
         fs::remove(s8_source, ec);
@@ -2427,7 +2442,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             const Json current_facts = detect(in.options.sys_root);
             if (const auto refusal = resources::preflight_host_pool(measuring_snapshot.parsed, current_facts))
                 throw PlanFailed("resources: " + refusal->message);
-            const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
+            const std::string attempt_id = new_instance_id();
+            const fs::path attempt_dir = run_dir / "measurement-attempts" / attempt_id;
+            fs::create_directories(attempt_dir);
+            const fs::path plan = attempt_dir / "plan.json", ranks = attempt_dir / "rank-demand.json";
             fs::remove(plan, ec);
             fs::remove(ranks, ec);
             if (hooks.admit_power && !power_admitted) {
@@ -2558,10 +2576,30 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 } catch (const vram::Refused& error) {
                     throw PlanFailed(error.what());
                 }
+                const auto current_round = round_key();
+                if (current_round.second != frozen_key)
+                    throw PlanFailed("plan: effective inputs, model, runtime or engine build changed during the "
+                                     "tracked measurement; refusing to re-key its result");
+                const Json measured_plan = parse_plan_json(read_file(plan), plan.string());
+                const Json rank_demand = parse_plan_json(read_file(ranks), ranks.string());
+                const auto selected_bdfs = round_resolved.values.at("layout").at("engine_cards");
+                if (!rank_demand.is_object() || !rank_demand.contains("gpu") ||
+                    !rank_demand.at("gpu").is_array() || rank_demand.at("gpu").size() != selected_bdfs.size())
+                    throw PlanFailed("plan: measured rank demand does not match the selected engine ranks");
+                for (size_t i = 0; i < selected_bdfs.size(); ++i)
+                    if (!rank_demand.at("gpu").at(i).is_object() ||
+                        rank_demand.at("gpu").at(i).value("bdf", std::string()) !=
+                            selected_bdfs.at(i).get<std::string>())
+                        throw PlanFailed("plan: measured rank demand differs from selected engine BDF order");
+                const auto owned = plan_cache_store_owned(
+                    cache, frozen_key, measured_plan, rank_demand, round_resolved.values,
+                    HostResident{measured_helpers_mib, static_cast<uint64_t>(std::stoull(engine_mib))},
+                    OwnerMeasurementEvidence{attempt_id, measuring_snapshot.sha256});
+                if (!owned.owner || owned.owner->attempt_id != attempt_id || owned.key != plan_key(frozen_key))
+                    throw PlanFailed("plan: owner cache publication did not return the tracked measurement receipt");
+                out.summary["plan_measurement_attempt"] = attempt_id;
                 std::vector<std::string> stored = measured_args;
-                stored.insert(stored.end(), {"--measured-plan", plan.string(), "--rank-demand", ranks.string(),
-                                             "--helpers-resident-mib", std::to_string(measured_helpers_mib),
-                                             "--engine-resident-mib", engine_mib});
+                stored.insert(stored.end(), {"--expected-owner-attempt", attempt_id});
                 fs::remove(manifest, ec);
                 w = write(manifest, stored);
             }

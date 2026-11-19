@@ -21,6 +21,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <vector>
+#include <unistd.h>
 
 extern "C" char** environ;
 
@@ -98,6 +99,70 @@ int plan_cache_version(const Json& key_inputs) {
         return version;
     }
     throw std::runtime_error("plan cache key: unsupported cache version " + std::to_string(version));
+}
+
+bool is_sha256(const Json& value) {
+    if (!value.is_string()) return false;
+    const std::string digest = value.get<std::string>();
+    return digest.size() == 64 && std::all_of(digest.begin(), digest.end(), [](char c) {
+        return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
+    });
+}
+
+bool is_nonnegative_integer(const Json& value) {
+    return value.is_number_integer() && value.get<int64_t>() >= 0;
+}
+
+std::string owner_measurement_digest(const Json& owner, const std::string& key) {
+    const Json receipt = {{"attempt_id", owner.at("attempt_id")},
+                          {"key", key},
+                          {"measuring_manifest_sha256", owner.at("measuring_manifest_sha256")},
+                          {"plan_sha256", owner.at("plan_sha256")},
+                          {"rank_demand_sha256", owner.at("rank_demand_sha256")},
+                          {"helpers_resident_mib", owner.at("helpers_resident_mib")},
+                          {"engine_resident_mib", owner.at("engine_resident_mib")},
+                          {"native_config_sha256", owner.at("native_config_sha256")},
+                          {"resolution_root", owner.at("resolution_root")}};
+    return sha256_hex(receipt.dump());
+}
+
+void write_cache_entry(const fs::path& dir, const Json& key_inputs, const CachedPlan& cached, int version,
+                       const Json* owner = nullptr) {
+    Json entry = {{"cache_version", version}, {"key", cached.key}, {"key_inputs", key_inputs},
+                  {"measured_at", cached.measured_at}, {"plan", cached.plan_json},
+                  {"rank_demand", cached.rank_demand},
+                  {"resident", {{"helpers_mib", cached.resident.helpers_mib},
+                                 {"engine_mib", cached.resident.engine_mib}}}};
+    if (owner) entry["owner"] = *owner;
+    fs::create_directories(dir);
+    const fs::path file = dir / (cached.key + ".json");
+    std::string pattern = (dir / (cached.key + ".json.tmp.XXXXXX")).string();
+    std::vector<char> tmp_name(pattern.begin(), pattern.end());
+    tmp_name.push_back('\0');
+    const int fd = ::mkstemp(tmp_name.data());
+    if (fd < 0) throw std::runtime_error("cannot create temporary plan cache entry " + file.string());
+    const fs::path tmp(tmp_name.data());
+    bool open = true;
+    try {
+        const std::string bytes = entry.dump(2) + "\n";
+        size_t offset = 0;
+        while (offset < bytes.size()) {
+            const ssize_t n = ::write(fd, bytes.data() + offset, bytes.size() - offset);
+            if (n < 0 && errno == EINTR) continue;
+            if (n <= 0) throw std::runtime_error("cannot write " + tmp.string());
+            offset += static_cast<size_t>(n);
+        }
+        if (::fsync(fd) != 0) throw std::runtime_error("cannot sync " + tmp.string());
+        if (::close(fd) != 0) throw std::runtime_error("cannot close " + tmp.string());
+        open = false;
+        if (::rename(tmp.c_str(), file.c_str()) != 0)
+            throw std::runtime_error("cannot publish " + file.string());
+    } catch (...) {
+        if (open) ::close(fd);
+        std::error_code ignored;
+        fs::remove(tmp, ignored);
+        throw;
+    }
 }
 }  // namespace
 
@@ -290,10 +355,48 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
     if (!e.is_object()) throw std::runtime_error(where + ": not a JSON object");
     // An entry from before the resident host memory was measured (RSC08 S3) has no "resident": it is a miss, so the
     // configuration is measured again and the entry rewritten, never planned with a guessed figure.
-    if (!e.contains("resident")) return std::nullopt;
+    if (!e.contains("resident")) {
+        if (expected_version == 3)
+            throw std::runtime_error(where + ": native cache entry is missing measured resident memory");
+        return std::nullopt;
+    }
     for (const char* k : {"cache_version", "key", "key_inputs", "measured_at", "plan", "rank_demand", "resident"})
         if (!e.contains(k)) throw std::runtime_error(where + ": missing " + std::string(k));
-    if (e.size() != 7) throw std::runtime_error(where + ": unknown keys");
+    if (e.at("cache_version") != expected_version)
+        throw std::runtime_error(where + ": cache_version differs from key inputs");
+    const bool has_owner = e.contains("owner");
+    if (e.size() != (has_owner ? 8U : 7U) || (expected_version == 3 && !has_owner))
+        throw std::runtime_error(where + ": unknown keys");
+    if (has_owner) {
+        if (!e.at("owner").is_object() || e.at("owner").size() != 11 ||
+            e.at("owner").value("kind", std::string()) != "bc_serve_owned_measurement" ||
+            e.at("owner").value("version", 0) != 1 ||
+            !e.at("owner").contains("attempt_id") || !e.at("owner").at("attempt_id").is_string() ||
+            e.at("owner").at("attempt_id").get<std::string>().empty() ||
+            !is_sha256(e.at("owner").value("measuring_manifest_sha256", Json())) ||
+            !is_sha256(e.at("owner").value("plan_sha256", Json())) ||
+            !is_sha256(e.at("owner").value("rank_demand_sha256", Json())) ||
+            !e.at("owner").contains("helpers_resident_mib") ||
+            !e.at("owner").at("helpers_resident_mib").is_number_unsigned() ||
+            !e.at("owner").contains("engine_resident_mib") ||
+            !e.at("owner").at("engine_resident_mib").is_number_unsigned() ||
+            !e.at("owner").contains("native_config_sha256") ||
+            !e.at("owner").contains("resolution_root"))
+            throw std::runtime_error(where + ": invalid owner measurement provenance");
+        const bool native = expected_version == 3;
+        if ((native && (!is_sha256(e.at("owner").at("native_config_sha256")) ||
+                        e.at("owner").at("native_config_sha256") != key_inputs.at("native_config").at("sha256") ||
+                        e.at("owner").at("resolution_root") != key_inputs.at("native_config").at("resolution_root"))) ||
+            (!native && (!e.at("owner").at("native_config_sha256").is_null() ||
+                         !e.at("owner").at("resolution_root").is_null())) ||
+            e.at("owner").at("plan_sha256") != sha256_hex(e.at("plan").dump()) ||
+            e.at("owner").at("rank_demand_sha256") != sha256_hex(e.at("rank_demand").dump()) ||
+            e.at("owner").at("helpers_resident_mib") != e.at("resident").at("helpers_mib") ||
+            e.at("owner").at("engine_resident_mib") != e.at("resident").at("engine_mib") ||
+            !is_sha256(e.at("owner").value("measurement_sha256", Json())) ||
+            e.at("owner").at("measurement_sha256") != owner_measurement_digest(e.at("owner"), key))
+            throw std::runtime_error(where + ": owner measurement digest mismatch");
+    }
     if (!e.at("rank_demand").is_object() || e.at("rank_demand").value("kind", "") != "radiance_p1_rank_demand")
         throw std::runtime_error(where + ": rank_demand must be the engine's --plan-memory-ranks record");
     const Json& res = e.at("resident");
@@ -301,19 +404,22 @@ std::optional<CachedPlan> plan_cache_lookup(const fs::path& dir, const Json& key
         !res.at("helpers_mib").is_number_unsigned() || !res.at("engine_mib").is_number_unsigned() ||
         res.at("engine_mib").get<uint64_t>() == 0)
         throw std::runtime_error(where + ": resident must be {helpers_mib, engine_mib}: the engine's positive, the helpers' zero only for an engine-only layout");
-    if (e.at("cache_version") != expected_version)
-        throw std::runtime_error(where + ": cache_version differs from key inputs");
     if (e.at("key") != key || e.at("key_inputs") != key_inputs)
         throw std::runtime_error(where + ": recorded key or key inputs differ from what it is filed under");
     CachedPlan c{decode_engine_plan(e.at("plan"), where), e.at("plan"), e.at("rank_demand"), key,
                  e.at("measured_at").get<std::string>(),
                  {res.at("helpers_mib").get<uint64_t>(), res.at("engine_mib").get<uint64_t>()}};
+    if (has_owner)
+        c.owner = OwnerMeasurementEvidence{e.at("owner").at("attempt_id").get<std::string>(),
+                                           e.at("owner").at("measuring_manifest_sha256").get<std::string>()};
     return c;
 }
 
 CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const Json& plan_json, const Json& rank_demand,
                             const HostResident& resident) {
     const int version = plan_cache_version(key_inputs);
+    if (version == 3)
+        throw std::runtime_error("native version-3 plans require owner measurement provenance");
     if (resident.engine_mib == 0)
         throw std::runtime_error("the resident host memory of the helpers and of the engine must both be measured (positive MiB)");
     if (!rank_demand.is_object() || rank_demand.value("kind", "") != "radiance_p1_rank_demand")
@@ -323,16 +429,69 @@ CachedPlan plan_cache_store(const fs::path& dir, const Json& key_inputs, const J
     char at[32];
     std::strftime(at, sizeof at, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
     c.measured_at = at;
-    fs::create_directories(dir);
-    const Json e = {{"cache_version", version}, {"key", c.key}, {"key_inputs", key_inputs}, {"measured_at", c.measured_at},
-                    {"plan", plan_json}, {"rank_demand", rank_demand}, {"resident", {{"helpers_mib", resident.helpers_mib}, {"engine_mib", resident.engine_mib}}}};
-    const fs::path file = dir / (c.key + ".json"), tmp = dir / (c.key + ".json.tmp");
-    {
-        std::ofstream out(tmp, std::ios::binary | std::ios::trunc);
-        out << e.dump(2) << '\n';
-        if (!out) throw std::runtime_error("cannot write " + tmp.string());
+    write_cache_entry(dir, key_inputs, c, version);
+    return c;
+}
+
+CachedPlan plan_cache_store_owned(const fs::path& dir, const Json& key_inputs, const Json& plan_json,
+                                 const Json& rank_demand, const Json& values, const HostResident& resident,
+                                 const OwnerMeasurementEvidence& owner) {
+    const int version = plan_cache_version(key_inputs);
+    if (resident.engine_mib == 0 || owner.attempt_id.empty() || !is_sha256(owner.measuring_manifest_sha256))
+        throw std::runtime_error("owner measurement publication requires an attempt, manifest digest, and resident memory");
+    if (!rank_demand.is_object() || rank_demand.size() != 4 ||
+        rank_demand.value("kind", "") != "radiance_p1_rank_demand" ||
+        !rank_demand.contains("gpu") || !rank_demand.at("gpu").is_array())
+        throw std::runtime_error("owner measurement requires the engine rank-demand record");
+    std::vector<std::string> engine_bdfs;
+    for (const Json& gpu : rank_demand.at("gpu"))
+        if (gpu.is_object() && gpu.contains("bdf") && gpu.at("bdf").is_string())
+            engine_bdfs.push_back(gpu.at("bdf").get<std::string>());
+    if (rank_demand.value("schema_version", 0) != 1 ||
+        !rank_demand.contains("resident_other_bytes") || !is_nonnegative_integer(rank_demand.at("resident_other_bytes")))
+        throw std::runtime_error("owner rank demand has an invalid schema");
+    for (const Json& gpu : rank_demand.at("gpu"))
+        if (!gpu.is_object() || gpu.size() != 5 || !gpu.contains("bdf") || !gpu.at("bdf").is_string() ||
+            !gpu.contains("required_bytes") || !is_nonnegative_integer(gpu.at("required_bytes")) ||
+            !gpu.contains("fixed_bytes") || !is_nonnegative_integer(gpu.at("fixed_bytes")) ||
+            !gpu.contains("claimable_bytes") || !is_nonnegative_integer(gpu.at("claimable_bytes")) ||
+            !gpu.contains("evidence") || !gpu.at("evidence").is_string() ||
+            gpu.at("evidence").get<std::string>().find("rad0011") == std::string::npos ||
+            gpu.at("fixed_bytes").get<uint64_t>() > gpu.at("required_bytes").get<uint64_t>() ||
+            gpu.at("required_bytes").get<uint64_t>() > gpu.at("claimable_bytes").get<uint64_t>())
+            throw std::runtime_error("owner rank demand contains an invalid GPU row");
+    if (engine_bdfs.empty() || rank_demand.at("gpu").size() != engine_bdfs.size())
+        throw std::runtime_error("owner rank demand does not match the engine-device count");
+    if (version == 3) {
+        std::vector<std::string> native_engine_bdfs;
+        for (const Json& device : key_inputs.at("native_config").at("rank_devices"))
+            if (device.is_object() && device.value("role_group", std::string()) == "engine_cards")
+                native_engine_bdfs.push_back(device.at("bdf").get<std::string>());
+        if (native_engine_bdfs != engine_bdfs)
+            throw std::runtime_error("owner rank demand differs from the native ordered BDFs");
     }
-    fs::rename(tmp, file);
+    const v2::EnginePlan decoded = decode_engine_plan(plan_json, "owned measured plan");
+    check_plan_for_configuration(values, decoded);
+    if (decoded.vram.cards.size() != engine_bdfs.size())
+        throw std::runtime_error("owner engine plan rank count differs from native ordered BDFs");
+    if (owner.measuring_manifest_sha256.empty())
+        throw std::runtime_error("owner measurement has no measuring-manifest digest");
+    CachedPlan c{decoded, plan_json, rank_demand, plan_key(key_inputs), {}, resident};
+    const std::time_t now = std::chrono::system_clock::to_time_t(std::chrono::system_clock::now());
+    char at[32];
+    std::strftime(at, sizeof at, "%Y-%m-%dT%H:%M:%SZ", std::gmtime(&now));
+    c.measured_at = at;
+    Json provenance = {
+        {"kind", "bc_serve_owned_measurement"}, {"version", 1}, {"attempt_id", owner.attempt_id},
+        {"measuring_manifest_sha256", owner.measuring_manifest_sha256},
+        {"plan_sha256", sha256_hex(plan_json.dump())},
+        {"rank_demand_sha256", sha256_hex(rank_demand.dump())},
+        {"helpers_resident_mib", resident.helpers_mib}, {"engine_resident_mib", resident.engine_mib},
+        {"native_config_sha256", version == 3 ? key_inputs.at("native_config").at("sha256") : Json(nullptr)},
+        {"resolution_root", version == 3 ? key_inputs.at("native_config").at("resolution_root") : Json(nullptr)}};
+    provenance["measurement_sha256"] = owner_measurement_digest(provenance, c.key);
+    c.owner = owner;
+    write_cache_entry(dir, key_inputs, c, version, &provenance);
     return c;
 }
 

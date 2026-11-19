@@ -169,6 +169,8 @@ C40 (2026-11-20): integrated latest origin/main at 224456e53 (including 06877643
 
 C41 (2026-11-20): native inspection now reconciles the parser-reported model with the selected model before the fail-closed planner boundary. Relative authored model paths resolve under the sealed snapshot root; both selected/reported paths are weakly canonicalized. Fake inspector and negative fixture cover model mismatch. ABI44 bc_serving_test and bc_session_test passed (1/1 each). Production still stops before cache, writer, power, or child startup. Evidence C41.
 
+C42 (2026-11-20): moved measured-plan publication from CLI raw-file import into the tracked session owner after engine exit, helper reap and VRAM release. The owner freezes resolver values, model/build identity and key before measurement, recomputes before publish and refuses drift rather than re-keying. Unique attempt paths/IDs, strict plan/rank/config validation, owner receipt digests (including resident memory and optional native snapshot identity), unique atomic cache publication, and expected-attempt cache-only writer checks are implemented. Focused ABI44 `bc_serving_test` and `bc_session_test` passed (2/2), including two measured rounds after exit-11 pool adjustment and refusal after tampering with resident memory. Evidence C42 is in docs/evidence/radiance-latest-bump/README.md; Ledger event recorded for RUM04. Production remains v2 and the private native admission gate remains closed before writer/P1/measurement/replay. No GPU execution or performance claim.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -205,3 +207,4 @@ C41 (2026-11-20): native inspection now reconciles the parser-reported model wit
 - 2026-11-19T15:30:30.513934+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:32:53.989125+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:43:06.516924+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T16:11:28.537296+00:00 (updated-by): Updated: section:notes

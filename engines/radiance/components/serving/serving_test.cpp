@@ -909,8 +909,26 @@ void measured_plan_cache(Fixture& t) {
     assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 &&
            !found->measured_at.empty());
     const auto native_dir = t.root / "native-plan-cache";
-    const auto native_stored = sv::plan_cache_store(native_dir, native_key, plan, ranks,
-                                                     sv::HostResident{2304, 1536});
+    bool raw_native_refused = false;
+    try {
+        (void)sv::plan_cache_store(native_dir, native_key, plan, ranks, sv::HostResident{2304, 1536});
+    } catch (const std::runtime_error& error) {
+        raw_native_refused = std::string(error.what()).find("require owner measurement provenance") !=
+                             std::string::npos;
+    }
+    assert(raw_native_refused);
+    Json native_plan = plan;
+    if (r.values.at("engine").at("ngram_placement") == "ram")
+        native_plan["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
+                                       {"residence", "pinned"}, {"from", "rad0011 native test"},
+                                       {"remedy", ""}});
+    Json native_ranks = ranks;
+    native_ranks["gpu"].push_back({{"bdf", r.values.at("layout").at("engine_cards").at(0)},
+                                   {"required_bytes", 10}, {"fixed_bytes", 1}, {"claimable_bytes", 10},
+                                   {"evidence", "rad0011 test rank"}});
+    const auto native_stored = sv::plan_cache_store_owned(
+        native_dir, native_key, native_plan, native_ranks, r.values, sv::HostResident{2304, 1536},
+        sv::OwnerMeasurementEvidence{"native-test-attempt", sv::sha256_hex("measuring-manifest")});
     const auto native_found = sv::plan_cache_lookup(native_dir, native_key);
     assert(native_found && native_found->key == native_stored.key);
     const fs::path native_entry_path = native_dir / (native_stored.key + ".json");
@@ -920,6 +938,16 @@ void measured_plan_cache(Fixture& t) {
         in >> native_entry;
     }
     assert(native_entry.at("cache_version") == 3);
+    Json changed_resident = native_entry;
+    changed_resident["resident"]["engine_mib"] = 1537;
+    write(native_entry_path, changed_resident.dump(2) + "\n");
+    try {
+        (void)sv::plan_cache_lookup(native_dir, native_key);
+        assert(false && "owned measurement receipt must bind resident memory");
+    } catch (const std::runtime_error& error) {
+        assert(std::string(error.what()).find("owner measurement digest mismatch") != std::string::npos);
+    }
+    write(native_entry_path, native_entry.dump(2) + "\n");
     native_entry["cache_version"] = 2;
     write(native_entry_path, native_entry.dump(2) + "\n");
     try {
@@ -3246,6 +3274,18 @@ void session_engine_plan(Fixture& t) {
             r.out = "derived_host_pool_mib=2048\n";
             break; // stored; another pool wanted
         case 4:
+            r.exit = 10;
+            break; // the changed pool has a different measured-plan key
+        case 5: {
+            assert(flag(argv, "--unmeasured"));
+            Options changed = in.options;
+            changed.sets.push_back("memory.host_pool_mib=2048");
+            const auto changed_pair = session_manifest_pair(
+                bc::serving::resolve(changed, session_facts), session_facts);
+            std::ofstream(argv[2]) << changed_pair.measuring.dump(2) << '\n';
+            break;
+        }
+        case 6:
             r.exit = 0;
             r.out = "manifest: x\ndigest: 0123abcd\n";
             std::ofstream(argv[2]) << session_manifests.serving.dump(2) << '\n';
@@ -3264,26 +3304,44 @@ void session_engine_plan(Fixture& t) {
     };
     wait.ended = [&](pid_t pid) { ended.push_back(pid); };
     const ss::EngineStart s = ss::plan_engine_only(in, run, wait);
-    assert(calls.size() == 4);
+    assert(calls.size() == 6);
     // the measuring engine was the owner's to know about, and its exit was verified
-    assert(started.size() == 1 && started[0].rfind("measuring engine ", 0) == 0 && ended.size() == 1 &&
-           started[0] == "measuring engine " + std::to_string(ended[0]));
+    assert(started.size() == 2 && ended.size() == 2);
+    for (size_t i = 0; i < started.size(); ++i)
+        assert(started[i].rfind("measuring engine ", 0) == 0 &&
+               started[i] == "measuring engine " + std::to_string(ended[i]));
     for (const auto& c : calls) {
         assert(c[0] == in.self.string() && c[1] == "--write-manifest" && has(c, "--power-profile", "stock"));
         assert(has(c, "--site", site.string()) && has(c, "--configs", (configs / "qwen27b.toml").string()) &&
                !flag(c, "--layouts") && has(c, "--set", "layout.name=\"qwen27b-tp3-int8\"") &&
                has(c, "--sys-root", t.root.string()));
     }
-    for (size_t i : {0, 2, 3})
+    for (size_t i : {0, 2, 3, 5})
         assert(has(calls[i], "--plan-extra", "budgets: default") &&
                has(calls[i], "--engine-binary", BC_FAKE_ENGINE) &&
                has(calls[i], "--plan-cache", (run / "plan-cache").string()));
-    assert(!flag(calls[1], "--plan-extra") && !flag(calls[1], "--plan-cache"));
-    // the measuring start's plan and its reported start-up memory are stored; the engine is alone
-    assert(has(calls[2], "--measured-plan", (run / "plan-measured.json").string()) &&
-           has(calls[2], "--rank-demand", (run / "plan-ranks.json").string()) &&
-           has(calls[2], "--engine-resident-mib", "1234") && has(calls[2], "--helpers-resident-mib", "0"));
+    assert(!flag(calls[1], "--plan-extra") && !flag(calls[1], "--plan-cache") &&
+           !flag(calls[4], "--plan-extra") && !flag(calls[4], "--plan-cache"));
+    // The owner publishes exact artifacts from the tracked attempt, then the writer reads cache-only and checks its attempt receipt.
+    assert(flag(calls[2], "--expected-owner-attempt") && !flag(calls[2], "--measured-plan") &&
+           !flag(calls[2], "--rank-demand") && flag(calls[5], "--expected-owner-attempt"));
     assert(!flag(calls[2], "memory.host_pool_mib=2048") && has(calls[3], "--set", "memory.host_pool_mib=2048"));
+    {
+        std::set<std::string> expected_attempts;
+        for (size_t i : {size_t(2), size_t(5)})
+            for (size_t j = 0; j + 1 < calls[i].size(); ++j)
+                if (calls[i][j] == "--expected-owner-attempt")
+                    expected_attempts.insert(calls[i][j + 1]);
+        std::set<std::string> published_attempts;
+        for (const auto& entry : fs::directory_iterator(run / "plan-cache")) {
+            std::ifstream file(entry.path(), std::ios::binary);
+            Json record;
+            file >> record;
+            assert(record.at("cache_version") == 2 && record.contains("owner"));
+            published_attempts.insert(record.at("owner").at("attempt_id").get<std::string>());
+        }
+        assert(expected_attempts.size() == 2 && published_attempts == expected_attempts);
+    }
     // the engine: from the measured manifest only, its three ranks on the resolver's cards in rank order
     assert(s.argv.size() == 5 && s.argv[0] == BC_FAKE_ENGINE && s.argv[1] == "--manifest" &&
            s.argv[2].rfind("/proc/self/fd/", 0) == 0 && s.argv[3] == "--role" && s.argv[4] == "engine" &&

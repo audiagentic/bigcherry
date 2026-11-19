@@ -205,6 +205,9 @@ int main(int argc, char** argv) {
             // card-free engine reads ONLY its fixture port and mailbox.
             const auto& spec = parsed.at("spec");
             m["port"] = spec.at("processes").at("engine").at("server").at("port");
+            m["engine_cards"] = spec.at("processes").at("engine").at("device").at("gpus");
+            m["host_pool_mib"] = spec.at("resources").at("host").at("pool_mib");
+            m["ngram_placement"] = spec.at("processes").at("engine").at("execution").at("ngram_placement");
             if (spec.contains("handoff"))
                 m["shm"] = spec.at("handoff").at("transport").at("shm");
         }
@@ -278,8 +281,32 @@ int main(int argc, char** argv) {
             std::fflush(stdout);
             return 42;
         }
-        std::ofstream(plan) << "{\"plan\": \"measured\"}\n";
-        std::ofstream(arg_after(argc, argv, "--plan-memory-ranks")) << "[{\"rank\": 0}]\n";
+        const json cards = m.value("engine_cards", json::array({"0000:01:00.0"}));
+        json plan_doc = {
+            {"plan_version", 1}, {"producer", "radiance --plan-memory (rad0011)"},
+            {"host", json::array()},
+            {"checkpoints", {{"slot_bytes", 1048576}, {"floor_slots", 8}, {"want_slots", 72},
+                              {"from", "engine plan (fake measurement)"}}},
+            {"kv_one_session", {{"bytes", 4096}, {"from", "engine plan (fake measurement)"}}},
+            {"vram", {{"claimable", 10}, {"statics", 1}, {"elastic", 9}, {"experts", 0}, {"kv", 9},
+                       {"stage", 0}, {"kv_resolved", 9}, {"expert_floor", 0}, {"kv_ceiling", 9},
+                       {"expert_ceiling", 0}, {"from", "engine plan (fake measurement)"},
+                       {"cards", json::array()}}},
+            {"host_pool_mib", m.value("host_pool_mib", 9216)}};
+        for (size_t i = 0; i < cards.size(); ++i)
+            plan_doc["vram"]["cards"].push_back(
+                {{"capacity", 10}, {"free", 10}, {"engine_expert_plane", 0}, {"expert_unit_max", 1}});
+        if (m.value("ngram_placement", std::string()) == "ram")
+            plan_doc["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
+                                        {"residence", "pinned"}, {"from", "engine plan (fake measurement)"},
+                                        {"remedy", ""}});
+        json ranks = {{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
+                      {"gpu", json::array()}, {"resident_other_bytes", 0}};
+        for (const auto& bdf : cards)
+            ranks["gpu"].push_back({{"bdf", bdf}, {"required_bytes", 10}, {"fixed_bytes", 1},
+                                    {"claimable_bytes", 10}, {"evidence", "rad0011 fake measurement"}});
+        std::ofstream(plan) << plan_doc.dump(2) << '\n';
+        std::ofstream(arg_after(argc, argv, "--plan-memory-ranks")) << ranks.dump(2) << '\n';
         std::printf("I --plan-memory: wrote %s; engine start-up took %d MiB of MemAvailable; done\n", plan.c_str(),
                     m.value("engine_mib", 1234));
         return 0;

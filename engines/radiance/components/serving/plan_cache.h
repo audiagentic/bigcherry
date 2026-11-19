@@ -61,12 +61,19 @@ struct HostResident {
     uint64_t helpers_mib = 0, engine_mib = 0;
 };
 
+/* Provenance from the tracked measuring attempt that owns a native version-3 plan. */
+struct OwnerMeasurementEvidence {
+    std::string attempt_id;
+    std::string measuring_manifest_sha256;
+};
+
 struct CachedPlan {
     v2::EnginePlan plan;           // decoded by the shared v1 codec
     nlohmann::json plan_json;   // as rad0011 wrote it
     nlohmann::json rank_demand; // the per-rank GPU demand rad0011 wrote with it (--plan-memory-ranks)
     std::string key, measured_at;
     HostResident resident;
+    std::optional<OwnerMeasurementEvidence> owner;
 };
 
 /* What a plan must agree with in the configuration it is stored for (values, as resolve() returns them): the host pool it
@@ -83,5 +90,12 @@ std::optional<CachedPlan> plan_cache_lookup(const std::filesystem::path& dir, co
 CachedPlan plan_cache_store(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
                             const nlohmann::json& plan_json, const nlohmann::json& rank_demand,
                             const HostResident& resident);
+
+/* Owned entries can only be published by the session owner after a tracked measuring attempt. Native version 3
+ * requires ownership; version 2 also accepts it while preserving legacy seven-member cache entries. */
+CachedPlan plan_cache_store_owned(const std::filesystem::path& dir, const nlohmann::json& key_inputs,
+                                  const nlohmann::json& plan_json, const nlohmann::json& rank_demand,
+                                  const nlohmann::json& values, const HostResident& resident,
+                                  const OwnerMeasurementEvidence& owner);
 
 }  // namespace bc::serving

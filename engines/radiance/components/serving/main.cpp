@@ -644,6 +644,7 @@ int main(int argc, char** argv) {
         fs::path plan_cache, engine_binary;
         fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file,
             s8_replay_evidence_file;
+        std::string expected_owner_attempt;
         std::string power_profile;
         // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an
         // explicit live policy and NO experiment, so the plan it measures is the production plan.
@@ -705,6 +706,8 @@ int main(int argc, char** argv) {
                 plan_extra = need_arg("--plan-extra");
             else if (arg == "--rank-demand")
                 rank_demand_file = need_arg("--rank-demand");
+            else if (arg == "--expected-owner-attempt")
+                expected_owner_attempt = need_arg("--expected-owner-attempt");
             else if (arg == "--calibration-records")
                 calibration_records_file = need_arg("--calibration-records");
             else if (arg == "--s8-replay-evidence")
@@ -751,6 +754,8 @@ int main(int argc, char** argv) {
         if (measured_plan_file.empty() != rank_demand_file.empty())
             throw std::runtime_error("--measured-plan and --rank-demand go together (the engine's "
                                      "--plan-memory and --plan-memory-ranks)");
+        if (!expected_owner_attempt.empty() && !measured_plan_file.empty())
+            throw std::runtime_error("--expected-owner-attempt is for cache-only writer reads");
         if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
             throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab "
                                      "profile, or --calibration-run");
@@ -942,6 +947,9 @@ int main(int argc, char** argv) {
                           << "); the launcher measures it on a start with the helpers up\n";
                 return 10;
             }
+            if (!expected_owner_attempt.empty() &&
+                (!plan->owner || plan->owner->attempt_id != expected_owner_attempt))
+                throw std::runtime_error("the measured plan cache entry is not owned by the expected measuring attempt");
             in.instance_id = bc::serving::new_instance_id();
             in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
             in.calibration_cache = opts.calibration_cache;
