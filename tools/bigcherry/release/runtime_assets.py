@@ -66,12 +66,23 @@ ELF_DEBUG_POLICY = "gnu-objcopy-split-debug-strip-all-v1"
 # Deliberately explicit: unknown RSC12 configurations must be reviewed and
 # added to the engine payload contract, not silently copied from a checkout.
 SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
+# Approved repo-owned heat seeds. Archive members live at prefix/heat; no
+# checkout, lab launcher, or host-specific seed path is shipped.
+SHIPPED_HEAT_SEEDS = ("flashnext-mixed.hot-first", "perf51.rank0.hot-first")
+# Reviewed digests bind sources outside engine_tree/config_tree to the payload
+# policy runtime key. Updating a seed requires changing this record and hence
+# forces CI to build a new asset, rather than reusing an earlier release bundle.
+SHIPPED_HEAT_DIGESTS = {
+    "flashnext-mixed.hot-first": "230398970a6f744723a90f4799e4885a664e06742d8a6f1224ee32f0bfd83b29",
+    "perf51.rank0.hot-first": "cbf8e17ad4e0e57470da2c000904d863621d5affcf8876c9b87960b9472ba06e",
+}
 RUN_MANIFEST = (
     ("bin/radiance", True),
     ("radiance_home/bin/bc-serve", True),
     ("radiance_home/bin/bc-release", True),
     (BUILD_METADATA, True),
     *((f"configs/{name}", True) for name in SHIPPED_CONFIGS),
+    *((f"heat/{name}", True) for name in SHIPPED_HEAT_SEEDS),
     ("radiance_home/helpers/r3_moe_worker", True),
     ("radiance_home/helpers/*.so*", False),
     ("radiance_home/kernels/*.so*", True),
@@ -89,7 +100,8 @@ def payload_contract_key() -> str:
     """Versioned payload schema and selection policy, including optional files."""
     policy = {"schema": SCHEMA, "scope": RUN_SCOPE, "manifest": RUN_MANIFEST,
               "build_metadata": BUILD_METADATA, "build_identity_schema": 2,
-              "elf_debug_policy": ELF_DEBUG_POLICY}
+              "elf_debug_policy": ELF_DEBUG_POLICY,
+              "shipped_heat_digests": SHIPPED_HEAT_DIGESTS}
     return hashlib.sha256(json.dumps(policy, sort_keys=True,
                                       separators=(",", ":")).encode()).hexdigest()
 
@@ -236,6 +248,19 @@ def check_committed_config(root: Path, name: str, content: bytes) -> None:
         raise BundleError(f"uncommitted or absent tagged RSC12 config: {relative}")
 
 
+def check_committed_heat(root: Path, name: str, content: bytes) -> None:
+    """Ship only the exact checked-in heat source, never mutable lab output."""
+    if name not in SHIPPED_HEAT_DIGESTS or hashlib.sha256(content).hexdigest() != SHIPPED_HEAT_DIGESTS[name]:
+        raise BundleError(f"unapproved heat seed digest: {name}")
+    relative = f"tools/lab/radiance/heat/{name}"
+    result = subprocess.run(
+        ["git", "-C", str(root), "show", f"HEAD:{relative}"],
+        check=False, capture_output=True,
+    )
+    if result.returncode or result.stdout != content:
+        raise BundleError(f"uncommitted or absent tagged heat seed: {relative}")
+
+
 def check_run_manifest(names: set[str]) -> None:
     """A restored scoped bundle has exactly run-side files and every required kind."""
     for name in names:
@@ -259,7 +284,7 @@ def runtime_files(build: Path, root: Path) -> dict[str, Path]:
     files: dict[str, Path] = {}
     build_root = build.resolve()
     for pattern, _ in RUN_MANIFEST:
-        if pattern.startswith("configs/"):
+        if pattern.startswith(("configs/", "heat/")):
             continue
         for item in sorted(build.glob(pattern)):
             if not item.is_file():
@@ -279,6 +304,15 @@ def runtime_files(build: Path, root: Path) -> dict[str, Path]:
             raise BundleError(f"missing or unsafe RSC12 config: {name}")
         check_committed_config(root, name, source.read_bytes())
         files[f"configs/{name}"] = source
+    heat_dir = root / "tools/lab/radiance/heat"
+    if heat_dir.is_symlink() or heat_dir.parent.is_symlink():
+        raise BundleError("symlink in heat seed source directory")
+    for name in SHIPPED_HEAT_SEEDS:
+        source = heat_dir / name
+        if not source.is_file() or source.is_symlink():
+            raise BundleError(f"missing or unsafe heat seed: {name}")
+        check_committed_heat(root, name, source.read_bytes())
+        files[f"heat/{name}"] = source
     check_run_manifest(set(files))
     for name, path in files.items():
         check_no_interpreter(name, path)

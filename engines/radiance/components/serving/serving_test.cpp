@@ -55,6 +55,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <sched.h>
 #include <thread>
 #include <vector>
 
@@ -229,6 +230,21 @@ void detection_limits(const Fixture& t) {
     write(root / "proc/self/status", "CapEff:\t0000000000004000\n");
     write(root / "sys/module/amdgpu/parameters/no_system_mem_limit", "Y\n");
     const Json h = bc::serving::detect(root).at("host");
+    {   // cpu_count is the CPUs this process may run on (its affinity set), which is what the helper inherits
+        cpu_set_t allowed;
+        CPU_ZERO(&allowed);
+        assert(sched_getaffinity(0, sizeof allowed, &allowed) == 0);
+        assert(h.at("cpu_count") == uint64_t(CPU_COUNT(&allowed)));
+        cpu_set_t one;
+        CPU_ZERO(&one);
+        int first = 0;
+        while (first < CPU_SETSIZE && !CPU_ISSET(first, &allowed)) ++first;
+        CPU_SET(first, &one);
+        assert(sched_setaffinity(0, sizeof one, &one) == 0);   // pinned to one CPU: detect must report one
+        const Json pinned = bc::serving::detect(root).at("host");
+        assert(sched_setaffinity(0, sizeof allowed, &allowed) == 0);
+        assert(pinned.at("cpu_count") == 1);
+    }
     assert(h.at("memory_cgroups").size() == 1);
     assert(h.at("memory_cgroups")[0].at("version") == 1);
     assert(h.at("memory_cgroups")[0].at("room_mib") == 31 * 1024); // 32 GiB - (3 - 2 total_cache)
@@ -303,10 +319,30 @@ void type_range_required(Fixture& t) {
     fail(opts, t.facts, "unknown named layout");
     opts.profile = t.file("derived.toml", "[engine]\nmax_num_seqs = 99\n");
     fail(opts, t.facts, "derived and cannot be overridden");
-    { // the standard profile's 8 combine threads on a 4-CPU host
+    { // the combine thread count is derived from the discovered CPUs, never a literal the host may not have
+        namespace sv = bc::serving;
+        const auto threads_on = [&](uint64_t cpus, Options o) {
+            Json host = t.facts;
+            host["host"]["cpu_count"] = cpus;
+            return sv::resolve(o, host);
+        };
+        const Options standard = t.standard();
+        const auto four = threads_on(4, standard);
+        assert(four.values.at("helper").at("combine_threads") == 4);   // a 4-CPU host resolves instead of refusing
+        assert(four.provenance.at("helper.combine_threads").at("origin") == "derived");
+        const auto twenty = threads_on(20, standard);
+        assert(twenty.values.at("helper").at("combine_threads") == 8);  // the calibrated ceiling on a larger host
+        assert(twenty.provenance.at("helper.combine_threads").at("origin") == "derived");
+        assert(threads_on(1, standard).values.at("helper").at("combine_threads") == 1);
+        // an explicit value is the operator's: it keeps its origin, and one above the CPU count is still refused
+        Options explicit_set = standard;
+        explicit_set.sets.push_back("helper.combine_threads=6");
+        const auto six = threads_on(20, explicit_set);
+        assert(six.values.at("helper").at("combine_threads") == 6);
+        assert(six.provenance.at("helper.combine_threads").at("origin") != "derived");
         Json few = t.facts;
         few["host"]["cpu_count"] = 4;
-        fail(t.standard(), few, "helper.combine_threads exceeds discovered CPU count");
+        fail(explicit_set, few, "helper.combine_threads exceeds discovered CPU count");
     }
 }
 
@@ -1686,10 +1722,16 @@ void manifest_writer_step(Fixture& t) {
                        key +
                        "\"\n" +
 
+                       "record_schema_version = 1\n"
+                       "calibration_kind = \"radiance.live_policy\"\n"
+                       "calibration_key_fields = " + sv::policy_calibration_key_fields().dump() + "\n" +
                        "calibration_inputs = " + Json(policy_inputs.dump()).dump() + "\n" +
                        "source_plan_key = \"" + sv::plan_key(calibrated.measured->key_inputs) + "\"\n" +
                        "source_engine_build = \"" +
                        calibrated.measured->key_inputs.at("engine_build").get<std::string>() + "\"\n" +
+                       "source_revision = \"source_slice:fixture\"\n"
+                       "run_id = \"00000000-0000-4000-8000-000000000001\"\n"
+                       "host_facts_digest = \"" + std::string(64,'3') + "\"\n" +
                        "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
                        "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic "
                        "noise/drift/lane readings\"\n"
@@ -1705,6 +1747,103 @@ void manifest_writer_step(Fixture& t) {
                        "effect_row_noise_ns = 1550000\n"
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
+        // Pre-MRC04 #1169 scoped records remain active. Only records lacking
+        // calibration_inputs entirely are genuinely hash-only legacy.
+        {
+            std::ifstream input(calibrated.calibration_cache);
+            std::string historical((std::istreambuf_iterator<char>(input)),
+                                    std::istreambuf_iterator<char>());
+            for (const std::string field : {"record_schema_version", "calibration_kind",
+                                            "calibration_key_fields", "source_revision",
+                                            "run_id", "host_facts_digest"}) {
+                const auto at = historical.find(field + " = ");
+                assert(at != std::string::npos);
+                const auto end_line = historical.find('\n', at);
+                assert(end_line != std::string::npos);
+                historical.erase(at, end_line - at + 1);
+            }
+            sv::ManifestInputs scoped = calibrated;
+            scoped.calibration_cache = t.file("post-1169-policy.toml", historical);
+            const auto qualified = sv::build_manifest(scoped);
+            assert(qualified.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            const auto scoped_record = sv::read_live_policy_record(scoped.calibration_cache, key);
+            assert(scoped_record && scoped_record->record_schema_version == 1);
+            assert(scoped_record->source_revision.empty() &&
+                   scoped_record->run_id.empty() && scoped_record->host_facts_digest.empty());
+
+            for (const std::string field : {"calibration_inputs", "source_plan_key",
+                                            "source_engine_build"}) {
+                const auto at = historical.find(field + " = ");
+                assert(at != std::string::npos);
+                const auto end_line = historical.find('\n', at);
+                assert(end_line != std::string::npos);
+                historical.erase(at, end_line - at + 1);
+            }
+            sv::ManifestInputs legacy = calibrated;
+            legacy.calibration_cache = t.file("hash-only-policy.toml", historical);
+            const auto no_policy = sv::build_manifest(legacy);
+            assert(!no_policy.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            const auto old_record = sv::read_live_policy_record(legacy.calibration_cache, key);
+            assert(old_record && old_record->record_schema_version == 0);
+        }
+        // A verbatim 2026-11-19 production store contains the #1169 scoped
+        // record keyed c2a1... and earlier hash-only records. Derive with the
+        // *actual recorded scope* and this CPU-only synthetic model geometry.
+        // No production file is modified, and missing v1 provenance is not
+        // guessed during activation.
+        {
+            constexpr const char* production_key =
+                "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
+            const fs::path store = BC_CALIBRATION_PRODUCTION_FIXTURE;
+            std::ifstream input(store, std::ios::binary);
+            assert(input);
+            const std::string before((std::istreambuf_iterator<char>(input)),
+                                      std::istreambuf_iterator<char>());
+            const auto production_record = sv::read_live_policy_record(store, production_key);
+            assert(production_record && production_record->record_schema_version == 1);
+            assert(production_record->calibration_inputs &&
+                   sv::live_policy_record_complete(*production_record));
+            const Json& scope = *production_record->calibration_inputs;
+            Json production_spec = built.document.at("spec");
+            production_spec["plan"]["engine_memory"]["model_identity"] = scope.at("model");
+            production_spec["intent"]["layout"] = scope.at("layout");
+            production_spec["intent"]["service"]["objective"] = scope.at("objective");
+            production_spec["intent"]["power"]["profile"] = scope.at("power_profile");
+            production_spec["processes"]["engine"]["device"]["gpus"] = Json::array();
+            for (const auto& card : scope.at("engine_cards"))
+                production_spec["processes"]["engine"]["device"]["gpus"].push_back(card.at("bdf"));
+            auto& helpers = production_spec["processes"]["helpers"];
+            assert(helpers.size() == scope.at("helper_cards").size());
+            for (size_t i = 0; i < helpers.size(); ++i) {
+                const auto& card = scope.at("helper_cards")[i];
+                helpers[i]["gpu"] = card.at("bdf");
+                helpers[i]["tier"] = card.at("tier");
+                helpers[i]["formats"] = card.at("formats");
+                helpers[i]["rows_kernel"] = card.at("rows_kernel");
+            }
+            production_spec["processes"]["helper_common"] = scope.at("helper_runtime");
+            production_spec["handoff"]["telemetry"]["period_s"] = scope.at("histogram_period_s");
+            for (const auto& field : {"max_rows", "small_rows", "gemv_large_rows", "skip_owned"})
+                production_spec["handoff"]["transport"][field] = scope.at("remote_service").at(field);
+            production_spec["handoff"]["kernels"]["moe_down_tile"] =
+                scope.at("remote_service").at("moe_down_tile");
+            assert(sv::policy_calibration_inputs(production_spec) == scope);
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(production_spec)) ==
+                   production_key);
+            bc::experts::Container container;
+            assert(container.open(model.c_str()));
+            sv::ManifestInputs production = calibrated;
+            production.calibration_cache = store;
+            std::string skip;
+            const auto derived = sv::derive_manifest_live_policy(production, container,
+                                                                  production_spec, &skip);
+            if (!derived || !derived->policy.is_object() || derived->policy.empty())
+                throw std::runtime_error("post-#1169 production policy did not derive: " + skip);
+            std::ifstream check(store, std::ios::binary);
+            const std::string after((std::istreambuf_iterator<char>(check)),
+                                     std::istreambuf_iterator<char>());
+            assert(before == after);
+        }
         const auto with_calibration = sv::build_manifest(calibrated);
         { // A different engine build consumes the SAME qualified hardware evidence,
           // with a distinct strict memory-plan identity and a new manifest digest.
@@ -3231,6 +3370,89 @@ void config_files(Fixture& t) {
     }
 }
 
+
+// Release layout: configs and heat live in an immutable prefix, while mutable
+// histogram telemetry is confined to this session's run directory.
+void installed_site_defaults(Fixture& t) {
+    namespace sv = bc::serving;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path prefix = t.root / "installed-release";
+    fs::create_directories(prefix / "configs");
+    fs::create_directories(prefix / "heat");
+    fs::copy_file(configs / "flashnext.toml", prefix / "configs/flashnext.toml");
+    // Reuse the valid synthetic RAD and route heat made by manifest_writer_step.
+    // This tests the real S10 writer without requiring a card or model download.
+    fs::copy_file(t.root / "writer.hot-first", prefix / "heat/flashnext-mixed.hot-first");
+    write(prefix / "heat/perf51.rank0.hot-first", "1\n");
+    const auto site = t.file("installed-site.toml",
+        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
+        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
+        "\"\n[layout]\nname = \"flashnext-4gpu\"\n"
+        // One combine thread: the native writer below discovers the real CPU count, and a small CI runner
+        // has fewer CPUs than the layout's default.
+        "[helper]\ncombine_threads = 1\n");
+    Options opts;
+    opts.site = site;
+    opts.configs = {prefix / "configs"};
+    opts.model_root = t.root;
+    opts.run_dir = t.root / "sessions/production";
+    assert(opts.sets.empty());  // production site, no --set flags
+    const auto r = sv::resolve(opts, t.facts);
+    const auto heat = (prefix / "heat/flashnext-mixed.hot-first").string();
+    const auto histogram = (opts.run_dir / "heat.live").string();
+    assert(r.values.at("handoff").at("heat") == heat);
+    assert(r.values.at("handoff").at("histogram") == histogram);
+    assert(r.values.at("handoff").at("histogram_period_s") == 1);
+    sv::ManifestInputs in;
+    in.resolved = r;
+    in.instance_id = "11111111-1111-4111-8111-111111111111";
+    in.producer_sha256 = std::string(64, 'a');
+    in.profile = "production";
+    in.s10.power_profile = "stock";
+    in.s10.now_unix_s = 1800000000;
+    in.s10.calibration_records = Json::array();
+    const auto built = sv::build_manifest(in);
+    const auto& handoff = built.document.at("spec").at("handoff");
+    assert(handoff.at("placement").at("heat_file") == heat);
+    assert(handoff.at("telemetry").at("histogram_file") == histogram);
+    assert(handoff.at("telemetry").at("period_s") == 1);
+    assert(r.provenance.at("handoff.histogram").at("origin") == "derived");
+    // The session owner passes --run-dir to this actual separate native
+    // manifest writer. No --set flags, no checkout path or hardware needed.
+    const fs::path writer_output = t.root / "installed-unmeasured-manifest.json";
+    const auto result = run_bc_serve({
+        "--write-manifest", writer_output.string(), "--unmeasured",
+        "--power-profile", "stock", "--sys-root", t.root.string(),
+        "--site", site.string(), "--configs", (prefix / "configs").string(),
+        "--model-root", t.root.string(), "--run-dir", opts.run_dir.string()
+    });
+    if (result.exit_code != 0)
+        throw std::runtime_error("installed native manifest writer: " + result.output);
+    const Json cli_doc = Json::parse(std::ifstream(writer_output));
+    assert(cli_doc.at("spec").at("handoff").at("placement").at("heat_file") == heat);
+    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("histogram_file") == histogram);
+    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("period_s") == 1);
+
+    // Every layer can override the bundled seed; explicit off must stay off.
+    opts.site = t.file("installed-site-override.toml",
+        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
+        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
+        "\"\n[layout]\nname = \"flashnext-4gpu\"\n[handoff]\nheat = \"/site/seed\"\nhistogram = \"off\"\nhistogram_period_s = 7\n");
+    const auto overridden = sv::resolve(opts, t.facts);
+    assert(overridden.values.at("handoff").at("heat") == "/site/seed");
+    assert(overridden.values.at("handoff").at("histogram") == "off");
+    assert(overridden.values.at("handoff").at("histogram_period_s") == 7);
+    opts.sets.push_back("handoff.histogram=\"/cli/histogram\"");
+    assert(sv::resolve(opts, t.facts).values.at("handoff").at("histogram") == "/cli/histogram");
+
+    // The run-directory default is a session-owner choice, not a fabricated
+    // default in general resolver/explain calls that lack a run directory.
+    opts.site = site;
+    opts.sets.pop_back();
+    opts.run_dir.clear();
+    fail(opts, t.facts, "missing required key: handoff.histogram");
+}
+
 #ifndef BC_FAKE_ENGINE
 #error "BC_FAKE_ENGINE must name the fake engine binary (session_fake_engine.cpp)"
 #endif
@@ -4636,6 +4858,7 @@ int main(int argc, char** argv) {
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
         config_files(t);
+        installed_site_defaults(t);
         native_explain_cli(t);
         native_static_resolution_identity(t);
         session_engine_plan(t);

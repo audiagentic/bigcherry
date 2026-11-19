@@ -269,6 +269,18 @@ def _build_references(refs: dict[str, list[str]], build: Path) -> list[str]:
     keys = (build.name, f"{build.parent.name}/{build.name}",
             f"builds/{build.parent.name}/{build.name}", str(build))
     reasons = [reason for key in keys for reason in refs.get(key, ())]
+    # MRC01 identity.build_id is the build metadata ID, not necessarily the
+    # directory's build_plan_id. _age already refuses unsafe metadata.
+    for metadata in build.glob("bigcherry-build-metadata-*.json"):
+        try:
+            if metadata.is_symlink():
+                continue
+            doc = json.loads(metadata.read_text(encoding="utf-8"))
+            build_id = doc.get("build_id") if isinstance(doc, dict) else None
+            if isinstance(build_id, str) and re.fullmatch(r"[0-9a-f]{32}", build_id):
+                reasons.extend(refs.get(build_id, ()))
+        except (OSError, ValueError, TypeError):
+            pass  # _age protects malformed/unreadable sidecars
     for key, names in refs.items():
         if key.startswith("/") and _inside(key, build):
             reasons.extend(names)
@@ -313,6 +325,7 @@ def inspect(root: Path, *, policy, now: float | None = None,
             release_root: Path | None = None,
             directory_ids: dict[str, tuple[tuple[int, int], ...]] | None = None) -> list[dict]:
     """Candidate/protected inventory. Non-build cache paths are read-only."""
+    from . import retention
     from .retention import dir_size
 
     root = Path(root).resolve()
@@ -346,6 +359,13 @@ def inspect(root: Path, *, policy, now: float | None = None,
     for key, names in installed_refs.items():
         references.setdefault(key, []).extend(names)
     manifest_errors.extend(installed_errors)
+    for reader in (retention.native_installed_build_refs,
+                   retention.measurement_record_build_refs,
+                   retention.stored_serving_manifest_build_refs):
+        extra_refs, errors = reader(root)
+        for key, names in extra_refs.items():
+            references.setdefault(key, []).extend(names)
+        manifest_errors.extend(errors)
     if manifest_errors:
         manifest_errors = [f"unresolved run/release references ({len(manifest_errors)} observations): {manifest_errors[0]}"]
     try:
@@ -576,8 +596,8 @@ def _remove_build_tree(path: Path, expected: tuple[tuple[int, int], ...]) -> str
     All traversal/unlinks use no-follow directory fds. Interrupted leftovers
     are never automatically recovered or removed on later apply calls.
     """
-    from contextlib import ExitStack
     import errno
+    from contextlib import ExitStack
 
     root = path.parent.parent.parent
     if len(expected) != 4 or path.parent.parent != root / "builds":

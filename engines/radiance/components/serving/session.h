@@ -212,6 +212,9 @@ struct Session {
     PowerHook power_hook;
     std::optional<Laboratory> laboratory; // explicit finite ABBA mode, never a detached serving session
     std::filesystem::path run_dir;
+    // Production owners publish the admitted manifest's native feature snapshot.
+    // Fake-engine lifecycle tests explicitly opt in with a v2-shaped fixture.
+    bool publish_feature_states = false;
     Timing timing;
     Canary canary;
     // Optional post-canary runtime guard (MTP replay, live heat and policy).

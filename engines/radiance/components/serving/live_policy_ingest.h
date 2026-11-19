@@ -12,6 +12,8 @@ namespace bc::serving {
 struct LivePolicyProvenance {
     nlohmann::json inputs;
     std::string source_plan_key, source_engine_build;
+    // Audit-only provenance: never fed back into policy_calibration_key().
+    std::string source_revision, run_id, host_facts_digest;
 };
 void ingest_live_policy_record(const std::filesystem::path& log,
                                const std::filesystem::path& cache,

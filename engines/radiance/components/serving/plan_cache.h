@@ -42,6 +42,9 @@ std::string plan_key(const nlohmann::json& key_inputs);
 // Excludes engine binary, measured-plan hash, host pool, helper VRAM budgets and path strings.
 nlohmann::json policy_calibration_inputs(const nlohmann::json& spec);
 std::string policy_calibration_key(const nlohmann::json& inputs);
+// MRC04: mirrors the platform-owned calibration-kinds-v1.json declaration.
+nlohmann::json policy_calibration_key_fields();
+void require_declared_policy_calibration_inputs(const nlohmann::json& inputs);
 
 /* rad0011's plan (radiance --plan-memory) through the shared v1 decoder, plus what a single plan must satisfy by itself:
  * each host consumer once, and the checkpoint floor within the want. Throws naming `where` and the decoder's path. */
