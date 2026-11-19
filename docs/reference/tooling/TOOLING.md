@@ -33,7 +33,7 @@ bigcherry CLI -> cli/main.py parser -> cli/<domain>.py handler
               -> tests, receipts, evidence, or artifacts owned by that workflow
 ```
 
-### Platform measurement records (MRC01 slice 1)
+### Platform measurement records (MRC01 and MRC02)
 
 `bigcherry.core.run_records.RunRecordStore` owns v1 immutable run records at
 `$BC_WORK_ROOT/run-records/v1/`, with SHA-256 blobs under
@@ -48,11 +48,23 @@ and TTFT are separate fields; an empty phase means it was not measured.
 
 An input path is only an optional hint: effective configuration, exact argv,
 environment, power settings and result-affecting inputs are stored as blob
-references. `host_facts` and `feature_states` are explicit empty fields until
-MRC02/MRC03 supply those collectors. Engines supply adapters, not schema or
-store logic; a native runtime must remain Python-free. The WSL01 run manifest
-continues to own lifecycle. MRC01's manifest edges and results CLI, and MRC06's
-producer migrations, are **not part of this first slice**.
+references. `host_facts` is populated by the MRC02 platform collector;
+`feature_states` remains available for MRC03. Engines supply adapters, not
+schema or store logic; a native runtime must remain Python-free. The WSL01 run manifest
+continues to own lifecycle. The platform's `bigcherry.core.host_facts` collector
+returns per-fact `{value, readable, reason?}` structures over injectable sysfs
+and procfs roots. Its read-only probes include kernel, ROCm, amdgpu/firmware,
+VRAM, PCIe card/bridge links, clock state and OD max, power cap and bounds,
+host memory/DIMMs, environment-file SHA-256 and GPU lease status. A reported
+zero current power cap is flagged `zero_cap_suspect`, never interpreted as
+a valid cap. Use `run_records.with_host_facts(record)` in Python platform
+adapters and `run_manifest.new_manifest(host=...)` or
+`run_manifest.new_manifest(collect_host_facts=True)` for an explicit snapshot;
+callers opt in to collection at run creation rather than performing extra
+sysfs and tool queries on unrelated lifecycle operations. The existing
+workloads tool imports card/power sampling readers from this core module.
+MRC01's manifest edges and results CLI, and MRC06's producer migrations,
+are **not part of this first slice**.
 
 `bigcherry.core.retention.plan_cleanup` reports record/blob roots separately
 in `content_decisions` and blocks cleanup if store reachability cannot be

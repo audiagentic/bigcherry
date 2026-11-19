@@ -1,0 +1,96 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "82bfd3aed08021eea8d049cc1b5f616c09b2c446361451c8dfae646504f375e8"
+  ],
+  "prompt_tokens": 149777,
+  "prompt_tokens_target": 250000,
+  "prompt_words": 149777,
+  "reps": 1,
+  "seed": 41,
+  "shared_prefix": false,
+  "streams": [
+   1
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18453"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 1.716,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 48.656,
+    "event_gap_ms_p50": 46.876,
+    "event_gap_ms_p95": 47.365,
+    "event_gap_ms_p99": 48.656,
+    "mean_stream_decode_tps_est": 58.461,
+    "tokens": 256,
+    "ttft_ms_max": 144812.52,
+    "ttft_ms_p50": 144812.52,
+    "ttft_ms_p95": 144812.52
+   },
+   "engine": {
+    "decode_ms_per_step": 46.9254,
+    "decode_tokens_per_step": 2.7634,
+    "decode_tokens_total": 257.0,
+    "decode_tps_engine": 58.89,
+    "draft_acceptance": 0.5878,
+    "draft_accepted_total": 164.0,
+    "draft_tokens_total": 279.0,
+    "engine_step_seconds_decode_total": 4.36406,
+    "engine_steps_decode_total": 93.0,
+    "engine_steps_prefill_total": 124.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 249635.0,
+    "requests_running_max": 1.0,
+    "requests_running_mean": 0.997,
+    "requests_waiting_max": 1.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 58.461,
+     "error": "",
+     "events": 94,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 247907,
+     "response_tail_ms": 7.99,
+     "stream": 0,
+     "text_head": "We need answer user's request: \"Continue this list of words with a short story.\" They provided a huge list of words (tokens) and ask continue this list of words with a short story. Need likely produce a short story using/continuing the list? Need interpret. They want \"Continue this list of words with a short story.\" Maybe they want us to take the list and continue it, but as a short story? Could b",
+     "text_sha256": "8b0d84a3b36acbed4b0ee6ab58b5d9931c820bb7252dd0879797bb9365ad1be3",
+     "tokens": 256,
+     "ttft_ms": 144812.52,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 15.159,
+   "rep": 0,
+   "start_skew_ms": 0.0,
+   "streams": 1,
+   "wall_end_ns": 1795096482059969609,
+   "wall_s": 149.1824,
+   "wall_start_ns": 1795096332860433935
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "1": {
+   "aggregate_tps_median": 1.716,
+   "decode_ms_per_step_median": 46.9254,
+   "decode_tokens_per_step_median": 2.7634,
+   "decode_tps_engine_median": 58.89,
+   "draft_acceptance_median": 0.5878,
+   "event_gap_ms_p95_median": 47.365,
+   "reps_ok": 1,
+   "requests_running_mean_median": 0.997,
+   "ttft_ms_max_median": 144812.52
+  }
+ }
+}
