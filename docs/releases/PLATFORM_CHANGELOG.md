@@ -1,5 +1,27 @@
 # Changelog
 
+## [1.52.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.3...bc-platform-1.52.0) (2026-11-19)
+
+
+### New and changed
+
+* **build:** retry a cmake build once when the compiler dies from a signal and record it ([#1175](https://github.com/audiagentic/bigcherry/issues/1175)) ([352abdb](https://github.com/audiagentic/bigcherry/commit/352abdb380ab382ef3590ddc70102e23249a3967))
+* **lab:** parity harness experiment sets and a current-main Flash-Next baseline ([#1165](https://github.com/audiagentic/bigcherry/issues/1165)) ([f605d2c](https://github.com/audiagentic/bigcherry/commit/f605d2c5619e3f86692a870567cbf97ead89b60c))
+* **lab:** parity harness warmup override for policy-on experiment arms ([#1178](https://github.com/audiagentic/bigcherry/issues/1178)) ([31bd5b9](https://github.com/audiagentic/bigcherry/commit/31bd5b9e9e0b7a2430955a22adccf3b3047bccf2))
+
+
+### Fixes
+
+* **build:** configure a radiance component in its own tree when the shared build dir's cache pins another source path ([#1172](https://github.com/audiagentic/bigcherry/issues/1172)) ([a655e96](https://github.com/audiagentic/bigcherry/commit/a655e96989655cdda2f19bf67865570737c71d3c))
+* **lab:** parity harness uses the Flash-Next mixed heat the launcher defaulted to ([#1168](https://github.com/audiagentic/bigcherry/issues/1168)) ([5c500c5](https://github.com/audiagentic/bigcherry/commit/5c500c5f6647e086879fe9abd3138fb051cc4a52))
+* **serving:** accept the boot placement in the runtime policy receipt ([#1176](https://github.com/audiagentic/bigcherry/issues/1176)) ([fd6dbcd](https://github.com/audiagentic/bigcherry/commit/fd6dbcd09a015eb9d32e55d6eb6ecb846b131fcc))
+* **serving:** hash GPU identity, not live VRAM use, in the S8 inventory digest ([#1181](https://github.com/audiagentic/bigcherry/issues/1181)) ([f47633e](https://github.com/audiagentic/bigcherry/commit/f47633e917da9e7768112006d2fcce224f7684a5))
+* **serving:** live-policy calibration has its own key, shared by the calibration run and production ([#1169](https://github.com/audiagentic/bigcherry/issues/1169)) ([25ac566](https://github.com/audiagentic/bigcherry/commit/25ac566b95401e105a90842b7ba863c69233c289))
+* **serving:** re-read a mismatched heat proof for the declared publication period and name the differing field ([#1183](https://github.com/audiagentic/bigcherry/issues/1183)) ([5e814a1](https://github.com/audiagentic/bigcherry/commit/5e814a1d8947de8b1c8de2f8406435af96a6b6c6))
+* **serving:** refuse unwatermarked calibration heat and bound the no-feed wait ([#1162](https://github.com/audiagentic/bigcherry/issues/1162)) ([1e4bc57](https://github.com/audiagentic/bigcherry/commit/1e4bc572304f1b60206cb5359e4614e11fcfd5b3))
+* **serving:** replay a stored policy-on manifest for an unchanged config ([#1177](https://github.com/audiagentic/bigcherry/issues/1177)) ([409d3a1](https://github.com/audiagentic/bigcherry/commit/409d3a1b0fdf67e3a9ab775f39331e6667992482))
+* **serving:** wait for the first counted heat snapshot at startup and name the failing check in a heat refusal ([#1174](https://github.com/audiagentic/bigcherry/issues/1174)) ([9aa70b0](https://github.com/audiagentic/bigcherry/commit/9aa70b0623a5be6ec36fa7356995699d1ba0c776))
+
 ## [1.51.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.2...bc-platform-1.51.3) (2026-11-18)
 
 
