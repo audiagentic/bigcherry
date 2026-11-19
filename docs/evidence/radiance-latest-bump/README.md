@@ -345,3 +345,9 @@ Commit `ea62472e4` reuses the named cache and stored replay index for the genera
 The rad0004 hook adjustment landed as `6a3e291e7`. It applies and reapplies on the previous candidate as well as 2.2. Candidate commit `ddd9f21bc` adjusts the libr2/libr3 registry rewrite to hide the inherited gfx12-only open hook and supplies remote handoff stubs for standalone host architecture fixtures. Host object symbol checks and 22 focused patch tests passed (2 skipped). Two Qwen35 golden comparisons still differ. The targeted ABI44 engine and parser build is in progress.
 
 The Qwen35 W8A8 DFlash2 and FP8 4096 no-span rank-1 graph and step mismatches reproduced with identical observed hashes on both patched bases. Stock 2.2 passed both upstream pins. The goldens were preserved. The focused 2.2 build compiled the engine and rad_core. The CMake-configured libr2 and libr3 registry objects built with ROCm 7.2.4 and the same ABI44 SDK, and their symbol checks passed.
+
+## C66 — Native offline KL and the Radiance 2.2 candidate pin
+
+Commit `e1db9fb42` carries the sealed measured manifest and retained working directory into managed offline KL. The previous pinned ABI44 engine fixture passed (1/1) for record and score configuration, native YAML provenance, device settings and refusal of incompatible flags. The Python checks passed 71 tests and 16 subtests, including relative KL paths and artifact pathname replacement. Numerical KL remains open.
+
+Commit `6ec5e4013` pins the task candidate to Radiance 2.2.0 and aligns all six component build references. Recipe checks passed (5/5). The ABI44 and config changes in `b57796612` passed the layout suite on both upstream bases and the config suite on 2.2. The 2.2 native consumer check, final plugin rebuild and hardware qualification remain open.
