@@ -110,6 +110,8 @@ Astra source review ASTRA-CONSOLIDATION.md: initial scope is the admitted single
 
 Checkpoint cbdd21f5b frees rank-local collective buffers on pre-publication initialization failure, including GPU memset and stream-sync refusal. The exact 2.2 host fault fixture passed 23 cases; ordered 33-patch apply and libr3 rewrite verification passed. The existing historical N3 tests stop at rad0046's required-state gate. This checkpoint leaves coordinated post-publication unwind, engine-scoped remote callbacks and clean-stop drain open.
 
+Checkpoint c5abd3b47 poisons and wakes failed rendezvous and holds published owner buffers until joined rank workers and device contexts have drained. Four rendezvous cases, exact ordered 33-patch replay, libr3 rewrite and host/HIP syntax checks passed. Live mixed-TP, clean stop and remote callback ownership remain open.
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -126,3 +128,4 @@ Checkpoint cbdd21f5b frees rank-local collective buffers on pre-publication init
 - 2026-11-19T02:21:54.505617+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:validation, section:acceptance_criteria
 - 2026-11-19T09:12:22.140456+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:03:33.981692+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T23:20:26.906081+00:00 (updated-by): Updated: section:notes

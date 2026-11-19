@@ -127,6 +127,8 @@ Codeberg main advanced by 40 commits from the frozen 3deabda candidate to Radian
 
 Codeberg refs/heads/main matched the frozen Radiance 2.2.0 recipe SHA b6b8751cccb0e834a13ae9e5afca824ee9a487aa. The rad0046 fixture now reads the recipe pin; retained E4M3 row apply, byte-identical replay and compiled host geometry predicate passed on that exact source (1/1). This proves apply and host geometry. Device activation and numerical evidence remain open.
 
+2.2 host loader refused actual stock ABI43 DSO and an ABI44 DSO without the layout export (two cases, nine checks). Full v3 roster ABI is 44/5cc71b9c5bb7ab40. ABI44 now explicitly depends on the patch declaring RadBatch.cu_seqlens_h; exact-pin release fixture passes. Retained MoE rad0046 source lifecycle gate remains open.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -162,3 +164,4 @@ Codeberg refs/heads/main matched the frozen Radiance 2.2.0 recipe SHA b6b8751ccc
 - 2026-11-19T12:46:32.419552+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T21:53:59.253973+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T22:48:19.649691+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T23:20:13.004950+00:00 (updated-by): Updated: section:notes
