@@ -339,6 +339,14 @@ def publish_calibration_run(
         inputs=inputs,
         host_facts=_host(host_snapshot),
         feature_states=c["feature_states"],
+        calibration_selection={
+            "status": "selected", "record": selected,
+            "quantity_blobs": {
+                "native_calibration_quantities": measurement_producers.canonical_blob(
+                    selected["quantities"]
+                )
+            },
+        },
         validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
         session_id=c["run_id"],
     )

@@ -45,8 +45,7 @@ JSON records under `records/<kind>/<key>.json`. `put` serialises writes with
 a persistent `.lock`, fsyncs temp file and directory and atomically publishes
 with rename; a duplicate refuses unless `replace=True` is explicitly
 requested. Provenance is not in the key. The store does not activate or
-generate a policy. Large MRC01 quantity blobs and run-record linkage are
-future producer migrations.
+generate a policy. MRC01 v1 now supports typed selected-calibration and quantity blob references.
 
 Radiance **continues to read and write TOML natively**, without Python at
 runtime: `bc-serve calibration-ingest` writes `[[live_policy_record]]` entries
@@ -68,9 +67,9 @@ Radiance's sorted `policy_calibration_inputs` JSON.
 The operator commands are read-only (no hardware lease, no activation):
 
 ```sh
-PYTHONPATH=tools python -m bigcherry calibration list --store /path/to/live-policy-calibration.toml
-PYTHONPATH=tools python -m bigcherry calibration show --store /path/to/live-policy-calibration.toml --kind radiance.live_policy --key <sha256>
-PYTHONPATH=tools python -m bigcherry calibration validate --store /path/to/live-policy-calibration.toml
+bigcherry calibration list --store /path/to/live-policy-calibration.toml
+bigcherry calibration show --store /path/to/live-policy-calibration.toml --kind radiance.live_policy --key <sha256>
+bigcherry calibration validate --store /path/to/live-policy-calibration.toml
 ```
 
 An omitted `--store` defaults to `$BC_WORK_ROOT/live-policy-calibration.toml`
@@ -85,6 +84,25 @@ comes from installed build metadata's `source_slice_id` when present,
 otherwise is explicitly `unavailable`. A rebuild changes provenance, not
 the key. Changes to model, card identities, layout, objective, power
 profile, histogram cadence, helper execution or remote service do change it.
+
+### Immutable selected calibration in run records (MRC04)
+
+An MRC01 run record may carry optional `calibration_record`:
+`status=selected` requires an exact SHA-256-verified calibration JSON
+`record_blob`, its narrow `key_sha256` and `kind`, and named
+`quantity_blobs` for large measurements. The platform checks selected
+key/identity and every referenced blob at write, read, and retention scans.
+`status=none` requires a nonselection `reason_code` and `reason_detail`.
+Old immutable v1 records without the optional field remain readable but do
+not assert which calibration was selected.
+
+Native `bc-serve status --json` reports the selected kind/key or a
+nonselection reason; the native runtime does not run Python. After native
+calibration finishes, `bigcherry results ingest-calibration` stores the
+complete selected record and quantity map through
+`measurement_producers.publish`. The serving CPU test activates a record
+from build A on build B when the same narrow scope matches; separate leased
+device activation proof must not be inferred from CPU-only testing.
 
 ### Platform measurement records (MRC01–MRC03)
 
