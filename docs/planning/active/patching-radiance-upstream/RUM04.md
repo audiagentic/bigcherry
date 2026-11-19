@@ -161,6 +161,8 @@ C36 (2026-11-20): hardened C35 with matched runtime-home validation, exact local
 
 C37 (2026-11-20): both P1 entry points now accept the caller's prepared ManifestInputs. The measured write flow constructs the selected resolved config once and passes it to both P1 owner planning and final writer; P1's temporary owner-map document copies only resolved plus native_config and retains its production/fresh-identity/stock-power projection. The standalone --publish-v2-p1 keeps its request JSON unchanged. Built bc-serve, bc_serving_test, bc_v2_p1_producer_test; focused CTest passed bc_serving_test and bc_v2_p1_producer_test (1/1 each). This transports a future admitted snapshot through P1 but does not enable native production selection, v3 writer, measurement attestation, or stored replay. Evidence C37.
 
+C38 (2026-11-20): the isolated bc_serving_v3_writer_test now compiles v2/p1_producer.cpp, p1_measurement.cpp and p1_live_room.cpp against only the v3 wire library. After admitting and deleting authored YAML, the fixture runs real P1 using the same ManifestInputs and feeds its measured record into the real v3 writer; fake sysfs supplies live GTT usage and an embedding consumer plus margin matches the measured host-pool plan. Build and focused CTest passed (1/1). This is card-free v3 successor coverage only; production remains v2, and owner-attestation, cache/replay migration, and native GPU launch remain open. Evidence C38.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -193,3 +195,4 @@ C37 (2026-11-20): both P1 entry points now accept the caller's prepared Manifest
 - 2026-11-19T14:52:50.038889+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:07:40.385146+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T15:15:51.751252+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T15:21:41.245162+00:00 (updated-by): Updated: section:notes

@@ -2,6 +2,7 @@
 #include "test_manifest_fixture.h"
 #include "test_rad_fixture.h"
 #include "v2/manifest.h"
+#include "v2/p1_producer.h"
 
 #include <cstdlib>
 #include <filesystem>
@@ -122,6 +123,47 @@ int main(int argc, char** argv) {
         const auto measuring = sv::build_manifest(inputs);
         check_snapshot(measuring, wire::PlanUse::measuring, *inputs.native_config, yaml, temporary.path);
         bc::test::set_measured_manifest_fixture(inputs, measuring, facts);
+        // Run the real P1 producer with the same admitted snapshot that the
+        // v3 writer will persist. The authored path is already gone here.
+        const fs::path binary = temporary.path / "radiance-test-binary";
+        {
+            std::ofstream out(binary, std::ios::binary);
+            out.exceptions(std::ios::failbit | std::ios::badbit);
+            out << "matched engine fixture\n";
+        }
+        const fs::path gtt = temporary.path / "sys/bus/pci/devices/0000:09:00.0/mem_info_gtt_used";
+        fs::create_directories(gtt.parent_path());
+        {
+            std::ofstream out(gtt);
+            out.exceptions(std::ios::failbit | std::ios::badbit);
+            out << "0\n";
+        }
+        Json native_plan = inputs.measured->plan.plan_json;
+        native_plan["kv_one_session"]["bytes"] = inputs.resolved.typed.service.max_context;
+        native_plan["host_pool_mib"] = inputs.resolved.typed.memory.host_pool_mib;
+        // The derived pool is the measured host embedding plus the 1 MiB
+        // margin, matching this fixture's configured 9216 MiB pool.
+        native_plan["host"] = Json::array({{{"name", "embedding"},
+                                            {"bytes", 9215LL * 1048576},
+                                            {"residence", "pinned"},
+                                            {"from", "rad0011 v3 writer fixture"},
+                                            {"remedy", ""}}});
+        const Json rank_demand = {
+            {"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
+            {"gpu", Json::array({{{"bdf", "0000:09:00.0"}, {"required_bytes", 10},
+                                  {"fixed_bytes", 1}, {"claimable_bytes", 10},
+                                  {"evidence", "rad0011 v3 writer fixture rank split"}}})},
+            {"resident_other_bytes", 0}};
+        const Json native_sources = {
+            {"engine_plan", native_plan}, {"rank_demand", rank_demand},
+            {"engine_binary", binary.string()}, {"helper_binary", ""},
+            {"retention_target_tokens", 0},
+            {"margin", {{"key", "host_ledger_margin.mib"}, {"source", "cache"},
+                        {"evidence", "v3 writer fixture measured room"}, {"mib", 1}}},
+            {"run_id", "bc_serving_v3_writer_test"}};
+        inputs.s10.p1_record = wire::produce_p1(inputs, facts, temporary.path, native_sources);
+        check(inputs.s10.p1_record.at("kind") == "bc_serve_v2_measured_inputs",
+              "real P1 producer did not emit the expected measured input record");
         inputs.measured->key_inputs["native_config"] = {
             {"sha256", inputs.native_config->sha256()},
             {"resolution_root", inputs.native_config->resolution_root()}};

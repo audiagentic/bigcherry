@@ -265,10 +265,11 @@ if(BUILD_TESTING)
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2/example.flashnext-4gpu.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/v3/contract.fingerprint")
 
-  # Compile the real writer and its owner planner with just the successor
-  # codec. Both editions export the same C++ symbols with different types.
+  # Compile the real writer, owner planner and P1 producer with just the
+  # successor codec. Both editions export the same C++ symbols with different types.
   add_executable(bc_serving_v3_writer_test EXCLUDE_FROM_ALL
-    manifest_writer_v3_test.cpp ${bc_manifest_writer_sources} owner_map.cpp experts.cpp)
+    manifest_writer_v3_test.cpp ${bc_manifest_writer_sources} owner_map.cpp experts.cpp
+    v2/p1_producer.cpp v2/p1_measurement.cpp v2/p1_live_room.cpp)
   target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving_v3_wire)
   target_include_directories(bc_serving_v3_writer_test PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/generated" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
