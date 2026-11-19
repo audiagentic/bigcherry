@@ -1,0 +1,21 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_085325_made-yaml-snapshot-root-bindin_3546",
+  "files": [
+    "engines/radiance/components/serving/v2/native_config_snapshot.h",
+    "engines/radiance/components/serving/v2/native_config_snapshot.cpp",
+    "engines/radiance/components/serving/v2/native_config_manifest_test.cpp",
+    "engines/radiance/components/serving/native_fleet_config.h",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/components/serving/component.toml"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RUM04 foundation: explicit canonical execution root for immutable native YAML snapshots; validates absolute UTF-8 roots before filesystem lookup and rejects embedded NULs. ABI43 parser fixture receives the same explicit root; registers the existing rad_core-linked fixture with CTest. Snapshot wire test now covers caller-selected root, mismatched root, relative/file/NUL roots. Focused build and tests are pending.",
+  "timestamp-utc": "2026-11-19T08:53:25.086165Z",
+  "user-summary-candidate": "Made YAML snapshot root binding explicit and added focused regression coverage for malformed or mismatched execution roots. The adapter fixture is registered against Radiance's matched core parser; verification is pending."
+}

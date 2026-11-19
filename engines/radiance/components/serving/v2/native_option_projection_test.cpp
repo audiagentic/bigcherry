@@ -61,6 +61,12 @@ int main() {
         }
         check(verified_options > 100, "registry option coverage unexpectedly dropped");
 
+        Json explicit_zero = Json::object();
+        explicit_zero["spec"]["processes"]["engine"]["tuning"]["prefill_interleave"] = 0;
+        const auto zero = v2::project_native_options(explicit_zero, v2::kFields, {"--prefill-interleave"});
+        check(zero.error.empty() && zero.argv() == std::vector<std::string>({"--prefill-interleave", "0"}),
+              "explicit zero interleave was omitted from native argv");
+
         size_t env_count = 0;
         for (const auto& env : v2::kEnvBindings) {
             check(!env.path.empty() && !env.env.empty(), "unbound generated environment entry");

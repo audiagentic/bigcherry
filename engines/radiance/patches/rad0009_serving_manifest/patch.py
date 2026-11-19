@@ -381,6 +381,10 @@ if(RAD_BUILD_TESTS AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
 endif()
 """
 
+_CORE_TEST_REGISTRATION = r"""
+add_test(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test)
+"""
+
 
 
 PATCHES = (
@@ -422,6 +426,19 @@ PATCHES = (
             expect_matches=1,
             rationale="rad_core's unique link line; the shared library is included and linked right after it, failing "
                       "closed when the lane did not pass its .cmake.",
+        ),),
+    ),
+    FilePatch(
+        path="tests/CMakeLists.txt",
+        description="Register the native fleet config test after the upstream test harness enables CTest.",
+        edits=(Edit(
+            id="register-bc-native-fleet-config-test",
+            anchor=r"^get_property\(RAD_ALL_TESTS DIRECTORY PROPERTY TESTS\)$",
+            text=_CORE_TEST_REGISTRATION,
+            mode="insert_before",
+            guard=r"^add_test\(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test\)$",
+            expect_matches=1,
+            rationale="tests/CMakeLists is included after enable_testing; register before the suite's final test-label pass.",
         ),),
     ),
     FilePatch(

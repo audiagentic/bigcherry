@@ -113,6 +113,8 @@ RUM03 targeted validation after the shared JSON dependency migration (2026-11-19
 
 Follow-up targeted validation (2026-11-19): component coupling suite passes with updated ABI43 expectation (9 passed, 1 skipped, 10 subtests). ABI44 package replay/release-fixture tests pass 2/2 against the exact 3deabdaeca17b58bad90d332f4b204cf7bb8a10e checkout. Runtime-asset metadata tests pass 26/26 with 15 subtests. The ABI43 prefix/ABI44 extension fixture is no longer skipped when RADIANCE_SRC points to the frozen composition checkout.
 
+Required helper-row compatibility finding (RV4247, 2026-11-19): the pinned ABI43 source omits had_quant_act_fp8 and moe_gemm_fp8a8 registry rows that components/moe-remote/moe_remote_gpu.h resolves by exact name. rad0046_retained_moe_rows restores both rows and keeps wide block-E4M3 tiling restricted to class/part boundaries. Added rad0046 to serving-core immediately before the ABI44 contract extension. Its exact-source apply/replay test passes 1/1. Recipe and ABI44 prefix tests currently refuse composition because package state is untested while production requires validated; this is the intended gate, not a reason to weaken recipe state checks. Build libr4d/moe-remote on ABI44, assert both rows resolve and run retained E4M3 guard fixture, then mark the patch validated and rerun the ordered composition/replay gates. GPU activation/numerical parity still belongs to RUM09.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -142,3 +144,5 @@ Follow-up targeted validation (2026-11-19): component coupling suite passes with
 - 2026-11-19T07:57:07.207210+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T08:01:30.731011+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T08:06:37.521336+00:00 (updated-by): Updated: section:notes
+- RV4247
+- 2026-11-19T08:34:34.698229+00:00 (updated-by): Updated: section:notes

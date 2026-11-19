@@ -10,10 +10,12 @@
 namespace bc::serving {
 
 // The byte identity carried by a managed manifest. Native option validation
-// belongs to the matched engine and takes these exact bytes as its input.
+// belongs to the matched engine and takes these exact bytes as its input. The
+// caller supplies the execution root; it is never inferred from the owner's cwd.
 class NativeConfigSnapshot final {
   public:
-    static NativeConfigSnapshot read(const std::filesystem::path& authored);
+    static NativeConfigSnapshot read(const std::filesystem::path& authored,
+                                     const std::filesystem::path& resolution_root);
     static NativeConfigSnapshot from_manifest(const nlohmann::json& field);
     static void verify(std::string_view yaml, std::string_view sha256, std::string_view resolution_root);
     nlohmann::json manifest_field() const;

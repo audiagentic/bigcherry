@@ -35,6 +35,7 @@ patches = [
   "rad0030_int8_pipelined_prefill",
   "rad0036_prefill_governor",
   "rad0005_mp4_ffmpeg6_writer",
+  "rad0046_retained_moe_rows",
   "rad0048_abi44_kv_contract",
   "rad0049_qwen4exp_e4m3_kv",
   "rad0050_b16_kv_runtime_contract",

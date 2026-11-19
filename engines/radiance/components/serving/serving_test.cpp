@@ -60,6 +60,7 @@ namespace fs = std::filesystem;
 using bc::serving::Json;
 using bc::serving::Options;
 using bc::serving::Resolved;
+Json g_session_manifest_template = Json::object();
 
 void write(const fs::path& path, const std::string& content) {
     fs::create_directories(path.parent_path());
@@ -1118,13 +1119,67 @@ Json p1_record_for(const Json& unmeasured, int64_t pool_mib, int64_t margin_mib,
             {"planning_key", std::string(64, '6')},
             {"provenance", "serving_test synthetic record"},
             {"resource_inputs", inputs},
-            {"gpu", Json::array({{{"bdf", spec.at("processes").at("engine").at("device").at("gpus")[0]},
-                                  {"required_bytes", 10},
-                                  {"fixed_bytes", 1},
-                                  {"claimable_bytes", 10}}})},
+            {"gpu", [&] {
+                 Json cards = Json::array();
+                 for (const Json& bdf : spec.at("processes").at("engine").at("device").at("gpus"))
+                     cards.push_back({{"bdf", bdf}, {"required_bytes", 10}, {"fixed_bytes", 1},
+                                      {"claimable_bytes", 10}});
+                 return cards;
+             }()},
             {"concurrent_sessions", 1},
             {"host_reserve_bytes", reserve_mib * MiB},
             {"scope", scope}};
+}
+
+struct SessionManifestPair {
+    Json measuring;
+    Json serving;
+};
+
+namespace sv = bc::serving;
+
+SessionManifestPair session_manifest_pair(const sv::Resolved& resolved, const Json& facts) {
+    sv::ManifestInputs inputs;
+    inputs.resolved = resolved;
+    inputs.instance_id = "11111111-1111-4111-8111-111111111111";
+    inputs.producer_sha256 = std::string(64, 'a');
+    inputs.profile = "production";
+    inputs.s10.power_profile = "stock";
+    inputs.s10.now_unix_s = 1800000000;
+    inputs.s10.calibration_records = Json::array();
+    const sv::BuiltManifest unmeasured = sv::build_manifest(inputs);
+
+    Json plan = Json::parse(R"json({
+      "plan_version": 1, "producer": "radiance --plan-memory (rad0011)",
+      "host": [{"name": "ngram_table", "bytes": 1048576, "residence": "pinned", "from": "engine plan (test)", "remedy": ""}],
+      "checkpoints": {"slot_bytes": 1048576, "floor_slots": 8, "want_slots": 72, "from": "engine plan (test)"},
+      "kv_one_session": {"bytes": 4096, "from": "engine plan (test)"},
+      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "kv_resolved": 9, "expert_floor": 0,
+               "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)", "cards": []},
+      "host_pool_mib": 9216})json");
+    const size_t ranks = resolved.values.at("layout").at("engine_cards").size();
+    plan["vram"]["cards"] = Json::array();
+    for (size_t i = 0; i < ranks; ++i)
+        plan["vram"]["cards"].push_back(
+            {{"capacity", 10}, {"free", 10}, {"engine_expert_plane", 0}, {"expert_unit_max", 1}});
+    int64_t pool_mib = resolved.values.at("memory").at("host_pool_mib").get<int64_t>();
+    if (pool_mib <= 1024)
+        pool_mib = 9216;
+    plan["host_pool_mib"] = pool_mib;
+
+    sv::MeasuredPlan measured;
+    measured.plan.plan = sv::decode_engine_plan(plan, "session fixture plan");
+    measured.plan.plan_json = plan;
+    measured.plan.resident = {1536, 1024};
+    measured.key_inputs = sv::plan_key_inputs(
+        resolved.values, facts, sv::container_identity(resolved.values.at("engine").at("model").get<std::string>()),
+        std::string(64, 'b'), "");
+    inputs.measured = std::move(measured);
+    inputs.s10.p1_record =
+        p1_record_for(unmeasured.document, pool_mib, 1024,
+                      resolved.values.at("memory").at("host_reserve_mib").get<int64_t>());
+    const sv::BuiltManifest serving = sv::build_manifest(inputs);
+    return {unmeasured.document, serving.document};
 }
 
 void manifest_writer_step(Fixture& t) {
@@ -1232,6 +1287,7 @@ void manifest_writer_step(Fixture& t) {
     }
 
     const auto built = sv::build_manifest(in);
+    g_session_manifest_template = built.document;
     // It is a v1 manifest a consumer accepts, and says what the resolver resolved.
     const auto back =
         bc::serving::v2::read_manifest(built.text, "writer test", bc::serving::v2::PlanUse::serving);
@@ -2742,7 +2798,7 @@ void config_files(Fixture& t) {
         throw std::runtime_error("config_files: BIGCHERRY_LAYOUTS must name the layouts directory");
     const fs::path configs = fs::path(env).parent_path() / "configs";
     const auto model = t.root / "config-model.rad";
-    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
     const auto site = t.file("config-site.toml",
                              "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
     // Native RSC12 dense config: host pool/KV and ngram placement are explicit
@@ -2841,6 +2897,27 @@ void config_files(Fixture& t) {
                          Json::diff(x, y).dump().c_str(), Json::diff(y, z).dump().c_str());
             assert(false);
         }
+    }
+    { // ABI43 defaults absent Flash-Next interleave to auto:1; the measured v1.17 lane used zero.
+        const auto flashnext_site = t.file(
+            "flashnext-profile-site.toml",
+            "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n[handoff]\nheat = \"" +
+                (t.root / "writer.hot-first").string() + "\"\nhistogram = \"" +
+                (t.root / "writer.histogram").string() + "\"\n");
+        for (const char* profile : {"flashnext-4gpu", "flashnext-2xtx-rdna2-tail-combine"}) {
+            Options flashnext = config;
+            flashnext.site = flashnext_site;
+            flashnext.sets = {std::string("layout.name=\"") + profile + "\""};
+            const auto pinned = sv::resolve(flashnext, t.facts);
+            assert(pinned.values.at("tuning").at("prefill_interleave") == 0);
+        }
+        const auto& options = bc::serving::engine_option_fields();
+        const auto field = std::find_if(options.begin(), options.end(),
+                                        [](const auto& option) {
+                                            return option.key == "tuning.prefill_interleave";
+                                        });
+        assert(field != options.end() && field->path == "/spec/processes/engine/tuning/prefill_interleave" &&
+               field->kind == "ref");
     }
     // a profile and --set still override a config (config < site < profile < --set)
     config.sets.push_back("tuning.pipelined_prefill=\"off\"");
@@ -3076,6 +3153,9 @@ void session_engine_plan(Fixture& t) {
     in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
     in.self = "/build/radiance_home/bin/bc-serve";
     in.engine_binary = BC_FAKE_ENGINE;
+    const Json session_facts = bc::serving::detect(t.root);
+    const auto session_resolved = bc::serving::resolve(in.options, session_facts);
+    const SessionManifestPair session_manifests = session_manifest_pair(session_resolved, session_facts);
     std::vector<std::vector<std::string>> calls;
     auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
         for (size_t i = 0; i + 1 < argv.size(); ++i)
@@ -3095,7 +3175,7 @@ void session_engine_plan(Fixture& t) {
             break; // no measured plan
         case 2:
             assert(flag(argv, "--unmeasured"));
-            std::ofstream(argv[2]) << "{}";
+            std::ofstream(argv[2]) << session_manifests.measuring.dump(2) << '\n';
             break;
         case 3:
             r.exit = 11;
@@ -3104,7 +3184,7 @@ void session_engine_plan(Fixture& t) {
         case 4:
             r.exit = 0;
             r.out = "manifest: x\ndigest: 0123abcd\n";
-            std::ofstream(argv[2]) << "{}";
+            std::ofstream(argv[2]) << session_manifests.serving.dump(2) << '\n';
             break;
         default:
             assert(!"unexpected bc-serve call");
@@ -3142,8 +3222,9 @@ void session_engine_plan(Fixture& t) {
     assert(!flag(calls[2], "memory.host_pool_mib=2048") && has(calls[3], "--set", "memory.host_pool_mib=2048"));
     // the engine: from the measured manifest only, its three ranks on the resolver's cards in rank order
     assert(s.argv.size() == 5 && s.argv[0] == BC_FAKE_ENGINE && s.argv[1] == "--manifest" &&
-           s.argv[2] == calls[3][2] && s.argv[3] == "--role" && s.argv[4] == "engine" &&
-           s.manifest == calls[3][2]);
+           s.argv[2].rfind("/proc/self/fd/", 0) == 0 && s.argv[3] == "--role" && s.argv[4] == "engine" &&
+           s.manifest == calls[3][2] && s.execution_manifest() == s.argv[2] && s.pinned_manifest &&
+           s.stored_sha256 == bc::serving::sha256_hex(session_manifests.serving.dump(2) + "\n"));
     std::string rocr;
     const Json resolved = bc::serving::resolve(in.options, bc::serving::detect(t.root)).values;
     for (const Json& bdf : resolved.at("layout").at("engine_cards"))
@@ -3167,7 +3248,7 @@ void session_engine_plan(Fixture& t) {
         env_only.runner = [&](const std::vector<std::string>& argv) {
             calls.push_back(argv);
             ss::ManifestRun r;
-            std::ofstream(argv[2]) << "{}";
+            std::ofstream(argv[2]) << session_manifests.serving.dump(2) << '\n';
             return r;
         };
         ss::plan_engine_only(env_only, run, wait);
@@ -3181,21 +3262,6 @@ void session_engine_plan(Fixture& t) {
     { // A calibration run files its record under the key of the manifest it served with: the one production looks
       // up. The host pool is re-measured between the two writes (1033 -> 2247 MiB on flashnext-4gpu), so a key that
       // depended on it, or on the engine args, could never match; the written manifest's own scope is the key.
-        namespace sv = bc::serving;
-        using Json = nlohmann::json;
-        auto scope_manifest = [](int pool_mib) {
-            return Json{{"facts", {{"gpus", Json::array({{{"bdf", "0000:03:00.0"}, {"arch", "gfx1201"},
-                                                            {"vram", {{"total_mib", 32624}}}}})}}},
-                        {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}}}},
-                                       {"helpers", Json::array()}, {"helper_common", Json::object()}}},
-                        {"handoff", {{"transport", {{"max_rows", 64}, {"small_rows", 4}, {"gemv_large_rows", 16},
-                                                    {"skip_owned", true}}},
-                                     {"kernels", {{"moe_down_tile", 8}}}, {"telemetry", {{"period_s", 5}}}}},
-                        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'm')}}}}},
-                        {"intent", {{"layout", "flashnext-4gpu"}, {"service", {{"objective", "balanced"}}},
-                                    {"power", {{"profile", "stock"}}}}},
-                        {"resources", {{"host", {{"pool_mib", pool_mib}}}}}};
-        };
         ss::EnginePlanInputs cal = in;
         cal.calibration_run = true;
         cal.live_policy_file = t.file("session-cal-policy.json", "{\"accept_unwatermarked_heat\": true}\n");
@@ -3205,7 +3271,9 @@ void session_engine_plan(Fixture& t) {
         std::string keys[2];
         int i = 0;
         for (const int pool : {1033, 2247}) {
-            const Json written = {{"spec", scope_manifest(pool)}};
+            const Json written = g_session_manifest_template;
+            Json calibration_scope = written.at("spec");
+            calibration_scope["resources"]["host"]["pool_mib"] = pool;
             cal.runner = [&](const std::vector<std::string>& argv) {
                 ss::ManifestRun r;
                 std::ofstream(argv[2]) << written.dump();
@@ -3213,7 +3281,8 @@ void session_engine_plan(Fixture& t) {
             };
             const ss::EngineStart cs = ss::plan_engine_only(cal, run, wait);
             keys[i++] = cs.summary.at("calibration_store_key").get<std::string>();
-            assert(keys[i - 1] == sv::policy_calibration_key(sv::policy_calibration_inputs(written.at("spec"))));
+            assert(keys[i - 1] ==
+                   sv::policy_calibration_key(sv::policy_calibration_inputs(calibration_scope)));
         }
         assert(keys[0] == keys[1]); // a re-measured host pool does not move the record
     }
@@ -3425,7 +3494,7 @@ void session_engine_plan(Fixture& t) {
     in.runner = [&](const std::vector<std::string>& argv) {
         ss::ManifestRun r;
         if (std::find(argv.begin(), argv.end(), "--unmeasured") != argv.end()) {
-            std::ofstream(argv[2]) << "{}";
+            std::ofstream(argv[2]) << session_manifests.measuring.dump(2) << '\n';
             return r;
         }
         r.exit = 10;
@@ -3441,11 +3510,12 @@ void session_engine_plan(Fixture& t) {
     assert(refused);
     { // Real named resolver and process owner, fake measuring engine OS boundary.
         ss::EnginePlanInputs ram = in;
-        ram.engine_binary = BC_FAKE_ENGINE;
+        ram.engine_binary = t.root / "ram-measurement-error.sh";
+        write(ram.engine_binary, "#!/bin/sh\nprintf '%s\\n' 'E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare' >&2\nexit 1\n");
+        fs::permissions(ram.engine_binary, fs::perms::owner_exec | fs::perms::owner_read | fs::perms::owner_write);
         ram.runner = [&](const std::vector<std::string>& argv) {
             if (flag(argv, "--unmeasured")) {
-                std::ofstream(argv[2])
-                    << R"json({"measure_error":"E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare"})json";
+                std::ofstream(argv[2]) << session_manifests.measuring.dump(2) << '\n';
                 return ss::ManifestRun{};
             }
             return ss::ManifestRun{10, "", "cache miss"};
@@ -3556,6 +3626,8 @@ void session_owner_real_planner_admission(Fixture& t) {
         in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
         in.self = "/build/radiance_home/bin/bc-serve";
         in.engine_binary = BC_FAKE_ENGINE;
+        const Json facts = bc::serving::detect(t.root);
+        const SessionManifestPair manifests = session_manifest_pair(bc::serving::resolve(in.options, facts), facts);
 
         const fs::path trace = run / "power.trace";
         ss::Session session;
@@ -3565,10 +3637,10 @@ void session_owner_real_planner_admission(Fixture& t) {
         session.timing.canary_timeout = std::chrono::seconds(5);
         session.timing.stop_grace = std::chrono::seconds(1);
         session.timing.poll = std::chrono::milliseconds(20);
-        session.plan = [in, mode, port](const fs::path& dir, const ss::Hooks& hooks) -> ss::EngineStart {
+        session.plan = [in, mode, manifests](const fs::path& dir, const ss::Hooks& hooks) -> ss::EngineStart {
             ss::EnginePlanInputs actual = in;
             unsigned call = 0;
-            actual.runner = [mode, port, &hooks,
+            actual.runner = [mode, manifests, &hooks,
                              &call](const std::vector<std::string>& argv) mutable -> ss::ManifestRun {
                 // One real fork + start-gate + registration + verified reap for
                 // *each* writer attempt. Only its output is synthetic.
@@ -3580,7 +3652,8 @@ void session_owner_real_planner_admission(Fixture& t) {
                     result.exit = 10; // planner cache miss
                 } else {
                     const auto output = fs::path(argv.at(2));
-                    std::ofstream(output) << Json({{"port", port}}).dump();
+                    const bool unmeasured = std::find(argv.begin(), argv.end(), "--unmeasured") != argv.end();
+                    std::ofstream(output) << (unmeasured ? manifests.measuring : manifests.serving).dump(2) << '\n';
                 }
                 return result;
             };

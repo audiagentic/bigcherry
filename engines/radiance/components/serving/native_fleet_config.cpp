@@ -5,8 +5,9 @@
 
 namespace bc::serving {
 
-NativeFleetConfig NativeFleetConfig::read(const std::filesystem::path& authored) {
-    return NativeFleetConfig(NativeConfigSnapshot::read(authored), authored.string());
+NativeFleetConfig NativeFleetConfig::read(const std::filesystem::path& authored,
+                                          const std::filesystem::path& resolution_root) {
+    return NativeFleetConfig(NativeConfigSnapshot::read(authored, resolution_root), authored.string());
 }
 
 NativeFleetConfig NativeFleetConfig::replay(NativeConfigSnapshot snapshot) {

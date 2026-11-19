@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_100847_pinned-freshly-written-manifes_8772",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "After strict role-specific validation, fresh measuring and serving manifests are snapshotted from bounded no-follow regular-file reads into sealed descriptors. The session uses the sealed execution path for power admission, helper/engine argv, runtime guards, calibration reads, and stored-byte checks; measuring children inherit the descriptor. Stored replay attestation now compares against the digest of the bytes already authenticated, avoiding a second pathname read. Focused serving, stored replay, native projection and v3 wire checks pass.",
+  "timestamp-utc": "2026-11-19T10:08:47.658664Z",
+  "user-summary-candidate": "Pinned freshly written manifests to sealed bytes before admission and launch, then verified the focused serving and replay checks."
+}

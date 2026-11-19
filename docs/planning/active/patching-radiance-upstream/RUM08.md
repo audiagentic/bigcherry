@@ -2,7 +2,7 @@
 id: RUM08
 order: 8
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-18T01:28:40.856862+00:00'
 breadth: ''
 skill: advanced
@@ -105,6 +105,10 @@ C10 (2026-11-19): on the exact ABI43 source with HIP disabled, existing arch_tes
 
 C13 (2026-11-19): added candidate-only `rad0047_mtp_verify_replay_summary`. Against the frozen ABI43 commit, exact apply and idempotent replay passed; the compiled pass-key fixture confirms the wide speculative decode case returns 0 for a nonpositive full-KV summary and retains a nonzero key for positive 1504. Focused test: `tools/tests/patch/test_radiance_rad0047.py` (2 passed). Keep the patch unselected/untested in production recipe until the candidate prefix and effective live fallback are validated; v1.17 `rad0013` remains unchanged.
 
+2026-11-19 Sol review: ABI43 rewrites an absent prefill_interleave to auto:1; the matched v1.17 parity manifests omit the option and therefore use 0. Pin prefill_interleave=0 on flashnext-4gpu (inherited by its alias) to preserve the measured production setting. The existing v2 registry maps it to --prefill-interleave; assert explicit zero survives the shared native argv projector and the resolved named profile. Confirm the matched parser sets Config.prefill_interleave_set=true in the native core fixture before the runtime canary. num_speculative_tokens was explicitly 3 in historical manifests and the current BC defaults resolve to 3; do not change it without a separate historical/effective-value comparison.
+
+2026-11-19: historical parity launch manifests show num_speculative_tokens=3 and no prefill-interleave. ABI43 turns absent interleave into auto:1, so the flashnext-4gpu profile now pins 0 (alias inherits it). Resolver and native argv projection tests assert the named value and exact `--prefill-interleave 0`; the rad_core native-YAML fixture asserts explicit zero sets the option/provenance. Review and update the two affected layout-manifest golden hashes after running bc_serving_test. Keep depth 3 and rad0036 governor policy unchanged.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
@@ -122,3 +126,6 @@ C13 (2026-11-19): added candidate-only `rad0047_mtp_verify_replay_summary`. Agai
 - 2026-11-19T02:54:52.556661+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T03:06:34.707493+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T03:16:06.097468+00:00 (updated-by): Updated: section:files, section:notes
+- 2026-11-19T08:59:55.589700+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T09:00:55.776384+00:00 (state-transition): State: pending → in_progress
+- 2026-11-19T09:02:24.106483+00:00 (updated-by): Updated: section:notes

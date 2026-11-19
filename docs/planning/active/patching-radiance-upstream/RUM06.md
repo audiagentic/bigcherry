@@ -106,6 +106,8 @@ Prerequisites RUM02/RUM03/RUM05. Coordinate RCS14 topology without absorbing unr
 
 Astra source review ASTRA-CONSOLIDATION.md: initial scope is the admitted single-engine generation, not a general multi-engine factory. Preserve independent helper model-byte ownership verification. Reuse existing parent tickets and mailbox epochs. One existing partial-start/drain fixture plus route/combine activation in RUM09 is sufficient unless a real failure requires expansion.
 
+2026-11-19 Sol implementation refinement: start with the pre-publication ArInst allocation leak in ABI43 composed `libr4d/r4d_ar_entry.hip` (`build()` locals 424–470, `acquire()` failure 558–559). Make each acquired address rank-locally owned immediately and reuse the ordinary release tail only before publishing `rv.scratch/flags/seq`; do not free published pointers until peers unwind. A host-only fake-HIP test can call the real exported init path and inject failure at each allocation, asserting exact-once matching frees and no peer publication; verify the libr3 rewrite preserves the fix. Separately inspect `r4d_ar_oneshot_2rank_exact.hip` allocation cleanup on memset/sync failure. Keep post-publication unwind, engine-owned callback context, clean-stop drain, and helper lifecycle as separate required RUM06 work; this small slice does not complete the item.
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -120,3 +122,4 @@ Astra source review ASTRA-CONSOLIDATION.md: initial scope is the admitted single
 
 - RV4237
 - 2026-11-19T02:21:54.505617+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:validation, section:acceptance_criteria
+- 2026-11-19T09:12:22.140456+00:00 (updated-by): Updated: section:notes

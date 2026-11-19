@@ -78,6 +78,11 @@ description = "All four cards: the R9700 engine, the XTX pair (head) and the RX 
 [config.flashnext-4gpu.helper]
 combine = true
 
+# ABI43 changes an absent interleave to `auto:1`; the measured v1.17 baseline
+# used zero. Keep the chosen production setting explicit across this bump.
+[config.flashnext-4gpu.tuning]
+prefill_interleave = 0
+
 # The same cards and settings as flashnext-4gpu under its RAD23 experiment name (its own plan key).
 [config.flashnext-2xtx-rdna2-tail-combine]
 base = "flashnext-4gpu"

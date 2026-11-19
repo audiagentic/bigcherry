@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_092849_recorded-and-verified-the-flas_6649",
+  "files": [
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/v2/native_option_projection_test.cpp",
+    "engines/radiance/configs/flashnext.toml"
+  ],
+  "plan-item-ids": [
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Pinned Flash-Next interleave to the v1.17 baseline and covered resolved zero and explicit native argv projection. Corrected serving-test temporary profile fixture to include helper-required heat and histogram handoff inputs. Focused CPU CTest passed bc_serving_test, bc_v2_native_projection_test and bc_serving_v3_wire_test (3/3); patch integration suite previously passed 24 tests plus 8 subtests.",
+  "timestamp-utc": "2026-11-19T09:28:49.352479Z",
+  "user-summary-candidate": "Recorded and verified the Flash-Next interleave compatibility baseline in serving tests."
+}

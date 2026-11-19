@@ -11,7 +11,8 @@ namespace bc::serving {
 // The enclosing manifest owns build identity and live admission.
 class NativeFleetConfig final {
   public:
-    static NativeFleetConfig read(const std::filesystem::path& authored);
+    static NativeFleetConfig read(const std::filesystem::path& authored,
+                                  const std::filesystem::path& resolution_root);
     // Replay takes a snapshot from the strictly decoded, identity-verified
     // spec.native_config field.
     static NativeFleetConfig replay(NativeConfigSnapshot snapshot);

@@ -6,6 +6,8 @@
 #include "jcs.h"
 #include "sha256.h"
 
+#include <chrono>
+#include <filesystem>
 #include <fstream>
 #include <sstream>
 #include <stdexcept>
@@ -56,6 +58,53 @@ int main(int argc, char** argv) {
     check(!old && old.error().code == Code::unsupported_version, "successor reader accepted v2");
 
     const std::string yaml = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+    const auto execution_root = std::filesystem::canonical(std::filesystem::current_path());
+    const auto fixture_id = std::to_string(std::chrono::steady_clock::now().time_since_epoch().count());
+    const auto fixture_root = std::filesystem::temp_directory_path() / ("bc-native-config-root-" + fixture_id);
+    check(std::filesystem::create_directory(fixture_root), "cannot create distinct execution-root fixture");
+    const auto temporary_yaml = std::filesystem::temp_directory_path() / ("bc-native-config-" + fixture_id + ".yaml");
+    {
+        std::ofstream out(temporary_yaml, std::ios::binary);
+        out << yaml;
+    }
+    const auto snapshot = bc::serving::NativeConfigSnapshot::read(temporary_yaml, execution_root);
+    check(snapshot.yaml_utf8() == yaml &&
+              snapshot.manifest_field().at("resolution_root") == execution_root.string(),
+          "native snapshot did not preserve the caller-selected execution root");
+    snapshot.require_execution_root();
+    bool relative_root_refused = false;
+    try { (void)bc::serving::NativeConfigSnapshot::read(temporary_yaml, "relative-root"); }
+    catch (const std::invalid_argument&) { relative_root_refused = true; }
+    check(relative_root_refused, "native snapshot accepted a relative execution root");
+    bool file_root_refused = false;
+    try { (void)bc::serving::NativeConfigSnapshot::read(temporary_yaml, temporary_yaml); }
+    catch (const std::invalid_argument&) { file_root_refused = true; }
+    check(file_root_refused, "native snapshot accepted a file as the execution root");
+    bool nul_root_refused = false;
+    try {
+        const std::string bad_root = execution_root.string() + std::string("\0suffix", 7);
+        (void)bc::serving::NativeConfigSnapshot::read(temporary_yaml, bad_root);
+    } catch (const std::invalid_argument& error) {
+        nul_root_refused = std::string(error.what()).find("absolute UTF-8 path") != std::string::npos;
+    }
+    check(nul_root_refused, "native snapshot accepted an execution root containing NUL");
+    bool invalid_utf8_root_refused = false;
+    try {
+        std::string bad_root = execution_root.string();
+        bad_root.push_back(static_cast<char>(0xff));
+        (void)bc::serving::NativeConfigSnapshot::read(temporary_yaml, bad_root);
+    } catch (const std::invalid_argument& error) {
+        invalid_utf8_root_refused = std::string(error.what()).find("absolute UTF-8 path") != std::string::npos;
+    }
+    check(invalid_utf8_root_refused, "native snapshot accepted an execution root with invalid UTF-8");
+    const auto other_root = fixture_root;
+    const auto mismatched_root = bc::serving::NativeConfigSnapshot::read(temporary_yaml, other_root);
+    bool root_refused = false;
+    try { mismatched_root.require_execution_root(); }
+    catch (const std::invalid_argument&) { root_refused = true; }
+    check(root_refused, "native snapshot accepted execution under a different root");
+    std::filesystem::remove(temporary_yaml);
+    std::filesystem::remove(fixture_root);
     const std::string root = "/fixture";
     const std::string yaml_digest = bc::serving::sha256_hex(yaml);
     Json doc = Json::parse(old_bytes);

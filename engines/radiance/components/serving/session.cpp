@@ -11,6 +11,7 @@
 #include "sha256.h"
 #include "stored_manifest.h"
 #include "stored_manifest_cache.h"
+#include "v2/document_bytes.h"
 
 #include <algorithm>
 #include <array>
@@ -102,6 +103,58 @@ class PinnedManifest final {
   private:
     int fd_ = -1;
 };
+
+std::filesystem::path EngineStart::execution_manifest() const {
+    return pinned_manifest ? pinned_manifest->path() : manifest;
+}
+
+namespace {
+
+std::string errno_text();
+
+struct PinnedManifestSnapshot {
+    std::shared_ptr<PinnedManifest> pinned;
+    v2::Manifest parsed;
+    std::string sha256;
+};
+
+PinnedManifestSnapshot pin_manifest_file(const fs::path& path, v2::PlanUse use) {
+    const int fd = ::open(path.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    if (fd < 0)
+        throw PlanFailed("manifest: cannot open writer output " + path.string() + ": " + errno_text());
+    struct Close {
+        int fd;
+        ~Close() { ::close(fd); }
+    } close{fd};
+
+    struct stat st{};
+    if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0 ||
+        static_cast<uint64_t>(st.st_size) > v2::kMaxDocumentBytes)
+        throw PlanFailed("manifest: writer output is not a bounded regular file: " + path.string());
+
+    std::string bytes;
+    bytes.reserve(static_cast<size_t>(st.st_size));
+    std::array<char, 64 * 1024> chunk{};
+    for (;;) {
+        const ssize_t n = ::read(fd, chunk.data(), chunk.size());
+        if (n < 0 && errno == EINTR)
+            continue;
+        if (n < 0)
+            throw PlanFailed("manifest: cannot read writer output " + path.string() + ": " + errno_text());
+        if (n == 0)
+            break;
+        if (bytes.size() + static_cast<size_t>(n) > v2::kMaxDocumentBytes)
+            throw PlanFailed("manifest: writer output exceeds the strict document size limit: " + path.string());
+        bytes.append(chunk.data(), static_cast<size_t>(n));
+    }
+    auto parsed = v2::read_manifest(bytes, path.string(), use);
+    if (!parsed)
+        throw PlanFailed(v2::render_human("bc-serve manifest admission", parsed.error()));
+    auto pinned = std::make_shared<PinnedManifest>(bytes);
+    return {std::move(pinned), std::move(parsed.value()), sha256_hex(bytes)};
+}
+
+} // namespace
 
 namespace {
 
@@ -913,7 +966,7 @@ class Owner {
             if (s_.power_hook.verify_serving)
                 require_callback(s_.power_hook.verify_serving.invoke(
                                      "session.power.verify_serving",
-                                     plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest),
+                                     plan_.execution_manifest()),
                                  "power final manifest");
             record_["manifest"] = plan_.manifest.string();
             if (plan_.pinned_manifest) {
@@ -931,7 +984,7 @@ class Owner {
                 require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.floor", false),
                                  "gfxoff floor receipt");
             if (!plan_.stored_sha256.empty() &&
-                sha256_hex(read_file(plan_.pinned_manifest ? plan_.pinned_manifest->path() : plan_.manifest)) !=
+                sha256_hex(read_file(plan_.execution_manifest())) !=
                     plan_.stored_sha256)
                 throw PlanFailed("replay: stored manifest bytes changed after authentication");
             if (s_.before_gpu_start)
@@ -1272,7 +1325,7 @@ class Owner {
     void calibrate() {
         if (!s_.laboratory)
             throw PlanFailed("calibration requested without lab inputs");
-        const auto verified = v2::load_manifest(plan_.manifest, v2::PlanUse::serving);
+        const auto verified = v2::load_manifest(plan_.execution_manifest(), v2::PlanUse::serving);
         if (!verified)
             throw PlanFailed("calibration manifest: " + verified.error().message);
         const auto& spec = verified.value().spec;
@@ -1365,7 +1418,8 @@ class Owner {
         if (s_.lab_evidence_gate)
             require_callback(s_.lab_evidence_gate.invoke("session.calibration.prove_live"),
                              "calibration final live evidence gate");
-        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store, plan_.manifest,
+        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store,
+                                            plan_.execution_manifest(),
                                             plan_.summary.at("calibration_store_key").get<std::string>());
     }
 
@@ -1376,7 +1430,7 @@ class Owner {
         // engine with manifest-declared heat. Measuring engines, standalone
         // engines and helpers never receive it; no ambient environment read.
         std::vector<std::string> argv = plan_.argv;
-        const auto manifest = v2::load_manifest(plan_.manifest, v2::PlanUse::serving);
+        const auto manifest = v2::load_manifest(plan_.execution_manifest(), v2::PlanUse::serving);
         if (manifest && manifest.value().spec.handoff &&
             manifest.value().spec.handoff->telemetry.histogram_file) {
             plan_.heat_session_nonce = heat_launch_nonce();
@@ -1717,7 +1771,7 @@ void require_segment(const std::string& name) {
 }
 
 void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::path& run_dir,
-                            const Hooks& hooks, std::vector<pid_t>* pids) {
+                            const Hooks& hooks, std::vector<pid_t>* pids, int inherited_manifest_fd) {
     for (const HelperStart& h : helpers) {
         const fs::path log = run_dir / (h.role + "-measuring-" + stamp() + ".log");
         {
@@ -1730,7 +1784,7 @@ void launch_measure_helpers(const std::vector<HelperStart>& helpers, const fs::p
                 require_callback(hooks.started.invoke("session.hooks.started", ChildKind::measuring_helper,
                                                       h.role + " measuring", p, log),
                                  "hooks.started");
-        });
+        }, inherited_manifest_fd);
         pids->push_back(pid);
         const auto deadline = Clock::now() + std::chrono::minutes(15);
         bool ready = false;
@@ -2142,17 +2196,20 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             const ManifestRun u = write(measuring, {"--unmeasured"}, measuring_histogram);
             if (u.exit != 0)
                 throw PlanFailed("plan: the unmeasured manifest was not written: " + tail_text(u.err));
+            const auto measuring_snapshot = pin_manifest_file(measuring, v2::PlanUse::measuring);
+            const fs::path measuring_execution = measuring_snapshot.pinned->path();
             const fs::path plan = run_dir / "plan-measured.json", ranks = run_dir / "plan-ranks.json";
             fs::remove(plan, ec);
             fs::remove(ranks, ec);
             if (hooks.admit_power && !power_admitted) {
                 require_callback(
-                    hooks.admit_power.invoke("session.hooks.admit_power", measuring, v2::PlanUse::measuring),
+                    hooks.admit_power.invoke("session.hooks.admit_power", measuring_execution,
+                                             v2::PlanUse::measuring),
                     "pre-measure manifest power admission");
                 power_admitted = true;
             }
             const auto helper_measuring =
-                helper_starts({processes, facts}, home, helper_binary, measuring, true);
+                helper_starts({processes, facts}, home, helper_binary, measuring_execution, true);
             // Native counterpart of radiance_plan._wait_for_helper_vram_release:\n            // strict writer
             // admission is retained; the owner adds a guarded OS\n            // seam and binds the release
             // deadline to its actual helper stop timeout.\n            // The resolver's immutable BDF
@@ -2169,13 +2226,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             }
             MeasuringHelpers group(hooks);
             {
-                launch_measure_helpers(helper_measuring, run_dir, hooks, &group.pids);
+                launch_measure_helpers(helper_measuring, run_dir, hooks, &group.pids,
+                                       measuring_snapshot.pinned->descriptor());
                 // Exactly what the bash launcher measures: anonymous RSS total plus shared RSS once.
                 const uint64_t measured_helpers_mib = helper_resident_mib(group.pids);
                 require_segment(handoff);
                 const fs::path log = run_dir / ("engine-measure-" + id + "-" + std::to_string(round) + ".log");
                 const pid_t pid =
-                    spawn({engine.string(), "--manifest", measuring.string(), "--role", "engine",
+                    spawn({engine.string(), "--manifest", measuring_execution.string(), "--role", "engine",
                            "--plan-memory", plan.string(), "--plan-memory-ranks", ranks.string()},
                           child_environment(environ, out.runtime), log,
                           // registered with the owner before it runs: should its exit not be verified here,
@@ -2186,7 +2244,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                                         ChildKind::measuring_engine,
                                                                         "measuring engine", p, log),
                                                    "hooks.started");
-                          });
+                          }, measuring_snapshot.pinned->descriptor());
                 int st = 0;
                 const auto deadline = Clock::now() + std::chrono::minutes(30);
                 bool stopped_early = false, helper_died = false;
@@ -2280,19 +2338,20 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             }
         }
         if (w.exit == 0) {
+            auto final_snapshot = pin_manifest_file(manifest, v2::PlanUse::serving);
+            const fs::path execution_manifest = final_snapshot.pinned->path();
             if (hooks.admit_power && !power_admitted) {
                 require_callback(
-                    hooks.admit_power.invoke("session.hooks.admit_power", manifest, v2::PlanUse::serving),
+                    hooks.admit_power.invoke("session.hooks.admit_power", execution_manifest,
+                                             v2::PlanUse::serving),
                     "measured manifest power admission");
                 power_admitted = true;
             }
             if (in.calibration_run) {
-                // Use the strict manifest we actually launched, not the memory-plan identity.
-                std::ifstream calibration_manifest(manifest);
-                if (!calibration_manifest)
-                    throw PlanFailed("calibration: cannot read the written measured manifest");
-                Json written;
-                calibration_manifest >> written;
+                // Use the strict bytes we admitted for launch, not a later pathname read.
+                const Json written = Json::parse(read_file(execution_manifest), nullptr, false);
+                if (!written.is_object() || !written.contains("spec"))
+                    throw PlanFailed("calibration: the admitted measured manifest is malformed");
                 out.summary["calibration_store_key"] =
                     bc::serving::policy_calibration_key(
                         bc::serving::policy_calibration_inputs(written.at("spec")));
@@ -2302,7 +2361,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     throw PlanFailed("writer failed to publish its original native P1/P2 replay evidence");
                 const StoredManifestIndex entry{cache_selection->key,
                                                 manifest.filename().string(),
-                                                complete_file_identity(manifest),
+                                                final_snapshot.sha256,
                                                 cache_selection->model_digest,
                                                 cache_selection->model_stamp,
                                                 complete_file_identity(s8_source)};
@@ -2313,8 +2372,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 write_stored_index(cache_selection->index, entry);
             }
             out.manifest = manifest;
-            out.argv = {engine.string(), "--manifest", manifest.string(), "--role", "engine"};
-            out.helpers = helper_starts({processes, facts}, home, helper_binary, manifest, false);
+            out.stored_sha256 = final_snapshot.sha256;
+            out.pinned_manifest = std::move(final_snapshot.pinned);
+            out.argv = {engine.string(), "--manifest", execution_manifest.string(), "--role", "engine"};
+            out.helpers = helper_starts({processes, facts}, home, helper_binary, execution_manifest, false);
             out.handoff_shm = handoff;
             std::smatch d;
             static const std::regex digest(R"(digest: ([0-9a-f]+))");
@@ -2467,7 +2528,7 @@ EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path
                                std::string("replay: stored attestation is corrupt: ") + e.what());
         }
         if (bound.manifest_filename != stored.filename().string() ||
-            bound.digest != complete_file_identity(stored))
+            bound.digest != sha256_hex(bytes))
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                "replay: stored attestation no longer binds the original manifest bytes");
         if (bound.model_digest.empty() || bound.model_digest != attestation->model_digest)

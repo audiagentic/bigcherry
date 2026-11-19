@@ -92,6 +92,7 @@ PIN_BLOBS = {
         "core/bc_serving_manifest.cpp": (None, "bb02d82"),
         "core/CMakeLists.txt": ("921debd", "9a24bef"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
+        "tests/CMakeLists.txt": ("9531405", "8c36206"),
     },
 }
 
@@ -692,7 +693,8 @@ class TestServingManifestPatch(unittest.TestCase):
     def test_main_edits_are_thin_calls_into_the_extension_point(self):
         patches = _load(RAD0009)
         # config.cpp (the option table) is deliberately not touched: --manifest is handled before config_parse
-        self.assertEqual({p.path for p in patches if not p.create}, {"core/main.cpp", "core/CMakeLists.txt"})
+        self.assertEqual({p.path for p in patches if not p.create},
+                         {"core/main.cpp", "core/CMakeLists.txt", "tests/CMakeLists.txt"})
         self.assertEqual(sum(1 for p in patches if p.create), 2)
         temp, root = self._applied()
         try:
@@ -756,6 +758,10 @@ class TestServingManifestPatch(unittest.TestCase):
                 'BC_CONTRACT_DIR="${_bc_serving}/../../../../docs/design/serving-manifest-v2")',
                 "endif()",
             ])
+            tests = (root / "tests/CMakeLists.txt").read_text(encoding="utf-8")
+            self.assertIn("add_test(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test)", tests)
+            self.assertLess(tests.index("add_test(NAME bc_native_fleet_config_test"),
+                            tests.index("get_property(RAD_ALL_TESTS DIRECTORY PROPERTY TESTS)"))
         finally:
             temp.cleanup()
 

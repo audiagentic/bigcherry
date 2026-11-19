@@ -50,26 +50,30 @@ void write(const fs::path& file, const std::string& bytes) {
 
 int main() {
     const std::string original = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny:\r\n"
-                                 "    model: tiny.rad\r\n    mixed-step-target-ms: 0\r\n";
-    const std::string expected = "b6c5c7937797350f664b9d8a8572156499ae6ce648295786772a61da690af641";
+                                 "    model: tiny.rad\r\n    mixed-step-target-ms: 0\r\n"
+                                 "    prefill-interleave: 0\r\n";
+    const std::string expected = "31c54f93dd2d358632dff77f70cc90909b15d98932d0163139742f90900c013d";
     std::string directory = (fs::temp_directory_path() / "bc-native-fleet-XXXXXX").string();
     check(::mkdtemp(directory.data()) != nullptr, "cannot create test directory");
     const fs::path path = fs::path(directory) / "fleet.yaml";
     write(path, original);
-    const auto first = NativeFleetConfig::read(path);
+    const auto execution_root = fs::canonical(fs::current_path());
+    const auto first = NativeFleetConfig::read(path, execution_root);
     check(first.snapshot().sha256() == expected && first.snapshot().yaml_utf8() == original,
           "original bytes or digest changed");
     const auto& model = first.fleet().models.at(0);
-    check(model.cfg.mixed_step_target_ms == 0 &&
-              model.cfg.given.at("--mixed-step-target-ms") == "models.tiny.mixed-step-target-ms",
+    check(model.cfg.mixed_step_target_ms == 0 && model.cfg.prefill_interleave == 0 &&
+              model.cfg.prefill_interleave_set &&
+              model.cfg.given.at("--mixed-step-target-ms") == "models.tiny.mixed-step-target-ms" &&
+              model.cfg.given.at("--prefill-interleave") == "models.tiny.prefill-interleave",
           "native option or its YAML provenance changed");
 
     write(fs::path(directory) / "next", "# replaced\n" + original);
     fs::rename(fs::path(directory) / "next", path);
-    check(NativeConfigSnapshot::read(path).sha256() != expected, "formatting edit reused the old identity");
+    check(NativeConfigSnapshot::read(path, execution_root).sha256() != expected,
+          "formatting edit reused the old identity");
     fs::remove(path);
     const Json field = first.snapshot().manifest_field();
-    const auto execution_root = fs::current_path();
     fs::current_path(directory);
     check(NativeConfigSnapshot::from_manifest(field).manifest_field() == field,
           "decoding rewrote the recorded execution root");

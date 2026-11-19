@@ -14,6 +14,21 @@ std::string current_resolution_root() {
     return std::filesystem::canonical(std::filesystem::current_path()).string();
 }
 
+std::string canonical_resolution_root(const std::filesystem::path& root) {
+    const std::string& raw = root.native();
+    if (v2::bad_utf8(raw) != std::string_view::npos || raw.find('\0') != std::string::npos ||
+        !root.is_absolute())
+        throw std::invalid_argument("native fleet resolution_root must be an absolute UTF-8 path");
+    std::error_code ec;
+    const auto canonical = std::filesystem::canonical(root, ec);
+    if (ec)
+        throw std::invalid_argument("native fleet resolution_root must name an existing directory");
+    ec.clear();
+    if (!std::filesystem::is_directory(canonical, ec) || ec)
+        throw std::invalid_argument("native fleet resolution_root must name an existing directory");
+    return canonical.string();
+}
+
 std::string checked_digest(std::string_view yaml, std::string_view resolution_root) {
     if (yaml.size() > v2::kMaxDocumentBytes)
         throw std::invalid_argument("native fleet YAML exceeds the document byte limit");
@@ -30,7 +45,8 @@ std::string checked_digest(std::string_view yaml, std::string_view resolution_ro
 
 }  // namespace
 
-NativeConfigSnapshot NativeConfigSnapshot::read(const std::filesystem::path& authored) {
+NativeConfigSnapshot NativeConfigSnapshot::read(const std::filesystem::path& authored,
+                                                 const std::filesystem::path& resolution_root) {
     // Size and read through one open file, including under atomic author-file replacement.
     std::ifstream in(authored, std::ios::binary | std::ios::ate);
     const std::streamoff size = in.tellg();
@@ -42,7 +58,7 @@ NativeConfigSnapshot NativeConfigSnapshot::read(const std::filesystem::path& aut
     in.seekg(0);
     if (!in.read(bytes.data(), size) || in.peek() != std::char_traits<char>::eof() || in.bad())
         throw std::runtime_error("cannot read complete native fleet YAML: " + authored.string());
-    return NativeConfigSnapshot(std::move(bytes), current_resolution_root(), std::nullopt);
+    return NativeConfigSnapshot(std::move(bytes), canonical_resolution_root(resolution_root), std::nullopt);
 }
 
 NativeConfigSnapshot NativeConfigSnapshot::from_manifest(const nlohmann::json& field) {
