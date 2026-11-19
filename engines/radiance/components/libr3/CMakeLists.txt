@@ -77,6 +77,16 @@ foreach(line ${unit_lines})
   # Relative to the wrapper (units/ beside r4d-src/) so its bytes do not depend on where the build tree lives; an
   # absolute path changes with every new build directory and turns each unit into a compiler-cache miss.
   file(GENERATE OUTPUT ${wrapper} CONTENT "#include \"r3_compat.h\"\n#include \"../r4d-src/${unit}.hip\"\n")
+  # ROCm 7.2.4 crashes in GVN when optimizing the gfx1100 IQR p3 GEMM.
+  # Disabling GVN's memory-dependence analysis avoids the crash at the normal release optimization level.
+  if(unit STREQUAL "r4d_gemm_iqr_p3" AND "gfx1100" IN_LIST R3_TARGETS
+      AND CMAKE_HIP_COMPILER_ID STREQUAL "Clang"
+      AND CMAKE_HIP_COMPILER_VERSION VERSION_EQUAL "22.0.0")
+    execute_process(COMMAND "${CMAKE_HIP_COMPILER}" --version OUTPUT_VARIABLE r3_clang_version)
+    if(r3_clang_version MATCHES "roc-7[.]2[.]4([ )]|$)")
+      list(APPEND flags "-Xarch_gfx1100" "-mllvm=-enable-gvn-memdep=false")
+    endif()
+  endif()
   if(flags)
     set_source_files_properties(${wrapper} PROPERTIES COMPILE_OPTIONS "${flags}")
   endif()
