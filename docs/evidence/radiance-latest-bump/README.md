@@ -329,3 +329,5 @@ Commit `5539f42fb` carries the working directory descriptor and frozen environme
 ## C64 — Start and stop an engine-only native session
 
 Commit `a4af18f3e` connects the generated v3 session owner to sealed native engine startup. Before combining with main, the owner fixture passed (1/1), covering inspect, measure, start, health, canary, verified shutdown, a drop in available host memory after measurement, and runtime-home drift. The pinned ABI44 consumer fixture passed (1/1), including measured plan admission. Both default v2 session checks and all 14 patch checks passed. The built engine refused an unsealed direct serving start with exit 2. No GPU execution was performed. The combined source is `9ab98f7de`, which includes main through `d611e7997`. Its session checks are tracked separately.
+
+Post-merge verification: the generated v3 owner fixture passed (1/1) with main integrated and the shared calibration fixture definition fixed in `51f396787`. The ledger validated on that revision.
