@@ -71,6 +71,14 @@ class Qwen4expB16Tests(unittest.TestCase):
             first = apply_all(files, root)
             self.assertTrue(first and all(result.ok for result in first), first)
             self.assertTrue(all(edit.status == "applied" for result in first for edit in result.results), first)
+            launchers = (root / "libr4d/r4d_attn_paged_gqa8.hip").read_text()
+            self.assertEqual(launchers.count("!g8_byte_cache(a, LAYOUT)"), 4)
+            self.assertNotIn("g8_e4m3_cache", launchers)
+            replay = apply_all(load_patch_files(PREREQUISITES[1]), root)
+            self.assertTrue(all(result.ok for result in replay), replay)
+            self.assertEqual(
+                launchers, (root / "libr4d/r4d_attn_paged_gqa8.hip").read_text(),
+            )
             snapshot = {patch.path: (root / patch.path).read_bytes() for patch in files}
             second = apply_all(files, root)
             self.assertTrue(second and all(result.ok for result in second), second)

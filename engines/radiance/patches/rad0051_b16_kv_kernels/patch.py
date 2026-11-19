@@ -355,6 +355,8 @@ PATCHES += (
     return kv && kv->dtype == (layout == RAD_KVQ_NONE ? RAD_F8E4M3 : RAD_U8);
 }
 #define G8_BYTE_ENTRIES(TAG, ROWB, XOPT, LAYOUT)"""),
+        _replace("b16-page4-macro-cache-checks", "!g8_e4m3_cache(a)",
+                 "!g8_byte_cache(a, LAYOUT)", count=4),
         _replace("b16-page4-macro-prefill-call", "g8_prefill_launch<256, G8_P_OPT_256 | (XOPT), 0>",
                  "g8_prefill_launch<256, G8_P_OPT_256 | (XOPT), 0, LAYOUT>"),
         _replace("b16-page4-macro-decode-calls", "g8_decode_launch<256, 0, (XOPT)>",

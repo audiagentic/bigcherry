@@ -117,6 +117,12 @@ _BYTE_DECODE_LAUNCH = """    R4DArgs r;                                         
 _DTYPE_CHECK = """    if ((XOPT) == 0 && !g8_e4m3_cache(a)) return R4D_NO(RAD_E_DTYPE);                           \\
 """
 
+def _dtype_check_guard(launch: str) -> str:
+    native = re.escape(_DTYPE_CHECK)
+    packed = re.escape(_DTYPE_CHECK.replace("g8_e4m3_cache(a)", "g8_byte_cache(a, LAYOUT)"))
+    return "(?:" + native + "|" + packed + ")" + re.escape(launch)
+
+
 _CONSTRAINTS = r"""/* Native E4M3 on the two Flash-Next page-4 geometries. */
 #define BC_Q4_FP8_ATTN_BASE(gqa) \
     C_EQ("window", 0), C_EQ("head_dim", 256), C_EQ("gqa", gqa), C_EQ("block_size", 4), \
@@ -266,20 +272,21 @@ PATCHES = (
     )),
     FilePatch(path="libr4d/r4d_attn_paged_gqa8.hip", language="none", edits=(
         _edit("q4-e4m3-byte-launch-macro", _BYTE_LAUNCH_ANCHOR,
-              _BYTE_LAUNCH, "#define G8_BYTE_ENTRIES(TAG, ROWB, XOPT, LAYOUT)"),
-        _edit("q4-e4m3-prefill-check", _FIRST_BYTE_LAUNCH,
-              _DTYPE_CHECK + _FIRST_BYTE_LAUNCH,
-              "const int rc = fill_paged_row(a, &r, 256, ROWB);"),
+              _BYTE_LAUNCH, "#define G8_BYTE_ENTRIES(TAG, ROWB, XOPT"),
+        Edit(id="q4-e4m3-prefill-check", anchor=re.escape(_FIRST_BYTE_LAUNCH),
+             mode="replace", text=_DTYPE_CHECK + _FIRST_BYTE_LAUNCH,
+             guard=_dtype_check_guard(_FIRST_BYTE_LAUNCH), max_span_lines=3,
+             rationale="Require the native E4M3 tensor at the prefill shim"),
         Edit(id="q4-e4m3-decode-checks", anchor=re.escape(_BYTE_DECODE_LAUNCH),
              mode="replace_all", text=(_DTYPE_CHECK + _BYTE_DECODE_LAUNCH).replace("\\", "\\\\"),
-             guard=re.escape("const int rc = g8_decode_common(a, &r, 256, ROWB);"), expect_matches=3,
+             guard=_dtype_check_guard(_BYTE_DECODE_LAUNCH), expect_matches=3,
              max_span_lines=3, rationale="Require the native E4M3 tensor at the decode shims"),
         _edit("q4-e4m3-page4-wrappers", _BYTE_LAUNCH_END,
               "G8_BYTE_ENTRIES(i8, 516, O_KVI8)\n"
               "#if G8_BLOCK_SIZE == 4 && (R4D_ATTN_GQA == 12 || R4D_ATTN_GQA == 6)\n"
               "G8_BYTE_ENTRIES(fp8, 512, 0)\n"
               "#endif\n"
-              "#undef G8_BYTE_ENTRIES\n", "G8_BYTE_ENTRIES(fp8, 512, 0, RAD_KVQ_NONE)"),
+              "#undef G8_BYTE_ENTRIES\n", "G8_BYTE_ENTRIES(fp8, 512, 0"),
     )),
     FilePatch(path="libr4d/r4d_plugin.h", language="none", edits=(
         _edit("q4-e4m3-wrapper-declarations", "int     r4d_rad_attn_prefill_h256_gqa12_i8",
