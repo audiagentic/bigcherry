@@ -115,6 +115,10 @@ Follow-up targeted validation (2026-11-19): component coupling suite passes with
 
 Required helper-row compatibility finding (RV4247, 2026-11-19): the pinned ABI43 source omits had_quant_act_fp8 and moe_gemm_fp8a8 registry rows that components/moe-remote/moe_remote_gpu.h resolves by exact name. rad0046_retained_moe_rows restores both rows and keeps wide block-E4M3 tiling restricted to class/part boundaries. Added rad0046 to serving-core immediately before the ABI44 contract extension. Its exact-source apply/replay test passes 1/1. Recipe and ABI44 prefix tests currently refuse composition because package state is untested while production requires validated; this is the intended gate, not a reason to weaken recipe state checks. Build libr4d/moe-remote on ABI44, assert both rows resolve and run retained E4M3 guard fixture, then mark the patch validated and rerun the ordered composition/replay gates. GPU activation/numerical parity still belongs to RUM09.
 
+
+
+C28 (2026-11-19): exact rad0046 ABI43 apply/replay passed; an isolated `R3_ONLY` libr3 plugin build with the restored quantizer and grouped-MoE HIP units succeeded, and a no-GPU dlopen probe confirmed both helper rows survive real `r3_registry` filtering with live launch callbacks. The existing `r3_rad46_rows_policy_test` is a separate dispatch policy test, not this patch's boundary guard. Current build source is ABI43, so rad0046 remains `untested` until the same build/row check runs against composed ABI44. Hardware/numerical activation is RUM09. Evidence C28; Ledger event `chg_20261119_122726_verified-that-both-restored-he_3927`.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -146,3 +150,4 @@ Required helper-row compatibility finding (RV4247, 2026-11-19): the pinned ABI43
 - 2026-11-19T08:06:37.521336+00:00 (updated-by): Updated: section:notes
 - RV4247
 - 2026-11-19T08:34:34.698229+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T12:28:01.492650+00:00 (updated-by): Updated: section:notes

@@ -126,6 +126,10 @@ C25 (2026-11-19): measuring preflight now reads host pool/KV/reserve/TP from the
 
 C26 (2026-11-19): removed worker_policy_config.h's hard-coded generated/v2 header include and rebuilt/reran r3_policy_config_test successfully with the current v2 target selected. This is an edition-neutral include seam, not a full v3 worker build. Evidence: docs/evidence/radiance-latest-bump/README.md C26; Ledger event chg_20261119_120946_removed-the-helper-workers-ha_3343.
 
+
+
+C27 (2026-11-19): shared writer requires NativeConfigSnapshot for generated v3 and rejects it for v2; v3 records exact bytes/digest/root/provenance before strict decode. An isolated real-writer test removes the author file and covers measuring/serving outputs plus missing-snapshot refusal; focused CTest passed 1/1 and direct rerun exited 0. Production still selects v2; native consumer and launch integration remain open. Evidence C27; Ledger event `chg_20261119_122249_added-a-verified-successor-man_4213`.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -148,3 +152,4 @@ C26 (2026-11-19): removed worker_policy_config.h's hard-coded generated/v2 heade
 - 2026-11-19T10:09:50.104454+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:01:22.900750+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:10:17.693225+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T12:28:07.874455+00:00 (updated-by): Updated: section:notes
