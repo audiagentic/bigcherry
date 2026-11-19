@@ -1,0 +1,25 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_005433_planned-a-platform-measurement_2228",
+  "files": [
+    "docs/planning/active/run-measurement-records/MRC01.md",
+    "docs/planning/active/run-measurement-records/MRC02.md",
+    "docs/planning/active/run-measurement-records/MRC03.md",
+    "docs/planning/active/run-measurement-records/MRC04.md",
+    "docs/planning/active/run-measurement-records/MRC05.md",
+    "docs/planning/active/run-measurement-records/MRC06.md",
+    "docs/evidence/2026-11-19-flashnext-4gpu-regression/README.md"
+  ],
+  "plan-item-ids": [
+    "MRC01",
+    "MRC02",
+    "MRC03",
+    "MRC04",
+    "MRC05",
+    "MRC06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Plan run-measurement-records MRC01-MRC06 filled (generic run-record store, host facts, feature-state contract, calibration store, baseline/compare/history, producer migration) and the Flash-Next four-GPU regression evidence page added (live policy off since 2026-11-09 confirmed; 256K prefill gap open).",
+  "timestamp-utc": "2026-11-19T00:54:33.426059Z",
+  "user-summary-candidate": "Planned a platform measurement-record system and documented why the Flash-Next four-GPU results regressed against the v1.17.0 baseline."
+}
