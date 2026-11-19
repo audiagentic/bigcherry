@@ -1,0 +1,16 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_212559_verified-native-yaml-and-measu_7390",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/components/serving/native_fleet_v3_engine_test.cpp",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Share native Config replay and reconciliation across measuring and staging a measured v3 serving manifest. Exact-pin ABI44 host fixture passed 1/1, including measured plan, artifact replacement, wrong role and direct startup refusal. Focused rad0009 checks passed 2/2.",
+  "timestamp-utc": "2026-11-19T21:25:59.879335Z",
+  "user-summary-candidate": "Verified native YAML and measured plan preparation for the new Radiance serving path."
+}

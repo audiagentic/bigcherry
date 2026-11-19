@@ -317,3 +317,7 @@ Verification: generated-v3 `bc_native_v3_session_test` passed (1/1), including b
 ## C61 — Recheck the retained E4M3 patch fixture on the pinned source (2026-11-20)
 
 Repeated the focused `rad0046_retained_moe_rows` exact-source apply/replay test against pinned Radiance source `3deabdaeca17b58bad90d332f4b204cf7bb8a10`. The test passed (1/1), including compilation and execution of the shared block-E4M3 geometry predicate for aligned classes, the 192-column split boundary, and non-block-E4M3 legacy behavior. This confirms the patch mechanics and CPU-side boundary rule. It does not itself establish GPU numerical activation or authorize lifecycle promotion; the ABI44 build/row-probe evidence is C29 and hardware qualification remains in RUM09.
+
+## C62 — Prepare native Config from a measured serving manifest
+
+The rad0009 bridge shares native YAML replay between measurement and serving Config preparation. The exact-pin ABI44 host fixture passed (1/1), preserving YAML provenance and the measured plan after replacement of the artifact path, rejecting a wrong role and confirming direct startup refusal. Two focused patch checks passed. Session launch still needs to carry the retained execution root and environment. Ledger event: chg_20261119_212559_verified-native-yaml-and-measu_7390.

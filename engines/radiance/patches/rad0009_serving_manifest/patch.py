@@ -30,7 +30,7 @@ _BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up ex
 #include <vector>
 
 namespace rad { struct Config; }
-namespace bc::serving::v2 { struct EnginePlan; }
+namespace bc::serving::v2 { struct EnginePlan; struct Manifest; enum class PlanUse; }
 
 /* The argv radiance should parse. Without --manifest, argv is left unchanged and true is returned. With it, *argc
  * and *argv are replaced by a synthetic argv (storage lives for the process). On a malformed manifest or a stray
@@ -41,6 +41,11 @@ bool bc_serving_engine_argv(int* argc, char*** argv);
  * single native Config from the strict v3 measuring snapshot. Returns 1 when prepared, 0 when
  * this is not a native v3 measuring start, and -1 after a fail-closed diagnostic. */
 int bc_serving_take_native_measuring_config(rad::Config* out);
+
+/* Replay a strict-read v3 manifest into Radiance's native Config. This stages a serving Config
+ * for owner validation only and does not authorize Engine::start(). */
+int bc_serving_prepare_native_engine_config(const bc::serving::v2::Manifest* manifest,
+                                             bc::serving::v2::PlanUse use, rad::Config* out);
 
 /* After a successful parse: every option the manifest produced must be recorded in `given` as "command line" (an
  * option another option swallowed as its argument is not), else a message is printed and false is returned: the
@@ -115,7 +120,7 @@ BcEngineSettings g_engine_settings{};
 std::string g_shm;
 std::string g_histogram;
 std::string g_heat_launch_nonce;
-struct NativeMeasuringInputs {
+struct NativeEngineInputs {
     std::string yaml_utf8;
     std::string sha256;
     std::string resolution_root;
@@ -130,7 +135,7 @@ struct NativeMeasuringInputs {
     int64_t max_sequences = 0;
     int64_t host_pool_mib_per_rank = 0;
 };
-std::optional<NativeMeasuringInputs> g_native_measuring;
+std::optional<NativeEngineInputs> g_native_measuring;
 
 bool fail(const std::string& why) {
     std::fprintf(stderr, "radiance: --manifest: %s\n", why.c_str());
@@ -257,7 +262,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         const auto view = v2::native_config_view(manifest.value());
         if (!view) return fail("v3 measuring manifest has no admitted native YAML snapshot");
         const auto& spec = manifest.value().spec;
-        NativeMeasuringInputs native;
+        NativeEngineInputs native;
         native.yaml_utf8.assign(view->yaml_utf8);
         native.sha256.assign(view->identity.sha256);
         native.resolution_root.assign(view->identity.resolution_root);
@@ -403,25 +408,22 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     return true;
 }
 
-int bc_serving_take_native_measuring_config(rad::Config* out) {
-    if (!g_native_measuring) return 0;
-    if (!out) {
-        fail("native measuring Config output is null");
-        return -1;
-    }
+namespace {
+int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config* out) {
+    if (!out) return fail("native Config output is null"), -1;
 #ifndef BC_RAD_NATIVE_FLEET_CONFIG
-    fail("this Radiance source has no native fleet parser for v3 measurement");
+    fail("this Radiance source has no native fleet parser for v3 Config replay");
     return -1;
 #else
     namespace fs = std::filesystem;
     const auto reject_unless = [](bool condition, const char* message) {
         if (condition) return false;
-        std::fprintf(stderr, "radiance: --manifest: native measuring config: %s\n", message);
+        std::fprintf(stderr, "radiance: --manifest: native Config: %s\n", message);
         return true;
     };
     const auto canonical_under_root = [&](const std::string& value) {
         fs::path path(value);
-        if (path.is_relative()) path = fs::path(g_native_measuring->resolution_root) / path;
+        if (path.is_relative()) path = fs::path(admitted.resolution_root) / path;
         std::error_code error;
         const fs::path canonical = fs::weakly_canonical(path, error);
         if (error) throw std::runtime_error("cannot resolve " + path.string());
@@ -429,50 +431,100 @@ int bc_serving_take_native_measuring_config(rad::Config* out) {
     };
     try {
         bc::serving::NativeConfigSnapshot snapshot = bc::serving::NativeConfigSnapshot::admitted(
-            g_native_measuring->yaml_utf8, g_native_measuring->sha256,
-            g_native_measuring->resolution_root);
+            admitted.yaml_utf8, admitted.sha256, admitted.resolution_root);
         bc::serving::NativeFleetConfig native = bc::serving::NativeFleetConfig::replay(std::move(snapshot));
         const rad::fleet::FleetConfig& fleet = native.fleet();
-        if (fleet.models.size() != 1)
-            return fail("native measuring Config requires exactly one model"), -1;
+        if (fleet.models.size() != 1) return fail("native Config requires exactly one model"), -1;
         rad::Config cfg = fleet.models.front().cfg;
         std::vector<int> expected_cards;
-        expected_cards.reserve(g_native_measuring->engine_bdfs.size());
-        for (size_t i = 0; i < g_native_measuring->engine_bdfs.size(); ++i)
+        expected_cards.reserve(admitted.engine_bdfs.size());
+        for (size_t i = 0; i < admitted.engine_bdfs.size(); ++i)
             expected_cards.push_back(static_cast<int>(i));
-        if (reject_unless(fleet.cards == expected_cards, "YAML card ordinals differ from the selected rank order") ||
-            reject_unless(cfg.tp == g_native_measuring->tp, "YAML TP differs from the admitted engine TP") ||
+        if (reject_unless(fleet.cards == expected_cards, "YAML card ordinals differ from selected rank order") ||
+            reject_unless(cfg.tp == admitted.tp, "YAML TP differs from admitted engine TP") ||
             reject_unless(cfg.host == "127.0.0.1", "only the managed loopback listener is supported") ||
-            reject_unless(cfg.port == g_native_measuring->port, "YAML listener port differs from the admitted port") ||
-            reject_unless(cfg.max_ctx == g_native_measuring->max_context,
-                    "YAML max-model-len differs from the admitted context limit") ||
-            reject_unless(cfg.max_seqs == g_native_measuring->max_sequences,
-                    "YAML max-num-seqs differs from the admitted session limit") ||
-            reject_unless(cfg.host_pool_mib == g_native_measuring->host_pool_mib_per_rank,
-                    "YAML host-pool-mib differs from the admitted per-rank pool") ||
-            reject_unless(cfg.kernel_hierarchy == g_native_measuring->kernels,
-                    "YAML kernel hierarchy differs from the admitted runtime kernels") ||
-            reject_unless(cfg.rank_devices == g_native_measuring->rank_devices.value_or(std::vector<std::string>{}),
-                    "YAML rank-devices differs from the admitted ordered BDF selection") ||
-            reject_unless(canonical_under_root(cfg.model) == canonical_under_root(g_native_measuring->model),
-                    "YAML model differs from the admitted local model") ||
-            reject_unless(canonical_under_root(cfg.radiance_home) == canonical_under_root(g_native_measuring->radiance_home),
-                    "YAML runtime home differs from the matched build") ||
+            reject_unless(cfg.port == admitted.port, "YAML listener port differs from admitted port") ||
+            reject_unless(cfg.max_ctx == admitted.max_context,
+                          "YAML max-model-len differs from admitted context limit") ||
+            reject_unless(cfg.max_seqs == admitted.max_sequences,
+                          "YAML max-num-seqs differs from admitted session limit") ||
+            reject_unless(cfg.host_pool_mib == admitted.host_pool_mib_per_rank,
+                          "YAML host-pool-mib differs from admitted per-rank pool") ||
+            reject_unless(cfg.kernel_hierarchy == admitted.kernels,
+                          "YAML kernel hierarchy differs from admitted runtime kernels") ||
+            reject_unless(cfg.rank_devices == admitted.rank_devices.value_or(std::vector<std::string>{}),
+                          "YAML rank-devices differs from admitted ordered BDF selection") ||
+            reject_unless(canonical_under_root(cfg.model) == canonical_under_root(admitted.model),
+                          "YAML model differs from admitted local model") ||
+            reject_unless(canonical_under_root(cfg.radiance_home) == canonical_under_root(admitted.radiance_home),
+                          "YAML runtime home differs from matched build") ||
             reject_unless(!cfg.kld() && !cfg.calib() && !cfg.diagnose_mode() && !cfg.debug_graph,
-                    "offline quality, diagnose and debug-graph modes are not measuring roles"))
+                          "offline quality, diagnose and debug-graph modes are not managed serving roles"))
             return -1;
-        // Fleet card ordinals describe the process-visible GPUs; rank_devices
-        // remains the native BDF list used by rad0016 when the layout requires it.
+        // Fleet card ordinals describe process-visible GPUs; rank_devices remains
+        // the native BDF list used by rad0016 when the layout requires it.
         cfg.devices = fleet.cards;
         if (fleet.log_set) rad::log_set_level(fleet.log);
         *out = std::move(cfg);
-        g_native_measuring.reset();
         return 1;
     } catch (const std::exception& error) {
         fail(std::string("native YAML replay failed: ") + error.what());
         return -1;
     }
 #endif
+}
+} // namespace
+
+int bc_serving_take_native_measuring_config(rad::Config* out) {
+    if (!g_native_measuring) return 0;
+    const int result = prepare_native_engine_config(*g_native_measuring, out);
+    if (result > 0) g_native_measuring.reset();
+    return result;
+}
+
+int bc_serving_prepare_native_engine_config(const v2::Manifest* manifest, v2::PlanUse use,
+                                             rad::Config* out) {
+    if (!manifest || !out) return fail("native Config staging requires a manifest and output"), -1;
+    if (use != v2::PlanUse::measuring && use != v2::PlanUse::serving)
+        return fail("native Config staging supports only measuring and serving roles"), -1;
+    const auto native_view = v2::native_config_view(*manifest);
+    if (!native_view) return fail("native Config staging requires an admitted v3 YAML snapshot"), -1;
+    const bool serving = use == v2::PlanUse::serving;
+    if (serving != manifest->spec.plan.engine_memory.has_value())
+        return fail("native Config staging role differs from strict manifest role"), -1;
+    if (serving) {
+        const auto view = v2::engine_view(*manifest);
+        if (!view.ok()) {
+            std::fputs(v2::render_human("radiance", view.error()).c_str(), stderr);
+            return -1;
+        }
+        g_expected = view.value().memory.expected;
+        g_engine_bdfs = view.value().engine.device.gpus;
+        g_floor_ppm = view.value().kv_backing_floor_ppm;
+        g_have_expected = true;
+    } else {
+        g_have_expected = false;
+        g_engine_bdfs = manifest->spec.processes.engine.device.gpus;
+    }
+    const auto& spec = manifest->spec;
+    NativeEngineInputs admitted;
+    admitted.yaml_utf8.assign(native_view->yaml_utf8);
+    admitted.sha256.assign(native_view->identity.sha256);
+    admitted.resolution_root.assign(native_view->identity.resolution_root);
+    admitted.model = spec.intent.model;
+    admitted.radiance_home = spec.processes.engine.runtime.radiance_home;
+    admitted.kernels = spec.processes.engine.runtime.kernels;
+    admitted.engine_bdfs = spec.processes.engine.device.gpus;
+    admitted.rank_devices = spec.processes.engine.device.rank_devices;
+    admitted.tp = spec.processes.engine.scheduler.tp;
+    admitted.port = spec.processes.engine.server.port;
+    admitted.max_context = spec.intent.service.max_context_tokens;
+    admitted.max_sequences = spec.intent.service.max_sessions;
+    admitted.host_pool_mib_per_rank = spec.resources.host.pool_mib;
+    if (admitted.engine_bdfs.size() != static_cast<size_t>(admitted.tp) || admitted.tp <= 0 ||
+        admitted.max_context <= 0 || admitted.max_sequences <= 0 || admitted.host_pool_mib_per_rank < 0)
+        return fail("native Config staging has incomplete engine admission inputs"), -1;
+    return prepare_native_engine_config(admitted, out);
 }
 
 extern "C" int bc_serving_engine_settings(BcEngineSettings* out) {
