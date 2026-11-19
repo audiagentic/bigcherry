@@ -68,6 +68,17 @@ def _manifest(root: Path):
         }
     ]
     (root / "feature-states.v1.json").write_text(json.dumps(states))
+    start = host_facts.snapshot_at_start(
+        {"kernel_release": {"value": "test", "readable": True}},
+        captured_at="2026-11-19T11:59:59Z", phase="owner_start",
+    )
+    start_file = root / host_facts.START_RECEIPT_FILE
+    start_file.write_text(json.dumps(start))
+    (root / "session.json").write_text(json.dumps({
+        "schema_version": 1, "state": "running", "manifest": str(path),
+        "started_at": "2026-11-19T11:59:58Z",
+        "host_facts_start_sha256": hashlib.sha256(start_file.read_bytes()).hexdigest(),
+    }))
     return path, meta, binary
 
 
@@ -97,9 +108,7 @@ def test_workload_producer_pins_manifest_bytes_and_metrics(tmp_path):
         work_root=tmp_path,
         argv=["bigcherry", "workload", "run", "prefill-doc-44k"],
         environment={"ROCM_PATH": "/opt/fixture"},
-        host_snapshot=host_facts.snapshot_at_start(
-            {"kernel_release": {"value": "test", "readable": True}},
-            captured_at="2026-11-19T11:59:59Z"),
+        host_snapshot=host_facts.read_owner_start(tmp_path),
     )
     path.unlink()
     store = run_records.RunRecordStore(tmp_path)

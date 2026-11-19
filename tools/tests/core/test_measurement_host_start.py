@@ -26,7 +26,7 @@ def publish(tmp_path, snapshot, *, stamp="2026-11-20T12:00:00Z"):
     return measurement_producers.publish(
         work_root=tmp_path,
         run_id="measured-001", recorded_at=stamp,
-        identity={"engine": "test-engine", "build_id": "build", "binary_sha256": "a" * 64,
+        identity={"engine": "radiance", "build_id": "build", "binary_sha256": "a" * 64,
                   "source_revision": "rev", "model": "model", "layout": "tp3"},
         workload={"name": "probe", "definition": {"prompt": 1}},
         metrics={"decode": {"steps": 1}, "prefill": {}, "ttft": {}},
@@ -103,7 +103,8 @@ def test_native_owner_start_receipt_requires_valid_file(tmp_path):
 
 
 
-def test_store_refuses_new_legacy_unobserved_host_facts_but_reads_existing_v1(tmp_path):
+def test_unsealed_host_facts_are_refused_on_put_and_read(tmp_path):
+    """No recovery reader can treat an empty v1 host object as a measurement."""
     import hashlib
     import sys
     from pathlib import Path
@@ -112,15 +113,16 @@ def test_store_refuses_new_legacy_unobserved_host_facts_but_reads_existing_v1(tm
     from test_run_records import fixture_record
 
     store = run_records.RunRecordStore(tmp_path)
-    legacy = fixture_record(store)
-    legacy["host_facts"] = {}
-    with pytest.raises(run_records.RecordError, match="start host"):
-        store.put_record(legacy)
-
-    raw = run_records.canonical_record_bytes(legacy)
+    unsealed = fixture_record(store, engine="radiance")
+    unsealed["host_facts"] = {}
+    with pytest.raises(run_records.RecordError, match="host_facts|start"):
+        store.put_record(unsealed)
+    # Make the historical bytes directly: the new canonical validation must
+    # not silently turn them into a sealed record before reading.
+    raw = run_records._json_bytes(unsealed)
     digest = hashlib.sha256(raw).hexdigest()
     path = store.record_path(digest)
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_bytes(raw)
-    # Preserve existing MRC01 v1 immutable objects: only NEW puts are guarded.
-    assert store.get_record(digest) == legacy
+    with pytest.raises(run_records.RecordError, match="host_facts|start"):
+        store.get_record(digest)

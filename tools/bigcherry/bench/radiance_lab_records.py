@@ -90,13 +90,10 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
     native_states = _file(run_dir / feature_states.FILE_NAME)
     states = feature_states.read_feature_states(native_states)
     start_file = _file(run_dir / host_facts.START_RECEIPT_FILE)
-    start = host_facts.read_start_receipt(start_file)
-    raw_start = start_file.read_bytes()
-    if session.get("host_facts_start_sha256") != _digest(raw_start):
-        raise run_records.RecordError("native owner start facts digest differs from session receipt")
-    from ..core.measurement_producers import utc_stamp
-    if utc_stamp(session["started_at"]) > utc_stamp(start["captured_at"]):
-        raise run_records.RecordError("native host facts timestamp predates owner start")
+    try:
+        start = host_facts.read_owner_start(run_dir)
+    except ValueError as exc:
+        raise run_records.RecordError(f"invalid native start receipt: {exc}") from exc
     if any(state["engine"] != engines.RADIANCE for state in states):
         raise run_records.RecordError("native feature-state engine differs")
     instance = manifest.get("metadata", {}).get("instance_id")
@@ -425,6 +422,8 @@ def publish_probe(
     if kind not in ("needle", "image"):
         raise run_records.RecordError("unknown Radiance lab probe")
     c = _session_context(run_dir)
+    if host_snapshot is not None and host_snapshot != c["host_start"]:
+        raise run_records.RecordError("probe host facts differ from native owner start")
     if kind == "needle":
         rows = result["rows"]
         if not rows or any(type(r.get("hit")) is not bool for r in rows):
@@ -466,7 +465,7 @@ def publish_probe(
         environment=_native_environment(c["session"]),
         power_settings=c["manifest"]["spec"].get("power", {}),
         inputs=inputs,
-        host_facts=_host(host_snapshot),
+        host_facts=_host(c["host_start"]),
         feature_states=c["feature_states"],
         validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
         session_id=c["run_id"],
@@ -532,8 +531,9 @@ def publish_rsc02_arm(
         "rsc02_build_metadata": build_meta,
     }
     states = []
-    # The B arm is the native owner, which publishes MRC03. The A arm is the
-    # legacy bash owner and must never inherit B's stale feature state file.
+    # The historical A arm remains lab evidence, never a native measured record.
+    if result["arm"] != "B":
+        raise run_records.RecordError("only the sealed native owner arm may publish")
     if result["arm"] == "B":
         if not isinstance(result.get("run_dir"), str):
             raise run_records.RecordError(
@@ -557,9 +557,9 @@ def publish_rsc02_arm(
         inputs["rsc02_native_feature_states"] = states_file
         inputs["rsc02_native_session"] = run_dir / "session.json"
         native_start_file = _file(run_dir / host_facts.START_RECEIPT_FILE)
-        host_facts.read_start_receipt(native_start_file)
-        if native_session.get("host_facts_start_sha256") != _digest(native_start_file.read_bytes()):
-            raise run_records.RecordError("RSC02 native owner host start digest differs")
+        native_start = host_facts.read_owner_start(run_dir)
+        if host_snapshot is not None and host_snapshot != native_start:
+            raise run_records.RecordError("RSC02 host facts differ from native owner start")
         inputs["rsc02_native_host_start"] = native_start_file
     return measurement_producers.publish(
         work_root=work_root,
@@ -593,10 +593,10 @@ def publish_rsc02_arm(
         environment=engine[0].get("env", {}),
         power_settings=result.get("power_before_stop", {}),
         inputs=inputs,
-        host_facts=_host(host_snapshot),
+        host_facts=_host(native_start),
         feature_states=states,
         validity={
             "state": "unverified",
-            "reason_codes": ["LEGACY_ARM_NOT_VA25_ATTESTED"],
+            "reason_codes": ["VA25_NOT_ATTESTED"],
         },
     )

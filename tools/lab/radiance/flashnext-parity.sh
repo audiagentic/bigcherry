@@ -265,7 +265,7 @@ data["actual_warmup_s"]=float(sys.argv[2]); data["warmup_target_s"]=float(sys.ar
 data["warmup_rounds"]=int(sys.argv[4])
 p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP_ELAPSED_S" "$WARMUP_S" "$k" ||
       fail "cannot record actual warmup"
-    python3 "$PARITY" capture-host-facts "$L" ||
+    python3 "$PARITY" capture-host-facts "$L" --run-dir "$RUN" ||
       fail "cannot snapshot measurement-time host facts"
   fi
 

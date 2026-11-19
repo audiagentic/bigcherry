@@ -112,8 +112,6 @@ def main(argv: list[str] | None = None) -> int:
     from bigcherry.bench.radiance_lab_records import verify_live_target
 
     verify_live_target(args.run_dir, args.url)
-    from bigcherry.core import host_facts
-    host_start = host_facts.snapshot_at_start()
     text = corpus()
     cpt = chars_per_token(args.url, args.model, text, args.timeout)
     rows = []
@@ -140,7 +138,7 @@ def main(argv: list[str] | None = None) -> int:
                     "tolerance": 0.08, "max_tokens": 40},
         argv=[str(Path(__file__).resolve()), *(argv if argv is not None else sys.argv[1:])],
         extra_inputs={"corpus": text.encode("utf-8")},
-        work_root=args.work_root, host_snapshot=host_start,
+        work_root=args.work_root,
     )
     args.out.write_text(json.dumps({"record_sha256": digest}, sort_keys=True) + "\n", encoding="utf-8")
     print(json.dumps({"summary": summary, "record_sha256": digest}))

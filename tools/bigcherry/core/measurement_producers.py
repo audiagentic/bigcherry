@@ -11,6 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from . import engines
 from . import host_facts as host_capture
 from . import run_records
 
@@ -59,16 +60,16 @@ def publish(
         raise run_records.RecordError("actual argv required")
     if any(not isinstance(v, (bytes, Path)) for v in inputs.values()):
         raise run_records.RecordError("provenance inputs must be exact bytes or readable files")
-    # New producer writes require a receipt captured BEFORE the measurement.
-    # Existing stored v1 records are still decoded by run_records without it.
+    # Radiance requires a sealed start receipt; other engines are MRC07 work.
     recorded_time = utc_stamp(recorded_at)
-    try:
-        host_capture.validate_start_snapshot(host_facts)
-        start_time = utc_stamp(host_facts["captured_at"])
-    except (ValueError, TypeError, KeyError) as exc:
-        raise run_records.RecordError(f"missing or invalid start host facts: {exc}") from exc
-    if start_time > recorded_time:
-        raise run_records.RecordError("start host-facts timestamp is after the measured record time")
+    if identity["engine"] == engines.RADIANCE:
+        try:
+            host_capture.validate_start_snapshot(host_facts)
+            start_time = utc_stamp(host_facts["captured_at"])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise run_records.RecordError(f"missing or invalid start host facts: {exc}") from exc
+        if start_time > recorded_time:
+            raise run_records.RecordError("start host-facts timestamp is after the measured record time")
     store = run_records.RunRecordStore(work_root)
 
     def source_blob(source: bytes | Path) -> dict:

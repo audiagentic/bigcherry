@@ -29,6 +29,6 @@ The fixture proof remains in `tools/tests/core/test_host_facts.py`, covering
 per-field source failures, PCIe upstream, DIMM and MemAvailable readers,
 zero-cap behavior, and explicit manifest/record collection.
 `tools/tests/core/test_measurement_host_start.py` covers the strict start
-receipt, timestamps, new-store refusal, and read-only legacy recovery. Native
+receipt, timestamps, and refusal to read or write unsealed Radiance records. Native
 `bc_session_host_start_test` exercises publication before a fake engine
 child; it does not require a GPU lease.

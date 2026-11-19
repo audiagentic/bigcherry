@@ -355,8 +355,22 @@ def publish_record(
         raise WorkloadError("build binary SHA-256 missing")
     if binary.is_file() and __import__("hashlib").sha256(binary.read_bytes()).hexdigest() != meta["binary_hash"]:
         raise WorkloadError("build binary no longer matches build metadata")
-    # MRC03 is emitted in the native run folder. Never infer feature states
-    # from the current time or an unrelated previous session.
+    # Bind the measured row to the running native owner and its start seal.
+    # An independent Python snapshot cannot replace a missing native receipt.
+    session_path = manifest_path.parent / "session.json"
+    if session_path.is_symlink() or not session_path.is_file():
+        raise WorkloadError("native owner session receipt required for measurement")
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    if Path(session.get("manifest", "")).resolve() != manifest_path.resolve() or (
+        session.get("state") not in ("running", "healthy")
+    ):
+        raise WorkloadError("native owner session does not own the measured manifest")
+    try:
+        owner_start = host_facts.read_owner_start(manifest_path.parent)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise WorkloadError(f"native owner start receipt required: {exc}") from exc
+    if host_snapshot is not None and host_snapshot != owner_start:
+        raise WorkloadError("measured host facts differ from sealed native owner start")
     state_path = manifest_path.parent / feature_states.FILE_NAME
     states = feature_states.read_feature_states(state_path)
     if any(state["engine"] != engines.RADIANCE for state in states):
@@ -390,9 +404,7 @@ def publish_record(
     if not isinstance(config, dict):
         raise WorkloadError("record requires exact workload config")
 
-    if host_snapshot is None:
-        raise WorkloadError("missing measurement-start host facts; invoke via bigcherry workload run")
-    facts = host_facts.validate_start_snapshot(host_snapshot)
+    facts = owner_start
     return measurement_producers.publish(
         work_root=work_root,
         run_id=row["row_id"],
@@ -417,6 +429,8 @@ def publish_record(
             "workload_result": measurement_producers.canonical_blob(row),
             "build_metadata": metadata_file.read_bytes(),
             "native_feature_states": state_path.read_bytes(),
+            "native_host_start": (manifest_path.parent / host_facts.START_RECEIPT_FILE).read_bytes(),
+            "native_session": session_path.read_bytes(),
         },
         host_facts=facts, feature_states=states,
         validity={"state": "unverified", "reason_codes": ["ATTESTATION_MISSING"]},

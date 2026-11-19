@@ -252,7 +252,7 @@ def test_native_start_receipt_digest_and_timing_fail_closed(tmp_path):
     assert lab._session_context(run)["host_start"] == FAKE_HOST
 
     receipt.write_text(receipt.read_text() + " ")
-    with pytest.raises(run_records.RecordError, match="start facts digest"):
+    with pytest.raises(run_records.RecordError, match="start receipt digest"):
         lab._session_context(run)
 
     receipt.unlink()
@@ -265,7 +265,7 @@ def test_native_start_receipt_digest_and_timing_fail_closed(tmp_path):
     session = json.loads(session_path.read_text())
     session["host_facts_start_sha256"] = hashlib.sha256(receipt.read_bytes()).hexdigest()
     session_path.write_text(json.dumps(session))
-    with pytest.raises(run_records.RecordError, match="predates owner start"):
+    with pytest.raises(run_records.RecordError, match="precedes its start"):
         lab._session_context(run)
 
 

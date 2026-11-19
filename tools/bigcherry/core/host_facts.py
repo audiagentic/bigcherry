@@ -354,8 +354,7 @@ def collect_host_facts(
     }
 
 # MRC02: the timestamp is captured before the measured child/request begins,
-# NOT when the immutable run record is eventually published. Older v1 records
-# may still contain legacy unwrapped host-facts dictionaries for read-only use.
+# NOT when the immutable run record is eventually published.
 START_RECEIPT_FILE = "host-facts.start.v1.json"
 START_FIELDS = (
     "kernel_release", "kernel_build", "rocm_version", "amdgpu_version",
@@ -501,7 +500,7 @@ def snapshot_at_start(
 
 
 def validate_start_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
-    """Strict start receipt validation; no silent promotion of legacy facts."""
+    """Validate the sole measurement-start receipt shape and field readability."""
     if not isinstance(snapshot, dict) or set(snapshot) != {
         "schema_version", "capture_phase", "captured_at", "facts"
     } or snapshot["schema_version"] != 1 or snapshot["capture_phase"] not in START_PHASES:
@@ -530,3 +529,30 @@ def read_start_receipt(path: Path) -> dict[str, Any]:
     if path.is_symlink() or not path.is_file():
         raise ValueError(f"missing or unsafe native host-facts start receipt: {path}")
     return validate_start_snapshot(json.loads(path.read_text(encoding="utf-8")))
+
+def read_owner_start(run_dir: Path, *, session_name: str = "session.json") -> dict[str, Any]:
+    """Read and verify the native owner start receipt and its immutable seal.
+
+    A post-run sampler cannot create this proof. The owner session must name the
+    digest of the exact start bytes; the caller must keep both files together.
+    """
+    folder = Path(run_dir)
+    session_path = folder / session_name
+    receipt_path = folder / START_RECEIPT_FILE
+    if session_path.is_symlink() or not session_path.is_file():
+        raise ValueError("missing or unsafe native owner session receipt")
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    snapshot = read_start_receipt(receipt_path)
+    if snapshot["capture_phase"] != "owner_start":
+        raise ValueError("native owner requires owner_start host facts")
+    if not isinstance(session, dict) or session.get("host_facts_start_sha256") != hashlib.sha256(
+        receipt_path.read_bytes()
+    ).hexdigest():
+        raise ValueError("native owner start receipt digest differs from session")
+    if not isinstance(session.get("started_at"), str):
+        raise ValueError("native owner start time is missing")
+    started = datetime.fromisoformat(session["started_at"])
+    captured = datetime.fromisoformat(snapshot["captured_at"])
+    if started.tzinfo is None or started.utcoffset().total_seconds() != 0 or captured < started:
+        raise ValueError("native owner receipt precedes its start or timestamp is not UTC")
+    return snapshot

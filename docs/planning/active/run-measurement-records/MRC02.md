@@ -22,7 +22,9 @@ A platform, engine-agnostic collector of the host facts that change measured per
 - 1. Collector module (platform-owned, no engine imports) returning one host-facts dict with per-fact `readable` flags; reuse workloads.card_paths() and power_state() by moving them into the collector and leaving thin callers.
 - 2. Add cap_default/cap_min/cap_max and an `unreadable` marker so a zero cap is reported as suspect rather than as a cap.
 - 3. Add kernel, ROCm, amdgpu/firmware, PCIe link, environment-file digest and lease holder (from `agent-lease status` output or its state file).
-- 4. Wire into MRC01 records and run_manifest `host` field; fixture-sysfs tests (the functions already take a sys_root).
+- 4. Wire into MRC01 records and run manifests, with sysfs fixtures.
+- 5. Radiance producers require the native owner's SHA-sealed start receipt; verify session ownership and reject unsealed Radiance records on writes and reads.
+- 6. Defer llama.cpp producer and adapter changes to MRC07 without new wrappers.
 
 ## Detailed Solution & Technical Design
 
@@ -41,7 +43,8 @@ workloads.py already reads per-card hwmon power and clocks through card_paths(sy
 ## Validation
 
 - Fixture sysfs tests for each fact, including unreadable files and a cap of 0.
-- On the real host, collect once and compare against rocm-smi / sysfs by hand for two cards.
+- Real-host comparison against independent rocm-smi and sysfs observations on two cards is documented in docs/evidence/run-measurement-records/MRC02.
+- Exercise strict owner start, parity, workload, native lab, probe, receipt tampering and unsealed Radiance read/write refusal.
 
 ## Effort & Risk
 
@@ -53,9 +56,9 @@ Small. Risk: sysfs layouts differ by kernel; keep each fact independently readab
 
 ## Acceptance Criteria
 
-- Every record carries host facts; an unreadable value is marked, never silently zero.
-- The collector has no dependency on any engine package.
-- bench/workloads.py no longer owns sysfs reading.
+- Every new Radiance record carries a sealed owner-start host receipt; an unreadable value is marked, never silently zero.
+- The collector has no dependency on any engine package; other engine producers belong to MRC07.
+- bench/workloads.py no longer owns sysfs reading; Radiance measurements do not re-sample after start.
 
 ## Notes
 

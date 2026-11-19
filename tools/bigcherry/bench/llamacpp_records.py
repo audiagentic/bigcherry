@@ -50,10 +50,6 @@ def _metrics(row: dict) -> tuple[dict[str, dict], dict[str, dict]]:
     return phases, specs
 
 
-def _missing_host_start() -> dict:
-    raise run_records.RecordError("llama benchmark requires a wrapper start host-facts receipt")
-
-
 def publish_row(
     row: dict[str, Any],
     *,
@@ -143,8 +139,9 @@ def publish_row(
             "original_llama_row": payload,
             "execution_attestation": measurement_producers.canonical_blob(proof),
         },
-        host_facts=host_facts.validate_start_snapshot(host_snapshot)
-        if host_snapshot is not None else _missing_host_start(),
+        host_facts=host_snapshot
+        if host_snapshot is not None
+        else host_facts.collect_host_facts(),
         feature_states=[],
         validity=validity,
     )

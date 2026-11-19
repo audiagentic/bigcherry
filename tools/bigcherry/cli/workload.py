@@ -39,8 +39,9 @@ def cmd_workload(args: argparse.Namespace) -> int:
         if not info.get("manifest"):
             raise workloads.WorkloadError("verified live manifest required for v1 measurement")
         manifest_bytes = Path(info["manifest"]).read_bytes()
-        # MRC02: snapshot before the first measured request, not after metrics.
-        host_start = workloads.host_facts.snapshot_at_start()
+        # MRC02: read the native owner's SHA-sealed start receipt before
+        # sending the first measured request; refuse unrelated process state.
+        host_start = workloads.host_facts.read_owner_start(Path(info["manifest"]).parent)
         before = workloads.power_state()
         metrics, details = workloads.execute(args.id, args.url, args.repo_root, cfg)
         after = workloads.power_state()

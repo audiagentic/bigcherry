@@ -172,8 +172,21 @@ def validate_record(record: Any) -> dict[str, Any]:
     _check_schema(record, schema, schema, "record")
     # Arbitrary workload/host details must still be JSON, with no NaN/Infinity.
     _json_bytes(record)
-    # Optional MRC05 metric metadata is strict when supplied. Legacy MRC01
-    # records remain readable but cannot be used to create measured gates.
+    # MRC02 migrates Radiance. A Radiance record is never read or written
+    # without the sealed start receipt; other engines are scoped to MRC07.
+    from . import engines
+    if record["identity"]["engine"] == engines.RADIANCE:
+        from .host_facts import validate_start_snapshot
+
+        try:
+            validate_start_snapshot(record["host_facts"])
+            start = datetime.fromisoformat(record["host_facts"]["captured_at"])
+            recorded = datetime.fromisoformat(record["recorded_at"])
+            if start > recorded:
+                raise ValueError("start receipt is after measured record")
+        except (ValueError, TypeError, KeyError) as exc:
+            raise RecordError(f"Radiance record requires sealed start host facts: {exc}") from exc
+    # Phase-qualified gates must match the supplied measurements.
     if "metric_specs" in record:
         for phase in ("decode", "prefill", "ttft"):
             if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
@@ -181,8 +194,7 @@ def validate_record(record: Any) -> dict[str, Any]:
             for spec in record["metric_specs"][phase].values():
                 if type(spec["gated"]) is not bool:
                     raise RecordError("metric gate must be a boolean")
-    # VA25 validity must not have internally contradictory verdict metadata.
-    # Absence is supported for pre-MRC06 v1 records; such records remain readable.
+    # VA25 execution validity must not contradict its reason codes.
     if "validity" in record:
         validity = record["validity"]
         if (validity["state"] == "valid") != (not validity["reason_codes"]):
@@ -326,19 +338,6 @@ class RunRecordStore:
         return raw
 
     def put_record(self, record: dict[str, Any]) -> str:
-        # MRC02: new records cannot masquerade as measured when they have
-        # empty or publication-time host facts. Keep get_record backward
-        # compatible with existing immutable v1 objects, including {}.
-        from .host_facts import validate_start_snapshot
-
-        try:
-            validate_start_snapshot(record.get("host_facts"))
-            start = datetime.fromisoformat(record["host_facts"]["captured_at"])
-            recorded = datetime.fromisoformat(record["recorded_at"])
-            if start > recorded:
-                raise ValueError("host-facts start timestamp is after measured record")
-        except (ValueError, KeyError, TypeError) as exc:
-            raise RecordError(f"new records require valid start host facts: {exc}") from exc
         data = canonical_record_bytes(record)
         for ref in blob_references(record):
             self.get_blob(ref)

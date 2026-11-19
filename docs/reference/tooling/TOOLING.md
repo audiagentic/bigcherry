@@ -111,19 +111,16 @@ roots. Its read-only probes include kernel, ROCm, amdgpu/firmware, VRAM,
 PCIe card/bridge links, clock state and OD max, power cap and bounds,
 host memory/DIMMs, environment-file SHA-256 and GPU lease status. A reported
 zero current power cap is flagged `zero_cap_suspect`, never interpreted as
-a valid cap. For every newly published measurement, capture `host_facts.snapshot_at_start()`
-**before** the first measured request or child, and pass the sealed snapshot
-to `measurement_producers.publish(..., host_facts=start)` or
-`run_records.with_host_facts(record, start)`. Every leaf has independent
-`readable` and, when unreadable, a reason; new record writes refuse an
-empty, legacy or post-measurement snapshot while existing immutable v1 records
-remain readable. Native `bc-serve` writes `host-facts.start.v1.json` before
-child launch; the platform ingest verifies its SHA-256 against `session.json`
-and copies its start-time fields without resampling at ingest. Owners of
-external benchmark and lab runs capture before their measured invocation.
-`run_manifest.new_manifest(host=...)` or its optional
-`collect_host_facts=True` remains available for non-measurement lifecycle
-snapshots, without imposing sysfs/tool queries on unrelated operations.
+a valid cap. The native Radiance owner seals host facts before child
+admission and binds the exact start bytes by SHA-256 in its session receipt.
+Parity, workload, calibration, native lab, probe and RSC02 B-arm producers use
+that verified receipt without a second sample; publication and retrieval
+reject empty, unwrapped, late, or mismatched Radiance host facts. Unsealed
+Radiance records must be deleted or re-measured, never reconstructed from
+the current host. Experiment bundles seal their own pre-execution facts.
+Other engines' producer migrations belong to MRC07. The platform collector
+does not import any engine. Non-measurement lifecycle manifests may collect
+host state separately without claiming it is a measured start.
 The workloads tool imports its card/power sampling readers from this core
 module. MRC01's manifest edges and results CLI, and MRC06's producer
 migrations, are outside these slices.
