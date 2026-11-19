@@ -19,6 +19,22 @@ manifests they start from. The engine still starts from flags until the S4
 cutover, so this is not yet a fully qualified v1 launch.
 
 
+## Native YAML candidate
+
+Build the patched `radiance` source with the `native-serving` recipe to select
+wire edition 3 for the engine, `bc-serve` and the MoE worker. Each build generates
+the codec from the same registry and verifies the tracked fingerprint.
+
+For a fresh v3 start, select the BigCherry hardware profile and author the
+Radiance settings in YAML. Relative YAML paths resolve under the model root.
+
+```sh
+bc-serve start CONFIG --native-config fleet.yaml --model-root MODEL_DIR --run-dir RUN_DIR
+```
+
+For an exact replay, use `bc-serve start --manifest MANIFEST --run-dir RUN_DIR`.
+It reads the YAML bytes and resolution root from the admitted manifest.
+
 ## RSC02 step 3: manifest-bound power and native runtime guards
 
 The foreground `bc-serve serve` and detached `bc-serve start` owner authenticate

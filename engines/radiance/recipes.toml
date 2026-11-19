@@ -115,6 +115,11 @@ description = "radiance's own release build of the engine binary."
 options = {}
 needs = []
 
+[build.native-serving]
+description = "Radiance with the shared v3 managed serving wire contract. Pair with source.radiance."
+options = { BC_SERVING_CONTRACT_VERSION = "3" }
+needs = []
+
 # The diagnostic build: defines BC_MOE_REMOTE_DIAG for the engine core and the arch plugins (rad0004's call sites and
 # the extension point's diagnostic answers are compiled out without it). Pair it with source.radiance-diag.
 [build.moe-diag]

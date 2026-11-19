@@ -113,6 +113,7 @@ void usage() {
            "DIR] "
            "[--set k=v]\n"
            "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
+           "         [--native-config YAML --model-root DIR]  select native YAML for a v3 named start\n"
            "         --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B\n"
            "             --calibration-store FILE   foreground finite ABBA workload, strict measured-drift "
            "gate\n"
@@ -141,7 +142,7 @@ void usage() {
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary, stored_manifest;
+    fs::path run_dir, engine_binary, stored_manifest, native_config;
     std::string config_name;
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
@@ -194,6 +195,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             opts.sets.push_back(need());
         } else if (arg == "--manifest") {
             stored_manifest = need();
+        } else if (arg == "--native-config") {
+            native_config = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
@@ -234,6 +237,19 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         opts.sets.push_back("layout.name=" + Json(config_name).dump());
     if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
         throw std::runtime_error("--manifest must name an existing regular file");
+    if (!native_config.empty()) {
+        if (bc::serving::v2::kContractVersion != 3)
+            throw std::runtime_error("--native-config requires a v3 serving build");
+        if (config_name.empty() || !stored_manifest.empty() || opts.model_root.empty())
+            throw std::runtime_error("--native-config requires a named CONFIG and --model-root DIR");
+        if (!fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root))
+            throw std::runtime_error("--native-config and --model-root must name an existing file and directory");
+        if (calibration_run || !lab_experiment.empty())
+            throw std::runtime_error("--native-config requires a normal serving start");
+    } else if ((cmd == "serve" || cmd == "start") && bc::serving::v2::kContractVersion == 3 &&
+               stored_manifest.empty()) {
+        throw std::runtime_error("v3 serving requires --native-config YAML for a fresh start");
+    }
     run_dir = fs::absolute(run_dir);
     if (!lab_experiment.empty() &&
         (cmd != "serve" || calibration_run || config_name.empty() || !stored_manifest.empty() ||
@@ -390,6 +406,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
 
     inputs.self = self;
     inputs.engine_binary = engine_binary;
+    if (!native_config.empty())
+        inputs.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
     inputs.power_profile = power_profile;
     inputs.live_policy_file = std::move(live_policy_file);
     inputs.calibration_run = calibration_run;

@@ -17,6 +17,40 @@ function(bc_add_manifest_library target abi generated)
   target_include_directories(${target} PUBLIC "${src}/v2" "${generated}" "${src}")
 endfunction()
 
+function(bc_add_contract_generator)
+  if(TARGET bc_contract_gen)
+    return()
+  endif()
+  set(src "${CMAKE_CURRENT_FUNCTION_LIST_DIR}/contract")
+  add_library(bc_contract STATIC "${src}/registry.cpp")
+  target_link_libraries(bc_contract PUBLIC bc_jcs)
+  target_include_directories(bc_contract PUBLIC "${src}")
+  add_executable(bc_contract_gen "${src}/generate.cpp")
+  target_link_libraries(bc_contract_gen PRIVATE bc_contract)
+endfunction()
+
+function(bc_generate_serving_v3 generated)
+  bc_add_contract_generator()
+  set(src "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
+  set(registry "${src}/contract/serving-v2.toml")
+  set(fingerprint "${src}/generated/v3/contract.fingerprint")
+  add_custom_command(
+    OUTPUT "${generated}/serving_types.h" "${generated}/serving_codec.h"
+           "${generated}/serving_codec.cpp"
+    BYPRODUCTS "${generated}/serving-v3.schema.json" "${generated}/serving-fields.md"
+               "${generated}/contract.fingerprint"
+    COMMAND bc_contract_gen --successor "${registry}" "${generated}"
+    COMMAND "${CMAKE_COMMAND}" -E compare_files "${generated}/contract.fingerprint" "${fingerprint}"
+    DEPENDS bc_contract_gen "${registry}" "${fingerprint}" VERBATIM)
+endfunction()
+
+set(BC_SERVING_CONTRACT_VERSION "2" CACHE STRING "Serving manifest wire edition")
+if(NOT BC_SERVING_CONTRACT_VERSION MATCHES "^[23]$")
+  message(FATAL_ERROR "BC_SERVING_CONTRACT_VERSION must be 2 or 3")
+endif()
+if(BC_SERVING_V3_NATIVE_TEST AND BC_SERVING_CONTRACT_VERSION STREQUAL "3")
+  message(FATAL_ERROR "Choose the runtime v3 edition or the isolated v3 native-consumer test")
+endif()
 if(DEFINED BC_SERVING_GENERATED_DIR AND NOT BC_SERVING_V3_NATIVE_TEST)
   message(FATAL_ERROR "BC_SERVING_GENERATED_DIR is reserved for the isolated v3 native-consumer test")
 endif()
@@ -44,6 +78,9 @@ if(NOT TARGET bc_serving_v2)
   target_link_libraries(bc_jcs PUBLIC bc_json_dependency)
   if(BC_SERVING_V3_NATIVE_TEST)
     set(_bc_manifest_generated "${BC_SERVING_GENERATED_DIR}")
+  elseif(BC_SERVING_CONTRACT_VERSION STREQUAL "3")
+    set(_bc_manifest_generated "${CMAKE_CURRENT_BINARY_DIR}/bc-serving-generated/v3")
+    bc_generate_serving_v3("${_bc_manifest_generated}")
   else()
     set(_bc_manifest_generated "${_bc_v2_dir}/generated/v2")
   endif()

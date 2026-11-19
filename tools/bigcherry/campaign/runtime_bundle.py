@@ -29,11 +29,11 @@ TestLister = Callable[[Path, Path], dict[str, list[str]]]
 GPU_LABEL = "gpu"
 
 
-def _cache_source(tree: Path) -> str | None:
-    """The source directory a CMake tree was configured from (its cache's CMAKE_HOME_DIRECTORY), or None."""
+def _cache_value(tree: Path, name: str) -> str | None:
+    """Read the effective value from this CMake configuration, if present."""
     try:
         for line in (tree / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace").splitlines():
-            if line.startswith("CMAKE_HOME_DIRECTORY:"):
+            if line.startswith(f"{name}:"):
                 return line.split("=", 1)[1].strip()
     except OSError:
         pass
@@ -51,7 +51,7 @@ def component_build_dir(build_dir: Path, name: str, source: Path | None = None) 
     plain = build_dir / "components" / name
     if source is None:
         return plain
-    pinned = _cache_source(plain)
+    pinned = _cache_value(plain, "CMAKE_HOME_DIRECTORY")
     if pinned is None or Path(pinned).resolve() == Path(source).resolve():
         return plain
     return build_dir / "components" / f"{name}@{hashlib.sha256(str(Path(source).resolve()).encode()).hexdigest()[:10]}"
@@ -96,6 +96,7 @@ def build_runtime(
     if prefix.exists():
         shutil.rmtree(prefix)
     runner(["cmake", "--install", str(build_dir), "--prefix", str(prefix)], source_root)
+    serving_edition = _cache_value(build_dir, "BC_SERVING_CONTRACT_VERSION") if engine == engines.RADIANCE else None
     for name, component in sorted(declared.items()):
         component_build = component_build_dir(build_dir, name, component.root)
         values = {"engine_source": str(source_root), "targets": ";".join(component.targets)}
@@ -103,6 +104,8 @@ def build_runtime(
         for key, value in launcher_options:
             options.setdefault(key, value)
         options.update(rocm_options)
+        if serving_edition is not None and name in {"serving", "moe-remote"}:
+            options["BC_SERVING_CONTRACT_VERSION"] = serving_edition
         options["CMAKE_PREFIX_PATH"] = str(prefix)
         if c_compiler:
             options["CMAKE_C_COMPILER"] = c_compiler

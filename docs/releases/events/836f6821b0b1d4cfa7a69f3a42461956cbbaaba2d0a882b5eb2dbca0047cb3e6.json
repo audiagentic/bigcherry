@@ -1,0 +1,23 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_225722_radiance-22-can-build-and-lau_1638",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/README.md",
+    "engines/radiance/components/serving/bc_serving_v2.cmake",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/recipes.toml",
+    "tools/bigcherry/campaign/runtime_bundle.py",
+    "tools/tests/campaign/test_runtime_bundle_source_path.py"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Select the shared v3 wire edition in the native-serving build. Each consumer generates and verifies the same codec fingerprint. The v3 owner CLI accepts authored native YAML with the existing model-root and named profile, and exact replay retains embedded configuration.",
+  "timestamp-utc": "2026-11-19T22:57:22.489023Z",
+  "user-summary-candidate": "Radiance 2.2 can build and launch the native YAML serving candidate through the normal owner CLI."
+}

@@ -12,11 +12,7 @@ include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")
 # The serving manifest v2 contract (contract/README.md): the field registry contract/serving-v2.toml and its generator.
 # GPU-free and independent of bc_serving, whose typed model it generates (generated/, committed; bc_contract_check
 # fails CI when a committed file differs from the generator's output).
-add_library(bc_contract STATIC contract/registry.cpp)
-target_link_libraries(bc_contract PUBLIC bc_jcs)
-target_include_directories(bc_contract PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contract")
-add_executable(bc_contract_gen contract/generate.cpp)
-target_link_libraries(bc_contract_gen PRIVATE bc_contract)
+bc_add_contract_generator()
 
 # The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve's manifest writer plans owner maps with it (manifest_writer.cpp).
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
@@ -257,16 +253,9 @@ if(BUILD_TESTING)
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
 
   # Exercise the successor using the production manifest source list with a
-  # generated v3 codec. Current runtime targets keep their v2 codec.
-  set(successor_registry "${CMAKE_CURRENT_SOURCE_DIR}/contract/serving-v2.toml")
+  # generated v3 codec, independently of the selected runtime edition.
   set(successor_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/v3")
-  add_custom_command(
-    OUTPUT "${successor_dir}/serving_types.h" "${successor_dir}/serving_codec.h"
-           "${successor_dir}/serving_codec.cpp"
-    BYPRODUCTS "${successor_dir}/serving-v3.schema.json" "${successor_dir}/serving-fields.md"
-               "${successor_dir}/contract.fingerprint"
-    COMMAND bc_contract_gen --successor "${successor_registry}" "${successor_dir}"
-    DEPENDS bc_contract_gen "${successor_registry}" VERBATIM)
+  bc_generate_serving_v3("${successor_dir}")
   bc_add_manifest_library(bc_serving_v3_wire radiance::abi "${successor_dir}")
   set_target_properties(bc_serving_v3_wire PROPERTIES EXCLUDE_FROM_ALL TRUE)
   add_executable(bc_serving_v3_wire_test EXCLUDE_FROM_ALL v2/native_config_manifest_test.cpp)
