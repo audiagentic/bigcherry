@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_221728_keep-native-serving-dependenci_3563",
+  "files": [
+    "engines/radiance/components/serving/component.toml"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Declare native serving ABI source, environment and internal flags in component coupling metadata. Recipe, coupling and runtime asset checks passed 43 tests and 27 subtests.",
+  "timestamp-utc": "2026-11-19T22:17:28.012862Z",
+  "user-summary-candidate": "Keep native serving dependencies represented in release metadata."
+}
