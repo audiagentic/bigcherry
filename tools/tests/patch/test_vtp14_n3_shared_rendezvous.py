@@ -74,7 +74,7 @@ class SharedRendezvousTests(unittest.TestCase):
             self.assertNotRegex(r.stdout, r'"failures": \{\s*"')
 
 
-    def test_rank_buffer_allocation_failures_release_unpublished_storage(self):
+    def test_rank_buffer_allocation_and_owner_retirement(self):
         checkout = radiance_checkout()
         compiler = shutil.which("c++")
         if checkout is None or compiler is None:
@@ -95,7 +95,10 @@ class SharedRendezvousTests(unittest.TestCase):
             with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
                 tar.extractall(root, filter="data")
 
-            patches = [file for file in load(N3) if file.path.startswith("libr4d/")]
+            patches = [
+                file for file in load(N3)
+                if file.path.startswith(("libr4d/", "core/plugin/bc_shared_slot."))
+            ]
             results = apply_all(patches, root)
             self.assertTrue(all(result.ok for result in results), results)
             hip = root / "hip"
@@ -107,7 +110,9 @@ class SharedRendezvousTests(unittest.TestCase):
                 "#define __forceinline__ inline\n"
                 "using hipStream_t = void*;\n"
                 "constexpr int hipSuccess = 0;\n"
-                "inline int hipGetDevice(int* out) { *out = 0; return hipSuccess; }\n"
+                "extern thread_local int fake_hip_device;\n"
+                "inline int hipGetDevice(int* out) { *out = fake_hip_device; return hipSuccess; }\n"
+                "inline int hipSetDevice(int dev) { fake_hip_device = dev; return hipSuccess; }\n"
                 "inline int hipDeviceGetPCIBusId(char*, int, int) { return 1; }\n"
             )
             # The IPC allocator lives in a HIP kernel translation unit. Compile its
@@ -116,12 +121,21 @@ class SharedRendezvousTests(unittest.TestCase):
             start = ipc.index("long r4d_ar_ipc_alloc(")
             end = ipc.index("\n}", start) + 2
             (root / "ar_ipc_alloc.inc").write_text(ipc[start:end] + "\n")
+            # The real bridge needs only Radiance's current engine owner from core.
+            (root / "rad_internal.h").write_text("namespace rad { int engine_owner(); }\n")
+            bridge = root / "core/plugin/bc_shared_slot.cpp"
+            exports = [
+                "rad_bc_shared_slot", "rad_bc_rendezvous_owner",
+                "rad_bc_defer_rank_cleanup", "rad_bc_forget_rank_cleanup",
+            ]
             fixture = Path(__file__).parent / "fixtures/radiance_ar_allocation_test.cpp"
             executable = root / "ar_allocation_test"
             compiled = subprocess.run(
                 [compiler, "-std=c++17", "-ffunction-sections", "-fdata-sections",
                  "-Wl,--gc-sections", "-pthread", "-I", str(root), "-I", str(root / "abi"),
-                 "-I", str(root / "libr4d"), str(fixture), "-ldl", "-o", str(executable)],
+                 "-I", str(root / "libr4d"), "-I", str(bridge.parent),
+                 *(f"-Wl,--export-dynamic-symbol={symbol}" for symbol in exports),
+                 str(fixture), str(bridge), "-ldl", "-o", str(executable)],
                 capture_output=True, text=True, timeout=30,
             )
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)

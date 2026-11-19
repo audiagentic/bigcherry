@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
+#include <list>
 #include <map>
 #include <mutex>
 #include <new>
@@ -17,11 +18,18 @@ namespace rad {
 
 namespace {
 
+struct RankCleanup {
+    int owner;
+    void* instance;
+    void (*cleanup)(void*);
+};
+
 struct Slot {
     void*  p     = nullptr;
     size_t size  = 0;
     size_t align = 0;
     std::vector<std::string> users;
+    std::list<RankCleanup> pending;
 };
 
 std::mutex& slots_mu() {
@@ -34,6 +42,12 @@ std::mutex& slots_mu() {
 std::map<std::string, Slot>& slots() {
     static auto* s = new std::map<std::string, Slot>();
     return *s;
+}
+
+Slot* slot_at(const void* storage) {
+    for (auto& entry : slots())
+        if (entry.second.p == storage) return &entry.second;
+    return nullptr;
 }
 
 std::string user_of(const void* addr) {
@@ -64,7 +78,7 @@ int bc_shared_slot_for(const std::string& user, const char* key, size_t size, si
         }
         std::memset(p, 0, size);
         if (init) init(p);
-        it = slots().emplace(key, Slot{ p, size, align, {} }).first;
+        it = slots().emplace(key, Slot{ p, size, align, {}, {} }).first;
     } else if (it->second.size != size || it->second.align != align) {
         if (why)
             *why = "shared slot '" + std::string(key) + "' is " + std::to_string(it->second.size) + " bytes aligned " +
@@ -94,6 +108,21 @@ std::vector<std::string> bc_shared_slot_keys(const std::string& prefix) {
     return out;
 }
 
+void bc_shared_slot_retire_owner(int owner) {
+    std::list<RankCleanup> cleanup;
+    {
+        std::lock_guard<std::mutex> lk(slots_mu());
+        for (auto& entry : slots()) {
+            auto& pending = entry.second.pending;
+            for (auto it = pending.begin(); it != pending.end();) {
+                auto candidate = it++;
+                if (candidate->owner == owner) cleanup.splice(cleanup.end(), pending, candidate);
+            }
+        }
+    }
+    for (const RankCleanup& entry : cleanup) entry.cleanup(entry.instance);
+}
+
 }  /* namespace rad */
 
 extern "C" int rad_bc_shared_slot(const char* key, size_t size, size_t align, void (*init)(void*), void** out,
@@ -106,3 +135,26 @@ extern "C" int rad_bc_shared_slot(const char* key, size_t size, size_t align, vo
 }
 
 extern "C" int rad_bc_rendezvous_owner() { return rad::engine_owner(); }
+
+extern "C" int rad_bc_defer_rank_cleanup(void* storage, void* instance, void (*cleanup)(void*)) {
+    const int owner = rad::engine_owner();
+    if (!storage || !instance || !cleanup || owner <= 0) return RAD_E_INVAL;
+    std::lock_guard<std::mutex> lk(rad::slots_mu());
+    auto* slot = rad::slot_at(storage);
+    if (!slot) return RAD_E_STATE;
+    try {
+        slot->pending.push_back({owner, instance, cleanup});
+    } catch (const std::bad_alloc&) {
+        return RAD_E_NOMEM;
+    }
+    return RAD_OK;
+}
+
+extern "C" void rad_bc_forget_rank_cleanup(void* storage, void* instance) {
+    const int owner = rad::engine_owner();
+    std::lock_guard<std::mutex> lk(rad::slots_mu());
+    auto* slot = rad::slot_at(storage);
+    if (slot) slot->pending.remove_if([=](const rad::RankCleanup& entry) {
+        return entry.owner == owner && entry.instance == instance;
+    });
+}

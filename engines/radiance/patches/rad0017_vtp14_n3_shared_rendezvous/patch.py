@@ -38,8 +38,8 @@ SRC = Path(__file__).resolve().parent / "src"
 # The build identity hashes this file's bytes only (patch_implementation_digest), so the src/ files it
 # creates are pinned here: a src/ change must update these digests, which changes this file and the build.
 SRC_SHA256 = {
-    "bc_shared_slot.cpp": "de4ea6a2e6001a34e00cec18b96a7951daa88eaad740031e68ce81c4aed7e3e4",
-    "bc_shared_slot.h": "e1ca434a4ec14bddac2c91a5f924a5557c9a39220c9714506846fff85c4c9a46",
+    "bc_shared_slot.cpp": "663c5618be297b2f8b3e9e67f187940e4aaa56cdb2b92e5846aa859d9d832bec",
+    "bc_shared_slot.h": "5c68f1b7bc09fa31d846022c6f468e9219197f146f4e7a9b60bd62094d521506",
     "bc_shared_slot_test.cpp": "e820233bf87f51ea8b038e07cb81612be4b226280e1d8424865d74fb62480492",
 }
 
@@ -137,6 +137,10 @@ AR_ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", descriptio
                 rv.failed = 0;
                 rv.arrived = 0;
                 rv.epoch = 0;
+                std::memset(rv.scratch, 0, sizeof rv.scratch);
+                std::memset(rv.flags, 0, sizeof rv.flags);
+                std::memset(rv.seq, 0, sizeof rv.seq);
+                std::memset(rv.dev, 0, sizeof rv.dev);
             }
             return rv;
         }
@@ -221,6 +225,33 @@ AR_ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", descriptio
     r4d_ar_ipc_free(in->my_seq);
     r4d_ar_ipc_free(in->locpack);
     r4d_ar_ipc_free(in->my_stage);
+}
+
+void free_failed_rank(void* instance) {
+    auto* in = static_cast<ArInst*>(instance);
+    int previous = -1;
+    const bool restore = hipGetDevice(&previous) == hipSuccess && previous != in->allocation_device;
+    if (hipSetDevice(in->allocation_device) != hipSuccess)
+        std::fprintf(stderr, "[r4d] could not bind device %d for failed all-reduce cleanup\n",
+                     in->allocation_device);
+    free_rank_buffers(in);
+    if (restore) (void)hipSetDevice(previous);
+    delete in;
+}
+
+using DeferRankCleanup = int (*)(void*, void*, void (*)(void*));
+using ForgetRankCleanup = void (*)(void*, void*);
+
+struct RankCleanupBridge {
+    DeferRankCleanup defer = reinterpret_cast<DeferRankCleanup>(
+        dlsym(RTLD_DEFAULT, "rad_bc_defer_rank_cleanup"));
+    ForgetRankCleanup forget = reinterpret_cast<ForgetRankCleanup>(
+        dlsym(RTLD_DEFAULT, "rad_bc_forget_rank_cleanup"));
+};
+
+const RankCleanupBridge& rank_cleanup_bridge() {
+    static const RankCleanupBridge bridge;
+    return bridge;
 }
 
 /* Build the world. `max_numel` is the largest message any launch on this instance carries.""",
@@ -350,6 +381,19 @@ AR_ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", descriptio
     Rendezvous& rv = rv_for(group);
     {
         std::lock_guard<std::mutex> lk(rv.m);
+        if (rv.failed) return RAD_E_STATE;
+        if (rv.owner != 0) {
+            const auto& bridge = rank_cleanup_bridge();
+            const int rc = bridge.defer && bridge.forget
+                ? bridge.defer(&rv, in, free_failed_rank) : RAD_E_STATE;
+            if (rc != RAD_OK) {
+                rv.failed = 1;
+                rv.cv.notify_all();
+                return rc;
+            }
+            in->allocation_device = dev;
+            in->pending_rv = &rv;
+        }
         rv.scratch[rank] = in->my_scratch;
         rv.flags[rank]   = in->my_flags;
         rv.seq[rank]     = in->my_seq;
@@ -379,6 +423,51 @@ AR_ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", descriptio
     delete in;""",
         guard="BC_VTP14_N3_RELEASE",
         rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
+    ),
+    _edit(
+        "n3-own-published-rank",
+        r"""    long my_scratch = 0, my_flags = 0, my_seq = 0, locpack = 0;""",
+        r"""    long my_scratch = 0, my_flags = 0, my_seq = 0, locpack = 0;
+    Rendezvous* pending_rv = nullptr;  /* BC_VTP14_N3_RANK_PENDING */
+    int allocation_device = -1;""",
+        guard="BC_VTP14_N3_RANK_PENDING",
+    ),
+    _edit(
+        "n3-defer-failed-rank",
+        r"""    int rc = build(in, k.group, k.rank, k.world, k.numel, k.dtype, k.host);
+    if (rc != RAD_OK) { delete in; return rc; }
+    {
+        std::lock_guard<std::mutex> lk(g_cache_mu);
+        g_cache.push_back(CacheSlot{ k, in, 1 });
+    }
+    *out = in;""",
+        r"""    // BC_VTP14_N3_FAILED_RANK: once published, failed instances stay live until the owner retires them.
+    int rc = build(in, k.group, k.rank, k.world, k.numel, k.dtype, k.host);
+    if (rc == RAD_OK) {
+        try {
+            std::lock_guard<std::mutex> lk(g_cache_mu);
+            g_cache.push_back(CacheSlot{ k, in, 1 });
+        } catch (const std::bad_alloc&) {
+            rc = RAD_E_NOMEM;
+        }
+    }
+    Rendezvous* rv = in->pending_rv;
+    if (rc != RAD_OK) {
+        if (rv) {
+            std::lock_guard<std::mutex> lk(rv->m);
+            rv->failed = 1;
+            rv->cv.notify_all();
+        } else {
+            delete in;
+        }
+        return rc;
+    }
+    if (rv) {
+        rank_cleanup_bridge().forget(rv, in);
+        in->pending_rv = nullptr;
+    }
+    *out = in;""",
+        guard="BC_VTP14_N3_FAILED_RANK",
     ),
 ))
 
@@ -438,10 +527,33 @@ AR_IPC = FilePatch(path="libr4d/r4d_ar_oneshot_2rank_exact.hip", language="none"
     ),
 ))
 
+ENGINE_RETIRE = FilePatch(path="core/engine.cpp", language="none",
+                          description="Release failed rendezvous allocations after the owning engine drains",
+                          edits=(
+    _edit(
+        "n3-retire-rank-include",
+        '#include "build/startup.h"\n',
+        '#include "build/startup.h"\n'
+        '#include "plugin/bc_shared_slot.h" /* BC_VTP14_N3_RETIRE_INCLUDE */\n',
+        guard="BC_VTP14_N3_RETIRE_INCLUDE",
+    ),
+    _edit(
+        "n3-retire-rank",
+        "    for (auto& r : ranks_) r->ctx.shutdown();\n"
+        "    if (cards_claimed_) {",
+        "    for (auto& r : ranks_) r->ctx.shutdown();\n"
+        "    // BC_VTP14_N3_RETIRE: rank workers have joined, and the library and devices are still live.\n"
+        "    bc_shared_slot_retire_owner(owner_);\n"
+        "    if (cards_claimed_) {",
+        guard="BC_VTP14_N3_RETIRE:",
+    ),
+))
+
 PATCHES = (
     AR_ENTRY,
     AR_IPC,
     ENGINE,
+    ENGINE_RETIRE,
     _created("core/plugin/bc_shared_slot.h", "bc_shared_slot.h", "BC_VTP14_N3: one process-wide named slot"),
     _created("core/plugin/bc_shared_slot.cpp", "bc_shared_slot.cpp", "BC_VTP14_N3: see bc_shared_slot.h"),
     _created("tests/bc_shared_slot_test.cpp", "bc_shared_slot_test.cpp", "BC_VTP14_N3 (BigCherry managed patch rad0017)"),

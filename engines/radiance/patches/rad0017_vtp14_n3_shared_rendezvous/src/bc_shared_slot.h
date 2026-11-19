@@ -9,7 +9,8 @@
  *
  * Fail closed: a key asked for again with a different size or alignment is refused with the reason,
  * never handed a second slot. A slot is constructed once (by the first caller's init) and lives for
- * the process: no destructor is kept, so no callback into an unloaded library remains. */
+ * the process. Rank cleanup callbacks are retired separately before the owning engine unloads
+ * the libraries that registered them. */
 #pragma once
 
 #include <cstddef>
@@ -22,6 +23,11 @@ extern "C" {
  * when the key exists with a different size or alignment (the reason in why[0..why_len)). */
 int rad_bc_shared_slot(const char* key, size_t size, size_t align, void (*init)(void* slot), void** out,
                        char* why, size_t why_len);
+
+/* Before publishing rank buffers, reserve a cleanup in the existing slot under the current
+ * engine owner. A successful init forgets it and keeps the ordinary plugin fini path. */
+int rad_bc_defer_rank_cleanup(void* slot, void* instance, void (*cleanup)(void*));
+void rad_bc_forget_rank_cleanup(void* slot, void* instance);
 }
 
 namespace rad {
@@ -32,6 +38,9 @@ std::vector<std::string> bc_shared_slot_users(const std::string& key);
 
 /* The keys that start with `prefix`, sorted. */
 std::vector<std::string> bc_shared_slot_keys(const std::string& prefix);
+
+/* After this owner's rank threads and device contexts have drained, before plugin unload. */
+void bc_shared_slot_retire_owner(int owner);
 
 /* Tests: record a user by name, as a library resolving the key would. */
 int bc_shared_slot_for(const std::string& user, const char* key, size_t size, size_t align,
