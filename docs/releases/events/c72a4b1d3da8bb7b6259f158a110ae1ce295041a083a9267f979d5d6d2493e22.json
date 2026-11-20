@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261120_124825_radiance-serving-configs-are-n_2191",
+  "files": [
+    "engines/radiance/configs",
+    "engines/radiance/components/serving/xbigcherry.cpp",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/config_loader.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RUM04 steps (i) and (ii-core): every serving config is one native YAML with a closed x-bigcherry section; the engine inspector returns that section and the tuning values from the same sealed bytes, bc-serve decodes them against the closed v1 schema, and the resolver reads a config from its YAML through a device-free inspect. explain --native-config passes all 18 configs and the resolved values equal the TOML-era reference with no TOML present. rad0009 takes the admitted rank-devices when the YAML omits them. Commits f597a0a39..d214bf5a8 on node/radiance-latest-bump.",
+  "timestamp-utc": "2026-11-20T12:48:25.412026Z",
+  "user-summary-candidate": "Radiance serving configs are now single native YAML files; a start no longer reads the old TOML catalogue to resolve them."
+}
