@@ -5,6 +5,7 @@
 #include "manifest_power.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
+#include "config_loader.h"
 #include "release_runtime.h"
 #include "runtime_guards.h"
 #include "sdk_check.h"
@@ -130,7 +131,7 @@ void usage() {
            "         positional CONFIG selects the RSC12 named config. Unchanged static inputs reuse an "
            "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
            "96 canary, 97 plan, 98 busy\n"
-           "         v3 uses --native-config YAML or the verified bundled configs/NAME.yaml.\n"
+           "         v3 reads NAME.yaml from the verified bundle, else from --configs DIR; --native-config YAML names another file.\n"
            "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
            "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
@@ -378,12 +379,13 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
         opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
     }
-    if (prefix && bc::serving::v2::kContractVersion == 3 && native_config.empty() &&
-        stored_manifest.empty() && !config_name.empty() && config_name.find('/') == std::string::npos &&
-        (cmd == "serve" || cmd == "start")) {
-        const fs::path bundled = *prefix / "configs" / (config_name + ".yaml");
-        if (fs::is_regular_file(bundled))
-            native_config = bundled;
+    if (bc::serving::v2::kContractVersion == 3 && native_config.empty() && stored_manifest.empty() &&
+        !config_name.empty() && (cmd == "serve" || cmd == "start")) {
+        // A config is its YAML: NAME.yaml of the verified bundle, else of --configs / BIGCHERRY_CONFIGS.
+        std::vector<fs::path> sources = opts.configs;
+        if (prefix) sources.insert(sources.begin(), *prefix / "configs");
+        if (const fs::path found = bc::serving::config_yaml_for(config_name, sources); !found.empty())
+            native_config = found;
     }
     if (!native_config.empty()) {
         if (bc::serving::v2::kContractVersion != 3)
@@ -396,7 +398,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error("--native-config requires a normal serving start");
     } else if ((cmd == "serve" || cmd == "start") && bc::serving::v2::kContractVersion == 3 &&
                stored_manifest.empty()) {
-        throw std::runtime_error("v3 serving requires --native-config YAML for a fresh start");
+        throw std::runtime_error("v3 serving needs " + config_name + ".yaml in the bundle or --configs DIR (or --native-config YAML) for a fresh start");
     }
     if (quality) {
         if (native_config.empty() || quality->reference.empty() || quality->output.empty() ||
