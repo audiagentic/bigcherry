@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import pytest
 from bigcherry.cli.main import main
-from bigcherry.core import results, run_records
+from bigcherry.core import host_facts, results, run_records
 
 
 def make_record(store, number, *, session="ab-1", decode=40, prefill=1000, ttft=30,
@@ -48,11 +48,14 @@ def make_record(store, number, *, session="ab-1", decode=40, prefill=1000, ttft=
                 {"role": "policy", "blob": blob(policy.encode())},
             ],
         },
-        "host_facts": {
-            "kernel": {"value": kernel, "readable": True},
-            "gpus": [{"bdf": {"value": "0000:01:00.0", "readable": True},
-                      "power": {"cap_uw": {"value": 230000000, "readable": True}}}],
-        },
+        "host_facts": host_facts.snapshot_at_start(
+            {"kernel_release": {"value": kernel, "readable": True},
+             "cards": {"0000:01:00.0": {
+                 "bdf": {"value": "0000:01:00.0", "readable": True},
+                 "power": {"cap_uw": {"value": 230000000, "readable": True}}
+             }}},
+            captured_at=stamp or f"2026-11-{number + 1:02d}T10:00:00Z",
+        ),
         "feature_states": [{
             "engine": "dummy", "feature_id": "live_policy",
             "state": policy, "reason_code": "enabled" if policy == "active" else "disabled",

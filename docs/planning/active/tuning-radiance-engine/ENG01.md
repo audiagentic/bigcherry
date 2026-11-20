@@ -15,16 +15,15 @@ work: M
 
 ## Description
 
-With the live policy warmed the R9700 engine sets the pace (engine local 6.2 ms document / 6.8 ms cold per layer call against helpers 4.0-5.5 ms) and the decode step (~25 ms one-stream, ~47 ms six-stream) is ~75% outside the remote-MoE path. No profile separates attention, gated delta-net, engine-resident experts, synchronisation and host gaps for the default TP1 R9700 engine (existing per-op datasets are dual-XTX: runs/qwen27b-prefill-profile, runs/rad49-tp-prefill-prof). This item owns the artifact and the go/no-go for kernel work.
+First kernel-cost decision gate for production Radiance on the R9700 engine with two XTX helpers. Attribute exposed per-operation work on the current source/ABI with live policy confirmed ON, and pair the profile with a matched unprofiled baseline. Existing historical local-call and decode figures are diagnostic context, not proof of current policy-on op shares or prospective speedup. Profile instrumentation can synchronize and disable replay; keep its overhead separate.
 
 ## Steps
 
-1. Use the lab experiment {"engine": {"profile_ops": "on"}} (runs/rad49-tp-prefill-prof/exp.json). The measuring start must pass host admission: the 2026-11-10 attempts were refused at the n-gram table (47.68 GiB RAM table + 23.07 GiB other allocations + 4.59 GiB headroom against 74.61 GiB available, short by ~0.7 GiB while another job held host memory): run with --ngram-placement disk for the prefill profile, or when the host is quiet; note the plan key changes.
-2. An --experiment start is the lab profile: pass --live-policy FILE (the derived settings of a production manifest) and check the launcher's live placement line says ON; record it.
-3. Separate short probes: cold 27k prefill, 44k document prefill, one-stream decode, six-stream decode; collect rank-0 per-op device time, host-site time and idle wait.
-4. Run the matched unprofiled configuration for throughput (per-op mode adds synchronisation and disables pass replay: its totals are diagnostic).
-5. Rank operators by share of the engine layer call and decide which, if any, is worth a kernel project.
-Not rocprofv3 around the engine (Radiance's AQL backend fails under it).
+1. Record exact current source/ABI/build, topology, manifest and runtime feature state; verify live placement is ON and identity matches the production R9700-engine/two-XTX-helper layout.
+2. Profile separate cold/document prefill and one-/six-stream decode probes. Correlate rank-0 operator time, host work, synchronization, overlap and idle wait using valid clock domains; identify exposed critical-path time rather than summing overlapped device time.
+3. Run the same production configuration unprofiled for throughput and dispersion. Keep instrumentation overhead and any admission/resource changes explicit.
+4. Rank operations by exposed time and calculate a maximum Amdahl bound for eliminating each operation. Compare it with paired noise and a declared worthwhile gain before admitting a kernel candidate.
+5. Record the go/no-go and route any admitted single-operation work to its existing owner. Do not create a generic optimization campaign.
 
 ## Detailed Solution & Technical Design
 
@@ -40,7 +39,7 @@ Not rocprofv3 around the engine (Radiance's AQL backend fails under it).
 
 ## Validation
 
-Per-op tables for the four probes with the policy state, measured-plan key, build id and n-gram placement recorded beside them; an unprofiled reference run; operator totals reconcile to the engine local time within the diagnostic overhead.
+Policy-on identity and runtime activation are recorded with source/build/ABI, model, topology and measured-plan key. Per-op tables cover cold/document prefill and one-/six-stream decode; matched unprofiled references report dispersion. Correlated timestamps distinguish exposed CPU wait from overlapping GPU event totals; diagnostic overhead is stated.
 
 ## Effort & Risk
 
@@ -52,7 +51,7 @@ Per-op tables for the four probes with the policy state, measured-plan key, buil
 
 ## Acceptance Criteria
 
-A labelled R9700 engine breakdown for prefill and decode exists, the top operators are ranked with their share, and a written go/no-go for each candidate kernel project is recorded in this item.
+A current production R9700-engine/two-XTX-helper per-op attribution and matched unprofiled baseline are recorded. The exposed path, operator shares and maximum Amdahl bound are explicit. Each kernel candidate has a written admission/rejection against paired noise and a declared minimum worthwhile gain. No kernel implementation is admitted without this gate.
 
 ## Notes
 
@@ -61,3 +60,8 @@ Source: gateway prior-work audit 2026-11-10; my first attempts: runs/engine-prof
 ## Change Log
 
 - 2026-11-10T13:11:33.523674+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4235
+- 2026-11-20T02:19:41.977225+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria

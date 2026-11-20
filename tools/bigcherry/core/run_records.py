@@ -50,17 +50,22 @@ def _json_bytes(value: object) -> bytes:
 
 
 def with_host_facts(record: dict[str, Any], facts: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Return an independent v1 record populated from the platform collector.
+    """Copy a measurement-owner's already captured v1 start snapshot.
 
     Adapters call this before `put_record`; existing stored records are immutable.
     A caller may inject a fixture snapshot, avoiding host access in unit tests.
     """
     from copy import deepcopy
 
-    from .host_facts import collect_host_facts
+    from .host_facts import validate_start_snapshot
 
+    if facts is None:
+        raise RecordError("start host facts must be captured by the measurement owner")
     updated = deepcopy(record)
-    updated["host_facts"] = deepcopy(facts if facts is not None else collect_host_facts())
+    try:
+        updated["host_facts"] = deepcopy(validate_start_snapshot(facts))
+    except ValueError as exc:
+        raise RecordError(f"invalid start host facts: {exc}") from exc
     validate_record(updated)
     return updated
 
@@ -167,7 +172,22 @@ def validate_record(record: Any) -> dict[str, Any]:
     _check_schema(record, schema, schema, "record")
     # Arbitrary workload/host details must still be JSON, with no NaN/Infinity.
     _json_bytes(record)
-    # Every record declares each metric's direction and gate (MRC05), phase by phase.
+    # MRC02: a Radiance record must carry the SHA-bound measurement start
+    # receipt on both read and write. Do not synthesize an old host snapshot.
+    from . import engines
+    if record["identity"]["engine"] == engines.RADIANCE:
+        from .host_facts import validate_start_snapshot
+
+        try:
+            validate_start_snapshot(record["host_facts"])
+            start = datetime.fromisoformat(record["host_facts"]["captured_at"])
+            recorded = datetime.fromisoformat(record["recorded_at"])
+            if start > recorded:
+                raise ValueError("start receipt is after measured record")
+        except (ValueError, TypeError, KeyError) as exc:
+            raise RecordError(f"Radiance record requires sealed start host facts: {exc}") from exc
+
+    # MRC05/#1226: exact per-phase metric direction and gate are mandatory.
     if "metric_specs" not in record:
         raise RecordError("metric_specs is required: every metric needs an explicit direction and gate")
     for phase in ("decode", "prefill", "ttft"):
@@ -176,8 +196,8 @@ def validate_record(record: Any) -> dict[str, Any]:
         for spec in record["metric_specs"][phase].values():
             if type(spec["gated"]) is not bool:
                 raise RecordError("metric gate must be a boolean")
-    # VA25 validity must not have internally contradictory verdict metadata.
-    # Absence is supported for pre-MRC06 v1 records; such records remain readable.
+
+    # VA25 validity must not contradict its reason codes.
     if "validity" in record:
         validity = record["validity"]
         if (validity["state"] == "valid") != (not validity["reason_codes"]):

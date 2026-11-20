@@ -236,6 +236,13 @@ void feature_state_start_status_and_warning() {
     c.behaviour["spec"]["handoff"]["transport"] = {{"shm", ""}};
     const pid_t owner = c.owner();
     c.wait_state({"running"});
+    const Json host_start = Json::parse(text(c.run / "host-facts.start.v1.json"));
+    assert(host_start.at("schema_version") == 1);
+    assert(host_start.at("capture_phase") == "owner_start");
+    assert(host_start.at("captured_at").is_string());
+    assert(host_start.at("facts").at("kernel_release").at("readable").is_boolean());
+    assert(host_start.at("facts").at("mem_available_kib").at("readable").is_boolean());
+    assert(host_start.at("facts").at("cards").is_object());
     const auto reply = ss::control(c.run, "status", 2s);
     assert(reply && reply->at("state") == "running");
     const Json features = reply->at("feature_states");
@@ -1654,6 +1661,12 @@ int test_main(int argc, char** argv) {
     g_root = fs::current_path() / "bc-session-fixture";
     fs::remove_all(g_root);
     fs::create_directories(g_root);
+    if (argc == 2 && std::string(argv[1]) == "--host-start-only") {
+        // Focused CPU-only MRC02 owner receipt regression (no hardware lease).
+        feature_state_start_status_and_warning();
+        std::cout << "PASS: native owner host-facts start receipt before child\n";
+        return 0;
+    }
     injected_owner_plan_exception();
     real_session_power_returned_errors();
     manifest_writer_before_durable_admission();

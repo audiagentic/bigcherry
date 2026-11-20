@@ -28,6 +28,8 @@ def cmd_workload(args: argparse.Namespace) -> int:
         if not info.get("manifest"):
             raise workloads.WorkloadError("verified live manifest required for v1 measurement")
         manifest_bytes = Path(info["manifest"]).read_bytes()
+        # Verify the native owner's SHA-sealed start receipt before the first request.
+        host_start = workloads.host_facts.read_owner_start(Path(info["manifest"]).parent)
         before = workloads.host_facts.power_state()
         metrics, details = workloads.execute(args.id, args.url, args.repo_root, cfg)
         after = workloads.host_facts.power_state()
@@ -47,7 +49,7 @@ def cmd_workload(args: argparse.Namespace) -> int:
             row, manifest_bytes=manifest_bytes, work_root=args.work_root,
             argv=list(sys.argv),
             environment={name: os.environ[name] for name in env_keys if name in os.environ},
-            host_snapshot=workloads.host_facts.collect_host_facts(),
+            host_snapshot=host_start,
         )
         (run / "record.sha256").write_text(digest + "\n")
         print(f"{args.id}@{cfg['version']} {row['row_id']} -> {run}")

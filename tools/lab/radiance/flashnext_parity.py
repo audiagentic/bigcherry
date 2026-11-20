@@ -419,13 +419,19 @@ def _platform():
     return engines, feature_states, measurement_producers
 
 
-def capture_host_facts(launch: Path) -> None:
-    """Snapshot passive host readings while the measured session is active."""
+def capture_host_facts(launch: Path, run_dir: Path) -> None:
+    """Copy native owner start receipt and bound session before measuring."""
     tools = str(REPO / "tools")
     if tools not in sys.path:
         sys.path.insert(0, tools)
-    from bigcherry.core.host_facts import collect_host_facts
-    _write(launch / "host-facts.json", collect_host_facts())
+    from bigcherry.core import host_facts
+    from shutil import copyfile
+
+    host_facts.read_owner_start(run_dir)
+    copyfile(Path(run_dir) / host_facts.START_RECEIPT_FILE,
+             Path(launch) / host_facts.START_RECEIPT_FILE)
+    copyfile(Path(run_dir) / "session.json", Path(launch) / "native-session-start.json")
+    host_facts.read_owner_start(launch, session_name="native-session-start.json")
 
 
 def capture_launch_provenance(
@@ -479,7 +485,15 @@ def publish_launch_record(
     manifest = _load(manifest_file)
     snapshot = _load(launch / "launch-provenance.json")
     warmup = _load(launch / "launch.json")
-    facts = _load(launch / "host-facts.json")
+    from bigcherry.core import host_facts as host_capture
+    try:
+        facts = host_capture.read_owner_start(launch, session_name="native-session-start.json")
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ParityError(f"native owner sealed start receipt unavailable: {exc}") from exc
+    owner = _load(launch / "native-session-start.json")
+    native_manifest = Path(owner.get("manifest", ""))
+    if not native_manifest.is_file() or native_manifest.read_bytes() != manifest_file.read_bytes():
+        raise ParityError("native owner admitted manifest differs from measured parity manifest")
     states = feature_states.read_feature_states(launch / feature_states.FILE_NAME)
     if any(item["engine"] != engines.RADIANCE for item in states):
         raise ParityError("native feature-state engine differs from Radiance")
@@ -526,6 +540,8 @@ def publish_launch_record(
         "policy_state": measurement_producers.canonical_blob(state),
         "warmup": launch / "launch.json",
         "native_feature_states": launch / feature_states.FILE_NAME,
+        "native_host_start": launch / host_capture.START_RECEIPT_FILE,
+        "native_session_start": launch / "native-session-start.json",
         "build_metadata": meta_file,
     }
     # Raw source bytes remain content-addressed, never recreated from metrics.
@@ -552,7 +568,8 @@ def publish_launch_record(
     return measurement_producers.publish(
         work_root=work_root,
         run_id=manifest["metadata"]["instance_id"],
-        recorded_at=snapshot["recorded_at"],
+        # The sealed owner start receipt marks the actual measurement start (the argv was selected earlier).
+        recorded_at=facts["captured_at"],
         identity=identity,
         workload={"name": "flashnext-parity", "definition": run["workload"]},
         metrics=metrics, metric_specs=metric_specs,
@@ -568,7 +585,7 @@ def publish_launch_record(
 
 
 def cmd_capture_host_facts(args) -> int:
-    capture_host_facts(Path(args.launch))
+    capture_host_facts(Path(args.launch), Path(args.run_dir))
     return 0
 
 
@@ -631,8 +648,9 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("log")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_policy_line)
-    p = sub.add_parser("capture-host-facts", help="passive native-session host snapshot")
+    p = sub.add_parser("capture-host-facts", help="pin SHA-sealed native owner start")
     p.add_argument("launch")
+    p.add_argument("--run-dir", required=True)
     p.set_defaults(fn=cmd_capture_host_facts)
     p = sub.add_parser("capture-provenance", help="capture native argv and input selection")
     p.add_argument("launch")

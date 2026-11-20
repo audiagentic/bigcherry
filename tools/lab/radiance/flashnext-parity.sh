@@ -84,8 +84,8 @@ case "$CMD" in
     # The run records are the result. These two are `bigcherry results baseline|compare` over this OUT's launch receipts.
     [ -n "$OUT" ] || usage
     if [ "$CMD" = baseline ]; then [ -n "$NAME" ] && [ -n "$TO" ] || usage; else [ -n "$BASELINE" ] || usage; fi
-    source tools/env/bigcherry-env.sh >/dev/null 2>&1 || exit 2
     compgen -G "$OUT/launch-*/record.sha256" >/dev/null || { echo "flashnext-parity: $OUT has no launch records" >&2; exit 2; }
+    source tools/env/bigcherry-env.sh >/dev/null 2>&1 || exit 2
     RECORD_ARGS=()
     for receipt in "$OUT"/launch-*/record.sha256; do
       [ -s "$receipt" ] || { echo "flashnext-parity: $receipt: no run record for this launch" >&2; exit 2; }
@@ -282,8 +282,8 @@ data["actual_warmup_s"]=float(sys.argv[2]); data["warmup_target_s"]=float(sys.ar
 data["warmup_rounds"]=int(sys.argv[4])
 p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP_ELAPSED_S" "$WARMUP_S" "$k" ||
     fail "cannot record actual warmup"
-  python3 "$PARITY" capture-host-facts "$L" ||
-    fail "cannot snapshot measurement-time host facts"
+  python3 "$PARITY" capture-host-facts "$L" --run-dir "$RUN" ||
+    fail "cannot pin sealed native owner start receipt"
 
   # a. cold prefill
   for s in $(seq "$COLD_SEED0" $((COLD_SEED0 + COLD_FILLS - 1))); do

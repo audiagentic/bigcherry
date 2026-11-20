@@ -11,7 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import run_records, calibration_records, feature_registry
+from . import engines, run_records, calibration_records, feature_registry
+from . import host_facts as host_capture
 
 
 def canonical_blob(value: object) -> bytes:
@@ -59,6 +60,16 @@ def publish(
         raise run_records.RecordError("actual argv required")
     if any(not isinstance(v, (bytes, Path)) for v in inputs.values()):
         raise run_records.RecordError("provenance inputs must be exact bytes or readable files")
+    # Radiance requires a sealed start receipt; other engines are MRC07 work.
+    recorded_time = utc_stamp(recorded_at)
+    if identity["engine"] == engines.RADIANCE:
+        try:
+            host_capture.validate_start_snapshot(host_facts)
+            start_time = utc_stamp(host_facts["captured_at"])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise run_records.RecordError(f"missing or invalid start host facts: {exc}") from exc
+        if start_time > recorded_time:
+            raise run_records.RecordError("start host-facts timestamp is after the measured record time")
     # Only registered producer engines have a native feature-state contract.
     if identity["engine"] in feature_registry.FEATURES:
         feature_registry.require_coverage(identity["engine"], feature_states)
@@ -73,7 +84,7 @@ def publish(
     record: dict[str, Any] = {
         "schema_version": 1,
         "run_id": run_id,
-        "recorded_at": utc_stamp(recorded_at),
+        "recorded_at": recorded_time,
         "identity": identity,
         "workload": workload,
         "metrics": metrics,

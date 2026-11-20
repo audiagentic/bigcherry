@@ -1,0 +1,22 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_022341_updated-five-strataradiance-p_6467",
+  "files": [
+    "docs/planning/active/patching-bc-optimizations/BCOP37.md",
+    "docs/planning/active/patching-radiance-rdna3/RAD49.md",
+    "docs/planning/active/patching-radiance-rdna3/RAD11.md",
+    "docs/planning/active/tuning-radiance-engine/ENG01.md",
+    "docs/planning/active/run-multi-engine/MEN05.md"
+  ],
+  "plan-item-ids": [
+    "BCOP37",
+    "RAD49",
+    "RAD11",
+    "ENG01",
+    "MEN05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reconciled Strata qualification, TP2 no-go, engine critical-path attribution, cross-engine quality and IQ3-class feasibility gates through Planning MCP. Added and closed findings reviews RV4234\u2013RV4238. Retained all five items in pending state; did not create conditional MEN29/ENG09 or supersede RAD49/RAD42/ENG02.",
+  "timestamp-utc": "2026-11-20T02:23:41.771883Z",
+  "user-summary-candidate": "Updated five Strata/Radiance plan gates to reflect measured limits, current-source qualification, quality evidence and conditional implementation ownership."
+}
