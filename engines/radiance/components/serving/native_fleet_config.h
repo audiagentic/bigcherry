@@ -5,8 +5,12 @@
 #include "v2/native_config_snapshot.h"
 
 #include <optional>
+#include <string>
 
 namespace bc::serving {
+
+// The top-level x-bigcherry subtree of YAML text as JSON (null when absent); see native_fleet_config.cpp.
+nlohmann::json x_bigcherry_subtree(const std::string& yaml_utf8);
 
 // One managed, single-model fleet document. The site supplies non-secret YAML,
 // including comments and unused anchors, since a snapshot retains every byte.

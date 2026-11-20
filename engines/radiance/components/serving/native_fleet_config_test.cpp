@@ -76,7 +76,35 @@ int sealed_memfd(const std::string& bytes) {
 
 }  // namespace
 
+// The x-bigcherry subtree: YAML 1.2 core typing, no coercion, a duplicate key refused with its path.
+void test_x_bigcherry_subtree() {
+    const std::string head = "cards: [0]\nmodels:\n  tiny: {model: tiny.rad}\n";
+    check(bc::serving::x_bigcherry_subtree(head).is_null(), "a file without x-bigcherry must yield null");
+    const Json typed = bc::serving::x_bigcherry_subtree(head +
+        "x-bigcherry:\n  schema: 1\n  on: true\n  quoted: \"true\"\n  ratio: 0.5\n  none:\n  words: off\n"
+        "  list: [1, \"2\", x]\n  nest: {a: 1}\n");
+    check(typed.at("schema") == 1 && typed.at("on") == true && typed.at("quoted") == "true" &&
+              typed.at("ratio") == 0.5 && typed.at("none").is_null() && typed.at("words") == "off" &&
+              typed.at("list") == Json::array({1, "2", "x"}) && typed.at("nest").at("a") == 1,
+          "x-bigcherry scalars must follow YAML 1.2 core typing without coercion");
+    try {
+        (void)bc::serving::x_bigcherry_subtree(head + "x-bigcherry:\n  helper: {combine: true}\n  helper: {combine: false}\n");
+    } catch (const std::invalid_argument& error) {
+        check(std::string(error.what()).find("x-bigcherry.helper is given twice") != std::string::npos, error.what());
+        try {
+            (void)bc::serving::x_bigcherry_subtree(head + "x-bigcherry:\n  helper:\n    combine: true\n    combine: false\n");
+        } catch (const std::invalid_argument& nested) {
+            check(std::string(nested.what()).find("x-bigcherry.helper.combine is given twice") != std::string::npos,
+                  nested.what());
+            return;
+        }
+        throw std::runtime_error("expected a nested duplicate refusal");
+    }
+    throw std::runtime_error("expected a duplicate refusal");
+}
+
 int main() {
+    test_x_bigcherry_subtree();
     const std::string original = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny:\r\n"
                                  "    model: tiny.rad\r\n    mixed-step-target-ms: 17\r\n"
                                  "    prefill-interleave: 0\r\n";

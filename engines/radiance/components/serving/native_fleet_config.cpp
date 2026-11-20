@@ -3,13 +3,102 @@
 
 #include "fleet/fleet.h"
 
+#include <ryml.hpp>
+#include <ryml_std.hpp>
+
 #include <charconv>
+#include <cmath>
 #include <cstring>
 #include <iostream>
 #include <stdexcept>
 #include <utility>
 
 namespace bc::serving {
+
+namespace {
+
+struct XBigcherryError : std::runtime_error {
+    using std::runtime_error::runtime_error;
+};
+[[noreturn]] void on_basic(ryml::csubstr msg, ryml::ErrorDataBasic const&, void*) {
+    throw XBigcherryError(std::string(msg.str, msg.len));
+}
+[[noreturn]] void on_parse(ryml::csubstr msg, ryml::ErrorDataParse const&, void*) {
+    throw XBigcherryError(std::string(msg.str, msg.len));
+}
+[[noreturn]] void on_visit(ryml::csubstr msg, ryml::ErrorDataVisit const&, void*) {
+    throw XBigcherryError(std::string(msg.str, msg.len));
+}
+
+// YAML 1.2 core typing of one plain scalar: null, bool, integer, float; a quoted scalar is always a string.
+nlohmann::json typed_scalar(ryml::ConstNodeRef node) {
+    const std::string text(node.val().str, node.val().len);
+    if (node.is_val_quoted()) return text;
+    if (text.empty() || text == "null" || text == "Null" || text == "NULL" || text == "~") return nullptr;
+    if (text == "true" || text == "True" || text == "TRUE") return true;
+    if (text == "false" || text == "False" || text == "FALSE") return false;
+    const char* begin = text.data();
+    const char* end = begin + text.size();
+    std::int64_t integer = 0;
+    if (const auto [ptr, error] = std::from_chars(begin, end, integer); error == std::errc{} && ptr == end)
+        return integer;
+    // A decimal float: digits with one point or an exponent, no leading plus-less words such as "nan" or "inf".
+    if (text.find_first_of("0123456789") != std::string::npos &&
+        text.find_first_not_of("+-0123456789.eE") == std::string::npos) {
+        char* parsed_end = nullptr;
+        const double value = std::strtod(begin, &parsed_end);
+        if (parsed_end == end && std::isfinite(value)) return value;
+    }
+    return text;
+}
+
+nlohmann::json yaml_json(ryml::ConstNodeRef node, const std::string& path) {
+    if (node.is_map()) {
+        nlohmann::json object = nlohmann::json::object();
+        for (ryml::ConstNodeRef child : node.children()) {
+            const std::string key(child.key().str, child.key().len);
+            if (object.contains(key)) throw XBigcherryError(path + "." + key + " is given twice");
+            object[key] = yaml_json(child, path + "." + key);
+        }
+        return object;
+    }
+    if (node.is_seq()) {
+        nlohmann::json array = nlohmann::json::array();
+        std::size_t index = 0;
+        for (ryml::ConstNodeRef child : node.children())
+            array.push_back(yaml_json(child, path + "[" + std::to_string(index++) + "]"));
+        return array;
+    }
+    return typed_scalar(node);
+}
+
+}  // namespace
+
+// The top-level x-bigcherry subtree of the sealed YAML as JSON, null when the file has none. Radiance's parser skips
+// x-* keys and keeps its tree private, so the same bytes are parsed once more here with the same library (with
+// anchors and merge keys resolved as it does): the one YAML parser; bc-serve receives JSON and decodes it against the
+// closed schema. A duplicate key anywhere below x-bigcherry is refused, naming its YAML path.
+nlohmann::json x_bigcherry_subtree(const std::string& yaml_utf8) {
+    try {
+        ryml::Callbacks callbacks;
+        callbacks.set_error_basic(&on_basic).set_error_parse(&on_parse).set_error_visit(&on_visit);
+        ryml::EventHandlerTree handler(callbacks);
+        ryml::Parser parser(&handler);
+        ryml::Tree tree(callbacks);
+        ryml::parse_in_arena(&parser, ryml::to_csubstr("native config"), ryml::to_csubstr(yaml_utf8), &tree);
+        tree.resolve();
+        if (tree.empty() || !tree.crootref().has_children()) return nullptr;
+        ryml::ConstNodeRef root = tree.crootref();
+        if (root.is_stream()) root = root.first_child();
+        if (!root.is_map()) return nullptr;
+        for (ryml::ConstNodeRef child : root.children())
+            if (std::string_view(child.key().str, child.key().len) == "x-bigcherry")
+                return yaml_json(child, "x-bigcherry");
+    } catch (const XBigcherryError& error) {
+        throw std::invalid_argument(std::string("native config x-bigcherry: ") + error.what());
+    }
+    return nullptr;
+}
 
 NativeFleetConfig NativeFleetConfig::read(const std::filesystem::path& authored,
                                           const std::filesystem::path& resolution_root) {
@@ -105,6 +194,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"max_context", cfg.max_ctx},
                          {"max_sequences", cfg.max_seqs},
                          // The tuning options the authored YAML states, as the strict reader accepted them (null: absent).
+                         {"x_bigcherry", x_bigcherry_subtree(managed.snapshot().yaml_utf8())},
                          {"tuning", {{"p2p", source("--p2p")},
                                       {"pipelined_prefill", source("--pipelined-prefill")},
                                       {"pipelined_prefill_min_rows",

@@ -19,3 +19,9 @@ models:
     prefix-resume: nearest
     rope-scaling: none
     p2p: "off"
+x-bigcherry:
+  schema: 1
+  description: "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 all-reduce"
+  ranks:
+    - {arch: "gfx1100", count: 2}
+  memory: {host-pool-mib: 0, host-kv-mib: 0}

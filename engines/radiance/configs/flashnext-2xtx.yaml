@@ -17,3 +17,11 @@ models:
     num-speculative-tokens: 3
     prefix-resume: nearest
     rope-scaling: none
+x-bigcherry:
+  schema: 1
+  description: "Flash-Next on the R9700, both 7900 XTX cards holding the hottest experts"
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  helpers:
+    - {arch: "gfx1100", count: "all", placement: "head"}
+  handoff: {heat: "@bundle/heat/perf51.rank0.hot-first", histogram-period-s: 1}

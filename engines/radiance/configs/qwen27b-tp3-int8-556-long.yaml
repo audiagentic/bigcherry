@@ -39,3 +39,12 @@ models:
     # The all-reduce grid and two-shot form (rad0022, rad0032, rad0033): time to first token -13 / -24 / -22% at 512 / 2048 /
     # 6144 tokens, 4/6/8 streams +7.6 / +10.9 / +13.9%, bit-identical output (VTP31, VTP36).
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
+x-bigcherry:
+  schema: 1
+  description: "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M tokens of fp8 cache"
+  variant-of: "qwen27b-tp3-int8-556"
+  differs: ["models.qwen27b.max-model-len", "models.qwen27b.prefill-governor", "models.qwen27b.prefill-interleave"]
+  ranks:
+    - {arch: "gfx1100", count: 2}
+    - {arch: "gfx1201", count: 1}
+  memory: {host-pool-mib: 0, host-kv-mib: 0}

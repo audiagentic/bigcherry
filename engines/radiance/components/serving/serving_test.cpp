@@ -3608,6 +3608,37 @@ void session_engine_plan(Fixture& t) {
                 assert(tuning.at("tune_pin") == "all_reduce:nblocks=4" && tuning.at("p2p") == "off");
                 assert(tuning.at("pipelined_prefill_min_rows") == 256 && !tuning.contains("prefill_governor"));
             }
+            {   // The BigCherry-owned section: one pass with every table, then one refusal per rule.
+                const auto section = [](Json section) {
+                    return [section](ss::Env& e) { e["TEST_NATIVE_INSPECT_XBIGCHERRY"] = section.dump(); };
+                };
+                const Json ranks = Json::array({{{"arch", "gfx1100"}, {"count", 3}}});
+                const Json full = {{"schema", 1}, {"description", "d"}, {"ranks", ranks},
+                                   {"helpers", Json::array({{{"arch", "gfx1030"}, {"count", "all"},
+                                                             {"placement", "tail"}, {"share", 2}}})},
+                                   {"service", {{"objective", "balanced"}}},
+                                   {"memory", {{"host-pool-mib", 0}, {"hard-caps", {{"vram", 7}}}}},
+                                   {"handoff", {{"heat", "@bundle/heat/x"}, {"moe-down-tile", true}}},
+                                   {"helper", {{"combine", true}}}, {"kernels", {{"dec11", true}}}};
+                if (const std::string pass = preflight(section(full)); !pass.empty())
+                    throw std::runtime_error("preflight: a full x-bigcherry section was refused: " + pass);
+                const auto with = [&](const char* key, Json value) { Json j = full; j[key] = value; return j; };
+                refused_for("x-bigcherry.ranks name 2 ranks, but the YAML's tp is 3",
+                            section({{"schema", 1}, {"description", "d"},
+                                     {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 2}}})}}));
+                refused_for("x-bigcherry.bogus is not a key", section(with("bogus", 1)));
+                refused_for("x-bigcherry.helper.combine must be true or false", section(with("helper", {{"combine", "yes"}})));
+                refused_for("x-bigcherry.helper.nope is not a key", section(with("helper", {{"nope", true}})));
+                refused_for("x-bigcherry.schema is 2", section(with("schema", 2)));
+                refused_for("x-bigcherry.description is required", section({{"schema", 1}, {"ranks", ranks}}));
+                refused_for("x-bigcherry.helpers[0].placement must be head or tail",
+                            section(with("helpers", Json::array({{{"arch", "a"}, {"count", 1}, {"placement", "mid"}}}))));
+                refused_for("x-bigcherry.memory.host-pool-mib must be an integer",
+                            section(with("memory", {{"host-pool-mib", "0"}})));
+                refused_for("x-bigcherry.variant-of needs differs",
+                            section(with("variant-of", "other")));
+                refused_for("is required: a serving config file carries an x-bigcherry section", section(nullptr));
+            }
             refused_for("ill-typed tuning tp_ownership", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tp_ownership", 5}}.dump(); });
             refused_for("ill-typed tuning tune_pin", [](ss::Env& e) {

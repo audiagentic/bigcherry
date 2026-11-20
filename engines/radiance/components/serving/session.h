@@ -35,6 +35,7 @@
 #include "stored_manifest.h"
 #include "v2/manifest.h"
 #include "v2/native_config_snapshot.h"
+#include "xbigcherry.h"
 
 namespace bc::serving::power {
 class SessionPower;
@@ -289,6 +290,7 @@ struct NativeConfigInspection {
     std::vector<int> cards;
     std::vector<std::string> rank_devices;
     NativeEngineSettings settings{};
+    XBigcherry x_bigcherry;   // the file's BigCherry-owned section, decoded against the closed v1 schema
     Json receipt;
 };
 

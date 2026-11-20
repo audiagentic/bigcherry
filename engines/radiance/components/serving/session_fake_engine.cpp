@@ -184,6 +184,10 @@ int main(int argc, char** argv) {
                               {"prefill_governor", nullptr}, {"tp_ownership", nullptr}, {"tune_pin", nullptr}};
         if (const char* configured_tuning = std::getenv("TEST_NATIVE_INSPECT_TUNING"))
             native_tuning.update(json::parse(configured_tuning));
+        json x_bigcherry = {{"schema", 1}, {"description", "fake inspector config"},
+                            {"ranks", json::array({{{"arch", "gfx1100"}, {"count", tp}}})}};
+        if (const char* configured = std::getenv("TEST_NATIVE_INSPECT_XBIGCHERRY"))
+            x_bigcherry = json::parse(configured);
         json native_settings = {{"max_batched_tokens", 2048}, {"checkpoint_interval", 4096},
                                 {"placement", "expert_tiered"}, {"ngram_placement", "ram"}, {"kv_dtype", "fp8"},
                                 {"speculative_tokens", 3}, {"rope_scaling", "none"}, {"prefix_resume", "nearest"},
@@ -202,6 +206,7 @@ int main(int argc, char** argv) {
                                     {"listener", {{"host", std::getenv("TEST_NATIVE_INSPECT_HOST") ? std::getenv("TEST_NATIVE_INSPECT_HOST") : "127.0.0.1"},
                                                    {"port", configured_integer("TEST_NATIVE_INSPECT_PORT", 8123)}}},
                                     {"tuning", native_tuning},
+                                    {"x_bigcherry", x_bigcherry},
                                     {"tp", tp},
                                     {"cards", cards},
                                     {"rank_devices", rank_devices},

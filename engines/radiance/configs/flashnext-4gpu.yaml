@@ -19,3 +19,15 @@ models:
     rope-scaling: none
     prefill-interleave: 0
     mixed-step-target-ms: 0
+x-bigcherry:
+  schema: 1
+  description: "All four cards: the R9700 engine, the XTX pair (head) and the RX 6900 XT (tail) as helpers, with the combine"
+  variant-of: "flashnext-2xtx-rdna2-tail"
+  differs: ["models.flashnext.mixed-step-target-ms", "models.flashnext.prefill-interleave", "x-bigcherry.handoff.heat", "x-bigcherry.helper.combine"]
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  helpers:
+    - {arch: "gfx1100", count: "all", placement: "head"}
+    - {arch: "gfx1030", count: 1, placement: "tail"}
+  handoff: {heat: "@bundle/heat/flashnext-mixed.hot-first", histogram-period-s: 1}
+  helper: {combine: true}

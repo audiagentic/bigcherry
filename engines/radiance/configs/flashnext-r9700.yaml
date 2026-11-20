@@ -17,3 +17,9 @@ models:
     num-speculative-tokens: 3
     prefix-resume: nearest
     rope-scaling: none
+x-bigcherry:
+  schema: 1
+  description: "Flash-Next on the R9700 alone: no helpers, the experts tiered to host memory"
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  memory: {host-pool-mib: 45056, host-kv-mib: 0}

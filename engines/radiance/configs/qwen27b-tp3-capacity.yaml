@@ -26,3 +26,12 @@ models:
     tp-ownership: "kv=1,1,2;ffn=7680,7680,2048;lk=7,7,2;lv=21,21,6"
     # the all-reduce grid without the two-shot form, as this split was measured (VTP33)
     tune-pin: "all_reduce:nblocks=4,nthreads=256"
+x-bigcherry:
+  schema: 1
+  description: "qwen27b-tp3 for resident context: 7/7/2 delta-net, 7680/7680/2048 feed-forward, 262,144 tokens"
+  variant-of: "qwen27b-tp3"
+  differs: ["models.qwen27b.max-model-len", "models.qwen27b.tp-ownership", "models.qwen27b.tune-pin"]
+  ranks:
+    - {arch: "gfx1100", count: 2}
+    - {arch: "gfx1201", count: 1}
+  memory: {host-pool-mib: 0, host-kv-mib: 0}

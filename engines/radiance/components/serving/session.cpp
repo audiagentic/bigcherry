@@ -2299,7 +2299,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& listener = engine_report.value("listener", Json::object());
     if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "radiance_home_source", "kernels",
                                     "kernels_source", "listener", "tp", "cards", "rank_devices",
-                                    "max_context", "max_sequences", "tuning", "settings"}) ||
+                                    "max_context", "max_sequences", "tuning", "x_bigcherry", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
         !nullable_string_field(engine_report, "radiance_home_source") ||
@@ -2355,6 +2355,15 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     out.rank_devices = engine_report.at("rank_devices").get<std::vector<std::string>>();
     out.listener_host = listener.at("host").get<std::string>();
     out.tp = static_cast<int>(tp);
+    try {
+        out.x_bigcherry = decode_x_bigcherry(engine_report.at("x_bigcherry"));
+    } catch (const std::invalid_argument& error) {
+        throw PlanFailed(std::string("native config admission: ") + error.what());
+    }
+    if (out.x_bigcherry.rank_count() != tp)
+        throw PlanFailed("native config admission: x-bigcherry.ranks name " +
+                         std::to_string(out.x_bigcherry.rank_count()) + " ranks, but the YAML's tp is " +
+                         std::to_string(tp));
     auto& settings = out.settings;
     settings.port = static_cast<uint32_t>(port);
     if (context == 0)

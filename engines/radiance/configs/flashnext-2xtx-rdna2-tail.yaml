@@ -17,3 +17,14 @@ models:
     num-speculative-tokens: 3
     prefix-resume: nearest
     rope-scaling: none
+x-bigcherry:
+  schema: 1
+  description: "flashnext-2xtx plus the RX 6900 XT holding a tail of the coldest experts"
+  variant-of: "flashnext-2xtx"
+  differs: ["x-bigcherry.helpers"]
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  helpers:
+    - {arch: "gfx1100", count: "all", placement: "head"}
+    - {arch: "gfx1030", count: 1, placement: "tail"}
+  handoff: {heat: "@bundle/heat/perf51.rank0.hot-first", histogram-period-s: 1}

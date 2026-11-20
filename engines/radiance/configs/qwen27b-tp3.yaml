@@ -29,3 +29,10 @@ models:
     # link weights and the reduced shard written once. Against the grid alone: time to first token -21 / -27 / -25% at
     # 512 / 2048 / 6144 tokens, 4/6/8 streams +13.6 / +13.5 / +16.7%, bit-identical output (VTP36).
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
+x-bigcherry:
+  schema: 1
+  description: "Qwen3.8-27B MXFP4 over XTX, XTX, R9700 (native TP3): 6/6/12 query heads, the R9700 the largest share"
+  ranks:
+    - {arch: "gfx1100", count: 2}
+    - {arch: "gfx1201", count: 1}
+  memory: {host-pool-mib: 0, host-kv-mib: 0}
