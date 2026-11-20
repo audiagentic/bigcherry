@@ -3164,6 +3164,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             if (final_spec.intent.model != v.at("engine").at("model").get<std::string>() ||
                 final_spec.processes.engine.device.gpus != selected_bdfs)
                 throw PlanFailed("native v3 measured serving artifact changed the frozen model or ordered engine devices");
+            const auto& draft_host = verified.parsed.spec.resources.host;
+            const auto& final_host = final_spec.resources.host;
+            if (!in.quality_score &&
+                (draft_host.kv_mib != final_host.kv_mib || draft_host.reserve_mib != final_host.reserve_mib))
+                throw PlanFailed("native v3 measured host KV tier or reserve differs from the measurement attempt");
             const auto& final_engine = final_spec.processes.engine;
             check_native_helper_roles(final_snapshot.parsed, processes, selected_bdfs, handoff);
             if (native_inspection.listener_port != final_engine.server.port ||

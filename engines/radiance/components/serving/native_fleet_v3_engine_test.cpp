@@ -132,6 +132,12 @@ void check_native_measuring_main(const std::string& path, const wire::Manifest& 
               cfg.host_pool_mib == spec.resources.host.pool_mib,
           "native measuring Config differs from the independent admitted engine settings");
     const auto yaml_config = replay(manifest).fleet().models.front().cfg;
+    check(cfg.prefix_cache_mib == spec.resources.host.kv_mib &&
+              cfg.host_headroom_mib == spec.resources.host.reserve_mib &&
+              cfg.checkpoint_slots == yaml_config.checkpoint_slots &&
+              cfg.given.at("--prefix-cache-mib") == "manifest spec.resources.host.kv_mib" &&
+              cfg.given.at("--host-headroom-mib") == "manifest spec.resources.host.reserve_mib",
+          "native measuring Config lost admitted host resources or overrode checkpoint auto");
     const auto given = yaml_config.given.find("--host-pool-mib");
     const std::string pool_source = given == yaml_config.given.end() ?
         "manifest spec.resources.host.pool_mib" : given->second;
@@ -186,6 +192,12 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
               cfg.max_seqs == spec.intent.service.max_sessions &&
               cfg.host_pool_mib == spec.resources.host.pool_mib,
           "serving Config differs from its independent measured manifest fields");
+    check(cfg.prefix_cache_mib == spec.resources.host.kv_mib &&
+              cfg.host_headroom_mib == spec.resources.host.reserve_mib &&
+              spec.resources.host.checkpoint_slots &&
+              cfg.checkpoint_slots == *spec.resources.host.checkpoint_slots &&
+              cfg.given.at("--checkpoint-slots") == "manifest spec.resources.host.checkpoint_slots",
+          "native serving Config differs from its measured cache and checkpoint allocation");
     check(bc_serving_expected_plan(&expected, &floor_ppm),
           "native serving did not retain the strict measured-plan admission");
     check(bc_plan::mode() == bc_plan::Mode::check, "rad0011 did not arm live plan admission for native serving");
@@ -196,6 +208,7 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
               bc_serving_engine_bdfs() == spec.processes.engine.device.gpus,
           "native serving changed the expected plan, KV floor, or ordered BDFs");
 
+    const auto yaml_config = replay(manifest).fleet().models.front().cfg;
     const auto quality_config = [&](const std::vector<std::string>& flags) {
         rad::Config quality;
         check(serving_entry(sealed_path, flags) && bc_serving_take_native_config(&quality) == 1 &&
@@ -207,6 +220,10 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
                   quality.devices == cfg.devices && quality.rank_devices == cfg.rank_devices &&
                   quality.host_pool_mib == cfg.host_pool_mib,
               "native quality overlay changed YAML provenance, ordered devices or per-rank pool");
+        check(quality.prefix_cache_mib == yaml_config.prefix_cache_mib &&
+                  quality.host_headroom_mib == yaml_config.host_headroom_mib &&
+                  quality.checkpoint_slots == yaml_config.checkpoint_slots,
+              "managed serving cache or checkpoint reserve leaked into native offline scoring");
         return quality;
     };
     const auto recording = quality_config({"--kld-record", "/ref", "--kld-corpus", "/corpus.jsonl"});

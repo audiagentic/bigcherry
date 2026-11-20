@@ -144,6 +144,9 @@ struct NativeEngineInputs {
     int64_t max_context = 0;
     int64_t max_sequences = 0;
     int64_t host_pool_mib_per_rank = 0;
+    int64_t host_kv_mib = 0;
+    int64_t host_reserve_mib = 0;
+    std::optional<int64_t> checkpoint_slots;
     bool offline_quality = false;
 };
 std::optional<NativeEngineInputs> g_native_engine;
@@ -163,6 +166,9 @@ NativeEngineInputs native_engine_inputs(const v2::Spec& spec, const v2::NativeCo
     admitted.max_context = spec.intent.service.max_context_tokens;
     admitted.max_sequences = spec.intent.service.max_sessions;
     admitted.host_pool_mib_per_rank = spec.resources.host.pool_mib;
+    admitted.host_kv_mib = spec.resources.host.kv_mib;
+    admitted.host_reserve_mib = spec.resources.host.reserve_mib;
+    admitted.checkpoint_slots = spec.resources.host.checkpoint_slots;
     return admitted;
 }
 
@@ -552,15 +558,36 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
             reject_unless(!cfg.kld() && !cfg.calib() && !cfg.diagnose_mode() && !cfg.debug_graph,
                           "native YAML cannot select an offline or debug mode in a managed manifest"))
             return -1;
-        if (cfg.given.contains("--host-pool-mib")) {
-            if (reject_unless(cfg.host_pool_mib == admitted.host_pool_mib_per_rank,
-                              "YAML host-pool-mib differs from admitted per-rank pool"))
+        const auto bind_host = [&](const char* option, int64_t& value, int64_t measured,
+                                   const char* provenance, bool allow_auto = false) {
+            const auto authored = cfg.given.find(option);
+            if (authored != cfg.given.end() && !(allow_auto && value == -1)) {
+                if (value == measured) return true;
+                return fail(std::string("native YAML ") + option + " differs from " + provenance);
+            }
+            value = measured;
+            cfg.given.insert_or_assign(option, provenance);
+            return true;
+        };
+        // The manifest and native Config both use per-rank pool MiB. Only the
+        // upstream argv/YAML boundary consumes aggregate pool MiB.
+        if (!bind_host("--host-pool-mib", cfg.host_pool_mib, admitted.host_pool_mib_per_rank,
+                       "manifest spec.resources.host.pool_mib"))
+            return -1;
+        if (!admitted.offline_quality) {
+            // The offline scorer runs with its original model settings and
+            // does not open the managed serving cache or checkpoint store.
+            if (admitted.host_kv_mib > std::numeric_limits<int32_t>::max())
+                return fail("admitted host KV tier exceeds native prefix-cache-mib range"), -1;
+            if (!bind_host("--prefix-cache-mib", cfg.prefix_cache_mib, admitted.host_kv_mib,
+                           "manifest spec.resources.host.kv_mib") ||
+                !bind_host("--host-headroom-mib", cfg.host_headroom_mib, admitted.host_reserve_mib,
+                           "manifest spec.resources.host.reserve_mib"))
                 return -1;
-        } else {
-            // The typed plan and Config already hold per-rank MiB. Only
-            // argv/YAML inputs are aggregate and divided by the parser.
-            cfg.host_pool_mib = admitted.host_pool_mib_per_rank;
-            cfg.given.emplace("--host-pool-mib", "manifest spec.resources.host.pool_mib");
+            if (admitted.checkpoint_slots &&
+                !bind_host("--checkpoint-slots", cfg.checkpoint_slots, *admitted.checkpoint_slots,
+                           "manifest spec.resources.host.checkpoint_slots", true))
+                return -1;
         }
         if (fleet.log_set) rad::log_set_level(fleet.log);
         // The manifest bridge already stripped every option except verbosity
