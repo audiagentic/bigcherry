@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (36)
+## Engine patches (37)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -49,6 +49,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | `diagnostic` | `--expert-stats` counts the routed experts a layer keeps in bf16 beside its quantised table (its protected experts). Before, their histogram indices had no entry in the stats map and were tallied as `unmapped`, so a quantised layer's counts came up short by exactly its protected experts' selections. |
 | [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | `diagnostic` | `--expert-route-record FILE` writes the experts each token's router chose, for every routed trunk layer, when the run ends. A KLD run on a routed model cannot rank KV caches because any change in the arithmetic moves about 1.1% of the choices (FLASHNEXT-ROUTING.md); to score a cache alone the measured run has to take a reference run's choices. This is the record half; replay is a later patch. Manifest field `engine.tuning.expert_route_record` (contract amendment 21). |
 | [rad0045_expert_route_replay](../../../../engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md) | `diagnostic` | `--expert-route-replay FILE` makes a run take, for every token and routed layer, the experts a reference run recorded with `--expert-route-record` (rad0044) instead of the router's own choice. KLD against a reference cannot rank KV caches on a routed model because any change in the arithmetic moves about 1.1% of the expert choices (42% of token-layer expert sets differ between chunk 64 and 128); replaying the reference's route removes that noise, so only the cache differs. Manifest field `engine.tuning.expert_route_replay` (contract amendment 22). |
+| [rad0060_ltx2_tp3_linear_declare](../../../../engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/SUMMARY.md) | `diagnostic` | **Diagnostic only.** Adds an opt-in C01Slice to the real Radiance 2.2 LTX2 `Lin::declare` path. For IQ8R, row-sharded QKV/KV selects the same per-bank source rows for codes, scales and BF16 bias through the existing LinearFP8/span_parts and RadBuilder APIs. Column-sharded output projections require an aligned 256-K slice and currently **refuse any output bias**: once-after-reduce ownership is not yet implemented. |
 
 ## Components (6)
 
