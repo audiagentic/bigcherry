@@ -207,3 +207,7 @@ The session's available tools did **not** expose the authoritative Planning MCP 
 ## 2026-11-20 extended C00/C01 contracts
 
 The tenth native card-free CTest models the source-derived FWHT128/per-256-group signed i8 activation quantization and verifies equal whole vs legal per-rank codes/scales. The actual-model `test_ltx_iq8r_shards.py` verifies 768 source output rows, 1,920 legal raw-plane reconstructions, 384 refused sampled row cuts and 756 fused-bank boundary source rows across 288 checked QKV/KV projections. Crucial: video FFN-down has no bias, unlike audio FFN-down and six attention outputs. This is source/CPU evidence, not native TP3 GPU inference; see `docs/design/ltx25-tp3-component-test-ladder.md`.
+
+## First real Radiance C01 code (2026-11-20)
+
+The diagnostic `rad0060_ltx2_tp3_linear_declare` patch adds an optional C01Slice argument to upstream LTX's actual C++ linear declaration path. Fused QKV/KV rows use per-bank native RadBuilder spans for codes, scale views and bias; biasless output K columns use group-aligned IQ8R native span declarations. Biased outputs explicitly fail until a once-after-collective bias owner is implemented. Existing TP1 calls and world-size rejection are retained. This is compile-tested code in a standalone patch package, not an enabled distributed engine. Details: `docs/design/ltx25-c01-native-builder-stage.md`.

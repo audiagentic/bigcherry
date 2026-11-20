@@ -50,3 +50,7 @@ The lab now owns **ten independently selectable native CTests**: `ltx_tp3_refere
 `ltx_tp3_i8a8h_test` independently models the native `had_quant_act_i8g` math on BF16-rounded input: separate H128 rotations of each 256-K group, **one shared group scale**, nearest-even int8 quantization, invalid K cuts and three-rank code/scale equality. It does not call the kernel.
 
 `tools/tests/lab/test_ltx_iq8r_shards.py` is another optional real-file test with explicit-path CLI, verifying logical raw-plane K slicing and fused QKV/KV bank offsets. It checks the presence or absence of checkpoint biases for all 48 blocks and refuses the bad audio 10/10/12 output split. See `docs/design/ltx25-tp3-component-test-ladder.md` for the exact model counts, negative controls and E2E promotion gates. These tests do not ship with the engine.
+
+## C01 native builder diagnostic patch (2026-11-20)
+
+The new Radiance patch package `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare` adds an optional `C01Slice` argument to the real LTX `Lin::declare` builder. Its native `ltx_tp3_builder_shard_test` includes the exact packaged header. `test_ltx_tp3_builder_patch.py` checks anchored applicability, idempotence and failure on changed upstream source. `native-c01-gate/CMakeLists.txt` compiles the patched frozen 2.2 LTX translation unit using its ABI44 headers in an isolated work-root stage. The production one-rank path is unchanged; no TP3 serving admission or GPU code is activated. See `docs/design/ltx25-c01-native-builder-stage.md`.
