@@ -4977,6 +4977,36 @@ void helper_vram_owner_graph(Fixture& t) {
     assert(room_refused.at("processes").size() == 1 &&
            room_refused.at("processes").at(0).at("role") == "native config inspector" &&
            ss::alive_recorded(room_refused).empty());
+
+    owner.before_gpu_start = {};
+    const fs::path reference = t.root / "recorded-quality";
+    fs::create_directory(reference);
+    write(reference / "kld.json", "{}");
+    owner.quality = ss::QualityScore{reference, t.root / "helper-quality.json"};
+    const int scored = ss::serve(owner);
+    const auto quality = ss::read_record(owner.run_dir).value_or(Json::object());
+    check_replay(quality);
+    const auto& engine_args = quality.at("processes").back().at("argv");
+    const auto events = quality.at("events").dump();
+    if (scored != 0 || quality.value("state", "") != "stopped" || !ss::alive_recorded(quality).empty() ||
+        engine_args.size() != 9 || engine_args[5] != "--kld-ref" || engine_args[6] != reference.string() ||
+        engine_args[7] != "--kld-out" || engine_args[8] != owner.quality->output.string() ||
+        events.find("quality_completed") == std::string::npos || events.find("power_restored") == std::string::npos ||
+        events.find("canary_passed") != std::string::npos || events.find("healthy") != std::string::npos)
+        throw std::runtime_error("native helper finite score did not complete and clean up: " + quality.dump());
+    assert(admissions.size() == 5 && fs::file_size(owner.quality->output.string() + ".rows") == 16);
+
+    // A finite run that times out still stops every helper and restores power.
+    owner.quality->output = t.root / "helper-quality-timeout.json";
+    owner.timing.quality_timeout = std::chrono::milliseconds(100);
+    write(reference / "kld.json", R"({"fake_delay_ms":5000})");
+    const int timed_out = ss::serve(owner);
+    const auto timeout_record = ss::read_record(owner.run_dir).value_or(Json::object());
+    if (timed_out == 0 || timeout_record.value("state", "") != "failed" ||
+        !ss::alive_recorded(timeout_record).empty() ||
+        timeout_record.at("errors").dump().find("KL scoring timed out") == std::string::npos ||
+        timeout_record.at("events").dump().find("power_restored") == std::string::npos)
+        throw std::runtime_error("native helper finite score timeout did not clean up: " + timeout_record.dump());
 #else
     int writers = 0;
     std::vector<fs::path> measuring_histograms;

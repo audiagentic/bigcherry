@@ -134,6 +134,8 @@ void usage() {
            "  start  --manifest FILE --run-dir DIR [--configs FILE|DIR]   replay exact strict-v2 bytes "
            "after current static/live/power checks; refuses changed build/model/devices, missing "
            "attestation or gates; never rewrites FILE\n"
+           "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
+           "                 --kld-ref DIR --kld-out FILE   run a finite native KL score\n"
            "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
@@ -144,6 +146,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     Options opts;
     fs::path run_dir, engine_binary, stored_manifest, native_config;
     std::string config_name;
+    std::optional<ss::QualityScore> quality;
+    if (cmd == "quality") quality.emplace();
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
     fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records, lab_experiment;
@@ -161,7 +165,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             passed.push_back(argv[i + 1]);
             return std::string(argv[++i]);
         };
-        const bool session_cmd = cmd == "serve" || cmd == "start";
+        const bool session_cmd = cmd == "serve" || cmd == "start" || quality.has_value();
         if (arg == "--help" || arg == "-h") {
             usage();
             return 0;
@@ -198,6 +202,10 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             stored_manifest = need();
         } else if (arg == "--native-config") {
             native_config = need();
+        } else if (arg == "--kld-ref" && quality && quality->reference.empty()) {
+            quality->reference = need();
+        } else if (arg == "--kld-out" && quality && quality->output.empty()) {
+            quality->output = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
@@ -255,6 +263,13 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         throw std::runtime_error("v3 serving requires --native-config YAML for a fresh start");
     }
     run_dir = fs::absolute(run_dir);
+    if (quality) {
+        if (native_config.empty() || quality->reference.empty() || quality->output.empty() ||
+            calibration_run || !lab_experiment.empty())
+            throw std::runtime_error("quality requires named native YAML, --kld-ref DIR and --kld-out FILE");
+        quality->reference = fs::canonical(quality->reference);
+        quality->output = fs::absolute(quality->output);
+    }
     if (!lab_experiment.empty() &&
         (cmd != "serve" || calibration_run || config_name.empty() || !stored_manifest.empty() ||
          !live_policy_file.empty() || !prompts_a.empty() || !prompts_b.empty() || !calibration_store.empty()))
@@ -402,6 +417,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.options = opts;
     inputs.stored_manifest = std::move(stored_manifest);
     inputs.named_config = config_name;
+    inputs.quality_score = quality.has_value();
     inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_prompts_a = prompts_a;
     inputs.calibration_prompts_b = prompts_b;
@@ -451,6 +467,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (calibration_run)
         session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
+    session.quality = std::move(quality);
     session.publish_feature_states = true;
     session.strict_production_features = strict_production_features;
     if (calibration_run)
@@ -583,7 +600,7 @@ int main(int argc, char** argv) {
             const std::string cmd(argv[1]);
             if (cmd == "explain")
                 return explain_command(argc, argv);
-            if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status")
+            if (cmd == "serve" || cmd == "start" || cmd == "quality" || cmd == "stop" || cmd == "status")
                 return session_command(cmd, argc, argv);
         }
         if (argc > 1 && std::string(argv[1]) == "calibration-prune") {

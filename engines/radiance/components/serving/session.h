@@ -146,6 +146,7 @@ struct Timing {
     std::chrono::milliseconds canary_timeout{std::chrono::minutes(2)};
     std::chrono::milliseconds stop_grace{std::chrono::seconds(60)};
     std::chrono::milliseconds poll{std::chrono::milliseconds(200)};
+    std::chrono::milliseconds quality_timeout{std::chrono::minutes(90)};
 };
 
 struct Canary {
@@ -209,9 +210,13 @@ PowerHook hooks_for_power_transaction(power::SessionPower& transaction);
 struct Laboratory {
     std::filesystem::path prompts_a, prompts_b, calibration_store;
 };
+struct QualityScore {
+    std::filesystem::path reference, output;
+};
 struct Session {
     PowerHook power_hook;
     std::optional<Laboratory> laboratory; // explicit finite ABBA mode, never a detached serving session
+    std::optional<QualityScore> quality;   // foreground native-v3 score against a recorded reference
     std::filesystem::path run_dir;
     // Production owners publish the admitted manifest's native feature snapshot.
     // Fake-engine lifecycle tests explicitly opt in with a v2-shaped fixture.
@@ -325,6 +330,7 @@ struct EnginePlanInputs {
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
     std::optional<NativeAdmissionRequest> native_admission;
+    bool quality_score = false; // this owner must be the admitted runtime home's executable
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default

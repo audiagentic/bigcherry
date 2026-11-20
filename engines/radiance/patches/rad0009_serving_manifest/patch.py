@@ -83,7 +83,6 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include <atomic>
 #include <chrono>
 #include <csignal>
-#include <filesystem>
 #include <thread>
 #endif
 
@@ -95,6 +94,7 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <filesystem>
 #include <fstream>
 #include <iterator>
 #include <limits>
@@ -103,6 +103,9 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include <string>
 #include <utility>
 #include <vector>
+
+#include <sys/stat.h>
+#include <unistd.h>
 
 namespace rad {
 /* radiance's own entry point, declared here so this file needs no engine header; a signature that drifts fails
@@ -173,7 +176,7 @@ bool fail(const std::string& why) {
     return false;
 }
 
-std::string read_native_serving_manifest(std::string_view path) {
+std::string read_native_serving_manifest(std::string_view path, int& sealed_fd) {
     constexpr std::string_view prefix = "/proc/self/fd/";
     if (path.substr(0, prefix.size()) != prefix)
         throw std::invalid_argument("v3 serving requires an inherited sealed manifest descriptor");
@@ -182,7 +185,30 @@ std::string read_native_serving_manifest(std::string_view path) {
     const auto [end, err] = std::from_chars(path.data(), path.data() + path.size(), fd);
     if (err != std::errc{} || end != path.data() + path.size())
         throw std::invalid_argument("v3 serving manifest descriptor is invalid");
-    return v2::read_sealed_document(fd, "v3 serving manifest descriptor");
+    std::string text = v2::read_sealed_document(fd, "v3 serving manifest descriptor");
+    sealed_fd = fd;
+    return text;
+}
+
+bool matched_quality_owner(const std::string& home, int manifest_fd) {
+    namespace fs = std::filesystem;
+    const pid_t owner = ::getppid();
+    if (owner <= 1) return false;
+    const fs::path expected = fs::path(home) / "bin/bc-serve";
+    const fs::path parent = fs::path("/proc") / std::to_string(owner);
+    std::error_code error;
+    if (!expected.is_absolute() || fs::canonical(expected, error) != expected || error)
+        return false;
+    if (fs::read_symlink(parent / "exe", error) != expected || error)
+        return false;
+    struct stat local{}, retained{}, runtime{}, executable{};
+    return ::fstat(manifest_fd, &local) == 0 &&
+           ::stat((parent / "fd" / std::to_string(manifest_fd)).c_str(), &retained) == 0 &&
+           local.st_dev == retained.st_dev && local.st_ino == retained.st_ino &&
+           ::lstat(expected.c_str(), &runtime) == 0 && S_ISREG(runtime.st_mode) &&
+           ::stat((parent / "exe").c_str(), &executable) == 0 &&
+           runtime.st_dev == executable.st_dev && runtime.st_ino == executable.st_ino &&
+           ::getppid() == owner;
 }
 
 }  // namespace
@@ -262,10 +288,11 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     if (native && !run_flags.empty() && !plan_memory.empty())
         return fail("v3 native offline quality cannot be combined with memory measurement");
     std::string text;
+    int sealed_fd = -1;
     if (native && plan_memory.empty()) {
         if (role != "engine") return fail("v3 serving requires --role engine");
         try {
-            text = read_native_serving_manifest(path);
+            text = read_native_serving_manifest(path, sealed_fd);
         } catch (const std::exception& error) {
             return fail(error.what());
         }
@@ -292,8 +319,16 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         if (!plan_memory.empty() && rank_out.empty())
             return fail("v3 native measurement requires --plan-memory-ranks");
         const auto& spec = manifest.value().spec;
-        if (!run_flags.empty() && (spec.handoff || !spec.processes.helpers.empty()))
-            return fail("v3 native offline quality currently admits engine-only layouts");
+        if (!run_flags.empty() && (spec.handoff || !spec.processes.helpers.empty())) {
+            const auto flag = [&](const char* name) {
+                return std::count_if(run_flags.begin(), run_flags.end(), [&](const auto& arg) {
+                    return arg.first == name && std::filesystem::path(arg.second).is_absolute();
+                }) == 1;
+            };
+            if (run_flags.size() != 2 || !flag("--kld-ref") || !flag("--kld-out") ||
+                !matched_quality_owner(spec.processes.engine.runtime.radiance_home, sealed_fd))
+                return fail("v3 native helper KL scoring requires its matched owner and retained manifest");
+        }
         const auto view = v2::native_config_view(manifest.value());
         if (!view) return fail("v3 manifest has no admitted native YAML snapshot");
         auto admitted = native_engine_inputs(spec, *view);

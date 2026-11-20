@@ -33,6 +33,7 @@
 #include <cstdlib>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <nlohmann/json.hpp>
@@ -324,6 +325,20 @@ int main(int argc, char** argv) {
             }
             ::usleep(10000);
         }
+        return 0;
+    }
+    const std::string reference = arg_after(argc, argv, "--kld-ref");
+    if (!reference.empty()) {
+        const std::string output = arg_after(argc, argv, "--kld-out");
+        std::ifstream metadata(std::filesystem::path(reference) / "kld.json");
+        const auto fixture = json::parse(metadata, nullptr, false);
+        if (output.empty() || !fixture.is_object() ||
+            !std::filesystem::path(reference).is_absolute() || !std::filesystem::path(output).is_absolute() ||
+            !arg_after(argc, argv, "--bc-heat-launch-nonce").empty())
+            return 9;
+        std::this_thread::sleep_for(std::chrono::milliseconds(fixture.value("fake_delay_ms", 0)));
+        std::ofstream(output) << json{{"all", {{"positions", 1}}}}.dump() << '\n';
+        std::ofstream(output + ".rows", std::ios::binary).write("0123456789abcdef", 16);
         return 0;
     }
     const std::string plan = arg_after(argc, argv, "--plan-memory");

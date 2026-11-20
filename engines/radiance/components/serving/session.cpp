@@ -726,6 +726,19 @@ bool running(pid_t pid, int* status) {
     return false; // exited (reaped now) or not a child of ours any more (reaped before)
 }
 
+// The finite engine and its helpers are already registered with the caller's owner.
+template<class CheckHelpers, class WaitOwner>
+std::optional<int> wait_for_finite_engine(pid_t pid, Clock::time_point deadline,
+                                          const CheckHelpers& check_helpers, const WaitOwner& wait_owner) {
+    int status = 0;
+    while (running(pid, &status)) {
+        check_helpers();
+        if (Clock::now() >= deadline || !wait_owner())
+            return std::nullopt;
+    }
+    return status;
+}
+
 bool stop_child(pid_t pid, int first, std::chrono::milliseconds grace) {
     // gone means the child reaped AND no process left in its group (a descendant that outlived it included)
     auto gone = [&] { return !running(pid) && group_gone(pid); };
@@ -992,6 +1005,10 @@ class Owner {
         int code = 0;
         std::vector<std::string> failures;
         try {
+            if (s_.quality && (v2::kContractVersion != 3 || s_.laboratory))
+                throw PlanFailed("quality requires a native v3 owner");
+            if (s_.quality)
+                validate_quality_paths(*s_.quality);
             if (s_.power_hook.apply && s_.power_hook.begin_manifest)
                 throw PlanFailed("power_hook: choose pre-plan or manifest admission, not both");
             if (bool(s_.power_hook.apply || s_.power_hook.begin_manifest) != bool(s_.power_hook.restore))
@@ -1146,46 +1163,51 @@ class Owner {
             if (v2::kContractVersion == 3 || plan_.native_launch)
                 recheck_native_host_room();
             start_helpers();
-            start_engine();
-            if (!wait_health())
-                throw Stop{};
-            event("healthy");
-            if (s_.power_hook.gfxoff_window)
-                require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.loaded_idle", true),
-                                 "gfxoff loaded idle receipt");
-            if (const auto why =
-                    canary(plan_.port, s_.canary.prompt, s_.canary.expect, s_.timing.canary_timeout)) {
-                failures.push_back("start canary failed: the engine is up but " + *why);
-                code = 96;
-                throw Failed{};
-            }
-            event("canary_passed");
-            if (s_.runtime_guard) {
-                require_callback(s_.runtime_guard.invoke("session.runtime_guard", plan_, engine_log_),
-                                 "runtime replay/heat/policy guard");
-                event(s_.laboratory ? "runtime_guard_preflight" : "runtime_guard_ready");
-            }
-            if (s_.laboratory) {
-                event("calibrating");
-                calibrate();
-                event("calibration_completed");
+            if (s_.quality) {
+                score_quality(*s_.quality);
             } else {
-                event("running");
-                while (service(s_.timing.poll)) {
-                    if (s_.runtime_watch)
-                        require_callback(s_.runtime_watch.invoke("session.runtime_watch"),
-                                         "live heat/policy guard");
-                    if (const auto gone = exited_child()) {
-                        failures.push_back(*gone + " exited while serving");
-                        code = 1;
-                        throw Failed{};
-                    }
+                start_engine();
+                if (!wait_health())
+                    throw Stop{};
+                event("healthy");
+                if (s_.power_hook.gfxoff_window)
+                    require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.loaded_idle", true),
+                                     "gfxoff loaded idle receipt");
+                if (const auto why =
+                        canary(plan_.port, s_.canary.prompt, s_.canary.expect, s_.timing.canary_timeout)) {
+                    failures.push_back("start canary failed: the engine is up but " + *why);
+                    code = 96;
+                    throw Failed{};
                 }
-                event("stop_requested", {{"by", stop_reason()}});
+                event("canary_passed");
+                if (s_.runtime_guard) {
+                    require_callback(s_.runtime_guard.invoke("session.runtime_guard", plan_, engine_log_),
+                                     "runtime replay/heat/policy guard");
+                    event(s_.laboratory ? "runtime_guard_preflight" : "runtime_guard_ready");
+                }
+                if (s_.laboratory) {
+                    event("calibrating");
+                    calibrate();
+                    event("calibration_completed");
+                } else {
+                    event("running");
+                    while (service(s_.timing.poll)) {
+                        if (s_.runtime_watch)
+                            require_callback(s_.runtime_watch.invoke("session.runtime_watch"),
+                                             "live heat/policy guard");
+                        if (const auto gone = exited_child()) {
+                            failures.push_back(*gone + " exited while serving");
+                            code = 1;
+                            throw Failed{};
+                        }
+                    }
+                    event("stop_requested", {{"by", stop_reason()}});
+                }
+                /* calibration terminates with the same verified stop/restore as a
+                 * serving owner; it does not remain in a detached running state. */
             }
-            /* calibration terminates with the same verified stop/restore as a
-             * serving owner; it does not remain in a detached running state. */
         } catch (const Stop&) {
+            if (s_.quality) code = 1;
             event("stop_requested", {{"by", stop_reason()}});
         } catch (const Failed&) {
             if (code == 0)
@@ -1662,7 +1684,48 @@ class Owner {
         write_atomic(s_.run_dir / "calibration-evidence.v1.json", evidence.dump(2) + "\n");
     }
 
-    void start_engine() {
+    static void validate_quality_paths(const QualityScore& score) {
+        if (!score.reference.is_absolute() || !fs::is_regular_file(score.reference / "kld.json"))
+            throw PlanFailed("quality: the reference needs an absolute, recorded KL directory");
+        if (!score.output.is_absolute() || !fs::is_directory(score.output.parent_path()) ||
+            fs::symlink_status(score.output).type() != fs::file_type::not_found ||
+            fs::symlink_status(score.output.string() + ".rows").type() != fs::file_type::not_found)
+            throw PlanFailed("quality: output and row sidecar need unused absolute paths in an existing directory");
+    }
+
+    void score_quality(const QualityScore& score) {
+        validate_quality_paths(score);
+        event("scoring", {{"reference", score.reference.string()}, {"output", score.output.string()}});
+        const pid_t engine = start_engine(&score);
+        const auto check_helpers = [&] {
+            for (const auto& child : children_) {
+                if (child.pid != engine && !running(child.pid))
+                    throw PlanFailed("quality: " + child.role + " died during KL scoring");
+            }
+        };
+        const auto status = wait_for_finite_engine(engine, Clock::now() + s_.timing.quality_timeout,
+                                                   check_helpers, [&] { return service(s_.timing.poll); });
+        if (!status) {
+            if (stop_requested()) throw Stop{};
+            throw PlanFailed("quality: KL scoring timed out");
+        }
+        check_helpers();
+        if (!WIFEXITED(*status) || WEXITSTATUS(*status) != 0)
+            throw PlanFailed("quality: KL scoring engine failed; see " + engine_log_.string());
+        const fs::path rows = score.output.string() + ".rows";
+        if (!fs::is_regular_file(score.output) || fs::file_size(score.output) > v2::kMaxDocumentBytes ||
+            !fs::is_regular_file(rows))
+            throw PlanFailed("quality: KL scoring did not produce the report and row sidecar");
+        const Json report = Json::parse(read_file(score.output), nullptr, false);
+        const auto positions = report.is_object() && report.contains("all") && report["all"].is_object()
+            ? report["all"].value("positions", int64_t{0}) : 0;
+        if (positions <= 0 || uint64_t(positions) > UINT64_MAX / 16 ||
+            fs::file_size(rows) != uint64_t(positions) * 16)
+            throw PlanFailed("quality: KL scoring row sidecar differs from reported positions");
+        event("quality_completed", {{"positions", positions}, {"output", score.output.string()}});
+    }
+
+    pid_t start_engine(const QualityScore* quality = nullptr) {
         const fs::path log = s_.run_dir / ("engine-" + stamp() + ".log");
         engine_log_ = log;
         // The strict reader accepts this ephemeral flag only for a serving
@@ -1682,14 +1745,16 @@ class Owner {
                 throw PlanFailed("native serving: launch does not match the admitted engine manifest");
             native_launch->root.require_matches(native->identity.resolution_root);
         }
-        if (manifest && manifest.value().spec.handoff &&
-            manifest.value().spec.handoff->telemetry.histogram_file) {
+        if (quality) {
+            argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
+        } else if (manifest && manifest.value().spec.handoff &&
+                   manifest.value().spec.handoff->telemetry.histogram_file) {
             plan_.heat_session_nonce = heat_launch_nonce();
             argv.push_back("--bc-heat-launch-nonce");
             argv.push_back(plan_.heat_session_nonce);
         }
         plan_.engine_launched_at = std::chrono::system_clock::now();
-        (void)spawn(
+        return spawn(
             argv, native_launch ? native_launch->environment : child_environment(environ, plan_.runtime), log,
             [&](pid_t pid) { track("engine", pid, log, &argv); },
             plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1,
@@ -2363,25 +2428,20 @@ void release_measuring_helpers(MeasuringHelpers& group, const vram::Baseline& ba
 }
 
 int wait_measuring_engine(pid_t pid, const MeasuringHelpers& helpers, const Hooks& hooks) {
-    int status = 0;
+    std::optional<int> status;
     std::string refusal;
-    const auto deadline = Clock::now() + std::chrono::minutes(30);
     try {
-        while (running(pid, &status)) {
+        const auto check_helpers = [&] {
             for (size_t i = 0; i < helpers.pids.size(); ++i) {
-                if (!running(helpers.pids[i])) {
-                    refusal = "plan: helper" + std::to_string(i) + " died during engine memory measurement";
-                    break;
-                }
+                if (!running(helpers.pids[i]))
+                    throw PlanFailed("plan: helper" + std::to_string(i) + " died during engine memory measurement");
             }
-            if (!refusal.empty())
-                break;
-            if (Clock::now() > deadline ||
-                !require_callback(hooks.wait.invoke("session.hooks.wait", 200ms), "measuring wait")) {
-                refusal = "plan: the measuring start was stopped (a stop request or 30 min)";
-                break;
-            }
-        }
+        };
+        status = wait_for_finite_engine(pid, Clock::now() + 30min, check_helpers, [&] {
+            return require_callback(hooks.wait.invoke("session.hooks.wait", 200ms), "measuring wait");
+        });
+        if (!status)
+            refusal = "plan: the measuring start was stopped (a stop request or 30 min)";
     } catch (...) {
         if (stop_child(pid, SIGINT, 60s) && hooks.ended)
             require_callback(hooks.ended.invoke("session.hooks.ended", pid), "hooks.ended");
@@ -2397,7 +2457,7 @@ int wait_measuring_engine(pid_t pid, const MeasuringHelpers& helpers, const Hook
     for (size_t i = 0; i < helpers.pids.size(); ++i)
         if (!running(helpers.pids[i]))
             throw PlanFailed("plan: helper" + std::to_string(i) + " died during engine memory measurement");
-    return status;
+    return *status;
 }
 
 void check_native_helper_roles(const v2::Manifest& manifest, const Json& workers,
@@ -2657,6 +2717,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
 
     if (in.native_admission) {
         const fs::path frozen_runtime_home = fs::canonical(home);
+        if (in.quality_score) {
+            const fs::path owner = frozen_runtime_home / "bin/bc-serve";
+            if (in.self != owner || fs::canonical(owner) != owner)
+                throw PlanFailed("quality requires the matched runtime home's bc-serve executable");
+        }
         out.native_launch = prepare_native_launch(in.native_admission->resolution_root, frozen_runtime_home,
                                                   out.runtime, in.native_admission->runtime_overrides,
                                                   in.options.sys_root);
