@@ -2,7 +2,7 @@
 id: RCD09
 order: 9
 plan: run-campaign-durability
-state: pending
+state: superseded
 created-at: '2026-09-26T00:52:20.106874+00:00'
 breadth: ''
 skill: intermediate
@@ -12,6 +12,52 @@ work: M
 ---
 
 # Implement normalized observability, durable events, telemetry and agent wake semantics
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- no hand-written watcher loop required for submit/manage/observe/review;
+- durable event reconnect is lossless from sequence N;
+- status and logs are executor-independent public contracts;
+- status/metrics are rebuildable projections, never authority;
+- wake policy separates operational failure from scientific FAIL;
+- live hardware/process telemetry uses stable IDs and cannot silently trigger result-driven retries;
+- offline suite green and dev/gateway acceptance complete.
+
+## Notes
+
+Consolidation disposition (2026-11-20): superseded into active RCD10 after RV4247. RCD10 now carries the harvest-integrity and observability requirements from this source, including the separate real cutover/soak gate. This plan transition does not claim implementation or hardware acceptance. Preserve this source record and its historical evidence/ledger references.
 
 ## Status
 
@@ -166,18 +212,13 @@ Before RCD09 is complete:
 5. verify status/metrics remain useful while Slurm is temporarily unavailable;
 6. define/qualify event rotation/checkpointing before long-term file size requires it (not needed for initial cutover if bounded soak confirms acceptable size).
 
-## Acceptance criteria
-
-- no hand-written watcher loop required for submit/manage/observe/review;
-- durable event reconnect is lossless from sequence N;
-- status and logs are executor-independent public contracts;
-- status/metrics are rebuildable projections, never authority;
-- wake policy separates operational failure from scientific FAIL;
-- live hardware/process telemetry uses stable IDs and cannot silently trigger result-driven retries;
-- offline suite green and dev/gateway acceptance complete.
-
 ## Change log
 
 - 2026-09-26: initial design.
 - 2026-09-26: specified multiprocess-safe events/status/telemetry and wake semantics.
 - 2026-09-27: implemented durable follow/status/log projections, Prometheus/Markdown snapshot timer, expanded human/agent CLI and mocked production coexistence; live GPU/gateway acceptance remains.
+
+## Change Log
+
+- 2026-11-20T02:56:16.453853+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:56:26.474187+00:00 (state-transition): State: pending → superseded

@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_024850_deprecated-dormant-rcd01-with_1822",
+  "files": [
+    "docs/planning/completed/run-campaign-durability/RCD01.md",
+    "docs/planning/completed/run-campaign-durability/reviews/RCD01/RV4245.md"
+  ],
+  "plan-item-ids": [
+    "RCD01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Re-evaluated dormant RCD01 against current evidence, recorded a review with an explicit reactivation trigger, and transitioned it to deprecated while preserving its full protocol and provenance.",
+  "timestamp-utc": "2026-11-20T02:48:50.297546Z",
+  "user-summary-candidate": "Deprecated dormant RCD01 with a documented reactivation trigger; no implementation completion was claimed."
+}

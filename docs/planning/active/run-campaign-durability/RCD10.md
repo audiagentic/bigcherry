@@ -13,6 +13,56 @@ work: M
 
 # Accept v1, migrate active qualification work and retire the lab queue
 
+## Description
+
+
+
+## Steps
+
+Consolidated from RCD08/RCD09 (2026-11-20):
+- Preserve verified harvest: deterministic/idempotent explicit-path harvest; committed evidence bound to exact run/session/attempt/record digest; re-verify record/patch/validation/contract identity; reject dirty/staged canonical destinations and contract drift; require committed verified evidence plus planned-session completeness for review-ready; reuse existing statistical contract estimator; never stash/add-A/auto-promote.
+- Preserve observability contracts: durable event reconnect is lossless from sequence N; status/logs are executor-independent public contracts; status/metrics are rebuildable projections and never authority; live hardware/process telemetry uses stable IDs; operational wake policy is separate from scientific FAIL; scientific FAIL cannot result-drive retries.
+- Keep retirement of shell watchers/legacy queue gated on real end-to-end cutover and soak proof, not offline software tests alone.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+Run `PYTHONPATH=tools python -m pytest -q tools/tests/jobs/test_harvest.py tools/tests/jobs/test_report.py tools/tests/jobs/test_status_projection.py tools/tests/jobs/test_service_control_plane.py` for the consolidated software boundaries. Also require real dev Slurm/hardware acceptance, a complete planned series through submit/execute/harvest/report, evidence/report parity, incident/recovery runbook proof and soak before retirement. Hardware and soak remain pending until measured receipts exist; planning cleanup alone supplies no such proof.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- offline jobs suite and real Noble scheduler reference remain green;
+- every currently required dev capability is real-accepted or explicitly unsupported;
+- incident/recovery behavior matches the runbook;
+- one full planned series completes without shell queue/watcher intervention;
+- committed evidence/report parity is confirmed;
+- active operational docs no longer instruct agents to use the old queue before archival.
+
+RCD10 owns RCD08/RCD09 residual cutover acceptance. Harvest is deterministic/idempotent and exact-path; committed evidence identity is verified; dirty/staged canonical destinations, validation/contract drift and incomplete planned sessions fail closed; review-ready requires committed verified evidence; estimator policy is reused; no automatic promotion or broad staging occurs. Durable events reconnect losslessly from sequence N. Status/logs are executor-independent; projections are rebuildable and non-authoritative. Stable-ID process/telemetry and agent-wake policy separate operational failures from scientific FAIL; scientific FAIL does not trigger retries. Offline tests must pass, and real dev/gateway/Slurm series acceptance plus soak remains a separate required gate before queue/watcher retirement.
+
+## Notes
+
+Consolidated from active RCD08 and RCD09 on 2026-11-20 via RV4247. Their source records remain preserved after supersession; this does not claim real dev/Slurm/hardware/soak acceptance. Legacy shell watcher/queue retirement is still gated on RCD10 end-to-end receipts.
+
 ## Objective
 
 Retire the shell queue only after the managed service passes capability-derived real-hardware acceptance and soak. Acceptance is based on current accepted inventory and scientific requirements, never hard-coded GPU slots.
@@ -76,16 +126,15 @@ hand-written watcher/switch scripts
 
 `summarize.py`/`noise.py` may retire once the RCD08 report path has been compared on real equivalent evidence. Rollback means pause new managed submissions and stop managed scheduler execution before using the direct/manual campaign path; never run two schedulers against the same GPUs.
 
-## Acceptance criteria
-
-- offline jobs suite and real Noble scheduler reference remain green;
-- every currently required dev capability is real-accepted or explicitly unsupported;
-- incident/recovery behavior matches the runbook;
-- one full planned series completes without shell queue/watcher intervention;
-- committed evidence/report parity is confirmed;
-- active operational docs no longer instruct agents to use the old queue before archival.
-
 ## Change log
 
 - 2026-09-26: capability-derived acceptance/incident/soak design.
 - 2026-09-27: acceptance-matrix and fail-closed legacy migration tooling implemented and offline-tested; hardware soak/retirement remains pending.
+
+## Reviews
+
+- RV4247
+
+## Change Log
+
+- 2026-11-20T02:55:11.838066+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
