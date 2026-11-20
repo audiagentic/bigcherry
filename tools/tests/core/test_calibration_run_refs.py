@@ -4,7 +4,9 @@ from copy import deepcopy
 
 import pytest
 from bigcherry.core import engines, feature_registry
-from bigcherry.core import calibration_records, run_records
+from bigcherry.core import calibration_records, host_facts, run_records
+
+_SEALED = host_facts.snapshot_at_start({"kernel_release": {"value": "fixture", "readable": True}}, captured_at="2026-11-20T00:00:00Z")
 
 
 def record(store):
@@ -20,7 +22,7 @@ def record(store):
         "metric_specs": {"decode": {}, "prefill": {}, "ttft": {}},
         "provenance": {"effective_config": blob, "argv": blob,
                        "environment": blob, "power_settings": blob, "inputs": []},
-        "host_facts": {}, "feature_states": [],
+        "host_facts": _SEALED, "feature_states": [],
     }
 
 
@@ -94,7 +96,7 @@ def test_platform_producer_pins_selected_calibration_blob_and_quantities(tmp_pat
         work_root=tmp_path, run_id=row["run_id"], recorded_at=row["recorded_at"],
         identity=row["identity"], workload=row["workload"], metrics=row["metrics"],
         effective_config=b"manifest", argv=["bc-serve"], environment={},
-        power_settings={}, inputs={}, host_facts={}, metric_specs=row["metric_specs"],
+        power_settings={}, inputs={}, host_facts=_SEALED, metric_specs=row["metric_specs"],
         feature_states=[{"engine": engines.RADIANCE, "feature_id": name, "state": "active",
                          "reason_code": "configured", "reason_detail": "", "observed_at": "2026-11-20T00:00:00Z"}
                         for name in feature_registry.feature_ids(engines.RADIANCE)],

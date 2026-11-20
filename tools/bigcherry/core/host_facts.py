@@ -9,10 +9,12 @@ power, PCIe or GPU leases.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import subprocess
 from collections.abc import Callable
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
@@ -350,3 +352,207 @@ def collect_host_facts(
         "environment_sha256": _environment_hash(environment_file),
         "gpu_lease_holder": _lease_holder(lease),
     }
+
+# MRC02: the timestamp is captured before the measured child/request begins,
+# NOT when the immutable run record is eventually published.
+START_RECEIPT_FILE = "host-facts.start.v1.json"
+START_FIELDS = (
+    "kernel_release", "kernel_build", "rocm_version", "amdgpu_version",
+    "amdgpu_srcversion", "mem_available_kib", "memory",
+    "environment_sha256", "gpu_lease_holder",
+)
+START_PHASES = frozenset({"measurement_start", "owner_start"})
+
+
+_CARD_FIELDS = (
+    "bdf", "arch", "vram_total_bytes", "firmware_version",
+    "sclk_current_mhz", "mclk_current_mhz",
+    "sclk_od_max_mhz", "mclk_od_max_mhz",
+)
+_POWER_FIELDS = (
+    "cap_uw", "cap_default_uw", "cap_min_uw", "cap_max_uw",
+    "average_uw", "perf_level",
+)
+_CARD_PCIE_FIELDS = ("current_speed", "current_width", "max_speed", "max_width")
+
+
+def _complete_fields(value: dict[str, Any], required: tuple[str, ...]) -> dict[str, Any]:
+    return {
+        **{name: value.get(name, fact(None, "not_captured_at_start")) for name in required},
+        **value,
+    }
+
+
+def _complete_card(bdf: str, raw: Any) -> dict[str, Any]:
+    if not isinstance(bdf, str) or _BDF.fullmatch(bdf) is None or not isinstance(raw, dict):
+        raise ValueError("start host card requires a PCI BDF and fact object")
+    card = _complete_fields(raw, _CARD_FIELDS)
+    if "bdf" not in raw:
+        card["bdf"] = fact(bdf)
+    power = raw.get("power", {})
+    pcie = raw.get("pcie", {})
+    if not isinstance(power, dict) or not isinstance(pcie, dict):
+        raise ValueError("start host card power/PCIe must be objects")  # noqa: TRY004 - schema violations use ValueError
+    port = pcie.get("card", {})
+    upstream = pcie.get("upstream", [])
+    if not isinstance(port, dict) or not isinstance(upstream, list):
+        raise ValueError("start host PCIe card/upstream must be an object/list")  # noqa: TRY004 - schema violations use ValueError
+    card["power"] = _complete_fields(power, _POWER_FIELDS)
+    card["pcie"] = {
+        **pcie,
+        "card": _complete_fields(port, _CARD_PCIE_FIELDS),
+        "upstream": upstream,
+        "upstream_readability": pcie.get(
+            "upstream_readability", fact(len(upstream)) if upstream
+            else fact(None, "upstream_unobserved"),
+        ),
+    }
+    return card
+
+
+def _validate_cards(cards: dict[str, Any]) -> None:
+    for bdf, card in cards.items():
+        if not isinstance(bdf, str) or _BDF.fullmatch(bdf) is None or not isinstance(card, dict):
+            raise ValueError("start host card requires a PCI BDF and fact object")
+        identity = card.get("bdf")
+        if not set(_CARD_FIELDS).issubset(card) or (
+            not isinstance(identity, dict)
+            or identity.get("readable") is not True
+            or identity.get("value") != bdf
+        ):
+            raise ValueError("start host card identity or field readability is incomplete")
+        if not isinstance(card.get("power"), dict) or not set(_POWER_FIELDS).issubset(card["power"]):
+            raise ValueError("start host card power field readability is incomplete")
+        pcie = card.get("pcie")
+        if not isinstance(pcie, dict) or not isinstance(pcie.get("card"), dict) or (
+            not set(_CARD_PCIE_FIELDS).issubset(pcie["card"])
+            or not isinstance(pcie.get("upstream"), list)
+            or "upstream_readability" not in pcie
+        ):
+            raise ValueError("start host card PCIe field readability is incomplete")
+
+
+def _typed(value: Any, where: str) -> None:
+    if isinstance(value, dict):
+        if "value" in value or "readable" in value:
+            if not isinstance(value.get("readable"), bool) or "value" not in value:
+                raise ValueError(f"{where}: missing per-field readability")
+            if value["readable"] is False and (
+                value["value"] is not None
+                or not isinstance(value.get("reason"), str)
+                or not value["reason"]
+            ):
+                raise ValueError(f"{where}: unreadable requires null value and explicit reason")
+            if value["readable"] and value["value"] is None and value.get("reason") != "unheld":
+                # A legitimate idle GPU lease has no holder, but is readable.
+                raise ValueError(f"{where}: readable null must identify an observed absence")
+            return
+        if not value and where != "host_facts.cards":
+            raise ValueError(f"{where}: missing per-field readability")
+        for key, item in value.items():
+            _typed(item, f"{where}.{key}")
+        return
+    if isinstance(value, list):
+        for i, item in enumerate(value):
+            _typed(item, f"{where}[{i}]")
+        return
+    raise ValueError(f"{where}: host-facts leaf is missing per-field readability")
+
+
+def snapshot_at_start(
+    facts: dict[str, Any] | None = None, *,
+    captured_at: str | None = None,
+    phase: str = "measurement_start",
+) -> dict[str, Any]:
+    """Capture passive host readings only when the caller starts measuring.
+
+    Missing fields are explicit unreadable markers, never end-of-run values.
+    For native owners, the C++ start receipt supplies the source fields.
+    """
+    measured = collect_host_facts() if facts is None else facts
+    if not isinstance(measured, dict):
+        raise ValueError("start host facts must be an object")  # noqa: TRY004 - schema violations use ValueError
+    normalised = {
+        key: measured.get(key, fact(None, "not_captured_at_start"))
+        for key in START_FIELDS
+    }
+    cards = measured.get("cards")
+    if cards is None:
+        normalised["cards"] = {}
+        normalised["cards_readability"] = fact(None, "not_captured_at_start")
+    elif not isinstance(cards, dict):
+        raise ValueError("start host cards must be an object keyed by BDF")
+    else:
+        normalised["cards"] = {bdf: _complete_card(bdf, card) for bdf, card in cards.items()}
+        normalised["cards_readability"] = (
+            fact(len(cards)) if cards else fact(None, "no_cards_detected")
+        )
+    for key, value in measured.items():
+        if key not in normalised:
+            normalised[key] = value
+    capture = {
+        "schema_version": 1,
+        "capture_phase": phase,
+        "captured_at": captured_at or datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        "facts": normalised,
+    }
+    return validate_start_snapshot(capture)
+
+
+def validate_start_snapshot(snapshot: dict[str, Any]) -> dict[str, Any]:
+    """Validate the sole measurement-start receipt shape and field readability."""
+    if not isinstance(snapshot, dict) or set(snapshot) != {
+        "schema_version", "capture_phase", "captured_at", "facts"
+    } or snapshot["schema_version"] != 1 or snapshot["capture_phase"] not in START_PHASES:
+        raise ValueError("start host-facts receipt requires a schema and admitted capture phase")
+    try:
+        value = snapshot["captured_at"]
+        parsed = datetime.fromisoformat(value)
+        if parsed.utcoffset() is None or parsed.utcoffset().total_seconds() != 0:
+            raise ValueError("not UTC")
+    except (KeyError, TypeError, ValueError) as exc:
+        raise ValueError("start host-facts receipt requires a UTC timestamp") from exc
+    if not isinstance(snapshot["facts"], dict) or not all(
+        key in snapshot["facts"] for key in (*START_FIELDS, "cards", "cards_readability")
+    ):
+        raise ValueError("start host-facts receipt is missing field readability")
+    if not isinstance(snapshot["facts"]["cards"], dict):
+        raise ValueError("start host-facts cards must be an object")  # noqa: TRY004 - schema violations use ValueError
+    _validate_cards(snapshot["facts"]["cards"])
+    _typed(snapshot["facts"], "host_facts")
+    return snapshot
+
+
+def read_start_receipt(path: Path) -> dict[str, Any]:
+    """Read a sealed start receipt, never recomputing current/end host values."""
+    path = Path(path)
+    if path.is_symlink() or not path.is_file():
+        raise ValueError(f"missing or unsafe native host-facts start receipt: {path}")
+    return validate_start_snapshot(json.loads(path.read_text(encoding="utf-8")))
+
+def read_owner_start(run_dir: Path, *, session_name: str = "session.json") -> dict[str, Any]:
+    """Read and verify the native owner start receipt and its immutable seal.
+
+    A post-run sampler cannot create this proof. The owner session must name the
+    digest of the exact start bytes; the caller must keep both files together.
+    """
+    folder = Path(run_dir)
+    session_path = folder / session_name
+    receipt_path = folder / START_RECEIPT_FILE
+    if session_path.is_symlink() or not session_path.is_file():
+        raise ValueError("missing or unsafe native owner session receipt")
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    snapshot = read_start_receipt(receipt_path)
+    if snapshot["capture_phase"] != "owner_start":
+        raise ValueError("native owner requires owner_start host facts")
+    if not isinstance(session, dict) or session.get("host_facts_start_sha256") != hashlib.sha256(
+        receipt_path.read_bytes()
+    ).hexdigest():
+        raise ValueError("native owner start receipt digest differs from session")
+    if not isinstance(session.get("started_at"), str):
+        raise ValueError("native owner start time is missing")
+    started = datetime.fromisoformat(session["started_at"])
+    captured = datetime.fromisoformat(snapshot["captured_at"])
+    if started.tzinfo is None or started.utcoffset().total_seconds() != 0 or captured < started:
+        raise ValueError("native owner receipt precedes its start or timestamp is not UTC")
+    return snapshot

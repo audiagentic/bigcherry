@@ -10,9 +10,12 @@ from pathlib import Path
 
 import pytest
 from bigcherry.cli.main import main
-from bigcherry.core import engines, feature_registry, measurement_producers, run_records
+from bigcherry.core import engines, feature_registry, host_facts, measurement_producers, run_records
 
-FAKE_HOST = {"kernel_release": {"value": "fixture", "readable": True}}
+FAKE_HOST = host_facts.snapshot_at_start(
+    {"kernel_release": {"value": "fixture", "readable": True}},
+    captured_at="2026-11-19T00:00:00Z", phase="owner_start",
+)
 STATES = [
     {
         "engine": "radiance",
@@ -76,6 +79,8 @@ def make_run(root: Path, *, state="running", events=None):
     }
     manifest.write_text(json.dumps(content))
     (root / "feature-states.v1.json").write_text(json.dumps(STATES))
+    host_file = root / host_facts.START_RECEIPT_FILE
+    host_file.write_text(json.dumps(FAKE_HOST))
     (root / "session.json").write_text(
         json.dumps(
             {
@@ -83,7 +88,8 @@ def make_run(root: Path, *, state="running", events=None):
                 "state": state,
                 "port": 18450,
                 "manifest": str(manifest),
-                "started_at": "2026-11-20T00:00:00Z",
+                "started_at": "2026-11-19T00:00:00Z",
+                "host_facts_start_sha256": hashlib.sha256(host_file.read_bytes()).hexdigest(),
                 "selection": {"calibration_store_key": None},
                 "events": [{"kind": k} for k in (events or [])],
                 "processes": [
@@ -240,6 +246,32 @@ def test_calibration_bad_snapshot_or_wrong_key_fails_closed(tmp_path):
     with pytest.raises(ValueError, match="sha256|digest|mismatch"):
         lab.publish_calibration_run(run, work_root=tmp_path, host_snapshot=FAKE_HOST)
     assert run_records.RunRecordStore(tmp_path).query() == []
+
+
+def test_native_start_receipt_digest_and_timing_fail_closed(tmp_path):
+    from bigcherry.bench import radiance_lab_records as lab
+
+    run = tmp_path / "run"
+    make_run(run)
+    receipt = run / host_facts.START_RECEIPT_FILE
+    assert lab._session_context(run)["host_start"] == FAKE_HOST
+
+    receipt.write_text(receipt.read_text() + " ")
+    with pytest.raises(run_records.RecordError, match="start receipt digest"):
+        lab._session_context(run)
+
+    receipt.unlink()
+    with pytest.raises(run_records.RecordError, match="host-facts"):
+        lab._session_context(run)
+
+    earlier = {**FAKE_HOST, "captured_at": "2026-11-18T00:00:00Z"}
+    receipt.write_text(json.dumps(earlier))
+    session_path = run / "session.json"
+    session = json.loads(session_path.read_text())
+    session["host_facts_start_sha256"] = hashlib.sha256(receipt.read_bytes()).hexdigest()
+    session_path.write_text(json.dumps(session))
+    with pytest.raises(run_records.RecordError, match="precedes its start"):
+        lab._session_context(run)
 
 
 def test_probe_records_preserve_exact_rows_after_run_dir_purge(tmp_path):
@@ -450,7 +482,7 @@ def test_needle_cli_publishes_instead_of_legacy_results_json(
         },
     )
     pointer = tmp_path / "needle.json"
-    with patch("bigcherry.core.host_facts.collect_host_facts", return_value=FAKE_HOST):
+    with patch("bigcherry.core.host_facts.collect_host_facts", return_value=FAKE_HOST["facts"]):
         assert (
             module.main(
                 [
@@ -502,7 +534,7 @@ def test_image_cli_captures_exact_sent_pixels_and_refusal(tmp_path, monkeypatch)
 
     monkeypatch.setattr(module, "ask", fake_ask)
     out = tmp_path / "image.json"
-    with patch("bigcherry.core.host_facts.collect_host_facts", return_value=FAKE_HOST):
+    with patch("bigcherry.core.host_facts.collect_host_facts", return_value=FAKE_HOST["facts"]):
         assert (
             module.main(
                 [

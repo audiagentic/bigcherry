@@ -13,7 +13,6 @@ import hashlib
 import json
 import os
 import re
-from pathlib import Path
 import shutil
 import subprocess
 import sys
@@ -21,6 +20,7 @@ import time
 import tomllib
 import urllib.error
 import urllib.request
+from pathlib import Path
 
 from rsc02_s15_projection import ProjectionError, compare, dry_run, projection
 
@@ -417,17 +417,18 @@ def accept(args: argparse.Namespace) -> int:
                 result = json.loads(Path(cell["out"]).read_text())
                 if result["state"] != "stopped" or not result["clean_stop"]:
                     raise Refusal(f"{label}: clean shutdown not verified")
-                # This operator-runner is still an active leased S15
-                # acceptance tool, not a retired historical report.
-                sys.path.insert(0, str(REPO / "tools"))
-                from bigcherry.bench.radiance_lab_records import publish_rsc02_arm
-
+                # The A control is retained as experimental comparison evidence.
+                # Only the native B arm has a sealed session-start receipt.
                 snapshot_file = Path(cell["out"]).with_suffix(".snapshot.json")
-                snapshot = json.loads(snapshot_file.read_text(encoding="utf-8"))
-                record_digest = publish_rsc02_arm(
-                    result, snapshot, work_root=Path(cell["work_root"]),
-                )
-                (out / f"{label}.record.sha256").write_text(record_digest + "\n")
+                if which == "B":
+                    sys.path.insert(0, str(REPO / "tools"))
+                    from bigcherry.bench.radiance_lab_records import publish_rsc02_arm
+
+                    snapshot = json.loads(snapshot_file.read_text(encoding="utf-8"))
+                    record_digest = publish_rsc02_arm(
+                        result, snapshot, work_root=Path(cell["work_root"]),
+                    )
+                    (out / f"{label}.record.sha256").write_text(record_digest + "\n")
                 results.append((which, result, snapshot_file))
             snaps = dict((which, json.loads(snap.read_text())) for which, _, snap in results)
             report = compare(snaps["A"], snaps["B"])
