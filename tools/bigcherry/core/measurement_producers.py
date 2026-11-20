@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import engines, run_records, calibration_records
+from . import engines, run_records, calibration_records, feature_registry
 from . import host_facts as host_capture
 
 
@@ -70,6 +70,9 @@ def publish(
             raise run_records.RecordError(f"missing or invalid start host facts: {exc}") from exc
         if start_time > recorded_time:
             raise run_records.RecordError("start host-facts timestamp is after the measured record time")
+    # Only registered producer engines have a native feature-state contract.
+    if identity["engine"] in feature_registry.FEATURES:
+        feature_registry.require_coverage(identity["engine"], feature_states)
     store = run_records.RunRecordStore(work_root)
 
     def source_blob(source: bytes | Path) -> dict:

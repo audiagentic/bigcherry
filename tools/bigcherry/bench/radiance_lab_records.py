@@ -606,3 +606,41 @@ def publish_rsc02_arm(
             "reason_codes": ["VA25_NOT_ATTESTED"],
         },
     )
+
+
+def publish_native_lab(run_dir: Path, sidecar: Path, *,
+                       work_root: Path | None = None,
+                       host_snapshot: dict | None = None) -> str:
+    """Ingest explicit metrics after a clean native owner stop, never infer."""
+    c = _session_context(run_dir, require_stopped=True)
+    path = _file(Path(sidecar))
+    if path.parent.resolve() != c["run_dir"]:
+        raise run_records.RecordError("native lab evidence is outside the stopped run")
+    doc = _read_json(path)
+    if (doc.get("schema_version") != 1 or doc.get("run_id") != c["run_id"]
+            or doc.get("manifest_sha256") != _digest(c["manifest_bytes"])):
+        raise run_records.RecordError("native lab manifest, run ID or schema mismatch")
+    metrics = doc.get("metrics")
+    if (not isinstance(metrics, dict)
+            or set(metrics) != {"decode", "prefill", "ttft"}
+            or not any(metrics.values())):
+        raise run_records.RecordError("native lab has no typed measured metrics")
+    workload = doc.get("workload")
+    if (not isinstance(workload, dict) or not isinstance(workload.get("name"), str)
+            or not workload["name"] or not isinstance(workload.get("definition"), dict)):
+        raise run_records.RecordError("native lab has no typed workload")
+    specs = doc.get("metric_specs")
+    if not isinstance(specs, dict) or set(specs) != {"decode", "prefill", "ttft"}:
+        raise run_records.RecordError("native lab has no typed metric specs")
+    return measurement_producers.publish(
+        work_root=work_root, run_id=c["run_id"] + "-lab",
+        recorded_at=doc["recorded_at"], identity=c["identity"],
+        workload=workload, metrics=metrics, metric_specs=specs,
+        effective_config=c["manifest_bytes"], argv=_native_argv(c["session"]),
+        environment=_native_environment(c["session"]),
+        power_settings=c["manifest"]["spec"].get("power", {}),
+        inputs={**c["inputs"], "native_lab_measurement": path},
+        host_facts=_host(host_snapshot), feature_states=c["feature_states"],
+        validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
+        session_id=c["run_id"],
+    )

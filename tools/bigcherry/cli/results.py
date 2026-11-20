@@ -164,6 +164,16 @@ def cmd_results(args: argparse.Namespace) -> int:
                     print(f"  {item['role']}: {item['blob']['sha256']}")
                 print(f"validity: {rec.get('validity', {'state':'unknown'})}")
             return 0
+        if args.results_action == "ingest-native-lab":
+            from ..bench.radiance_lab_records import publish_native_lab
+
+            sha = publish_native_lab(args.run_dir, args.measurement_file,
+                                     work_root=args.work_root)
+            if args.json:
+                print(json.dumps({"sha256": sha}, sort_keys=True))
+            else:
+                print(f"native lab run-record v1: {sha}")
+            return 0
         if args.results_action == "ingest-calibration":
             from ..bench.radiance_lab_records import publish_calibration_run
 
@@ -288,6 +298,14 @@ def register(sub) -> None:
     ingest.add_argument("--work-root", type=Path, default=None)
     ingest.add_argument("--json", action="store_true")
     ingest.set_defaults(func=cmd_results)
+
+    native_lab = actions.add_parser("ingest-native-lab",
+                                    help="ingest typed measurements from a stopped native Radiance owner")
+    native_lab.add_argument("--run-dir", type=Path, required=True)
+    native_lab.add_argument("--measurement-file", type=Path, required=True)
+    native_lab.add_argument("--work-root", type=Path, default=None)
+    native_lab.add_argument("--json", action="store_true")
+    native_lab.set_defaults(func=cmd_results)
 
     baseline = actions.add_parser("baseline", help="create portable spread-derived baseline (two or more launches)")
     common(baseline, require_scope=True)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 import pytest
-from bigcherry.core import host_facts, measurement_producers, run_records
+from bigcherry.core import engines, feature_registry, host_facts, measurement_producers, run_records
 
 
 def fake_facts():
@@ -32,7 +32,11 @@ def publish(tmp_path, snapshot, *, stamp="2026-11-20T12:00:00Z"):
         metrics={"decode": {"steps": 1}, "prefill": {}, "ttft": {}},
         effective_config=b"exact-manifest", argv=["engine", "--run"],
         environment={}, power_settings={}, inputs={"raw": b"evidence"},
-        host_facts=snapshot, feature_states=[],
+        host_facts=snapshot,
+        feature_states=[{"engine": engines.RADIANCE, "feature_id": name, "state": "inactive",
+                         "reason_code": "fixture_not_configured", "reason_detail": "",
+                         "observed_at": "2026-11-20T11:00:00Z"}
+                        for name in feature_registry.feature_ids(engines.RADIANCE)],
         metric_specs={"decode": {"steps": {"direction": "higher", "gated": False}}, "prefill": {}, "ttft": {}},
     )
 

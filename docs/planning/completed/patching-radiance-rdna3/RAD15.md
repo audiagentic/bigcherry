@@ -2,7 +2,7 @@
 id: RAD15
 order: 15
 plan: patching-radiance-rdna3
-state: pending
+state: deprecated
 created-at: '2026-10-20T12:00:00+00:00'
 breadth: ''
 skill: advanced
@@ -143,6 +143,9 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE unless current 4-GPU trace proves local MoE dominates" was NOT applied; this item stays open. Why: engines/radiance/components/bc-gfx12/component.toml:16 ships a qualified gfx1201 FP8 decode row, but RAD15.md:21,28-31,48 also demands gfx1100 FP8/W4 engine-local moe_gemm_q rows and XTX topology/quality A/B. engines/radiance/components/libr3/native/r4d_moe.hip.rw:367-398 still shows grouped GEMM rather than the requested decode-GEMV dispatch; closure has no current negative A/B. Active items that reference this one: BCOP348, BCOP349, BCOP354, MEN24, PRBE115, QFP43, QFP54, RAD16, RAD17, RAD44. Keep the distinct gfx1100 engine-GEMV acceptance open unless a current-pin topology trial proves it not worth pursuing.
 
+2026-11-20 (AEDT): deprecated. Its patch rad0007_hc_pf2_fp8_down was tested and rejected: at M=2048 on gfx1201, after the P0 correctness fix and four optimisation passes, the FP8 down path takes 1203.7 us against the existing bf16 path's 530.7 us (about 2.3x slower). The package is kept unchanged as evidence in engines/radiance/patches/archive/rad0007_hc_pf2_fp8_down (row in archive/ARCHIVE.md); do not repeat the attempt without a new idea for the quant kernel's cost.
+
+
 ## Change Log
 
 - 2026-10-20T12:00:00+00:00 (created-by): Created by agent
@@ -155,3 +158,5 @@ BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed dis
 - 2026-10-21T05:00:27.165068+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:11:44.583614+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:23:54.636300+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:48:28.943237+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:48:47.024860+00:00 (state-transition): State: pending → deprecated

@@ -169,6 +169,21 @@ when live placement is inactive or degraded, including the reason code and
 the preflight/provenance reason; other default-off options are diagnostic
 rather than automatically required. MRC06 still owns producer migration.
 
+The platform registry at `tools/bigcherry/core/feature_registry.py` declares
+Radiance feature IDs and their production expectations. The native owner reports
+all seven declared features before child admission. Missing, duplicate, and
+wrong-engine states refuse new Radiance measurement publication. Other engine
+producers are scoped to MRC07.
+
+Inspect the authenticated native snapshot with
+`bigcherry status --run-dir RUN`. A required inactive or degraded feature
+prints its native reason, and `bigcherry status --run-dir RUN
+--strict-production-features` returns status 2. For production admission,
+`bc-serve serve CONFIG --run-dir RUN --strict-production-features`
+refuses a missing required feature **before child spawn**, while writing its
+snapshot and diagnostic. A run without selected helpers does not require live
+placement. No Python is invoked by the native serving runtime.
+
 ### Portable results: baseline, compare, history (MRC05 slice 1)
 
 `bigcherry.core.results` owns offline baseline gates, comparisons and history
@@ -231,9 +246,9 @@ inputs are snapshotted before launch and checked for mutation; feature states
 are read from the native run directory using MRC03. Passive MRC02 host facts
 are captured immediately before measurement. Incomplete state, metadata,
 or mismatched key aborts **record publication**, rather than fabricate
-provenance. The old `parity.json` remains a read-only summary view for existing consumers and is
-not ingested as a source of run-record metric truth. The remaining MRC06
-producer migrations and legacy-writer retirement are separate slices.
+provenance. There is no parity summary writer or reader. The shell baseline and
+compare commands delegate to `bigcherry results` over SHA-verified
+launch receipts; the platform store is the sole result view.
 
 **MRC06 slice 2 — producer migration and legacy listing.** The parity producer now reads the selected current calibration with MRC04's shared native-TOML reader, without duplicating its key verification.
 
@@ -248,6 +263,15 @@ It drives the original benchmark and intercepts the existing result append bound
 Typed HI47 measurement sidecars can be published with "python -m bigcherry.experiment.bundle record BUNDLE --measurement-file BUNDLE/measurement.json" or with the managed "run --measurement-file measurement.json" option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
 
 The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; records that predate the validity field remain readable. `metric_specs` (direction and gate for every metric) is required in every record; a record without it is refused when published, and publishing code must pass it. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
+
+**MRC06 native-lab sidecar ingestion.** Radiance operators can publish a typed
+non-calibration measurement from an explicitly *stopped* native owner with
+`bigcherry results ingest-native-lab --run-dir RUN --measurement-file RUN/lab-measurement.json --work-root ROOT`.
+The sidecar is within the stopped run directory and contains schema version
+1, matching run ID and manifest digest, UTC recorded time, typed workload and
+phase-qualified decode/prefill/TTFT metrics. Exact source evidence is pinned to
+one immutable MRC01 record; absent VA25 proof is marked unverified. No metrics
+are inferred from logs, no independent historical results reader is exposed.
 
 **MRC06 slice 3 — Radiance native lab results.** Native `bc-serve serve
 --calibration-run` saves admitted manifest, exact process argv, A/B prompt

@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_012534_every-active-radiance-patch-is_2451",
+  "files": [
+    "engines/radiance/patches/archive/ARCHIVE.md",
+    "engines/radiance/patches",
+    "docs/reference/patches/PATCH_SYSTEM.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PRQ06 (#1224, #1227): retired-patch archive (never composed by registry, lint, pin-bump or builds); rad0001/rad0006/rad0034/rad0035 (superseded or replaced), rad0003 and rad0007 (rejected with measured reasons) and rad0039 (abandoned) archived unchanged with ARCHIVE.md rows; rad0042-rad0045 qualified as diagnostics. Active Radiance set: 30 validated + 6 diagnostic, nothing untested or superseded.",
+  "timestamp-utc": "2026-11-20T01:25:34.005505Z",
+  "user-summary-candidate": "Every active Radiance patch is validated or a diagnostic; retired patches are kept as evidence."
+}

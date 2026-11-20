@@ -12,6 +12,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
+from bigcherry.core import engines, feature_registry
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools" / "lab" / "radiance" / "flashnext-parity.sh"
@@ -207,8 +208,12 @@ class RunRecordsTests(unittest.TestCase):
             (launch / "feature-states.v1.json").write_text(json.dumps([{
                 "feature_id": "live_policy", "state": "inactive",
                 "reason_code": "no_calibration", "reason_detail": "not configured",
-                "engine": "radiance", "observed_at": "2026-11-19T00:00:00Z"
-            }]))
+                "engine": engines.RADIANCE, "observed_at": "2026-11-19T00:00:00Z"
+            }] + [{
+                "feature_id": name, "state": "inactive",
+                "reason_code": "fixture_not_configured", "reason_detail": "",
+                "engine": engines.RADIANCE, "observed_at": "2026-11-19T00:00:00Z",
+            } for name in feature_registry.feature_ids(engines.RADIANCE) if name != "live_policy"]))
             from bigcherry.core import host_facts
             import hashlib
             start = host_facts.snapshot_at_start(
@@ -237,6 +242,22 @@ class RunRecordsTests(unittest.TestCase):
                 "warmup_rounds": 0,
             }))
         return out
+
+    def test_parity_launch_uses_shared_record_producer_once(self):
+        from bigcherry.core import measurement_producers, run_records
+
+        out = self.run_fixture("sole-writer", [1.0])
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}), patch(
+            "bigcherry.core.measurement_producers.publish",
+            wraps=measurement_producers.publish,
+        ) as publish:
+            digest = fp.publish_launch_record(out, out / "launch-1", work_root=self.root)
+        self.assertEqual(publish.call_count, 1)
+        self.assertEqual(
+            run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
+            "sole-writer-launch-1",
+        )
+        self.assertFalse((out / "parity.json").exists())
 
     def test_two_harness_records_match_results_compare_verdict(self):
         from bigcherry.core import results, run_records

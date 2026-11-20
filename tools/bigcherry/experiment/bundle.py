@@ -15,8 +15,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
-from ..core import host_facts, measurement_producers
 from ..core.telemetry import console_telemetry
+from ..core import engines, feature_registry, feature_states, host_facts, measurement_producers
 from ..tuning.journal import atomic_write, canonical
 from . import attestation
 
@@ -313,12 +313,17 @@ def publish_measurement(
     document = json.loads(document_file.read_text(encoding="ascii"))
     if not any(metrics.get(phase) for phase in ("decode", "prefill", "ttft")):
         raise BundleError("bundle has no declared measured phase metrics")
-    native_start = document.get("host_facts_start")
-    if native_start is None:
-        raise BundleError("measurement bundle has no sealed start host facts")
-    host_facts.validate_start_snapshot(native_start)
-    if host_snapshot is not None and host_snapshot != native_start:
-        raise BundleError("supplied host snapshot differs from pre-exec bundle")
+    # A Radiance record needs the host facts sealed before the child started; other engines keep the ingest-time
+    # snapshot (MRC07).
+    if identity["engine"] == engines.RADIANCE:
+        start_facts = document.get("host_facts_start")
+        if start_facts is None:
+            raise BundleError("measurement bundle has no sealed start host facts")
+        host_facts.validate_start_snapshot(start_facts)
+        if host_snapshot is not None and host_snapshot != start_facts:
+            raise BundleError("supplied host snapshot differs from pre-exec bundle")
+    else:
+        start_facts = host_snapshot if host_snapshot is not None else host_facts.collect_host_facts()
     process_observed = _observed_execution_from_bundle(root)
     if observed is not None and process_observed is not None and (
         observed.backend != process_observed.backend
@@ -339,6 +344,9 @@ def publish_measurement(
     }
     if measurement_source is not None:
         inputs["measured_results"] = measurement_source
+    # Only Radiance has a native feature-state snapshot in this plan.
+    states = (feature_states.read_feature_states(root / feature_states.FILE_NAME)
+              if identity["engine"] in feature_registry.FEATURES else [])
     digest = measurement_producers.publish(
         work_root=work_root,
         run_id=document["experiment_id"],
@@ -351,8 +359,8 @@ def publish_measurement(
         argv=document["command"], environment=document["environment"],
         power_settings=document.get("power_state", {}),
         inputs=inputs,
-        host_facts=native_start,
-        feature_states=[],
+        host_facts=start_facts,
+        feature_states=states,
         validity=validity,
         session_id=document["experiment_id"],
     )

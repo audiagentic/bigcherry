@@ -9,7 +9,7 @@ from typing import Any, cast
 
 from .. import __version__, check, doctor
 from . import gfxoff_cmd
-from ..core import paths
+from ..core import paths, feature_states, feature_registry
 from ..source import audit as source_audit
 from ..release import records as releases
 
@@ -33,6 +33,29 @@ def cmd_status(args: Namespace) -> int:
     print(f"  repo:     {paths.REPO_ROOT}")
     print(f"  checkout: {root}")
     print(f"  revision: {revision[:12]}{' (dirty)' if dirty else ''}")
+    print()
+    run_dir = getattr(args, "run_dir", None)
+    if run_dir is not None:
+        snapshot = Path(run_dir) / feature_states.FILE_NAME
+        try:
+            states = feature_states.read_feature_states(snapshot)
+            if not states:
+                raise feature_states.FeatureStateError("empty native feature-state snapshot")
+            engine = states[0]["engine"]
+            feature_registry.require_coverage(engine, states)
+            print(f"  feature states ({engine}; {snapshot}):")
+            for item in states:
+                print(f"    {item['feature_id']:<24} {item['state']:<9} {item['reason_code']}: {item['reason_detail']}")
+            warnings = feature_registry.production_warnings(engine, states)
+            for warning in warnings:
+                print(f"  {warning}")
+            if warnings and getattr(args, "strict_production_features", False):
+                return 2
+        except (feature_states.FeatureStateError, OSError, ValueError) as exc:
+            print(f"  feature states unavailable: {exc}")
+            return 2
+    else:
+        print("  feature states: no run selected (use --run-dir DIR)")
     print()
     records = releases.all_records()
     if not records:

@@ -2,7 +2,7 @@
 id: MRC05
 order: 5
 plan: run-measurement-records
-state: pending
+state: completed
 created-at: '2026-11-19T00:50:41.670049+00:00'
 breadth: ''
 skill: intermediate
@@ -47,8 +47,7 @@ Today: tools/lab/radiance/flashnext_parity.py (with flashnext-parity.sh) is a ra
 
 ## Validation
 
-- Tests: spread-derived tolerance, single-launch refusal, one-sided gate in each direction, history drift flag on a synthetic series.
-- Run the new compare on the four arms of docs/evidence/2026-11-19-flashnext-4gpu-regression and confirm it reports the policy state difference.
+Merged: #1198 (bigcherry results baseline|compare|history over run records: tolerances from measured spread, single launch refused, one-sided gates by recorded direction, decode vs prefill/TTFT verdicts separate, provenance diff, drift flags), #1214 (the Flash-Next parity harness consumes portable run records), #1223 (parity.json, the harness's own baseline/compare and the record toggle removed; flashnext-parity.sh baseline|compare call bigcherry results with the launch SHAs). Tests: tools/tests/core/test_results.py, tools/tests/lab/test_flashnext_parity.py (MRC05 verdict reproduces the former harness verdict on fixtures).
 
 ## Effort & Risk
 
@@ -60,9 +59,7 @@ Medium. Risk: tolerances too tight on noisy metrics; derive them from measured s
 
 ## Acceptance Criteria
 
-- A baseline contains everything needed to reproduce it, by content.
-- A compare never gives a verdict from one launch and always lists host and feature-state differences.
-- `results history` answers a layout/metric question without opening run folders.
+Baselines, comparisons and history are platform operations over run-record v1 for any engine; the Radiance parity harness has no separate baseline/compare implementation or summary file; a comparison lists the provenance differences between the runs it compares.
 
 ## Notes
 
@@ -73,3 +70,5 @@ On main 2026-11-19: `baselines/flashnext-4gpu-parity-main-20261119.json` (a curr
 - 2026-11-19T00:50:41.670049+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:22.108305+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-19T07:39:07.531890+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T01:25:28.932213+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-20T01:25:33.475307+00:00 (state-transition): State: pending → completed

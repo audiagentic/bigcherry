@@ -367,17 +367,13 @@ def record_metric_phase(name: str) -> str:
 
 
 def _platform():
-    # The standalone harness is invoked by path; platform imports only inside
-    # the producer and portable baseline/compare, leaving the engine native.
+    # This standalone harness imports the shared platform producer by path,
+    # never opening a second measurement-result write path.
     tools = str(REPO / "tools")
     if tools not in sys.path:
         sys.path.insert(0, tools)
-    from bigcherry.core import feature_states, run_records
-    return feature_states, run_records
-
-
-def _json_bytes(obj) -> bytes:
-    return (json.dumps(obj, sort_keys=True, separators=(",", ":"), allow_nan=False) + "\n").encode("utf-8")
+    from bigcherry.core import engines, feature_states, measurement_producers
+    return engines, feature_states, measurement_producers
 
 
 def capture_host_facts(launch: Path, run_dir: Path) -> None:
@@ -434,12 +430,12 @@ def selected_calibration(path: Path, key: str) -> dict:
 def publish_launch_record(
     out: Path, launch: Path, *, work_root: Path | None = None
 ) -> str:
-    """Publish a completed launch only to the immutable platform record store.
+    """Publish exactly one complete parity launch through the platform producer.
 
     Missing native feature state, build identity, or selected calibration is a
     producer error. None of those can be manufactured from the measurements.
     """
-    feature_states, run_records = _platform()
+    engines, feature_states, measurement_producers = _platform()
     out, launch = Path(out), Path(launch)
     run = _load(out / "run.json")
     manifest_file = launch / "manifest.json"
@@ -456,7 +452,7 @@ def publish_launch_record(
     if not native_manifest.is_file() or native_manifest.read_bytes() != manifest_file.read_bytes():
         raise ParityError("native owner admitted manifest differs from measured parity manifest")
     states = feature_states.read_feature_states(launch / feature_states.FILE_NAME)
-    if any(item["engine"] != "radiance" for item in states):
+    if any(item["engine"] != engines.RADIANCE for item in states):
         raise ParityError("native feature-state engine differs from Radiance")
     build = run.get("build_identity") or {}
     meta_file = Path(run["build"]) / "bigcherry-build-metadata-radiance.json"
@@ -495,67 +491,54 @@ def publish_launch_record(
             definition["repeat_groups"] = groups
         metric_specs[phase][name] = definition
 
-    store = run_records.RunRecordStore(work_root)
-    def blob_obj(obj):
-        return store.put_blob(_json_bytes(obj))
-    def named_blob(role, data):
-        return {"role": role, "blob": data}
-    inputs = [
-        named_blob("run_info", store.put_blob_file(out / "run.json")),
-        named_blob("heat", store.put_blob_file(Path(snapshot["heat_path"]))),
-        named_blob("policy_state", blob_obj(state)),
-        named_blob("warmup", store.put_blob_file(launch / "launch.json")),
-        named_blob("native_feature_states", store.put_blob_file(launch / feature_states.FILE_NAME)),
-        named_blob("native_host_start", store.put_blob_file(launch / host_capture.START_RECEIPT_FILE)),
-        named_blob("native_session_start", store.put_blob_file(launch / "native-session-start.json")),
-        named_blob("build_metadata", store.put_blob_file(meta_file)),
-    ]
-    # Raw corpus calibration and helper policy counters, when produced by the
-    # existing harness, are result-affecting evidence; keep their original bytes.
+    inputs = {
+        "run_info": out / "run.json",
+        "heat": Path(snapshot["heat_path"]),
+        "policy_state": measurement_producers.canonical_blob(state),
+        "warmup": launch / "launch.json",
+        "native_feature_states": launch / feature_states.FILE_NAME,
+        "native_host_start": launch / host_capture.START_RECEIPT_FILE,
+        "native_session_start": launch / "native-session-start.json",
+        "build_metadata": meta_file,
+    }
+    # Raw source bytes remain content-addressed, never recreated from metrics.
     for role, filename in (("doc_calibration", "doc-calibration.json"),
                            ("policy_placement", "policy.json")):
         path = launch / filename
         if path.is_file():
-            inputs.append(named_blob(role, store.put_blob_file(path)))
+            inputs[role] = path
     if state["configured"]:
         cal = snapshot.get("calibration_store")
         key = state.get("calibration_key")
         if not cal or not isinstance(key, str) or not key:
             raise ParityError("active policy lacks selected calibration store/key")
-        inputs.append(named_blob("calibration_record",
-                                 blob_obj(selected_calibration(Path(cal), key))))
+        inputs["calibration_record"] = measurement_producers.canonical_blob(
+            selected_calibration(Path(cal), key)
+        )
     identity = {
-        "engine": "radiance", "build_id": metadata["build_id"],
+        "engine": engines.RADIANCE, "build_id": metadata["build_id"],
         "binary_sha256": metadata["binary_hash"],
         "source_revision": run["revision"],
         "model": spec["plan"]["engine_memory"]["model_identity"],
         "layout": spec["intent"]["layout"],
     }
-    record = {
-        "schema_version": 1, "run_id": manifest["metadata"]["instance_id"],
-        # The curated native argv was captured before warmup. The host
-        # snapshot marks the actual measurement start, not argv selection.
-        "recorded_at": facts["captured_at"],
-        "identity": identity, "workload": {
-            "name": "flashnext-parity", "definition": run["workload"],
+    return measurement_producers.publish(
+        work_root=work_root,
+        run_id=manifest["metadata"]["instance_id"],
+        # The sealed owner start receipt marks the actual measurement start (the argv was selected earlier).
+        recorded_at=facts["captured_at"],
+        identity=identity,
+        workload={"name": "flashnext-parity", "definition": run["workload"]},
+        metrics=metrics, metric_specs=metric_specs,
+        effective_config=manifest_file.read_bytes(),
+        argv=snapshot["argv"], environment=snapshot["environment"],
+        power_settings={
+            "effective": spec.get("power", {}),
+            "requested_profile": snapshot["power_profile"],
         },
-        "metrics": metrics, "metric_specs": metric_specs,
-        "provenance": {
-            "effective_config": store.put_blob_file(manifest_file),
-            "argv": blob_obj(snapshot["argv"]),
-            "environment": blob_obj(snapshot["environment"]),
-            "power_settings": blob_obj({
-                "effective": spec.get("power", {}),
-                "requested_profile": snapshot["power_profile"],
-            }),
-            "inputs": inputs,
-        },
-        "host_facts": facts, "feature_states": states,
-    }
-    digest = store.put_record(record)
-    if store.get_record(digest) != record:
-        raise ParityError("new run record failed content-addressed round trip")
-    return digest
+        inputs=inputs,
+        host_facts=facts, feature_states=states,
+    )
 
 
 def cmd_capture_host_facts(args) -> int:

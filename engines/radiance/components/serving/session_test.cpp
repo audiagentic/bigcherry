@@ -254,6 +254,22 @@ void feature_state_start_status_and_warning() {
     assert(stopped && stopped->value("ok", false));
     assert(exit_code(owner) == 0);
     assert(c.record().at("feature_states") == features);
+
+    // Strict production admission refuses an inactive required feature before
+    // fork/exec, while retaining the diagnostic snapshot in status.
+    Case strict_case("feature-state-strict");
+    strict_case.capture_owner_log = true;
+    strict_case.helpers = 1;
+    strict_case.session.publish_feature_states = true;
+    strict_case.session.strict_production_features = true;
+    strict_case.behaviour = c.behaviour;
+    strict_case.behaviour["spec"]["processes"]["engine"]["server"]["port"] = strict_case.port;
+    const pid_t strict_owner = strict_case.owner();
+    assert(exit_code(strict_owner) != 0);
+    const auto failed = strict_case.record();
+    assert(failed.at("state") == "failed" && failed.at("processes").empty());
+    assert(failed.at("feature_states").is_array());
+    assert(text(strict_case.run / "owner.log").find("strict production feature refusal") != std::string::npos);
 }
 
 void feature_state_invalid_manifest_prevents_child() {
