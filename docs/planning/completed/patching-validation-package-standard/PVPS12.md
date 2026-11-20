@@ -2,7 +2,7 @@
 id: PVPS12
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: superseded
 created-at: '2026-09-27T02:53:34.798768+00:00'
 breadth: ''
 skill: intermediate
@@ -56,6 +56,10 @@ Unit tests plus a campaign session whose record carries the id; withdrawal of a 
 
 Framework work (no promotion gate). Existing records keep ratio-set linkage (audited).
 
+2026-11-20 consolidation: exact requirements transferred to active PVPS01, which owns patch-validation execution identity and evidence. The prepared MRC02 successor is now completed and does not retain the specific timed-process/withdrawal gates. PVPS01 keeps both gates pending; no dual-XTX hardware result or record migration is claimed.
+
 ## Change Log
 
 - 2026-09-27T02:53:34.798768+00:00 (created-by): Created by agent
+- 2026-11-20T04:23:20.185208+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:23:35.555154+00:00 (state-transition): State: pending → superseded

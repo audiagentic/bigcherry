@@ -1,0 +1,43 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_042000_consolidated-patch-qualificati_8392",
+  "files": [
+    "docs/planning/active/patching-validation-package-standard/PVPS01.md",
+    "docs/planning/active/patching-validation-package-standard/PVPS15.md",
+    "docs/planning/active/patching-validation-package-standard/PVPS04.md",
+    "docs/planning/active/patching-patch-system/PA50.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS03.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS05.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS06.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS07.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS09.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS10.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS11.md",
+    "docs/planning/completed/patching-external-fixes/PEF03.md",
+    "docs/planning/completed/patching-docs-structure/DOC01.md",
+    "docs/planning/completed/patching-ec-contracts/PEC01.md",
+    "docs/planning/completed/patching-patch-system/PA48.md",
+    "docs/planning/completed/patching-validation-package-standard/reviews/PVPS04/RV4254.md"
+  ],
+  "plan-item-ids": [
+    "PVPS01",
+    "PVPS03",
+    "PVPS04",
+    "PVPS05",
+    "PVPS06",
+    "PVPS07",
+    "PVPS09",
+    "PVPS10",
+    "PVPS11",
+    "PVPS15",
+    "PEF03",
+    "PA50",
+    "DOC01",
+    "PEC01",
+    "PA48"
+  ],
+  "status": "unreleased",
+  "technical-summary": "W4 planning consolidation: PVPS01 now preserves PVPS03/05/06/07/09/11 gates; PVPS15 owns PVPS10 contribution profiling; PEF03's historical b11126 audit is retained in active PA50. Superseded only those sources after owner updates. Corrected PVPS04's false premise after source inspection and kept it pending. Deprecated dormant DOC01, PEC01 and PA48 with explicit reactivation triggers; no completion or hardware claims.",
+  "timestamp-utc": "2026-11-20T04:20:00.432997Z",
+  "user-summary-candidate": "Consolidated patch qualification and source-triage requirements into their active owners, corrected PVPS04's stale build-use premise, and deprecated three dormant plans with reactivation triggers."
+}

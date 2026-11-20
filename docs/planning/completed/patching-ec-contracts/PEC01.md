@@ -2,7 +2,7 @@
 id: PEC01
 order: 0
 plan: patching-ec-contracts
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:47:32.637015+00:00'
 breadth: ''
 skill: advanced
@@ -59,13 +59,14 @@ Supersedes: EC14
 Migration: capability-rebaseline-v3-2026-09
 Successor key: patching-ec-contracts-ec14
 
+2026-11-20 deprecation: current search found no active owner, campaign recipe, implementation or open PR for VK-TUNE-002; EC03 is completed and no active contract owns this boundary sweep. This is a dormant research proposal, not a passing measurement or runtime default. Reactivate only when a release-scoped Vulkan MoE prefill sweep is scheduled with exact provider/driver identity, correctness controls and authorized hardware evidence, or when newer source evidence makes a bounded sweep actionable. Preserve the original Qwen MoE/dense and ubatch matrix.
+
 ## Change Log
 
 - 2026-09-09T10:47:32.637015+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:03:32.639007+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.749756+00:00 (updated-by): Updated: section:ledger-events
@@ -74,3 +75,5 @@ Successor key: patching-ec-contracts-ec14
 - 2026-09-10T02:36:20.969226+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria
 - chg_20260910_023638_the-two-ec-contract-successors_4025
 - 2026-09-10T02:36:38.452678+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T04:18:10.876251+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:18:21.086864+00:00 (state-transition): State: pending → deprecated

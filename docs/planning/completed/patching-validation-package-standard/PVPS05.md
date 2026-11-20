@@ -2,7 +2,7 @@
 id: PVPS05
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: superseded
 created-at: '2026-09-25T12:52:33.805104+00:00'
 breadth: ''
 skill: intermediate
@@ -57,6 +57,10 @@ Offline tests (tools/tests/patch/test_production_lane.py); hardware: 1216 with -
 
 Pending GPT review of metric/round counts (gateway failing 2026-09-25).
 
+2026-11-20 consolidation: requirements transferred to active PVPS01 (patch qualification matrix), including this item's specific validation and acceptance gates. Source history is retained. The target remains pending; no implementation, hardware validation, or promotion acceptance is implied. See PVPS01 inherited qualification gates.
+
 ## Change Log
 
 - 2026-09-25T12:52:33.805104+00:00 (created-by): Created by agent
+- 2026-11-20T04:10:28.155594+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:11:36.599089+00:00 (state-transition): State: pending → superseded
