@@ -1,0 +1,557 @@
+{
+ "rows": 9984,
+ "decode_rows": 9809,
+ "layers": 45,
+ "fields": {
+  "local_us": {
+   "mean": 54.77,
+   "p50": 54.04,
+   "p95": 57.04
+  },
+  "wait_us": {
+   "mean": 67.51,
+   "p50": 65.52,
+   "p95": 104.44
+  },
+  "helper_gpu_us": {
+   "mean": 111.35,
+   "p50": 109.8,
+   "p95": 147.82
+  },
+  "act_us": {
+   "mean": 15.87,
+   "p50": 15.8,
+   "p95": 17.4
+  },
+  "gemm_us": {
+   "mean": 85.48,
+   "p50": 83.24,
+   "p95": 119.01
+  },
+  "write_us": {
+   "mean": 10.34,
+   "p50": 10.25,
+   "p95": 11.5
+  },
+  "publish_us": {
+   "mean": 21.91,
+   "p50": 21.6,
+   "p95": 22.48
+  },
+  "wait_bookkeeping_us": {
+   "mean": 39.65,
+   "p50": 34.72,
+   "p95": 90.96
+  },
+  "finish_us": {
+   "mean": 0.56,
+   "p50": 0.56,
+   "p95": 0.6
+  }
+ },
+ "per_layer_mean": {
+  "0": {
+   "local_us": 62.38,
+   "wait_us": 88.14,
+   "helper_gpu_us": 133.28,
+   "act_us": 16.27,
+   "gemm_us": 106.34,
+   "write_us": 10.68,
+   "publish_us": 22.31,
+   "wait_bookkeeping_us": 26.88,
+   "finish_us": 0.56
+  },
+  "1": {
+   "local_us": 55.08,
+   "wait_us": 83.05,
+   "helper_gpu_us": 127.96,
+   "act_us": 16.21,
+   "gemm_us": 100.94,
+   "write_us": 10.8,
+   "publish_us": 22.2,
+   "wait_bookkeeping_us": 24.68,
+   "finish_us": 0.56
+  },
+  "2": {
+   "local_us": 54.35,
+   "wait_us": 69.53,
+   "helper_gpu_us": 113.76,
+   "act_us": 15.99,
+   "gemm_us": 87.45,
+   "write_us": 10.31,
+   "publish_us": 22.06,
+   "wait_bookkeeping_us": 40.3,
+   "finish_us": 0.56
+  },
+  "3": {
+   "local_us": 55.67,
+   "wait_us": 58.78,
+   "helper_gpu_us": 103.84,
+   "act_us": 15.9,
+   "gemm_us": 77.76,
+   "write_us": 10.18,
+   "publish_us": 22.27,
+   "wait_bookkeeping_us": 47.41,
+   "finish_us": 0.56
+  },
+  "4": {
+   "local_us": 55.34,
+   "wait_us": 66.25,
+   "helper_gpu_us": 111.33,
+   "act_us": 16.06,
+   "gemm_us": 84.89,
+   "write_us": 10.38,
+   "publish_us": 22.44,
+   "wait_bookkeeping_us": 40.29,
+   "finish_us": 0.56
+  },
+  "5": {
+   "local_us": 55.66,
+   "wait_us": 81.76,
+   "helper_gpu_us": 127.09,
+   "act_us": 16.2,
+   "gemm_us": 100.25,
+   "write_us": 10.64,
+   "publish_us": 22.34,
+   "wait_bookkeeping_us": 27.88,
+   "finish_us": 0.56
+  },
+  "6": {
+   "local_us": 55.08,
+   "wait_us": 86.13,
+   "helper_gpu_us": 130.89,
+   "act_us": 16.25,
+   "gemm_us": 103.64,
+   "write_us": 11.01,
+   "publish_us": 22.28,
+   "wait_bookkeeping_us": 26.23,
+   "finish_us": 0.56
+  },
+  "7": {
+   "local_us": 55.53,
+   "wait_us": 83.8,
+   "helper_gpu_us": 128.98,
+   "act_us": 16.26,
+   "gemm_us": 101.92,
+   "write_us": 10.8,
+   "publish_us": 22.03,
+   "wait_bookkeeping_us": 24.87,
+   "finish_us": 0.56
+  },
+  "8": {
+   "local_us": 55.69,
+   "wait_us": 67.3,
+   "helper_gpu_us": 112.55,
+   "act_us": 16.07,
+   "gemm_us": 86.13,
+   "write_us": 10.35,
+   "publish_us": 22.06,
+   "wait_bookkeeping_us": 35.21,
+   "finish_us": 0.56
+  },
+  "9": {
+   "local_us": 55.6,
+   "wait_us": 59.13,
+   "helper_gpu_us": 104.18,
+   "act_us": 15.94,
+   "gemm_us": 78.15,
+   "write_us": 10.09,
+   "publish_us": 22.04,
+   "wait_bookkeeping_us": 46.87,
+   "finish_us": 0.56
+  },
+  "10": {
+   "local_us": 54.5,
+   "wait_us": 67.93,
+   "helper_gpu_us": 112.38,
+   "act_us": 16.11,
+   "gemm_us": 85.78,
+   "write_us": 10.48,
+   "publish_us": 22.18,
+   "wait_bookkeeping_us": 30.87,
+   "finish_us": 0.56
+  },
+  "11": {
+   "local_us": 55.86,
+   "wait_us": 61.4,
+   "helper_gpu_us": 106.51,
+   "act_us": 16.11,
+   "gemm_us": 80.16,
+   "write_us": 10.24,
+   "publish_us": 22.12,
+   "wait_bookkeeping_us": 50.7,
+   "finish_us": 0.56
+  },
+  "12": {
+   "local_us": 55.46,
+   "wait_us": 74.07,
+   "helper_gpu_us": 119.23,
+   "act_us": 16.05,
+   "gemm_us": 92.62,
+   "write_us": 10.56,
+   "publish_us": 22.27,
+   "wait_bookkeeping_us": 28.41,
+   "finish_us": 0.56
+  },
+  "13": {
+   "local_us": 54.61,
+   "wait_us": 75.31,
+   "helper_gpu_us": 119.4,
+   "act_us": 16.14,
+   "gemm_us": 92.71,
+   "write_us": 10.54,
+   "publish_us": 22.14,
+   "wait_bookkeeping_us": 24.59,
+   "finish_us": 0.56
+  },
+  "14": {
+   "local_us": 55.32,
+   "wait_us": 62.67,
+   "helper_gpu_us": 107.78,
+   "act_us": 16.08,
+   "gemm_us": 81.42,
+   "write_us": 10.27,
+   "publish_us": 22.23,
+   "wait_bookkeeping_us": 42.68,
+   "finish_us": 0.55
+  },
+  "15": {
+   "local_us": 55.43,
+   "wait_us": 60.13,
+   "helper_gpu_us": 105.33,
+   "act_us": 16.08,
+   "gemm_us": 79.16,
+   "write_us": 10.09,
+   "publish_us": 22.14,
+   "wait_bookkeeping_us": 42.32,
+   "finish_us": 0.55
+  },
+  "16": {
+   "local_us": 55.28,
+   "wait_us": 63.02,
+   "helper_gpu_us": 108.1,
+   "act_us": 16.04,
+   "gemm_us": 81.8,
+   "write_us": 10.26,
+   "publish_us": 22.37,
+   "wait_bookkeeping_us": 52.06,
+   "finish_us": 0.55
+  },
+  "17": {
+   "local_us": 54.89,
+   "wait_us": 71.78,
+   "helper_gpu_us": 116.41,
+   "act_us": 16.11,
+   "gemm_us": 89.82,
+   "write_us": 10.48,
+   "publish_us": 22.06,
+   "wait_bookkeeping_us": 32.69,
+   "finish_us": 0.55
+  },
+  "18": {
+   "local_us": 54.37,
+   "wait_us": 81.83,
+   "helper_gpu_us": 126.05,
+   "act_us": 16.24,
+   "gemm_us": 99.15,
+   "write_us": 10.66,
+   "publish_us": 22.23,
+   "wait_bookkeeping_us": 22.03,
+   "finish_us": 0.55
+  },
+  "19": {
+   "local_us": 53.6,
+   "wait_us": 73.37,
+   "helper_gpu_us": 116.7,
+   "act_us": 16.14,
+   "gemm_us": 90.03,
+   "write_us": 10.53,
+   "publish_us": 21.87,
+   "wait_bookkeeping_us": 26.17,
+   "finish_us": 0.55
+  },
+  "20": {
+   "local_us": 54.35,
+   "wait_us": 76.73,
+   "helper_gpu_us": 120.8,
+   "act_us": 16.19,
+   "gemm_us": 93.91,
+   "write_us": 10.7,
+   "publish_us": 22.1,
+   "wait_bookkeeping_us": 27.0,
+   "finish_us": 0.55
+  },
+  "21": {
+   "local_us": 55.42,
+   "wait_us": 65.98,
+   "helper_gpu_us": 110.96,
+   "act_us": 15.99,
+   "gemm_us": 84.75,
+   "write_us": 10.22,
+   "publish_us": 22.09,
+   "wait_bookkeeping_us": 38.29,
+   "finish_us": 0.56
+  },
+  "22": {
+   "local_us": 54.25,
+   "wait_us": 79.38,
+   "helper_gpu_us": 123.51,
+   "act_us": 16.09,
+   "gemm_us": 96.87,
+   "write_us": 10.55,
+   "publish_us": 22.02,
+   "wait_bookkeeping_us": 28.84,
+   "finish_us": 0.55
+  },
+  "23": {
+   "local_us": 55.36,
+   "wait_us": 63.68,
+   "helper_gpu_us": 108.8,
+   "act_us": 16.06,
+   "gemm_us": 82.38,
+   "write_us": 10.36,
+   "publish_us": 21.75,
+   "wait_bookkeeping_us": 42.76,
+   "finish_us": 0.55
+  },
+  "24": {
+   "local_us": 55.36,
+   "wait_us": 80.15,
+   "helper_gpu_us": 125.25,
+   "act_us": 16.32,
+   "gemm_us": 98.09,
+   "write_us": 10.84,
+   "publish_us": 21.99,
+   "wait_bookkeeping_us": 24.23,
+   "finish_us": 0.56
+  },
+  "25": {
+   "local_us": 55.23,
+   "wait_us": 53.89,
+   "helper_gpu_us": 98.6,
+   "act_us": 15.86,
+   "gemm_us": 72.72,
+   "write_us": 10.02,
+   "publish_us": 21.75,
+   "wait_bookkeeping_us": 59.78,
+   "finish_us": 0.55
+  },
+  "26": {
+   "local_us": 55.07,
+   "wait_us": 60.82,
+   "helper_gpu_us": 105.64,
+   "act_us": 15.89,
+   "gemm_us": 79.57,
+   "write_us": 10.19,
+   "publish_us": 22.0,
+   "wait_bookkeeping_us": 42.44,
+   "finish_us": 0.56
+  },
+  "27": {
+   "local_us": 55.33,
+   "wait_us": 65.03,
+   "helper_gpu_us": 110.03,
+   "act_us": 16.06,
+   "gemm_us": 83.67,
+   "write_us": 10.3,
+   "publish_us": 22.18,
+   "wait_bookkeeping_us": 52.1,
+   "finish_us": 0.55
+  },
+  "28": {
+   "local_us": 55.05,
+   "wait_us": 82.37,
+   "helper_gpu_us": 127.07,
+   "act_us": 16.22,
+   "gemm_us": 100.19,
+   "write_us": 10.66,
+   "publish_us": 22.0,
+   "wait_bookkeeping_us": 20.67,
+   "finish_us": 0.55
+  },
+  "29": {
+   "local_us": 55.18,
+   "wait_us": 62.43,
+   "helper_gpu_us": 107.27,
+   "act_us": 15.99,
+   "gemm_us": 81.1,
+   "write_us": 10.18,
+   "publish_us": 22.03,
+   "wait_bookkeeping_us": 37.93,
+   "finish_us": 0.55
+  },
+  "30": {
+   "local_us": 55.32,
+   "wait_us": 69.14,
+   "helper_gpu_us": 114.11,
+   "act_us": 16.02,
+   "gemm_us": 87.73,
+   "write_us": 10.36,
+   "publish_us": 21.99,
+   "wait_bookkeeping_us": 36.97,
+   "finish_us": 0.55
+  },
+  "31": {
+   "local_us": 55.34,
+   "wait_us": 54.22,
+   "helper_gpu_us": 99.28,
+   "act_us": 15.89,
+   "gemm_us": 73.3,
+   "write_us": 10.09,
+   "publish_us": 22.33,
+   "wait_bookkeeping_us": 60.87,
+   "finish_us": 0.55
+  },
+  "32": {
+   "local_us": 55.13,
+   "wait_us": 53.43,
+   "helper_gpu_us": 98.23,
+   "act_us": 15.99,
+   "gemm_us": 72.24,
+   "write_us": 10.0,
+   "publish_us": 22.21,
+   "wait_bookkeeping_us": 80.97,
+   "finish_us": 0.55
+  },
+  "33": {
+   "local_us": 55.9,
+   "wait_us": 76.11,
+   "helper_gpu_us": 120.45,
+   "act_us": 16.24,
+   "gemm_us": 93.58,
+   "write_us": 10.63,
+   "publish_us": 22.09,
+   "wait_bookkeeping_us": 37.09,
+   "finish_us": 0.56
+  },
+  "35": {
+   "local_us": 55.76,
+   "wait_us": 66.26,
+   "helper_gpu_us": 111.76,
+   "act_us": 16.09,
+   "gemm_us": 85.32,
+   "write_us": 10.34,
+   "publish_us": 22.64,
+   "wait_bookkeeping_us": 33.49,
+   "finish_us": 0.55
+  },
+  "36": {
+   "local_us": 55.44,
+   "wait_us": 84.73,
+   "helper_gpu_us": 129.79,
+   "act_us": 16.33,
+   "gemm_us": 102.6,
+   "write_us": 10.87,
+   "publish_us": 22.04,
+   "wait_bookkeeping_us": 20.64,
+   "finish_us": 0.55
+  },
+  "37": {
+   "local_us": 55.19,
+   "wait_us": 76.56,
+   "helper_gpu_us": 121.39,
+   "act_us": 16.14,
+   "gemm_us": 94.71,
+   "write_us": 10.54,
+   "publish_us": 22.41,
+   "wait_bookkeeping_us": 23.93,
+   "finish_us": 0.55
+  },
+  "38": {
+   "local_us": 55.39,
+   "wait_us": 75.57,
+   "helper_gpu_us": 120.66,
+   "act_us": 16.11,
+   "gemm_us": 94.03,
+   "write_us": 10.52,
+   "publish_us": 22.28,
+   "wait_bookkeeping_us": 29.55,
+   "finish_us": 0.55
+  },
+  "39": {
+   "local_us": 55.63,
+   "wait_us": 59.44,
+   "helper_gpu_us": 104.69,
+   "act_us": 16.04,
+   "gemm_us": 78.44,
+   "write_us": 10.22,
+   "publish_us": 21.89,
+   "wait_bookkeeping_us": 73.0,
+   "finish_us": 0.55
+  },
+  "40": {
+   "local_us": 55.39,
+   "wait_us": 60.02,
+   "helper_gpu_us": 105.22,
+   "act_us": 16.01,
+   "gemm_us": 78.92,
+   "write_us": 10.29,
+   "publish_us": 22.33,
+   "wait_bookkeeping_us": 48.91,
+   "finish_us": 0.55
+  },
+  "41": {
+   "local_us": 54.7,
+   "wait_us": 61.91,
+   "helper_gpu_us": 106.33,
+   "act_us": 15.97,
+   "gemm_us": 80.12,
+   "write_us": 10.24,
+   "publish_us": 22.31,
+   "wait_bookkeeping_us": 38.87,
+   "finish_us": 0.55
+  },
+  "42": {
+   "local_us": 53.39,
+   "wait_us": 85.95,
+   "helper_gpu_us": 128.99,
+   "act_us": 16.23,
+   "gemm_us": 101.91,
+   "write_us": 10.85,
+   "publish_us": 22.22,
+   "wait_bookkeeping_us": 19.27,
+   "finish_us": 0.55
+  },
+  "43": {
+   "local_us": 54.6,
+   "wait_us": 61.29,
+   "helper_gpu_us": 104.54,
+   "act_us": 15.97,
+   "gemm_us": 78.32,
+   "write_us": 10.24,
+   "publish_us": 21.93,
+   "wait_bookkeeping_us": 45.87,
+   "finish_us": 0.55
+  },
+  "45": {
+   "local_us": 55.21,
+   "wait_us": 62.0,
+   "helper_gpu_us": 107.22,
+   "act_us": 16.0,
+   "gemm_us": 80.98,
+   "write_us": 10.24,
+   "publish_us": 21.49,
+   "wait_bookkeeping_us": 42.59,
+   "finish_us": 0.55
+  },
+  "48": {
+   "local_us": 46.27,
+   "wait_us": 29.76,
+   "helper_gpu_us": 58.55,
+   "act_us": 12.23,
+   "gemm_us": 43.23,
+   "write_us": 8.92,
+   "publish_us": 18.29,
+   "wait_bookkeeping_us": 71.25,
+   "finish_us": 0.56
+  }
+ },
+ "step_sum_us": {
+  "local_us": 2479,
+  "wait_us": 3102,
+  "helper_gpu_us": 5101,
+  "publish_us": 992,
+  "wait_bookkeeping_us": 1730,
+  "finish_us": 25
+ }
+}
