@@ -2,7 +2,7 @@
 id: PRQ06
 order: 0
 plan: patching-radiance-qualification
-state: pending
+state: completed
 created-at: '2026-11-19T21:40:02.721878+00:00'
 breadth: ''
 skill: advanced
@@ -55,6 +55,7 @@ Every active Radiance patch is validated or diagnostic (experiment-only); every 
 
 ## Notes
 
+2026-11-20 (AEDT) result. Active Radiance set: 30 validated + 6 diagnostic (rad0004, rad0010, rad0042-rad0045); none untested or superseded. Archived unchanged under engines/radiance/patches/archive/ with ARCHIVE.md rows: rad0001, rad0006, rad0034, rad0035 (superseded, #1224); rad0003 and rad0007 (rejected on measurements), rad0039 (abandoned, RHP02 slice A only). The registry, module catalog, release notes and patch-promote never load archive/ (tests in test_patch_registry.py). rad0042-rad0045 qualified at the diagnostic tier from the VTP44 evidence. RAD15 and RHP02 deprecated with archive pointers. patch-lint clean; patch-rebase-check clean for radiance, radiance-diag, radiance-routing-evidence and radiance-vtp44-evidence; patch-verify-evidence clean. patch-promote could not be used as designed (it must run from main and wants the patches already in a diagnostic source, which lint refuses while they are untested), so its internal steps were applied in one commit; worth fixing separately. Leftover noted, not changed: the generated serving contract still declares engine fields for the retired rad0003 (RAD_MTP_FULL_HEAD) and rad0006 (RAD_DIAG_FREEZE_PROMOTION_AFTER) environment variables.
 
 
 ## Change Log
@@ -62,3 +63,5 @@ Every active Radiance patch is validated or diagnostic (experiment-only); every 
 - 2026-11-19T21:40:02.721878+00:00 (created-by): Created by agent
 - 2026-11-19T21:40:21.043079+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
 - 2026-11-19T21:47:53.617559+00:00 (updated-by): Updated: section:title, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-19T22:55:59.595759+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:56:08.327950+00:00 (state-transition): State: pending → completed

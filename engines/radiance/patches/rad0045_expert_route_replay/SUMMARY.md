@@ -1,6 +1,6 @@
 # rad0045_expert_route_replay
 
-**Status:** untested
+**Status:** diagnostic
 **Plan item:** VTP44
 
 ## Summary
@@ -9,7 +9,7 @@
 
 ## Outcome
 
-Not yet run. Expected on Flash-Next (hcbf16, TP2, the 4,163-token run): a replayed run's `--expert-stats` counts equal the record's histogram in all 48 layers; replaying the reference's own record at its own configuration gives KLD 0; the three KV arms and a chunk-size change then score without the 0.037-0.040 routing floor.
+Qualified as a diagnostic tool (2026-11-20, record in `evidence/promotion.json`). Run on Flash-Next (hcbf16, TP2, the 4,163-token run): in every replayed run the per-layer expert counts equal the record's histogram in all 48 layers, replaying the reference's own record gives KLD exactly 0, and replay takes the chunk-128 KLD from 0.0372 to 0.0076, removing the routing floor so that bf16_i8 separates from fp8 (docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-REPLAY.md; the 11-document check, which records an occasional route divergence, is docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-REPLAY-11DOCS.md). One document pair, one run per arm.
 
 ## Detail
 
