@@ -34,7 +34,6 @@ patches = [
   "rad0023_ar_timeline",
   "rad0030_int8_pipelined_prefill",
   "rad0036_prefill_governor",
-  "rad0005_mp4_ffmpeg6_writer",
   "rad0046_retained_moe_rows",
   "rad0048_abi44_kv_contract",
   "rad0049_qwen4exp_e4m3_kv",
@@ -45,9 +44,7 @@ patches = [
   "rad0054_attn_prefill_fp8",
 ]
 
-# Host build compatibility for the pinned engine (rad0005: MP4 writer against FFmpeg 6). Enablers with no runtime path of
-# their own; promoted to validated by a passing bump (compile, plugin ABI, component tests, cpu-smoke) and then moved to
-# serving-core.
+# Host build compatibility. Radiance 2.2 includes the FFmpeg 6 write callback support upstream.
 [patch-set.host-compat]
 patches = []
 required-state = "untested"

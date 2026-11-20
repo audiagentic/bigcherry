@@ -1,6 +1,6 @@
 # rad0046_retained_moe_rows
 
-**Status:** untested
+**Status:** validated
 **Plan item:** RUM03
 
 ## Summary
@@ -13,4 +13,4 @@ The Flash-Next and gfx1201 helper paths resolve these exact row names and their 
 
 ## Outcome
 
-The row declarations are missing from upstream Radiance 2.2.0 (`b6b8751cccb0e834a13ae9e5afca824ee9a487aa`), which retains the launch templates, constraints and operand descriptions. Exact-source apply and byte-identical replay passed. The composed ABI44 libraries expose both rows. A gfx1201 probe resolved the quantizer and checked the grouped GEMM against a numerical reference at both 64- and 128-column tile widths. The production promotion and matched deployment regression gates remain open.
+The row declarations are missing from upstream Radiance 2.2.0 (`b6b8751cccb0e834a13ae9e5afca824ee9a487aa`), which retains the launch templates, constraints and operand descriptions. Exact-source apply and byte-identical replay passed. The composed ABI44 libraries expose both rows. A gfx1201 probe resolved the quantizer and checked the grouped GEMM against a numerical reference at both 64- and 128-column tile widths. The row restoration passed its production promotion gates. Matched deployment quality and performance remain in RUM09.

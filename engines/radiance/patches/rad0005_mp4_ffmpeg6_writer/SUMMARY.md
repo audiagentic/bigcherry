@@ -9,7 +9,7 @@ Selects the FFmpeg 6 vs 7 avio_alloc_context write-callback signature so rad_cor
 
 ## Outcome
 
-untested: compile-compatibility fix, read-only callback so behavior is identical on both FFmpeg versions; not yet run through its own qualification.
+The patch supported the earlier production pin. Radiance 2.2.0 selects the callback signature upstream through its `WriteBuf` alias. The v2.2 recipe uses that implementation, which passed the integrated FFmpeg 6 build.
 
 ## Detail
 
