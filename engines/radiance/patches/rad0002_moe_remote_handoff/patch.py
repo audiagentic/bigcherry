@@ -525,6 +525,8 @@ inline bool bc_moe_remote_hc_open(int64_t moe_top_k, const Geom& g, int64_t T, i
 struct BcMoeRemote {
     /* publish_fused: the same op for a step whose helper rows join the fused gather (param fused = 1: no combine) */
     rad_op publish = 0, publish_fused = 0, add = 0, inject = 0;
+    rad_op quantize = 0;
+    rad_buf aq = 0, as = 0;
 
     /* The step `T` is handed off (shadow keeps the local path and only publishes). */
     bool policy(int64_t T) const { return publish && add && bc_moe_remote_wanted(T); }
@@ -549,9 +551,46 @@ struct BcMoeRemote {
         return m.ar_out_take != kArOutNorm && active(T) && !fused(m, T);
     }
 
-    /* Block declare, after the quantised experts' order `reg` is final: publish the layer's runtime slot map,
-     * and declare the two mailbox ops when the step gate admits any step. The gate comes from libr3moe, so an
-     * absent op while the gate is open is an error, never a silent local fallback. */
+    /* Keep mailbox-only buffers beside their first use in the declared graph. The helpers
+     * consume group-128 E4M3, even when the local grouped GEMM uses rotated int8. */
+    template <class Moe>
+    int declare_publish(RadBuilder* b, const Moe& m, int layer, Names* materialize = nullptr) {
+        const auto& c = m.c;
+        const auto& g = m.g;
+        const auto& w = m.w;
+        if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
+        aq = c.expert_rot ? w.hr.q : w.h.q;
+        as = c.expert_rot ? w.hr.s : w.h.s;
+        if (materialize) {
+            aq = decl_b(b, materialize->f("blk.%d.moe_mailbox.q", layer), RAD_F8E4M3, {g.max_tok, g.n_embd});
+            as = decl_b(b, materialize->f("blk.%d.moe_mailbox.s", layer), RAD_F32,
+                        {g.max_tok, g.n_embd / RAD_FP8_BLOCK});
+            if (aq && as && g.n_embd % RAD_FP8_BLOCK == 0)
+                quantize = rw(b, RAD_OP(b, c.expert_rot ? "had_quant_act_fp8" : "quant_act_fp8",
+                               RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                          RAD_INT("group", RAD_FP8_BLOCK), RAD_STR("dtype", g.dtype)),
+                               RAD_NOWEIGHTS),
+                              {w.h.x}, {aq, as});
+        }
+        if (!aq || !as || (materialize && !quantize)) {
+            std::fprintf(stderr, "radiance: MoE remote hand-off is missing the required E4M3 activation "
+                         "planes or quantizer at layer %d\n", layer);
+            return RAD_E_INVAL;
+        }
+        for (int f = 0; f < 2; ++f)
+            (f ? publish_fused : publish) =
+                rw(b, RAD_OP(b, "moe_mailbox_publish",
+                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
+                                        RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
+                                        RAD_INT("expert_base", c.expert_base),
+                                        RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
+                             RAD_NOWEIGHTS),
+                   {w.ids, w.ew, w.h.x, aq, as}, {w.ids});
+        return publish && publish_fused ? RAD_OK : RAD_E_INVAL;
+    }
+
+    /* Publish the final runtime slot map and declare merge operators. Legacy graphs without
+     * independent int8 input planes declare their publish operators here as well. */
     template <class Moe>
     int declare(RadBuilder* b, const Moe& m, const std::vector<int64_t>& reg, int layer) {
         const auto& c = m.c;
@@ -564,17 +603,7 @@ struct BcMoeRemote {
         bc_moe_remote_layer_map(layer, (int)ne, slot.data());
 
         if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
-        const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
-        const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
-        for (int f = 0; f < 2; ++f)
-            (f ? publish_fused : publish) =
-                rw(b, RAD_OP(b, "moe_mailbox_publish",
-                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
-                                        RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
-                                        RAD_INT("expert_base", c.expert_base),
-                                        RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
-                             RAD_NOWEIGHTS),
-                   {w.ids, w.ew, w.h.x, q, s, q}, {w.ids});
+        if (!publish && declare_publish(b, m, layer) < 0) return RAD_E_INVAL;
         add = RAD_OP(b, "moe_mailbox_add",
                      RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
                      RAD_NOWEIGHTS);
@@ -597,7 +626,7 @@ struct BcMoeRemote {
         if (!publish || !publish_fused || !add || !inject) {
             std::fprintf(stderr, "radiance: MoE remote hand-off is on but its mailbox ops are not declared at layer "
                          "%d (publish %d/%d merge %d inject %d; q %d s %d rot %d); is libr3moe loaded?\n", layer,
-                         publish != 0, publish_fused != 0, add != 0, inject != 0, q != 0, s != 0, (int)c.expert_rot);
+                         publish != 0, publish_fused != 0, add != 0, inject != 0, aq != 0, as != 0, (int)c.expert_rot);
             return RAD_E_INVAL;
         }
         return RAD_OK;
@@ -607,22 +636,29 @@ struct BcMoeRemote {
      * the helper-owned routes are masked out of the local sort. In mask-only (diagnostic) the publish comes
      * later, from the diagnostic hook. */
     template <class Moe>
-    void after_route(RadCtx* c_, const Moe& m, int64_t T, int64_t r0, int64_t rows, const RadOperand& ecnt) const {
+    void after_route(RadCtx* c_, const Moe& m, int64_t T, int64_t r0, int64_t rows, const RadOperand& ecnt,
+                     const RadOperand& inv = RAD_NONE) const {
         if (!policy(T) || bc_moe_remote_mask_only()) return;
         const auto& c = m.c;
         const auto& g = m.g;
         const auto& w = m.w;
         const int64_t k = c.top_k;
-        const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
-        const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
+        if (quantize)
+            RAD_ISSUE_N(c_, quantize, rows, brow_slice(w.h.x, r0, rows, g.n_embd),
+                        brow_slice(aq, r0, rows, g.n_embd),
+                        brow_slice(as, r0, rows, g.n_embd / RAD_FP8_BLOCK));
         RAD_ISSUE_N(c_, fused(m, T) ? publish_fused : publish, rows,
                     brow_slice(w.ids, r0, rows, k),
                     brow_slice(w.ew, r0, rows, k),
                     brow_slice(w.h.x, r0, rows, g.n_embd),
-                    brow_slice(q, r0, rows, g.n_embd),
-                    brow_slice(s, r0, rows, g.n_embd / RAD_FP8_BLOCK),
-                    brows(q, T));
-        if (active(T))
+                    brow_slice(aq, r0, rows, g.n_embd),
+                    brow_slice(as, r0, rows, g.n_embd / RAD_FP8_BLOCK),
+                    brows(aq, T));
+        if (!active(T)) return;
+        if (inv.kind != RAD_OPK_NONE)
+            RAD_ISSUE_N(c_, m.op_scatter, rows, brow_slice(w.ids, r0, rows, k),
+                        brows(w.sorted, rows * k), brows(w.eoff, c.n_expert + 1), ecnt, inv);
+        else
             RAD_ISSUE_N(c_, m.op_scatter, rows, brow_slice(w.ids, r0, rows, k),
                         brows(w.sorted, rows * k), brows(w.eoff, c.n_expert + 1), ecnt);
     }
@@ -751,7 +787,34 @@ PATCHES = (
                 rationale="The end of the residual add declaration: reg[] (the runtime slots) is final and the gathered output buffers exist.",
             ),
             Edit(
+                id="bc-remote-declare-publish",
+                anchor=r"^    if \(!gin_q \|\| !gin_s \|\| g\.n_embd % gin_g\) return RAD_E_INVAL;$",
+                text=(
+                    "\n    RAD_ARCH_TRY(bc_remote.declare_publish(b, *this, l,"
+                    "\n        (c.expert_rot ? gin_q != w.hr.q || gin_s != w.hr.s"
+                    "\n                      : gin_q != w.h.q || gin_s != w.h.s) ? &nm : nullptr));"
+                ),
+                guard=r"RAD_ARCH_TRY\(bc_remote\.declare_publish\(b, \*this, l,",
+                applies_if=r"rad_buf gin_q = 0, gin_s = 0;",
+                expect_matches=1,
+                rationale="Declare scratch and publish at their issue position, with a separate E4M3 pair when the local pair differs.",
+            ),
+            Edit(
+                id="bc-remote-after-route-inverse",
+                anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
+                mode="insert_before",
+                text=(
+                    "    bc_remote.after_route(c_, *this, T, r0, rows, ecnt,\n"
+                    "                          scatter_inv ? brows(w.inv, rows * k) : RAD_NONE);\n"
+                ),
+                guard=r"bc_remote\.after_route\(c_, \*this, T, r0, rows, ecnt,",
+                applies_if=r"bool[ \t]+scatter_inv = false",
+                expect_matches=1,
+                rationale="The remasked scatter must write the same inverse slot table as the original scatter.",
+            ),
+            Edit(
                 id="bc-remote-after-route",
+                applies_if=r"^(?![\s\S]*bool[ \t]+scatter_inv = false)",
                 anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
                 mode="insert_before",
                 text="    bc_remote.after_route(c_, *this, T, r0, rows, ecnt);\n",

@@ -68,9 +68,9 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 PIN_BLOBS = {
     RAD0002: {
         "abi/bc_moe_remote.h": (None, "ef3527a"),
-        "arch/common/bc_moe_remote_block.h": (None, "76d01f6"),
+        "arch/common/bc_moe_remote_block.h": (None, "89c76c3"),
         "arch/common/rad_block_hc.h": ("3a602e5", "2d573ec"),
-        "arch/common/rad_block_moe_fp8.h": ("614db0e", "177e79c"),
+        "arch/common/rad_block_moe_fp8.h": ("614db0e", "3634a17"),
         "core/engine.cpp": ("7544310", "c0c5357"),
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
@@ -87,11 +87,11 @@ PIN_BLOBS = {
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("177e79c", "86160d0"),
+        "arch/common/rad_block_moe_fp8.h": ("3634a17", "ecf99af"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "8454b50"),
-        "core/bc_serving_manifest.cpp": (None, "173a264"),
+        "core/bc_serving_manifest.h": (None, "149f010"),
+        "core/bc_serving_manifest.cpp": (None, "2e7cde1"),
         "core/CMakeLists.txt": ("921debd", "ddf2395"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
         "tests/CMakeLists.txt": ("9531405", "e9f08cd"),
@@ -256,7 +256,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 if not p.create and not p.path.startswith("tests/")
             }
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 28)
+            self.assertEqual(sum(core_edits.values()), 30)
             self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
@@ -266,6 +266,9 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 )
                 code = [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
                 for line in code:
+                    if line == "scatter_inv ? brows(w.inv, rows * k) : RAD_NONE);":
+                        self.assertIn("bc_remote.after_route(c_, *this, T, r0, rows, ecnt,\n", (root / relative).read_text())
+                        continue
                     self.assertRegex(
                         line, r"bc_moe_remote|bc_remote|BcMoeRemote", f"{relative}: {line}"
                     )
@@ -363,7 +366,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("brows(w.eoff, c.n_expert + 1));", block)
             self.assertNotIn("moe_mailbox_shadow", block)
             self.assertNotIn("moe_mailbox_mask_ref", block)
-            self.assertIn("brows(q, T));", block)
+            self.assertIn("brows(aq, T));", block)
             self.assertIn("m.gfold ? brow_slice(w.sout, r0, rows, g.n_embd) : RAD_NONE", block)
             self.assertIn("m.gfold ? brow_slice(w.sgate, r0, rows, 1) : RAD_NONE", block)
         finally:
@@ -453,7 +456,7 @@ int main(int argc, char** argv) {
             self.assertIn("if (refuses(m, T)) {\n            rad_step_fail(c_,", block)
             self.assertLess(block.index("if (refuses(m, T)) {"), block.index("if (fused(m, T)) {"))
             fused = block[block.index("    template <class Moe>\n    bool fused("):
-                          block.index("    /* Block declare, after the quantised experts' order")]
+                          block.index("    /* Keep mailbox-only buffers")]
             program = """
 #include <cstdint>
 #include <cstdio>
