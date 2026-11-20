@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_025852_parity-records-now-identify-th_1189",
+  "files": [
+    "tools/lab/radiance/flashnext_parity.py",
+    "tools/tests/lab/test_flashnext_parity.py"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Flash-Next parity run-info resolves the measured upstream pin from published source metadata or the paired qualification build and source identities, verifying the actual engine SHA. Catalog fallback records its origin explicitly. The verified v1.17 and Radiance 2.2 stage both report their own pins.",
+  "timestamp-utc": "2026-11-20T02:58:52.922847Z",
+  "user-summary-candidate": "Parity records now identify the measured Radiance artifact even when the runner checkout targets a different release."
+}

@@ -109,6 +109,43 @@ class ProvenanceTests(unittest.TestCase):
         self.assertEqual((self.out / "bigcherry-build-metadata-radiance.json").read_bytes(),
                          files["bigcherry-build-metadata-radiance.json"])
 
+    def test_run_info_names_measured_release_source(self):
+        engine = b"release engine"
+        self.write("old/bin/radiance", engine)
+        release = self.write("old/source-bundle.json", json.dumps({
+            "built_from": {"pinned": "v1.17.0", "pinned_version": "1.17.0"},
+            "binary_sha256": hashlib.sha256(engine).hexdigest(),
+        }).encode())
+        build = release.parent
+        args = ["run-info", str(self.out), "--build", str(build), "--launches", "1", "--port", "18450"]
+        self.assertEqual(fp.main(args), 0)
+        record = json.loads((self.out / "run.json").read_text())
+        self.assertEqual(record["radiance_pin"], {
+            "pinned": "v1.17.0", "pinned_version": "1.17.0", "source": "source-bundle.json",
+        })
+        self.write("old/bin/radiance", b"unrelated engine")
+        with self.assertRaisesRegex(fp.ParityError, "published source does not identify"):
+            fp.measured_radiance_pin(build, hashlib.sha256(b"unrelated engine").hexdigest())
+
+    def test_pin_requires_matching_candidate_source_and_engine(self):
+        binary = hashlib.sha256(b"candidate").hexdigest()
+        revision = "frozen-catalog"
+        pin = "upstream-sha"
+        build = self.dir / "candidate"
+        self.write("candidate/source-provenance.json", json.dumps({
+            "catalog_revision": revision, "upstream": pin,
+            "source_identity": {"upstream_revision": pin, "source_slice_id": "source-slice"},
+        }).encode())
+        self.write("candidate/qualification-build-metadata.json", json.dumps({
+            "catalog_revision": revision, "binary_hash": binary, "source_slice_id": "source-slice",
+        }).encode())
+        self.write("candidate/catalog/engines/radiance/recipes.toml",
+                   b'pinned = "upstream-sha"\npinned-version = "2.2.0"\n')
+        self.assertEqual(fp.measured_radiance_pin(build, binary), {
+            "pinned": pin, "pinned_version": "2.2.0", "source": "source-provenance.json",
+        })
+        self.assertEqual(fp.measured_radiance_pin(self.dir, binary)["source"], "invoking_catalog")
+
     def test_archives_failed_session_logs_only_for_the_launch_owner(self):
         manifest = self.write("native/manifest.json", b"{}\n")
         processes = [

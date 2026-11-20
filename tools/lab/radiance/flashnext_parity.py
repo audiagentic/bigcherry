@@ -99,6 +99,43 @@ def radiance_pin(recipes: Path = RECIPES) -> dict:
     return {"pinned": data["pinned"], "pinned_version": data.get("pinned-version")}
 
 
+def measured_radiance_pin(build: Path, engine_sha256: str, recipes: Path = RECIPES) -> dict:
+    """Identify the measured engine, or explicitly label the checkout fallback."""
+    for name in ("bundle.json", "source-bundle.json"):
+        path = build / name
+        if not path.is_file():
+            continue
+        bundle = _load(path)
+        source = bundle.get("built_from", {})
+        pin = source.get("pinned")
+        if bundle.get("binary_sha256") != engine_sha256 or not isinstance(pin, str) or not pin:
+            raise ParityError(f"{path}: published source does not identify the measured engine")
+        return {"pinned": pin, "pinned_version": source.get("pinned_version"), "source": name}
+
+    source_path = build / "source-provenance.json"
+    identity_path = build / "qualification-build-metadata.json"
+    if source_path.is_file() and identity_path.is_file():
+        source = _load(source_path)
+        identity = _load(identity_path)
+        native = source.get("source_identity", {})
+        pin = source.get("upstream")
+        if (identity.get("binary_hash") != engine_sha256 or not isinstance(pin, str) or not pin
+                or native.get("upstream_revision") != pin or not native.get("source_slice_id")
+                or native["source_slice_id"] != identity.get("source_slice_id")
+                or not source.get("catalog_revision")
+                or source["catalog_revision"] != identity.get("catalog_revision")):
+            raise ParityError(f"{build}: qualification source does not identify the measured engine")
+        catalog = build / "catalog/engines/radiance/recipes.toml"
+        version = None
+        if catalog.is_file():
+            catalog_pin = radiance_pin(catalog)
+            if catalog_pin["pinned"] == pin:
+                version = catalog_pin["pinned_version"]
+        return {"pinned": pin, "pinned_version": version, "source": source_path.name}
+
+    return {**radiance_pin(recipes), "source": "invoking_catalog"}
+
+
 def build_identity(build: Path) -> dict:
     """The build's own record (bigcherry-build-metadata-radiance.json) when it has one: which build was measured."""
     meta = Path(build) / "bigcherry-build-metadata-radiance.json"
@@ -108,7 +145,7 @@ def build_identity(build: Path) -> dict:
     return {k: data.get(k) for k in ("build_id", "build_plan_id", "source_slice_id", "binary_hash", "runtime_bundle_hash")}
 
 
-def capture_build(build: Path, out: Path) -> None:
+def capture_build(build: Path, out: Path) -> dict[str, str]:
     """Hash the runtime closure as measured, using the Radiance release member layout."""
     from bigcherry.release.runtime_assets import BUILD_METADATA, RUN_MANIFEST, digest
 
@@ -122,6 +159,7 @@ def capture_build(build: Path, out: Path) -> None:
     if (build / BUILD_METADATA).is_file():
         shutil.copyfile(build / BUILD_METADATA, out / BUILD_METADATA)
     _write(out / "runtime-members.json", members)
+    return members
 
 
 def cmd_run_info(args) -> int:
@@ -133,10 +171,14 @@ def cmd_run_info(args) -> int:
         workload[name] = int(value) if re.fullmatch(r"-?\d+", value) else value
     out = Path(args.out)
     out.mkdir(parents=True, exist_ok=True)
-    capture_build(Path(args.build), out)
+    build = Path(args.build).resolve()
+    members = capture_build(build, out)
+    if "bin/radiance" not in members:
+        raise ParityError(f"{build}: missing measured engine binary")
+    pin = measured_radiance_pin(build, members["bin/radiance"])
     _write(out / "run.json", {
-        "schema": SCHEMA, "build": str(Path(args.build).resolve()), "build_identity": build_identity(Path(args.build)),
-        "revision": git_revision(), "radiance_pin": radiance_pin(),
+        "schema": SCHEMA, "build": str(build), "build_identity": build_identity(build),
+        "revision": git_revision(), "radiance_pin": pin,
         "date": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "launches": args.launches, "port": args.port, "workload": workload})
     return 0
