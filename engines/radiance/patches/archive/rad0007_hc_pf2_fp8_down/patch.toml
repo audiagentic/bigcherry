@@ -1,0 +1,13 @@
+schema = 1
+id = "rad0007_hc_pf2_fp8_down"
+order = 7
+state = "rejected"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+retirement = "rejected: measured at M=2048 on gfx1201 after the P0 fix and four optimisation passes, the FP8 down path takes 1203.7 us against the existing bf16 path's 530.7 us (about 2.3x slower), so it is not accepted; plans RAD15/RAD17"
+plan-item = "RAD17"
+plan-ids = ["RAD15", "RAD17"]
+requires = []
+conflicts = []
+tags = ["wmma", "prefill", "quantization", "gfx1201"]

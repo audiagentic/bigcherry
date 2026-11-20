@@ -28,7 +28,6 @@ FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "4a61d72"
 
 # rad0001 is superseded by radiance 1.7.0 (Engine::~Engine drains the mover stream itself) and is not applied.
 RAD0002 = "rad0002_moe_remote_handoff"
-RAD0003 = "rad0003_mtp_full_head_switch"
 RAD0004 = "rad0004_moe_remote_diagnostics"
 RAD0009 = "rad0009_serving_manifest"
 RAD0011 = "rad0011_plan_memory"
@@ -39,11 +38,6 @@ CASES = {
         "arch/common/rad_block_moe_fp8.h",
         "rad_op op_ar = 0, op_add = 0;",
         "rad_op op_ar = 0, op_add = 0, int changed_shape;",
-    ),
-    RAD0003: (
-        "arch/common/rad_block_mtp_fp8.h",
-        "if (!head || !lm) return false;",
-        "if (!head || !lm) return true;",
     ),
     RAD0004: (
         "arch/common/rad_block_moe_fp8.h",
@@ -81,9 +75,6 @@ PIN_BLOBS = {
         "core/runtime/ctx.cpp": ("ff0f746", "2ff379e"),
         # Only the upstream include block is needed for this test-only edit.
         "tests/arch_fakes.h": ("2fd7c92", "128aaea"),
-    },
-    RAD0003: {
-        "arch/common/rad_block_mtp_fp8.h": ("c571d45", "235cebb"),
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
@@ -195,11 +186,6 @@ class TestRadiancePatchPackages(unittest.TestCase):
                                 re.compile(edit.guard_pattern(), re.MULTILINE),
                                 f"{package_id}:{patch.path}:{edit.id}",
                             )
-
-                    if package_id == RAD0003:
-                        text = (root / "arch/common/rad_block_mtp_fp8.h").read_text(encoding="utf-8")
-                        self.assertIn("std::atoi(e) != 0", text)
-                        self.assertNotIn("*e == 1", text)
 
                     for relative, (_, patched_blob) in PIN_BLOBS[package_id].items():
                         self.assertEqual(

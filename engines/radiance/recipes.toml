@@ -86,6 +86,31 @@ patches = [
 ]
 required-state = "untested"
 
+# VTP44 evidence tools, built only into the diagnostic source radiance-vtp44-evidence: rad0042 the packed-KV selftest
+# cases, rad0043 complete --expert-stats (protected experts too), rad0044 --expert-route-record, rad0045
+# --expert-route-replay. Evidence: docs/evidence/2026-11-16-vtp44-generic-kv-layouts/ and
+# docs/evidence/2026-11-20-prq06-diagnostic-evidence/.
+[patch-set.vtp44-evidence]
+patches = [
+]
+required-state = "untested"
+
+[patch-set.rad0042-diagnostic]
+patches = ["rad0042_kv_b16_selftest"]
+required-state = "diagnostic"
+
+[patch-set.rad0043-diagnostic]
+patches = ["rad0043_expert_stats_protected"]
+required-state = "diagnostic"
+
+[patch-set.rad0044-diagnostic]
+patches = ["rad0044_expert_route_record"]
+required-state = "diagnostic"
+
+[patch-set.rad0045-diagnostic]
+patches = ["rad0045_expert_route_replay"]
+required-state = "diagnostic"
+
 [source.radiance-native]
 class = "production"
 description = "Frozen upstream source snapshot b6b8751cccb0e834a13ae9e5afca824ee9a487aa: no overlay, no patches."
@@ -110,6 +135,23 @@ description = "Production Radiance plus RHP01 opt-in host histogram coverage dia
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "vtp14-mixed-tp"]
 
+[source.radiance-vtp44-evidence]
+class = "diagnostic"
+description = "Production Radiance plus the VTP44 evidence tools (KV selftest cases, complete expert stats, expert route record and replay); not a production source."
+overlay = false
+patch-sets = [
+  "serving-core",
+  "host-compat",
+  "serving-manifest",
+  "helper-config",
+  "vtp14-mixed-tp",
+  "vtp44-evidence",
+  "rad0042-diagnostic",
+  "rad0043-diagnostic",
+  "rad0044-diagnostic",
+  "rad0045-diagnostic",
+]
+
 [build.stock]
 description = "radiance's own release build of the engine binary."
 options = {}
@@ -127,36 +169,8 @@ description = "radiance built with BC_MOE_REMOTE_DIAG: remote-MoE shadow compare
 options = { CMAKE_CXX_FLAGS = "-DBC_MOE_REMOTE_DIAG" }
 needs = []
 
-# Experiments contain only unpromoted patches; promotion retires their memberships.
-[experiment.mtp-full-head-switch]
-patches = ["rad0003_mtp_full_head_switch"]
-
-# RHP02 slice A: the inactive read-only credit observer ABI. Nothing registers it yet, so there is no activation to show;
-# untested, therefore experiment-only until a consumer (RHP02 B) exercises it.
-[experiment.moe-heat-observer]
-patches = ["rad0039_moe_heat_observer"]
-
-# VTP43/VTP44: preserve the historical bf16_fp8/bf16_i8 cache behavior through the ABI44 runtime port rad0050-rad0053
-# in serving-core; the old-base rad0037/38/40/41 implementations remain historical evidence. Only rad0042's selftest
-# cases remain experiment-only. bf16_i8 is served by the named configs qwen27b-tp3-int8-556-long-bf16i8 and
-# flashnext-4gpu-bf16i8 (ENG06, 2026-11-19).
-# Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md, docs/evidence/2026-11-19-eng06-bf16i8/README.md.
-[experiment.kv-bf16-packed]
-patches = ["rad0042_kv_b16_selftest"]
-
-# VTP44: --expert-stats also counts a layer's protected (bf16) experts, so the routing tallies of Flash-Next are complete.
-# Untested, therefore experiment-only.
-[experiment.expert-stats-protected]
-patches = ["rad0043_expert_stats_protected"]
-
-# VTP44: the reference run records the experts each token chose; --expert-stats counts them (rad0043 maps every expert).
-[experiment.expert-route-record]
-patches = ["rad0043_expert_stats_protected", "rad0044_expert_route_record"]
-
-# VTP44: replay a recorded route (rad0045) in the measured runs; the experiment also records (rad0044) and counts (rad0043).
-[experiment.expert-route-replay]
-patches = ["rad0043_expert_stats_protected", "rad0044_expert_route_record", "rad0045_expert_route_replay"]
-
+# Experiments contain only unpromoted patches; promotion retires their memberships. None is open: the patches of earlier
+# experiments are qualified (serving-core, or the diagnostic sets below) or retired into engines/radiance/patches/archive/.
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the
 # component's, never restated here.
