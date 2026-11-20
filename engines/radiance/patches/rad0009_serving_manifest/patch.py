@@ -26,10 +26,11 @@ _BC_SERVING_MANIFEST_H = r"""/* bc_serving_manifest.h -- BigCherry's start-up ex
 
 #include <cstdint>
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 
-namespace rad { struct Config; }
+namespace rad { struct Config; class Engine; class StallWatch; }
 namespace bc::serving::v2 { struct EnginePlan; struct Manifest; enum class PlanUse; }
 
 /* The argv radiance should parse. Without --manifest, argv is left unchanged and true is returned. With it, *argc
@@ -40,6 +41,9 @@ bool bc_serving_engine_argv(int* argc, char*** argv);
 /* After rad0011 extracts launch flags, prepare the single native Config from the strict
  * v3 snapshot. Returns 1 when prepared, 0 for other starts, and -1 on refusal. */
 int bc_serving_take_native_config(rad::Config* out);
+
+/* Serve the admitted engine behind a one-model HTTP front on fleet-capable Radiance. */
+int bc_serving_managed_front(rad::Engine& engine, std::unique_ptr<rad::StallWatch> watch);
 
 /* After a successful parse: every option the manifest produced must be recorded in `given` as "command line" (an
  * option another option swallowed as its argument is not), else a message is printed and false is returned: the
@@ -73,7 +77,14 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #ifdef BC_RAD_NATIVE_FLEET_CONFIG
 #include "native_fleet_config.h"
 #include "fleet/fleet.h"
+#include "engine.h"
+#include "server/front.h"
+#include "util/stallwatch.h"
+#include <atomic>
+#include <chrono>
+#include <csignal>
 #include <filesystem>
+#include <thread>
 #endif
 
 #include <nlohmann/json.hpp>
@@ -439,6 +450,17 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
 }
 
 namespace {
+#ifdef BC_RAD_NATIVE_FLEET_CONFIG
+const rad::fleet::FleetConfig k_default_fleet;
+int64_t g_front_load_ms = k_default_fleet.load_timeout_ms;
+int64_t g_front_drain_ms = k_default_fleet.drain_timeout_ms;
+int64_t g_front_keepalive_ms = k_default_fleet.keepalive_ms;
+std::vector<std::string> g_front_aliases;
+static_assert(std::atomic<bool>::is_always_lock_free);
+std::atomic<bool> g_front_stop{false};
+void stop_managed_front(int) { g_front_stop.store(true, std::memory_order_relaxed); }
+#endif
+
 int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config* out) {
     if (!out) return fail("native Config output is null"), -1;
 #ifndef BC_RAD_NATIVE_FLEET_CONFIG
@@ -508,6 +530,10 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
         // Fleet card ordinals describe process-visible GPUs; rank_devices remains
         // the native BDF list used by rad0016 when the layout requires it.
         cfg.devices = fleet.cards;
+        g_front_load_ms = fleet.load_timeout_ms;
+        g_front_drain_ms = fleet.drain_timeout_ms;
+        g_front_keepalive_ms = fleet.keepalive_ms;
+        g_front_aliases = fleet.models.front().aliases;
         *out = std::move(cfg);
         return 1;
     } catch (const std::exception& error) {
@@ -517,6 +543,77 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
 #endif
 }
 } // namespace
+
+#ifdef BC_RAD_NATIVE_FLEET_CONFIG
+int bc_serving_managed_front(rad::Engine& engine, std::unique_ptr<rad::StallWatch> watch) {
+    using namespace std::chrono_literals;
+    const rad::Config& cfg = engine.config();
+    if (cfg.kld() || cfg.calib() || cfg.diagnose_mode()) return engine.serve(std::move(watch));
+
+    // The stock fleet's transport policy for one model, using its admitted server keys.
+    rad::server::TransportOptions transport;
+    transport.host = cfg.host;
+    transport.port = cfg.port;
+    transport.n_threads = rad::server::idle_workers(cfg.http_threads);
+    transport.api_key = cfg.api_key;
+    transport.cors = cfg.cors;
+    transport.read_timeout_s = cfg.http_read_timeout_s;
+    transport.write_timeout_s = cfg.http_write_timeout_s;
+    transport.keep_alive_timeout_s = cfg.http_keep_alive_timeout_s;
+    transport.max_body_bytes = static_cast<size_t>(cfg.http_max_body_mib) << 20;
+    transport.trusted_proxies = cfg.trusted_proxies;
+    const int64_t queue_depth = cfg.max_queued_requests > 0 ? cfg.max_queued_requests : cfg.max_seqs * 8;
+    transport.max_threads = queue_depth + 64;
+    transport.max_queued = 64;
+
+    rad::server::Front front(std::move(transport), g_front_keepalive_ms);
+    front.add(cfg.served_model_name, g_front_aliases, g_front_load_ms, true);
+    front.set_operator_rule([&cfg](const rad::server::HttpRequest& req) {
+        return !cfg.api_key.empty() || rad::server::local_operator(req, cfg.host, cfg.allow_hosts);
+    });
+    struct sigaction action {};
+    action.sa_handler = stop_managed_front;
+    sigemptyset(&action.sa_mask);
+    action.sa_flags = SA_RESETHAND;
+    if (sigaction(SIGINT, &action, nullptr) != 0 || sigaction(SIGTERM, &action, nullptr) != 0) {
+        RAD_ERR("managed front: cannot install stop handlers");
+        return RAD_E_IO;
+    }
+
+    engine.set_front(&front, g_front_aliases);
+    std::atomic<bool> served{false};
+    int serve_rc = RAD_OK;
+    std::thread model([&] {
+        serve_rc = engine.serve(std::move(watch));
+        served.store(true);
+    });
+    while (!engine.serving() && !served.load() && !g_front_stop.load())
+        std::this_thread::sleep_for(20ms);
+
+    int listen_rc = RAD_OK;
+    if (!served.load() && !g_front_stop.load()) {
+        std::atomic<bool> listener_done{false};
+        std::thread listener([&] {
+            listen_rc = front.run();
+            listener_done.store(true);
+        });
+        while (!served.load() && !listener_done.load() && !g_front_stop.load())
+            std::this_thread::sleep_for(20ms);
+        engine.request_stop(g_front_drain_ms);
+        model.join();
+        // Stop only after the transport is running or run() has already returned.
+        while (front.port() == 0 && !listener_done.load())
+            std::this_thread::sleep_for(20ms);
+        front.stop();
+        listener.join();
+    } else {
+        engine.request_stop(g_front_drain_ms);
+        model.join();
+    }
+    engine.set_front(nullptr, {});
+    return serve_rc < 0 ? serve_rc : listen_rc;
+}
+#endif
 
 int bc_serving_take_native_config(rad::Config* out) {
     if (!g_native_engine) return 0;
@@ -756,6 +853,20 @@ PATCHES = (
                 applies_if=r'#include "fleet/config\.h"',
                 expect_matches=1,
                 rationale="The temporary measured-manifest lane uses the prior single-engine lifecycle; native YAML keeps the fleet.",
+            ),
+            Edit(
+                id="bc-serve-behind-managed-front",
+                anchor=r"^    s = engine\.serve\(std::move\(watch\)\);$",
+                text=(
+                    "    s = (bc_native_config > 0 || argv != bc_original_argv)\n"
+                    "        ? bc_serving_managed_front(engine, std::move(watch))\n"
+                    "        : engine.serve(std::move(watch));"
+                ),
+                mode="replace",
+                guard=r"bc_serving_managed_front\(engine, std::move\(watch\)\)",
+                applies_if=r"return rad::fleet::run\(fleet\);",
+                expect_matches=1,
+                rationale="The admitted online engine serves behind the stock front after bring-up completes.",
             ),
             Edit(
                 id="bc-serving-mark-given",
