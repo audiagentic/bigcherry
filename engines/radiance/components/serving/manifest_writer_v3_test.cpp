@@ -258,6 +258,20 @@ int main(int argc, char** argv) {
                   "a native plan key must bind tuning through the YAML digest, not a second copy");
             check(native_key.at("native_config").at("sha256") == inputs.native_config->sha256(),
                   "the native plan key does not carry the YAML digest");
+            // Two YAMLs that differ only in one tuning value: different digest, so different keys.
+            const auto key_for = [&](const std::string& text, const char* name) {
+                const fs::path path = temporary.path / name;
+                { std::ofstream out(path, std::ios::binary); out << text; }
+                const auto snapshot = sv::NativeConfigSnapshot::read(path, temporary.path);
+                fs::remove(path);
+                return sv::plan_key_inputs(inputs.resolved.values, facts, model_identity, engine_identity, "", &snapshot);
+            };
+            const std::string with_pin = yaml + "    tune-pin: \"all_reduce:nblocks=4\"\r\n";
+            const std::string other_pin = yaml + "    tune-pin: \"all_reduce:nblocks=8\"\r\n";
+            check(key_for(with_pin, "pin-a.yaml") != key_for(other_pin, "pin-b.yaml"),
+                  "two YAMLs differing only in tune-pin gave the same native plan key");
+            check(key_for(with_pin, "pin-c.yaml") == key_for(with_pin, "pin-d.yaml"),
+                  "the same YAML bytes gave different native plan keys");
         }
         const fs::path cache_dir = temporary.path / "plan-cache";
         const sv::OwnerMeasurementEvidence owner{"v3-writer-attempt", sv::sha256_hex(measuring.text)};
