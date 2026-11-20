@@ -75,6 +75,7 @@ inline InspectedConfig inspected(const Preset& p, const std::filesystem::path& c
 // (a test's setting overrides), and layout.name.
 inline void use(Options& options, const Preset& p, const std::filesystem::path& configs = "/fixture/configs") {
     options.inspected = inspected(p, configs);
+    if (options.model_root.empty()) options.model_root = "/fixture/models";   // a preset's model path is relative
     std::vector<std::string> sets = p.sets;
     sets.push_back("layout.name=" + nlohmann::json(p.name).dump());
     sets.insert(sets.end(), options.sets.begin(), options.sets.end());

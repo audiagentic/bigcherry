@@ -132,7 +132,7 @@ void run_engine_consumer(const fs::path& consumer, const fs::path& root,
 
 int main(int argc, char** argv) {
     try {
-        check(argc == 2 || argc == 3, "expected the engine-only named config fixture source and optional consumer");
+        check(argc == 1 || argc == 2, "expected an optional engine consumer executable");
         TempDirectory temporary;
         const fs::path model = temporary.path / "tiny.rad";
         const fs::path runtime_home = temporary.path / "runtime-home";
@@ -354,7 +354,7 @@ int main(int argc, char** argv) {
                   serving.document.at("spec").at("plan").at("engine_memory").at("model_identity") == model_identity &&
                   serving.document.at("spec").at("plan").at("engine_memory").at("engine_identity") == engine_identity,
               "the final serving manifest did not carry the owner-cached plan and real build identities");
-        if (argc == 3) run_engine_consumer(argv[2], temporary.path, measuring, serving);
+        if (argc == 2) run_engine_consumer(argv[1], temporary.path, measuring, serving);
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';
         return 1;

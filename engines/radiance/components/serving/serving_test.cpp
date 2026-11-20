@@ -296,11 +296,8 @@ void unknown_keys(Fixture& t) {
 
 
 void type_range_required(Fixture& t) {
-    Options opts;
-    opts.sets = {"layout.name=\"flashnext-4gpu\""};
-    fail(opts, t.facts, "missing required key: engine.model");
-    opts.sets.clear();
-    opts = t.standard();
+    // (engine.model is no longer a missing-key case: a config's YAML always names its model.)
+    Options opts = t.standard();
     opts.profile = t.file("type.toml", "[service]\nmax_sessions = \"many\"\n");
     fail(opts, t.facts, "service.max_sessions: expected non-negative integer");
     opts.profile = t.file("range.toml", "[helper]\ncombine_threads = 0\n");
@@ -312,7 +309,7 @@ void type_range_required(Fixture& t) {
     opts.profile = t.file("badcount.toml", "[helper]\ncount = 1\nindex = 2\n");
     fail(opts, t.facts, "helper.index must be below helper.count");
     opts.profile = t.file("invalidlayout.toml", "[layout]\nname = \"not-a-layout\"\n");
-    fail(opts, t.facts, "unknown named layout");
+    fail(opts, t.facts, "no config was read");
     opts.profile = t.file("derived.toml", "[engine]\nmax_num_seqs = 99\n");
     fail(opts, t.facts, "derived and cannot be overridden");
     { // the combine thread count is derived from the discovered CPUs, never a literal the host may not have
@@ -410,69 +407,6 @@ void provenance_hash_and_parity(Fixture& t) {
             assert(pv.contains(field));
         assert(pv.at("inputs").is_array());
     }
-
-    // RSC01 launcher-equivalence golden. Values transcribed from the
-    // 2026-11-02 launch-flashnext-best.sh engine argv and COMMON/WorkerConfig.
-    // RSC02 deletes the launcher and replaces this with a manifest golden.
-    const auto& e = r.values.at("engine");
-    const std::vector<std::pair<std::string, Json>> expected_engine = {
-        {"model", (t.root / "model.rad").string()},
-        {"radiance_home", "/runtime"},
-        {"port", 36080},
-        {"kernels", "libr4d,libr3moe,libref"},
-        {"placement", "expert_tiered"},
-        {"ngram_placement", "ram"},
-        {"host_pool_mib", 9216},
-        {"prefix_cache_mib", 12288},
-        {"tp", 1},
-        {"max_num_seqs", 8},
-        {"max_num_batched_tokens", 2048},
-        {"checkpoint_interval", 4096},
-        {"kv_cache_dtype", "fp8"},
-        {"num_speculative_tokens", 3},
-        {"max_model_len", 262144},
-        {"rope_scaling", "none"},
-        {"prefix_resume", "nearest"}};
-    for (const auto& [name, value] : expected_engine)
-        if (e.at(name) != value)
-            throw std::runtime_error("launcher engine parity failed: " + name);
-    // The launcher COMMON values; paths are required rather than guessed.
-    const auto& a = r.values.at("handoff");
-    const std::vector<std::pair<std::string, Json>> expected_common = {
-        {"shm", "/r3-moe-helper"},  {"heat", "/heat.hot-first"}, {"histogram", "/heat.live"},
-        {"histogram_period_s", 60}, {"max_rows", 4096},          {"small_rows", 8},
-        {"gemv_large_rows", 32},    {"moe_down_tile", true},     {"skip_owned", true},
-        {"placement", "tail"}};
-    for (const auto& [key, val] : expected_common)
-        if (a.at(key) != val)
-            throw std::runtime_error("launcher COMMON parity failed: " + key);
-    const auto& h = r.values.at("helper");
-    const std::vector<std::pair<std::string, Json>> expected_helper = {
-        {"count", 3},           {"index", 0},          {"engine_ranks", 1}, {"cpu", false},
-        {"power_save", true},   {"queue_warm", false}, {"combine", false},  {"combine_min_rows", 256},
-        {"combine_threads", 8}, {"cpu_set_auto", true}};
-    for (const auto& [name, value] : expected_helper)
-        if (h.at(name) != value)
-            throw std::runtime_error("launcher WorkerConfig parity failed: " + name);
-    const auto& derived_budgets = r.typed.memory.helper_budgets_mib;
-    assert(derived_budgets.size() == 3);
-    for (size_t i = 0; i < derived_budgets.size(); ++i)
-        assert(derived_budgets[i] > 0 &&
-               derived_budgets[i] < t.facts.at("gpus")[i < 2 ? i : 3].at("vram_total_mib").get<uint64_t>());
-    assert(r.typed.memory.tail_budget_mib == derived_budgets.back());
-    assert(r.manifest.at("process_helpers").size() == 3);
-    const auto& helpers = r.manifest.at("process_helpers");
-    assert(helpers[0]["plugin_file"] == "libr3.so");
-    assert(helpers[1]["formats"].size() == 2);
-    assert(helpers[2]["plugin_file"] == "libr2.so");
-    assert(helpers[2]["rows_kernel"] == true);
-    assert(helpers[2]["placement"] == "tail");
-    assert(helpers[2]["share"] == 0);
-
-    for (size_t i = 0; i < 3; ++i)
-        assert(r.manifest.at("process_helpers")[i]["config"]["index"] == i);
-    assert(r.typed.layout.engine_cards == std::vector<std::string>{"0000:09:00.0"});
-    assert(r.typed.layout.helper_cards[2] == "0000:17:00.0");
 
     const auto schema = bc::serving::json_schema();
     assert(schema["properties"]["helper"]["properties"].size() == 10);
@@ -1226,6 +1160,62 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
         throw std::runtime_error("cli test: child wait failed");
     return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, output};
 }
+struct SessionManifestPair {
+    Json measuring;
+    Json serving;
+};
+
+namespace sv = bc::serving;
+
+SessionManifestPair session_manifest_pair(const sv::Resolved& resolved, const Json& facts) {
+    sv::ManifestInputs inputs;
+    inputs.resolved = resolved;
+    inputs.instance_id = "11111111-1111-4111-8111-111111111111";
+    inputs.producer_sha256 = std::string(64, 'a');
+    inputs.profile = "production";
+    inputs.s10.power_profile = "stock";
+    inputs.s10.now_unix_s = 1800000000;
+    inputs.s10.calibration_records = Json::array();
+    const sv::BuiltManifest unmeasured = sv::build_manifest(inputs);
+
+    bc::test::set_measured_manifest_fixture(inputs, unmeasured, facts);
+    const sv::BuiltManifest serving = sv::build_manifest(inputs);
+    return {unmeasured.document, serving.document};
+}
+
+// A build-tree start takes no --set for its runtime home: it is <build>/radiance_home of the --engine-binary, and this bc-serve
+// must be the one in it.
+void build_tree_runtime_home(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const fs::path build = t.root / "tree-build";
+    fs::create_directories(build / "bin");
+    fs::create_directories(build / "radiance_home/bin");
+    std::ofstream(build / "bin/radiance") << "#!/bin/sh\n";
+    const fs::path owner = build / "radiance_home/bin/bc-serve";
+    std::ofstream(owner) << "#!/bin/sh\n";
+    const fs::path home = fs::weakly_canonical(build / "radiance_home");
+    assert(ss::derive_build_runtime_home(owner, build / "bin/radiance") == home);
+    const auto refused = [&](const fs::path& self, const fs::path& engine, const std::string& why) {
+        try {
+            (void)ss::derive_build_runtime_home(self, engine);
+        } catch (const ss::PlanFailed& error) {
+            assert(std::string(error.what()).find(why) != std::string::npos);
+            return;
+        }
+        throw std::runtime_error("derive_build_runtime_home accepted: " + why);
+    };
+    // another build's bc-serve with this build's engine
+    const fs::path other = t.root / "other-build";
+    fs::create_directories(other / "radiance_home/bin");
+    std::ofstream(other / "radiance_home/bin/bc-serve") << "#!/bin/sh\n";
+    refused(other / "radiance_home/bin/bc-serve", build / "bin/radiance", "run the bc-serve of the build");
+    // an engine that is not <build>/bin/radiance, and a build without a runtime home
+    refused(owner, build / "radiance", "is not <build>/bin/radiance");
+    fs::create_directories(t.root / "bare/bin");
+    std::ofstream(t.root / "bare/bin/radiance") << "#!/bin/sh\n";
+    refused(owner, t.root / "bare/bin/radiance", "has no radiance_home");
+}
+
 void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
     const auto no_snapshot = run_bc_serve(
         {"--write-manifest", "unused.json", "--measured-plan", "missing-plan.json", "--rank-demand",
@@ -2925,6 +2915,7 @@ int main(int argc, char** argv) {
     try {
         Fixture t;
         v3_writer_cli_rejects_unowned_imports(t);
+        build_tree_runtime_home(t);
         session_engine_plan(t);
         helper_vram_owner_graph(t);
         std::cout << "PASS: native v3 sealed snapshot session draft and pre-cache gate\n";

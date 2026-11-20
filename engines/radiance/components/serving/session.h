@@ -324,6 +324,12 @@ InspectedConfig inspect_config_snapshot(const std::filesystem::path& engine, con
                                         const std::filesystem::path& sys_root, const Hooks& hooks,
                                         const Env& runtime_overrides = {});
 
+// A build-tree start's runtime home, derived from its engine: <build>/bin/radiance gives <build>/radiance_home, which must
+// hold this very bc-serve (<home>/bin/bc-serve), so a start never mixes builds. Refused when the home is missing or this
+// executable is not the one in it. The runtime home is a machine fact: never authored, never a --set of a managed start.
+std::filesystem::path derive_build_runtime_home(const std::filesystem::path& self,
+                                                const std::filesystem::path& engine_binary);
+
 // Sets options.inspected for the named config: `yaml` when given, else NAME.yaml of the config sources. The runtime home
 // is `--set engine.radiance_home=...` or the home of this executable's build or installed prefix; the engine is
 // `engine_binary` or <home>/../bin/radiance. A config with no YAML is refused.

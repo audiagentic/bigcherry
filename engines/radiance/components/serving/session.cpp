@@ -2519,6 +2519,21 @@ InspectedConfig inspect_config_snapshot(const fs::path& engine, const NativeConf
     return out;
 }
 
+fs::path derive_build_runtime_home(const fs::path& self, const fs::path& engine_binary) {
+    std::error_code error;
+    const fs::path engine = fs::weakly_canonical(engine_binary, error);
+    if (error || engine.filename() != "radiance" || engine.parent_path().filename() != "bin")
+        throw PlanFailed("serve: --engine-binary " + engine_binary.string() + " is not <build>/bin/radiance");
+    const fs::path home = engine.parent_path().parent_path() / "radiance_home";
+    if (!fs::is_directory(home))
+        throw PlanFailed("serve: the engine's build has no radiance_home (" + home.string() + ")");
+    const fs::path owner = fs::weakly_canonical(self, error);
+    if (error || owner != fs::weakly_canonical(home / "bin" / "bc-serve", error))
+        throw PlanFailed("serve: this bc-serve is not " + (home / "bin" / "bc-serve").string() +
+                         ": run the bc-serve of the build whose engine serves (--engine-binary)");
+    return home;
+}
+
 void attach_inspected_config(Options& options, const std::string& name, const fs::path& yaml, const fs::path& self,
                              const fs::path& engine_binary, const Hooks& hooks, const fs::path& resolution_root,
                              const Env& runtime_overrides, const NativeConfigSnapshot* sealed) {
@@ -2530,6 +2545,7 @@ void attach_inspected_config(Options& options, const std::string& name, const fs
                          "BIGCHERRY_CONFIGS) and no --native-config");
     fs::path home;
     if (const auto layered = layered_string(options, "engine", "radiance_home")) home = *layered;
+    if (home.empty() && !engine_binary.empty()) home = derive_build_runtime_home(self, engine_binary);
     if (home.empty() && self.parent_path().filename() == "bin" &&
         self.parent_path().parent_path().filename() == "radiance_home")
         home = self.parent_path().parent_path();
@@ -2546,6 +2562,9 @@ void attach_inspected_config(Options& options, const std::string& name, const fs
                                : inspect_config_snapshot(engine, NativeConfigSnapshot::read(file, root),
                                                          name, file, home, options.sys_root, hooks,
                                                          runtime_overrides);
+    // The runtime home is the machine's fact the inspection used: the resolver takes it as its own setting.
+    if (!layered_string(options, "engine", "radiance_home"))
+        options.sets.push_back("engine.radiance_home=" + Json(options.inspected->radiance_home.string()).dump());
 }
 
 NativeConfigInspection inspect_and_reconcile_native_config(

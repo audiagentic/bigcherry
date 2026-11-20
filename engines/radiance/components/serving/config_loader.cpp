@@ -10,6 +10,11 @@ namespace bc::serving {
 namespace fs = std::filesystem;
 using Json = nlohmann::json;
 
+namespace {
+// The settings tables: the resolver's key prefixes a config may set.
+const std::set<std::string> kSettingsTables = {"service", "engine", "tuning", "memory", "helper", "handoff", "kernels"};
+}  // namespace
+
 std::filesystem::path config_yaml_for(const std::string& name, const std::vector<std::filesystem::path>& given) {
     std::vector<fs::path> dirs = given;
     if (dirs.empty())

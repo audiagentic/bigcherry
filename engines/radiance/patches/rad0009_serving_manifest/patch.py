@@ -761,7 +761,6 @@ endif()
 if(BC_SERVING_V3_NATIVE_TEST)
   if(NOT RAD_BUILD_TESTS OR NOT DEFINED BC_SERVING_GENERATED_DIR OR
      NOT DEFINED BC_V3_WRITER_TEST_EXECUTABLE OR NOT EXISTS "${BC_V3_WRITER_TEST_EXECUTABLE}" OR
-     NOT DEFINED BC_V3_WRITER_CONFIG OR NOT EXISTS "${BC_V3_WRITER_CONFIG}" OR
      NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
     message(FATAL_ERROR "rad0009: v3 native consumer test requires RAD_BUILD_TESTS, the v3 codec, writer, config and fleet parser")
   endif()
@@ -794,9 +793,9 @@ _CORE_TEST_REGISTRATION = r"""
 if(TARGET bc_native_fleet_config_test)
   add_test(NAME bc_native_fleet_config_test COMMAND bc_native_fleet_config_test)
 endif()
-if(TARGET bc_native_v3_engine_test AND DEFINED BC_V3_WRITER_TEST_EXECUTABLE AND DEFINED BC_V3_WRITER_CONFIG)
+if(TARGET bc_native_v3_engine_test AND DEFINED BC_V3_WRITER_TEST_EXECUTABLE)
   add_test(NAME bc_native_v3_engine_test COMMAND "${BC_V3_WRITER_TEST_EXECUTABLE}"
-    "${BC_V3_WRITER_CONFIG}" "$<TARGET_FILE:bc_native_v3_engine_test>")
+    "$<TARGET_FILE:bc_native_v3_engine_test>")
 endif()
 """
 
