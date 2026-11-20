@@ -4,7 +4,6 @@
 #include "fleet/fleet.h"
 
 #include <ryml.hpp>
-#include <ryml_std.hpp>
 
 #include <charconv>
 #include <cmath>
