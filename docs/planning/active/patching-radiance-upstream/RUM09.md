@@ -106,6 +106,8 @@ The pool-fallback engine produced a live plan. At an explicit diagnostic trial o
 
 Live automatic remeasurement at be89849c0 produced two distinct engine plan receipts and converged from 9216 to 2247 MiB unchanged YAML, then launched serving. Front integration 7ef6186a2 attaches the stock HTTP front on managed online paths and leaves measurement/offline unchanged. Exact 2.2 patch replay, five manifest cases and 105 native front host checks pass. A front-enabled live run is queued separately for health, fresh start and both replay paths.
 
+Live checkpoint 77fd71cf6 converged and passed health and default-name routing. The first completion reached Flash-Next layer 0 and failed with mailbox publish operand 3 handle 0. Operand 3 is the required E4M3 activation slice; the HIP op also requires its scales and base. Stock 2.2 can use an I8 local activation lane without materializing the E4M3 pair. Port the producer planes while preserving the local lane and the strict runtime check. No working completion or replay yet.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -130,3 +132,4 @@ Live automatic remeasurement at be89849c0 produced two distinct engine plan rece
 - 2026-11-19T23:05:36.031221+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:13:25.180057+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:23:43.215660+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T00:43:44.078640+00:00 (updated-by): Updated: section:notes
