@@ -82,7 +82,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-One explicitly enumerated runtime roster passes source, same-SDK build/plugin ABI+layout, strict config/admission/lifecycle, selected TP1 helper-on activation, helper-off functional quality, short quality, bounded paired performance and install/relocate gates. The package actually withholds every unqualified profile/mode. Recipe, component declarations, native config and runtime roster refer to one exact candidate. No production pin change occurs before all gates pass.
+The bump carries every BigCherry fix and every serving config main supports; nothing is withheld on the old release. All 18 named configs in engines/radiance/configs (flashnext-* 10, qwen27b-* 8) start from the installed 2.2 bundle with no --set, pass the canary and stop cleanly, on the same-SDK build with uniform plugin ABI and both gfx1201 and gfx1100 kernels. The measured production configs (flashnext-4gpu, flashnext-4gpu-bf16i8, qwen27b-tp3-int8-556, qwen27b-tp3-int8-556-long, qwen27b-tp3-int8-556-long-bf16i8) pass the matched paired comparison against the current release with no gated regression (prefill, TTFT, step time), plus helper-on activation and short quality (KLD/top-1) where numerics can move. Mixed-rank TP3 (RUM06) passes its code-object, ordinal, rendezvous and span tests. Recipe, component declarations, native config and runtime roster refer to one exact candidate. No production pin change occurs before all gates pass.
 
 ## Notes
 
@@ -132,6 +132,8 @@ The 6fe47b998 leased Flash-Next smoke passed with 12288 MiB host KV actually act
 
 Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first score step and traced it to the completion ticket offset being recomputed from dispatch max_rows while the published shared scratch uses the segment's 4096-row capacity. Changed all three add/inject/shadow completion launches to use the host-calculated shared scratch ticket_begin, copied into device launch state. Exact task-worktree contract test compiled with GCC 14 and passed (`r3_v26_gpu_contract_test: PASS`); this test explicitly compares 4096-row shared and 64-row dispatch geometry. Ledger event chg_20261120_051531_fixed-a-helper-on-scoring-faul_6229. A prior GPU retry used an older Radiance engine and stopped at the v3 helper-quality admission guard (exit 97), so it does not qualify this fix. Next: clean checkpoint, canonical v3 lane build from this exact task revision, card-free v3 inspector/writer/replay and bundle ABI checks, then one helper-on first-130-row scoring run before full short quality/paired performance gates.
 
+2026-11-20 owner re-scope: the bump brings all our fixes over. The earlier first-lane boundary (admit only the two named Flash-Next entries and leave the seven Qwen 27B configs and other Flash-Next variants on the prior bundle or withheld) is withdrawn. RUM06 mixed-TP collective lifetimes is now a bump blocker for TP3 27B. Status 2026-11-20: flashnext-4gpu matched 3-pair comparison vs 1170.35.0 (runs: BC work root work/radiance-latest-bump/paired-parity-rum09.20261120): decode step -5 to -6.5% (better), long7 prefill +1.7%, cold TTFT -0.3%; FAIL prefill.long8_prefill_tps -2.75% (allow 0.33%) and prefill.doc_prefill_tps -0.34% (allow 0.11%); prompt hashes and token counts identical per pair. Suspect: chained launches now on in 2.2 (plugin chain_pays), plus 301 vs 141 MiB hardware queues and new ops; under investigation (bigcherry-2).
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -169,3 +171,4 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 - 2026-11-20T03:53:26.606171+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T04:00:21.973713+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T05:15:47.666983+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T08:49:59.253113+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

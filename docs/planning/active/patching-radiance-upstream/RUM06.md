@@ -114,6 +114,8 @@ Checkpoint c5abd3b47 poisons and wakes failed rendezvous and holds published own
 
 Checkpoint bedf51edb consolidates rank attachment rollback, clears the result pointer on refusal and destroys completion events on their owning device during shutdown. Exact ABI44/ROCm syntax and four focused host fixtures passed. This preserves the frozen canary SDK; engine-scoped remote lifecycle, clean-stop drain and hardware proof remain open.
 
+2026-11-20 owner re-scope (RUM09): the bump must carry every config main serves, so this item is now a bump blocker: the Qwen 27B TP3 configs (gfx1100, gfx1100, gfx1201 engine ranks) and the Flash-Next tp2xtx configs must start and qualify on 2.2. The TP patches rad0016-rad0033 are already in serving-core on the candidate; what remains is the mixed-rank code-object, ordinal-reversal, group-rendezvous and span tests and a TP3 27B start/canary/paired comparison on the 2.2 build.
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -132,3 +134,4 @@ Checkpoint bedf51edb consolidates rank attachment rollback, clears the result po
 - 2026-11-19T23:03:33.981692+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:20:26.906081+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T01:23:16.000046+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T08:50:11.218145+00:00 (updated-by): Updated: section:notes
