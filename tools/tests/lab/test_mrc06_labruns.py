@@ -586,6 +586,7 @@ def test_noncalibration_lab_requires_measured_sidecar_and_sealed_native_session(
         "recorded_at": "2026-11-20T03:00:00Z",
         "workload": {"name": "native-lab", "definition": {"profile": "observe"}},
         "metrics": {"decode": {"step_ms": 42}, "prefill": {}, "ttft": {}},
+        "metric_specs": {"decode": {"step_ms": {"direction": "lower", "gated": True}}, "prefill": {}, "ttft": {}},
     }
     sidecar.write_text(json.dumps(source))
     sha = lab.publish_native_lab(run, sidecar, work_root=tmp_path, host_snapshot=FAKE_HOST)

@@ -605,10 +605,13 @@ def publish_native_lab(run_dir: Path, sidecar: Path, *,
     if (not isinstance(workload, dict) or not isinstance(workload.get("name"), str)
             or not workload["name"] or not isinstance(workload.get("definition"), dict)):
         raise run_records.RecordError("native lab has no typed workload")
+    specs = doc.get("metric_specs")
+    if not isinstance(specs, dict) or set(specs) != {"decode", "prefill", "ttft"}:
+        raise run_records.RecordError("native lab has no typed metric specs")
     return measurement_producers.publish(
         work_root=work_root, run_id=c["run_id"] + "-lab",
         recorded_at=doc["recorded_at"], identity=c["identity"],
-        workload=workload, metrics=metrics, metric_specs=doc.get("metric_specs"),
+        workload=workload, metrics=metrics, metric_specs=specs,
         effective_config=c["manifest_bytes"], argv=_native_argv(c["session"]),
         environment=_native_environment(c["session"]),
         power_settings=c["manifest"]["spec"].get("power", {}),
