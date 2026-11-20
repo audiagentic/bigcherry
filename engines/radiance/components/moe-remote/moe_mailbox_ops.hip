@@ -806,7 +806,6 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
     /* publish validated stamp identity; finish is on that same stream.
      * seal_ready validates it again after the last result consumer. */
     ConsumptionStamp* out = stamps + pass.ticket_id % capacity;
-    uint32_t consumed = 0;
     if (idx < slots && published[idx]) {
         const uint32_t klass = published[idx] - 1u;
         /* publish selected the legal lane class and wrote this word. */
@@ -816,7 +815,10 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
         r.slot = pass.generation_slot;
         r.epoch = pass.placement_epoch;
         r.sequence = sequence[lane];
-        consumed = 1;
+        /* Finish uses slots + 1 work-items, which can be less than one wave.
+         * Count each validated slot directly after writing its consumption record. */
+        (void)__hip_atomic_fetch_add(&out->consumed_count, 1u, __ATOMIC_RELAXED,
+                                     __HIP_MEMORY_SCOPE_AGENT);
     }
     if (idx == 0)
         if (const uint32_t cg = published[slots]) {
@@ -824,10 +826,6 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
             rec[lanes].epoch = pass.placement_epoch;
             rec[lanes].sequence = cg;
         }
-    const uint32_t consumed_lanes = (uint32_t)__syncthreads_count(consumed);
-    if (idx == 0 && consumed_lanes)
-        (void)__hip_atomic_fetch_add(&out->consumed_count, consumed_lanes, __ATOMIC_RELAXED,
-                                     __HIP_MEMORY_SCOPE_AGENT);
     published[idx] = 0;
 }
 
