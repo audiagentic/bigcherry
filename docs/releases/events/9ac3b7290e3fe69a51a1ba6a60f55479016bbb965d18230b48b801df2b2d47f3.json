@@ -1,0 +1,19 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_225550_the-four-vtp44-kv-scoring-tool_8569",
+  "files": [
+    "engines/radiance/patches/rad0042_kv_b16_selftest",
+    "engines/radiance/patches/rad0043_expert_stats_protected",
+    "engines/radiance/patches/rad0044_expert_route_record",
+    "engines/radiance/patches/rad0045_expert_route_replay",
+    "engines/radiance/recipes.toml",
+    "docs/evidence/2026-11-20-prq06-diagnostic-evidence"
+  ],
+  "plan-item-ids": [
+    "PRQ06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PRQ06 step 3 (qualification). rad0042, rad0043, rad0044 and rad0045 (VTP44 evidence tools) moved untested -> diagnostic at the diagnostic tier (mechanics and activation, no production admission): evidence/promotion.json per patch at pin v1.17.0 with the subject digest, evidence from the VTP44 Flash-Next runs (docs/evidence/2026-11-16-vtp44-generic-kv-layouts) and the rad0042 gfx1100 selftest; SUMMARY 'not yet run' lines corrected. Recipes: diagnostic source radiance-vtp44-evidence with single-patch diagnostic sets; no experiment is open. patch-lint clean, production and diagnostic-source rebase checks clean (rad0004 and rad0010 still apply). Active Radiance set: 30 validated, 6 diagnostic. Decision owner: lead 2026-11-20. No patch implementation changed.",
+  "timestamp-utc": "2026-11-19T22:55:50.734375Z",
+  "user-summary-candidate": "The four VTP44 KV-scoring tools are now classified as qualified diagnostic patches."
+}

@@ -1,0 +1,22 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_224859_three-more-retired-radiance-pa_3839",
+  "files": [
+    "engines/radiance/patches/archive/ARCHIVE.md",
+    "engines/radiance/patches/archive/rad0003_mtp_full_head_switch",
+    "engines/radiance/patches/archive/rad0007_hc_pf2_fp8_down",
+    "engines/radiance/patches/archive/rad0039_moe_heat_observer",
+    "engines/radiance/recipes.toml",
+    "engines/radiance/components/moe-remote/CMakeLists.txt",
+    "engines/radiance/components/moe-remote/component.toml"
+  ],
+  "plan-item-ids": [
+    "PRQ06",
+    "RAD15",
+    "RHP02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PRQ06 step 3 (retirements). rad0003 and rad0007 set rejected (tested, not accepted: MTP acceptance 0.63-0.65 vs 0.62-0.64; FP8 down path 1203.7 us vs 530.7 us at M=2048) and rad0039 recorded abandoned (RHP02 slice A only, consumer never built), then all three moved unchanged into engines/radiance/patches/archive/ with ARCHIVE.md rows. Their experiments are removed from recipes.toml; rad0039's host ABI test and package test moved into its archive folder and the r3_heat_observer_abi_test ctest target is dropped; RAD15 and RHP02 deprecated with pointers to the archive. Recipes gain the diagnostic source radiance-vtp44-evidence (patch-set vtp44-evidence: rad0042-rad0045) so those four can be classified diagnostic by patch-promote --diagnostic next. Decision owner: lead 2026-11-20. No state, content or digest of any remaining patch changed.",
+  "timestamp-utc": "2026-11-19T22:48:59.851593Z",
+  "user-summary-candidate": "Three more retired Radiance patches are archived as evidence, and two stale plans are closed."
+}
