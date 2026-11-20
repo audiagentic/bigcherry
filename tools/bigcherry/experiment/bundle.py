@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Any
 
 from ..core.telemetry import console_telemetry
-from ..core import host_facts, measurement_producers
+from ..core import feature_registry, feature_states, host_facts, measurement_producers
 from . import attestation
 from ..tuning.journal import atomic_write, canonical
 
@@ -329,6 +329,9 @@ def publish_measurement(
     }
     if measurement_source is not None:
         inputs["measured_results"] = measurement_source
+    # Only Radiance has a native feature-state snapshot in this plan.
+    states = (feature_states.read_feature_states(root / feature_states.FILE_NAME)
+              if identity["engine"] in feature_registry.FEATURES else [])
     digest = measurement_producers.publish(
         work_root=work_root,
         run_id=document["experiment_id"],
@@ -342,7 +345,7 @@ def publish_measurement(
         power_settings=document.get("power_state", {}),
         inputs=inputs,
         host_facts=host_snapshot if host_snapshot is not None else host_facts.collect_host_facts(),
-        feature_states=[],
+        feature_states=states,
         validity=validity,
         session_id=document["experiment_id"],
     )

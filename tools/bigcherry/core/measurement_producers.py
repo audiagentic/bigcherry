@@ -11,7 +11,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import run_records, calibration_records
+from . import run_records, calibration_records, feature_registry
 
 
 def canonical_blob(value: object) -> bytes:
@@ -59,6 +59,9 @@ def publish(
         raise run_records.RecordError("actual argv required")
     if any(not isinstance(v, (bytes, Path)) for v in inputs.values()):
         raise run_records.RecordError("provenance inputs must be exact bytes or readable files")
+    # Only registered producer engines have a native feature-state contract.
+    if identity["engine"] in feature_registry.FEATURES:
+        feature_registry.require_coverage(identity["engine"], feature_states)
     store = run_records.RunRecordStore(work_root)
 
     def source_blob(source: bytes | Path) -> dict:
