@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 from datetime import datetime, timezone
@@ -89,7 +90,8 @@ class ReleaseNotesTests(unittest.TestCase):
     def test_radiance_has_its_own_release_line(self):
         config = notes.load_config(_REPO, "radiance")
         self.assertEqual(config.tag_prefix, "bc-radiance-")
-        self.assertEqual(config.build_patch_sets, ("serving-core", "host-compat", "serving-manifest", "mtp-pass-replay"))
+        recipe = tomllib.loads((_REPO / config.recipes).read_text(encoding="utf-8"))
+        self.assertEqual(config.build_patch_sets, tuple(recipe["source"]["radiance"]["patch-sets"]))
         self.assertEqual((config.recipes, config.patches, config.upstream_name),
                          ("engines/radiance/recipes.toml", "engines/radiance/patches", "radiance"))
         self.assertIn("engines/radiance", config.owned_paths)
@@ -222,7 +224,6 @@ class ReleasePleaseWiringTests(unittest.TestCase):
     def test_manifest_versions(self):
         self.assertEqual(sorted(self.manifest), [".", "engines/llamacpp", "engines/radiance"])
         # This manifest records the last published line. The recipe may be ahead during a pin bump.
-        import tomllib
         pinned = tomllib.loads((_REPO / "engines" / "radiance" / "recipes.toml").read_text(encoding="utf-8"))["pinned"]
         pin = notes.pin_version(_REPO, notes.load_config(_REPO, "radiance"), pinned)
         self.assertRegex(self.manifest["engines/radiance"], r"^\d+\.\d+\.\d+$")
