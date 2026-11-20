@@ -823,16 +823,6 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
     if (blockIdx.x || threadIdx.x >= slots + 1u) return;
     const uint32_t idx = threadIdx.x;
     Request* traced = nullptr;
-    if (trace_every && idx < slots && published[idx]) {
-        const uint32_t lane = lane_of(idx, published[idx] - 1u, slots);
-        const uint32_t seq = sequence[lane];
-        if (seq && seq % trace_every == 0) {
-            auto* h = reinterpret_cast<Header*>(base);
-            auto* ring = reinterpret_cast<Request*>(base + h->regions[v26::index(Region::Requests)].offset);
-            traced = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
-            traced->mailbox_trace[3] = wall_clock64();
-        }
-    }
     StepTicket pass{};
     if (!r3::mailbox_completion::pass_ticket(published, ticket_begin, &pass) ||
         !sequence || !stamps || !capacity || !rec) __builtin_trap();
@@ -844,10 +834,18 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
         /* publish selected the legal lane class and wrote this word. */
         const uint32_t lane = lane_of(idx, klass, slots);
         if (lane >= lanes) __builtin_trap();
+        const uint32_t seq = sequence[lane];
+        if (trace_every && seq && seq % trace_every == 0) {
+            if (!base) __builtin_trap();
+            auto* h = reinterpret_cast<Header*>(base);
+            auto* ring = reinterpret_cast<Request*>(base + h->regions[v26::index(Region::Requests)].offset);
+            traced = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
+            traced->mailbox_trace[3] = wall_clock64();
+        }
         ConsumedRecord& r = rec[lane];
         r.slot = pass.generation_slot;
         r.epoch = pass.placement_epoch;
-        r.sequence = sequence[lane];
+        r.sequence = seq;
         /* Finish uses slots + 1 work-items, which can be less than one wave.
          * Count each validated slot directly after writing its consumption record. */
         (void)__hip_atomic_fetch_add(&out->consumed_count, 1u, __ATOMIC_RELAXED,
