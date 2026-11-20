@@ -11,19 +11,20 @@ priority: P1
 work: L
 ---
 
-# Lower-bit (IQ3-class) expert quantisation for radiance containers: feasibility and quality
+# IQ3-class Radiance expert weights — numerical, residency and critical-path feasibility before implementation
 
 ## Description
 
-Owner question 2026-10-19: would IQ-style quantisation, as in GGUF, help radiance models? The Flash-Next container is already a 4-bit expert format (fp8 trunk, iq4r experts, 114 GiB). A 3-bit-class expert format (IQ3_XXS/IQ3_S style codebooks, or Paiton's W3A8) would shrink the experts by roughly a quarter, so more of them stay GPU-resident on our 80 GiB of cards (R9700 32 + 2 x XTX 24) and fewer cross the x8 host link. Residency is our main lever (smaller expert pool gave +15% long-prompt decode; host-resident experts bound prefill). Costs: codebook/lookup dequantisation in the kernels (per arch: gfx1100, gfx1201, future gfx1030), calibration/importance data, a converter in radiance's quantiser tooling, and a quality budget (KLD harness exists).
+Assess whether packing only routed experts at approximately three bits rather than the current Radiance four-bit representation improves effective GPU residency and avoids enough host transfer to outweigh unpack/compute cost while meeting quality gates on gfx1100/gfx1201. GGUF IQ3 and Strata formats are not drop-in Radiance formats. Historical container sizes and KLD figures are dated and must be re-established for the exact current source/ABI and model. This item is feasibility only; converter/native kernel implementation requires a separate follow-on decision.
 
 ## Steps
 
-1. Inventory: which formats radiance's quantisers and kernels already support (iq4r, mxfp4, fp8 block) and what the container loader accepts; read the converter source and the 1.8.0 release notes.
-2. Offline quality study: quantise experts only (trunk unchanged) to 3-bit variants from the same source weights and score with the KLD harness (helper-kld.json style, stored reference): kld_mean, p99, top-1, against the current 4-bit baseline (0.0633 / 0.673 / 88.3%).
-3. Kernel feasibility in the replay harness: dequant + grouped GEMM microbench per arch with row sweeps, parity vs CPU reference, bytes moved.
-4. Capacity arithmetic: resident pairs per tier and host-resident share under 3-bit versus 4-bit; predicted decode/prefill effect from the heat model (RHP07).
-5. Decide: build the converter and kernels only if quality and arithmetic justify it; otherwise record as evaluated.
+1. Inventory exact current Radiance source/recipe/container loader under the active RUM ABI. Record supported formats, model/weight identity, expert/trunk bytes, pack/unpack, activation dtype and gfx1100/gfx1201 coverage.
+2. Model capacity and traffic using accepted RHP04/RHP09 costs: per-device reserves, newly resident expert pairs, route probabilities, avoided host bytes by phase, KV/head budget, layout and uncertainty.
+3. Compare a pinned expert-only three-bit candidate against current four-bit and common high-precision references with trunk/tokenizer/KV/MTP held fixed. Predeclare quality bounds; report top-1, TV/KLD tails and representative coding-task quality, not mean KLD alone.
+4. Evaluate candidate load/format and dequant/GEMV/GEMM shape with existing replay/fixtures. Record row shapes, rounding, accumulation, bytes, instructions and unsupported paths; prohibit silent aliases or fallback.
+5. Compute a conservative end-to-end benefit bound from measured ENG01/RHP09 exposed critical path, subtracting unpack/compute/wait costs. Reject if no credible benefit exceeds paired noise.
+6. Record GO/NO-GO. Only after positive quality, residency and kernel evidence propose a separate managed implementation slice with current-model, long-context, MTP and paired serving gates.
 
 ## Detailed Solution & Technical Design
 
@@ -39,7 +40,7 @@ Owner question 2026-10-19: would IQ-style quantisation, as in GGUF, help radianc
 
 ## Validation
 
-KLD within an agreed budget of the 4-bit baseline; replay microbench shows the 3-bit expert GEMM no slower per byte than 4-bit; the capacity model shows a material cut in host-resident experts.
+Offline round-trip/reference and adversarial row/ID checks bind outputs to pinned inputs. Capacity/traffic simulation covers relevant device-memory pressure and reports uncertainty. Hardware evidence, if later authorized under a GPU lease, includes current model/ABI, KLD tails, MTP acceptance and ABBA serving metrics; offline results alone do not claim activation or E2E speed.
 
 ## Effort & Risk
 
@@ -51,7 +52,7 @@ KLD within an agreed budget of the 4-bit baseline; replay microbench shows the 3
 
 ## Acceptance Criteria
 
-
+A pinned current-build model/source has quantified expert size, residency and traffic benefit with uncertainty and a predeclared minimum useful gain. Expert-only quantization meets an explicit quality budget against a common high-precision reference and representative coding-task check. Current loader/kernel compatibility for gfx1100/gfx1201 is demonstrated or a precise no-go is recorded. Exposed critical-path benefit is justified from ENG01/RHP09. No converter/native kernel implementation is implied by feasibility.
 
 ## Notes
 
@@ -60,3 +61,8 @@ References: Paiton W3A8 (all-resident on 2 x 32 GiB, quality claims given for th
 ## Change Log
 
 - 2026-10-18T14:43:51.861513+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4237
+- 2026-11-20T02:21:53.155223+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria
