@@ -125,3 +125,7 @@ The remote shell has no GitHub HTTPS credentials. The connected GitHub tool publ
 ### Tool-policy caveat for resumed tests
 
 The remote shell permits the pytest command but does not support a working-directory argument; attempting cd failed, and its jobs interface was denied. A broad lab run using an absolute test path from the shell default CWD failed only tools/tests/lab/test_flashnext_parity.py::ScriptTests::test_compare_needs_the_launch_records (107 passed, 2 skipped); its shell script sources tools/env/bigcherry-env.sh relative to the working directory and hides source failure output. This is **not** proof of an upstream code regression. The three native CTests, focused LTX pytest tests and 36 tooling/engine guards passed separately. A resumed agent should run the entire lab suite from the actual worktree CWD using an approved runner before merge.
+
+## 2026-11-20 component-first harness expansion
+
+The CPU-first staged test plan is `docs/design/ltx25-tp3-component-test-ladder.md`: nine independent native CTests plus optional real-model IQ8R/DiT/connector numerical sampling (227 real rows in total). It maps the existing LT3 components to separate failure gates and the incremental native/HIP/E2E promotion path. Current passes are **not** production TP3 functionality, and the original TP1-only guard is unchanged. The GPU lease was held by another actor during this CPU harness slice.

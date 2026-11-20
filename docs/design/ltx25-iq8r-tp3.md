@@ -199,3 +199,7 @@ Each slice must undergo its CTests/patch tests, patch-lint/forbidden-terms, revi
 ## Required Planning and Ledger handoff
 
 The session's available tools did **not** expose the authoritative Planning MCP or Ledger MCP, and the remote shell policy denies the project worktree executable. Per docs/reference/agents/WORKFLOW.md, **do not hand-edit** docs/planning/active items or docs/releases/events files. The owning Planning MCP group must be found/created and LT3-01–15 registered there when access is available. Any substantive PR requires a Ledger MCP unreleased event as part of the normal workflow. This design is a concrete implementation handoff, not a counterfeit authoritative plan or release event.
+
+## Component-first test ladder (2026-11-20)
+
+`docs/design/ltx25-tp3-component-test-ladder.md` gives the independently runnable C00–C08 contracts for model IQ8R, QKV/KV/FFN, global Q/K normalization, attention, guidance, text/connector and optional gfx1030 handoff, resource admission, decoder/output ownership and the synthetic integration chain. Nine native CPU CTests and bounded optional model inspectors are lab-only. Promotion to actual native TP3 waits for operator-level hardware numerical parity, collective/cancellation proof and the real 48-block E2E graph; current upstream LTX TP1 refusal is preserved.

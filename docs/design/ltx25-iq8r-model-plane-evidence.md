@@ -56,3 +56,7 @@ The real model has the same **20 IQ8R linear projection names and shapes in each
 | 10/10/12 | **192** (4 per block) |
 
 The four affected names are **audio_attn1.out.weight**, **audio_attn2.out.weight**, **a2v.out.weight**, and **v2a.out.weight**. All have K=2048, and the 10/10/12 head split yields K spans of 640/640/768, which split the 256-column scale groups. By contrast, audio_ff_down.weight has K=8192 and proportional K spans of 2560/2560/3072, all group-aligned. For an actual production TP3 implementation, head-only admission and output K-sharding admission must therefore be separate per operator. These are geometry/plane rules only: kernel coverage, inter-rank reductions and activation quantization remain untested.
+
+## Connector and cross-modal model sampling
+
+The component-first ladder extended the read-only real-model numerical oracle to check **64 IQ8R projection entries** across the video/audio connector stacks (8 blocks each; QKV, output, FFN-up and FFN-down), plus each connector block norm/gate shape. It also checked 40 cross-modal/text-cross/FFN projection entries from DiT blocks 0, 27, 28 and 47. An additional **104 selected actual IQ8R weight rows** passed BF16/U8/I8 dequantization and the f64 FWHT128 matrix-product identity; total selected real-row checks are now **227** (123 earlier + 104 new). The connector is still intended to execute leader-only: the 8 rejected *hypothetical* audio connector 10/10/12 K cuts are advisory geometry, **not evidence that connectors are distributed**. This is not native codec/kernel parity.

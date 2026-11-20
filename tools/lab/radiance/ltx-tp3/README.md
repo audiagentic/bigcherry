@@ -26,7 +26,9 @@ For the standard tooling test suite (Python test harness only, never engine runt
 
     PYTHONPATH=tools python3 -m pytest tools/tests/lab/test_ltx_tp3_reference.py -q
 
-The model-aware numeric tool also audits all 48 DiT blocks: 960 required IQ8R projection entries share expected shapes; audio 10/10/12 would break scale-group K cuts for four output projections per block (192 invalid). Audio FFN-down remains aligned because its K width is four times the audio head-inner width. This is an admission oracle only, not kernel or TP3 execution coverage.\n\n## Mutation/safety
+The model-aware numeric tool also audits all 48 DiT blocks: 960 required IQ8R projection entries share expected shapes; audio 10/10/12 would break scale-group K cuts for four output projections per block (192 invalid). Audio FFN-down remains aligned because its K width is four times the audio head-inner width. This is an admission oracle only, not kernel or TP3 execution coverage.
+
+## Mutation/safety
 
 Writes only the explicitly selected CMake build directory or pytest temporary directory. Does not touch GPUs, allocate model weights, mutate engine source, weaken the TP1 guard, or hold a hardware lease. No background processes. A mock 16-GiB gfx1030 memory budget is not a residency proof: the real Gemma workspace, allocator and connector placement must be measured separately.
 
@@ -38,3 +40,7 @@ Experimental lab proof for LT3-03/04/05/07/11/12. Do not promote to shared tooli
 ## Optional real-model validation (separate test tooling)
 
 The corresponding Python test tooling can inspect the actual local IQ8R container with bounded disk reads, without running Radiance or modifying production: `tools/tests/lab/test_ltx_iq8r_planes.py` checks every declared IQ8R plane extent and `tools/tests/lab/test_ltx_iq8r_numeric.py` performs sampled row-level BF16/U8/I8/FWHT128 dense-versus-TP3 arithmetic. Both accept an explicit model-file positional argument and have CPU-only synthetic pytest fixtures. Evidence and limitations: `docs/design/ltx25-iq8r-model-plane-evidence.md`. The former's pure header/plane validation and latter's f64 oracle do not qualify the native HIP kernel. A 10/10/12 audio **K** split is forbidden at group 256 even though it owns whole attention heads.
+
+## Per-component harnesses and promotion gates
+
+The lab now owns **nine independently selectable native CTests**: `ltx_tp3_reference_test`, `ltx_tp3_protocol_test`, `ltx_tp3_numerical_test`, `ltx_tp3_linear_test`, `ltx_tp3_rms_test`, `ltx_tp3_handoff_test`, `ltx_tp3_guidance_test`, `ltx_tp3_output_test` and `ltx_tp3_micro_pipeline_test`. The two additional real-container Python oracles inspect model planes, sampled quantized rows, all 48 DiT block layouts and both eight-layer connector stacks. For the exact matrix of component pass/fail gates, device promotion steps and end-to-end acceptance see `docs/design/ltx25-tp3-component-test-ladder.md`. All native tests are synthetic and make no production engine calls; optional real-file tests are read-only and CPU-only.
