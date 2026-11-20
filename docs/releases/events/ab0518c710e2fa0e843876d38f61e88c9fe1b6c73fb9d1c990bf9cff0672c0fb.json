@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_020220_restored-the-flash-next-packed_4291",
+  "files": [
+    "engines/radiance/patches/rad0042_kv_b16_selftest/patch.py",
+    "engines/radiance/patches/rad0042_kv_b16_selftest/patch.toml",
+    "engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md"
+  ],
+  "plan-item-ids": [
+    "VTP44",
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Ported the diagnostic packed KV selftests to Radiance 2.2 ABI44 with opaque B16/V4 tensor inputs, current kernel registrations and a separate host contract fixture. Verified exact-base apply and idempotence, descriptor execution and C++ syntax. The earlier GPU evidence applies to its original base.",
+  "timestamp-utc": "2026-11-20T02:02:20.745176Z",
+  "user-summary-candidate": "Restored the Flash-Next packed KV diagnostic cases on the Radiance 2.2 source."
+}
