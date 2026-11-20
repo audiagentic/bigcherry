@@ -19,7 +19,6 @@ class EngineRegistryIsolationTests(unittest.TestCase):
         radiance = registry.load_registry("radiance", radiance_root)
         expected = {
             "rad0002_moe_remote_handoff",
-            "rad0003_mtp_full_head_switch",
             "rad0004_moe_remote_diagnostics",
         }
         self.assertTrue(expected <= set(radiance.by_id))

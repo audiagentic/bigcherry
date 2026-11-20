@@ -2,7 +2,7 @@
 id: RHP02
 order: 9
 plan: patching-radiance-heat-placement
-state: pending
+state: deprecated
 created-at: '2026-10-15T01:35:00+00:00'
 breadth: ''
 skill: advanced
@@ -63,6 +63,9 @@ High: long-prefill host run-ahead and remote-only mapped units can hide holes in
 Depends on RHP01 and merged/verified RAD09. Does not implement ownership migration; that is RHP05/06.
 
 STATUS 2026-11-01: recording is cheap and on by default (histogram in pinned host memory, #500; launcher --record-heat, #502), but the item's goal - one versioned observer feed shared by the engine HeatEngine and the helper ownership policy, retiring R3_MOE_WORKER_HISTOGRAM / _HEAT after parity - is not done. It is a stage 1 dependency of the live-placement roadmap: RHP04's stage 1 policy loop consumes coherent interval snapshots from this feed (the pinned-memory histogram is the interim source until parity).
+
+2026-11-20 (AEDT): deprecated. Only slice A (the inactive read-only credit observer ABI, patch rad0039_moe_heat_observer) was built; nothing registers it and the engine-side consumer (slice B) was never built, so it never had an activation or hardware result. The patch is abandoned and kept unchanged as evidence in engines/radiance/patches/archive/rad0039_moe_heat_observer (row in archive/ARCHIVE.md, with its host ABI test and package test under tests/). Reusing the idea means a new patch identity.
+
 
 ## Staged plan (GPT analysis 2026-11-13)
 
@@ -174,3 +177,5 @@ This is a **record only**, not the RHP02 ABI migration. Two independently collec
 
 - 2026-11-01T22:52:30.560823+00:00 (updated-by): Updated: order=9, section:notes
 - 2026-11-13T03:54:37.777943+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:48:36.118545+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:48:53.460128+00:00 (state-transition): State: pending → deprecated

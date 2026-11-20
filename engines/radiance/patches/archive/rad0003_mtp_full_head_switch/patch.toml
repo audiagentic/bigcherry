@@ -1,0 +1,13 @@
+schema = 1
+id = "rad0003_mtp_full_head_switch"
+order = 3
+state = "rejected"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+retirement = "rejected: RAD_MTP_FULL_HEAD=1 gave MTP acceptance 0.63-0.65 against 0.62-0.64 with the container draft head on the measured Flash-Next workload, so draft-head precision does not explain the acceptance gap and the switch is not worth adopting; plan RAD01"
+plan-item = "RAD01"
+plan-ids = ["RAD01"]
+requires = []
+conflicts = []
+tags = ["mtp", "speculative-decoding"]
