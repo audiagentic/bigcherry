@@ -109,7 +109,7 @@ source tools/env/bigcherry-env.sh >/dev/null 2>&1
 [ -n "${BC_WORK_ROOT:-}" ] || { echo "flashnext-parity: BC_WORK_ROOT not set (tools/env/bigcherry-env.sh)" >&2; exit 1; }
 RUN=$BC_WORK_ROOT/flashnext
 URL=http://127.0.0.1:$PORT
-BUILD=$(cd "$BUILD" && pwd)
+BUILD=$(cd "$BUILD" && pwd -P)
 BC_SERVE="$BUILD/radiance_home/bin/bc-serve"
 [ -x "$BC_SERVE" ] || { echo "flashnext-parity: $BUILD has no native radiance_home/bin/bc-serve" >&2; exit 2; }
 [ -n "${BC_MODEL_ROOT:-}" ] || { echo "flashnext-parity: BC_MODEL_ROOT not set" >&2; exit 2; }
@@ -121,9 +121,12 @@ NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BU
 # journalled settings; a missing lease or missing qualification fails closed.
 # Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
 [ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
-# A build directory (not an installed bundle) has no site file naming the engine home: say it, or the owner refuses
-# with "missing required key: engine.radiance_home".
-[ -d "$BUILD/radiance_home" ] && NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
+# Installed bc-serve binds its verified runtime home and rejects an override.
+# A build-tree owner needs the runtime home supplied explicitly.
+owner_path=$(realpath -- "$BC_SERVE")
+if [[ "$owner_path" != "$BUILD/radiance_home/bin/bc-serve" || "$(basename -- "$(dirname -- "$BUILD")")" != releases ]]; then
+  NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
+fi
 # The helpers need the workload heat file (it has no portable path). The default is the Flash-Next mixed-workload heat,
 # the launcher's default when the v1.17.0 baseline was taken (that run's own copy was lost; this is the 2026-11-18
 # re-recording). perf51 (a different layout's recording) costs ~10% of 256K prefill on flashnext-4gpu

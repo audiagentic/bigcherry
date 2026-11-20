@@ -116,6 +116,8 @@ Live direct per-slot accounting at bb1b8a190 reproduced exactly 139 published an
 
 Packet trace captured 102 publish and 51 finish dispatches for parent 1. Both old and inverse-aware publish hooks had applied to the 2.2 graph because a multiline negative guard matched after the capability marker. Checkpoint 03f587211 uses a whole-file applicability guard and exact one-publish fixture. The leased helper-on Flash-Next checkpoint generated 24 tokens in each fresh, named and explicit stored session and used one exact manifest with only two measurement attempts. Explicit replay used the original site inputs after the authored YAML was removed. Final integrated runtime build, bounded quality/performance and release/install gates remain.
 
+Integrated build freeze 0851977e4 includes main through a28b6b350, the single-publish fix, remote rank rollback/clean drain and ported diagnostic packages. Regenerated shared v3 schema fingerprint starts 63e1e00b. Three host contract CTests and 12 Python checks passed. The exact full runtime build is running. Verified local v1.17.0 build bc-radiance-1170.34.0 is the planned matched old-pin control. The newer 1170.35.0 release did not expose a runtime archive at inspection.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -145,3 +147,4 @@ Packet trace captured 102 publish and 51 finish dispatches for parent 1. Both ol
 - 2026-11-20T01:03:47.081769+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T01:12:49.299909+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:05:25.873512+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:18:45.278897+00:00 (updated-by): Updated: section:notes
