@@ -4814,7 +4814,7 @@ void helper_vram_owner_graph(Fixture& t) {
     fs::create_symlink(BC_FAKE_ENGINE, home / "helpers/r3_moe_worker");
     in.named_config = "flashnext-2xtx";
     in.options.sets.insert(in.options.sets.end(),
-                          {"memory.helper_budgets_mib=[1,1]", "memory.host_pool_mib=1024", "memory.host_kv_mib=0"});
+                          {"memory.helper_budgets_mib=[1,1]", "memory.host_pool_mib=2048", "memory.host_kv_mib=0"});
     const auto selected = bc::serving::resolve(in.options, bc::serving::detect(t.root));
     const auto& value = selected.values;
     const auto& engine = value.at("engine");
@@ -4901,7 +4901,8 @@ void helper_vram_owner_graph(Fixture& t) {
     };
     const auto fresh = serve_and_stop({"native config inspector", "native v3 measuring draft writer",
         "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "native v3 measured writer",
-        "helper0", "helper1", "engine"});
+        "native v3 measuring draft writer", "helper0 measuring", "helper1 measuring",
+        "native v3 measuring engine", "native v3 measured writer", "helper0", "helper1", "engine"});
     assert(samples.size() == 2 && !fs::exists(authored));
     for (const auto& [bdf, count] : samples) {
         assert(count >= 4);
@@ -4912,6 +4913,17 @@ void helper_vram_owner_graph(Fixture& t) {
     const auto measured_samples = samples;
     const auto stored = fs::path(fresh.at("manifest").get<std::string>());
     const auto attempt = fresh.at("selection").at("plan_measurement_attempt");
+    size_t attempts = 0;
+    for (const auto& dir : fs::directory_iterator(owner.run_dir / "measurement-attempts")) {
+        ++attempts;
+        assert(fs::is_regular_file(dir.path() / "plan.json"));
+        if (dir.path().filename() != attempt.get<std::string>())
+            assert(!fs::exists(owner.run_dir / ("manifest-native-" + dir.path().filename().string() + ".json")));
+    }
+    assert(attempts == 2);
+    const auto final = bc::serving::v2::load_manifest(stored, bc::serving::v2::PlanUse::serving);
+    assert(final && final.value().spec.resources.host.pool_mib == 1024 &&
+           final.value().spec.native_config.yaml_utf8 == yaml);
     const std::vector<std::string> replay_roles{"native config inspector", "helper0", "helper1", "engine"};
     const auto check_replay = [&](const Json& replayed) {
         assert(replayed.at("selection").at("replay") == true);
