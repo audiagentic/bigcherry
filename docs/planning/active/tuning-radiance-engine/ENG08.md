@@ -53,9 +53,11 @@ flashnext-4gpu serves at depth 4 with the live policy active and the evidence co
 
 ## Notes
 
+2026-11-20 (AEDT): paused at the owner's direction so the GPUs go to the LTX and RUM09 work. Done: the native depth-3 calibration filed a v1 record under the production key c2a1aa0e (the key does not include the MTP depth, so depth 3 and depth 4 share it; a depth-4 calibration is refused as a duplicate), the production store now holds only that v1 record, and the pre-v1 reader is retired (branch retire-post1169). The policy-on A/B of fixed depth 3 against 4 is deferred: point 1 (depth 3) is in the scratch folder, point 2 partial. Policy-off evidence already shows depth 4 at +4.5% (1 stream) and +9.5% (256K) with a tie at 6 streams (docs/evidence/2026-11-20-eng05-mtp-depth). To finish: ABBA 3,4,4,3 with the policy on, 2 launches each, then set the winning depth per config in engines/radiance/configs/flashnext.toml and close.
 
 
 ## Change Log
 
 - 2026-11-19T21:44:41.041586+00:00 (created-by): Created by agent
 - 2026-11-19T21:44:55.241499+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-20T01:49:34.579407+00:00 (updated-by): Updated: section:notes

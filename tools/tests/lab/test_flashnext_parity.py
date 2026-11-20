@@ -359,7 +359,7 @@ class RunRecordsTests(unittest.TestCase):
 
         # MRC04's production snapshot includes the complete narrow key and
         # all quantities. Synthetic partial keys are correctly invalid.
-        fixture = ROOT / "tools/tests/fixtures/calibration/production-2026-11-19.toml"
+        fixture = ROOT / "tools/tests/fixtures/calibration/production-2026-11-20.toml"
         self.calibration.write_bytes(fixture.read_bytes())
         current = [item for item in calibration_records.read_native_toml(self.calibration)
                    if item["status"] == "current"]

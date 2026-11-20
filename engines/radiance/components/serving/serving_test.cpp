@@ -1660,12 +1660,21 @@ void manifest_writer_step(Fixture& t) {
                        "effect_row_noise_ns = 1550000\n"
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
-        // Pre-MRC04 #1169 scoped records remain active. Records lacking calibration_inputs entirely are an
-        // unsupported format and are refused.
+        // A record in an older format is refused, never read as evidence: the pre-v1 scoped record (no
+        // record_schema_version) and the hash-only one (no calibration_inputs either).
         {
             std::ifstream input(calibrated.calibration_cache);
             std::string historical((std::istreambuf_iterator<char>(input)),
                                     std::istreambuf_iterator<char>());
+            const auto refused_with_unsupported_format = [&](const std::string& file, const std::string& text) {
+                sv::ManifestInputs old = calibrated;
+                old.calibration_cache = t.file(file.c_str(), text);
+                try { (void)sv::build_manifest(old); }
+                catch (const std::exception& e) {
+                    return std::string(e.what()).find("unsupported record format") != std::string::npos;
+                }
+                return false;
+            };
             for (const std::string field : {"record_schema_version", "calibration_kind",
                                             "calibration_key_fields", "source_revision",
                                             "run_id", "host_facts_digest"}) {
@@ -1675,14 +1684,7 @@ void manifest_writer_step(Fixture& t) {
                 assert(end_line != std::string::npos);
                 historical.erase(at, end_line - at + 1);
             }
-            sv::ManifestInputs scoped = calibrated;
-            scoped.calibration_cache = t.file("post-1169-policy.toml", historical);
-            const auto qualified = sv::build_manifest(scoped);
-            assert(qualified.document.at("spec").at("handoff").at("placement").contains("live_policy"));
-            const auto scoped_record = sv::read_live_policy_record(scoped.calibration_cache, key);
-            assert(scoped_record && scoped_record->record_schema_version == 1);
-            assert(scoped_record->source_revision.empty() &&
-                   scoped_record->run_id.empty() && scoped_record->host_facts_digest.empty());
+            assert(refused_with_unsupported_format("pre-v1-policy.toml", historical));
 
             for (const std::string field : {"calibration_inputs", "source_plan_key",
                                             "source_engine_build"}) {
@@ -1692,20 +1694,11 @@ void manifest_writer_step(Fixture& t) {
                 assert(end_line != std::string::npos);
                 historical.erase(at, end_line - at + 1);
             }
-            sv::ManifestInputs legacy = calibrated;
-            legacy.calibration_cache = t.file("hash-only-policy.toml", historical);
-            bool hash_only_refused = false;   // a store with a hash-only row is refused, not read as audit evidence
-            try { (void)sv::build_manifest(legacy); }
-            catch (const std::exception& e) {
-                hash_only_refused = std::string(e.what()).find("unsupported record format") != std::string::npos;
-            }
-            assert(hash_only_refused);
+            assert(refused_with_unsupported_format("hash-only-policy.toml", historical));
         }
-        // The 2026-11-19 production store (its hash-only rows pruned) holds the #1169 scoped
-        // record keyed c2a1.... Derive with the
+        // The production store (one native v1 record keyed c2a1...). Derive with the
         // *actual recorded scope* and this CPU-only synthetic model geometry.
-        // No production file is modified, and missing v1 provenance is not
-        // guessed during activation.
+        // No production file is modified.
         {
             constexpr const char* production_key =
                 "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
@@ -1753,7 +1746,7 @@ void manifest_writer_step(Fixture& t) {
             const auto derived = sv::derive_manifest_live_policy(production, container,
                                                                   production_spec, &skip);
             if (!derived || !derived->policy.is_object() || derived->policy.empty())
-                throw std::runtime_error("post-#1169 production policy did not derive: " + skip);
+                throw std::runtime_error("production policy did not derive: " + skip);
             std::ifstream check(store, std::ios::binary);
             const std::string after((std::istreambuf_iterator<char>(check)),
                                      std::istreambuf_iterator<char>());

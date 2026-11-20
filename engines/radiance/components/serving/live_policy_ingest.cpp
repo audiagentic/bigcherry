@@ -306,7 +306,7 @@ std::vector<std::string> prune_live_policy_store(const fs::path& cache, bool app
         const auto* rows = parsed["live_policy_record"].as_array();
         const auto* row = rows && rows->size() == 1 ? (*rows)[0].as_table() : nullptr;
         if (!row) invalid("unparseable live_policy_record block");
-        if (row->contains("calibration_inputs")) kept += block;
+        if (row->contains("calibration_inputs") && row->contains("record_schema_version")) kept += block;
         else removed.push_back(std::string((*row)["plan_cache_key"].value_or(std::string_view("?"))));
     }
     if (!apply || removed.empty()) return removed;
