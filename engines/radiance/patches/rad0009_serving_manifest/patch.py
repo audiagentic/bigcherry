@@ -539,6 +539,12 @@ int prepare_native_engine_config(const NativeEngineInputs& admitted, rad::Config
         expected_cards.reserve(admitted.engine_bdfs.size());
         for (size_t i = 0; i < admitted.engine_bdfs.size(); ++i)
             expected_cards.push_back(static_cast<int>(i));
+        // rank-devices is a machine fact: a YAML that omits it takes the admitted ordered BDF selection (sealed in the
+        // manifest); one that states it must match that selection exactly (checked below).
+        if (cfg.given.find("--rank-devices") == cfg.given.end() && admitted.rank_devices) {
+            cfg.rank_devices = *admitted.rank_devices;
+            cfg.given.insert_or_assign("--rank-devices", "manifest spec.processes.engine.device.rank_devices");
+        }
         if (reject_unless(fleet.cards == expected_cards, "YAML card ordinals differ from selected rank order") ||
             reject_unless(cfg.tp == admitted.tp, "YAML TP differs from admitted engine TP") ||
             reject_unless(cfg.host == "127.0.0.1", "only the managed loopback listener is supported") ||

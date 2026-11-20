@@ -260,6 +260,64 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
 }
 } // namespace
 
+// rank-devices is a machine fact. The admitted manifest names the ordered BDFs; a YAML that omits the option takes
+// them, one that states the same list passes, and one that states another list is refused.
+std::string with_rank_devices(wire::Manifest manifest, const std::vector<std::string>& admitted,
+                              const std::optional<std::string>& yaml_list) {
+    manifest.spec.processes.engine.device.rank_devices = admitted;
+    auto& native = manifest.spec.native_config;
+    auto& yaml = native.yaml_utf8;
+    if (yaml_list) {
+        const auto begin = yaml.find("\r\n    mixed-step-target-ms:");
+        check(begin != std::string::npos, "fixture YAML lost its mixed-step-target-ms line");
+        const auto end = yaml.find("\r\n", begin + 2);
+        check(end != std::string::npos, "fixture YAML lost its line ending");
+        yaml.insert(end, "\r\n    rank-devices: \"" + *yaml_list + "\"");
+    }
+    native.sha256 = bc::serving::sha256_hex(yaml);
+    if (manifest.spec.plan.engine_memory)
+        manifest.spec.plan.engine_memory->cache_key = wire::plan_cache_key(manifest);
+    const auto encoded = wire::write_s10(manifest);
+    if (!encoded) throw std::runtime_error(wire::render_human("rank-devices fixture", encoded.error()));
+    return encoded.value();
+}
+
+// Returns the engine Config the measuring entry prepares, or nullopt when the entry refuses the manifest.
+std::optional<rad::Config> measuring_config(const std::string& bytes) {
+    const Descriptor sealed;
+    sealed.write_bytes(bytes);
+    sealed.seal();
+    const wire::Manifest manifest = read(sealed.path(), wire::PlanUse::measuring);
+    const auto native = wire::native_config_view(manifest);
+    check(native.has_value(), "rank-devices fixture has no native YAML view");
+    std::filesystem::current_path(native->identity.resolution_root);
+    std::vector<std::string> storage = {"radiance", "--manifest", sealed.path(), "--role", "engine",
+                                        "--plan-memory", "unused-plan.json", "--plan-memory-ranks",
+                                        "unused-ranks.json"};
+    std::vector<char*> argv;
+    for (std::string& arg : storage) argv.push_back(arg.data());
+    int argc = static_cast<int>(argv.size());
+    argv.push_back(nullptr);
+    char** raw_argv = argv.data();
+    if (!bc_serving_engine_argv(&argc, &raw_argv)) return std::nullopt;
+    check(bc_plan_memory_take_flag(&argc, &raw_argv) == 0, "rad0011 rejected the rank-devices fixture flags");
+    rad::Config cfg;
+    if (bc_serving_take_native_config(&cfg) != 1) return std::nullopt;
+    return cfg;
+}
+
+void check_rank_devices(const wire::Manifest& measuring) {
+    const std::vector<std::string> admitted = {"0000:09:00.0"};
+    const auto omitted = measuring_config(with_rank_devices(measuring, admitted, std::nullopt));
+    check(omitted && omitted->rank_devices == admitted &&
+              omitted->given.at("--rank-devices") == "manifest spec.processes.engine.device.rank_devices",
+          "a YAML without rank-devices must take the admitted ordered BDF selection");
+    const auto same = measuring_config(with_rank_devices(measuring, admitted, "0000:09:00.0"));
+    check(same && same->rank_devices == admitted, "a YAML stating the admitted rank-devices must pass");
+    check(!measuring_config(with_rank_devices(measuring, admitted, "0000:03:00.0")),
+          "a YAML stating other rank-devices than the admitted selection must be refused");
+}
+
 int main(int argc, char** argv) {
     static_assert(wire::kContractVersion == 3, "consumer must link only the v3 generated reader");
     static_assert(RAD_ABI_VERSION == 44u, "consumer must match the ABI44 candidate engine");
@@ -290,6 +348,7 @@ int main(int argc, char** argv) {
         measuring_without_pool.seal();
         check_native_measuring_main(measuring_without_pool.path(),
                                     read(measuring_without_pool.path(), wire::PlanUse::measuring));
+        check_rank_devices(measuring);
         reject_wrong_use(argv[1], wire::PlanUse::serving);
         reject_wrong_use(argv[2], wire::PlanUse::measuring);
         reject_direct_v3_serving_start(argv[2]);

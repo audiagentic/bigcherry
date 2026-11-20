@@ -3561,7 +3561,7 @@ void session_engine_plan(Fixture& t) {
         // stopped before any writer, power admission, engine or helper child. One pass and one refusal per rule.
         if (bc::serving::v2::kContractVersion == 3) {
             int preflight_runs = 0;
-            const auto preflight = [&](const std::function<void(ss::Env&)>& tweak) -> std::string {
+            const auto preflight = [&](auto&& tweak) -> std::string {
                 ss::EnginePlanInputs pre = gated;
                 pre.native_preflight = true;
                 tweak(pre.native_admission->runtime_overrides);
@@ -3585,7 +3585,7 @@ void session_engine_plan(Fixture& t) {
                     assert(kind == ss::ChildKind::native_config_inspector);   // never a writer, helper or engine
                 return refusal;
             };
-            const auto refused_for = [&](const std::string& why, const std::function<void(ss::Env&)>& tweak) {
+            const auto refused_for = [&](const std::string& why, auto&& tweak) {
                 const std::string refusal = preflight(tweak);
                 if (refusal.find(why) == std::string::npos)
                     throw std::runtime_error("preflight: expected a refusal naming '" + why + "', got '" + refusal + "'");
