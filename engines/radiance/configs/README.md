@@ -47,23 +47,22 @@ run root to its subprocess manifest writer and stored-manifest replay.
 
 ## Serving a config
 
-`bc-serve` of the build that serves (`<build>/radiance_home/bin/bc-serve`; RSC02) owns the whole session: it makes the
-measured manifest (measuring first on a plan-cache miss), starts the engine from it, waits for `/health`, sends the
-start canary, and stops everything it started, verified, on `stop`, a signal or a child's exit. Engine-only configs for
-now; helper configs still start with the lab launcher.
+A matched v2.2 build uses native Radiance YAML for the engine. The named TOML
+profile selects BigCherry's physical GPU and helper assignment and its runtime
+admission policy. The owner validates and seals the exact YAML bytes, measures
+the plan on a miss, and records the result in its launch manifest. Named and
+explicit stored starts recheck live room. The explicit start reads the admitted
+YAML from the manifest.
 
-```
-agent-lease acquire gpu --ttl 4h --purpose "..." -- \
-  bc-serve serve --run-dir RUN --configs engines/radiance/configs --model-root MODELS --site SITE \
-                 --set layout.name='"qwen27b-tp3-int8-556"'      # in the foreground; the lease covers the session
-bc-serve start ...same options...                                # detached (hosts without a lease system)
-bc-serve status --run-dir RUN                                    # config, model, cards, port, manifest, processes
-bc-serve stop --run-dir RUN                                      # 0 once every process has exited
-```
+An installed v2.2 build with the verified `flashnext-4gpu.yaml` payload selects
+it for `bc-serve start flashnext-4gpu --run-dir RUN --model-root MODELS`.
+A build-tree owner uses `--native-config YAML` and `--configs DIR`. Use a native
+YAML file for variants without a bundled profile. The model root resolves the
+relative model path in the YAML. The bundled listener binds loopback port 36080.
 
-The run directory holds the session's lock, control socket, record (`session.json`), plan cache, manifests and logs.
-The site file names the machine's values (`engine.radiance_home`, the port); the engine gets no configuration but its
-manifest.
+The run directory holds the lock, control socket, `session.json`, plan cache,
+manifests and child logs. Use `bc-serve status --run-dir RUN` to inspect it and
+`bc-serve stop --run-dir RUN` to wait for verified child exit.
 
 ## Format
 

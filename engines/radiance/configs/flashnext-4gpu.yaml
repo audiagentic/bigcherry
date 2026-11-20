@@ -1,0 +1,21 @@
+cards: [0]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr4d,libr3moe,libref
+models:
+  flashnext:
+    model: radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+    tp: 1
+    max-model-len: 262144
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    ngram-placement: ram
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+    prefill-interleave: 0
+    mixed-step-target-ms: 0
