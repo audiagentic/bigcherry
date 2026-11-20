@@ -55,7 +55,7 @@ Each patch is validated, explicitly experimental with a stated reason, or reject
 
 ## Notes
 
-
+2026-11-20: rad0005_mp4_ffmpeg6_writer is archived (superseded by Radiance 2.2, which includes the FFmpeg 6 write callback support upstream; RUM02). The rad0005 mentions above are historical; no FFmpeg 6 build test or host-compat declaration is needed for it any more. See engines/radiance/patches/archive/ARCHIVE.md.
 
 ## Acceptance
 
@@ -64,7 +64,6 @@ patch-status shows no untested radiance patch without a decision recorded in thi
 ## Change Log
 
 - 2026-11-15T22:57:03.917108+00:00 (created-by): Created by agent
-
 
 ## Status 2026-11-16: patches still untested and the decision for each
 
@@ -84,3 +83,4 @@ patch-status shows no untested radiance patch without a decision recorded in thi
 - rad0003_mtp_full_head_switch and rad0007_hc_pf2_fp8_down: remain in progress, no rejection recorded (owner decision).
 - rad0004, rad0010 (diagnostic) and rad0006 (superseded): handled by PRQ05.
 - The production exception list (untested-in-production.toml) is empty; PRQ05 replaces it with source classes.
+- 2026-11-20T12:47:11.749269+00:00 (updated-by): Updated: section:notes

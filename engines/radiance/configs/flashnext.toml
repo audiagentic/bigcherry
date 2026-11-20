@@ -88,7 +88,7 @@ combine = true
 heat = "@bundle/heat/flashnext-mixed.hot-first"
 
 # NOT the default: flashnext-4gpu serves an fp8 cache for 8 sessions of 262,144 tokens. bf16 keys and int8 values
-# (bf16_i8, rad0038) keep the keys exact (KLD against bf16 0.00269 against fp8's 0.00495) at 1.283x the bf16 capacity
+# (bf16_i8, carried by rad0048-rad0053; measured on the archived rad0038) keep the keys exact (KLD against bf16 0.00269 against fp8's 0.00495) at 1.283x the bf16 capacity
 # (1,002,364 tokens), but at 8 sessions the engine card (R9700, 32 GB) is 5.47 GB short at admission (gpu_room: live
 # 32.17 GB against 37.64 GB required), so this variant serves 4 sessions (3.8 at 262,144 tokens). Two launches, policy on,
 # 451 s warmup, 2026-11-19: 256K prefill 2916 / 3051 tok/s, document prefill 3605, cold TTFT 8.45 s, one-stream decode

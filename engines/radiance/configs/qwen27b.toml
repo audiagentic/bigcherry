@@ -84,7 +84,7 @@ description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M to
 base = "qwen27b-tp3-int8-556-long"
 description = "qwen27b-tp3-int8-556-long with a 16-bit (bf16) cache: about 624,000 tokens, no cache rounding"
 
-# bf16 keys, int8 values with an f16 scale per 32 dims (rad0038; VTP43, ENG06): 818,896 tokens (3.1 sessions at 262,144)
+# bf16 keys, int8 values with an f16 scale per 32 dims (layout carried by rad0048-rad0053; measured 2026-11-19 on the archived rad0038; VTP43, ENG06): 818,896 tokens (3.1 sessions at 262,144)
 # against bf16's 624,048, with the bf16 cache's decode speed. One fresh start each, ABBA, 2026-11-19, against this config's
 # fp8 and bf16 siblings: engine decode 27.6 ms/step (bf16 27.6, fp8 28.0); first token of a 100K prompt 42.5 s (bf16 43.6,
 # fp8 45.1), 60K 23.5 s (23.6 / 24.3); needles at 48K and 100K 18 of 18. KLD against bf16 0.00269 on the long corpus

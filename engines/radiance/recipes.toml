@@ -219,7 +219,7 @@ stack = "rocm-7-2"
 # Left on its default (AUTO) a build that cannot find them compiles without a decoder and the engine logs "the 'vision' encoder
 # is loaded but this build has no media decoder, so every media part will be refused" while the vision tower still sits in VRAM
 # (879 MiB a rank): released builds shipped that way until 2026-11-19. ON makes a missing FFmpeg a configure error. FFmpeg 6.1 is
-# enough (rad0005 covers its avio signature). CI installs the -dev packages in its build image; on the agent container export
+# enough (Radiance 2.2 carries the FFmpeg 6 avio write-callback signature upstream; rad0005 is archived). CI installs the -dev packages in its build image; on the agent container export
 # CMAKE_PREFIX_PATH=/opt/ffmpeg6 (tools/env/bigcherry-env.sh does when /opt/ffmpeg6 exists).
 options = { RAD_BUILD_TESTS = "OFF", RAD_WITH_FFMPEG = "ON", CMAKE_C_COMPILER_LAUNCHER = "bc-ccache", CMAKE_CXX_COMPILER_LAUNCHER = "bc-ccache", CMAKE_HIP_COMPILER_LAUNCHER = "bc-ccache" }
 c-compiler = "${RADIANCE_HOST_CC}"
