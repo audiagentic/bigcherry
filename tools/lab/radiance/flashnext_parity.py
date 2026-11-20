@@ -600,9 +600,12 @@ def publish_launch_record(
         inputs["calibration_record"] = measurement_producers.canonical_blob(
             selected_calibration(Path(cal), key)
         )
+    runtime_members = _load(out / "runtime-members.json")
     identity = {
         "engine": engines.RADIANCE, "build_id": metadata["build_id"],
-        "binary_sha256": metadata["binary_hash"],
+        # Use the runtime member captured before launch; some release metadata
+        # identifies an unstripped artifact rather than the executable run.
+        "binary_sha256": runtime_members["bin/radiance"],
         "source_revision": run["revision"],
         "model": spec["plan"]["engine_memory"]["model_identity"],
         "layout": spec["intent"]["layout"],

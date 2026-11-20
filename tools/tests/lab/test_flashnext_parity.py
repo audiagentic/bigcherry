@@ -277,6 +277,7 @@ class RunRecordsTests(unittest.TestCase):
         out = self.root / name
         make_run(out, scales)
         info = json.loads((out / "run.json").read_text())
+        (out / "runtime-members.json").write_text(json.dumps({"bin/radiance": "e" * 64}))
         info["build"] = str(self.build)
         info["build_identity"] = fp.build_identity(self.build)
         (out / "run.json").write_text(json.dumps(info))
@@ -342,6 +343,7 @@ class RunRecordsTests(unittest.TestCase):
         ) as publish:
             digest = fp.publish_launch_record(out, out / "launch-1", work_root=self.root)
         self.assertEqual(publish.call_count, 1)
+        self.assertEqual(publish.call_args.kwargs["identity"]["binary_sha256"], "e" * 64)
         self.assertEqual(publish.call_args.kwargs["power_settings"]["effective"], {"profile": "stock"})
         self.assertEqual(
             run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
