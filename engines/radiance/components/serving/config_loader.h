@@ -19,11 +19,16 @@
 
 #include <nlohmann/json.hpp>
 
+#include "serving.h"
+
 namespace bc::serving {
 
 /* The config files: `given` (--configs), else BIGCHERRY_CONFIGS (':'-separated); a directory gives its *.toml in name
  * order. Empty when neither names any: configs are optional and the resolver then reads layouts only. */
 std::vector<std::filesystem::path> config_sources(const std::vector<std::filesystem::path>& given);
+
+/* NAME.yaml in the first of the config sources (`given`, else BIGCHERRY_CONFIGS) that holds it; empty when none does. */
+std::filesystem::path config_yaml_for(const std::string& name, const std::vector<std::filesystem::path>& given);
 
 struct ConfigSet {
     nlohmann::json config = nlohmann::json::object();   // name -> effective table (variants applied, no `base`)
@@ -38,5 +43,8 @@ ConfigSet load_configs(const std::vector<std::filesystem::path>& files);
  * relative model is left unresolved (`model_unresolved`), and selecting that config is refused. */
 nlohmann::json config_as_layout(const nlohmann::json& effective, const std::filesystem::path& model_root = {},
                                 const std::filesystem::path& heat_source = {});
+
+/* The same, for a config read from its native YAML (an InspectedConfig): the resolver's only source of configs. */
+nlohmann::json inspected_as_layout(const InspectedConfig& config, const std::filesystem::path& model_root = {});
 
 } // namespace bc::serving

@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <cstdlib>
+#include <sstream>
 #include <functional>
 #include <set>
 #include <stdexcept>
@@ -15,7 +16,7 @@ using Json = nlohmann::json;
 namespace {
 
 // The settings tables: the resolver's key prefixes a config may set. Everything else in a config is its recipe.
-const std::set<std::string> kSettingsTables = {"service", "engine", "tuning", "memory", "helper", "handoff"};
+const std::set<std::string> kSettingsTables = {"service", "engine", "tuning", "memory", "helper", "handoff", "kernels"};
 const std::set<std::string> kRecipeKeys = {"description", "base", "model", "ranks", "tp_wire", "helpers"};
 const std::set<std::string> kRankKeys = {"arch", "count"};
 const std::set<std::string> kHelperKeys = {"arch", "count", "placement", "budget_mib", "share"};
@@ -164,6 +165,23 @@ std::vector<fs::path> config_sources(const std::vector<fs::path>& given_in) {
     return files;
 }
 
+std::filesystem::path config_yaml_for(const std::string& name, const std::vector<std::filesystem::path>& given) {
+    std::vector<fs::path> dirs = given;
+    if (dirs.empty())
+        if (const char* env = std::getenv("BIGCHERRY_CONFIGS"))
+            for (std::stringstream parts(env); parts.good();) {
+                std::string part;
+                std::getline(parts, part, ':');
+                if (!part.empty()) dirs.emplace_back(part);
+            }
+    if (name.empty() || name.find('/') != std::string::npos) return {};
+    for (const fs::path& dir : dirs) {
+        const fs::path candidate = fs::is_directory(dir) ? dir / (name + ".yaml") : fs::path{};
+        if (!candidate.empty() && fs::is_regular_file(candidate)) return candidate;
+    }
+    return {};
+}
+
 ConfigSet load_configs(const std::vector<fs::path>& files) {
     Json written = Json::object(), source = Json::object();
     for (const auto& f : files) {
@@ -265,6 +283,50 @@ Json config_as_layout(const Json& c, const fs::path& model_root, const fs::path&
     else l["model_unresolved"] = model.string();
     if (!settings.empty()) l["settings"] = settings;
     return l;
+}
+
+// An inspected config (its native YAML, parsed by the engine) as the same effective table a catalogue entry gave, so one
+// builder (config_as_layout) and the resolver's own checks serve both. `@bundle/heat/...` resolves against the YAML's
+// file, whose directory is the bundle's configs/.
+Json inspected_as_layout(const InspectedConfig& c, const fs::path& model_root) {
+    const XBigcherry& x = c.x;
+    Json effective = Json::object();
+    effective["description"] = x.description;
+    effective["model"] = c.model;
+    Json ranks = Json::array();
+    for (const XRank& r : x.ranks) ranks.push_back({{"arch", r.arch}, {"count", r.count}});
+    effective["ranks"] = ranks;
+    if (c.tp_wire) effective["tp_wire"] = *c.tp_wire;
+    if (!x.helpers.empty()) {
+        Json helpers = Json::array();
+        for (const XHelperGroup& h : x.helpers) {
+            Json g = {{"arch", h.arch}, {"placement", h.placement},
+                      {"count", h.count < 0 ? Json("all") : Json(h.count)}};
+            if (h.budget_mib) g["budget_mib"] = *h.budget_mib;
+            if (h.share) g["share"] = *h.share;
+            helpers.push_back(g);
+        }
+        effective["helpers"] = helpers;
+    }
+    const auto underscored = [](std::string key) {
+        std::replace(key.begin(), key.end(), '-', '_');
+        return key;
+    };
+    const std::pair<const char*, const Json*> tables[] = {{"service", &x.service}, {"memory", &x.memory},
+                                                           {"handoff", &x.handoff}, {"helper", &x.helper},
+                                                           {"kernels", &x.kernels}};
+    for (const auto& [name, table] : tables) {
+        if (table->empty()) continue;
+        Json out = Json::object();
+        for (const auto& [key, value] : table->items()) {
+            if (key == "hard-caps" || key == "hard-floors")
+                throw std::runtime_error(c.yaml_path.string() + ": x-bigcherry.memory." + key +
+                                         " is an admission policy of a site or profile, not of a config file");
+            out[underscored(key)] = value;
+        }
+        effective[name] = out;
+    }
+    return config_as_layout(effective, model_root, c.yaml_path);
 }
 
 } // namespace bc::serving

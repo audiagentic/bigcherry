@@ -490,6 +490,14 @@ std::vector<fs::path> layout_sources(const Options& options) {
 Json load_layouts(const Options& options) {
     Json out = {{"layout", Json::object()}, {"source", Json::object()}, {"kind", Json::object()}};
     // RSC12: configs (--configs, BIGCHERRY_CONFIGS) replace the layout sources unless --layouts is given as well.
+    if (options.inspected) {
+        // A config read from its native YAML is the one config the resolver knows; the file stem is its name.
+        const InspectedConfig& c = *options.inspected;
+        out["layout"][c.name] = inspected_as_layout(c, options.model_root);
+        out["source"][c.name] = c.yaml_path.string();
+        out["kind"][c.name] = "config";
+        return out;
+    }
     const auto config_files = config_sources(options.configs);
     const std::vector<fs::path> layout_files =
         config_files.empty() || !options.layouts.empty() ? layout_sources(options) : std::vector<fs::path>{};

@@ -287,6 +287,7 @@ struct NativeConfigInspection {
     std::optional<std::string> kernels_source;
     std::string listener_host;
     int tp = 0;
+    std::optional<std::string> tp_wire;
     std::vector<int> cards;
     std::vector<std::string> rank_devices;
     NativeEngineSettings settings{};
@@ -308,6 +309,26 @@ NativeConfigInspection inspect_native_config(const std::filesystem::path& engine
                                              const NativeConfigSnapshot& snapshot,
                                              const Env& complete_environment, const Hooks& hooks = {},
                                              int resolution_root_fd = -1);
+// Reads a serving config's native YAML through the engine's own parser, device-free: the inspector child runs with
+// every GPU hidden (ROCR/HIP_VISIBLE_DEVICES=-1), so a start's first step needs no card and selects none. The result is
+// the resolver's source of the config (ranks, helpers, wire, BigCherry-owned settings); the later inspect with the
+// selected cards stays the admission check.
+InspectedConfig inspect_config_file(const std::filesystem::path& engine, const std::filesystem::path& yaml,
+                                    const std::filesystem::path& radiance_home, const std::filesystem::path& model_root,
+                                    const std::filesystem::path& sys_root, const Hooks& hooks);
+// The same for bytes already sealed in a snapshot (a stored manifest's admitted YAML): `name` and `yaml_path` label it.
+InspectedConfig inspect_config_snapshot(const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
+                                        const std::string& name, const std::filesystem::path& yaml_path,
+                                        const std::filesystem::path& radiance_home,
+                                        const std::filesystem::path& sys_root, const Hooks& hooks);
+
+// Sets options.inspected for the named config: `yaml` when given, else NAME.yaml of the config sources. The runtime home
+// is `--set engine.radiance_home=...` or the home of this executable's build or installed prefix; the engine is
+// `engine_binary` or <home>/../bin/radiance. A config with no YAML is refused.
+void attach_inspected_config(Options& options, const std::string& name, const std::filesystem::path& yaml,
+                             const std::filesystem::path& self, const std::filesystem::path& engine_binary,
+                             const Hooks& hooks);
+
 NativeConfigInspection inspect_and_reconcile_native_config(
     const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
     const std::filesystem::path& selected_radiance_home, const std::filesystem::path& selected_model,

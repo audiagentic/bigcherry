@@ -2298,7 +2298,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& engine_report = doc.at("engine");
     const Json& listener = engine_report.value("listener", Json::object());
     if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "radiance_home_source", "kernels",
-                                    "kernels_source", "listener", "tp", "cards", "rank_devices",
+                                    "kernels_source", "listener", "tp", "tp_wire", "cards", "rank_devices",
                                     "max_context", "max_sequences", "tuning", "x_bigcherry", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
@@ -2355,6 +2355,9 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     out.rank_devices = engine_report.at("rank_devices").get<std::vector<std::string>>();
     out.listener_host = listener.at("host").get<std::string>();
     out.tp = static_cast<int>(tp);
+    if (!nullable_string_field(engine_report, "tp_wire"))
+        throw PlanFailed("native config inspector: ill-typed tp_wire");
+    if (!engine_report.at("tp_wire").is_null()) out.tp_wire = engine_report.at("tp_wire").get<std::string>();
     try {
         out.x_bigcherry = decode_x_bigcherry(engine_report.at("x_bigcherry"));
     } catch (const std::invalid_argument& error) {
@@ -2470,6 +2473,57 @@ static void reconcile_native_config(
         throw PlanFailed("native config admission: YAML card ordinals differ from the local rank visibility order");
     if (report.listener_host != "127.0.0.1")
         throw PlanFailed("native config admission: only the loopback listener is supported by the managed owner");
+}
+
+InspectedConfig inspect_config_file(const fs::path& engine, const fs::path& yaml, const fs::path& radiance_home,
+                                    const fs::path& model_root, const fs::path& sys_root, const Hooks& hooks) {
+    return inspect_config_snapshot(engine, NativeConfigSnapshot::read(yaml, model_root), yaml.stem().string(), yaml,
+                                   radiance_home, sys_root, hooks);
+}
+
+InspectedConfig inspect_config_snapshot(const fs::path& engine, const NativeConfigSnapshot& snapshot,
+                                        const std::string& name, const fs::path& yaml_path,
+                                        const fs::path& radiance_home, const fs::path& sys_root, const Hooks& hooks) {
+    const fs::path home = fs::canonical(radiance_home);
+    const auto launch = prepare_native_launch(snapshot.resolution_root(), home,
+                                              {{"ROCR_VISIBLE_DEVICES", "-1"}, {"HIP_VISIBLE_DEVICES", "-1"}}, {},
+                                              sys_root);
+    launch->root.require_matches(snapshot.resolution_root());
+    const NativeConfigInspection report =
+        inspect_native_config(engine, snapshot, launch->environment, hooks, launch->root.descriptor());
+    InspectedConfig out;
+    out.name = name;
+    out.yaml_path = yaml_path;
+    out.sha256 = report.snapshot_sha256;
+    out.model = report.model;
+    out.tp_wire = report.tp_wire;
+    out.x = report.x_bigcherry;
+    return out;
+}
+
+void attach_inspected_config(Options& options, const std::string& name, const fs::path& yaml, const fs::path& self,
+                             const fs::path& engine_binary, const Hooks& hooks) {
+    if (options.inspected) return;
+    fs::path file = yaml;
+    if (file.empty()) file = config_yaml_for(name, options.configs);
+    if (file.empty())
+        throw PlanFailed("config " + name + ": no " + name + ".yaml in the config sources (--configs DIR, "
+                         "BIGCHERRY_CONFIGS) and no --native-config");
+    fs::path home;
+    for (const std::string& setting : options.sets)
+        if (setting.starts_with("engine.radiance_home="))
+            home = Json::parse(setting.substr(std::string("engine.radiance_home=").size())).get<std::string>();
+    if (home.empty() && self.parent_path().filename() == "bin" &&
+        self.parent_path().parent_path().filename() == "radiance_home")
+        home = self.parent_path().parent_path();
+    if (home.empty())
+        throw PlanFailed("config " + name + ": the runtime home is unknown (--set engine.radiance_home=...)");
+    const fs::path engine = engine_binary.empty() ? home.parent_path() / "bin" / "radiance" : engine_binary;
+    if (options.model_root.empty())
+        throw PlanFailed("config " + name + ": reading its YAML needs --model-root (its model paths resolve there)");
+    options.inspected = inspect_config_file(engine, file, home, options.model_root, options.sys_root, hooks);
+    if (options.inspected->name != name)
+        throw PlanFailed("config " + name + ": the YAML " + file.string() + " is named " + options.inspected->name);
 }
 
 NativeConfigInspection inspect_and_reconcile_native_config(
@@ -2920,6 +2974,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     // replace the layout files unless --layouts is given).
     EnginePlanInputs in = given;
     in.options.run_dir = run_dir;
+    if (!in.named_config.empty())   // the config is its native YAML, read before anything is resolved
+        attach_inspected_config(in.options, in.named_config,
+                                in.native_admission ? in.native_admission->authored_yaml : fs::path{}, in.self,
+                                in.engine_binary, hooks);
     {
         const auto configs = config_sources(given.options.configs);
         in.options.configs = configs;
@@ -3721,6 +3779,9 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
                            "replay: explicitly requested power profile differs from the stored manifest");
     in.power_profile = m.spec.intent.power.profile;
     in.named_config = name;
+    if (native_snapshot && !in.options.inspected)   // replay reads the admitted bytes, not a file on disk
+        in.options.inspected = inspect_config_snapshot(engine, *native_snapshot, name, fs::path(name + ".yaml"),
+                                                       native_runtime_home, in.options.sys_root, hooks);
     std::string source_name;
     ReplayEvidence evidence;
     std::optional<NamedCache> attestation;

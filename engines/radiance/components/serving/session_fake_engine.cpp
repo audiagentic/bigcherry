@@ -205,6 +205,8 @@ int main(int argc, char** argv) {
                                     {"kernels_source", nullptr},
                                     {"listener", {{"host", std::getenv("TEST_NATIVE_INSPECT_HOST") ? std::getenv("TEST_NATIVE_INSPECT_HOST") : "127.0.0.1"},
                                                    {"port", configured_integer("TEST_NATIVE_INSPECT_PORT", 8123)}}},
+                                    {"tp_wire", std::getenv("TEST_NATIVE_INSPECT_TP_WIRE")
+                                                    ? json(std::getenv("TEST_NATIVE_INSPECT_TP_WIRE")) : json(nullptr)},
                                     {"tuning", native_tuning},
                                     {"x_bigcherry", x_bigcherry},
                                     {"tp", tp},

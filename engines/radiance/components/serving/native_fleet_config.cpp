@@ -192,6 +192,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"kernels_source", source("--kernels")},
                          {"listener", {{"host", cfg.host}, {"port", cfg.port}}},
                          {"tp", cfg.tp},
+                         {"tp_wire", stated("--tp-wire", cfg.tp_wire_exact ? "exact" : "wht6")},
                          {"cards", fleet.cards},
                          {"rank_devices", cfg.rank_devices},
                          {"max_context", cfg.max_ctx},

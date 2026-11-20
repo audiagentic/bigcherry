@@ -7,6 +7,8 @@
 #include <vector>
 #include <nlohmann/json.hpp>
 
+#include "xbigcherry.h"
+
 namespace bc::serving {
 
 /* The engine options the registry binds to a field of their own beyond the hand-written resolver keys (contract amendment 13):
@@ -78,6 +80,17 @@ struct NativeEngineSettings {
     // integer). The engine's strict reader validated their form; the resolver validates their type and range.
     std::map<std::string, nlohmann::json> tuning;
 };
+// One serving config as its native YAML states it, read by the engine's own parser through the device-free inspector
+// (session.h inspect_config_file): the config name is the file stem. This replaces the RSC12 TOML catalogue as the
+// resolver's source of a config's model, ranks, helpers, wire and BigCherry-owned settings.
+struct InspectedConfig {
+    std::string name;
+    std::filesystem::path yaml_path;   // the file read; its directory's sibling heat/ holds @bundle/heat seeds
+    std::string sha256;                // digest of the exact bytes the inspector parsed
+    std::string model;                 // as authored: absolute, or relative to the model root
+    std::optional<std::string> tp_wire;
+    XBigcherry x;
+};
 struct Options {
     std::filesystem::path sys_root = "/";
     std::filesystem::path site, profile;
@@ -94,6 +107,9 @@ struct Options {
     // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
     std::filesystem::path calibration_cache;
     std::vector<std::string> sets;
+    // The config named by layout.name, read from its YAML: when set, it is the one config the resolver knows (the
+    // catalogue readers are gone); the caller runs the inspector first. Empty only for tests of layout files.
+    std::optional<InspectedConfig> inspected;
 };
 struct Resolved {
     Config typed;

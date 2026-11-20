@@ -562,24 +562,31 @@ int explain_command(int argc, char** argv) {
     if (name.empty())
         throw std::runtime_error("explain: a named CONFIG is required");
     opts.sets.push_back("layout.name=" + Json(name).dump());
+    namespace ss = bc::serving::session;
+    const fs::path self = fs::read_symlink("/proc/self/exe");
+    if (const auto prefix = bc::serving::installed_prefix(self)) {
+        // An installed bundle binds its own runtime home and engine, as a start does.
+        if (!engine_binary.empty() && fs::canonical(engine_binary) != fs::canonical(*prefix / "bin/radiance"))
+            throw std::runtime_error("installed release refusal: engine binary differs from verified prefix");
+        engine_binary = *prefix / "bin/radiance";
+        if (std::any_of(opts.sets.begin(), opts.sets.end(),
+                        [](const std::string& s) { return s.starts_with("engine.radiance_home="); }))
+            throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
+        opts.sets.push_back("engine.radiance_home=" + Json((*prefix / "radiance_home").string()).dump());
+    }
+    if (!native_config.empty() &&
+        (opts.model_root.empty() || !fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root)))
+        throw std::runtime_error("explain: --native-config and --model-root must name an existing file and directory");
+    // The config is its native YAML: read it, device-free, through the engine's parser before resolving.
+    try {
+        ss::attach_inspected_config(opts, name, native_config, self, engine_binary, ss::Hooks{});
+    } catch (const ss::PlanFailed& error) {
+        throw std::runtime_error(std::string("explain: ") + error.what());
+    }
     const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
     if (!native_config.empty()) {
         if (bc::serving::v2::kContractVersion != 3)
             throw std::runtime_error("explain: --native-config requires a v3 serving build");
-        if (opts.model_root.empty() || !fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root))
-            throw std::runtime_error("explain: --native-config and --model-root must name an existing file and directory");
-        namespace ss = bc::serving::session;
-        const fs::path self = fs::read_symlink("/proc/self/exe");
-        if (const auto prefix = bc::serving::installed_prefix(self)) {
-            // An installed bundle binds its own runtime home and engine, as a start does.
-            if (!engine_binary.empty() && fs::canonical(engine_binary) != fs::canonical(*prefix / "bin/radiance"))
-                throw std::runtime_error("installed release refusal: engine binary differs from verified prefix");
-            engine_binary = *prefix / "bin/radiance";
-            if (std::any_of(opts.sets.begin(), opts.sets.end(),
-                            [](const std::string& s) { return s.starts_with("engine.radiance_home="); }))
-                throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
-            opts.sets.push_back("engine.radiance_home=" + Json((*prefix / "radiance_home").string()).dump());
-        }
         ss::EnginePlanInputs preflight;
         preflight.options = opts;
         preflight.named_config = name;
