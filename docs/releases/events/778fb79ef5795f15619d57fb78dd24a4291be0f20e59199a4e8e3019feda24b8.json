@@ -1,0 +1,23 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_032552_merged-the-thtr-recovery-evide_4917",
+  "files": [
+    "docs/planning/active/tuning-hip-tune-recovery/THTR05.md",
+    "docs/planning/completed/tuning-hip-tune-recovery/THTR01.md",
+    "docs/planning/completed/tuning-hip-tune-recovery/THTR02.md",
+    "docs/planning/completed/tuning-hip-tune-recovery/THTR03.md",
+    "docs/planning/completed/tuning-hip-tune-recovery/THTR04.md",
+    "docs/planning/completed/tuning-hip-tune-recovery/reviews/THTR05/RV4252.md"
+  ],
+  "plan-item-ids": [
+    "THTR01",
+    "THTR02",
+    "THTR03",
+    "THTR04",
+    "THTR05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Consolidated behavioral witness, recommendation-only escalation, multiplicity study and ranking-fidelity evidence from THTR01-THTR04 into active P0 THTR05 as separate gates; preserved its full-corpus publication condition.",
+  "timestamp-utc": "2026-11-20T03:25:52.874512Z",
+  "user-summary-candidate": "Merged the THTR recovery evidence and safety gates into P0 THTR05 while keeping all empirical studies and production policies gated."
+}

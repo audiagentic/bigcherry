@@ -2,7 +2,7 @@
 id: THTR03
 order: 0
 plan: tuning-hip-tune-recovery
-state: pending
+state: superseded
 created-at: '2026-09-09T10:51:29.984447+00:00'
 breadth: ''
 skill: advanced
@@ -55,13 +55,14 @@ Supersedes: HTR05
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-tune-recovery-htr05
 
+Consolidation disposition (2026-11-20): superseded into active P0 THTR05 after review RV4252. The specific evidence/safety track from this item is preserved separately in THTR05; the original shortest-vector/full-corpus gate remains. No production change, implementation, or validation result is claimed. Preserve this source record and its history.
+
 ## Change Log
 
 - 2026-09-09T10:51:29.984447+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:07:53.235105+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.021353+00:00 (updated-by): Updated: section:ledger-events
@@ -70,3 +71,5 @@ Successor key: tuning-hip-tune-recovery-htr05
 - 2026-09-10T03:36:39.858389+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_033709_repaired-five-recovery-success_3695
 - 2026-09-10T03:37:09.543479+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T03:25:15.064900+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:25:22.067867+00:00 (state-transition): State: pending → superseded

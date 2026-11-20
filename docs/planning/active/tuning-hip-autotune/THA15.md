@@ -26,6 +26,11 @@ Perform provenance-safe promoted-winner execution and winner-versus-runner-up co
 5. Collect multi-session interleaved winner/runner-up/native evidence with cache refresh and teardown receipts.
 6. Verify MTP behavioral equivalence and report predicted-versus-measured E2E effect; never rerank from current policy or mutable caches.
 
+Conditional candidate scopes consolidated from THA24 and THA25 (2026-11-20); these are not qualified or selected production winners:
+- THA24 custom gfx1100 Q8_0×Q8_1 WMMA shape K=5120, M=6144, N=512: keep custom_kernel opt-in; require architecture mask and stable identity, distinct correctness reference, SHA-256 architecture-matched resource report, passed benchmark evidence and offline regression tests before any runtime/catalog inclusion. Preserve native candidates/default.
+- THA25 gfx1100 Q8_1 activation reuse/K-tile/fused gate+up prefill: instrument Q8_1 launch/source identity/grouping and weighted node timing; prove prepacked native entry and execution-scoped planner compatibility/lifetime; clone exact shapes; measure occupancy/I/thread/tile/LDS independently; consider fused prefill only after separate stability proof. Require production replay and complete evidence contract.
+Both candidates must satisfy THA15’s immutable source ranking, exact build/shape/signature identity, correctness/activation/final-launch and candidate-only winner-vs-runner-up comparison requirements.
+
 ## Detailed Solution & Technical Design
 
 Capability owner: tuning
@@ -46,6 +51,8 @@ production ranker/promotion metadata; replay manifest resolver; counterfactual r
 
 Immutable provenance hash checks; strict missing/mismatch rejection; winner/runner-up manifest diff audit; activation and final-launch evidence; multi-session performance matrix; MTP acceptance/output equivalence; cache refresh and clean shutdown.
 
+THA24: run HI25 readiness/full suite; verify architecture mask, stable identity, independent reference, resource report digest and benchmark evidence. THA25: verify Q8_1 counter/identity telemetry, graph lifetime and workspace, correctness, multi-GPU behavior, causal kernel/E2E evidence and complete production replay provenance. For both, audit winner/runner-up manifests differ only in candidate binding, verify final launch and graceful teardown, and reject incomplete provenance. No benchmark was run for this planning transfer.
+
 ## Effort & Risk
 
 
@@ -58,6 +65,8 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 Every admitted comparison is provenance-bound, candidate-only divergent, activation-verified, correctness-equivalent, and backed by repeatable counterfactual timing. Incomplete historical decisions are rejected rather than reconstructed.
 
+Neither custom gfx1100 candidate reaches runtime/catalog or production replay without complete architecture/build/shape/signature identity, independent correctness, activation/final launch, resource and benchmark evidence. THA25 additionally proves graph/workspace lifetime, Q8_1 launch identity/grouping, independent tile/resource experiments and causal E2E contribution. Preserve native as default; candidate comparisons are provenance-bound, candidate-only divergent and runner-up auditable. No qualification or promotion is claimed here.
+
 ## Notes
 
 Supersedes: HI171
@@ -68,13 +77,14 @@ Supersedes: HI171
 Inherited semantic scope: preserve immutable top-2 ordering, selection digest, strict UNREPLAYABLE_PROVENANCE behavior, invariant counterfactual manifests, and MTP equivalence gates.
 Migration: capability-rebaseline-v3-2026-09
 
+Conditional custom candidate qualification gates consolidated from THA24/THA25 on 2026-11-20 after RV4250. Both sources are preserved as superseded records; the candidates remain opt-in/unqualified pending all offline and real-device evidence. This update does not authorize implementation or production use.
+
 ## Change Log
 
 - 2026-09-09T10:49:57.014698+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:06:08.560483+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.918682+00:00 (updated-by): Updated: section:ledger-events
@@ -84,3 +94,8 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:24:15.859276+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_022438_the-next-five-high-risk-tuning_6580
 - 2026-09-10T02:24:38.740975+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4250
+- 2026-11-20T03:15:04.278887+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes

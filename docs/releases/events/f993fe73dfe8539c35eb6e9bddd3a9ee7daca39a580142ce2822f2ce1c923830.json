@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_032137_tha33-now-has-explicit-future_3233",
+  "files": [
+    "docs/planning/active/tuning-hip-autotune/THA33.md",
+    "docs/planning/completed/tuning-hip-autotune/reviews/THA33/RV4251.md"
+  ],
+  "plan-item-ids": [
+    "THA33"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added review-approved build-artifact identity, code-object, repeated isolated reproduction and acceptance gates to THA33. Preserved pending status and the separate gfx1100 scope; no hardware run or root-cause claim.",
+  "timestamp-utc": "2026-11-20T03:21:37.874378Z",
+  "user-summary-candidate": "THA33 now has explicit future validation and acceptance criteria for the unresolved gfx1201 build-sensitive SIGSEGV."
+}
