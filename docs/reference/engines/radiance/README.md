@@ -22,11 +22,11 @@ Patches modify upstream Radiance source.
 | --- | --- | --- |
 | [rad0001_drain_mover_before_arena_free](../../../../engines/radiance/patches/archive/rad0001_drain_mover_before_arena_free/SUMMARY.md) | Drain GPU transfers before freeing memory | `superseded` |
 | [rad0002_moe_remote_handoff](../../../../engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md) | Send expert work to helper GPUs | `validated` |
-| [rad0003_mtp_full_head_switch](../../../../engines/radiance/patches/rad0003_mtp_full_head_switch/SUMMARY.md) | Optionally draft with the full model head | `untested` |
+| [rad0003_mtp_full_head_switch](../../../../engines/radiance/patches/archive/rad0003_mtp_full_head_switch/SUMMARY.md) | Optionally draft with the full model head | `untested` |
 | [rad0004_moe_remote_diagnostics](../../../../engines/radiance/patches/rad0004_moe_remote_diagnostics/SUMMARY.md) | Diagnose remote expert routing | `diagnostic` |
 | [rad0005_mp4_ffmpeg6_writer](../../../../engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/SUMMARY.md) | Support FFmpeg 6 builds | `validated` |
 | [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/archive/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `superseded` |
-| [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/rad0007_hc_pf2_fp8_down/SUMMARY.md) | Unused experimental FP8 HyperConn kernels | `untested` |
+| [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/archive/rad0007_hc_pf2_fp8_down/SUMMARY.md) | Unused experimental FP8 HyperConn kernels | `untested` |
 | [rad0008_hc_upmix_rt_sweep](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) | Tune HyperConn launch size | `validated` |
 | [rad0009_serving_manifest](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md) | Start engine from a serving manifest | `validated` |
 | [rad0010_routing_evidence](../../../../engines/radiance/patches/rad0010_routing_evidence/SUMMARY.md) | Record expert-routing counters | `diagnostic` |
@@ -58,7 +58,7 @@ Patches modify upstream Radiance source.
 | [rad0037_bf16_fp8_kv](../../../../engines/radiance/patches/rad0037_bf16_fp8_kv/SUMMARY.md) | Keep BF16 keys; compress cache values to FP8 | `validated` |
 | [rad0038_bf16_i8_kv](../../../../engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md) | Keep BF16 keys; quantise cache values to scaled INT8 | `validated` |
 
-| [rad0039_moe_heat_observer](../../../../engines/radiance/patches/rad0039_moe_heat_observer/SUMMARY.md) | Observe expert usage without changing placement; inactive | `untested` |
+| [rad0039_moe_heat_observer](../../../../engines/radiance/patches/archive/rad0039_moe_heat_observer/SUMMARY.md) | Observe expert usage without changing placement; inactive | `untested` |
 | [rad0040_kv_layout_table](../../../../engines/radiance/patches/rad0040_kv_layout_table/SUMMARY.md) | Keep packed KV-cache layout definitions in one table | `validated` |
 | [rad0041_kv_b16_flashnext](../../../../engines/radiance/patches/rad0041_kv_b16_flashnext/SUMMARY.md) | Add packed BF16-key KV-cache kernels for Flash-Next | `validated` |
 | [rad0042_kv_b16_selftest](../../../../engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md) | Add numeric selftests for Flash-Next packed KV caches | `untested` |

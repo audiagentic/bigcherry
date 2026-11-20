@@ -57,7 +57,13 @@ class RadianceSourceClassesTests(unittest.TestCase):
         self.assertEqual(recipes.patch_sets["moe-remote-diag"].patches, ("rad0004_moe_remote_diagnostics",))
         self.assertEqual(recipes.patch_sets["moe-remote-diag"].required_state, "diagnostic")
         self.assertEqual(recipes.patch_sets["routing-evidence"].required_state, "diagnostic")
-        self.assertEqual(set(records), {"rad0004_moe_remote_diagnostics", "rad0010_routing_evidence"})
+        self.assertEqual(set(records), {
+            "rad0004_moe_remote_diagnostics", "rad0010_routing_evidence",
+            "rad0042_kv_b16_selftest", "rad0043_expert_stats_protected",
+            "rad0044_expert_route_record", "rad0045_expert_route_replay",
+        })
+        for patch_id in records:
+            self.assertEqual(states[patch_id], "diagnostic")
         for patch_id, record in records.items():
             self.assertEqual(record.patch_id, patch_id)
             self.assertEqual(record.tier, profile_evidence.DIAGNOSTIC_TIER)
@@ -114,9 +120,11 @@ class RadianceSourceClassesTests(unittest.TestCase):
     def test_experiment_accepts_unqualified_but_not_retired(self):
         _, recipes, _, states, records = _data()
         self.assertEqual(_problems(recipes, states, records), ())
-        changed = {**states, "rad0003_mtp_full_head_switch": "superseded"}
-        errors = _problems(recipes, changed, records)
-        self.assertTrue(any("experiment mtp-full-head-switch" in error for error in errors), errors)
+        probe = config.Experiment("probe", ("rad9999_probe",), (), (), (), ())
+        with_probe = replace(recipes, experiments={**recipes.experiments, "probe": probe})
+        self.assertEqual(_problems(with_probe, {**states, "rad9999_probe": "untested"}, records), ())
+        errors = _problems(with_probe, {**states, "rad9999_probe": "superseded"}, records)
+        self.assertTrue(any("experiment probe" in error for error in errors), errors)
 
     def test_macro_build_is_separate_from_lifecycle_admission(self):
         _, recipes, patches, _, _ = _data()
