@@ -6,7 +6,7 @@ expert placement adapted to differing GPU memory and bandwidth.
 
 ## Patches and extensions at a glance
 
-BigCherry maintains **43 engine patch packages** and **6 components** for Radiance.
+BigCherry maintains **36 active engine patch packages** and **6 components** for Radiance.
 Each description says what the package is for, not that it is enabled or
 performance-qualified. **Validated** means package-level evidence exists;
 **untested** means qualification is not established; **diagnostic** is for
@@ -20,13 +20,9 @@ Patches modify upstream Radiance source.
 
 | Patch | Simple purpose | State |
 | --- | --- | --- |
-| [rad0001_drain_mover_before_arena_free](../../../../engines/radiance/patches/archive/rad0001_drain_mover_before_arena_free/SUMMARY.md) | Drain GPU transfers before freeing memory | `superseded` |
 | [rad0002_moe_remote_handoff](../../../../engines/radiance/patches/rad0002_moe_remote_handoff/SUMMARY.md) | Send expert work to helper GPUs | `validated` |
-| [rad0003_mtp_full_head_switch](../../../../engines/radiance/patches/archive/rad0003_mtp_full_head_switch/SUMMARY.md) | Optionally draft with the full model head | `untested` |
 | [rad0004_moe_remote_diagnostics](../../../../engines/radiance/patches/rad0004_moe_remote_diagnostics/SUMMARY.md) | Diagnose remote expert routing | `diagnostic` |
 | [rad0005_mp4_ffmpeg6_writer](../../../../engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/SUMMARY.md) | Support FFmpeg 6 builds | `validated` |
-| [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/archive/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `superseded` |
-| [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/archive/rad0007_hc_pf2_fp8_down/SUMMARY.md) | Unused experimental FP8 HyperConn kernels | `untested` |
 | [rad0008_hc_upmix_rt_sweep](../../../../engines/radiance/patches/rad0008_hc_upmix_rt_sweep/SUMMARY.md) | Tune HyperConn launch size | `validated` |
 | [rad0009_serving_manifest](../../../../engines/radiance/patches/rad0009_serving_manifest/SUMMARY.md) | Start engine from a serving manifest | `validated` |
 | [rad0010_routing_evidence](../../../../engines/radiance/patches/rad0010_routing_evidence/SUMMARY.md) | Record expert-routing counters | `diagnostic` |
@@ -51,24 +47,31 @@ Patches modify upstream Radiance source.
 | [rad0031_ts_timeline](../../../../engines/radiance/patches/rad0031_ts_timeline/SUMMARY.md) | Trace two-shot reduction timings | `validated` |
 | [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | Use both link directions in reductions | `validated` |
 | [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | Avoid duplicate reduction writes | `validated` |
-| [rad0034_prefill_concurrency](../../../../engines/radiance/patches/archive/rad0034_prefill_concurrency/SUMMARY.md) | Earlier long-prefill concurrency limit | `superseded` |
-| [rad0035_prefill_order](../../../../engines/radiance/patches/archive/rad0035_prefill_order/SUMMARY.md) | Earlier prefill ordering and ageing controls | `superseded` |
 | [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | Unified prefill admission and ordering | `validated` |
 
 | [rad0037_bf16_fp8_kv](../../../../engines/radiance/patches/rad0037_bf16_fp8_kv/SUMMARY.md) | Keep BF16 keys; compress cache values to FP8 | `validated` |
 | [rad0038_bf16_i8_kv](../../../../engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md) | Keep BF16 keys; quantise cache values to scaled INT8 | `validated` |
 
-| [rad0039_moe_heat_observer](../../../../engines/radiance/patches/archive/rad0039_moe_heat_observer/SUMMARY.md) | Observe expert usage without changing placement; inactive | `untested` |
 | [rad0040_kv_layout_table](../../../../engines/radiance/patches/rad0040_kv_layout_table/SUMMARY.md) | Keep packed KV-cache layout definitions in one table | `validated` |
 | [rad0041_kv_b16_flashnext](../../../../engines/radiance/patches/rad0041_kv_b16_flashnext/SUMMARY.md) | Add packed BF16-key KV-cache kernels for Flash-Next | `validated` |
-| [rad0042_kv_b16_selftest](../../../../engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md) | Add numeric selftests for Flash-Next packed KV caches | `untested` |
-| [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | Record protected-expert statistics without changing routing | `untested` |
-| [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | Record expert choices for replay and comparison | `untested` |
-| [rad0045_expert_route_replay](../../../../engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md) | Replay recorded expert choices during KV-cache comparisons | `untested` |
+| [rad0042_kv_b16_selftest](../../../../engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md) | Add numeric selftests for Flash-Next packed KV caches | `diagnostic` |
+| [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | Record protected-expert statistics without changing routing | `diagnostic` |
+| [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | Record expert choices for replay and comparison | `diagnostic` |
+| [rad0045_expert_route_replay](../../../../engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md) | Replay recorded expert choices during KV-cache comparisons | `diagnostic` |
 
-| [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | Count protected BF16 experts correctly in routing statistics | `untested` |
-| [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | Record which experts each token used for reference comparisons | `untested` |
-| [rad0045_expert_route_replay](../../../../engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md) | Replay recorded expert choices to isolate KV-cache differences | `untested` |
+### Archived patches
+
+Retired patches are kept unchanged as evidence under [engines/radiance/patches/archive](../../../../engines/radiance/patches/archive/ARCHIVE.md) (reason, successor and evidence per patch in ARCHIVE.md); they are never built or composed.
+
+| Package | What it was for | Final state |
+|---|---|---|
+| [rad0001_drain_mover_before_arena_free](../../../../engines/radiance/patches/archive/rad0001_drain_mover_before_arena_free/SUMMARY.md) | Drain GPU transfers before freeing memory | `superseded` |
+| [rad0003_mtp_full_head_switch](../../../../engines/radiance/patches/archive/rad0003_mtp_full_head_switch/SUMMARY.md) | Optionally draft with the full model head | `rejected` |
+| [rad0006_heat_freeze_diagnostic](../../../../engines/radiance/patches/archive/rad0006_heat_freeze_diagnostic/SUMMARY.md) | Freeze expert movement for diagnosis | `superseded` |
+| [rad0007_hc_pf2_fp8_down](../../../../engines/radiance/patches/archive/rad0007_hc_pf2_fp8_down/SUMMARY.md) | Unused experimental FP8 HyperConn kernels | `rejected` |
+| [rad0034_prefill_concurrency](../../../../engines/radiance/patches/archive/rad0034_prefill_concurrency/SUMMARY.md) | Earlier long-prefill concurrency limit | `superseded` |
+| [rad0035_prefill_order](../../../../engines/radiance/patches/archive/rad0035_prefill_order/SUMMARY.md) | Earlier prefill ordering and ageing controls | `superseded` |
+| [rad0039_moe_heat_observer](../../../../engines/radiance/patches/archive/rad0039_moe_heat_observer/SUMMARY.md) | Observe expert usage without changing placement; inactive | `untested` |
 
 ### Components (extensions)
 
