@@ -318,7 +318,7 @@ int main(int, char** argv) {
         doc["spec"]["processes"]["engine"]["kernels"] = {{"moe_native", false}, {"moe_fp16", false}, {"moe_ahalf", true},
             {"dec11", false}, {"gemv", true}, {"fuse_stage", false}, {"all_reduce_wire4", true}};
         doc["spec"]["intent"]["service"]["profile"] = "lab";
-        doc["spec"]["experiment"] = {{"engine", {{"mtp_full_head", true}, {"mask_only", 2}, {"freeze_promotion_after", 5}}}};
+        doc["spec"]["experiment"] = {{"engine", {{"routing_evidence", true}, {"mask_only", 2}}}};
         doc["provenance"]["/spec/experiment"] = {{"origin", "profile"}, {"source", "lab"}, {"class", "diagnostic"},
             {"lifecycle", "startup_only"}, {"confidence", "exact"}, {"inputs", nlohmann::json::array()}};
         doc["provenance"]["/spec/processes/engine/kernels"] = {{"origin", "profile"}, {"source", "kernel switches"}, {"class", "policy"},
@@ -348,11 +348,10 @@ int main(int, char** argv) {
         CHECK(std::string(std::getenv("R3_GEMV")) == "0");
         CHECK(std::string(std::getenv("R3_MOE_WORKER_FUSESTAGE")) == "1");
         CHECK(std::string(std::getenv("R3_MOE_WORKER_MASK_ONLY")) == "0");
-        CHECK(std::string(std::getenv("RAD_MTP_FULL_HEAD")) == "1");
-        CHECK(std::string(std::getenv("RAD_DIAG_FREEZE_PROMOTION_AFTER")) == "5");
+        CHECK(std::string(std::getenv("RAD_ROUTING_EVIDENCE")) == "1");
         for (const char* v : {"R3_MOE_NATIVE", "R3_MOE_FP16", "R3_MOE_AHALF", "R3_DEC11", "R3_GEMV",
                                "R3_MOE_WORKER_FUSESTAGE", "R3_MOE_WORKER_MASK_ONLY",
-                               "RAD_MTP_FULL_HEAD", "RAD_DIAG_FREEZE_PROMOTION_AFTER", "R3_AR_WIRE4"}) unsetenv(v);
+                               "RAD_ROUTING_EVIDENCE", "R3_AR_WIRE4"}) unsetenv(v);
     }
 
     // Amendment 11: the engine's other flags are manifest fields. Value-less flags (profile_ops, debug_selection, deterministic,

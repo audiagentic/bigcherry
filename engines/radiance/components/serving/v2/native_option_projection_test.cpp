@@ -76,7 +76,7 @@ int main() {
                           std::string(env.path) + ": option and environment both emitted");
             ++env_count;
         }
-        check(env_count == v2::kEnvBindings.size() && env_count >= 15,
+        check(env_count == v2::kEnvBindings.size() && env_count >= 12,
               "environment binding coverage unexpectedly dropped");
 
         auto renamed = v2::kFields;

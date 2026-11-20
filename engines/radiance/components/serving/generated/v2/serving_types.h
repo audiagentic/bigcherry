@@ -18,10 +18,10 @@ inline constexpr std::string_view kApiVersion = "bigcherry/v2";
 inline constexpr std::string_view kKind = "ServingManifest";
 inline constexpr int64_t kContractVersion = 2;
 // sha256 of the JCS validation schema without annotations (contract/README.md); the build pins it.
-inline constexpr std::string_view kFingerprint = "sha256:63474c3c0ae1f4cb3592188f09fe71e305385679766d7417c63c83516c058ec7";
+inline constexpr std::string_view kFingerprint = "sha256:8bd52e362ed8e8aaf13a1c16b8b3bca709e804f574843a47ca5dee6ff7a6cb82";
 // sha256 of the schema plus the frozen semantics it does not express (classes, lifecycle, Radiance bindings,
 // reader error codes); README.md.
-inline constexpr std::string_view kSemanticFingerprint = "sha256:de84fa0d64364a892a13c1bf59d2fd98a07f56d9d517aaaf2dfff112a26595e6";
+inline constexpr std::string_view kSemanticFingerprint = "sha256:4dc1949639816f5ee99d8c86520117576fdebc61e8cf877cf6c81d9d5fa1f959";
 // spec §11 amendment 8: the deepest container nesting a valid document can have (the root object is 1),
 // derived from the closed schema by the generator. The strict reader refuses anything deeper.
 inline constexpr size_t kMaxDepth = 9;
@@ -1470,17 +1470,8 @@ struct ExperimentEngine {
     std::optional<Deterministic> deterministic;
     // Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`).
     std::optional<int64_t> kv_resident;
-    // Draft through the trunk head instead of the 2-bit copy (`RAD_MTP_FULL_HEAD`, patch rad0003).
-    std::optional<bool> mtp_full_head;
-    // PF2 wide hyper-convolution up-mix row tile (`RAD_HC_UPMIX_RT`; defaults to the existing production tile, with one
-    // larger diagnostic choice).
-    std::optional<int64_t> hc_pf2_upmix_rt;
-    // FP8 PF2 down-product (`RAD_HC_PF2_FP8_DOWN`, patch rad0007).
-    std::optional<bool> hc_pf2_fp8_down;
     // Record routing evidence (`RAD_ROUTING_EVIDENCE`, patch rad0010).
     std::optional<bool> routing_evidence;
-    // Stop heat promotion after this many calls (`RAD_DIAG_FREEZE_PROMOTION_AFTER`, patch rad0006, diagnostic build).
-    std::optional<int64_t> freeze_promotion_after;
     // Publish owned routes and compare the helper's rows against the engine's (`R3_MOE_WORKER_SHADOW`, diagnostic
     // build, patches rad0002 and rad0004).
     std::optional<bool> shadow;
@@ -1569,7 +1560,7 @@ struct FieldInfo {
     std::string_view default_source;   // where the default comes from, or empty
     std::string_view ref_def;          // kind "ref": the shared type it uses, else empty
 };
-inline constexpr std::array<FieldInfo, 442> kFields = {{
+inline constexpr std::array<FieldInfo, 438> kFields = {{
     {"$defs/uint", "integer", "", true, false,
      "", "", false,
      "Unsigned integer within I-JSON's safe range.", "", "", ""},
@@ -2851,21 +2842,9 @@ inline constexpr std::array<FieldInfo, 442> kFields = {{
     {"/spec/experiment/engine/kv_resident", "ref", "diagnostic", false, false,
      "--kv-resident", "Config.kv_resident", false,
      "Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`).", "", "", "positive"},
-    {"/spec/experiment/engine/mtp_full_head", "boolean", "diagnostic", false, false,
-     "", "", false,
-     "Draft through the trunk head instead of the 2-bit copy (`RAD_MTP_FULL_HEAD`, patch rad0003).", "", "", ""},
-    {"/spec/experiment/engine/hc_pf2_upmix_rt", "int_enum", "diagnostic", false, false,
-     "", "", false,
-     "PF2 wide hyper-convolution up-mix row tile (`RAD_HC_UPMIX_RT`; defaults to the existing production tile, with one larger diagnostic choice).", "", "", ""},
-    {"/spec/experiment/engine/hc_pf2_fp8_down", "boolean", "diagnostic", false, false,
-     "", "", false,
-     "FP8 PF2 down-product (`RAD_HC_PF2_FP8_DOWN`, patch rad0007).", "", "", ""},
     {"/spec/experiment/engine/routing_evidence", "boolean", "diagnostic", false, false,
      "", "", false,
      "Record routing evidence (`RAD_ROUTING_EVIDENCE`, patch rad0010).", "", "", ""},
-    {"/spec/experiment/engine/freeze_promotion_after", "integer", "diagnostic", false, false,
-     "", "", false,
-     "Stop heat promotion after this many calls (`RAD_DIAG_FREEZE_PROMOTION_AFTER`, patch rad0006, diagnostic build).", "", "", ""},
     {"/spec/experiment/engine/shadow", "boolean", "diagnostic", false, false,
      "", "", false,
      "Publish owned routes and compare the helper's rows against the engine's (`R3_MOE_WORKER_SHADOW`, diagnostic build, patches rad0002 and rad0004).", "", "", ""},
@@ -2902,7 +2881,7 @@ struct EnvBinding {
     std::string_view kind;   // "boolean" (1 or 0) or "integer"
     std::string_view env;
 };
-inline constexpr std::array<EnvBinding, 16> kEnvBindings = {{
+inline constexpr std::array<EnvBinding, 12> kEnvBindings = {{
     {"/spec/processes/engine/kernels/attn_native", "boolean", "R3_ATTN_NATIVE"},
     {"/spec/processes/engine/kernels/moe_native", "boolean", "R3_MOE_NATIVE"},
     {"/spec/processes/engine/kernels/moe_fp16", "boolean", "R3_MOE_FP16"},
@@ -2912,11 +2891,7 @@ inline constexpr std::array<EnvBinding, 16> kEnvBindings = {{
     {"/spec/processes/engine/kernels/dec11", "boolean", "R3_DEC11"},
     {"/spec/processes/engine/kernels/gemv", "boolean", "R3_GEMV"},
     {"/spec/processes/engine/kernels/fuse_stage", "boolean", "R3_MOE_WORKER_FUSESTAGE"},
-    {"/spec/experiment/engine/mtp_full_head", "boolean", "RAD_MTP_FULL_HEAD"},
-    {"/spec/experiment/engine/hc_pf2_upmix_rt", "int_enum", "RAD_HC_UPMIX_RT"},
-    {"/spec/experiment/engine/hc_pf2_fp8_down", "boolean", "RAD_HC_PF2_FP8_DOWN"},
     {"/spec/experiment/engine/routing_evidence", "boolean", "RAD_ROUTING_EVIDENCE"},
-    {"/spec/experiment/engine/freeze_promotion_after", "integer", "RAD_DIAG_FREEZE_PROMOTION_AFTER"},
     {"/spec/experiment/engine/shadow", "boolean", "R3_MOE_WORKER_SHADOW"},
     {"/spec/experiment/engine/mask_only", "int_enum", "R3_MOE_WORKER_MASK_ONLY"},
 }};
