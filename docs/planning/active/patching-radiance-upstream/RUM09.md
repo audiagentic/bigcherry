@@ -114,6 +114,8 @@ Fail-closed diagnostic checkpoint d466f696a reproduced the first request on leas
 
 Live direct per-slot accounting at bb1b8a190 reproduced exactly 139 published and 0 consumed. This comparison rules out the workgroup reduction as the sole explanation. The GPU session exited cleanly and released its lease. Next diagnostic distinguishes first-capture dispatch from recorded replay and checks whether any device consumed records were written before seal.
 
+Packet trace captured 102 publish and 51 finish dispatches for parent 1. Both old and inverse-aware publish hooks had applied to the 2.2 graph because a multiline negative guard matched after the capability marker. Checkpoint 03f587211 uses a whole-file applicability guard and exact one-publish fixture. The leased helper-on Flash-Next checkpoint generated 24 tokens in each fresh, named and explicit stored session and used one exact manifest with only two measurement attempts. Explicit replay used the original site inputs after the authored YAML was removed. Final integrated runtime build, bounded quality/performance and release/install gates remain.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -142,3 +144,4 @@ Live direct per-slot accounting at bb1b8a190 reproduced exactly 139 published an
 - 2026-11-20T00:55:22.935951+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T01:03:47.081769+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T01:12:49.299909+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:05:25.873512+00:00 (updated-by): Updated: section:notes
