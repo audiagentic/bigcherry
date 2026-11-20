@@ -1356,7 +1356,10 @@ def build_parser() -> argparse.ArgumentParser:
             command.add_argument("--key", required=True)
         command.set_defaults(func=cmd_calibration)
 
-    status = sub.add_parser("status", help="show checkout and release status")
+    status = sub.add_parser("status", help="show checkout, release and native feature states")
+    status.add_argument("--run-dir", type=Path, help="observed native owner run directory")
+    status.add_argument("--strict-production-features", action="store_true",
+                        help="nonzero exit when a production-required feature is inactive")
     status.set_defaults(func=cmd_status)
 
     experiment_cmd = sub.add_parser(

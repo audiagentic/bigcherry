@@ -7,7 +7,7 @@
 | Gate | What to run / owned harness | What green means now | Required next native / hardware gate |
 |---|---|---|---|
 | **C00 Container and IQ8R** | `test_ltx_iq8r_planes.py`, `test_ltx_iq8r_numeric.py`, `ltx_tp3_i8a8h_test` | Real RAD2 metadata and **1,306** IQ8R tensor plane extents; sampled real I8/U8/BF16 rotated rows satisfy double-precision H128 identity; reject malformed planes | Native RadFile reader; exact signed rounding and i8a8h activation quantizer vs reference; BF16/FP32 tolerances on gfx1100/gfx1201 |
-| **C01 QKV / KV / gates / FFN and output projection** | `ltx_tp3_linear_test`, `test_ltx_iq8r_shards.py`; original `ltx_tp3_reference_test` | Uneven 32-head ownership, fused QKV and KV bank order, one output bias after three partial sums, K=256 alignment and negative cuts | Opt-in per-rank native LTX builder mapping via `rad_weight_shard_span_parts` / `LinearFP8::span_parts`; compare actual shard views with TP1 on card |
+| **C01 QKV / KV / gates / FFN and output projection** | `ltx_tp3_linear_test`, `test_ltx_iq8r_shards.py`, `ltx_tp3_builder_shard_test` and opt-in `test_ltx_tp3_builder_patch.py`; original `ltx_tp3_reference_test` | Uneven 32-head ownership, fused QKV and KV bank order, one output bias after three partial sums, K=256 alignment and negative cuts | Opt-in per-rank native LTX builder mapping via `rad_weight_shard_span_parts` / `LinearFP8::span_parts`; compare actual shard views with TP1 on card |
 | **C02 Global Q/K RMS** | `ltx_tp3_rms_test`; original `ltx_tp3_reference_test` | Distinct Q/K token row counts; all-head denominator over 2048/4096 input widths, asymmetric 3-rank shares; zero, NaN/Inf and shape refusal | Real rank collective with f32 accumulation and deterministic ordering, BF16 gain/rounding vs TP1 before RoPE |
 | **C03 Self/text/cross-modal attention** | `ltx_tp3_numerical_test` | Tiny f64 dense vs uneven TP3 simulated self/cross attention with softmax, per-head gate and output bias-once | Separate video/audio/text cross/A2V/V2A native block parity, including RoPE, attention masks, row counts and real checkpoint kernels |
 | **C04 Guidance and collective order** | `ltx_tp3_guidance_test`; original `ltx_tp3_protocol_test` | Per-pass identical rank traces for plain/STG/ISO/combined, with STG block-28 and isolated-branch omissions; detects divergent rank event lists | Engine-graph-emitted operation tickets, rank mismatches, timeouts, abort/recovery and no-deadlock test for every guidance combination |
@@ -36,7 +36,7 @@ cmake --build ${BC_WORK_ROOT}/ltx-tp3-native-build --parallel 2
 cmake --build ${BC_WORK_ROOT}/ltx-tp3-native-build --target test
 ```
 
-Each executable is also an independent build/test target under `${BC_WORK_ROOT}/ltx-tp3-native-build/` and can be chosen with `ctest -R ltx_tp3_<component>_test` on a runner supporting that command. The CMake test target runs all ten.
+Each executable is also an independent build/test target under `${BC_WORK_ROOT}/ltx-tp3-native-build/` and can be chosen with `ctest -R ltx_tp3_<component>_test` on a runner supporting that command. The CMake test target runs all eleven.
 
 Real-model read-only CPU check (not a pytest CI dependency):
 
@@ -68,3 +68,7 @@ Checkpoint bias contract: video `ff_down` is biasless in all 48 blocks. Audio `a
 ```sh
 python3 tools/tests/lab/test_ltx_iq8r_shards.py "${BC_MODEL_ROOT}/ltx-2.5/ltx-2.5-iq8r.rad"
 ```
+
+## C01 native Radiance builder staging (2026-11-20)
+
+Package `rad0060_ltx2_tp3_linear_declare` now contains real LTX2 builder changes, diagnostic-only and not selected by a source recipe. `C01Slice` carries whole-head QKV/KV bank rows and 256-aligned output K spans through the existing `LinearFP8::declare` and `span_parts` APIs. Biasless video FFN-down columns are accepted; biased output columns fail until bias-once reduction exists. The frozen Radiance 2.2 LTX translation unit compiled host-only after patch application; it has not run a real RadBuilder model-weight loader or any GPU operation. Proof gates, commands and remaining dependencies: `docs/design/ltx25-c01-native-builder-stage.md`.

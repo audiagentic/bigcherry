@@ -17,6 +17,8 @@ PRODUCT_ROOT = Path(__file__).resolve().parents[2] / "bigcherry"
 # Paths are POSIX-style, relative to tools/bigcherry. A trailing "/" is a prefix.
 ALLOWLIST: dict[str, str] = {
     "core/engines.py": "the engine registry itself",
+    "core/feature_registry.py": "platform declaration and dispatch for each engine's feature IDs",
+    "experiment/bundle.py": "typed run-result feature-state adapter dispatch by declared engine",
     "patch/campaign/": "patch campaign tooling is llama.cpp-only by design",
     "patch/validation_campaign.py": "llama.cpp-only patch validation campaign",
     "campaign/qualification_matrix.py": "llama.cpp-only qualification matrix",

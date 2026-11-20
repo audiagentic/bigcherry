@@ -133,3 +133,7 @@ The CPU-first staged test plan is `docs/design/ltx25-tp3-component-test-ladder.m
 ## 2026-11-20 C00/C01 follow-on
 
 `ltx_tp3_i8a8h_test` adds source-derived CPU BF16/H128/256-group nearest-even i8 activation tests. `test_ltx_iq8r_shards.py` adds real-plane K-shard and fused-bank tests: 768 source output rows, 1,920 legal rank reconstructions, 384 refused sampled row cuts, 288 fused projection entries with 756 sampled bank boundary rows. Video `ff_down` is biasless; audio FFN-down and the six attention outputs each have a bias added once after reduction. These CPU-only validations do not qualify the native loader or HIP i8a8h. The LTX TP1 guard remains in place.
+
+## 2026-11-20 C01 actual native source staging
+
+The first native Radiance diagnostic package is `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/`. It adds an optional C01Slice to LTX `Lin::declare` and stages row-bank and column weight declarations with real builder calls; the default path and TP>1 refusal are unchanged. Isolated frozen source applicability/idempotence and C++23 object compilation passed. C01 biased output projections are refused, because collective-and-bias-once is the next slice. Evidence and test commands are in `docs/design/ltx25-c01-native-builder-stage.md`. No model activation or GPU proof is claimed.

@@ -115,6 +115,12 @@ required-state = "diagnostic"
 patches = ["rad0045_expert_route_replay"]
 required-state = "diagnostic"
 
+# LT3 C01 is a diagnostic-only builder staging patch for the frozen 2.2/ABI44
+# source; no source or production recipe selects it until the RUM pin qualifies.
+[patch-set.ltx3-c01-diagnostic]
+patches = ["rad0060_ltx2_tp3_linear_declare"]
+required-state = "diagnostic"
+
 [source.radiance-native]
 class = "production"
 description = "radiance 1.14.0 as released: no overlay, no patches."
