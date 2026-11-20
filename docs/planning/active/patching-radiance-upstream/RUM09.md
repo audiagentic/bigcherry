@@ -102,6 +102,8 @@ Main integration checkpoint 99ae7bfea incorporates origin/main d611e7997, with l
 
 A full 2.2 v3 runtime was staged for the ec28406a2 checkpoint. Engine, worker and serving use identical wire fingerprints. All ten kernel and 49 architecture plugins plus one quantizer reported ABI44 fingerprint 5cc71b9c5bb7ab40. A stock-power helper-on Flash-Next lifecycle check is queued on the GPU lease with fresh, named-cache and explicit stored replay stages. No GPU result yet. The strict recipe gate still requires retained E4M3 rad0046 qualification. Run final hardware quality and matched old/new parity on the final integrated runtime.
 
+The pool-fallback engine produced a live plan. At an explicit diagnostic trial of 2247 MiB, writer convergence succeeded and all three helpers and the serving engine launched. After loading Flash-Next, stock Radiance 2.2 refused managed serving because its Engine had no attached server Front. Health, named replay and explicit replay did not complete. Automatic remeasurement checkpoint be89849c0 passed the card-free convergence, lookup and replay test and is running separately under the GPU lease without the manual pool override.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -124,3 +126,4 @@ A full 2.2 v3 runtime was staged for the ec28406a2 checkpoint. Engine, worker an
 - 2026-11-19T07:35:45.850777+00:00 (state-transition): State: pending → in_progress
 - 2026-11-19T21:41:03.879740+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:05:36.031221+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T00:13:25.180057+00:00 (updated-by): Updated: section:notes
