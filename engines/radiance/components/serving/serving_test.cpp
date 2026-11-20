@@ -3557,6 +3557,56 @@ void session_engine_plan(Fixture& t) {
             {"TEST_NATIVE_INSPECT_KERNELS", expected_kernels.dump()}};
         gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root, std::move(native_overrides)};
         gated.named_config = "qwen27b-tp3-int8";
+        // Offline preflight (`bc-serve explain CONFIG --native-config YAML`): the planner's inspection and reconcile,
+        // stopped before any writer, power admission, engine or helper child. One pass and one refusal per rule.
+        if (bc::serving::v2::kContractVersion == 3) {
+            int preflight_runs = 0;
+            const auto preflight = [&](const std::function<void(ss::Env&)>& tweak) -> std::string {
+                ss::EnginePlanInputs pre = gated;
+                pre.native_preflight = true;
+                tweak(pre.native_admission->runtime_overrides);
+                const fs::path pre_run = run / ("native-preflight-" + std::to_string(++preflight_runs));
+                fs::create_directories(pre_run);
+                std::vector<ss::ChildKind> kinds;
+                ss::Hooks hooks;
+                hooks.wait = [](std::chrono::milliseconds) { return true; };
+                hooks.started = [&](ss::ChildKind kind, const std::string&, pid_t, const fs::path&) {
+                    kinds.push_back(kind);
+                };
+                std::string refusal;
+                try {
+                    const ss::EngineStart plan = ss::plan_engine_only(pre, pre_run, hooks);
+                    assert(plan.native_preflight_receipt.at("protocol") == "bigcherry.native-fleet-inspect/v2");
+                    assert(plan.argv.empty() && plan.helpers.empty());   // nothing was prepared to start
+                } catch (const ss::PlanFailed& error) {
+                    refusal = error.what();
+                }
+                for (const ss::ChildKind kind : kinds)
+                    assert(kind == ss::ChildKind::native_config_inspector);   // never a writer, helper or engine
+                return refusal;
+            };
+            const auto refused_for = [&](const std::string& why, const std::function<void(ss::Env&)>& tweak) {
+                const std::string refusal = preflight(tweak);
+                if (refusal.find(why) == std::string::npos)
+                    throw std::runtime_error("preflight: expected a refusal naming '" + why + "', got '" + refusal + "'");
+            };
+            if (const std::string pass = preflight([](ss::Env&) {}); !pass.empty())
+                throw std::runtime_error("preflight: a matching YAML was refused: " + pass);
+            refused_for("model-defined context", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MAX_CONTEXT"] = "0"; });
+            refused_for("explicit ngram-placement", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"ngram_placement", "auto"}}.dump(); });
+            refused_for("set num-speculative-tokens", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"speculative_tokens", -1}}.dump(); });
+            refused_for("set rope-scaling", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"rope_scaling", ""}}.dump(); });
+            refused_for("YAML model differs", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MODEL"] = "/elsewhere/other.rad"; });
+            refused_for("tensor parallelism differs", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_TP"] = "2"; });
+            refused_for("card ordinals differ", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_CARDS"] = "[2,1,0]"; });
+            refused_for("rank-device order differs", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_RANK_DEVICES"] = Json::array({"0000:09:00.0", "0000:09:01.0", "0000:09:02.0"}).dump(); });
+            refused_for("loopback listener", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_HOST"] = "0.0.0.0"; });
+            refused_for("runtime home differs", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_REPORTED_HOME"] = "/another/home"; });
+        }
         const fs::path gated_run = run / "native-admission";
         fs::create_directories(gated_run);
         const fs::path cache_tripwire = gated_run /
