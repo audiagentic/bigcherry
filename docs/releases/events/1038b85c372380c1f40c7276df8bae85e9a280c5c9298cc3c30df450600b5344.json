@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_035152_trvp16-now-has-concrete-review_3993",
+  "files": [
+    "docs/planning/active/tuning-rocm-vulkan-provider/TRVP16.md",
+    "docs/planning/completed/tuning-rocm-vulkan-provider/reviews/TRVP16/RV4253.md"
+  ],
+  "plan-item-ids": [
+    "TRVP16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Expanded TRVP16's actionable qualification sections to identify the merged upstream commit, require source-composed safety review and exact multi-RDNA correctness/negative-control evidence, and explicitly require matched end-to-end decode/prefill regression checks. The upstream reported decode regression remains external and is not treated as BigCherry evidence. RV4253 remains closed.",
+  "timestamp-utc": "2026-11-20T03:51:52.152852Z",
+  "user-summary-candidate": "TRVP16 now has concrete review and validation gates for the merged upstream Vulkan collective, including workload regression checks, while preserving PRVP03 as the only implementation owner."
+}
