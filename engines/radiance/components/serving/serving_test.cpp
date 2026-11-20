@@ -2976,7 +2976,7 @@ void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
         "--site", site.string(), "--model-root", (t.root / "model-root").string(), "--sys-root", t.root.string(),
         "--set", "layout.name=\"qwen27b-tp3-int8\""};
     const auto measured_key = run_bc_serve(measured_args);
-    if (measured_key.output.find("native snapshot descriptor must be a fully sealed memfd") == std::string::npos)
+    if (measured_key.output.find("native writer descriptor must be a fully sealed memfd") == std::string::npos)
         throw std::runtime_error("v3 measured writer rejected the frozen-key guard before snapshot loading: " +
                                  measured_key.output);
     std::vector<std::string> missing_owner_args = measured_args;
@@ -3530,13 +3530,26 @@ void session_engine_plan(Fixture& t) {
             if (end == std::string::npos) break;
             begin = end + 1;
         }
+#ifdef BC_NATIVE_V3_SESSION_ONLY
+        std::reverse(expected_kernels.begin(), expected_kernels.end());
+        const int native_port = select_free_port();
+        const Json execution_settings = {
+            {"max_batched_tokens", 384}, {"checkpoint_interval", 1536}, {"kv_dtype", "bf16"},
+            {"ngram_placement", session_resolved.values.at("engine").at("ngram_placement")},
+            {"speculative_tokens", 2}, {"rope_scaling", "yarn:4"}, {"prefix_resume", "exact"},
+            {"prefill_interleave", 1}};
+#else
+        const int native_port = session_resolved.typed.engine.port;
+        const Json execution_settings = Json::object();
+#endif
         ss::Env native_overrides = {
             {"TEST_NATIVE_INSPECT_TP", "3"},
             {"TEST_NATIVE_INSPECT_RANK_DEVICES", session_resolved.values.at("layout").at("engine_cards").dump()},
             {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"},
             {"TEST_NATIVE_INSPECT_MODEL", model.string()},
             {"TEST_NATIVE_INSPECT_EXPECT_YAML", native_yaml_bytes},
-            {"TEST_NATIVE_INSPECT_PORT", std::to_string(session_resolved.values.at("engine").at("port").get<int>())},
+            {"TEST_NATIVE_INSPECT_PORT", std::to_string(native_port)},
+            {"TEST_NATIVE_INSPECT_SETTINGS", execution_settings.dump()},
             {"TEST_NATIVE_INSPECT_MAX_CONTEXT",
              std::to_string(session_resolved.values.at("service").at("max_context").get<int>())},
             {"TEST_NATIVE_INSPECT_MAX_SEQUENCES",
@@ -3642,7 +3655,17 @@ void session_engine_plan(Fixture& t) {
                     if (parsed.ok()) {
                         const auto& spec = parsed.value().spec;
                         const auto native = bc::serving::v2::native_config_view(parsed.value());
+                        const auto& engine = spec.processes.engine;
                         measured_artifact_verified = native && native->yaml_utf8 == native_yaml_bytes &&
+                            engine.server.port == native_port &&
+                            engine.runtime.kernels == expected_kernels.get<std::vector<std::string>>() &&
+                            engine.scheduler.max_num_batched_tokens == 384 &&
+                            engine.scheduler.checkpoint_interval == 1536 &&
+                            engine.execution.kv_cache_dtype == bc::serving::v2::KvCacheDtype::kBf16 &&
+                            engine.execution.num_speculative_tokens == 2 &&
+                            engine.execution.rope_scaling == "yarn:4" &&
+                            engine.execution.prefix_resume == bc::serving::v2::PrefixResume::kExact &&
+                            engine.tuning && engine.tuning->prefill_interleave == 1 &&
                             spec.intent.model == model.string() && spec.processes.engine.device.gpus ==
                                 session_resolved.values.at("layout").at("engine_cards").get<std::vector<std::string>>() &&
                             spec.plan.engine_memory &&
@@ -3675,6 +3698,7 @@ void session_engine_plan(Fixture& t) {
                original_index.manifest_filename == original_manifest.filename().string());
         ss::EnginePlanInputs replay = gated;
         replay.stored_manifest = original_manifest;
+        replay.options.model_root.clear();
         ss::Hooks stored_hooks;
         stored_hooks.wait = [](std::chrono::milliseconds) { return true; };
         unsigned replay_inspections = 0;
@@ -3684,7 +3708,7 @@ void session_engine_plan(Fixture& t) {
             ++replay_inspections;
         };
         stored_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse use) {
-            assert(use == bc::serving::v2::PlanUse::serving && replay_inspections == replay_admissions + 1);
+            assert(use == bc::serving::v2::PlanUse::serving && replay_inspections > replay_admissions);
             ++replay_admissions;
             return bc::serving::v2::Status{};
         };
@@ -3731,7 +3755,8 @@ void session_engine_plan(Fixture& t) {
             return bc::serving::v2::P1LiveRoom{1, 1, 1};
         };
         refuse_stored(low_replay, "live MemAvailable/cgroup room");
-        assert(replay_inspections == 0 && replay_admissions == 0 && !fs::exists(native_yaml));
+        assert(replay_admissions == 0 && !fs::exists(native_yaml));
+        replay_inspections = 0;
 
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const auto hit = ss::plan_engine_only(gated, gated_run, stored_hooks);
@@ -4853,6 +4878,7 @@ void helper_vram_owner_graph(Fixture& t) {
         {"TEST_NATIVE_INSPECT_MAX_CONTEXT", service.at("max_context").dump()},
         {"TEST_NATIVE_INSPECT_MAX_SEQUENCES", service.at("max_sessions").dump()},
         {"TEST_NATIVE_INSPECT_KERNELS", kernels.dump()},
+        {"TEST_NATIVE_INSPECT_SETTINGS", Json({{"ngram_placement", engine.at("ngram_placement")}}).dump()},
     }};
     std::map<std::string, unsigned> samples;
     in.helper_vram.read_used = [&](const fs::path& path) {

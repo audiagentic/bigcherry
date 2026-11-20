@@ -89,7 +89,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
         };
 
         const nlohmann::json report = {
-            {"protocol", "bigcherry.native-fleet-inspect/v1"},
+            {"protocol", "bigcherry.native-fleet-inspect/v2"},
             {"snapshot", {{"sha256", managed.snapshot().sha256()},
                            {"resolution_root", managed.snapshot().resolution_root()}}},
             {"engine", {{"abi_version", RAD_ABI_VERSION},
@@ -103,7 +103,18 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"cards", fleet.cards},
                          {"rank_devices", cfg.rank_devices},
                          {"max_context", cfg.max_ctx},
-                         {"max_sequences", cfg.max_seqs}}}
+                         {"max_sequences", cfg.max_seqs},
+                         {"settings", {{"max_batched_tokens", cfg.max_tok},
+                                       {"checkpoint_interval", cfg.checkpoint_interval},
+                                       {"placement", cfg.placement},
+                                       {"ngram_placement", rad::table_placement_name(cfg.ngram_placement)},
+                                       {"kv_dtype", cfg.kv_cache_dtype},
+                                       {"speculative_tokens", cfg.n_spec},
+                                       {"rope_scaling", cfg.rope_scaling},
+                                       {"prefix_resume", cfg.prefix_exact ? "exact" : "nearest"},
+                                       {"prefix_cache", cfg.prefix_cache},
+                                       {"prefill_interleave", cfg.prefill_interleave_set && cfg.prefill_interleave >= 0
+                                           ? nlohmann::json(cfg.prefill_interleave) : nlohmann::json(nullptr)}}}}}
         };
         std::cout << report.dump() << '\n';
         return 0;

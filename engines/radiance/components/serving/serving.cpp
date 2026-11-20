@@ -1073,7 +1073,7 @@ Json json_schema() {
     return root;
 }
 
-Resolved resolve(const Options& options, const Json& facts) {
+Resolved resolve(const Options& options, const Json& facts, const NativeEngineSettings* native) {
     Json values = Json::object(), provenance = Json::object();
     for (const auto& f : schema_fields())
         if (!f.fallback.is_null())
@@ -1308,6 +1308,44 @@ Resolved resolve(const Options& options, const Json& facts) {
     }
 
 
+    const auto native_value = [&](const char* key, const Json& value) {
+        Field field = *field_for(key);
+        // The native parser has already validated the RoPE syntax.
+        if (field.key == "engine.rope_scaling")
+            field.choices.clear();
+        if (field.key == "engine.checkpoint_interval")
+            field.lo = 0;
+        put(values, provenance, field, value, "native", "sealed Radiance YAML (matched native parser)");
+    };
+    if (native) {
+        native_value("engine.port", native->port);
+        native_value("service.max_context", native->max_context);
+        native_value("service.max_sessions", native->max_sequences);
+        native_value("engine.max_num_batched_tokens", native->max_batched_tokens);
+        native_value("engine.checkpoint_interval", native->checkpoint_interval);
+        native_value("engine.placement", native->placement);
+        native_value("engine.ngram_placement", native->ngram_placement);
+        native_value("engine.kv_cache_dtype", native->kv_dtype);
+        native_value("engine.num_speculative_tokens", native->speculative_tokens);
+        native_value("engine.rope_scaling", native->rope_scaling);
+        native_value("engine.prefix_resume", native->prefix_resume);
+        if (native->prefix_cache) {
+            values.at("engine").erase("no_prefix_cache");
+            provenance.erase("engine.no_prefix_cache");
+        } else {
+            native_value("engine.no_prefix_cache", "on");
+        }
+        if (native->prefill_interleave) {
+            native_value("tuning.prefill_interleave", *native->prefill_interleave);
+        } else {
+            if (values.contains("tuning")) {
+                values.at("tuning").erase("prefill_interleave");
+                if (values.at("tuning").empty()) values.erase("tuning");
+            }
+            provenance.erase("tuning.prefill_interleave");
+        }
+    }
+
     // Canonical derived engine option names. There is no argv/env conversion.
     auto alias = [&](const std::string& key, const Json& v,
                      const std::string& source, const std::string& input) {
@@ -1335,9 +1373,21 @@ Resolved resolve(const Options& options, const Json& facts) {
             archs += (archs.empty() ? "" : "+") + arch;
             if (have.insert(stem).second) stems += (stems.empty() ? "" : ",") + stem;
         }
-        alias("engine.kernels", stems + (engine_only ? "" : ",libr3moe") + ",libref",
-              "engines/radiance/archs.toml " + archs + " plugin; launcher ENGINE_KERNELS",
-              "layout.engine_cards");
+        const std::string required = stems + (engine_only ? "" : ",libr3moe") + ",libref";
+        if (native) {
+            std::istringstream tokens(required);
+            for (std::string kernel; std::getline(tokens, kernel, ',');)
+                if (std::find(native->kernels.begin(), native->kernels.end(), kernel) == native->kernels.end())
+                    throw std::runtime_error("native config admission: kernel list lacks topology plugin " + kernel);
+            std::string order;
+            for (const auto& kernel : native->kernels)
+                order += (order.empty() ? "" : ",") + kernel;
+            native_value("engine.kernels", order);
+        } else {
+            alias("engine.kernels", required,
+                  "engines/radiance/archs.toml " + archs + " plugin; launcher ENGINE_KERNELS",
+                  "layout.engine_cards");
+        }
     }
 
     for (const char* key : {"engine.model", "engine.radiance_home"})

@@ -66,6 +66,14 @@ struct Config {
     Helper helper;
     Engine engine;
 };
+// The representable engine settings reported by the matched native parser.
+struct NativeEngineSettings {
+    uint32_t port, max_context, max_sequences, max_batched_tokens, checkpoint_interval, speculative_tokens;
+    std::vector<std::string> kernels;
+    std::string placement, ngram_placement, kv_dtype, rope_scaling, prefix_resume;
+    bool prefix_cache;
+    std::optional<uint32_t> prefill_interleave;
+};
 struct Options {
     std::filesystem::path sys_root = "/";
     std::filesystem::path site, profile;
@@ -90,7 +98,8 @@ struct Resolved {
 };
 Json detect(const std::filesystem::path& root = "/");
 Json json_schema();
-Resolved resolve(const Options& options, const Json& facts);
+Resolved resolve(const Options& options, const Json& facts,
+                 const NativeEngineSettings* native = nullptr);
 /* The layout definition files (--layouts, else BIGCHERRY_LAYOUTS; a directory gives its *.toml), and every named layout
  * in them with the file it came from: {"layout": {name: table}, "source": {name: path}}. A name defined twice is refused. */
 std::vector<std::filesystem::path> layout_sources(const Options& options);

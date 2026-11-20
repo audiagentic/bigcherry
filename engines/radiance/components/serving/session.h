@@ -279,16 +279,20 @@ struct NativeConfigInspection {
     std::string model;
     std::string radiance_home;
     std::optional<std::string> radiance_home_source;
-    std::vector<std::string> kernels;
     std::optional<std::string> kernels_source;
     std::string listener_host;
-    std::uint16_t listener_port = 0;
     int tp = 0;
     std::vector<int> cards;
     std::vector<std::string> rank_devices;
-    int64_t max_context = 0;
-    int64_t max_sequences = 0;
+    NativeEngineSettings settings{};
+    Json receipt;
 };
+
+struct NativeWriterInput {
+    NativeConfigSnapshot snapshot;
+    NativeEngineSettings settings;
+};
+NativeWriterInput read_native_writer_input(int fd);
 
 /* Ask the matched Radiance binary to parse and resolve the admitted native YAML snapshot under its recorded
  * root. `native_environment` supplies the same explicit configuration environment selected for the later child;

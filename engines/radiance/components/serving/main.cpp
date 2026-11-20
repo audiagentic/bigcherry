@@ -402,7 +402,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         quality->reference = fs::canonical(quality->reference);
         quality->output = fs::absolute(quality->output);
     }
-    if (!config_name.empty() && opts.configs.empty()) {
+    const bool installed_native_replay =
+        prefix && bc::serving::v2::kContractVersion == 3 && !stored_manifest.empty();
+    if ((!config_name.empty() || installed_native_replay) && opts.configs.empty()) {
         const char* env = std::getenv("BIGCHERRY_CONFIGS");
         if (!env || !*env) {
             if (!prefix)
@@ -1013,20 +1015,18 @@ int main(int argc, char** argv) {
                                              " is not a JSON array");
             }
             const auto facts = bc::serving::detect(opts.sys_root);
-            const auto r = bc::serving::resolve(opts, facts);
+            std::optional<bc::serving::session::NativeWriterInput> native;
+            if (native_config_fd >= 0)
+                native = bc::serving::session::read_native_writer_input(native_config_fd);
+            const auto r = bc::serving::resolve(opts, facts, native ? &native->settings : nullptr);
             const auto& v = r.values;
-            const std::optional<bc::serving::NativeConfigSnapshot> native_config =
-                native_config_fd >= 0
-                    ? std::optional<bc::serving::NativeConfigSnapshot>(
-                          bc::serving::NativeConfigSnapshot::from_sealed_fd(native_config_fd))
-                    : std::nullopt;
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
             // Prepare the selected configuration once. P1 consumes this same
             // input as the final writer so a native snapshot can flow through
             // both without reopening or reconstructing engine configuration.
             bc::serving::ManifestInputs in;
             in.resolved = r;
-            in.native_config = native_config;
+            if (native) in.native_config = std::move(native->snapshot);
             in.engine_binary = engine_binary;
             in.plan_engine_args = plan_extra;
             if (unmeasured) {

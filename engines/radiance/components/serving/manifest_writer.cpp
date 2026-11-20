@@ -366,11 +366,13 @@ Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenan
         if (engine_only && (pointer.rfind("/spec/handoff", 0) == 0 || pointer.rfind("/spec/processes/helper_common", 0) == 0)) continue;
         const Json& rp = r.provenance.at(key);
         const std::string origin = rp.at("origin").get<std::string>();
-        if (origin != "cli" && origin != "site" && origin != "profile") continue;
+        if (origin != "cli" && origin != "site" && origin != "profile" && origin != "native") continue;
         const Json* base = covering(p, pointer);
         if (!base) continue;
-        p[pointer] = record(origin.c_str(), rp.at("source").get<std::string>().c_str(), base->at("class").get<std::string>().c_str(),
-                            "exact");
+        p[pointer] = record(origin == "native" ? "detected" : origin.c_str(),
+                            rp.at("source").get<std::string>().c_str(),
+                            base->at("class").get<std::string>().c_str(), "exact",
+                            origin == "native" ? Json::array({"/spec/native_config"}) : Json::array());
     }
     return p;
 }

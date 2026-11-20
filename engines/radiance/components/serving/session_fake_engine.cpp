@@ -180,7 +180,13 @@ int main(int argc, char** argv) {
             }
             kernels = parsed;
         }
-        json report = {{"protocol", "bigcherry.native-fleet-inspect/v1"},
+        json native_settings = {{"max_batched_tokens", 2048}, {"checkpoint_interval", 4096},
+                                {"placement", "expert_tiered"}, {"ngram_placement", "ram"}, {"kv_dtype", "fp8"},
+                                {"speculative_tokens", 3}, {"rope_scaling", "none"}, {"prefix_resume", "nearest"},
+                                {"prefix_cache", true}, {"prefill_interleave", nullptr}};
+        if (const char* configured_settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS"))
+            native_settings.update(json::parse(configured_settings));
+        json report = {{"protocol", "bigcherry.native-fleet-inspect/v2"},
                        {"snapshot", {{"sha256", reported_digest},
                                      {"resolution_root", input.at("resolution_root")}}},
                        {"engine", {{"abi_version", RAD_ABI_VERSION},
@@ -195,7 +201,8 @@ int main(int argc, char** argv) {
                                     {"cards", cards},
                                     {"rank_devices", rank_devices},
                                     {"max_context", configured_integer("TEST_NATIVE_INSPECT_MAX_CONTEXT", 4096)},
-                                    {"max_sequences", configured_integer("TEST_NATIVE_INSPECT_MAX_SEQUENCES", 1)}}}};
+                                    {"max_sequences", configured_integer("TEST_NATIVE_INSPECT_MAX_SEQUENCES", 1)},
+                                    {"settings", native_settings}}}};
         if (mode && std::strcmp(mode, "cards") == 0) report["engine"]["cards"] = json::array({"0"});
         std::cout << report.dump() << '\n';
         return 0;

@@ -220,13 +220,18 @@ int main() {
     ::close(sealed_fd);
     check(result && *result == 0, "sealed native config inspection failed");
     const Json report = Json::parse(output.str());
-    check(report.at("protocol") == "bigcherry.native-fleet-inspect/v1" &&
+    check(report.at("protocol") == "bigcherry.native-fleet-inspect/v2" &&
               report.at("snapshot").at("sha256") == inspected_field.at("sha256") &&
               report.at("snapshot").at("resolution_root") == execution_root.string() &&
               report.at("engine").at("listener").at("port") == 8123 &&
               report.at("engine").at("cards") == Json::array({2, 0}) &&
               report.at("engine").at("model") == "tiny.rad" &&
               report.at("engine").at("max_context") == 0 &&
+              report.at("engine").at("settings") == Json({
+                  {"max_batched_tokens", 2048}, {"checkpoint_interval", 2048},
+                  {"placement", "auto"}, {"ngram_placement", "auto"}, {"kv_dtype", "bf16"},
+                  {"speculative_tokens", -1}, {"rope_scaling", ""}, {"prefix_resume", "exact"},
+                  {"prefix_cache", true}, {"prefill_interleave", nullptr}}) &&
               report.dump().find(inspected_yaml) == std::string::npos,
           "native inspect report changed identity, ordering, parsed values or exposed source YAML");
 
