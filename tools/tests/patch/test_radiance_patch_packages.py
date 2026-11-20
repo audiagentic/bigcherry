@@ -64,7 +64,7 @@ PIN_BLOBS = {
         "abi/bc_moe_remote.h": (None, "6e3fbc7"),
         "arch/common/bc_moe_remote_block.h": (None, "89c76c3"),
         "arch/common/rad_block_hc.h": ("3a602e5", "2d573ec"),
-        "arch/common/rad_block_moe_fp8.h": ("614db0e", "3634a17"),
+        "arch/common/rad_block_moe_fp8.h": ("614db0e", "f3ab4f3"),
         "core/engine.cpp": ("7544310", "010989d"),
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
@@ -78,7 +78,7 @@ PIN_BLOBS = {
     },
     RAD0004: {
         "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("3634a17", "ecf99af"),
+        "arch/common/rad_block_moe_fp8.h": ("f3ab4f3", "9e6d964"),
     },
     RAD0009: {
         "core/bc_serving_manifest.h": (None, "149f010"),
@@ -280,7 +280,10 @@ class TestRadiancePatchPackages(unittest.TestCase):
             declare = moe.index("RAD_ARCH_TRY(bc_remote.declare(b, *this, reg, l));")
             self.assertLess(moe.index('op_add = rw(b, RAD_OP(b, "add",'), declare)
             self.assertLess(declare, moe.index("xp_parts.assign("))
-            after_route = moe.index("bc_remote.after_route(c_, *this, T, r0, rows, ecnt);")
+            # One publication per pass. The second would clear the first's flags after masking its IDs.
+            self.assertEqual(moe.count("bc_remote.after_route("), 1)
+            after_route = moe.index("bc_remote.after_route(c_, *this, T, r0, rows, ecnt,")
+            self.assertIn("scatter_inv ? brows(w.inv, rows * k) : RAD_NONE", moe[after_route:after_route + 160])
             n4 = moe.index("const int64_t n4[4]")
             hq = moe.index("RAD_ISSUE_N(c_, op_hq, rows")
             self.assertLess(hq, after_route)

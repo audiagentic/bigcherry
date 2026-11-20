@@ -847,7 +847,7 @@ PATCHES = (
             ),
             Edit(
                 id="bc-remote-after-route",
-                applies_if=r"^(?![\s\S]*bool[ \t]+scatter_inv = false)",
+                applies_if=r"\A(?![\s\S]*bool[ \t]+scatter_inv = false)",
                 anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
                 mode="insert_before",
                 text="    bc_remote.after_route(c_, *this, T, r0, rows, ecnt);\n",
