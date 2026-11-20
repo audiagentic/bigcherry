@@ -292,7 +292,7 @@ def publish_measurement(
     expected: attestation.ExecutionIdentity | None,
     observed: attestation.ExecutionAttestation | None,
     work_root: Path | None = None,
-    metric_specs: dict | None = None,
+    metric_specs: dict,
     host_snapshot: dict | None = None,
     measurement_source: bytes | None = None,
 ) -> str:
@@ -389,7 +389,7 @@ def record_measurement_file(
         )
     return publish_measurement(
         root, identity=doc["identity"], workload=doc["workload"],
-        metrics=doc["metrics"], metric_specs=doc.get("metric_specs"),
+        metrics=doc["metrics"], metric_specs=doc["metric_specs"],
         expected=wanted, observed=actual, work_root=work_root,
         measurement_source=path.read_bytes(),
     )

@@ -172,8 +172,8 @@ def validate_record(record: Any) -> dict[str, Any]:
     _check_schema(record, schema, schema, "record")
     # Arbitrary workload/host details must still be JSON, with no NaN/Infinity.
     _json_bytes(record)
-    # MRC02 migrates Radiance. A Radiance record is never read or written
-    # without the sealed start receipt; other engines are scoped to MRC07.
+    # MRC02: a Radiance record must carry the SHA-bound measurement start
+    # receipt on both read and write. Do not synthesize an old host snapshot.
     from . import engines
     if record["identity"]["engine"] == engines.RADIANCE:
         from .host_facts import validate_start_snapshot
@@ -186,15 +186,18 @@ def validate_record(record: Any) -> dict[str, Any]:
                 raise ValueError("start receipt is after measured record")
         except (ValueError, TypeError, KeyError) as exc:
             raise RecordError(f"Radiance record requires sealed start host facts: {exc}") from exc
-    # Phase-qualified gates must match the supplied measurements.
-    if "metric_specs" in record:
-        for phase in ("decode", "prefill", "ttft"):
-            if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
-                raise RecordError(f"metric_specs.{phase}: direction missing or extra metric")
-            for spec in record["metric_specs"][phase].values():
-                if type(spec["gated"]) is not bool:
-                    raise RecordError("metric gate must be a boolean")
-    # VA25 execution validity must not contradict its reason codes.
+
+    # MRC05/#1226: exact per-phase metric direction and gate are mandatory.
+    if "metric_specs" not in record:
+        raise RecordError("metric_specs is required: every metric needs an explicit direction and gate")
+    for phase in ("decode", "prefill", "ttft"):
+        if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
+            raise RecordError(f"metric_specs.{phase}: direction missing or extra metric")
+        for spec in record["metric_specs"][phase].values():
+            if type(spec["gated"]) is not bool:
+                raise RecordError("metric gate must be a boolean")
+
+    # VA25 validity must not contradict its reason codes.
     if "validity" in record:
         validity = record["validity"]
         if (validity["state"] == "valid") != (not validity["reason_codes"]):

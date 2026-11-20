@@ -40,6 +40,11 @@ def fixture_record(
             "prefill": {"tokens_per_second": 1000.0},
             "ttft": {"milliseconds": 28.3},
         },
+        "metric_specs": {
+            "decode": {"tokens_per_second": {"direction": "higher", "gated": True}},
+            "prefill": {"tokens_per_second": {"direction": "higher", "gated": True}},
+            "ttft": {"milliseconds": {"direction": "lower", "gated": True}},
+        },
         "provenance": {
             "effective_config": config,
             "argv": argv,
@@ -140,6 +145,7 @@ def test_query_engine_layout_workload_metric_and_time(tmp_path):
     )
     b["run_id"] = "run-002"
     b["metrics"]["decode"] = {}
+    b["metric_specs"]["decode"] = {}
     store.put_record(b)
     assert len(store.query()) == 2
     assert len(store.query(engine="engine-a", layout="layout-x", workload="short")) == 1

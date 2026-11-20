@@ -203,6 +203,7 @@ def test_record_and_run_manifest_host_facts_round_trip(tmp_path, monkeypatch):
         },
         "workload": {"name": "test", "definition": {}},
         "metrics": {"decode": {}, "prefill": {}, "ttft": {}},
+        "metric_specs": {"decode": {}, "prefill": {}, "ttft": {}},
         "provenance": {
             "effective_config": blob,
             "argv": blob,

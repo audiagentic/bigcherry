@@ -33,6 +33,7 @@ def publish(tmp_path, snapshot, *, stamp="2026-11-20T12:00:00Z"):
         effective_config=b"exact-manifest", argv=["engine", "--run"],
         environment={}, power_settings={}, inputs={"raw": b"evidence"},
         host_facts=snapshot, feature_states=[],
+        metric_specs={"decode": {"steps": {"direction": "higher", "gated": False}}, "prefill": {}, "ttft": {}},
     )
 
 

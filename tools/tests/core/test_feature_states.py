@@ -38,6 +38,7 @@ def run_record(store):
         },
         "workload": {"name": "fixture", "definition": {}},
         "metrics": {"decode": {}, "prefill": {}, "ttft": {}},
+        "metric_specs": {"decode": {}, "prefill": {}, "ttft": {}},
         "provenance": {
             "effective_config": blob,
             "argv": blob,

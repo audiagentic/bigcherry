@@ -939,6 +939,7 @@ class CacheInventory(unittest.TestCase):
                          "model": "model", "layout": "layout"},
             "workload": {"name": "decode", "definition": {}},
             "metrics": {"decode": {}, "prefill": {}, "ttft": {}},
+            "metric_specs": {"decode": {}, "prefill": {}, "ttft": {}},
             "provenance": {"effective_config": blob, "argv": blob,
                            "environment": blob, "power_settings": blob, "inputs": []},
             "host_facts": __import__("bigcherry.core.host_facts", fromlist=["snapshot_at_start"])
