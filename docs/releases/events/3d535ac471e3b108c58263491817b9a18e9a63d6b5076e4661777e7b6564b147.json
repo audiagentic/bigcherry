@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_012533_one-measurement-path-no-legac_3737",
+  "files": [
+    "tools/bigcherry/bench/workloads.py",
+    "tools/bigcherry/cli/results.py",
+    "tools/bigcherry/core/calibration_records.py",
+    "engines/radiance/components/serving/live_policy_ingest.cpp",
+    "tools/lab/radiance/flashnext_parity.py",
+    "tools/lab/radiance/flashnext-parity.sh"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1223: legacy paths and shims removed (workload JSONL index/aliases/compare/seed, results legacy listing, calibration legacy classification, parity.json and the harness's own baseline/compare, engine-side Python test helpers); bc-serve calibration-prune removed the 6 hash-only records from the production store (kept verbatim as a test fixture); the 138 retired workload rows summarised as evidence with their raw files.",
+  "timestamp-utc": "2026-11-20T01:25:33.827179Z",
+  "user-summary-candidate": "One measurement path, no legacy readers or shims."
+}

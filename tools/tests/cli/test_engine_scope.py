@@ -80,14 +80,14 @@ class EngineScopeTests(unittest.TestCase):
     def test_patches_lists_the_chosen_engines_patch_tree(self):
         code, out, _ = self._run(["--engine", "radiance", "patches"])
         self.assertEqual(code, 0)
-        self.assertIn("rad0001_drain_mover_before_arena_free", out)
+        self.assertIn("rad0002_moe_remote_handoff", out)
         self.assertNotIn("0100_cmake_options", out)
 
     def test_patches_on_llamacpp_lists_its_own_tree(self):
         code, out, _ = self._run(["--engine", "llamacpp", "patches"])
         self.assertEqual(code, 0)
         self.assertIn("0100_cmake_options", out)
-        self.assertNotIn("rad0001_drain_mover_before_arena_free", out)
+        self.assertNotIn("rad0002_moe_remote_handoff", out)
 
     def test_platform_command_refuses_the_flag(self):
         self.assertIsNone(_resolve(["patch-lint"]).engine)

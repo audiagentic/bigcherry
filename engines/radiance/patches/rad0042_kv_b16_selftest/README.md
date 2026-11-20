@@ -24,3 +24,10 @@ the `gpu` lease against the rad0038 baseline (0 failures, 246 skipped); the new 
 ## Detail
 
 `libr4d/r4d_selftest.cpp` only.
+
+### Promotion record
+
+Tier: diagnostic
+
+Mechanics: card-free patch-package tests (apply, anchors, idempotence) and patch-lint; the selftest cases compile in a gfx1201 build and pass libr3's rewrite check.
+Activation: the cases run on a gfx1100 card (one 7900 XTX, libr3's r3_selftest, each case alone) on 2026-11-18: all 21 cases of the two packed layouts (bf16_fp8 and bf16_i8, gqa 12 and gqa 6) pass, including bf16_i8_rows; the run before the inventory fix failed 14 of them, and the run after passed all. See docs/evidence/2026-11-16-vtp44-generic-kv-layouts/rad0042-selftest/ (before-summary.txt, after-summary.txt).
