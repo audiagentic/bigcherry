@@ -17,13 +17,13 @@ work: M
 
 A feature-state contract: each engine declares its optional performance features and reports each as active, inactive or degraded with a reason code. The platform shows the states in status, copies them into every record, and warns loudly at production start when a production feature is inactive. Motivation: the Radiance live placement policy was silently off from 2026-11-09 to 2026-11-19 (the calibration key was orphaned by #790), costing about 32 % of cold 27K TTFT; nothing flagged it until a transaction count was compared by hand.
 
-Examples: Radiance: live placement policy, MTP, prefix cache, KV host tier, helper combine. llama.cpp: dispatch cache, tuning.
+MRC03 scope: Radiance's live placement policy, MTP, prefix cache, KV host tier, helper combine and vision options. The llama.cpp feature-state producer and registry coverage are deferred to MRC07; no llama.cpp adapter is introduced here.
 
 ## Steps
 
 - 1. Contract: a schema for `feature_states` (feature id, state active|inactive|degraded, reason_code, detail) and a registry of the features each engine declares, owned by the platform.
 - 2. Radiance adapter: bc-serve writes the states file into the run directory at start (the native runtime stays Python-free). Map the existing manifest `spec.handoff.placement.live_policy_state` (configured, requested, reason_code, reason_detail) and add MTP, prefix cache, KV host tier and helper combine from the resolved configuration.
-- 3. llama.cpp adapter: report dispatch cache and tuning state from the build/run configuration.
+- 3. Deferred to MRC07: llama.cpp adapter and its engine-specific registry entries. MRC03's implementation and validation cover Radiance only.
 - 4. Platform: show states in `bigcherry status`, copy them into every record (MRC01), and at production start print a loud warning (and a non-zero exit under a strict flag) when a feature marked production is inactive.
 - 5. Tests: contract validation, adapter fixtures, warning on an inactive production feature.
 
@@ -59,8 +59,8 @@ Medium. Risk: a warning noisy enough to be ignored; only features marked product
 ## Acceptance Criteria
 
 - An inactive production feature is reported at start-up and in `status`, without reading logs.
-- Every record contains the feature states of the run.
-- Adding a feature to an engine requires only a registry entry and an adapter line.
+- Every new Radiance measurement record contains the native owner's feature states; incomplete snapshots refuse publication.
+- Adding a Radiance feature requires only a platform registry entry and a native adapter line; other engine coverage is MRC07.
 
 ## Notes
 

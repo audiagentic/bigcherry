@@ -164,6 +164,21 @@ when live placement is inactive or degraded, including the reason code and
 the preflight/provenance reason; other default-off options are diagnostic
 rather than automatically required. MRC06 still owns producer migration.
 
+The platform registry at `tools/bigcherry/core/feature_registry.py` declares
+Radiance feature IDs and their production expectations. The native owner reports
+all seven declared features before child admission. Missing, duplicate, and
+wrong-engine states refuse new Radiance measurement publication. Other engine
+producers are scoped to MRC07.
+
+Inspect the authenticated native snapshot with
+`bigcherry status --run-dir RUN`. A required inactive or degraded feature
+prints its native reason, and `bigcherry status --run-dir RUN
+--strict-production-features` returns status 2. For production admission,
+`bc-serve serve CONFIG --run-dir RUN --strict-production-features`
+refuses a missing required feature **before child spawn**, while writing its
+snapshot and diagnostic. A run without selected helpers does not require live
+placement. No Python is invoked by the native serving runtime.
+
 ### Portable results: baseline, compare, history (MRC05 slice 1)
 
 `bigcherry.core.results` owns offline baseline gates, comparisons and history
