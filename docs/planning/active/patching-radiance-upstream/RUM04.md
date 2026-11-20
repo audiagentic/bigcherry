@@ -221,6 +221,8 @@ The first live RUM09 attempt reached measurement and refused a missing YAML host
 
 The isolated GPU retry passed native pool preparation and wrote the live engine plan and rank receipt. The final measured writer returned exit 11 because the 9216 MiB trial pool differed from its 2247 MiB derived requirement. No serving or replay occurred. Add bounded native remeasurement for omitted YAML pools with a distinct effective input key per attempt and expose explicit pool conflicts; preserve helper rollback and exact receipts.
 
+Exact b0c256877 ABI44 integrated Flash-Next v3 with three physical helpers passed fresh and named starts, then explicit stored replay after the authored YAML was removed and VRAM had recovered from shutdown. All three starts report the same manifest digest and measurement attempt. Immediate explicit replay refused live VRAM after stop as designed. The authored YAML reached the upstream parser and the recorded TP1 engine BDF and three disjoint helper roles were admitted. Finite KL and shipped configuration/install checks remain part of the integrated proof.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -286,3 +288,4 @@ The isolated GPU retry passed native pool preparation and wrote the live engine 
 - 2026-11-19T23:20:19.446517+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:49:40.807569+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:59:22.141784+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:03:46.253523+00:00 (updated-by): Updated: section:notes

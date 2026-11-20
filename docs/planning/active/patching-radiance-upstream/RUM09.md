@@ -122,6 +122,8 @@ Merged main through f40d74c5c at b0c256877. The finite native owner KL action f6
 
 Integrated v2.2.0 build checkpoint b0c256877 verified 60 DSO ABI exports, roster and v3 fingerprint. Qualification runtime bundle 03be7bf7c7e09fb0c3c33354daeb4dcc. A fresh gfx1201 mixed rank start streamed a token and stop reaped the children with zero outstanding mailbox work. Named replay reused the same manifest and measurement. Immediate explicit replay refused live rank VRAM after shutdown; retry against the same immutable manifest after room has returned. Old-pin 1170.35.0 performance control preserves its verified engine and replaces only the v2 owner in a scratch copy for genuine MRC02 host-start receipts; focused ABI35 owner tests passed 2/2.
 
+Settled explicit replay exited 0 with the author YAML absent. Fresh, named and explicit replay verified the same immutable manifest and plan measurement attempt. Qualification continued with helper-off and helper-on KL against the matched v1.17.0 reference. The initial immediate-VRAM refusal and successful retry are retained as separate evidence.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -154,3 +156,4 @@ Integrated v2.2.0 build checkpoint b0c256877 verified 60 DSO ABI exports, roster
 - 2026-11-20T02:18:45.278897+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:39:23.371083+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:58:45.425205+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:03:37.935279+00:00 (updated-by): Updated: section:notes
