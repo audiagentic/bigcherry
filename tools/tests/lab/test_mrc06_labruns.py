@@ -578,3 +578,31 @@ def test_probe_wrong_port_refuses_before_network(tmp_path, monkeypatch):
             ]
         )
     assert requests == []
+
+
+def test_noncalibration_lab_requires_measured_sidecar_and_sealed_native_session(tmp_path):
+    from bigcherry.bench import radiance_lab_records as lab
+    run = tmp_path / "run"
+    manifest, _ = make_run(run, state="stopped")
+    sidecar = run / "lab-measurement.json"
+    source = {
+        "schema_version": 1, "run_id": "launch-v1",
+        "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
+        "recorded_at": "2026-11-20T03:00:00Z",
+        "workload": {"name": "native-lab", "definition": {"profile": "observe"}},
+        "metrics": {"decode": {"step_ms": 42}, "prefill": {}, "ttft": {}},
+        "metric_specs": {"decode": {"step_ms": {"direction": "lower", "gated": True}}, "prefill": {}, "ttft": {}},
+    }
+    sidecar.write_text(json.dumps(source))
+    sha = lab.publish_native_lab(run, sidecar, work_root=tmp_path, host_snapshot=FAKE_HOST)
+    store = run_records.RunRecordStore(tmp_path)
+    row = store.get_record(sha)
+    assert row["metrics"]["decode"]["step_ms"] == 42
+    assert row["validity"]["state"] == "unverified"
+    assert any(item["role"] == "native_lab_measurement" for item in row["provenance"]["inputs"])
+    altered = dict(source, manifest_sha256="0"*64)
+    sidecar.write_text(json.dumps(altered))
+    with pytest.raises(ValueError, match="manifest"):
+        lab.publish_native_lab(run, sidecar, work_root=tmp_path, host_snapshot=FAKE_HOST)
+    manifest.unlink()
+    assert store.get_record(sha) == row

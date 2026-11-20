@@ -523,6 +523,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="qualify diagnostics on mechanics and activation only, without production admission",
     )
     patch_promote_cmd.add_argument(
+        "--diagnostic-source",
+        metavar="SOURCE",
+        help="with --diagnostic: the diagnostic source a patch joins when it is only in an experiment today",
+    )
+    patch_promote_cmd.add_argument(
         "--release",
         action="store_true",
         help="finish the release-please release when its PR exists; otherwise report pending",

@@ -232,6 +232,22 @@ class RunRecordsTests(unittest.TestCase):
             }))
         return out
 
+    def test_parity_launch_uses_shared_record_producer_once(self):
+        from bigcherry.core import measurement_producers, run_records
+
+        out = self.run_fixture("sole-writer", [1.0])
+        with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}), patch(
+            "bigcherry.core.measurement_producers.publish",
+            wraps=measurement_producers.publish,
+        ) as publish:
+            digest = fp.publish_launch_record(out, out / "launch-1", work_root=self.root)
+        self.assertEqual(publish.call_count, 1)
+        self.assertEqual(
+            run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
+            "sole-writer-launch-1",
+        )
+        self.assertFalse((out / "parity.json").exists())
+
     def test_two_harness_records_match_results_compare_verdict(self):
         from bigcherry.core import results, run_records
 
