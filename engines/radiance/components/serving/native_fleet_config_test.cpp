@@ -243,6 +243,9 @@ int main() {
     char* inspect_argv[] = {command, inspect, const_cast<char*>(fd_text.c_str()), nullptr};
     std::ostringstream output;
     std::streambuf* old_out = std::cout.rdbuf(output.rdbuf());
+    // The first step of a start is a device-free parse: it must work with every GPU hidden, as bc-serve runs it.
+    check(::setenv("ROCR_VISIBLE_DEVICES", "-1", 1) == 0 && ::setenv("HIP_VISIBLE_DEVICES", "-1", 1) == 0,
+          "cannot hide the devices for the inspector");
     const auto result = bc::serving::inspect_native_fleet_config_command(3, inspect_argv);
     std::cout.rdbuf(old_out);
     ::close(sealed_fd);
@@ -254,6 +257,8 @@ int main() {
               report.at("engine").at("listener").at("port") == 8123 &&
               report.at("engine").at("cards") == Json::array({2, 0}) &&
               report.at("engine").at("model") == "tiny.rad" &&
+              report.at("engine").at("x_bigcherry").is_null() && report.at("engine").at("tp_wire").is_null() &&
+              report.at("engine").at("tuning").at("tune_pin").is_null() &&
               report.at("engine").at("max_context") == 0 &&
               report.at("engine").at("settings") == Json({
                   {"max_batched_tokens", 2048}, {"checkpoint_interval", 2048},
