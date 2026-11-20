@@ -54,6 +54,10 @@ def test_retained_rows_apply_and_replay_on_reviewed_abi43_source():
                 ["git", "-C", checkout, "show", f"{candidate_commit}:{rel}"],
             ))
 
+        unpatched_rows = (root / "libr4d/r4d_rows.cpp").read_text()
+        assert '"had_quant_act_fp8", "had_quant_act_fp8", "quant"' not in unpatched_rows
+        assert '"moe_gemm_fp8a8", "moe_gemm_q", "moe"' not in unpatched_rows
+
         first = apply_all(patches, root)
         assert first and all(result.ok for result in first), first
         assert all(edit.status == "applied" for result in first for edit in result.results), first
