@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.35.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.34.0...bc-radiance-1170.35.0) (2026-11-20)
+
+
+### New and changed
+
+* **core:** Radiance feature registry and strict production status (MRC03) ([#1230](https://github.com/audiagentic/bigcherry/issues/1230)) ([71acad4](https://github.com/audiagentic/bigcherry/commit/71acad45621c1e68cf6df90778a64b4d9c3b5d4a))
+
 ## [1170.34.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.33.0...bc-radiance-1170.34.0) (2026-11-19)
 
 
