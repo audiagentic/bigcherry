@@ -13,6 +13,46 @@ work: L
 
 # Vulkan collective and mixed-architecture qualification
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-20 upstream status reconciliation (RV4253): llama.cpp PR #25051 merged to upstream master on 2026-11-02. This is a candidate implementation to inspect at the merged revision; it does not establish BigCherry correctness, inactive-rank destination/source safety, multi-RDNA qualification, or performance. Next step is source-composed review against the pinned BigCherry base and PRVP03 SPI/fallback contract, then exact Vulkan correctness and hardware qualification before any adoption or claim. PRVP03 remains the sole BigCherry AllReduce implementation owner; TRVP16 remains qualification-only. No GPU work was performed for this planning update.
+
 ## 2026-10-11 implementation audit: inactive-shard safety before heterogeneous TP
 
 **Disposition: no new transport or hardware campaign yet.** TRVP16 owns qualification of the existing PRVP03 communication SPI across all-Vulkan multi-RDNA configurations, not another AllReduce implementation. PRVP03/1290 is an evaluated, default-off, synchronous F32 host reference. An upstream Vulkan provider, [llama.cpp #25051](https://github.com/ggml-org/llama.cpp/pull/25051), is OPEN as inspected 2026-10-10 (head `99becee6fc0312964b8cde77e83baf46b5f133d6`); inspect/rebase its actual code before considering any independent phase-1 transport. No BigCherry mixed-RDNA correctness or throughput has been measured.
@@ -58,3 +98,8 @@ Pinned-source structural checks **10/10 passed** (1290 unconditional rank read, 
 
 - 2026-10-02T12:35:11.094367+00:00 (created-by): Created by agent.
 - 2026-10-11: Source-level inactive-shard/fallback contract and upstream #25051 ownership rebaseline; no implementation/hardware action.
+
+## Reviews
+
+- RV4253
+- 2026-11-20T03:47:31.184076+00:00 (updated-by): Updated: section:notes

@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_034808_trvp16-now-records-that-the-up_8398",
+  "files": [
+    "docs/planning/active/tuning-rocm-vulkan-provider/TRVP16.md",
+    "docs/planning/completed/tuning-rocm-vulkan-provider/reviews/TRVP16/RV4253.md"
+  ],
+  "plan-item-ids": [
+    "TRVP16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Updated TRVP16 with the current upstream status of llama.cpp PR #25051 (merged 2026-11-02) and added a source-review/qualification gate while preserving PRVP03 implementation ownership and the no-hardware-proof boundary. Review RV4253 closed.",
+  "timestamp-utc": "2026-11-20T03:48:08.817523Z",
+  "user-summary-candidate": "TRVP16 now records that the upstream Vulkan AllReduce implementation merged and requires source and correctness review before any BigCherry adoption or performance claim."
+}
