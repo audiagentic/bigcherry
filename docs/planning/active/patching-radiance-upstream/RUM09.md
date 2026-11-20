@@ -112,6 +112,8 @@ At producer checkpoint e36f584f0, the live run passed health and the prior requi
 
 Fail-closed diagnostic checkpoint d466f696a reproduced the first request on leased hardware without losing the error to a queue trap. Parent 1 had matching ticket/epoch/slot (1/1/0) but 139 published and 0 consumed. Host proof rejected it and returned HTTP 500 without emitting consumption ACKs. Investigate finish operation issue/replay and counter reduction before the next functional canary.
 
+Live direct per-slot accounting at bb1b8a190 reproduced exactly 139 published and 0 consumed. This comparison rules out the workgroup reduction as the sole explanation. The GPU session exited cleanly and released its lease. Next diagnostic distinguishes first-capture dispatch from recorded replay and checks whether any device consumed records were written before seal.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -139,3 +141,4 @@ Fail-closed diagnostic checkpoint d466f696a reproduced the first request on leas
 - 2026-11-20T00:43:44.078640+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:55:22.935951+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T01:03:47.081769+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T01:12:49.299909+00:00 (updated-by): Updated: section:notes
