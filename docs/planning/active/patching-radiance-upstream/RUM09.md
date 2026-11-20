@@ -108,6 +108,8 @@ Live automatic remeasurement at be89849c0 produced two distinct engine plan rece
 
 Live checkpoint 77fd71cf6 converged and passed health and default-name routing. The first completion reached Flash-Next layer 0 and failed with mailbox publish operand 3 handle 0. Operand 3 is the required E4M3 activation slice; the HIP op also requires its scales and base. Stock 2.2 can use an I8 local activation lane without materializing the E4M3 pair. Port the producer planes while preserving the local lane and the strict runtime check. No working completion or replay yet.
 
+At producer checkpoint e36f584f0, the live run passed health and the prior required buffer-handle check. The first completion reached GPU execution, then gfx1201 reported an HSA queue exception at mailbox_seal_kernel. The owner received no HTTP reply and ended the session. Preserve the engine fault log and diagnose the mailbox pointers and queue ordering before another live attempt.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -133,3 +135,4 @@ Live checkpoint 77fd71cf6 converged and passed health and default-name routing. 
 - 2026-11-20T00:13:25.180057+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:23:43.215660+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:43:44.078640+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T00:55:22.935951+00:00 (updated-by): Updated: section:notes
