@@ -115,6 +115,7 @@ struct R3MoeMailboxDevice {
     R3MoeShadowFirst* shadow_first = nullptr;
     uint32_t layer_count = 0;
     uint32_t finish_threads = 0; /* validated against the physical device limit */
+    uint32_t trace_every = 0; /* strict manifest's existing lanes.trace_level; no events when 0 */
     uint32_t max_rows = 0;
     uint32_t hidden = 0;    /* the segment's model shape: every launch is checked against it */
     uint32_t top_k = 0;

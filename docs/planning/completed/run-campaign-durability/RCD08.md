@@ -2,7 +2,7 @@
 id: RCD08
 order: 8
 plan: run-campaign-durability
-state: pending
+state: superseded
 created-at: '2026-09-26T00:52:15.711845+00:00'
 breadth: ''
 skill: intermediate
@@ -12,6 +12,53 @@ work: M
 ---
 
 # Implement verified evidence harvest, explicit git commit and canonical reports
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- deterministic/idempotent explicit-path harvest;
+- committed evidence is traceable to exact run/session/attempt/record digest;
+- validation/contract drift cannot be silently harvested;
+- review-ready requires committed verified evidence and planned-session completeness;
+- statistical aggregation reuses existing contract estimator/policy;
+- no stash/add-A/reset or auto-promotion;
+- offline tests green;
+- dev real-series parity complete.
+
+## Notes
+
+Consolidation disposition (2026-11-20): superseded into active RCD10 after RV4247. RCD10 now carries the harvest-integrity and observability requirements from this source, including the separate real cutover/soak gate. This plan transition does not claim implementation or hardware acceptance. Preserve this source record and its historical evidence/ledger references.
 
 ## Status
 
@@ -133,19 +180,13 @@ Before marking RCD08 complete:
 6. prove a scientific FAIL harvests/reports normally without becoming an operational process failure;
 7. confirm no unrelated repository path enters the harvest commit.
 
-## Acceptance criteria
-
-- deterministic/idempotent explicit-path harvest;
-- committed evidence is traceable to exact run/session/attempt/record digest;
-- validation/contract drift cannot be silently harvested;
-- review-ready requires committed verified evidence and planned-session completeness;
-- statistical aggregation reuses existing contract estimator/policy;
-- no stash/add-A/reset or auto-promotion;
-- offline tests green;
-- dev real-series parity complete.
-
 ## Change log
 
 - 2026-09-26: initial design.
 - 2026-09-26: specified verified harvest/git transaction and report invariants.
 - 2026-09-27: implemented verified record-delta harvest, exact git transaction, scientific identity v2 contract/config freezing, JSON/Markdown reports and temp-git/statistical mocks; hardware acceptance remains.
+
+## Change Log
+
+- 2026-11-20T02:56:03.216886+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:56:09.760482+00:00 (state-transition): State: pending → superseded

@@ -59,14 +59,18 @@ void trace_dump(void* map, uint32_t lane, uint32_t seq) {
      * gemm_us -> gate/up, quant and down done, write_us -> rows written and done published; helper 0's combine wait and
      * time on the step it combined. */
     const uint64_t s0 = q->stage_trace[0], s1 = q->stage_trace[1], cb = q->stage_trace[2];
+    const auto mailbox = r3::moe_trace::compute(q->mailbox_trace, t[2], us);
     const bool st_ok = s0 >= t[3] && s1 >= s0 && t[4] >= s1 && s0;
     std::fprintf(stderr, "TRACE,lane,%u,seq,%u,layer,%u,rows,%u,routes,%u,local_us,%.2f,wait_us,%.2f,helper_gpu_us,%.2f,enter,%llu,wall_ns,%llu,"
-                 "act_us,%.2f,gemm_us,%.2f,write_us,%.2f,combine_wait_us,%u,combine_us,%u\n",
+                 "act_us,%.2f,gemm_us,%.2f,write_us,%.2f,combine_wait_us,%u,combine_us,%u,"
+                 "mailbox_stamp_ok,%u,publish_us,%.2f,wait_bookkeeping_us,%.2f,finish_us,%.2f,combine_engine_wait_us,%.2f\n",
                  lane, seq, q->layer, q->rows, q->route_count,
                  (double)(int64_t)(t[1] - t[0]) * us, (double)(int64_t)(t[2] - t[1]) * us,
                  (double)(int64_t)(t[4] - t[3]) * us, (unsigned long long)t[1], wall_ns,
                  st_ok ? (double)(s0 - t[3]) * us : 0.0, st_ok ? (double)(s1 - s0) * us : 0.0, st_ok ? (double)(t[4] - s1) * us : 0.0,
-                 (unsigned)(cb & 0xffffffffu), (unsigned)(cb >> 32));
+                 (unsigned)(cb & 0xffffffffu), (unsigned)(cb >> 32),
+                 mailbox.valid ? 1u : 0u, mailbox.publish_us, mailbox.wait_bookkeeping_us,
+                 mailbox.finish_us, mailbox.combine_engine_wait_us);
 }
 
 struct ReplayInput {

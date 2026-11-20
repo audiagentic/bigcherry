@@ -5,6 +5,7 @@
 #include "jcs.h"
 #include "ledger.h"
 #include "live_policy.h"
+#include "lab_trace_experiment.h"
 #include "owner_map.h"
 #include "plan_cache.h"
 #include "serving_codec.h"
@@ -478,7 +479,12 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
                                          {"model_identity", in.measured->key_inputs.at("model")},
                                          {"engine_identity", in.measured->key_inputs.at("engine_build")},
                                          {"expected", in.measured->plan.plan_json}};
-    if (live_policy.is_null() && in.profile == "production" && !engine_only) {
+    // A trace-only lab experiment changes no calibrated quantities: derive
+    // from the identical narrow production key and strict record checks.
+    // All other lab experiments remain excluded from implicit activation.
+    if (live_policy.is_null() && !engine_only &&
+        (in.profile == "production" ||
+         (in.profile == "lab" && lab_lane_trace_only(in.experiment)))) {
         std::string skipped_reason;
         if (const auto derived = derive_manifest_live_policy(in, container, spec, &skipped_reason)) {
             live_policy = derived->policy;

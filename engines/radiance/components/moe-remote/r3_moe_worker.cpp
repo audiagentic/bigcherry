@@ -36,6 +36,7 @@
 #include "worker_shape.h"
 #include "worker_share.h"
 #include "worker_owners.h"
+#include "mailbox_trace_math.h"
 #include "worker_harness.h"
 #include "worker_selftest.h"
 #include "worker_combine.h"

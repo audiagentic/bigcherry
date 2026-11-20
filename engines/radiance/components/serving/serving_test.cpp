@@ -4521,9 +4521,10 @@ void session_engine_plan(Fixture& t) {
         fs::create_directories(lab_run);
         bool writer_checked = false;
         fs::path produced;
+        std::string expected_experiment = lab.experiment_file.string();
         lab.runner = [&](const std::vector<std::string>& argv) {
             writer_checked =
-                has(argv, "--experiment", lab.experiment_file.string()) && !flag(argv, "--calibration-run");
+                has(argv, "--experiment", expected_experiment) && !flag(argv, "--calibration-run");
             if (!flag(argv, "--unmeasured"))
                 return ss::ManifestRun{10, "", "no cached measured plan"};
             const auto written = run_bc_serve({argv.begin() + 1, argv.end()});
@@ -4547,6 +4548,30 @@ void session_engine_plan(Fixture& t) {
         const auto detached = run_bc_serve({"start", "qwen27b-tp3-int8", "--run-dir", run.string(),
                                             "--lab-experiment", lab.experiment_file.string()});
         assert(detached.exit_code != 0 && detached.output.find("requires foreground") != std::string::npos);
+        // ENG05: exact existing trace_level is the one extra, non-mutating
+        // lab experiment admitted by the native owner. It goes through
+        // the strict writer and measuring manifest; no GPU child launches.
+        ss::EnginePlanInputs trace = lab;
+        trace.experiment_file = t.file(
+            "lab-mailbox-trace.json", R"({"diagnostics":{"lanes":{"trace_level":1}}})");
+        expected_experiment = trace.experiment_file.string();
+        writer_checked = false;
+        produced.clear();
+        fs::create_directories(lab_run / "trace-only");
+        try {
+            (void)ss::plan_engine_only(trace, lab_run / "trace-only", wait);
+        } catch (const ss::PlanFailed& error) {
+            std::cerr << "lab trace: " << error.what() << "\n";
+            // Deliberately stop before starting any measuring GPU child.
+        }
+        assert(writer_checked && !produced.empty() && fs::is_regular_file(produced));
+        const auto traced = bc::serving::v2::load_manifest(
+            produced, bc::serving::v2::PlanUse::measuring);
+        assert(traced && traced.value().spec.experiment &&
+               traced.value().spec.experiment->diagnostics &&
+               traced.value().spec.experiment->diagnostics->lanes &&
+               traced.value().spec.experiment->diagnostics->lanes->trace_level == 1);
+
         // An unsupported lab shape changes measurements: refuse before the writer/child.
         ss::EnginePlanInputs shaped = lab;
         shaped.experiment_file = t.file("lab-shape-rejected.json", R"({"shape":{}})");
@@ -4559,7 +4584,7 @@ void session_engine_plan(Fixture& t) {
         try {
             (void)ss::plan_engine_only(shaped, lab_run / "shape-rejected", wait);
         } catch (const ss::PlanFailed& e) {
-            refused_shape = std::string(e.what()).find("observe-only") != std::string::npos;
+            refused_shape = std::string(e.what()).find("only observe placement or a single diagnostics.lanes.trace_level") != std::string::npos;
         }
         assert(refused_shape && !child_writer_called);
     }

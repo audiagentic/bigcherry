@@ -500,6 +500,11 @@ struct alignas(64) Request {
     uint64_t stage_trace[3];
     uint64_t placement_epoch, completion_epoch;
     uint32_t helper, lane, lane_slot, reserved;
+    // ENG05 debug stamps occupy the old 48-byte tail padding: the v26 wire
+    // size, offsets, routing fields and helper contract are unchanged.
+    // Written only for sequence % experiment.diagnostics.lanes.trace_level == 0.
+    // All six stamps are engine GPU wall_clock64 ticks, not helper GPU ticks.
+    uint64_t mailbox_trace[6];
 };
 static_assert(sizeof(Request) == 256 && alignof(Request) == 64);
 static_assert(offsetof(Request, layer) == 12 &&
@@ -509,6 +514,7 @@ static_assert(offsetof(Request, layer) == 12 &&
               offsetof(Request, route_offset) == 40 &&
               offsetof(Request, activation_offset) == 48 &&
               offsetof(Request, activation_q_offset) == 56);
+static_assert(offsetof(Request, mailbox_trace) == 208);
 static_assert(offsetof(Request, result_offset) > 64 &&
               offsetof(Request, result_stride) > 64);
 static_assert(std::is_standard_layout_v<Request> &&

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.36.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.35.0...bc-radiance-1170.36.0) (2026-11-20)
+
+
+### New and changed
+
+* **core:** sealed measurement-start host facts for Radiance records (MRC02) ([#1238](https://github.com/audiagentic/bigcherry/issues/1238)) ([1f5f6a1](https://github.com/audiagentic/bigcherry/commit/1f5f6a1a5e31bafa10ba8aafd9a2b7f313dc3984))
+
 ## [1170.35.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.34.0...bc-radiance-1170.35.0) (2026-11-20)
 
 

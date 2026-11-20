@@ -26,6 +26,9 @@ struct BcEngineSettings {
     uint32_t fuse_stage = 1;
     uint32_t attn_native = 1;
     uint32_t all_reduce_wire4 = 0;
+    // The exact existing helper lane trace setting is projected to engine
+    // plugins too, for the optional per-layer handoff trace. Default off.
+    uint32_t mailbox_trace_every = 0;
 };
 
 // The engine exports this symbol. Missing symbol or wrong ABI is inert for a

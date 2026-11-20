@@ -2,7 +2,7 @@
 id: RCD01
 order: 0
 plan: run-campaign-durability
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:47:10.667188+00:00'
 breadth: ''
 skill: advanced
@@ -61,13 +61,14 @@ RE-ASSESSED 2026-09-10 against the WHOLE project run history (per user directive
 
 Supersedes CD01. Preserve RE11's durable-run design inline rather than relying on the deprecated predecessor: operation-spec versus execution-hash split, immutable results, byte verification, running≠success, all falsifiers, and cross-host fencing boundary. Existing HI82 resume does not satisfy this generalized scope.
 
+Deprecation decision (2026-11-20): This generalized recovery protocol is unselected dormant work. Existing evidence does not meet its repeated real campaign-state failure trigger; no active implementation or production recipe dependency was found during this re-evaluation. Reactivate only after repeated reproducible campaign-state failures requiring cross-process/host recovery, or a verified production dependency/correctness finding. This is not an implementation-completion claim. The full protocol above remains preserved for any future activation.
+
 ## Change Log
 
 - 2026-09-09T10:47:10.667188+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:03:16.931644+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.731253+00:00 (updated-by): Updated: section:ledger-events
@@ -86,3 +87,9 @@ Supersedes CD01. Preserve RE11's durable-run design inline rather than relying o
 - 2026-09-10T04:02:12.649207+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_040226_fixed-the-four-remaining-seman_2499
 - 2026-09-10T04:02:26.621227+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4245
+- 2026-11-20T02:47:49.886262+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:48:36.011794+00:00 (state-transition): State: pending → deprecated
