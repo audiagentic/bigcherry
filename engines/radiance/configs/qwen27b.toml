@@ -11,23 +11,12 @@ model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad"
 ranks = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
 tp_wire = "exact"
 
-[config.qwen27b-tp3-int8.service]
-max_context = 8192
-max_sessions = 8
-
-[config.qwen27b-tp3-int8.engine]
-kv_cache_dtype = "fp8"
-num_speculative_tokens = 3
-# A dense model has no n-gram table to keep in RAM.
-ngram_placement = "disk"
-
 # No host expert pool and no host KV tier: the engine sizes its own memory. bc-serve's constants (a 9 GiB pool, a 12 GiB
 # tier) are measured for helper layouts.
 [config.qwen27b-tp3-int8.memory]
 host_pool_mib = 0
 host_kv_mib = 0
 
-[config.qwen27b-tp3-int8.tuning]
 # The ranks exchange through host memory: this host has no peer-to-peer path.
 p2p = "off"
 tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
@@ -60,15 +49,6 @@ model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
 ranks = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]
 tp_wire = "exact"
 
-[config.qwen27b-tp3.service]
-max_context = 8192
-max_sessions = 8
-
-[config.qwen27b-tp3.engine]
-kv_cache_dtype = "fp8"
-num_speculative_tokens = 3
-ngram_placement = "disk"   # a dense model has no n-gram table to keep in RAM
-
 [config.qwen27b-tp3.memory]   # the engine sizes its own memory (see qwen27b-tp3-int8)
 host_pool_mib = 0
 host_kv_mib = 0
@@ -93,9 +73,6 @@ pipelined_prefill_min_rows = 256
 base = "qwen27b-tp3"
 description = "qwen27b-tp3 for resident context: 7/7/2 delta-net, 7680/7680/2048 feed-forward, 262,144 tokens"
 
-[config.qwen27b-tp3-capacity.service]
-max_context = 262144
-
 [config.qwen27b-tp3-capacity.tuning]
 tp_ownership = "kv=1,1,2;ffn=7680,7680,2048;lk=7,7,2;lv=21,21,6"
 # the all-reduce grid without the two-shot form, as this split was measured (VTP33)
@@ -107,16 +84,6 @@ description = "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 a
 model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
 ranks = [{ arch = "gfx1100", count = 2 }]
 tp_wire = "wht6"
-
-[config.qwen27b-2xtx.service]
-max_context = 8192
-max_sessions = 6
-
-[config.qwen27b-2xtx.engine]
-max_num_batched_tokens = 2048
-kv_cache_dtype = "fp8"
-num_speculative_tokens = 3
-ngram_placement = "disk"
 
 [config.qwen27b-2xtx.memory]
 host_pool_mib = 0
@@ -145,9 +112,6 @@ p2p = "off"
 base = "qwen27b-tp3-int8-556"
 description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M tokens of fp8 cache"
 
-[config.qwen27b-tp3-int8-556-long.service]
-max_context = 262144
-
 # Two decode-only steps after each prefill chunk while other sequences decode (VTP39, 2026-11-15, -long-bf16, two
 # starts an arm): beside a 100k-token prompt, 4 decoding streams get 6.0 -> 16.0 chunks/s (typical gap 847 -> 41 ms)
 # for +9.8% on that prompt's first token; 7 streams 10.3 -> 26.4 chunks/s for +14%. A prompt with nothing else running,
@@ -166,9 +130,6 @@ prefill_governor = "kind=budget;factor=1.5;long_tokens=16384;order=remaining;age
 base = "qwen27b-tp3-int8-556-long"
 description = "qwen27b-tp3-int8-556-long with a 16-bit (bf16) cache: about 624,000 tokens, no cache rounding"
 
-[config.qwen27b-tp3-int8-556-long-bf16.engine]
-kv_cache_dtype = "bf16"
-
 # bf16 keys, int8 values with an f16 scale per 32 dims (rad0038; VTP43, ENG06): 818,896 tokens (3.1 sessions at 262,144)
 # against bf16's 624,048, with the bf16 cache's decode speed. One fresh start each, ABBA, 2026-11-19, against this config's
 # fp8 and bf16 siblings: engine decode 27.6 ms/step (bf16 27.6, fp8 28.0); first token of a 100K prompt 42.5 s (bf16 43.6,
@@ -178,5 +139,3 @@ kv_cache_dtype = "bf16"
 base = "qwen27b-tp3-int8-556-long"
 description = "qwen27b-tp3-int8-556-long with bf16 keys and int8 values (bf16_i8): 818,896 tokens, the bf16 cache's decode speed"
 
-[config.qwen27b-tp3-int8-556-long-bf16i8.engine]
-kv_cache_dtype = "bf16_i8"

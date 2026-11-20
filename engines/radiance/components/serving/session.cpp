@@ -3043,6 +3043,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             // Same inspection and reconcile as a start (above); nothing past it runs: no cache reuse, writer, power
             // admission, engine or helper child, so no GPU is touched.
             out.native_preflight_receipt = native_inspection.receipt;
+            out.native_preflight_values = resolve(in.options, facts, &native_inspection.settings).values;
             out.port = native_inspection.settings.port;
             return out;
         }

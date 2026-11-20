@@ -598,6 +598,11 @@ int explain_command(int argc, char** argv) {
         try {
             const ss::EngineStart plan = ss::plan_engine_only(preflight, scratch, ss::Hooks{});
             const Json& report = plan.native_preflight_receipt;
+            if (json) {
+                std::cout << Json{{"result", "pass"}, {"config", name}, {"values", plan.native_preflight_values}}
+                                 .dump(2) << '\n';
+                return 0;
+            }
             std::cout << "native admission preflight: PASS\n  config " << name << "\n  yaml " << native_config.string()
                       << "\n  snapshot " << report.at("snapshot").at("sha256").get<std::string>() << "\n  model "
                       << report.at("engine").at("model").get<std::string>() << "\n  tp "

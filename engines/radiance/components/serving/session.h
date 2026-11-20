@@ -134,6 +134,8 @@ struct EngineStart {
     std::uint64_t native_helper_resident_mib = 0; // measured by the owner, outside the engine's P1 record
     // Set only by a native preflight: the inspector's strict receipt for the admitted YAML (no child was started).
     nlohmann::json native_preflight_receipt = nlohmann::json::object();
+    // The resolver's values after the admitted YAML is applied: what the serve path plans from.
+    nlohmann::json native_preflight_values = nlohmann::json::object();
 
     // The exact strict document that was admitted and will be consumed by this role.
     // Stored replay and fresh launches use a sealed descriptor; manifest remains the durable public path.

@@ -102,12 +102,6 @@ heat = "@bundle/heat/flashnext-mixed.hot-first"
 base = "flashnext-4gpu"
 description = "flashnext-4gpu with a bf16_i8 cache at 4 sessions (not the default: fp8 at 8 sessions is)"
 
-[config.flashnext-4gpu-bf16i8.engine]
-kv_cache_dtype = "bf16_i8"
-
-[config.flashnext-4gpu-bf16i8.service]
-max_sessions = 4
-
 # The same cards and settings as flashnext-4gpu under its RAD23 experiment name (its own plan key).
 [config.flashnext-2xtx-rdna2-tail-combine]
 base = "flashnext-4gpu"
@@ -123,15 +117,6 @@ description = "flashnext-2xtx-rdna2-tail with the helper-row combine over all th
 description = "Flash-Next on the R9700 alone: no helpers, the experts tiered to host memory"
 model = "radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad"
 ranks = [{ arch = "gfx1201", count = 1 }]
-
-[config.flashnext-r9700.service]
-max_context = 8192
-max_sessions = 1
-
-[config.flashnext-r9700.engine]
-max_num_batched_tokens = 64
-kv_cache_dtype = "fp8"
-ngram_placement = "disk"
 
 [config.flashnext-r9700.memory]
 host_pool_mib = 45056
@@ -160,10 +145,6 @@ arch = "gfx1201"
 count = 1
 placement = "head"
 
-[config.flashnext-tp2xtx-r9700.service]
-max_context = 65536
-max_sessions = 6
-
 [config.flashnext-tp2xtx-r9700.memory]
 # INTERIM (RSC03: to be derived per rank from the experts neither the helper nor the ranks' measured VRAM holds). Pinned
 # once per rank, so 8 GiB in all: the RAD49 estimate's shortfall is near zero with ~4 GiB a rank of slack, and beside the
@@ -174,7 +155,6 @@ host_pool_mib = 4096
 heat = "@bundle/heat/flashnext-mixed.hot-first"
 histogram_period_s = 1   # as flashnext-2xtx
 
-[config.flashnext-tp2xtx-r9700.tuning]
 # The ranks exchange through host memory: this host has no peer-to-peer path.
 p2p = "off"
 
@@ -196,10 +176,6 @@ placement = "head"
 arch = "gfx1030"
 count = 1
 placement = "tail"
-
-[config.flashnext-tp2xtx.service]
-max_context = 131072
-max_sessions = 8
 
 [config.flashnext-tp2xtx.memory]
 # INTERIM (RSC03), as flashnext-tp2xtx-r9700: the estimate leaves ~1 GiB a rank of slack, and the pool (4 GiB in all)

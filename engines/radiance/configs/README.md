@@ -82,10 +82,10 @@ placement = "head"                               # "head" or "tail" (only the la
 budget_mib = 23500                               # optional explicit override; left out, derived from the card
 share = 1                                        # weight in a head group (optional)
 
-[config.NAME.service]                            # settings tables: the resolver's own keys,
-max_context = 8192                               # the names --set and bc-serve --explain use
-[config.NAME.engine]                             # (service, engine, tuning, memory, helper, handoff)
-kv_cache_dtype = "fp8"
+[config.NAME.memory]                             # settings tables: the resolver's own keys,
+host_pool_mib = 0                                # the names --set and bc-serve --explain use
+[config.NAME.helper]                             # (tuning, memory, helper, handoff; not service/engine, below)
+combine = true
 [config.NAME.tuning]
 tp_ownership = "kv=1,1,2;ffn=..."
 
@@ -102,7 +102,11 @@ Rules:
   is refused, naming the file and the key. A setting the resolver does not know is refused by the resolver.
 - **Variants.** A variant inherits every value of its base (a chain of bases is allowed). Tables merge key by key; a
   scalar or a list (`ranks`, `helpers`) replaces, so a variant that changes the helper groups restates the list.
-- **No flag spellings.** There is no `server-args`: a context length is `service.max_context`, not `--max-model-len`.
+- **Engine settings live in the native YAML.** The context length, session count, KV dtype, speculative depth,
+  n-gram placement and batch size of a config are in `NAME.yaml` beside its TOML (`max-model-len`, `max-num-seqs`,
+  `kv-cache-dtype`, ...), once. The TOML keeps what BigCherry owns: model, ranks and placement, memory policy, helpers,
+  handoff. `bc-serve explain NAME --native-config NAME.yaml` shows the values after the YAML is applied.
+- **No flag spellings.** There is no `server-args`: a pool size is `memory.host_pool_mib`, not `--host-pool-mib`.
 - **Not in a config:** what belongs to the machine (ports, model root, run root, power profile definitions; the site
   file) and what is derived (host pool, host KV tier, checkpoint slots: the memory plan).
 - **Precedence:** config < site file < profile < `--set`. A `--set` is for a one-off experiment; a setting worth keeping
