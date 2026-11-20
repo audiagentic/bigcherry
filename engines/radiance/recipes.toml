@@ -42,6 +42,7 @@ patches = [
   "rad0052_b16_kv_geometries",
   "rad0053_v4_kv_layouts",
   "rad0054_attn_prefill_fp8",
+  "rad0055_qwen35_plain_mxfp4",
 ]
 
 # Host build compatibility. Radiance 2.2 includes the FFmpeg 6 write callback support upstream.

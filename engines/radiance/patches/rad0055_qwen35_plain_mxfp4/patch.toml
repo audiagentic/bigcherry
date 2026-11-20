@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0055_qwen35_plain_mxfp4"
+order = 55
+state = "validated"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["RUM06"]
+requires = ["rad0019_vtp14_n2_tp_ownership_fp8", "rad0054_attn_prefill_fp8"]
+conflicts = []
+tags = ["tensor-parallel", "quantization"]
