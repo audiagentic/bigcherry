@@ -831,21 +831,45 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
     published[idx] = 0;
 }
 
+/* The terminal event makes this receipt visible to RankCompletion. A receipt only
+ * proves consumption if its identity and counts both match the admitted parent. */
+__device__ __forceinline__ void store_seal_stamp(ConsumptionStamp* o, const ConsumptionStamp& s) {
+    __hip_atomic_store(&o->placement_epoch, s.placement_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->generation_slot, s.generation_slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->published_count, s.published_count, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->consumed_count, s.consumed_count, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
+    __hip_atomic_store(&o->ticket_id, s.ticket_id, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);   /* publication word last */
+}
+
 /* Once per parent and rank, on the scheduler's seal, after the parent's last GPU effect and before its terminal event.
  * One thread; posted stores to host-mapped memory, records first and the stamp's ticket_id last with a system-scope
  * release. Only changed lane/combine records are copied. */
 __global__ void mailbox_seal_kernel(uint8_t* base, uint32_t rank, const ConsumptionStamp* stamps, ConsumptionStamp* host,
                                     uint32_t capacity, ConsumedRecord* rec, StepTicket pass) {
     if (blockIdx.x || threadIdx.x) return;
-    if (!base || !stamps || !host || !capacity || !rec) __builtin_trap();
+    // No diagnostic receipt is possible without the destination or its bound.
+    if (!host || !capacity) __builtin_trap();
+    const uint32_t slot = pass.ticket_id % capacity;
+    ConsumptionStamp* out = host + slot;
+    ConsumptionStamp s = stamps ? stamps[slot] : ConsumptionStamp{};
     Header* h = reinterpret_cast<Header*>(base);
-    if (rank >= h->rank_count) __builtin_trap();
-    const ConsumptionStamp s = stamps[pass.ticket_id % capacity];
-    /* Exact per-parent consumed ACK: it cannot precede the last result-plane
-     * reader, because finish runs after add/tail and seal is behind all passes
-     * on this rank's stream. Reject a mismatched or incomplete stamp instead
-     * of publishing an optimistic lifetime proof. The rank event follows. */
-    if (!r3::consumption::seal_ready(s, pass)) __builtin_trap();
+    // Values outside {0, 1} distinguish structural failures in the host's invalid-seal log.
+    constexpr uint32_t kMissingSealMapping = UINT32_MAX;
+    constexpr uint32_t kBadSealRank = UINT32_MAX - 1;
+    constexpr uint32_t kMalformedSealTicket = UINT32_MAX - 2;
+    if (!base || !stamps || !rec)
+        s.generation_slot = kMissingSealMapping;
+    else if (rank >= h->rank_count)
+        s.generation_slot = kBadSealRank;
+    else if (pass.generation_slot > 1 || pass.reserved[0] || pass.reserved[1] || pass.reserved[2])
+        s.generation_slot = kMalformedSealTicket;
+
+    /* An invalid stamp reaches the terminal event so the host can name the failure and
+     * poison the ledger. Return before updating any lane/combine consumed ACK. */
+    if (!r3::consumption::seal_ready(s, pass)) {
+        store_seal_stamp(out, s);
+        return;
+    }
     for (uint32_t lane = 0; lane < h->counts.lanes; ++lane) {
         ConsumedRecord& r = rec[lane];
         if (r.sequence == r.flushed) continue;
@@ -861,12 +885,7 @@ __global__ void mailbox_seal_kernel(uint8_t* base, uint32_t rank, const Consumpt
                            __HIP_MEMORY_SCOPE_SYSTEM);
         rec[h->counts.lanes].flushed = rec[h->counts.lanes].sequence;
     }
-    ConsumptionStamp* o = host + pass.ticket_id % capacity;
-    __hip_atomic_store(&o->placement_epoch, s.placement_epoch, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-    __hip_atomic_store(&o->generation_slot, s.generation_slot, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-    __hip_atomic_store(&o->published_count, s.published_count, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-    __hip_atomic_store(&o->consumed_count, s.consumed_count, __ATOMIC_RELAXED, __HIP_MEMORY_SCOPE_SYSTEM);
-    __hip_atomic_store(&o->ticket_id, s.ticket_id, __ATOMIC_RELEASE, __HIP_MEMORY_SCOPE_SYSTEM);   /* publication word last */
+    store_seal_stamp(out, s);
 }
 
 long long geti(const RadArgs* a, const char* key, long long bad = -1) {

@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_005930_mailbox-seal-failures-report-t_9117",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_mailbox_ops.hip",
+    "engines/radiance/components/moe-remote/mailbox_completion_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Send invalid mailbox seal stamps to the existing terminal event proof for precise diagnostics and ledger poisoning. Skip every consumed acknowledgement when the seal cannot prove ownership and equal counts.",
+  "timestamp-utc": "2026-11-20T00:59:30.851130Z",
+  "user-summary-candidate": "Mailbox seal failures report the expected parent and observed ticket and counters before refusing further admission."
+}
