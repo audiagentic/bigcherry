@@ -6,7 +6,7 @@ roots = ["engines/radiance/components", "engines/radiance/patches", "tools/lab/r
 extensions = [".h", ".hip", ".cpp", ".cc", ".py", ".sh", ".rw", ".txt", ".toml"]
 literals = [2560, 640, 384, 160, 49]
 symbols = ["kActivationBf16Bytes", "kActivationQBytes", "kLegacyIntermediate", "kExpertWidth", "kRankWidth", "kHidden", "kMaxRoutes"]
-test_patterns = ["_test\\.cpp$", "/test_[^/]*$", "/tests/", "_fixture\\.h$", "replay"]
+test_patterns = ["session_fake_engine\\.cpp$", "_test\\.cpp$", "/test_[^/]*$", "/tests/", "_fixture\\.h$", "replay"]
 
 [[allow]]
 path = "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw"
@@ -266,11 +266,11 @@ path = "engines/radiance/patches/rad0040_kv_layout_table/patch.py"
 anchor = "X(B16I8, \"bf16_i8\", 49, 32)"
 category = "D"
 reason = "B16I8 row bytes and scale group are one typed KV layout descriptor"
-owner = "RUM07"
+owner = "RUM09"
 
 [[allow]]
 path = "engines/radiance/patches/rad0042_kv_b16_selftest/patch.py"
-anchor = "assert(rad_kvq_row16(RAD_KVQ_B16I8) == 49);"
+anchor = "{ RAD_KVQ_V4, \"fp8_v4\", 400, 256, 0, 384, 32 },"
 category = "B"
 reason = "fixed H256 descriptor fixture oracle for B16I8 row sizing"
 
@@ -453,3 +453,41 @@ path = "engines/radiance/patches/rad0038_bf16_i8_kv/patch.py"
 anchor = "_edit('arch_test_cpp-2', '            CHECK_EQ(count_op(b, \"kv_store_s"
 category = "B"
 reason = "self-test numerics and test text at fixed shapes (same as the existing bf16kv cases)"
+
+[[allow]]
+path = "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py"
+anchor = "X(B16I8,  4, \"bf16_i8\",  49, 32,  0, 48, 32)"
+category = "D"
+reason = "Packed KV descriptor row widths and scale geometry belong to the ABI44 format contract."
+owner = "RUM09"
+
+[[allow]]
+path = "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py"
+anchor = "{ RAD_KVQ_V4,    \"fp8_v4\",   400, 256,   0, 384, 32 },"
+category = "D"
+reason = "Packed KV descriptor row widths and scale geometry belong to the ABI44 format contract."
+owner = "RUM09"
+
+[[allow]]
+path = "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/patch.toml"
+anchor = "order = 49"
+category = "E"
+reason = "Patch ordering identifier matches its registered package number."
+
+[[allow]]
+path = "engines/radiance/patches/rad0050_b16_kv_runtime_contract/patch.py"
+anchor = "std::string words[] = {\"radiance\", \"--model\", \"unused.rad\", \"--kv-cache-dtype\", name};"
+category = "B"
+reason = "The patched runtime fixture uses a placeholder model to check parser behavior."
+
+[[allow]]
+path = "engines/radiance/patches/rad0050_b16_kv_runtime_contract/patch.py"
+anchor = "REQUIRE_EQ(fleet::parse(std::string(\"models:\\n  flash:\\n    model: unused.rad\\n\""
+category = "B"
+reason = "The patched runtime fixture uses a placeholder model to check parser behavior."
+
+[[allow]]
+path = "engines/radiance/patches/rad0054_attn_prefill_fp8/patch.py"
+anchor = "REQUIRE_EQ(fleet::parse(\"models:\\n  main:\\n    model: unused.rad\\n\""
+category = "B"
+reason = "The patched config fixture uses a placeholder model to check parser behavior."
