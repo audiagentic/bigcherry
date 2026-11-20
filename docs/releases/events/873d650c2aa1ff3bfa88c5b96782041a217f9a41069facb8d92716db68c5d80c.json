@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_012246_clean-up-remote-moe-rank-resou_9916",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_remote_hook.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Roll back all per-rank mailbox allocations and completion events on partial attach. Reuse the same cleanup for normal shutdown after selecting each rank's device. Publish a device view only after bootstrap and scratch setup succeed. Verified a pinned ABI44 host syntax check and the admission, mailbox completion, bootstrap, and v26 contract host fixtures.",
+  "timestamp-utc": "2026-11-20T01:22:46.849947Z",
+  "user-summary-candidate": "Clean up remote MoE rank resources when helper attachment fails so a partial rank cannot retain buffers or expose an incomplete mailbox."
+}
