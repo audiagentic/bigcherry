@@ -1,0 +1,29 @@
+[
+  {
+    "branch": "node/radiance-main-integration",
+    "tip": "493d7c68f972022346d11b97a706f19592bcbeb1",
+    "base": "979165912fad9a857e4377345dad2fbad2ca1edf",
+    "unique_commits": 94,
+    "patch": "node__radiance-main-integration.patch.gz",
+    "sha256": "ea008e7f5927a2de15830c401a460355bee70738702a7a2c0e07ee95d9ed0bdc",
+    "policy": "superseded"
+  },
+  {
+    "branch": "node/radiance-22-candidate",
+    "tip": "4ddfdb2fe76800a89ac435c5b1584e8f0ab0b8da",
+    "base": "979165912fad9a857e4377345dad2fbad2ca1edf",
+    "unique_commits": 5,
+    "patch": "node__radiance-22-candidate.patch.gz",
+    "sha256": "8ace4aefea6de52ebeaed6b82c93dca88990e09be50a4640f7f96424547761d9",
+    "policy": "review-before-retire"
+  },
+  {
+    "branch": "feat/iq6r-v4-qualification",
+    "tip": "1d1ef307952501f66d110ab7eaef37e0a01e8903",
+    "base": "6966213e3ec5cc454144eaf0ef5ee3f184d8099a",
+    "unique_commits": 16,
+    "patch": "feat__iq6r-v4-qualification.patch.gz",
+    "sha256": "0399e6bd6fcf582a8b7d5ba2720ad8be80511bcac1ee2e907ba494b74206c9d7",
+    "policy": "active-hold"
+  }
+]
