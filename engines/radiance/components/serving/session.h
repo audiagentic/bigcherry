@@ -216,6 +216,7 @@ struct Session {
     // Production owners publish the admitted manifest's native feature snapshot.
     // Fake-engine lifecycle tests explicitly opt in with a v2-shaped fixture.
     bool publish_feature_states = false;
+    bool strict_production_features = false;
     Timing timing;
     Canary canary;
     // Optional post-canary runtime guard (MTP replay, live heat and policy).

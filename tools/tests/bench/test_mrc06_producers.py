@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from bigcherry.bench import workloads
 from bigcherry.cli.main import main
-from bigcherry.core import run_records
+from bigcherry.core import engines, feature_registry, run_records
 from bigcherry.experiment import attestation, bundle
 
 
@@ -67,6 +67,11 @@ def _manifest(root: Path):
             "observed_at": "2026-11-19T12:00:00Z",
         }
     ]
+    states.extend({
+        "engine": engines.RADIANCE, "feature_id": name, "state": "inactive",
+        "reason_code": "fixture_not_configured", "reason_detail": "",
+        "observed_at": "2026-11-19T12:00:00Z",
+    } for name in feature_registry.feature_ids(engines.RADIANCE) if name != "live_policy")
     (root / "feature-states.v1.json").write_text(json.dumps(states))
     return path, meta, binary
 

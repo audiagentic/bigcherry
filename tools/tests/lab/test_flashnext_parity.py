@@ -13,6 +13,7 @@ from contextlib import redirect_stdout
 from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
+from bigcherry.core import engines, feature_registry
 
 ROOT = Path(__file__).resolve().parents[3]
 SCRIPT = ROOT / "tools" / "lab" / "radiance" / "flashnext-parity.sh"
@@ -260,8 +261,12 @@ class RunRecordsTests(unittest.TestCase):
             (launch / "feature-states.v1.json").write_text(json.dumps([{
                 "feature_id": "live_policy", "state": "inactive",
                 "reason_code": "no_calibration", "reason_detail": "not configured",
-                "engine": "radiance", "observed_at": "2026-11-19T00:00:00Z"
-            }]))
+                "engine": engines.RADIANCE, "observed_at": "2026-11-19T00:00:00Z"
+            }] + [{
+                "feature_id": name, "state": "inactive",
+                "reason_code": "fixture_not_configured", "reason_detail": "",
+                "engine": engines.RADIANCE, "observed_at": "2026-11-19T00:00:00Z",
+            } for name in feature_registry.feature_ids(engines.RADIANCE) if name != "live_policy"]))
             (launch / "host-facts.json").write_text(json.dumps({"kernel_release": {
                 "value": "fixture", "readable": True
             }}))
