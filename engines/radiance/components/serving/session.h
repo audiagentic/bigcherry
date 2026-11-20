@@ -132,6 +132,8 @@ struct EngineStart {
     // Native launches retain the admitted working directory and exact environment across child starts.
     std::shared_ptr<const NativeEngineLaunch> native_launch;
     std::uint64_t native_helper_resident_mib = 0; // measured by the owner, outside the engine's P1 record
+    // Set only by a native preflight: the inspector's strict receipt for the admitted YAML (no child was started).
+    nlohmann::json native_preflight_receipt = nlohmann::json::object();
 
     // The exact strict document that was admitted and will be consumed by this role.
     // Stored replay and fresh launches use a sealed descriptor; manifest remains the durable public path.
@@ -334,6 +336,10 @@ struct EnginePlanInputs {
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance
     std::filesystem::path helper_binary;    // empty: <radiance_home>/helpers/r3_moe_worker
     std::optional<NativeAdmissionRequest> native_admission;
+    // Offline admission check (`bc-serve explain CONFIG --native-config YAML`): resolve, inspect and reconcile the
+    // admitted YAML exactly as a serve start does, then stop before the writer, the power admission and every
+    // engine or helper child. It needs native_admission and takes no GPU.
+    bool native_preflight = false;
     bool quality_score = false; // this owner must be the admitted runtime home's executable
     ManifestRunner runner;                  // empty: run_to_completion with the owner's child environment
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override

@@ -130,7 +130,9 @@ void usage() {
            "         positional CONFIG selects the RSC12 named config. Unchanged static inputs reuse an "
            "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
            "96 canary, 97 plan, 98 busy\n"
-           "         v3 uses --native-config YAML or the verified bundled YAML for flashnext-4gpu.\n"
+           "         v3 uses --native-config YAML or the verified bundled configs/NAME.yaml.\n"
+           "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
+           "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
            "  start  --manifest FILE --run-dir DIR [--configs FILE|DIR]   replay exact strict-v2 bytes "
            "after current static/live/power checks; refuses changed build/model/devices, missing "
@@ -377,8 +379,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
     }
     if (prefix && bc::serving::v2::kContractVersion == 3 && native_config.empty() &&
-        stored_manifest.empty() && config_name == "flashnext-4gpu" && (cmd == "serve" || cmd == "start")) {
-        const fs::path bundled = *prefix / "configs/flashnext-4gpu.yaml";
+        stored_manifest.empty() && !config_name.empty() && config_name.find('/') == std::string::npos &&
+        (cmd == "serve" || cmd == "start")) {
+        const fs::path bundled = *prefix / "configs" / (config_name + ".yaml");
         if (fs::is_regular_file(bundled))
             native_config = bundled;
     }
@@ -514,6 +517,7 @@ int explain_command(int argc, char** argv) {
     Options opts;
     std::string name;
     bool json = false;
+    fs::path native_config, engine_binary;
     for (int i = 2; i < argc; ++i) {
         const std::string arg = argv[i];
         auto need = [&]() {
@@ -534,6 +538,10 @@ int explain_command(int argc, char** argv) {
             opts.profile = need();
         } else if (arg == "--model-root") {
             opts.model_root = need();
+        } else if (arg == "--native-config") {
+            native_config = need();
+        } else if (arg == "--engine-binary") {
+            engine_binary = need();
         } else if (arg == "--calibration") {
             opts.calibration_cache = need();
         } else if (arg == "--sys-root") {
@@ -555,6 +563,52 @@ int explain_command(int argc, char** argv) {
         throw std::runtime_error("explain: a named CONFIG is required");
     opts.sets.push_back("layout.name=" + Json(name).dump());
     const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
+    if (!native_config.empty()) {
+        if (bc::serving::v2::kContractVersion != 3)
+            throw std::runtime_error("explain: --native-config requires a v3 serving build");
+        if (opts.model_root.empty() || !fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root))
+            throw std::runtime_error("explain: --native-config and --model-root must name an existing file and directory");
+        namespace ss = bc::serving::session;
+        const fs::path self = fs::read_symlink("/proc/self/exe");
+        if (const auto prefix = bc::serving::installed_prefix(self)) {
+            // An installed bundle binds its own runtime home and engine, as a start does.
+            if (!engine_binary.empty() && fs::canonical(engine_binary) != fs::canonical(*prefix / "bin/radiance"))
+                throw std::runtime_error("installed release refusal: engine binary differs from verified prefix");
+            engine_binary = *prefix / "bin/radiance";
+            if (std::any_of(opts.sets.begin(), opts.sets.end(),
+                            [](const std::string& s) { return s.starts_with("engine.radiance_home="); }))
+                throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
+            opts.sets.push_back("engine.radiance_home=" + Json((*prefix / "radiance_home").string()).dump());
+        }
+        ss::EnginePlanInputs preflight;
+        preflight.options = opts;
+        preflight.named_config = name;
+        preflight.self = self;
+        preflight.engine_binary = engine_binary;
+        preflight.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
+        preflight.native_preflight = true;
+        // The planner's scratch directory: nothing persistent is written, no child outlives the inspector.
+        char scratch[] = "/tmp/bc-explain-XXXXXX";
+        if (!::mkdtemp(scratch))
+            throw std::runtime_error("explain: cannot create a scratch directory");
+        struct Cleanup {
+            fs::path path;
+            ~Cleanup() { std::error_code ignored; fs::remove_all(path, ignored); }
+        } cleanup{scratch};
+        try {
+            const ss::EngineStart plan = ss::plan_engine_only(preflight, scratch, ss::Hooks{});
+            const Json& report = plan.native_preflight_receipt;
+            std::cout << "native admission preflight: PASS\n  config " << name << "\n  yaml " << native_config.string()
+                      << "\n  snapshot " << report.at("snapshot").at("sha256").get<std::string>() << "\n  model "
+                      << report.at("engine").at("model").get<std::string>() << "\n  tp "
+                      << report.at("engine").at("tp").get<int>() << ", cards " << report.at("engine").at("cards").dump()
+                      << ", port " << plan.port << '\n';
+            return 0;
+        } catch (const ss::PlanFailed& error) {
+            std::cout << "native admission preflight: REFUSED\n  config " << name << "\n  " << error.what() << '\n';
+            return 1;
+        }
+    }
     if (json) {
         std::cout << Json{{"config", name},
                           {"values", resolved.values},

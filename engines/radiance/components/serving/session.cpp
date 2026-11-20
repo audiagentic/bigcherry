@@ -3039,6 +3039,13 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const NativeConfigInspection native_inspection = inspect_and_reconcile_native_config(
             engine, snapshot, frozen_runtime_home, v.at("engine").at("model").get<std::string>(),
             launch.environment, selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, launch.root.descriptor());
+        if (in.native_preflight) {
+            // Same inspection and reconcile as a start (above); nothing past it runs: no cache reuse, writer, power
+            // admission, engine or helper child, so no GPU is touched.
+            out.native_preflight_receipt = native_inspection.receipt;
+            out.port = native_inspection.settings.port;
+            return out;
+        }
         if (v2::kContractVersion != 3)
             throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
                              "integration is incomplete; refusing before cache reuse, manifest writing, power "
