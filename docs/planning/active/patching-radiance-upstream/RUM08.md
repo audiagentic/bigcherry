@@ -101,7 +101,7 @@ Astra source review ASTRA-CONSOLIDATION.md: resolve native replay/controller cho
 
 C10 (2026-11-19): on the exact ABI43 source with HIP disabled, existing arch_test qsa_reads_the_exact_host_bound_and_keys_its_side_of_the_exact_bound passed 30 checks; runtime_test an_arch_keyed_program_issues_decode_passes_at_the_keyed_bound passed 6. These cover exact-bound selector and effective keyed pass bounds only. Sol identified a remaining edge: the architecture key may coalesce missing and above-bound summaries while issue uses a keyed context only for a proven positive summary. Prove that wide verify cannot receive missing summary or add one focused selected/effective-argument test before retiring rad0013; RUM08 remains open.
 
-2026-11-19 Sol follow-up to RV4239: source tracing narrows the C10 summary edge. BatchBuilder allocates and attaches kv_used_max_h from per-group h_used and seqused_h; an accepted nonempty full-KV decode/verify therefore has a positive summary. A missing pointer alone can be recomputed by issue.cpp for a true full-group operand. The wide QSA verify path above the bound uses private qsa_sequ, so both summary cases use the same model-bound fallback there. Do not change pass-key encoding based only on an absent pointer. Verify effective arguments on selected fixed-depth paths; if an accepted dense path can carry genuinely missing/nonpositive summary, make it fail closed or encode presence explicitly. See completed RV4239.
+2026-11-19 Sol follow-up to RV4305: source tracing narrows the C10 summary edge. BatchBuilder allocates and attaches kv_used_max_h from per-group h_used and seqused_h; an accepted nonempty full-KV decode/verify therefore has a positive summary. A missing pointer alone can be recomputed by issue.cpp for a true full-group operand. The wide QSA verify path above the bound uses private qsa_sequ, so both summary cases use the same model-bound fallback there. Do not change pass-key encoding based only on an absent pointer. Verify effective arguments on selected fixed-depth paths; if an accepted dense path can carry genuinely missing/nonpositive summary, make it fail closed or encode presence explicitly. See completed RV4305.
 
 C13 (2026-11-19): added candidate-only `rad0047_mtp_verify_replay_summary`. Against the frozen ABI43 commit, exact apply and idempotent replay passed; the compiled pass-key fixture confirms the wide speculative decode case returns 0 for a nonpositive full-KV summary and retains a nonzero key for positive 1504. Focused test: `tools/tests/patch/test_radiance_rad0047.py` (2 passed). Keep the patch unselected/untested in production recipe until the candidate prefix and effective live fallback are validated; v1.17 `rad0013` remains unchanged.
 
@@ -127,7 +127,7 @@ Rechecked the selected upstream replay seam on the composed frozen 2.2 host buil
 
 ## Reviews
 
-- RV4239
+- RV4305
 - 2026-11-19T02:22:09.889177+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:validation, section:acceptance_criteria
 - 2026-11-19T02:54:52.556661+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T03:06:34.707493+00:00 (updated-by): Updated: section:notes

@@ -94,7 +94,7 @@ Astra source review ASTRA-CONSOLIDATION.md adds installed normal, measure/KL and
 
 Stage Gate C: first run the TP1 Flash-Next production canary with disjoint heterogeneous helpers. This is first launch/parity evidence only. Run required mixed-rank qualification separately before any common-pin release claiming that support; if unavailable retain the previous release for those lanes. The helper-off profile is functional/KL control, not a throughput comparator; compare same layout and workload across old/new builds. Exact gate recipes: docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md.
 
-RV4240: original Gate C required a helper-on mixed-TP canary despite the selected first lane being TP1; packer profile allowlist also needed enforcement. The corrected sequence qualifies the named TP1 lane first and makes mixed-rank proof conditional on inclusion in the candidate roster. RUM09 still owns release execution. The current runtime asset packer must be changed before claiming other names are withheld. Policy-off baseline file is an old-pin workload reference, not candidate evidence. See docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md and docs/evidence/radiance-latest-bump/README.md.
+RV4306: original Gate C required a helper-on mixed-TP canary despite the selected first lane being TP1; packer profile allowlist also needed enforcement. The corrected sequence qualifies the named TP1 lane first and makes mixed-rank proof conditional on inclusion in the candidate roster. RUM09 still owns release execution. The current runtime asset packer must be changed before claiming other names are withheld. Policy-off baseline file is an old-pin workload reference, not candidate evidence. See docs/reviews/radiance-upstream-2026-11-18/IMPLEMENTATION-HANDOFF.md and docs/evidence/radiance-latest-bump/README.md.
 
 User direction (2026-11-19): migrate all retained, historically tested BigCherry features onto the new Radiance base and include them in the production recipe. After Gate A and RUM07's exact compatibility gates pass, update the candidate pin and promote the packages together; do not leave them candidate-only while waiting for the final paired performance comparison. The final RUM09 deployment/runtime qualification and performance comparison remain pending and must gate release/publish. The latest origin/main commits through 31bd5b9e9 are merged into the task branch; their stored-manifest replay, boot-placement receipt, and parity warmup changes are part of the candidate.
 
@@ -128,6 +128,8 @@ The b0c quality launches refused inconsistent fixtures before scoring. Helper-of
 
 d92592f9 ENG05 bundle a3fe93104719c360823424f900c58f12 passed exact fresh, in-flight stop/drain, named and explicit replay of one measured manifest. Helper-off short quality finished all 8240 rows (mean KL 0.0600258684, top-1 88.8349515%, perplexity ratio 1.02394536 vs old reference). Helper-on reached scoring and faulted after the initial 64-row helper work, so no quality gate is issued. A 129-position exact prefix reproducer with step traces is queued, with one chained acquire fence comparison on a repeat. 6fe47b998 host-cache runtime 55860a8af7a6bd15a73fde53564109b6 passed exact ABI44 host fixtures and is undergoing an isolated allocation/clean-stop smoke. Paired performance remains gated on the fixed final runtime and matching short quality.
 
+The 6fe47b998 leased Flash-Next smoke passed with 12288 MiB host KV actually active, 72 pinned checkpoint slots, 2247 MiB expert pool and 4705 MiB reserve. It streamed and stopped in flight with every child reaped and zero mailbox work outstanding. The separate d92592f9 129-position helper score faulted on step 0 at q=64 both with ordinary chaining and every-launch acquire. Kernel diagnostics unavailable at this sandbox. Next isolate pre-ENG05 behavior and the large uncombined mailbox path before performance; the release-ready recipe is now admitted at ce109347a.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -141,11 +143,11 @@ d92592f9 ENG05 bundle a3fe93104719c360823424f900c58f12 passed exact fresh, in-fl
 
 ## Reviews
 
-- RV4240
+- RV4306
 - 2026-11-19T03:00:58.377857+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
-- RV4243
+- RV4309
 - 2026-11-19T04:28:00.455200+00:00 (updated-by): Updated: section:description
-- RV4245
+- RV4311
 - 2026-11-19T07:30:08.804115+00:00 (updated-by): Updated: section:steps, section:validation, section:notes
 - 2026-11-19T07:35:45.850777+00:00 (state-transition): State: pending → in_progress
 - 2026-11-19T21:41:03.879740+00:00 (updated-by): Updated: section:notes
@@ -163,3 +165,4 @@ d92592f9 ENG05 bundle a3fe93104719c360823424f900c58f12 passed exact fresh, in-fl
 - 2026-11-20T03:03:37.935279+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:12:18.577770+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:53:26.606171+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:00:21.973713+00:00 (updated-by): Updated: section:notes

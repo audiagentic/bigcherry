@@ -107,7 +107,7 @@ Production-format implementation blocker: target's native FP8 opt-in is absent o
 
 ABI43 port assessment (2026-11-19): keep the current appended rad0040/rad0042 descriptor-only edits out of the candidate composition. Their arithmetic is correct (head_dim 256: B16F8=768 B/head, B16I8=784 B/head; plain E4M3=512 B/head, native I8=516 B/head), but the fixture is assert-only under NDEBUG and no runtime callers connect the table to allocation or kernels. The first integrated candidate slice is resident head_dim=256, GQA=12, page=4. Carry the hybrid format distinctly through native config advice/parser and argv/engine admission; don't map it silently to BF16/I8 or change ABI sizes unnoticed. Keep logical head_dim 256 separate from physical page row bytes in planning, group/page allocation and binding. Port standalone store with prefill/decode readers as one slice, retain MTP shared KV group, use existing unfused resident attention where valid, and reject streaming until mirror/ring transfer is ported. QSA block-key storage remains separate. Add always-on refusal and byte/shape checks, then compare store bytes plus dense, QSA, MTP draft/verify output against reference before adding GQA6 or page16. Plain fp8 parity remains separate.
 
-ABI43 scope correction after RV4238: the earlier resident B16F8/B16I8 slice is not the first production slice. The selected Flash-Next RUM09 path resolves plain E4M3 by default and cannot be replaced with native I8. Implement and qualify the exact H256/GQA/page E4M3 reader plus store, planning, binding and MTP sharing first. The B16 hybrids remain deferred optional formats; do not use the current descriptor-only scratch as accepted runtime work. The exact source triage is anchored to 3deabdaeca17b58bad90d332f4b204cf7bb8a10e, and all row/probe claims must be checked against that commit.
+ABI43 scope correction after RV4304: the earlier resident B16F8/B16I8 slice is not the first production slice. The selected Flash-Next RUM09 path resolves plain E4M3 by default and cannot be replaced with native I8. Implement and qualify the exact H256/GQA/page E4M3 reader plus store, planning, binding and MTP sharing first. The B16 hybrids remain deferred optional formats; do not use the current descriptor-only scratch as accepted runtime work. The exact source triage is anchored to 3deabdaeca17b58bad90d332f4b204cf7bb8a10e, and all row/probe claims must be checked against that commit.
 
 2026-11-19 user direction supersedes prior deferral language: B16F8 and B16I8 are BigCherry cache features and must be migrated in this bump. Deliver plain E4M3 first for the selected deployment, then finish both hybrid cache formats as an integrated, separately gated stage before RUM07 completion. Preserve the dirty rad0040/rad0042 work and inspect/reuse its useful descriptor/test structure without treating it as runtime implementation. Sol is reviewing the ABI43 format contract and exact migration order.
 
@@ -119,7 +119,7 @@ User direction requires every BigCherry cache feature still advertised to migrat
 
 The frozen upstream candidate stays ABI43. Any local exported-field changes for KV layout, capability, ownership or pipelining are composed into one ABI44 bump under RUM03, including exact version and fingerprint checks plus same-SDK rebuild of all plugins. Do not run/cache or package ABI43 plugins against the extended layout.
 
-RV4241 correction (2026-11-19): attn_prefill_fp8 is a required BigCherry feature. The v1.17.0 baseline accepts off/qk/pv/both; the ABI43 candidate dropped its config control while retaining the prefill_fp8 row input. Restore and route the exact modes. Historical lossy rows are only H256/GQA6/page16 for plain E4M3, fp8_v4 and k6_v4 (nine combinations); page4 and B16 combinations have no historical lossy row and must refuse before allocation. SERVING-OPTION-INVENTORY.md records this correction.
+RV4307 correction (2026-11-19): attn_prefill_fp8 is a required BigCherry feature. The v1.17.0 baseline accepts off/qk/pv/both; the ABI43 candidate dropped its config control while retaining the prefill_fp8 row input. Restore and route the exact modes. Historical lossy rows are only H256/GQA6/page16 for plain E4M3, fp8_v4 and k6_v4 (nine combinations); page4 and B16 combinations have no historical lossy row and must refuse before allocation. SERVING-OPTION-INVENTORY.md records this correction.
 
 ABI44 contract scaffold (2026-11-19): rad0048_abi44_kv_contract owns the single post-rad0020 ABI bump and carries independent KV layout plus attn_prefill_fp8 ABI fields. Its descriptor covers all four packed IDs and H256 row/offset formulas; exact-source replay and always-on Release fixture pass. It does not implement runtime config, capability, planning, binding, store/read or attention dispatch. Keep the package unselected until those RUM07 stages and RUM03 same-SDK loader checks pass.
 
@@ -195,7 +195,7 @@ Use always-on CPU checks for descriptor fields, names, row widths/offsets, page 
 
 ## Reviews
 
-- RV4238
+- RV4304
 - 2026-11-19T02:22:01.408878+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:validation, section:acceptance_criteria
 - 2026-11-19T02:23:43.500330+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T03:23:02.448475+00:00 (updated-by): Updated: section:steps
@@ -207,7 +207,7 @@ Use always-on CPU checks for descriptor fields, names, row widths/offsets, page 
 - 2026-11-19T03:39:12.923328+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria
 - 2026-11-19T03:56:06.476909+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-19T04:02:36.192409+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
-- RV4241
+- RV4307
 - 2026-11-19T04:14:09.066477+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T04:25:59.053482+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T04:33:16.952350+00:00 (updated-by): Updated: section:notes
@@ -230,7 +230,7 @@ Use always-on CPU checks for descriptor fields, names, row widths/offsets, page 
 - 2026-11-19T05:36:49.852678+00:00 (updated-by): Updated: section:validation
 - 2026-11-19T05:37:58.145044+00:00 (updated-by): Updated: section:validation
 - 2026-11-19T05:53:54.253241+00:00 (updated-by): Updated: section:validation
-- RV4244
+- RV4310
 - 2026-11-19T05:59:50.084969+00:00 (updated-by): Updated: section:validation
 - 2026-11-19T07:31:11.696666+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T07:35:34.813970+00:00 (state-transition): State: in_progress → completed

@@ -97,7 +97,7 @@ RUM01 execution decision is now tied to frozen endpoints: BigCherry baseline pat
 - 2026-11-18T02:16:19.600984+00:00 (updated-by): Updated: section:title, section:steps, section:detailed_solution, section:code_samples, section:acceptance_criteria
 - RV4232
 - 2026-11-18T03:39:43.858967+00:00 (updated-by): Updated: section:notes
-- RV4236
+- RV4302
 - 2026-11-19T02:29:07.618375+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T02:43:15.359892+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T02:44:07.245775+00:00 (state-transition): State: pending → completed

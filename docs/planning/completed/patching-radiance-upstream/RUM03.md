@@ -2,7 +2,7 @@
 id: RUM03
 order: 2
 plan: patching-radiance-upstream
-state: in_progress
+state: completed
 created-at: '2026-11-18T01:28:07.390588+00:00'
 breadth: ''
 skill: advanced
@@ -103,7 +103,7 @@ The frozen upstream source remains pinned to ABI43, while every local exported-s
 
 Local ABI boundary correction (2026-11-19): ABI43 remains the exact frozen upstream input and the C9 wrong-ABI/layout check proves only that upstream loader baseline. RUM07 must append local KV layout fields to RadBuildCtx, RadKVGroupDecl and RadArchProbe. Those join the existing rad0018/rad0020 struct additions in one ABI44 bump; never mutate the exported shape while still reporting 43. All shipped plugin kinds must rebuild with ABI44 before the candidate can be packaged or released. This increases the final same-SDK build gate but avoids a second conflicting ABI bump.
 
-RV4242 resolution (2026-11-19): preserve rad0018/rad0020 as their established ABI43 field extensions. Candidate-only rad0048_abi44_kv_contract runs after rad0020, advances ABI43 to ABI44 once, fingerprints ownership/pipeline fields plus KV layout, capability and prefill-mode fields, and includes an always-on Release CPU fixture. It remains untested and absent from recipe composition until RUM07 runtime wiring and the full same-SDK plugin/loader gate pass. Focused test: tools/tests/patch/test_radiance_rad0048.py.
+RV4308 resolution (2026-11-19): preserve rad0018/rad0020 as their established ABI43 field extensions. Candidate-only rad0048_abi44_kv_contract runs after rad0020, advances ABI43 to ABI44 once, fingerprints ownership/pipeline fields plus KV layout, capability and prefill-mode fields, and includes an always-on Release CPU fixture. It remains untested and absent from recipe composition until RUM07 runtime wiring and the full same-SDK plugin/loader gate pass. Focused test: tools/tests/patch/test_radiance_rad0048.py.
 
 User reaffirmation (2026-11-19): B16F8 and B16I8 are required legacy cache features for this bump. ABI44's canonical descriptor must preserve IDs, widths, offsets, and capability bits for both formats; it does not itself port or validate runtime support. Keep rad0048 as sole ABI/descriptor owner and make rad0040 a consumer, then rebuild every plugin against the one ABI44 fingerprint. RUM07 carries the complete B16 runtime and focused correctness gates.
 
@@ -113,7 +113,7 @@ RUM03 targeted validation after the shared JSON dependency migration (2026-11-19
 
 Follow-up targeted validation (2026-11-19): component coupling suite passes with updated ABI43 expectation (9 passed, 1 skipped, 10 subtests). ABI44 package replay/release-fixture tests pass 2/2 against the exact 3deabdaeca17b58bad90d332f4b204cf7bb8a10e checkout. Runtime-asset metadata tests pass 26/26 with 15 subtests. The ABI43 prefix/ABI44 extension fixture is no longer skipped when RADIANCE_SRC points to the frozen composition checkout.
 
-Required helper-row compatibility finding (RV4247, 2026-11-19): the pinned ABI43 source omits had_quant_act_fp8 and moe_gemm_fp8a8 registry rows that components/moe-remote/moe_remote_gpu.h resolves by exact name. rad0046_retained_moe_rows restores both rows and keeps wide block-E4M3 tiling restricted to class/part boundaries. Added rad0046 to serving-core immediately before the ABI44 contract extension. Its exact-source apply/replay test passes 1/1. Recipe and ABI44 prefix tests currently refuse composition because package state is untested while production requires validated; this is the intended gate, not a reason to weaken recipe state checks. Build libr4d/moe-remote on ABI44, assert both rows resolve and run retained E4M3 guard fixture, then mark the patch validated and rerun the ordered composition/replay gates. GPU activation/numerical parity still belongs to RUM09.
+Required helper-row compatibility finding (RV4313, 2026-11-19): the pinned ABI43 source omits had_quant_act_fp8 and moe_gemm_fp8a8 registry rows that components/moe-remote/moe_remote_gpu.h resolves by exact name. rad0046_retained_moe_rows restores both rows and keeps wide block-E4M3 tiling restricted to class/part boundaries. Added rad0046 to serving-core immediately before the ABI44 contract extension. Its exact-source apply/replay test passes 1/1. Recipe and ABI44 prefix tests currently refuse composition because package state is untested while production requires validated; this is the intended gate, not a reason to weaken recipe state checks. Build libr4d/moe-remote on ABI44, assert both rows resolve and run retained E4M3 guard fixture, then mark the patch validated and rerun the ordered composition/replay gates. GPU activation/numerical parity still belongs to RUM09.
 
 
 
@@ -131,6 +131,8 @@ Codeberg refs/heads/main matched the frozen Radiance 2.2.0 recipe SHA b6b8751ccc
 
 The annotated upstream v2.2.0 tag dereferences to the frozen recipe b6b8751c. Rebuilt ABI44 libr4d on gfx1201 passed the stock had_quant_act_fp8 reference test and a direct exact moe_gemm_fp8a8 CPU-reference comparison. Aligned classes 512/256 selected 128-column tiling and classes 512/384 selected 64-column fallback; both had zero mismatches. The first probe's shape refusal was diagnosed as wrong test-only _1 parameter names for the two-class row and corrected to N_odd/K_odd. Original and corrected logs plus binary hashes are kept. Verified patch promotion, functional quality and A/B remain open.
 
+ce109347a admits rad0046 on scoped row-restoration evidence. Same-SDK registry-only control exposed 677 rows with both names absent; ABI44 subject exposed 679 with both present and passed gfx1201 quantizer plus 64/128-column device reference checks. Focal gates G0–G5 passed with genuine profile evidence. Radiance 2.2 upstream has the compile-tested FFmpeg 6/7 callback branch, so rad0005 is removed from this composition. Exact v2.2 production rebase is 32/32 clean; patch-lint and docs catalog passed. Integrated deployment throughput and helper-on offline scoring remain RUM09.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -146,21 +148,21 @@ The annotated upstream v2.2.0 tag dereferences to the frozen recipe b6b8751c. Re
 
 ## Reviews
 
-- RV4234
+- RV4300
 - 2026-11-19T02:09:24.234699+00:00 (updated-by): Updated: section:title, section:detailed_solution
-- RV4235
+- RV4301
 - 2026-11-19T02:15:39.669409+00:00 (updated-by): Updated: section:steps, section:files, section:validation, section:acceptance_criteria
 - 2026-11-19T02:48:21.302296+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T04:02:01.528340+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-19T04:20:06.571659+00:00 (updated-by): Updated: section:title
-- RV4242
+- RV4308
 - 2026-11-19T04:26:05.437126+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T04:33:41.862009+00:00 (updated-by): Updated: section:notes
-- RV4246
+- RV4312
 - 2026-11-19T07:57:07.207210+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T08:01:30.731011+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T08:06:37.521336+00:00 (updated-by): Updated: section:notes
-- RV4247
+- RV4313
 - 2026-11-19T08:34:34.698229+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:28:01.492650+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T12:46:32.419552+00:00 (updated-by): Updated: section:notes
@@ -168,3 +170,5 @@ The annotated upstream v2.2.0 tag dereferences to the frozen recipe b6b8751c. Re
 - 2026-11-19T22:48:19.649691+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:20:13.004950+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:33:16.483831+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:00:28.590821+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:04:47.400659+00:00 (state-transition): State: in_progress → completed

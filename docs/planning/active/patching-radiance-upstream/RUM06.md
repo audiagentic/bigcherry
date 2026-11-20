@@ -126,7 +126,7 @@ Checkpoint bedf51edb consolidates rank attachment rollback, clears the result po
 
 ## Reviews
 
-- RV4237
+- RV4303
 - 2026-11-19T02:21:54.505617+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:validation, section:acceptance_criteria
 - 2026-11-19T09:12:22.140456+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:03:33.981692+00:00 (updated-by): Updated: section:notes
