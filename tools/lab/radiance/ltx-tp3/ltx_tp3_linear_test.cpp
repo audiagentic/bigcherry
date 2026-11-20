@@ -95,21 +95,22 @@ void head_gates(int hd, Shares shares) {
         near(reconstructed[head], dense[head]);
     }
 }
-void row_parallel(int k, int n, Shares shares) {
+void row_parallel(int k, int n, Shares shares, bool has_bias = true) {
     assert(k % 32 == 0);
     const auto slices = iq8r_input_slices(k, {
         shares[0] * k / 32, shares[1] * k / 32, shares[2] * k / 32});
     const Mat w = weights(n, k, 23);
     const Vec x = input(k, 71);
     for (int row = 0; row < n; ++row) {
-        const double bias = (row + 1) * .029;
+        const double bias = has_bias ? (row + 1) * .029 : 0.0;
         double sum = bias; // exactly once
         for (const auto sl : slices)
             for (int c = sl.offset; c < sl.offset + sl.width; ++c)
                 sum += w[row][c] * x[c];
         near(sum, project_row(w[row], x) + bias);
         const double wrong = sum + 2 * bias;
-        assert(std::abs(sum - wrong) > 0.01);
+        if (has_bias) assert(std::abs(sum - wrong) > 0.01);
+        else assert(sum == wrong);
     }
 }
 void negative_alignment() {
@@ -132,7 +133,8 @@ int main() {
         row_parallel(4096, 9, shares); // video output
         row_parallel(2048, 9, shares); // audio and cross-modal output
     }
-    row_parallel(8192, 9, {10, 10, 12}); // audio FFN down is group-aligned
+    row_parallel(16384, 9, {8, 8, 16}, false); // video FFN-down has no bias
+    row_parallel(8192, 9, {10, 10, 12}, true); // audio FFN-down has bias
     negative_alignment();
     std::cout << "LT3 linear banks, gates, output and FFN: passed\n";
 }

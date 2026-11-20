@@ -203,3 +203,7 @@ The session's available tools did **not** expose the authoritative Planning MCP 
 ## Component-first test ladder (2026-11-20)
 
 `docs/design/ltx25-tp3-component-test-ladder.md` gives the independently runnable C00–C08 contracts for model IQ8R, QKV/KV/FFN, global Q/K normalization, attention, guidance, text/connector and optional gfx1030 handoff, resource admission, decoder/output ownership and the synthetic integration chain. Nine native CPU CTests and bounded optional model inspectors are lab-only. Promotion to actual native TP3 waits for operator-level hardware numerical parity, collective/cancellation proof and the real 48-block E2E graph; current upstream LTX TP1 refusal is preserved.
+
+## 2026-11-20 extended C00/C01 contracts
+
+The tenth native card-free CTest models the source-derived FWHT128/per-256-group signed i8 activation quantization and verifies equal whole vs legal per-rank codes/scales. The actual-model `test_ltx_iq8r_shards.py` verifies 768 source output rows, 1,920 legal raw-plane reconstructions, 384 refused sampled row cuts and 756 fused-bank boundary source rows across 288 checked QKV/KV projections. Crucial: video FFN-down has no bias, unlike audio FFN-down and six attention outputs. This is source/CPU evidence, not native TP3 GPU inference; see `docs/design/ltx25-tp3-component-test-ladder.md`.

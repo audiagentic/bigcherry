@@ -129,3 +129,7 @@ The remote shell permits the pytest command but does not support a working-direc
 ## 2026-11-20 component-first harness expansion
 
 The CPU-first staged test plan is `docs/design/ltx25-tp3-component-test-ladder.md`: nine independent native CTests plus optional real-model IQ8R/DiT/connector numerical sampling (227 real rows in total). It maps the existing LT3 components to separate failure gates and the incremental native/HIP/E2E promotion path. Current passes are **not** production TP3 functionality, and the original TP1-only guard is unchanged. The GPU lease was held by another actor during this CPU harness slice.
+
+## 2026-11-20 C00/C01 follow-on
+
+`ltx_tp3_i8a8h_test` adds source-derived CPU BF16/H128/256-group nearest-even i8 activation tests. `test_ltx_iq8r_shards.py` adds real-plane K-shard and fused-bank tests: 768 source output rows, 1,920 legal rank reconstructions, 384 refused sampled row cuts, 288 fused projection entries with 756 sampled bank boundary rows. Video `ff_down` is biasless; audio FFN-down and the six attention outputs each have a bias added once after reduction. These CPU-only validations do not qualify the native loader or HIP i8a8h. The LTX TP1 guard remains in place.
