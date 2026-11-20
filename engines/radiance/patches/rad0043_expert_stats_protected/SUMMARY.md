@@ -1,6 +1,6 @@
 # rad0043_expert_stats_protected
 
-**Status:** untested
+**Status:** diagnostic
 **Plan item:** VTP44
 
 ## Summary
@@ -9,7 +9,7 @@
 
 ## Outcome
 
-Not yet run. Expected on Flash-Next (hcbf16) with the same 4,163-token run: `ranks.unmapped` 0 instead of 1,672 and `selections == tokens x top_k` in all 48 layers.
+Qualified as a diagnostic tool (2026-11-20, record in `evidence/promotion.json`). Run on Flash-Next (hcbf16, two 7900 XTX TP2, deterministic): the `--expert-stats` tally now counts the protected bf16 experts too, over 1,998,240 routed selections (4,163 tokens, 48 layers, top-10), and a repeat run gives identical per-layer counts (docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-ROUTING.md). It was the counting half of the route record/replay runs that scored the KV caches (docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-REPLAY.md). Not a production feature: it only counts.
 
 ## Detail
 

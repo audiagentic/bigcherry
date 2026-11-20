@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0043_expert_stats_protected"
 order = 43
-state = "untested"
+state = "diagnostic"
 kind = "diagnostic"
 origin = "local"
 backend = "agnostic"

@@ -110,7 +110,7 @@ class ActivationTests(unittest.TestCase):
 
     def test_a_setting_without_a_marker_is_unobservable(self):
         self.assertEqual(
-            eq.setting_activation(self.libr3, "R3_ATTN_NATIVE", control_log="", subject_log="").status, "unobservable")
+            eq.setting_activation(self.libr3, "R3_GDN_NATIVE", control_log="", subject_log="").status, "unobservable")
 
 
 if __name__ == "__main__":
