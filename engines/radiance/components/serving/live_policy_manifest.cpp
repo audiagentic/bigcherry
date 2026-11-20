@@ -51,8 +51,6 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
         if (skipped_reason) *skipped_reason = "record key=" + key + ": " + why;
         return std::nullopt;
     };
-    // The strict reader maps #1169's verified narrow-key scope to v1 in memory; absent later run/host provenance
-    // must not silently disable a valid production policy.
     if (!record->calibration_inputs || *record->calibration_inputs != policy_inputs)
         return skip("record has no matching model/card/service calibration provenance; not activating incompatible evidence");
     // Behind a TP engine (RAD49) every rank counts every routed row of a handed-off pass (the router is replicated), so rank

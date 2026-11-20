@@ -138,7 +138,7 @@ if(BUILD_TESTING)
   add_executable(bc_live_policy_ingest_test EXCLUDE_FROM_ALL live_policy_ingest_test.cpp)
   target_link_libraries(bc_live_policy_ingest_test PRIVATE bc_serving)
   target_compile_definitions(bc_live_policy_ingest_test PRIVATE
-    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml"
+    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml"
     BC_CALIBRATION_HASH_ONLY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19-with-hash-only.toml")
   add_test(NAME bc_live_policy_ingest_test COMMAND bc_live_policy_ingest_test)
 
@@ -153,7 +153,7 @@ if(BUILD_TESTING)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
   target_compile_definitions(bc_serving_test PRIVATE
-    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19.toml")
+    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml")
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
@@ -209,6 +209,9 @@ if(BUILD_TESTING)
   add_dependencies(bc_session_test bc_fake_engine)
   target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_session_test COMMAND bc_session_test)
+  # The same executable's host-start case; a build target of the test's name so the component gate can declare it.
+  add_custom_target(bc_session_host_start_test DEPENDS bc_session_test)
+  add_test(NAME bc_session_host_start_test COMMAND bc_session_test --host-start-only)
   # A build target so the component test gate can declare it; building it runs the tripwire.
   add_custom_target(bc_session_callback_guard
     COMMAND ${CMAKE_COMMAND} -P "${CMAKE_CURRENT_SOURCE_DIR}/callback_boundary_guard.cmake"

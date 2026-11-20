@@ -16,8 +16,7 @@ struct LivePolicyRecord {
     // Records bind source evidence to the narrow, typed hardware/service scope; a record without it is refused.
     std::optional<nlohmann::json> calibration_inputs;
     std::string source_plan_key, source_engine_build;
-    // In-memory activation state: 1 includes verified post-#1169 scoped
-    // records (later revision/run/host provenance remains unavailable).
+    // Always 1: the one supported record format.
     uint32_t record_schema_version = 0;
     std::string calibration_kind, source_revision, run_id, host_facts_digest;
     nlohmann::json calibration_key_fields = nlohmann::json::array();

@@ -19,8 +19,8 @@ Owns measurement and cost-model validity for every layout; RCS10 owns default-on
 
 ## Steps
 
-1. Write the protocol, experiment or collector against the code as it is (radiance 1.14.0, remote-MoE protocol v19).
-2. Land card-free tests first where the item has any logic; measure only with the gpu lease.
+1. Reconfirm exact current Radiance source/ABI, recipe and RUM migration state; the 1.14.0/protocol-v19 references in historical notes are not the calibration target. Bind discovery to stable physical device identity and current native owner/resource admission receipts.
+2. Write the protocol, experiment or collector against current source; preserve one shared calibration schema/store and existing run-record integration. Card-free tests precede any GPU measurement, which requires the exclusive gpu lease.
 
 ## Detailed Solution & Technical Design
 
@@ -62,3 +62,8 @@ Supersedes RPL01 (patching-runtime-placement). Budgets: cache hit <0.5 s, change
 
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:47.166041+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4242
+- 2026-11-20T02:32:00.345179+00:00 (updated-by): Updated: section:steps

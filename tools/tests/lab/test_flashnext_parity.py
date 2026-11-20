@@ -214,9 +214,20 @@ class RunRecordsTests(unittest.TestCase):
                 "reason_code": "fixture_not_configured", "reason_detail": "",
                 "engine": engines.RADIANCE, "observed_at": "2026-11-19T00:00:00Z",
             } for name in feature_registry.feature_ids(engines.RADIANCE) if name != "live_policy"]))
-            (launch / "host-facts.json").write_text(json.dumps({"kernel_release": {
-                "value": "fixture", "readable": True
-            }}))
+            from bigcherry.core import host_facts
+            import hashlib
+            start = host_facts.snapshot_at_start(
+                {"kernel_release": {"value": "fixture", "readable": True}},
+                phase="owner_start", captured_at="2026-11-19T00:00:00Z",
+            )
+            start_path = launch / host_facts.START_RECEIPT_FILE
+            start_path.write_text(json.dumps(start))
+            (launch / "native-session-start.json").write_text(json.dumps({
+                "schema_version": 1, "state": "running",
+                "manifest": str(launch / "manifest.json"),
+                "started_at": "2026-11-18T23:59:59Z",
+                "host_facts_start_sha256": hashlib.sha256(start_path.read_bytes()).hexdigest(),
+            }))
             (launch / "launch-provenance.json").write_text(json.dumps({
                 "argv": ["bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450"],
                 "environment": {"ROCM_PATH": "fixture-rocm"},
@@ -304,24 +315,36 @@ class RunRecordsTests(unittest.TestCase):
             self.assertEqual(report["metrics"]["ttft.cold_ttft_s"]["verdict"], "REGRESSION")
             self.assertEqual(report["metrics"]["decode.decode1_acceptance"]["verdict"], "info")
 
-    def test_record_launch_cli_and_passive_host_snapshot(self):
-        from bigcherry.core import run_records
+    def test_record_launch_cli_requires_original_native_start_seal(self):
+        from bigcherry.core import host_facts, run_records
 
         out = self.run_fixture("cli", [1.0])
         launch = out / "launch-1"
-        fake_facts = {"kernel_build": {"value": "fixture-host", "readable": True}}
+        native = self.root / "native-owner"
+        native.mkdir()
+        (native / host_facts.START_RECEIPT_FILE).write_bytes(
+            (launch / host_facts.START_RECEIPT_FILE).read_bytes()
+        )
+        (native / "session.json").write_bytes(
+            (launch / "native-session-start.json").read_bytes()
+        )
         with patch.dict(os.environ, {"BC_WORK_ROOT": str(self.root)}), patch(
-            "bigcherry.core.host_facts.collect_host_facts", return_value=fake_facts
+            "bigcherry.core.host_facts.collect_host_facts",
+            side_effect=AssertionError("no Python re-sampling permitted"),
         ):
-            self.assertEqual(fp.main(["capture-host-facts", str(launch)]), 0)
-            self.assertEqual(json.loads((launch / "host-facts.json").read_text()), fake_facts)
+            self.assertEqual(fp.main([
+                "capture-host-facts", str(launch), "--run-dir", str(native),
+            ]), 0)
+            snapshot = host_facts.read_owner_start(
+                launch, session_name="native-session-start.json",
+            )
+            self.assertEqual(snapshot["capture_phase"], "owner_start")
+            self.assertEqual(snapshot["facts"]["kernel_release"]["value"], "fixture")
             self.assertEqual(fp.main([
                 "capture-provenance", "--heat", str(self.heat),
                 "--power-profile", "stock", str(launch), "--",
                 "bc-serve", "serve", "flashnext-4gpu", "--set", "engine.port=18450",
             ]), 0)
-            captured = json.loads((launch / "launch-provenance.json").read_text())
-            self.assertEqual(captured["argv"][-2:], ["--set", "engine.port=18450"])
             output = StringIO()
             with redirect_stdout(output):
                 self.assertEqual(fp.main([
@@ -329,14 +352,15 @@ class RunRecordsTests(unittest.TestCase):
                     "--work-root", str(self.root),
                 ]), 0)
             digest = output.getvalue().strip()
-            self.assertEqual(len(digest), 64)
             store = run_records.RunRecordStore(self.root)
             rec = store.get_record(digest)
-            self.assertEqual(rec["host_facts"], fake_facts)
-            self.assertEqual(
-                json.loads(store.get_blob(rec["provenance"]["argv"]))[-2:],
-                ["--set", "engine.port=18450"],
-            )
+            self.assertEqual(rec["host_facts"], snapshot)
+            roles = {x["role"] for x in rec["provenance"]["inputs"]}
+            self.assertIn("native_host_start", roles)
+            self.assertIn("native_session_start", roles)
+            (launch / host_facts.START_RECEIPT_FILE).write_text("unsealed bytes")
+            with self.assertRaises((ValueError, fp.ParityError)):
+                fp.publish_launch_record(out, launch)
 
     def test_missing_required_native_provenance_does_not_publish(self):
         from bigcherry.core import run_records
@@ -359,7 +383,7 @@ class RunRecordsTests(unittest.TestCase):
 
         # MRC04's production snapshot includes the complete narrow key and
         # all quantities. Synthetic partial keys are correctly invalid.
-        fixture = ROOT / "tools/tests/fixtures/calibration/production-2026-11-19.toml"
+        fixture = ROOT / "tools/tests/fixtures/calibration/production-2026-11-20.toml"
         self.calibration.write_bytes(fixture.read_bytes())
         current = [item for item in calibration_records.read_native_toml(self.calibration)
                    if item["status"] == "current"]
