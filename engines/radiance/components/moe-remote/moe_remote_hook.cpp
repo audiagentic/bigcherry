@@ -81,6 +81,8 @@ struct EnginePlugin {
     void (*poll)(void);
     void (*shutdown)(void);
     int (*capacity)(uint32_t parent_limit);
+    void (*finish_admission)(void);
+    int (*wait_finished)(int64_t timeout_ms);
 };
 using RegisterFn = int (*)(const EnginePlugin*);
 
@@ -210,7 +212,7 @@ int admit_ticket(StepTicket* out, int try_only, int world_size) {
         : g.ledger.admit(ranks, out,
                          [] { return helper_faulted(); },
                          [] { poll_tickets(); });
-    if (try_only && (r == Result::Closed || r == Result::Full)) return 1;
+    if (r == Result::Closed || (try_only && r == Result::Full)) return 1;
     if (r != Result::Ok) {
         if (r == Result::Full)
             std::fprintf(stderr, "libr3moe: admission route-ring ceiling exhausted; high-water %zu, capacity %zu\n",
@@ -288,6 +290,15 @@ void poll_tickets() {
     (void)g.ledger.poll([](const StepTicket& t, uint32_t rank) {
         return g.completion[rank].prove(t);
     });
+}
+
+int wait_finished_tickets(int64_t timeout_ms) {
+    if (timeout_ms < 0) return RAD_E_INVAL;
+    const auto cutoff = g.ledger.finish_admission();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    const auto result = g.ledger.wait_drained(cutoff.old_epoch, cutoff.latest_ticket, deadline,
+                                              [] { poll_tickets(); }, [] { return helper_faulted(); });
+    return result == r3::admission::Ledger::Result::Ok ? RAD_OK : RAD_E_STATE;
 }
 
 bool served_lane(uint32_t lane) {
@@ -682,7 +693,8 @@ void register_mailbox() {
                                      before_pass, admit_ticket, bind_ticket, cancel_ticket,
                                      host_done_ticket, rank_done_ticket, poll_tickets,
                                      [] { g.ledger.interrupt(); },
-                                     [](uint32_t limit) -> int { return g.ledger.configure(limit) ? RAD_OK : RAD_E_STATE; }};
+                                     [](uint32_t limit) -> int { return g.ledger.configure(limit) ? RAD_OK : RAD_E_STATE; },
+                                     [] { (void)g.ledger.finish_admission(); }, wait_finished_tickets};
     if (g.engine_register(&plugin) != 0) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         g.watch.stop();

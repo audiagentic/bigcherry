@@ -67,15 +67,15 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "ef3527a"),
+        "abi/bc_moe_remote.h": (None, "6e3fbc7"),
         "arch/common/bc_moe_remote_block.h": (None, "89c76c3"),
         "arch/common/rad_block_hc.h": ("3a602e5", "2d573ec"),
         "arch/common/rad_block_moe_fp8.h": ("614db0e", "3634a17"),
-        "core/engine.cpp": ("7544310", "c0c5357"),
+        "core/engine.cpp": ("7544310", "010989d"),
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
-        "core/place/bc_moe_remote.cpp": (None, "6ffd837"),
-        "core/place/bc_moe_remote_engine.h": (None, "cfb316a"),
+        "core/place/bc_moe_remote.cpp": (None, "3edd659"),
+        "core/place/bc_moe_remote_engine.h": (None, "8065009"),
         "core/place/bc_moe_remote_place.h": (None, "da896b6"),
         "core/place/planner.cpp": ("2ea4220", "7944888"),
         "core/runtime/ctx.cpp": ("ff0f746", "2ff379e"),
@@ -256,7 +256,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 if not p.create and not p.path.startswith("tests/")
             }
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 30)
+            self.assertEqual(sum(core_edits.values()), 34)
             self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:

@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
+#include <future>
 #include <map>
 #include <thread>
 using r3::admission::Ledger;
@@ -316,6 +317,31 @@ int main() {
           "derived ceiling exhausted without GPU wait");
     check(backlog.poll([](const StepTicket&, uint32_t) { return P::Proven; }), "prefill completion");
     check(backlog.outstanding()==0 && backlog.high_water()==33, "prefill high-water retained");
+    Ledger finishing(3);
+    StepTicket current{}, ahead{}, unused{}, rejected{};
+    check(finishing.initialize(41,0) &&
+          finishing.try_admit(2,&current)==R::Ok && finishing.bind(current.ticket_id,1) &&
+          finishing.try_admit(2,&ahead)==R::Ok && finishing.bind(ahead.ticket_id,2) &&
+          finishing.try_admit(2,&unused)==R::Ok, "current, issued-ahead and unbound tail");
+    auto placement = finishing.close_admission();
+    auto clean_waiter = std::async(std::launch::async,[&] { return finishing.admit(2,&rejected); });
+    check(clean_waiter.wait_for(std::chrono::milliseconds(10))==std::future_status::timeout,
+          "placement gate blocks a new admit before terminal close");
+    const auto cutoff = finishing.finish_admission();
+    check(clean_waiter.wait_for(std::chrono::seconds(1))==std::future_status::ready &&
+          clean_waiter.get()==R::Closed && finishing.cancel(unused.ticket_id) &&
+          finishing.valid(ahead,1) && finishing.try_admit(2,&rejected)==R::Closed,
+          "terminal close wakes admission and preserves the already-issued parent");
+    check(finishing.host_complete(current.ticket_id) && finishing.host_complete(ahead.ticket_id) &&
+          finishing.poll([&](const StepTicket& ticket,uint32_t rank) {
+              return ticket.ticket_id==ahead.ticket_id && rank==1 ? P::Pending : P::Proven;
+          }) && !finishing.drained(cutoff.old_epoch,cutoff.latest_ticket),
+          "clean closure cannot retire an ahead parent without all terminal seals");
+    check(finishing.poll([](const StepTicket&,uint32_t){return P::Proven;}) &&
+          finishing.drained(cutoff.old_epoch,cutoff.latest_ticket) &&
+          finishing.reopen(placement.old_epoch+1,1) &&
+          finishing.try_admit(2,&rejected)==R::Closed,
+          "all terminal seals drain; placement may settle without restarting admission");
     r3::moe_shm::LaneSignal lane{};
     unsigned drains=0;
     lane.drain_request=10;

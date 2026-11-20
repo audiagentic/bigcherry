@@ -51,6 +51,8 @@ typedef struct BcMoeRemotePlugin {
     void (*poll)(void);
     void (*shutdown)(void);
     int (*capacity)(uint32_t parent_limit);
+    void (*finish_admission)(void);
+    int (*wait_finished)(int64_t timeout_ms);
 } BcMoeRemotePlugin;
 /* Register the plugin (NULL unregisters). Layer maps published before registration are replayed to it.
  * Returns 0, or -1 when struct_size does not match. */
@@ -78,6 +80,8 @@ int bc_moe_remote_cancel(BcMoeRemoteTicket ticket);
 int bc_moe_remote_host_done(BcMoeRemoteTicket ticket);
 void bc_moe_remote_poll(void);
 void bc_moe_remote_shutdown(void);
+int bc_moe_remote_finish_admission(void);
+int bc_moe_remote_wait_finished(int64_t timeout_ms);
 /* Per-release value handed explicitly from scheduler thread through the rank
  * barrier. The rank thread stores it in TLS for Ctx::run_pass to consume. */
 void bc_moe_remote_rank_ticket(BcMoeRemoteTicket ticket);
@@ -287,6 +291,24 @@ extern "C" void bc_moe_remote_shutdown(void) {
     }
     if (fn) fn();
 }
+extern "C" int bc_moe_remote_finish_admission(void) {
+    void (*fn)() = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        fn = g_plugin.finish_admission;
+    }
+    if (!fn) return 0;
+    fn();
+    return 1;
+}
+extern "C" int bc_moe_remote_wait_finished(int64_t timeout_ms) {
+    int (*fn)(int64_t) = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        fn = g_plugin.wait_finished;
+    }
+    return fn ? fn(timeout_ms) : -1;
+}
 static thread_local BcMoeRemoteTicket g_rank_ticket{};
 extern "C" void bc_moe_remote_rank_ticket(BcMoeRemoteTicket t) { g_rank_ticket = t; }
 extern "C" BcMoeRemoteTicket bc_moe_remote_current_ticket(void) { return g_rank_ticket; }
@@ -345,10 +367,12 @@ _BC_MOE_REMOTE_ENGINE_H = r"""/* Scheduler/rank admission bridge. Scheduler chan
 #pragma once
 #include "bc_moe_remote.h"
 #include "device/device.h"
+#include <atomic>
 
 class BcMoeRemoteAdmission {
     BcMoeRemoteTicket current_{}, ahead_{}, issued_{};
     int ahead_status_ = 0;
+    std::atomic<bool> finishing_{false}, stepper_finished_{false};
 public:
     // Engine::step_loop holds one scalar ahead batch, not a queue.
     static constexpr uint32_t kIssueAheadDepth = 1;
@@ -359,7 +383,8 @@ public:
             current_ = ahead_;
             ahead_ = {};
         } else {
-            if (bc_moe_remote_admit(&current_, 0, ranks) < 0) return RAD_E_STATE;
+            const int admission = bc_moe_remote_admit(&current_, 0, ranks);
+            if (admission != 0) return admission < 0 ? RAD_E_STATE : admission;
             b = scheduler.step();
             if (!b) {
                 if (bc_moe_remote_cancel(current_) < 0) return RAD_E_STATE;
@@ -403,6 +428,14 @@ public:
         return RAD_OK;
     }
     int host_done() { return bc_moe_remote_host_done(current_); }
+    bool finish() {
+        if (!bc_moe_remote_finish_admission()) return false;
+        finishing_.store(true, std::memory_order_release);
+        return true;
+    }
+    bool finishing() const { return finishing_.load(std::memory_order_acquire); }
+    bool stepper_finished() const { return stepper_finished_.load(std::memory_order_acquire); }
+    void note_stepper_finished() { stepper_finished_.store(true, std::memory_order_release); }
 };
 """
 
@@ -1006,7 +1039,8 @@ PATCHES = (
                 id="bc-remote-ahead-try-admit",
                 anchor=r"^    for \(int i = 0; i < serial_rows_ && serial_done_ > 0; \+\+i\)$",
                 mode="insert_before",
-                text="    if (!bc_remote_admission_.try_ahead((int)ranks_.size())) return bc_remote_admission_.ahead_status();\n",
+                text=("    if (bc_remote_admission_.finishing()) return RAD_OK;\n"
+                      "    if (!bc_remote_admission_.try_ahead((int)ranks_.size())) return bc_remote_admission_.ahead_status();\n"),
                 guard=r"bc_remote_admission_\.try_ahead\(",
                 expect_matches=1,
                 rationale="Reserve only after upstream's flex/quiet early exits and before expect_draft or step_next mutates scheduler state.",
@@ -1024,7 +1058,9 @@ PATCHES = (
                 id="bc-remote-scheduler-admit",
                 anchor=r"^        if \(issued\) sched_\.promote_next\(\);\n        else        b = sched_\.step\(\);$",
                 mode="replace",
-                text="        if (bc_remote_admission_.step(issued, b, sched_, (int)ranks_.size()) < 0) return fail_loop(RAD_E_STATE);",
+                text=("        const int bc_remote_status = bc_remote_admission_.step(issued, b, sched_, (int)ranks_.size());\n"
+                      "        if (bc_remote_status < 0) return fail_loop(RAD_E_STATE);\n"
+                      "        if (bc_remote_status > 0) break;"),
                 guard=r"bc_remote_admission_\.step\(issued, b, sched_,",
                 expect_matches=1,
                 rationale="Admission precedes scheduler mutation, checkpoint restore and prepare_release.",
@@ -1047,13 +1083,69 @@ PATCHES = (
                 rationale="Host completion only after finish_block_drafter/finish_serial_drafter returns.",
             ),
             Edit(
-                id="bc-remote-shutdown-interrupt",
-                anchor=r"^    stopping_\.store\(true, std::memory_order_release\);$",
+                id="bc-remote-fault-interrupt",
+                anchor=r"^int Engine::fail_loop\(int st\) \{$",
+                text="\n    bc_moe_remote_shutdown();",
+                guard=r"^int Engine::fail_loop\(int st\) \{\n    bc_moe_remote_shutdown\(\);$",
+                expect_matches=1,
+                rationale="Fault shutdown interrupts the admission and completion waiters immediately.",
+            ),
+            Edit(
+                id="bc-remote-finish-issued-ahead",
+                anchor=r"^    while \(!stopping_\.load\(std::memory_order_acquire\)\) \{\n        step_watch\.progress\(\);$",
+                mode="replace",
+                text=("    while (!stopping_.load(std::memory_order_acquire) && (ahead || !bc_remote_admission_.finishing())) {\n"
+                      "        step_watch.progress();"),
+                guard=r"ahead \|\| !bc_remote_admission_\.finishing\(\)",
+                expect_matches=1,
+                rationale="A clean stop finishes the already-issued batch without starting a new parent.",
+            ),
+            Edit(
+                id="bc-remote-note-stepper-finished",
+                anchor=r"^        if \(gen_\) gen_loop\(\); else step_loop\(\);$",
+                text="\n        bc_remote_admission_.note_stepper_finished();",
+                guard=r"bc_remote_admission_\.note_stepper_finished\(\);",
+                applies_if=r"front_->detach\(cfg_\.served_model_name",
+                expect_matches=1,
+                rationale="Let the live Server frame wait for the stepper before rank teardown.",
+            ),
+            Edit(
+                id="bc-remote-finish-before-server-destruction",
+                anchor=r"^    srv\.retire\(\);\n    if \(live\) live->stop\(\);\n    const int st = loop_status_\.load\(std::memory_order_acquire\);$",
+                mode="insert_before",
+                text="""    if (!gen_ && loop_status_.load(std::memory_order_acquire) >= 0 &&
+        bc_remote_admission_.finish()) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (!bc_remote_admission_.stepper_finished()) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+                bc_moe_remote_shutdown();
+                fatal("model %s: remote MoE stepper did not finish within its shutdown deadline",
+                      cfg_.served_model_name.c_str());
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        const int stepper_status = loop_status_.load(std::memory_order_acquire);
+        if (stepper_status < 0) return stepper_status;
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (bc_moe_remote_wait_finished(std::max<int64_t>(0, remaining)) < 0)
+            return fail_loop(RAD_E_STATE);
+        bc_moe_remote_engine_idle();
+    }
+""",
+                guard=r"bc_moe_remote_wait_finished\(std::max<int64_t>",
+                applies_if=r"front_->detach\(cfg_\.served_model_name",
+                expect_matches=1,
+                rationale="Use the bound parents' existing terminal proof before server and rank teardown.",
+            ),
+            Edit(
+                id="bc-remote-after-server-interrupt",
+                anchor=r"^    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);$",
                 mode="insert_before",
                 text="    bc_moe_remote_shutdown();\n",
-                guard=r"bc_moe_remote_shutdown\(\);",
-                expect_matches=2,
-                rationale="Both fault and normal shutdown wake admission/drain before joining stepper.",
+                guard=r"bc_moe_remote_shutdown\(\);\n    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);",
+                expect_matches=1,
+                rationale="Wake remaining waits only after the clean server drain or error stop path.",
             ),
             Edit(
                 id="include-bc-moe-remote-engine",
