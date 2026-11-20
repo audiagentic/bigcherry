@@ -329,6 +329,8 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_owner_map_test PRIVATE
     BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_owner_map_test COMMAND bc_owner_map_test)
+  # Synthetic 26 MiB model and heat records belong in the build tree, not the source checkout.
+  set_tests_properties(bc_owner_map_test PROPERTIES ENVIRONMENT "TMPDIR=${CMAKE_CURRENT_BINARY_DIR}")
   # Radiance's plugin module defaults CMAKE_BUILD_TYPE to RelWithDebInfo, which adds -DNDEBUG and turns every assert()
   # in these tests into a no-op. Test executables keep their assertions; the assert-based tests refuse to build without.
   get_property(_bc_tests DIRECTORY PROPERTY TESTS)

@@ -6,6 +6,16 @@ the existing command/API and read the owning domain's tests. If the work is
 exploratory or plan-specific, start in `tools/lab/<plan-topic>/` and keep it
 outside the production package until it has an explicit disposition.
 
+## Root-level source versus generated output
+
+The repository root contains a few intentional, versioned source contracts:
+
+- `dispositions/` is the authoritative patch-disposition store (`bigcherry.core.paths.DISPOSITIONS`), read by patch validation and CI. It must stay tracked.
+- `sql/` contains the canonical dispatch database bootstrap schema and migration history (`bigcherry.core.paths.SQL`), used by tuning/inventory. It is not a directory for runtime databases.
+- `host/kernel/` preserves protected host-kernel reconstruction sources and patches. Generated module builds and installed kernel files belong outside the source checkout and must not be removed as disposable output.
+
+The root `out/` directory is ignored scratch, never a durable evidence store; promote retained reports to `docs/evidence/`. Synthetic C++ test models belong in isolated, automatically cleaned build scratch, not a tracked root-level fixture directory.
+
 ## Start with the right owner
 
 | Concern | Maintained owner | Use it for |
