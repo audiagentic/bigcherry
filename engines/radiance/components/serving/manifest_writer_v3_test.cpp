@@ -160,7 +160,9 @@ int main(int argc, char** argv) {
         sv::Options options;
         options.configs = {argv[1]};
         options.model_root = temporary.path;
-        options.sets = {"layout.name=\"flashnext-r9700\"", "memory.host_pool_mib=9216",
+        // The engine settings live in the native YAML (the config's TOML keeps none): this fixture resolves without one, so
+        // it states the helper-free value the YAML of flashnext-r9700 carries.
+        options.sets = {"layout.name=\"flashnext-r9700\"", "memory.host_pool_mib=9216", "engine.ngram_placement=\"disk\"",
                         "engine.model=" + Json(model.string()).dump(),
                         "engine.radiance_home=" + Json(runtime_home.string()).dump()};
         sv::ManifestInputs inputs;
