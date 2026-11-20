@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.56.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.55.0...bc-platform-1.56.0) (2026-11-20)
+
+
+### New and changed
+
+* **measurement:** one canonical Radiance results path (MRC06) ([#1231](https://github.com/audiagentic/bigcherry/issues/1231)) ([9d8ed4b](https://github.com/audiagentic/bigcherry/commit/9d8ed4bb5a200ff070f466e5df1f0729bc64bc51))
+* **release:** patch-promote --diagnostic from an experiment, gates after the change ([#1229](https://github.com/audiagentic/bigcherry/issues/1229)) ([2caf1f7](https://github.com/audiagentic/bigcherry/commit/2caf1f79e1e8dd88932f89f8a2a4e93dd5558e56))
+
 ## [1.55.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.54.0...bc-platform-1.55.0) (2026-11-19)
 
 
