@@ -131,7 +131,7 @@ class TestPatchProvenanceCrossCheck(unittest.TestCase):
     # set before) was DEMOTED 2026-09-09 -- see RETIRED_RDNA_PATCHES below
     # and HI162 (docs/planning/completed/tuning-hip-autotune/HI162.md). RD19
     # (2026-09-11): patch.toml's state field had never been synced to
-    # config/external-sources.toml's own real, already-recorded
+    # engines/llamacpp/external-sources.toml's own real, already-recorded
     # "ported-validated" promotion (gpt-dev-agent PROMOTE verdict, session
     # ses_866bf44313864664, 2026-08-23) -- see the patch's own README.md
     # for the full real evidence. Corrected here to match, not a new claim.

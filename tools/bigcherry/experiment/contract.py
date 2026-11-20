@@ -20,7 +20,7 @@ provenance -- see EC04/EC05's identity-separation requirement.
 Contracts live in ``config/experiment-contracts.toml`` (``paths.EXPERIMENT_CONTRACTS``),
 one ``[contract.<id>]`` table per contract, the same registry shape as
 ``config/recipes.toml``'s ``[experiment.<name>]``/``[patch-set.<name>]`` sections
-and ``config/external-sources.toml``'s per-source tables -- this project's
+and ``engines/llamacpp/external-sources.toml``'s per-source tables -- this project's
 established pattern for "a registry of named things extended incrementally,
 one git diff per addition."
 """
@@ -1555,7 +1555,7 @@ def known_source_ids_from_external_sources(
 ) -> frozenset[str]:
     """Real cross-check input for ``load_contracts(known_source_ids=...)``:
     every ``[[sources]] id`` currently registered in
-    ``config/external-sources.toml`` (``paths.EXTERNAL_SOURCES`` by default).
+    ``engines/llamacpp/external-sources.toml`` (``paths.EXTERNAL_SOURCES`` by default).
     Kept as a separate, explicit call rather than an automatic default inside
     ``load_contracts`` -- a caller who wants the real registry cross-check
     (the CLI, a promotion gate) asks for it explicitly; a caller building or

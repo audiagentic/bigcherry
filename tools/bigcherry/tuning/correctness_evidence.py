@@ -2,7 +2,7 @@
 
 Runs test-backend-ops twice per deterministic seed -- once forced to native,
 once forced to a candidate -- and reduces both runs to the per-seed and
-aggregated rows sql/dispatch-db.sql's correctness_evidence/correctness_
+aggregated rows tools/bigcherry/tuning/sql/dispatch-db.sql's correctness_evidence/correctness_
 evidence_seed tables (schema 6) expect. Implements the RV49 contract as
 adjudicated for its implementation details in RV77 (patch-management
 review, 2026-08-20/21):

@@ -53,7 +53,7 @@ def read_measurements_sqlite(
 
     When ``dispatch_filter`` is set, only that dispatch digest is returned.
 
-    ``stage`` defaults to ``"final"`` -- sql/dispatch-db.sql's own schema
+    ``stage`` defaults to ``"final"`` -- tools/bigcherry/tuning/sql/dispatch-db.sql's own schema
     makes ``stage`` (``screen``|``final``) part of ``measurement``'s
     UNIQUE constraint, meaning the SAME candidate legitimately has TWO
     separate rows: a cheap early screening pass and the authoritative

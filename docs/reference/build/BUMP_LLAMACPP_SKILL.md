@@ -61,7 +61,7 @@ python -m bigcherry --engine llamacpp sources status          # offline: what we
 python -m bigcherry --engine llamacpp sources check            # ONLINE: has a tracked fork moved/rebased/merged/drifted
 ```
 
-- `sources status` reads `config/external-sources.toml` -- every patch that
+- `sources status` reads `engines/llamacpp/external-sources.toml` -- every patch that
   backports code from an external fork or PR is declared there, with its
   provenance chain and current status (`ported-benched` / `ported-untested`
   / `planned` / `superseded` / `deferred-hardware` / `excluded`).

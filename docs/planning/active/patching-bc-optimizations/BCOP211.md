@@ -11,7 +11,7 @@ work: S
 
 # PRBE110/PRBE04: reconcile 1267 b11552 MMQ rebase and promotion gate
 
-**Discovery/change:** 1267's Q6_K dispatch-marker and `mmq.cuh` J-max anchors no longer exist on pinned b11552; 0300 now chooses forced J before activation padding. Repository `dispositions/1267_*.json` already marks `known_broken`. PRBE04 still claimed PRBE110 had not delivered the package despite b11126 hardware receipts. Archived gfx1201 pp512 +2.4675% CI95 [2.2776,2.6508], but validation record remains incomplete/ineligible despite a contract-pass field; no new GPU measurement.
+**Discovery/change:** 1267's Q6_K dispatch-marker and `mmq.cuh` J-max anchors no longer exist on pinned b11552; 0300 now chooses forced J before activation padding. Repository `engines/llamacpp/dispositions/1267_*.json` already marks `known_broken`. PRBE04 still claimed PRBE110 had not delivered the package despite b11126 hardware receipts. Archived gfx1201 pp512 +2.4675% CI95 [2.2776,2.6508], but validation record remains incomplete/ineligible despite a contract-pass field; no new GPU measurement.
 
 **Owner/consolidation:** PRBE110/1267 owns the one patch and architecture gate. PRBE04 owns PEF01/HI71 safety and final acceptance. 0300 owns J/eligibility; 1006 owns Q6_K codegen. No new MMQ dispatcher, J knob, allocator, scheduler, cache, telemetry or hardware queue. Existing Radiance RAD02/RAD03/RAD04 work untouched.
 

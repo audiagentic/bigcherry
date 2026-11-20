@@ -17,7 +17,7 @@ from bigcherry.transform_records import load_artifact_records
 
 
 ROOT = Path(__file__).resolve().parents[3]
-SCHEMA = ROOT / "sql" / "dispatch-db.sql"
+SCHEMA = ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 MANIFEST_PATH = paths.llama_root() / "ggml/src/ggml-cuda/hip-autotune-manifest.json"
 HASH_HEADER = paths.llama_root() / "ggml/src/ggml-cuda/hip-autotune-build-hash.h"
 TUNER_SOURCE = paths.llama_root() / "ggml/src/ggml-cuda/hip-autotune-tuner.cu"

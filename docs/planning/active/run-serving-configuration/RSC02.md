@@ -55,7 +55,7 @@ step of `start`/`stop`, never a launcher option that rewrites settings.
 
 ### Step 6 inventory and hard gates (2026-11-18, origin/main 9549aa603)
 
-The exhaustive caller/mode table is in [RSC04](RSC04.md#verified-inventory-2026-11-18-originmain-9549aa603). The older estimate of 16 lab scripts is **not** a verified executable count: this revision has 13 direct lab `.sh`/`.py` launch callers plus indirect wrappers, lab docs, launcher-sourced `lib/plan-check.sh`/`sdk-check.sh`, Python supervisor, campaign adapter, 40 `config/serving-settings.toml` launcher owners, and launcher-text test oracles.
+The exhaustive caller/mode table is in [RSC04](RSC04.md#verified-inventory-2026-11-18-originmain-9549aa603). The older estimate of 16 lab scripts is **not** a verified executable count: this revision has 13 direct lab `.sh`/`.py` launch callers plus indirect wrappers, lab docs, launcher-sourced `lib/plan-check.sh`/`sdk-check.sh`, Python supervisor, campaign adapter, 40 `engines/radiance/reference/serving-settings-inventory.toml` launcher owners, and launcher-text test oracles.
 
 The live native entry points are `bc-serve serve CONFIG --run-dir DIR --configs DIR [--site FILE --model-root DIR --engine-binary FILE --power-profile NAME --allow-power-apply]`, `start CONFIG|--manifest FILE --run-dir DIR`, `stop/status --run-dir DIR`, and lab `serve --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B --calibration-store FILE`. `--explain` exists but `explain CONFIG` is not yet a CLI subcommand. Unsupported launcher-only forms are **not** to be introduced as backwards-compatible aliases; config fields or a typed lab interface must replace them and be tested with the real owner/writer/manifest call graph.
 

@@ -19,7 +19,7 @@ it without a dependency cycle (replay.py already imports catalog.py).
 tools/tests/test_dispatch_abi_agreement.py enforces this module's value
 against the real C++ #define (parsed directly out of hip-autotune-types.h,
 the same technique signature_mapping.py already uses for the real ggml enum
-tables) and against sql/dispatch-db.sql's schema_meta seed row -- so a future
+tables) and against tools/bigcherry/tuning/sql/dispatch-db.sql's schema_meta seed row -- so a future
 bump that misses one of the three fails a fast offline test instead of
 silently drifting.
 """
@@ -40,7 +40,7 @@ from __future__ import annotations
 # EXISTING hashed field's on-wire meaning is reinterpreted such that old and
 # new semantics cannot be distinguished through content + capability
 # applicability alone) -- and bump GGML_HIP_SIGNATURE_SCHEMA_VERSION in
-# hip-autotune-types.h and sql/dispatch-db.sql's schema_meta seed row in the
+# hip-autotune-types.h and tools/bigcherry/tuning/sql/dispatch-db.sql's schema_meta seed row in the
 # same commit. This is exactly the HI118/HI119 case that forced the 1->2
 # bump: schema 1 had no way to represent "producer evaluated bias/scale
 # presence at all", so the reinterpretation was of the canonical

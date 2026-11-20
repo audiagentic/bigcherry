@@ -14,7 +14,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.tuning import correctness_evidence as ce # noqa: E402
 from bigcherry.tuning import tune_promotion # noqa: E402
 
-SCHEMA_SQL = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+SCHEMA_SQL = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 HARDWARE_HEX = "33" * 16
 
 

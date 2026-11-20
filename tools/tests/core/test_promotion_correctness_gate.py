@@ -15,7 +15,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.tuning import correctness_evidence as ce # noqa: E402
 from bigcherry.tuning import promotion_gate as gate # noqa: E402
 
-SCHEMA_SQL = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+SCHEMA_SQL = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
 DISPATCH_HEX = "11" * 16
 SIGNATURE_HEX = "22" * 16
@@ -221,7 +221,7 @@ class EvaluateGateTests(_Base):
         self.assertEqual(status, "rejected_correctness_contract")
 
     def test_under_seeded_evidence_is_rejected_at_the_schema_layer(self):
-        # sql/dispatch-db.sql's own CHECK (seed_count >= 3) already makes an
+        # tools/bigcherry/tuning/sql/dispatch-db.sql's own CHECK (seed_count >= 3) already makes an
         # under-seeded correctness_evidence row impossible to insert at
         # all -- the strongest possible fail-closed guarantee, enforced
         # before this module's own logic ever runs.

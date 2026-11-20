@@ -178,7 +178,7 @@ MANIFEST = {
     ],
 }
 
-SCHEMA_PATH = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+SCHEMA_PATH = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
 
 # ------------------------------------------------------------------ helpers
@@ -238,7 +238,7 @@ def populate_db(db: TempDB) -> Path:
 def _insert_screen_duplicate(db: TempDB) -> None:
     """Clone an existing 'final'-stage measurement row as a 'screen'-stage
     duplicate with a suspiciously faster median (fewer samples) -- the
-    real shape sql/dispatch-db.sql's UNIQUE constraint allows and the
+    real shape tools/bigcherry/tuning/sql/dispatch-db.sql's UNIQUE constraint allows and the
     exact shape that used to inflate report.py's counts/comparisons."""
     row = db.query(
         "SELECT build_id, hardware_id, signature_id, dispatch_digest, "
@@ -397,7 +397,7 @@ class TestReadMeasurementsSQLite(unittest.TestCase):
         self.assertEqual(results, [])
 
     def test_screen_stage_duplicate_excluded_from_default_final_view(self):
-        """gpt-dev-agent review, 2026-08-31: sql/dispatch-db.sql makes stage
+        """gpt-dev-agent review, 2026-08-31: tools/bigcherry/tuning/sql/dispatch-db.sql makes stage
         (screen|final) part of measurement's UNIQUE constraint -- the same
         candidate can legitimately have both a cheap early screening row and
         the authoritative final row. Reading without a stage filter used to

@@ -382,7 +382,7 @@ def validation_evidence_statuses(
         # for any module.state != "validated" -- registry.STATES is a
         # closed vocabulary that does not include "ported-benched"/
         # "deferred-hardware" at all (those are tracked-status values from
-        # config/external-sources.toml, a separate axis). Dispatch to the
+        # engines/llamacpp/external-sources.toml, a separate axis). Dispatch to the
         # matching status-obligation verifier so those two tracked
         # statuses are actually checked for qualification instead of
         # silently reporting not-required.

@@ -33,18 +33,20 @@ PATCH_CATALOG = PATCHES / "catalog.toml"
 # PATCH_VALIDATION.md) -- never auto-regenerated, see
 # tools/bigcherry/patch/validation_policy.py.
 VALIDATION_PACKAGE_GRANDFATHER = PATCHES / "_validation" / "validation-package-grandfather.json"
-SQL = REPO_ROOT / "sql"
+# Cross-engine tuning schema is maintained alongside the tuning platform, not at repository root.
+SQL = REPO_ROOT / "tools" / "bigcherry" / "tuning" / "sql"
 DOCS = REPO_ROOT / "docs"
 ARTIFACTS = REPO_ROOT / "artifacts"
-# NOT under ARTIFACTS: `artifacts/` is entirely gitignored, and a
-# disposition (HI152) is a real, reviewed decision meant to be shared and
-# persist across bumps/sessions/machines -- not a disposable working
-# artifact. Found live: dispositions recorded under artifacts/pin-bump/
-# were silently never committed, defeating the whole point.
-DISPOSITIONS = REPO_ROOT / "dispositions"
+# Persistent llama.cpp patch coverage decisions are engine-owned and Git-tracked.
+# Never store them in ignored artifacts: a matching revision+digest disposition
+# may waive only a non-recipe patch; see engines/llamacpp/dispositions/README.md.
+DISPOSITIONS = PATCHES.parent / "dispositions"
 CONFIG = REPO_ROOT / "config"
 RECIPES = LLAMACPP.recipes_path(REPO_ROOT)
-EXTERNAL_SOURCES = CONFIG / "external-sources.toml"
+# Registry belongs to llama.cpp; its engine.toml is the single location authority.
+EXTERNAL_SOURCES = LLAMACPP.external_sources_path(REPO_ROOT)
+if EXTERNAL_SOURCES is None:
+    raise RuntimeError("llamacpp engine declaration must provide external-sources")
 EXPERIMENT_CONTRACTS = CONFIG / "experiment-contracts.toml"
 MODELS = CONFIG / "models.toml"
 

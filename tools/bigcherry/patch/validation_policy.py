@@ -96,7 +96,7 @@ def tracked_statuses_for_patch(
     patch_id: str, *, external_sources_path: str | Path | None = None
 ) -> tuple[str, ...]:
     """Every distinct tracked-status ever recorded for this exact patch id
-    across config/external-sources.toml's [[sources.tracked]] entries.
+    across engines/llamacpp/external-sources.toml's [[sources.tracked]] entries.
     Exact-patch binding (``entry["patch"] == patch_id``), not plan-item
     aggregation -- a plan item can span multiple engines/llamacpp/patches/hypotheses."""
     registry = source_registry.load_registry(external_sources_path or paths.EXTERNAL_SOURCES)

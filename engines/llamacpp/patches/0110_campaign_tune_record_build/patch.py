@@ -32,7 +32,7 @@ because both describe builds that should not exist:
 
 Record mode writes JSON Lines; ``python -m bigcherry.inventory`` builds the
 database offline with the stdlib ``sqlite3`` module against the same
-``sql/dispatch-db.sql`` schema. There is no SQLite link edit anywhere in this
+``tools/bigcherry/tuning/sql/dispatch-db.sql`` schema. There is no SQLite link edit anywhere in this
 package (PA27 removed the declaration-only, no-consumer
 ``GGML_HIP_AUTOTUNE_SQLITE`` option that 0100 used to carry).
 """

@@ -25,6 +25,10 @@ ALLOW_FILE = "config/forbidden-terms-allow.txt"
 LOCAL_FILE = "config/environment.local.toml"
 HOOKS_DIR = ".githooks"
 
+GITHUB_NOREPLY_COAUTHOR = re.compile(
+    r"(?i)^Co-authored-by:\s+[^\x3c\x3e\r\n]+\x3c([A-Za-z0-9._+%-]+@users\.noreply\.github\.com)\x3e\s*$"
+)
+
 GENERIC = (
     # Reject credential-shaped values without storing a real secret in the code.
     ("credential token", re.compile(
@@ -184,7 +188,15 @@ def message_findings(root: Path, base: str) -> list[tuple[str, int, str]]:
     for rev in revs:
         msg = subprocess.run(["git", "-C", str(root), "show", "-s", "--format=%B", rev], capture_output=True,
                              text=True, check=True).stdout
-        out += text_findings(root, f"commit {rev[:10]} message", msg)
+        lines = []
+        for line in msg.splitlines():
+            match = GITHUB_NOREPLY_COAUTHOR.fullmatch(line)
+            if match:
+                # Only GitHub-generated co-author identity is public metadata.
+                # Keep the display name subject to ordinary machine-name checks.
+                line = line[:match.start(1)] + "[GitHub noreply]" + line[match.end(1):]
+            lines.append(line)
+        out += text_findings(root, f"commit {rev[:10]} message", "\n".join(lines))
     return out
 
 

@@ -43,7 +43,7 @@ Capture the reader commit, kernel release/vermagic and generated-header/Module.s
 
 ## Files
 
-- host/kernel/7.0.13-gfxoff/README.md
+- experiments/host-kernel-gfxoff-7.0.13/README.md
 - docs/evidence/2026-11-18-memory-baseline/README.md
 - docs/planning/active/build-host-kernel/BHK01.md
 

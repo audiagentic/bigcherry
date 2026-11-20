@@ -63,7 +63,7 @@
 #define GGML_VK_HARDWARE_SCHEMA_VERSION  1
 
 // 128-bit blake2b digest, same construction as ggml_hip_digest. Persisted
-// verbatim into the vk_* database tables (sql/dispatch-db.sql).
+// verbatim into the vk_* database tables (tools/bigcherry/tuning/sql/dispatch-db.sql).
 #define GGML_VK_DIGEST_BYTES 16
 
 struct ggml_vk_digest {

@@ -15,7 +15,7 @@ scoped waiver bound to one exact (patch_id, target_revision,
 patch_digest) triple -- it silently stops applying the instant any of
 those three changes, so it can never become a permanent hole.
 
-Storage: JSON files under a dispositions directory (NOT releases/*.json
+Storage: JSON files under engines/llamacpp/dispositions/ (NOT releases/*.json
 -- avoids the exact class of bug fixed in release/records.py this
 session, where a non-ReleaseRecord JSON dropped into releases/ crashed
 every save()).

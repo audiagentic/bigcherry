@@ -1,0 +1,12 @@
+{
+  "file_count": 1775,
+  "index_baseline_bigcherry_commit": "821420af597c44e1e8ada8a7d78830be86ab88e6",
+  "index_format": "sha256(relative-path-utf8) TAB sha256(file-bytes), sorted by path digest",
+  "integrity_digests_sha256": "f5473c2882f1158f5b37178fbcdbfc8e4c1653e5b7c05a7bad1430b6e254395a",
+  "integrity_index_date": "2026-11-20",
+  "kind": "legacy-recovered-work-root-results",
+  "outcome_claim": "none; see individual artifacts and bundle README",
+  "provenance_status": "partial; retained paths normalized; original work root not recoverable from this bundle alone",
+  "recovery_date": "2026-11-17",
+  "schema_version": 1
+}

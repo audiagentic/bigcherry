@@ -43,7 +43,7 @@ def _package_of(path: str) -> str | None:
     return package if sep and package and not package.startswith("_") else None
 
 _PATCH_TEST_RE = re.compile(r"^tools/tests/patch/test_(\d{4}_[A-Za-z0-9_]+)\.py$")
-_DISPOSITION_RE = re.compile(r"^dispositions/(\d{4}_[^/]+)\.json$")
+_DISPOSITION_RE = re.compile(r"^engines/llamacpp/dispositions/(\d{4}_[^/]+)\.json$")
 _DEFAULT_CHECK_TIMEOUT_SECONDS = 600
 _DEFAULT_EXPERIMENT_WORKERS = 6
 

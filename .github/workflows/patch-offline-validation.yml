@@ -38,7 +38,7 @@ on:
       - 'tools/tests/build/test_source_compile_check.py'
       - 'tools/bigcherry/source/upstream.py'
       - 'tools/bigcherry/source/workspace.py'
-      - 'dispositions/**'
+      - 'engines/llamacpp/dispositions/**'
       - 'config/recipes.toml'
       - '.github/workflows/patch-offline-validation.yml'
   workflow_dispatch:

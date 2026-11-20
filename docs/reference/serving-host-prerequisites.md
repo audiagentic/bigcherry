@@ -8,7 +8,7 @@ GFX12 compute-idle clause removed in 7.0.13-gfxoff (MES 0x81 unchanged),
 the same host measured 15.0 W, 0% busy and VDDGFX 29 mV.
 These values are historical evidence, **not classifier thresholds**.
 
-For the upstream 7.0.13 kernel patch series, complete modified source reference, recovered config, build recipe, cross-release comparison and validation limitations, see `host/kernel/7.0.13-gfxoff/README.md` and plan BHK01. The installed kernel, modules and read-only recovery bundle are protected prerequisites; never delete them during cleanup.
+For the upstream 7.0.13 kernel patch series, complete modified source reference, recovered config, build recipe, cross-release comparison and validation limitations, see `experiments/host-kernel-gfxoff-7.0.13/README.md` and plan BHK01. The installed kernel, modules and read-only recovery bundle are protected prerequisites; never delete them during cleanup.
 
 ## Runtime check and evidence
 
