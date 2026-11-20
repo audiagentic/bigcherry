@@ -101,8 +101,8 @@ int main() {
     assert(production->calibration_inputs &&
            sv::policy_calibration_key(*production->calibration_inputs) == prod_key);
     assert(sv::live_policy_record_complete(*production));
-    assert(production->source_revision.empty() && production->run_id.empty() &&
-           production->host_facts_digest.empty()); // no invented provenance
+    assert(!production->source_revision.empty() && !production->run_id.empty() &&
+           production->host_facts_digest.size() == 64);   // a native v1 record carries its run provenance
     assert(sv::policy_calibration_key(scope) == stable_key);
     auto changed_build = scope;
     changed_build["engine_build"] = std::string(64,'5');
@@ -238,16 +238,21 @@ int main() {
         const std::string before = [&] { std::ifstream in(old_store); return std::string(
             std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
         const auto planned = sv::prune_live_policy_store(old_store, false);
-        assert(planned.size() == 6);
+        assert(planned.size() == 7);   // six hash-only rows and the pre-v1 scoped one
         assert([&] { std::ifstream in(old_store); return std::string(
             std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }() == before);  // dry run
         assert(sv::prune_live_policy_store(old_store, true) == planned);
-        assert(sv::read_live_policy_record(old_store, prod_key));
+        assert(!sv::read_live_policy_record(old_store, prod_key));   // every row was an unsupported format
         const std::string pruned = [&] { std::ifstream in(old_store); return std::string(
             std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
-        const std::string expected = [&] { std::ifstream in(BC_CALIBRATION_PRODUCTION_FIXTURE); return std::string(
-            std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
-        assert(pruned == expected);
+        assert(pruned.find("[[live_policy_record]]") == std::string::npos);
+        // The supported store is left alone, byte for byte.
+        const fs::path good_store = dir / "good-store.toml";
+        fs::copy_file(BC_CALIBRATION_PRODUCTION_FIXTURE, good_store);
+        assert(sv::prune_live_policy_store(good_store, true).empty());
+        assert([&] { std::ifstream a(good_store), b(BC_CALIBRATION_PRODUCTION_FIXTURE);
+                     return std::string(std::istreambuf_iterator<char>(a), std::istreambuf_iterator<char>()) ==
+                            std::string(std::istreambuf_iterator<char>(b), std::istreambuf_iterator<char>()); }());
         assert(sv::prune_live_policy_store(old_store, true).empty());   // idempotent
     }
     fs::remove_all(dir);

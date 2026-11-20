@@ -26,7 +26,7 @@ void ingest_live_policy_log(const std::filesystem::path& log,
                             const std::filesystem::path& cache,
                             const std::filesystem::path& manifest,
                             const std::string& target_store_key);
-// Remove the rows the strict reader refuses (no calibration_inputs: hash-only evidence from before scoped keys) from a
+// Remove the rows the strict reader refuses (no calibration_inputs or record_schema_version: evidence from before native v1 records) from a
 // calibration store. Returns the plan_cache_key of each row that is, or with apply was, removed. Takes the store's lock,
 // keeps every other byte, validates the result with the strict reader, and replaces the file atomically.
 std::vector<std::string> prune_live_policy_store(const std::filesystem::path& cache, bool apply);
