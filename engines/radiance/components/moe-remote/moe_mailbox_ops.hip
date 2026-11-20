@@ -1111,7 +1111,7 @@ int add_launch(const RadArgs* a, RadStream stream) {
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
                        d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
-                       published_ticket_offset(d->slots, d->max_rows),
+                       d->ticket_begin,
                        static_cast<uint8_t*>(d->mailbox), d->trace_every);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
@@ -1172,7 +1172,7 @@ int inject_launch(const RadArgs* a, RadStream stream) {
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
                        d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
-                       published_ticket_offset(d->slots, d->max_rows),
+                       d->ticket_begin,
                        static_cast<uint8_t*>(d->mailbox), d->trace_every);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
@@ -1214,7 +1214,7 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
                        d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
-                       published_ticket_offset(d->slots, d->max_rows),
+                       d->ticket_begin,
                        static_cast<uint8_t*>(d->mailbox), d->trace_every);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }

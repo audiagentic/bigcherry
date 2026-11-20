@@ -1259,6 +1259,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.layer_count = g.hdr->layer_count;
     s.dev.slots = g.hdr->slot_count;
     s.dev.lanes = g.hdr->counts.lanes;
+    s.dev.ticket_begin = scratch.ticket_begin;
     s.dev.published_words = scratch.published_words;
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */

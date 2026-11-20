@@ -1,4 +1,5 @@
 #include "moe_v26_gpu_contract.h"
+#include "mailbox_completion.h"
 #include <algorithm>
 #include <cstdio>
 #include <cstdlib>
@@ -151,13 +152,27 @@ static bool live_contract(const std::string& hip, const std::string& host) {
             "h->combine[rank].result_consumed_generation",
             "published_ticket_offset(h->slot_count, h->max_rows)",
             "published[h->slot_count]",
-            "mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads)"})
+            "mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads)",
+            "d->ticket_begin"})
         if (!has(hip, required)) return false;
     for (const auto* required : {
             "scratch.sequence_bytes", "scratch.published_bytes",
             "scratch.consumed_bytes", "gpu::scratch_for",
+            "s.dev.ticket_begin = scratch.ticket_begin",
             "gpu::finish_launch", "s.dev.finish_threads = finish.threads"})
         if (!has(host, required)) return false;
+    size_t finish_uses = 0;
+    for (size_t at = 0; (at = hip.find("mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads)", at)) != std::string::npos; ++finish_uses)
+        ++at;
+    if (finish_uses != 3) return false;
+    size_t ticket_offset_uses = 0;
+    for (size_t at = 0; (at = hip.find("d->ticket_begin", at)) != std::string::npos; ++ticket_offset_uses)
+        ++at;
+    if (ticket_offset_uses != 3) return false;
+    size_t dynamic_finish_offsets = 0;
+    for (size_t at = 0; (at = hip.find("published_ticket_offset(d->slots, d->max_rows)", at)) != std::string::npos; ++dynamic_finish_offsets)
+        ++at;
+    if (dynamic_finish_offsets != 0) return false;
     return true;
 }
 static void live_contract_mutation_guards() {
@@ -188,6 +203,22 @@ int main() {
     const v::Topology topologies[] = {
         {1,1}, {2,1}, {1,2}, {2,2}, {1,3}, {2,3}, {3,2}, {4,1}
     };
+
+    // The worker's published allocation uses the shared segment's maximum
+    // rows, while launch row limits may be smaller. The finish offset must be
+    // captured from the allocation, not recomputed from the dispatch cap.
+    {
+        const v::Topology t{1, 3};
+        gpu::Scratch shared{}, dispatch{};
+        check(gpu::scratch_for(t, r3::moe_shm::kMaxRows, &shared) == gpu::Refusal::None &&
+              gpu::scratch_for(t, 64, &dispatch) == gpu::Refusal::None,
+              "shared and dispatch scratch geometry accepted");
+        check(shared.ticket_begin != dispatch.ticket_begin &&
+              shared.ticket_begin == r3::mailbox_completion::published_ticket_offset(
+                                         3, r3::moe_shm::kMaxRows) &&
+              dispatch.ticket_begin == r3::mailbox_completion::published_ticket_offset(3, 64),
+              "finish ticket offset follows the allocated shared capacity");
+    }
     struct Case { LayoutShape shape; uint32_t layers; };
     const Case cases[] = {
         {{2560,10,512,64,128,640},49},

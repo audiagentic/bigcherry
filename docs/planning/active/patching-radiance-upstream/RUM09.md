@@ -130,6 +130,8 @@ d92592f9 ENG05 bundle a3fe93104719c360823424f900c58f12 passed exact fresh, in-fl
 
 The 6fe47b998 leased Flash-Next smoke passed with 12288 MiB host KV actually active, 72 pinned checkpoint slots, 2247 MiB expert pool and 4705 MiB reserve. It streamed and stopped in flight with every child reaped and zero mailbox work outstanding. The separate d92592f9 129-position helper score faulted on step 0 at q=64 both with ordinary chaining and every-launch acquire. Kernel diagnostics unavailable at this sandbox. Next isolate pre-ENG05 behavior and the large uncombined mailbox path before performance; the release-ready recipe is now admitted at ce109347a.
 
+Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first score step and traced it to the completion ticket offset being recomputed from dispatch max_rows while the published shared scratch uses the segment's 4096-row capacity. Changed all three add/inject/shadow completion launches to use the host-calculated shared scratch ticket_begin, copied into device launch state. Exact task-worktree contract test compiled with GCC 14 and passed (`r3_v26_gpu_contract_test: PASS`); this test explicitly compares 4096-row shared and 64-row dispatch geometry. Ledger event chg_20261120_051531_fixed-a-helper-on-scoring-faul_6229. A prior GPU retry used an older Radiance engine and stopped at the v3 helper-quality admission guard (exit 97), so it does not qualify this fix. Next: clean checkpoint, canonical v3 lane build from this exact task revision, card-free v3 inspector/writer/replay and bundle ABI checks, then one helper-on first-130-row scoring run before full short quality/paired performance gates.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -166,3 +168,4 @@ The 6fe47b998 leased Flash-Next smoke passed with 12288 MiB host KV actually act
 - 2026-11-20T03:12:18.577770+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:53:26.606171+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T04:00:21.973713+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T05:15:47.666983+00:00 (updated-by): Updated: section:notes
