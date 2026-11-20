@@ -196,6 +196,7 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"rank_devices", cfg.rank_devices},
                          {"max_context", cfg.max_ctx},
                          {"max_sequences", cfg.max_seqs},
+                         {"x_bigcherry", x_bigcherry_subtree(managed.snapshot().yaml_utf8())},
                          // The tuning options the authored YAML states, as values the strict reader parsed (null: absent).
                          {"tuning", {{"p2p", stated("--p2p", cfg.p2p == rad::RAD_P2P_ON    ? "on"
                                                              : cfg.p2p == rad::RAD_P2P_OFF ? "off" : "auto")},
