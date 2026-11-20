@@ -2430,13 +2430,25 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
 NativeWriterInput read_native_writer_input(int fd) {
     const std::string bytes = v2::read_sealed_document(fd, "native writer descriptor");
     const auto parsed = v2::parse_strict_json(bytes, "native writer descriptor");
-    if (!parsed || !parsed.value().is_object() || parsed.value().size() != 2 ||
-        !parsed.value().contains("snapshot") || !parsed.value().contains("inspection"))
-        throw PlanFailed("native writer descriptor: expected sealed snapshot and typed inspection receipt");
+    if (!parsed || !parsed.value().is_object() || parsed.value().size() != 3 ||
+        !parsed.value().contains("snapshot") || !parsed.value().contains("inspection") ||
+        !parsed.value().contains("config"))
+        throw PlanFailed("native writer descriptor: expected sealed snapshot, typed inspection receipt and config label");
     const auto& handoff = parsed.value();
     auto snapshot = NativeConfigSnapshot::from_manifest(handoff.at("snapshot"));
     auto inspection = parse_native_config_report(handoff.at("inspection"), snapshot);
-    return {std::move(snapshot), std::move(inspection.settings)};
+    const Json& label = handoff.at("config");
+    if (!label.is_object() || !label.contains("name") || !label.at("name").is_string() ||
+        !label.contains("yaml_path") || !label.at("yaml_path").is_string())
+        throw PlanFailed("native writer descriptor: config label needs a name and yaml_path");
+    InspectedConfig inspected;
+    inspected.name = label.at("name").get<std::string>();
+    inspected.yaml_path = label.at("yaml_path").get<std::string>();
+    inspected.sha256 = inspection.snapshot_sha256;
+    inspected.model = inspection.model;
+    inspected.tp_wire = inspection.tp_wire;
+    inspected.x = inspection.x_bigcherry;
+    return {std::move(snapshot), std::move(inspection.settings), std::move(inspected)};
 }
 
 static void reconcile_native_config(
@@ -2487,17 +2499,19 @@ InspectedConfig inspect_config_file(const fs::path& engine, const fs::path& yaml
 
 InspectedConfig inspect_config_snapshot(const fs::path& engine, const NativeConfigSnapshot& snapshot,
                                         const std::string& name, const fs::path& yaml_path,
-                                        const fs::path& radiance_home, const fs::path& sys_root, const Hooks& hooks) {
+                                        const fs::path& radiance_home, const fs::path& sys_root, const Hooks& hooks,
+                                        const Env& runtime_overrides) {
     const fs::path home = fs::canonical(radiance_home);
     const auto launch = prepare_native_launch(snapshot.resolution_root(), home,
-                                              {{"ROCR_VISIBLE_DEVICES", "-1"}, {"HIP_VISIBLE_DEVICES", "-1"}}, {},
-                                              sys_root);
+                                              {{"ROCR_VISIBLE_DEVICES", "-1"}, {"HIP_VISIBLE_DEVICES", "-1"}},
+                                              runtime_overrides, sys_root);
     launch->root.require_matches(snapshot.resolution_root());
     const NativeConfigInspection report =
         inspect_native_config(engine, snapshot, launch->environment, hooks, launch->root.descriptor());
     InspectedConfig out;
     out.name = name;
     out.yaml_path = yaml_path;
+    out.radiance_home = home;
     out.sha256 = report.snapshot_sha256;
     out.model = report.model;
     out.tp_wire = report.tp_wire;
@@ -2506,7 +2520,8 @@ InspectedConfig inspect_config_snapshot(const fs::path& engine, const NativeConf
 }
 
 void attach_inspected_config(Options& options, const std::string& name, const fs::path& yaml, const fs::path& self,
-                             const fs::path& engine_binary, const Hooks& hooks) {
+                             const fs::path& engine_binary, const Hooks& hooks, const fs::path& resolution_root,
+                             const Env& runtime_overrides, const NativeConfigSnapshot* sealed) {
     if (options.inspected) return;
     fs::path file = yaml;
     if (file.empty()) file = config_yaml_for(name, options.configs);
@@ -2514,24 +2529,23 @@ void attach_inspected_config(Options& options, const std::string& name, const fs
         throw PlanFailed("config " + name + ": no " + name + ".yaml in the config sources (--configs DIR, "
                          "BIGCHERRY_CONFIGS) and no --native-config");
     fs::path home;
-    for (const std::string& setting : options.sets)
-        if (setting.starts_with("engine.radiance_home="))
-        {   // --set takes the value as JSON ("/path") or as bare text (/path), as the resolver's --set does
-            const std::string text = setting.substr(std::string("engine.radiance_home=").size());
-            const Json parsed = Json::parse(text, nullptr, false);
-            home = parsed.is_string() ? parsed.get<std::string>() : text;
-        }
+    if (const auto layered = layered_string(options, "engine", "radiance_home")) home = *layered;
     if (home.empty() && self.parent_path().filename() == "bin" &&
         self.parent_path().parent_path().filename() == "radiance_home")
         home = self.parent_path().parent_path();
     if (home.empty())
-        throw PlanFailed("config " + name + ": the runtime home is unknown (--set engine.radiance_home=...)");
+        throw PlanFailed("config " + name + ": the runtime home is unknown (engine.radiance_home from --set, a profile or the site file, or this build's own radiance_home)");
     const fs::path engine = engine_binary.empty() ? home.parent_path() / "bin" / "radiance" : engine_binary;
-    if (options.model_root.empty())
+    // The YAML's relative paths resolve under the admission's resolution root, else the model root.
+    const fs::path root = resolution_root.empty() ? options.model_root : resolution_root;
+    if (root.empty())
         throw PlanFailed("config " + name + ": reading its YAML needs --model-root (its model paths resolve there)");
-    options.inspected = inspect_config_file(engine, file, home, options.model_root, options.sys_root, hooks);
-    if (options.inspected->name != name)
-        throw PlanFailed("config " + name + ": the YAML " + file.string() + " is named " + options.inspected->name);
+    // One read of the bytes serves both inspections when the caller sealed them already.
+    options.inspected = sealed ? inspect_config_snapshot(engine, *sealed, name, file, home,
+                                                         options.sys_root, hooks, runtime_overrides)
+                               : inspect_config_snapshot(engine, NativeConfigSnapshot::read(file, root),
+                                                         name, file, home, options.sys_root, hooks,
+                                                         runtime_overrides);
 }
 
 NativeConfigInspection inspect_and_reconcile_native_config(
@@ -2982,10 +2996,17 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     // replace the layout files unless --layouts is given).
     EnginePlanInputs in = given;
     in.options.run_dir = run_dir;
+    std::optional<NativeConfigSnapshot> sealed_snapshot;   // the YAML's bytes, read once for every inspection
+    if (in.native_admission)
+        sealed_snapshot = NativeConfigSnapshot::read(in.native_admission->authored_yaml,
+                                                     in.native_admission->resolution_root);
     if (!in.named_config.empty())   // the config is its native YAML, read before anything is resolved
         attach_inspected_config(in.options, in.named_config,
                                 in.native_admission ? in.native_admission->authored_yaml : fs::path{}, in.self,
-                                in.engine_binary, hooks);
+                                in.engine_binary, hooks,
+                                in.native_admission ? in.native_admission->resolution_root : fs::path{},
+                                in.native_admission ? in.native_admission->runtime_overrides : Env{},
+                                sealed_snapshot ? &*sealed_snapshot : nullptr);
     if (in.options.inspected) {   // the sealed YAML is the one source: no catalogue or layout file is read
         in.options.configs.clear();
         in.options.layouts.clear();
@@ -3113,6 +3134,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
 
     if (in.native_admission) {
         const fs::path frozen_runtime_home = fs::canonical(home);
+        if (in.options.inspected && in.options.inspected->radiance_home != frozen_runtime_home)
+            throw PlanFailed("native config admission: the runtime home changed between the config parse and the "
+                             "admission (" + in.options.inspected->radiance_home.string() + " then " +
+                             frozen_runtime_home.string() + ")");
         if (in.quality_score) {
             const fs::path owner = frozen_runtime_home / "bin/bc-serve";
             if (in.self != owner || fs::canonical(owner) != owner)
@@ -3122,8 +3147,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                   out.runtime, in.native_admission->runtime_overrides,
                                                   in.options.sys_root);
         const auto& launch = *out.native_launch;
-        const NativeConfigSnapshot snapshot =
-            NativeConfigSnapshot::read(in.native_admission->authored_yaml, in.native_admission->resolution_root);
+        const NativeConfigSnapshot snapshot = *sealed_snapshot;
         launch.root.require_matches(snapshot.resolution_root());
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
         const std::string matched_engine_identity =
@@ -3168,7 +3192,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             native_resolved.values, facts, container_identity(v.at("engine").at("model").get<std::string>()),
             matched_engine_identity, "budgets: default", &snapshot);
         const PinnedManifest writer_input(
-            Json{{"snapshot", snapshot.manifest_field()}, {"inspection", native_inspection.receipt}}.dump());
+            Json{{"snapshot", snapshot.manifest_field()}, {"inspection", native_inspection.receipt},
+                 {"config", {{"name", in.named_config}, {"yaml_path", in.options.inspected->yaml_path.string()}}}}.dump());
         const std::string handoff = processes.empty() ? std::string{} : "/r3-serve-" + new_instance_id();
         std::string helper_identity;
         if (!handoff.empty()) {
@@ -3791,8 +3816,9 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     in.power_profile = m.spec.intent.power.profile;
     in.named_config = name;
     if (native_snapshot && !in.options.inspected)   // replay reads the admitted bytes, not a file on disk
-        in.options.inspected = inspect_config_snapshot(engine, *native_snapshot, name, fs::path(name + ".yaml"),
-                                                       native_runtime_home, in.options.sys_root, hooks);
+        in.options.inspected = inspect_config_snapshot(
+            engine, *native_snapshot, name, fs::path(name + ".yaml"), native_runtime_home, in.options.sys_root, hooks,
+            given.native_admission ? given.native_admission->runtime_overrides : Env{});
     std::string source_name;
     ReplayEvidence evidence;
     std::optional<NamedCache> attestation;
@@ -3801,7 +3827,10 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (given.replay_evidence) {
         evidence = given.replay_evidence.require("session.replay.evidence", m);
     } else {
-        if (!in.options.inspected) {
+        if (in.options.inspected) {   // the admitted YAML bytes are the one source: no catalogue or layout file
+            in.options.configs.clear();
+            in.options.layouts.clear();
+        } else {
             in.options.configs = config_sources(given.options.configs);
             if (in.options.configs.empty())
                 throw PlanFailed(

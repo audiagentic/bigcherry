@@ -87,6 +87,7 @@ struct InspectedConfig {
     std::string name;
     std::filesystem::path yaml_path;   // the file read; its directory's sibling heat/ holds @bundle/heat seeds
     std::string sha256;                // digest of the exact bytes the inspector parsed
+    std::filesystem::path radiance_home;   // the canonical runtime home that parsed them (a start must keep it)
     std::string model;                 // as authored: absolute, or relative to the model root
     std::optional<std::string> tp_wire;
     XBigcherry x;
@@ -111,6 +112,9 @@ struct Options {
     // catalogue readers are gone); the caller runs the inspector first. Empty only for tests of layout files.
     std::optional<InspectedConfig> inspected;
 };
+// The string a layered setting `section.key` takes before any config is resolved: the last --set, else the profile, else the
+// site file (the resolver's own precedence among them); nothing when none sets it. A --set value is JSON or bare text.
+std::optional<std::string> layered_string(const Options& options, const std::string& section, const std::string& key);
 struct Resolved {
     Config typed;
     Json values, provenance, facts, manifest;

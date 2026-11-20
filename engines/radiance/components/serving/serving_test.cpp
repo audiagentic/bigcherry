@@ -3544,6 +3544,12 @@ void session_engine_plan(Fixture& t) {
 #endif
         ss::Env native_overrides = {
             {"TEST_NATIVE_INSPECT_TP", "3"},
+            {"TEST_NATIVE_INSPECT_TP_WIRE", "exact"},
+            {"TEST_NATIVE_INSPECT_XBIGCHERRY",
+             Json{{"schema", 1}, {"description", "qwen27b-tp3-int8 fixture"},
+                  {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 2}}, {{"arch", "gfx1201"}, {"count", 1}}})},
+                  {"memory", {{"host-pool-mib", 0}, {"host-kv-mib", 0}}}}   // a dense model: the engine sizes its own
+                 .dump()},
             {"TEST_NATIVE_INSPECT_RANK_DEVICES", session_resolved.values.at("layout").at("engine_cards").dump()},
             {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"},
             {"TEST_NATIVE_INSPECT_MODEL", model.string()},
@@ -3612,12 +3618,10 @@ void session_engine_plan(Fixture& t) {
                 const auto section = [](Json section) {
                     return [section](ss::Env& e) { e["TEST_NATIVE_INSPECT_XBIGCHERRY"] = section.dump(); };
                 };
-                const Json ranks = Json::array({{{"arch", "gfx1100"}, {"count", 3}}});
+                const Json ranks = Json::array({{{"arch", "gfx1100"}, {"count", 2}}, {{"arch", "gfx1201"}, {"count", 1}}});
                 const Json full = {{"schema", 1}, {"description", "d"}, {"ranks", ranks},
-                                   {"helpers", Json::array({{{"arch", "gfx1030"}, {"count", "all"},
-                                                             {"placement", "tail"}, {"share", 2}}})},
                                    {"service", {{"objective", "balanced"}}},
-                                   {"memory", {{"host-pool-mib", 0}, {"hard-caps", {{"vram", 7}}}}},
+                                   {"memory", {{"host-pool-mib", 0}}},
                                    {"handoff", {{"heat", "@bundle/heat/x"}, {"moe-down-tile", true}}},
                                    {"helper", {{"combine", true}}}, {"kernels", {{"dec11", true}}}};
                 if (const std::string pass = preflight(section(full)); !pass.empty())
@@ -3653,7 +3657,8 @@ void session_engine_plan(Fixture& t) {
             refused_for("set rope-scaling", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"rope_scaling", ""}}.dump(); });
             refused_for("YAML model differs", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MODEL"] = "/elsewhere/other.rad"; });
-            refused_for("tensor parallelism differs", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_TP"] = "2"; });
+            // (tp against the selected ranks cannot differ: the resolver's ranks are the YAML's x-bigcherry.ranks, and
+            // their count against the YAML's tp is the refusal tested above.)
             refused_for("card ordinals differ", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_CARDS"] = "[2,1,0]"; });
             refused_for("rank-device order differs", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_RANK_DEVICES"] = Json::array({"0000:09:00.0", "0000:09:01.0", "0000:09:02.0"}).dump(); });
@@ -3782,11 +3787,12 @@ void session_engine_plan(Fixture& t) {
                 }
             }
         }
-        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 4 &&
-              inspector_roles[0] == "native config inspector" &&
-              inspector_roles[1] == "native v3 measuring draft writer" &&
-              inspector_roles[2] == "native v3 measuring engine" &&
-              inspector_roles[3] == "native v3 measured writer" && reaped.size() == 4 && owner_receipt_verified &&
+        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 5 &&
+              inspector_roles[0] == "native config inspector" &&   // the device-free parse that resolves the config
+              inspector_roles[1] == "native config inspector" &&   // the admission inspect with the selected cards
+              inspector_roles[2] == "native v3 measuring draft writer" &&
+              inspector_roles[3] == "native v3 measuring engine" &&
+              inspector_roles[4] == "native v3 measured writer" && reaped.size() == 5 && owner_receipt_verified &&
               measured_artifact_verified && !fs::exists(native_yaml) && fs::exists(cache_tripwire)))
             throw std::runtime_error("native v3 session did not complete one owner-tracked measurement and measured "
                                      "writer with a sealed serving handoff: " +
@@ -3865,7 +3871,7 @@ void session_engine_plan(Fixture& t) {
         const auto hit = ss::plan_engine_only(gated, gated_run, stored_hooks);
         assert(hit.manifest == original_manifest && hit.summary.at("replay") == true &&
                hit.stored_sha256 == bc::serving::file_sha256(original_manifest));
-        assert(replay_inspections == 1 && replay_admissions == 1);
+        assert(replay_inspections == 2 && replay_admissions == 1);   // the device-free config parse and the admission inspect
         fs::remove(native_yaml);
 
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
@@ -3952,9 +3958,13 @@ void session_engine_plan(Fixture& t) {
         assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
         serving_power_verified = cleared_children = serving_handoff_seen = false;
         const auto replay_record = run_owner();
+        if (replay_record.at("selection").value("replay", false) != true ||
+            replay_record.at("selection").at("plan_measurement_attempt") != original_index.native_measurement->attempt_id ||
+            replay_record.at("processes").size() != 3)   // the two inspectors (config parse, admission) and the engine
+            throw std::runtime_error("native v3 stored replay record: " + replay_record.at("processes").dump() + replay_record.at("selection").dump());
         assert(replay_record.at("selection").at("replay") == true &&
                replay_record.at("selection").at("plan_measurement_attempt") == original_index.native_measurement->attempt_id &&
-               replay_record.at("processes").size() == 2);
+               replay_record.at("processes").size() == 3);
 
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path low_room_run = run / "native-low-room";
@@ -4027,8 +4037,10 @@ void session_engine_plan(Fixture& t) {
             drift_roles.emplace(pid, role);
             drift_role_order.push_back(role);
         };
+        int drift_inspections = 0;
         drift_hooks.ended = [&](pid_t pid) {
-            if (drift_roles.at(pid) == "native config inspector") {
+            // The first inspector is the device-free config parse; the drift lands after the admission inspect.
+            if (drift_roles.at(pid) == "native config inspector" && ++drift_inspections == 2) {
                 fs::remove(drift_yaml);
                 fs::remove(home_alias);
                 fs::create_directory_symlink(replacement_home, home_alias);
@@ -4053,10 +4065,11 @@ void session_engine_plan(Fixture& t) {
         if (fs::is_directory(drift_attempts))
             for (const auto& attempt : fs::directory_iterator(drift_attempts))
                 if (attempt.is_directory()) drift_attempt_dirs.push_back(attempt.path());
-        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 3 &&
+        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 4 &&
               drift_role_order[0] == "native config inspector" &&
-              drift_role_order[1] == "native v3 measuring draft writer" &&
-              drift_role_order[2] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
+              drift_role_order[1] == "native config inspector" &&
+              drift_role_order[2] == "native v3 measuring draft writer" &&
+              drift_role_order[3] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
               !fs::exists(drift_attempt_dirs.front() / "plan-cache") &&
               !fs::exists(drift_run / ("manifest-native-" + drift_attempt_dirs.front().filename().string() + ".json"))))
             throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
@@ -4982,6 +4995,11 @@ void helper_vram_owner_graph(Fixture& t) {
         {"TEST_NATIVE_INSPECT_MAX_SEQUENCES", service.at("max_sessions").dump()},
         {"TEST_NATIVE_INSPECT_KERNELS", kernels.dump()},
         {"TEST_NATIVE_INSPECT_SETTINGS", Json({{"ngram_placement", engine.at("ngram_placement")}}).dump()},
+        // flashnext-2xtx: the R9700 engine, both 7900 XTX as head helpers (as engines/radiance/configs/flashnext-2xtx.yaml)
+        {"TEST_NATIVE_INSPECT_XBIGCHERRY",
+         Json{{"schema", 1}, {"description", "flashnext-2xtx fixture"},
+              {"ranks", Json::array({{{"arch", "gfx1201"}, {"count", 1}}})},
+              {"helpers", Json::array({{{"arch", "gfx1100"}, {"count", "all"}, {"placement", "head"}}})}}.dump()},
     }};
     std::map<std::string, unsigned> samples;
     in.helper_vram.read_used = [&](const fs::path& path) {
@@ -5046,7 +5064,9 @@ void helper_vram_owner_graph(Fixture& t) {
             throw std::runtime_error("native helper owner started unexpected roles: " + record.dump());
         return record;
     };
-    const auto fresh = serve_and_stop({"native config inspector", "native v3 measuring draft writer",
+    // The first inspector is the device-free config parse; the second is the admission inspect.
+    const auto fresh = serve_and_stop({"native config inspector", "native config inspector",
+        "native v3 measuring draft writer",
         "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "native v3 measured writer",
         "native v3 measuring draft writer", "helper0 measuring", "helper1 measuring",
         "native v3 measuring engine", "native v3 measured writer", "helper0", "helper1", "engine"});
@@ -5071,7 +5091,8 @@ void helper_vram_owner_graph(Fixture& t) {
     const auto final = bc::serving::v2::load_manifest(stored, bc::serving::v2::PlanUse::serving);
     assert(final && final.value().spec.resources.host.pool_mib == 1024 &&
            final.value().spec.native_config.yaml_utf8 == yaml);
-    const std::vector<std::string> replay_roles{"native config inspector", "helper0", "helper1", "engine"};
+    const std::vector<std::string> replay_roles{"native config inspector", "native config inspector", "helper0",
+                                                "helper1", "engine"};
     const auto check_replay = [&](const Json& replayed) {
         assert(replayed.at("selection").at("replay") == true);
         assert(replayed.at("manifest") == stored.string());
@@ -5101,8 +5122,9 @@ void helper_vram_owner_graph(Fixture& t) {
     assert(conflict != 0 && still_occupied >= 0 && cleaned == 0);
     assert(admissions.size() == 3 && samples == measured_samples);
     assert(refused.at("errors").dump().find("still exists after an unverified stop") != std::string::npos);
-    assert(refused.at("processes").size() == 1 &&
+    assert(refused.at("processes").size() == 2 &&   // the config parse and the admission inspect, then the refusal
            refused.at("processes").at(0).at("role") == "native config inspector" &&
+           refused.at("processes").at(1).at("role") == "native config inspector" &&
            ss::alive_recorded(refused).empty());
 
     const auto meminfo = t.root / "proc/meminfo";
@@ -5121,8 +5143,9 @@ void helper_vram_owner_graph(Fixture& t) {
     const auto room_refused = ss::read_record(owner.run_dir).value_or(Json::object());
     assert(low_room != 0 && admissions.size() == 4 && samples == measured_samples);
     assert(room_refused.at("errors").dump().find("host bytes required=") != std::string::npos);
-    assert(room_refused.at("processes").size() == 1 &&
+    assert(room_refused.at("processes").size() == 2 &&
            room_refused.at("processes").at(0).at("role") == "native config inspector" &&
+           room_refused.at("processes").at(1).at("role") == "native config inspector" &&
            ss::alive_recorded(room_refused).empty());
 
     owner.before_gpu_start = {};

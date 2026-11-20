@@ -319,9 +319,6 @@ Json inspected_as_layout(const InspectedConfig& c, const fs::path& model_root) {
         if (table->empty()) continue;
         Json out = Json::object();
         for (const auto& [key, value] : table->items()) {
-            if (key == "hard-caps" || key == "hard-floors")
-                throw std::runtime_error(c.yaml_path.string() + ": x-bigcherry.memory." + key +
-                                         " is an admission policy of a site or profile, not of a config file");
             out[underscored(key)] = value;
         }
         effective[name] = out;

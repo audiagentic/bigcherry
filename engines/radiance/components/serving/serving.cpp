@@ -1081,6 +1081,23 @@ Json json_schema() {
     return root;
 }
 
+std::optional<std::string> layered_string(const Options& options, const std::string& section, const std::string& key) {
+    const std::string dotted = section + "." + key + "=";
+    for (auto it = options.sets.rbegin(); it != options.sets.rend(); ++it)
+        if (it->starts_with(dotted)) {
+            const std::string text = it->substr(dotted.size());
+            const Json parsed = Json::parse(text, nullptr, false);
+            return parsed.is_string() ? parsed.get<std::string>() : text;
+        }
+    for (const fs::path* file : {&options.profile, &options.site}) {
+        const Json layer = read_toml(*file);
+        if (layer.contains(section) && layer.at(section).is_object() && layer.at(section).contains(key) &&
+            layer.at(section).at(key).is_string())
+            return layer.at(section).at(key).get<std::string>();
+    }
+    return std::nullopt;
+}
+
 Resolved resolve(const Options& options, const Json& facts, const NativeEngineSettings* native) {
     Json values = Json::object(), provenance = Json::object();
     for (const auto& f : schema_fields())

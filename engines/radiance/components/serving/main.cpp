@@ -1086,6 +1086,8 @@ int main(int argc, char** argv) {
             std::optional<bc::serving::session::NativeWriterInput> native;
             if (native_config_fd >= 0)
                 native = bc::serving::session::read_native_writer_input(native_config_fd);
+            // The writer takes the config as the owner's inspector parsed it from the same sealed YAML bytes.
+            if (native && !opts.inspected) opts.inspected = native->inspected;
             const auto r = bc::serving::resolve(opts, facts, native ? &native->settings : nullptr);
             const auto& v = r.values;
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();

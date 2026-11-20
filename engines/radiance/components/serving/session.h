@@ -298,6 +298,7 @@ struct NativeConfigInspection {
 struct NativeWriterInput {
     NativeConfigSnapshot snapshot;
     NativeEngineSettings settings;
+    InspectedConfig inspected;   // the config as the owner's inspector parsed it from the same sealed bytes
 };
 NativeWriterInput read_native_writer_input(int fd);
 
@@ -320,14 +321,16 @@ InspectedConfig inspect_config_file(const std::filesystem::path& engine, const s
 InspectedConfig inspect_config_snapshot(const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,
                                         const std::string& name, const std::filesystem::path& yaml_path,
                                         const std::filesystem::path& radiance_home,
-                                        const std::filesystem::path& sys_root, const Hooks& hooks);
+                                        const std::filesystem::path& sys_root, const Hooks& hooks,
+                                        const Env& runtime_overrides = {});
 
 // Sets options.inspected for the named config: `yaml` when given, else NAME.yaml of the config sources. The runtime home
 // is `--set engine.radiance_home=...` or the home of this executable's build or installed prefix; the engine is
 // `engine_binary` or <home>/../bin/radiance. A config with no YAML is refused.
 void attach_inspected_config(Options& options, const std::string& name, const std::filesystem::path& yaml,
                              const std::filesystem::path& self, const std::filesystem::path& engine_binary,
-                             const Hooks& hooks);
+                             const Hooks& hooks, const std::filesystem::path& resolution_root = {},
+                             const Env& runtime_overrides = {}, const NativeConfigSnapshot* sealed = nullptr);
 
 NativeConfigInspection inspect_and_reconcile_native_config(
     const std::filesystem::path& engine, const NativeConfigSnapshot& snapshot,

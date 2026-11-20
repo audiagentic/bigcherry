@@ -8,7 +8,7 @@ namespace bc::serving {
 namespace {
 
 using Json = nlohmann::json;
-enum class Kind { text, integer, boolean, integers, caps, scalar };
+enum class Kind { text, integer, boolean, integers, scalar };
 
 [[noreturn]] void refuse(const std::string& path, const std::string& what) {
     throw std::invalid_argument("x-bigcherry: " + path + " " + what);
@@ -19,7 +19,7 @@ const std::map<std::string, std::map<std::string, Kind>>& sections() {
         {"service", {{"objective", Kind::text}, {"quality", Kind::text}, {"retention", Kind::text}}},
         {"memory", {{"host-pool-mib", Kind::integer}, {"host-kv-mib", Kind::integer},
                     {"host-reserve-mib", Kind::integer}, {"tail-budget-mib", Kind::integer},
-                    {"helper-budgets-mib", Kind::integers}, {"hard-caps", Kind::caps}, {"hard-floors", Kind::caps}}},
+                    {"helper-budgets-mib", Kind::integers}}},
         {"handoff", {{"heat", Kind::text}, {"histogram", Kind::text}, {"histogram-period-s", Kind::integer},
                      {"moe-down-tile", Kind::boolean}, {"skip-owned", Kind::boolean},
                      {"gemv-large-rows", Kind::integer}, {"small-rows", Kind::integer},
@@ -73,10 +73,6 @@ Json section(const Json& source, const std::string& key) {
             case Kind::integers:
                 if (!value.is_array() || value.empty()) refuse(at, "must be a nonempty list of integers");
                 for (std::size_t i = 0; i < value.size(); ++i) whole(value[i], at + "[" + std::to_string(i) + "]", 0);
-                break;
-            case Kind::caps:
-                require_object(value, at);
-                for (const auto& [target, amount] : value.items()) whole(amount, at + "." + target, 0);
                 break;
             case Kind::scalar:
                 if (!value.is_boolean() && !value.is_string() && !value.is_number_integer())
