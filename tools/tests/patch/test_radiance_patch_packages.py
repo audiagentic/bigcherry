@@ -1013,7 +1013,9 @@ class TestPlanMemoryPatch(unittest.TestCase):
         engine = tomllib.loads((REPO / "engines" / "radiance" / "engine.toml").read_text(encoding="utf-8"))
         self.assertEqual(engine["build"]["repo-paths"]["BC_SERVING_V2_CMAKE"],
                          "engines/radiance/components/serving/bc_serving_v2.cmake")
-        listed = re.findall(r'"\$\{src\}/([^"]+\.cpp)"', (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8"))
+        shared = (self.SERVING / "bc_serving_v2.cmake").read_text(encoding="utf-8")
+        manifest_library = shared.split("function(bc_add_manifest_library target abi generated)", 1)[1].split("endfunction()", 1)[0]
+        listed = re.findall(r'"\$\{src\}/([^"]+\.cpp)"', manifest_library)
         self.assertTrue(listed and all((self.SERVING / f).is_file() for f in listed), listed)
 
     def test_second_apply_is_a_no_op(self):
