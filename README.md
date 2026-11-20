@@ -9,15 +9,16 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 
 | Engine | Upstream pin | Catalogued changes | Main additions |
 | --- | --- | --- | --- |
-| [Radiance](docs/reference/engines/radiance/README.md) | **v1.17.0** | **36 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
+| [Radiance](docs/reference/engines/radiance/README.md) | **v2.2.0** | **45 patches**, 6 components | RDNA2/3/4 kernels, remote experts, placement and serving manifest |
 | [llama.cpp](docs/reference/engines/llamacpp/README.md) | **b11552** | **150 patches** | HIP kernel tuning, measured dispatch, multi-GPU reductions |
 
 **Radiance.** The `libr2`, `libr3` and `bc-gfx12` components add kernels
 for different AMD generations. Remote-MoE workers exchange routed expert
 results with the engine over pinned host memory. The main validated engine
 patches provide the remote hand-off and a HyperConn up-mix kernel selector.
-The strict serving loader and manifest are being integrated; full
-manifest-driven startup is not yet qualified.
+The v2.2.0 candidate starts from native Radiance YAML. The BigCherry
+owner records the admitted YAML and measured device and helper plan for replay.
+Final quality, performance and installation checks remain in progress.
 [Components and patches](docs/reference/engines/radiance/ENHANCEMENTS.md).
 
 **llama.cpp.** BigCherry records real HIP matrix operations, measures kernel
@@ -28,13 +29,13 @@ controls, adaptive AllReduce and selected AMD kernel fixes.
 [Patch catalogue](docs/reference/engines/llamacpp/PATCHES.md).
 
 Package counts include experimental, superseded and rejected work, not only
-patches selected for production. Radiance has 30 validated patches;
+patches selected for production. Radiance has 37 validated patches;
 llama.cpp has 70.
 
 ## Current-pin throughput
 
-Fresh aggregate output and prefill throughput on the current **v1.17.0** pin is not yet
-qualified for these layouts. The Flash-Next model page records a dated cross-pin
+Fresh aggregate output and prefill throughput on the **v2.2.0** candidate
+is still being qualified for these layouts. The Flash-Next model page records a dated cross-pin
 check, not a matched unmodified-stock throughput A/B. Earlier results remain archived.
 
 | Model and layout | Prefill tokens/s | Aggregate output tokens/s |

@@ -12,3 +12,9 @@ The patch adds Qwen4exp GQA6/page4 and Qwen35 GQA6/page16 B16 rows while keeping
 ## Outcome
 
 The retained behavior was tested on the old Radiance base and its historical device, codec, KLD, serving, and performance evidence remains authoritative for those semantics. On Radiance 2.1.0, this port passed ordered exact apply/reapply, focused host and architecture fixtures, selected object builds, the complete component build, ABI44 plugin checks, and the serving/libr3 component suites. This validated migration is included in the production recipe. The final paired deployment quality/performance gate remains RUM09.
+
+## Detail
+
+Geometry-specific rows keep the DFlash2 route on its existing E4M3 cache while enabling B16 on the retained trunk layouts.
+
+[Patch implementation](patch.py).

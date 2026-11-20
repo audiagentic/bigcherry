@@ -12,3 +12,9 @@ The patch disables recorded-pass reuse for an unproven nonpositive full-KV summa
 ## Outcome
 
 The old-base behavior is covered by the retained BigCherry evidence. ABI44 attachment checks and the final production validation remain part of RUM07/RUM09 before this package enters the bumped production recipe.
+
+## Detail
+
+The escape applies only to wide full-KV verification without an authoritative positive summary. It does not replace the upstream replay scheduler.
+
+[Patch implementation](patch.py).

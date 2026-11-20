@@ -12,3 +12,9 @@ The patch adds typed B16 stores/readers and preserves separate QSA storage and s
 ## Outcome
 
 The retained behavior was tested on the old Radiance base and its historical device, codec, KLD, serving, and performance evidence remains authoritative for those semantics. On Radiance 2.1.0, this port passed ordered exact apply/reapply, focused host and architecture fixtures, selected object builds, the complete component build, ABI44 plugin checks, and the serving/libr3 component suites. This validated migration is included in the production recipe. The final paired deployment quality/performance gate remains RUM09.
+
+## Detail
+
+The kernel declarations bind the BF16-key layout and each value codec so a cache store has a matching attention reader.
+
+[Patch implementation](patch.py).

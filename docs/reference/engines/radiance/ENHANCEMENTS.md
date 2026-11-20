@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (36)
+## Engine patches (45)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -49,6 +49,15 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | `diagnostic` | `--expert-stats` counts the routed experts a layer keeps in bf16 beside its quantised table (its protected experts). Before, their histogram indices had no entry in the stats map and were tallied as `unmapped`, so a quantised layer's counts came up short by exactly its protected experts' selections. |
 | [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | `diagnostic` | `--expert-route-record FILE` writes the experts each token's router chose, for every routed trunk layer, when the run ends. A KLD run on a routed model cannot rank KV caches because any change in the arithmetic moves about 1.1% of the choices (FLASHNEXT-ROUTING.md); to score a cache alone the measured run has to take a reference run's choices. This is the record half; replay is a later patch. Manifest field `engine.tuning.expert_route_record` (contract amendment 21). |
 | [rad0045_expert_route_replay](../../../../engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md) | `diagnostic` | `--expert-route-replay FILE` makes a run take, for every token and routed layer, the experts a reference run recorded with `--expert-route-record` (rad0044) instead of the router's own choice. KLD against a reference cannot rank KV caches on a routed model because any change in the arithmetic moves about 1.1% of the expert choices (42% of token-layer expert sets differ between chunk 64 and 128); replaying the reference's route removes that noise, so only the cache differs. Manifest field `engine.tuning.expert_route_replay` (contract amendment 22). |
+| [rad0046_retained_moe_rows](../../../../engines/radiance/patches/rad0046_retained_moe_rows/SUMMARY.md) | `untested` | Restores the `had_quant_act_fp8` and `moe_gemm_fp8a8` rows on the retained implementations. The grouped GEMM keeps 64-column fallback tiling unless every expert class and part aligns to the 128-column block-scale grid. The shared pure width predicate lives in `libr4d/r4d_moe_block_fp8_geometry.h` so the launcher and card-free boundary fixture exercise the same rule. |
+| [rad0047_mtp_verify_replay_summary](../../../../engines/radiance/patches/rad0047_mtp_verify_replay_summary/SUMMARY.md) | `untested` | The patch disables recorded-pass reuse for an unproven nonpositive full-KV summary, preserving live execution rather than forming a potentially unsafe replay key. |
+| [rad0048_abi44_kv_contract](../../../../engines/radiance/patches/rad0048_abi44_kv_contract/SUMMARY.md) | `validated` | The patch appends and fingerprints the local KV layout/capability fields and defines one descriptor table for V4, K6V4, B16F8 and B16I8. |
+| [rad0049_qwen4exp_e4m3_kv](../../../../engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/SUMMARY.md) | `validated` | The patch restores the deployed H256/GQA12 and GQA6/page4 E4M3 rows, store and attention wiring without aliasing the format to I8. |
+| [rad0050_b16_kv_runtime_contract](../../../../engines/radiance/patches/rad0050_b16_kv_runtime_contract/SUMMARY.md) | `validated` | The patch carries packed-layout selection through CLI/YAML, capability admission, model declaration, sizing, fallback and binding; unsupported streamed writes remain resident. |
+| [rad0051_b16_kv_kernels](../../../../engines/radiance/patches/rad0051_b16_kv_kernels/SUMMARY.md) | `validated` | The patch adds typed B16 stores/readers and preserves separate QSA storage and shared Qwen4exp trunk/MTP KV ownership. |
+| [rad0052_b16_kv_geometries](../../../../engines/radiance/patches/rad0052_b16_kv_geometries/SUMMARY.md) | `validated` | The patch adds Qwen4exp GQA6/page4 and Qwen35 GQA6/page16 B16 rows while keeping H128/GQA4/page16 DFlash2 on native E4M3. |
+| [rad0053_v4_kv_layouts](../../../../engines/radiance/patches/rad0053_v4_kv_layouts/SUMMARY.md) | `validated` | The patch ports the historical V4/K6 stores, readers and geometry rows using descriptor-owned offsets and preserves the tested standalone and fused scale arithmetic. |
+| [rad0054_attn_prefill_fp8](../../../../engines/radiance/patches/rad0054_attn_prefill_fp8/SUMMARY.md) | `validated` | The patch restores off, QK, PV and combined prefill modes on the supported Qwen35 H256/GQA6/page16 E4M3, V4 and K6V4 rows; decode and unsupported geometries do not accept the prefill selector. |
 
 ## Components (6)
 
