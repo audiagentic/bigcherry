@@ -124,6 +124,8 @@ Integrated v2.2.0 build checkpoint b0c256877 verified 60 DSO ABI exports, roster
 
 Settled explicit replay exited 0 with the author YAML absent. Fresh, named and explicit replay verified the same immutable manifest and plan measurement attempt. Qualification continued with helper-off and helper-on KL against the matched v1.17.0 reference. The initial immediate-VRAM refusal and successful retry are retained as separate evidence.
 
+The b0c quality launches refused inconsistent fixtures before scoring. Helper-off must use the engine-only kernel roster. Helper-on must keep the calibrated host KV tier instead of forcing the helper-off zero-KV override. Updated the short YAML inputs and arm overrides accordingly. Merged main through 643250eb1 at 8e72665df, including ENG05. Because ENG05 expands the exact-size private settings callback and changes mailbox HIP launch packets, d92592f9c is the next exact runtime freeze. Rebuild matched engine, owner, helper plugin and worker, and affected libr3 units together before renewed lifecycle, KL, and paired performance. Preserve the b0c lifecycle evidence as a separate checkpoint.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -157,3 +159,4 @@ Settled explicit replay exited 0 with the author YAML absent. Fresh, named and e
 - 2026-11-20T02:39:23.371083+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:58:45.425205+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:03:37.935279+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:12:18.577770+00:00 (updated-by): Updated: section:notes
