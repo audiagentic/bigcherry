@@ -2,7 +2,7 @@
 id: PEF03
 order: 0
 plan: patching-external-fixes
-state: pending
+state: superseded
 created-at: '2026-09-23T14:16:04.207572+00:00'
 breadth: ''
 skill: intermediate
@@ -61,6 +61,10 @@ Raised by the b10901 -> b11126 pin bump (log: artifacts/logs/manual/bump-b11126-
 
 Non-blocking for the bump by policy: conflicts and upstream absorption are the hard gates.
 
+2026-11-20 consolidation: historical b11126 fork-drift/source-check findings and unresolved limits transferred to active PA50, alongside its newer b11552 audit. PA50 retains each baseline and requires current snapshot/patch-id/content reconciliation before closure. No upstream absorption or implementation acceptance is claimed.
+
 ## Change Log
 
 - 2026-09-23T14:16:04.207572+00:00 (created-by): Created by agent
+- 2026-11-20T04:14:01.430914+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:14:08.620348+00:00 (state-transition): State: pending → superseded

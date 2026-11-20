@@ -15,14 +15,15 @@ work: M
 
 ## Description
 
-Every standard producer session builds five trees (tune, replay, stock, control, validation-subject). On the producer path tune/replay binaries are never run; they only feed campaign_build_identities into the campaign identity digest and the evidence record. Dropping them saves ~40% of per-session build work.
+Audit the standard producer build set before attempting to remove tune/replay builds or campaign identity fields. The original claim that tune/replay binaries are never executed is contradicted by current activation and e2e campaign paths. Preserve every live tune/replay consumer and historical evidence. Any reduction must be based on a producer-path call graph proving a specific role is unused, with identity/schema/verifier migration in the same change.
 
 ## Steps
 
-1. Confirm no producer or dispatcher path executes tune_bin/replay_bin.
-2. Make campaign_build_identities producer-path = {stock} (plus the PVPS03 base arm), migrate the identity digest and evidence schema (no legacy fallback), update verify-evidence for new records while keeping historical records verifiable as history.
-3. Keep tune/replay builds for the tuning campaign path that actually runs them.
-4. Tests + one hardware session showing 3 builds (stock, control, subject).
+1. Map every standard producer and dispatcher call path that consumes tune_bin, replay_bin, tune_server, replay_server, tune_bench and replay_bench, including activation probes, e2e campaign operations and replay validation.
+2. Classify each role by whether it is built, identified, launched or required by a non-standard command; do not infer non-use from the ordinary benchmark lane alone.
+3. Retain all roles with a live consumer. Only propose removing a build when the exact producer/dispatcher call graph proves no activation, correctness, campaign, or replay path uses it.
+4. If a role can be removed, migrate campaign identity digests and evidence schema atomically, update new-record verification, preserve historical-record verification, and retain tune/replay builds on the tuning campaign path that executes them.
+5. Measure build-count and behavior changes in offline fixtures and a representative producer session before accepting any saving.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +39,7 @@ Every standard producer session builds five trees (tune, replay, stock, control,
 
 ## Validation
 
-Offline suite; patch-verify-evidence on existing records still reports them as historical; a new session persists evidence with the new identity shape.
+Static call-graph evidence must cover campaign/scaffold/producer activation, e2e campaign and replay entry points. Tests must prove required tune/replay consumers still launch and identity records remain complete; historical records remain verifiable after any schema change. Any proposed reduced build set must show exact producer behavior and unchanged verdict/evidence semantics. No tests or hardware runs were performed during this planning correction.
 
 ## Effort & Risk
 
@@ -50,7 +51,7 @@ Offline suite; patch-verify-evidence on existing records still reports them as h
 
 ## Acceptance Criteria
 
-
+No live tune/replay execution or evidence-identity consumer is removed. The producer's required build set is proven from all activation, correctness, campaign and replay paths. A role is dropped only with an exact call-graph proof, atomic identity/schema/verifier migration, retained historical verification, and tests showing required flows are unchanged. The original build-count saving is not accepted as a premise.
 
 ## Notes
 
@@ -66,3 +67,8 @@ Deliberately NOT implementing this now: it's a genuine schema fork touching the 
 
 - 2026-09-25T12:43:53.159999+00:00 (created-by): Created by agent
 - 2026-09-27T12:36:15.733308+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4254
+- 2026-11-20T04:13:01.931953+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria

@@ -2,7 +2,7 @@
 id: PVPS03
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: superseded
 created-at: '2026-09-25T12:03:55.053290+00:00'
 breadth: ''
 skill: intermediate
@@ -58,6 +58,8 @@ Offline unit tests for composition + ladder; one hardware session (e.g. 1216 gfx
 
 validated-enhancements is empty at 2026-09-25 (RD73 demoted), so arm 3 == arm 2 until the first promotion; serial-2 verdicts remain valid under the new definition.
 
+2026-11-20 consolidation: requirements transferred to active PVPS01 (patch qualification matrix), including this item's specific validation and acceptance gates. Source history is retained. The target remains pending; no implementation, hardware validation, or promotion acceptance is implied. See PVPS01 inherited qualification gates.
+
 ## Change Log
 
 - 2026-09-25T12:03:55.053290+00:00 (created-by): Created by agent
@@ -66,3 +68,5 @@ validated-enhancements is empty at 2026-09-25 (RD73 demoted), so arm 3 == arm 2 
 
 - chg_20260925_121417_patch-validation-now-measures_6673
 - 2026-09-25T12:14:20.736304+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T04:10:38.496436+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:11:45.104715+00:00 (state-transition): State: pending → superseded
