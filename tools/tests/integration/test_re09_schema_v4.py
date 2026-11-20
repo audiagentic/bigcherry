@@ -3,7 +3,7 @@
 Real SQLite throughout (no mocking): a real schema-3 fixture DB (built the
 same way schema 2->3 rows would look, with real FK children in
 observation/measurement/winner/replay_miss), migrated via
-sql/migrations/0004_build_campaign_identity.sql, then PRAGMA
+tools/bigcherry/tuning/sql/migrations/0004_build_campaign_identity.sql, then PRAGMA
 foreign_key_check proving nothing broke.
 """
 
@@ -18,8 +18,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCHEMA_V3_BASE = REPO_ROOT / "sql" / "dispatch-db.sql"
-MIGRATION_0004 = REPO_ROOT / "sql" / "migrations" / "0004_build_campaign_identity.sql"
+SCHEMA_V3_BASE = REPO_ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
+MIGRATION_0004 = REPO_ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "migrations" / "0004_build_campaign_identity.sql"
 
 
 def _schema_v3_ddl() -> str:

@@ -106,7 +106,7 @@ The exact FilePatch target list is from docs/reviews/radiance-upstream-2026-11-1
 | RCS13 GEMV, worker footprint and memory accounting | moe-remote/gemv_geometry.h, moe_remote_gpu.h, worker_footprint.h, worker_topology_v26.h; bc-gfx12/bc_moe_gemv.hip; launch-sized LDS, grouped-GEMM fallback/refusal, exact helper lane/VRAM/pointer/map footprints, shared wire v26. | RUM02/RUM05/RUM06; device/geometry interface **UNDECLARED** |
 | Planner remeasure and VRAM-release barrier (Python adapter) | BigCherry Python adapter consumes rad0011 Engine::plan facts and waits for engine VRAM allocation release between measuring and serving. The adapter stays out of RSP01 runtime; production owner must not use stale resource estimates. | RUM04/RUM05; producer/consumer shape **UNDECLARED** |
 | Heat producer/consumer and kMaxLayers | core/place/heat.cpp, core/runtime/ctx.cpp plus moe-remote/heat_publication.h / moe_remote_shm.h; real histogram source format, shared magic/version, max 128 routed layers and bounded ring updates must agree. | RUM02/RUM05/RUM06; shape contract **UNDECLARED** |
-| host/kernel/7.0.13-gfxoff | Linux amdgpu_amdkfd_set_compute_idle/GFX12 compute-queue GFXOFF semantics; upstream AMD commit 6a1dbb006056. Host-kernel source patch, not Radiance plugin ABI. | **GAP in RUM**, owned by BHK02–BHK04; host prerequisite |
+| experiments/host-kernel-gfxoff-7.0.13 | Linux amdgpu_amdkfd_set_compute_idle/GFX12 compute-queue GFXOFF semantics; upstream AMD commit 6a1dbb006056. Host-kernel source patch, not Radiance plugin ABI. | **GAP in RUM**, owned by BHK02–BHK04; host prerequisite |
 
 ## RUM gaps and rules for migration
 

@@ -11,8 +11,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCHEMA_SQL = REPO_ROOT / "sql" / "dispatch-db.sql"
-MIGRATION_0007 = REPO_ROOT / "sql" / "migrations" / "0007_producer_capabilities.sql"
+SCHEMA_SQL = REPO_ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
+MIGRATION_0007 = REPO_ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "migrations" / "0007_producer_capabilities.sql"
 
 
 def _fresh_connection() -> sqlite3.Connection:

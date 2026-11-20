@@ -112,6 +112,16 @@ class SourceCompileCheckTests(unittest.TestCase):
         )
         self.assertIn("owner=patch-1345", rendered)
 
+    def test_server_compile_job_does_not_fetch_web_ui(self):
+        workflow = (Path(__file__).resolve().parents[3] / ".github/workflows/patch-compile-validation.yml").read_text(
+            encoding="utf-8"
+        )
+        configure = workflow.split("- name: Configure CPU-only server", 1)[1].split(
+            "- name: Compile server translation units", 1
+        )[0]
+        self.assertIn("-DLLAMA_BUILD_UI=OFF", configure)
+        self.assertIn("-DLLAMA_USE_PREBUILT_UI=OFF", configure)
+
     def test_arity_parser_ignores_nested_commas(self):
         self.assertEqual(
             scc._arity("fn<int, 2>(x), std::array<int, 4>{}, false"),

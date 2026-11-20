@@ -11,7 +11,7 @@ regressed real identity invariants this codebase already enforces:
 
 - build_id is NOT resolved via (source_revision, manifest_hash) -- that is
   the LEGACY key; schema 4 deliberately allows distinct campaign builds to
-  share it (see sql/dispatch-db.sql's identity_scope CHECK and the two
+  share it (see tools/bigcherry/tuning/sql/dispatch-db.sql's identity_scope CHECK and the two
   partial UNIQUE indexes). This module resolves identity purely from rows
   the dispatch_db ALREADY has -- the measurements artifact was ingested into
   this exact database before promotion ever runs (lifecycle.py's tune

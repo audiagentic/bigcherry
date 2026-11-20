@@ -15,7 +15,7 @@ work: M
 
 ## Description
 
-The original 7.0.13-gfxoff source tree and GFXOFF edit scripts were lost in the 2026-11-17 work-root purge. Keep the evidenced upstream GFX12 compute-queue GFXOFF fix, source-reference file, recovery config, ordered patch series, build recipe, and cross-release comparison under `host/kernel/7.0.13-gfxoff/`. Generated sources and modules remain in project scratch and never in Git.
+The original 7.0.13-gfxoff source tree and GFXOFF edit scripts were lost in the 2026-11-17 work-root purge. Keep the evidenced upstream GFX12 compute-queue GFXOFF fix, source-reference file, recovery config, ordered patch series, build recipe, and cross-release comparison under `experiments/host-kernel-gfxoff-7.0.13/`. Generated sources and modules remain in project scratch and never in Git.
 
 ## Steps
 
@@ -79,7 +79,7 @@ The installed `7.0.13-gfxoff` kernel, modules, boot records and the read-only `<
 
 PWR06 measured the R9700 loaded-HIP idle change from stock 20.6 W, 3% busy, 612 mV to patched 15.0 W, 0% busy, 29 mV (MES 0x81 unchanged; three 60-second repetitions). This validates behavior, **not** the full installed source diff. The original `_gfxoff_edit*.py` scripts are missing, so additional historical edits remain uncertain.
 
-Reference: `host/kernel/7.0.13-gfxoff/README.md`; `docs/reference/serving-host-prerequisites.md`; `docs/evidence/2026-11-18-gfxoff-kernel-recovery/README.md`.
+Reference: `experiments/host-kernel-gfxoff-7.0.13/README.md`; `docs/reference/serving-host-prerequisites.md`; `docs/evidence/2026-11-18-gfxoff-kernel-recovery/README.md`.
 
 ## Change Log
 

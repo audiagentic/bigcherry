@@ -14,7 +14,7 @@ work: M
 
 ## Authoritative decision (2026-10-14)
 
-**Pending / 1267 remains `untested` and `known_broken` on b11552. Do not adopt, queue a GPU campaign, or resurrect 1203.** The tracked `dispositions/1267_rd07_q6k_mmq_scale_fold.json` already records `FAILED_NEEDS_RECONCILIATION` against pinned llama.cpp `23b0202a189c44a54625aadcb37a946dd1d6278d`. The existing PRBE04 prose incorrectly says PRBE110 has not delivered the package: 1267 exists and was hardware-exercised on b11126. This item owns only the 1267 source/rebase and architecture-selection decision. PRBE04 owns downstream PEF01/HI71 safety qualification.
+**Pending / 1267 remains `untested` and `known_broken` on b11552. Do not adopt, queue a GPU campaign, or resurrect 1203.** The tracked `engines/llamacpp/dispositions/1267_rd07_q6k_mmq_scale_fold.json` already records `FAILED_NEEDS_RECONCILIATION` against pinned llama.cpp `23b0202a189c44a54625aadcb37a946dd1d6278d`. The existing PRBE04 prose incorrectly says PRBE110 has not delivered the package: 1267 exists and was hardware-exercised on b11126. This item owns only the 1267 source/rebase and architecture-selection decision. PRBE04 owns downstream PEF01/HI71 safety qualification.
 
 **12-hour protection:** no independent PRBE110/PRBE04/1267 implementation, plan, evidence, PR or queued experiment was found in the 12 hours preceding this audit (latest relevant independent plan commit 2026-10-08 06:47 UTC; package/evidence relocation 2026-10-09 04:20 UTC). Active RAD02/RAD03 helper/mailbox and RAD04 two-half prefill remain untouched. Recent BCOP190–210 do not own this Q6_K scale-fold path.
 

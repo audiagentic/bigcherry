@@ -7,7 +7,7 @@
 // inventory build exists at all (standards 6.2).
 //
 // **Output is JSONL, not SQLite.** The plan specified a SQLite writer, and
-// `sql/dispatch-db.sql` is still the schema of record -- but it is populated
+// `tools/bigcherry/tuning/sql/dispatch-db.sql` is still the schema of record -- but it is populated
 // offline by a Python tool rather than inline by the backend. Three reasons:
 //
 //   * no build dependency. libsqlite3-dev is not installed on either machine

@@ -15,14 +15,24 @@
 #error "assert-based test built with NDEBUG: its assertions would not run"
 #endif
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
+#include <vector>
 
 namespace {
 namespace fs = std::filesystem;
 namespace v2 = bc::serving::v2;
 using Json = nlohmann::json;
+
+struct ScopedFixture {
+    fs::path path;
+    ~ScopedFixture() {
+        std::error_code ec;
+        fs::remove_all(path, ec);
+    }
+};
 
 std::string read(const fs::path& p) {
     std::ifstream in(p, std::ios::binary);
@@ -50,9 +60,17 @@ bool refused_at(const v2::Manifest& m, const bc::experts::Container& model, cons
 }  // namespace
 
 int main(int, char**) {
-    const fs::path root = fs::current_path() / "bc-owner-map-fixture";
-    fs::remove_all(root);
-    fs::create_directories(root);
+    // Synthetic model data is scratch. Never create or delete repository-root files.
+    const std::string scratch_template = (fs::temp_directory_path() / "bc-owner-map-XXXXXX").string();
+    std::vector<char> scratch_name(scratch_template.begin(), scratch_template.end());
+    scratch_name.push_back(char(0));
+    const char* created = ::mkdtemp(scratch_name.data());
+    if (!created) {
+        std::perror("mkdtemp");
+        return 1;
+    }
+    const ScopedFixture fixture{fs::path(created)};
+    const fs::path& root = fixture.path;
     const auto model_path = root / "owners.rad";
     bc::test::write_rad(model_path, 4, 16, 512, 512, bc::test::embedded_profile(4, 16));
     bc::experts::Container model;
@@ -284,7 +302,6 @@ int main(int, char**) {
         m.spec.experiment->shape->helper_common->placement->balance_speeds_milli = std::vector<int64_t>{1000, 1000};
         assert(refused_at(m, model, "spec.plan.owner_map.helpers["));   // other speeds split the experts differently
     }
-    fs::remove_all(root);
     std::printf("ok\n");
     return 0;
 }

@@ -1,6 +1,8 @@
 # Linux 7.0.13-gfxoff — host kernel source reference
 
-This directory records a reproducible **source reconstruction**, not proof of an identical installed binary. It lives under `host/kernel/` because the amdgpu module is a protected host prerequisite, not an engine patch or release asset. Generated Linux trees, objects, and receipts remain outside Git under `<work-root>/tmp/hostkernel/`.
+This is an **inert, opt-in host-kernel experiment** (plans BHK01–BHK04; evidence `docs/evidence/2026-11-18-gfxoff-kernel-recovery/README.md`). It asks whether an upstream AMD GFX12 compute-queue GFXOFF change can reproduce the observed idle-power improvement and be reconstructed byte-identically. Inputs: pinned Linux 7.0.13 source tarball, exact upstream patch, recovered config and source reference. Outputs: host-local scratch builds, comparisons, and reviewed evidence. Never install or load any module from this archive. Validation limitations and the missing compiler-version match remain recorded below.
+
+This directory records a reproducible **source reconstruction**, not proof of an identical installed binary. It is cataloged as a host-kernel experiment, not a production engine patch, installed module, or release asset. Generated Linux trees, objects, and receipts remain outside Git under `<work-root>/tmp/hostkernel/`.
 
 ## Provenance
 
@@ -36,9 +38,9 @@ From the repository root (substitute an actual work root):
 
 ```sh
 export BC_WORK_ROOT=<work-root>
-bash host/kernel/7.0.13-gfxoff/build-module.sh '<work-root>/downloads/linux-7.0.13.tar.xz' '<work-root>/tmp/hostkernel-rebuild' 8
+bash experiments/host-kernel-gfxoff-7.0.13/build-module.sh '<work-root>/downloads/linux-7.0.13.tar.xz' '<work-root>/tmp/hostkernel-rebuild' 8
 mkdir -p '<work-root>/tmp/hostkernel-compare'
-bash host/kernel/7.0.13-gfxoff/compare-release.sh 7.3.5 '<work-root>/tmp/hostkernel-compare'
+bash experiments/host-kernel-gfxoff-7.0.13/compare-release.sh 7.3.5 '<work-root>/tmp/hostkernel-compare'
 ```
 
 The build script validates the tarball digest and refuses pre-existing scratch directories; extracts separate stock and patched trees; applies the ordered series, checks the retained full file, then runs `olddefconfig`, `modules_prepare`, and only `M=drivers/gpu/drm/amd/amdgpu modules` for each with `nice` and at most 12 make jobs. It reports `modinfo` srcversions where available and retains outputs for review. The comparison script accepts a Linux source directory, tarball, or release version; reports `git apply --check`, target-clause presence, and whether the fix's effect exists. Source inspection does **not** prove commit ancestry.

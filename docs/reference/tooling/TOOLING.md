@@ -6,6 +6,16 @@ the existing command/API and read the owning domain's tests. If the work is
 exploratory or plan-specific, start in `tools/lab/<plan-topic>/` and keep it
 outside the production package until it has an explicit disposition.
 
+## Root-level source versus generated output
+
+Root source follows its maintained owner:
+
+- `engines/llamacpp/dispositions/` holds narrow revision-and-digest-bound known-broken patch records. It is tracked and reviewed with the llama.cpp engine, not stored under ignored artifacts.
+- `tools/bigcherry/tuning/sql/` holds the cross-engine (HIP and Vulkan) tuning database schema and migrations, owned by the tuning platform.
+- `experiments/host-kernel-gfxoff-7.0.13/` catalogs a reproducible host-kernel reconstruction and its evidence; it is neither an installed module nor production engine code. Generated modules and installed kernel files must not be removed as scratch.
+
+The root `out/` directory is ignored scratch, never a durable evidence store; promote retained reports to `docs/evidence/`. Synthetic C++ test models belong in isolated, automatically cleaned build scratch, not a tracked root-level fixture directory.
+
 ## Start with the right owner
 
 | Concern | Maintained owner | Use it for |

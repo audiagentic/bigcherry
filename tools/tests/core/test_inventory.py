@@ -303,7 +303,7 @@ class TempDB:
     def __init__(self):
         self._dir = tempfile.TemporaryDirectory(prefix="bigcherry_test_")
         self.db_path = Path(self._dir.name) / "test.sqlite"
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         conn = sqlite3.connect(str(self.db_path))
         try:
             conn.executescript(schema_path.read_text(encoding="utf-8"))
@@ -464,7 +464,7 @@ class TestBuildDatabase(unittest.TestCase):
             counts = inventory.build_database(
                 rec,
                 db.db_path,
-                Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql",
+                Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql",
             )
 
             self.assertEqual(counts["builds"], 1)
@@ -478,7 +478,7 @@ class TestBuildDatabase(unittest.TestCase):
             inventory.build_database(
                 rec,
                 db.db_path,
-                Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql",
+                Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql",
             )
             row = db.query("SELECT diagnostics_json FROM observation")[0]
             diagnostics = json.loads(row[0])
@@ -502,7 +502,7 @@ class TestBuildDatabase(unittest.TestCase):
             inventory.build_database(
                 rec,
                 db.db_path,
-                Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql",
+                Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql",
             )
             build_row = db.query(
                 "SELECT source_slice_id, build_plan_id, effective_build_id, "
@@ -534,7 +534,7 @@ class TestBuildDatabase(unittest.TestCase):
             inventory.build_database(
                 rec,
                 db.db_path,
-                Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql",
+                Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql",
             )
             build_row = db.query(
                 "SELECT source_slice_id, build_plan_id, effective_build_id, "
@@ -554,7 +554,7 @@ class TestBuildDatabase(unittest.TestCase):
                 inventory.build_database(
                     rec,
                     db.db_path,
-                    Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql",
+                    Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql",
                     identity=inventory.CampaignDatabaseIdentity(
                         source_slice_id="slice-1",
                         build_plan_id="",
@@ -572,7 +572,7 @@ class TestBuildDatabase(unittest.TestCase):
             inventory.build_database(
                 rec,
                 db.db_path,
-                Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql",
+                Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql",
                 identity=inventory.CampaignDatabaseIdentity(
                     source_slice_id="slice-1",
                     build_plan_id="plan-1",
@@ -599,7 +599,7 @@ class TestLoadMeasurements(unittest.TestCase):
 
     def test_rejects_unknown_database_schema_version(self):
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         try:
             with TempDB() as db:
@@ -627,7 +627,7 @@ class TestLoadMeasurements(unittest.TestCase):
 
     def test_basic_load(self):
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             counts = inventory.load_measurements(
@@ -647,7 +647,7 @@ class TestLoadMeasurements(unittest.TestCase):
         # RE09 (RV48 audit): no campaign kwargs supplied -- behaves exactly
         # as before, NULL identity, not a fabricated one.
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -673,7 +673,7 @@ class TestLoadMeasurements(unittest.TestCase):
         # RE09: a real caller holding a CampaignLaneResult passes these
         # through; they land on build, measurement, AND winner rows.
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -730,7 +730,7 @@ class TestLoadMeasurements(unittest.TestCase):
         # limitation (placeholder hardware digest collision -- see
         # _resolve_hardware's own KNOWN GAP comment and the "agreeing"
         # test below) that has nothing to do with campaign identity.
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         with TempDB() as db:
             connection = sqlite3.connect(str(db.db_path))
             try:
@@ -795,7 +795,7 @@ class TestLoadMeasurements(unittest.TestCase):
         # rejected. The campaign-aware load gets its OWN new build row.
         path_legacy = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
         path_campaign = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -816,7 +816,7 @@ class TestLoadMeasurements(unittest.TestCase):
         # collision -- see _resolve_hardware's own KNOWN GAP comment) that
         # has nothing to do with campaign identity.
         path_a = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -853,7 +853,7 @@ class TestLoadMeasurements(unittest.TestCase):
         row["measured"] = 2
 
         path = make_jsonl_file(TUNING_HEADER, row)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             counts = inventory.load_measurements(
@@ -881,7 +881,7 @@ class TestLoadMeasurements(unittest.TestCase):
         path = make_jsonl_file(
             TUNING_HEADER, TUNING_RESULT_NATIVE, TUNING_RESULT_IMPROVED
         )
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             counts = inventory.load_measurements(
@@ -902,7 +902,7 @@ class TestLoadMeasurements(unittest.TestCase):
         manifest_path.unlink()
         manifest_path.write_text(json.dumps(MANIFEST), encoding="utf-8")
 
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             _counts = inventory.load_measurements(
@@ -925,7 +925,7 @@ class TestLoadMeasurements(unittest.TestCase):
     def test_b3_fields_stored(self):
         """B3 schema fields (gpu_mad_us, host_median_us) should be populated."""
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             inventory.load_measurements(
@@ -953,7 +953,7 @@ class TestLoadMeasurements(unittest.TestCase):
     def test_winner_reason_stored(self):
         """Winner.reason (B3) should be populated."""
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_IMPROVED)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             inventory.load_measurements(
@@ -971,7 +971,7 @@ class TestLoadMeasurements(unittest.TestCase):
     def test_rejected_candidates_recorded(self):
         """Rejected candidates (architecture, workspace) should be in measurement."""
         path = make_jsonl_file(TUNING_HEADER, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             inventory.load_measurements(
@@ -1002,7 +1002,7 @@ class TestLoadMeasurements(unittest.TestCase):
         bad_result["dispatch"] = "dead"  # too short
 
         path = make_jsonl_file(TUNING_HEADER, bad_result)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         with TempDB() as db:
             with self.assertRaisesRegex(RecordError, "invalid dispatch digest"):
@@ -1016,7 +1016,7 @@ class TestLoadMeasurements(unittest.TestCase):
         os.unlink(path)
 
     def test_malformed_json_and_unknown_record_kind_are_rejected(self):
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         for tail, message in (
             ("{", "malformed JSON"),
             (json.dumps({"kind": "future"}), "unknown record kind"),
@@ -1041,7 +1041,7 @@ class TestLoadMeasurements(unittest.TestCase):
         bad_result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
         bad_result["candidates"][0]["median_us"] = "fast"
         path = make_jsonl_file(TUNING_HEADER, bad_result)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "median_us.*numeric"):
@@ -1150,7 +1150,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
             self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
             self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
         )
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
@@ -1175,7 +1175,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
             self._result_with_signature(signature_hex=signature_hex, canonical=canonical_a),
             self._result_with_signature(signature_hex=signature_hex, canonical=canonical_b),
         )
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "different canonical content earlier in this same load"):
@@ -1196,7 +1196,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
         path_b = make_jsonl_file(
             TUNING_HEADER, self._result_with_signature(signature_hex=signature_hex, canonical=canonical_b),
         )
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(path_a, db.db_path, schema_path, manifest_path=None)
@@ -1216,7 +1216,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
         without_canonical = json.loads(json.dumps(TUNING_RESULT_NATIVE))
         without_canonical["signature"] = signature_hex
         path = make_jsonl_file(TUNING_HEADER, with_canonical, without_canonical)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
@@ -1231,7 +1231,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
             TUNING_HEADER,
             self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
         )
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         seen = []
         try:
             with TempDB() as db:
@@ -1251,7 +1251,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
             TUNING_HEADER,
             self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
         )
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "does not match.*verifier"):
@@ -1269,7 +1269,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
             TUNING_HEADER,
             self._result_with_signature(signature_hex=signature_hex, canonical=canonical),
         )
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(path, db.db_path, schema_path, manifest_path=None)
@@ -1293,7 +1293,7 @@ class TestSignatureCanonicalConsistency(unittest.TestCase):
         result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
         result["signature"] = signature_hex
         path = make_jsonl_file(TUNING_HEADER, result)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "no canonical content"):
@@ -1361,7 +1361,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
         manifest, header = self._manifest_and_header()
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1379,7 +1379,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
     def test_no_manifest_persists_no_capability_row(self):
         _, header = self._manifest_and_header()
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1397,7 +1397,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
         del header["producer_capabilities"]
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1416,7 +1416,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
         )
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "does not match"):
@@ -1438,7 +1438,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
         header["manifest_hash"] = manifest["manifest_hash"]  # header agrees with the tampered claim
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "recomputed manifest_hash"):
@@ -1470,7 +1470,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
         header["build_descriptor_hash"] = fabricated["descriptor_hash"]
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "embedded build_descriptor"):
@@ -1493,7 +1493,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
         header["source_revision"] = "c" * 40  # different root's revision
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "source_revision"):
@@ -1510,7 +1510,7 @@ class TestHipCapabilityPersistence(unittest.TestCase):
         manifest, header = self._manifest_and_header()
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1587,7 +1587,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1615,7 +1615,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         unaudited["dispatch"] = "d" * 32
         meas_path = make_jsonl_file(header, audited, unaudited)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
         def verifier(canonical):
             if canonical["op"] == "ADD":
@@ -1644,7 +1644,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         result = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
         meas_path = make_jsonl_file(header, result)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaises(RecordError):
@@ -1666,7 +1666,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         result = self._result(signature_hex=signature_hex, canonical={"op": "ADD", "flags": 0})
         meas_path = make_jsonl_file(header, result)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaises(RecordError):
@@ -1691,7 +1691,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         second["dispatch"] = "d" * 32
         meas_path = make_jsonl_file(header, first, second)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "different canonical content"):
@@ -1716,7 +1716,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         signature_hex = "8" * 32
         canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1732,7 +1732,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         manifest, header = self._manifest_and_header()
         meas_path = make_jsonl_file(header, TUNING_RESULT_NATIVE)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1760,7 +1760,7 @@ class TestWinnerVerificationAttestation(unittest.TestCase):
         canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         first_result = self._result(signature_hex=signature_hex, canonical=canonical)
         first_path = make_jsonl_file(header, first_result)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(
@@ -1829,7 +1829,7 @@ class TestRequireStrengthenedIngest(unittest.TestCase):
         signature_hex = "3" * 32
         canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         nonexistent_manifest_path = Path(tempfile.mktemp(suffix=".json"))
         try:
             with TempDB() as db:
@@ -1850,7 +1850,7 @@ class TestRequireStrengthenedIngest(unittest.TestCase):
         canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "require_strengthened_ingest"):
@@ -1869,7 +1869,7 @@ class TestRequireStrengthenedIngest(unittest.TestCase):
         signature_hex = "5" * 32
         canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "require_strengthened_ingest"):
@@ -1888,7 +1888,7 @@ class TestRequireStrengthenedIngest(unittest.TestCase):
         result = json.loads(json.dumps(TUNING_RESULT_NATIVE))
         meas_path = make_jsonl_file(header, result)
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 with self.assertRaisesRegex(RecordError, "no signature_id"):
@@ -1908,7 +1908,7 @@ class TestRequireStrengthenedIngest(unittest.TestCase):
         canonical = {"op": "MUL_MAT", "flags": 0, "ne0": [1, 2, 3, 4], "ned": [1, 2, 3, 4]}
         meas_path = make_jsonl_file(header, self._result(signature_hex=signature_hex, canonical=canonical))
         manifest_path = self._write_manifest(manifest)
-        schema_path = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+        schema_path = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
         try:
             with TempDB() as db:
                 inventory.load_measurements(

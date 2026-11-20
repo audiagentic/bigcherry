@@ -28,7 +28,7 @@ from bigcherry.transform_records import (
 )
 
 ROOT = Path(__file__).resolve().parents[3]
-SCHEMA = ROOT / "sql" / "dispatch-db.sql"
+SCHEMA = ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
 REVISION = "a" * 40
 MANIFEST = "b" * 64

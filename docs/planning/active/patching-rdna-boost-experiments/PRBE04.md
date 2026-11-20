@@ -20,7 +20,7 @@ priority: P1
 
 ## Proven blockers and evidence
 
-- b11552 `ggml/src/ggml-cuda/mmq.cu` dispatches `mul_mat_q_case<GGML_TYPE_Q6_K, GGML_PREC_Q8>(ctx, args, stream)`; 1267's marker expects the removed `<GGML_TYPE_Q6_K>(..., forced_J)` call. Its `mmq.cuh` `J_max` anchor also vanished. The current 0300 framework selects J **before** activation padding, so the old 1267 J-max knob must not be independently resurrected. `dispositions/1267_rd07_q6k_mmq_scale_fold.json` already records `known_broken`.
+- b11552 `ggml/src/ggml-cuda/mmq.cu` dispatches `mul_mat_q_case<GGML_TYPE_Q6_K, GGML_PREC_Q8>(ctx, args, stream)`; 1267's marker expects the removed `<GGML_TYPE_Q6_K>(..., forced_J)` call. Its `mmq.cuh` `J_max` anchor also vanished. The current 0300 framework selects J **before** activation padding, so the old 1267 J-max knob must not be independently resurrected. `engines/llamacpp/dispositions/1267_rd07_q6k_mmq_scale_fold.json` already records `known_broken`.
 - b11126 archived gfx1201 pp512 +2.4675%, CI95 [2.2776%, 2.6508%]; tg128 -0.0331%, CI95 [-0.0592%, -0.0071%]. Gfx1100/gfx1030 failed to establish benefit. The gfx1201 record's contract pass coexists with `validation_disposition=incomplete`, `eligible_for_validated_state=false` and failed performance/control check fields. This is **historical, pin-bound, not validated or production gain**.
 - The proposed folded F32 expression is not algebraically bit-identical in general. A 200,000-case host model yielded 38,735 differing F32 bit patterns; no GPU mismatch was reproduced. Current Flash-Next IQ4_XS/Q8_0 does not execute Q6_K MMQ, so first prove a relevant Q6_K model/lane and exposed >=3% E2E ceiling.
 
