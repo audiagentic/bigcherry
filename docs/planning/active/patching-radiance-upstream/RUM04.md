@@ -223,6 +223,8 @@ The isolated GPU retry passed native pool preparation and wrote the live engine 
 
 Exact b0c256877 ABI44 integrated Flash-Next v3 with three physical helpers passed fresh and named starts, then explicit stored replay after the authored YAML was removed and VRAM had recovered from shutdown. All three starts report the same manifest digest and measurement attempt. Immediate explicit replay refused live VRAM after stop as designed. The authored YAML reached the upstream parser and the recorded TP1 engine BDF and three disjoint helper roles were admitted. Finite KL and shipped configuration/install checks remain part of the integrated proof.
 
+59ab547ce ships the portable flashnext-4gpu.yaml and resolves it for verified installed v3 named start/serve without an explicit --native-config. The exact v2.2 engine sealed inspector accepted model/rank order, the libr4d/libr3moe/libref order, loopback 36080, 262144 context and 8 sessions. Build-tree explicit YAML and installed variants without a bundled YAML remain supported through the explicit flag. Remaining migration boundary: owner resolver and writer still mirror native placement, n-gram, cache dtype, speculation, RoPE/prefix, batch and checkpoint settings; RUM04 needs to derive required admission/receipt values from the typed upstream inspection and remove duplicate v3 defaults. Preserve v2 compatibility and replay proof, then run the installed named start on the verified release path.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -289,3 +291,4 @@ Exact b0c256877 ABI44 integrated Flash-Next v3 with three physical helpers passe
 - 2026-11-19T23:49:40.807569+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:59:22.141784+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:03:46.253523+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:22:59.663552+00:00 (updated-by): Updated: section:notes
