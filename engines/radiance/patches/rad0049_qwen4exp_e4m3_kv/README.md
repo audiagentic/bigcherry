@@ -24,3 +24,26 @@ A/B: VTP44 IDENTITY.md compares the stock and packed-layout-patched binaries on 
 Focused Radiance 2.2 attachment checks and historical behavior evidence. Integrated deployment KL and parity are tracked separately in RUM09.
 
 [Historical sources and port checks](../../../../docs/evidence/radiance-latest-bump/RETAINED-KV-G4.md)
+
+
+### RUM11: Qwen 27B TP3 page-16 E4M3 store
+
+A separate qk_norm_rope_gate_kv_store_h256_gqa6_page16_fp8 row selects
+only BF16-Q, H256, rank-local 6 Q heads / 1 KV head, rotary 64, page16
+and native fp8_e4m3. The existing page4 cQkNormRopeGateKvQ4Fp8
+constraint, both page4 attention paths, and the streamed row are unchanged.
+
+The resident fused kernel (r4d_qk_norm_rope_gate.hip) uses kvs.block_size
+in the block and offset computation, sizes each row as nkv * block_size *
+(2 * HD) bytes and clamps each value to the E4M3 finite range before
+packing. r4d_shape_qk_norm_rope_gate_kv_store derives its cache shape from
+the caller's block size; r4d_fuse_qk_norm_rope_gate_kv_store mirrors it
+to the reference kv_store. Neither mandates page4. The gfx1100 libr3
+rewrite rules do not replace the fused-store body or its E4M3 row.
+
+The dedicated case of qk_kv_fold_case uses H256, 6/1 local heads, rotary
+64 and page16. It compares Q, rotated K and every cache byte against
+qk_norm_rope_gate followed by kv_store_fp8, including negative and
+out-of-range slots, under both gfx1100 and gfx1201 selftest runners.
+This is a runnable test, not a claim of a GPU pass. RUM11's actual card
+selftest, TP3 cold start and KLD/top-1 gate remain for the release owner.
