@@ -48,10 +48,8 @@ Patches modify upstream Radiance source.
 | [rad0032_ts3_duplex](../../../../engines/radiance/patches/rad0032_ts3_duplex/SUMMARY.md) | Use both link directions in reductions | `validated` |
 | [rad0033_ts3_once](../../../../engines/radiance/patches/rad0033_ts3_once/SUMMARY.md) | Avoid duplicate reduction writes | `validated` |
 | [rad0036_prefill_governor](../../../../engines/radiance/patches/rad0036_prefill_governor/SUMMARY.md) | Unified prefill admission and ordering | `validated` |
-
 | [rad0037_bf16_fp8_kv](../../../../engines/radiance/patches/rad0037_bf16_fp8_kv/SUMMARY.md) | Keep BF16 keys; compress cache values to FP8 | `validated` |
 | [rad0038_bf16_i8_kv](../../../../engines/radiance/patches/rad0038_bf16_i8_kv/SUMMARY.md) | Keep BF16 keys; quantise cache values to scaled INT8 | `validated` |
-
 | [rad0040_kv_layout_table](../../../../engines/radiance/patches/rad0040_kv_layout_table/SUMMARY.md) | Keep packed KV-cache layout definitions in one table | `validated` |
 | [rad0041_kv_b16_flashnext](../../../../engines/radiance/patches/rad0041_kv_b16_flashnext/SUMMARY.md) | Add packed BF16-key KV-cache kernels for Flash-Next | `validated` |
 | [rad0042_kv_b16_selftest](../../../../engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md) | Add numeric selftests for Flash-Next packed KV caches | `diagnostic` |
