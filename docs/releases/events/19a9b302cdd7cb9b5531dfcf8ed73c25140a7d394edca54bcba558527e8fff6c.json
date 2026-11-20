@@ -1,0 +1,37 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_031907_consolidated-gated-hip-optimiz_6076",
+  "files": [
+    "docs/planning/active/tuning-hip-autotune/THA15.md",
+    "docs/planning/active/tuning-hip-autotune/THA16.md",
+    "docs/planning/completed/tuning-hip-autotune/THA09.md",
+    "docs/planning/completed/tuning-hip-autotune/THA14.md",
+    "docs/planning/completed/tuning-hip-autotune/THA19.md",
+    "docs/planning/completed/tuning-hip-autotune/THA20.md",
+    "docs/planning/completed/tuning-hip-autotune/THA21.md",
+    "docs/planning/completed/tuning-hip-autotune/THA22.md",
+    "docs/planning/completed/tuning-hip-autotune/THA23.md",
+    "docs/planning/completed/tuning-hip-autotune/THA24.md",
+    "docs/planning/completed/tuning-hip-autotune/THA25.md",
+    "docs/planning/completed/tuning-hip-autotune/reviews/THA16/RV4248.md",
+    "docs/planning/completed/tuning-hip-autotune/reviews/THA16/RV4249.md",
+    "docs/planning/completed/tuning-hip-autotune/reviews/THA15/RV4250.md"
+  ],
+  "plan-item-ids": [
+    "THA09",
+    "THA14",
+    "THA15",
+    "THA16",
+    "THA19",
+    "THA20",
+    "THA21",
+    "THA22",
+    "THA23",
+    "THA24",
+    "THA25"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reviewed consolidation of conditional HIP tuning candidates. THA09/14 moved to THA16 with full dispatch-optimization gates after trace attribution; THA19-23 moved into THA16 as unselected operator-family gates behind THA18 and exposed critical-path evidence; THA24/25 moved into THA15 with candidate provenance, correctness, resource and replay gates. THA05/07 remain active because THA15 does not cover their distinct orchestration/RCCL boundaries.",
+  "timestamp-utc": "2026-11-20T03:19:07.807826Z",
+  "user-summary-candidate": "Consolidated gated HIP optimization candidates under active THA15/THA16 while retaining separate THA05 orchestration and THA07 RCCL work."
+}

@@ -2,7 +2,7 @@
 id: THA09
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:49:14.603876+00:00'
 breadth: ''
 skill: advanced
@@ -61,13 +61,14 @@ Migration: capability-rebaseline-v3-2026-09
 
 Supersedes HI158. Preserve RV133: the original shadow counter was vacuous because the resolver guard made L1 unreachable for invalid native selection, and the dispatch entry point has a second guard. This successor owns only the follow-up experiment; do not reimplement the completed mechanism.
 
+Consolidation disposition (2026-11-20): superseded into active THA16 after review RV4248. The manifest’s THA15 target was not a scope match: THA15 owns promoted-winner provenance and counterfactual replay. THA16 now tracks this item’s full requirements as an unimplemented conditional candidate, gated on trace evidence that the mechanism lies on the exposed critical path. This is a plan ownership change only; no candidate implementation, hardware validation or promotion is claimed. Preserve this source record and its evidence.
+
 ## Change Log
 
 - 2026-09-09T10:49:14.603876+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:05:16.500617+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.867999+00:00 (updated-by): Updated: section:ledger-events
@@ -82,3 +83,5 @@ Supersedes HI158. Preserve RV133: the original shadow counter was vacuous becaus
 - 2026-09-10T04:01:50.125123+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_040226_fixed-the-four-remaining-seman_2499
 - 2026-09-10T04:02:26.584992+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T03:11:15.650841+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:11:22.412536+00:00 (state-transition): State: pending → superseded

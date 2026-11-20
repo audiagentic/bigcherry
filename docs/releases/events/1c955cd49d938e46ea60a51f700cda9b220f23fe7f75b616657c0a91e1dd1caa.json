@@ -1,0 +1,18 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_031302_moved-the-lazy-dispatch-and-gr_8385",
+  "files": [
+    "docs/planning/active/tuning-hip-autotune/THA16.md",
+    "docs/planning/completed/tuning-hip-autotune/THA09.md",
+    "docs/planning/completed/tuning-hip-autotune/THA14.md"
+  ],
+  "plan-item-ids": [
+    "THA09",
+    "THA14",
+    "THA16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "After review RV4248, moved THA09 and THA14\u2019s conditional dispatch-optimization candidates into active THA16, preserving all correctness, invalidation and sub-1% gates. Superseded the source trackers; no candidate implementation or promotion is claimed.",
+  "timestamp-utc": "2026-11-20T03:13:02.801679Z",
+  "user-summary-candidate": "Moved the lazy dispatch and graph-binding follow-ups under THA16\u2019s critical-path evidence gate; both remain conditional and unimplemented."
+}
