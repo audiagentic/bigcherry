@@ -280,6 +280,16 @@ record or lab input forces a fresh manifest. The lookup is distinct from
 the existing engine-memory plan cache. The old `--set layout.name=...` serving
 path remains on its original planner.
 
+Named starts require `BC_WORK_ROOT`. The full model fingerprint is reused
+across run directories and configs through
+`$BC_WORK_ROOT/cache/model-identities/<sha256-of-canonical-path>.json`.
+Each ordinary file is an atomically replaced strict version-1 JSON record:
+`model` (canonical path), `stamp` (device, inode, size, mtime_ns, ctime_ns
+as decimal strings) and `digest` (the unchanged chunked SHA-256).
+An unchanged stamp skips a full-file read; a changed stamp rehashes, while
+malformed files and symlinks refuse. Stored-manifest indices retain their
+model digest only as replay attestation, not a fingerprint lookup cache.
+
 `bc-serve start --manifest FILE --run-dir DIR --configs FILE|DIR` replays a
 previously recorded strict-v2 manifest **without writing or normalising it**.
 A writer-produced manifest carries a separate atomic `FILE.replay-index.json`

@@ -2869,8 +2869,11 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     static_inputs.helper_digest =
         resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
     const fs::path index = stored_index_path(run_dir, name);
+    const char* work_root = std::getenv("BC_WORK_ROOT");
+    if (!work_root || !*work_root)
+        throw PlanFailed("named model identity requires BC_WORK_ROOT");
     const ModelIdentity artifact =
-        cached_model_identity(values.at("engine").at("model").get<std::string>(), index, {}, verified_model);
+        cached_model_identity(values.at("engine").at("model").get<std::string>(), fs::path(work_root), {}, verified_model);
     static_inputs.model_digest = artifact.digest;
     static_inputs.power_profile = in.power_profile;
 
@@ -3335,7 +3338,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     throw PlanFailed("native v3 measured writer did not publish ordinary S8 replay evidence");
                 const StoredManifestIndex entry{
                     cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model.digest,
-                    current->model.stamp, complete_file_identity(s8_source),
+                    complete_file_identity(s8_source),
                     StoredManifestIndex::NativeMeasurement{attempt_id, owned.owner_sha256}};
                 write_stored_index(measured_manifest.string() + ".replay-index.json", entry);
                 write_stored_index(cache->index, entry);
@@ -3620,7 +3623,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                                 manifest.filename().string(),
                                                 final_snapshot.file_identity,
                                                 cache_selection->model.digest,
-                                                cache_selection->model.stamp,
                                                 complete_file_identity(s8_source)};
                 // Each manifest carries an adjacent immutable replay attestation;
                 // the per-config index may point to another manifest on the next
