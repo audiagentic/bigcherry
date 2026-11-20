@@ -11,17 +11,18 @@ priority: P1
 work: S
 ---
 
-# Current-build MTP depth and acceptance sweep on flashnext-4gpu
+# Current-build MTP depth 0–5 policy-ON sweep, excluding ENG08's depth-4 A/B
 
 ## Description
 
-Depth sweeps exist for the dual-XTX 27B (no speculation 51.9 tok/s, MTP3 114.3 tok/s at acceptance 0.74, MTP7 108.2 at 0.45; runs/qwen27b-spec-band, qwen27b-spec-depth) and for llama.cpp Flash-Next (MTP3 best, MTP3+ngram-mod slower; QFN01), but none on the current Radiance flashnext-4gpu engine with the policy on. Acceptance varies -20%..+24% per prompt with expert placement (runs/policy-accept), so the sweep must use several prompts and judge ms/step and tokens/step, not one prompt's tok/s.
+Qualify MTP depths on the current flashnext-4gpu Radiance build with live placement policy confirmed ON. The Nov 11 depth 0..5 result below was policy OFF and remains historical evidence only; it is not policy-ON acceptance and cannot be combined with ENG08's later policy-OFF depth-4 result as though they were one sweep. ENG08 owns the calibrated policy-ON depth-3 versus depth-4 production decision. ENG02 retains the distinct multi-depth policy-ON decision for 0,1,2,3 and 5; coordinate depth 3 baseline with ENG08 and do not duplicate depth-4 calibration/A-B.
 
 ## Steps
 
-1. Depths 0,1,2,3,4,5 (engine.num_speculative_tokens) on the production layout with the policy on and warmed; same prompt set (>=6 seeds one-stream, 3 six-stream), engine decode tok/s, ms/step, tokens/step, acceptance.
-2. Per-arm short lease windows; a fresh server per depth (a different depth is a different configuration and plan key).
-3. Record the winning depth per stream count and whether the default should move.
+1. Confirm current source/build/model/manifest and feature state. Record exact policy key and require live placement ON for every accepted arm; keep policy-OFF history separately labelled.
+2. Under a later exclusive GPU lease, test depths 0,1,2,3 and 5 across the established prompt set and one-/six-stream workloads. ENG08 alone owns the depth-3 vs depth-4 calibrated ABBA production decision; share its matching depth-3 reference rather than starting duplicate depth-4 arms.
+3. Use fresh launches per distinct depth, verify MTP replay for depths above 1 and record ms/step, target tokens/step, proposed/accepted distribution, throughput, prefill/TTFT, VRAM, heat and admission state.
+4. Report per-depth decision and whether depth 3 remains the supported default alongside ENG08's separate depth-4 decision. Do not change global defaults based on policy-OFF evidence.
 
 ## Detailed Solution & Technical Design
 
@@ -37,7 +38,27 @@ Depth sweeps exist for the dual-XTX 27B (no speculation 51.9 tok/s, MTP3 114.3 t
 
 ## Validation
 
-Per-depth tables over >=6 prompts with the policy state verified from each manifest; the MTP replay check (launcher) passes for every depth above 1.
+Tables for policy-ON depths 0,1,2,3,5 across the established prompts with source/build, manifest, feature state and plan key. ENG08 supplies the distinct depth-4 ABBA/calibration result. MTP replay passes for each depth above 1; accepted/proposed work and prefill/TTFT are recorded.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+A current policy-ON result supports the targeted depth choice across multiple prompts and one-/six-stream workloads, with MTP activation and acceptance distribution verified. Depth 4 is decided only through ENG08's separate calibrated A/B. Historical policy-OFF tables remain clearly labelled and cannot satisfy this item.
+
+## Notes
+
+Memory: MTP acceptance over several prompts. Source: gateway prior-work audit 2026-11-10.
+
+
+
+2026-11-20 reconciliation: the existing Nov 11 sweep was live policy OFF and remains historical. ENG08 owns the calibrated policy-ON depth-3 vs depth-4 A/B; this item retains its unique policy-ON multi-depth evaluation at 0,1,2,3,5. No OFF result is reclassified as ON.
 
 ## Result 2026-11-11 (flashnext-4gpu, live policy OFF for every arm, 6 one-stream and 3 six-stream seeds)
 
@@ -52,22 +73,11 @@ Per-depth tables over >=6 prompts with the policy state verified from each manif
 
 Depth 5 is clearly worse. Depth 4 is +5% over depth 3 on one stream and +1% on six streams (inside run-to-run noise at six streams). The depth is part of the plan and calibration key, so moving the default from 3 to 4 invalidates the calibrated live-placement policy and needs a fresh calibration; the gain does not pay for that. **Decision: keep the default at 3.** Re-measure depth 4 only together with the next recalibration. The same depth-4 arm on the patched kernel (7.0.13-gfxoff) gave 129/339 tok/s, so the kernel change does not move decode.
 
-## Effort & Risk
-
-
-
-## Standards
-
-
-
-## Acceptance Criteria
-
-The default depth is confirmed or changed on measured one-stream and six-stream decode over several prompts, with the evidence recorded here.
-
-## Notes
-
-Memory: MTP acceptance over several prompts. Source: gateway prior-work audit 2026-11-10.
-
 ## Change Log
 
 - 2026-11-10T13:11:37.675845+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4240
+- 2026-11-20T02:29:55.302868+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria, section:notes

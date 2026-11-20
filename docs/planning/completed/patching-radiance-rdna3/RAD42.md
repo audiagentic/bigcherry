@@ -2,7 +2,7 @@
 id: RAD42
 order: 0
 plan: patching-radiance-rdna3
-state: pending
+state: superseded
 created-at: '2026-11-01T11:26:21.039480+00:00'
 breadth: ''
 skill: advanced
@@ -11,22 +11,17 @@ work: M
 priority: P2
 ---
 
-# Overlap the engine's result transfer: chunked rows and the combine pushing into engine VRAM
+# Delivered chunked MoE result combine; BAR-push transferred to RAD51
 
 ## Description
 
-**MoE result-delivery owner, distinct from TP3 all-reduce.** Design A chunked combine is shipped (2026-11-01, +6.1% eight-session throughput) and its no-route-first-token deadlock was fixed (PR #520). Design B, CPU BAR/DMA-BUF output straight to engine VRAM, remains unimplemented. HL04 closed its flashnext-4gpu version because exposed CPU combine was only ~0.1–0.2 ms; new evidence must establish >=0.3 ms critical-path saving before reopening that path. HL02 owns shared contention/CPU-push measurements; RAD50 owns DMA-BUF mapping/live/fault proof; RAD51 is the separate optional MoE serving integration gate; VTP38 owns **TP3** host reduction. Historical design text follows.
-
-**History — original rationale:**
-
-Today the engine starts reading result rows only after every helper (or the combine) is done, then pulls ~10.5 MB over its x4 link (~1.6 ms a 2048-row layer with the combine). Two overlaps: (a) helpers and helper 0's combine publish per-chunk done words (e.g. every 256 tokens) and the engine's add kernel consumes chunks as they land; (b) the CPU combine writes its fp16 rows straight into a buffer in the engine's VRAM through the resizable BAR (posted writes, no read contention), shared to helper 0 by IPC, so the engine reads locally. Estimate on the current topology 1-4%; larger after the R9700 moves to an x8 slot.
+Historical delivery record. Design A, 256-row chunked CPU combine/consumption, shipped in PR #497 with a reported +6.1% eight-session result in its original cohort. The no-route-first-token poller deadlock was fixed in PR #520 with regression coverage. Design B, CPU BAR/DMA-BUF writes into engine VRAM, was not shipped and belongs only to RAD51, gated by HL02 contention and RAD50 safety plus a live critical-path case. The prior ~0.1–0.2 ms exposed combine remains a negative gate; do not claim the synthetic BAR result reverses it. RAD42 does not own TP3, RAD41 payload format, or HL03 activations.
 
 ## Steps
 
-1. Use the RAD40 harness to measure chunk overhead and BAR-push throughput under real concurrency first; stop if the modelled gain is under 1%.
-2. Protocol: per-chunk generation words for the combined plane (and per-helper planes), release/acquire ordering across CPU and GPU, chunk size from the harness.
-3. Engine allocates the combined plane in fine-grained VRAM and exports it; helper 0 maps it and the combine pool writes with non-temporal stores.
-4. 42K probe with TRACE: engine exposed wait and add time before/after; 8-session run.
+1. Preserve the PR #497 delivery, cohort-limited measurement and PR #520 regression evidence as history; do not reimplement the shipped chunk path.
+2. Transfer all unshipped CPU BAR-push serving acceptance to RAD51. HL02 owns shared-link measurements; RAD50 owns mapping/publication safety; VTP38 owns TP3.
+3. Verify no unique chunk-combine acceptance remains in current source/ABI or linked reviews. If a future regression is found, file a narrow new item with current evidence rather than reopening the completed design under this broad item.
 
 ## Detailed Solution & Technical Design
 
@@ -42,7 +37,7 @@ Today the engine starts reading result rows only after every helper (or the comb
 
 ## Validation
 
-Engine-side transfer time a prefill layer reduced by the modelled amount; 8-session throughput up; output bit-identical to the non-overlapped path (same rows, same order).
+Historical source/PR references and original run evidence remain linked. Confirm PR #520 regression tests exist in current tree and RAD51 explicitly owns remaining serving, safety, quality and critical-path acceptance. No GPU retest is required for this disposition.
 
 ## Effort & Risk
 
@@ -54,7 +49,7 @@ Engine-side transfer time a prefill layer reduced by the modelled amount; 8-sess
 
 ## Acceptance Criteria
 
-
+Chunk combine delivery and its no-route-first-token repair are preserved with their original evidence and limits. All unshipped BAR-push acceptance is explicitly owned by RAD51 and HL02/RAD50. No unique RAD42 work remains; state may be superseded, not completed as if BAR-push shipped.
 
 ## Notes
 
@@ -73,6 +68,10 @@ Hang fixed 2026-11-02 (PR #520). Cause: in a combined step, only a chunk's first
 
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE BAR/write path into RAD41, close duplicate" was NOT applied; this item stays open. Why: PR #497 implemented chunked combine, PR #520 fixed the chunk-poller hang, and moe_remote_shm.h:289-312 defines the 256-row generation scheme. RAD42.md:85-89 explicitly says design b, CPU BAR-push into engine VRAM, is not done and should be revisited after a link change; RAD41.md:14-31 does not include this write path or its publication/quality gate. Keep the still-unmeasured BAR-push design separately, while marking chunked design A delivered and its hang fixed.
+
+
+
+2026-11-20 disposition: PR #497 chunk-combine and PR #520 deadlock repair are delivered; preserve their cohort and protocol history above. Unshipped BAR-push work is transferred to RAD51, with HL02/RAD50 gates. No TP3, RAD41 payload or activation scope is transferred. Superseded only after review RV4239 closes.
 
 ## Change Log
 
@@ -109,3 +108,10 @@ Design b (pushing the combined plane into engine VRAM through the BAR) is not do
 - 2026-11-02T04:26:16.739750+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-02T04:46:35.372778+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:24:27.433273+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4239
+- 2026-11-20T02:28:17.055543+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-20T02:28:29.510342+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:28:59.399164+00:00 (state-transition): State: pending → superseded

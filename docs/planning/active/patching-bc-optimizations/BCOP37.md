@@ -11,19 +11,19 @@ priority: P1
 work: M
 ---
 
-# Qualify Strata Flash-Next on local AMD host
+# Qualify current Strata ROCm/RDNA3 Flash-Next execution against BigCherry before engine adoption
 
 ## Description
 
-Qualify the Strata execution architecture for Qwen Flash-Next on the local AMD machine (96 GiB aggregate VRAM, 96 GiB RAM), compare it with the current BigCherry/llama.cpp deployment, and preserve enough mechanism-level evidence to decide what BigCherry should adopt.
-
-This item is deliberately prescriptive. Agents MUST NOT spend time trying to make an unsuitable Strata source tree support HIP/Qwen/GGUF. First identify a runnable AMD implementation, prove its capabilities from source, then benchmark it. A failed prerequisite is a routing problem, not an invitation to create a new backend.
-
-BCOP37 is an evidence/disposition item. It does not own a new scheduler, expert router/cache, loader, HIP backend, MTP implementation, or benchmark framework.
+BCOP37 is an evidence and disposition campaign to determine whether a current, pinned AMD Strata implementation correctly executes Qwen3.8-Flash-Next on the two RX 7900 XTX cards and optionally the R9700, and which measured techniques merit a separate Radiance owner. It does not implement a Strata backend, scheduler, expert cache, quantizer, loader, or adapter; possible engine integration belongs to MEN29 only after correctness and capability are proven. Preserve the Oct 6 Maxritz/Strata-rocm@2ed00de findings: production UD-IQ4_XS produced garbage even with corrected tokenizer IDs; coherent Swift IQ2_XS was 20.8–22.4 decode tok/s versus matched llama.cpp 23–24, with incomparable prefill batch sizes. These results do not qualify a newer dual-XTX fork. External fork rates are hypotheses.
 
 ## Steps
 
-
+1. Refresh Niko1221/Strata, Maxritz/Strata-rocm and the RDNA3 fork from exact source revisions. Record licenses, symbols, build targets, tokenizer, pack support, two-XTX mode, mixed gfx1100/gfx1201 support and whether modes compose; do not infer fork features from upstream.
+2. Select immutable checkpoint and supported pack. Prove tokenizer IDs and tensor/quant semantics. Label comparisons MATCHED only when model semantics are equivalent; otherwise label UNMATCHED and prohibit speed ratios. Validate finite logits, coherent repeatable generation, cold/warm and multi-turn requests before timing.
+3. With a later GPU lease only, establish the dual-XTX baseline, speculation off first, then controlled MTP; report TTFT, cold/warm prefill and decode separately with sampling, accepted/proposed MTP, source/build/pack identity and repeated order-balanced runs.
+4. Test R9700 mixed-architecture feasibility only after correct dual-XTX execution and only if current source explicitly supports it. Compare the same pack/settings with XTX-only; unsupported is a valid outcome. Do not implement TP3 or remote expert-worker protocols.
+5. Attribute source-supported mechanisms separately and map exposed-time evidence to ENG01, RAD11, RAD30, RAD54, RHP04/RHP09 or conditional ENG09. Use MEN05 for sampled coding-agent quality and wall-time tradeoffs. Record a MEN29 GO/NO-GO. Preserve existing bundles and add evidence under distinct run IDs.
 
 ## Detailed Solution & Technical Design
 
@@ -39,7 +39,7 @@ BCOP37 is an evidence/disposition item. It does not own a new scheduler, expert 
 
 ## Validation
 
-
+Host-only capability review must cite exact source symbols, build flags, ABI, architecture targets, tokenizer and pack identity. Later hardware work requires the GPU lease and canonical run records; reject stub/CPU fallback, wrong tokenizer, nonfinite or incoherent output, unproven activation, incompatible pack semantics and unbalanced comparisons. No GPU work is part of this plan-consolidation change.
 
 ## Effort & Risk
 
@@ -51,15 +51,7 @@ BCOP37 is an evidence/disposition item. It does not own a new scheduler, expert 
 
 ## Acceptance Criteria
 
-BCOP37 completes when:
-
-- the AMD source lineage is identified and pinned without attempting an unauthorized port;
-- a real HIP GPU smoke test passes, or a precise current-source blocker is captured;
-- matched Strata/BigCherry evidence is produced where technically possible;
-- expert-cache, cold-expert, KV, speculation and topology mechanisms are characterized to the extent exposed by the runtime;
-- raw evidence is preserved;
-- each useful mechanism is assigned to an existing BigCherry owner;
-- no duplicate runtime subsystem was created.
+Record the current AMD lineage/revision, license, build/architecture/pack capability matrix. Produce at least one finite, coherent, repeatable Qwen Flash-Next HIP run with correct tokenizer, or a source-specific no-go. Test or explicitly source-disqualify two-XTX support; assess R9700 only if supported. Label each comparison MATCHED/UNMATCHED and report quality, MTP, TTFT, prefill and decode separately. Map mechanisms to existing owners with measured exposure; create no duplicate runtime subsystem. Record an evidence-backed MEN29 GO/NO-GO and retain all Oct 6 history.
 
 ## Notes
 
@@ -475,3 +467,8 @@ Reject/defer gains that disappear after matching quant, context, prompt caching,
 - 2026-10-05T23:23:55.742027+00:00 (updated-by): Updated: section:notes
 - 2026-10-05T23:52:18.406728+00:00 (updated-by): Updated: section:notes
 - 2026-10-06T07:30:33.305557+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4234
+- 2026-11-20T02:18:34.372538+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria

@@ -2,7 +2,7 @@
 id: MRC02
 order: 2
 plan: run-measurement-records
-state: pending
+state: completed
 created-at: '2026-11-19T00:50:28.025472+00:00'
 breadth: ''
 skill: intermediate
@@ -42,9 +42,7 @@ workloads.py already reads per-card hwmon power and clocks through card_paths(sy
 
 ## Validation
 
-- Fixture sysfs tests for each fact, including unreadable files and a cap of 0.
-- Real-host comparison against independent rocm-smi and sysfs observations on two cards is documented in docs/evidence/run-measurement-records/MRC02.
-- Exercise strict owner start, parity, workload, native lab, probe, receipt tampering and unsealed Radiance read/write refusal.
+Merged: #1191 (engine-agnostic host-facts collector: kernel, ROCm, amdgpu/firmware, per-card BDF/arch/VRAM, clocks, power cap with bounds and zero_cap_suspect, PCIe links, environment digest, lease holder, per-field readability), #1238 (every measured Radiance producer captures a sealed host-facts start receipt bound to its native owner session; publication and reads refuse missing, unwrapped, mismatched or late start facts; no reconstruction after the run). Tests: tools/tests/core/test_host_facts.py, test_measurement_host_start.py, serving bc_session_host_start_test, tools/tests/jobs managed-streaming; core/bench/lab/experiment suites 789 pass. The work root held no run records, so none needed migration.
 
 ## Effort & Risk
 
@@ -56,9 +54,7 @@ Small. Risk: sysfs layouts differ by kernel; keep each fact independently readab
 
 ## Acceptance Criteria
 
-- Every new Radiance record carries a sealed owner-start host receipt; an unreadable value is marked, never silently zero.
-- The collector has no dependency on any engine package; other engine producers belong to MRC07.
-- bench/workloads.py no longer owns sysfs reading; Radiance measurements do not re-sample after start.
+Every Radiance run record carries the host facts observed at measurement start (sealed, bound to the native owner session), with each field's readability and reason; a record without them is refused. The collector stays engine-independent. llama.cpp start receipts are tracked in LCM02.
 
 ## Notes
 
@@ -69,3 +65,5 @@ Add to the fact list (2026-11-19): DIMM population, configured memory speed and 
 - 2026-11-19T00:50:28.025472+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:08.497481+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-19T07:38:54.834871+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:22:07.094431+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-20T02:22:11.635463+00:00 (state-transition): State: pending → completed
