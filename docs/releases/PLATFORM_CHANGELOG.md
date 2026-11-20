@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.58.0...bc-platform-1.58.1) (2026-11-20)
+
+
+### Fixes
+
+* **hygiene:** accept GitHub noreply commit attribution trailers ([#1251](https://github.com/audiagentic/bigcherry/issues/1251)) ([1eb64df](https://github.com/audiagentic/bigcherry/commit/1eb64dffe606ec0b6a6c82f605f604f9d32242a1))
+
 ## [1.58.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.57.0...bc-platform-1.58.0) (2026-11-20)
 
 
