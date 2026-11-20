@@ -110,6 +110,8 @@ Live checkpoint 77fd71cf6 converged and passed health and default-name routing. 
 
 At producer checkpoint e36f584f0, the live run passed health and the prior required buffer-handle check. The first completion reached GPU execution, then gfx1201 reported an HSA queue exception at mailbox_seal_kernel. The owner received no HTTP reply and ended the session. Preserve the engine fault log and diagnose the mailbox pointers and queue ordering before another live attempt.
 
+Fail-closed diagnostic checkpoint d466f696a reproduced the first request on leased hardware without losing the error to a queue trap. Parent 1 had matching ticket/epoch/slot (1/1/0) but 139 published and 0 consumed. Host proof rejected it and returned HTTP 500 without emitting consumption ACKs. Investigate finish operation issue/replay and counter reduction before the next functional canary.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -136,3 +138,4 @@ At producer checkpoint e36f584f0, the live run passed health and the prior requi
 - 2026-11-20T00:23:43.215660+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:43:44.078640+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:55:22.935951+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T01:03:47.081769+00:00 (updated-by): Updated: section:notes
