@@ -54,7 +54,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- per-row signature_schema/schema_version columns regardless.
 -- schema_version '7' (HI121): adds build_capability and fixes
 -- winner_dispatch_idx/vk_winner_dispatch_idx being wrongly global-unique.
--- See sql/migrations/0007_producer_capabilities.sql.
+-- See tools/bigcherry/tuning/sql/migrations/0007_producer_capabilities.sql.
 -- schema_version '8' (HI121 close-out step 6, HI127): adds
 -- winner_verification, a per-WINNER (not per-signature, not per-build)
 -- attestation that this exact winner row was ingested through the HI125-
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- genuinely NEW winner_id, and winner_verification's ON DELETE CASCADE FK
 -- means the old attestation is destroyed along with the old row it
 -- attested, never left dangling against a replacement it never proved
--- anything about. See sql/migrations/0008_winner_verification.sql.
+-- anything about. See tools/bigcherry/tuning/sql/migrations/0008_winner_verification.sql.
 -- schema_version '9' (HTR01, adversarially designed with GPT, session
 -- ses_330ae3c055084f38, 2026-08-30): adds correctness_evidence_origin (why
 -- a given correctness_evidence row exists -- promotion_winner |
@@ -81,7 +81,7 @@ CREATE TABLE IF NOT EXISTS schema_meta (
 -- but which correctness_evidence.py's SeedEvidence previously discarded --
 -- enabling exact numerical-family clustering ("these candidates produce
 -- IDENTICAL bytes across seeds 1/2/3"), a strictly stronger signal than
--- matching NMSE alone. See sql/migrations/0009_correctness_evidence_
+-- matching NMSE alone. See tools/bigcherry/tuning/sql/migrations/0009_correctness_evidence_
 -- analytics.sql. Existing rows get NULL origin/output-digest values on
 -- migration -- NULL means historical/unavailable, never inferred.
 INSERT OR IGNORE INTO schema_meta(key, value) VALUES

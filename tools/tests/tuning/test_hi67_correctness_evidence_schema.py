@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-SCHEMA_SQL = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+SCHEMA_SQL = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
 
 def _seed_build_hardware_signature_candidates(conn: sqlite3.Connection) -> tuple[int, int, int, int, int]:

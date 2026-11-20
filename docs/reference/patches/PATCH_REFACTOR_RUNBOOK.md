@@ -153,6 +153,8 @@ PYTHONPATH=tools python -m bigcherry patch-disposition list
 PYTHONPATH=tools python -m bigcherry patch-disposition clear --patch-id <patch-id>
 ```
 
+Disposition JSON is engine-owned at `engines/llamacpp/dispositions/`; follow its `README.md` for stale-record review and evidence-preserving retirement. The CLI remains the only supported writer.
+
 The disposition is valid only for the recorded `(patch ID, target revision,
 implementation digest)` triple. A recipe-selected patch must still be clean;
 do not use a disposition to excuse a required production patch. Include the

@@ -21,7 +21,7 @@ from bigcherry.tuning import verification_state  # noqa: E402
 from bigcherry.source.audit import git_revision  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCHEMA_SQL = REPO_ROOT / "sql" / "dispatch-db.sql"
+SCHEMA_SQL = REPO_ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
 EPOCH = dispatch_abi.SIGNATURE_IDENTITY_EPOCH
 

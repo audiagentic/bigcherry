@@ -13,7 +13,7 @@ This module is data-model only: validation, canonical JSON, and digesting.
 No Vulkan patch, dispatch hook, or measurement writer exists yet -- nothing
 here is wired into a build (RE30 is pre-implementation past this
 scaffolding). It exists so the identity shape backing the new
-``vk_hardware``/``vk_signature``/... tables in sql/dispatch-db.sql is
+``vk_hardware``/``vk_signature``/... tables in tools/bigcherry/tuning/sql/dispatch-db.sql is
 settled and testable before any Vulkan record/tune/replay code is written
 against it.
 """
@@ -31,7 +31,7 @@ PERSON_VK_HARDWARE = b"llama-vk-hw"
 VK_SIGNATURE_SCHEMA_VERSION = 1
 VK_HARDWARE_SCHEMA_VERSION = 1
 
-# Mirrors vk_candidate.family's CHECK constraint in sql/dispatch-db.sql --
+# Mirrors vk_candidate.family's CHECK constraint in tools/bigcherry/tuning/sql/dispatch-db.sql --
 # grows in step with that CHECK as Vulkan families are added.
 VK_FAMILIES = ("mul_mat", "mul_mat_id")
 

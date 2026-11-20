@@ -8,7 +8,7 @@ import sqlite3
 import unittest
 from pathlib import Path
 
-MIGRATION = Path(__file__).resolve().parents[3] / "sql" / "migrations" / "0009_correctness_evidence_analytics.sql"
+MIGRATION = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "migrations" / "0009_correctness_evidence_analytics.sql"
 
 
 class Migration0009Tests(unittest.TestCase):

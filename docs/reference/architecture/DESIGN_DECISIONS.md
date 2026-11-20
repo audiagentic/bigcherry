@@ -53,7 +53,7 @@ type. A future geometry dimension then touches the header and two signatures, no
 `libsqlite3-dev` is absent on both machines and the build server has no passwordless
 sudo, so record mode writes **JSON Lines** from C++ and
 `python -m bigcherry.inventory` builds the SQLite database offline with the
-stdlib `sqlite3` module. `sql/dispatch-db.sql` remains the schema of record — only
+stdlib `sqlite3` module. `tools/bigcherry/tuning/sql/dispatch-db.sql` remains the schema of record — only
 *who* writes it moved. This buys: a killed tuning run keeps everything flushed;
 a truncated final line is recoverable by construction; and standards 9.1
 (production links no SQLite) is true because nothing links it, rather than because

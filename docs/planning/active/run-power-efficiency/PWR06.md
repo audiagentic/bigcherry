@@ -80,7 +80,7 @@ Owner-run (root). Evidence: $BC_WORK_ROOT/runs/r9700-idle/result.txt; GPT R9700 
 
 ## Update 2026-11-11 (GFXOFF fix measured; deep-idle / runtime-PM investigation)
 
-**Rebuild provenance (2026-11-18).** The preserved source patch, full edited amdgpu file, recovered config, rebuild commands and cross-Linux-release comparison are at `host/kernel/7.0.13-gfxoff/README.md` (plan BHK01). The original edit scripts are missing and exact module srcversion matching remains blocked on missing build tools. Protect the installed kernel/modules and recovery bundle; no kernel installation or boot change is part of this reconstruction.
+**Rebuild provenance (2026-11-18).** The preserved source patch, full edited amdgpu file, recovered config, rebuild commands and cross-Linux-release comparison are at `experiments/host-kernel-gfxoff-7.0.13/README.md` (plan BHK01). The original edit scripts are missing and exact module srcversion matching remains blocked on missing build tools. Protect the installed kernel/modules and recovery bundle; no kernel installation or boot change is part of this reconstruction.
 
 **GFXOFF kernel patch (7.0.13-gfxoff, MES firmware 0x81 unchanged), R9700, 3 reps x 60 s per phase, 1 Hz hwmon:** no process 15.0 W / 29 mV; HIP context resident idle 15.0 W, 0% busy, 29 mV (stock kernel: 20.6 W, 3%, 612 mV); after exit 15.0 W. Model loaded idle 15.1 W, after one request 15.0 W; the request decoded coherently at 95 tok/s with the spec head active. Kernel log clean. Kernel is a host prerequisite, not a manifest setting. Raw data: run folder r9700-gfxoff (gfxoff-7.0.13-mes81, baseline-7.0.13-mes81).
 

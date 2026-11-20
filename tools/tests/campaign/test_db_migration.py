@@ -21,7 +21,7 @@ class DatabaseMigrationTests(unittest.TestCase):
             CREATE TABLE replay_miss (miss_id INTEGER PRIMARY KEY);
             """
         )
-        migration = Path(__file__).resolve().parents[3] / "sql" / "migrations" / "0003_campaign_identity.sql"
+        migration = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "migrations" / "0003_campaign_identity.sql"
         connection.executescript(migration.read_text(encoding="utf-8"))
         self.assertEqual(
             connection.execute("SELECT value FROM schema_meta WHERE key='schema_version'").fetchone()[0],

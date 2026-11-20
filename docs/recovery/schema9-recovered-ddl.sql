@@ -1,6 +1,6 @@
 -- HISTORICAL RECOVERY SNAPSHOT ONLY.
 -- Retained as provenance for the recovery ledger; not used for bootstrap or migration.
--- Current schema source is sql/dispatch-db.sql; tested transitions are sql/migrations/*.sql.
+-- Current schema source is tools/bigcherry/tuning/sql/dispatch-db.sql; tested transitions are sql/migrations/*.sql.
 
 CREATE TABLE schema_meta (
     key   TEXT PRIMARY KEY,

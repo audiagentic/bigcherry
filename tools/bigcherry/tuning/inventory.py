@@ -8,7 +8,7 @@ produces the two things downstream needs.
     SQLite database ->  querying, and the tuner's measurement store
 
 `sqlite3` is in the Python standard library, so the database is built with no
-dependency on either machine. The schema is `sql/dispatch-db.sql` unchanged --
+dependency on either machine. The schema is `tools/bigcherry/tuning/sql/dispatch-db.sql` unchanged --
 moving the writer offline did not change what is stored, only who stores it.
 """
 
@@ -51,20 +51,20 @@ CURRENT_DB_SCHEMA_VERSION = "9"
 #: hardware/signature/candidate/observation/measurement/winner), purely
 #: additive -- zero changes to any schema-4 table/column/index. Real
 #: existing schema-4 databases migrate to 5 in place via the unconditional
-#: UPDATE at the end of sql/dispatch-db.sql; no data is lost or reshaped.
+#: UPDATE at the end of tools/bigcherry/tuning/sql/dispatch-db.sql; no data is lost or reshaped.
 #: See that file's schema_meta comment for why this differs from the
 #: "guess at an unlisted intermediate shape" case readers must still reject.
 #: Schema 6 (HI67 slices 2/3, RV49/RV77, 2026-08-21): added correctness_
 #: evidence and correctness_evidence_seed, purely additive -- zero changes
 #: to any schema-5 table/column/index (HIP or vk_*). Real existing schema-5
 #: databases migrate to 6 in place via the unconditional UPDATE at the end
-#: of sql/dispatch-db.sql; no data is lost or reshaped.
+#: of tools/bigcherry/tuning/sql/dispatch-db.sql; no data is lost or reshaped.
 #: Schema 7 (HI121, 2026-08-26): added build_capability (backend-scoped
 #: producer semantic-knowledge attestation) and fixed winner_dispatch_idx/
 #: vk_winner_dispatch_idx being wrongly global-unique instead of build-
 #: scoped. UNLIKE schema 5/6, an existing schema-6 database is NOT migrated
 #: by an unconditional UPDATE in dispatch-db.sql -- the index fix requires
-#: DROP/CREATE INDEX, which sql/migrations/0007_producer_capabilities.sql
+#: DROP/CREATE INDEX, which tools/bigcherry/tuning/sql/migrations/0007_producer_capabilities.sql
 #: must be run explicitly to apply (see that file's own docstring for why).
 
 

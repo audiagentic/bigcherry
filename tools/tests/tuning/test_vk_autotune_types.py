@@ -1,7 +1,7 @@
 """RE30 phase 2: Vulkan autotune identity-type tests.
 
 Covers vk_autotune_types.py's validators/canonical-JSON/digest functions and
-the new vk_* tables in sql/dispatch-db.sql. Real SQLite throughout (no
+the new vk_* tables in tools/bigcherry/tuning/sql/dispatch-db.sql. Real SQLite throughout (no
 mocking), same convention as test_re09_schema_v4.py.
 """
 
@@ -17,7 +17,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry import vk_autotune_types as vk  # noqa: E402
 
 REPO_ROOT = Path(__file__).resolve().parents[3]
-SCHEMA_SQL = REPO_ROOT / "sql" / "dispatch-db.sql"
+SCHEMA_SQL = REPO_ROOT / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
 
 def _hex_digest(byte: int = 0xAB) -> str:

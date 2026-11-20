@@ -8,11 +8,11 @@ outside the production package until it has an explicit disposition.
 
 ## Root-level source versus generated output
 
-The repository root contains a few intentional, versioned source contracts:
+Root source follows its maintained owner:
 
-- `dispositions/` is the authoritative patch-disposition store (`bigcherry.core.paths.DISPOSITIONS`), read by patch validation and CI. It must stay tracked.
-- `sql/` contains the canonical dispatch database bootstrap schema and migration history (`bigcherry.core.paths.SQL`), used by tuning/inventory. It is not a directory for runtime databases.
-- `host/kernel/` preserves protected host-kernel reconstruction sources and patches. Generated module builds and installed kernel files belong outside the source checkout and must not be removed as disposable output.
+- `engines/llamacpp/dispositions/` holds narrow revision-and-digest-bound known-broken patch records. It is tracked and reviewed with the llama.cpp engine, not stored under ignored artifacts.
+- `tools/bigcherry/tuning/sql/` holds the cross-engine (HIP and Vulkan) tuning database schema and migrations, owned by the tuning platform.
+- `experiments/host-kernel-gfxoff-7.0.13/` catalogs a reproducible host-kernel reconstruction and its evidence; it is neither an installed module nor production engine code. Generated modules and installed kernel files must not be removed as scratch.
 
 The root `out/` directory is ignored scratch, never a durable evidence store; promote retained reports to `docs/evidence/`. Synthetic C++ test models belong in isolated, automatically cleaned build scratch, not a tracked root-level fixture directory.
 

@@ -23,7 +23,7 @@ from bigcherry import hi80_generate_correctness_evidence as cli  # noqa: E402
 from bigcherry.tuning import promotion_gate as gate # noqa: E402
 from bigcherry.tuning import signature_mapping as scm # noqa: E402
 
-SCHEMA_SQL = Path(__file__).resolve().parents[3] / "sql" / "dispatch-db.sql"
+SCHEMA_SQL = Path(__file__).resolve().parents[3] / "tools" / "bigcherry" / "tuning" / "sql" / "dispatch-db.sql"
 
 DISPATCH_HEX = "11" * 16
 SIGNATURE_HEX = "22" * 16
