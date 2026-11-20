@@ -1,0 +1,17 @@
+[
+  {
+    "branch": "docs/radiance-maint-20261119",
+    "original": "docs/reference/engines/radiance/README.md",
+    "archive": "docs/evidence/2026-11-20-branch-retirement/worktree-snapshots/docs-radiance-maint-20261119.README.patch.gz",
+    "sha256": "11e5f32d9398700ce1efbbabb2c36cf5a298f2d4af633d7652af7903560b48c7",
+    "original_sha256": "1b200dfdf94f6df784d753d120ffe6872b9d8406ca21cc788b9a07c93f2c1f62"
+  },
+  {
+    "branch": "agent/legacy-followups",
+    "original": "tools/lab/radiance/fp-ab.sh",
+    "archive": "docs/evidence/2026-11-20-branch-retirement/worktree-snapshots/agent-legacy-followups.fp-ab.sh.txt",
+    "sha256": "0bf74aac64ba3f9501d843b8cfabdd7feeea11c7ef9241db9de75d5787f16d04",
+    "original_sha256": "8abb3bd990649a79c5eddbf0c936843457ad5bf31fc62c91bca9ce024a5f1c74",
+    "redactions": "two fixed host-local calibration file paths normalized to BC_WORK_ROOT"
+  }
+]
