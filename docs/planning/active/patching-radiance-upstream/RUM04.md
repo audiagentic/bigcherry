@@ -219,6 +219,8 @@ Checkpoint 4a03a8172 reuses the full model digest within one cold measurement wh
 
 The first live RUM09 attempt reached measurement and refused a missing YAML host-pool value because it differed from the admitted per-rank pool. Checkpoint 1d1ce5be7 uses the admitted pool when the YAML omits it and rejects an explicitly conflicting pool. Exact 2.2 ABI44 fixture passed measuring, serving and offline preparation. A separate incremental runtime is retrying the original YAML under the GPU lease.
 
+The isolated GPU retry passed native pool preparation and wrote the live engine plan and rank receipt. The final measured writer returned exit 11 because the 9216 MiB trial pool differed from its 2247 MiB derived requirement. No serving or replay occurred. Add bounded native remeasurement for omitted YAML pools with a distinct effective input key per attempt and expose explicit pool conflicts; preserve helper rollback and exact receipts.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -283,3 +285,4 @@ The first live RUM09 attempt reached measurement and refused a missing YAML host
 - 2026-11-19T22:58:09.531280+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:20:19.446517+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:49:40.807569+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T23:59:22.141784+00:00 (updated-by): Updated: section:notes
