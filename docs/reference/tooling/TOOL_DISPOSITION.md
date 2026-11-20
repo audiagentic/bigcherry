@@ -600,6 +600,12 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_protocol.h` | **TRANSITIONAL** | LTX-2.5 TP3 card-free schedule, leader and stale-conditioning mock; see docs/design/ltx25-iq8r-tp3.md. |
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_protocol_test.cpp` | **TRANSITIONAL** | LTX-2.5 TP3 card-free schedule, leader and stale-conditioning mock; see docs/design/ltx25-iq8r-tp3.md. |
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_numerical_test.cpp` | **TRANSITIONAL** | Card-free LTX self/cross-attention dense-vs-TP3 numerical test; see docs/design/ltx25-iq8r-tp3.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_linear_test.cpp` | **TRANSITIONAL** | Card-free LTX fused QKV/KV, gate and FFN/out shard arithmetic, with IQ8R K-boundary refusals; see docs/design/ltx25-tp3-component-test-ladder.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_rms_test.cpp` | **TRANSITIONAL** | Card-free multirow all-head Q/K RMS and input-validation reference; see docs/design/ltx25-tp3-component-test-ladder.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_handoff_test.cpp` | **TRANSITIONAL** | Card-free optional gfx1030 text/connector ownership, sizing and replay-safe mailbox reference; see docs/design/ltx25-tp3-component-test-ladder.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_guidance_test.cpp` | **TRANSITIONAL** | Card-free guided-pass/stage-28 rank order, pass epoch/branch mismatch and negative control; see docs/design/ltx25-tp3-component-test-ladder.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_output_test.cpp` | **TRANSITIONAL** | Card-free decoder/first-frame/upscale leader-only and cancellation ownership reference; see docs/design/ltx25-tp3-component-test-ladder.md. |
+| `tools/lab/radiance/ltx-tp3/ltx_tp3_micro_pipeline_test.cpp` | **TRANSITIONAL** | Card-free synthetic LT3 component-chain contract, not engine E2E; see docs/design/ltx25-tp3-component-test-ladder.md. |
 | `tools/lab/radiance/hostread-idle-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: does a kernel reading host-mapped memory slow down when the host CPU is idle versus busy-looping. |
 | `tools/lab/radiance/idle-gap-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: VRAM-streaming kernel with an idle gap, host waiting by event polling vs blocking-sync event. |
 | `tools/lab/radiance/ipc-signal-bench.cpp` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 experiment B: can a helper process sleep in the driver (blocked HSA signal wait) until another process's GPU work completes. |

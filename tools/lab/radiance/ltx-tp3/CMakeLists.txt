@@ -3,7 +3,7 @@ project(bc_ltx_tp3_reference LANGUAGES CXX)
 include(CTest)
 
 if(BUILD_TESTING)
-  foreach(name IN ITEMS ltx_tp3_reference_test ltx_tp3_protocol_test ltx_tp3_numerical_test)
+  foreach(name IN ITEMS ltx_tp3_reference_test ltx_tp3_protocol_test ltx_tp3_numerical_test ltx_tp3_linear_test ltx_tp3_rms_test ltx_tp3_handoff_test ltx_tp3_guidance_test ltx_tp3_output_test ltx_tp3_micro_pipeline_test)
     add_executable(${name} ${name}.cpp)
     target_compile_features(${name} PRIVATE cxx_std_20)
     target_compile_options(${name} PRIVATE -Wall -Wextra -Werror -pedantic -UNDEBUG)

@@ -239,6 +239,90 @@ def audit_all_dit_projections(image: SelectedImageRows) -> dict[str, object]:
     }
 
 
+
+def audit_connector_and_cross_modal(image: SelectedImageRows) -> dict[str, object]:
+    """Model-backed, bounded CPU seam for connector and DiT cross-modal tensors.
+
+    Current LTX ownership keeps connectors on the leader; the hypothetical
+    per-rank IQ8R K cuts below are informative, not a connector TP3 request.
+    """
+    connectors = 0
+    selected_rows = 0
+    bad_candidate_cuts = {}
+    for name, width in (("video", 4096), ("audio", 2048)):
+        expected = {
+            "qkv.weight": (3 * width, width),
+            "out.weight": (width, width),
+            "ff_up.weight": (4 * width, width),
+            "ff_down.weight": (width, 4 * width),
+        }
+        for block in range(8):
+            prefix = "conn." + name + ".blk." + str(block) + "."
+            for suffix, shape in expected.items():
+                entry = image.entries[prefix + suffix]
+                if (entry[3], entry[4], entry[14], entry[5:7]) != (1, 2, 3, shape):
+                    raise AssertionError("connector IQ8R projection mismatch: " + prefix + suffix)
+                connectors += 1
+            for suffix, shape in (
+                ("q_norm.weight", (width,)),
+                ("k_norm.weight", (width,)),
+                ("gate.weight", (HEADS, width)),
+            ):
+                e = image.entries[prefix + suffix]
+                if e[3] != 0 or e[5:5 + e[4]] != shape:
+                    raise AssertionError("connector BF16 norm/gate mismatch: " + prefix + suffix)
+            if block in (0, 7):
+                for suffix in ("qkv.weight", "out.weight", "ff_down.weight"):
+                    e = image.entries[prefix + suffix]
+                    rows, k = e[5:7]
+                    x = activation(k)
+                    hx = fwht_blocks(x)
+                    for row in (0, rows - 1):
+                        compare_row(image.iq8r_row(prefix + suffix, row), x, hx)
+                        selected_rows += 1
+            if name == "audio":
+                try:
+                    shard_columns(width // HEADS, (10, 10, 12))
+                except ValueError:
+                    bad_candidate_cuts["audio_connector_out"] = (
+                        bad_candidate_cuts.get("audio_connector_out", 0) + 1)
+
+    cross_types = (
+        "attn2.q.weight", "attn2.kv.weight",
+        "audio_attn2.q.weight", "audio_attn2.kv.weight",
+        "a2v.q.weight", "a2v.kv.weight", "v2a.q.weight", "v2a.kv.weight",
+        "ff_down.weight", "audio_ff_down.weight",
+    )
+    cross_entries = 0
+    for block in (0, 27, 28, 47):
+        for suffix in cross_types:
+            name = "dit.blk." + str(block) + "." + suffix
+            e = image.entries[name]
+            if e[3] != 1 or e[4] != 2 or e[14] != 3:
+                raise AssertionError("cross-modal IQ8R projection absent: " + name)
+            rows, k = e[5:7]
+            if k % GROUP:
+                raise AssertionError("nonrepresentable IQ8R K")
+            x, hx = activation(k), None
+            hx = fwht_blocks(x)
+            for row in (0, rows - 1):
+                compare_row(image.iq8r_row(name, row), x, hx)
+                selected_rows += 1
+            cross_entries += 1
+    assert connectors == 64
+    assert cross_entries == 40
+    assert selected_rows == 24 + 80 == 104
+    assert bad_candidate_cuts == {"audio_connector_out": 8}
+    return {
+        "connector_layers_per_modality": 8,
+        "connector_iq8r_entries": connectors,
+        "cross_modal_sampled_projection_entries": cross_entries,
+        "real_rows_checked": selected_rows,
+        "hypothetical_audio_connector_k_cut_rejections": 8,
+        "connector_owner": "leader_only",
+    }
+
+
 def run_real_model(path: Path) -> dict[str, object]:
     inspected = inspect_iq8r_planes(path)
     image = SelectedImageRows(path)
@@ -299,7 +383,8 @@ def run_real_model(path: Path) -> dict[str, object]:
         assert verified["video"]["refused_k_splits"] == []
         assert verified["audio"]["refused_k_splits"] == ["10/10/12"]
         return {"iq8r_entries_structurally_valid": inspected["count"], "results": verified,
-                "dit_inventory": audit_all_dit_projections(image)}
+                "dit_inventory": audit_all_dit_projections(image),
+                "connector_cross_modal": audit_connector_and_cross_modal(image)}
     finally:
         image.close()
 
@@ -332,6 +417,8 @@ def test_actual_ltx_iq8r_numeric_when_supplied() -> None:
     assert result["iq8r_entries_structurally_valid"] > 1000
     assert result["dit_inventory"]["iq8r_projection_entries"] == 960
     assert result["dit_inventory"]["rejected_10_10_12_total"] == 192
+    assert result["connector_cross_modal"]["connector_iq8r_entries"] == 64
+    assert result["connector_cross_modal"]["real_rows_checked"] == 104
 
 
 if __name__ == "__main__":
