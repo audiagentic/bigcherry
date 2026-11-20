@@ -230,6 +230,13 @@ void feature_state_start_status_and_warning() {
     c.behaviour["spec"]["handoff"]["transport"] = {{"shm", ""}};
     const pid_t owner = c.owner();
     c.wait_state({"running"});
+    const Json host_start = Json::parse(text(c.run / "host-facts.start.v1.json"));
+    assert(host_start.at("schema_version") == 1);
+    assert(host_start.at("capture_phase") == "owner_start");
+    assert(host_start.at("captured_at").is_string());
+    assert(host_start.at("facts").at("kernel_release").at("readable").is_boolean());
+    assert(host_start.at("facts").at("mem_available_kib").at("readable").is_boolean());
+    assert(host_start.at("facts").at("cards").is_object());
     const auto reply = ss::control(c.run, "status", 2s);
     assert(reply && reply->at("state") == "running");
     const Json features = reply->at("feature_states");
@@ -238,6 +245,8 @@ void feature_state_start_status_and_warning() {
     assert(features.at(0).at("feature_id") == "live_policy");
     assert(features.at(0).at("state") == "inactive");
     assert(features.at(0).at("reason_code") == "calibration_key_absent");
+    assert(reply->at("calibration_record").at("status") == "none");
+    assert(reply->at("calibration_record").at("reason_code") == "calibration_key_absent");
     assert(features.at(0).at("reason_detail").get<std::string>().find("orphaned key") != std::string::npos);
     assert(text(c.run / "owner.log").find("WARNING production feature live_policy inactive") != std::string::npos);
     assert(text(c.run / "owner.log").find("calibration_key_absent") != std::string::npos);
@@ -245,6 +254,22 @@ void feature_state_start_status_and_warning() {
     assert(stopped && stopped->value("ok", false));
     assert(exit_code(owner) == 0);
     assert(c.record().at("feature_states") == features);
+
+    // Strict production admission refuses an inactive required feature before
+    // fork/exec, while retaining the diagnostic snapshot in status.
+    Case strict_case("feature-state-strict");
+    strict_case.capture_owner_log = true;
+    strict_case.helpers = 1;
+    strict_case.session.publish_feature_states = true;
+    strict_case.session.strict_production_features = true;
+    strict_case.behaviour = c.behaviour;
+    strict_case.behaviour["spec"]["processes"]["engine"]["server"]["port"] = strict_case.port;
+    const pid_t strict_owner = strict_case.owner();
+    assert(exit_code(strict_owner) != 0);
+    const auto failed = strict_case.record();
+    assert(failed.at("state") == "failed" && failed.at("processes").empty());
+    assert(failed.at("feature_states").is_array());
+    assert(text(strict_case.run / "owner.log").find("strict production feature refusal") != std::string::npos);
 }
 
 void feature_state_invalid_manifest_prevents_child() {
@@ -1367,6 +1392,12 @@ int test_main(int argc, char** argv) {
     g_root = fs::current_path() / "bc-session-fixture";
     fs::remove_all(g_root);
     fs::create_directories(g_root);
+    if (argc == 2 && std::string(argv[1]) == "--host-start-only") {
+        // Focused CPU-only MRC02 owner receipt regression (no hardware lease).
+        feature_state_start_status_and_warning();
+        std::cout << "PASS: native owner host-facts start receipt before child\n";
+        return 0;
+    }
     injected_owner_plan_exception();
     real_session_power_returned_errors();
     manifest_writer_before_durable_admission();

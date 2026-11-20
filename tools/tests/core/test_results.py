@@ -7,7 +7,7 @@ from copy import deepcopy
 
 import pytest
 from bigcherry.cli.main import main
-from bigcherry.core import results, run_records
+from bigcherry.core import host_facts, results, run_records
 
 
 def make_record(store, number, *, session="ab-1", decode=40, prefill=1000, ttft=30,
@@ -48,11 +48,14 @@ def make_record(store, number, *, session="ab-1", decode=40, prefill=1000, ttft=
                 {"role": "policy", "blob": blob(policy.encode())},
             ],
         },
-        "host_facts": {
-            "kernel": {"value": kernel, "readable": True},
-            "gpus": [{"bdf": {"value": "0000:01:00.0", "readable": True},
-                      "power": {"cap_uw": {"value": 230000000, "readable": True}}}],
-        },
+        "host_facts": host_facts.snapshot_at_start(
+            {"kernel_release": {"value": kernel, "readable": True},
+             "cards": {"0000:01:00.0": {
+                 "bdf": {"value": "0000:01:00.0", "readable": True},
+                 "power": {"cap_uw": {"value": 230000000, "readable": True}}
+             }}},
+            captured_at=stamp or f"2026-11-{number + 1:02d}T10:00:00Z",
+        ),
         "feature_states": [{
             "engine": "dummy", "feature_id": "live_policy",
             "state": policy, "reason_code": "enabled" if policy == "active" else "disabled",
@@ -66,19 +69,15 @@ def cohort(store, start=1, values=(40, 44), **kw):
     return [make_record(store, start + i, decode=value, **kw) for i, value in enumerate(values)]
 
 
-def test_direction_is_explicit_and_existing_v1_records_remain_readable(tmp_path):
+def test_a_record_without_metric_specs_is_refused(tmp_path):
     store = run_records.RunRecordStore(tmp_path)
     row = make_record(store, 1)
     assert store.get_record(row["sha256"]) == row["record"]
-    legacy = deepcopy(row["record"])
-    del legacy["metric_specs"]
-    del legacy["session_id"]
-    store.put_record(legacy)  # existing MRC01 records remain valid
-    with pytest.raises(results.ResultsError, match="direction|metric_specs"):
-        results.make_baseline(store, [
-            {"sha256": store.put_record(legacy), "record": legacy},
-            make_record(store, 2),
-        ], "not-a-baseline")
+    bare = deepcopy(row["record"])
+    del bare["metric_specs"]
+    del bare["session_id"]
+    with pytest.raises(run_records.RecordError, match="metric_specs"):
+        store.put_record(bare)
 
 
 def test_single_launch_or_same_run_id_is_refused(tmp_path):

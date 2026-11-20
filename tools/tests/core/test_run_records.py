@@ -6,7 +6,7 @@ import hashlib
 import json
 
 import pytest
-from bigcherry.core import retention, run_records
+from bigcherry.core import host_facts, retention, run_records
 
 
 def fixture_record(
@@ -40,6 +40,11 @@ def fixture_record(
             "prefill": {"tokens_per_second": 1000.0},
             "ttft": {"milliseconds": 28.3},
         },
+        "metric_specs": {
+            "decode": {"tokens_per_second": {"direction": "higher", "gated": True}},
+            "prefill": {"tokens_per_second": {"direction": "higher", "gated": True}},
+            "ttft": {"milliseconds": {"direction": "lower", "gated": True}},
+        },
         "provenance": {
             "effective_config": config,
             "argv": argv,
@@ -49,7 +54,10 @@ def fixture_record(
                 {"role": "heat", "blob": heat, "path_hint": "/deleted/run/heat"}
             ],
         },
-        "host_facts": {},
+        "host_facts": host_facts.snapshot_at_start(
+            {"kernel_release": {"value": "fixture", "readable": True}},
+            captured_at=stamp,
+        ),
         "feature_states": [],
     }
 
@@ -137,6 +145,7 @@ def test_query_engine_layout_workload_metric_and_time(tmp_path):
     )
     b["run_id"] = "run-002"
     b["metrics"]["decode"] = {}
+    b["metric_specs"]["decode"] = {}
     store.put_record(b)
     assert len(store.query()) == 2
     assert len(store.query(engine="engine-a", layout="layout-x", workload="short")) == 1

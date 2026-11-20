@@ -15,6 +15,18 @@ namespace fs = std::filesystem;
 namespace sv = bc::serving;
 using Json = nlohmann::json;
 
+// The declared narrow scope every ingested record is stored under; a variant changes one declared field.
+static const Json kScope = {{"policy_key_version", 2}, {"model", "test-model"},
+                            {"layout", "flashnext-4gpu"}, {"objective", "balanced"},
+                            {"power_profile", "stock"}, {"engine_cards", Json::array()},
+                            {"helper_cards", Json::array()}, {"histogram_period_s", 1},
+                            {"helper_runtime", Json::object()}, {"remote_service", Json::object()}};
+static Json scope_named(const std::string& model) { Json s = kScope; s["model"] = model; return s; }
+static sv::LivePolicyProvenance provenance(const Json& scope) {
+    return sv::LivePolicyProvenance{scope, std::string(64, '1'), std::string(64, '2'),
+                                    "revision-test", "run-abc", std::string(64, '3')};
+}
+
 static void log_line(const fs::path& path, const Json& row) {
     std::ofstream out(path);
     assert(out);
@@ -23,7 +35,7 @@ static void log_line(const fs::path& path, const Json& row) {
 static bool refused(const fs::path& log, const fs::path& cache,
                     const std::string& key, const std::string& layout,
                     const std::string& objective, const std::string& target) {
-    try { sv::ingest_live_policy_record(log, cache, key, layout, objective, target); }
+    try { sv::ingest_live_policy_record(log, cache, key, layout, objective, target, provenance(kScope)); }
     catch (const std::runtime_error&) { return true; }
     return false;
 }
@@ -31,7 +43,7 @@ int main() {
     const fs::path dir = fs::temp_directory_path() / ("bc-rhp16-ingest-" + std::to_string(::getpid()));
     fs::create_directories(dir);
     const fs::path log = dir / "worker.log", cache = dir / "calibration.toml";
-    const std::string key(64, 'a'), store_key(64, 'd');
+    const std::string key(64, 'a'), store_key = sv::policy_calibration_key(kScope);
     // The exact policy-live-9 golden inputs: run them through the serializer,
     // reader and original derivation, not a second implementation.
     Json m = {
@@ -60,22 +72,17 @@ int main() {
     log_line(log, row);
     // The helper sees the typed v1 key, while production derives from the
     // RSC03 plan-store key. Ingestion maps only after source validation.
-    sv::ingest_live_policy_record(log, cache, key, "flashnext-4gpu", "balanced", store_key);
+    sv::ingest_live_policy_record(log, cache, key, "flashnext-4gpu", "balanced", store_key, provenance(kScope));
     const auto rec = sv::read_live_policy_record(cache, store_key);
     assert(!sv::read_live_policy_record(cache, key));
     assert(rec && sv::live_policy_record_complete(*rec));
-    assert(!rec->calibration_inputs);  // old hash-only evidence remains readable but unqualified
+    assert(rec->calibration_inputs && *rec->calibration_inputs == kScope);
     // Production records bind their scope and preserve measured-plan/build provenance.
-    const Json scope = {{"policy_key_version", 2}, {"model", "test-model"},
-                        {"layout", "flashnext-4gpu"}, {"objective", "balanced"},
-                        {"power_profile", "stock"}, {"engine_cards", Json::array()},
-                        {"helper_cards", Json::array()}, {"histogram_period_s", 1},
-                        {"helper_runtime", Json::object()}, {"remote_service", Json::object()}};
+    const Json& scope = kScope;
     const std::string stable_key = sv::policy_calibration_key(scope);
     const fs::path stable_store = dir / "scoped.toml";
     sv::ingest_live_policy_record(log, stable_store, key, "flashnext-4gpu", "balanced", stable_key,
-                                  sv::LivePolicyProvenance{scope, std::string(64,'1'), std::string(64,'2'),
-                                                           "revision-test", "run-abc", std::string(64,'3')});
+                                  provenance(scope));
     const auto scoped_record = sv::read_live_policy_record(stable_store, stable_key);
     assert(scoped_record && scoped_record->calibration_inputs && *scoped_record->calibration_inputs == scope);
     assert(scoped_record->source_plan_key == std::string(64,'1') &&
@@ -85,7 +92,7 @@ int main() {
     assert(scoped_record->calibration_key_fields == sv::policy_calibration_key_fields());
     assert(scoped_record->source_revision == "revision-test" && scoped_record->run_id == "run-abc");
     assert(scoped_record->host_facts_digest == std::string(64,'3'));
-    assert(rec->record_schema_version == 0); // historic records are audit-only
+    assert(rec->record_schema_version == 1);
     // Verbatim native 2026-11-19 store, including earlier hash-only entries.
     constexpr const char* prod_key =
         "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
@@ -94,8 +101,8 @@ int main() {
     assert(production->calibration_inputs &&
            sv::policy_calibration_key(*production->calibration_inputs) == prod_key);
     assert(sv::live_policy_record_complete(*production));
-    assert(production->source_revision.empty() && production->run_id.empty() &&
-           production->host_facts_digest.empty()); // no invented provenance
+    assert(!production->source_revision.empty() && !production->run_id.empty() &&
+           production->host_facts_digest.size() == 64);   // a native v1 record carries its run provenance
     assert(sv::policy_calibration_key(scope) == stable_key);
     auto changed_build = scope;
     changed_build["engine_build"] = std::string(64,'5');
@@ -128,9 +135,10 @@ int main() {
     }
     log_line(log,structural);
     const fs::path structural_store=dir/"structural-effect-off.toml";
-    const std::string structural_key(64,'f');
+    const Json structural_scope = scope_named("structural");
+    const std::string structural_key = sv::policy_calibration_key(structural_scope);
     sv::ingest_live_policy_record(log,structural_store,key,
-                                  "flashnext-4gpu","balanced",structural_key);
+                                  "flashnext-4gpu","balanced",structural_key,provenance(structural_scope));
     const auto structural_read=sv::read_live_policy_record(structural_store,structural_key);
     assert(structural_read && sv::live_policy_record_complete(*structural_read));
     assert(structural_read->absent.at("effect_window_noise_ladder") ==
@@ -174,7 +182,7 @@ int main() {
     row["measurements"]["heat_watermarked"] = 1;
     log_line(log,row);
     const fs::path watermarked_store = dir / "watermarked.toml";
-    sv::ingest_live_policy_record(log,watermarked_store,key,"flashnext-4gpu","balanced",store_key);
+    sv::ingest_live_policy_record(log,watermarked_store,key,"flashnext-4gpu","balanced",store_key,provenance(kScope));
     auto with_mark = sv::read_live_policy_record(watermarked_store,store_key);
     assert(with_mark && with_mark->measurements.at("heat_watermarked") == 1);
     assert(!sv::derive_live_policy(*with_mark,sv::Calibration::standard(watermarked_store),
@@ -189,7 +197,7 @@ int main() {
         std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
     assert(refused(log,cache,key,"flashnext-4gpu","balanced","")); // no plan-store key: the helper key is never stored
     try {
-        sv::ingest_live_policy_record(log,cache,key,"flashnext-4gpu","balanced",store_key);
+        sv::ingest_live_policy_record(log,cache,key,"flashnext-4gpu","balanced",store_key,provenance(kScope));
         assert(false); // no duplicates at the production plan-store key
     } catch (const std::runtime_error&) { }
     assert(refused(log,cache,std::string(64,'b'),"flashnext-4gpu","balanced",store_key));
@@ -205,12 +213,50 @@ int main() {
     row["absent"]["copy_bytes_per_s"] = "no per-helper throughput hook";
     log_line(log, row);
     const fs::path partial_cache = dir / "partial.toml";
-    sv::ingest_live_policy_record(log, partial_cache, std::string(64,'c'), "flashnext-4gpu", "balanced", std::string(64,'e'));
-    const auto partial = sv::read_live_policy_record(partial_cache, std::string(64,'e'));
+    const Json partial_scope = scope_named("partial");
+    const std::string partial_key = sv::policy_calibration_key(partial_scope);
+    sv::ingest_live_policy_record(log, partial_cache, std::string(64,'c'), "flashnext-4gpu", "balanced", partial_key,
+                                  provenance(partial_scope));
+    const auto partial = sv::read_live_policy_record(partial_cache, partial_key);
     assert(partial && !sv::live_policy_record_complete(*partial));
     assert(partial->absent.at("copy_bytes_per_s") == "no per-helper throughput hook");
     row["absent"].erase("copy_bytes_per_s");
     log_line(log, row);
     assert(refused(log,dir/"missing-reason.toml",std::string(64,'c'),"flashnext-4gpu","balanced",store_key));
+    // Hash-only rows (no calibration_inputs) are a format this build does not read: the strict reader refuses the store
+    // and calibration-prune removes exactly those rows, leaving the scoped one byte for byte.
+    {
+        const fs::path old_store = dir / "old-store.toml";
+        fs::copy_file(BC_CALIBRATION_HASH_ONLY_FIXTURE, old_store);
+        constexpr const char* prod_key = "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
+        bool read_refused = false;
+        try { (void)sv::read_live_policy_record(old_store, prod_key); }
+        catch (const std::runtime_error& e) {
+            read_refused = std::string(e.what()).find("unsupported record format") != std::string::npos;
+        }
+        assert(read_refused);
+        const std::string before = [&] { std::ifstream in(old_store); return std::string(
+            std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
+        const auto planned = sv::prune_live_policy_store(old_store, false);
+        assert(planned.size() == 7);   // six hash-only rows and the pre-v1 scoped one
+        assert([&] { std::ifstream in(old_store); return std::string(
+            std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }() == before);  // dry run
+        assert(sv::prune_live_policy_store(old_store, true) == planned);
+        assert(!sv::read_live_policy_record(old_store, prod_key));   // every row was an unsupported format
+        const std::string pruned = [&] { std::ifstream in(old_store); return std::string(
+            std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()); }();
+        assert(pruned.find("[[live_policy_record]]") == std::string::npos);
+        // The supported store is left alone, byte for byte.
+        const fs::path good_store = dir / "good-store.toml";
+        fs::copy_file(BC_CALIBRATION_PRODUCTION_FIXTURE, good_store);
+        assert(sv::prune_live_policy_store(good_store, true).empty());
+        const bool unchanged = [&] {
+            std::ifstream a(good_store), b(BC_CALIBRATION_PRODUCTION_FIXTURE);
+            return std::string(std::istreambuf_iterator<char>(a), std::istreambuf_iterator<char>()) ==
+                   std::string(std::istreambuf_iterator<char>(b), std::istreambuf_iterator<char>());
+        }();
+        assert(unchanged);
+        assert(sv::prune_live_policy_store(old_store, true).empty());   // idempotent
+    }
     fs::remove_all(dir);
 }

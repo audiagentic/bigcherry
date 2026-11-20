@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 from bigcherry.bench import workloads
 from bigcherry.cli.main import main
-from bigcherry.core import run_records
+from bigcherry.core import engines, feature_registry, host_facts, run_records
 from bigcherry.experiment import attestation, bundle
 
 
@@ -67,7 +67,23 @@ def _manifest(root: Path):
             "observed_at": "2026-11-19T12:00:00Z",
         }
     ]
+    states.extend({
+        "engine": engines.RADIANCE, "feature_id": name, "state": "inactive",
+        "reason_code": "fixture_not_configured", "reason_detail": "",
+        "observed_at": "2026-11-19T12:00:00Z",
+    } for name in feature_registry.feature_ids(engines.RADIANCE) if name != "live_policy")
     (root / "feature-states.v1.json").write_text(json.dumps(states))
+    start = host_facts.snapshot_at_start(
+        {"kernel_release": {"value": "test", "readable": True}},
+        captured_at="2026-11-19T11:59:59Z", phase="owner_start",
+    )
+    start_file = root / host_facts.START_RECEIPT_FILE
+    start_file.write_text(json.dumps(start))
+    (root / "session.json").write_text(json.dumps({
+        "schema_version": 1, "state": "running", "manifest": str(path),
+        "started_at": "2026-11-19T11:59:58Z",
+        "host_facts_start_sha256": hashlib.sha256(start_file.read_bytes()).hexdigest(),
+    }))
     return path, meta, binary
 
 
@@ -97,7 +113,7 @@ def test_workload_producer_pins_manifest_bytes_and_metrics(tmp_path):
         work_root=tmp_path,
         argv=["bigcherry", "workload", "run", "prefill-doc-44k"],
         environment={"ROCM_PATH": "/opt/fixture"},
-        host_snapshot={"kernel": {"value": "test", "readable": True}},
+        host_snapshot=host_facts.read_owner_start(tmp_path),
     )
     path.unlink()
     store = run_records.RunRecordStore(tmp_path)
@@ -125,40 +141,15 @@ def test_workload_missing_manifest_refused_without_publishing(tmp_path):
     assert run_records.RunRecordStore(tmp_path).query() == []
 
 
-def test_legacy_rows_list_read_only_and_never_become_baselines(tmp_path, capsys):
+def test_results_list_reads_run_records_only(tmp_path, capsys):
+    # A stray pre-record JSONL index is not a results source: nothing lists it, nothing classifies it.
     index = tmp_path / "results" / "index.jsonl"
     index.parent.mkdir()
-    legacy = {
-        "schema": workloads.SCHEMA,
-        "row_id": "old-1",
-        "timestamp": "2026-11-17T12:00:00+00:00",
-        "workload_id": "prefill-doc-44k",
-        "workload_version": 1,
-        "layout": "flashnext-4gpu",
-        "manifest": "/deleted/manifests/old.json",
-        "metrics": {"prefill_tps": {"median": 3312.0}},
-    }
-    original = json.dumps(legacy) + "\n"
-    index.write_text(original)
-    status = main(
-        [
-            "results",
-            "list",
-            "--work-root",
-            str(tmp_path),
-            "--engine",
-            "radiance",
-            "--json",
-        ]
-    )
+    index.write_text(json.dumps({"schema": "bigcherry.workload-result.v1", "row_id": "old-1"}) + "\n")
+    status = main(["results", "list", "--work-root", str(tmp_path), "--engine", "radiance", "--json"])
     assert status == 0
-    listing = json.loads(capsys.readouterr().out)
-    assert listing[0]["status"] == "legacy"
-    assert listing[0]["row_id"] == "old-1"
-    assert listing[0]["reason"] == "missing_content_provenance"
-    assert index.read_text() == original
-    with pytest.raises((ValueError, RuntimeError), match="read.only|legacy"):
-        workloads.append_index(index, legacy)
+    assert json.loads(capsys.readouterr().out) == []
+    assert not hasattr(workloads, "read_index") and not hasattr(workloads, "append_index")
 
 
 def test_llama_row_publishes_phase_metrics_and_attestation(tmp_path):
@@ -190,6 +181,9 @@ def test_llama_row_publishes_phase_metrics_and_attestation(tmp_path):
         work_root=tmp_path,
         expected=expected,
         observed=observed,
+        host_snapshot=host_facts.snapshot_at_start(
+            {"kernel_release": {"value": "fixture", "readable": True}},
+            captured_at="2026-11-19T11:59:59Z"),
     )
     store = run_records.RunRecordStore(tmp_path)
     record = store.get_record(digest)
@@ -222,6 +216,7 @@ def test_bundle_measurement_marks_missing_attestation_invalid(tmp_path):
     digest = bundle.publish_measurement(
         location,
         metrics={"decode": {"tokens_per_second": 10.0}, "prefill": {}, "ttft": {}},
+        metric_specs={"decode": {"tokens_per_second": {"direction": "higher", "gated": False}}, "prefill": {}, "ttft": {}},
         identity={
             "engine": "llama.cpp",
             "build_id": "b1",
@@ -337,6 +332,8 @@ def test_bundle_typed_sidecar_cli_and_content_validation(tmp_path, capsys):
         },
         "workload": {"name": "fixture", "definition": {"prompt": 512}},
         "metrics": {"decode": {"tokens_per_second": 12.3}, "prefill": {}, "ttft": {}},
+        "metric_specs": {"decode": {"tokens_per_second": {"direction": "higher", "gated": False}},
+                         "prefill": {}, "ttft": {}},
         "metric_specs": {
             "decode": {"tokens_per_second": {"direction": "higher", "gated": True}},
             "prefill": {},
@@ -374,6 +371,7 @@ def test_bundle_typed_sidecar_cli_and_content_validation(tmp_path, capsys):
         bundle.publish_measurement(
             root,
             metrics=doc["metrics"],
+            metric_specs=doc["metric_specs"],
             identity=doc["identity"],
             workload=doc["workload"],
             expected=None,
@@ -420,6 +418,7 @@ def test_bundle_cannot_trust_observed_claim_without_process_evidence(tmp_path):
         },
         workload={"name": "fixture", "definition": {"prompt": 512}},
         metrics={"decode": {"tokens_per_second": 12.0}, "prefill": {}, "ttft": {}},
+        metric_specs={"decode": {"tokens_per_second": {"direction": "higher", "gated": False}}, "prefill": {}, "ttft": {}},
     )
     store = run_records.RunRecordStore(tmp_path)
     record = store.get_record(digest)

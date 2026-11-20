@@ -74,6 +74,10 @@ LIVE STAGE-1 POLICY, FIRST HARDWARE RESULTS 2026-11-04 (PR 597, slice H; product
 
 STAGE-1 POLICY: FURTHER FINDINGS AND THE NEXT DESIGN 2026-11-04. (a) Placement-dependent numerics: with the policy off a static placement reproduces its own greedy output exactly (0 of 8 prompts differ between two server starts), but ANY placement change shifts greedy text early on every prompt: default vs the filler-fitted static placement 8 of 8 differ at characters 0-79; default before vs after the live policy's moves 8 of 8 at characters 0-39. So the divergence is a property of which card computes an expert and in what order partial outputs are summed, not of the policy, and text identity is the wrong gate for placement changes. The gate is distribution distance: KLD and top-1 against the BF16 reference. (b) KLD gate with the policy active (3 arms, same build and reference, 8,240 positions): engine-only control mean 0.0678 / p99.9 2.376 / top-1 88.57%; static helper layout -0.0032 / -0.131 / -0.07 pt; static layout plus live policy identical to the static twin on every statistic. Caveat: the policy committed only one transaction during the short scoring, so heavy churn is covered by the earlier 1,000-forced-swap gate, not by this one. (c) Re-run of the workload shift on the build with the review fixes (B1/B2/S1-S5): identical behaviour (filler 2,291 -> about 2,820, +20%; documentation after adapting 3,656 -> 2,786-2,973, still 20-25% below the 3,749 default; 43 transactions, 5.6 GB, 0 aborts; decode 25.0 and 46.7 ms/step; no_live_feed=0). The fixes closed correctness gaps at the proposal boundary without changing the policy's objective. (d) WHY THE OBJECTIVE IS THE WRONG HALF: the static placement that reached 3,725 tok/s on filler differs from the default in two ways - the split of the cold set across the three helpers (head/tail by heat) and WHICH EXPERTS THE R9700 HOLDS IN ITS OWN VRAM. The live policy moves experts only between helpers; the engine-local set is fixed for it (the engine's own HeatEngine adapts it, slowly and independently), so part of the static gain is outside the loop's reach, and the stage-1 objective (per-layer peak weighted helper load, margin on the global peak) can lower the helper-side score while worsening real step time. (e) NEXT DESIGN (slice J, after the measured-effect gate of slice I): stop inventing a balancing objective. Take the STATIC PLACER'S OWN plan (the heat-ranked head/tail split with the launch budgets and shares, worker_share::plan_tail, the algorithm that produced the +59%) applied to the live decayed heat as the TARGET owner map, diff it against the current map, order the moves by heat delta, and apply them in bounded transactions (max moves/bytes per transaction from measurement), each judged by the measured-effect gate and reverted on a regression beyond the noise floor. This converges toward a placement already known to be good for the workload rather than toward the output of a new heuristic, uses no per-device cost vector (the static placer's head/tail ordering already encodes card speed), and makes the helper-only limitation explicit; coordinating with the engine-local set (the engine's tier, RHP05-07 and the radiance HeatEngine) is a separate item. Success test: the same workload-shift run (8 filler prompts, then 10 documentation prompts) - filler should approach 3,700 and documentation should return to about 3,750, never below the default.
 
+
+
+2026-11-20 current-scope clarification (RV4243): consume only RHP09 calibration accepted for the exact current source/ABI, layout and device identity. The live runtime owner map and RHP11 epoch remain authoritative; optimize exposed critical path plus move cost and uncertainty separately for decode/prefill. RHP07 owns stability, RHP13 unified residency, and RHP22 forced-churn quality. No separate Strata cache or calibration service.
+
 ## Implementation-grade notes (2026-10-15)
 
 ### Objective and constraints
@@ -175,9 +179,6 @@ Merged build with the live policy on and the effect gate on (the same experiment
 
 ## Ledger-events
 
-
-
-
 - chg_20261101_225732_planning-a-staged-roadmap-for_4092
 - 2026-11-01T22:57:35.857193+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261102_022722_groundwork-for-live-expert-pla_5619
@@ -198,3 +199,8 @@ Merged build with the live policy on and the effect gate on (the same experiment
 - chg_20261105_011757_the-live-expert-placement-poli_4015
 - 2026-11-05T01:18:01.236336+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-10T03:37:06.845356+00:00 (state-transition): State: pending → in_progress
+
+## Reviews
+
+- RV4243
+- 2026-11-20T02:31:52.428376+00:00 (updated-by): Updated: section:notes

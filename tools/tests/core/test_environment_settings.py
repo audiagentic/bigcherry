@@ -29,7 +29,7 @@ TYPED_ENGINE_VARS = {
 SELFTEST_FILE = "r4d_selftest.cpp.rw"
 
 _READ = re.compile(r'(?:getenv|\bu32|\bflag|\bchoice|\bpeek_u32|\bpeek_flag|\benv_on|\brows_env)\("((?:R3|RAD|BC)_[A-Z0-9_]+)"')
-_SKIP_PARTS = ("native-shelved", "/tests/", "golden/")
+_SKIP_PARTS = ("native-shelved", "/tests/", "golden/", "/patches/archive/")   # archived patches are evidence, never built
 
 
 def _tracked(prefix: str) -> list[str]:

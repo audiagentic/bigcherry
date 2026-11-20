@@ -16,9 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from ..core.telemetry import console_telemetry
-from ..core import host_facts, measurement_producers
-from . import attestation
+from ..core import engines, feature_registry, feature_states, host_facts, measurement_producers
 from ..tuning.journal import atomic_write, canonical
+from . import attestation
 
 SCHEMA_VERSION = 1
 ALLOWED_ENV = {
@@ -161,6 +161,9 @@ def run_managed(
         raise BundleError(f"bundle already exists: {root}")
     root.mkdir(parents=True)
     experiment_id = str(uuid.uuid4())
+    # Captured and sealed in intent before the child can start. Never read
+    # current host facts from a later result-publication process.
+    host_start = host_facts.snapshot_at_start(phase="owner_start")
     env = os.environ.copy()
     env.update(environment or {})
     intent = {
@@ -177,6 +180,7 @@ def run_managed(
         "environment": safe_environment(env),
         "host_started_ns": time.time_ns(),
         "monotonic_started_ns": time.monotonic_ns(),
+        "host_facts_start": host_start,
         "artifacts": [],
         "intended_artifacts": ["stdout.log", "stderr.log"],
         "capabilities": [],
@@ -288,7 +292,7 @@ def publish_measurement(
     expected: attestation.ExecutionIdentity | None,
     observed: attestation.ExecutionAttestation | None,
     work_root: Path | None = None,
-    metric_specs: dict | None = None,
+    metric_specs: dict,
     host_snapshot: dict | None = None,
     measurement_source: bytes | None = None,
 ) -> str:
@@ -309,6 +313,17 @@ def publish_measurement(
     document = json.loads(document_file.read_text(encoding="ascii"))
     if not any(metrics.get(phase) for phase in ("decode", "prefill", "ttft")):
         raise BundleError("bundle has no declared measured phase metrics")
+    # A Radiance record needs the host facts sealed before the child started; other engines keep the ingest-time
+    # snapshot (MRC07).
+    if identity["engine"] == engines.RADIANCE:
+        start_facts = document.get("host_facts_start")
+        if start_facts is None:
+            raise BundleError("measurement bundle has no sealed start host facts")
+        host_facts.validate_start_snapshot(start_facts)
+        if host_snapshot is not None and host_snapshot != start_facts:
+            raise BundleError("supplied host snapshot differs from pre-exec bundle")
+    else:
+        start_facts = host_snapshot if host_snapshot is not None else host_facts.collect_host_facts()
     process_observed = _observed_execution_from_bundle(root)
     if observed is not None and process_observed is not None and (
         observed.backend != process_observed.backend
@@ -329,6 +344,9 @@ def publish_measurement(
     }
     if measurement_source is not None:
         inputs["measured_results"] = measurement_source
+    # Only Radiance has a native feature-state snapshot in this plan.
+    states = (feature_states.read_feature_states(root / feature_states.FILE_NAME)
+              if identity["engine"] in feature_registry.FEATURES else [])
     digest = measurement_producers.publish(
         work_root=work_root,
         run_id=document["experiment_id"],
@@ -341,8 +359,8 @@ def publish_measurement(
         argv=document["command"], environment=document["environment"],
         power_settings=document.get("power_state", {}),
         inputs=inputs,
-        host_facts=host_snapshot if host_snapshot is not None else host_facts.collect_host_facts(),
-        feature_states=[],
+        host_facts=start_facts,
+        feature_states=states,
         validity=validity,
         session_id=document["experiment_id"],
     )
@@ -379,7 +397,7 @@ def record_measurement_file(
         )
     return publish_measurement(
         root, identity=doc["identity"], workload=doc["workload"],
-        metrics=doc["metrics"], metric_specs=doc.get("metric_specs"),
+        metrics=doc["metrics"], metric_specs=doc["metric_specs"],
         expected=wanted, observed=actual, work_root=work_root,
         measurement_source=path.read_bytes(),
     )

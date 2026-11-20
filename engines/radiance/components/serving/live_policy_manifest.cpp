@@ -44,21 +44,15 @@ std::optional<DerivedLivePolicy> derive_manifest_live_policy(
     if (!record) {
         // Silence here once left every start of a layout without a policy after a plan-key change orphaned its record.
         if (skipped_reason)
-            *skipped_reason = "no calibration record for key=" + key + " in " + in.calibration_cache.string() +
-                              " (legacy hash-only records lack model/card provenance and need verified migration)";
+            *skipped_reason = "no calibration record for key=" + key + " in " + in.calibration_cache.string();
         return std::nullopt;
     }
     const auto skip = [&](const std::string& why) -> std::optional<DerivedLivePolicy> {
         if (skipped_reason) *skipped_reason = "record key=" + key + ": " + why;
         return std::nullopt;
     };
-    // The strict reader maps #1169's verified narrow-key scope to v1 in
-    // memory. Only hash-only records remain audit-only; absent later run/host
-    // provenance must not silently disable a valid production policy.
-    if (record->record_schema_version != 1)
-        return skip("legacy_record_schema: hash-only evidence lacks calibration_inputs; audit-only, no activation");
     if (!record->calibration_inputs || *record->calibration_inputs != policy_inputs)
-        return skip("record has no matching model/card/service calibration provenance; not activating legacy or incompatible evidence");
+        return skip("record has no matching model/card/service calibration provenance; not activating incompatible evidence");
     // Behind a TP engine (RAD49) every rank counts every routed row of a handed-off pass (the router is replicated), so rank
     // 0's histogram covers the layers either rank consumes, and the helpers store and move full-width experts: the policy
     // applies to any engine width. The histogram counts only passes the remote row gate admits (the publish op runs only

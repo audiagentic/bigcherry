@@ -21,25 +21,12 @@ source tools/env/bigcherry-env.sh
 bigcherry workload list
 bigcherry workload run prefill-doc-44k --url http://127.0.0.1:18452
 bigcherry workload run decode-6stream --url http://127.0.0.1:18452 --manifest $BC_WORK_ROOT/flashnext/manifest-EXACT.json
-bigcherry workload compare prefill-doc-44k
-bigcherry workload compare pwr-phases --layout flashnext-2xtx --since 2026-10-27
+bigcherry results list --engine radiance --workload prefill-doc-44k
+bigcherry results history --engine radiance --workload prefill-doc-44k --metric prefill_tps
 ```
 
 `run` requires a **running** OpenAI-compatible server; it sends inference traffic, so a lead must first arrange GPU authorisation. The CLI **does not start/stop processes, touch GPU power settings, or take leases**. Use `--manifest` when the active engine's exact manifest cannot be verified via its process command line. Never guess a build, layout, policy state or calibration key from whichever historical manifest happens to be newest.
 
-Each completed run produces exactly **one** JSONL entry in `$BC_WORK_ROOT/results/index.jsonl` (outside Git) and a saved full record in `$BC_WORK_ROOT/results/workloads/<date-id-uuid>/result.json`. The row includes UTC timestamp, `workload_id` and `workload_version`, median and per-rep metrics, measured prompt counts, build path/build ID and source commit **if evidenced**, layout, kernel, policy state and calibration key if available, manifest options (spec depth, chunk, host pool/KV, sessions), per-BDF sysfs readback (`power1_cap`, VDDGFX offset, OD SCLK max, forced perf level), and run folder. Unknown historical metadata stays unknown, not “stock”. Power state is an observed snapshot, not an instruction to set it. A changed power snapshot during a run is marked.
+Each completed run publishes exactly **one** immutable run record (run-record v1, see `docs/reference/tooling/TOOLING.md`) and keeps its run folder, with the workload's own result row, under `$BC_WORK_ROOT/results/workloads/<date-id-uuid>/`. Compare runs with `bigcherry results compare`, `baseline` and `history`, which read only SHA-verified records; they report differences in build, layout, kernel, policy, power, options, corpus and repetition count, and comparisons are **not** proven like-for-like unless that report says so. There is no results index file and no importer of older logs: the 138 rows of the 2026-11-11/12 runs, whose manifests were purged, are summarised in `docs/evidence/2026-11-20-retired-workload-index/`.
 
-`compare` restricts rows to the **same ID and version**, optionally layout and date, and prints differences in build, layout, kernel, policy, power, manifest options, corpus, phase duration/sensor and repetition count. Comparisons are **not** proven like-for-like merely because the IDs match; differences and unknown metadata require a caveat or repeat under matched conditions.
-
-## Historical index
-
-`bigcherry workload seed` imports identifiable completed artifacts idempotently; seeded rows have `source=seeded` and evidence paths, with no invented run-level sysfs readback. Import sources:
-
-- `runs/policy-onoff-ab`: `on1/off1/off2/on2` document slices, cold27k, decode 1-stream and 6-stream. Expected 16 rows, subject to artifact/manifest validation.
-- `runs/pwr-stock/docpf.out`: six 44k document slices with policy OFF, retained explicitly as **6/10 partial** (so it cannot silently be treated as the ten-rep baseline).
-- `runs/pwr01-baseline-10271708`: October 27 **valid preserved** PWR01. The October research page's older `10271712` label was corrected to `10271708`; `10271703` was prefix-cached and is excluded.
-- `runs/pwr01-baseline-11111036` (4GPU stock), `11111051` (4GPU -125mV reported), `11111104` (2XTX stock). The latter corresponds to `runs/pwr-stock/out2xtx.log`. Historical power labels are descriptive, not a substitute for an in-phase sysfs readback.
-
-The seed can be rerun without duplicating identified artifacts; outputs live only in the outside-Git index. Historical PWR01 raw response-level token timing and policy A/B corpus SHA-256 were not retained. These are **historical evidence**, not validated fresh reproductions.
-
-**Evidence rule:** Every performance claim in a PR, issue, plan or benchmark report must cite `workload-id@version` **and a concrete `row_id`** from `$BC_WORK_ROOT/results/index.jsonl` (or a saved result JSON). State any comparison warnings and exclude unlike measurements from an attributed improvement claim.
+**Evidence rule:** Every performance claim in a PR, issue, plan or benchmark report must cite `workload-id@version` **and a concrete `row_id`** (its run-record SHA-256 from `bigcherry results list`). State any comparison warnings and exclude unlike measurements from an attributed improvement claim.

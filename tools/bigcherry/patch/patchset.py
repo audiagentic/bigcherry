@@ -145,7 +145,7 @@ def discover_modules(root: Path) -> list[Path]:
         return []
     found = []
     for path in root.rglob("*.py"):
-        if any(part.startswith("_") for part in path.relative_to(root).parts):
+        if any(patch_registry.is_reserved_part(part) for part in path.relative_to(root).parts):
             continue
         found.append(path)
     return sorted(found)

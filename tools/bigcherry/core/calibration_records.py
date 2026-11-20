@@ -199,11 +199,11 @@ def _nonduplicate(pairs: list[tuple[str, Any]]) -> dict[str, Any]:
 
 
 def read_native_toml(path: Path) -> list[dict[str, Any]]:
-    """Translate the native v1 TOML index to platform records.
+    """Translate the native TOML index to platform records.
 
-    Legacy rows remain inspectable, but are reported with a non-activation
-    verdict. Malformed v1 rows get an invalid verdict rather than activating.
-    No native cache is mutated by this read.
+    Every row must carry calibration_inputs; a row without them is a format this reader does not know and the read
+    is refused (the native ``bc-serve calibration-prune`` removes such rows). Malformed rows that do carry them get an invalid verdict
+    rather than activating. No native cache is mutated by this read.
     """
     path = Path(path)
     if not path.is_file() or path.is_symlink():
@@ -249,66 +249,28 @@ def read_native_toml(path: Path) -> list[dict[str, Any]]:
                 f"live_policy_record[{index}]: duplicate plan_cache_key"
             )
         seen.add(digest)
+        if "calibration_inputs" not in entry or "record_schema_version" not in entry:
+            raise CalibrationError(
+                f"live_policy_record[{index}]: unsupported record format (needs calibration_inputs and "
+                "record_schema_version 1); remove it with `bc-serve calibration-prune`"
+            )
         info = {
             "kind": "radiance.live_policy",
             "key": digest,
             "index": index,
-            "status": "legacy",
-            "reason": "legacy_record_schema",
+            "status": "invalid",
+            "reason": "unchecked",
             "record": None,
-            "legacy": dict(entry),
+            "native": dict(entry),
         }
-        if "calibration_inputs" not in entry:
-            # Only genuinely hash-only records are legacy. A partially
-            # specified scoped record is invalid, never silently downgraded.
-            if any(
-                field in entry
-                for field in (
-                    "source_plan_key",
-                    "source_engine_build",
-                    "record_schema_version",
-                    "calibration_kind",
-                    "calibration_key_fields",
-                    "source_revision",
-                    "run_id",
-                    "host_facts_digest",
-                )
-            ):
-                info.update(
-                    status="invalid",
-                    reason="scoped provenance without calibration_inputs",
-                )
-            rows.append(info)
-            continue
         try:
             kind = "radiance.live_policy"
-            v1 = "record_schema_version" in entry
-            if v1:
-                if (
-                    type(entry["record_schema_version"]) is not int
-                    or entry["record_schema_version"] != 1
-                ):
-                    raise CalibrationError("unsupported record_schema_version")
-                if entry["calibration_kind"] != kind:
-                    raise CalibrationError("unexpected calibration kind")
-                if (
-                    entry["calibration_key_fields"]
-                    != key_declaration(kind)["key_fields"]
-                ):
-                    raise CalibrationError(
-                        "calibration_key_fields differs from declaration"
-                    )
-            elif any(
-                field in entry
-                for field in (
-                    "calibration_kind",
-                    "calibration_key_fields",
-                    "source_revision",
-                    "run_id",
-                    "host_facts_digest",
-                )
-            ):
-                raise CalibrationError("v1 metadata requires record_schema_version")
+            if type(entry["record_schema_version"]) is not int or entry["record_schema_version"] != 1:
+                raise CalibrationError("unsupported record_schema_version")
+            if entry["calibration_kind"] != kind:
+                raise CalibrationError("unexpected calibration kind")
+            if entry["calibration_key_fields"] != key_declaration(kind)["key_fields"]:
+                raise CalibrationError("calibration_key_fields differs from declaration")
             inputs = json.loads(
                 entry["calibration_inputs"], object_pairs_hook=_nonduplicate
             )
@@ -347,29 +309,13 @@ def read_native_toml(path: Path) -> list[dict[str, Any]]:
                 "plan_key": source_plan,
                 "recorded_at": entry["seeded"],
             }
-            if v1:
-                provenance.update(
-                    source_revision=entry["source_revision"],
-                    run_id=entry["run_id"],
-                    host_facts_digest=entry["host_facts_digest"],
-                )
-                record = new_record(kind, inputs, quantities, provenance)
-                record_format = "native_v1"
-            else:
-                # #1169 scoped evidence has a verifiable key, complete quantities
-                # and source plan/build. It predates run/revision/host digests;
-                # never fabricate those fields or rewrite the native store.
-                from datetime import date
-
-                _validate_quantities(kind, quantities)
-                date.fromisoformat(provenance["recorded_at"])
-                record = {
-                    "kind": kind,
-                    "key": key,
-                    "quantities": quantities,
-                    "provenance": provenance,
-                }
-                record_format = "native_post_1169"
+            provenance.update(
+                source_revision=entry["source_revision"],
+                run_id=entry["run_id"],
+                host_facts_digest=entry["host_facts_digest"],
+            )
+            record = new_record(kind, inputs, quantities, provenance)
+            record_format = "native_v1"
             info.update(
                 status="current", reason=None, record=record, format=record_format
             )
@@ -484,3 +430,4 @@ class CalibrationStore:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
         return path
+

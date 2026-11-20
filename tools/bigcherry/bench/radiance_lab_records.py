@@ -16,9 +16,9 @@ import urllib.parse
 from datetime import UTC, datetime
 from pathlib import Path
 
-from ..core import engines
 from ..core import (
     calibration_records,
+    engines,
     feature_states,
     host_facts,
     measurement_producers,
@@ -89,6 +89,11 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         )
     native_states = _file(run_dir / feature_states.FILE_NAME)
     states = feature_states.read_feature_states(native_states)
+    start_file = _file(run_dir / host_facts.START_RECEIPT_FILE)
+    try:
+        start = host_facts.read_owner_start(run_dir)
+    except ValueError as exc:
+        raise run_records.RecordError(f"invalid native start receipt: {exc}") from exc
     if any(state["engine"] != engines.RADIANCE for state in states):
         raise run_records.RecordError("native feature-state engine differs")
     instance = manifest.get("metadata", {}).get("instance_id")
@@ -109,6 +114,7 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         "layout": intent["layout"],
     }
     source_inputs: dict[str, bytes | Path] = {
+        "native_host_facts_start": start_file,
         "native_session": session_file,
         "native_feature_states": native_states,
         "native_build_metadata": metadata_file,
@@ -132,27 +138,31 @@ def _session_context(run_dir: Path, *, require_stopped: bool = False) -> dict:
         "identity": identity,
         "run_id": instance,
         "feature_states": states,
+        "host_start": start,
         "inputs": source_inputs,
     }
 
 
 def _host(snapshot: dict | None) -> dict:
-    # The platform ingest may happen after the native owner stopped. Unlike
-    # native feature states, these host readings are at ingest time only.
-    return snapshot if snapshot is not None else host_facts.collect_host_facts()
+    if snapshot is None:
+        raise run_records.RecordError(
+            "missing measurement-start host facts; never sample at result ingest time"
+        )
+    try:
+        return host_facts.validate_start_snapshot(snapshot)
+    except ValueError as exc:
+        raise run_records.RecordError(f"invalid measurement-start host facts: {exc}") from exc
 
 
 def _now() -> str:
     return datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
-def _native_argv(session: dict, *, fallback: list[str] | None = None) -> list[str]:
+def _native_argv(session: dict) -> list[str]:
     processes = session.get("processes", [])
     for p in processes:
         if p.get("role") == "engine" and isinstance(p.get("argv"), list) and p["argv"]:
             return p["argv"]
-    if fallback:
-        return fallback
     raise run_records.RecordError(
         "native session does not record measured process argv"
     )
@@ -186,7 +196,7 @@ def _selected_calibration(path: Path, key: str) -> dict:
     ]
     if len(rows) != 1 or rows[0]["status"] != "current":
         raise run_records.RecordError(
-            "calibration key is missing, legacy or invalid in MRC04 reader"
+            "calibration key is missing or invalid in MRC04 reader"
         )
     if rows[0]["format"] != "native_v1":
         raise run_records.RecordError(
@@ -316,6 +326,10 @@ def publish_calibration_run(
             ),
         }
     )
+    # Native calibration receipt is the sole host authority; a caller cannot
+    # substitute end-of-run host readings for a missing start snapshot.
+    if host_snapshot is not None and host_snapshot != c["host_start"]:
+        raise run_records.RecordError("native host facts differ from supplied ingest snapshot")
     sha = measurement_producers.publish(
         work_root=work_root,
         run_id=c["run_id"] + "-calibration",
@@ -337,8 +351,16 @@ def publish_calibration_run(
         environment=_native_environment(c["session"]),
         power_settings=c["manifest"]["spec"].get("power", {}),
         inputs=inputs,
-        host_facts=_host(host_snapshot),
+        host_facts=_host(c["host_start"]),
         feature_states=c["feature_states"],
+        calibration_selection={
+            "status": "selected", "record": selected,
+            "quantity_blobs": {
+                "native_calibration_quantities": measurement_producers.canonical_blob(
+                    selected["quantities"]
+                )
+            },
+        },
         validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
         session_id=c["run_id"],
     )
@@ -406,6 +428,8 @@ def publish_probe(
     if kind not in ("needle", "image"):
         raise run_records.RecordError("unknown Radiance lab probe")
     c = _session_context(run_dir)
+    if host_snapshot is not None and host_snapshot != c["host_start"]:
+        raise run_records.RecordError("probe host facts differ from native owner start")
     if kind == "needle":
         rows = result["rows"]
         if not rows or any(type(r.get("hit")) is not bool for r in rows):
@@ -447,7 +471,7 @@ def publish_probe(
         environment=_native_environment(c["session"]),
         power_settings=c["manifest"]["spec"].get("power", {}),
         inputs=inputs,
-        host_facts=_host(host_snapshot),
+        host_facts=_host(c["host_start"]),
         feature_states=c["feature_states"],
         validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
         session_id=c["run_id"],
@@ -513,8 +537,9 @@ def publish_rsc02_arm(
         "rsc02_build_metadata": build_meta,
     }
     states = []
-    # The B arm is the native owner, which publishes MRC03. The A arm is the
-    # legacy bash owner and must never inherit B's stale feature state file.
+    # The historical A arm remains lab evidence, never a native measured record.
+    if result["arm"] != "B":
+        raise run_records.RecordError("only the sealed native owner arm may publish")
     if result["arm"] == "B":
         if not isinstance(result.get("run_dir"), str):
             raise run_records.RecordError(
@@ -537,6 +562,11 @@ def publish_rsc02_arm(
             raise run_records.RecordError("RSC02 native feature-state engine differs")
         inputs["rsc02_native_feature_states"] = states_file
         inputs["rsc02_native_session"] = run_dir / "session.json"
+        native_start_file = _file(run_dir / host_facts.START_RECEIPT_FILE)
+        native_start = host_facts.read_owner_start(run_dir)
+        if host_snapshot is not None and host_snapshot != native_start:
+            raise run_records.RecordError("RSC02 host facts differ from native owner start")
+        inputs["rsc02_native_host_start"] = native_start_file
     return measurement_producers.publish(
         work_root=work_root,
         run_id=f"rsc02-{manifest['metadata']['instance_id']}-{result['arm']}",
@@ -569,10 +599,48 @@ def publish_rsc02_arm(
         environment=engine[0].get("env", {}),
         power_settings=result.get("power_before_stop", {}),
         inputs=inputs,
-        host_facts=_host(host_snapshot),
+        host_facts=_host(native_start),
         feature_states=states,
         validity={
             "state": "unverified",
-            "reason_codes": ["LEGACY_ARM_NOT_VA25_ATTESTED"],
+            "reason_codes": ["VA25_NOT_ATTESTED"],
         },
+    )
+
+
+def publish_native_lab(run_dir: Path, sidecar: Path, *,
+                       work_root: Path | None = None,
+                       host_snapshot: dict | None = None) -> str:
+    """Ingest explicit metrics after a clean native owner stop, never infer."""
+    c = _session_context(run_dir, require_stopped=True)
+    path = _file(Path(sidecar))
+    if path.parent.resolve() != c["run_dir"]:
+        raise run_records.RecordError("native lab evidence is outside the stopped run")
+    doc = _read_json(path)
+    if (doc.get("schema_version") != 1 or doc.get("run_id") != c["run_id"]
+            or doc.get("manifest_sha256") != _digest(c["manifest_bytes"])):
+        raise run_records.RecordError("native lab manifest, run ID or schema mismatch")
+    metrics = doc.get("metrics")
+    if (not isinstance(metrics, dict)
+            or set(metrics) != {"decode", "prefill", "ttft"}
+            or not any(metrics.values())):
+        raise run_records.RecordError("native lab has no typed measured metrics")
+    workload = doc.get("workload")
+    if (not isinstance(workload, dict) or not isinstance(workload.get("name"), str)
+            or not workload["name"] or not isinstance(workload.get("definition"), dict)):
+        raise run_records.RecordError("native lab has no typed workload")
+    specs = doc.get("metric_specs")
+    if not isinstance(specs, dict) or set(specs) != {"decode", "prefill", "ttft"}:
+        raise run_records.RecordError("native lab has no typed metric specs")
+    return measurement_producers.publish(
+        work_root=work_root, run_id=c["run_id"] + "-lab",
+        recorded_at=doc["recorded_at"], identity=c["identity"],
+        workload=workload, metrics=metrics, metric_specs=specs,
+        effective_config=c["manifest_bytes"], argv=_native_argv(c["session"]),
+        environment=_native_environment(c["session"]),
+        power_settings=c["manifest"]["spec"].get("power", {}),
+        inputs={**c["inputs"], "native_lab_measurement": path},
+        host_facts=_host(host_snapshot), feature_states=c["feature_states"],
+        validity={"state": "unverified", "reason_codes": ["VA25_NOT_ATTESTED"]},
+        session_id=c["run_id"],
     )

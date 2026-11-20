@@ -70,7 +70,7 @@ class PlanTests(unittest.TestCase):
         manifest = self.make()
         self.assertEqual(json.loads(manifest.read_text())["spec"]["processes"]["engine"]["server"]["port"], 18431)
         engine = (self.log / "engine.args").read_text().split()
-        self.assertEqual(engine[:4], ["--manifest", str(self.root / "run/manifest-measuring.json"), "--role", "engine"])
+        self.assertEqual(engine[:4], ["--manifest", str(self.root / "run/manifest-measuring-0.json"), "--role", "engine"])
         self.assertEqual(engine[4], "--plan-memory")
         calls = (self.log / "bc-serve.args").read_text().splitlines()
         self.assertEqual(len(calls), 3)   # cache miss, unmeasured, measured

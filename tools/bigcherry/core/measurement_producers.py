@@ -11,7 +11,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from . import run_records
+from . import engines, run_records, calibration_records, feature_registry
+from . import host_facts as host_capture
 
 
 def canonical_blob(value: object) -> bytes:
@@ -43,9 +44,10 @@ def publish(
     inputs: dict[str, bytes | Path],
     host_facts: dict[str, Any],
     feature_states: list[dict],
-    metric_specs: dict | None = None,
+    metric_specs: dict,
     validity: dict | None = None,
     session_id: str | None = None,
+    calibration_selection: dict[str, Any] | None = None,
 ) -> str:
     """Publish one complete immutable record, verifying every source blob."""
     if not isinstance(effective_config, bytes) or not effective_config:
@@ -58,6 +60,19 @@ def publish(
         raise run_records.RecordError("actual argv required")
     if any(not isinstance(v, (bytes, Path)) for v in inputs.values()):
         raise run_records.RecordError("provenance inputs must be exact bytes or readable files")
+    # Radiance requires a sealed start receipt; other engines are MRC07 work.
+    recorded_time = utc_stamp(recorded_at)
+    if identity["engine"] == engines.RADIANCE:
+        try:
+            host_capture.validate_start_snapshot(host_facts)
+            start_time = utc_stamp(host_facts["captured_at"])
+        except (ValueError, TypeError, KeyError) as exc:
+            raise run_records.RecordError(f"missing or invalid start host facts: {exc}") from exc
+        if start_time > recorded_time:
+            raise run_records.RecordError("start host-facts timestamp is after the measured record time")
+    # Only registered producer engines have a native feature-state contract.
+    if identity["engine"] in feature_registry.FEATURES:
+        feature_registry.require_coverage(identity["engine"], feature_states)
     store = run_records.RunRecordStore(work_root)
 
     def source_blob(source: bytes | Path) -> dict:
@@ -69,7 +84,7 @@ def publish(
     record: dict[str, Any] = {
         "schema_version": 1,
         "run_id": run_id,
-        "recorded_at": utc_stamp(recorded_at),
+        "recorded_at": recorded_time,
         "identity": identity,
         "workload": workload,
         "metrics": metrics,
@@ -86,8 +101,29 @@ def publish(
         "host_facts": host_facts,
         "feature_states": feature_states,
     }
-    if metric_specs is not None:
-        record["metric_specs"] = metric_specs
+    if calibration_selection is not None:
+        if not isinstance(calibration_selection, dict):
+            raise run_records.RecordError("calibration selection must be an object")
+        status = calibration_selection.get("status")
+        if status == "selected":
+            if set(calibration_selection) != {"status", "record", "quantity_blobs"}:
+                raise run_records.RecordError("calibration selected needs record and quantities")
+            source = calibration_records.validate_record(calibration_selection["record"])
+            quantities = calibration_selection["quantity_blobs"]
+            if not isinstance(quantities, dict):
+                raise run_records.RecordError("calibration quantities must be named")
+            record["calibration_record"] = {
+                "status": "selected", "kind": source["kind"],
+                "key_sha256": source["key"]["sha256"],
+                "record_blob": store.put_blob(canonical_blob(source)),
+                "quantity_blobs": [{"name": name, "blob": source_blob(raw)}
+                                   for name, raw in sorted(quantities.items())],
+            }
+        elif status == "none":
+            record["calibration_record"] = dict(calibration_selection)
+        else:
+            raise run_records.RecordError("unknown calibration selection status")
+    record["metric_specs"] = metric_specs
     if validity is not None:
         record["validity"] = validity
     if session_id:

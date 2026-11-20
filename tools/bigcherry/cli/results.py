@@ -6,11 +6,11 @@ import argparse
 import json
 import os
 import sys
-from datetime import UTC, datetime
 import tempfile
+from datetime import UTC, datetime
 from pathlib import Path
 
-from ..core import engines, results, run_records
+from ..core import engines, results, run_manifest, run_records
 from ..core.context import resolve_work_root
 
 
@@ -106,6 +106,45 @@ def _show_history(report: dict) -> None:
 def cmd_results(args: argparse.Namespace) -> int:
     try:
         store = run_records.RunRecordStore(args.work_root)
+        if args.results_action == "put":
+            # Input files are operator-supplied transport only; the store
+            # remains the exclusive reader and validates all SHA references.
+            with args.record.open("r", encoding="utf-8") as stream:
+                doc = json.load(stream, object_pairs_hook=run_records._pairs_no_duplicates)
+            run_records.validate_record(doc)
+            for entry in args.blob:
+                sha, separator, raw_path = entry.partition("=")
+                if not separator or not raw_path:
+                    raise run_records.RecordError("--blob must be SHA256=PATH")
+                run_records._check_digest(sha)
+                path = Path(raw_path)
+                if path.is_symlink() or not path.is_file():
+                    raise run_records.RecordError(f"unsafe blob input: {path}")
+                ref = store.put_blob_file(path)
+                if ref["sha256"] != sha:
+                    raise run_records.RecordError(f"sha256 mismatch in supplied blob: {sha}")
+            digest = store.put_record(doc)
+            if args.run_dir is not None:
+                run_manifest.link_measurement_record(args.run_dir, store, digest)
+            if args.json:
+                print(json.dumps({"sha256": digest}, sort_keys=True))
+            else:
+                print(f"run-record v1: {digest}")
+            return 0
+        if args.results_action == "query":
+            rows = store.query(
+                run_id=args.run_id, engine=args.engine, layout=args.layout,
+                workload=args.workload, metric=args.metric, since=args.since, until=args.until
+            )
+            if args.json:
+                print(json.dumps(rows, indent=2, sort_keys=True))
+            else:
+                for item in rows:
+                    rec = item["record"]
+                    print(f"{rec['recorded_at']} {rec['run_id']} "
+                          f"{rec['identity']['engine']} {rec['identity']['layout']} "
+                          f"{rec['workload']['name']} {item['sha256']}")
+            return 0
         if args.results_action == "show":
             rec = store.get_record(args.sha256)
             result = {"sha256": args.sha256, "record": rec}
@@ -125,6 +164,16 @@ def cmd_results(args: argparse.Namespace) -> int:
                     print(f"  {item['role']}: {item['blob']['sha256']}")
                 print(f"validity: {rec.get('validity', {'state':'unknown'})}")
             return 0
+        if args.results_action == "ingest-native-lab":
+            from ..bench.radiance_lab_records import publish_native_lab
+
+            sha = publish_native_lab(args.run_dir, args.measurement_file,
+                                     work_root=args.work_root)
+            if args.json:
+                print(json.dumps({"sha256": sha}, sort_keys=True))
+            else:
+                print(f"native lab run-record v1: {sha}")
+            return 0
         if args.results_action == "ingest-calibration":
             from ..bench.radiance_lab_records import publish_calibration_run
 
@@ -135,7 +184,6 @@ def cmd_results(args: argparse.Namespace) -> int:
                 print(f"calibration run-record v1: {sha}")
             return 0
         if args.results_action == "list":
-            from ..bench import workloads
             if args.today:
                 if args.since or args.until:
                     raise results.ResultsError("--today cannot combine with --since/--until")
@@ -153,37 +201,14 @@ def cmd_results(args: argparse.Namespace) -> int:
                     "workload": rec["workload"]["name"],
                     "recorded_at": rec["recorded_at"],
                 })
-            # Explicit read-only bridge for the one retired Radiance index.
-            # Do not recreate a manifest, promote its metrics or import it into
-            # the verified record store.
-            if args.engine in (None, engines.RADIANCE):
-                index = resolve_work_root(args.work_root) / "results/index.jsonl"
-                for legacy in workloads.read_index(index):
-                    if args.layout and legacy.get("layout") != args.layout:
-                        continue
-                    if args.workload and legacy.get("workload_id") != args.workload:
-                        continue
-                    stamp = str(legacy.get("timestamp", "")).replace("+00:00", "Z")
-                    if args.since and stamp < args.since:
-                        continue
-                    if args.until and stamp > args.until:
-                        continue
-                    rows.append({
-                        "status": "legacy",
-                        "reason": "missing_content_provenance",
-                        "row_id": legacy["row_id"], "engine": engines.RADIANCE,
-                        "layout": legacy.get("layout"),
-                        "workload": legacy["workload_id"],
-                        "recorded_at": stamp,
-                    })
-            rows.sort(key=lambda row: (row["recorded_at"], row.get("sha256", row.get("row_id", ""))))
+            rows.sort(key=lambda row: (row["recorded_at"], row["sha256"]))
             if args.json:
                 print(json.dumps(rows, indent=2, sort_keys=True))
             else:
                 for row in rows:
                     print(f"{row['recorded_at']} {row['status']:<12} "
                           f"{row['engine']} {row['layout']} {row['workload']} "
-                          f"{row.get('sha256', row.get('row_id'))}")
+                          f"{row['sha256']}")
             return 0
         if args.results_action == "baseline":
             baseline = results.make_baseline(
@@ -221,7 +246,8 @@ def cmd_results(args: argparse.Namespace) -> int:
                 _show_history(report)
             return 0
         raise results.ResultsError(f"unknown results command {args.results_action}")
-    except (results.ResultsError, run_records.RecordError, OSError, ValueError, KeyError, TypeError) as exc:
+    except (results.ResultsError, run_records.RecordError, run_manifest.ManifestError,
+            OSError, ValueError, KeyError, TypeError) as exc:
         print(f"results: {exc}", file=sys.stderr)
         return 2
 
@@ -241,7 +267,21 @@ def register(sub) -> None:
         command.add_argument("--json", action="store_true", help="emit structured JSON")
         command.set_defaults(func=cmd_results)
 
-    listing = actions.add_parser("list", help="list verified run records and read-only legacy workload rows")
+    putting = actions.add_parser("put", help="publish a complete record with SHA-verified input blobs")
+    putting.add_argument("--record", type=Path, required=True, help="record JSON input")
+    putting.add_argument("--blob", action="append", default=[], metavar="SHA256=PATH",
+                         help="exact source bytes (repeat for all blobs not already in the store)")
+    putting.add_argument("--run-dir", type=Path, help="atomically add a typed edge to its WSL01 manifest")
+    putting.add_argument("--work-root", type=Path, default=None)
+    putting.add_argument("--json", action="store_true")
+    putting.set_defaults(func=cmd_results)
+
+    querying = actions.add_parser("query", help="filter only SHA-verified v1 records")
+    common(querying)
+    querying.add_argument("--run-id", help="WSL01 run identity")
+    querying.add_argument("--metric", help="phase-qualified metric, e.g. decode.tokens_per_second")
+
+    listing = actions.add_parser("list", help="list verified run records")
     common(listing)
     listing.add_argument("--today", action="store_true",
                          help="restrict to today's UTC date (use --engine radiance --workload parity)")
@@ -258,6 +298,14 @@ def register(sub) -> None:
     ingest.add_argument("--work-root", type=Path, default=None)
     ingest.add_argument("--json", action="store_true")
     ingest.set_defaults(func=cmd_results)
+
+    native_lab = actions.add_parser("ingest-native-lab",
+                                    help="ingest typed measurements from a stopped native Radiance owner")
+    native_lab.add_argument("--run-dir", type=Path, required=True)
+    native_lab.add_argument("--measurement-file", type=Path, required=True)
+    native_lab.add_argument("--work-root", type=Path, default=None)
+    native_lab.add_argument("--json", action="store_true")
+    native_lab.set_defaults(func=cmd_results)
 
     baseline = actions.add_parser("baseline", help="create portable spread-derived baseline (two or more launches)")
     common(baseline, require_scope=True)

@@ -18,7 +18,9 @@ RETIRED = ("rad0034_prefill_concurrency", "rad0035_prefill_order")
 
 
 def meta(name: str) -> dict:
-    with (PATCHES / name / "patch.toml").open("rb") as f:
+    # A retired patch lives, unchanged, under archive/ (never composed); an active one at the patches root.
+    package = PATCHES / "archive" / name if name in RETIRED else PATCHES / name
+    with (package / "patch.toml").open("rb") as f:
         return tomllib.load(f)
 
 

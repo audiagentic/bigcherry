@@ -50,17 +50,22 @@ def _json_bytes(value: object) -> bytes:
 
 
 def with_host_facts(record: dict[str, Any], facts: dict[str, Any] | None = None) -> dict[str, Any]:
-    """Return an independent v1 record populated from the platform collector.
+    """Copy a measurement-owner's already captured v1 start snapshot.
 
     Adapters call this before `put_record`; existing stored records are immutable.
     A caller may inject a fixture snapshot, avoiding host access in unit tests.
     """
     from copy import deepcopy
 
-    from .host_facts import collect_host_facts
+    from .host_facts import validate_start_snapshot
 
+    if facts is None:
+        raise RecordError("start host facts must be captured by the measurement owner")
     updated = deepcopy(record)
-    updated["host_facts"] = deepcopy(facts if facts is not None else collect_host_facts())
+    try:
+        updated["host_facts"] = deepcopy(validate_start_snapshot(facts))
+    except ValueError as exc:
+        raise RecordError(f"invalid start host facts: {exc}") from exc
     validate_record(updated)
     return updated
 
@@ -167,21 +172,48 @@ def validate_record(record: Any) -> dict[str, Any]:
     _check_schema(record, schema, schema, "record")
     # Arbitrary workload/host details must still be JSON, with no NaN/Infinity.
     _json_bytes(record)
-    # Optional MRC05 metric metadata is strict when supplied. Legacy MRC01
-    # records remain readable but cannot be used to create measured gates.
-    if "metric_specs" in record:
-        for phase in ("decode", "prefill", "ttft"):
-            if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
-                raise RecordError(f"metric_specs.{phase}: direction missing or extra metric")
-            for spec in record["metric_specs"][phase].values():
-                if type(spec["gated"]) is not bool:
-                    raise RecordError("metric gate must be a boolean")
-    # VA25 validity must not have internally contradictory verdict metadata.
-    # Absence is supported for pre-MRC06 v1 records; such records remain readable.
+    # MRC02: a Radiance record must carry the SHA-bound measurement start
+    # receipt on both read and write. Do not synthesize an old host snapshot.
+    from . import engines
+    if record["identity"]["engine"] == engines.RADIANCE:
+        from .host_facts import validate_start_snapshot
+
+        try:
+            validate_start_snapshot(record["host_facts"])
+            start = datetime.fromisoformat(record["host_facts"]["captured_at"])
+            recorded = datetime.fromisoformat(record["recorded_at"])
+            if start > recorded:
+                raise ValueError("start receipt is after measured record")
+        except (ValueError, TypeError, KeyError) as exc:
+            raise RecordError(f"Radiance record requires sealed start host facts: {exc}") from exc
+
+    # MRC05/#1226: exact per-phase metric direction and gate are mandatory.
+    if "metric_specs" not in record:
+        raise RecordError("metric_specs is required: every metric needs an explicit direction and gate")
+    for phase in ("decode", "prefill", "ttft"):
+        if set(record["metric_specs"][phase]) != set(record["metrics"][phase]):
+            raise RecordError(f"metric_specs.{phase}: direction missing or extra metric")
+        for spec in record["metric_specs"][phase].values():
+            if type(spec["gated"]) is not bool:
+                raise RecordError("metric gate must be a boolean")
+
+    # VA25 validity must not contradict its reason codes.
     if "validity" in record:
         validity = record["validity"]
         if (validity["state"] == "valid") != (not validity["reason_codes"]):
             raise RecordError("validity: reason_codes disagree with execution verdict")
+    if "calibration_record" in record:
+        selection = record["calibration_record"]
+        if selection["status"] == "none":
+            if set(selection) != {"status", "reason_code", "reason_detail"}:
+                raise RecordError("calibration none requires only a reason code and detail")
+        elif selection["status"] == "selected":
+            required = {"status", "kind", "key_sha256", "record_blob", "quantity_blobs"}
+            if set(selection) != required:
+                raise RecordError("calibration selected requires kind, key, record_blob and quantity_blobs")
+            names = [entry["name"] for entry in selection["quantity_blobs"]]
+            if len(names) != len(set(names)):
+                raise RecordError("calibration has duplicate quantity blob names")
     return record
 
 
@@ -192,6 +224,11 @@ def blob_references(record: dict[str, Any]) -> Iterator[dict[str, Any]]:
         yield bundle[name]
     for item in bundle["inputs"]:
         yield item["blob"]
+    if record.get("calibration_record", {}).get("status") == "selected":
+        selected = record["calibration_record"]
+        yield selected["record_blob"]
+        for item in selected["quantity_blobs"]:
+            yield item["blob"]
 
 
 def _digest(data: bytes) -> str:
@@ -320,10 +357,28 @@ class RunRecordStore:
             raise RecordError(f"blob size mismatch for {digest}")
         return raw
 
+    def _check_calibration_record(self, record: dict[str, Any]) -> None:
+        selection = record.get("calibration_record", {})
+        if selection.get("status") != "selected":
+            return
+        from . import calibration_records
+        try:
+            raw = self.get_blob(selection["record_blob"])
+            payload = json.loads(
+                raw.decode("utf-8"), object_pairs_hook=_pairs_no_duplicates
+            )
+            calibration_records.validate_record(payload)
+        except (ValueError, UnicodeError, KeyError, TypeError) as exc:
+            raise RecordError(f"calibration record blob is invalid: {exc}") from exc
+        if (selection["kind"] != payload["kind"] or
+                selection["key_sha256"] != payload["key"]["sha256"]):
+            raise RecordError("calibration record selected key/kind differs from blob")
+
     def put_record(self, record: dict[str, Any]) -> str:
         data = canonical_record_bytes(record)
         for ref in blob_references(record):
             self.get_blob(ref)
+        self._check_calibration_record(record)
         digest = _digest(data)
         self._put(self.record_path(digest), data, digest)
         return digest
@@ -333,6 +388,7 @@ class RunRecordStore:
         record = _decode_record(raw)
         for ref in blob_references(record):
             self.get_blob(ref)
+        self._check_calibration_record(record)
         return record
 
     def _objects(self, kind: str) -> Iterator[Path]:
@@ -370,6 +426,7 @@ class RunRecordStore:
         self,
         *,
         engine: str | None = None,
+        run_id: str | None = None,
         layout: str | None = None,
         workload: str | None = None,
         metric: str | None = None,
@@ -400,7 +457,9 @@ class RunRecordStore:
             digest = _check_digest(path.stem)
             doc = self.get_record(digest)
             if (
-                engine is not None
+                run_id is not None
+                and doc["run_id"] != run_id
+                or engine is not None
                 and doc["identity"]["engine"] != engine
                 or layout is not None
                 and doc["identity"]["layout"] != layout
