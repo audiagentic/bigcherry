@@ -20,6 +20,12 @@ models:
     rope-scaling: none
     p2p: "off"
     pipelined-prefill: auto
+    # Pipeline a one-sequence prefill step from 256 rows rather than 1024, so a 512-token prompt overlaps its all-reduces too:
+    # +7.6% / +2.9% / +1.6% at 1/4/8 streams, identical output (VTP31 experiment 7).
     pipelined-prefill-min-rows: 256
     tp-ownership: "kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24"
+    # The all-reduce grid (rad0022): four blocks of 256 threads beat the default at every stream count and prompt size, with
+    # identical output (VTP31 experiment 1). The two-shot form (rad0032, rad0033): four pieces with the fused step, the duplex
+    # link weights and the reduced shard written once. Against the grid alone: time to first token -21 / -27 / -25% at
+    # 512 / 2048 / 6144 tokens, 4/6/8 streams +13.6 / +13.5 / +16.7%, bit-identical output (VTP36).
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"

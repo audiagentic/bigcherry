@@ -104,6 +104,15 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"rank_devices", cfg.rank_devices},
                          {"max_context", cfg.max_ctx},
                          {"max_sequences", cfg.max_seqs},
+                         // The tuning options the authored YAML states, as the strict reader accepted them (null: absent).
+                         {"tuning", {{"p2p", source("--p2p")},
+                                      {"pipelined_prefill", source("--pipelined-prefill")},
+                                      {"pipelined_prefill_min_rows",
+                                       cfg.given.contains("--pipelined-prefill-min-rows")
+                                           ? nlohmann::json(cfg.pipelined_prefill_min_rows) : nlohmann::json(nullptr)},
+                                      {"prefill_governor", source("--prefill-governor")},
+                                      {"tp_ownership", source("--tp-ownership")},
+                                      {"tune_pin", source("--tune-pin")}}},
                          {"settings", {{"max_batched_tokens", cfg.max_tok},
                                        {"checkpoint_interval", cfg.checkpoint_interval},
                                        {"placement", cfg.placement},

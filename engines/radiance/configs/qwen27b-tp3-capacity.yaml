@@ -20,6 +20,9 @@ models:
     rope-scaling: none
     p2p: "off"
     pipelined-prefill: auto
+    # Pipeline a one-sequence prefill step from 256 rows rather than 1024, so a 512-token prompt overlaps its all-reduces too:
+    # +7.6% / +2.9% / +1.6% at 1/4/8 streams, identical output (VTP31 experiment 7).
     pipelined-prefill-min-rows: 256
     tp-ownership: "kv=1,1,2;ffn=7680,7680,2048;lk=7,7,2;lv=21,21,6"
+    # the all-reduce grid without the two-shot form, as this split was measured (VTP33)
     tune-pin: "all_reduce:nblocks=4,nthreads=256"

@@ -2299,7 +2299,7 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     const Json& listener = engine_report.value("listener", Json::object());
     if (!exact_keys(engine_report, {"abi_version", "model", "radiance_home", "radiance_home_source", "kernels",
                                     "kernels_source", "listener", "tp", "cards", "rank_devices",
-                                    "max_context", "max_sequences", "settings"}) ||
+                                    "max_context", "max_sequences", "tuning", "settings"}) ||
         !integer_field(engine_report, "abi_version") || !string_field(engine_report, "model") ||
         !string_field(engine_report, "radiance_home") ||
         !nullable_string_field(engine_report, "radiance_home_source") ||
@@ -2361,6 +2361,20 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
         throw PlanFailed("native config admission: model-defined context is not representable; set max-model-len");
     settings.max_context = static_cast<uint32_t>(context);
     settings.max_sequences = static_cast<uint32_t>(sequences);
+    {
+        const Json& tuning = engine_report.at("tuning");
+        if (!tuning.is_object() ||
+            !exact_keys(tuning, {"p2p", "pipelined_prefill", "pipelined_prefill_min_rows", "prefill_governor",
+                                 "tp_ownership", "tune_pin"}))
+            throw PlanFailed("native config inspector: report omitted the tuning settings");
+        for (const auto& [name, value] : tuning.items()) {
+            if (value.is_null()) continue;
+            const bool rows = name == "pipelined_prefill_min_rows";
+            if (rows ? !value.is_number_integer() : (!value.is_string() || value.get_ref<const std::string&>().empty()))
+                throw PlanFailed("native config inspector: ill-typed tuning " + name);
+            out.settings.tuning.emplace(name, value);
+        }
+    }
     const Json& runtime = engine_report.at("settings");
     if (!exact_keys(runtime, {"max_batched_tokens", "checkpoint_interval", "placement",
                               "ngram_placement", "kv_dtype", "speculative_tokens", "rope_scaling",

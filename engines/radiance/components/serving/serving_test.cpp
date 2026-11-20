@@ -3592,6 +3592,28 @@ void session_engine_plan(Fixture& t) {
             };
             if (const std::string pass = preflight([](ss::Env&) {}); !pass.empty())
                 throw std::runtime_error("preflight: a matching YAML was refused: " + pass);
+            // The tuning options the YAML states are the resolver's tuning values; ill-typed ones are refused.
+            {
+                ss::EnginePlanInputs pre = gated;
+                pre.native_preflight = true;
+                pre.native_admission->runtime_overrides["TEST_NATIVE_INSPECT_TUNING"] =
+                    Json{{"tp_ownership", "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"},
+                         {"tune_pin", "all_reduce:nblocks=4"}, {"p2p", "off"}, {"pipelined_prefill_min_rows", 256}}
+                        .dump();
+                const fs::path tuned_run = run / "native-preflight-tuning";
+                fs::create_directories(tuned_run);
+                const ss::EngineStart tuned = ss::plan_engine_only(pre, tuned_run, ss::Hooks{});
+                const Json& tuning = tuned.native_preflight_values.at("tuning");
+                assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
+                assert(tuning.at("tune_pin") == "all_reduce:nblocks=4" && tuning.at("p2p") == "off");
+                assert(tuning.at("pipelined_prefill_min_rows") == 256 && !tuning.contains("prefill_governor"));
+            }
+            refused_for("ill-typed tuning tp_ownership", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tp_ownership", 5}}.dump(); });
+            refused_for("ill-typed tuning tune_pin", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tune_pin", ""}}.dump(); });
+            refused_for("ill-typed tuning pipelined_prefill_min_rows", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"pipelined_prefill_min_rows", "256"}}.dump(); });
             refused_for("model-defined context", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MAX_CONTEXT"] = "0"; });
             refused_for("explicit ngram-placement", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"ngram_placement", "auto"}}.dump(); });

@@ -82,8 +82,6 @@ combine = true
 
 # ABI43 changes an absent interleave to `auto:1`; the measured v1.17 baseline
 # used zero. Keep the chosen production setting explicit across this bump.
-[config.flashnext-4gpu.tuning]
-prefill_interleave = 0
 
 [config.flashnext-4gpu.handoff]
 # The production mixed-workload ranking (the committed lab source ships in prefix/heat).
@@ -154,9 +152,6 @@ host_pool_mib = 4096
 [config.flashnext-tp2xtx-r9700.handoff]
 heat = "@bundle/heat/flashnext-mixed.hot-first"
 histogram_period_s = 1   # as flashnext-2xtx
-
-# The ranks exchange through host memory: this host has no peer-to-peer path.
-p2p = "off"
 
 # RAD49 steps 3-4: both other cards are remote-MoE helpers behind both ranks: the R9700 takes the hottest experts it holds,
 # the RX 6900 XT the coldest that fit what it left (tail), and helper 0 combines both helpers' rows on the CPU into the

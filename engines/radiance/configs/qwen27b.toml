@@ -17,19 +17,6 @@ tp_wire = "exact"
 host_pool_mib = 0
 host_kv_mib = 0
 
-# The ranks exchange through host memory: this host has no peer-to-peer path.
-p2p = "off"
-tp_ownership = "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
-# The pipelined prefill on the int8 trunk is opt-in (rad0030): "on", not "auto", which keeps such a trunk serial.
-# One-prompt time to first token -17% to -21%, four 4096-token prompts -16%, 4/6/8 streams +7.4% / +7.8% / +8.4%; KLD
-# against the serial prefill 0.0012 mean, top-1 99.3%, less than the serial prefill moves when its chunk is halved (VTP37).
-pipelined_prefill = "on"
-# The all-reduce grid and two-shot form (rad0022, rad0032, rad0033): time to first token -13 / -24 / -22% at 512 / 2048 /
-# 6144 tokens, 4/6/8 streams +7.6 / +10.9 / +13.9%, bit-identical output (VTP31, VTP36).
-tune_pin = "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
-# The narrowest pipelined step, as in the MXFP4 layout (VTP31 experiment 12).
-pipelined_prefill_min_rows = 256
-
 # The 5,5,6 split: the R9700 takes the largest share of heads and feed-forward, so each card keeps about 228,000 tokens of
 # KV cache against about 56,000. Against qwen27b-tp3-int8 (ABBA, n=8): 1/4/6/8 streams +2.6 / +2.3 / +12.0 / +5.4%, time to
 # first token -2.8 / -0.1 / -4.3% at 512 / 2048 / 6144 tokens; passes the reordering quality gate against its own serial
@@ -38,11 +25,8 @@ pipelined_prefill_min_rows = 256
 base = "qwen27b-tp3-int8"
 description = "qwen27b-tp3-int8 with the 5,5,6 split: about 4x the KV cache per card"
 
-[config.qwen27b-tp3-int8-556.tuning]
-tp_ownership = "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"
-
 # The MXFP4 container on the same three ranks (VTP14): the R9700 takes the largest share. The split is a setting, checked
-# against the loaded model, so a sweep is `--set tuning.tp_ownership=...` and needs no rebuild.
+# against the loaded model, so a sweep edits `tp-ownership` in its YAML and needs no rebuild.
 [config.qwen27b-tp3]
 description = "Qwen3.8-27B MXFP4 over XTX, XTX, R9700 (native TP3): 6/6/12 query heads, the R9700 the largest share"
 model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad"
@@ -53,30 +37,12 @@ tp_wire = "exact"
 host_pool_mib = 0
 host_kv_mib = 0
 
-[config.qwen27b-tp3.tuning]
-p2p = "off"   # the ranks exchange through host memory
-tp_ownership = "kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24"
-pipelined_prefill = "auto"
-# The all-reduce grid (rad0022): four blocks of 256 threads beat the default at every stream count and prompt size, with
-# identical output (VTP31 experiment 1). The two-shot form (rad0032, rad0033): four pieces with the fused step, the duplex
-# link weights and the reduced shard written once. Against the grid alone: time to first token -21 / -27 / -25% at
-# 512 / 2048 / 6144 tokens, 4/6/8 streams +13.6 / +13.5 / +16.7%, bit-identical output (VTP36).
-tune_pin = "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
-# Pipeline a one-sequence prefill step from 256 rows rather than 1024, so a 512-token prompt overlaps its all-reduces too:
-# +7.6% / +2.9% / +1.6% at 1/4/8 streams, identical output (VTP31 experiment 7).
-pipelined_prefill_min_rows = 256
-
 # For resident context rather than speed: the delta-net and feed-forward shares move off the R9700, so with rad0029 (every
 # rank its own VRAM split) its memory goes to the KV cache. At 262,144 tokens and 8 sequences it holds 6.7 full-length
 # sessions against qwen27b-tp3's 5.5 and dual-XTX TP2's 3.3, at 3-8% less throughput than qwen27b-tp3 (VTP33).
 [config.qwen27b-tp3-capacity]
 base = "qwen27b-tp3"
 description = "qwen27b-tp3 for resident context: 7/7/2 delta-net, 7680/7680/2048 feed-forward, 262,144 tokens"
-
-[config.qwen27b-tp3-capacity.tuning]
-tp_ownership = "kv=1,1,2;ffn=7680,7680,2048;lk=7,7,2;lv=21,21,6"
-# the all-reduce grid without the two-shot form, as this split was measured (VTP33)
-tune_pin = "all_reduce:nblocks=4,nthreads=256"
 
 # Two RDNA3 engine ranks with the lossy wht6 all-reduce over host memory: no helpers, no route heat.
 [config.qwen27b-2xtx]
@@ -88,9 +54,6 @@ tp_wire = "wht6"
 [config.qwen27b-2xtx.memory]
 host_pool_mib = 0
 host_kv_mib = 0
-
-[config.qwen27b-2xtx.tuning]
-p2p = "off"
 
 # The 5,5,6 split at 262,144 tokens a session. The cache is sized from the context setting, not the cards: at 8 x 8192
 # the cards kept about 10 GiB each unused, and at 8 x 262,144 the cache takes them. 2026-11-14 (one start each):
@@ -116,15 +79,6 @@ description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M to
 # starts an arm): beside a 100k-token prompt, 4 decoding streams get 6.0 -> 16.0 chunks/s (typical gap 847 -> 41 ms)
 # for +9.8% on that prompt's first token; 7 streams 10.3 -> 26.4 chunks/s for +14%. A prompt with nothing else running,
 # and eight 100k prompts at once, are unchanged. Interleave 4 / 8 gave 4.1x / 6.2x for +19% / +39%.
-[config.qwen27b-tp3-int8-556-long.tuning]
-prefill_interleave = 2
-# Prefill governor (VTP42): prompt left in flight held within 1.5x the largest request (262,144 -> 393k tokens) and
-# free KV; prompts within 16k tokens are never held back; prefill work goes to the prompt with least left; a prompt
-# still waiting to start after 120 s reserves its place against later long prompts. Eight 100k prompts plus 4k / 8k /
-# 16k requests arriving mid-run (-long-bf16): 100k mean first token 299 -> 228 s and last 477 -> 390 s against the
-# VTP39/VTP41 cap of two, mid-size 5-8 / 11-16 / 19-28 s (unchanged), no preemptions. Evidence:
-# docs/evidence/2026-11-16-vtp42-prefill-governor/README.md (and the VTP39/VTP41 evidence it builds on).
-prefill_governor = "kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000"
 
 [config.qwen27b-tp3-int8-556-long-bf16]
 base = "qwen27b-tp3-int8-556-long"

@@ -248,6 +248,17 @@ int main(int argc, char** argv) {
         const std::string engine_identity = sv::engine_identity(binary, runtime_home);
         const Json native_key = sv::plan_key_inputs(inputs.resolved.values, facts, model_identity,
                                                      engine_identity, "", &*inputs.native_config);
+        { // A native key binds the YAML digest, which covers every tuning option the YAML states: tuning values add
+          // nothing to it, and a changed YAML (hence a changed tuning value) changes the digest and so the key.
+            Json tuned = inputs.resolved.values;
+            tuned["tuning"] = {{"tp_ownership", "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"}};
+            const Json tuned_key = sv::plan_key_inputs(tuned, facts, model_identity, engine_identity, "",
+                                                       &*inputs.native_config);
+            check(!native_key.contains("tuning") && tuned_key == native_key,
+                  "a native plan key must bind tuning through the YAML digest, not a second copy");
+            check(native_key.at("native_config").at("sha256") == inputs.native_config->sha256(),
+                  "the native plan key does not carry the YAML digest");
+        }
         const fs::path cache_dir = temporary.path / "plan-cache";
         const sv::OwnerMeasurementEvidence owner{"v3-writer-attempt", sv::sha256_hex(measuring.text)};
         const auto stored = sv::plan_cache_store_owned(cache_dir, native_key, native_plan, rank_demand,

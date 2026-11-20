@@ -1335,6 +1335,16 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
         } else {
             native_value("engine.no_prefix_cache", "on");
         }
+        // The YAML is the one source of the tuning options: nothing else (config, site, profile, --set) sets them.
+        for (const char* name : {"p2p", "pipelined_prefill", "pipelined_prefill_min_rows", "prefill_governor",
+                                 "tp_ownership", "tune_pin"}) {
+            if (values.contains("tuning") && values.at("tuning").contains(name)) {
+                values.at("tuning").erase(name);
+                provenance.erase(std::string("tuning.") + name);
+            }
+        }
+        for (const auto& [name, value] : native->tuning)
+            native_value(("tuning." + name).c_str(), value);
         if (native->prefill_interleave) {
             native_value("tuning.prefill_interleave", *native->prefill_interleave);
         } else {

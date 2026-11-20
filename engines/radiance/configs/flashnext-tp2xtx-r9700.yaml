@@ -18,4 +18,5 @@ models:
     num-speculative-tokens: 3
     prefix-resume: nearest
     rope-scaling: none
+    # The ranks exchange through host memory: this host has no peer-to-peer path.
     p2p: "off"

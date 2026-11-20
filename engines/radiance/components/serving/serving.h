@@ -1,6 +1,7 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
@@ -73,6 +74,9 @@ struct NativeEngineSettings {
     std::string placement, ngram_placement, kv_dtype, rope_scaling, prefix_resume;
     bool prefix_cache;
     std::optional<uint32_t> prefill_interleave;
+    // The tuning options the YAML states (resolver key tuning.NAME, strings except pipelined_prefill_min_rows, an
+    // integer). The engine's strict reader validated their form; the resolver validates their type and range.
+    std::map<std::string, nlohmann::json> tuning;
 };
 struct Options {
     std::filesystem::path sys_root = "/";
