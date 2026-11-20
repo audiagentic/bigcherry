@@ -1668,7 +1668,7 @@ void manifest_writer_step(Fixture& t) {
                                     std::istreambuf_iterator<char>());
             const auto refused_with_unsupported_format = [&](const std::string& file, const std::string& text) {
                 sv::ManifestInputs old = calibrated;
-                old.calibration_cache = t.file(file, text);
+                old.calibration_cache = t.file(file.c_str(), text);
                 try { (void)sv::build_manifest(old); }
                 catch (const std::exception& e) {
                     return std::string(e.what()).find("unsupported record format") != std::string::npos;

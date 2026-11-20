@@ -250,9 +250,12 @@ int main() {
         const fs::path good_store = dir / "good-store.toml";
         fs::copy_file(BC_CALIBRATION_PRODUCTION_FIXTURE, good_store);
         assert(sv::prune_live_policy_store(good_store, true).empty());
-        assert([&] { std::ifstream a(good_store), b(BC_CALIBRATION_PRODUCTION_FIXTURE);
-                     return std::string(std::istreambuf_iterator<char>(a), std::istreambuf_iterator<char>()) ==
-                            std::string(std::istreambuf_iterator<char>(b), std::istreambuf_iterator<char>()); }());
+        const bool unchanged = [&] {
+            std::ifstream a(good_store), b(BC_CALIBRATION_PRODUCTION_FIXTURE);
+            return std::string(std::istreambuf_iterator<char>(a), std::istreambuf_iterator<char>()) ==
+                   std::string(std::istreambuf_iterator<char>(b), std::istreambuf_iterator<char>());
+        }();
+        assert(unchanged);
         assert(sv::prune_live_policy_store(old_store, true).empty());   // idempotent
     }
     fs::remove_all(dir);
