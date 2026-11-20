@@ -104,6 +104,8 @@ A full 2.2 v3 runtime was staged for the ec28406a2 checkpoint. Engine, worker an
 
 The pool-fallback engine produced a live plan. At an explicit diagnostic trial of 2247 MiB, writer convergence succeeded and all three helpers and the serving engine launched. After loading Flash-Next, stock Radiance 2.2 refused managed serving because its Engine had no attached server Front. Health, named replay and explicit replay did not complete. Automatic remeasurement checkpoint be89849c0 passed the card-free convergence, lookup and replay test and is running separately under the GPU lease without the manual pool override.
 
+Live automatic remeasurement at be89849c0 produced two distinct engine plan receipts and converged from 9216 to 2247 MiB unchanged YAML, then launched serving. Front integration 7ef6186a2 attaches the stock HTTP front on managed online paths and leaves measurement/offline unchanged. Exact 2.2 patch replay, five manifest cases and 105 native front host checks pass. A front-enabled live run is queued separately for health, fresh start and both replay paths.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -127,3 +129,4 @@ The pool-fallback engine produced a live plan. At an explicit diagnostic trial o
 - 2026-11-19T21:41:03.879740+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:05:36.031221+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T00:13:25.180057+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T00:23:43.215660+00:00 (updated-by): Updated: section:notes
