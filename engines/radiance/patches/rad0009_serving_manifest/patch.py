@@ -567,7 +567,12 @@ int bc_serving_managed_front(rad::Engine& engine, std::unique_ptr<rad::StallWatc
     transport.max_queued = 64;
 
     rad::server::Front front(std::move(transport), g_front_keepalive_ms);
-    front.add(cfg.served_model_name, g_front_aliases, g_front_load_ms, true);
+    auto aliases = g_front_aliases;
+    // Older managed clients send an explicit model "default".
+    if (cfg.served_model_name != "default" &&
+        std::find(aliases.begin(), aliases.end(), "default") == aliases.end())
+        aliases.emplace_back("default");
+    front.add(cfg.served_model_name, aliases, g_front_load_ms, true);
     front.set_operator_rule([&cfg](const rad::server::HttpRequest& req) {
         return !cfg.api_key.empty() || rad::server::local_operator(req, cfg.host, cfg.allow_hosts);
     });
@@ -580,7 +585,7 @@ int bc_serving_managed_front(rad::Engine& engine, std::unique_ptr<rad::StallWatc
         return RAD_E_IO;
     }
 
-    engine.set_front(&front, g_front_aliases);
+    engine.set_front(&front, std::move(aliases));
     std::atomic<bool> served{false};
     int serve_rc = RAD_OK;
     std::thread model([&] {
