@@ -76,7 +76,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-Native settings have one upstream parser/default/provenance authority and no duplicate BigCherry mirror. Exact replay uses admitted immutable bytes with build identity; all helper/resource/power guarantees remain. No new normalized writer, serializer, generic registry or bundle layer is required.
+All 18 serving configs are single YAML files (native sections plus x-bigcherry v1); no TOML catalogue, layout file, v2 serving contract or reader of them remains; every caller listed in the design is migrated; schema, agreement, single-source, variant and release tests pass; the resolved values of all 18 equal the pre-switch reference except the deletions the mapping lists; RUM09 start/canary/stop of each config passes on the 2.2 build.
 
 ## Notes
 
@@ -229,6 +229,8 @@ Audit of d92592f9: the sealed manifest declared 12288 MiB host KV and 4705 MiB r
 
 b8d41e31d admits native listener, limits, kernel order, batching, checkpoint interval, KV format, placement, speculation, RoPE and prefix policy into the resolver only from the matched engine’s sealed native inspection. The same receipt reaches the draft writer, measured P1 and final writer, and named/explicit replay. Verified installed explicit replay uses bundle configs and authenticated YAML resolution root when omitted. Focused native owner and exact upstream parser tests passed. Remaining qualification includes actual v3 bundle install/replay and the supported explicit handling of native auto defaults.
 
+2026-11-20 owner decision: a serving config is one seamless native YAML file per deployment with a closed, typed top-level x-bigcherry section; the RSC12 TOML catalogue, layout files and their readers are deleted in this change. This replaces the step 'use existing BC profile selection first; add only a narrow x-bigcherry selector if needed'. Design and full key mapping (153 resolver keys plus file-level TOML keys): docs/design/radiance-native-config-x-bigcherry.md. The interim YAML-beside-slimmed-TOML commits d99323272..c04c69128 are reworked to that design (their YAML files, preflight and inspector tuning report are kept).
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -298,3 +300,4 @@ b8d41e31d admits native listener, limits, kernel order, batching, checkpoint int
 - 2026-11-20T03:22:59.663552+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:36:45.051737+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:53:19.772616+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T10:44:09.358513+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
