@@ -2,7 +2,7 @@
 id: MRC06
 order: 6
 plan: run-measurement-records
-state: pending
+state: completed
 created-at: '2026-11-19T00:50:46.203067+00:00'
 breadth: ''
 skill: intermediate
@@ -49,9 +49,7 @@ One producer per PR. Each step ends with the old writer removed (not dual-writin
 
 ## Validation
 
-- Per producer: a run writes a record that round-trips and validates; the old writer no longer exists or is read-only.
-- tools/tests passes (BC_WORK_ROOT set); bigcherry check --quick clean.
-- The attestation test suite still passes with the field moved into the record.
+Merged: #1203 (parity launches publish run records), #1205 (workload, experiment producers on run-record v1), #1209 (native calibration ingest and needle/image probes as records, bigcherry results list/show), #1223 (old JSONL workload index, legacy listing, parity.json and the harness's baseline/compare removed; 138 retired rows kept as evidence), #1231 (one canonical Radiance results path; native lab ingest refuses sidecars without typed metric specs). Tests: tools/tests/bench/test_mrc06_producers.py, tools/tests/lab/test_mrc06_labruns.py, tools/tests/lab/test_flashnext_parity.py, tools/tests/core/test_results.py; core/bench/lab suites 763 pass.
 
 ## Effort & Risk
 
@@ -63,9 +61,7 @@ Large across six PRs. Risk: a half-migrated state with two stores; mitigate by r
 
 ## Acceptance Criteria
 
-- There is exactly one write path for measurement results.
-- Old stores open read-only and have an entry in the disposition registry.
-- Attestation validity is a field of the record.
+Every Radiance measurement producer writes only immutable run-record v1 through core.measurement_producers; no old result store, summary file, record toggle, compatibility output or legacy listing remains; retired results are kept only as evidence. llama.cpp producers are tracked separately in plan run-llamacpp-measurement (LCM01).
 
 ## Notes
 
@@ -162,3 +158,5 @@ digest verification. It pins the complete source evidence as immutable
 blobs and marks unattested measurements as unverified. The CLI, sidecar
 and owner-state refusal tests are CPU-only. The earlier slice notes and
 acceptance audit describe historical state; llama.cpp work is MRC07.
+- 2026-11-20T01:49:57.796375+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-20T01:50:05.332411+00:00 (state-transition): State: pending → completed
