@@ -112,6 +112,10 @@ struct Fixture {
     Fixture() : root(fs::current_path() / "bc-serving-fixture") {
         // This test only writes in its own CTest build directory.
         fs::remove_all(root);
+        const auto cache_root = root / "work";
+        fs::create_directories(cache_root);
+        if (::setenv("BC_WORK_ROOT", cache_root.c_str(), 1) != 0)
+            throw std::runtime_error("cannot set fixture BC_WORK_ROOT");
         const auto nodes = root / "sys/class/kfd/kfd/topology/nodes";
         write(nodes / "0/properties", "gfx_target_version 0\n");
         // KFD node order, not BDF sort or device names, defines HIP ordinals.

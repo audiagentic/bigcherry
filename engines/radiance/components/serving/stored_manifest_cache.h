@@ -53,7 +53,11 @@ struct ModelIdentity {
 // the OS file boundary so a test can assert zero reads on a hit. The owner can
 // also reuse a verified identity from the same measurement attempt.
 using FullFileReader = callback::Guarded<std::string(const std::filesystem::path&)>;
-ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
+// One shared cache per BC_WORK_ROOT; identical model paths reuse the digest
+// across independent run directories and named configurations.
+std::filesystem::path model_identity_cache_path(const std::filesystem::path& model,
+                                                const std::filesystem::path& work_root);
+ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& work_root,
                                     const FullFileReader& full_reader = {},
                                     const ModelIdentity* verified = nullptr);
 
@@ -71,8 +75,7 @@ struct StoredManifestIndex {
     std::string key;
     std::string manifest_filename;
     std::string digest;
-    std::string model_digest; // optional on generic indices; mandatory for production replay attestation
-    std::optional<FileStamp> model_stamp; // full model digest reusable only with identical stat identity
+    std::string model_digest; // binds immutable manifest to original model; never a digest lookup cache
     std::string s8_digest; // optional full hash of the original writer's native P1/P2 replay evidence
     struct NativeMeasurement {
         std::string attempt_id;
