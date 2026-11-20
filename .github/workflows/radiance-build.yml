@@ -205,7 +205,8 @@ jobs:
               # The isolated test build uses the generated files and SDK of the release build.
               sdk_package=$(sed -nE "s/^radiance_DIR:[^=]+=//p" "$serving/CMakeCache.txt")
               engine_source=$(sed -nE "s/^RADIANCE_SRC:[^=]+=//p" "$serving/CMakeCache.txt")
-              test -d "$sdk_package" && test -d "$engine_source"
+              test -d "$sdk_package"
+              test -d "$engine_source"
               fixture="$serving/v3-owner-tests"
               cmake -S engines/radiance/components/serving -B "$fixture" -G Ninja \
                 -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$RADIANCE_HOST_CXX" \
