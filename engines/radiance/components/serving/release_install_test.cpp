@@ -167,14 +167,11 @@ class Fixture {
                            .dump();
         }
         add("bigcherry-build-metadata-radiance.json", metadata);
-        add("configs/flashnext.toml", "schema = 1\n");
-        add("configs/qwen27b.toml", "schema = 1\n");
-        if (native_profile || fault == Fault::native_profile_interpreter || fault == Fault::native_profile_executable)
-            add("configs/flashnext-4gpu.yaml",
-                fault == Fault::native_profile_interpreter ? "# requires python3\ncards: [0]\n" : "cards: [0]\n",
-                fault == Fault::native_profile_executable ? 0755 : 0644);
-        if (native_profile)   // every named config has its profile: a second one rides with the first
-            add("configs/qwen27b-tp3-int8-556.yaml", "cards: [0, 1, 2]\n");
+        // A config is its native YAML: the bundle carries one file per named config (the second one here stands for the rest).
+        add("configs/flashnext-4gpu.yaml",
+            fault == Fault::native_profile_interpreter ? "# requires python3\ncards: [0]\n" : "cards: [0]\n",
+            fault == Fault::native_profile_executable ? 0755 : 0644);
+        add("configs/qwen27b-tp3-int8-556.yaml", "cards: [0, 1, 2]\n");
         if (fault == Fault::unknown_profile)
             add("configs/unreviewed.yaml", "cards: [0]\n");
         add("heat/flashnext-mixed.hot-first", "mixed production heat seed\n");
@@ -218,12 +215,12 @@ class Fixture {
         tar_member(zip, Member{"bundle.json", bytes});
         for (const auto& [name, member] : members) {
             Member entry = member;
-            if (fault == Fault::entry_mode && name == "configs/qwen27b.toml")
+            if (fault == Fault::entry_mode && name == "configs/qwen27b-tp3-int8-556.yaml")
                 entry.mode = 0755; // disagrees with manifest (not a chmod-based test)
             tar_member(zip, entry);
         }
         if (fault == Fault::duplicate)
-            tar_member(zip, members.at("configs/flashnext.toml"));
+            tar_member(zip, members.at("configs/flashnext-4gpu.yaml"));
         if (fault == Fault::traversal)
             tar_member(zip, Member{"../escape", "malicious"});
         if (fault == Fault::extra)
@@ -284,7 +281,7 @@ void test_two_installs_and_rollback() {
     bc::release::install(a);
     auto first = bc::release::verify(a.root, a.sdk);
     check(first["current"] == a.tag && first["previous"].is_null(), "first verified release not current");
-    check(fs::is_regular_file(a.root / "releases" / a.tag / "configs/flashnext.toml"),
+    check(fs::is_regular_file(a.root / "releases" / a.tag / "configs/flashnext-4gpu.yaml"),
           "installed asset missing self-contained RSC12 config");
     check(fs::is_regular_file(a.root / "releases" / a.tag / "heat/flashnext-mixed.hot-first") &&
           fs::is_regular_file(a.root / "releases" / a.tag / "heat/perf51.rank0.hot-first"),
@@ -373,7 +370,7 @@ void test_tamper_refuses_rollback_without_switch() {
     const auto b = f.make("bc-radiance-1170.34.0");
     bc::release::install(a);
     bc::release::install(b);
-    write_file(a.root / "releases" / a.tag / "configs/qwen27b.toml", "tampered config");
+    write_file(a.root / "releases" / a.tag / "configs/qwen27b-tp3-int8-556.yaml", "tampered config");
     refused(ErrorCode::digest_mismatch, [&] { bc::release::rollback(a.root, a.sdk); });
     const auto index = bc::release::read_json(a.root / "index.json");
     check(index["current"] == b.tag && index["previous"] == a.tag, "corrupt previous displaced active engine");
@@ -472,7 +469,7 @@ void test_real_platform_packer_golden() {
     });
     check(bc::release::verify(d.path / "installed", sdk)["current"] == tag,
           "actual platform-produced tar did not install with native verifier");
-    check(fs::file_size(d.path / "installed" / "releases" / tag / "configs/flashnext.toml") > 100,
+    check(fs::file_size(d.path / "installed" / "releases" / tag / "configs/flashnext-4gpu.yaml") > 100,
           "actual packaged model config was missing");
 }
 
@@ -589,7 +586,7 @@ void test_native_installed_start_gate() {
     check(retired != 0 && read_file(log).find("not the verified current tag") != std::string::npos,
           "retained old prefix started despite current tag change: " + read_file(log));
     const auto current_serve = b.root / "releases" / b.tag / "radiance_home/bin/bc-serve";
-    write_file(b.root / "releases" / b.tag / "configs/qwen27b.toml", "schema = 9\n");
+    write_file(b.root / "releases" / b.tag / "configs/qwen27b-tp3-int8-556.yaml", "cards: [9]\n");
     const int tampered = run_cli(current_serve, {"serve", "qwen27b-tp3-int8", "--run-dir", run.string()}, log);
     check(tampered != 0 && read_file(log).find("BC_RELEASE_3") != std::string::npos,
           "tampered current release reached serving: " + read_file(log));

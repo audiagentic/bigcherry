@@ -1,25 +1,12 @@
-"""Every named serving config has its native YAML, and the release ships exactly those."""
+"""A serving config is its native YAML (the TOML catalogue is gone); the release ships exactly those files."""
 from __future__ import annotations
 
 import re
-import tomllib
 from pathlib import Path
 
 from bigcherry.release import runtime_assets as assets
 
 CONFIGS = Path(__file__).resolve().parents[3] / "engines/radiance/configs"
-
-
-def config_names() -> set[str]:
-    names: set[str] = set()
-    for toml in ("flashnext.toml", "qwen27b.toml"):
-        names |= set(tomllib.loads((CONFIGS / toml).read_text(encoding="utf-8"))["config"])
-    return names
-
-
-def test_every_named_config_has_a_native_yaml():
-    yaml = {p.stem for p in CONFIGS.glob("*.yaml")}
-    assert yaml == config_names()
 
 
 def test_the_release_ships_exactly_the_config_yaml_files():

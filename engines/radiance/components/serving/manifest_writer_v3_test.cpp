@@ -1,4 +1,5 @@
 #include "manifest_writer.h"
+#include "test_config_fixture.h"
 #include "test_manifest_fixture.h"
 #include "test_rad_fixture.h"
 #include "plan_cache.h"
@@ -158,13 +159,11 @@ int main(int argc, char** argv) {
             }]
         })json");
         sv::Options options;
-        options.configs = {argv[1]};
         options.model_root = temporary.path;
-        // The engine settings live in the native YAML (the config's TOML keeps none): this fixture resolves without one, so
-        // it states the helper-free value the YAML of flashnext-r9700 carries.
-        options.sets = {"layout.name=\"flashnext-r9700\"", "memory.host_pool_mib=9216", "engine.ngram_placement=\"disk\"",
+        options.sets = {"memory.host_pool_mib=9216",
                         "engine.model=" + Json(model.string()).dump(),
                         "engine.radiance_home=" + Json(runtime_home.string()).dump()};
+        sv::fixture::use(options, "flashnext-r9700");   // test_config_fixture.h: the preset named after the shipped YAML
         sv::ManifestInputs inputs;
         inputs.resolved = sv::resolve(options, facts);
         inputs.profile = "production";

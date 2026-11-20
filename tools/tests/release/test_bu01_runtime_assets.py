@@ -40,8 +40,6 @@ class RuntimeAssetsTests(unittest.TestCase):
             component = engine_dir / "components" / name
             component.mkdir(parents=True)
             (component / "component.toml").write_text('built-against = "v1.17.0"\n')
-        for name in assets.SHIPPED_CONFIGS:
-            (config_dir / name).write_text(f"schema = 1\n# {name}\n")
         for name in assets.SHIPPED_HEAT_SEEDS:
             seed = self.root / "tools/lab/radiance/heat" / name
             seed.parent.mkdir(parents=True, exist_ok=True)
@@ -351,19 +349,6 @@ class RuntimeAssetsTests(unittest.TestCase):
                 for item, data in saved:
                     item.write_bytes(data)
 
-    def test_packaged_rsc12_configs_are_verified_without_checkout(self):
-        asset, archive, checksum = self.packaged()
-        for name in assets.SHIPPED_CONFIGS:
-            self.assertIn(f"configs/{name}", asset["file_names"])
-        installed = assets.restore(archive, checksum, asset, self.root,
-                                   self.path / "other-work", self.sdk)
-        for name in assets.SHIPPED_CONFIGS:
-            self.assertEqual((installed / "configs" / name).read_bytes(),
-                             (self.root / "engines/radiance/configs" / name).read_bytes())
-        # Two source TOMLs, no source tree, scripts or layouts in the payload.
-        self.assertFalse((installed / "engines").exists())
-        self.assertFalse((installed / "tools").exists())
-
     def test_heat_seeds_are_source_bound_and_in_installed_manifest(self):
         asset, archive, checksum = self.packaged()
         with tarfile.open(archive, "r:gz") as tar:
@@ -402,17 +387,6 @@ class RuntimeAssetsTests(unittest.TestCase):
         with mock.patch.object(assets, "check_committed_heat",
                                side_effect=assets.BundleError("uncommitted heat seed")):
             with self.assertRaisesRegex(assets.BundleError, "uncommitted heat"):
-                self.packaged()
-
-    def test_changed_or_extra_rsc12_source_config_refuses_pack(self):
-        extra = self.root / "engines/radiance/configs/unreviewed.toml"
-        extra.write_text("schema = 1\n")
-        with self.assertRaisesRegex(assets.BundleError, "RSC12 config closure"):
-            self.packaged()
-        extra.unlink()
-        with mock.patch.object(assets, "check_committed_config",
-                               side_effect=assets.BundleError("uncommitted RSC12 config")):
-            with self.assertRaisesRegex(assets.BundleError, "uncommitted"):
                 self.packaged()
 
     def test_python_shell_and_interpreter_content_refused_before_pack(self):

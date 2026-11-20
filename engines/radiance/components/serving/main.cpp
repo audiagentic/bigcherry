@@ -47,14 +47,9 @@ void usage() {
            "  --validate <site.toml> [profile.toml] [--set key=value]\n"
            "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
            "  explain CONFIG [--json] [--configs DIR] [--site FILE] [--set key=value]\n"
-           "  --layouts FILE|DIR  layout definitions (repeatable; a directory gives its *.toml); default "
-           "BIGCHERRY_LAYOUTS,\n"
-           "                     a ':'-separated list. Layouts are run-time data: none is compiled in\n"
-           "  --configs FILE|DIR  RSC12 configs (repeatable; default BIGCHERRY_CONFIGS): one file per model, "
-           "named configs and\n"
-           "                     variants (base = ...); their names select as layout.name. Given configs, "
-           "layout files are\n"
-           "                     read only from --layouts\n"
+           "  --configs DIR       directories of NAME.yaml configs (repeatable; default BIGCHERRY_CONFIGS, else the\n"
+           "                     installed bundle's configs/): a config is one native Radiance YAML with an x-bigcherry\n"
+           "                     section; its name selects as layout.name\n"
            "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
            "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
            "  calibration-prune --calibration FILE [--apply]   (drop rows the strict reader refuses)\n"
@@ -190,8 +185,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             opts.site = need();
         } else if (arg == "--profile") {
             opts.profile = need();
-        } else if (arg == "--layouts") {
-            opts.layouts.emplace_back(need());
         } else if (arg == "--configs") {
             opts.configs.emplace_back(need());
         } else if (arg == "--model-root") {
@@ -725,8 +718,6 @@ int main(int argc, char** argv) {
                     ingest_opts.site = argv[++i];
                 else if (arg == "--profile")
                     ingest_opts.profile = argv[++i];
-                else if (arg == "--layouts")
-                    ingest_opts.layouts.emplace_back(argv[++i]);
                 else if (arg == "--configs")
                     ingest_opts.configs.emplace_back(argv[++i]);
                 else if (arg == "--model-root")
@@ -834,8 +825,6 @@ int main(int argc, char** argv) {
                 opts.site = need_arg("--site");
             else if (arg == "--profile")
                 opts.profile = need_arg("--profile");
-            else if (arg == "--layouts")
-                opts.layouts.emplace_back(need_arg("--layouts"));
             else if (arg == "--configs")
                 opts.configs.emplace_back(need_arg("--configs"));
             else if (arg == "--model-root")

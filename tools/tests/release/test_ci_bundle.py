@@ -48,8 +48,6 @@ class CiBundleTests(unittest.TestCase):
         self.build = build
         configs = self.root / "engines/radiance/configs"
         configs.mkdir(parents=True)
-        for name in assets.SHIPPED_CONFIGS:
-            (configs / name).write_text(f"schema = 1\n# {name}\n")
         for name in assets.SHIPPED_HEAT_SEEDS:
             seed = self.root / "tools/lab/radiance/heat" / name
             seed.parent.mkdir(parents=True, exist_ok=True)
@@ -368,14 +366,6 @@ class CiBundleTests(unittest.TestCase):
              self.assertRaisesRegex(cb.CiBundleError, "source trees"):
             cb.verify_publish_candidate(TAG, stage, root=self.root)
         self.assertIs(assets.tag_identity, original)
-
-    def test_final_upload_gate_rechecks_tagged_rsc12_bytes(self):
-        cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)
-        stage = self.work / "release-assets" / TAG
-        with mock.patch.object(assets, "tag_identity", return_value=TREE_ID), \
-             mock.patch.object(cb, "tagged_config", return_value=b"altered tagged config"), \
-             self.assertRaisesRegex(cb.CiBundleError, "config differs from tagged source"):
-            cb.verify_publish_candidate(TAG, stage, root=self.root)
 
     def test_final_upload_gate_rechecks_tagged_heat_bytes(self):
         cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk)

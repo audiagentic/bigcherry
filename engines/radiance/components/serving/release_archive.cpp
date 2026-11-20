@@ -85,8 +85,6 @@ bool runtime_member(const std::string& name) {
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
         "bigcherry-build-metadata-radiance.json",
-        "configs/flashnext.toml",
-        "configs/qwen27b.toml",
         "heat/flashnext-mixed.hot-first",
         "heat/perf51.rank0.hot-first",
     };
@@ -227,8 +225,7 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
         "bigcherry-build-metadata-radiance.json",
-        "configs/flashnext.toml",
-        "configs/qwen27b.toml",
+        "configs/flashnext-4gpu.yaml",   // the production config; the other named configs are its siblings
     };
     require(std::includes(names.begin(), names.end(), must_have.begin(), must_have.end()),
             ErrorCode::invalid_install, "required native runtime member missing");

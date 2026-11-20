@@ -77,7 +77,7 @@ const std::vector<Field>& schema_fields() {
             "launcher: baseline fp8 KV policy", "policy", "startup-only",
             0, 0, {"baseline", "strict"});
         add("layout.name", "string", nullptr,
-            "the named layout (--layouts / BIGCHERRY_LAYOUTS); required, no default");
+            "the named config (its YAML, read by the caller); required, no default");
         add("layout.engine_cards", "string_array", nullptr,
             "RSC05: selected PCI BDFs from KFD GPU nodes, in rank order", "discovered");
         // present only when the layout's engine holds more than one card type (radiance --rank-devices; amendment 18)
@@ -453,88 +453,17 @@ ArchInfo arch_info(const std::string& arch) {
 
 } // namespace
 
-/* The layout definition files: --layouts, else BIGCHERRY_LAYOUTS (a ':'-separated list), each a TOML file or a
- * directory whose *.toml files are read in name order. There is no built-in table and no default. */
-std::vector<fs::path> layout_sources(const Options& options) {
-    std::vector<fs::path> given = options.layouts;
-    if (given.empty())
-        if (const char* env = std::getenv("BIGCHERRY_LAYOUTS"); env && *env) {
-            std::string s(env);
-            for (size_t at = 0; at <= s.size();) {
-                const size_t colon = std::min(s.find(':', at), s.size());
-                if (colon > at) given.emplace_back(s.substr(at, colon - at));
-                at = colon + 1;
-            }
-        }
-    if (given.empty())
-        throw std::runtime_error("layout: no layout definitions: pass --layouts FILE|DIR or set BIGCHERRY_LAYOUTS");
-    std::vector<fs::path> files;
-    for (const auto& g : given) {
-        if (fs::is_directory(g)) {
-            std::vector<fs::path> in_dir;
-            for (const auto& e : fs::directory_iterator(g))
-                if (e.is_regular_file() && e.path().extension() == ".toml") in_dir.push_back(e.path());
-            std::sort(in_dir.begin(), in_dir.end());
-            if (in_dir.empty()) throw std::runtime_error("layout: " + g.string() + " holds no *.toml layout file");
-            files.insert(files.end(), in_dir.begin(), in_dir.end());
-        } else if (fs::is_regular_file(g)) {
-            files.push_back(g);
-        } else {
-            throw std::runtime_error("layout: " + g.string() + " is neither a layout file nor a directory");
-        }
-    }
-    return files;
-}
-
-/* Every named layout of the sources, and the file each came from. A name defined twice is refused. */
+/* The named layouts: the one config the caller read from its native YAML (Options::inspected), and the file it came from.
+ * There is no catalogue, layout file or built-in table. */
 Json load_layouts(const Options& options) {
+    if (!options.inspected)
+        throw std::runtime_error("layout: no config was read: a config is its native YAML, which the caller inspects "
+                                 "first (bc-serve reads NAME.yaml from the bundle or --configs)");
     Json out = {{"layout", Json::object()}, {"source", Json::object()}, {"kind", Json::object()}};
-    // RSC12: configs (--configs, BIGCHERRY_CONFIGS) replace the layout sources unless --layouts is given as well.
-    if (options.inspected) {
-        // A config read from its native YAML is the one config the resolver knows; the file stem is its name.
-        const InspectedConfig& c = *options.inspected;
-        out["layout"][c.name] = inspected_as_layout(c, options.model_root);
-        out["source"][c.name] = c.yaml_path.string();
-        out["kind"][c.name] = "config";
-        return out;
-    }
-    const auto config_files = config_sources(options.configs);
-    const std::vector<fs::path> layout_files =
-        config_files.empty() || !options.layouts.empty() ? layout_sources(options) : std::vector<fs::path>{};
-    for (const auto& f : layout_files) {
-        Json doc;
-        try { doc = toml_to_json(toml::parse_file(f.string())); }
-        catch (const toml::parse_error& e) { throw std::runtime_error(f.string() + ": TOML parse error: " + e.what()); }
-        for (auto it = doc.begin(); it != doc.end(); ++it)
-            if (it.key() != "schema" && it.key() != "layout")
-                throw std::runtime_error(f.string() + ": unknown top-level key " + it.key() + " (schema, layout)");
-        if (doc.value("schema", 0) != 1) throw std::runtime_error(f.string() + ": schema = 1 is required");
-        if (!doc.contains("layout")) continue;
-        for (auto it = doc.at("layout").begin(); it != doc.at("layout").end(); ++it) {
-            if (out["layout"].contains(it.key()))
-                throw std::runtime_error("layout " + it.key() + " is defined in both " +
-                                         out["source"][it.key()].get<std::string>() + " and " + f.string());
-            out["layout"][it.key()] = it.value();
-            out["source"][it.key()] = f.string();
-            out["kind"][it.key()] = "layout";
-        }
-    }
-    if (!config_files.empty()) {
-        // each config, variants applied, as the layout table the resolver reads: one resolver, its own checks
-        const ConfigSet configs = load_configs(config_files);
-        for (auto it = configs.config.begin(); it != configs.config.end(); ++it) {
-            if (out["layout"].contains(it.key()))
-                throw std::runtime_error("config " + it.key() + " (" + configs.source.at(it.key()).get<std::string>() +
-                                         ") has the name of a layout in " + out["source"][it.key()].get<std::string>());
-            // The heat path belongs to its defining base/config, even when a
-            // variant resides in a different file.
-            const std::string heat_owner = configs.origin.at(it.key()).value("handoff.heat", it.key());
-            const fs::path heat_source = configs.source.at(heat_owner).get<std::string>();
-            out["layout"][it.key()] = config_as_layout(it.value(), options.model_root, heat_source);
-            out["source"][it.key()] = configs.source.at(it.key());
-            out["kind"][it.key()] = "config";
-        }
-    }
+    const InspectedConfig& c = *options.inspected;
+    out["layout"][c.name] = inspected_as_layout(c, options.model_root);
+    out["source"][c.name] = c.yaml_path.string();
+    out["kind"][c.name] = "config";
     return out;
 }
 

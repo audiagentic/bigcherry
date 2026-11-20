@@ -2568,8 +2568,6 @@ std::vector<std::string> resolver_args(const Options& o) {
         a.insert(a.end(), {"--site", o.site.string()});
     if (!o.profile.empty())
         a.insert(a.end(), {"--profile", o.profile.string()});
-    for (const auto& l : o.layouts)
-        a.insert(a.end(), {"--layouts", l.string()});
     for (const auto& c : o.configs)
         a.insert(a.end(), {"--configs", c.string()});
     if (!o.model_root.empty())
@@ -2991,9 +2989,6 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
     const Wait& wait = hooks.wait;
-    // The sources as files, frozen: the manifest writer runs with BIGCHERRY_* removed from its environment, so
-    // configs or layouts that came from the environment are passed as arguments (load_layouts' rule: configs
-    // replace the layout files unless --layouts is given).
     EnginePlanInputs in = given;
     in.options.run_dir = run_dir;
     std::optional<NativeConfigSnapshot> sealed_snapshot;   // the YAML's bytes, read once for every inspection
@@ -3007,15 +3002,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                                 in.native_admission ? in.native_admission->resolution_root : fs::path{},
                                 in.native_admission ? in.native_admission->runtime_overrides : Env{},
                                 sealed_snapshot ? &*sealed_snapshot : nullptr);
-    if (in.options.inspected) {   // the sealed YAML is the one source: no catalogue or layout file is read
-        in.options.configs.clear();
-        in.options.layouts.clear();
-    } else {
-        const auto configs = config_sources(given.options.configs);
-        in.options.configs = configs;
-        in.options.layouts = configs.empty() || !given.options.layouts.empty() ? layout_sources(given.options)
-                                                                               : std::vector<fs::path>{};
-    }
+    if (!in.options.inspected)
+        throw PlanFailed("serve: no config was read: name a CONFIG (NAME.yaml in the bundle or --configs)");
+    in.options.configs.clear();   // the sealed YAML is the one source: no file is read again
 
     if (in.calibration_run) {
         // The Bash launcher rejected unusable A/B inputs before starting a child.
@@ -3827,16 +3816,9 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (given.replay_evidence) {
         evidence = given.replay_evidence.require("session.replay.evidence", m);
     } else {
-        if (in.options.inspected) {   // the admitted YAML bytes are the one source: no catalogue or layout file
-            in.options.configs.clear();
-            in.options.layouts.clear();
-        } else {
-            in.options.configs = config_sources(given.options.configs);
-            if (in.options.configs.empty())
-                throw PlanFailed(
-                    "replay: static RSC12 configuration cannot be checked without --configs or BIGCHERRY_CONFIGS");
-            in.options.layouts = given.options.layouts;
-        }
+        if (!in.options.inspected)
+            throw PlanFailed("replay: the admitted YAML was not read");
+        in.options.configs.clear();   // the admitted YAML bytes are the one source
         const auto has_set = [&](const std::string& key) {
             return std::any_of(in.options.sets.begin(), in.options.sets.end(),
                                [&](const std::string& setting) { return setting.starts_with(key + "="); });

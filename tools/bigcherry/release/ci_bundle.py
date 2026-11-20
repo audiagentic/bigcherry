@@ -185,7 +185,7 @@ def pack_and_verify(tag: str, *, root: Path, work_root: Path, sdk: Path, plan_id
 
 def tagged_config(root: Path, tag: str, name: str) -> bytes:
     """Read the immutable config at the exact release tag, never HEAD."""
-    if name not in (*ra.SHIPPED_CONFIGS, *ra.OPTIONAL_NATIVE_PROFILES) or not TAG.fullmatch(tag):
+    if name not in ra.NATIVE_RELEASE_PROFILES or not TAG.fullmatch(tag):
         raise CiBundleError("unapproved tag/config in engine release")
     result = subprocess.run(
         ["git", "-C", str(root), "show", f"refs/tags/{tag}:engines/radiance/configs/{name}"],
@@ -297,7 +297,7 @@ def verify_publish_candidate(tag: str, directory: Path, *, root: Path) -> dict:
             raise CiBundleError("archive engine/owner contract differs from the tagged release")
         if manifest.get("release_tag") != origin:
             raise CiBundleError("archive manifest belongs to a different original release")
-        for name in (*ra.SHIPPED_CONFIGS, *native_profiles):
+        for name in native_profiles:
             if (extracted / "configs" / name).read_bytes() != tagged_config(root, tag, name):
                 raise CiBundleError(f"released RSC12 config differs from tagged source: {name}")
         for name in ra.SHIPPED_HEAT_SEEDS:

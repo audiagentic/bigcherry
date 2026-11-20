@@ -75,7 +75,6 @@ RUN_SCOPE = "engine-runtime"
 ELF_DEBUG_POLICY = "gnu-objcopy-split-debug-strip-all-v1"
 # Deliberately explicit: unknown RSC12 configurations must be reviewed and
 # added to the engine payload contract, not silently copied from a checkout.
-SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
 # Native profiles are selected by exact name: one per named serving config (engines/radiance/configs/NAME.yaml, the
 # single authority of that config's engine settings). A checkout's other YAML is local input.
 NATIVE_RELEASE_PROFILES = (
@@ -116,7 +115,6 @@ RUN_MANIFEST = (
     ("radiance_home/bin/bc-serve", True),
     ("radiance_home/bin/bc-release", True),
     (BUILD_METADATA, True),
-    *((f"configs/{name}", True) for name in SHIPPED_CONFIGS),
     *((f"heat/{name}", True) for name in SHIPPED_HEAT_SEEDS),
     ("radiance_home/helpers/r3_moe_worker", True),
     ("radiance_home/helpers/*.so*", False),
@@ -428,12 +426,9 @@ def runtime_files(build: Path, root: Path, *, native_profiles: tuple[str, ...] =
                 raise BundleError(f"runtime symlink escapes build directory: {item}")
             files[item.relative_to(build).as_posix()] = item
     config_dir = root / "engines/radiance/configs"
-    actual = sorted(item.name for item in config_dir.glob("*.toml"))
-    if actual != sorted(SHIPPED_CONFIGS):
-        raise BundleError(f"RSC12 config closure changed: {actual!r}")
     if config_dir.is_symlink() or config_dir.parent.is_symlink():
-        raise BundleError("symlink in RSC12 config source directory")
-    for name in (*SHIPPED_CONFIGS, *native_profiles):
+        raise BundleError("symlink in native config source directory")
+    for name in native_profiles:
         source = config_dir / name
         if not source.is_file() or source.is_symlink():
             raise BundleError(f"missing or unsafe RSC12 config: {name}")

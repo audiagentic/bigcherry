@@ -25,7 +25,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/calibration_seed.inc"
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/calibration.toml")
 
 # The card types (engines/radiance/archs.toml) are compiled in: the same file the platform inventory tools read, so the
-# resolver has no copy. The layouts are run-time data (--layouts / BIGCHERRY_LAYOUTS), never compiled in.
+# resolver has no copy. A config is a run-time YAML file (NAME.yaml of the bundle or --configs), never compiled in.
 foreach(bc_data archs)
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../${bc_data}.toml" bc_data_seed)
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/${bc_data}_seed.inc" "R\"bcdata(${bc_data_seed})bcdata\"\n")
@@ -149,7 +149,7 @@ if(BUILD_TESTING)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
   target_compile_definitions(bc_serving_test PRIVATE
-    ${bc_calibration_fixture})
+    ${bc_calibration_fixture} BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
@@ -161,20 +161,10 @@ if(BUILD_TESTING)
     add_dependencies(bc_native_v3_session_test bc_fake_engine bc-serve)
     target_compile_definitions(bc_native_v3_session_test PRIVATE
       ${bc_calibration_fixture} BC_NATIVE_V3_SESSION_ONLY BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
-      BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
+      BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
     add_test(NAME bc_native_v3_session_test COMMAND bc_native_v3_session_test)
-    set_tests_properties(bc_native_v3_session_test PROPERTIES
-      TIMEOUT 60 ENVIRONMENT "BIGCHERRY_LAYOUTS=${CMAKE_CURRENT_SOURCE_DIR}/../../layouts")
+    set_tests_properties(bc_native_v3_session_test PROPERTIES TIMEOUT 60)
   endif()
-  # RSC04: real named resolver and strict-v2 writer with only fake OS hardware facts.
-  add_executable(bc_typed_settings_test EXCLUDE_FROM_ALL typed_settings_test.cpp)
-  target_link_libraries(bc_typed_settings_test PRIVATE bc_serving)
-  add_dependencies(bc_typed_settings_test bc-serve)
-  target_compile_definitions(bc_typed_settings_test PRIVATE
-    BC_SERVE_EXE=\"$<TARGET_FILE:bc-serve>\"
-    BC_CONFIGS_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/../../configs\")
-  add_test(NAME bc_typed_settings_test COMMAND bc_typed_settings_test)
-  set_tests_properties(bc_typed_settings_test PROPERTIES TIMEOUT 60)
   add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
   target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
   add_test(NAME bc_power_transaction_test COMMAND bc_power_transaction_test)
@@ -279,8 +269,7 @@ if(BUILD_TESTING)
   target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving_v3_wire)
   target_include_directories(bc_serving_v3_writer_test PRIVATE
     "${CMAKE_CURRENT_BINARY_DIR}/generated" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
-  add_test(NAME bc_serving_v3_writer_test COMMAND bc_serving_v3_writer_test
-    "${CMAKE_CURRENT_SOURCE_DIR}/../../configs/flashnext.toml")
+  add_test(NAME bc_serving_v3_writer_test COMMAND bc_serving_v3_writer_test)
 
   # S9: compile and test the inactive generated v2 codec, never production linked.
   # S8: inactive typed resource and handoff rules, linked only by card-free tests.
@@ -372,9 +361,6 @@ if(BUILD_TESTING)
         target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
       endif()
     endif()
-    # The tests resolve the repository's example layouts; the binaries have no built-in layouts (BIGCHERRY_LAYOUTS).
-    set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT
-                 "BIGCHERRY_LAYOUTS=${CMAKE_CURRENT_SOURCE_DIR}/../../layouts")
   endforeach()
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)

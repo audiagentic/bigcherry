@@ -95,10 +95,7 @@ struct InspectedConfig {
 struct Options {
     std::filesystem::path sys_root = "/";
     std::filesystem::path site, profile;
-    // The layout definition files or directories (--layouts); empty: BIGCHERRY_LAYOUTS. Never compiled in.
-    std::vector<std::filesystem::path> layouts;
-    // RSC12 config files or directories (--configs); empty: BIGCHERRY_CONFIGS. When configs are given, their names are the
-    // named layouts, and layout files are read only when --layouts is given as well (never BIGCHERRY_LAYOUTS).
+    // Directories holding NAME.yaml configs (--configs); empty: BIGCHERRY_CONFIGS, else the installed bundle's configs/.
     std::vector<std::filesystem::path> configs;
     // The root a config's relative model path is under (--model-root); bc-serve reads no environment for it.
     std::filesystem::path model_root;
@@ -124,9 +121,8 @@ Json detect(const std::filesystem::path& root = "/");
 Json json_schema();
 Resolved resolve(const Options& options, const Json& facts,
                  const NativeEngineSettings* native = nullptr);
-/* The layout definition files (--layouts, else BIGCHERRY_LAYOUTS; a directory gives its *.toml), and every named layout
- * in them with the file it came from: {"layout": {name: table}, "source": {name: path}}. A name defined twice is refused. */
-std::vector<std::filesystem::path> layout_sources(const Options& options);
+/* The one named config of Options::inspected as a layout, with its file: {"layout": {name: table}, "source": {name: path},
+ * "kind": {name: "config"}}. Refused when no config was read. */
 Json load_layouts(const Options& options);
 /* archs.toml reserve-mib of a card type: the VRAM a card of it keeps free. */
 uint64_t arch_reserve_mib(const std::string& arch);
