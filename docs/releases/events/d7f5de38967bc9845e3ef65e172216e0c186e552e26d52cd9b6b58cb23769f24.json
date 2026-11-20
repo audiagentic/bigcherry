@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_033647_native-radiance-serving-applie_4893",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/native_fleet_v3_engine_test.cpp",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Apply the manifest's admitted host KV tier, reserve and final checkpoint count to the native Config while preserving offline score allocation. Refuse draft-to-final KV or reserve drift. Exact legacy fixture patch replay passed. Exact ABI44 native fixtures and leased checks are pending.",
+  "timestamp-utc": "2026-11-20T03:36:47.399311Z",
+  "user-summary-candidate": "Native Radiance serving applies the host KV and checkpoint allocation recorded by BigCherry."
+}

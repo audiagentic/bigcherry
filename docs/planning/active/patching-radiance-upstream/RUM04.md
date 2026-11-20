@@ -225,6 +225,8 @@ Exact b0c256877 ABI44 integrated Flash-Next v3 with three physical helpers passe
 
 59ab547ce ships the portable flashnext-4gpu.yaml and resolves it for verified installed v3 named start/serve without an explicit --native-config. The exact v2.2 engine sealed inspector accepted model/rank order, the libr4d/libr3moe/libref order, loopback 36080, 262144 context and 8 sessions. Build-tree explicit YAML and installed variants without a bundled YAML remain supported through the explicit flag. Remaining migration boundary: owner resolver and writer still mirror native placement, n-gram, cache dtype, speculation, RoPE/prefix, batch and checkpoint settings; RUM04 needs to derive required admission/receipt values from the typed upstream inspection and remove duplicate v3 defaults. Preserve v2 compatibility and replay proof, then run the installed named start on the verified release path.
 
+Audit of d92592f9: the sealed manifest declared 12288 MiB host KV and 4705 MiB reserve, but the native engine bridge explicitly supplied only the pool, leaving omitted YAML knobs at upstream 0 and 4096. 6fe47b998 binds typed host KV and reserve in measurement and serving, binds the measured slot count only in serving, preserves the offline scorer’s allocation, and refuses draft/final KV or reserve divergence. Exact fixture replay passed. Rebuild owner/engine together, reuse the matched ENG05 plugins, and prove both resources in engine logs before comparing performance. Remaining authority work: use one typed projection from the matched upstream inspector inside the existing sealed writer FD for draft, P1, measured manifest and stored replay. Required receipts are listener/limits, kernel order, batch/chunk, placement, n-gram location, KV format, fixed speculation, RoPE and prefix policy. Keep BigCherry physical placement, helper transport, retention objective and measured resources as owner controls. Preserve v2 and the distinct named static, owner attempt and wire plan keys. Explicitly cover native auto and omitted values or refuse ambiguous release values before admission.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -292,3 +294,4 @@ Exact b0c256877 ABI44 integrated Flash-Next v3 with three physical helpers passe
 - 2026-11-19T23:59:22.141784+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:03:46.253523+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:22:59.663552+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:36:45.051737+00:00 (updated-by): Updated: section:notes
