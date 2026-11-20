@@ -62,6 +62,9 @@ Patches modify upstream Radiance source.
 | [rad0040_kv_layout_table](../../../../engines/radiance/patches/rad0040_kv_layout_table/SUMMARY.md) | Keep packed KV-cache layout definitions in one table | `validated` |
 | [rad0041_kv_b16_flashnext](../../../../engines/radiance/patches/rad0041_kv_b16_flashnext/SUMMARY.md) | Add packed BF16-key KV-cache kernels for Flash-Next | `validated` |
 | [rad0042_kv_b16_selftest](../../../../engines/radiance/patches/rad0042_kv_b16_selftest/SUMMARY.md) | Add numeric selftests for Flash-Next packed KV caches | `untested` |
+| [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | Record protected-expert statistics without changing routing | `untested` |
+| [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | Record expert choices for replay and comparison | `untested` |
+| [rad0045_expert_route_replay](../../../../engines/radiance/patches/rad0045_expert_route_replay/SUMMARY.md) | Replay recorded expert choices during KV-cache comparisons | `untested` |
 
 | [rad0043_expert_stats_protected](../../../../engines/radiance/patches/rad0043_expert_stats_protected/SUMMARY.md) | Count protected BF16 experts correctly in routing statistics | `untested` |
 | [rad0044_expert_route_record](../../../../engines/radiance/patches/rad0044_expert_route_record/SUMMARY.md) | Record which experts each token used for reference comparisons | `untested` |
