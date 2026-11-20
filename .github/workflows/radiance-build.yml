@@ -197,10 +197,23 @@ jobs:
             if [ "$BUILD_LANE" = radiance:native-serving:linux-radiance ]; then
               # The generic component suite contains stock-edition writer and launch
               # fixtures. Gate the generated native contract, wire reader, and writer.
-              serving="${builds[0]}/components/serving"
+              serving=$(realpath "${builds[0]}/components/serving")
               cmake --build "$serving" -j --target bc_contract_check bc_serving_v3_wire_test bc_serving_v3_writer_test
               ctest --test-dir "$serving" --output-on-failure --no-tests=error \
                 --output-log "$serving/ctest-component-tests.log" -R "^(bc_contract_check|bc_serving_v3_wire_test|bc_serving_v3_writer_test)$"
+              # Exercise the real owner and its stored replay gates with a card-free engine.
+              # The isolated test build uses the generated files and SDK of the release build.
+              sdk_package=$(sed -nE "s/^radiance_DIR:[^=]+=//p" "$serving/CMakeCache.txt")
+              engine_source=$(sed -nE "s/^RADIANCE_SRC:[^=]+=//p" "$serving/CMakeCache.txt")
+              test -d "$sdk_package" && test -d "$engine_source"
+              fixture="$serving/v3-owner-tests"
+              cmake -S engines/radiance/components/serving -B "$fixture" -G Ninja \
+                -DCMAKE_BUILD_TYPE=Release -DCMAKE_CXX_COMPILER="$RADIANCE_HOST_CXX" \
+                -Dradiance_DIR="$sdk_package" -DRADIANCE_SRC="$engine_source" \
+                -DBC_SERVING_V3_NATIVE_TEST=ON -DBC_SERVING_GENERATED_DIR="$serving/bc-serving-generated/v3"
+              cmake --build "$fixture" -j --target bc_native_v3_session_test
+              ctest --test-dir "$fixture" --output-on-failure --no-tests=error \
+                --output-log "$serving/ctest-native-owner.log" -R "^bc_native_v3_session_test$"
             else
               python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
             fi
@@ -304,5 +317,7 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: component-test-logs
-          path: work/builds/*/*/components/*/ctest-component-tests.log
+          path: |
+            work/builds/*/*/components/*/ctest-component-tests.log
+            work/builds/*/*/components/serving/ctest-native-owner.log
           if-no-files-found: ignore
