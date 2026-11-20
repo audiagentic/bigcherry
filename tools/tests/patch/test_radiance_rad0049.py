@@ -56,15 +56,16 @@ class Qwen4expNativeFp8Tests(unittest.TestCase):
 
             # RUM11: exercise the actual source-generated page16 row and its card selftest.
             rows = (root / "libr4d/r4d_rows.cpp").read_text()
-            self.assertIn('cQkNormRopeGateKvH256G6Page16Fp8[]', rows)
-            self.assertIn('C_EQ("n_head", 6), C_EQ("n_head_kv", 1), C_EQ("rot", 64)', rows)
+            self.assertIn('cQkNormRopeGateKvH256Page16Fp8[]', rows)
             self.assertIn('C_EQ("block_size", 16), C_IN("kv_dtype", "fp8_e4m3")', rows)
-            self.assertIn('ROW(cQkNormRopeGateKvH256G6Page16Fp8)', rows)
+            self.assertIn('ROW(cQkNormRopeGateKvH256Page16Fp8)', rows)
             self.assertIn('ROW(cQkNormRopeGateKvQ4Fp8)', rows)
             device_test = (root / "libr4d/r4d_selftest.cpp").read_text()
-            self.assertIn('bool page16_e4m3 = false', device_test)
-            self.assertIn('page16_e4m3 ? 6 : 12, nkv = page16_e4m3 ? 1 : 2', device_test)
-            self.assertIn('qk_kv_fold_case(pl, false, 0, true)', device_test)
+            self.assertIn('int page16_nq = 0, int page16_nkv = 0', device_test)
+            self.assertIn('nq = page16_nq ? page16_nq : 12', device_test)
+            self.assertIn('nkv = page16_nq ? page16_nkv : 2', device_test)
+            for heads in ((6, 1), (12, 2)):
+                self.assertIn(f'qk_kv_fold_case(pl, false, 0, {heads[0]}, {heads[1]})', device_test)
             self.assertIn('is byte-identical to the prologue + kv_store', device_test)
 
             cxx = shutil.which("c++")
@@ -78,16 +79,17 @@ class Qwen4expNativeFp8Tests(unittest.TestCase):
                 start = expanded.index(f"{name}[]")
                 return expanded[start:expanded.index("};", start)]
 
-            page16 = row_constraint("cQkNormRopeGateKvH256G6Page16Fp8")
-            for key, value in (("head_dim", 256), ("n_head", 6), ("n_head_kv", 1),
-                               ("rot", 64), ("block_size", 16)):
+            page16 = row_constraint("cQkNormRopeGateKvH256Page16Fp8")
+            for key, value in (("head_dim", 256), ("block_size", 16)):
                 self.assertIn(f'("{key}"), RAD_C_EQ, (long long)({value})', page16)
+            for key in ("n_head", "n_head_kv", "rot"):
+                self.assertNotIn(f'("{key}")', page16)
             self.assertIn('("q_dtype"), RAD_C_IN, 0, ("bf16")', page16)
             self.assertIn('("kv_dtype"), RAD_C_IN, 0, ("fp8_e4m3")', page16)
             page4 = row_constraint("cQkNormRopeGateKvQ4Fp8")
             self.assertIn('("block_size"), RAD_C_EQ, (long long)(4)', page4)
             self.assertIn('("kv_dtype"), RAD_C_IN, 0, ("fp8_e4m3")', page4)
-            self.assertIn('qk_norm_rope_gate_kv_store_h256_gqa6_page16_fp8', expanded)
+            self.assertIn('qk_norm_rope_gate_kv_store_h256_page16_fp8', expanded)
             self.assertIn('r4d_rad_qk_norm_rope_gate_kv_store', expanded)
 
             for tag, gqa, width in (("H256G12", 12, 5), ("H256G6Bs4", 6, 10)):
@@ -146,11 +148,18 @@ class Qwen4expNativeFp8Tests(unittest.TestCase):
                        '{ "qk_norm_rope_gate_kv_store_streamed_fp8",'),
                 region(after, '{ "qk_norm_rope_gate_kv_store_fp8",',
                        '{ "qk_norm_rope_gate_kv_store_streamed_fp8",'))
-            self.assertEqual(after.count('{ "qk_norm_rope_gate_kv_store_h256_gqa6_page16_fp8",'), 1)
+            self.assertEqual(after.count('{ "qk_norm_rope_gate_kv_store_h256_page16_fp8",'), 1)
+            constraint = region(after, "static const RadConstraint cQkNormRopeGateKvH256Page16Fp8[]", "};")
+            for key in ('"n_head"', '"n_head_kv"', '"rot"'):
+                self.assertNotIn(key, constraint)
+            for fragment in ('C_IN("q_dtype", "bf16")', 'C_EQ("head_dim", 256)',
+                             'C_EQ("block_size", 16)', 'C_IN("kv_dtype", "fp8_e4m3")'):
+                self.assertIn(fragment, constraint)
             selftest = (root / "libr4d/r4d_selftest.cpp").read_text()
-            self.assertIn("qk_kv_fold_case(pl, false, 0, true);", selftest)
-            self.assertIn("nq = page16_e4m3 ? 6 : 12", selftest)
-            self.assertIn("nkv = page16_e4m3 ? 1 : 2", selftest)
+            for nq, nkv in ((6, 1), (12, 2)):
+                self.assertIn(f"qk_kv_fold_case(pl, false, 0, {nq}, {nkv});", selftest)
+            self.assertIn("nq = page16_nq ? page16_nq : 12", selftest)
+            self.assertIn("nkv = page16_nq ? page16_nkv : 2", selftest)
             cxx = shutil.which("c++")
             if cxx:
                 subprocess.run([cxx, "-std=c++17", "-I", str(root / "abi"),

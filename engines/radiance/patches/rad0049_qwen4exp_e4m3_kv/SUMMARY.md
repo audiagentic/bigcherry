@@ -19,4 +19,4 @@ The Qwen4exp declarations keep the E4M3 format and geometry explicit at both sto
 
 [Patch implementation](patch.py).
 
-RUM11: a separate tightly constrained H256/GQA6/page16 E4M3 fused-store row and a byte-identity selftest are added. This does not change the deployed Flash-Next page-4 row. Hardware selftest and TP3 startup/KLD qualification remain outstanding.
+RUM11: a separate H256/page16 E4M3 fused-store row admits variable local head counts and rotary widths, with byte-identity selftests for 6/1 and 12/2 heads. This does not change the deployed Flash-Next page-4 row. Hardware selftest and TP3 startup/KLD qualification remain outstanding.
