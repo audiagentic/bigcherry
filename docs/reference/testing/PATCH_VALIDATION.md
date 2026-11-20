@@ -37,7 +37,7 @@ Keep these authorities separate:
 | `patch.toml` | Package identity, lifecycle state, order, dependencies, conflicts, bindings, and other machine metadata |
 | `SUMMARY.md` | Human-facing mirror checked by G1 for Status and Plan item; it is not the composition authority |
 | `config/recipes.toml` | Named source and patch-set composition |
-| `config/external-sources.toml` | External-source tracking status and porting history |
+| `engines/llamacpp/external-sources.toml` | External-source tracking status and porting history |
 | Experiment Contract in `config/experiment-contracts.toml` | Scientific hypothesis, scope, required checks, thresholds, and acceptance policy |
 | `validation.toml` and patch-local `validation/` | How a contract's declared evidence is produced |
 | `evidence/validation.json` plus bound artifacts | What actually ran and was proven, with identity-bound results |
@@ -106,7 +106,7 @@ change.
 | Axis | Authority | Valid values | Meaning |
 | --- | --- | --- | --- |
 | Package state | `patch.toml` | `untested`, `evaluated`, `diagnostic`, `validated`, `rejected`, `superseded` | Whether the package is accepted for composition |
-| Source status | `config/external-sources.toml` | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, `superseded`, `excluded`, `evidence-only` | Progress and proof level of a tracked external change |
+| Source status | `engines/llamacpp/external-sources.toml` | `planned`, `ported-untested`, `ported-benched`, `ported-validated`, `deferred-hardware`, `superseded`, `excluded`, `evidence-only` | Progress and proof level of a tracked external change |
 | Run result | `evidence/validation.json` | `PASS`, `FAIL`, `BLOCKED`, `ERROR` plus named results | What this run established; it is not a metadata edit |
 
 ### State-based source admission

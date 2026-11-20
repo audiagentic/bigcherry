@@ -21,7 +21,7 @@ work: M
 
 1. Re-run `bigcherry sources check --timeout <larger>` per source to get past the git-cherry timeout on stew675-rdna-boosts and joursbleu-llama-cpp.
 2. For each 'not found by title' finding, manually check whether the commit was squashed/renamed (harmless) or genuinely dropped/reverted (needs a real decision) -- prioritize commits already `ported-*` in a live patch (RD04, RD08, RD12, RD13, RD17, RD19, RD20, RD21/PRBE16, RD22, RD54, PRBE20/1210) over `planned`/`excluded` ones.
-3. Record a fresh snapshot (v4) for stew675-rdna-boosts once reviewed, per config/external-sources.toml's existing snapshot-versioning convention.
+3. Record a fresh snapshot (v4) for stew675-rdna-boosts once reviewed, per engines/llamacpp/external-sources.toml's existing snapshot-versioning convention.
 4. File any real content-drift finding (a ported patch whose upstream source changed) as its own separate plan item -- do not fix inline here.
 
 ## Detailed Solution & Technical Design
