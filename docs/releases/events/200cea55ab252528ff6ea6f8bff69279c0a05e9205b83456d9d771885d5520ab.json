@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_025853_flash-next-parity-reports-reta_9731",
+  "files": [
+    "tools/lab/radiance/flashnext_parity.py",
+    "tools/tests/lab/test_flashnext_parity.py"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Capture effective power policy from the admitted serving manifest plan in the Flash-Next parity record. Focused parity suite passed 20 tests.",
+  "timestamp-utc": "2026-11-20T02:58:53.146785Z",
+  "user-summary-candidate": "Flash-Next parity reports retain the effective power settings used during the run."
+}

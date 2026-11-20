@@ -120,6 +120,8 @@ Integrated build freeze 0851977e4 includes main through a28b6b350, the single-pu
 
 Merged main through f40d74c5c at b0c256877. The finite native owner KL action f6c07a8ea passed the merged exact ABI44 host fixture, including helper verification, no HTTP, timeout, and cleanup. Recovered corpus matched archived FNV 66bc5f8a27eda3e6. Verified v1.17.0 1170.34.0 two-XTX TP2 exact reference recorded 8240 positions across four documents and exited 0. The shared install has since advanced; verified 1170.35.0 is the current old-pin serving/performance control. Remaining final runtime integration, live quality and performance use staged 2.2 artifacts.
 
+Integrated v2.2.0 build checkpoint b0c256877 verified 60 DSO ABI exports, roster and v3 fingerprint. Qualification runtime bundle 03be7bf7c7e09fb0c3c33354daeb4dcc. A fresh gfx1201 mixed rank start streamed a token and stop reaped the children with zero outstanding mailbox work. Named replay reused the same manifest and measurement. Immediate explicit replay refused live rank VRAM after shutdown; retry against the same immutable manifest after room has returned. Old-pin 1170.35.0 performance control preserves its verified engine and replaces only the v2 owner in a scratch copy for genuine MRC02 host-start receipts; focused ABI35 owner tests passed 2/2.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -151,3 +153,4 @@ Merged main through f40d74c5c at b0c256877. The finite native owner KL action f6
 - 2026-11-20T02:05:25.873512+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:18:45.278897+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:39:23.371083+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:58:45.425205+00:00 (updated-by): Updated: section:notes
