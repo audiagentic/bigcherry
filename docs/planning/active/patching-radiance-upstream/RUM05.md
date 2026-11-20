@@ -81,6 +81,8 @@ Astra source review ASTRA-CONSOLIDATION.md supersedes the earlier mandatory Flee
 
 Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gates after power admission, before any serving child forks. The new gate uses authenticated helper RSS and the sealed manifest; existing VRAM checks remain. Final v3 owner and S8 tests passed 2/2. Focused v2 serving, session, stored and S8 tests passed 4/4. Leased physical placement and offline rank-order qualification remain open.
 
+2026-11-20 defect from the RUM09 per-config smokes: flashnext-r9700 (single card, no helpers) is refused at the engine's live admission: vram on 0000:09:00.0 live 32999625720 bytes short of required 33000662008 (shortfall 1036288 bytes; statics 5800083456, experts 26852451320, kv_required 348127232, headroom 0, prefill chunks 64). The plan sizes the elastic budget to the exact claimable bytes with zero headroom, and 2.2 holds slightly more at serve time (driver context 329 vs 258 MiB and queue scratch observed on flashnext-4gpu). Fix in the planner: derive the serve-time residency from the same measured inputs the engine admits against (or remeasure at admission and re-plan), not a hand-picked margin. Also fixed on the branch for mixed-arch worlds: rank-devices omitted from the YAML takes the admitted BDF order (64bae9124).
+
 ## Change Log
 
 - 2026-11-18T01:28:20.204242+00:00 (created-by): Created by codex
@@ -93,3 +95,4 @@ Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gate
 - 2026-11-18T02:28:17.614303+00:00 (updated-by): Updated: section:validation
 - 2026-11-19T22:18:39.878379+00:00 (state-transition): State: pending → in_progress
 - 2026-11-19T22:59:23.833156+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T12:44:34.149699+00:00 (updated-by): Updated: section:notes

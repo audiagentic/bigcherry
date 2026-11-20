@@ -73,6 +73,8 @@ Surviving large implementations in changed packages move only where doing so red
 
 Prerequisites RUM01/RUM03/RUM04. The Astra source review ASTRA-CONSOLIDATION.md supersedes extraction-first ordering. Coordinate RCS13 inventory and RCS01/RCS08 component ownership. Remove obsolete native bridges/replay/policy before moving surviving code; movement is not net deletion.
 
+2026-11-20 owner direction: convert every BigCherry patch and extension to 2.2 and leave the next bump as easy as possible (document, simplify, consolidate, reuse). State on the candidate (patch-rebase-check per source): production 32/32, radiance-diag 33/33, routing-evidence 33/33, vtp44-evidence 36/36 clean; all six components built-against the 2.2 commit. Scope added to this item: (1) obsolete first: archive, unchanged, per PATCH_SYSTEM 'Retired patches' the patches 2.2 superseded: rad0005 (upstream FFmpeg 6 writer), rad0037/rad0038/rad0040/rad0041 (replaced by rad0048-rad0053); rad0013 follows RUM08's retirement proof. `patch-rebase-check --all` must then be clean, so a future bump has one probe. (2) Footprint: record anchors and edits per patch (docs/reviews/radiance-upstream-2026-11-18/patch-footprint.json) before and after; consolidate where it cuts repeated upstream attachments: the largest are rad0009 serving manifest, rad0017 rendezvous, rad0051/rad0053 KV kernels and layouts; move injected bodies into owned components behind narrow typed hooks, so that a bump re-anchors hooks, not bodies. (3) Reuse: one shared row-registration helper for KV geometry rows so a new model geometry is one table entry (RUM11 was a missed geometry). Acceptance adds: no superseded patch outside archive/, --all clean, footprint report committed with the before/after anchor counts.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -84,3 +86,4 @@ Prerequisites RUM01/RUM03/RUM04. The Astra source review ASTRA-CONSOLIDATION.md 
 - 2026-11-18T02:25:00.590374+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:25:21.136200+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:28:04.354691+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-11-20T12:44:25.653062+00:00 (updated-by): Updated: section:notes

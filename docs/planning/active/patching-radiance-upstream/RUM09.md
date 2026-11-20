@@ -134,6 +134,8 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 
 2026-11-20 owner re-scope: the bump brings all our fixes over. The earlier first-lane boundary (admit only the two named Flash-Next entries and leave the seven Qwen 27B configs and other Flash-Next variants on the prior bundle or withheld) is withdrawn. RUM06 mixed-TP collective lifetimes is now a bump blocker for TP3 27B. Status 2026-11-20: flashnext-4gpu matched 3-pair comparison vs 1170.35.0 (runs: BC work root work/radiance-latest-bump/paired-parity-rum09.20261120): decode step -5 to -6.5% (better), long7 prefill +1.7%, cold TTFT -0.3%; FAIL prefill.long8_prefill_tps -2.75% (allow 0.33%) and prefill.doc_prefill_tps -0.34% (allow 0.11%); prompt hashes and token counts identical per pair. Suspect: chained launches now on in 2.2 (plugin chain_pays), plus 301 vs 141 MiB hardware queues and new ops; under investigation (bigcherry-2).
 
+2026-11-20 qualification matrix and status. All 18 configs pass the offline native preflight with 0 differences from the TOML-era values (RUM04). Hardware start/canary/stop on the 2.2 build: flashnext-4gpu PASS (paired runs), flashnext-4gpu-bf16i8 PASS, flashnext-r9700 FAIL (1 MB live-room shortfall, RUM05), qwen27b-tp3-int8-556 FAIL (E4M3 page16 store, RUM11; rank-devices fixed), the rest in progress. Prefill regression: chaining cleared; candidate long-8 is bimodal; old-vs-candidate same-session A/B queued. Per-start 122 GB model fingerprint replaced by a host-wide identity cache (branch agent/model-identity-cache). Bump-ease close-out for this item: update the bump-radiance skill and docs/reference/build/PIN_BUMP.md with this bump's lessons: probe each recipe source rather than --all, run the native preflight over every config before any GPU start, register kernel rows per model geometry, archive superseded patches in the bump, and the per-config smoke script as a reusable command (`bigcherry` CLI) instead of scratch scripts.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -172,3 +174,4 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 - 2026-11-20T04:00:21.973713+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T05:15:47.666983+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T08:49:59.253113+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-11-20T12:44:40.287723+00:00 (updated-by): Updated: section:notes

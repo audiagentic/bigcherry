@@ -115,6 +115,8 @@ Checkpoint 9e74425b8: host-only generated v3 owner test passed 1/1 and v2 servin
 
 Rechecked the selected upstream replay seam on the composed frozen 2.2 host build. The existing QSA exact-bound selector test passed 30 checks and the keyed runtime decode test passed 6. These verify selected bound and effective keyed issue arguments for their fixtures. Actual fixed-depth Flash-Next route/shape and paired performance evidence remain pending.
 
+2026-11-20: to close this item for the bump: rad0047_mtp_verify_replay_summary is still state untested and in no patch set; qualify and compose it, or reject it with evidence. Then archive rad0013 (it no longer applies to 2.2: FAILED_NEEDS_RECONCILIATION in patch-rebase-check --all) once target replay coverage is shown equivalent, and record the rad0036 governor equivalence decision. The 2.2 chained-launch A/B (RUM09 notes) found no scheduling cause for the long-prefill regression.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
@@ -138,3 +140,4 @@ Rechecked the selected upstream replay seam on the composed frozen 2.2 host buil
 - 2026-11-19T21:54:34.526893+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T22:46:29.186651+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:07:28.977274+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T12:44:29.903864+00:00 (updated-by): Updated: section:notes
