@@ -242,7 +242,7 @@ It drives the original benchmark and intercepts the existing result append bound
 
 Typed HI47 measurement sidecars can be published with "python -m bigcherry.experiment.bundle record BUNDLE --measurement-file BUNDLE/measurement.json" or with the managed "run --measurement-file measurement.json" option. The sidecar declares "identity", "workload", phase-separated "metrics", and VA25 "expected"/"observed". Its bytes, bundle, stdout/stderr, and process observation are stored by SHA-256 and a one-time "record.sha256" pointer is created. Process-only bundles without measurements remain unchanged.
 
-The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; old v1 records without the new optional field remain readable. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
+The optional MRC01 "validity" field contains state valid/invalid/unverified and reason codes. VA25's canonical comparator supplies validity, not intent. MRC05 refuses explicitly invalid or unverified measurements for baseline, compare and history; records that predate the validity field remain readable. `metric_specs` (direction and gate for every metric) is required in every record; a record without it is refused when published, and publishing code must pass it. Unattested Radiance workload runs are recorded as unverified and cannot activate new gates; missing execution evidence is not invented from the manifest or rig label.
 
 **MRC06 native-lab sidecar ingestion.** Radiance operators can publish a typed
 non-calibration measurement from an explicitly *stopped* native owner with
@@ -272,9 +272,8 @@ obtained during offline ingest are not claims about measurement-start state.
 `needle_probe.py` and `image_probe.py` now require a matching local native
 `--run-dir` and optional `--work-root`. Their `--out` is a digest-pointer
 JSON object; full results, exact corpus/image bytes and controls are MRC01
-content blobs. The leased S15 `rsc02_s15_ab.py` still runs; each cleanly
-stopped arm publishes one immutable record. Existing S15 comparator JSON
-remains read-only lifecycle/comparison evidence, not a measurement index.
+content blobs. The S15 A/B driver `rsc02_s15_ab.py` is archived (it needed the retired
+Bash launcher); its comparator JSON remains read-only lifecycle/comparison evidence, not a measurement index.
 
 Today's parity records in **UTC** and one verified record by digest:
 
