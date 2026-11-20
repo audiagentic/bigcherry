@@ -176,6 +176,10 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
             return it == cfg.given.end() ? nlohmann::json(nullptr) : nlohmann::json(it->second);
         };
 
+        auto stated = [&](const char* key, const std::string& value) -> nlohmann::json {
+            return cfg.given.contains(key) ? nlohmann::json(value) : nlohmann::json(nullptr);
+        };
+
         const nlohmann::json report = {
             {"protocol", "bigcherry.native-fleet-inspect/v2"},
             {"snapshot", {{"sha256", managed.snapshot().sha256()},
@@ -192,16 +196,18 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"rank_devices", cfg.rank_devices},
                          {"max_context", cfg.max_ctx},
                          {"max_sequences", cfg.max_seqs},
-                         // The tuning options the authored YAML states, as the strict reader accepted them (null: absent).
-                         {"x_bigcherry", x_bigcherry_subtree(managed.snapshot().yaml_utf8())},
-                         {"tuning", {{"p2p", source("--p2p")},
-                                      {"pipelined_prefill", source("--pipelined-prefill")},
+                         // The tuning options the authored YAML states, as values the strict reader parsed (null: absent).
+                         {"tuning", {{"p2p", stated("--p2p", cfg.p2p == RAD_P2P_ON    ? "on"
+                                                             : cfg.p2p == RAD_P2P_OFF ? "off" : "auto")},
+                                      {"pipelined_prefill", stated("--pipelined-prefill",
+                                                                   cfg.pipelined_prefill == 1   ? "on"
+                                                                   : cfg.pipelined_prefill == 2 ? "off" : "auto")},
                                       {"pipelined_prefill_min_rows",
                                        cfg.given.contains("--pipelined-prefill-min-rows")
                                            ? nlohmann::json(cfg.pipelined_prefill_min_rows) : nlohmann::json(nullptr)},
-                                      {"prefill_governor", source("--prefill-governor")},
-                                      {"tp_ownership", source("--tp-ownership")},
-                                      {"tune_pin", source("--tune-pin")}}},
+                                      {"prefill_governor", stated("--prefill-governor", cfg.prefill_governor)},
+                                      {"tp_ownership", stated("--tp-ownership", cfg.tp_ownership)},
+                                      {"tune_pin", stated("--tune-pin", cfg.tune_pin)}}},
                          {"settings", {{"max_batched_tokens", cfg.max_tok},
                                        {"checkpoint_interval", cfg.checkpoint_interval},
                                        {"placement", cfg.placement},
