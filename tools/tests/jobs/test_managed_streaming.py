@@ -7,6 +7,7 @@ import unittest
 from pathlib import Path
 from unittest import mock
 
+from bigcherry.core import host_facts
 from bigcherry.experiment.bundle import run_managed, validate
 
 
@@ -42,10 +43,15 @@ class ManagedStreamingTests(unittest.TestCase):
         # Successful run_managed must not use subprocess.run/capture_output;
         # patching it to explode proves the production success path is Popen
         # with file-backed stdout/stderr.
-        with mock.patch(
-            "bigcherry.experiment.bundle.subprocess.run",
-            side_effect=AssertionError("managed success path must not buffer output"),
-        ):
+        # The sealed start host facts are collected by their own commands before the child starts; they are not
+        # the child's output, so the test fixes them rather than letting them reach the patched subprocess.run.
+        sealed = host_facts.snapshot_at_start(
+            {"kernel_release": {"value": "fixture", "readable": True}}, phase="owner_start")
+        with mock.patch("bigcherry.experiment.bundle.host_facts.snapshot_at_start", return_value=sealed), \
+                mock.patch(
+                    "bigcherry.experiment.bundle.subprocess.run",
+                    side_effect=AssertionError("managed success path must not buffer output"),
+                ):
             rc = self._run(bundle, [sys.executable, "-c", child])
         self.assertEqual(rc, 0)
         self.assertEqual((bundle / "stdout.log").stat().st_size, 16 * 1024 * 1024)

@@ -6,7 +6,7 @@ import hashlib
 import json
 
 import pytest
-from bigcherry.core import retention, run_records
+from bigcherry.core import host_facts, retention, run_records
 
 
 def fixture_record(
@@ -54,7 +54,10 @@ def fixture_record(
                 {"role": "heat", "blob": heat, "path_hint": "/deleted/run/heat"}
             ],
         },
-        "host_facts": {},
+        "host_facts": host_facts.snapshot_at_start(
+            {"kernel_release": {"value": "fixture", "readable": True}},
+            captured_at=stamp,
+        ),
         "feature_states": [],
     }
 

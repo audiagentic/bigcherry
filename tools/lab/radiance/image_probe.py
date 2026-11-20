@@ -47,6 +47,7 @@ def bmp(width: int = SIZE, height: int = SIZE) -> bytes:
 def jpeg(width: int = SIZE, height: int = SIZE) -> bytes:
     """The same picture as a JPEG (needs Pillow, which the stdlib lacks)."""
     import io
+
     from PIL import Image
     image = Image.new("RGB", (width, height))
     image.putdata([pixel(x, y, width, height) for y in range(height) for x in range(width)])
