@@ -1,5 +1,16 @@
 # rad0060: LTX-2.5 IQ8R C01 native linear declaration (diagnostic only)
 
+## Summary
+
+An opt-in, diagnostic-only C01Slice for the LTX2 `Lin::declare` path (details below); TP1 behaviour is unchanged and the
+`world_size > 1` refusal is preserved.
+
+## Outcome
+
+See SUMMARY.md: compile and applicability evidence only; nothing here is selected by a production patch set.
+
+## Detail
+
 **Status:** native staging slice, source-pinned to Radiance's frozen 2.2 / ABI44
 candidate. Not selected by any production patch set or engine launch. This
 package creates `arch/ltx2/bc_ltx_tp3_c01.h` and changes only

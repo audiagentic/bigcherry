@@ -1,5 +1,10 @@
 # rad0060 — LTX2 TP3 native C01 declaration staging
 
+**Status:** diagnostic
+**Plan item:** LT3
+
+## Summary
+
 **Diagnostic only.** Adds an opt-in C01Slice to the real Radiance 2.2
 LTX2 `Lin::declare` path. For IQ8R, row-sharded QKV/KV selects the same
 per-bank source rows for codes, scales and BF16 bias through the existing
@@ -10,6 +15,8 @@ once-after-reduce ownership is not yet implemented.
 Existing TP1 calls pass the default null slice and stay unchanged.
 The LTX `world_size > 1` refusal is preserved; no runtime TP3 graph,
 Q/K all-head RMS or mixed-card liveness is claimed.
+
+## Outcome
 
 **Host validation:** patch applies and is idempotent against the observed
 frozen candidate's actual `arch/ltx2/ltx2.cpp`; C++23 compilation of
@@ -22,3 +29,7 @@ an actual builder weight-view receipt test, controlled native one-rank
 projection parity, rank-local buffers, global RMS/all-reduce, bias-once
 and request/owner graph acceptance. No promotion or merge without the
 project's Planning/Ledger and standard CI gates.
+
+## Detail
+
+See README.md.
