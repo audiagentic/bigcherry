@@ -398,3 +398,19 @@ and records its provenance. An explicit mismatch still refuses. The exact
 The separate retry runtime preserves the original plugins and worker, and
 includes the owner model-digest reuse from `4a03a8172`. The retry is running
 with the same YAML and stock power.
+
+## C70 — Automatic pool convergence and HTTP readiness
+
+On the leased Flash-Next run, `be89849c0` measured at 9216 MiB and then
+converged at 2247 MiB with the same YAML. Two distinct attempt directories
+record the engine plans. Only the converged attempt published a serving
+manifest. The earlier engine then exited because it needed a server front.
+
+The engine containing `7ef6186a2` attached the stock Radiance 2.2 front and
+passed the live health gate. Completion returned 404 because the owner asked
+for `default` while the native model name was `flashnext`. Checkpoint
+`77fd71cf6` restores the managed default alias and retains canonical model
+discovery. The host HTTP suite verified both names, unknown-name refusal and
+clean shutdown. A separate leased retry uses that engine. Its copied, verified
+model stamp avoids another full fingerprint read, and the changed engine
+identity requires a fresh measurement.
