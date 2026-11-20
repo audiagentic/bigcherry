@@ -1285,6 +1285,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     }
     s.dev.helpers = helpers;
     s.dev.finish_threads = finish.threads;
+    s.dev.trace_every = bc_engine_settings_snapshot().mailbox_trace_every;
     s.dev.layer_count = g.hdr->layer_count;
     s.dev.slots = g.hdr->slot_count;
     s.dev.lanes = g.hdr->counts.lanes;

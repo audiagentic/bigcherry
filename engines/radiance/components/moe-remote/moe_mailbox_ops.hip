@@ -160,7 +160,8 @@ __global__ void mailbox_publish_kernel(
     uint32_t layer, uint32_t rows, uint32_t hidden, uint32_t top_k,
     int32_t expert_base, uint32_t n_expert, uint32_t max_rows,
     uint32_t shadow, uint32_t world,
-    const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine) {
+    const uint8_t* st_aq, const float* st_as, const uint16_t* st_x, uint32_t st_bf16, uint32_t combine,
+    uint32_t trace_every) {
     __shared__ uint32_t nr;
     __shared__ const uint8_t* selected_owner;
     // Counted producer scratch, ahead of the optional per-expert heat table.
@@ -178,10 +179,12 @@ __global__ void mailbox_publish_kernel(
      * ticket. Later mailbox kernels refer to the Request, not this cell. */
     StepTicket ticket{};
     ConsumptionStamp* stamp = nullptr;
+    uint64_t trace_enter = 0;  // thread zero's engine GPU clock; only with trace enabled
     /* One thread validates the ticket, device stamp and owner binding ONCE
      * per pass, before the already-existing block barrier. Other threads
      * neither load the ticket cell nor repeat device-stamp comparisons. */
     if (threadIdx.x == 0) {
+        if (trace_every) trace_enter = wall_clock64();
         ticket = *ticket_cell;
         if (!stamps || !capacity) __builtin_trap();
         stamp = stamps + ticket.ticket_id % capacity;
@@ -347,6 +350,10 @@ __global__ void mailbox_publish_kernel(
             q->lane_slot = (seq - 1u) % kLaneSlots;
             q->reserved = 0;
             q->sequence = seq;
+            if (trace_every && seq % trace_every == 0) {
+                q->mailbox_trace[0] = trace_enter;   // start of publish kernel
+                for (unsigned t = 1; t < 6; ++t) q->mailbox_trace[t] = 0;
+            }
             q->trace[0] = wall_clock64();
             q->trace[1] = 0;
             q->trace[2] = 0;
@@ -358,6 +365,10 @@ __global__ void mailbox_publish_kernel(
         __threadfence_system();
         __syncthreads();
         if (threadIdx.x == 0) {
+            // After activation/route system fence, immediately before the
+            // request's release store. This span includes the mandatory fence.
+            if (trace_every && seq % trace_every == 0)
+                q->mailbox_trace[1] = wall_clock64();
             store_sys_rel(&h->lane[lane].request_sequence, seq);
             published[slot] = 1u + cls;   /* 0: nothing published to this slot; else 1 + the lane class */
         }
@@ -396,18 +407,22 @@ __device__ __forceinline__ const Request* slot_request(
 /* Wait for this step's helpers (exactly their published sequences) and, on a combined step, for combine.done; stamp the
  * R3_MOE_WORKER_TRACE completion times. One thread. */
 __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank,
-                                     uint32_t world, uint32_t helpers, Request** traced, uint64_t* seen_at) {
+                                     uint32_t world, uint32_t helpers, Request** traced, uint64_t* seen_at,
+                                     uint32_t trace_every) {
     Header* h = reinterpret_cast<Header*>(base);
     const uint64_t entered = wall_clock64();   /* R3_MOE_WORKER_TRACE: engine clock */
     /* R3_MOE_WORKER_COMBINE: the combiner publishes done only after every combined helper's done word, so the loop below then
      * finds them already there. */
+    uint64_t combine_wait_start = 0, combine_wait_ticks = 0;
     if (const uint32_t g = published[h->slot_count]) {
+        if (trace_every) combine_wait_start = wall_clock64();
         unsigned long long spins = 0;
         while (load_sys_acq(&h->combine[rank].done) != g) {
             if (load_sys_acq(&h->helper_fault)) __builtin_trap();
             __builtin_amdgcn_s_sleep(2);
             if (++spins > 4000000000ULL) __builtin_trap();
         }
+        if (trace_every) combine_wait_ticks = wall_clock64() - combine_wait_start;
     }
     // Scratch is per-launch LDS sized for the validated helper count.
     // Thread zero owns it; no extra global-memory trace writes inside the wait.
@@ -439,31 +454,37 @@ __device__ void mailbox_wait_helpers(uint8_t* base, const uint32_t* sequence, co
         if (!traced[k]) continue;
         traced[k]->trace[1] = entered;
         traced[k]->trace[2] = seen_at[k];
+        if (trace_every && traced[k]->sequence % trace_every == 0) {
+            traced[k]->mailbox_trace[2] = wall_clock64();  // after wait bookkeeping
+            traced[k]->mailbox_trace[5] = combine_wait_ticks;
+        }
     }
 }
 
 /* Before the add: wait for the helpers -- except on a combined step, whose add kernel waits chunk by chunk (RAD42) and whose
  * full wait follows the add (mailbox_add_tail_wait_kernel). */
 __global__ void mailbox_add_wait_kernel(
-    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t world, uint32_t helpers) {
+    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t world,
+    uint32_t helpers, uint32_t trace_every) {
     if (blockIdx.x || threadIdx.x) return;
     auto* h = reinterpret_cast<Header*>(base);
     if (published[h->slot_count]) return;
     extern __shared__ uint64_t scratch[];
     auto** traced = reinterpret_cast<Request**>(scratch + helpers);
-    mailbox_wait_helpers(base, sequence, published, rank, world, helpers, traced, scratch);
+    mailbox_wait_helpers(base, sequence, published, rank, world, helpers, traced, scratch, trace_every);
 }
 
 /* A combined step's full wait: combine.done and every helper's done word, after the add (so no request slot is reused
  * early) or before the shadow comparison (which reads every helper's own plane). */
 __global__ void mailbox_add_tail_wait_kernel(
-    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t world, uint32_t helpers) {
+    uint8_t* base, const uint32_t* sequence, const uint32_t* published, uint32_t rank, uint32_t world,
+    uint32_t helpers, uint32_t trace_every) {
     if (blockIdx.x || threadIdx.x) return;
     auto* h = reinterpret_cast<Header*>(base);
     if (!published[h->slot_count]) return;
     extern __shared__ uint64_t scratch[];
     auto** traced = reinterpret_cast<Request**>(scratch + helpers);
-    mailbox_wait_helpers(base, sequence, published, rank, world, helpers, traced, scratch);
+    mailbox_wait_helpers(base, sequence, published, rank, world, helpers, traced, scratch, trace_every);
 }
 
 __global__ void mailbox_mask_ref_kernel(
@@ -797,9 +818,21 @@ __global__ void mailbox_shadow_rows_kernel(
 __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* published,
                                           ConsumptionStamp* stamps, uint32_t capacity,
                                           ConsumedRecord* rec, uint32_t slots,
-                                          uint32_t lanes, uint32_t ticket_begin) {
+                                          uint32_t lanes, uint32_t ticket_begin,
+                                          uint8_t* base, uint32_t trace_every) {
     if (blockIdx.x || threadIdx.x >= slots + 1u) return;
     const uint32_t idx = threadIdx.x;
+    Request* traced = nullptr;
+    if (trace_every && idx < slots && published[idx]) {
+        const uint32_t lane = lane_of(idx, published[idx] - 1u, slots);
+        const uint32_t seq = sequence[lane];
+        if (seq && seq % trace_every == 0) {
+            auto* h = reinterpret_cast<Header*>(base);
+            auto* ring = reinterpret_cast<Request*>(base + h->regions[v26::index(Region::Requests)].offset);
+            traced = ring + lane * kLaneSlots + ((seq - 1u) % kLaneSlots);
+            traced->mailbox_trace[3] = wall_clock64();
+        }
+    }
     StepTicket pass{};
     if (!r3::mailbox_completion::pass_ticket(published, ticket_begin, &pass) ||
         !sequence || !stamps || !capacity || !rec) __builtin_trap();
@@ -829,6 +862,7 @@ __global__ void mailbox_add_finish_kernel(const uint32_t* sequence, uint32_t* pu
         (void)__hip_atomic_fetch_add(&out->consumed_count, consumed_lanes, __ATOMIC_RELAXED,
                                      __HIP_MEMORY_SCOPE_AGENT);
     published[idx] = 0;
+    if (traced) traced->mailbox_trace[4] = wall_clock64();
 }
 
 /* Once per parent and rank, on the scheduler's seal, after the parent's last GPU effect and before its terminal event.
@@ -962,7 +996,7 @@ int publish_launch(const RadArgs* a, RadStream stream) {
                        fuse_stage ? static_cast<const uint8_t*>(a->t[3].data) : nullptr,
                        static_cast<const float*>(a->t[4].data),
                        static_cast<const uint16_t*>(a->t[2].data), d->cpu_ref,
-                       fused ? 0u : d->combine);   /* a fused step never asks for the combine (see kPublishParams) */
+                       fused ? 0u : d->combine, d->trace_every);   /* a fused step never asks for the combine (see kPublishParams) */
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -999,7 +1033,7 @@ int launch_maps(R3MoeMailboxDevice* d, RadStream stream, const int32_t* sorted, 
                 uint32_t rows, uint32_t hidden, uint32_t top_k) {
     const uint32_t slots = rows * top_k;
     hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers, d->trace_every);
     if (hipMemsetAsync(d->rmask, 0, (size_t)slots * sizeof(uint32_t), (hipStream_t)stream) != hipSuccess ||
         hipMemsetAsync(d->inv, 0xff, (size_t)slots * sizeof(int32_t), (hipStream_t)stream) != hipSuccess)
         return RAD_E_DEVICE;
@@ -1055,14 +1089,15 @@ int add_launch(const RadArgs* a, RadStream stream) {
                        d->mask_ref, d->mask_only,
                        (uint32_t)rows, (uint32_t)hidden, (uint32_t)top_k);
     hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers, d->trace_every);
     /* This is after every true output-plane reader and (for combined steps)
      * the full helper tail wait. The parent seal, not this kernel, posts the
      * host-visible result-consumed ACK once per parent/rank. */
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
                        d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
-                       published_ticket_offset(d->slots, d->max_rows));
+                       published_ticket_offset(d->slots, d->max_rows),
+                       static_cast<uint8_t*>(d->mailbox), d->trace_every);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -1103,7 +1138,7 @@ int inject_launch(const RadArgs* a, RadStream stream) {
      * before the inject overwrites the injected slots' weights). A fused step has no combine (inject_init checks), so the
      * wait sees every helper done and there is no combine tail to wait for. */
     hipLaunchKernelGGL(mailbox_add_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers, d->trace_every);
     if (hipMemsetAsync(d->rmask, 0, (size_t)slots * sizeof(uint32_t), (hipStream_t)stream) != hipSuccess)
         return RAD_E_DEVICE;
     hipLaunchKernelGGL(mailbox_route_mark_kernel, dim3((slots + 255u) / 256u), dim3(256), 0,
@@ -1122,7 +1157,8 @@ int inject_launch(const RadArgs* a, RadStream stream) {
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
                        d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
-                       published_ticket_offset(d->slots, d->max_rows));
+                       published_ticket_offset(d->slots, d->max_rows),
+                       static_cast<uint8_t*>(d->mailbox), d->trace_every);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
@@ -1149,7 +1185,7 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
                     (uint32_t)top_k) != RAD_OK)
         return RAD_E_DEVICE;
     hipLaunchKernelGGL(mailbox_add_tail_wait_kernel, dim3(1), dim3(1), 2u * sizeof(uint64_t) * d->helpers, (hipStream_t)stream,
-                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers);
+                       static_cast<uint8_t*>(d->mailbox), d->sequence, d->published, d->rank, d->world, d->helpers, d->trace_every);
     hipLaunchKernelGGL(mailbox_shadow_rows_kernel, dim3(rows), dim3(256), sizeof(uint32_t) * d->helpers,
                        (hipStream_t)stream, static_cast<uint8_t*>(d->mailbox),
                        d->sequence, d->published, d->rank, d->world, d->helpers, d->inv, d->rmask,
@@ -1163,7 +1199,8 @@ int shadow_launch(const RadArgs* a, RadStream stream) {
     hipLaunchKernelGGL(mailbox_add_finish_kernel, dim3(1), dim3(d->finish_threads), 0, (hipStream_t)stream,
                        d->sequence, d->published, d->stamps,
                        d->consumed_capacity, d->consumed_rec, d->slots, d->lanes,
-                       published_ticket_offset(d->slots, d->max_rows));
+                       published_ticket_offset(d->slots, d->max_rows),
+                       static_cast<uint8_t*>(d->mailbox), d->trace_every);
     return hipGetLastError() == hipSuccess ? RAD_OK : RAD_E_DEVICE;
 }
 
