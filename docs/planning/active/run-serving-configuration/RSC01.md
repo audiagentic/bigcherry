@@ -25,7 +25,7 @@ Owner direction 2026-11-01/02: launching must be easy to run and manage, use sta
 4. Output: a resolved manifest (canonical JSON via nlohmann/json, which is already linked, plus a content hash) with per-value provenance.
 5. Linked into the engine (RSC07), r3_moe_worker (RSC06) and the bc-serve supervisor (RSC02). `bc-serve --validate|--explain [--json]` is the only explain implementation.
 6. The Python `bigcherry config` commands become thin clients that call bc-serve; there is no schema or resolver in Python.
-7. config/serving-settings.toml stays as the reference inventory the C++ schema is built from. It is not read at run time.
+7. engines/radiance/reference/serving-settings-inventory.toml stays as the reference inventory the C++ schema is built from. It is not read at run time.
 8. Equivalence test: for flashnext-2xtx-rdna2-tail, the manifest carries exactly the values today's launcher passes. The test extracts the launcher's argv and envs, and is replaced when RSC02 deletes the launcher.
 
 ## Detailed Solution & Technical Design

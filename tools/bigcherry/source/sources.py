@@ -2,7 +2,7 @@
 keep watching those sources.
 
 Each engine declares its registry in its engine.toml (``layout.external-sources``; llama.cpp's is
-``config/external-sources.toml``); an engine that declares none has no external sources. Every patch that
+``engines/llamacpp/external-sources.toml``); an engine that declares none has no external sources. Every patch that
 backports code from an external repository, fork branch, or upstream PR
 declares a machine-readable ``PROVENANCE`` dict (see the patches in group
 ``rdna-boosts``); the cross-check below fails if the patch and the registry

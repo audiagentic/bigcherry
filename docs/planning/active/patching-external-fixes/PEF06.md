@@ -74,7 +74,7 @@ For consolidation, use source-function ownership as the dedupe key: same backend
 
 ## Files
 
-Existing Q2_K/Q6_K MMQ patch and its plan item (resolve exact owner before edit); `ggml/src/ggml-cuda/mmq.cuh` / Q2_K MMQ source at current pin; existing HIP-autotune plan/selector; existing KV/cache policy owner; `config/external-sources.toml`; benchmark/evidence artifacts only as needed.
+Existing Q2_K/Q6_K MMQ patch and its plan item (resolve exact owner before edit); `ggml/src/ggml-cuda/mmq.cuh` / Q2_K MMQ source at current pin; existing HIP-autotune plan/selector; existing KV/cache policy owner; `engines/llamacpp/external-sources.toml`; benchmark/evidence artifacts only as needed.
 
 ## Validation
 

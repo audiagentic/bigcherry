@@ -26,7 +26,7 @@ from bigcherry.source import sources # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[3]
 RECIPES_PATH = ROOT / "config" / "recipes.toml"
-EXTERNAL_SOURCES_PATH = ROOT / "config" / "external-sources.toml"
+EXTERNAL_SOURCES_PATH = ROOT / "engines" / "llamacpp" / "external-sources.toml"
 
 
 def _real_patch_ids() -> set[str]:

@@ -22,7 +22,7 @@ family, dispatch key, benchmark framework, or runtime model dispatcher.
   `docs/planning/active/` or `docs/planning/completed/`
 
 The registry contains one `[contract.<id>]` table per contract. Source IDs
-must resolve through `config/external-sources.toml` when callers request that
+must resolve through `engines/llamacpp/external-sources.toml` when callers request that
 cross-check. Contract IDs and hashes are provenance; they must never become
 part of a runtime dispatch signature or candidate name.
 

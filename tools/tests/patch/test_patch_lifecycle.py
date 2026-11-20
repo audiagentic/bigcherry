@@ -38,7 +38,7 @@ class ComputeAllRealRegistryTests(unittest.TestCase):
         #
         # The patch's own PROVENANCE/patch.toml plan-item field was fixed
         # (2026-09-13) from the stale "RD09" to "PRBE05" -- the tracked
-        # source registry entry (config/external-sources.toml) already
+        # source registry entry (engines/llamacpp/external-sources.toml) already
         # named PRBE05 as RD09's actionable successor ("Legacy predecessor:
         # RD09. Actionable owner: PRBE05."), so the patch-side field was
         # the one out of date, not the registry. Before this fix, the

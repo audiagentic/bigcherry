@@ -81,7 +81,7 @@ Quality risk at medium reasoning: Q3_K_XL is the lower-risk first fallback; IQ3_
 
 ### r30/r31 provenance and portability
 
-`config/external-sources.toml` currently tracks the older stew675 `rdna-boosts` v3 snapshot `c8af5361` (2026-08-30). It does not cover r30 `f108261` or r31 `76a083e`.
+`engines/llamacpp/external-sources.toml` currently tracks the older stew675 `rdna-boosts` v3 snapshot `c8af5361` (2026-08-30). It does not cover r30 `f108261` or r31 `76a083e`.
 
 Portability triage:
 
@@ -112,7 +112,7 @@ Safest upstream-fix patch: detect `has_tools && has_response_format` before gram
 - `tools/lab/flash-next/` — reusable correctness/plausibility gate and fixtures.
 - `docs/planning/active/patching-qwen-flash-next/QFP28.md` — external triage/review/results.
 - `profile/flashnext.ini` — only validated profile-policy winners.
-- `config/external-sources.toml` — provenance tracking when maintained; no code dependency solely because a source was reviewed.
+- `engines/llamacpp/external-sources.toml` — provenance tracking when maintained; no code dependency solely because a source was reviewed.
 
 ## Validation
 

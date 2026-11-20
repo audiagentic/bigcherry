@@ -43,7 +43,10 @@ ARTIFACTS = REPO_ROOT / "artifacts"
 DISPOSITIONS = PATCHES.parent / "dispositions"
 CONFIG = REPO_ROOT / "config"
 RECIPES = LLAMACPP.recipes_path(REPO_ROOT)
-EXTERNAL_SOURCES = CONFIG / "external-sources.toml"
+# Registry belongs to llama.cpp; its engine.toml is the single location authority.
+EXTERNAL_SOURCES = LLAMACPP.external_sources_path(REPO_ROOT)
+if EXTERNAL_SOURCES is None:
+    raise RuntimeError("llamacpp engine declaration must provide external-sources")
 EXPERIMENT_CONTRACTS = CONFIG / "experiment-contracts.toml"
 MODELS = CONFIG / "models.toml"
 
