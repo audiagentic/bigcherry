@@ -35,6 +35,22 @@ class ServingManifestV2ContractTest(unittest.TestCase):
                          ["properties"]["power"]["properties"]["cpu"]["properties"]
                          ["settings"]["additionalProperties"], False)
 
+    def test_every_patch_the_contract_names_is_an_active_patch(self):
+        # A field that exists for a patch must not outlive it: a retired patch is archived (never loaded), so a
+        # declaration naming it is dead and goes with it.
+        import re
+
+        from bigcherry.core import engines, paths
+        from bigcherry.patch import registry
+
+        layout = engines.load(paths.REPO_ROOT, "radiance")
+        active = {d.patch_id.split("_", 1)[0] for d in
+                  registry.load_registry("radiance", layout.patches_root(paths.REPO_ROOT)).descriptors}
+        text = (SERVING / "contract/serving-v2.toml").read_text()
+        named = {m.group(0) for line in text.splitlines() if line.startswith("doc = ")
+                 for m in re.finditer(r"\brad\d{4}\b", line)}
+        self.assertEqual(sorted(named - active), [], "contract docs name patches that are not active")
+
     def test_roundtrip_and_independent_ascii_jcs_digest(self):
         for name in EXAMPLES:
             with self.subTest(name=name):
