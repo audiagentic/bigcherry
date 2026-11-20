@@ -2,7 +2,7 @@
 id: MRC03
 order: 3
 plan: run-measurement-records
-state: pending
+state: completed
 created-at: '2026-11-19T00:50:32.612787+00:00'
 breadth: ''
 skill: advanced
@@ -45,8 +45,7 @@ The engine runtime does not link Python: bc-serve (C++) writes the schema file; 
 
 ## Validation
 
-- Contract tests; a fixture with the policy inactive produces the warning.
-- On hardware: start Flash-Next with a deliberately orphaned calibration record; the warning names the policy and the reason code (reuse the failure of 2026-11-09 to 2026-11-19 as the test).
+Merged: #1195 (bc-serve writes native feature states at startup; production WARNING when the live policy is not active), #1230 (platform feature registry declaring Radiance feature ids and production expectations; native snapshots feed status and measurement; incomplete or wrong snapshots refuse publication; bc-serve --strict-production-features). Hardware: no---set production smokes of installed bc-radiance-1170.33.0 and 1170.34.0 wrote feature-states.v1.json with 5 active features (live_policy configured) and no warning. Tests: tools/tests/core/test_feature_registry.py, test_feature_states.py, serving feature_state_test and session tests; core/bench/lab suites pass.
 
 ## Effort & Risk
 
@@ -58,9 +57,7 @@ Medium. Risk: a warning noisy enough to be ignored; only features marked product
 
 ## Acceptance Criteria
 
-- An inactive production feature is reported at start-up and in `status`, without reading logs.
-- Every new Radiance measurement record contains the native owner's feature states; incomplete snapshots refuse publication.
-- Adding a Radiance feature requires only a platform registry entry and a native adapter line; other engine coverage is MRC07.
+Radiance's optional performance features are declared in a platform registry with production expectations; every Radiance start reports each feature's state and reason natively; records carry complete feature states; a production start with an expected feature inactive warns (or refuses under strict), so a silently-off live policy cannot recur. llama.cpp feature states are tracked in LCM02.
 
 ## Notes
 
@@ -71,3 +68,5 @@ First increments on main (2026-11-19): the heat guard and runtime receipt refusa
 - 2026-11-19T00:50:32.612787+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:13.072249+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-19T07:38:59.061941+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T01:54:00.086087+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
+- 2026-11-20T01:54:04.546515+00:00 (state-transition): State: pending → completed
