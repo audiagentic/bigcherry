@@ -2986,7 +2986,10 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         attach_inspected_config(in.options, in.named_config,
                                 in.native_admission ? in.native_admission->authored_yaml : fs::path{}, in.self,
                                 in.engine_binary, hooks);
-    {
+    if (in.options.inspected) {   // the sealed YAML is the one source: no catalogue or layout file is read
+        in.options.configs.clear();
+        in.options.layouts.clear();
+    } else {
         const auto configs = config_sources(given.options.configs);
         in.options.configs = configs;
         in.options.layouts = configs.empty() || !given.options.layouts.empty() ? layout_sources(given.options)
@@ -3798,11 +3801,13 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     if (given.replay_evidence) {
         evidence = given.replay_evidence.require("session.replay.evidence", m);
     } else {
-        in.options.configs = config_sources(given.options.configs);
-        if (in.options.configs.empty())
-            throw PlanFailed(
-                "replay: static RSC12 configuration cannot be checked without --configs or BIGCHERRY_CONFIGS");
-        in.options.layouts = given.options.layouts;
+        if (!in.options.inspected) {
+            in.options.configs = config_sources(given.options.configs);
+            if (in.options.configs.empty())
+                throw PlanFailed(
+                    "replay: static RSC12 configuration cannot be checked without --configs or BIGCHERRY_CONFIGS");
+            in.options.layouts = given.options.layouts;
+        }
         const auto has_set = [&](const std::string& key) {
             return std::any_of(in.options.sets.begin(), in.options.sets.end(),
                                [&](const std::string& setting) { return setting.starts_with(key + "="); });
