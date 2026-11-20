@@ -2475,6 +2475,10 @@ static void reconcile_native_config(
         throw PlanFailed("native config admission: only the loopback listener is supported by the managed owner");
 }
 
+static std::shared_ptr<const NativeEngineLaunch> prepare_native_launch(
+    const fs::path& resolution_root, const fs::path& runtime_home, const Env& selected, Env overrides,
+    const fs::path& sys_root);
+
 InspectedConfig inspect_config_file(const fs::path& engine, const fs::path& yaml, const fs::path& radiance_home,
                                     const fs::path& model_root, const fs::path& sys_root, const Hooks& hooks) {
     return inspect_config_snapshot(engine, NativeConfigSnapshot::read(yaml, model_root), yaml.stem().string(), yaml,
