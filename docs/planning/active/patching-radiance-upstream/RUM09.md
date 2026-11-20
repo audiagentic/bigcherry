@@ -126,6 +126,8 @@ Settled explicit replay exited 0 with the author YAML absent. Fresh, named and e
 
 The b0c quality launches refused inconsistent fixtures before scoring. Helper-off must use the engine-only kernel roster. Helper-on must keep the calibrated host KV tier instead of forcing the helper-off zero-KV override. Updated the short YAML inputs and arm overrides accordingly. Merged main through 643250eb1 at 8e72665df, including ENG05. Because ENG05 expands the exact-size private settings callback and changes mailbox HIP launch packets, d92592f9c is the next exact runtime freeze. Rebuild matched engine, owner, helper plugin and worker, and affected libr3 units together before renewed lifecycle, KL, and paired performance. Preserve the b0c lifecycle evidence as a separate checkpoint.
 
+d92592f9 ENG05 bundle a3fe93104719c360823424f900c58f12 passed exact fresh, in-flight stop/drain, named and explicit replay of one measured manifest. Helper-off short quality finished all 8240 rows (mean KL 0.0600258684, top-1 88.8349515%, perplexity ratio 1.02394536 vs old reference). Helper-on reached scoring and faulted after the initial 64-row helper work, so no quality gate is issued. A 129-position exact prefix reproducer with step traces is queued, with one chained acquire fence comparison on a repeat. 6fe47b998 host-cache runtime 55860a8af7a6bd15a73fde53564109b6 passed exact ABI44 host fixtures and is undergoing an isolated allocation/clean-stop smoke. Paired performance remains gated on the fixed final runtime and matching short quality.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -160,3 +162,4 @@ The b0c quality launches refused inconsistent fixtures before scoring. Helper-of
 - 2026-11-20T02:58:45.425205+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:03:37.935279+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T03:12:18.577770+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:53:26.606171+00:00 (updated-by): Updated: section:notes
