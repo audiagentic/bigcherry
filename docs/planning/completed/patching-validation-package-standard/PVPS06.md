@@ -2,7 +2,7 @@
 id: PVPS06
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: superseded
 created-at: '2026-09-25T23:16:32.446729+00:00'
 breadth: ''
 skill: intermediate
@@ -56,6 +56,8 @@ Offline tests; re-evaluate 1207's recorded comparison offline to show which gate
 
 No legacy fallback: the old absolute-all-vocab path remains only as the bit-identity (tolerance 0) mode.
 
+2026-11-20 consolidation: requirements transferred to active PVPS01 (patch qualification matrix), including this item's specific validation and acceptance gates. Source history is retained. The target remains pending; no implementation, hardware validation, or promotion acceptance is implied. See PVPS01 inherited qualification gates.
+
 ## Change Log
 
 - 2026-09-25T23:16:32.446729+00:00 (created-by): Created by agent
@@ -64,3 +66,5 @@ No legacy fallback: the old absolute-all-vocab path remains only as the bit-iden
 
 - chg_20260925_232233_correctness-checks-for-approxi_1217
 - 2026-09-25T23:22:36.566063+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T04:11:15.636261+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:11:32.214020+00:00 (state-transition): State: pending → superseded
