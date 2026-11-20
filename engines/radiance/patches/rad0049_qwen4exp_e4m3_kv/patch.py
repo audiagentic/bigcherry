@@ -196,6 +196,26 @@ _FUSED_ROWS = r"""{ "qk_norm_rope_gate_kv_store_fp8", "qk_norm_rope_gate_kv_stor
 
 """
 
+_PAGE16_CONSTRAINT = """/* Resident native E4M3 page-16 fused store at the compiled H256 width.
+ * The fused kernel validates head counts and rotary width at launch; these vary by rank.
+ * Leave the existing Flash-Next page-4 and streamed rows unchanged. */
+static const RadConstraint cQkNormRopeGateKvH256Page16Fp8[] = {
+    C_IN("q_dtype", "bf16"), C_EQ("head_dim", 256),
+    C_EQ("block_size", 16), C_IN("kv_dtype", "fp8_e4m3"),
+};
+
+"""
+
+_PAGE16_ROW = """{ "qk_norm_rope_gate_kv_store_h256_page16_fp8", "qk_norm_rope_gate_kv_store", "attn",
+  "Fused QK normalization, RoPE, gate and native E4M3 page-16 KV store",
+  "H256/page16 with rank-local head counts, negative slots store nothing",
+  "bf16 Q, K and V, native E4M3 K and V with caller-constant scales",
+  RAD_DOMAIN_DEVICE, R4D_PRIO_ONLY, ROW(cQkNormRopeGateKvH256Page16Fp8), NOTUNE,
+  nullptr, nullptr, r4d_rad_qk_norm_rope_gate_kv_store, nullptr, nullptr, nullptr,
+  r4d_shape_qk_norm_rope_gate_kv_store, nullptr, r4d_fuse_qk_norm_rope_gate_kv_store },
+
+"""
+
 _FP8_WRITE_BYTES = """  } else if constexpr (KV == QK_KV_FP8 || KV == QK_KV_STREAMED_FP8) {
     if (isk && t < HD) {
       constexpr bool STREAMED = KV == QK_KV_STREAMED_FP8;
@@ -333,14 +353,43 @@ PATCHES = (
               '    C_IN("q_dtype", "bf16"), C_EQ("head_dim", 256), C_EQ("block_size", 4),\n'
               '    C_IN("kv_dtype", "fp8_e4m3"),\n'
               "};\n", "static const RadConstraint cQkNormRopeGateKvQ4Fp8[]", mode="insert_before"),
+        _edit("q4-e4m3-page16-constraint", "static const RadConstraint cQkNormRopeGateKvI8[]",
+              _PAGE16_CONSTRAINT, "static const RadConstraint cQkNormRopeGateKvH256Page16Fp8[]",
+              mode="insert_before"),
         _edit("q4-e4m3-fused-rows", '{ "qk_norm_rope_gate_kv_store_i8",',
               _FUSED_ROWS, '{ "qk_norm_rope_gate_kv_store_fp8",', mode="insert_before"),
+        _edit("q4-e4m3-page16-row", '{ "qk_norm_rope_gate_kv_store_i8",',
+              _PAGE16_ROW, '{ "qk_norm_rope_gate_kv_store_h256_page16_fp8",',
+              mode="insert_before"),
         _edit("q4-e4m3-chain-fused", '        "qk_norm_rope_gate_kv_store_i8", "qk_norm_rope_gate_kv_store_bf16",\n',
               '        "qk_norm_rope_gate_kv_store_fp8",\n', '        "qk_norm_rope_gate_kv_store_fp8",\n',
               mode="insert_after"),
         _edit("q4-e4m3-chain-decode", '        "attn_decode_h256_gqa6_bs4_bf16kv", "attn_decode_h256_gqa6_bs4_i8",\n',
               '        "attn_decode_h256_gqa12_fp8kv", "attn_decode_h256_gqa6_bs4_fp8kv",\n',
               '        "attn_decode_h256_gqa12_fp8kv", "attn_decode_h256_gqa6_bs4_fp8kv",\n', mode="insert_after"),
+    )),
+    FilePatch(path="libr4d/r4d_selftest.cpp", language="none", edits=(
+        _edit("q4-e4m3-page16-selftest-signature",
+              "static void qk_kv_fold_case(const Plugin& pl, bool bf16, int kvq = 0) {",
+              "static void qk_kv_fold_case(const Plugin& pl, bool bf16, int kvq = 0,\n"
+              "                            int page16_nq = 0, int page16_nkv = 0) {",
+              "int page16_nq = 0, int page16_nkv = 0"),
+        _edit("q4-e4m3-page16-selftest-row",
+              '    const char* row = bf16     ? "qk_norm_rope_gate_kv_store_bf16"',
+              '    const char* row = page16_nq ? "qk_norm_rope_gate_kv_store_h256_page16_fp8"\n'
+              '                    : bf16     ? "qk_norm_rope_gate_kv_store_bf16"',
+              'row = page16_nq ? "qk_norm_rope_gate_kv_store_h256_page16_fp8"'),
+        _edit("q4-e4m3-page16-selftest-geometry",
+              "    const int64_t M = 48, nq = 12, nkv = 2, hd = 256, rot = 64, ctx = 4096, bs = 16, nb = 6;",
+              "    const int64_t M = 48, nq = page16_nq ? page16_nq : 12;\n"
+              "    const int64_t nkv = page16_nq ? page16_nkv : 2;\n"
+              "    const int64_t hd = 256, rot = 64, ctx = 4096, bs = 16, nb = 6;",
+              "nq = page16_nq ? page16_nq : 12"),
+        _edit("q4-e4m3-page16-selftest-invocation",
+              "        qk_kv_fold_case(pl, false, 3);\n",
+              "        qk_kv_fold_case(pl, false, 0, 6, 1);\n"
+              "        qk_kv_fold_case(pl, false, 0, 12, 2);\n",
+              "qk_kv_fold_case(pl, false, 0, 12, 2)", mode="insert_after"),
     )),
     FilePatch(path="tests/arch_test.cpp", language="none", edits=(
         _edit("q4-e4m3-host-fixture", "TEST(a_streamed_qwen4exp_group_stores_then_resolves_then_attends)",

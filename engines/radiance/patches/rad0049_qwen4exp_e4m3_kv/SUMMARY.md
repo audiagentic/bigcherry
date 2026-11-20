@@ -1,7 +1,7 @@
 # rad0049_qwen4exp_e4m3_kv
 
 **Status:** validated
-**Plan item:** RUM07
+**Plan item:** RUM07/RUM11
 
 Scope: Restore native E4M3 Flash-Next cache rows on the ABI43 base.
 
@@ -18,3 +18,5 @@ The Radiance 2.2 production attachment passes exact replay. The [carry-forward r
 The Qwen4exp declarations keep the E4M3 format and geometry explicit at both store and attention selection.
 
 [Patch implementation](patch.py).
+
+RUM11: a separate H256/page16 E4M3 fused-store row admits variable local head counts and rotary widths, with byte-identity selftests for 6/1 and 12/2 heads. This does not change the deployed Flash-Next page-4 row. Hardware selftest and TP3 startup/KLD qualification remain outstanding.
