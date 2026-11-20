@@ -149,3 +149,16 @@ recreated or silently trusted as new evidence.
 - 2026-11-19T00:50:46.203067+00:00 (created-by): Created by agent
 - 2026-11-19T00:54:27.377473+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:acceptance_criteria
 - 2026-11-19T07:39:11.871195+00:00 (updated-by): Updated: section:notes
+
+## Radiance-only owner-rule merge update (2026-11-20)
+
+The #1223 main retirement remains authoritative: no parity summary
+writer or reader, no workload JSONL index, no record-disable option,
+and no managed llama.cpp run-bench CLI. Shell parity baseline/compare
+commands delegate directly to the canonical `bigcherry results` API.
+The additional MRC06 native-lab path is explicit typed sidecar ingestion
+from a cleanly stopped Radiance owner, with run ID and original manifest
+digest verification. It pins the complete source evidence as immutable
+blobs and marks unattested measurements as unverified. The CLI, sidecar
+and owner-state refusal tests are CPU-only. The earlier slice notes and
+acceptance audit describe historical state; llama.cpp work is MRC07.

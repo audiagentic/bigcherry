@@ -1,0 +1,2 @@
+Mechanics: card-free patch-package tests (apply, anchors, idempotence) and patch-lint.
+Activation: on Flash-Next (qwen3.8-next-flash-hcbf16, two 7900 XTX TP2, deterministic) the --expert-stats tally counts the protected bf16 experts too: the run counts 1,998,240 routed selections over 48 layers and 4,163 tokens (top-10), and two repeat runs give identical per-layer counts. See docs/evidence/2026-11-16-vtp44-generic-kv-layouts/FLASHNEXT-ROUTING.md.

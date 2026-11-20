@@ -207,6 +207,32 @@ class PatchPromoteTests(unittest.TestCase):
         )
         self.assertEqual(original, recipes_path.read_text(encoding="utf-8"))
 
+    def test_a_patch_only_in_an_experiment_joins_a_named_diagnostic_source(self):
+        layout = engines.load(self.root, "radiance")
+        recipes_path = layout.recipes_path(self.root)
+        recipes_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(_REPO / "engines/radiance/recipes.toml", recipes_path)
+        text = recipes_path.read_text(encoding="utf-8").rstrip("\n") + (
+            '\n\n[experiment.probe]\npatches = ["rad9001_probe", "rad9002_probe"]\n'
+            '\n[experiment.alone]\npatches = ["rad9003_probe"]\n')
+        recipes_path.write_text(text, encoding="utf-8")
+        # No diagnostic source named: refused, and the message lists the choices.
+        with self.assertRaisesRegex(pp.PatchPromoteError, "--diagnostic-source.*radiance-diag"):
+            pp._update_diagnostic_recipes(self.root, layout, ("rad9001_probe",))
+        with self.assertRaisesRegex(pp.PatchPromoteError, "not a declared diagnostic source"):
+            pp._update_diagnostic_recipes(self.root, layout, ("rad9001_probe",), source="radiance")
+        self.assertEqual(recipes_path.read_text(encoding="utf-8"), text)   # a refusal changes nothing
+        pp._update_diagnostic_recipes(self.root, layout, ("rad9001_probe", "rad9003_probe"), source="radiance-diag")
+        parsed = tomllib.loads(recipes_path.read_text(encoding="utf-8"))
+        self.assertEqual(parsed["patch-set"]["rad9001-diagnostic"]["patches"], ["rad9001_probe"])
+        self.assertEqual(parsed["patch-set"]["rad9001-diagnostic"]["required-state"], "diagnostic")
+        self.assertIn("rad9001-diagnostic", parsed["source"]["radiance-diag"]["patch-sets"])
+        self.assertIn("rad9003-diagnostic", parsed["source"]["radiance-diag"]["patch-sets"])
+        self.assertNotIn("rad9001-diagnostic", parsed["source"]["radiance"]["patch-sets"])
+        # The experiment keeps its other patch; the one that is left empty is gone.
+        self.assertEqual(parsed["experiment"]["probe"]["patches"], ["rad9002_probe"])
+        self.assertNotIn("alone", parsed["experiment"])
+
     def test_diagnostic_state_and_evidence_do_not_claim_ab_or_production(self):
         info = pp._load_patch(self.root, self.layout, "1348_demo")
         evidence = "Mechanics: patch tests pass\nActivation: own marker seen\n"
