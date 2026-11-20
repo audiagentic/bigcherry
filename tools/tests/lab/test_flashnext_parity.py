@@ -248,13 +248,12 @@ class RunRecordsTests(unittest.TestCase):
             manifest = {
                 "metadata": {"instance_id": f"{name}-launch-{i}"},
                 "spec": {
-                    "plan": {"engine_memory": {"model_identity": "m" * 64}},
+                    "plan": {"engine_memory": {"model_identity": "m" * 64}, "power": {"profile": "stock"}},
                     "intent": {"layout": "flashnext-4gpu"},
                     "handoff": {"placement": {"live_policy_state": {
                         "configured": False, "requested": "off",
                         "reason_code": "no_calibration", "calibration_key": ""
                     }}},
-                    "power": {"profile": "stock"}
                 }
             }
             (launch / "manifest.json").write_text(json.dumps(manifest))
@@ -306,6 +305,7 @@ class RunRecordsTests(unittest.TestCase):
         ) as publish:
             digest = fp.publish_launch_record(out, out / "launch-1", work_root=self.root)
         self.assertEqual(publish.call_count, 1)
+        self.assertEqual(publish.call_args.kwargs["power_settings"]["effective"], {"profile": "stock"})
         self.assertEqual(
             run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
             "sole-writer-launch-1",

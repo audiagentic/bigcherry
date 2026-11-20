@@ -576,7 +576,7 @@ def publish_launch_record(
         effective_config=manifest_file.read_bytes(),
         argv=snapshot["argv"], environment=snapshot["environment"],
         power_settings={
-            "effective": spec.get("power", {}),
+            "effective": spec["plan"].get("power", spec.get("power", {})),
             "requested_profile": snapshot["power_profile"],
         },
         inputs=inputs,
