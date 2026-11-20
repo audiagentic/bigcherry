@@ -136,6 +136,8 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 
 2026-11-20 qualification matrix and status. All 18 configs pass the offline native preflight with 0 differences from the TOML-era values (RUM04). Hardware start/canary/stop on the 2.2 build: flashnext-4gpu PASS (paired runs), flashnext-4gpu-bf16i8 PASS, flashnext-r9700 FAIL (1 MB live-room shortfall, RUM05), qwen27b-tp3-int8-556 FAIL (E4M3 page16 store, RUM11; rank-devices fixed), the rest in progress. Prefill regression: chaining cleared; candidate long-8 is bimodal; old-vs-candidate same-session A/B queued. Per-start 122 GB model fingerprint replaced by a host-wide identity cache (branch agent/model-identity-cache). Bump-ease close-out for this item: update the bump-radiance skill and docs/reference/build/PIN_BUMP.md with this bump's lessons: probe each recipe source rather than --all, run the native preflight over every config before any GPU start, register kernel rows per model geometry, archive superseded patches in the bump, and the per-config smoke script as a reusable command (`bigcherry` CLI) instead of scratch scripts.
 
+2026-11-21 per-config start/canary/stop matrix on the 2.2 candidate build (ca194ebc/1ebb6563, pre-RUM11, pre-x-bigcherry YAMLs from d99323272): PASS flashnext-4gpu (paired runs), flashnext-4gpu-bf16i8, flashnext-2xtx-rdna2-tail, flashnext-2xtx-rdna2-tail-combine. FAIL host RAM, n-gram table pinned in ram (RUM05): flashnext-2xtx, flashnext-2xtx-combine, flashnext-2xtx-rdna2-head, flashnext-tp2xtx. FAIL VRAM live-room 1 MB (RUM05): flashnext-r9700. FAIL declare unsupported in the GDN in-projection on TP2 gfx1100 (RUM06 lane): qwen27b-2xtx. FAIL E4M3 page16 store (RUM11, fixed in 5d9735720, hardware start pending): qwen27b-tp3-int8-556. Not yet run: qwen27b-tp3, -tp3-capacity, -tp3-int8, -tp3-int8-556-long, -long-bf16, -long-bf16i8, flashnext-tp2xtx-r9700. Results: rum09-config-smokes task folder. A build-tree start without --set refuses for a missing engine.radiance_home; it must be derived from --engine-binary (RUM04 serve path).
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -175,3 +177,4 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 - 2026-11-20T05:15:47.666983+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T08:49:59.253113+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - 2026-11-20T12:44:40.287723+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T13:48:08.014210+00:00 (updated-by): Updated: section:notes
