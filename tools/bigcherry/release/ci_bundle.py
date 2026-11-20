@@ -134,9 +134,19 @@ def build_inputs_tree(root: Path) -> str:
     return hashlib.sha256("\n".join(lines).encode()).hexdigest()
 
 
+def _payload_key(target: ra.ReleaseTarget, native_profiles: tuple[str, ...]) -> str:
+    policy = ra.payload_contract_key(native_profiles=native_profiles)
+    if target.lane == ra.STOCK_LANE:
+        return policy
+    return hashlib.sha256(f"{policy} {target.lane} {target.schema_fingerprint} "
+                          f"{target.semantic_fingerprint}".encode()).hexdigest()
+
+
 def runtime_key(root: Path, rocm_version: str, *, native_profiles: tuple[str, ...] = ()) -> dict[str, str]:
+    target = ra.release_target(root)
+    profiles = target.select_profiles(native_profiles)
     return {**ra.stock_identity(root), "build_inputs": build_inputs_tree(root),
-            "payload_contract": ra.payload_contract_key(native_profiles=native_profiles), "rocm_version": rocm_version}
+            "payload_contract": _payload_key(target, profiles), "rocm_version": rocm_version}
 
 
 def lane_build(work_root: Path, plan_id: str | None = None) -> tuple[Path, str, str]:
@@ -157,8 +167,9 @@ def pack_and_verify(tag: str, *, root: Path, work_root: Path, sdk: Path, plan_id
     if not TAG.fullmatch(tag):
         raise CiBundleError(f"not a bc-radiance release tag: {tag}")
     _build, plan, binary_sha = lane_build(work_root, plan_id)
-    record = {"notes": f"release asset lane build: radiance:stock:linux-radiance build_plan_id={plan} binary_sha256={binary_sha}"}
-    asset = ra.pack(record, root, work_root, sdk, tag, native_profiles=native_profiles)
+    target = ra.release_target(root)
+    record = {"notes": f"release asset lane build: {target.lane} build_plan_id={plan} binary_sha256={binary_sha}"}
+    asset = ra.pack(record, root, work_root, sdk, tag, native_profiles=native_profiles, target=target)
     out = work_root / "release-assets" / tag
     archive, checksum = out / asset["name"], out / asset["checksum_name"]
     scratch = Path(tempfile.mkdtemp(prefix="ci-bundle-verify-", dir=out))
@@ -266,19 +277,24 @@ def verify_publish_candidate(tag: str, directory: Path, *, root: Path) -> dict:
     names = receipt.get("file_names")
     if not isinstance(names, list) or not all(isinstance(name, str) for name in names):
         raise CiBundleError("upload receipt has no valid runtime file names")
+    target = ra.release_target(root, tag)
     native_profiles = ra.selected_native_profiles(set(names))
+    if native_profiles != target.select_profiles(native_profiles):
+        raise CiBundleError("release archive omits the native release's required profiles")
     if (not isinstance(key, dict)
             or set(key) != {"engine_tree", "config_tree", "build_inputs",
                             "payload_contract", "rocm_version"}
             or any(key.get(k) != v or receipt.get(k) != v for k, v in identity.items())
             or key.get("build_inputs") != tagged_build_inputs_tree(root, tag)
             or key.get("rocm_version") != receipt.get("rocm_version")
-            or key.get("payload_contract") != ra.payload_contract_key(native_profiles=native_profiles)):
+            or key.get("payload_contract") != _payload_key(target, native_profiles)):
         raise CiBundleError("release runtime key differs from tagged source/payload policy")
     with tempfile.TemporaryDirectory(prefix="rsp01-upload-verify-") as scratch:
         extracted = Path(scratch) / "unpacked"
         manifest = ra.checked_extract(archive, receipt, extracted)
         ra.require_product("upload manifest", manifest)
+        if manifest.get("serving_contract") != target.serving_contract(manifest["files"]):
+            raise CiBundleError("archive engine/owner contract differs from the tagged release")
         if manifest.get("release_tag") != origin:
             raise CiBundleError("archive manifest belongs to a different original release")
         for name in (*ra.SHIPPED_CONFIGS, *native_profiles):
@@ -319,7 +335,13 @@ def verify_reusable_archive(tag: str, root: Path, receipt: dict) -> None:
         if (receipt.get("release_tag") != tag or
                 manifest.get("release_tag") != receipt.get("reused_from", tag)):
             raise CiBundleError("reusable archive source tag mismatch")
-        for name in ra.selected_native_profiles(set(manifest["files"])):
+        target = ra.release_target(root, tag)
+        native_profiles = ra.selected_native_profiles(set(manifest["files"]))
+        if native_profiles != target.select_profiles(native_profiles):
+            raise CiBundleError("reused archive omits the native release's required profiles")
+        if manifest.get("serving_contract") != target.serving_contract(manifest["files"]):
+            raise CiBundleError("reused engine/owner contract differs from the tagged release")
+        for name in native_profiles:
             if (extracted / "configs" / name).read_bytes() != tagged_config(root, tag, name):
                 raise CiBundleError(f"released native profile differs from tagged source: {name}")
 
@@ -327,6 +349,7 @@ def verify_reusable_archive(tag: str, root: Path, receipt: dict) -> None:
 def find_reusable(tag: str, *, root: Path, rocm_version: str, limit: int = 40,
                   native_profiles: tuple[str, ...] = ()) -> tuple[str, dict] | None:
     """The newest earlier bc-radiance release whose published receipt has this runtime key, with that receipt."""
+    native_profiles = ra.release_target(root).select_profiles(native_profiles)
     want = runtime_key(root, rocm_version, native_profiles=native_profiles)
     listing = json.loads(_gh(["release", "list", "--limit", str(limit), "--json", "tagName"], root))
     for entry in listing:
@@ -402,8 +425,13 @@ def cmd_release_bundle(args) -> int:
     root = Path(args.root).resolve()
     try:
         native_profiles = tuple(args.native_profile)
-        if native_profiles and (args.verify_publish_dir is not None or args.prune):
+        if native_profiles and (args.verify_publish_dir is not None or args.prune or args.print_lane):
             raise CiBundleError("--native-profile selects members for packing or reuse lookup")
+        if args.print_lane:
+            if not TAG.fullmatch(args.tag):
+                raise CiBundleError("lane selection requires one exact Radiance release tag")
+            print(ra.release_target(root, args.tag).lane)
+            return 0
         if args.verify_publish_dir is not None:
             result = verify_publish_candidate(args.tag, Path(args.verify_publish_dir), root=root)
             print(json.dumps({"verified": True, "tag": args.tag, "archive": result["name"]}, sort_keys=True))
@@ -443,6 +471,7 @@ def add_parser(sub) -> None:
                    help="include an explicitly approved committed YAML profile in the runtime archive")
     p.add_argument("--verify-publish-dir",
                    help="final pre-upload gate: verify exactly one Python-free tagged engine archive/receipt/checksum (no SDK)")
+    p.add_argument("--print-lane", action="store_true", help="print the build lane selected by the exact release tag")
     p.add_argument("--find-reusable", action="store_true",
                    help="print the earlier release whose bundle has this runtime key (no build needed), then exit")
     p.add_argument("--prune", action="store_true",

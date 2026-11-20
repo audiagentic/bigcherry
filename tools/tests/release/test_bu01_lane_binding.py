@@ -8,6 +8,7 @@ from unittest import mock
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from bigcherry.release import pin_release
 from bigcherry.release import pin_bump
+from bigcherry.release import runtime_assets as assets
 
 
 class LaneBindingTests(unittest.TestCase):
@@ -17,6 +18,10 @@ class LaneBindingTests(unittest.TestCase):
             package="engines/radiance", upstream_name="radiance",
             llama_tag="v1.16.0", build=1160, version="1160.0.1",
             release_tag="bc-radiance-1160.0.1", branch="feat/staged")
+        self.target = assets.ReleaseTarget(assets.STOCK_LANE)
+        target = mock.patch.object(assets, "release_target", side_effect=lambda root: self.target)
+        target.start()
+        self.addCleanup(target.stop)
         self.old_id = "a" * 32
         self.new_id = "b" * 32
         self.new_sha = "c" * 64
@@ -38,7 +43,19 @@ class LaneBindingTests(unittest.TestCase):
                       self.record["notes"].splitlines()[-1])
         self.assertEqual(self.record["runtime_assets"][self.plan.release_tag], receipt)
         pack.assert_called_once_with(self.record, self.plan.repo_root,
-                                     (self.plan.repo_root / "work/bu01-test"), (self.plan.repo_root / "work/sdk-test"), self.plan.release_tag)
+                                     (self.plan.repo_root / "work/bu01-test"), (self.plan.repo_root / "work/sdk-test"), self.plan.release_tag,
+                                     target=self.target)
+
+    def test_record_backed_release_uses_the_native_recipe_before_build_and_pack(self):
+        self.target = assets.ReleaseTarget(assets.NATIVE_LANE, assets.NATIVE_RELEASE_PROFILES)
+        result = SimpleNamespace(build_plan_id=self.new_id, binary_sha256=self.new_sha)
+        with mock.patch.object(pin_bump, "execute_lane_build", return_value=result) as build, \
+             mock.patch.object(pin_release, "_asset_environment", return_value=(Path("work"), Path("sdk"))), \
+             mock.patch.object(assets, "pack", return_value={"plan_id": self.new_id}) as pack:
+            pin_release._prepare_runtime_asset(self.plan, self.record)
+        self.assertEqual(build.call_args.kwargs["lane"], assets.NATIVE_LANE)
+        self.assertIn(f"release asset lane build: {assets.NATIVE_LANE}", self.record["notes"])
+        self.assertEqual(pack.call_args.kwargs["target"], self.target)
 
     def test_failed_current_lane_never_generates_an_asset(self):
         with mock.patch.object(pin_bump, "execute_lane_build",

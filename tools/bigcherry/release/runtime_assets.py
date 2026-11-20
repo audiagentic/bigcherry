@@ -18,12 +18,22 @@ import stat
 import subprocess
 import tarfile
 import tempfile
+import tomllib
+from dataclasses import dataclass
 from pathlib import Path, PurePosixPath
 
 from ..core import engines
 
 SCHEMA = "bigcherry-radiance-runtime-v1"
-PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): radiance:stock:linux-radiance build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
+STOCK_LANE = "radiance:stock:linux-radiance"
+NATIVE_LANE = "radiance:native-serving:linux-radiance"
+RECIPES = "engines/radiance/recipes.toml"
+SERVING_COMPONENT = "engines/radiance/components/serving"
+SERVING_FINGERPRINT = f"{SERVING_COMPONENT}/generated/v3/contract.fingerprint"
+SERVING_EDITION = "BC_SERVING_CONTRACT_VERSION"
+PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): "
+                  r"(radiance:(?:stock|native-serving):linux-radiance) "
+                  r"build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
 FILE_LIMIT = 10000
 BYTE_LIMIT = 16 * 1024**3
 #: The public bc-radiance-1170.0.0 record in releases/v1.17.0.json uses
@@ -68,6 +78,7 @@ ELF_DEBUG_POLICY = "gnu-objcopy-split-debug-strip-all-v1"
 SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
 # Native profiles are selected by exact name. A checkout's other YAML is local input.
 OPTIONAL_NATIVE_PROFILES = ("flashnext-4gpu.yaml",)
+NATIVE_RELEASE_PROFILES = ("flashnext-4gpu.yaml",)
 NATIVE_PROFILE_MEMBERS = frozenset(f"configs/{name}" for name in OPTIONAL_NATIVE_PROFILES)
 NATIVE_PROFILE_LIMIT = 16 * 1024 * 1024
 # Approved repo-owned heat seeds. Archive members live at prefix/heat; no
@@ -126,6 +137,85 @@ class BundleError(RuntimeError):
     pass
 
 
+@dataclass(frozen=True)
+class ReleaseTarget:
+    lane: str
+    profiles: tuple[str, ...] = ()
+    schema_fingerprint: str = ""
+    semantic_fingerprint: str = ""
+
+    def select_profiles(self, requested: tuple[str, ...]) -> tuple[str, ...]:
+        check_native_profile_selection(requested)
+        if not self.profiles:
+            return requested
+        if requested and requested != self.profiles:
+            raise BundleError("native release requires its declared YAML profiles")
+        return self.profiles
+
+    def serving_contract(self, files: dict) -> dict | None:
+        if self.lane == STOCK_LANE:
+            return None
+        return {"edition": 3, "lane": self.lane, "schema_fingerprint": self.schema_fingerprint,
+                "semantic_fingerprint": self.semantic_fingerprint,
+                "engine_sha256": files["bin/radiance"]["sha256"],
+                "owner_sha256": files["radiance_home/bin/bc-serve"]["sha256"]}
+
+
+def release_target(root: Path, tag: str | None = None) -> ReleaseTarget:
+    """Resolve the release lane from the exact source checkout or immutable tag."""
+    def read(path: str) -> str:
+        if tag is None:
+            return (root / path).read_text(encoding="utf-8")
+        result = subprocess.run(["git", "-C", str(root), "show", f"refs/tags/{tag}:{path}"],
+                                check=False, capture_output=True, text=True)
+        if result.returncode:
+            raise BundleError(f"missing {path} at release tag {tag}")
+        return result.stdout
+
+    recipes = tomllib.loads(read(RECIPES))
+    native = recipes.get("build", {}).get("native-serving")
+    if native is None and not re.fullmatch(r"2\.2\.\d+", recipes.get("pinned-version", "")):
+        return ReleaseTarget(STOCK_LANE)
+    if native is None or native.get("options", {}).get(SERVING_EDITION) != "3":
+        raise BundleError("native release recipe must select serving edition 3")
+    fingerprint = re.fullmatch(
+        r"schema (sha256:[0-9a-f]{64})\nsemantics (sha256:[0-9a-f]{64})\n?",
+        read(SERVING_FINGERPRINT),
+    )
+    if fingerprint is None:
+        raise BundleError("invalid committed v3 serving contract fingerprints")
+    return ReleaseTarget(NATIVE_LANE, NATIVE_RELEASE_PROFILES, *fingerprint.groups())
+
+
+def verify_native_build(build: Path, root: Path, target: ReleaseTarget) -> None:
+    """Require both halves of the shipped startup protocol to use the same edition."""
+    from ..campaign.runtime_bundle import component_build_dir
+
+    owner = component_build_dir(build, "serving", root / SERVING_COMPONENT)
+    expected = f"schema {target.schema_fingerprint}\nsemantics {target.semantic_fingerprint}"
+    for role, directory, generated in (
+        ("engine", build, build / "core/bc-serving-generated/v3"),
+        ("owner", owner, owner / "bc-serving-generated/v3"),
+    ):
+        try:
+            cache = (directory / "CMakeCache.txt").read_text(encoding="utf-8", errors="replace")
+        except OSError as exc:
+            raise BundleError(f"native release has no effective {role} build configuration") from exc
+        editions = re.findall(rf"(?m)^{SERVING_EDITION}:[^=\n]+=(.*)$", cache)
+        if editions != ["3"]:
+            raise BundleError(f"native release requires serving edition 3 in the {role} build")
+        try:
+            fingerprint = (generated / "contract.fingerprint").read_text(encoding="utf-8").rstrip("\n")
+        except OSError as exc:
+            raise BundleError(f"native release has no generated {role} serving fingerprint") from exc
+        if fingerprint != expected:
+            raise BundleError(f"generated {role} serving fingerprint differs from the release recipe")
+    built_owner = owner / "bin/bc-serve"
+    staged_owner = build / "radiance_home/bin/bc-serve"
+    if not built_owner.is_file() or not staged_owner.is_file() or digest(built_owner) != digest(staged_owner):
+        raise BundleError("staged bc-serve differs from the verified native owner build")
+
+
 def require_published_legacy_asset(asset: dict, tag: str | None) -> None:
     published = PUBLISHED_LEGACY_ASSETS.get(tag)
     if published is None or any(asset.get(key) != value for key, value in published.items()):
@@ -170,11 +260,13 @@ def source_tree_marker(asset: dict, sdk: Path) -> str:
             f"{sdk.resolve()} {version} ")
 
 
-def select_build(record: dict, work_root: Path) -> tuple[Path, str, str]:
+def select_build(record: dict, work_root: Path, lane: str = STOCK_LANE) -> tuple[Path, str, str]:
     found = PLAN.findall(record.get("notes", ""))
     if not found:
         raise BundleError("release record has no pin-bump lane build plan ID and binary SHA-256")
-    plan_id, binary_sha = found[-1]
+    recorded_lane, plan_id, binary_sha = found[-1]
+    if recorded_lane != lane:
+        raise BundleError(f"release record selects {recorded_lane}, expected {lane}")
     matches = list((work_root / "builds").glob(f"*/{plan_id}"))
     if len(matches) != 1 or not matches[0].is_dir():
         raise BundleError(f"expected one lane build for {plan_id}, found {len(matches)}")
@@ -384,10 +476,14 @@ def split_elf_debug(files: dict[str, Path], scratch: Path
 
 
 def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str,
-         *, native_profiles: tuple[str, ...] = ()) -> dict:
+         *, native_profiles: tuple[str, ...] = (), target: ReleaseTarget | None = None) -> dict:
     if not re.fullmatch(r"bc-radiance-[0-9]+\.[0-9]+\.[0-9]+", tag):
         raise BundleError("unsafe Radiance release tag")
-    build, plan_id, binary_sha = select_build(record, work_root)
+    target = target or release_target(root)
+    build, plan_id, binary_sha = select_build(record, work_root, target.lane)
+    native_profiles = target.select_profiles(native_profiles)
+    if target.lane == NATIVE_LANE:
+        verify_native_build(build, root, target)
     files = runtime_files(build, root, native_profiles=native_profiles)
     identity = stock_identity(root)
     version = sdk_version(sdk)
@@ -408,6 +504,9 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str,
                 for name, path in sorted(files.items())
             },
         }
+        contract = target.serving_contract(manifest["files"])
+        if contract is not None:
+            manifest["serving_contract"] = contract
         encoded = (json.dumps(manifest, sort_keys=True, separators=(",", ":")) + "\n").encode()
         name = f"{PRODUCT}-{plan_id}.tar.gz"
         dest = out / name
@@ -434,6 +533,8 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str,
                  "plan_id": plan_id, "source_slice_id": build.parent.name,
                  "rocm_version": version, "binary_sha256": digest(files["bin/radiance"]),
                  "source_binary_sha256": binary_sha, "built_from": built_identity, **identity}
+        if contract is not None:
+            asset["serving_contract"] = contract
         old = record.get("runtime_assets", {}).get(tag)
         if old is not None and old != asset:
             staged.unlink()
@@ -456,6 +557,15 @@ def verify_runtime_tree(target: Path, asset: dict, manifest: dict,
         raise BundleError("runtime manifest has no file map")
     if manifest.get("payload_scope") != asset.get("payload_scope"):
         raise BundleError("runtime manifest/record mismatch: payload_scope")
+    contract = manifest.get("serving_contract")
+    if contract != asset.get("serving_contract"):
+        raise BundleError("runtime manifest/record mismatch: serving_contract")
+    if contract is not None and (
+        not isinstance(contract, dict)
+        or contract.get("engine_sha256") != checks.get("bin/radiance", {}).get("sha256")
+        or contract.get("owner_sha256") != checks.get("radiance_home/bin/bc-serve", {}).get("sha256")
+    ):
+        raise BundleError("runtime serving contract does not bind both archived executables")
     if asset.get("built_from") is not None and manifest.get("built_from") != asset["built_from"]:
         raise BundleError("runtime manifest/record mismatch: built_from")
     if asset.get("payload_scope") == RUN_SCOPE:

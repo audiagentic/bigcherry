@@ -17,6 +17,10 @@ on:
         description: bc-radiance-* release tag to pack the verified runtime bundle for ('' builds and tests only)
         type: string
         default: ''
+      build_lane:
+        description: Build lane selected by the immutable release recipe
+        type: string
+        default: 'radiance:stock:linux-radiance'
   # GitHub Actions scopes caches per branch (current branch, PR base branch, then the repo's default
   # branch) -- without this, every PR branch's upstream-clone and ccache caches start cold every time,
   # since this workflow never otherwise runs ON main itself to populate a cache later PR branches can
@@ -137,10 +141,11 @@ jobs:
 
       - name: Build in the ROCm image
         env:
+          BUILD_LANE: ${{ inputs.build_lane || 'radiance:stock:linux-radiance' }}
           CI_COMPILE_JOBS: ${{ inputs.compile_jobs || 'default' }}
           CI_FORCE_COLD: ${{ inputs.cold || 'false' }}
         run: |
-          docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
+          docker run --rm --shm-size=1g -e BIGCHERRY_ENVIRONMENT -e BUILD_LANE -e CI_COMPILE_JOBS -e CI_FORCE_COLD -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
             git config --global --add safe.directory /src/work/upstream/radiance.git
             export RADIANCE_HOST_CC=gcc-14 RADIANCE_HOST_CXX=g++-14 PYTHONPATH=tools
@@ -176,17 +181,29 @@ jobs:
             else
               git clone --bare https://codeberg.org/StillDeadcode/radiance.git work/upstream/radiance.git
             fi
-            python3 -m bigcherry build --lane radiance:stock:linux-radiance | tee work/lane-build.log
+            case "$BUILD_LANE" in
+              radiance:stock:linux-radiance|radiance:native-serving:linux-radiance) ;;
+              *) echo "Invalid Radiance release lane" >&2; exit 2 ;;
+            esac
+            python3 -m bigcherry build --lane "$BUILD_LANE" | tee work/lane-build.log
             plan=$(grep -oE "ok build_plan_id=[0-9a-f]+" work/lane-build.log | tail -1 | cut -d= -f2)
             test -n "$plan"
-            # The card-free component tests, exactly as the pin-bump gate runs them (runtime_bundle.run_component_tests):
-            # each declared [test] target of every component, one ctest log per component, named on failure.
+            # Test the exact build being staged for release.
             builds=(work/builds/*/"$plan")
             if [ "${#builds[@]}" -ne 1 ] || [ ! -d "${builds[0]}" ]; then
               echo "component-tests: want exactly one build directory for plan $plan, found: ${builds[*]}" >&2
               exit 1
             fi
-            python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
+            if [ "$BUILD_LANE" = radiance:native-serving:linux-radiance ]; then
+              # The generic component suite contains stock-edition writer and launch
+              # fixtures. Gate the generated native contract, wire reader, and writer.
+              serving="${builds[0]}/components/serving"
+              cmake --build "$serving" -j --target bc_contract_check bc_serving_v3_wire_test bc_serving_v3_writer_test
+              ctest --test-dir "$serving" --output-on-failure --no-tests=error \
+                --output-log "$serving/ctest-component-tests.log" -R "^(bc_contract_check|bc_serving_v3_wire_test|bc_serving_v3_writer_test)$"
+            else
+              python3 -m bigcherry --engine radiance component-tests --build "${builds[0]}"
+            fi
             # Fingerprint the successful build inside the CI compiler image.
             python3 tools/lab/radiance/ci_ccache.py fingerprint --output work/ci-ccache-artifact/compiler.json
           '
@@ -230,7 +247,10 @@ jobs:
           docker run --rm -e BUNDLE_TAG -e BC_WORK_ROOT=/src/work -v "$GITHUB_WORKSPACE:/src" -w /src '${{ needs.image.outputs.image }}' bash -euxo pipefail -c '
             git config --global --add safe.directory /src
             git config --global --add safe.directory /src/tooling
-            PYTHONPATH=/src/tooling/tools python3 -m bigcherry --engine radiance release-bundle "$BUNDLE_TAG" --root /src --work /src/work --sdk /opt/rocm-7.2.4
+            plan=$(grep -oE "ok build_plan_id=[0-9a-f]+" work/lane-build.log | tail -1 | cut -d= -f2)
+            test -n "$plan"
+            PYTHONPATH=/src/tooling/tools python3 -m bigcherry --engine radiance release-bundle "$BUNDLE_TAG" \
+              --root /src --work /src/work --sdk /opt/rocm-7.2.4 --plan-id "$plan"
           '
 
       - name: Enforce exact tag-bound Python-free archive before upload artifact
