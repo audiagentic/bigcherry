@@ -58,6 +58,24 @@ class ForbiddenTermsTextTests(unittest.TestCase):
         self.assertEqual(len(hits), 1)
         self.assertTrue(hits[0][0].startswith("commit ") and hits[0][2] == "machine name")
 
+    def test_only_git_commit_trailer_may_hide_github_noreply(self):
+        self._commit("base")
+        base = subprocess.run(["git", "-C", str(self.root), "rev-parse", "HEAD"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+        angle = lambda value: chr(60) + value + chr(62)
+        gh_domain = "@users" + ".noreply.github.com"
+        ordinary_domain = "@ordinary" + ".org"
+        self._commit("clean change\n\nCo-authored-by: Contributor " + angle("1234+user" + gh_domain))
+        self.assertEqual([], ft.message_findings(self.root, base))
+        self._commit("other author\n\nCo-authored-by: Person " + angle("person" + ordinary_domain))
+        self.assertEqual(["email address"], [x[2] for x in ft.message_findings(self.root, base)])
+        self._commit("embedded identity person" + gh_domain)
+        self.assertEqual(2, len(ft.message_findings(self.root, base)))
+        self._commit("identity\n\nCo-authored-by: zeta-box " + angle("1234+handle" + gh_domain))
+        self.assertEqual(["email address", "email address", "machine name"],
+                         sorted(x[2] for x in ft.message_findings(self.root, base)))
+        self.assertTrue(ft.text_findings(self.root, "pr", "user" + gh_domain))
+
 
 if __name__ == "__main__":
     unittest.main()
