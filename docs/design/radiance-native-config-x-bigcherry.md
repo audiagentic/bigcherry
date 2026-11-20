@@ -79,21 +79,30 @@ documented overrides (as today) and are named in the launch provenance as overri
 - Native half: only Radiance's parser (`fleet::parse` / `Reader::build_model`) via the engine's
   `--bc-inspect-native-config` report from the matched build, as on the branch today (including the `tuning` report
   added in 6edb46038). bc-serve never parses native keys itself.
-- `x-bigcherry` half: Radiance's parser skips it, so the same inspector (our component native_fleet_config.cpp,
-  which already holds the parsed tree of the same sealed bytes) returns the raw `x-bigcherry` subtree as JSON in its
-  report, with duplicate-key and YAML-syntax errors raised by the same parser. bc-serve decodes that JSON against
-  the closed v1 schema. Result: one YAML parser, one read of one sealed byte sequence, no second YAML library in
-  bc-serve.
+- `x-bigcherry` half: Radiance's `fleet::parse` skips top-level `x-*` keys and keeps no tree, so the inspector
+  (our component native_fleet_config.cpp, in the matched engine) parses the same sealed bytes a second time with the
+  same library Radiance uses (rapidyaml, already linked into the engine) and returns the `x-bigcherry` subtree as
+  JSON in its report. bc-serve decodes that JSON against the closed v1 schema. One YAML library, one sealed byte
+  sequence, no YAML parser in bc-serve.
+- Duplicate keys: Radiance refuses a repeated key only in the maps it walks, and it never walks `x-*`, so the
+  inspector checks duplicates inside `x-bigcherry` itself and names the YAML path.
+- Scalars follow the YAML 1.2 core schema in the JSON: plain `true`/`false`, integers and floats are typed, quoted
+  values stay strings, empty and `null` become null. Words such as `on`/`off` are strings and must be quoted where a
+  string is meant (as `p2p: "off"` is today). The closed decode never coerces: a string where a bool or number is
+  wanted is a refusal naming the path.
 - The v3 launch manifest seals the whole file's bytes and digest (as now); a change in either half changes the plan
   key and the stored-manifest identity. `x-bigcherry` changes are excluded from upstream reload comparison (RUM10)
   because managed hot reload stays refused.
 
 ## Precedence and experiments
 
-File < site file < profile < `--set`, unchanged. `--set` addresses YAML paths: `--set
-models.flashnext.kv-cache-dtype=i8` or `--set x-bigcherry.helper.combine=true`. bc-serve applies a native `--set`
-by passing the native override through the inspector input (sealed with the launch), never by rewriting the
-author's file. A setting worth keeping becomes its own config file. No `--set` in a served (production) start.
+Site file and profile keep their roles (machine facts, power, calibration); they never carry native engine options.
+A managed (served) start refuses any `--set`. A lab arm that changes a setting authors its own YAML file (a copy of
+the config with the change), passed with `--native-config`; the file is sealed into the launch like any config, so
+the arm's exact inputs are recorded with no override channel. The lab harnesses (`flashnext-parity.sh`
+`FLASHNEXT_PARITY_SETS`) migrate to writing such an arm file. A sealed override map applied before parse is not
+part of this design; add it later only if a real caller cannot use an arm file. A setting worth keeping becomes its
+own config file.
 
 ## Variants
 
@@ -271,7 +280,7 @@ description`; `model` -> `models.<id>.model`; `ranks` -> `x-bigcherry.ranks`; `t
 ## Callers to migrate (same change, then delete the old path)
 
 - bc-serve: RSC12 catalogue reader (TOML configs, `base` merge), layout reader, `explain`/`--schema` (YAML paths),
-  `--set` addressing, plan/manifest keys (drop TOML-derived inputs; digest covers the file), bundled config
+  `--set` (refused on a managed start; deleted with the TOML resolver keys), plan/manifest keys (drop TOML-derived inputs; digest covers the file), bundled config
   selection (`<prefix>/configs/<name>.yaml`).
 - Generated serving contract: delete the v2 contract (`components/serving/contract/serving-v2.toml`, generated
   codec/types/schema) with the bump; v3 is the only contract on main after it.
@@ -284,14 +293,17 @@ description`; `model` -> `models.<id>.model`; `ranks` -> `x-bigcherry.ranks`; `t
 
 ## Tests
 
-- Schema: one refusal per rule (unknown key, wrong type, duplicate key, bad schema version, unknown `differs` path,
+- Schema: one refusal per rule (unknown key, wrong type, a plain string where a bool/number is wanted, duplicate key
+  inside x-bigcherry, bad schema version, unknown `differs` path,
   orphan model id, two models in a managed file), one pass per shipped config.
 - Agreement: TP vs ranks count, cards order, kernels cover rank archs, loopback host, model path resolution; each a
   refusal naming both sources.
 - Single source: no key is accepted in both halves (a native key inside `x-bigcherry` is refused, an `x-bigcherry`
   key under `models.<id>` is refused by Radiance's closed model keys).
 - Equivalence: the resolved values of all 18 configs equal the reference captured from the TOML catalogue before the
-  switch (captured by `bc-serve explain --json` for each config before the switch), except deliberate deletions listed in the mapping.
+  switch (captured by `bc-serve explain --json` for each config before the switch), except the deliberate deletions the mapping lists (`layout.name`, `service.max_context`, `service.max_sessions`) and
+  `engine.port`, which leaves the files and is supplied by bc-serve (bundled start and preflight alike); the diff
+  output lists each of these explicitly.
 - Variants: the `variant-of`/`differs` check over every pair.
 - Release: an installed bundle starts any config by name with no repository path; a stock Radiance binary parses
   each file (`radiance --config X --check`).
