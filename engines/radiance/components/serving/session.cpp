@@ -2408,8 +2408,9 @@ static NativeConfigInspection parse_native_config_report(const Json& doc,
     settings.checkpoint_interval = bounded("checkpoint_interval", 0);
     settings.placement = text("placement");
     settings.ngram_placement = text("ngram_placement");
-    if (settings.ngram_placement == "auto")
-        throw PlanFailed("native config admission: explicit ngram-placement is required for host resource accounting");
+    // Native "auto" is an authored *intent*: the engine's measuring start
+    // resolves its real host/cgroup/pin budgets and publishes the chosen tier.
+    // A final manifest must seal that measured tier, not this undecided intent.
     settings.kv_dtype = text("kv_dtype");
     if (runtime.at("speculative_tokens") == -1)
         throw PlanFailed("native config admission: automatic speculative depth is not representable; set num-speculative-tokens");
@@ -2894,7 +2895,8 @@ static bool native_settings_match(const NativeEngineSettings& native, const v2::
            native.max_batched_tokens == engine.scheduler.max_num_batched_tokens &&
            native.checkpoint_interval == engine.scheduler.checkpoint_interval &&
            native.placement == v2::kWeightPlacementNames[static_cast<size_t>(execution.placement)] &&
-           native.ngram_placement == v2::kNgramPlacementNames[static_cast<size_t>(execution.ngram_placement)] &&
+           (native.ngram_placement == "auto" ||
+            native.ngram_placement == v2::kNgramPlacementNames[static_cast<size_t>(execution.ngram_placement)]) &&
            native.kv_dtype == v2::kKvCacheDtypeNames[static_cast<size_t>(execution.kv_cache_dtype)] &&
            native.speculative_tokens == execution.num_speculative_tokens &&
            native.rope_scaling == execution.rope_scaling &&
@@ -3377,6 +3379,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 (draft_host.kv_mib != final_host.kv_mib || draft_host.reserve_mib != final_host.reserve_mib))
                 throw PlanFailed("native v3 measured host KV tier or reserve differs from the measurement attempt");
             check_native_helper_roles(final_snapshot.parsed, processes, selected_bdfs, handoff);
+            // The engine's rank receipt is the only authority for an auto
+            // n-gram tier. Seal its exact RAM/disk/VRAM result; a final
+            // artifact must not carry the auto intent through to execution.
+            if (settings.ngram_placement == "auto" &&
+                (!decoded_ranks.ngram_placement ||
+                 *decoded_ranks.ngram_placement != v2::kNgramPlacementNames[
+                     static_cast<size_t>(final_spec.processes.engine.execution.ngram_placement)]))
+                throw PlanFailed("native v3 final n-gram placement differs from measured engine rank receipt");
             if (!native_settings_match(settings, final_spec))
                 throw PlanFailed("native v3 measured serving artifact differs from the matched parser's engine settings");
             const fs::path final_home = final_spec.processes.engine.runtime.radiance_home;

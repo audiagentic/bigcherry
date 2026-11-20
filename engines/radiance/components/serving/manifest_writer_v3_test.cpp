@@ -2,6 +2,7 @@
 #include "test_manifest_fixture.h"
 #include "test_rad_fixture.h"
 #include "plan_cache.h"
+#include "rank_demand.h"
 #include "sha256.h"
 #include "v2/manifest.h"
 #include "v2/p1_producer.h"
@@ -246,6 +247,44 @@ int main(int argc, char** argv) {
                                   {"fixed_bytes", 1}, {"claimable_bytes", 10},
                                   {"evidence", "rad0011 v3 writer fixture rank split"}}})},
             {"resident_other_bytes", 0}};
+        // RUM05 B: the native YAML's omitted ngram-placement ("auto")
+        // becomes an explicit measured tier. The exact rank receipt, not
+        // another resolver default, must own RAM/DISK/VRAM selection.
+        {
+            const std::vector<std::string> bdfs = {"0000:09:00.0"};
+            Json measured_ram = rank_demand;
+            measured_ram["ngram_placement"] = "ram";
+            auto ram = sv::decode_engine_rank_demand(measured_ram, bdfs, "ram fixture");
+            check(sv::admitted_ngram_placement(ram, true, "auto") == "ram",
+                  "native auto did not seal the measured pinned-RAM placement");
+            Json measured_disk = rank_demand;
+            measured_disk["ngram_placement"] = "disk";
+            auto disk = sv::decode_engine_rank_demand(measured_disk, bdfs, "disk fixture");
+            check(sv::admitted_ngram_placement(disk, false, "auto") == "disk",
+                  "native auto did not seal the measured disk fallback");
+            check(sv::admitted_ngram_placement(disk, false, "disk") == "disk",
+                  "explicit disk override was rewritten");
+            bool refused_missing = false, refused_mismatch = false, refused_invalid = false;
+            try {
+                const auto old = sv::decode_engine_rank_demand(rank_demand, bdfs, "old receipt");
+                (void)sv::admitted_ngram_placement(old, false, "auto");
+            } catch (const std::runtime_error& e) {
+                refused_missing = std::string(e.what()).find("remeasure") != std::string::npos;
+            }
+            try {
+                (void)sv::admitted_ngram_placement(ram, false, "auto");
+            } catch (const std::runtime_error& e) {
+                refused_mismatch = std::string(e.what()).find("pinned-table") != std::string::npos;
+            }
+            measured_disk["ngram_placement"] = "auto";
+            try {
+                (void)sv::decode_engine_rank_demand(measured_disk, bdfs, "invalid receipt");
+            } catch (const std::runtime_error& e) {
+                refused_invalid = std::string(e.what()).find("ngram_placement") != std::string::npos;
+            }
+            check(refused_missing && refused_mismatch && refused_invalid,
+                  "an absent, contradictory or unresolved n-gram receipt was admitted");
+        }
         const std::string model_identity = sv::container_identity(model);
         const std::string engine_identity = sv::engine_identity(binary, runtime_home);
         const Json native_key = sv::plan_key_inputs(inputs.resolved.values, facts, model_identity,
@@ -256,6 +295,21 @@ int main(int argc, char** argv) {
             tuned["tuning"] = {{"tp_ownership", "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"}};
             const Json tuned_key = sv::plan_key_inputs(tuned, facts, model_identity, engine_identity, "",
                                                        &*inputs.native_config);
+            // Native YAML digest alone owns the authored choice. The P1
+            // engine result may change from auto to ram/disk without making
+            // the sealed owner attempt look like another static configuration.
+            Json chosen = inputs.resolved.values;
+            chosen["engine"]["ngram_placement"] = "auto";
+            const auto auto_key = sv::plan_key_inputs(chosen, facts, model_identity, engine_identity, "",
+                                                      &*inputs.native_config);
+            chosen["engine"]["ngram_placement"] = "ram";
+            const auto ram_key = sv::plan_key_inputs(chosen, facts, model_identity, engine_identity, "",
+                                                     &*inputs.native_config);
+            chosen["engine"]["ngram_placement"] = "disk";
+            const auto disk_key = sv::plan_key_inputs(chosen, facts, model_identity, engine_identity, "",
+                                                      &*inputs.native_config);
+            check(auto_key == native_key && ram_key == native_key && disk_key == native_key,
+                  "derived native n-gram tier must not change the admitted YAML plan key");
             check(!native_key.contains("tuning") && tuned_key == native_key,
                   "a native plan key must bind tuning through the YAML digest, not a second copy");
             check(native_key.at("native_config").at("sha256") == inputs.native_config->sha256(),
@@ -351,6 +405,20 @@ int main(int argc, char** argv) {
         refuses_rekeyed_input(wrong_devices, "writer accepted a plan keyed to another ordered GPU identity");
         const auto serving = sv::build_manifest(inputs);
         check_snapshot(serving, wire::PlanUse::serving, *inputs.native_config, yaml, temporary.path);
+        // The measured engine tier is a derived leaf in the final strict
+        // v3 wire contract (not a second native/YAML policy value).
+        inputs.resolved.provenance["engine.ngram_placement"] =
+            Json{{"origin", "derived"}, {"source", "rad0011 measured rank n-gram tier"},
+                 {"lifecycle", "startup-only"}};
+        inputs.resolved.manifest["provenance"] = inputs.resolved.provenance;
+        const auto measured_tier = sv::build_manifest(inputs);
+        check_snapshot(measured_tier, wire::PlanUse::serving, *inputs.native_config, yaml, temporary.path);
+        check(measured_tier.document.at("provenance")
+                  .at("/spec/processes/engine/execution/ngram_placement")
+                  .at("origin") == "derived" &&
+                  measured_tier.document.at("spec").at("processes").at("engine")
+                      .at("execution").at("ngram_placement") == "disk",
+              "strict v3 writer lost the explicit measured tier/provenance");
         check(serving.document.at("spec").at("plan").at("engine_memory").at("expected") == cached->plan_json &&
                   serving.document.at("spec").at("plan").at("engine_memory").at("model_identity") == model_identity &&
                   serving.document.at("spec").at("plan").at("engine_memory").at("engine_identity") == engine_identity,

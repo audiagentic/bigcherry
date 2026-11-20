@@ -25,16 +25,40 @@ int64_t measured_integer(const nlohmann::json& value, const std::string& where, 
 
 }  // namespace
 
+std::string admitted_ngram_placement(const EngineRankDemand& measured, bool has_pinned_ngram,
+                                     const std::string& requested) {
+    if (requested != "auto" && requested != "ram" && requested != "disk" && requested != "vram")
+        throw std::runtime_error("native n-gram placement: unsupported native YAML intent");
+    if (requested == "auto" && !measured.ngram_placement)
+        throw std::runtime_error("native auto n-gram placement requires an exact measured rank receipt; remeasure");
+    const std::string chosen =
+        requested == "auto" ? *measured.ngram_placement : requested;
+    if (measured.ngram_placement && *measured.ngram_placement != chosen)
+        throw std::runtime_error("native n-gram placement differs from engine measured rank receipt");
+    if ((chosen == "ram") != has_pinned_ngram)
+        throw std::runtime_error("native n-gram tier differs from measured pinned-table consumer");
+    return chosen;
+}
+
 EngineRankDemand decode_engine_rank_demand(const nlohmann::json& record,
                                            const std::vector<std::string>& ordered_bdfs,
                                            const std::string& where) {
-    exact_fields(record, {"schema_version", "kind", "gpu", "resident_other_bytes"}, where);
+    if (record.is_object() && record.contains("ngram_placement"))
+        exact_fields(record, {"schema_version", "kind", "gpu", "resident_other_bytes", "ngram_placement"}, where);
+    else
+        exact_fields(record, {"schema_version", "kind", "gpu", "resident_other_bytes"}, where);
     if (!record.at("schema_version").is_number_integer() || record.at("schema_version") != 1 ||
         !record.at("kind").is_string() || record.at("kind") != "radiance_p1_rank_demand" ||
         !record.at("gpu").is_array() || record.at("gpu").size() != ordered_bdfs.size())
         throw std::runtime_error(where + ": invalid source identity or rank count");
 
     EngineRankDemand out;
+    if (record.contains("ngram_placement")) {
+        const auto& choice = record.at("ngram_placement");
+        if (!choice.is_string() || (choice != "ram" && choice != "disk" && choice != "vram"))
+            throw std::runtime_error(where + ".ngram_placement: resolved engine tier must be ram, disk or vram");
+        out.ngram_placement = choice.get<std::string>();
+    }
     out.resident_other_bytes = measured_integer(record.at("resident_other_bytes"),
                                                 where + ".resident_other_bytes", false);
     out.gpu.reserve(ordered_bdfs.size());

@@ -13,7 +13,6 @@ models:
     checkpoint-interval: 4096
     placement: expert_tiered
     kv-cache-dtype: bf16_i8
-    ngram-placement: ram
     num-speculative-tokens: 3
     prefix-resume: nearest
     rope-scaling: none

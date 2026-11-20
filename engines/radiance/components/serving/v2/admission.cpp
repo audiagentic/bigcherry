@@ -51,6 +51,50 @@ ConfigError gpu_room(const std::string& at, const std::string& what,
 
 }  // namespace
 
+Result<OneSessionPools> refit_one_session_pools(int64_t claimable, int64_t statics,
+                                                int64_t experts, int64_t stage,
+                                                int64_t expert_floor, int64_t kv,
+                                                int64_t kv_one_session) {
+    constexpr int64_t mib = int64_t{1} << 20;
+    const auto invalid = [](const char* detail) -> Result<OneSessionPools> {
+        return make_error(ConfigErrorCode::invalid_value, kAt + ".vram",
+                          std::string("one-session pool refit: ") + detail);
+    };
+    for (int64_t n : {claimable, statics, experts, stage, expert_floor, kv, kv_one_session})
+        if (n < 0 || n > kMaxBytes)
+            return invalid("nonnegative measured byte counts required");
+    if (!kv_one_session || expert_floor > experts)
+        return invalid("one-session KV or expert floor inconsistent");
+    if (statics > claimable || stage > claimable - statics)
+        return make_error(ConfigErrorCode::admission_refused, kAt + ".vram",
+                          "fixed weights and staging exceed live claimable bytes");
+    // KVManager's nominal ceiling can be smaller than the actual full-session
+    // capacity. A claim for one session must back its measured full size.
+    const int64_t available = claimable - statics - stage;
+    const auto ceil_mib = [](int64_t n) { return n / mib + (n % mib != 0); };
+    int64_t candidate_kv = std::max(kv, kv_one_session);
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const int64_t kv_mib = ceil_mib(candidate_kv);
+        if (kv_mib <= available / mib) {
+            const int64_t weights_capacity_mib =
+                (claimable - stage - kv_mib * mib) / mib;
+            const int64_t weights_capacity_bytes = weights_capacity_mib * mib;
+            if (weights_capacity_bytes >= statics &&
+                weights_capacity_bytes - statics >= expert_floor) {
+                const int64_t fitted_experts =
+                    std::min(experts, weights_capacity_bytes - statics);
+                return OneSessionPools{fitted_experts, candidate_kv,
+                                       ceil_mib(statics + fitted_experts), kv_mib};
+            }
+        }
+        if (candidate_kv == kv_one_session) break;
+        candidate_kv = kv_one_session; // reclaim only optional KV before refusing
+    }
+    return make_error(ConfigErrorCode::admission_refused, kAt + ".vram",
+                      "live claimable bytes cannot hold one full session and the measured expert floor"
+                      " after exact MiB pool rounding");
+}
+
 Status check_host_room(std::string_view resource, int64_t available_bytes, int64_t headroom_bytes,
                        const std::vector<std::pair<std::string, int64_t>>& components) {
     const bool pin = resource == "host_pool";

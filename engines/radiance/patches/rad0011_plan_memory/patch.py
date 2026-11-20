@@ -33,7 +33,7 @@ int bc_plan_memory_take_flag(int* argc, char*** argv);
 
 /* Records what plan() sized, and started from a measured manifest checks it. Called once, right after its VRAM split resolves, with
  * plan()'s own values. A refused check exits here. */
-void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
+void bc_plan_memory_note(rad::Config& cfg, const std::vector<rad::VramFacts>& facts, rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
                          const rad::Program& prog);
@@ -237,6 +237,7 @@ _BC_PLAN_MEMORY_CPP = r"""/* bc_plan_memory.cpp -- see bc_plan_memory.h (BigCher
 #include "bc_plan_memory.h"
 
 #include "bc_plan_check.h"
+#include "admission.h"
 #include "bc_serving_manifest.h"
 #include "serving_codec.h"
 
@@ -263,6 +264,7 @@ nlohmann::json g_rank_gpu = nlohmann::json::array();
 bool g_rank_noted = false;
 std::vector<rad::VramFacts> g_rank_facts;
 int64_t g_rank_stage = 0;
+std::string g_rank_ngram_placement;
 long long g_taken_kb = 0;   /* MemAvailable fallen since this process's first line, at the end of the VRAM split (before any pool) */
 
 v2::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from, const char* remedy) {
@@ -272,11 +274,35 @@ v2::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from,
 
 int bc_plan_memory_take_flag(int* argc, char*** argv) { return bc_plan::take_flags(argc, argv); }
 
-void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
+void bc_plan_memory_note(rad::Config& cfg, const std::vector<rad::VramFacts>& facts, rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
                          const rad::Program& prog) {
     if (bc_plan::mode() == bc_plan::Mode::none) return;
+    // RUM05: KVManager's reported ceiling can be smaller than a full session,
+    // and the independently MiB-rounded weights and KV pools must fit the
+    // *same* measured claimable budget used for live engine admission.
+    // Refit only the elastic split, never static weights or the expert floor.
+    auto fitted = bc::serving::v2::refit_one_session_pools(
+        vb.claimable, vb.statics, vb.experts, vb.stage,
+        vb.expert_floor, vb.kv, kv_one);
+    if (!fitted) {
+        std::fputs(bc::serving::v2::render_human("radiance", fitted.error()).c_str(), stderr);
+        std::fflush(stderr);
+        std::_Exit(bc::serving::v2::exit_code_of(fitted.error()));
+    }
+    if (fitted.value().experts_bytes != vb.experts ||
+        fitted.value().kv_bytes != vb.kv) {
+        RAD_INFO("BigCherry memory: full-session KV %lld bytes, fitted elastic experts %lld"
+                 " bytes; exact MiB weights %lld, KV %lld",
+                 (long long)kv_one, (long long)fitted.value().experts_bytes,
+                 (long long)fitted.value().weights_mib, (long long)fitted.value().kv_mib);
+    }
+    vb.experts = fitted.value().experts_bytes;
+    vb.kv = fitted.value().kv_bytes;
+    vb.weights = vb.statics + vb.experts;
+    cfg.vram_weights_mib = fitted.value().weights_mib;
+    cfg.vram_kv_mib = fitted.value().kv_mib;
     /* The checkpoint interval the store is sized with is the resolved chunk geometry's (configure_kv resolves it after
      * plan(); the same function is called here), not the raw flag: it rounds up to the step quantum. */
     rad::ChunkGeometry geo;
@@ -332,6 +358,7 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
     if (!bc_plan::rank_measure_out().empty()) {
         g_rank_facts = facts;
         g_rank_stage = vb.stage;
+        g_rank_ngram_placement = rad::table_placement_name(cfg.ngram_resolved);
     }
     if (bc_plan::mode() == bc_plan::Mode::check) {
         // before any pool is configured (Engine::plan() configures them after this call): RSC08 S4
@@ -427,6 +454,7 @@ int bc_plan_memory_done() {
         const std::string rank_tmp = rank_path + ".tmp";
         std::ofstream out(rank_tmp, std::ios::binary | std::ios::trunc);
         out << nlohmann::json{{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
+                              {"ngram_placement", g_rank_ngram_placement},
                               {"gpu", g_rank_gpu},
                               /* MemAvailable can rise while the engine starts (other processes free memory): the engine
                                * took none of that, so the fall is clamped at zero. */
