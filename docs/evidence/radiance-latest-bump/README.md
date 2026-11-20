@@ -414,3 +414,20 @@ discovery. The host HTTP suite verified both names, unknown-name refusal and
 clean shutdown. A separate leased retry uses that engine. Its copied, verified
 model stamp avoids another full fingerprint read, and the changed engine
 identity requires a fresh measurement.
+
+## C71 — Live mailbox producer and terminal proof
+
+The live run with `77fd71cf6` routed the default completion to Flash-Next.
+It refused a zero activation buffer handle before the first mailbox dispatch.
+Checkpoint `e36f584f0` stages an E4M3 activation slice and scales for the
+mailbox while retaining INT8 activations for the local GEMM. The real
+architecture host graph passed 39 assertions. The live retry advanced into
+GPU execution and hit a queue exception during the mailbox seal.
+
+The diagnostic at `d466f696a` reported a matching parent ticket, epoch, and
+slot, with 139 publications and zero consumptions. The host refused the
+terminal proof without acknowledging those slots or allowing more admission.
+The direct count variant at `bb1b8a190` reproduced the same counts. A host
+launch interposer verified that both mailbox add and inject submit finish
+last, on the same stream and with matching geometry and pointers. A bounded
+first-capture and replay packet trace awaits the shared GPU lease.
