@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_035311_corrected-trvp16s-historical_3570",
+  "files": [
+    "docs/planning/active/tuning-rocm-vulkan-provider/TRVP16.md",
+    "docs/planning/completed/tuning-rocm-vulkan-provider/reviews/TRVP16/RV4253.md"
+  ],
+  "plan-item-ids": [
+    "TRVP16"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Replaced TRVP16's stale 2026-10-10 statement that upstream #25051 remained open with its merged status and commit dcbb091; kept no-BigCherry-qualification boundary explicit and removed a duplicate sentence. RV4253 records the same source status and external decode-regression lead.",
+  "timestamp-utc": "2026-11-20T03:53:11.624447Z",
+  "user-summary-candidate": "Corrected TRVP16's historical upstream status to the 2026-11-02 merge and clarified that this remains an unqualified external candidate."
+}

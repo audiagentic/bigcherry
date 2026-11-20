@@ -2,7 +2,7 @@
 id: THA14
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:49:36.383115+00:00'
 breadth: ''
 skill: advanced
@@ -68,13 +68,14 @@ Supersedes: HI164
 Inherited semantic scope: preserve graph-lifetime invariance conditions, explicit invalidation, canonical prepared facts, and anti-pointer-cache constraints.
 Migration: capability-rebaseline-v3-2026-09
 
+Consolidation disposition (2026-11-20): superseded into active THA16 after review RV4248. The manifest’s THA15 target was not a scope match: THA15 owns promoted-winner provenance and counterfactual replay. THA16 now tracks this item’s full requirements as an unimplemented conditional candidate, gated on trace evidence that the mechanism lies on the exposed critical path. This is a plan ownership change only; no candidate implementation, hardware validation or promotion is claimed. Preserve this source record and its evidence.
+
 ## Change Log
 
 - 2026-09-09T10:49:36.383115+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:05:45.501143+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.892896+00:00 (updated-by): Updated: section:ledger-events
@@ -83,3 +84,5 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:24:09.113698+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_022438_the-next-five-high-risk-tuning_6580
 - 2026-09-10T02:24:38.727991+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T03:11:28.902659+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:11:35.535688+00:00 (state-transition): State: pending → superseded
