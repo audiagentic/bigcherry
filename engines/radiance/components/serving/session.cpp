@@ -2516,7 +2516,11 @@ void attach_inspected_config(Options& options, const std::string& name, const fs
     fs::path home;
     for (const std::string& setting : options.sets)
         if (setting.starts_with("engine.radiance_home="))
-            home = Json::parse(setting.substr(std::string("engine.radiance_home=").size())).get<std::string>();
+        {   // --set takes the value as JSON ("/path") or as bare text (/path), as the resolver's --set does
+            const std::string text = setting.substr(std::string("engine.radiance_home=").size());
+            const Json parsed = Json::parse(text, nullptr, false);
+            home = parsed.is_string() ? parsed.get<std::string>() : text;
+        }
     if (home.empty() && self.parent_path().filename() == "bin" &&
         self.parent_path().parent_path().filename() == "radiance_home")
         home = self.parent_path().parent_path();
