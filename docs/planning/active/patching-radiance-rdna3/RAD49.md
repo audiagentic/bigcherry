@@ -11,18 +11,18 @@ work: L
 priority: P1
 ---
 
-# flashnext-tp2xtx: dense/attention TP2 on the XTX pair, R9700 + RX 6900 XT hold the experts (Strata-informed)
+# XTX TP2 + R9700 expert-helper Flash-Next topology — measured no-go and owned follow-ons
 
 ## Description
 
-Owner direction 2026-11-08: put the dense layers (attention, GDN, QSA, dense/shared projections) tensor-split across the two RX 7900 XTX cards, optimised as in the original multi-card setup, and use the R9700 (gfx1201) and RX 6900 XT (gfx1030) as expert holders (remote-MoE helpers). Use the Strata-rdna3 findings (the strata-rdna3 analysis, kept in the task scratch folder outside the repository) to boost it. Radiance already runs Flash-Next TP2 (--tp 2, host-memory all-reduce, wht6 wire); bigcherry runs qwen27b-2xtx TP2. Blocker: moe-remote refuses more than one helper behind a multi-rank engine (moe_remote_hook.cpp r3_moe_mailbox_device; step_slot uses the slot axis for either rank or helper).
+RAD49 tested dense/attention TP2 on two gfx1100 RX 7900 XTX cards with the R9700 as remote-MoE expert helper. The Nov 9–10 evidence records an explicit negative measured decision: about 1,945 vs 3,100 prefill tok/s and about 72 vs 46 ms per six-stream step against R9700-engine/XTX-helper layouts. The three-card comparison also had different context limits (6x65K vs 8x262K), so capacity is not a speed ratio. These profiled shares and results describe this configuration only. Do not promote the layout by default, infer Strata dual-XTX results, or launch TP3. This item remains pending until every unique residual acceptance is verified against successors.
 
 ## Steps
 
-1. Card-free: layout flashnext-tp2xtx (engine gfx1100 count 2, tp-wire, helper gfx1201 placement head) and launcher/manifest support for a TP engine with helpers; inventory every TP1 assumption in the helper path (rank-sliced vs full-width expert results under TP, combine, owner bitmaps, placement policy).
-2. Hardware (gpu lease): TP2 XTX + R9700 helper (the one-helper case the protocol allows today) vs flashnext-4gpu with the parity harness; exact BF16 wire first, then wht6. Decide go/no-go from decode ms/step + acceptance, doc and long prefill.
-3. N helpers behind M engine ranks (slot = (rank, helper)), so the RX 6900 XT tail joins; GPT design review; KL gate.
-4. Strata ideas inside our design: heat-derived expert deal across helpers and engine-resident VRAM (disjoint, no fixed budgets), exchange overlap, length-dependent prefill path, gfx11 GDN/QSA kernels behind strict numerics.
+1. Preserve and reference runs/rad49-findings-20261109.md, runs/rad49-3card-split, runs/rad49-tp-prefill-prof and runs/rad49-4gpu-regress. Separate delivered protocol work from hardware decision and identify current merged/source-only status.
+2. State the measured no-go with source/model/quant/ABI and context-capacity caveat. Keep profiled all-reduce (~22–23%), helper wait (~15%) and decode GEMM shares diagnostic; do not add them as prospective savings.
+3. Map any residual placement/cost attribution to ENG01/RHP04/RHP09/RHP13; local handoff to RAD29/RAD30/RAD54; combine/encoding to RAD23/RAD41; BAR-push only RAD51 under HL02/RAD50; TP host exchange to HL05; phase-specific prefill only to ENG09 if later proven unowned; Strata engine evidence to BCOP37/MEN29 if supported.
+4. Audit live item acceptance and linked reviews for every proposed successor. Keep RAD49 pending with only exact uncovered closure work while any unique criterion remains. Supersede only after all residual requirements have explicit live owners and reviews are handled.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +38,7 @@ Owner direction 2026-11-08: put the dense layers (attention, GDN, QSA, dense/sha
 
 ## Validation
 
-Parity harness (tools/lab/radiance/flashnext-parity.sh) against flashnext-4gpu baseline; same-session A/B for any claim; 4-GPU KL gate vs the R9700-alone control; decode and prefill reported separately.
+Host-only verification records current source/ABI and exact evidence paths, context confounders, merged protocol references, current production layout and every successor's live scope. No GPU retest is part of this reconciliation.
 
 ## Effort & Risk
 
@@ -50,7 +50,7 @@ Parity harness (tools/lab/radiance/flashnext-parity.sh) against flashnext-4gpu b
 
 ## Acceptance Criteria
 
-
+The negative topology decision and limitations are explicit; no default promotion is claimed. Each residual requirement is either explicitly accepted by a live successor or retained as narrowly scoped RAD49 work. Preserve original receipts and reviews. Set superseded only after that ownership audit is complete; failure performance alone is not completion.
 
 ## Notes
 
@@ -86,3 +86,8 @@ KL gate pending; w4nl needs a two-pass integer form), (2) re-enable the fused ga
 wait counters carried in the existing heat snapshot - one telemetry path), (4) hc mixing matrices int8 in the recipe.
 The RX 6900 XT tail does not pay behind TP2 yet (its expert compute ~3.9 ms a request).
 - 2026-11-10T00:11:22.301887+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4238
+- 2026-11-20T02:23:02.849033+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:acceptance_criteria

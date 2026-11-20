@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_030357_builds-from-a-different-checko_4894",
+  "files": [
+    "tools/bigcherry/campaign/runtime_bundle.py",
+    "tools/tests/campaign/test_runtime_bundle_source_path.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A content-addressed build directory is shared by every checkout with identical sources, but a radiance component's CMake cache pins the source path it was first configured from and CMake refused a build from another checkout. build_runtime and run_component_tests now configure a component whose cache pins a different source path in its own tree (components/<name>@<hash of the path>) beside the existing one, which is never reconfigured or removed because another run may be building in it.",
+  "timestamp-utc": "2026-11-19T03:03:57.950053Z",
+  "user-summary-candidate": "Builds from a different checkout no longer fail on a shared build directory's cached source path."
+}

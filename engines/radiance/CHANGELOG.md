@@ -1,5 +1,89 @@
 # Changelog
 
+## [1170.36.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.35.0...bc-radiance-1170.36.0) (2026-11-20)
+
+
+### New and changed
+
+* **core:** sealed measurement-start host facts for Radiance records (MRC02) ([#1238](https://github.com/audiagentic/bigcherry/issues/1238)) ([1f5f6a1](https://github.com/audiagentic/bigcherry/commit/1f5f6a1a5e31bafa10ba8aafd9a2b7f313dc3984))
+
+## [1170.35.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.34.0...bc-radiance-1170.35.0) (2026-11-20)
+
+
+### New and changed
+
+* **core:** Radiance feature registry and strict production status (MRC03) ([#1230](https://github.com/audiagentic/bigcherry/issues/1230)) ([71acad4](https://github.com/audiagentic/bigcherry/commit/71acad45621c1e68cf6df90778a64b4d9c3b5d4a))
+
+## [1170.34.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.33.0...bc-radiance-1170.34.0) (2026-11-19)
+
+
+### New and changed
+
+* **calibration:** platform calibration-record store v1 (MRC04 slice 1) ([#1199](https://github.com/audiagentic/bigcherry/issues/1199)) ([84b2065](https://github.com/audiagentic/bigcherry/commit/84b2065ef6387aca6bf667a0292f6b42d3658211))
+* **measurement:** native calibration and lab probes as run records (MRC06 slice 3) ([#1209](https://github.com/audiagentic/bigcherry/issues/1209)) ([82fa90e](https://github.com/audiagentic/bigcherry/commit/82fa90e0f90403f98272d430c6c903c77610822e))
+
+
+### Fixes
+
+* **radiance:** derive helper.combine_threads from the discovered CPUs ([#1200](https://github.com/audiagentic/bigcherry/issues/1200)) ([fccaceb](https://github.com/audiagentic/bigcherry/commit/fccaceb12a476c2ceddb9fbd75e7699bada31b26))
+* **radiance:** measure the combine thread knee and derive from the affinity set ([#1206](https://github.com/audiagentic/bigcherry/issues/1206)) ([d90c57e](https://github.com/audiagentic/bigcherry/commit/d90c57e40c711e9408a2d0544520a39d77c4124f))
+
+## [1170.33.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.5...bc-radiance-1170.33.0) (2026-11-19)
+
+
+### New and changed
+
+* **radiance:** build with the FFmpeg media decoder; image input modes measured ([#1189](https://github.com/audiagentic/bigcherry/issues/1189)) ([5820391](https://github.com/audiagentic/bigcherry/commit/5820391c817571a66033d27e8981afeee8c08b42))
+* **radiance:** ship bf16_i8 KV as named configs (TP3 27B, Flash-Next at 4 sessions) with evidence ([#1184](https://github.com/audiagentic/bigcherry/issues/1184)) ([358ddd1](https://github.com/audiagentic/bigcherry/commit/358ddd197de6e96310033ae69e6ff90b4ef17b29))
+* **serving:** publish native feature states at startup ([#1195](https://github.com/audiagentic/bigcherry/issues/1195)) ([7c73af9](https://github.com/audiagentic/bigcherry/commit/7c73af98fb5b23a32a1309cc2b4b5551dfda371a))
+
+
+### Fixes
+
+* **radiance:** ship release heat seeds and default session recording ([#1197](https://github.com/audiagentic/bigcherry/issues/1197)) ([bf27b43](https://github.com/audiagentic/bigcherry/commit/bf27b433839cdbed161f301c564b7893b398b407))
+
+## [1170.32.5](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.4...bc-radiance-1170.32.5) (2026-11-19)
+
+
+### Fixes
+
+* **serving:** accept the boot placement in the runtime policy receipt ([#1176](https://github.com/audiagentic/bigcherry/issues/1176)) ([fd6dbcd](https://github.com/audiagentic/bigcherry/commit/fd6dbcd09a015eb9d32e55d6eb6ecb846b131fcc))
+* **serving:** hash GPU identity, not live VRAM use, in the S8 inventory digest ([#1181](https://github.com/audiagentic/bigcherry/issues/1181)) ([f47633e](https://github.com/audiagentic/bigcherry/commit/f47633e917da9e7768112006d2fcce224f7684a5))
+* **serving:** live-policy calibration has its own key, shared by the calibration run and production ([#1169](https://github.com/audiagentic/bigcherry/issues/1169)) ([25ac566](https://github.com/audiagentic/bigcherry/commit/25ac566b95401e105a90842b7ba863c69233c289))
+* **serving:** re-read a mismatched heat proof for the declared publication period and name the differing field ([#1183](https://github.com/audiagentic/bigcherry/issues/1183)) ([5e814a1](https://github.com/audiagentic/bigcherry/commit/5e814a1d8947de8b1c8de2f8406435af96a6b6c6))
+* **serving:** refuse unwatermarked calibration heat and bound the no-feed wait ([#1162](https://github.com/audiagentic/bigcherry/issues/1162)) ([1e4bc57](https://github.com/audiagentic/bigcherry/commit/1e4bc572304f1b60206cb5359e4614e11fcfd5b3))
+* **serving:** replay a stored policy-on manifest for an unchanged config ([#1177](https://github.com/audiagentic/bigcherry/issues/1177)) ([409d3a1](https://github.com/audiagentic/bigcherry/commit/409d3a1b0fdf67e3a9ab775f39331e6667992482))
+* **serving:** wait for the first counted heat snapshot at startup and name the failing check in a heat refusal ([#1174](https://github.com/audiagentic/bigcherry/issues/1174)) ([9aa70b0](https://github.com/audiagentic/bigcherry/commit/9aa70b0623a5be6ec36fa7356995699d1ba0c776))
+
+## [1170.32.4](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.3...bc-radiance-1170.32.4) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** keep recording-only heat observational ([#1151](https://github.com/audiagentic/bigcherry/issues/1151)) ([65644df](https://github.com/audiagentic/bigcherry/commit/65644df6571efa80a019232ecfa517385db87ed5))
+
+## [1170.32.3](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.2...bc-radiance-1170.32.3) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** wait for helper VRAM release before the final manifest write ([#1147](https://github.com/audiagentic/bigcherry/issues/1147)) ([ec0ca83](https://github.com/audiagentic/bigcherry/commit/ec0ca833bf89280453dcb4a5b5af9bbd7b6b0793))
+
+## [1170.32.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.1...bc-radiance-1170.32.2) (2026-11-18)
+
+
+### Fixes
+
+* **release:** trim the engine asset (debug split, no benchmark catalogs) ([#1143](https://github.com/audiagentic/bigcherry/issues/1143)) ([758a426](https://github.com/audiagentic/bigcherry/commit/758a42656daa0b2927b28aa82aea0a3717a584d8))
+
+## [1170.32.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.32.0...bc-radiance-1170.32.1) (2026-11-18)
+
+
+### Fixes
+
+* **release:** refuse unflagged engine downgrades ([#1122](https://github.com/audiagentic/bigcherry/issues/1122)) ([1ec2465](https://github.com/audiagentic/bigcherry/commit/1ec24652bc72019cf794095092171facbb47e88e))
+* **serving:** verify installed release before native startup ([#1121](https://github.com/audiagentic/bigcherry/issues/1121)) ([b305cdd](https://github.com/audiagentic/bigcherry/commit/b305cdd35c722423e136144890d1abeeb44f1bfa))
+
 ## [1170.32.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.31.0...bc-radiance-1170.32.0) (2026-11-18)
 
 

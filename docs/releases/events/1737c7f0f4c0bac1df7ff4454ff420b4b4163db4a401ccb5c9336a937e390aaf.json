@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_builds-from-different-checkout_8596",
+  "files": [
+    "tools/bigcherry/campaign/runtime_bundle.py",
+    "tools/bigcherry/core/process.py",
+    "docs/reference/build/BUILD.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1172: component builds use a sibling build tree when a content-addressed tree's CMake cache was configured from another checkout (no wipe). #1175: one recorded retry of `cmake --build` when a compiler dies from a signal; receipts in <build>/bigcherry-compile-retries.jsonl and <work-root>/build-compile-retries.jsonl. Random ~1/160 compiler crashes on this host point at hardware (host checks requested).",
+  "timestamp-utc": "2026-11-19T07:11:11.397444Z",
+  "user-summary-candidate": "Builds from different checkouts no longer collide, and a random compiler crash is retried once and recorded."
+}

@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0044_expert_route_record"
 order = 44
-state = "untested"
+state = "diagnostic"
 kind = "diagnostic"
 origin = "local"
 backend = "agnostic"

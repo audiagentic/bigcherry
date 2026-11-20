@@ -1,0 +1,410 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "urn:bigcherry:run-record:v1",
+  "title": "BigCherry platform measurement run record v1",
+  "description": "Immutable measurement record. Every provenance input is an on-disk sha256 blob, not a path. The run manifest separately owns lifecycle.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "run_id",
+    "recorded_at",
+    "identity",
+    "workload",
+    "metrics",
+    "provenance",
+    "host_facts",
+    "feature_states",
+    "metric_specs"
+  ],
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "run_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "recorded_at": {
+      "type": "string",
+      "format": "date-time",
+      "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+    },
+    "identity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "build_id",
+        "binary_sha256",
+        "source_revision",
+        "model",
+        "layout"
+      ],
+      "properties": {
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "build_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "binary_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "source_revision": {
+          "type": "string",
+          "minLength": 1
+        },
+        "model": {
+          "type": "string",
+          "minLength": 1
+        },
+        "layout": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "workload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "definition"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "definition": {
+          "type": "object"
+        }
+      }
+    },
+    "metrics": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decode",
+        "prefill",
+        "ttft"
+      ],
+      "properties": {
+        "decode": {
+          "$ref": "#/$defs/metric_group"
+        },
+        "prefill": {
+          "$ref": "#/$defs/metric_group"
+        },
+        "ttft": {
+          "$ref": "#/$defs/metric_group"
+        }
+      }
+    },
+    "provenance": {
+      "$ref": "#/$defs/provenance_bundle"
+    },
+    "host_facts": {
+      "type": "object"
+    },
+    "feature_states": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/feature_state"
+      }
+    },
+    "session_id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "metric_specs": {
+      "$ref": "#/$defs/metric_specs"
+    },
+    "validity": {
+      "$ref": "#/$defs/validity"
+    },
+    "calibration_record": {
+      "$ref": "#/$defs/calibration_selection"
+    }
+  },
+  "$defs": {
+    "sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    },
+    "blob_reference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sha256",
+        "size_bytes"
+      ],
+      "properties": {
+        "sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "size_bytes": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "provenance_input": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role",
+        "blob"
+      ],
+      "properties": {
+        "role": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blob": {
+          "$ref": "#/$defs/blob_reference"
+        },
+        "path_hint": {
+          "type": "string"
+        }
+      }
+    },
+    "provenance_bundle": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "effective_config",
+        "argv",
+        "environment",
+        "power_settings",
+        "inputs"
+      ],
+      "properties": {
+        "effective_config": {
+          "$ref": "#/$defs/blob_reference"
+        },
+        "argv": {
+          "$ref": "#/$defs/blob_reference"
+        },
+        "environment": {
+          "$ref": "#/$defs/blob_reference"
+        },
+        "power_settings": {
+          "$ref": "#/$defs/blob_reference"
+        },
+        "inputs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/provenance_input"
+          }
+        }
+      }
+    },
+    "metric_group": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "number"
+      },
+      "description": "Named numeric metrics; empty object means phase was not measured. Units belong in metric names.",
+      "propertyNames": {
+        "type": "string",
+        "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+      }
+    },
+    "feature_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "feature_id",
+        "state",
+        "reason_code",
+        "reason_detail",
+        "engine",
+        "observed_at"
+      ],
+      "properties": {
+        "feature_id": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "state": {
+          "enum": [
+            "active",
+            "inactive",
+            "degraded"
+          ]
+        },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1,
+          "pattern": "^[a-z][a-z0-9_]*$"
+        },
+        "reason_detail": {
+          "type": "string"
+        },
+        "engine": {
+          "type": "string",
+          "minLength": 1
+        },
+        "observed_at": {
+          "type": "string",
+          "format": "date-time",
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$"
+        }
+      }
+    },
+    "metric_spec": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "direction",
+        "gated"
+      ],
+      "properties": {
+        "direction": {
+          "enum": [
+            "lower",
+            "higher"
+          ]
+        },
+        "gated": {
+          "type": "boolean"
+        },
+        "repeat_groups": {
+          "type": "array",
+          "items": {
+            "type": "array",
+            "items": {
+              "type": "number"
+            },
+            "minItems": 2
+          }
+        }
+      }
+    },
+    "metric_specs": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "decode",
+        "prefill",
+        "ttft"
+      ],
+      "properties": {
+        "decode": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/metric_spec"
+          }
+        },
+        "prefill": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/metric_spec"
+          }
+        },
+        "ttft": {
+          "type": "object",
+          "propertyNames": {
+            "type": "string",
+            "pattern": "^[a-zA-Z_][a-zA-Z0-9_]*$"
+          },
+          "additionalProperties": {
+            "$ref": "#/$defs/metric_spec"
+          }
+        }
+      }
+    },
+    "validity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "reason_codes"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "valid",
+            "invalid",
+            "unverified"
+          ]
+        },
+        "reason_codes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      }
+    },
+    "quantity_blob": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "name",
+        "blob"
+      ],
+      "properties": {
+        "name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "blob": {
+          "$ref": "#/$defs/blob_reference"
+        }
+      }
+    },
+    "calibration_selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "status"
+      ],
+      "properties": {
+        "status": {
+          "enum": [
+            "selected",
+            "none"
+          ]
+        },
+        "kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "key_sha256": {
+          "$ref": "#/$defs/sha256"
+        },
+        "record_blob": {
+          "$ref": "#/$defs/blob_reference"
+        },
+        "quantity_blobs": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/quantity_blob"
+          }
+        },
+        "reason_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "reason_detail": {
+          "type": "string"
+        }
+      }
+    }
+  }
+}

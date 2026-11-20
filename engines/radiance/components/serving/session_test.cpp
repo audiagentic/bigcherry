@@ -68,6 +68,7 @@ struct Case {
     int port = free_port();
     Json behaviour = Json::object();
     int helpers = 0;
+    bool capture_owner_log = false;
     ss::Session session;
 
     explicit Case(const std::string& name) : run(g_root / (std::to_string(++g_case) + "-" + name)) {
@@ -118,6 +119,11 @@ struct Case {
         std::cout.flush();
         const pid_t pid = ::fork();
         if (pid == 0) {
+            if (capture_owner_log) {
+                const int log = ::open((run / "owner.log").c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+                assert(log >= 0 && ::dup2(log, STDERR_FILENO) == STDERR_FILENO);
+                ::close(log);
+            }
             int code = 1;
             try {
                 code = ss::serve(session);
@@ -194,6 +200,86 @@ bool any_error_contains(const Json& record, const std::string& needle) {
         if (e.get<std::string>().find(needle) != std::string::npos)
             return true;
     return false;
+}
+
+void feature_state_start_status_and_warning() {
+    Case c("feature-state");
+    c.capture_owner_log = true;
+    c.helpers = 1;
+    c.session.publish_feature_states = true;
+    c.behaviour["spec"] = {
+        {"intent", {{"service", {{"profile", "production"}}}}},
+        {"resources", {{"host", {{"kv_mib", 4096}}}}},
+        {"processes", {
+            {"helpers", Json::array({{{"role", "helper0"}}})},
+            {"engine", {{"execution", {{"num_speculative_tokens", 2}}},
+                        {"vision", {{"vision_tower_placement", "gpu"}, {"mm_max_patches", 64}}}}},
+            {"helper_common", {{"combine", {{"enabled", false}}}}},
+        }},
+        {"handoff", {{"placement", {{"live_policy_state", {
+            {"requested", "off"}, {"configured", false},
+            {"reason_code", "calibration_key_absent"},
+            {"reason_detail", "no matching calibration"},
+        }}}}}},
+    };
+    c.behaviour["provenance"] = {{"/spec/handoff/placement",
+                                  {{"source", "live policy disabled: orphaned key"}}}};
+    // The fake engine consumes the server port and handoff transport from
+    // any manifest with a spec object, just as it does for stored-v2 tests.
+    c.behaviour["spec"]["processes"]["engine"]["server"] = {{"port", c.port}};
+    c.behaviour["spec"]["handoff"]["transport"] = {{"shm", ""}};
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    const Json host_start = Json::parse(text(c.run / "host-facts.start.v1.json"));
+    assert(host_start.at("schema_version") == 1);
+    assert(host_start.at("capture_phase") == "owner_start");
+    assert(host_start.at("captured_at").is_string());
+    assert(host_start.at("facts").at("kernel_release").at("readable").is_boolean());
+    assert(host_start.at("facts").at("mem_available_kib").at("readable").is_boolean());
+    assert(host_start.at("facts").at("cards").is_object());
+    const auto reply = ss::control(c.run, "status", 2s);
+    assert(reply && reply->at("state") == "running");
+    const Json features = reply->at("feature_states");
+    assert(features.is_array() && features.size() == 7);
+    assert(Json::parse(text(c.run / "feature-states.v1.json")) == features);
+    assert(features.at(0).at("feature_id") == "live_policy");
+    assert(features.at(0).at("state") == "inactive");
+    assert(features.at(0).at("reason_code") == "calibration_key_absent");
+    assert(reply->at("calibration_record").at("status") == "none");
+    assert(reply->at("calibration_record").at("reason_code") == "calibration_key_absent");
+    assert(features.at(0).at("reason_detail").get<std::string>().find("orphaned key") != std::string::npos);
+    assert(text(c.run / "owner.log").find("WARNING production feature live_policy inactive") != std::string::npos);
+    assert(text(c.run / "owner.log").find("calibration_key_absent") != std::string::npos);
+    const auto stopped = ss::control(c.run, "stop", 10s);
+    assert(stopped && stopped->value("ok", false));
+    assert(exit_code(owner) == 0);
+    assert(c.record().at("feature_states") == features);
+
+    // Strict production admission refuses an inactive required feature before
+    // fork/exec, while retaining the diagnostic snapshot in status.
+    Case strict_case("feature-state-strict");
+    strict_case.capture_owner_log = true;
+    strict_case.helpers = 1;
+    strict_case.session.publish_feature_states = true;
+    strict_case.session.strict_production_features = true;
+    strict_case.behaviour = c.behaviour;
+    strict_case.behaviour["spec"]["processes"]["engine"]["server"]["port"] = strict_case.port;
+    const pid_t strict_owner = strict_case.owner();
+    assert(exit_code(strict_owner) != 0);
+    const auto failed = strict_case.record();
+    assert(failed.at("state") == "failed" && failed.at("processes").empty());
+    assert(failed.at("feature_states").is_array());
+    assert(text(strict_case.run / "owner.log").find("strict production feature refusal") != std::string::npos);
+}
+
+void feature_state_invalid_manifest_prevents_child() {
+    Case c("feature-invalid");
+    c.session.publish_feature_states = true;
+    const pid_t owner = c.owner();
+    assert(exit_code(owner) != 0);
+    assert(c.record().at("state") == "failed");
+    assert(c.record().at("processes").empty());
+    assert(!fs::exists(c.run / "feature-states.v1.json"));
 }
 
 void serve_status_stop() {
@@ -1306,6 +1392,12 @@ int test_main(int argc, char** argv) {
     g_root = fs::current_path() / "bc-session-fixture";
     fs::remove_all(g_root);
     fs::create_directories(g_root);
+    if (argc == 2 && std::string(argv[1]) == "--host-start-only") {
+        // Focused CPU-only MRC02 owner receipt regression (no hardware lease).
+        feature_state_start_status_and_warning();
+        std::cout << "PASS: native owner host-facts start receipt before child\n";
+        return 0;
+    }
     injected_owner_plan_exception();
     real_session_power_returned_errors();
     manifest_writer_before_durable_admission();
@@ -1314,6 +1406,8 @@ int test_main(int argc, char** argv) {
     callback_exception_matrix();
     spawn_and_environment();
     serve_status_stop();
+    feature_state_start_status_and_warning();
+    feature_state_invalid_manifest_prevents_child();
     helpers_order_and_killed();
     helper_failure_unwinds();
     helper_power_hook_boundary();

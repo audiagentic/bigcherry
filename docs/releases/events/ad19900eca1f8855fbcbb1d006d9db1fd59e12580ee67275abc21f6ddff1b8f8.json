@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_041248_production-starts-with-the-liv_3835",
+  "files": [
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/runtime_guards.h",
+    "engines/radiance/components/serving/session_guards_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The runtime heat guard refused every production start with the live placement policy on, right after the start canary: the first read of the engine's periodic histogram can be an authentic file that holds no route counts yet, which was reported as unsafe. histogram_verdict now returns a new pending verdict for exactly that case (authentic nonce/proof/shape, padding zero, all counts zero) and the startup check waits for the first counted snapshot for the declared histogram period or the policy's allowed heat age, whichever is longer; every other unsafe cause still refuses at once and the steady-state poll is unchanged. Every non-fresh verdict now carries a reason that the refusal text names (it used to print only the number). The model's 49 routed layers including the MTP layer are accepted and counts beyond them stay padding.",
+  "timestamp-utc": "2026-11-19T04:12:48.730570Z",
+  "user-summary-candidate": "Production starts with the live placement policy on no longer refuse at the heat check right after the canary, and a refusal now says why."
+}

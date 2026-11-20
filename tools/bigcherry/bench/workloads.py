@@ -6,10 +6,8 @@ changes power, or acquires a GPU lease. Running a workload sends inference reque
 from __future__ import annotations
 
 import datetime as dt
-import fcntl
 import hashlib
 import json
-import os
 import platform
 import re
 import statistics
@@ -21,12 +19,13 @@ import urllib.parse
 import urllib.request
 import uuid
 from pathlib import Path
+from typing import Any
 
+from ..core import engines, feature_states, host_facts, measurement_producers
 from ..core.context import resolve_work_root
 from . import stream_bench
 
 CATALOG = Path(__file__).with_name("workloads.toml")
-DEFAULT_INDEX = resolve_work_root() / "results/index.jsonl"
 DEFAULT_RUNS = resolve_work_root() / "results/workloads"
 SCHEMA = "bigcherry.workload-result.v1"
 
@@ -155,42 +154,6 @@ def _read_text(path: Path) -> str | None:
         return None
 
 
-def card_paths(sys_root: Path = Path("/sys")) -> list[tuple[str, Path]]:
-    cards = []
-    for card in (sys_root / "class/drm").glob("card[0-9]*"):
-        device = card / "device"
-        if not device.is_dir():
-            continue
-        # sysfs symlink target ends in the PCI device address.
-        bdf = device.resolve().name
-        if re.fullmatch(r"[0-9a-fA-F]{4}:[0-9a-fA-F]{2}:[0-9a-fA-F]{2}\.[0-7]", bdf):
-            cards.append((bdf.lower(), device))
-    return sorted(cards)
-
-
-def power_state(sys_root: Path = Path("/sys")) -> dict:
-    """Read-only per-BDF snapshot; missing controls stay null, never inferred as stock."""
-    result = {}
-    for bdf, dev in card_paths(sys_root):
-        hwmon = list((dev / "hwmon").glob("hwmon*/power1_cap"))
-        cap = _read_text(hwmon[0]) if hwmon else None
-        od = _read_text(dev / "pp_od_clk_voltage") or ""
-        vo = re.search(r"OD_VDDGFX_OFFSET:\s*\n?\s*(-?\d+)\s*m?V", od)
-        # OD_SCLK formats differ across driver revisions: never infer a maximum if absent.
-        sclk = re.search(r"OD_SCLK:[\s\S]*?(?=OD_[A-Z]+:|$)", od)
-        freqs = re.findall(r"\b\d+:\s*(\d+)\s*M?Hz", sclk.group(0)) if sclk else []
-        mclk = re.search(r"OD_MCLK:[\s\S]*?(?=OD_[A-Z]+:|$)", od)
-        mclk_row = re.search(r"(?m)^\s*1:\s*(\d+)\s*MHz\s*$", mclk.group(0), re.IGNORECASE) if mclk else None
-        result[bdf] = {
-            "power1_cap_uw": int(cap) if cap and cap.isdecimal() else None,
-            "vddgfx_offset_mv": int(vo.group(1)) if vo else None,
-            "od_sclk_max_mhz": max(map(int, freqs)) if freqs else None,
-            "od_mclk_max_mhz": int(mclk_row.group(1)) if mclk_row else None,
-            "perf_level": _read_text(dev / "power_dpm_force_performance_level"),
-        }
-    return result
-
-
 def _manifest_for_server(url: str, work_root: Path) -> Path | None:
     """Use live engine cmdline's exact --manifest, never newest historical manifest."""
     port = urllib.parse.urlparse(url).port
@@ -250,16 +213,6 @@ def manifest_info(path: Path | None) -> dict:
     }
 
 
-def _board_watts(sys_root: Path = Path("/sys")) -> dict:
-    readings = {}
-    for bdf, dev in card_paths(sys_root):
-        power = next(iter((dev / "hwmon").glob("hwmon*/power1_average")), None)
-        val = _read_text(power) if power else None
-        if val and val.isdecimal():
-            readings[bdf] = int(val) / 1e6
-    return readings
-
-
 def _run_power(cfg: dict, url: str) -> tuple[dict, dict]:
     # Passive hwmon readings while sending the same prompts as PWR01.
     duration = cfg["phase_seconds"]
@@ -269,7 +222,7 @@ def _run_power(cfg: dict, url: str) -> tuple[dict, dict]:
 
     def poll():
         while not stop.is_set():
-            readings[active_phase[0]].append(_board_watts())
+            readings[active_phase[0]].append(host_facts.board_watts())
             stop.wait(1.0)
 
     thread = threading.Thread(target=poll, daemon=True)
@@ -338,88 +291,145 @@ def make_row(workload_id: str, cfg: dict, metrics: dict, detail: dict,
             "runner_commit": detail.get("runner_commit"),
             "layout": info.get("layout"), "kernel": kernel or platform.release(),
             "model": info.get("model"), "policy": info.get("policy", {"state": "unknown", "calibration_key": None}),
-            "power_state": power if power is not None else power_state(),
+            "power_state": power if power is not None else host_facts.power_state(),
             "options": info.get("options", {}), "manifest": info.get("manifest"),
             "manifest_digest": info.get("manifest_digest"), "run_folder": run_folder}
 
 
-def append_index(path: Path, row: dict) -> None:
-    """One os.write under an advisory lock: no partial/interleaved JSONL records."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    data = (json.dumps(row, allow_nan=False, sort_keys=True) + "\n").encode()
-    fd = os.open(path, os.O_CREAT | os.O_WRONLY | os.O_APPEND, 0o664)
+def _metric_phase(name: str) -> str | None:
+    if name.startswith("prefill") or name == "prefill_tps":
+        return "prefill"
+    if name.startswith("decode"):
+        return "decode"
+    if name == "ttft_ms":
+        return "ttft"
+    return None
+
+
+def publish_record(
+    row: dict,
+    *,
+    manifest_bytes: bytes | None = None,
+    work_root: Path | None = None,
+    argv: list[str] | None = None,
+    environment: dict[str, str] | None = None,
+    host_snapshot: dict | None = None,
+) -> str:
+    """MRC06 new writer; historical row payloads are kept only as source blobs.
+
+    The manifest's bytes must still exist at the time of capture. A historical
+    path or an unverified server is not enough to claim a valid build identity.
+    """
+    manifest_name = row.get("manifest")
+    if not manifest_name:
+        raise WorkloadError("verified active manifest required for run-record publication")
+    manifest_path = Path(manifest_name)
+    raw = manifest_bytes if manifest_bytes is not None else manifest_path.read_bytes()
+    manifest = json.loads(raw)
+    spec = manifest["spec"]
+    build = spec["processes"]["engine"]["runtime"]["radiance_home"]
+    build_root = Path(build).parent
+    metadata_file = build_root / f"bigcherry-build-metadata-{engines.RADIANCE}.json"
+    meta = json.loads(metadata_file.read_text(encoding="utf-8"))
+    for name in ("build_id", "binary_hash", "source_slice_id", "build_plan_id"):
+        if not isinstance(meta.get(name), str) or not meta[name]:
+            raise WorkloadError(f"verified build metadata requires {name}")
+    if (row.get("build_id"), row.get("layout"), row.get("model")) != (
+        meta["build_id"], spec["intent"]["layout"], spec["intent"]["model"]
+    ):
+        raise WorkloadError("result identity differs from captured strict manifest and build metadata")
+    # The engine binary is the runtime artifact whose recorded hash is the build's binary hash (no engine name here).
+    artifacts = meta.get("runtime_artifacts")
+    named = [n for n, h in artifacts.items() if h == meta.get("binary_hash")] if isinstance(artifacts, dict) else []
+    if len(named) != 1:
+        raise WorkloadError("build metadata does not name exactly one runtime artifact for its binary hash")
+    binary = build_root / "bin" / named[0]
+    # The build's metadata is the record-of-build; if the binary is present,
+    # enforce that its actual contents still match that metadata.
+    if not isinstance(meta["binary_hash"], str) or len(meta["binary_hash"]) != 64:
+        raise WorkloadError("build binary SHA-256 missing")
+    if binary.is_file() and __import__("hashlib").sha256(binary.read_bytes()).hexdigest() != meta["binary_hash"]:
+        raise WorkloadError("build binary no longer matches build metadata")
+    # Bind the measured row to the running native owner and its start seal.
+    # An independent Python snapshot cannot replace a missing native receipt.
+    session_path = manifest_path.parent / "session.json"
+    if session_path.is_symlink() or not session_path.is_file():
+        raise WorkloadError("native owner session receipt required for measurement")
+    session = json.loads(session_path.read_text(encoding="utf-8"))
+    if Path(session.get("manifest", "")).resolve() != manifest_path.resolve() or (
+        session.get("state") not in ("running", "healthy")
+    ):
+        raise WorkloadError("native owner session does not own the measured manifest")
     try:
-        fcntl.flock(fd, fcntl.LOCK_EX)
-        if os.write(fd, data) != len(data):
-            raise OSError("short index write")
-        os.fsync(fd)
-    finally:
-        fcntl.flock(fd, fcntl.LOCK_UN)
-        os.close(fd)
+        owner_start = host_facts.read_owner_start(manifest_path.parent)
+    except (ValueError, TypeError, KeyError) as exc:
+        raise WorkloadError(f"native owner start receipt required: {exc}") from exc
+    if host_snapshot is not None and host_snapshot != owner_start:
+        raise WorkloadError("measured host facts differ from sealed native owner start")
+    state_path = manifest_path.parent / feature_states.FILE_NAME
+    states = feature_states.read_feature_states(state_path)
+    if any(state["engine"] != engines.RADIANCE for state in states):
+        raise WorkloadError("feature states and engine identity differ")
 
+    phase_metrics: dict[str, dict[str, float]] = {p: {} for p in ("decode", "prefill", "ttft")}
+    metric_specs: dict[str, dict[str, dict[str, Any]]] = {p: {} for p in phase_metrics}
+    for name, entry in row["metrics"].items():
+        phase = _metric_phase(name)
+        if phase is None:
+            continue  # board_watts is structured data; retained in exact row blob
+        value = entry["median"]
+        if type(value) not in (float, int):
+            raise WorkloadError(f"non-numeric measured metric {name}")
+        phase_metrics[phase][name] = value
+        metric_specs[phase][name] = {
+            "direction": "lower" if name == "ttft_ms" else "higher",
+            "gated": name != "decode_engine_tps",
+        }
+        # Cold requests use distinct seeds, docs use different slices. Only
+        # same-seed stream repeats may enlarge baseline tolerance.
+        if row["workload_id"].startswith("decode-") and name in ("decode_aggregate_tps", "ttft_ms"):
+            reps = [rep.get(name) for rep in entry.get("per_rep", [])
+                    if isinstance(rep, dict) and type(rep.get(name)) in (int, float)]
+            if len(reps) >= 2:
+                metric_specs[phase][name]["repeat_groups"] = [reps]
+    if not any(phase_metrics.values()):
+        raise WorkloadError("no numeric workload metrics")
+    stamp = row["timestamp"]
+    config = row.get("details", {}).get("workload_config")
+    if not isinstance(config, dict):
+        raise WorkloadError("record requires exact workload config")
 
-def read_index(path: Path) -> list[dict]:
-    if not path.exists():
-        return []
-    rows = []
-    with path.open() as stream:
-        for number, line in enumerate(stream, 1):
-            try:
-                obj = json.loads(line)
-            except json.JSONDecodeError as exc:
-                raise WorkloadError(f"{path}:{number}: invalid JSONL: {exc}") from exc
-            if obj.get("schema") != SCHEMA:
-                raise WorkloadError(f"{path}:{number}: unknown result schema")
-            rows.append(obj)
-    return rows
-
-
-def difference(a: dict, b: dict) -> list[str]:
-    return [name for name, fn in (
-        ("layout", lambda x: x.get("layout")),
-        ("build", lambda x: (x.get("build_path"), x.get("build_commit"), x.get("build_id"))),
-        ("kernel", lambda x: x.get("kernel")),
-        ("model", lambda x: x.get("model")),
-        ("policy", lambda x: x.get("policy")),
-        ("power", lambda x: x.get("power_state")),
-        ("options", lambda x: x.get("options")),
-        ("corpus", lambda x: x.get("details", {}).get("corpus_sha256")),
-        ("phase", lambda x: (x.get("details", {}).get("phase_seconds"),
-                            x.get("details", {}).get("power_sensor"))),
-        ("reps", lambda x: x.get("details", {}).get("completed_reps")),
-    ) if fn(a) != fn(b)]
-
-
-def compare(rows: list[dict], workload_id: str, version: int, *,
-            layout: str | None = None, since: str | None = None) -> str:
-    selected = [r for r in rows if r["workload_id"] == workload_id and r["workload_version"] == version
-                and (layout is None or r.get("layout") == layout)
-                and (since is None or r["timestamp"][:10] >= since[:10])]
-    selected.sort(key=lambda r: r["timestamp"])
-    headers = "date                  row              layout              build        policy  metric                    median"
-    lines = [f"{workload_id}@{version}: {len(selected)} rows", headers]
-    for r in selected:
-        metrics = r["metrics"]
-        scalar = [k for k in ("prefill_tps", "decode_aggregate_tps", "ttft_ms", "decode_tps", "prefill_tps")
-                  if k in metrics]
-        name = scalar[0] if scalar else next((k for k in metrics if k != "board_watts"), "board_watts")
-        value = metrics[name]["median"]
-        if not isinstance(value, (float, int)):
-            value = float("nan")
-        for metric_name in (("decode_tps", "prefill_tps") if workload_id == "pwr-phases" else (name,)):
-            value = metrics[metric_name]["median"]
-            lines.append(f"{r['timestamp'][:19]:<21} {r['row_id']:<16} {(r.get('layout') or '?'):<19} "
-                         f"{Path(r['build_path']).name[:12] if r.get('build_path') else '?':<12} "
-                         f"{r.get('policy', {}).get('state', '?'):<7} {metric_name:<24} {value:.2f}")
-    if len(selected) > 1:
-        reference = selected[0]
-        for r in selected[1:]:
-            changes = difference(reference, r)
-            if changes:
-                lines.append(f"WARNING {r['row_id']} differs from {reference['row_id']}: {', '.join(changes)}")
-    if selected and any(r.get("source") == "seeded" for r in selected):
-        lines.append("NOTE seeded history may lack per-rep timing, kernel, manifest, or power readback; unknown is not stock.")
-    return "\n".join(lines)
+    facts = owner_start
+    return measurement_producers.publish(
+        work_root=work_root,
+        run_id=row["row_id"],
+        recorded_at=stamp,
+        identity={
+            "engine": engines.RADIANCE, "build_id": meta["build_id"],
+            "binary_sha256": meta["binary_hash"],
+            "source_revision": row.get("runner_commit") or meta.get("source_commit") or row.get("build_commit") or "",
+            "model": spec["intent"]["model"],
+            "layout": spec["intent"]["layout"],
+        },
+        workload={
+            "name": row["workload_id"],
+            "definition": {**config, "version": row["workload_version"]},
+        },
+        metrics=phase_metrics, metric_specs=metric_specs,
+        effective_config=raw,
+        argv=argv or ["bigcherry", "workload", "run", row["workload_id"]],
+        environment=environment or {},
+        power_settings=row.get("power_state") or {},
+        inputs={
+            "workload_result": measurement_producers.canonical_blob(row),
+            "build_metadata": metadata_file.read_bytes(),
+            "native_feature_states": state_path.read_bytes(),
+            "native_host_start": (manifest_path.parent / host_facts.START_RECEIPT_FILE).read_bytes(),
+            "native_session": session_path.read_bytes(),
+        },
+        host_facts=facts, feature_states=states,
+        validity={"state": "unverified", "reason_codes": ["ATTESTATION_MISSING"]},
+    )
 
 
 def live_info(url: str, work_root: Path, manifest: Path | None) -> dict:

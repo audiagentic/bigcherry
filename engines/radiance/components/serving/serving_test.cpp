@@ -1,6 +1,7 @@
 #ifdef NDEBUG
 #undef NDEBUG // Assertions are test requirements even in RelWithDebInfo.
 #endif
+#include "../moe-remote/heat_publication.h"
 #include "calibration.h"
 #include "config_loader.h"
 #include "experts.h"
@@ -10,6 +11,7 @@
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "resources.h"
+#include "runtime_guards.h"
 #include "s8_replay.h"
 #include "sdk_check.h"
 #include "serving.h"
@@ -50,6 +52,7 @@
 #include <sstream>
 #include <stdexcept>
 #include <string>
+#include <sched.h>
 #include <thread>
 #include <vector>
 
@@ -210,6 +213,21 @@ void detection_limits(const Fixture& t) {
     write(root / "proc/self/status", "CapEff:\t0000000000004000\n");
     write(root / "sys/module/amdgpu/parameters/no_system_mem_limit", "Y\n");
     const Json h = bc::serving::detect(root).at("host");
+    {   // cpu_count is the CPUs this process may run on (its affinity set), which is what the helper inherits
+        cpu_set_t allowed;
+        CPU_ZERO(&allowed);
+        assert(sched_getaffinity(0, sizeof allowed, &allowed) == 0);
+        assert(h.at("cpu_count") == uint64_t(CPU_COUNT(&allowed)));
+        cpu_set_t one;
+        CPU_ZERO(&one);
+        int first = 0;
+        while (first < CPU_SETSIZE && !CPU_ISSET(first, &allowed)) ++first;
+        CPU_SET(first, &one);
+        assert(sched_setaffinity(0, sizeof one, &one) == 0);   // pinned to one CPU: detect must report one
+        const Json pinned = bc::serving::detect(root).at("host");
+        assert(sched_setaffinity(0, sizeof allowed, &allowed) == 0);
+        assert(pinned.at("cpu_count") == 1);
+    }
     assert(h.at("memory_cgroups").size() == 1);
     assert(h.at("memory_cgroups")[0].at("version") == 1);
     assert(h.at("memory_cgroups")[0].at("room_mib") == 31 * 1024); // 32 GiB - (3 - 2 total_cache)
@@ -284,10 +302,30 @@ void type_range_required(Fixture& t) {
     fail(opts, t.facts, "unknown named layout");
     opts.profile = t.file("derived.toml", "[engine]\nmax_num_seqs = 99\n");
     fail(opts, t.facts, "derived and cannot be overridden");
-    { // the standard profile's 8 combine threads on a 4-CPU host
+    { // the combine thread count is derived from the discovered CPUs, never a literal the host may not have
+        namespace sv = bc::serving;
+        const auto threads_on = [&](uint64_t cpus, Options o) {
+            Json host = t.facts;
+            host["host"]["cpu_count"] = cpus;
+            return sv::resolve(o, host);
+        };
+        const Options standard = t.standard();
+        const auto four = threads_on(4, standard);
+        assert(four.values.at("helper").at("combine_threads") == 4);   // a 4-CPU host resolves instead of refusing
+        assert(four.provenance.at("helper.combine_threads").at("origin") == "derived");
+        const auto twenty = threads_on(20, standard);
+        assert(twenty.values.at("helper").at("combine_threads") == 8);  // the calibrated ceiling on a larger host
+        assert(twenty.provenance.at("helper.combine_threads").at("origin") == "derived");
+        assert(threads_on(1, standard).values.at("helper").at("combine_threads") == 1);
+        // an explicit value is the operator's: it keeps its origin, and one above the CPU count is still refused
+        Options explicit_set = standard;
+        explicit_set.sets.push_back("helper.combine_threads=6");
+        const auto six = threads_on(20, explicit_set);
+        assert(six.values.at("helper").at("combine_threads") == 6);
+        assert(six.provenance.at("helper.combine_threads").at("origin") != "derived");
         Json few = t.facts;
         few["host"]["cpu_count"] = 4;
-        fail(t.standard(), few, "helper.combine_threads exceeds discovered CPU count");
+        fail(explicit_set, few, "helper.combine_threads exceeds discovered CPU count");
     }
 }
 
@@ -1234,6 +1272,26 @@ void manifest_writer_step(Fixture& t) {
     const auto back =
         bc::serving::v2::read_manifest(built.text, "writer test", bc::serving::v2::PlanUse::serving);
     assert(back.ok());
+    { // RED: strict native writer + real runtime guard must not kill recording-only serving.
+        namespace ss = bc::serving::session;
+        const fs::path file = t.root / "recording-only-guard-manifest.json";
+        sv::write_manifest_file(file, built.text);
+        const fs::path log = t.file("recording-only-guard-engine.log", "recorded pass: draft pass 8 token\n");
+        ss::EngineStart engine;
+        engine.manifest = file;
+        engine.handoff_shm =
+            built.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
+        engine.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
+        engine.heat_session_nonce = "0123456789abcdef0123456789abcdef";
+        ss::RuntimeGuards guard;
+        const auto result = guard.startup(engine, log, {});
+        if (result)
+            throw std::runtime_error("recording-only native runtime guard refused: " + result->message);
+        if (guard.policy_enabled())
+            throw std::runtime_error("uncalibrated recording-only manifest incorrectly activated policy");
+        if (const auto ongoing = guard.poll())
+            throw std::runtime_error("recording-only heat file affected serving: " + ongoing->message);
+    }
     // RED P1-5: measured producer P1 + raw P2 with a bounded valid_until.
     // Build the strict v2 consumer document via the REAL S10 writer, and
     // re-qualify that same native P1 with today's scope using the same S8.
@@ -1257,7 +1315,7 @@ void manifest_writer_step(Fixture& t) {
         scope["engine_build_digest"] = sv::engine_identity(binary, home);
         scope["helper_build_digest"] = sv::file_sha256(binary);
         scope["layout_digest"] = sv::sha256_hex(current.values.at("layout").dump());
-        scope["inventory_digest"] = sv::sha256_hex(t.facts.at("gpus").dump());
+        scope["inventory_digest"] = sv::gpu_inventory_digest(t.facts.at("gpus"));
         scope["context_target_tokens"] = current.values.at("service").at("max_context");
         native["resource_inputs"]["context_target_tokens"] = scope["context_target_tokens"];
         const int64_t same_seed = current.values.at("handoff").at("small_rows").get<int64_t>();
@@ -1365,6 +1423,31 @@ void manifest_writer_step(Fixture& t) {
         if (before)
             throw std::runtime_error("valid native S8 replay failed: " +
                                      v2::render_human("valid before expiry", *before));
+        { // The stored inventory scope is an identity snapshot (selected card, BDF, architecture, VRAM total). Live VRAM
+          // use and the PCIe link state differ from one start to the next (the previous engine's pages are still being
+          // released), and must never refuse the replay of an unchanged configuration.
+            Json drifted = t.facts;
+            for (Json& g : drifted["gpus"]) {
+                g["vram_used_mib"] = g.value("vram_used_mib", 0) + 7;
+                g["vram_available_mib"] = std::max<int64_t>(0, g.value("vram_available_mib", 0) - 7);
+                g["current_link_speed"] = "2.5 GT/s PCIe";
+                g["current_link_width"] = 1;
+            }
+            const auto drift = ss::verify_stored_s8(typed.value(), producer_config, drifted, room, measured, binary,
+                                                    binary, expiry - 1);
+            if (drift)
+                throw std::runtime_error("replay refused for live VRAM drift: " + v2::render_human("drift", *drift));
+            // ... while a changed card identity still refuses.
+            Json moved = t.facts;
+            moved["gpus"][0]["arch"] = "gfx-foreign";
+            const auto changed = ss::verify_stored_s8(typed.value(), producer_config, moved, room, measured, binary,
+                                                      binary, expiry - 1);
+            assert(changed.has_value());
+            Json resized = t.facts;
+            resized["gpus"][0]["vram_total_mib"] = resized["gpus"][0].at("vram_total_mib").get<int64_t>() + 1024;
+            assert(ss::verify_stored_s8(typed.value(), producer_config, resized, room, measured, binary, binary,
+                                        expiry - 1).has_value());
+        }
         const auto after = ss::verify_stored_s8(typed.value(), producer_config, t.facts, room, measured, binary,
                                                 binary, expiry);
         assert(after.has_value());
@@ -1518,22 +1601,50 @@ void manifest_writer_step(Fixture& t) {
     // This synthetic tiny model has synthetic additional effect/lanes/drift readings.
     {
         sv::ManifestInputs calibrated = in;
-        const std::string key = sv::calibration_key(calibrated.measured->key_inputs);
-        { // The calibration key ignores the pinned engine commit (records carry across bumps) and nothing else.
-            auto bumped = calibrated.measured->key_inputs;
-            bumped["engine_build"] = std::string(64, 'f');
-            assert(sv::calibration_key(bumped) == key &&
-                   sv::plan_key(bumped) != sv::plan_key(calibrated.measured->key_inputs));
-            auto other = calibrated.measured->key_inputs;
-            other["layout"] = "another-layout";
-            assert(sv::calibration_key(other) != key);
+        const Json policy_inputs = sv::policy_calibration_inputs(built.document.at("spec"));
+        const std::string key = sv::policy_calibration_key(policy_inputs);
+        { // Rebuilds, helper VRAM budgets and host memory do not change measured policy scope.
+            auto changed = built.document.at("spec");
+            changed["plan"]["engine_memory"]["engine_identity"] = std::string(64, 'f');
+            changed["processes"]["helpers"][0]["vram_budget_mib"] = 1234;
+            changed["resources"]["host"]["pool_mib"] = 1234;
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) == key);
+            changed = built.document.at("spec");
+            changed["intent"]["layout"] = "another-layout";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["intent"]["service"]["objective"] = "latency";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["handoff"]["telemetry"]["period_s"] = 1;
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["processes"]["helpers"][0]["gpu"] = "0000:06:00.0";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["plan"]["engine_memory"]["model_identity"] = std::string(64, 'f');
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
+            changed = built.document.at("spec");
+            changed["facts"]["gpus"][0]["arch"] = "gfx1030";
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
         }
         calibrated.calibration_cache =
             t.file("live-policy-record.toml",
                    "schema_version = 1\n[[live_policy_record]]\n"
                    "plan_cache_key = \"" +
                        key +
-                       "\"\n"
+                       "\"\n" +
+
+                       "record_schema_version = 1\n"
+                       "calibration_kind = \"radiance.live_policy\"\n"
+                       "calibration_key_fields = " + sv::policy_calibration_key_fields().dump() + "\n" +
+                       "calibration_inputs = " + Json(policy_inputs.dump()).dump() + "\n" +
+                       "source_plan_key = \"" + sv::plan_key(calibrated.measured->key_inputs) + "\"\n" +
+                       "source_engine_build = \"" +
+                       calibrated.measured->key_inputs.at("engine_build").get<std::string>() + "\"\n" +
+                       "source_revision = \"source_slice:fixture\"\n"
+                       "run_id = \"00000000-0000-4000-8000-000000000001\"\n"
+                       "host_facts_digest = \"" + std::string(64,'3') + "\"\n" +
                        "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
                        "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic "
                        "noise/drift/lane readings\"\n"
@@ -1549,7 +1660,138 @@ void manifest_writer_step(Fixture& t) {
                        "effect_row_noise_ns = 1550000\n"
                        "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
                        "abort_quiescent_ns = 1500000000\n");
+        // A record in an older format is refused, never read as evidence: the pre-v1 scoped record (no
+        // record_schema_version) and the hash-only one (no calibration_inputs either).
+        {
+            std::ifstream input(calibrated.calibration_cache);
+            std::string historical((std::istreambuf_iterator<char>(input)),
+                                    std::istreambuf_iterator<char>());
+            const auto refused_with_unsupported_format = [&](const std::string& file, const std::string& text) {
+                sv::ManifestInputs old = calibrated;
+                old.calibration_cache = t.file(file.c_str(), text);
+                try { (void)sv::build_manifest(old); }
+                catch (const std::exception& e) {
+                    return std::string(e.what()).find("unsupported record format") != std::string::npos;
+                }
+                return false;
+            };
+            for (const std::string field : {"record_schema_version", "calibration_kind",
+                                            "calibration_key_fields", "source_revision",
+                                            "run_id", "host_facts_digest"}) {
+                const auto at = historical.find(field + " = ");
+                assert(at != std::string::npos);
+                const auto end_line = historical.find('\n', at);
+                assert(end_line != std::string::npos);
+                historical.erase(at, end_line - at + 1);
+            }
+            assert(refused_with_unsupported_format("pre-v1-policy.toml", historical));
+
+            for (const std::string field : {"calibration_inputs", "source_plan_key",
+                                            "source_engine_build"}) {
+                const auto at = historical.find(field + " = ");
+                assert(at != std::string::npos);
+                const auto end_line = historical.find('\n', at);
+                assert(end_line != std::string::npos);
+                historical.erase(at, end_line - at + 1);
+            }
+            assert(refused_with_unsupported_format("hash-only-policy.toml", historical));
+        }
+        // The production store (one native v1 record keyed c2a1...). Derive with the
+        // *actual recorded scope* and this CPU-only synthetic model geometry.
+        // No production file is modified.
+        {
+            constexpr const char* production_key =
+                "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
+            const fs::path store = BC_CALIBRATION_PRODUCTION_FIXTURE;
+            std::ifstream input(store, std::ios::binary);
+            assert(input);
+            const std::string before((std::istreambuf_iterator<char>(input)),
+                                      std::istreambuf_iterator<char>());
+            const auto production_record = sv::read_live_policy_record(store, production_key);
+            assert(production_record && production_record->record_schema_version == 1);
+            assert(production_record->calibration_inputs &&
+                   sv::live_policy_record_complete(*production_record));
+            const Json& scope = *production_record->calibration_inputs;
+            Json production_spec = built.document.at("spec");
+            production_spec["plan"]["engine_memory"]["model_identity"] = scope.at("model");
+            production_spec["intent"]["layout"] = scope.at("layout");
+            production_spec["intent"]["service"]["objective"] = scope.at("objective");
+            production_spec["intent"]["power"]["profile"] = scope.at("power_profile");
+            production_spec["processes"]["engine"]["device"]["gpus"] = Json::array();
+            for (const auto& card : scope.at("engine_cards"))
+                production_spec["processes"]["engine"]["device"]["gpus"].push_back(card.at("bdf"));
+            auto& helpers = production_spec["processes"]["helpers"];
+            assert(helpers.size() == scope.at("helper_cards").size());
+            for (size_t i = 0; i < helpers.size(); ++i) {
+                const auto& card = scope.at("helper_cards")[i];
+                helpers[i]["gpu"] = card.at("bdf");
+                helpers[i]["tier"] = card.at("tier");
+                helpers[i]["formats"] = card.at("formats");
+                helpers[i]["rows_kernel"] = card.at("rows_kernel");
+            }
+            production_spec["processes"]["helper_common"] = scope.at("helper_runtime");
+            production_spec["handoff"]["telemetry"]["period_s"] = scope.at("histogram_period_s");
+            for (const auto& field : {"max_rows", "small_rows", "gemv_large_rows", "skip_owned"})
+                production_spec["handoff"]["transport"][field] = scope.at("remote_service").at(field);
+            production_spec["handoff"]["kernels"]["moe_down_tile"] =
+                scope.at("remote_service").at("moe_down_tile");
+            assert(sv::policy_calibration_inputs(production_spec) == scope);
+            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(production_spec)) ==
+                   production_key);
+            bc::experts::Container container;
+            assert(container.open(model.c_str()));
+            sv::ManifestInputs production = calibrated;
+            production.calibration_cache = store;
+            std::string skip;
+            const auto derived = sv::derive_manifest_live_policy(production, container,
+                                                                  production_spec, &skip);
+            if (!derived || !derived->policy.is_object() || derived->policy.empty())
+                throw std::runtime_error("production policy did not derive: " + skip);
+            std::ifstream check(store, std::ios::binary);
+            const std::string after((std::istreambuf_iterator<char>(check)),
+                                     std::istreambuf_iterator<char>());
+            assert(before == after);
+        }
         const auto with_calibration = sv::build_manifest(calibrated);
+        { // A different engine build consumes the SAME qualified hardware evidence,
+          // with a distinct strict memory-plan identity and a new manifest digest.
+            sv::ManifestInputs rebuilt = calibrated;
+            rebuilt.measured->key_inputs["engine_build"] = std::string(64, 'f');
+            // Native cross-build activation: fixture was written by build A,
+            // the effective measured plan on build B has a different identity.
+            const auto persisted_a = sv::read_live_policy_record(calibrated.calibration_cache, key);
+            assert(persisted_a && persisted_a->calibration_inputs &&
+                   persisted_a->source_engine_build ==
+                       calibrated.measured->key_inputs.at("engine_build").get<std::string>());
+            assert(persisted_a->source_engine_build !=
+                   rebuilt.measured->key_inputs.at("engine_build").get<std::string>());
+            const auto carried = sv::build_manifest(rebuilt);
+            assert(sv::policy_calibration_key(
+                       sv::policy_calibration_inputs(carried.document.at("spec"))) == key);
+            assert(carried.document.at("spec").at("handoff").at("placement").contains("live_policy"));
+            assert(carried.document.at("spec").at("handoff").at("placement").at("live_policy") ==
+                   with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy"));
+            assert(carried.document.at("spec").at("plan").at("engine_memory").at("engine_identity") !=
+                   with_calibration.document.at("spec").at("plan").at("engine_memory").at("engine_identity"));
+            assert(carried.digest != with_calibration.digest);
+            assert(bc::serving::v2::read_manifest(carried.text, "carried calibration",
+                                                  bc::serving::v2::PlanUse::serving).ok());
+        }
+        { // A policy-enabled manifest must STILL refuse missing live heat.
+            namespace ss = bc::serving::session;
+            const fs::path document = t.root / "policy-enabled-guard-manifest.json";
+            sv::write_manifest_file(document, with_calibration.text);
+            ss::EngineStart active;
+            active.manifest = document;
+            active.handoff_shm =
+                with_calibration.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
+            active.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
+            active.heat_session_nonce = "0123456789abcdef0123456789abcdef";
+            ss::RuntimeGuards guard;
+            const auto failure = guard.startup(active, t.root / "recording-only-guard-engine.log", {});
+            if (!guard.policy_enabled() || !failure || failure->message.find("histogram") == std::string::npos)
+                throw std::runtime_error("qualified live policy lost strict histogram admission");
+        }
         const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
         const uint64_t quiet_windows = lp.at("effect_min_quiet_windows").get<uint64_t>();
         const uint64_t window_samples = lp.at("effect_window_samples").get<uint64_t>();
@@ -1714,6 +1956,12 @@ void manifest_writer_step(Fixture& t) {
         calibration_run.live_policy_from = "--live-policy policy.json";
         const auto cr = sv::build_manifest(calibration_run);
         assert(!cr.document.at("spec").contains("experiment"));
+        // The record a calibration run files must be the one a production start of the same configuration looks up:
+        // the lab and production manifests carry the same calibrated scope.
+        assert(sv::policy_calibration_key(sv::policy_calibration_inputs(cr.document.at("spec"))) ==
+                   sv::policy_calibration_key(sv::policy_calibration_inputs(built.document.at("spec"))) &&
+               sv::policy_calibration_inputs(cr.document.at("spec")) ==
+                   sv::policy_calibration_inputs(built.document.at("spec")));
         const auto cr_path = t.root / "calibration-run-manifest.json";
         const auto prod_path = t.root / "production-manifest.json";
         sv::write_manifest_file(cr_path, cr.text);
@@ -1788,7 +2036,8 @@ void manifest_writer_step(Fixture& t) {
             out << "RHP16_CALIBRATION_JSON " << row.dump() << "\n";
         }
         const auto store = t.root / "calibration-run-store.toml";
-        const std::string store_key(64, 'e');
+        const std::string store_key = sv::policy_calibration_key(
+            sv::policy_calibration_inputs(cr.document.at("spec")));
         try {
             sv::ingest_live_policy_log(helper_log, store, prod_path, store_key);
             assert(false);
@@ -1796,10 +2045,19 @@ void manifest_writer_step(Fixture& t) {
             assert(std::string(e.what()).find("calibration-run manifest") != std::string::npos);
         }
         assert(!fs::exists(store));
+        bool bad_scope_rejected = false;
+        try {
+            sv::ingest_live_policy_log(helper_log, store, cr_path, std::string(64, 'e'));
+        } catch (const std::runtime_error& e) {
+            bad_scope_rejected = std::string(e.what()).find("target policy key") != std::string::npos;
+        }
+        assert(bad_scope_rejected && !fs::exists(store));
         sv::ingest_live_policy_log(helper_log, store, cr_path, store_key);
         const auto ingested = sv::read_live_policy_record(store, store_key);
         assert(ingested && sv::live_policy_record_complete(*ingested) &&
-               ingested->layout == crm.spec.intent.layout);
+               ingested->layout == crm.spec.intent.layout &&
+               ingested->calibration_inputs &&
+               *ingested->calibration_inputs == sv::policy_calibration_inputs(cr.document.at("spec")));
     }
     // The unmeasured manifest of the measuring start: owner map and settings, no plan and nothing derived from
     // one. A serving start refuses it, a measuring start reads it, and the measured manifest is the reverse.
@@ -2453,64 +2711,16 @@ void tp_engine_with_two_helpers_layout(Fixture& t) {
     assert(refused);
 }
 
-/* RSC12 step 4: every layout has a config of its name, and each config resolves exactly as its layout started
- * the way the launcher starts it. Nothing about a layout or the launcher is copied here: the layouts (cards,
- * model, server-args) come from the layouts files, the launcher's defaults from launch-flashnext-best.sh and
- * the engine-only values from plan-check.sh, so a changed layout or launcher that its config does not follow
- * fails this test.
- *  - a helper layout: the launcher's defaults, its server-args over them, the 1 s histogram period and (TP
- * ranks) no P2P; the pool and KV tier are what the launch derives (given to both sides) unless its server-args
- * pin them;
- *  - a helper-free layout: its server-args and the engine-only values (plan_check_describe_engine_only).
- * Both sides resolve to the same values and build the same manifest spec, and both manifests pass the strict
- * reader. The site's model stands in for the container (both sides read it); the declared model paths are
- * compared apart. */
-void converted_layout_parity(Fixture& t) {
+/* RSC02 S16: preserve the production static session identity invariant.
+ * This exercises real RSC12 named configs and the native resolver, but does
+ * not inspect or emulate retired shell launcher text. The old layout-vs-shell
+ * parity test was retired with the launcher and is no longer an acceptance gate. */
+void native_static_resolution_identity(Fixture& t) {
     namespace sv = bc::serving;
     const char* env = std::getenv("BIGCHERRY_LAYOUTS");
     if (!env || !fs::is_directory(env))
-        throw std::runtime_error("converted_layout_parity: BIGCHERRY_LAYOUTS must name the layouts directory");
-    // canonical: the test environment names it as components/serving/../../layouts
-    const fs::path layouts_dir = fs::canonical(env), configs = layouts_dir.parent_path() / "configs";
-    const fs::path lab = layouts_dir.parent_path().parent_path().parent_path() / "tools" / "lab" / "radiance";
-    auto read_text = [](const fs::path& p) {
-        std::ifstream in(p);
-        if (!in)
-            throw std::runtime_error("converted_layout_parity: cannot read " + p.string());
-        std::stringstream ss;
-        ss << in.rdbuf();
-        return ss.str();
-    };
-    // the launcher's defaults: NAME=VALUE at the start of a line in launch-flashnext-best.sh
-    const std::string launcher = read_text(lab / "launch-flashnext-best.sh");
-    auto launcher_default = [&](const std::string& name) {
-        std::smatch m;
-        if (!std::regex_search(launcher, m, std::regex("(^|\n)" + name + "=([^ \t\n#]+)")))
-            throw std::runtime_error("converted_layout_parity: launch-flashnext-best.sh sets no " + name);
-        return m[2].str();
-    };
-    // the engine-only values: `local pool=P kv=K ngram=N` in plan-check.sh
-    const std::string plan_check = read_text(lab / "lib" / "plan-check.sh");
-    std::smatch eo;
-    if (!std::regex_search(plan_check, eo, std::regex("local pool=([0-9]+) kv=([0-9]+) ngram=([a-z]+)")))
-        throw std::runtime_error(
-            "converted_layout_parity: plan-check.sh has no engine-only pool/kv/ngram line");
-    const std::string eo_pool = eo[1], eo_kv = eo[2], eo_ngram = eo[3];
-
-    Options lo;
-    lo.layouts = {layouts_dir};
-    const Json layouts = sv::load_layouts(lo).at("layout");
-    const auto set = sv::load_configs(sv::config_sources({configs}));
-    // one config for every layout; a config that is no layout is a named variant, listed here
-    const std::set<std::string> variants = {"qwen27b-tp3-int8-556", "qwen27b-tp3-int8-556-long",
-                                            "qwen27b-tp3-int8-556-long-bf16"};
-    for (auto it = layouts.begin(); it != layouts.end(); ++it)
-        if (!set.config.contains(it.key()))
-            throw std::runtime_error("layout " + it.key() + " has no config");
-    for (auto it = set.config.begin(); it != set.config.end(); ++it)
-        if (!layouts.contains(it.key()) && !variants.count(it.key()))
-            throw std::runtime_error("config " + it.key() + " is neither a layout nor a listed variant");
-
+        throw std::runtime_error("native_static_resolution_identity: BIGCHERRY_LAYOUTS required");
+    const fs::path configs = fs::path(env).parent_path() / "configs";
     const auto model = t.root / "parity-model.rad";
     bc::test::write_rad(model, 4, 16, 128, 128, {});
     const auto heat = t.root / "parity.hot-first";
@@ -2576,139 +2786,6 @@ void converted_layout_parity(Fixture& t) {
         assert(ss::static_resolution_key(input) != original_key &&
                "operator-controlled context remains a static identity input");
     }
-    const std::string derived_pool = "7168",
-                      derived_kv = "10240"; // what a launch derived (resources derive-launch)
-    const std::string port = launcher_default("PORT");
-    size_t checked = 0;
-    for (auto it = layouts.begin(); it != layouts.end(); ++it) {
-        const std::string name = it.key();
-        const Json& layout = it.value();
-        // the declared model: the same path, the site's override aside
-        if (layout.at("model") != set.config.at(name).at("model")) {
-            std::fprintf(stderr, "%s: layout model %s, config model %s\n", name.c_str(),
-                         layout.at("model").dump().c_str(), set.config.at(name).at("model").dump().c_str());
-            assert(false);
-        }
-        size_t ranks = 0;
-        const Json engine =
-            layout.at("engine").is_array() ? layout.at("engine") : Json::array({layout.at("engine")});
-        for (const auto& g : engine)
-            ranks += g.value("count", 1);
-        const bool helpers = layout.contains("helper") && !layout.at("helper").empty();
-        std::map<std::string, std::string> args; // the layout's server-args, flag -> value
-        const Json server_args = layout.value("server-args", Json::array());
-        for (size_t i = 0; i + 1 < server_args.size(); i += 2)
-            args[server_args[i]] = server_args[i + 1];
-        auto arg = [&](const std::string& flag, const std::string& otherwise) {
-            return args.count(flag) ? args.at(flag) : otherwise;
-        };
-        const std::string sel = "layout.name=\"" + name + "\"";
-        std::vector<std::string> launch, derived = {sel};
-        if (helpers) { // launch-flashnext-best.sh: its defaults, the layout's server-args over them;
-                       // plan_check_describe
-            const std::string pool = arg("--host-pool-mib", derived_pool),
-                              kv = arg("--host-kv-mib", derived_kv);
-            launch = {
-                sel,
-                "service.max_sessions=" + arg("--max-num-seqs", launcher_default("SEQS")),
-                "service.max_context=" + arg("--max-model-len", launcher_default("MAX_LEN")),
-                "memory.host_pool_mib=" + pool,
-                "memory.host_kv_mib=" + kv,
-                "engine.max_num_batched_tokens=" + arg("--max-num-batched-tokens", launcher_default("CHUNK")),
-                "engine.ngram_placement=\"" + arg("--ngram-placement", launcher_default("NGRAM")) + "\"",
-                "engine.kv_cache_dtype=\"" + arg("--kv-cache-dtype", launcher_default("KV_DTYPE")) + "\"",
-                "engine.rope_scaling=\"" + launcher_default("ROPE") + "\"",
-                "engine.port=" + port,
-                "engine.checkpoint_interval=" + arg("--checkpoint-interval", launcher_default("CKPT_INTERVAL")),
-                "engine.num_speculative_tokens=" +
-                    arg("--num-speculative-tokens", launcher_default("NUM_SPEC")),
-                "handoff.shm=\"" + launcher_default("SHM") + "\"",
-                "handoff.histogram_period_s=" + launcher_default("RECORD_PERIOD"),
-                "engine.prefix_resume=\"" + launcher_default("PREFIX_RESUME") + "\""};
-            // what the launch derives reaches the config the same way; a pool or tier the layout pins is the
-            // config's own
-            if (!args.contains("--host-pool-mib"))
-                derived.push_back("memory.host_pool_mib=" + derived_pool);
-            if (!args.contains("--host-kv-mib"))
-                derived.push_back("memory.host_kv_mib=" + derived_kv);
-        } else { // plan_check_describe_engine_only
-            launch = {sel, "engine.port=" + port};
-            const std::map<std::string, std::string> key = {
-                {"--max-model-len", "service.max_context"},
-                {"--max-num-seqs", "service.max_sessions"},
-                {"--max-num-batched-tokens", "engine.max_num_batched_tokens"},
-                {"--kv-cache-dtype", "engine.kv_cache_dtype"},
-                {"--num-speculative-tokens", "engine.num_speculative_tokens"},
-                {"--checkpoint-interval", "engine.checkpoint_interval"}};
-            for (const auto& [flag, value] : args) {
-                if (flag == "--host-pool-mib" || flag == "--host-kv-mib" || flag == "--ngram-placement")
-                    continue;
-                if (!key.contains(flag)) {
-                    std::string message = "layout ";
-                    message += name;
-                    message += ": server-arg ";
-                    message += flag;
-                    message += " is not a manifest setting";
-                    throw std::runtime_error(message);
-                }
-                const bool text = flag == "--kv-cache-dtype";
-                launch.push_back(key.at(flag) + "=" + (text ? "\"" + value + "\"" : value));
-            }
-            launch.push_back("memory.host_pool_mib=" + arg("--host-pool-mib", eo_pool));
-            launch.push_back("memory.host_kv_mib=" + arg("--host-kv-mib", eo_kv));
-            launch.push_back("engine.ngram_placement=\"" + arg("--ngram-placement", eo_ngram) + "\"");
-        }
-        if (ranks > 1)
-            launch.push_back("tuning.p2p=\"off\"");
-        // the layout's own [settings] reach both sides through the resolver (the layout table, the config's
-        // tables)
-        Options layout_opts;
-        layout_opts.site = site;
-        layout_opts.layouts = {layouts_dir};
-        layout_opts.sets = launch;
-        const auto from_layout = sv::resolve(layout_opts, t.facts);
-        Options config;
-        config.site = site;
-        config.configs = {configs};
-        config.model_root = t.root / "model-root"; // the site's model wins over the config's
-        config.sets = derived;
-        const auto from_config = sv::resolve(config, t.facts);
-        if (from_layout.values != from_config.values) {
-            std::fprintf(stderr, "%s values differ: %s\n", name.c_str(),
-                         Json::diff(from_layout.values, from_config.values).dump().c_str());
-            assert(false);
-        }
-        // the same execution projection: both manifests (same instance, producer and profile) have the same
-        // spec (model, roles and cards, settings, resources, owner map, handoff, memory-plan requirements) and
-        // pass the reader
-        auto manifest = [&](const sv::Resolved& r) {
-            sv::ManifestInputs in;
-            in.resolved = r;
-            in.instance_id = "11111111-1111-4111-8111-111111111111";
-            in.producer_sha256 = std::string(64, 'a');
-            in.profile = "production";
-            in.s10.power_profile = "stock";
-            const auto built = sv::build_manifest(in);
-            assert(bc::serving::v2::read_manifest(built.text, name, bc::serving::v2::PlanUse::measuring).ok());
-            return built.document.at("spec");
-        };
-        const Json spec_layout = manifest(from_layout), spec_config = manifest(from_config);
-        if (spec_layout != spec_config) {
-            std::fprintf(stderr, "%s manifest spec differs: %s\n", name.c_str(),
-                         Json::diff(spec_layout, spec_config).dump().c_str());
-            assert(false);
-        }
-        // the config side really is the config: some value comes from its file
-        const std::string file =
-            "config " + fs::path(set.source.at(name).get<std::string>()).filename().string();
-        bool from_file = false;
-        for (auto p = from_config.provenance.begin(); p != from_config.provenance.end(); ++p)
-            if (p.value().value("source", std::string()).find(file) != std::string::npos)
-                from_file = true;
-        assert(from_file);
-        ++checked;
-    }
-    assert(checked == layouts.size() && checked >= 13);
 }
 
 /* RSC12: a config resolves exactly as the layout it replaces (every effective value; only the provenance names
@@ -2721,6 +2798,7 @@ struct CommandResult {
     int exit_code;
     std::string output;
 };
+std::string serve_test_executable = BC_SERVE_EXE;
 CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
     int fds[2];
     if (::pipe(fds) != 0)
@@ -2734,11 +2812,12 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
             ::_exit(127);
         ::close(fds[1]);
         std::vector<char*> argv;
-        argv.push_back(const_cast<char*>(BC_SERVE_EXE));
+        const char* binary = serve_test_executable.c_str();
+        argv.push_back(const_cast<char*>(binary));
         for (const auto& arg : arguments)
             argv.push_back(const_cast<char*>(arg.c_str()));
         argv.push_back(nullptr);
-        ::execv(BC_SERVE_EXE, argv.data());
+        ::execv(binary, argv.data());
         ::_exit(127);
     }
     ::close(fds[1]);
@@ -2837,9 +2916,8 @@ void config_files(Fixture& t) {
     bc::test::write_rad(model, 0, 0, 128, 128, {});
     const auto site = t.file("config-site.toml",
                              "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
-    // the layout as the launcher resolves it: its server-args become --set, and so do the launcher's own
-    // engine-only values (no host pool, no host KV tier, the n-gram table on disk, a TP engine with no P2P:
-    // plan-check.sh)
+    // Native RSC12 dense config: host pool/KV and ngram placement are explicit
+    // effective values, and a TP engine defaults to no peer-to-peer transfers.
     Options layout;
     layout.site = site;
     layout.sets = {"layout.name=\"qwen27b-tp3-int8\"",
@@ -3142,6 +3220,89 @@ void config_files(Fixture& t) {
     }
 }
 
+
+// Release layout: configs and heat live in an immutable prefix, while mutable
+// histogram telemetry is confined to this session's run directory.
+void installed_site_defaults(Fixture& t) {
+    namespace sv = bc::serving;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path prefix = t.root / "installed-release";
+    fs::create_directories(prefix / "configs");
+    fs::create_directories(prefix / "heat");
+    fs::copy_file(configs / "flashnext.toml", prefix / "configs/flashnext.toml");
+    // Reuse the valid synthetic RAD and route heat made by manifest_writer_step.
+    // This tests the real S10 writer without requiring a card or model download.
+    fs::copy_file(t.root / "writer.hot-first", prefix / "heat/flashnext-mixed.hot-first");
+    write(prefix / "heat/perf51.rank0.hot-first", "1\n");
+    const auto site = t.file("installed-site.toml",
+        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
+        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
+        "\"\n[layout]\nname = \"flashnext-4gpu\"\n"
+        // One combine thread: the native writer below discovers the real CPU count, and a small CI runner
+        // has fewer CPUs than the layout's default.
+        "[helper]\ncombine_threads = 1\n");
+    Options opts;
+    opts.site = site;
+    opts.configs = {prefix / "configs"};
+    opts.model_root = t.root;
+    opts.run_dir = t.root / "sessions/production";
+    assert(opts.sets.empty());  // production site, no --set flags
+    const auto r = sv::resolve(opts, t.facts);
+    const auto heat = (prefix / "heat/flashnext-mixed.hot-first").string();
+    const auto histogram = (opts.run_dir / "heat.live").string();
+    assert(r.values.at("handoff").at("heat") == heat);
+    assert(r.values.at("handoff").at("histogram") == histogram);
+    assert(r.values.at("handoff").at("histogram_period_s") == 1);
+    sv::ManifestInputs in;
+    in.resolved = r;
+    in.instance_id = "11111111-1111-4111-8111-111111111111";
+    in.producer_sha256 = std::string(64, 'a');
+    in.profile = "production";
+    in.s10.power_profile = "stock";
+    in.s10.now_unix_s = 1800000000;
+    in.s10.calibration_records = Json::array();
+    const auto built = sv::build_manifest(in);
+    const auto& handoff = built.document.at("spec").at("handoff");
+    assert(handoff.at("placement").at("heat_file") == heat);
+    assert(handoff.at("telemetry").at("histogram_file") == histogram);
+    assert(handoff.at("telemetry").at("period_s") == 1);
+    assert(r.provenance.at("handoff.histogram").at("origin") == "derived");
+    // The session owner passes --run-dir to this actual separate native
+    // manifest writer. No --set flags, no checkout path or hardware needed.
+    const fs::path writer_output = t.root / "installed-unmeasured-manifest.json";
+    const auto result = run_bc_serve({
+        "--write-manifest", writer_output.string(), "--unmeasured",
+        "--power-profile", "stock", "--sys-root", t.root.string(),
+        "--site", site.string(), "--configs", (prefix / "configs").string(),
+        "--model-root", t.root.string(), "--run-dir", opts.run_dir.string()
+    });
+    if (result.exit_code != 0)
+        throw std::runtime_error("installed native manifest writer: " + result.output);
+    const Json cli_doc = Json::parse(std::ifstream(writer_output));
+    assert(cli_doc.at("spec").at("handoff").at("placement").at("heat_file") == heat);
+    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("histogram_file") == histogram);
+    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("period_s") == 1);
+
+    // Every layer can override the bundled seed; explicit off must stay off.
+    opts.site = t.file("installed-site-override.toml",
+        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
+        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
+        "\"\n[layout]\nname = \"flashnext-4gpu\"\n[handoff]\nheat = \"/site/seed\"\nhistogram = \"off\"\nhistogram_period_s = 7\n");
+    const auto overridden = sv::resolve(opts, t.facts);
+    assert(overridden.values.at("handoff").at("heat") == "/site/seed");
+    assert(overridden.values.at("handoff").at("histogram") == "off");
+    assert(overridden.values.at("handoff").at("histogram_period_s") == 7);
+    opts.sets.push_back("handoff.histogram=\"/cli/histogram\"");
+    assert(sv::resolve(opts, t.facts).values.at("handoff").at("histogram") == "/cli/histogram");
+
+    // The run-directory default is a session-owner choice, not a fabricated
+    // default in general resolver/explain calls that lack a run directory.
+    opts.site = site;
+    opts.sets.pop_back();
+    opts.run_dir.clear();
+    fail(opts, t.facts, "missing required key: handoff.histogram");
+}
+
 #ifndef BC_FAKE_ENGINE
 #error "BC_FAKE_ENGINE must name the fake engine binary (session_fake_engine.cpp)"
 #endif
@@ -3271,6 +3432,45 @@ void session_engine_plan(Fixture& t) {
         assert(calls.size() == 1 && has(calls[0], "--configs", (configs / "qwen27b.toml").string()) &&
                !flag(calls[0], "--layouts"));
     }
+    { // A calibration run files its record under the key of the manifest it served with: the one production looks
+      // up. The host pool is re-measured between the two writes (1033 -> 2247 MiB on flashnext-4gpu), so a key that
+      // depended on it, or on the engine args, could never match; the written manifest's own scope is the key.
+        namespace sv = bc::serving;
+        using Json = nlohmann::json;
+        auto scope_manifest = [](int pool_mib) {
+            return Json{{"facts", {{"gpus", Json::array({{{"bdf", "0000:03:00.0"}, {"arch", "gfx1201"},
+                                                            {"vram", {{"total_mib", 32624}}}}})}}},
+                        {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}}}},
+                                       {"helpers", Json::array()}, {"helper_common", Json::object()}}},
+                        {"handoff", {{"transport", {{"max_rows", 64}, {"small_rows", 4}, {"gemv_large_rows", 16},
+                                                    {"skip_owned", true}}},
+                                     {"kernels", {{"moe_down_tile", 8}}}, {"telemetry", {{"period_s", 5}}}}},
+                        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'm')}}}}},
+                        {"intent", {{"layout", "flashnext-4gpu"}, {"service", {{"objective", "balanced"}}},
+                                    {"power", {{"profile", "stock"}}}}},
+                        {"resources", {{"host", {{"pool_mib", pool_mib}}}}}};
+        };
+        ss::EnginePlanInputs cal = in;
+        cal.calibration_run = true;
+        cal.live_policy_file = t.file("session-cal-policy.json", "{\"accept_unwatermarked_heat\": true}\n");
+        cal.calibration_prompts_a = t.file("session-cal-a.txt", "prompt a\n");
+        cal.calibration_prompts_b = t.file("session-cal-b.txt", "prompt b\n");
+        cal.calibration_store = t.file("session-cal-store.toml", "");
+        std::string keys[2];
+        int i = 0;
+        for (const int pool : {1033, 2247}) {
+            const Json written = {{"spec", scope_manifest(pool)}};
+            cal.runner = [&](const std::vector<std::string>& argv) {
+                ss::ManifestRun r;
+                std::ofstream(argv[2]) << written.dump();
+                return r;
+            };
+            const ss::EngineStart cs = ss::plan_engine_only(cal, run, wait);
+            keys[i++] = cs.summary.at("calibration_store_key").get<std::string>();
+            assert(keys[i - 1] == sv::policy_calibration_key(sv::policy_calibration_inputs(written.at("spec"))));
+        }
+        assert(keys[0] == keys[1]); // a re-measured host pool does not move the record
+    }
     // a failed manifest write and a layout (server-args are the bash launcher's) are refused before any engine
     // starts
     calls.clear();
@@ -3396,6 +3596,52 @@ void session_engine_plan(Fixture& t) {
             "effect_min_quiet_windows":3,"effect_revert_ttl_ns":120000000000,
             "margin_ppm":100000,"half_life_observations_milli":4000,"effect_noise_multiplier_milli":2000,
             "protected_layers":[0,1]})json");
+        // RED: a strict observation policy cannot consume raw file heat.
+        bool strict_writer_called = false;
+        ss::EnginePlanInputs strict_heat = valid;
+        strict_heat.runner = [&](const std::vector<std::string>&) {
+            strict_writer_called = true;
+            return ss::ManifestRun{2, "", "unexpected writer for strict file heat"};
+        };
+        bool refused_strict_heat = false;
+        try {
+            (void)ss::plan_engine_only(strict_heat, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string why = e.what();
+            refused_strict_heat = why.find("accept_unwatermarked_heat") != std::string::npos &&
+                                  why.find("histogram") != std::string::npos;
+        }
+        if (!refused_strict_heat || strict_writer_called)
+            throw std::runtime_error("calibration accepted non-watermarked histogram with a strict policy");
+
+        std::ifstream policy_input(valid.live_policy_file);
+        std::string opted_in_policy{std::istreambuf_iterator<char>(policy_input),
+                                    std::istreambuf_iterator<char>()};
+        const std::string strict_setting = "\"accept_unwatermarked_heat\":false";
+        const auto setting_pos = opted_in_policy.find(strict_setting);
+        if (setting_pos == std::string::npos)
+            throw std::runtime_error("calibration policy fixture lost strict file heat setting");
+        opted_in_policy.replace(setting_pos, strict_setting.size(), "\"accept_unwatermarked_heat\":true");
+        valid.live_policy_file = t.file("session-calibration-opted-in-policy.json", opted_in_policy);
+
+        bool missing_store_writer = false;
+        ss::EnginePlanInputs missing_store = valid;
+        missing_store.calibration_store = t.root / "new-calibration-store.toml";
+        missing_store.runner = [&](const std::vector<std::string>&) {
+            missing_store_writer = true;
+            return ss::ManifestRun{2, "", "unexpected writer for missing store"};
+        };
+        bool refused_store = false;
+        try {
+            (void)ss::plan_engine_only(missing_store, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string why = e.what();
+            refused_store = why.find("calibration store") != std::string::npos &&
+                            why.find("empty") != std::string::npos &&
+                            why.find(missing_store.calibration_store.string()) != std::string::npos;
+        }
+        if (!refused_store || missing_store_writer)
+            throw std::runtime_error("calibration store preflight did not explain missing store");
         const fs::path calibration_run = t.root / "session-calibration-real-writer-owner";
         bool submitted_to_writer = false;
         fs::path written_calibration;
@@ -3447,6 +3693,29 @@ void session_engine_plan(Fixture& t) {
         refused = std::string(e.what()).find("measuring start failed") != std::string::npos;
     }
     assert(refused);
+    { // Real named resolver and process owner, fake measuring engine OS boundary.
+        ss::EnginePlanInputs ram = in;
+        ram.engine_binary = BC_FAKE_ENGINE;
+        ram.runner = [&](const std::vector<std::string>& argv) {
+            if (flag(argv, "--unmeasured")) {
+                std::ofstream(argv[2])
+                    << R"json({"measure_error":"E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare"})json";
+                return ss::ManifestRun{};
+            }
+            return ss::ManifestRun{10, "", "cache miss"};
+        };
+        bool host_ram_refused = false;
+        try {
+            (void)ss::plan_engine_only(ram, run, wait);
+        } catch (const ss::PlanFailed& e) {
+            const std::string detail = e.what();
+            host_ram_refused = detail.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
+                               detail.find("host RAM") != std::string::npos &&
+                               detail.find("47.69 GiB") != std::string::npos &&
+                               detail.find("82.00 GiB") != std::string::npos;
+        }
+        assert(host_ram_refused);
+    }
     { // RSC04 lab experiments use the real named resolver and writer call graph.
         ss::EnginePlanInputs lab = in;
         lab.named_config = "qwen27b-tp3-int8";
@@ -3681,6 +3950,171 @@ void session_owner_real_planner_admission(Fixture& t) {
     }
 }
 
+// End-to-end CPU-only planner boundary: real resolver and bc-serve writer,
+// fake engine/helper process boundary and BDF-specific sysfs fixtures.
+void helper_vram_owner_graph(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path home = t.root / "session-build" / "radiance_home";
+    // The normal lightweight RAD fixture omits name strings. The real
+    // resource ledger requires an actual bounded name table in its directory.
+    const fs::path model = t.root / "helper-vram-model.rad";
+    bc::test::write_rad(model, 4, 16, 128, 128, {});
+    {
+        std::fstream rad(model, std::ios::in | std::ios::out | std::ios::binary);
+        RadFileHeader header{};
+        rad.read(reinterpret_cast<char*>(&header), sizeof header);
+        header.str_off = header.file_bytes;
+        header.str_bytes = 7;
+        header.file_bytes += header.str_bytes;
+        rad.seekp(static_cast<std::streamoff>(header.str_off));
+        rad.write("weight", 7);
+        rad.seekp(0);
+        rad.write(reinterpret_cast<const char*>(&header), sizeof header);
+        assert(rad);
+    }
+    const fs::path site =
+        t.file("helper-vram-graph.toml",
+               "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() + "\"\n");
+    ss::EnginePlanInputs in;
+    in.options.site = site;
+    in.options.sys_root = t.root;
+    in.options.configs = {configs};
+    in.options.model_root = t.root;
+    in.options.sets = {"layout.name=\"flashnext-2xtx\"", "helper.combine_threads=1",
+                       "handoff.heat=\"" + (t.root / "writer.hot-first").string() + "\"",
+                       "handoff.histogram=\"" + (t.root / "vram-histogram").string() + "\""};
+    in.self = BC_SERVE_EXE;
+    in.engine_binary = BC_FAKE_ENGINE;
+    in.helper_binary = BC_FAKE_ENGINE;
+    int writers = 0;
+    std::vector<fs::path> measuring_histograms;
+    std::vector<std::vector<std::string>> serving_writer_args;
+    in.runner = [&](const std::vector<std::string>& args) -> ss::ManifestRun {
+        ++writers;
+        auto result = run_bc_serve({args.begin() + 1, args.end()});
+        const std::string file = fs::path(args.at(2)).filename().string();
+        if (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-measuring-", 0) != 0 &&
+            file.rfind("manifest-resources-", 0) != 0)
+            serving_writer_args.push_back(args);
+        if (result.exit_code == 0 && fs::is_regular_file(args.at(2))) {
+            if (file.rfind("manifest-measuring-", 0) == 0 ||
+                (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-resources-", 0) != 0)) {
+                const Json doc = Json::parse(std::ifstream(args.at(2)));
+                const fs::path prefix =
+                    doc.at("spec").at("handoff").at("telemetry").at("histogram_file").get<std::string>();
+                if (file.rfind("manifest-measuring-", 0) == 0)
+                    measuring_histograms.push_back(prefix);
+            }
+        }
+        return {result.exit_code, result.output, result.output};
+    };
+    in.helper_vram.read_used = [](const fs::path& path) -> uint64_t {
+        throw std::runtime_error("injected unreadable BDF-specific counter: " + path.string());
+    };
+    ss::Hooks hooks;
+    hooks.wait = [](std::chrono::milliseconds) { return true; };
+    bool blocked_baseline = false;
+    try {
+        (void)ss::plan_engine_only(in, t.root / "vram-graph-run", hooks);
+    } catch (const ss::PlanFailed& e) {
+        const std::string why = e.what();
+        blocked_baseline = why.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
+                           why.find("cannot read VRAM") != std::string::npos;
+        if (!blocked_baseline)
+            std::cerr << "helper graph: " << why << "\n";
+    }
+    if (!blocked_baseline || writers < 1)
+        throw std::runtime_error("helper graph did not reach the pre-start BDF baseline");
+
+    for (const std::string mode : {"immediate", "late", "never"}) {
+        ss::EnginePlanInputs active = in;
+        std::map<std::string, unsigned> samples;
+        active.helper_vram.read_used = [&](const fs::path& path) -> uint64_t {
+            std::ifstream used(path);
+            uint64_t bytes = 0;
+            if (!(used >> bytes))
+                throw std::runtime_error("missing fake BDF usage file");
+            const unsigned n = ++samples[path.string()];
+            // Three pre-start baseline observations; GPU usage lingers AFTER
+            // reaped fake helpers, then settles. No actual GPU is contacted.
+            if (n > 3 && (mode == "never" || (mode == "late" && n < 7)))
+                return bytes + uint64_t{256} * 1024 * 1024;
+            return bytes;
+        };
+        ss::Hooks live_hooks;
+        live_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        live_hooks.helper_stop_timeout = std::chrono::milliseconds(400);
+        const int before = writers;
+        std::string refusal;
+        const fs::path run_dir = t.root / ("vram-graph-" + mode);
+        fs::create_directories(run_dir);
+        try {
+            (void)ss::plan_engine_only(active, run_dir, live_hooks);
+        } catch (const ss::PlanFailed& e) {
+            refusal = e.what();
+        }
+        if (mode == "never") {
+            if (refusal.find("measuring helper VRAM not released") == std::string::npos ||
+                refusal.find("baseline=") == std::string::npos || writers - before != 3)
+                throw std::runtime_error("helper graph timeout: " + refusal +
+                                         " writers=" + std::to_string(writers - before));
+        } else if (writers - before < 4) {
+            std::ostringstream message;
+            message << "helper graph " << mode << " stopped before final writer: " << refusal
+                    << " writers=" << (writers - before);
+            throw std::runtime_error(message.str());
+        }
+    }
+    // Each measuring writer gets a private telemetry generation. A future
+    // engine that publishes during --plan-memory must never replace the
+    // serving engine's rank0 histogram at the operator's destination.
+    if (measuring_histograms.empty())
+        throw std::runtime_error("real measuring writer histogram fixture did not run");
+    for (const fs::path& path : measuring_histograms) {
+        if (path == t.root / "vram-histogram" || path.parent_path().parent_path() != t.root ||
+            path.parent_path().filename().string().rfind("vram-graph-", 0) != 0 ||
+            path.filename().string().rfind("histogram-measuring-", 0) != 0)
+            throw std::runtime_error("measuring histogram not isolated: " + path.string());
+    }
+    if (serving_writer_args.empty())
+        throw std::runtime_error("real serving writer was never invoked");
+    const std::string site_recording = "handoff.histogram=" + Json((t.root / "vram-histogram").string()).dump();
+    for (const auto& args : serving_writer_args) {
+        size_t histogram_overrides = 0;
+        for (size_t i = 0; i + 1 < args.size(); ++i)
+            if (args[i] == "--set" && args[i + 1].rfind("handoff.histogram=", 0) == 0) {
+                if (args[i + 1] != site_recording)
+                    throw std::runtime_error("private measuring prefix leaked to serving writer");
+                ++histogram_overrides;
+            }
+        if (histogram_overrides != 1)
+            throw std::runtime_error("serving writer lost the operator's recording destination");
+    }
+
+    // Exercise the real CPU publisher twice as future --plan-memory and serving
+    // producers would: neither generation may overwrite the other's files.
+    std::vector<uint32_t> counts(static_cast<size_t>(r3::moe_shm::kMaxLayers) * 16, 0);
+    counts[0] = 42;
+    const std::string serving_prefix = (t.root / "vram-histogram").string();
+    const std::string measurement_prefix = measuring_histograms.back().string();
+    const std::string nonce = "0123456789abcdef0123456789abcdef";
+    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
+        !r3::heat_publication::publish(serving_prefix, 0, 16, counts, nonce))
+        throw std::runtime_error("engine CPU histogram publication failed");
+    const ss::HistogramExpectation expected{
+        4, 16, std::chrono::system_clock::now() - std::chrono::seconds(3), {}, nonce};
+    const fs::path rank = serving_prefix + ".rank0";
+    if (ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
+                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
+        throw std::runtime_error("serving producer proof must qualify independently of measurement");
+    counts[0] += 1;
+    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
+        ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
+                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
+        throw std::runtime_error("later measuring publication affected the serving generation");
+}
+
 int main(int argc, char** argv) {
     bool write_golden = false;
     const char* dump_dir = nullptr;
@@ -3689,8 +4123,10 @@ int main(int argc, char** argv) {
             write_golden = true;
         } else if (std::string(argv[i]) == "--dump-manifests" && i + 1 < argc) {
             dump_dir = argv[++i];
+        } else if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
+            serve_test_executable = argv[++i];
         } else {
-            std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR]\n";
+            std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR] [--bc-serve-exe PATH]\n";
             return 2;
         }
     }
@@ -3715,9 +4151,11 @@ int main(int argc, char** argv) {
         tp_engine_with_two_helpers_layout(t);
         mixed_arch_engine_layout(t);
         config_files(t);
+        installed_site_defaults(t);
         native_explain_cli(t);
-        converted_layout_parity(t);
+        native_static_resolution_identity(t);
         session_engine_plan(t);
+        helper_vram_owner_graph(t);
         session_owner_real_planner_admission(t);
         derived_budget_is_the_workers(t);
         sdk_environment_step(t);

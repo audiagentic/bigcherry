@@ -2,7 +2,7 @@
 id: RSC12
 order: 0
 plan: run-serving-configuration
-state: pending
+state: in_progress
 created-at: '2026-11-13T22:56:54.680645+00:00'
 breadth: ''
 skill: intermediate
@@ -195,6 +195,12 @@ Target-version coordination (RV4225, November 18): RUM04 owns migration to upstr
 
 Warm-start implementation packet: docs/reviews/astra-performance-2026-11-18/IMPLEMENTATION-HANDOFF.md. Separate stable selected topology scope from fresh room checks. Keep streaming hashing and operation-scoped reuse in separate slices, with a generation mutation refusal test. Review the stable projection and digest version before changing the reader/writer.
 
+
+
+## Status 2026-11-19
+
+Steps 1-5 are in production: `engines/radiance/configs/{flashnext,qwen27b}.toml` with named variants, strict loader, `bc-serve explain`, and stored manifests (a start of an unchanged config replays the stored manifest; policy-on replay fixed in #1177). Step 6 (retire `server-args` and `[layout.NAME.settings]`, the layout files) depends on RSC04's leftovers. Open review RV4230 (reuse the verified Radiance bundle identity within a named start) stays open. Note for operators: the replay key hashes every operator `--set`, so any differing `--set` plans afresh instead of replaying.
+
 ## Change Log
 
 - 2026-11-13T22:56:54.680645+00:00 (created-by): Created by agent
@@ -206,3 +212,5 @@ Warm-start implementation packet: docs/reviews/astra-performance-2026-11-18/IMPL
 - 2026-11-18T01:41:05.379942+00:00 (updated-by): Updated: section:notes
 - RV4230
 - 2026-11-18T03:40:48.591484+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:37:15.960699+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:37:55.296359+00:00 (state-transition): State: pending → in_progress

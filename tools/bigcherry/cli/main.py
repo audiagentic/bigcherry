@@ -18,7 +18,6 @@ from .. import __version__
 from ..patch import catalog as patch_catalog
 from ..source import sources
 from ..release import pin as _release_pin
-from ..release.install import cmd_release_install
 from ..release import ci_bundle as _ci_bundle
 from ..release.patch_promote import cmd_patch_promote
 from ..tuning.engine_bench import cmd_engine_bench
@@ -46,6 +45,7 @@ from .patch import (
     cmd_patch_verify_evidence,
     cmd_patches,
 )
+from .calibration import cmd_calibration
 from .accept import cmd_accept
 from .profiling import cmd_profile_campaign
 from .runtime import cmd_reference_ladder, cmd_runtime_matrix
@@ -523,6 +523,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="qualify diagnostics on mechanics and activation only, without production admission",
     )
     patch_promote_cmd.add_argument(
+        "--diagnostic-source",
+        metavar="SOURCE",
+        help="with --diagnostic: the diagnostic source a patch joins when it is only in an experiment today",
+    )
+    patch_promote_cmd.add_argument(
         "--release",
         action="store_true",
         help="finish the release-please release when its PR exists; otherwise report pending",
@@ -700,6 +705,8 @@ def build_parser() -> argparse.ArgumentParser:
 
     from . import workload
     workload.register(sub)
+    from . import results as results_cli
+    results_cli.register(sub)
 
     sources.register(sub)
 
@@ -899,16 +906,6 @@ def build_parser() -> argparse.ArgumentParser:
         "once before that phase, and with no terminal the command stops before tagging, finished phases recorded",
     )
     pin_release_cmd.set_defaults(func=cmd_pin_release)
-
-    release_install_cmd = sub.add_parser(
-        "release-install",
-        help="verify and install a Radiance runtime bundle from a release tag in a detached worktree",
-    )
-    release_install_cmd.add_argument(
-        "tag", help="bc-radiance-* release tag or latest verified bundle release"
-    )
-    release_install_cmd.add_argument("--json", action="store_true", help=argparse.SUPPRESS)
-    release_install_cmd.set_defaults(func=cmd_release_install)
 
     _ci_bundle.add_parser(sub)
 
@@ -1348,7 +1345,21 @@ def build_parser() -> argparse.ArgumentParser:
     )
     generate.set_defaults(func=cmd_generate)
 
-    status = sub.add_parser("status", help="show checkout and release status")
+    # MRC04: platform view of native calibration TOML or generic v1 JSON store.
+    calibration = sub.add_parser("calibration", help="inspect/validate calibration records (read-only)")
+    cal_sub = calibration.add_subparsers(dest="calibration_action", required=True)
+    for action in ("list", "show", "validate"):
+        command = cal_sub.add_parser(action, help=f"{action} calibration evidence")
+        command.add_argument("--store", type=Path, help="native TOML cache or v1 JSON store directory")
+        if action == "show":
+            command.add_argument("--kind", required=True)
+            command.add_argument("--key", required=True)
+        command.set_defaults(func=cmd_calibration)
+
+    status = sub.add_parser("status", help="show checkout, release and native feature states")
+    status.add_argument("--run-dir", type=Path, help="observed native owner run directory")
+    status.add_argument("--strict-production-features", action="store_true",
+                        help="nonzero exit when a production-required feature is inactive")
     status.set_defaults(func=cmd_status)
 
     experiment_cmd = sub.add_parser(
@@ -1661,10 +1672,6 @@ def build_parser() -> argparse.ArgumentParser:
     from .layout_cmds import register as _register_layout
 
     _register_layout(sub)
-
-    from .serve import register as _register_serve
-
-    _register_serve(sub)
 
     from .host_check import register as _register_host_check
 

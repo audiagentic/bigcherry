@@ -89,6 +89,8 @@ Prerequisite RUM01; can proceed alongside RUM02 after design approval. Keep depe
 
 Astra source review ASTRA-CONSOLIDATION.md: execute after RUM01 and before native-config slice RUM04. Build only the minimum rank eligibility required by the selected lane; keep SDK/fingerprint inputs. No strict JSON-to-YAML rewrite.
 
+RCS15–18 now own native libr3d replacement. A matched comparison build retains libr3 until native qualification; this does not change the initial bump's acceptance. See docs/reviews/radiance-native-libr3d/INTEGRATION.md.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -98,3 +100,4 @@ Astra source review ASTRA-CONSOLIDATION.md: execute after RUM01 and before nativ
 - 2026-11-18T02:19:44.169437+00:00 (updated-by): Updated: order=2, section:notes
 - 2026-11-18T02:22:32.511127+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:25:34.495094+00:00 (updated-by): Updated: section:notes
+- 2026-11-18T08:49:24.938096+00:00 (updated-by): Updated: section:notes

@@ -18,6 +18,7 @@ from typing import Iterable
 from ..core import engines
 from ..patch import evidence as patch_evidence
 from ..patch import profile_evidence
+from ..patch.registry import is_reserved_part
 from . import notes as release_notes
 from . import pin_release
 
@@ -286,7 +287,7 @@ def _refresh_generated_docs(root: Path, engine: str) -> list[Path]:
     """Regenerate what a promotion changes in the docs: the enhancement catalogs, and the validated-patch count in
     the root README (both checked by tools/tests/test_docs_catalog.py in CI)."""
     _check_command(root, [sys.executable, "tools/docs/generate_engine_enhancement_summaries.py"], "enhancement catalogs")
-    patches = [p for p in (root / "engines" / engine / "patches").glob("*/patch.toml") if not p.parent.name.startswith("_")]
+    patches = [p for p in (root / "engines" / engine / "patches").glob("*/patch.toml") if not is_reserved_part(p.parent.name)]
     validated = sum(tomllib.loads(p.read_text(encoding="utf-8"))["state"] == "validated" for p in patches)
     readme = root / "README.md"
     text = readme.read_text(encoding="utf-8")
@@ -649,8 +650,24 @@ def _preflight(root: Path, layout: engines.EngineLayout, infos: tuple[PatchInfo,
         )
 
 
+def _remove_from_experiments(text: str, experiments: dict, patch_id: str, recipes: Path) -> str:
+    """An experiment holds only unpromoted patches: drop a promoted one, and the experiment when that empties it."""
+    for name, data in experiments.items():
+        if patch_id not in data.get("patches", ()):
+            continue
+        remaining = tuple(p for p in data["patches"] if p != patch_id)
+        if remaining:
+            text = _remove_section_patches(text, f"experiment.{name}", data["patches"], (patch_id,), recipes)
+        else:
+            text, count = re.subn(
+                rf'(?m)^\[experiment\.{re.escape(name)}\]\npatches = \[[^\]]*\]\n\n?', "", text, count=1)
+            if count != 1:
+                raise PatchPromoteError(f"{recipes}: cannot remove the emptied experiment {name!r}")
+    return text
+
+
 def _update_diagnostic_recipes(root: Path, layout: engines.EngineLayout,
-                               patch_ids: tuple[str, ...]) -> Path:
+                               patch_ids: tuple[str, ...], *, source: str | None = None) -> Path:
     """Keep each patch set's exact required-state after diagnostic promotion.
 
     A set may still contain untested patches, so isolate promoted members in
@@ -668,7 +685,15 @@ def _update_diagnostic_recipes(root: Path, layout: engines.EngineLayout,
             if any(set_name in data["patch-sets"] for set_name in containing)
         ]
         if not owners:
-            raise PatchPromoteError(f"{patch_id}: must already belong to a diagnostic source")
+            # A patch that is only in an experiment joins the diagnostic source the caller names.
+            if source is None:
+                raise PatchPromoteError(
+                    f"{patch_id}: not in a diagnostic source; name one with --diagnostic-source "
+                    f"({', '.join(n for n, c in sources.items() if c.get('class') == 'diagnostic')})")
+            if sources.get(source, {}).get("class") != "diagnostic":
+                raise PatchPromoteError(f"{patch_id}: {source!r} is not a declared diagnostic source")
+            owners = [source]
+        text = _remove_from_experiments(text, original.get("experiment", {}), patch_id, layout.recipes)
         for owner in owners:
             if sources[owner].get("class") != "diagnostic":
                 raise PatchPromoteError(f"{patch_id}: non-diagnostic source {owner!r} selects it")
@@ -811,6 +836,7 @@ def promote(
     profile_only: bool = False,
     release: bool = False,
     diagnostic: bool = False,
+    diagnostic_source: str | None = None,
 ) -> PromotionResult:
     root = root.resolve()
     layout = _layout(root, engine)
@@ -867,16 +893,21 @@ def promote(
             if default_on:
                 changed.extend(_promote_default_on(info, evidence))
             changed.append(profile_evidence.write(info.root, _profile_evidence(worktree, layout, info, evidence, diagnostic=diagnostic)))
-        _preflight(worktree, layout, work_infos, diagnostic=diagnostic)
+        if not diagnostic:
+            _preflight(worktree, layout, work_infos, diagnostic=diagnostic)
         for info in work_infos:
             changed.extend(_set_state(info, target_state="diagnostic" if diagnostic else "validated"))
             changed.append(_write_promotion_record(info, evidence, diagnostic=diagnostic))
             if not diagnostic:
                 changed.append(_write_release_evidence(worktree, info, evidence))
         changed.append(
-            _update_diagnostic_recipes(worktree, layout, patch_ids)
+            _update_diagnostic_recipes(worktree, layout, patch_ids, source=diagnostic_source)
             if diagnostic else _update_recipes(worktree, layout, patch_ids)
         )
+        if diagnostic:
+            # A diagnostic source admits only diagnostic patches, so the repository lint, the rebase check and the gates
+            # judge the promoted state: run them after the change is applied.
+            _preflight(worktree, layout, work_infos, diagnostic=True)
         changed.extend(_refresh_generated_docs(worktree, layout.name))
         _run_checks(worktree, layout, work_infos, diagnostic=diagnostic)
     except Exception:
@@ -964,6 +995,7 @@ def cmd_patch_promote(args) -> int:
             profile_only=args.profile_only,
             release=args.release,
             diagnostic=args.diagnostic,
+            diagnostic_source=args.diagnostic_source,
         )
     except PatchPromoteError as exc:
         print(f"patch-promote: {exc}", file=sys.stderr)

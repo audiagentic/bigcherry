@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_063211_a-second-production-start-with_6210",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/stored_manifest_test.cpp",
+    "docs/reference/engines/radiance/LIVE_PLACEMENT.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A stored production manifest with the live placement policy on was refused on replay (BC_CFG_PLAN_MISMATCH: stored semantic execution projection differs from the current config/variants), so a second policy-on start of an unchanged config could never reuse the first's manifest. The only differing projection field was handoff.placement.live_policy: the stored production manifest carries the policy the start derived (S10, from the calibration store and the measured plan) while the replay's current draft is unmeasured and derives none. The derived policy of a production manifest is now outside the execution projection (the replay key already binds the calibration store's file identity); a lab manifest's explicit --live-policy stays compared and every other configuration difference still refuses.",
+  "timestamp-utc": "2026-11-19T06:32:11.048674Z",
+  "user-summary-candidate": "A second production start with the live placement policy on now replays the first start's stored manifest."
+}

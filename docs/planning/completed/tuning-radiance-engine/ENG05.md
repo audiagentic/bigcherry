@@ -1,0 +1,73 @@
+---
+id: ENG05
+order: 0
+plan: tuning-radiance-engine
+state: completed
+created-at: '2026-11-19T07:30:54.932992+00:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P1
+work: M
+---
+
+# Flash-Next 4-GPU decode: recover the ~3-4% step-time loss since v1.17 and raise decode tok/s
+
+## Description
+
+Flash-Next on flashnext-4gpu (R9700 engine, 2x XTX head helpers, RX 6900 XT tail) decodes at v1.17.0 tok/s only because draft acceptance happens to be higher: engine step time is ~3-4% slower (1 stream 25.9 vs 24.99 ms/step, 6 streams 48.5 vs 47.04 ms/step; 2026-11-19, policy on, docs/evidence/2026-11-19-flashnext-4gpu-regression). Same-session, policy off: release bc-radiance-1170.14.0 (Nov 9) 25.3 ms/step vs main 25.9, so ~2% arrived after Nov 9. Decode tok/s = (1 + depth x acceptance) / step time, so step time and MTP depth/acceptance are the two levers. Owner direction 2026-11-19: plan it; prefill and TTFT are at or above v1.17 with the live policy on and must not regress.
+
+## Steps
+
+1. Attribute the post-Nov 9 step-time loss (no model first): tools/lab/radiance/kbench_ab.py on the decode rows (MoE gate/up/down GEMV rows at decode row counts, attention decode, combine) between the installed release bc-radiance-1170.14.0's build (its install.json build_dir) and main; then a per-stage decode-step profile on each build (attention, routing, hand-off wait, combine, MTP verify). Suspects: v26 topology cutover #1014 (mailbox/combine per routed layer), GEMV launch-sized LDS dispatch #946. Fix or re-tune the stage that grew; one change per PR, ABBA under the gpu lease.
+2. MTP depth sweep: num_speculative_tokens 2/3/4 at 1, 6 and 8 streams and at 256K context, several --seed prompts per arm (acceptance follows the text; report ms/step and tok/s separately). If the best depth differs by load, assess a load-dependent depth (engine support first; no hand-picked thresholds: derive from measured acceptance and step cost).
+3. Decode-targeted placement: test whether keeping the hottest decode experts on the R9700 (spare VRAM; today the helpers own all 25,078) cuts the per-layer hand-off wait; heat recorded from a decode workload, budgets derived (RAD49), compare with the live policy on.
+4. Power profile for decode: stock vs the host's tuned XTX profile (needs its PWR rule file); decode is latency/memory bound.
+5. Host kernel (owner window only): stock vs 7.0.13-gfxoff A/B for decode step time (GFX12 GFXOFF wake latency on the R9700 between steps); BHK01 step 7.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+Every arm: tools/lab/radiance/flashnext-parity.sh measure with the policy on (FLASHNEXT_PARITY_WARMUP_S as used for the comparison), at least 2 launches, compare against docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json and the current-main baseline; decode1/decode6/sess8/long8 ms_per_step and tok/s reported separately from prefill/TTFT; kbench rows per build for step 1.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+Decode ms/step at 1 and 6 streams within the v1.17.0 baseline allowance (or better), or each remaining gap attributed to a named change with its trade-off; any depth or placement change shows tok/s gain over >= 2 launches with no prefill/TTFT regression against the baseline.
+
+## Notes
+
+2026-11-20 (AEDT): helper combine thread knee measured, docs/evidence/2026-11-20-eng05-combine-threads (PR #1206). flashnext-4gpu, helper.combine_threads 2/4/8/12/16, two launches each (8 repeated for drift), placement policy off in every arm (the calibration key hashes the thread count). The helper's own combine stage costs about 920 us a step at 2 threads, 700 at 4, 580 at 8, 591 at 12 and 670-750 at 16, so the knee is 8. Decode step time does not move with it: 1 stream 25.74-25.87 ms in all ten launches, 6 streams and 8 sessions within +-1.2 ms with no trend. The CPU combine is therefore off the step's critical path and is not part of the v1.17 step-time gap; suspect 1 (GEMV capability cache) was ruled out earlier, suspect 2 is the v26 mailbox hand-off (branch agent/eng05-mailbox-trace). calibration.combine_threads.max=8 is now a measured seed and helper.combine_threads resolves as min(8, affinity-set CPUs).
+
+2026-11-20 (AEDT): step 2 MTP depth sweep, docs/evidence/2026-11-20-eng05-mtp-depth. flashnext-4gpu, num_speculative_tokens 2/3/4, two launches each (order 3 2 4 4 2 3), policy off (the calibration key hashes the depth), 3 prompt seeds at 1 and 6 streams, sess8, 256K. Aggregate tok/s, depth 2/3/4: 1 stream 91.6/107.2/110.6; 6 streams 225.9/233.2/230.7; 8 sessions 98.9/108.5/103.6; 256K 40.7/42.4/46.5. Depth 2 loses everywhere. Depth 4 is +3.1% at 1 stream (consistent over seeds and launches) and +9.7% at 256K but ties or loses from six streams up (step 54.8 vs 49.0 ms at 6 streams), so the best depth differs by load. The engine already has --draft-window adaptive (depth follows measured acceptance and step cost, no hand-picked thresholds); the serving layer has no key for it (draft_window is in the manifest contract but unset by the resolver, the writer and the engine arguments). Next slice: engine.draft_window (fixed default), then adaptive at ceilings 4 and 5 against fixed 3 and 4 on the same loads.
+
+2026-11-20 (AEDT) close-out: adaptive draft window measured (same evidence page, addendum). tuning.draft_window is already a resolver key; adaptive at ceiling 4 equals fixed 4 (same step time and acceptance at 1 stream, 6 streams and 256K), at ceiling 5 it is worse everywhere, so adaptive is closed. Fixed depth 4 is the one lever left: +4.5% at one stream, +9.5% at 256K, tie at 6 streams, policy off; it needs a depth-4 policy calibration record before it can be a default, moved to ENG08. Step-time gap attribution at close: the CPU combine is not part of it (knee 8, step time flat), suspect 1 (GEMV capability cache) ruled out in ABBA, suspect 2 (v26 mailbox) costs an absolute 2.75 ms (10.6%) a step by engine-clock stamps with no dominant stage and is parked by the lead because decode tok/s already equals v1.17; the stamps are the baseline if it is reopened.
+
+
+## Change Log
+
+- 2026-11-19T07:30:54.932992+00:00 (created-by): Created by agent
+- 2026-11-19T07:31:25.516109+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-19T07:34:30.174287+00:00 (updated-by): Updated: section:steps
+- 2026-11-19T19:16:17.344315+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T20:58:34.971866+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T21:44:59.641920+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T21:45:08.844101+00:00 (state-transition): State: pending → completed

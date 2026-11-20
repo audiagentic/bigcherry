@@ -162,6 +162,11 @@ int main(int argc, char** argv) {
     }
     const std::string plan = arg_after(argc, argv, "--plan-memory");
     if (!plan.empty()) {
+        if (m.contains("measure_error")) {
+            std::printf("%s\n", m.at("measure_error").get<std::string>().c_str());
+            std::fflush(stdout);
+            return 42;
+        }
         std::ofstream(plan) << "{\"plan\": \"measured\"}\n";
         std::ofstream(arg_after(argc, argv, "--plan-memory-ranks")) << "[{\"rank\": 0}]\n";
         std::printf("I --plan-memory: wrote %s; engine start-up took %d MiB of MemAvailable; done\n", plan.c_str(),

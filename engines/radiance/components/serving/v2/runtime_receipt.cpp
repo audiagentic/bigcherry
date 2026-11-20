@@ -83,8 +83,19 @@ Result<Json> publish_runtime_receipt(
     return fail("control.active_epoch", "placement control active_epoch is required");
   if (control.active_digest == 0)
     return fail("control.active_digest", "placement control active_digest is required");
-  if (control.transaction_id == 0)
-    return fail("control.transaction_id", "placement control transaction_id is required");
+  // The worker numbers a transaction only when it begins one (worker_topology_v26.h begin()), so a freshly started
+  // engine's sealed placement has transaction 0 and an empty journal: a healthy "no transaction yet" state, the
+  // normal state of every production start until the live policy commits its first move. Only exactly that is
+  // accepted for 0: still active (no transaction under way), no recorded fault, and no journal record of either slot
+  // (a journal entry without a control transaction would be a record belonging to no placement).
+  const bool boot_placement = control.transaction_id == 0;
+  if (boot_placement) {
+    if (control.state != static_cast<uint32_t>(r3::moe_shm::PlacementState::ACTIVE))
+      return fail("control.transaction_id", "placement control has a transaction under way but transaction_id 0");
+    for (const auto& entry : journal.entry)
+      if (entry.transaction_id != 0 || entry.fault != 0 || entry.cleanup_fault != 0)
+        return fail("journal", "journal holds a record but placement control has no transaction");
+  }
   if (control.journal_index > 1)
     return fail("control.journal_index", "placement control journal_index must be 0 or 1");
 
@@ -102,7 +113,7 @@ Result<Json> publish_runtime_receipt(
   // Matching current journal (not the stale other slot).
   const uint32_t idx = control.journal_index;
   const auto& current = journal.entry[idx];
-  if (current.transaction_id == 0)
+  if (!boot_placement && current.transaction_id == 0)
     return fail("journal", "current journal record is missing");
   if (current.transaction_id != control.transaction_id)
     return fail("journal", "current journal transaction_id does not match control");

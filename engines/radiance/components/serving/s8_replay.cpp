@@ -1,6 +1,7 @@
 #include "s8_replay.h"
 
 #include "manifest_writer.h"
+#include "plan_cache.h"
 #include "sha256.h"
 #include "v2/s8_rules.h"
 #include "v2/strict_json.h"
@@ -170,7 +171,7 @@ v2::Status verify_stored_s8(const v2::Manifest& admitted, const Resolved& curren
     scope["helper_build_digest"] =
         admitted.spec.processes.helpers.empty() ? sha256_hex(Json::array().dump()) : file_sha256(helper);
     scope["layout_digest"] = sha256_hex(current_config.values.at("layout").dump());
-    scope["inventory_digest"] = sha256_hex(facts.at("gpus").dump());
+    scope["inventory_digest"] = gpu_inventory_digest(facts.at("gpus"));
     scope["owner_map_digest"] = admitted.spec.plan.owner_map.owner_map_sha256;
     scope["context_target_tokens"] = current_config.values.at("service").at("max_context");
     scope["retention_target_tokens"] = admitted.spec.plan.resource_inputs->retention_target_tokens;

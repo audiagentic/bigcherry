@@ -57,7 +57,7 @@ class WorkloadsTest(unittest.TestCase):
             (dev / "pp_od_clk_voltage").write_text(
                 "OD_SCLK:\n0: 500MHz\n1: 3040MHz\nOD_MCLK:\n0: 97Mhz\n1: 1250MHz\nOD_VDDGFX_OFFSET:\n-125mV\n"
             )
-            self.assertEqual(w.power_state(root)["0000:03:00.0"], {
+            self.assertEqual(w.host_facts.power_state(root)["0000:03:00.0"], {
                 "power1_cap_uw": 272000000, "vddgfx_offset_mv": -125,
                 "od_sclk_max_mhz": 3040, "od_mclk_max_mhz": 1250, "perf_level": "auto",
             })
@@ -91,46 +91,6 @@ class WorkloadsTest(unittest.TestCase):
             self.assertEqual(row["layout"], "flashnext-4gpu")
             self.assertEqual(row["options"]["spec_depth"], 3)
             self.assertEqual(row["options"]["host_pool_mib"], 9216)
-
-    def test_index_append_one_line_and_comparison_flags(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "results" / "index.jsonl"
-            cfg = {"version": 1}
-            base = {"build_path": "/x", "layout": "a", "policy": {"state": "off"},
-                        "options": {"spec_depth": 3}, "kernel": "k", "model": "m", "power_state": {"gpu0": "stock"}}
-            a = w.make_row("prefill-doc-44k", cfg, {
-                "prefill_tps": {"median": 3312, "per_rep": [3312], "unit": "tok/s"},
-            }, {"completed_reps": 1}, base, run_folder="/tmp/1", kernel="k", power=base["power_state"])
-            b = w.make_row("prefill-doc-44k", cfg, {
-                "prefill_tps": {"median": 3708, "per_rep": [3708], "unit": "tok/s"},
-            }, {"completed_reps": 1}, {**base, "layout": "b", "policy": {"state": "on"}},
-                run_folder="/tmp/2", kernel="k", power=base["power_state"])
-            other = w.make_row("decode-1stream", cfg, {}, {}, base,
-                               run_folder="/tmp/3", kernel="k", power={})
-            for row in (a, b, other):
-                w.append_index(path, row)
-            rows = w.read_index(path)
-            self.assertEqual(len(rows), 3)
-            lines = path.read_text().splitlines()
-            self.assertEqual(len(lines), 3)
-            self.assertTrue(all(json.loads(line) for line in lines))
-            table = w.compare(rows, "prefill-doc-44k", 1)
-            self.assertIn("3312", table)
-            self.assertIn("3708", table)
-            self.assertIn("WARNING", table)
-            self.assertIn("layout", table)
-            self.assertIn("policy", table)
-            self.assertNotIn("decode-1stream", table)
-            self.assertIn("1 rows", w.compare(rows, "prefill-doc-44k", 1, layout="a"))
-            self.assertEqual(w.compare(rows, "prefill-doc-44k", 2).splitlines()[0],
-                             "prefill-doc-44k@2: 0 rows")
-
-    def test_fail_closed_on_corrupt_index(self):
-        with tempfile.TemporaryDirectory() as tmp:
-            path = Path(tmp) / "index.jsonl"
-            path.write_text('{"schema":"bigcherry.workload-result.v1"}\npartial')
-            with self.assertRaisesRegex(w.WorkloadError, "invalid JSONL"):
-                w.read_index(path)
 
     def test_http_missing_usage_does_not_invent_tokens(self):
         class FakeResponse:

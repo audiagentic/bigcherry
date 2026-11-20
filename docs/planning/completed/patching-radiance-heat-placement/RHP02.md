@@ -1,0 +1,181 @@
+---
+id: RHP02
+order: 9
+plan: patching-radiance-heat-placement
+state: deprecated
+created-at: '2026-10-15T01:35:00+00:00'
+breadth: ''
+skill: advanced
+created-by: agent
+priority: P0
+work: L
+---
+
+# Single Radiance heat observation feed to libr3moe; remove duplicate route collection
+
+## Description
+
+Expose a **read-only, one-to-many** observation from Radiance's existing histogram consumption, not a parallel GPU-side aggregation. Feed both the current `HeatEngine` and a separate cross-GPU ownership *policy consumer* from the same source events. Remove production dependence on `R3_MOE_WORKER_HISTOGRAM`/`R3_MOE_WORKER_HEAT` only after matching coverage and ranking; avoid compatibility aliases.
+
+## Steps
+
+1. After RHP01, define a narrow versioned `abi/rad_moe_heat.h` **optional hook** in a new Radiance patch package (or extend rad0002 if consistent with ownership ABI): immutable {model-global layer/expert domain, rank, step/epoch, phase or step-kind, counts, count length, multiplicity, completeness/overrun markers}; document buffer lifetime (valid during callback only). No pointers or blocking across processes.
+2. Publish from the existing CPU `tiering_dispatch` completed-bank loop exactly once per credited histogram; do not dispatch callbacks from `rad_route_report`, alter router math, copy counts again from GPU, or wait for future samples. Keep the existing `HeatEngine::observe` order and `last_histogram_reports`.
+3. Make observation work if `HeatEngine::enabled()==false` (all resident or helper-owned units `Tier::Mapped`) without turning **placement** on; `--deterministic` suppresses adaptation but may permit explicit read-only diagnostics. Avoid observing twice if multiple ranks share equivalent global counts; define rank selection/aggregation and MTP protected-layer semantics.
+4. Keep callback constant-time and bounded: queue or accumulate small immutable host snapshots out of the inference dispatch loop; no filesystem I/O, sorting, mutex contention with helpers, RPC, CPU callback on GPU critical stream or extra copy. Document queue full/restart policy and coverage counters. Consumer may use the same score formula or phase-specific window, but must not fork the *collection path*.
+5. Wire `libr3moe` ownership policy to the shared observations, compare its (layer,expert) counts and ordering against current `R3_MOE_WORKER_HISTOGRAM` diagnostic on matched runs; test prefill/decode split and protected slots. Once parity is accepted, remove duplicated GPU allocations, route counting kernel and heat file env vars from production component/settings/tests/docs in one migration, with no deprecated aliases.
+
+## Detailed Solution & Technical Design
+
+`HeatEngine` is a policy over *movable local units*, not a universal GPU-owner model. Do not force it to treat remotely owned experts as locally resident or invent movable mapped units. The shared **input histogram** is the invariant; `libr3moe` may maintain a bounded CPU score/window for remote ownership and reuse upstream's decay/hysteresis algorithm rather than a duplicate device telemetry stack. Ensure `rad0002` map/owner hooks still refer to exact runtime slot IDs; protected experts are never remapped merely from container IDs.
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+New/extended package in `engines/radiance/patches/` touching upstream `abi/`, `core/engine.cpp` (and `ctx` only when required); `engines/radiance/components/libr3/worker/{moe_remote_hook.cpp,moe_remote_gpu.h,r3_moe_worker.cpp}`; `component.toml`, patch tests, module parity tests and docs.
+
+## Validation
+
+Card-free callback lifetime, version mismatch, no callback, disabled-static mode, double-credit, phase attribution, MTP multiplicity and partial coverage tests. Hardware shadow comparison against existing histogram with same consumed step set, including 32K prefill and two helpers; check no CPU critical-path stalls and unchanged KL/greedy outputs.
+
+## Effort & Risk
+
+High: long-prefill host run-ahead and remote-only mapped units can hide holes in the normal HeatEngine path. Keep a diagnostic comparison gate but no permanent second collector.
+
+## Standards
+
+- Source of truth: pinned standalone Radiance 1.3.0 `89cee7ce414486c717aa2085c99e1f522e4c0ea6`; BigCherry `engines/radiance/`. Engine edits MUST be packaged as `engines/radiance/patches/radNNNN_*/{patch.py,patch.toml,SUMMARY.md}` with code-line anchors (patcher strips comments), tests with pinned blobs; helper policy lives in `libr3moe`. Re-check patch IDs before allocation.
+- Follow `engines/radiance/recipes.toml` and `components/libr3/component.toml`; runtime profiles set ONLY non-defaults. Use existing BigCherry quality/ABBA/campaign/evidence facilities; no parallel scheduler, telemetry backend, loader, or compatibility alias. Disabled behaviour byte/quality/performance equivalent.
+- Related active work: `RAD02` (R9700 trunk + 2 XTX helpers), `RAD03` (GPU mailbox), `RAD06` (prefill MoE), `RAD09` (merge/reconcile helper and rad0002). Integration depends on verified `RAD09` baseline. Do not overwrite another agent's branch or modify a shared patch without merging latest main.
+
+## Acceptance Criteria
+
+- Exactly one authoritative GPU routing histogram producer and existing Radiance host bank transfer; both consumer policies see the same credited events.
+- Old diagnostic vs new feed agrees **exactly** on matched (rank,step,layer,expert) counters, including MTP weighting, with full explicit coverage report. No silent expert-ID remapping.
+- Default-off path unchanged; remote helper still reproduces established quality/speed baseline; no new serving GPU sync or duplicate GPU heat allocation in production.
+- Existing duplicated collection/storage variables removed when parity passes, no legacy path retained.
+
+## Notes
+
+Depends on RHP01 and merged/verified RAD09. Does not implement ownership migration; that is RHP05/06.
+
+STATUS 2026-11-01: recording is cheap and on by default (histogram in pinned host memory, #500; launcher --record-heat, #502), but the item's goal - one versioned observer feed shared by the engine HeatEngine and the helper ownership policy, retiring R3_MOE_WORKER_HISTOGRAM / _HEAT after parity - is not done. It is a stage 1 dependency of the live-placement roadmap: RHP04's stage 1 policy loop consumes coherent interval snapshots from this feed (the pinned-memory histogram is the interim source until parity).
+
+2026-11-20 (AEDT): deprecated. Only slice A (the inactive read-only credit observer ABI, patch rad0039_moe_heat_observer) was built; nothing registers it and the engine-side consumer (slice B) was never built, so it never had an activation or hardware result. The patch is abandoned and kept unchanged as evidence in engines/radiance/patches/archive/rad0039_moe_heat_observer (row in archive/ARCHIVE.md, with its host ABI test and package test under tests/). Reusing the idea means a new patch identity.
+
+
+## Staged plan (GPT analysis 2026-11-13)
+
+Decision: a new read-only managed engine observer package (provisional `rad0030_moe_heat_observer`; recheck IDs) rather than growing `rad0002_moe_remote_handoff`. It adds `abi/rad_moe_heat.h` and thin anchored calls at the existing histogram credit/drain path (`tiering_dispatch`, `xstats_drain`); a single engine-side CPU callback copies a borrowed, already-landed row into a bounded versioned CPU-only SPSC region inside the existing engine/helper segment; helper 0 alone consumes it off the inference thread through the existing `worker_policy_input.h`/`worker_heat.h` policy. Observation must work when `HeatEngine::enabled()` is false without turning placement on.
+
+Hazards: the current helper GPU counter fires only on remote-admitted mailbox publishes while the upstream histogram counts all routed passes, so the old cumulative file (no step/phase watermark) cannot prove per-pass parity; MTP banks coalesce same-step passes into one histogram with `reports` multiplicity; rank-0 mirroring is not a universal invariant (the live mover is TP1 only); bootstrap owner ranking reads the heat file (`experts.cpp:151-171,192-210`, `owner_map.cpp`) and must move to the resolved owner map. Compare only identical admitted-step windows; if parity cannot be shown, RHP02 is not complete.
+
+Slices (each its own PR):
+A. Observer ABI + engine credit seam, inactive: package, `abi/rad_moe_heat.h`, registration, issue-time phase metadata, thin hooks, current-pin fail-closed/idempotent tests, ABI stubs; no consumer. Needs nothing else: can start now.
+B. CPU transport + helper source, inactive: shared-region version/shape/offset checks, per-rank SPSC producer in `moe_remote_hook.cpp`, `CreditedEngineSource`, helper-0 decoder; adds to the shm protocol, so it lands after RCS14 (v26) to avoid a second protocol bump.
+C. Shadow parity, diagnostic only: same-run observer vs legacy comparator on matched step windows (rank, step, layer, expert, weights, coverage, watermarks), unchanged live-policy input. Needs RHP01 coverage accepted. Folds the RHP08 tail-route parity evidence. If it fails, stop here and leave the old contract.
+D. Atomic production cutover and deletion: helper 0 uses `CreditedEngineSource`; bootstrap from the resolved `spec.plan.owner_map`; delete `step_heat`/GPU cumulative collector, `heat_host` snapshot thread and file writer (`moe_mailbox_ops.hip:153-170,230-267,928-945`, `moe_remote_hook.{h,cpp}`), `HistogramFileSource` and file watermark/unwatermarked exception, `histogram_file`/`histogram_period_s`, typed manifest fields `telemetry.histogram_file`, `telemetry.period_s`, `placement.heat_file` and regenerated v2 code, tests, tools and docs. One PR, no alias. Keep Radiance's own `--record-heat/--record-period` (the authoritative source) for RHP01 and offline calibration.
+
+Validation card-free: patch/ABI/mutation tests on v1.17; fake-`Ctx` source oracle (bank wrap, sparse layers, gap DMA, same-step multiplicity 1/2/4, phase captured at issue, xstats-only/static/deterministic paths, exactly one callback per true `mark_credited`); two independent mappings for transport (late producer, full queue never blocks the engine and yields a numbered gap, schema/digest/rank mismatch, restart, stale row vs new owner-map epoch); policy oracle (new vs old source on a matched window, rejection of regressing counts, mismatched sums, stale/incomplete/duplicate rows regardless of a forged completeness flag); bootstrap/manifest migration tests. Hardware (leases per arm): RHP01 gate, then shadow on `flashnext-4gpu` with small then 32K prefill, decode 1 and 6 streams, mixed, real 64-row verification, greedy/KLD (`helper-kld.json`) and `helper-ab.json` reported with decode ms/step and prefill TTFT separately. Pass: zero unclassified gaps, >= 99% settled coverage, exact per-expert and weight equality on matched windows, one GPU producer, unchanged quality, no regression beyond A/B/A/B spread.
+
+## Implementation-grade notes (2026-10-15)
+
+### ABI: proposed, NOT implemented
+
+```cpp
+// abi/rad_moe_heat.h, versioned opt-in observer, no ownership mutations.
+typedef struct RadMoeHeatRowV1 {
+    uint32_t abi_version;       // 1; struct_size checked before every callback
+    uint32_t struct_size;
+    uint64_t engine_step;       // monotonically assigned by source engine
+    uint32_t rank, layer, n_expert, pass_reports;
+    uint32_t phase;             // 1 prefill, 2 decode, 3 mixed; provenance required
+    uint32_t flags;             // coverage / overflow / report-kind
+    const int32_t* counts;      // borrowed; only valid until callback returns
+} RadMoeHeatRowV1;
+typedef void (*RadMoeHeatObserverV1)(void*, const RadMoeHeatRowV1*);
+void rad_moe_heat_set_observer_v1(void* context, RadMoeHeatObserverV1 fn);
+```
+
+This is a design sketch; verify ABI and registry/layout conventions in pinned Radiance before choosing the header location. `count[e]` uses model-global expert `e`, not `slot_of_expert[e]` nor helper-local packed IDs. Distinguish *histogram report phase* from row count: a mixed batch may contain both prefill/decode tokens; if the existing row aggregates across both, mark `phase=mixed` rather than inventing a split. A true per-phase split is a separately measured API enhancement, not a guessed label. Same for speculative draft reports.
+
+### Registration / ownership / lifetime
+
+- Register the callback at engine/plugin initialization through the existing explicit `rad0002` ABI wiring; use fixed `abi_version/struct_size`, no implicit symbol lookup or default-on behavior.
+- The engine retains ownership of the histogram bank. Callback has **no right** to retain `counts` pointer after return.
+- Implement a fixed-capacity SPSC CPU ring per engine rank, or copy/accumulate bounded compact host data in a preallocated per-rank window. For each callback, O(n_expert) copying might be required; measure versus existing dense HeatEngine pass; avoid allocation and system calls.
+- Release/acquire publication from callback to CPU worker. Consumer thread may be behind and coalesce only **mathematically equivalent** reports; never reorder decayed-LFU updates or count the same MTP report twice. Queue overflow increments shared `lost_observation`, reduces confidence, and disables replacement when coverage insufficient.
+- Callback failures, unsupported ABI or helper absence leave Radiance heat/residency unchanged and suppress only new ownership planning. Do not call a C++ exception through C ABI.
+- `HeatEngine::enabled()==false`: RHP02 can drain route evidence independently of promotion; no dummy movable weights and no forced `HeatEngine::step()` calls. In deterministic mode read-only diagnostics may be enabled explicitly, but adaptation must remain off.
+
+### Parity fixture
+
+For every matched tuple `(rank,step,layer,model-global expert)`, compare source count and report multiplicity to the legacy `R3_MOE_WORKER_HISTOGRAM` diagnostic. If the old histogram is cumulative rather than step-scoped, compare exact sums over an identical known-complete window and report the difference in coverage. Count a route only once across mirrored TP ranks; don't erroneously halve partitioned tensors. Protected experts must appear in **routing evidence** even though never remote-eligible.
+
+### Patch-engine mechanics and placement
+
+Keep engine package separate from libr3 component modifications. Use exact code-line anchors in `patch.py` and `PIN_BLOBS` in `tools/tests/patch/test_radiance_patch_packages.py`; the patch matcher strips comments. If extending `rad0002`, do so in a single cohesive package after merging `RAD09`; otherwise choose next free `radNNNN`, never assume 0004 is unused. Component source builds only when new ABI header exists, with no legacy callback shim.
+
+### Gate
+
+Offline tests: ABI mismatch, null observer, early unregister, borrowed-pointer lifetime, no histogram after helper init, phase=mixed, MTP reports >1, dropped event and deterministic/all-VRAM. Hardware: parity across full 32K prefill, four-doc KL unchanged, no extra GPU-side counter or D2H copy and no blocking in critical path. Remove `R3_MOE_WORKER_HISTOGRAM` and `R3_MOE_WORKER_HEAT` only when full parity passes.
+
+## Revised 2026-10-31 (GPT review of the plan against radiance 1.14.0 and RAD23; source claims checked)
+
+Export immutable, credited histograms to the remote ownership policy through a versioned, optional CPU observer. HeatEngine keeps local residency; HeatEngine::enabled() is not permission to collect remote heat. HeatParams::decay (0.95) is per credited step: do not decay again per callback.
+
+Steps:
+1. Verify the 1.14.0 engine ABI and the remote hook registration (bc_moe_remote.h, rad0002).
+2. Add a versioned borrowed-row callback with global layer/expert ids, rank, step, multiplicity, phase and coverage status, published from the completed-bank path with no extra GPU transfer.
+3. Accumulate into bounded per-rank CPU state (r3::heat::Heat in worker_heat.h is the accumulator seed); report overflow and incomplete observations.
+4. Compare with the static diagnostic on matched steps before retiring R3_MOE_WORKER_HISTOGRAM and R3_MOE_WORKER_HEAT in production.
+
+Validation: Callback lifetime, ABI mismatch, disabled heat, deterministic mode, rank duplication, MTP, mixed phases, histogram parity; no new GPU synchronisation.
+
+## What --record-heat costs today (2026-11-01, flashnext-4gpu, the 42K flashnext-probe)
+
+Without recording 14.28 / 14.31 / 14.35 s (three runs); with `--record-heat` 15.09, 17.69, 15.0, 15.1 s (period 30 s) and 16.06 s
+with the snapshot thread off (`--record-period 0`): 5-24%, irregular. Not the per-route global atomics: counting the step in
+an LDS histogram and adding once an expert (at most 512 atomics a step instead of 20,480) gave the bit-identical histogram
+(21,532,920 routes, 0 cells differing) and the same 15.0 s. Not the snapshots either. The cause is open; until it is found,
+record heat in a window (minutes of real traffic) and serve without it, which is what RHP05 stage A needs anyway.
+
+Clue (2026-11-01, engine logs of the same probes): the mover is identical with and without recording (2,669 promotions,
+8.43 GiB host-to-card in every run), so it is not extra swapping; but the engine card settles with 173-174 MiB free
+without recording, 153.6 MiB with recording and no snapshots, 141-145 MiB with 30 s snapshots: 20-33 MiB more than the
+256 KiB histogram. Hypothesis to test: recording brings extra HIP runtime objects onto the R9700 (the snapshot thread's
+own stream, the runtime's default stream for the zeroing hipMemset), i.e. extra hardware queues, which RDNA time-slices
+(RAD20 found the same on the XTX helpers). Test: count the engine process's KFD queues (/sys/class/kfd/kfd/proc/<pid>/queues)
+with and without --record-heat; if they differ, zero and copy the histogram on the engine's own stream instead.
+
+## Histogram in pinned host memory (2026-11-01, )
+
+The route histogram moved from engine VRAM to pinned, mapped host memory, counted per step in LDS and added once an expert
+(no PCIe atomics: one block, steps in order); a snapshot is a CPU copy, with no HIP stream of its own. Same requests, same
+counts (21,532,920 routes, 0 cells differing). 42K probe on the chunked-combine build: recording 13.06 s, not recording
+13.69 s, old recording 13.79 s; the engine card settles 166.7 MiB free recording (168.8 not), against 139.2 with the old
+histogram. On this build the old recording's time cost was itself small; the earlier 5-24% was measured before #497. Either
+way recording is now cheap enough to leave on, which stage A (heat-drift.py on live counts) needs.
+
+## Duplicate route collection still present (card-free audit, 2026-11-11)
+
+This is a **record only**, not the RHP02 ABI migration. Two independently collected feeds remain:
+
+| Path | File:line evidence | What it does |
+| --- | --- | --- |
+| Authoritative upstream Radiance histogram | `engines/radiance/tests/fixtures/769b4c6/core/runtime/ctx.cpp:621-695` (`route_report_impl`, bank + report count), `:596-607` (`route_flush`, asynchronous row transfer + event), `:734-760` (`next_histogram`, event query), `core/engine.cpp:266-293` (`tiering_dispatch`, `HeatEngine::observe` and credit) | Original model-global per-layer expert counts; asynchronous, banked, weighted by `last_histogram_reports`. The managed `rad0010_routing_evidence` package observes this same path without adding a GPU counter. Pin here is the package's v1.16.0 fixture; check the current engine pin at build time. |
+| Separate remote-helper GPU route count | `engines/radiance/components/moe-remote/moe_mailbox_ops.hip:167-171` (`step_heat` LDS array), `:236-248` (per-route count on `k == 0`), `:259-265` (accumulation into `heat`) | A distinct GPU-side route counter in the mailbox publish kernel; counts only admitted/published remote passes, not credited upstream histogram events. This is the collection RHP02 must eventually remove after parity, **not** extend in RHP01. |
+| Separate helper histogram storage/export | `engines/radiance/components/moe-remote/moe_remote_hook.cpp:60` (pinned `heat_host`), `:124` (snapshotter), `:831-849` (snapshot file and final device sync), `:853-867` (periodic snapshot thread), `:885-901` (final write/free) | Exports an independently accumulated cumulative uint32 histogram into `R3_MOE_WORKER_HISTOGRAM` rank files. The final device sync is at teardown, **not** a new per-layer wait. |
+| Current policy consumer | `engines/radiance/components/moe-remote/worker_heat_source.h:47-67` (`HistogramFileSource` and lack of completed watermark), `r3_moe_worker.cpp:639-649` (histogram requirement), `worker_policy_driver.h:479` (staleness warning) | Reads cumulative filesystem snapshots and computes deltas, rather than receiving per-step credited Radiance host observations. It cannot establish exact rank/step/phase/multiplicity parity from the file format alone. |
+
+**Remaining work:** RHP02 must introduce one versioned, bounded, nonblocking **CPU-side** observation of credited Radiance histogram rows and rewire the ownership policy to it; prove parity across model-global expert IDs, each layer (including MTP), rank/step, phase, report multiplicity and incomplete windows; then remove the mailbox-side GPU `step_heat`/heat accumulation, pinned cumulative array, file snapshot dependency and `R3_MOE_WORKER_HISTOGRAM`/`R3_MOE_WORKER_HEAT` production settings together, without a compatibility shim. Until the RHP01 heavier prefill/verification/ring-wrap lease evidence and full matched-window parity pass, none of this duplicated path is deleted or treated as the single authoritative feed.
+
+## Change Log
+
+- 2026-11-01T22:52:30.560823+00:00 (updated-by): Updated: order=9, section:notes
+- 2026-11-13T03:54:37.777943+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:48:36.118545+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T22:48:53.460128+00:00 (state-transition): State: pending → deprecated

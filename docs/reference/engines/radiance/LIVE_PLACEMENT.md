@@ -27,21 +27,62 @@ Not built yet: the device-speed and phase-aware solver (RHP17, RHP04 stage 3), t
 
 The policy is a field of the serving manifest: `spec.handoff.placement.live_policy`. bc-serve fills it when
 `derive_manifest_live_policy` finds a record in the calibration store (`${BC_WORK_ROOT}/live-policy-calibration.toml`) for this
-configuration's **calibration key** and the record is complete. Otherwise the field is absent and the policy is off. The launcher
-reports ON (with measured cadence) or OFF (with the missing-record/unsupported-layout reason derived from manifest provenance).
+configuration's **calibration key** and the record is complete. Otherwise the field is absent and the policy is off. The native manifest and `bc-serve explain CONFIG` expose the selection and reason; a startup ON is not proof of effective migration.
 A helper-free start is NOT_APPLICABLE. RHP18 tracks the remaining per-epoch runtime/degraded status and audit identity.
 
-The calibration key is `sha256` of the plan key inputs without `engine_build` and `cache_version`
-(`calibration_key` in `engines/radiance/components/serving/plan_cache.cpp`). The inputs are `card`, `engine`, `engine_args`,
-`helper_budgets_mib`, `layout` and `model`. **Anything that changes one of them orphans the record**: a different layout, a changed
-helper budget (`--budget`), different engine arguments. #790 added `helper_budgets_mib` on 2026-11-09, which orphaned the
-flashnext-4gpu record seeded on 2026-11-07: from that point no production start of the layout carried a live policy until it was
-re-calibrated.
+The **policy-calibration key v2** is separate from the memory-plan key. Its SHA-256 input scope
+includes the model-container identity, layout, objective, engine and helper GPU identities/architectures/VRAM,
+helper roles/formats/kernels, heat-histogram period, named power profile, helper execution settings
+(including combine/lanes), and remote service geometry. It **excludes** the engine/plugin build hash,
+host pool, helper VRAM budgets, memory-plan identity, engine flags and local path names.
+The move-byte cap is re-derived from the current helper budgets and expert stride at each start;
+drift, lane service times and noise remain measured quantities, never guessed constants.
+
+MRC04 v1 records retain `calibration_inputs` (the exact scope),
+`calibration_key_fields` (the platform's declared narrow inputs), `source_plan_key`
+(the full strict measured-plan identity), `source_engine_build`,
+`source_revision`, `run_id`, `host_facts_digest` and `seeded` as provenance.
+A source revision is recorded as `source_slice:<hash>` when immutable build
+metadata is available, otherwise `unavailable` is recorded explicitly.
+Records written after #1169 with `calibration_inputs`, `source_plan_key` and
+`source_engine_build` remain **current and activatable** when the declared scope
+hash and measured quantities validate, even if `record_schema_version` is absent.
+The native reader maps these rows to v1 activation in memory only; it does not
+invent the later revision/run/host-facts provenance or rewrite the TOML store.
+Only genuinely hash-only rows lacking `calibration_inputs` are legacy and
+receive `legacy_record_schema` as their non-activation reason.
+The platform's `bigcherry calibration list|show|validate` reads the native
+TOML store; the production reader/writer remain native C++. The reader verifies that
+the scope hashes to the record key; production matches the current model/cards/layout and
+service inputs before enabling. Changing model, physical cards/architectures, layout, histogram
+period, power profile or helper execution behavior still requires compatible evidence.
+
+**Startup guards (a production start with the policy on).** Right after the start canary `bc-serve` checks the engine's
+histogram stream and the worker's placement control. Two states of a fresh start are healthy and accepted, nothing else is
+loosened: the engine's first snapshot may still hold no route counts (the check waits up to the declared histogram period or
+the policy's allowed heat age, never for any other failure), and the worker's boot placement has transaction 0 with an
+empty journal, because a transaction is numbered only when the worker begins one (it must be active, fault-free, with both
+journal slots empty). Every refusal names the failing check.
+
+A second production start of an unchanged configuration replays the first start's stored manifest (RSC02). The policy a
+production manifest carries is derived by the start, not configured, so it is not part of the replay's execution
+projection (the replay key binds the calibration store's identity); a lab manifest's explicit `--live-policy` is, and any
+other configuration difference still refuses the replay.
+
+**Legacy migration caveat:** historical records in `live-policy-calibration.toml` have only
+the old hash, layout, objective and measurements; they lack model and helper-card provenance.
+They remain readable for audit, but are not automatically promoted across budget or card changes.
+To reuse the observations without another GPU calibration, an operator must establish an
+authenticated matching historic strict calibration manifest and card inventory and migrate
+the record with full provenance. Without those inputs, fail closed rather than trust a
+layout-only match or hand-rename a hash. A missing record is an OFF startup decision with
+a conspicuous warning, never a serving-start gate.
 
 **Instrumented runs.** Any start with `--experiment` (lane trace, `profile_ops`, `kv_resident`, ...) gets the *lab* service profile, and the
 policy is derived only for the *production* profile: such a run never carries a policy unless one is passed explicitly with
-`--live-policy FILE` (the derived `live_policy` object of a production manifest is a valid file). The experiment file's hash is also part of
-the calibration key.
+`--live-policy FILE` (the derived `live_policy` object of a production manifest is a valid file).
+Lab experiment files are outside the production policy-calibration scope; explicit policy evidence is still
+required for every instrumented lab run.
 
 ## RHP20 card and layout policy eligibility (2026-11-10 card-free review)
 
@@ -85,17 +126,34 @@ start-up layout, not production.
 Both arms get the same warm-up traffic (derived: `(min_samples + 1) * cadence + min_residency`). The off arm moves the calibration store
 aside; each arm's manifest is read and the arm is marked INVALID if its state differs from its label (runs/policy-onoff-ab/run.sh is the
 template). Report engine decode tok/s, client aggregate and ms/step separately; judge 1-stream decode over several prompts, not one.
-An instrumented run (`--experiment`) needs `--live-policy FILE`. The launcher prints `live placement: ON (...)` or `OFF -- reason`
-at start; a missing record, a layout the planner is not built for (heads followed by exactly one tail), and the lab profile are all
-named there. The default heat period is 1 s (a 60 s period starved the policy). Servers the launcher starts inside a lease are still listed
-by `agent-lease status` as outside any lease (they are detached).
+Instrumented lab runs need explicit policy evidence; do not rely on retired launcher flags. Inspect `spec.handoff.placement.live_policy` in the native-owned immutable manifest, and use the declared typed config. The default heat period was 1 s in historical runs (60 s starved the policy). The lease must cover the native process-owner lifetime, not just benchmark traffic.
 
 ## How to restore it after a key change
 
-Re-calibrate the layout (lab only, takes the `gpu` lease): `launch-flashnext-best.sh start --build DIR --port N --calibrate
---record-period 1 --calibration-prompts-a FILE --calibration-prompts-b FILE --live-policy policy.json`. The launcher ingests the
-record atomically into the store and a plain start then carries the derived `live_policy`. Recipe and prompt files:
-`runs/rhp16-calib9` (filler 27k prompts plus 44k document prompts, both workload orders). Do not edit the record's key by hand.
+**Native calibration heat source (2026-11-19):** The serving engine writes the manifest-declared
+spec.handoff.telemetry.histogram_file every period_s seconds. The helper coordinator currently uses
+HistogramFileSource on <prefix>.rank0, not the per-step credited-heat ring. Those file deltas carry
+complete_observations=false: the .bcproof sidecar proves publication generation and file identity,
+**not** coherent per-step observation coverage. Consequently an explicit lab policy with
+accept_unwatermarked_heat=false is incompatible with this source and the native owner now refuses it
+before launching a manifest writer. For file-based calibration, the operator must explicitly set
+accept_unwatermarked_heat=true in the lab --live-policy JSON, preserving the policy's provenance
+and other safety checks; the owner never silently overrides false. This is not a claim that a
+calibration will converge or that the file is an equivalent replacement for a credited stream.
+
+The native owner also refuses absent --calibration-store paths by name; create an empty ordinary
+file at that path before starting a fresh calibration. The heat-input watchdog is distinct from
+the full four-phase convergence deadline: without two accepted deltas its bound is
+(min_samples + 1) * histogram_period + max(cadence, max_heat_age) (terms in seconds), so
+the recorded policy (1000, 1 s, 60 s, 120 s) fails without heat in 1,121 s instead of
+borrowing a multi-hour four-phase policy horizon. The error reports BC_CFG_CALIBRATION_INVALID,
+heat_watermarked, the accepted delta count and the derived limit. The archived launcher passed
+--record-heat PREFIX explicitly; native serving instead derives the engine's histogram
+path from the immutable manifest and binds publication to the launch nonce. The helper's file
+consumer does not interpret .bcproof as an observation watermark. Radiance 2.x migration should
+retain this typed source distinction rather than hard-code upstream flags.
+
+Re-calibrate only through the supported native `bc-serve` typed calibration workflow under the GPU lease. The prior CLI recipe belongs to archived pre-S16 evidence (`runs/rhp16-calib9`); do not replay its shell flags as a new native mode or edit the calibration key by hand. See the current RSC12 configuration and S10 producer/consumer contract.
 
 ## When measuring
 

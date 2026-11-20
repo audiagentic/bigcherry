@@ -169,13 +169,81 @@ void check_plan_for_configuration(const Json& values, const v2::EnginePlan& plan
             throw std::runtime_error("the plan holds an unknown host consumer " + c.name);
 }
 
+std::string gpu_inventory_digest(const Json& gpus) {
+    static const char* const kIdentity[] = {"arch",        "bdf",           "drm_render_minor", "gfx_target_version",
+                                            "hip_ordinal", "kfd_node",      "max_link_speed",   "max_link_width",
+                                            "numa_node",   "simd_count",    "vram_total_mib"};
+    Json identity = Json::array();
+    for (const Json& g : gpus) {
+        Json one = Json::object();
+        for (const char* key : kIdentity)
+            if (g.contains(key)) one[key] = g.at(key);
+        identity.push_back(std::move(one));
+    }
+    return sha256_hex(identity.dump());
+}
+
 std::string plan_key(const Json& key_inputs) { return sha256_hex(key_inputs.dump()); }
-std::string calibration_key(const Json& key_inputs) {
-    if (!key_inputs.contains("engine_build")) throw std::runtime_error("calibration key: plan key inputs without engine_build");
-    Json inputs = key_inputs;
-    inputs.erase("engine_build");
-    inputs.erase("cache_version");
-    inputs["calibration_key_version"] = 1;
+// A policy measurement describes this hardware/service scope, not the engine's VRAM plan. Its
+// transaction, lane-service, heat-drift and noise readings can be reused with a different engine
+// binary, helper VRAM budget, host pool, checkpoint geometry or engine arguments. The policy
+// derivation recomputes its byte cap against the *current* expert stride and helper budgets.
+Json policy_calibration_inputs(const Json& spec) {
+    const Json& gpufacts = spec.at("facts").at("gpus");
+    const auto card = [&](const Json& bdf) {
+        for (const Json& gpu : gpufacts)
+            if (gpu.at("bdf") == bdf)
+                return Json{{"bdf", bdf}, {"arch", gpu.at("arch")},
+                            {"vram_total_mib", gpu.at("vram").at("total_mib")}};
+        throw std::runtime_error("policy calibration key: GPU " + bdf.get<std::string>() +
+                                 " is missing from detected facts");
+    };
+    Json engines = Json::array(), helpers = Json::array();
+    for (const Json& bdf : spec.at("processes").at("engine").at("device").at("gpus"))
+        engines.push_back(card(bdf));
+    for (const Json& h : spec.at("processes").at("helpers")) {
+        Json selected = card(h.at("gpu"));
+        selected["tier"] = h.at("tier");
+        selected["formats"] = h.at("formats");
+        selected["rows_kernel"] = h.at("rows_kernel");
+        helpers.push_back(std::move(selected));
+    }
+    // Transport shared-memory name, telemetry file, static heat file, helper budget, CLI
+    // paths, measured memory allocations and engine build are *not* calibrated physics.
+    const Json& transport = spec.at("handoff").at("transport");
+    Json service = {{"max_rows", transport.at("max_rows")},
+                    {"small_rows", transport.at("small_rows")},
+                    {"gemv_large_rows", transport.at("gemv_large_rows")},
+                    {"skip_owned", transport.at("skip_owned")},
+                    {"moe_down_tile", spec.at("handoff").at("kernels").at("moe_down_tile")}};
+    return {{"policy_key_version", 2},
+            {"model", spec.at("plan").at("engine_memory").at("model_identity")},
+            {"layout", spec.at("intent").at("layout")},
+            {"objective", spec.at("intent").at("service").at("objective")},
+            {"power_profile", spec.at("intent").at("power").at("profile")},
+            {"engine_cards", engines}, {"helper_cards", helpers},
+            {"histogram_period_s", spec.at("handoff").at("telemetry").at("period_s")},
+            {"helper_runtime", spec.at("processes").at("helper_common")},
+            {"remote_service", service}};
+}
+Json policy_calibration_key_fields() {
+    return Json::array({"engine_cards", "helper_cards", "helper_runtime", "histogram_period_s",
+                        "layout", "model", "objective", "policy_key_version",
+                        "power_profile", "remote_service"});
+}
+void require_declared_policy_calibration_inputs(const Json& inputs) {
+    const Json fields = policy_calibration_key_fields();
+    if (!inputs.is_object() || inputs.size() != fields.size())
+        throw std::runtime_error("policy calibration declaration: undeclared or absent key inputs");
+    for (const Json& field : fields)
+        if (!inputs.contains(field.get<std::string>()))
+            throw std::runtime_error("policy calibration declaration: missing " + field.get<std::string>());
+    if (inputs.at("policy_key_version") != 2)
+        throw std::runtime_error("policy calibration declaration: key version must be 2");
+}
+std::string policy_calibration_key(const Json& inputs) {
+    if (!inputs.is_object() || inputs.value("policy_key_version", 0) != 2)
+        throw std::runtime_error("policy calibration key: not version 2 inputs");
     return sha256_hex(inputs.dump());
 }
 

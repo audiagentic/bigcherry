@@ -90,6 +90,31 @@ patches = [
 ]
 required-state = "untested"
 
+# VTP44 evidence tools, built only into the diagnostic source radiance-vtp44-evidence: rad0042 the packed-KV selftest
+# cases, rad0043 complete --expert-stats (protected experts too), rad0044 --expert-route-record, rad0045
+# --expert-route-replay. Evidence: docs/evidence/2026-11-16-vtp44-generic-kv-layouts/ and
+# docs/evidence/2026-11-20-prq06-diagnostic-evidence/.
+[patch-set.vtp44-evidence]
+patches = [
+]
+required-state = "untested"
+
+[patch-set.rad0042-diagnostic]
+patches = ["rad0042_kv_b16_selftest"]
+required-state = "diagnostic"
+
+[patch-set.rad0043-diagnostic]
+patches = ["rad0043_expert_stats_protected"]
+required-state = "diagnostic"
+
+[patch-set.rad0044-diagnostic]
+patches = ["rad0044_expert_route_record"]
+required-state = "diagnostic"
+
+[patch-set.rad0045-diagnostic]
+patches = ["rad0045_expert_route_replay"]
+required-state = "diagnostic"
+
 [source.radiance-native]
 class = "production"
 description = "radiance 1.14.0 as released: no overlay, no patches."
@@ -114,6 +139,24 @@ description = "Production Radiance plus RHP01 opt-in host histogram coverage dia
 overlay = false
 patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "mtp-pass-replay", "vtp14-mixed-tp"]
 
+[source.radiance-vtp44-evidence]
+class = "diagnostic"
+description = "Production Radiance plus the VTP44 evidence tools (KV selftest cases, complete expert stats, expert route record and replay); not a production source."
+overlay = false
+patch-sets = [
+  "serving-core",
+  "host-compat",
+  "serving-manifest",
+  "helper-config",
+  "mtp-pass-replay",
+  "vtp14-mixed-tp",
+  "vtp44-evidence",
+  "rad0042-diagnostic",
+  "rad0043-diagnostic",
+  "rad0044-diagnostic",
+  "rad0045-diagnostic",
+]
+
 [build.stock]
 description = "radiance's own release build of the engine binary."
 options = {}
@@ -126,35 +169,8 @@ description = "radiance built with BC_MOE_REMOTE_DIAG: remote-MoE shadow compare
 options = { CMAKE_CXX_FLAGS = "-DBC_MOE_REMOTE_DIAG" }
 needs = []
 
-# Experiments contain only unpromoted patches; promotion retires their memberships.
-[experiment.mtp-full-head-switch]
-patches = ["rad0003_mtp_full_head_switch"]
-
-# RHP02 slice A: the inactive read-only credit observer ABI. Nothing registers it yet, so there is no activation to show;
-# untested, therefore experiment-only until a consumer (RHP02 B) exercises it.
-[experiment.moe-heat-observer]
-patches = ["rad0039_moe_heat_observer"]
-
-# VTP43: packed KV caches with bf16 keys (--kv-cache-dtype bf16_fp8 / bf16_i8), opt-in and untested, so experiment-only.
-# bf16_i8 requires bf16_fp8; rad0040 (VTP44) makes the packed layouts one table and requires bf16_i8; rad0041 (VTP44 B) adds
-# Flash-Next's geometry (gqa 12, and gqa 6 with 4-token pages) and requires rad0040; rad0042 adds their selftest cases.
-# Evidence: docs/evidence/2026-11-16-vtp43-bf16-fp8-kv/README.md.
-[experiment.kv-bf16-packed]
-patches = ["rad0042_kv_b16_selftest"]
-
-# VTP44: --expert-stats also counts a layer's protected (bf16) experts, so the routing tallies of Flash-Next are complete.
-# Untested, therefore experiment-only.
-[experiment.expert-stats-protected]
-patches = ["rad0043_expert_stats_protected"]
-
-# VTP44: the reference run records the experts each token chose; --expert-stats counts them (rad0043 maps every expert).
-[experiment.expert-route-record]
-patches = ["rad0043_expert_stats_protected", "rad0044_expert_route_record"]
-
-# VTP44: replay a recorded route (rad0045) in the measured runs; the experiment also records (rad0044) and counts (rad0043).
-[experiment.expert-route-replay]
-patches = ["rad0043_expert_stats_protected", "rad0044_expert_route_record", "rad0045_expert_route_replay"]
-
+# Experiments contain only unpromoted patches; promotion retires their memberships. None is open: the patches of earlier
+# experiments are qualified (serving-core, or the diagnostic sets below) or retired into engines/radiance/patches/archive/.
 
 # Profiles list only what they switch; libr3's runtime defaults (R3_ATTN_NATIVE on, every other R3_* off) are the
 # component's, never restated here.
@@ -202,6 +218,12 @@ stack = "rocm-7-2"
 # unconditional here since ccache is present on every host this platform builds on (dev and the
 # CI image both have it); if a future host lacks it, configure fails loudly rather than silently
 # rebuilding everything, which is the right failure mode to notice and fix.
-options = { RAD_BUILD_TESTS = "OFF", CMAKE_C_COMPILER_LAUNCHER = "bc-ccache", CMAKE_CXX_COMPILER_LAUNCHER = "bc-ccache", CMAKE_HIP_COMPILER_LAUNCHER = "bc-ccache" }
+# RAD_WITH_FFMPEG = ON: the engine decodes images and video through libavformat/libavcodec/libavutil/libswscale/libswresample.
+# Left on its default (AUTO) a build that cannot find them compiles without a decoder and the engine logs "the 'vision' encoder
+# is loaded but this build has no media decoder, so every media part will be refused" while the vision tower still sits in VRAM
+# (879 MiB a rank): released builds shipped that way until 2026-11-19. ON makes a missing FFmpeg a configure error. FFmpeg 6.1 is
+# enough (rad0005 covers its avio signature). CI installs the -dev packages in its build image; on the agent container export
+# CMAKE_PREFIX_PATH=/opt/ffmpeg6 (tools/env/bigcherry-env.sh does when /opt/ffmpeg6 exists).
+options = { RAD_BUILD_TESTS = "OFF", RAD_WITH_FFMPEG = "ON", CMAKE_C_COMPILER_LAUNCHER = "bc-ccache", CMAKE_CXX_COMPILER_LAUNCHER = "bc-ccache", CMAKE_HIP_COMPILER_LAUNCHER = "bc-ccache" }
 c-compiler = "${RADIANCE_HOST_CC}"
 cxx-compiler = "${RADIANCE_HOST_CXX}"

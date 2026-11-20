@@ -46,6 +46,15 @@ class FakeProcess:
 
 
 def main() -> int:
+    # The sealed start host facts are collected by their own commands before the child starts; this smoke fakes
+    # subprocess.Popen to exercise the bundle, so it fixes the snapshot instead of running those commands.
+    sealed = bundle.host_facts.snapshot_at_start(
+        {"kernel_release": {"value": "fixture", "readable": True}}, phase="owner_start")
+    with patch.object(bundle.host_facts, "snapshot_at_start", return_value=sealed):
+        return _smoke()
+
+
+def _smoke() -> int:
     checks = 0
     with tempfile.TemporaryDirectory(prefix="bigcherry-bundle-failure-") as temp:
         root = Path(temp)

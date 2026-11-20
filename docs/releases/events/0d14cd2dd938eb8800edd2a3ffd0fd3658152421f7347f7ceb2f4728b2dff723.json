@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261118_202205_starting-the-four-card-flash-n_4176",
+  "files": [
+    "engines/radiance/components/serving/helper_vram.cpp",
+    "engines/radiance/components/serving/helper_vram.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/runtime_guards.cpp"
+  ],
+  "plan-item-ids": [
+    "RSC02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Native session owner: waits for the helper cards' VRAM to be released between the measuring start and the final manifest write (bounded by the recorded helper stop timeout, typed refusal naming the card), types a measuring-start host-RAM refusal with the engine's own numbers, and no longer lets the heat guard stop a recording-only session; each measuring round writes its own histogram prefix. Found by the leased S15 runs on hardware, both tested through the real owner with fake sysfs.",
+  "timestamp-utc": "2026-11-18T20:22:05.730428Z",
+  "user-summary-candidate": "Starting the four-card Flash-Next layout through the native serving owner now works reliably, and recording route heat no longer stops a running server."
+}

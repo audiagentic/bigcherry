@@ -1,5 +1,157 @@
 # Changelog
 
+## [1.58.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.57.0...bc-platform-1.58.0) (2026-11-20)
+
+
+### New and changed
+
+* **core:** sealed measurement-start host facts for Radiance records (MRC02) ([#1238](https://github.com/audiagentic/bigcherry/issues/1238)) ([1f5f6a1](https://github.com/audiagentic/bigcherry/commit/1f5f6a1a5e31bafa10ba8aafd9a2b7f313dc3984))
+
+## [1.57.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.56.0...bc-platform-1.57.0) (2026-11-20)
+
+
+### New and changed
+
+* **core:** Radiance feature registry and strict production status (MRC03) ([#1230](https://github.com/audiagentic/bigcherry/issues/1230)) ([71acad4](https://github.com/audiagentic/bigcherry/commit/71acad45621c1e68cf6df90778a64b4d9c3b5d4a))
+
+## [1.56.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.55.0...bc-platform-1.56.0) (2026-11-20)
+
+
+### New and changed
+
+* **measurement:** one canonical Radiance results path (MRC06) ([#1231](https://github.com/audiagentic/bigcherry/issues/1231)) ([9d8ed4b](https://github.com/audiagentic/bigcherry/commit/9d8ed4bb5a200ff070f466e5df1f0729bc64bc51))
+* **release:** patch-promote --diagnostic from an experiment, gates after the change ([#1229](https://github.com/audiagentic/bigcherry/issues/1229)) ([2caf1f7](https://github.com/audiagentic/bigcherry/commit/2caf1f79e1e8dd88932f89f8a2a4e93dd5558e56))
+
+## [1.55.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.54.0...bc-platform-1.55.0) (2026-11-19)
+
+
+### New and changed
+
+* **core:** link verified run records and expose results put query ([#1213](https://github.com/audiagentic/bigcherry/issues/1213)) ([75b63ba](https://github.com/audiagentic/bigcherry/commit/75b63ba62210e989ad59d8993d955412f586e381))
+* **results:** make parity baseline compare portable record consumers ([#1214](https://github.com/audiagentic/bigcherry/issues/1214)) ([d611e79](https://github.com/audiagentic/bigcherry/commit/d611e79970a2296ef6904e56592fc5b468c9d1d7))
+
+## [1.54.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.53.0...bc-platform-1.54.0) (2026-11-19)
+
+
+### New and changed
+
+* **calibration:** platform calibration-record store v1 (MRC04 slice 1) ([#1199](https://github.com/audiagentic/bigcherry/issues/1199)) ([84b2065](https://github.com/audiagentic/bigcherry/commit/84b2065ef6387aca6bf667a0292f6b42d3658211))
+* **measurement:** migrate workload, llama.cpp and experiment producers to run records ([#1205](https://github.com/audiagentic/bigcherry/issues/1205)) ([1a8d9a8](https://github.com/audiagentic/bigcherry/commit/1a8d9a87904244cfe4f38465aec461d9c643a3d0))
+* **measurement:** native calibration and lab probes as run records (MRC06 slice 3) ([#1209](https://github.com/audiagentic/bigcherry/issues/1209)) ([82fa90e](https://github.com/audiagentic/bigcherry/commit/82fa90e0f90403f98272d430c6c903c77610822e))
+* **measurement:** publish parity launches as v1 run records ([#1203](https://github.com/audiagentic/bigcherry/issues/1203)) ([98581ad](https://github.com/audiagentic/bigcherry/commit/98581ad61c1cb5db7f7817db2c9eedaa4548d758))
+
+
+### Fixes
+
+* **radiance:** measure the combine thread knee and derive from the affinity set ([#1206](https://github.com/audiagentic/bigcherry/issues/1206)) ([d90c57e](https://github.com/audiagentic/bigcherry/commit/d90c57e40c711e9408a2d0544520a39d77c4124f))
+
+## [1.53.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.52.0...bc-platform-1.53.0) (2026-11-19)
+
+
+### New and changed
+
+* **core:** add platform run-record v1 store and queries ([#1188](https://github.com/audiagentic/bigcherry/issues/1188)) ([dec549f](https://github.com/audiagentic/bigcherry/commit/dec549f8d4efa5565190dfd5d245574508a490ac))
+* **core:** collect platform host facts for run records (MRC02) ([#1191](https://github.com/audiagentic/bigcherry/issues/1191)) ([0687764](https://github.com/audiagentic/bigcherry/commit/0687764388d71adf6b7623d56e1cdc051c1d9457))
+* **radiance:** build with the FFmpeg media decoder; image input modes measured ([#1189](https://github.com/audiagentic/bigcherry/issues/1189)) ([5820391](https://github.com/audiagentic/bigcherry/commit/5820391c817571a66033d27e8981afeee8c08b42))
+* **radiance:** ship bf16_i8 KV as named configs (TP3 27B, Flash-Next at 4 sessions) with evidence ([#1184](https://github.com/audiagentic/bigcherry/issues/1184)) ([358ddd1](https://github.com/audiagentic/bigcherry/commit/358ddd197de6e96310033ae69e6ff90b4ef17b29))
+* **results:** add portable baselines compare and history (MRC05) ([#1198](https://github.com/audiagentic/bigcherry/issues/1198)) ([78c1b86](https://github.com/audiagentic/bigcherry/commit/78c1b8629acfb017ff4aa5d0875c6f5b8db27fc5))
+* **serving:** publish native feature states at startup ([#1195](https://github.com/audiagentic/bigcherry/issues/1195)) ([7c73af9](https://github.com/audiagentic/bigcherry/commit/7c73af98fb5b23a32a1309cc2b4b5551dfda371a))
+
+
+### Fixes
+
+* **radiance:** ship release heat seeds and default session recording ([#1197](https://github.com/audiagentic/bigcherry/issues/1197)) ([bf27b43](https://github.com/audiagentic/bigcherry/commit/bf27b433839cdbed161f301c564b7893b398b407))
+* **release:** keep ELF debug symbols outside bundle staging ([#1187](https://github.com/audiagentic/bigcherry/issues/1187)) ([84e12a1](https://github.com/audiagentic/bigcherry/commit/84e12a17fe87ae0dbb6fbcc3cf7c6db56c41b718))
+
+## [1.52.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.3...bc-platform-1.52.0) (2026-11-19)
+
+
+### New and changed
+
+* **build:** retry a cmake build once when the compiler dies from a signal and record it ([#1175](https://github.com/audiagentic/bigcherry/issues/1175)) ([352abdb](https://github.com/audiagentic/bigcherry/commit/352abdb380ab382ef3590ddc70102e23249a3967))
+* **lab:** parity harness experiment sets and a current-main Flash-Next baseline ([#1165](https://github.com/audiagentic/bigcherry/issues/1165)) ([f605d2c](https://github.com/audiagentic/bigcherry/commit/f605d2c5619e3f86692a870567cbf97ead89b60c))
+* **lab:** parity harness warmup override for policy-on experiment arms ([#1178](https://github.com/audiagentic/bigcherry/issues/1178)) ([31bd5b9](https://github.com/audiagentic/bigcherry/commit/31bd5b9e9e0b7a2430955a22adccf3b3047bccf2))
+
+
+### Fixes
+
+* **build:** configure a radiance component in its own tree when the shared build dir's cache pins another source path ([#1172](https://github.com/audiagentic/bigcherry/issues/1172)) ([a655e96](https://github.com/audiagentic/bigcherry/commit/a655e96989655cdda2f19bf67865570737c71d3c))
+* **lab:** parity harness uses the Flash-Next mixed heat the launcher defaulted to ([#1168](https://github.com/audiagentic/bigcherry/issues/1168)) ([5c500c5](https://github.com/audiagentic/bigcherry/commit/5c500c5f6647e086879fe9abd3138fb051cc4a52))
+* **serving:** accept the boot placement in the runtime policy receipt ([#1176](https://github.com/audiagentic/bigcherry/issues/1176)) ([fd6dbcd](https://github.com/audiagentic/bigcherry/commit/fd6dbcd09a015eb9d32e55d6eb6ecb846b131fcc))
+* **serving:** hash GPU identity, not live VRAM use, in the S8 inventory digest ([#1181](https://github.com/audiagentic/bigcherry/issues/1181)) ([f47633e](https://github.com/audiagentic/bigcherry/commit/f47633e917da9e7768112006d2fcce224f7684a5))
+* **serving:** live-policy calibration has its own key, shared by the calibration run and production ([#1169](https://github.com/audiagentic/bigcherry/issues/1169)) ([25ac566](https://github.com/audiagentic/bigcherry/commit/25ac566b95401e105a90842b7ba863c69233c289))
+* **serving:** re-read a mismatched heat proof for the declared publication period and name the differing field ([#1183](https://github.com/audiagentic/bigcherry/issues/1183)) ([5e814a1](https://github.com/audiagentic/bigcherry/commit/5e814a1d8947de8b1c8de2f8406435af96a6b6c6))
+* **serving:** refuse unwatermarked calibration heat and bound the no-feed wait ([#1162](https://github.com/audiagentic/bigcherry/issues/1162)) ([1e4bc57](https://github.com/audiagentic/bigcherry/commit/1e4bc572304f1b60206cb5359e4614e11fcfd5b3))
+* **serving:** replay a stored policy-on manifest for an unchanged config ([#1177](https://github.com/audiagentic/bigcherry/issues/1177)) ([409d3a1](https://github.com/audiagentic/bigcherry/commit/409d3a1b0fdf67e3a9ab775f39331e6667992482))
+* **serving:** wait for the first counted heat snapshot at startup and name the failing check in a heat refusal ([#1174](https://github.com/audiagentic/bigcherry/issues/1174)) ([9aa70b0](https://github.com/audiagentic/bigcherry/commit/9aa70b0623a5be6ec36fa7356995699d1ba0c776))
+
+## [1.51.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.2...bc-platform-1.51.3) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** parity harness defaults to the stock power profile ([#1160](https://github.com/audiagentic/bigcherry/issues/1160)) ([f34412e](https://github.com/audiagentic/bigcherry/commit/f34412e6fd905e50799a3420d993820002bc202b))
+
+## [1.51.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.1...bc-platform-1.51.2) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** parity harness names the build's radiance_home for bc-serve ([#1158](https://github.com/audiagentic/bigcherry/issues/1158)) ([ac8f106](https://github.com/audiagentic/bigcherry/commit/ac8f1065514e54face2b61fb890e9f7936289d0a))
+
+## [1.51.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.51.0...bc-platform-1.51.1) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 projection treats live VRAM readings and the owner heat nonce as observations ([#1154](https://github.com/audiagentic/bigcherry/issues/1154)) ([bda5538](https://github.com/audiagentic/bigcherry/commit/bda55382b6eeffd2b0fb07e67c5c418583b5dce1))
+
+## [1.51.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.6...bc-platform-1.51.0) (2026-11-18)
+
+
+### New and changed
+
+* **lab:** record the Flash-Next mixed-workload route heat ([#1150](https://github.com/audiagentic/bigcherry/issues/1150)) ([b8612d8](https://github.com/audiagentic/bigcherry/commit/b8612d88e753f443b88d75f8cf6acad2661db241))
+
+## [1.50.6](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.5...bc-platform-1.50.6) (2026-11-18)
+
+
+### Fixes
+
+* **serving:** wait for helper VRAM release before the final manifest write ([#1147](https://github.com/audiagentic/bigcherry/issues/1147)) ([ec0ca83](https://github.com/audiagentic/bigcherry/commit/ec0ca833bf89280453dcb4a5b5af9bbd7b6b0793))
+
+## [1.50.5](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.4...bc-platform-1.50.5) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 runs both arms with the disk n-gram placement ([#1146](https://github.com/audiagentic/bigcherry/issues/1146)) ([89a2e4d](https://github.com/audiagentic/bigcherry/commit/89a2e4d969662b0eca3dc3560a0a5dbda5cd3fcb))
+* **release:** trim the engine asset (debug split, no benchmark catalogs) ([#1143](https://github.com/audiagentic/bigcherry/issues/1143)) ([758a426](https://github.com/audiagentic/bigcherry/commit/758a42656daa0b2927b28aa82aea0a3717a584d8))
+
+## [1.50.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.3...bc-platform-1.50.4) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 control arm gets the layout definitions its resource derivation needs ([#1141](https://github.com/audiagentic/bigcherry/issues/1141)) ([57bfd57](https://github.com/audiagentic/bigcherry/commit/57bfd5730cd6caa83917b781cc96dc7e0a6c796c))
+* **lab:** S15 control arm uses the site file's route-heat file ([#1139](https://github.com/audiagentic/bigcherry/issues/1139)) ([8484b54](https://github.com/audiagentic/bigcherry/commit/8484b54fabb058f47d91178fc9a165e8593a944a))
+* **lab:** S15 driver can pin one host pool for both arms ([#1142](https://github.com/audiagentic/bigcherry/issues/1142)) ([85577bb](https://github.com/audiagentic/bigcherry/commit/85577bb754add7d1249cfe58b88fa0b81e426101))
+
+## [1.50.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.2...bc-platform-1.50.3) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 capture reads a replayed start's pinned manifest descriptor; one pair per cohort by default ([#1137](https://github.com/audiagentic/bigcherry/issues/1137)) ([c9b9e30](https://github.com/audiagentic/bigcherry/commit/c9b9e30cc9f70aa37254957d8a7161b70f37c94e))
+
+## [1.50.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.1...bc-platform-1.50.2) (2026-11-18)
+
+
+### Fixes
+
+* **lab:** S15 driver tolerates a slow bc-serve status and passes the model root to arm A ([#1134](https://github.com/audiagentic/bigcherry/issues/1134)) ([3c301e2](https://github.com/audiagentic/bigcherry/commit/3c301e23a77cb580dc4ebda463d55cef83c74032))
+* **lab:** S15 projection treats per-start host memory readings as live observations ([#1136](https://github.com/audiagentic/bigcherry/issues/1136)) ([b50ed29](https://github.com/audiagentic/bigcherry/commit/b50ed29b3a95d71fb6381055b012e5c76e55513e))
+
 ## [1.50.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.50.0...bc-platform-1.50.1) (2026-11-18)
 
 

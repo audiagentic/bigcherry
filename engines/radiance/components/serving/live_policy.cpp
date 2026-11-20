@@ -1,4 +1,5 @@
 #include "live_policy.h"
+#include "plan_cache.h"
 #include "third_party/toml.hpp"
 
 #include <algorithm>
@@ -125,7 +126,10 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         return std::nullopt;
     }
     const std::set<std::string> fields = {
-        "plan_cache_key", "layout", "objective", "seeded",
+        "plan_cache_key", "calibration_inputs", "source_plan_key", "source_engine_build",
+        "record_schema_version", "calibration_kind", "calibration_key_fields",
+        "source_revision", "run_id", "host_facts_digest",
+        "layout", "objective", "seeded",
         "evidence", "txn_p50_ns", "txn_p95_ns", "copy_bytes_per_s",
         "heat_gap_max_ns", "heat_watermarked", "hot_set_k", "marginal_error_ppm", "marginal_observations",
         "drift_half_life_observations", "observation_rate_per_s", "tail_share_gain_ppm",
@@ -152,6 +156,57 @@ std::optional<LivePolicyRecord> read_live_policy_record(const std::filesystem::p
         if (row.key.size() != 64 || row.key.find_first_not_of("0123456789abcdef") != std::string::npos)
             bad(where + ": plan_cache_key must be lowercase SHA-256 hex");
         if (!seen.insert(row.key).second) bad(where + ": duplicate plan_cache_key " + row.key);
+        if (!t->contains("calibration_inputs") || !t->contains("record_schema_version"))
+            bad(where + ": unsupported record format (needs calibration_inputs and record_schema_version 1); "
+                        "remove it with bc-serve calibration-prune");
+        {
+            const std::string json = required(*t, "calibration_inputs", where);
+            Json parsed = Json::parse(json, nullptr, false);
+            if (parsed.is_discarded()) bad(where + ": calibration_inputs is not strict JSON");
+            try {
+                require_declared_policy_calibration_inputs(parsed);
+                if (policy_calibration_key(parsed) != row.key)
+                    bad(where + ": calibration_inputs digest disagrees with plan_cache_key");
+            } catch (const std::exception& e) {
+                bad(where + ": incompatible policy calibration inputs: " + e.what());
+            }
+            row.calibration_inputs = std::move(parsed);
+            row.source_plan_key = required(*t, "source_plan_key", where);
+            row.source_engine_build = required(*t, "source_engine_build", where);
+            for (const std::string& hex : {row.source_plan_key, row.source_engine_build})
+                if (hex.size() != 64 || hex.find_first_not_of("0123456789abcdef") != std::string::npos)
+                    bad(where + ": source plan/build identities must be lowercase SHA-256");
+        }
+        {
+            const auto* version = (*t)["record_schema_version"].as_integer();
+            if (!version || version->get() != 1)
+                bad(where + ": unsupported record_schema_version (expected 1)");
+            row.record_schema_version = 1;
+            row.calibration_kind = required(*t, "calibration_kind", where);
+            if (row.calibration_kind != "radiance.live_policy")
+                bad(where + ": unknown calibration_kind");
+            const auto* fields = (*t)["calibration_key_fields"].as_array();
+            if (!fields) bad(where + ": calibration_key_fields must be an array");
+            Json names = Json::array();
+            for (const auto& field : *fields) {
+                const auto* value = field.as_string();
+                if (!value) bad(where + ": calibration_key_fields must contain strings");
+                names.push_back(value->get());
+            }
+            if (names != policy_calibration_key_fields())
+                bad(where + ": calibration_key_fields differs from platform declaration");
+            row.calibration_key_fields = std::move(names);
+            if (!row.calibration_inputs)
+                bad(where + ": version 1 requires declared calibration inputs");
+            try { require_declared_policy_calibration_inputs(*row.calibration_inputs); }
+            catch (const std::exception& e) { bad(where + ": " + e.what()); }
+            row.source_revision = required(*t, "source_revision", where);
+            row.run_id = required(*t, "run_id", where);
+            row.host_facts_digest = required(*t, "host_facts_digest", where);
+            if (row.host_facts_digest.size() != 64 ||
+                row.host_facts_digest.find_first_not_of("0123456789abcdef") != std::string::npos)
+                bad(where + ": host_facts_digest must be lowercase SHA-256");
+        }
         row.layout = required(*t, "layout", where);
         row.objective = required(*t, "objective", where);
         row.seeded = required(*t, "seeded", where);

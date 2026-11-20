@@ -1,6 +1,9 @@
 """BU01 offline Radiance runtime bundle packaging and verification tests."""
 import io
 import json
+import re
+import shutil
+import subprocess
 import tarfile
 import tempfile
 import unittest
@@ -39,6 +42,12 @@ class RuntimeAssetsTests(unittest.TestCase):
             (component / "component.toml").write_text('built-against = "v1.17.0"\n')
         for name in assets.SHIPPED_CONFIGS:
             (config_dir / name).write_text(f"schema = 1\n# {name}\n")
+        for name in assets.SHIPPED_HEAT_SEEDS:
+            seed = self.root / "tools/lab/radiance/heat" / name
+            seed.parent.mkdir(parents=True, exist_ok=True)
+            seed.write_bytes(("heat fixture: " + name).encode())
+        self.committed_heat = mock.patch.object(assets, "check_committed_heat")
+        self.committed_heat.start()
         self.committed_config = mock.patch.object(assets, "check_committed_config")
         self.committed_config.start()
         self.sdk = self.path / "sdk"
@@ -76,6 +85,7 @@ class RuntimeAssetsTests(unittest.TestCase):
     def tearDown(self):
         self.patch.stop()
         self.committed_config.stop()
+        self.committed_heat.stop()
         self.temp.cleanup()
 
     def packaged(self):
@@ -130,6 +140,101 @@ class RuntimeAssetsTests(unittest.TestCase):
         path.unlink()
         with self.assertRaisesRegex(assets.BundleError, "missing or invalid build identity"):
             self.packaged()
+
+    def test_source_build_sha_is_bound_to_the_packaged_record(self):
+        asset, archive, checksum = self.packaged()
+        self.assertIn("source_binary_sha256", asset)
+        asset["source_binary_sha256"] = "0" * 64
+        with self.assertRaisesRegex(assets.BundleError, "source_binary_sha256"):
+            assets.restore(archive, checksum, asset, self.root,
+                           self.path / "other-work", self.sdk)
+
+    def test_benchmark_catalogs_are_not_runtime_members(self):
+        # Both files are present in the build fixture, but never ship.
+        for name in ("radiance_home/kernels.rkb", "radiance_home/kernels_moe.rkb"):
+            self.assertTrue((self.build / name).is_file())
+            self.assertNotIn(name, assets.runtime_files(self.build, self.root))
+        asset, archive, _ = self.packaged()
+        with tarfile.open(archive, "r:gz") as tar:
+            self.assertFalse(any(name.endswith(".rkb") for name in tar.getnames()))
+        self.assertFalse(any(name.endswith(".rkb") for name in asset["file_names"]))
+
+    def test_elf_debug_policy_in_runtime_reuse_key(self):
+        self.assertIn("split", assets.ELF_DEBUG_POLICY)
+        current = assets.payload_contract_key()
+        with mock.patch.object(assets, "ELF_DEBUG_POLICY", "do-not-split"):
+            self.assertNotEqual(current, assets.payload_contract_key())
+
+    def test_pack_splits_debug_elf_preserves_loader_and_offload(self):
+        # A card-free ELF fixture exercises the real pack and checked extract.
+        source = self.path / "probe.c"
+        source.write_text(
+            '__attribute__((used, section(".hip_fatbin"))) '
+            'const unsigned char fatbin[] = {0, 17, 34, 255};\n'
+            '__attribute__((used, section(".llvm.offloading"))) '
+            'const unsigned char offload[] = {11, 22, 33};\n'
+            'int main(void) { return fatbin[1] == 17 ? 0 : 1; }\n'
+        )
+        binary = self.build / "bin/radiance"
+        subprocess.run(["cc", "-g", "-O0", "-o", str(binary), str(source)], check=True)
+        # The entrypoint, a native helper, and a plugin must all be split.
+        serving = self.build / "radiance_home/bin/bc-serve"
+        helper = self.build / "radiance_home/helpers/r3_moe_worker"
+        plugin = self.build / "radiance_home/kernels/libr3moe.so"
+        for other in (serving, helper):
+            shutil.copy2(binary, other)
+        subprocess.run(["cc", "-g", "-shared", "-fPIC", "-o", str(plugin),
+                        str(source)], check=True)
+        original_digest = assets.digest(binary)
+        self.record["notes"] = (
+            f"pin-bump lane build: radiance:stock:linux-radiance "
+            f"build_plan_id={PLAN} binary_sha256={original_digest}"
+        )
+        before_dynamic = subprocess.check_output(["readelf", "-d", str(binary)])
+        before_ldd = re.sub(rb"\s*\(0x[0-9a-f]+\)", b"", subprocess.check_output(["ldd", str(binary)]))
+        original_sections = {
+            section: subprocess.check_output(["readelf", "-x", section, str(binary)])
+            for section in (".hip_fatbin", ".llvm.offloading")
+        }
+        asset, archive, checksum = self.packaged()
+        restored = assets.restore(
+            archive, checksum, asset, self.root, self.path / "unpacked", self.sdk
+        )
+        shipped = restored / "bin/radiance"
+        self.assertEqual(subprocess.check_output(["readelf", "-d", str(shipped)]),
+                         before_dynamic)
+        self.assertEqual(re.sub(rb"\s*\(0x[0-9a-f]+\)", b"",
+                                subprocess.check_output(["ldd", str(shipped)])), before_ldd)
+        for section, content in original_sections.items():
+            self.assertEqual(subprocess.check_output(
+                ["readelf", "-x", section, str(shipped)]), content)
+        sections = subprocess.check_output(["readelf", "-SW", str(shipped)]).decode()
+        self.assertNotIn(".debug_info", sections)
+        self.assertNotIn(".symtab", sections)
+        self.assertNotIn(".strtab", sections)
+        self.assertIn(".dynsym", sections)
+        self.assertNotEqual(assets.digest(shipped), original_digest)
+        self.assertEqual(assets.digest(shipped), asset["binary_sha256"])
+        self.assertEqual(asset["source_binary_sha256"], original_digest)
+        debug = self.work / "release-debug" / TAG / "bin/radiance.debug"
+        self.assertTrue(debug.is_file(), debug)
+        self.assertIn(".debug_info", subprocess.check_output(
+            ["readelf", "-SW", str(debug)]).decode())
+        self.assertEqual(subprocess.run([str(shipped)], check=False).returncode, 0)
+        with tarfile.open(archive, "r:gz") as tar:
+            self.assertFalse(any(name.endswith(".debug") for name in tar.getnames()))
+        for name in ("radiance_home/bin/bc-serve",
+                     "radiance_home/helpers/r3_moe_worker",
+                     "radiance_home/kernels/libr3moe.so"):
+            stripped = restored / name
+            section_names = subprocess.check_output(
+                ["readelf", "-SW", str(stripped)]).decode()
+            self.assertNotIn(".debug_info", section_names)
+            self.assertNotIn(".symtab", section_names)
+            self.assertIn(".dynsym", section_names)
+            self.assertTrue((self.work / "release-debug" / TAG / (name + ".debug")).is_file())
+        self.assertEqual(subprocess.run([str(restored / "radiance_home/bin/bc-serve")],
+                                        check=False).returncode, 0)
 
     def test_pack_restore_stock_binary_without_compiler(self):
         asset, archive, checksum = self.packaged()
@@ -226,9 +331,10 @@ class RuntimeAssetsTests(unittest.TestCase):
         for pattern, required in assets.RUN_MANIFEST:
             if not required:
                 continue
-            if pattern.startswith("configs/"):
-                members = [self.root / "engines/radiance" / pattern]
-                refusal = "RSC12 config closure changed"
+            if pattern.startswith(("configs/", "heat/")):
+                members = ([self.root / "engines/radiance" / pattern] if pattern.startswith("configs/")
+                           else [self.root / "tools/lab/radiance" / pattern])
+                refusal = "RSC12 config closure changed" if pattern.startswith("configs/") else "heat"
             else:
                 members = list(self.build.glob(pattern))
                 refusal = "missing runtime requirement"
@@ -257,6 +363,46 @@ class RuntimeAssetsTests(unittest.TestCase):
         # Two source TOMLs, no source tree, scripts or layouts in the payload.
         self.assertFalse((installed / "engines").exists())
         self.assertFalse((installed / "tools").exists())
+
+    def test_heat_seeds_are_source_bound_and_in_installed_manifest(self):
+        asset, archive, checksum = self.packaged()
+        with tarfile.open(archive, "r:gz") as tar:
+            manifest = json.load(tar.extractfile("bundle.json"))
+            for name in assets.SHIPPED_HEAT_SEEDS:
+                member = f"heat/{name}"
+                content = (self.root / "tools/lab/radiance/heat" / name).read_bytes()
+                self.assertIn(member, asset["file_names"])
+                self.assertEqual(tar.extractfile(member).read(), content)
+                self.assertEqual(manifest["files"][member]["sha256"],
+                                 assets.digest(self.root / "tools/lab/radiance/heat" / name))
+        installed = assets.restore(archive, checksum, asset, self.root,
+                                   self.path / "heat-install", self.sdk)
+        for name in assets.SHIPPED_HEAT_SEEDS:
+            self.assertEqual((installed / "heat" / name).read_bytes(),
+                             (self.root / "tools/lab/radiance/heat" / name).read_bytes())
+
+    def test_real_heat_seeds_match_reviewed_committed_digests(self):
+        for name in assets.SHIPPED_HEAT_SEEDS:
+            seed = ROOT.parent / "tools/lab/radiance/heat" / name
+            self.assertEqual(assets.digest(seed), assets.SHIPPED_HEAT_DIGESTS[name])
+            assets.check_committed_heat(ROOT.parent, name, seed.read_bytes())
+
+    def test_heat_digest_changes_invalidate_bundle_reuse_key(self):
+        original = assets.payload_contract_key()
+        with mock.patch.dict(assets.SHIPPED_HEAT_DIGESTS,
+                             {assets.SHIPPED_HEAT_SEEDS[0]: "0" * 64}):
+            self.assertNotEqual(original, assets.payload_contract_key())
+
+    def test_heat_source_missing_or_not_committed_refuses_pack(self):
+        seed = self.root / "tools/lab/radiance/heat" / assets.SHIPPED_HEAT_SEEDS[0]
+        seed.unlink()
+        with self.assertRaisesRegex(assets.BundleError, "heat"):
+            self.packaged()
+        seed.write_bytes(b"changed")
+        with mock.patch.object(assets, "check_committed_heat",
+                               side_effect=assets.BundleError("uncommitted heat seed")):
+            with self.assertRaisesRegex(assets.BundleError, "uncommitted heat"):
+                self.packaged()
 
     def test_changed_or_extra_rsc12_source_config_refuses_pack(self):
         extra = self.root / "engines/radiance/configs/unreviewed.toml"

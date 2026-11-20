@@ -1,6 +1,8 @@
 # RSC02 S15 — same-build Bash-to-native acceptance
 
-**State: prepared, hardware NOT RUN.** This is the RSC11 S15 gate for retiring
+> **Archived 2026-11-20.** The S15 tools moved unchanged to `tools/lab/radiance/archive/rsc02_s15/` (see `tools/lab/radiance/archive/ARCHIVE.md`): they compared the native owner with the retired Bash launcher, which no longer exists, so nothing here can be re-run. The text below is the record of how the equivalence was tested.
+
+**State: operator hardware acceptance attempted 2026-11-18; dense passed, helper blocked.** This is the RSC11 S15 gate for retiring
 `launch-flashnext-best.sh`, `lib/plan-check.sh` and the Python supervisor at
 S16. S13 must have merged, S14 must provide attributable serving/campaign
 receipts, the step-5 stored-manifest review fixes must be merged, and the RSP01
@@ -8,17 +10,41 @@ Python-free tagged release must pass its own gate before retirement. The
 RSC12 named-config loader is the source of effective settings, not a new
 launcher-flag mapping. There is **no GPU fallback** in card-free CI.
 
+## 2026-11-18 leased acceptance finding (helper cohort blocked)
+
+The operator's leased S15 short A/B found that the dense native cohort passes, but no
+helper parity has been accepted. The native `bc-serve serve flashnext-4gpu` measuring
+start reached a measured owner map, then the final manifest's strict S10 live
+VRAM admission refused helper0 (23,074 MiB of experts required, 391 MiB
+live claimable). Measuring helper processes had exited, but their BDF-scoped
+`mem_info_vram_used` counters had not necessarily returned to the pre-start
+baseline. The native owner requires a bounded post-reap VRAM release barrier
+before the final writer; neither a stale pre-measurement snapshot nor a
+larger helper budget may bypass live admission.
+
+For `flashnext-tp2xtx-r9700`, the measuring engine reported **host RAM**
+rather than VRAM exhaustion: the RAM-pinned n-gram table requires 47.69 GiB,
+another 64.60 GiB was projected for pools, checkpoint slots and other engine
+allocation, and 4.59 GiB headroom was required against 82.00 GiB
+reported available. The native owner's derived pool was 32,005 MiB.
+The Bash launcher's RAM admission also refuses this host; do not shrink the
+pool merely to turn the start green, infer nonreclaimable page cache without
+evidence, or claim helper equivalence. Both arms need admissible identical
+settings and new leased confirmation after the CPU-only fixes pass. No GPU
+or lease was used to develop these changes.
+
 ## One-command leased short A/B acceptance (operator only)
 
-The lab-only `tools/lab/radiance/rsc02_s15_ab.py` driver is **not a
+The lab-only `tools/lab/radiance/archive/rsc02_s15/rsc02_s15_ab.py` driver is **not a
 production dependency** and is **not run by CI or by this agent on GPUs**.
-Run from the repository root, with the completed build and absolute inputs
+Run from the repository root, with the completed build, the archived control and absolute inputs
 recorded first. Replace the example paths with the real paths of **one**
 immutable build and selected model; all paths must already exist:
 
 ```bash
-python3 tools/lab/radiance/rsc02_s15_ab.py accept \
+python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_ab.py accept \
   --build /absolute/completed/BUILD \
+  --legacy-runner /absolute/archived-control.sh \
   --bc-serve /absolute/completed/BUILD/radiance_home/bin/bc-serve \
   --configs /absolute/repo/engines/radiance/configs \
   --site /absolute/SITE.toml \
@@ -37,8 +63,8 @@ B/A for **each** dense Qwen 27B and helper Flash-Next cohort; A is the
 existing Bash launcher and B the foreground native owner. It refuses
 unleased startup or any unclean stop, and halts the sequence at the first
 failure. To test only the fake-engine/card-free path, run
-`python3 tools/lab/radiance/rsc02_s15_ab.py dry-run --native-test BUILD-TEST/bc_session_stored_test`;
-this is also the `bc_s15_dry_run_test` CTest entrypoint.
+`python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_ab.py dry-run --native-test BUILD-TEST/bc_session_stored_test`
+(a lab command; it is no longer a CTest target, the engine component is C++ only).
 
 Every paired short run **passes** only if the same build/engine/helper/model
 digests remain unchanged, both start/health/canary succeed, all manifest
@@ -58,8 +84,7 @@ leased hardware acceptance and release-start gate pass.
 
 ## Owners and build identity
 
-Run from a clean checkout on a leased host with the original Bash launcher
-and the candidate `bc-serve` present. Use exactly **one immutable completed
+Run from a clean candidate checkout on a leased host, supplying `--legacy-runner` as an absolute archived pre-S16 control script from an immutable, independently verified historical checkout. The candidate checkout itself no longer contains that script. Do not substitute the candidate native owner for control arm A. Use exactly **one immutable completed
 build** and record its full build metadata/source digest, `bc-serve`, engine,
 helpers, kernels and model SHA-256, ROCm/driver/runtime versions, ordered GPU
 PCI BDFs and architectures. Both arms must resolve the **same ordered cards,
@@ -81,25 +106,23 @@ resolve to exactly equal semantic execution projections; do not invent a
 profile or substitute a layout just to make a start pass. If production power
 intent is not stock/observe, use the same named profile for both and pass
 `--allow-power-apply` to the native owner **only after lease validation**.
-The Bash launcher controls are taken from its active help text; legacy
-options have no compatibility alias in native code. A cell with a missing
+The archived Bash control's options must match the exact historical code and receipt; legacy options have no compatibility alias in native code. A cell with a missing
 native typed mode is **BLOCKED**, not equivalent.
 
 ## Automated admission, observations and schedule
 
-1. **Card-free prerequisite:** build the declared component target
-   `bc_s15_dry_run_test` and run `ctest -R '^bc_s15_dry_run_test$'`.
+1. **Card-free prerequisite:** build `bc_session_stored_test` and run the lab `dry-run` command above.
    It runs the production native stored-manifest owner/fake engine and its
    comparator injects differences in speculation, histogram, helpers and
    role identity.
    Run the two longer real Bash launcher/fake-engine paths separately on a
    suitable card-free host with
-   `python3 tools/lab/radiance/rsc02_s15_projection.py dry-run --native-test
+   `python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_projection.py dry-run --native-test
    BUILD/bc_session_stored_test --legacy-launch-tests`. They hang under
    the CI build-container launcher environment, so no Bash success is
    inferred from the component CTest. The card-free prerequisite
    **cannot** assert hardware, latency, power or equal end-to-end owner
-   behaviour. The unit test `tools/tests/lab/test_rsc02_s15_projection.py`
+   behaviour. The unit test `tools/lab/radiance/archive/rsc02_s15/test_rsc02_s15_projection.py`
    checks byte-binding and semantic tampering.
 2. **Before every GPU cell:** verify identical build SHA, model SHA and
    ordered device facts; record a signed/verified active lease and current
@@ -128,7 +151,7 @@ native typed mode is **BLOCKED**, not equivalent.
    argument must refer to captured bytes; a missing, substituted or mutable
    manifest fails closed. Use the same selection rules on both arms.
 4. **Compare the two captures before measurements:**
-   `python3 tools/lab/radiance/rsc02_s15_projection.py compare --legacy
+   `python3 tools/lab/radiance/archive/rsc02_s15/rsc02_s15_projection.py compare --legacy
    A-snapshot.json --native B-snapshot.json --output projection.json`.
    It requires full equality of the execution spec, model/producer identity,
    measured host resources, plan, power, calibration, ordered cards, owner map,

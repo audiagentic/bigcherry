@@ -124,34 +124,41 @@ bool read_heat_proof(const fs::path& rank_file, r3::heat_publication::Proof* pro
 
 HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::system_clock::time_point now,
                                    std::chrono::nanoseconds max_age, const HistogramExpectation& expected,
-                                   HistogramIdentity* observed) {
+                                   HistogramIdentity* observed, std::string* reason) {
     using r3::moe_shm::kMaxHeatLdsBytes;
     using r3::moe_shm::kMaxLayers;
+    const auto verdict = [&](HistogramVerdict v, const char* why) {
+        if (reason)
+            *reason = why;
+        return v;
+    };
     constexpr uint64_t nanoseconds_per_second = 1000000000ULL;
     if (expected.layers == 0 || expected.layers > kMaxLayers || expected.experts == 0 ||
         expected.experts > kMaxHeatLdsBytes / sizeof(uint32_t) ||
         !r3::heat_publication::valid_nonce(expected.launch_nonce) ||
         expected.launched_at.time_since_epoch().count() <= 0 || max_age.count() <= 0)
-        return HistogramVerdict::unsafe;
+        return verdict(HistogramVerdict::unsafe, "the expected shape, launch nonce, launch time or age bound is invalid");
     const size_t cells = size_t(kMaxLayers) * static_cast<size_t>(expected.experts);
     const size_t required = cells * sizeof(uint32_t);
     if (expected.identity && expected.identity->counts.size() != cells)
-        return HistogramVerdict::unsafe;
+        return verdict(HistogramVerdict::unsafe, "the previous sample has a different size");
 
     // The producer must rename the raw histogram, then rename its companion.
     // A poll in that small gap may see two different generations. Re-read
     // briefly rather than mistaking normal atomic publication for degradation.
-    for (int attempt = 0; attempt != 6; ++attempt) {
+    const auto grace_end = std::chrono::steady_clock::now() + expected.proof_grace;
+    for (;;) {
         const Descriptor fd(::open(rank_file.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW));
         if (fd.get() < 0)
-            return errno == ENOENT ? HistogramVerdict::missing : HistogramVerdict::unsafe;
+            return errno == ENOENT ? verdict(HistogramVerdict::missing, "the histogram file does not exist")
+                                   : verdict(HistogramVerdict::unsafe, "the histogram file cannot be opened (a symlink or no access)");
         struct stat before{}, after{};
         if (::fstat(fd.get(), &before) != 0 || !S_ISREG(before.st_mode) ||
             before.st_size != static_cast<off_t>(required) || before.st_mtim.tv_sec < 0 ||
             before.st_mtim.tv_nsec < 0 || before.st_mtim.tv_nsec >= 1000000000L ||
             static_cast<uint64_t>(before.st_mtim.tv_sec) >
                 static_cast<uint64_t>(std::numeric_limits<int64_t>::max()) / nanoseconds_per_second)
-            return HistogramVerdict::unsafe;
+            return verdict(HistogramVerdict::unsafe, "the histogram file is not a regular file of the expected size");
 
         const int64_t modified = (static_cast<int64_t>(before.st_mtim.tv_sec) * 1000000000LL) +
                                  static_cast<int64_t>(before.st_mtim.tv_nsec);
@@ -161,11 +168,13 @@ HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::syste
         const auto now_ns =
             std::chrono::duration_cast<std::chrono::nanoseconds>(now.time_since_epoch()).count();
         if (modified <= launch_ns || (expected.identity && modified < expected.identity->modified_ns))
-            return HistogramVerdict::unsafe;
+            return verdict(HistogramVerdict::unsafe, modified <= launch_ns
+                                                         ? "the histogram was last written before this engine launched"
+                                                         : "the histogram is older than the previous sample");
         if (modified > now_ns)
-            return HistogramVerdict::future;
+            return verdict(HistogramVerdict::future, "the histogram is dated in the future");
         if (now_ns - modified > max_age.count())
-            return HistogramVerdict::stale;
+            return verdict(HistogramVerdict::stale, "the histogram is older than the allowed heat age");
 
         std::vector<uint32_t> values(cells);
         size_t copied = 0;
@@ -175,29 +184,35 @@ HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::syste
             if (n < 0 && errno == EINTR)
                 continue;
             if (n <= 0)
-                return HistogramVerdict::unsafe;
+                return verdict(HistogramVerdict::unsafe, "the histogram file could not be read in full");
             copied += static_cast<size_t>(n);
         }
         if (::fstat(fd.get(), &after) != 0 || before.st_dev != after.st_dev || before.st_ino != after.st_ino ||
             before.st_size != after.st_size || before.st_mtim.tv_sec != after.st_mtim.tv_sec ||
             before.st_mtim.tv_nsec != after.st_mtim.tv_nsec)
-            return HistogramVerdict::unsafe;
+            return verdict(HistogramVerdict::unsafe, "the histogram file changed while it was read");
 
         r3::heat_publication::Proof proof{};
-        const bool matched =
-            read_heat_proof(rank_file, &proof) &&
-            std::string_view(proof.launch_nonce.data(), proof.launch_nonce.size()) == expected.launch_nonce &&
-            proof.device == static_cast<uint64_t>(before.st_dev) &&
-            proof.inode == static_cast<uint64_t>(before.st_ino) &&
-            proof.size_bytes == static_cast<uint64_t>(required) &&
-            proof.modified_sec == static_cast<int64_t>(before.st_mtim.tv_sec) &&
-            proof.modified_nsec == static_cast<int64_t>(before.st_mtim.tv_nsec);
-        if (!matched) {
-            if (attempt != 5) {
+        const bool proof_read = read_heat_proof(rank_file, &proof);
+        std::string mismatch;
+        if (!proof_read) mismatch = "no readable proof file";
+        else {
+            const auto add = [&](const char* what) { mismatch += (mismatch.empty() ? "" : ", "); mismatch += what; };
+            if (std::string_view(proof.launch_nonce.data(), proof.launch_nonce.size()) != expected.launch_nonce) add("launch nonce");
+            if (proof.device != static_cast<uint64_t>(before.st_dev) || proof.inode != static_cast<uint64_t>(before.st_ino)) add("file identity");
+            if (proof.size_bytes != static_cast<uint64_t>(required)) add("size");
+            if (proof.modified_sec != static_cast<int64_t>(before.st_mtim.tv_sec) ||
+                proof.modified_nsec != static_cast<int64_t>(before.st_mtim.tv_nsec)) add("modification time");
+        }
+        if (!mismatch.empty()) {
+            if (std::chrono::steady_clock::now() < grace_end) {
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
                 continue;
             }
-            return HistogramVerdict::unsafe;
+            return verdict(HistogramVerdict::unsafe,
+                           ("the launch-bound proof beside the histogram does not match this launch and file (" + mismatch +
+                            ") for longer than the publication grace")
+                               .c_str());
         }
 
         bool demand = false;
@@ -205,21 +220,36 @@ HistogramVerdict histogram_verdict(const fs::path& rank_file, std::chrono::syste
         for (size_t i = 0; i < cells; ++i) {
             if (i >= model_cells) {
                 if (values[i] != 0)
-                    return HistogramVerdict::unsafe; // never accept counts in padded layers
+                    return verdict(HistogramVerdict::unsafe,
+                                   "counts in a layer beyond the model's routed layers (padding must stay zero)"); // never accept counts in padded layers
             } else {
                 demand = demand || values[i] != 0;
             }
             if (expected.identity && values[i] < expected.identity->counts[i])
-                return HistogramVerdict::unsafe; // restart / wrap: fail closed, never synthesize a delta
+                return verdict(HistogramVerdict::unsafe,
+                               "a count went down since the previous sample (restart or wrap)"); // fail closed, never synthesize a delta
         }
+        // Authentic and well-formed but nothing routed yet: no evidence, no fault (the caller decides how long to wait).
         if (!demand)
-            return HistogramVerdict::unsafe;
+            return verdict(HistogramVerdict::pending, "the histogram is authentic but holds no route counts yet");
         if (observed)
             *observed = HistogramIdentity{static_cast<uint64_t>(before.st_dev),
                                           static_cast<uint64_t>(before.st_ino), modified, std::move(values)};
-        return HistogramVerdict::fresh;
+        return verdict(HistogramVerdict::fresh, "");
     }
-    return HistogramVerdict::unsafe;
+    return verdict(HistogramVerdict::unsafe, "the histogram was never read consistently");
+}
+
+HistogramVerdict histogram_verdict_startup(const fs::path& rank_file, std::chrono::nanoseconds max_age,
+                                           const HistogramExpectation& expected, std::chrono::nanoseconds wait,
+                                           HistogramIdentity* observed, std::string* reason) {
+    const auto give_up = std::chrono::steady_clock::now() + wait;
+    auto verdict = histogram_verdict(rank_file, std::chrono::system_clock::now(), max_age, expected, observed, reason);
+    while (verdict == HistogramVerdict::pending && std::chrono::steady_clock::now() < give_up) {
+        std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        verdict = histogram_verdict(rank_file, std::chrono::system_clock::now(), max_age, expected, observed, reason);
+    }
+    return verdict;
 }
 
 ReplayVerdict replay_verdict(int64_t manifest_depth, bool profiled, std::string_view log) {
@@ -299,6 +329,18 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
                     ? handoff.telemetry.period_s * 3000000000LL
                     : 0;
             heat_age_budget_ = std::chrono::nanoseconds(std::max({age_ns, period_ns, int64_t(5000000000LL)}));
+            // The startup guard runs right after the canary, before the engine's next histogram snapshot has to have
+            // counted it: an authentic all-zero file is waited for up to the declared publication period, or the
+            // policy's allowed heat age if that is longer (both from the manifest; neither declared: no wait).
+            const int64_t declared_period_ns =
+                handoff.telemetry.period_s > 0 &&
+                        handoff.telemetry.period_s < std::numeric_limits<int64_t>::max() / 1000000000LL
+                    ? handoff.telemetry.period_s * 1000000000LL
+                    : 0;
+            heat_startup_wait_ = std::chrono::nanoseconds(std::max(declared_period_ns, age_ns));
+            // The raw file and its proof are two renames apart: a poll that lands between them re-reads for up to
+            // one declared publication period (never less than the default) before it calls the pair unsafe.
+            heat_expectation_.proof_grace = std::chrono::nanoseconds(std::max<int64_t>(declared_period_ns, 100000000LL));
         }
         if (policy_enabled_ && !histogram_)
             return refuse("policy", "live placement needs a recorded engine heat stream");
@@ -313,15 +355,23 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
 }
 
 v2::Status RuntimeGuards::inspect_heat() {
-    if (!histogram_)
+    // Recording is observational: an unavailable or temporarily inconsistent
+    // histogram must not shut down inference. Strict freshness, nonce, identity
+    // and shape checks remain mandatory when live placement policy is active.
+    if (!policy_enabled_ || !histogram_)
         return std::nullopt;
     HistogramIdentity identity{};
-    const auto evidence = histogram_verdict(*histogram_, std::chrono::system_clock::now(), heat_age_budget_,
-                                            heat_expectation_, &identity);
+    std::string why;
+    // Only the first check after startup waits, and only for an authentic file with no counts yet; every other
+    // verdict, and every later check, is decided at once.
+    const auto wait = heat_startup_wait_;
+    heat_startup_wait_ = std::chrono::nanoseconds{0};
+    const auto evidence = histogram_verdict_startup(*histogram_, heat_age_budget_, heat_expectation_, wait,
+                                                    &identity, &why);
     if (evidence != HistogramVerdict::fresh)
         return refuse(
-            "heat", "manifest-declared engine rank0 heat histogram is absent, unsafe, stale or future-dated: " +
-                        std::to_string(static_cast<int>(evidence)));
+            "heat", "manifest-declared engine rank0 heat histogram is absent, unsafe, stale, future-dated or still empty: " +
+                        std::to_string(static_cast<int>(evidence)) + " (" + why + ")");
     heat_expectation_.identity = std::move(identity);
     return std::nullopt;
 }

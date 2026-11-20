@@ -67,8 +67,15 @@ Plan-only follow-up to the earlier RAM baseline and timing investigation. BHK01 
 
 Depends on BHK02 for active timings where available; basic configured-memory comparison can proceed with SMBIOS if active decode remains blocked. Do not block the whole RAM comparison on writer feasibility BHK03.
 
+
+
+## Lead 2026-11-19
+
+This item audits the RAM baseline after the four-DIMM upgrade. Random, low-rate toolchain crashes on the host (clang code generation and machine-scheduler segfaults, a GNU `as` junk-byte failure; same input crashing at different points; see BHK01 notes) are the symptom class that an unstable memory configuration produces, and a four-DIMM population commonly runs at a lower speed or on an unstable profile. When this audit runs, record the configured speed, voltage and profile against the DIMMs' rating, whether any timing was changed through BHK02/BHK03 paths, and run an overnight memtest86+; repeat `tmp/bigcherry/build-flakiness/rep.py` (about 1 crash in 160 compiles before any change) after any change as the regression check.
+
 ## Change Log
 
 - 2026-11-18T01:29:48.426851+00:00 (created-by): Created by codex
 - 2026-11-18T01:35:42.339274+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-18T01:44:14.536296+00:00 (updated-by): Updated: section:effort_risk
+- 2026-11-19T07:38:21.132864+00:00 (updated-by): Updated: section:notes

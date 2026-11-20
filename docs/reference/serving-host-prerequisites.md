@@ -33,19 +33,7 @@ identity change) is `ambiguous` or `unavailable` rather than an
 assertion that the patch is active. This is a behavioural proxy,
 not an inspection of the kernel source or a direct GFXOFF register.
 
-- Live FlashNext launcher:
-  `tools/lab/radiance/launch-flashnext-best.sh` captures
-  `runs/.../gfxoff-floor-<STAMP>.json` after helpers and immediately
-  before `start_engine_manifest`; it evaluates after `/health` and
-  before `start_canary`, writing `gfxoff-<STAMP>.json` in the same
-  run folder. Failures never stop serving.
-- Python supervisor:
-  `tools/bigcherry/serving/supervisor.py` captures just before the
-  engine child and after `ProcessLauncher.ready`, before entering the
-  request wait loop. Results appear in the supervisor run record and
-  in the already-existing PWR07 power receipt's
-  `observations.gfxoff` block. The supervisor remains inactive for
-  production until the RSC11 serving cutover.
+- Native production owner: `bc-serve serve/start` owns the pre-engine/loaded-idle GFXOFF observations and retained power records. `bc-serve stop/status` reports the owned session. These observations do not replace the requirement for an idle baseline and verified child exit.
 - CLI:
   `bigcherry gfxoff floor --bdf 0000:09:00.0 --output FLOOR.json`
   and, after an idle engine context is resident,
@@ -74,7 +62,7 @@ No detector infers patch status from the kernel release suffix.
 
 The floor needs **no process holding that engine card**, and the loaded
 phase needs a healthy, request-idle engine that has created and retained its
-HIP/KFD compute context. The launcher controls this sequence; a standalone
+HIP/KFD compute context. The native session owner controls this sequence; a standalone
 doctor run cannot silently establish it. The no-process floor must itself show 0% GPU busy; otherwise the probe
 refuses to claim the baseline was idle. Other GPU workloads, unstable
 sensor data or another process on that card can make the comparison

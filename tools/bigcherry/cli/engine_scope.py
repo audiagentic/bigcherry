@@ -21,7 +21,7 @@ ENGINE = "engine"
 LANE = "lane"
 #: Covers every declared engine; ``--engine`` is not accepted.
 PLATFORM = "platform"
-#: Declares its own engine argument (engine-bench).
+#: Declares its own engine argument (engine-bench and results queries).
 SELF = "self"
 
 #: Commands that act on any engine, with their handler migrated to ``args.engine``.
@@ -43,7 +43,6 @@ _ENGINE_COMMANDS: frozenset[str] = frozenset(
         "pin-bump",
         "pin-triage",
         "pin-release",
-        "release-install",
         "release-bundle",
         "release-notes",
         "sources",
@@ -59,7 +58,7 @@ _LANE_COMMANDS = frozenset({"build", "campaign-build"})
 #: engine to choose.
 #: remote runs a bigcherry command (carrying its own --engine) on a GPU host, so it has no engine of its own.
 _PLATFORM_COMMANDS = frozenset({"patch-lint", "patch-disposition", "remote", "run", "clean"})
-_SELF_COMMANDS = frozenset({"engine-bench"})
+_SELF_COMMANDS = frozenset({"engine-bench", "results"})
 
 #: Everything else is today a llama.cpp tool. Each entry is either genuinely llama.cpp-only (tuning, replay,
 #: autotune, kernel profiling) or not yet migrated; both refuse another engine rather than silently act on llama.cpp.

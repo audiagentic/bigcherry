@@ -1,0 +1,144 @@
+{
+ "config": {
+  "allow_estimate": false,
+  "max_tokens": 256,
+  "model": "default",
+  "prompt_sha256": [
+   "b4ebad51de0e9cd80efd607374c957a436208566e23d8954e2d7418ce6a22447",
+   "d59da463199d86d714b73c7446afde566e04f04e467641d4565bc7492e1d4215",
+   "09d38cb7dbcf1228bb544146445b135bceaab806f510ec561c0085a66ef205dd",
+   "40ad518afaf5b6956b10553b1789e5e92ad2bf3013ee7ee78fddb0e2a9dc5e11"
+  ],
+  "prompt_tokens": 89852,
+  "prompt_tokens_target": 150000,
+  "prompt_words": 89852,
+  "reps": 1,
+  "seed": 42,
+  "shared_prefix": false,
+  "streams": [
+   4
+  ],
+  "temperature": 0.0,
+  "throughput_definition": "finite-batch makespan: tokens / (first request start to last response end)",
+  "url": "http://127.0.0.1:18453"
+ },
+ "ok": true,
+ "rounds": [
+  {
+   "aggregate": {
+    "aggregate_tps": 3.482,
+    "estimated_tokens": false,
+    "event_gap_ms_max": 915.074,
+    "event_gap_ms_p50": 39.49,
+    "event_gap_ms_p95": 828.062,
+    "event_gap_ms_p99": 884.485,
+    "mean_stream_decode_tps_est": 29.747,
+    "tokens": 1024,
+    "ttft_ms_max": 290934.57,
+    "ttft_ms_p50": 216751.73,
+    "ttft_ms_p95": 290934.57
+   },
+   "engine": {
+    "decode_ms_per_step": 34.659,
+    "decode_tokens_per_step": 3.7546,
+    "decode_tokens_total": 1025.0,
+    "decode_tps_engine": 108.329,
+    "draft_acceptance": 0.6002,
+    "draft_accepted_total": 659.0,
+    "draft_tokens_total": 1098.0,
+    "engine_step_seconds_decode_total": 9.461904,
+    "engine_steps_decode_total": 273.0,
+    "engine_steps_prefill_total": 235.0,
+    "num_preemptions_total": 0.0,
+    "prefill_tokens_total": 596158.0,
+    "requests_running_max": 2.0,
+    "requests_running_mean": 1.199,
+    "requests_waiting_max": 3.0
+   },
+   "ok": true,
+   "per_stream": [
+    {
+     "decode_tps_est": 81.515,
+     "error": "",
+     "events": 92,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 148688,
+     "response_tail_ms": 10.57,
+     "stream": 0,
+     "text_head": "We need answer user's request: \"Continue this list of words with a short story.\" They provided a huge list of words (many repeated). Need continue list of words with a short story. Need likely produce a short story that continues the list? Interpret: They want us to continue this list of words with a short story. Maybe they gave a list of words and ask to continue it with a short story. We need ou",
+     "text_sha256": "577be10833a6383c77cb7e5df690da137bff22c0ae3df7f79bcd6d9cd4cd66b9",
+     "tokens": 256,
+     "ttft_ms": 290934.57,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 11.769,
+     "error": "",
+     "events": 97,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 148555,
+     "response_tail_ms": 11.92,
+     "stream": 1,
+     "text_head": "We need answer user's request: \"Continue this list of words with a short story.\" They provided a huge list of words (tokens) and ask continue this list of words with a short story. Need likely produce a short story that continues the list? Need interpret. They want \"Continue this list of words with a short story.\" Maybe they want us to take the list and continue it, making a short story using thos",
+     "text_sha256": "ea89439a22887071beb895f967b822cb5397a186bd3f86fd9d91f41c3244baeb",
+     "tokens": 256,
+     "ttft_ms": 216751.73,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 12.339,
+     "error": "",
+     "events": 92,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 148714,
+     "response_tail_ms": 8.94,
+     "stream": 2,
+     "text_head": "We need answer user's request: \"Continue this list of words with a short story.\" They provided a huge list of words (tokens) and ask continue this list of words with a short story. Need likely produce a short story using/continuing the list? Need interpret. They want \"Continue this list of words with a short story.\" Maybe they want us to take the list and continue it, making a short story? The lis",
+     "text_sha256": "5100a5bcfe980ff744fbca6a287b960af163253907f94e14ebf99f89f1f83084",
+     "tokens": 256,
+     "ttft_ms": 69467.77,
+     "usage_source": "server"
+    },
+    {
+     "decode_tps_est": 13.364,
+     "error": "",
+     "events": 89,
+     "finish_reason": "length",
+     "ok": true,
+     "prompt_tokens": 148473,
+     "response_tail_ms": 4.59,
+     "stream": 3,
+     "text_head": "We need answer user's request: \"Continue this list of words with a short story.\" They provided a huge list of words (tokens) and ask continue this list of words with a short story. Need likely produce a short story that continues the list? Need interpret. They want \"Continue this list of words with a short story.\" Maybe they want us to take the list and continue it, making a short story using thos",
+     "text_sha256": "83a3b564c529411ed48423aacc04b4bdb50268e7704cfe4dd6a1f30ee0d253e0",
+     "tokens": 256,
+     "ttft_ms": 143472.74,
+     "usage_source": "server"
+    }
+   ],
+   "release_to_first_start_ms": 86.173,
+   "rep": 0,
+   "start_skew_ms": 32.426,
+   "streams": 4,
+   "wall_end_ns": 1795097420807273879,
+   "wall_s": 294.0942,
+   "wall_start_ns": 1795097126625153793
+  }
+ ],
+ "schema": "bigcherry.stream-benchmark.v1",
+ "summary": {
+  "4": {
+   "aggregate_tps_median": 3.482,
+   "decode_ms_per_step_median": 34.659,
+   "decode_tokens_per_step_median": 3.7546,
+   "decode_tps_engine_median": 108.329,
+   "draft_acceptance_median": 0.6002,
+   "event_gap_ms_p95_median": 828.062,
+   "reps_ok": 1,
+   "requests_running_mean_median": 1.199,
+   "ttft_ms_max_median": 290934.57
+  }
+ }
+}

@@ -13,22 +13,18 @@ priority: P1
 
 # moe-remote: helper count and topology as runtime values (no fixed 2), selectable combine methods
 
-## Current evidence reconciliation (2026-11-10)
-
-The old future-tense KLD/test notes were written before later runs. The 2G tail is the conservative named default; the 14G+CPU-combine flashnext-4gpu layout exists. RAD46 v1.17.0 4G/14G p99.9 gate failures supersede the earlier pass for current quality decisions. RHP10 closed the long-context tail matrix. See the linked status matrix; do not rerun it.
-
 ## Description
 
-Owner rules (2026-10-23, CLAUDE.local.md): code for unknown topologies - no fixed helper/device counts; topology-dependent methods stay selectable with a derived auto. The moe-remote protocol and helper hard-code two: kMaxRanks = 2 (moe_remote_shm.h) indexes result planes [rank][helper], combine.lane/seq are 2-element arrays, and R3_MOE_WORKER_COMBINE requires helper_count == 2. Make helper count (1..N) and engine ranks runtime values with separate axes, and make the helper-row combine a selectable method: R3_MOE_WORKER_COMBINE=off|cpu|gpu|auto (later p2p).
+RAD23 owns moe-remote runtime topology cardinality and combine-method selection: independent engine-rank/helper axes, shared-memory layout/generation, per-rank results, and supported off/cpu/gpu/auto method behavior. The original fixed-two source inventory is historical. Runtime slots/up-to-four-helper CPU combine are delivered (#485/#488); protocol v25 adds engine-rank support. Reconcile exact current source rather than reimplement. GPU combine, negotiated method activation and measured auto selection remain unproven and must stay explicit residuals. Do not absorb RAD42 chunk combine, RAD41 result encoding or RAD51 CPU BAR destination.
 
 ## Steps
 
-1. GPT design review (req_bigcherry_97cebda33722 + addendum req_bigcherry_3bb6b763ab97): protocol for N helpers, GPU-through-host combine race-freedom, overflow fallback, auto selection, prior art.
-2. Protocol: helper count and engine ranks as runtime header fields; per-helper arrays sized from them; layout_for derives region sizes; version bump. Remove every hard-coded 2 / kMaxRanks used for helpers.
-3. Combine methods behind one interface: off, cpu (AVX2/F16C, already on feat/combine-fp16), gpu (CPU futex readiness, then a GPU reduction on a device-local stream with explicit system-visible publish, presence masks and per-row fallback). 1 helper resolves to off.
-4. auto: measured once per host and cached - P2P availability, per-card host-link bandwidth, CPU features - choosing method and combiner helper (widest link; tree reduce when N-1 planes over one link loses). Per-model profile may override.
-5. Harness first: replay/combine bench for each method with 1, 2 and synthetic N planes before end-to-end.
-6. KLD gate and 4-pair A/B per method on the build server vs the parent build.
+1. Inspect current source/ABI in moe_remote_shm.h, moe_remote_hook.cpp, worker_combine.h and moe_mailbox_ops.hip plus tests. List supported engine-rank/helper-count combinations and refusal conditions, including zero helpers and unsupported formats.
+2. Record requested versus selected combine method and effective reason through the existing native config/feature-state/run-record path; do not add a second parser or telemetry system.
+3. Explicitly distinguish shipped CPU combine from any GPU or auto method. If GPU/auto are absent, retain as bounded open decisions or propose a separately justified slice; do not imply they are implemented.
+4. Use accepted RHP09 calibration and actual method/shape/link costs for selection. Measure supported methods and fallback costs by decode, small/large prefill and session count; avoid hard-coded helper heuristics.
+5. Preserve immutable ticket, overflow/fallback rows, generation, replay/order, helper cancellation/crash and PR #520 no-route-first-token coverage.
+6. List exact remaining criteria and keep pending until implementation/evidence or a documented no-go resolves them.
 
 ## Detailed Solution & Technical Design
 
@@ -55,7 +51,7 @@ array sized from them in layout_for; result planes [H][R]; combine over H planes
 
 ## Validation
 
-Component tests with helper counts 1, 2 and 3 (shm layout, combine correctness per method, fallback rows); KLD gate passes for cpu and gpu; helper-ab A/B per method; grep shows no hard-coded helper count.
+Card-free tests verify current 1/2 engine-rank and supported 0/1/2/3 helper layouts, malformed identity/ticket/replay/epoch, overflow/refusal, no-route-first-token chunk and cancellation/crash. Later leased hardware compares only actually supported methods with output/KLD and MTP checks.
 
 ## Effort & Risk
 
@@ -67,7 +63,7 @@ Component tests with helper counts 1, 2 and 3 (shm layout, combine correctness p
 
 ## Acceptance Criteria
 
-No fixed helper count in moe-remote code or protocol; off/cpu/gpu/auto selectable and auto derived from measured topology; the chosen method on the build server beats combine-off on prefill with tg not worse and KLD within the gate.
+Current source identifies exactly which rank/helper combinations and off/cpu/gpu/auto methods are implemented or fail closed. Supported combinations satisfy layout, ownership, ticket and exactly-once tests; unsupported requests reject before serving. Method selection is cost-gated on measured critical path beyond noise or explicitly rejected. No duplicate RAD42/RAD41/RAD51/RHP09 ownership. Remain pending while unique method-selection criteria are open.
 
 ## Notes
 
@@ -105,6 +101,10 @@ STATUS 2026-11-02 ~02:40. Merged since the 2026-11-01 status: W4H2 + 32-row GEMV
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED; optional output method in RAD41" was NOT applied; this item stays open. Why: PRs #485/#488 and engines/radiance/components/moe-remote/moe_remote_shm.h:32-36,246-254 deliver runtime helper slots and up-to-four-helper CPU combine. But r3_moe_worker.cpp:523-542 still provides a boolean CPU AVX2/F16C combine path, not off|cpu|gpu|auto with GPU kernels, measured auto selection and the per-method KLD/A/B required by RAD23.md:18-35,60-70. Active items that reference this one: RAD19, RAD39, RAD22, RCS07, RHP04, RHP03, RHP06, RHP10, RHP07, RHP09. Keep the unfinished GPU-combine, negotiated method, topology-derived auto policy and comparative validation as explicit acceptance criteria.
 
 2026-11-04 closed PR #506 (multi-row packed-f16 W4 decode GEMV, R3_MOE_WORKER_GEMV_W4MR, default-off) archived as experiments/radiance/RAD23-w4-gemv-mr/change.patch; never validated end to end (needs per-kernel time, --replay-sweep vs W4H2/CPU reference, then A/B and KLD). PR #482 (LANE_QUANT) was superseded by #481.
+
+## Current evidence reconciliation (2026-11-10)
+
+The old future-tense KLD/test notes were written before later runs. The 2G tail is the conservative named default; the 14G+CPU-combine flashnext-4gpu layout exists. RAD46 v1.17.0 4G/14G p99.9 gate failures supersede the earlier pass for current quality decisions. RHP10 closed the long-context tail matrix. See the linked status matrix; do not rerun it.
 
 ## Execution gate review (2026-10-23)
 
@@ -579,3 +579,8 @@ the R9700's 16-20 W idle (ASPM, root). Stage A of hot placement is in place reco
 - 2026-11-02T02:42:21.800564+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T04:24:06.680031+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T06:15:57.005197+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4241
+- 2026-11-20T02:30:52.024772+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria

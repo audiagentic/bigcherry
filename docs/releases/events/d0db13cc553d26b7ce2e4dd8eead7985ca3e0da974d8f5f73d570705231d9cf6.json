@@ -1,0 +1,21 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261118_085233_radiance-rdna3-migration-has-a_7831",
+  "files": [
+    "docs/reviews/radiance-native-libr3d/ASSESSMENT.md",
+    "docs/reviews/radiance-native-libr3d/INTEGRATION.md",
+    "docs/reviews/radiance-native-libr3d/native-rows.tsv"
+  ],
+  "plan-item-ids": [
+    "RCS01",
+    "RCS15",
+    "RCS16",
+    "RCS17",
+    "RCS18",
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Assess 123 native libr3d registry rows and local gfx1100 rewrite, helper ABI, mixed-rank transport and gfx1030 dependency. Stage native baseline, compute extensions, supported role qualification and retirement.",
+  "timestamp-utc": "2026-11-18T08:52:33.841430Z",
+  "user-summary-candidate": "Radiance RDNA3 migration has a staged plan to extend upstream libr3d and retire the generated gfx1100 provider after qualification."
+}

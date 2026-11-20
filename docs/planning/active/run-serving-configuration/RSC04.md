@@ -2,7 +2,7 @@
 id: RSC04
 order: 4
 plan: run-serving-configuration
-state: pending
+state: in_progress
 created-at: '2026-11-02T00:53:10.689343+00:00'
 breadth: ''
 skill: basic
@@ -113,6 +113,12 @@ Critical gap for the installed engine: the release archive holds configs/flashne
 
 S16 classification: MIGRATE only standing-procedure scripts (flashnext-parity.sh for the bump parity gate, pwr01-baseline.sh); ARCHIVE rhp01-coverage.sh at archive/lab-rhp01-coverage (requires the forbidden routing_evidence lab experiment, do not add a native mode) to `bc-serve serve CONFIG --run-dir`; ARCHIVE to immutable tags archive/lab-<name> and delete from the tree: burst-idle.sh, burst-trace.sh, flashnext-probe.sh, pwr03-idle-diag.sh, rad20-burst-profile.sh, rad20-profile.sh, rad20-queue-probe.sh, rad20-helper-kill.sh, rhp20-forced-move.py (each with an immutable-tag historical TOOL_DISPOSITION row); DELETE after S15 and RSP01: launch-flashnext-best.sh, lib/plan-check.sh, lib/sdk-check.sh, serving/supervisor.py, runtime_adapters.py, activation.py, cli/serve.py, serve_v2.py and serving-only Python modules once callers are gone, tools/bigcherry/release/install.py after the installed-tag start gate. Launcher-text tests are deleted with their subjects (test_launch_flashnext_cleanup, test_launch_flashnext_release, test_plan_check_launcher, test_helper_profile_parity, test_rhp16_calibrate, test_rhp18_policy_preflight, test_rhp19_calibration_watchdog, test_mtp_replay_guard; test_runtime_sdk_check after the native SDK negative test): port only an assertion that guards a production behaviour with no native test. Direct blockers from git grep: release/install.py references the launcher; tests/release/test_release_install.py checks the launcher command; tests/campaign/test_rsc03_resources.py reads launcher text. Deletion proof: git grep shows zero executable references. DO NOT MERGE the deletion until the leased S15 A/B (tools/lab/radiance/rsc02_s15_ab.py, runbook docs/reference/engines/radiance/RSC02_S15_ACCEPTANCE.md) passes on hardware for dense and helper configurations.
 
+
+
+## Status 2026-11-19
+
+S15 passed on hardware and S16 landed (#1131): `launch-flashnext-best.sh`, `lib/plan-check.sh`, `lib/sdk-check.sh`, `burst-idle.sh`, `flashnext-probe.sh`, `tools/bigcherry/cli/serve.py` and `serving/supervisor.py` are gone from main (checked 2026-11-19). `flashnext-parity.sh` is migrated to `bc-serve serve` and is the bump parity gate. Still present and to be classified before closing: `config/serving-settings.toml` (the launcher-owner entries), `engines/radiance/layouts/` (now example/test data; confirm nothing active reads it), and active runbooks that still name the launcher. Moving to in_progress for those leftovers.
+
 ## Change Log
 
 - 2026-11-02T00:53:10.689343+00:00 (created-by): Created by agent
@@ -123,3 +129,5 @@ S16 classification: MIGRATE only standing-procedure scripts (flashnext-parity.sh
 - chg_20261102_005338_planning-one-serve-command_5259
 - 2026-11-02T00:53:56.311686+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-18T04:42:21.572347+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:37:11.732116+00:00 (updated-by): Updated: section:notes
+- 2026-11-19T07:37:51.117086+00:00 (state-transition): State: pending → in_progress

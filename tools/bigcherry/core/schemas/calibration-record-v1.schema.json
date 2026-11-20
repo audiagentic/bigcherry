@@ -1,0 +1,112 @@
+{
+  "$id": "urn:bigcherry:calibration-record:v1",
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "additionalProperties": false,
+  "properties": {
+    "key": {
+      "additionalProperties": false,
+      "properties": {
+        "fields": {
+          "items": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "minItems": 1,
+          "type": "array"
+        },
+        "inputs": {
+          "type": "object"
+        },
+        "sha256": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "version": {
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "version",
+        "fields",
+        "inputs",
+        "sha256"
+      ],
+      "type": "object"
+    },
+    "kind": {
+      "pattern": "^[a-z][a-z0-9_.-]+$",
+      "type": "string"
+    },
+    "provenance": {
+      "additionalProperties": false,
+      "properties": {
+        "build_id": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "host_facts_digest": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "plan_key": {
+          "pattern": "^[0-9a-f]{64}$",
+          "type": "string"
+        },
+        "recorded_at": {
+          "pattern": "^\\d{4}-\\d{2}-\\d{2}$",
+          "type": "string"
+        },
+        "run_id": {
+          "minLength": 1,
+          "type": "string"
+        },
+        "source_revision": {
+          "minLength": 1,
+          "type": "string"
+        }
+      },
+      "required": [
+        "build_id",
+        "plan_key",
+        "source_revision",
+        "run_id",
+        "host_facts_digest",
+        "recorded_at"
+      ],
+      "type": "object"
+    },
+    "quantities": {
+      "additionalProperties": false,
+      "properties": {
+        "absent": {
+          "additionalProperties": {
+            "minLength": 1,
+            "type": "string"
+          },
+          "type": "object"
+        },
+        "measurements": {
+          "type": "object"
+        }
+      },
+      "required": [
+        "measurements",
+        "absent"
+      ],
+      "type": "object"
+    },
+    "schema_version": {
+      "const": 1
+    }
+  },
+  "required": [
+    "schema_version",
+    "kind",
+    "key",
+    "quantities",
+    "provenance"
+  ],
+  "title": "BigCherry generic calibration record v1",
+  "type": "object"
+}

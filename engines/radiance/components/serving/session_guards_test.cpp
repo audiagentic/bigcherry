@@ -10,6 +10,7 @@
 #include <optional>
 #include <stdexcept>
 #include <string>
+#include <thread>
 #include <vector>
 
 #include <unistd.h>
@@ -126,6 +127,95 @@ void producer_contract_case(std::string_view which) {
         fs::rename(rank.string() + ".tmp", rank);
         expect(histogram_verdict(rank, now, std::chrono::seconds(30), model) == HistogramVerdict::unsafe,
                "raw publication with stale sidecar cannot hijack this session");
+    } else if (which == "mtp_layer") {
+        // Flash-Next's container has 49 routed layers (0..48): layer 48 is the MTP layer and the engine counts routes
+        // in it. A 48-layer expectation would call those counts padding; the 49-layer one the container gives accepts
+        // them, and the padding check beyond it stays strict.
+        counts[size_t(48) * 2U] = 300;
+        publish_like_engine(rank, counts);
+        const HistogramExpectation container{49, 2, launch, {}, std::string(kLaunchNonce)};
+        std::string why;
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), container, nullptr, &why) == HistogramVerdict::fresh,
+               "counts in the last (MTP) layer of a 49-layer container are demand");
+        const HistogramExpectation short_by_one{48, 2, launch, {}, std::string(kLaunchNonce)};
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), short_by_one, nullptr, &why) == HistogramVerdict::unsafe &&
+                   why.find("beyond the model's routed layers") != std::string::npos,
+               "the same counts are padding to a 48-layer expectation, and the reason says so");
+        counts[size_t(49) * 2U] = 1;
+        publish_like_engine(rank, counts);
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), container, nullptr, &why) == HistogramVerdict::unsafe,
+               "a count beyond the 49th layer is still padding");
+    } else if (which == "proof_lag") {
+        // A heavily loaded disk stretches the gap between the producer's two renames (raw file, then its proof): a poll
+        // inside the gap sees the new raw file beside the previous generation's proof. Within the grace it is re-read
+        // and qualifies; past it the pair is unsafe and the reason names what differs.
+        HistogramExpectation model{49, 2, launch, {}, std::string(kLaunchNonce)};
+        counts[0] = 9;
+        publish_like_engine(rank, counts);                       // generation 1: raw + matching proof
+        counts[0] = 10;
+        publish_like_engine(rank, counts, kOtherNonce);          // generation 2 raw, a proof of another launch: the gap
+        std::thread producer([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            publish_like_engine(rank, counts);                   // the proof catches up
+        });
+        std::string why;
+        model.proof_grace = std::chrono::seconds(5);
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, nullptr, &why) == HistogramVerdict::fresh,
+               "a proof that catches up within the grace qualifies");
+        producer.join();
+        publish_like_engine(rank, counts, kOtherNonce);
+        model.proof_grace = std::chrono::milliseconds(60);
+        const auto t0 = std::chrono::steady_clock::now();
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), model, nullptr, &why) == HistogramVerdict::unsafe &&
+                   why.find("launch nonce") != std::string::npos && why.find("grace") != std::string::npos &&
+                   std::chrono::steady_clock::now() - t0 >= std::chrono::milliseconds(60),
+               "a proof that never catches up is unsafe after the grace and the reason says which field differs");
+    } else if (which == "startup_wait") {
+        const HistogramExpectation model{49, 2, launch, {}, std::string(kLaunchNonce)};
+        std::vector<uint32_t> zero(static_cast<size_t>(kMaxLayers) * 2, 0);
+        publish_like_engine(rank, zero);
+        // an authentic all-zero file is waited for: the engine's next snapshot carries the canary's counts
+        std::thread engine([&] {
+            std::this_thread::sleep_for(std::chrono::milliseconds(300));
+            auto later = zero;
+            later[size_t(48) * 2U] = 7;
+            publish_like_engine(rank, later);
+        });
+        const auto before = std::chrono::steady_clock::now();
+        std::string why;
+        expect(histogram_verdict_startup(rank, std::chrono::seconds(30), model, std::chrono::seconds(5), nullptr, &why) ==
+                   HistogramVerdict::fresh,
+               "the startup check waits for the first counted snapshot and then qualifies it");
+        expect(std::chrono::steady_clock::now() - before < std::chrono::seconds(4), "and does not wait out the bound");
+        engine.join();
+        // still empty at the end of the wait: pending (the caller refuses, with the reason)
+        publish_like_engine(rank, zero);
+        const auto t0 = std::chrono::steady_clock::now();
+        expect(histogram_verdict_startup(rank, std::chrono::seconds(30), model, std::chrono::milliseconds(200), nullptr,
+                                         &why) == HistogramVerdict::pending &&
+                   std::chrono::steady_clock::now() - t0 >= std::chrono::milliseconds(200),
+               "an all-zero file that stays empty is waited for exactly the bound, then pending");
+        // no wait declared: decided at once
+        const auto t1 = std::chrono::steady_clock::now();
+        expect(histogram_verdict_startup(rank, std::chrono::seconds(30), model, std::chrono::nanoseconds{0}, nullptr) ==
+                   HistogramVerdict::pending && std::chrono::steady_clock::now() - t1 < std::chrono::milliseconds(150),
+               "no declared wait means no wait");
+        // every other failure is immediate, however long the bound
+        publish_like_engine(rank, zero, kOtherNonce);
+        const auto t2 = std::chrono::steady_clock::now();
+        expect(histogram_verdict_startup(rank, std::chrono::seconds(30), model, std::chrono::seconds(5), nullptr, &why) ==
+                       HistogramVerdict::unsafe &&
+                   std::chrono::steady_clock::now() - t2 < std::chrono::seconds(1) &&
+                   why.find("proof") != std::string::npos,
+               "a wrong launch nonce is refused at once, never waited for");
+        auto padded = zero;
+        padded[size_t(60) * 2U] = 1;
+        publish_like_engine(rank, padded);
+        const auto t3 = std::chrono::steady_clock::now();
+        expect(histogram_verdict_startup(rank, std::chrono::seconds(30), model, std::chrono::seconds(5), nullptr) ==
+                       HistogramVerdict::unsafe &&
+                   std::chrono::steady_clock::now() - t3 < std::chrono::seconds(1),
+               "padded counts are refused at once, never waited for");
     } else {
         throw std::runtime_error("unknown heat regression case");
     }
@@ -139,7 +229,7 @@ int main(int argc, char** argv) {
             return 0;
         }
         expect(argc == 1, "invalid test arguments");
-        for (const char* check : {"layers", "rename", "reset", "foreign"})
+        for (const char* check : {"layers", "rename", "reset", "foreign", "mtp_layer", "startup_wait", "proof_lag"})
             producer_contract_case(check);
         using bc::serving::v2::LivePolicy;
         expect(replay_verdict(1, false, "") == ReplayVerdict::disabled, "MTP depth <= 1 is exempt");
@@ -167,8 +257,11 @@ int main(int argc, char** argv) {
         const HistogramExpectation expected{4, 2, launch, {}, std::string(kLaunchNonce)};
         std::vector<uint32_t> sample(size_t(r3::moe_shm::kMaxLayers) * 2, 0);
         publish_like_engine(rank, sample);
-        expect(histogram_verdict(rank, now, std::chrono::seconds(30), expected) == HistogramVerdict::unsafe,
-               "all-zero heat is no recorded rank demand");
+        std::string zero_reason;
+        expect(histogram_verdict(rank, now, std::chrono::seconds(30), expected, nullptr, &zero_reason) ==
+                       HistogramVerdict::pending &&
+                   zero_reason.find("no route counts yet") != std::string::npos,
+               "all-zero heat is authentic but no evidence yet: pending, never fresh");
         sample[0] = 3;
         publish_like_engine(rank, sample);
         const std::string observed(reinterpret_cast<const char*>(sample.data()),
@@ -278,6 +371,16 @@ int main(int argc, char** argv) {
         expect(base.value().limit == std::chrono::seconds(80), "ABBA workload capped by actual prompts");
         expect(base.value().report_period == std::chrono::seconds(2) && !base.value().accepted_feed,
                "unmeasured feed never qualifies by default");
+        // RED: no-accepted-delta deadline must not borrow the four phase horizon.
+        LivePolicy slow_policy = policy;
+        slow_policy.cadence_ns = 60000000000LL;
+        slow_policy.max_heat_age_ns = 120000000000LL;
+        slow_policy.min_samples = 1000;
+        const auto feed_deadline = calibration_heat_feed_deadline(slow_policy, std::chrono::seconds(1));
+        expect(bool(feed_deadline) && feed_deadline.value() == std::chrono::seconds(1121),
+               "the histogram no-feed bound must be policy and recording-period derived");
+        expect(!calibration_heat_feed_deadline(slow_policy, std::chrono::seconds(0)),
+               "calibration cannot use an absent histogram cadence");
         DriftProgress drift{};
         drift.capacity = 10;
         drift.intervals = 7;

@@ -67,7 +67,14 @@ in tracked files fails the check and names the file and line.
 - **Machine names** are listed under `[forbidden] terms` in `config/environment.local.toml`
   (untracked), or in `BIGCHERRY_FORBIDDEN_TERMS`. They never go in a tracked file, so the list
   cannot leak the names it guards. `config/environment.example.toml` shows the shape with a
-  placeholder.
+  placeholder. Account names are listed the same way. A trailing `*` stands for any digits after the
+  name (`name*` matches name, name2, name17, not a longer word). A linked worktree reads the list from
+  the primary checkout as well, so it applies in every worktree.
+- **Branch and tag names** are scanned too, because a pull request keeps its head branch name on GitHub.
+  `.githooks/pre-push` blocks a push that publishes one with a forbidden term, and `pr-title.yml` fails a pull
+  request whose head branch has one. CI reads the terms (machine and account names) from the repository secret
+  `FORBIDDEN_TERMS`, required and never written into the repository; keep it equal to the local list.
+  Name a branch for its topic (`feat/topic`), never for the account.
 - **Generic patterns** (absolute mount and home paths, drive-letter paths, private addresses,
   email addresses) are fixed in `tools/bigcherry/forbidden_terms.py`. Reserved example domains
   and version numbers are not reported.

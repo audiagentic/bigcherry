@@ -1,0 +1,13 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_071111_policy-on-starts-no-longer-fai_3080",
+  "files": [
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/runtime_guards.h",
+    "engines/radiance/components/serving/session_guards_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "#1174: the runtime heat guard names the failing check in a refusal and, at startup only, waits (bounded by the declared histogram period or the policy max heat age) for the first counted snapshot instead of refusing an authentic all-zero histogram.",
+  "timestamp-utc": "2026-11-19T07:11:11.361668Z",
+  "user-summary-candidate": "Policy-on starts no longer fail on an empty first heat snapshot; heat refusals say why."
+}

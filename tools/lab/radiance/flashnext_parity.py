@@ -1,4 +1,3 @@
-#!/usr/bin/env python3
 """Flash-Next performance parity: the before/after measurement of a Radiance pin bump (bump-radiance section 4).
 
 flashnext-parity.sh drives the launches and writes raw files under OUT/launch-<i>/; this module does everything that is
@@ -9,12 +8,11 @@ not process control, so it can be tested without cards:
   doc-calibrate --url U --tokens T --out FILE   chars per token of the docs corpus, measured with one probe request
   doc-prefill --url U --calibration FILE --slot measure:K|warmup:K --out FILE   one long document prefill, max_tokens 1
   policy-line LOG                       the helper's last `policy placement` line as JSON (committed, bytes_moved)
-  summarise OUT                         OUT/parity.json: per metric the per-launch values and their median
-  baseline OUT --name NAME [--to FILE]  a baseline from a measured parity.json, tolerances derived from the spread
-  compare OUT --baseline FILE           table against a baseline; exit 1 on a gated regression beyond its allowance
+  record-launch OUT --launch N          commit one completed launch into a run-record v1 (the record is the result;
+                                        baseline and compare are `bigcherry results baseline|compare`)
 
 Tokens/s is never gated across builds (MTP draft acceptance differs per build): the gated metrics are cold prefill and
-engine step time; acceptance and the live policy's transactions are reported only. Standard library only.
+engine step time; acceptance and the live policy's transactions are reported only. The native engine never imports Python; this file is a lab-side wrapper.
 """
 
 from __future__ import annotations
@@ -35,8 +33,6 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 SCHEMA = 1
-BASELINE_SCHEMA = 1
-DEFAULT_BASELINE = REPO / "docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json"
 RECIPES = REPO / "engines/radiance/recipes.toml"
 
 # name -> (direction, gated). direction: which way is better.
@@ -50,6 +46,9 @@ METRICS = {
     "sess8_warm_ms_per_step": ("lower", False),
     "long7_prefill_tps": ("higher", True),
     "long8_prefill_tps": ("higher", True),
+    # Informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one launch, 28 in the other).
+    # The greedy text differs between launches, and with it where the live policy moves experts; long-context decode is
+    # gated on long8_ms_per_step.
     "long7_ms_per_step": ("lower", False),
     "long8_ms_per_step": ("lower", True),
     "decode1_acceptance": ("higher", False),
@@ -60,15 +59,6 @@ METRICS = {
 }
 # The long-context seeds (flashnext-parity.sh LONG_SEEDS): each seed is its own prompt, so its own metrics.
 LONG_SEEDS = (7, 8)
-# What a reader of a baseline must know about a metric, carried into parity.json and the baseline.
-NOTES = {
-    "long7_ms_per_step": "informational, not gated: bimodal between launches (v1.17.0 baseline: 42-44 ms/step in one "
-                         "launch, 28 in the other). The greedy text differs between launches, and with it where the live "
-                         "policy moves experts; in the slow mode the text routes to experts that are not resident. "
-                         "Long-context decode is gated on long8_ms_per_step.",
-}
-
-
 class ParityError(RuntimeError):
     pass
 
@@ -128,7 +118,7 @@ def cmd_run_info(args) -> int:
     _write(out / "run.json", {
         "schema": SCHEMA, "build": str(Path(args.build).resolve()), "build_identity": build_identity(Path(args.build)),
         "revision": git_revision(), "radiance_pin": radiance_pin(),
-        "date": _dt.datetime.now(_dt.timezone.utc).isoformat(timespec="seconds"),
+        "date": _dt.datetime.now(_dt.UTC).isoformat(timespec="seconds"),
         "launches": args.launches, "port": args.port, "workload": workload})
     return 0
 
@@ -363,167 +353,217 @@ def launch_metrics(launch: Path, workload: dict) -> tuple[dict, dict, dict]:
     return value, repeats, detail
 
 
-def _median(values):
-    vals = [v for v in values if v is not None]
-    return statistics.median(vals) if vals else None
+# ------------------------------------------------------------------------------------------------------------- MRC06 v1
+
+def record_metric_phase(name: str) -> str:
+    """Keep parity metric names intact, but separate their measured phases."""
+    if name in ("cold_ttft_s", "sess8_ttft_s"):
+        return "ttft"
+    if name == "doc_prefill_tps" or name.startswith(("long7_prefill_", "long8_prefill_")):
+        return "prefill"
+    if name in METRICS:
+        return "decode"
+    raise ParityError(f"unknown parity metric {name}")
 
 
-def summarise(out: Path) -> dict:
-    out = Path(out)
+def _platform():
+    # This standalone harness imports the shared platform producer by path,
+    # never opening a second measurement-result write path.
+    tools = str(REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from bigcherry.core import engines, feature_states, measurement_producers
+    return engines, feature_states, measurement_producers
+
+
+def capture_host_facts(launch: Path, run_dir: Path) -> None:
+    """Copy native owner start receipt and bound session before measuring."""
+    tools = str(REPO / "tools")
+    if tools not in sys.path:
+        sys.path.insert(0, tools)
+    from bigcherry.core import host_facts
+    from shutil import copyfile
+
+    host_facts.read_owner_start(run_dir)
+    copyfile(Path(run_dir) / host_facts.START_RECEIPT_FILE,
+             Path(launch) / host_facts.START_RECEIPT_FILE)
+    copyfile(Path(run_dir) / "session.json", Path(launch) / "native-session-start.json")
+    host_facts.read_owner_start(launch, session_name="native-session-start.json")
+
+
+def capture_launch_provenance(
+    launch: Path, argv: list[str], *, heat: Path,
+    calibration: Path | None, power_profile: str
+) -> None:
+    """Capture precisely the owner invocation, not a reconstructed CLI."""
+    if not argv or not heat.is_file():
+        raise ParityError("missing native owner argv or the selected heat file")
+    # Intentional allowlist: do not persist ambient credentials or whole env.
+    keys = ("ROCM_PATH", "HIP_PATH", "BC_WORK_ROOT", "BC_MODEL_ROOT",
+            "FLASHNEXT_PARITY_POWER_PROFILE", "FLASHNEXT_PARITY_HEAT",
+            "FLASHNEXT_PARITY_SETS", "FLASHNEXT_PARITY_WARMUP_S")
+    _write(launch / "launch-provenance.json", {
+        "argv": list(argv), "environment": {k: os.environ[k] for k in keys if k in os.environ},
+        "heat_path": str(heat.resolve()),
+        "calibration_store": str(calibration.resolve()) if calibration else None,
+        "power_profile": power_profile,
+        "recorded_at": _dt.datetime.now(_dt.UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
+    })
+
+
+def selected_calibration(path: Path, key: str) -> dict:
+    """Use the platform MRC04 strict current/invalid classifications.
+
+    This reader verifies the full declared key and quantities; a row it does not know is refused.
+    """
+    from bigcherry.core.calibration_records import read_native_toml
+
+    selected = [item for item in read_native_toml(path) if item["key"] == key]
+    if len(selected) != 1:
+        raise ParityError("selected native calibration key is missing or ambiguous")
+    item = selected[0]
+    if item["status"] != "current":
+        raise ParityError(f"selected calibration is {item['status']}: {item['reason']}")
+    return item["native"]
+
+
+def publish_launch_record(
+    out: Path, launch: Path, *, work_root: Path | None = None
+) -> str:
+    """Publish exactly one complete parity launch through the platform producer.
+
+    Missing native feature state, build identity, or selected calibration is a
+    producer error. None of those can be manufactured from the measurements.
+    """
+    engines, feature_states, measurement_producers = _platform()
+    out, launch = Path(out), Path(launch)
     run = _load(out / "run.json")
-    launches = sorted((p for p in out.glob("launch-*") if p.is_dir()), key=lambda p: int(p.name.split("-")[1]))
-    if not launches:
-        raise ParityError(f"{out}: no launch-* directories")
-    per_launch, metrics = [], {name: {"direction": d, "gated": g, "launches": [], "repeats": []}
-                               for name, (d, g) in METRICS.items()}
-    for name, note in NOTES.items():
-        metrics[name]["note"] = note
-    for launch in launches:
-        info = _load(launch / "launch.json")
-        value, repeats, detail = launch_metrics(launch, run.get("workload") or {})
-        per_launch.append({"launch": launch.name, "policy": info["policy"], "warmup_s": info["warmup_s"],
-                           "detail": detail})
-        for name in METRICS:
-            metrics[name]["launches"].append(value.get(name))
-            metrics[name]["repeats"].append(repeats.get(name, []))
-    for m in metrics.values():
-        m["median"] = _median(m["launches"])
-    policies = {p["policy"] for p in per_launch}
-    if len(policies) != 1:
-        raise ParityError(f"{out}: the launches disagree on whether the live policy was on")
-    return {"schema": SCHEMA, "kind": "flashnext-parity", "build": run["build"], "build_identity": run.get("build_identity"),
-            "revision": run["revision"], "radiance_pin": run["radiance_pin"], "date": run["date"],
-            "workload": run.get("workload") or {}, "policy": policies.pop(),
-            "warmup_s": [p["warmup_s"] for p in per_launch], "launches": per_launch, "metrics": metrics}
-
-
-def cmd_summarise(args) -> int:
-    parity = summarise(Path(args.out))
-    _write(Path(args.out) / "parity.json", parity)
-    for name, m in parity["metrics"].items():
-        vals = ", ".join("-" if v is None else f"{v:.4g}" for v in m["launches"])
-        med = "-" if m["median"] is None else f"{m['median']:.4g}"
-        print(f"{name:22s} median {med:>10s}  launches [{vals}]  ({m['direction']} better"
-              f"{'' if m['gated'] else ', informational'})")
-    return 0
-
-
-# ---------------------------------------------------------------------------------------------------------------- baseline
-
-def _rel_spread(values) -> float:
-    vals = [v for v in values if v is not None]
-    if len(vals) < 2:
-        return 0.0
-    centre = statistics.fmean(vals)
-    return (max(vals) - min(vals)) / abs(centre) if centre else 0.0
-
-
-def _parity_file(path: Path) -> Path:
-    path = Path(path)
-    return path / "parity.json" if path.is_dir() else path
-
-
-def make_baseline(parity: dict, name: str, source: str) -> dict:
-    """Per gated metric: the median as the value; the tolerance is the larger of (a) the relative spread of the per-launch
-    values across launches and (b) the largest relative spread among true repeats (rounds of one prompt) in any launch;
-    a metric without true repeats takes (a) alone. Distinct prompts are content, not noise, and never widen it. Nothing is
-    picked by hand, so one launch is refused."""
-    count = len(parity["launches"])
-    if count < 2:
-        raise ParityError(f"a baseline needs at least two launches to measure their spread; {source} has {count}")
-    metrics = {}
-    for metric, m in parity["metrics"].items():
-        entry = {"direction": m["direction"], "gated": m["gated"], "value": m["median"]}
-        if m["gated"]:
-            if m["median"] is None or any(v is None for v in m["launches"]):
-                raise ParityError(f"{source}: gated metric {metric} is missing in a launch")
-            across = _rel_spread(m["launches"])
-            groups = [g for launch in m["repeats"] for g in launch if len(g) > 1]
-            repeat = max((_rel_spread(g) for g in groups), default=None)
-            entry.update({"tolerance": max(across, repeat or 0.0), "spread_across_launches": across,
-                          "spread_repeats": repeat, "launches": m["launches"]})
-        if "note" in m:
-            entry["note"] = m["note"]
-        metrics[metric] = entry
-    return {"schema": BASELINE_SCHEMA, "kind": "flashnext-parity-baseline", "name": name, "source_run": source,
-            "build": parity["build"], "build_identity": parity.get("build_identity"), "revision": parity["revision"],
-            "radiance_pin": parity["radiance_pin"], "date": parity["date"], "policy": parity["policy"],
-            "launches": count, "workload": parity["workload"], "metrics": metrics}
-
-
-def portable_path(path: str) -> str:
-    """A path for a tracked file: under $BC_WORK_ROOT it is written as ${BC_WORK_ROOT}/..., and any other absolute path is
-    refused (a local path never goes into the repository)."""
-    root = os.environ.get("BC_WORK_ROOT", "").rstrip("/")
-    resolved = str(Path(path).resolve())
-    if root and (resolved == root or resolved.startswith(root + "/")):
-        return "${BC_WORK_ROOT}" + resolved[len(root):]
-    raise ParityError(f"{path} is not under $BC_WORK_ROOT ({root or 'unset'}): a baseline names its build and run that way")
-
-
-def cmd_baseline(args) -> int:
-    src = _parity_file(Path(args.out))
-    parity = _load(src)
-    parity["build"] = portable_path(parity["build"])
-    baseline = make_baseline(parity, args.name, portable_path(str(src.parent)))
-    to = Path(args.to) if args.to else DEFAULT_BASELINE
-    to.parent.mkdir(parents=True, exist_ok=True)
-    _write(to, baseline)
-    print(f"baseline {args.name}: {to}")
-    for metric, e in baseline["metrics"].items():
-        if e["gated"]:
-            print(f"  {metric:22s} {e['value']:.4g}  tolerance {e['tolerance'] * 100:.2f}%")
-    return 0
-
-
-# ----------------------------------------------------------------------------------------------------------------- compare
-
-def compare(parity: dict, baseline: dict) -> tuple[list, bool]:
-    """Rows (metric, baseline, now, change %, allowance %, verdict) and whether any gated metric regressed beyond its
-    allowance. One-sided: a change in the better direction is never a failure. A gated metric without a value now fails."""
-    if parity.get("workload") != baseline.get("workload"):
-        raise ParityError("the run's workload definition differs from the baseline's: they do not measure the same thing")
-    rows, failed = [], False
-    for metric, base in baseline["metrics"].items():
-        now = (parity["metrics"].get(metric) or {}).get("median")
-        ref = base["value"]
-        change = (now - ref) / ref * 100.0 if now is not None and ref else None
-        if not base["gated"]:
-            rows.append((metric, ref, now, change, None, "info"))
+    manifest_file = launch / "manifest.json"
+    manifest = _load(manifest_file)
+    snapshot = _load(launch / "launch-provenance.json")
+    warmup = _load(launch / "launch.json")
+    from bigcherry.core import host_facts as host_capture
+    try:
+        facts = host_capture.read_owner_start(launch, session_name="native-session-start.json")
+    except (ValueError, TypeError, KeyError) as exc:
+        raise ParityError(f"native owner sealed start receipt unavailable: {exc}") from exc
+    owner = _load(launch / "native-session-start.json")
+    native_manifest = Path(owner.get("manifest", ""))
+    if not native_manifest.is_file() or native_manifest.read_bytes() != manifest_file.read_bytes():
+        raise ParityError("native owner admitted manifest differs from measured parity manifest")
+    states = feature_states.read_feature_states(launch / feature_states.FILE_NAME)
+    if any(item["engine"] != engines.RADIANCE for item in states):
+        raise ParityError("native feature-state engine differs from Radiance")
+    build = run.get("build_identity") or {}
+    meta_file = Path(run["build"]) / "bigcherry-build-metadata-radiance.json"
+    metadata = _load(meta_file)
+    for name in ("build_id", "binary_hash", "source_slice_id", "build_plan_id"):
+        if not isinstance(metadata.get(name), str) or not metadata[name]:
+            raise ParityError(f"build metadata lacks required {name}")
+    if any(build.get(k) != metadata.get(k) for k in
+           ("build_id", "binary_hash", "source_slice_id", "build_plan_id")):
+        raise ParityError("run.json build identity differs from build metadata")
+    if not re.fullmatch(r"[0-9a-f]{64}", metadata["binary_hash"]):
+        raise ParityError("build metadata has no SHA-256 binary identity")
+    spec = manifest["spec"]
+    placement = spec["handoff"]["placement"]
+    state = placement["live_policy_state"]
+    if type(state.get("configured")) is not bool or state["configured"] != bool(placement.get("live_policy")):
+        raise ParityError("manifest live policy and policy state disagree")
+    if bool(warmup["policy"]) != state["configured"]:
+        raise ParityError("warmup and manifest disagree about live policy")
+    if not isinstance(snapshot.get("argv"), list) or not snapshot["argv"] or not isinstance(snapshot.get("environment"), dict):
+        raise ParityError("missing captured native argv/environment")
+    values, repeats, _ = launch_metrics(launch, run["workload"])
+    metrics = {phase: {} for phase in ("decode", "prefill", "ttft")}
+    metric_specs = {phase: {} for phase in metrics}
+    for name, (direction, gated) in METRICS.items():
+        phase = record_metric_phase(name)
+        value = values.get(name)
+        if value is None:
+            if gated:
+                raise ParityError(f"required gated metric {name} is missing")
             continue
-        allowance = base["tolerance"] * 100.0
-        if now is None:
-            verdict = "MISSING"
-        else:
-            worse = change if base["direction"] == "lower" else -change
-            verdict = "REGRESSION" if worse > allowance else ("better" if worse < 0 else "ok")
-        failed |= verdict in ("REGRESSION", "MISSING")
-        rows.append((metric, ref, now, change, allowance, verdict))
-    return rows, failed
+        metrics[phase][name] = value
+        definition = {"direction": direction, "gated": gated}
+        groups = [group for group in repeats.get(name, []) if len(group) >= 2]
+        if groups:
+            definition["repeat_groups"] = groups
+        metric_specs[phase][name] = definition
+
+    inputs = {
+        "run_info": out / "run.json",
+        "heat": Path(snapshot["heat_path"]),
+        "policy_state": measurement_producers.canonical_blob(state),
+        "warmup": launch / "launch.json",
+        "native_feature_states": launch / feature_states.FILE_NAME,
+        "native_host_start": launch / host_capture.START_RECEIPT_FILE,
+        "native_session_start": launch / "native-session-start.json",
+        "build_metadata": meta_file,
+    }
+    # Raw source bytes remain content-addressed, never recreated from metrics.
+    for role, filename in (("doc_calibration", "doc-calibration.json"),
+                           ("policy_placement", "policy.json")):
+        path = launch / filename
+        if path.is_file():
+            inputs[role] = path
+    if state["configured"]:
+        cal = snapshot.get("calibration_store")
+        key = state.get("calibration_key")
+        if not cal or not isinstance(key, str) or not key:
+            raise ParityError("active policy lacks selected calibration store/key")
+        inputs["calibration_record"] = measurement_producers.canonical_blob(
+            selected_calibration(Path(cal), key)
+        )
+    identity = {
+        "engine": engines.RADIANCE, "build_id": metadata["build_id"],
+        "binary_sha256": metadata["binary_hash"],
+        "source_revision": run["revision"],
+        "model": spec["plan"]["engine_memory"]["model_identity"],
+        "layout": spec["intent"]["layout"],
+    }
+    return measurement_producers.publish(
+        work_root=work_root,
+        run_id=manifest["metadata"]["instance_id"],
+        # The sealed owner start receipt marks the actual measurement start (the argv was selected earlier).
+        recorded_at=facts["captured_at"],
+        identity=identity,
+        workload={"name": "flashnext-parity", "definition": run["workload"]},
+        metrics=metrics, metric_specs=metric_specs,
+        effective_config=manifest_file.read_bytes(),
+        argv=snapshot["argv"], environment=snapshot["environment"],
+        power_settings={
+            "effective": spec.get("power", {}),
+            "requested_profile": snapshot["power_profile"],
+        },
+        inputs=inputs,
+        host_facts=facts, feature_states=states,
+    )
 
 
-def render(rows) -> str:
-    def num(v, fmt):
-        return "-" if v is None else format(v, fmt)
-    lines = [f"{'metric':22s} {'baseline':>12s} {'now':>12s} {'change %':>9s} {'allowance':>10s}  verdict"]
-    for metric, ref, now, change, allowance, verdict in rows:
-        lines.append(f"{metric:22s} {num(ref, '.4g'):>12s} {num(now, '.4g'):>12s} {num(change, '+.2f'):>9s} "
-                     f"{('±' + num(allowance, '.2f')) if allowance is not None else '-':>10s}  {verdict}")
-    return "\n".join(lines)
+def cmd_capture_host_facts(args) -> int:
+    capture_host_facts(Path(args.launch), Path(args.run_dir))
+    return 0
 
 
-def cmd_compare(args) -> int:
-    parity = _load(_parity_file(Path(args.out)))
-    baseline = _load(Path(args.baseline))
-    rows, failed = compare(parity, baseline)
-    print(f"baseline {baseline.get('name')} (pin {baseline['radiance_pin'].get('pinned')}, rev {baseline['revision'][:12]}) "
-          f"-> now (pin {parity['radiance_pin'].get('pinned')}, rev {parity['revision'][:12]})")
-    if parity.get("policy") != baseline.get("policy"):
-        print(f"note: live policy {'on' if parity.get('policy') else 'off'} now, "
-              f"{'on' if baseline.get('policy') else 'off'} in the baseline")
-    print(render(rows))
-    print("FAIL: a gated metric regressed beyond its allowance (investigate; do not waive)" if failed else "PASS")
-    return 1 if failed else 0
+def cmd_capture_provenance(args) -> int:
+    if not args.argv:
+        raise ParityError("capture-provenance requires the real native argv after --")
+    capture_launch_provenance(
+        Path(args.launch), args.argv, heat=Path(args.heat),
+        calibration=Path(args.calibration) if args.calibration else None,
+        power_profile=args.power_profile,
+    )
+    return 0
+
+
+def cmd_record_launch(args) -> int:
+    digest = publish_launch_record(
+        Path(args.out), Path(args.out) / f"launch-{args.launch}",
+        work_root=Path(args.work_root) if args.work_root else None,
+    )
+    print(digest)
+    return 0
 
 
 # -------------------------------------------------------------------------------------------------------------------- main
@@ -560,18 +600,22 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("log")
     p.add_argument("--out")
     p.set_defaults(fn=cmd_policy_line)
-    p = sub.add_parser("summarise")
+    p = sub.add_parser("capture-host-facts", help="pin SHA-sealed native owner start")
+    p.add_argument("launch")
+    p.add_argument("--run-dir", required=True)
+    p.set_defaults(fn=cmd_capture_host_facts)
+    p = sub.add_parser("capture-provenance", help="capture native argv and input selection")
+    p.add_argument("launch")
+    p.add_argument("--heat", required=True)
+    p.add_argument("--calibration")
+    p.add_argument("--power-profile", required=True)
+    p.add_argument("argv", nargs=argparse.REMAINDER)
+    p.set_defaults(fn=cmd_capture_provenance)
+    p = sub.add_parser("record-launch", help="commit one completed launch into run-record v1")
     p.add_argument("out")
-    p.set_defaults(fn=cmd_summarise)
-    p = sub.add_parser("baseline")
-    p.add_argument("out", help="a measure OUT directory or its parity.json")
-    p.add_argument("--name", required=True)
-    p.add_argument("--to", help=f"default {DEFAULT_BASELINE.relative_to(REPO)}")
-    p.set_defaults(fn=cmd_baseline)
-    p = sub.add_parser("compare")
-    p.add_argument("out", help="a measure OUT directory or its parity.json")
-    p.add_argument("--baseline", required=True)
-    p.set_defaults(fn=cmd_compare)
+    p.add_argument("--launch", type=int, required=True)
+    p.add_argument("--work-root")
+    p.set_defaults(fn=cmd_record_launch)
     return ap
 
 
@@ -579,7 +623,7 @@ def main(argv=None) -> int:
     args = build_parser().parse_args(argv)
     try:
         return args.fn(args)
-    except (ParityError, KeyError, ValueError) as exc:
+    except (ParityError, KeyError, ValueError, OSError, TypeError) as exc:
         print(f"flashnext-parity: ERROR: {exc}", file=sys.stderr)
         return 2
 

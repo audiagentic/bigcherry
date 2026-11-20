@@ -121,6 +121,8 @@ enum class Fault : std::uint8_t {
     python_file,
     shebang,
     interpreter_reference,
+    benchmark_catalog,
+    moe_benchmark_catalog,
     entry_mode,
     wrong_manifest,
     wrong_source,
@@ -149,7 +151,6 @@ class Fixture {
         add("radiance_home/bin/bc-serve", executable ? read_file(BC_SERVE_EXE) : "serve-binary", 0755);
         add("radiance_home/bin/bc-release", executable ? read_file(BC_RELEASE_EXE) : "release-binary", 0755);
         add("radiance_home/helpers/r3_moe_worker", "worker-binary", 0755);
-        add("radiance_home/kernels.rkb", "catalog");
         add("radiance_home/kernels/libr3moe.so", "kernel");
         add("radiance_home/architectures/qwen.so", "architecture");
         add("radiance_home/quantizers/quant.so", "quant");
@@ -164,7 +165,13 @@ class Fixture {
         add("bigcherry-build-metadata-radiance.json", metadata);
         add("configs/flashnext.toml", "schema = 1\n");
         add("configs/qwen27b.toml", "schema = 1\n");
+        add("heat/flashnext-mixed.hot-first", "mixed production heat seed\n");
+        add("heat/perf51.rank0.hot-first", "baseline heat seed\n");
 
+        if (fault == Fault::benchmark_catalog)
+            add("radiance_home/kernels.rkb", "benchmark fixture");
+        if (fault == Fault::moe_benchmark_catalog)
+            add("radiance_home/kernels_moe.rkb", "benchmark fixture");
         if (fault == Fault::python_file)
             add("radiance_home/vectors/config.py", "print('must refuse')\n");
         if (fault == Fault::shebang)
@@ -267,6 +274,9 @@ void test_two_installs_and_rollback() {
     check(first["current"] == a.tag && first["previous"].is_null(), "first verified release not current");
     check(fs::is_regular_file(a.root / "releases" / a.tag / "configs/flashnext.toml"),
           "installed asset missing self-contained RSC12 config");
+    check(fs::is_regular_file(a.root / "releases" / a.tag / "heat/flashnext-mixed.hot-first") &&
+          fs::is_regular_file(a.root / "releases" / a.tag / "heat/perf51.rank0.hot-first"),
+          "installed asset missing verified heat seed closure");
     check(fs::is_regular_file(a.root / "releases" / a.tag / "radiance_home/bin/bc-release"),
           "installed asset missing native release tool");
     bc::release::install(b);
@@ -356,6 +366,10 @@ void test_tamper_refuses_rollback_without_switch() {
     const auto index = bc::release::read_json(a.root / "index.json");
     check(index["current"] == b.tag && index["previous"] == a.tag, "corrupt previous displaced active engine");
     refused(ErrorCode::digest_mismatch, [&] { bc::release::verify(a.root, a.sdk); });
+    // A different installed release's heat seed is as immutable as its
+    // engine and config: digest tampering must make verification fail closed.
+    write_file(b.root / "releases" / b.tag / "heat/flashnext-mixed.hot-first", "changed heat");
+    refused(ErrorCode::digest_mismatch, [&] { bc::release::verify(b.root, b.sdk); });
 }
 
 void test_refusal_matrix() {
@@ -448,6 +462,9 @@ int run_cli(const fs::path& exe, const std::vector<std::string>& args, const fs:
         // Do not inherit the host's ROCm override into a synthetic release.
         ::unsetenv("ROCM_PATH");
         ::unsetenv("HIP_PATH");
+        // The same guard refuses an LD_LIBRARY_PATH entry that carries ROCm libraries outside the recorded SDK (a build
+        // container exports its own SDK's lib directory there), so the host's search path is not inherited either.
+        ::unsetenv("LD_LIBRARY_PATH");
         std::vector<std::string> owned = {exe.string()};
         owned.insert(owned.end(), args.begin(), args.end());
         if (!installed_engine.empty()) {
@@ -548,6 +565,17 @@ void test_native_installed_start_gate() {
           "tampered current release reached serving: " + read_file(log));
 }
 
+void test_benchmark_catalogs_are_not_native_runtime_members() {
+    ScopedDir d;
+    Fixture f(d.path);
+    for (const auto fault : {Fault::benchmark_catalog, Fault::moe_benchmark_catalog}) {
+        auto req = f.make(fault == Fault::benchmark_catalog ? "bc-radiance-1170.64.0" :
+                                                              "bc-radiance-1170.65.0",
+                          fault);
+        refused(ErrorCode::unsafe_archive, [&] { bc::release::install(req); });
+    }
+}
+
 void test_interrupted_staging_refuses_install() {
     ScopedDir d;
     Fixture f(d.path);
@@ -568,6 +596,7 @@ int main() {
         test_tamper_refuses_rollback_without_switch();
         test_refusal_matrix();
         test_digest_tag_sdk_and_existing_integrity_refuse();
+        test_benchmark_catalogs_are_not_native_runtime_members();
         test_interrupted_staging_refuses_install();
         test_real_platform_packer_golden();
         test_native_installed_start_gate();

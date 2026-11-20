@@ -16,7 +16,9 @@ from pathlib import Path
 from typing import Any
 
 from ..core.telemetry import console_telemetry
+from ..core import engines, feature_registry, feature_states, host_facts, measurement_producers
 from ..tuning.journal import atomic_write, canonical
+from . import attestation
 
 SCHEMA_VERSION = 1
 ALLOWED_ENV = {
@@ -152,11 +154,16 @@ def run_managed(
     role: str,
     environment: dict[str, str] | None = None,
     parent_experiment_id: str | None = None,
+    measurement_file: Path | None = None,
+    work_root: Path | None = None,
 ) -> int:
     if root.exists():
         raise BundleError(f"bundle already exists: {root}")
     root.mkdir(parents=True)
     experiment_id = str(uuid.uuid4())
+    # Captured and sealed in intent before the child can start. Never read
+    # current host facts from a later result-publication process.
+    host_start = host_facts.snapshot_at_start(phase="owner_start")
     env = os.environ.copy()
     env.update(environment or {})
     intent = {
@@ -173,6 +180,7 @@ def run_managed(
         "environment": safe_environment(env),
         "host_started_ns": time.time_ns(),
         "monotonic_started_ns": time.monotonic_ns(),
+        "host_facts_start": host_start,
         "artifacts": [],
         "intended_artifacts": ["stdout.log", "stderr.log"],
         "capabilities": [],
@@ -255,8 +263,144 @@ def run_managed(
         capabilities=["process_evidence"],
     )
     write_document(document_path, final)
+    if returncode == 0 and measurement_file is not None:
+        # Sidecar contains the lane's measured quantities and VA25 evidence;
+        # no metric is fabricated from the managed runner's stdout.
+        path = Path(measurement_file)
+        if path.is_absolute() or ".." in path.parts:
+            raise BundleError("measurement sidecar must be a relative bundle artifact")
+        record_measurement_file(root, root / path, work_root=work_root)
     return returncode
 
+
+
+def _observed_execution_from_bundle(root: Path) -> attestation.ExecutionAttestation | None:
+    """VA25: only the actually launched child's captured output is evidence."""
+    output = (
+        (root / "stdout.log").read_text(encoding="utf-8", errors="replace")
+        + "\n"
+        + (root / "stderr.log").read_text(encoding="utf-8", errors="replace")
+    )
+    parsed = attestation.parse_rocm_attestation(output)
+    if parsed is not None:
+        return parsed
+    return attestation.parse_llama_server_attestation(output)
+
+
+def publish_measurement(
+    root: Path, *, metrics: dict, identity: dict, workload: dict,
+    expected: attestation.ExecutionIdentity | None,
+    observed: attestation.ExecutionAttestation | None,
+    work_root: Path | None = None,
+    metric_specs: dict,
+    host_snapshot: dict | None = None,
+    measurement_source: bytes | None = None,
+) -> str:
+    """Attach actual measured quantities to a completed HI47 bundle by value.
+
+    VA25 is compared using its own canonical comparator. A failed attestation
+    is still stored with explicit invalidity, but MRC05 refuses activation.
+    Without measured quantities an execution bundle is NOT a measurement.
+    """
+    root = Path(root)
+    proof = validate(root)
+    if not proof["promotable"]:
+        raise BundleError("measurement requires a successfully completed and verified bundle")
+    pointer = root / "record.sha256"
+    if pointer.exists():
+        raise BundleError("bundle already has a published immutable measurement")
+    document_file = root / "experiment.json"
+    document = json.loads(document_file.read_text(encoding="ascii"))
+    if not any(metrics.get(phase) for phase in ("decode", "prefill", "ttft")):
+        raise BundleError("bundle has no declared measured phase metrics")
+    # A Radiance record needs the host facts sealed before the child started; other engines keep the ingest-time
+    # snapshot (MRC07).
+    if identity["engine"] == engines.RADIANCE:
+        start_facts = document.get("host_facts_start")
+        if start_facts is None:
+            raise BundleError("measurement bundle has no sealed start host facts")
+        host_facts.validate_start_snapshot(start_facts)
+        if host_snapshot is not None and host_snapshot != start_facts:
+            raise BundleError("supplied host snapshot differs from pre-exec bundle")
+    else:
+        start_facts = host_snapshot if host_snapshot is not None else host_facts.collect_host_facts()
+    process_observed = _observed_execution_from_bundle(root)
+    if observed is not None and process_observed is not None and (
+        observed.backend != process_observed.backend
+        or observed.failure_signature != process_observed.failure_signature
+        or observed.devices != process_observed.devices
+    ):
+        process_observed = attestation.ExecutionAttestation(
+            backend=None, failure_signature="declared VA25 observation conflicts with the measured child log"
+        )
+    # A sidecar's assertion cannot create positive backend init evidence:
+    # the process log is authoritative, even if a caller supplied observed.
+    evidence, validity = attestation.record_execution_evidence(expected, process_observed)
+    inputs = {
+        "experiment_bundle": document_file.read_bytes(),
+        "experiment_stdout": (root / "stdout.log").read_bytes(),
+        "experiment_stderr": (root / "stderr.log").read_bytes(),
+        "execution_attestation": measurement_producers.canonical_blob(evidence),
+    }
+    if measurement_source is not None:
+        inputs["measured_results"] = measurement_source
+    # Only Radiance has a native feature-state snapshot in this plan.
+    states = (feature_states.read_feature_states(root / feature_states.FILE_NAME)
+              if identity["engine"] in feature_registry.FEATURES else [])
+    digest = measurement_producers.publish(
+        work_root=work_root,
+        run_id=document["experiment_id"],
+        recorded_at=__import__("datetime").datetime.now(
+            __import__("datetime").timezone.utc
+        ).strftime("%Y-%m-%dT%H:%M:%SZ"),
+        identity=identity, workload=workload, metrics=metrics,
+        metric_specs=metric_specs,
+        effective_config=document_file.read_bytes(),
+        argv=document["command"], environment=document["environment"],
+        power_settings=document.get("power_state", {}),
+        inputs=inputs,
+        host_facts=start_facts,
+        feature_states=states,
+        validity=validity,
+        session_id=document["experiment_id"],
+    )
+    atomic_write(pointer, (digest + "\n").encode("ascii"))
+    return digest
+
+
+def record_measurement_file(
+    root: Path, measurement: Path, *, work_root: Path | None = None
+) -> str:
+    """Publish a typed measured-result sidecar created by the experiment lane."""
+    path = Path(measurement)
+    if not path.is_file() or path.is_symlink():
+        raise BundleError("missing or unsafe typed measurement file")
+    doc = json.loads(path.read_text(encoding="utf-8"))
+    expected = doc.get("expected")
+    observed = doc.get("observed")
+    if not isinstance(expected, dict):
+        raise BundleError("typed measurement requires expected VA25 identity")
+    wanted = attestation.ExecutionIdentity(
+        expected["backend"], tuple(expected["architectures"]),
+        tuple(expected["locators"]) if expected.get("locators") is not None else None,
+    )
+    actual = None
+    if observed is not None:
+        if not isinstance(observed, dict):
+            raise BundleError("VA25 observed evidence must be an object")
+        actual = attestation.ExecutionAttestation(
+            backend=observed.get("backend"),
+            devices=tuple(attestation.ObservedDevice(d["architecture"], d.get("locator"))
+                          for d in observed.get("devices", [])),
+            telemetry=observed.get("telemetry", {}),
+            failure_signature=observed.get("failure_signature"),
+        )
+    return publish_measurement(
+        root, identity=doc["identity"], workload=doc["workload"],
+        metrics=doc["metrics"], metric_specs=doc["metric_specs"],
+        expected=wanted, observed=actual, work_root=work_root,
+        measurement_source=path.read_bytes(),
+    )
 
 def validate(root: Path, *, required_capabilities: set[str] | None = None) -> dict[str, Any]:
     path = root / "experiment.json"
@@ -366,6 +510,13 @@ def main(argv: list[str] | None = None) -> int:
     run_cmd.add_argument("--model", type=Path, required=True)
     run_cmd.add_argument("--role", required=True)
     run_cmd.add_argument("--parent-experiment-id", default=None)
+    run_cmd.add_argument("--measurement-file", type=Path,
+                         help="optional typed result sidecar produced by the managed command")
+    run_cmd.add_argument("--work-root", type=Path)
+    record_cmd = sub.add_parser("record", help="publish typed measured sidecar for completed bundle")
+    record_cmd.add_argument("bundle", type=Path)
+    record_cmd.add_argument("--measurement-file", type=Path, required=True)
+    record_cmd.add_argument("--work-root", type=Path)
     run_cmd.add_argument("--env", action="append", default=[])
     child_command: list[str] = []
     parse_argv = list(argv) if argv is not None else sys.argv[1:]
@@ -377,6 +528,12 @@ def main(argv: list[str] | None = None) -> int:
     try:
         if args.command == "validate":
             result = validate(args.bundle, required_capabilities=set(args.require))
+            status = 0
+        elif args.command == "record":
+            digest = record_measurement_file(
+                args.bundle, args.measurement_file, work_root=args.work_root
+            )
+            result = {"record_sha256": digest}
             status = 0
         else:
             command = child_command
@@ -394,6 +551,8 @@ def main(argv: list[str] | None = None) -> int:
                 build_descriptor_hash=args.build_descriptor_hash,
                 model=args.model, role=args.role, environment=environment,
                 parent_experiment_id=args.parent_experiment_id,
+                measurement_file=args.measurement_file,
+                work_root=args.work_root,
             )
             result = validate(args.bundle)
     except (OSError, BundleError) as exc:

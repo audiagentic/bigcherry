@@ -22,10 +22,28 @@ using Json = nlohmann::json;
 // Fixture writer for the future helper's step-4 calibration store. The transaction,
 // copy, heat gap, marginal error and hot-set readings are from policy-live-9;
 // the effect, lane and drift quantities NOT measured there are synthetic test data.
-static std::string fixture(const std::string& key, bool malformed = false) {
+// The declared narrow scope a stored record is keyed by; the tag changes one declared field, so each tag has its own key.
+static Json scope_for(char tag) {
+    return Json{{"policy_key_version", 2}, {"model", std::string("test-model-") + tag},
+                {"layout", "flashnext-4gpu"}, {"objective", "balanced"},
+                {"power_profile", "stock"}, {"engine_cards", Json::array()},
+                {"helper_cards", Json::array()}, {"histogram_period_s", 1},
+                {"helper_runtime", Json::object()}, {"remote_service", Json::object()}};
+}
+static std::string key_for(char tag) { return sv::policy_calibration_key(scope_for(tag)); }
+static std::string fixture(char tag, bool malformed = false) {
     return "schema_version = 1\n"
            "[[live_policy_record]]\n"
-           "plan_cache_key = \"" + key + "\"\n"
+           "plan_cache_key = \"" + key_for(tag) + "\"\n"
+           "calibration_inputs = " + Json(scope_for(tag).dump()).dump() + "\n"
+           "source_plan_key = \"" + std::string(64, '1') + "\"\n"
+           "source_engine_build = \"" + std::string(64, '2') + "\"\n"
+           "record_schema_version = 1\n"
+           "calibration_kind = \"radiance.live_policy\"\n"
+           "calibration_key_fields = " + sv::policy_calibration_key_fields().dump() + "\n"
+           "source_revision = \"revision-test\"\n"
+           "run_id = \"run-test\"\n"
+           "host_facts_digest = \"" + std::string(64, '3') + "\"\n"
            "layout = \"flashnext-4gpu\"\n"
            "objective = \"balanced\"\n"
            "seeded = \"2026-11-05\"\n"
@@ -299,23 +317,45 @@ static void derive_says_why() {
     bc::experts::Container container;
     sv::ManifestInputs in;
     std::string why;
-    assert(!sv::derive_manifest_live_policy(in, container, &why) && why.empty());   // unmeasured: no reason
     sv::MeasuredPlan measured;
     measured.key_inputs = Json{{"engine_build", "x"}, {"layout", "flashnext-4gpu"}};
+    const Json policy_spec = {
+        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'a')}}}}},
+        {"intent", {{"layout", "flashnext-4gpu"},
+                    {"service", {{"objective", "balanced"}}}, {"power", {{"profile", "stock"}}}}},
+        {"facts", {{"gpus", Json::array({
+            Json{{"bdf", "0000:03:00.0"}, {"arch", "gfx1100"}, {"vram", {{"total_mib", 24560}}}},
+            Json{{"bdf", "0000:06:00.0"}, {"arch", "gfx1030"}, {"vram", {{"total_mib", 16368}}}},
+            Json{{"bdf", "0000:09:00.0"}, {"arch", "gfx1201"}, {"vram", {{"total_mib", 32624}}}}
+        })}}},
+        {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:09:00.0"})}}}}},
+                       {"helpers", Json::array({
+                            Json{{"gpu", "0000:03:00.0"}, {"tier", "head"},
+                                 {"formats", Json::array({"w4nl64"})}, {"rows_kernel", "gemm"}},
+                            Json{{"gpu", "0000:06:00.0"}, {"tier", "tail"},
+                                 {"formats", Json::array({"w4nl64"})}, {"rows_kernel", "gemm"}}
+                       })},
+                       {"helper_common", Json::object()}}},
+        {"handoff", {{"transport", {{"max_rows", 4096}, {"small_rows", 8},
+                                  {"gemv_large_rows", 32}, {"skip_owned", true}}},
+                     {"kernels", {{"moe_down_tile", 1}}},
+                     {"telemetry", {{"period_s", 1}}}}}
+    };
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why) && why.empty()); // unmeasured
     in.measured = measured;
     why.clear();
-    assert(!sv::derive_manifest_live_policy(in, container, &why));                   // no store given
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why));                   // no store given
     assert(why.find("no calibration store") != std::string::npos);
     // Helper arrangement the planner is not built for: no tail (flashnext-2xtx) is refused with the arrangement named.
     in.resolved.manifest = Json{{"process_helpers", Json::array({Json{{"placement", "head"}}, Json{{"placement", "head"}}})}};
     why.clear();
-    assert(!sv::derive_manifest_live_policy(in, container, &why));
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why));
     assert(why.find("exactly one tail helper") != std::string::npos && why.find("[head,head]") != std::string::npos);
     in.resolved.manifest = Json{{"process_helpers", Json::array({Json{{"placement", "head"}}, Json{{"placement", "tail"}}})}};
     const fs::path store = write_fixture("schema_version = 1\n");
     in.calibration_cache = store;
     why.clear();
-    assert(!sv::derive_manifest_live_policy(in, container, &why));                   // store without this key
+    assert(!sv::derive_manifest_live_policy(in, container, policy_spec, &why));                   // store without this key
     assert(why.find("no calibration record for key=") != std::string::npos);
     assert(why.find(store.string()) != std::string::npos);
     fs::remove(store);
@@ -323,12 +363,12 @@ static void derive_says_why() {
 
 int main() {
     derive_says_why();
-    const std::string key(64, 'a');
+    const std::string key = key_for('a');
     const fs::path file = write_fixture("schema_version = 1\n");
     assert(!sv::read_live_policy_record(file, key));
-    write_fixture(fixture(std::string(64, 'b')));
+    write_fixture(fixture('b'));
     assert(!sv::read_live_policy_record(file, key)); // different plan: remeasure, no reuse
-    write_fixture(fixture(key));
+    write_fixture(fixture('a'));
     auto rec = sv::read_live_policy_record(file, key);
     assert(rec && rec->measurements.at("hot_set_k") == 5931);
     assert(sv::live_policy_record_complete(*rec));
@@ -486,7 +526,7 @@ int main() {
     assert(stride.policy.at("min_residency_ns") == p.at("min_residency_ns"));
     // Partial evidence is accepted only with a named absence and cannot
     // silently become a policy with guessed numbers.
-    std::string partial = fixture(key);
+    std::string partial = fixture('a');
     const std::string copy = "copy_bytes_per_s = 160000000\n";
     assert(partial.find(copy) != std::string::npos);
     partial.erase(partial.find(copy), copy.size());
@@ -495,24 +535,24 @@ int main() {
     const auto incomplete = sv::read_live_policy_record(file, key);
     assert(incomplete && !sv::live_policy_record_complete(*incomplete));
     assert(incomplete->absent.at("copy_bytes_per_s") == "per-helper copy hook absent");
-    partial = fixture(key);
+    partial = fixture('a');
     partial.erase(partial.find(copy), copy.size());
     write_fixture(partial);
     assert(throws_with(file, key, "copy_bytes_per_s"));
 
     // The zero-valued reading is valid TOML, but a missing or nonbinary reading is not.
-    std::string no_watermark = fixture(key);
+    std::string no_watermark = fixture('a');
     const std::string zero_field = "heat_watermarked = 0\n";
     no_watermark.erase(no_watermark.find(zero_field),zero_field.size());
     write_fixture(no_watermark);
     assert(throws_with(file,key,"heat_watermarked"));
-    write_fixture(fixture(key) + "heat_watermarked = 2\n");
+    write_fixture(fixture('a') + "heat_watermarked = 2\n");
     assert(throws_with(file,key,"TOML") || throws_with(file,key,"duplicate"));
-    auto bad_mark = fixture(key);
+    auto bad_mark = fixture('a');
     bad_mark.replace(bad_mark.find(zero_field),zero_field.size(),"heat_watermarked = 2\n");
     write_fixture(bad_mark);
     assert(throws_with(file,key,"heat_watermarked must be 0 or 1"));
-    write_fixture(fixture(key, true));
+    write_fixture(fixture('a', true));
     assert(throws_with(file, key, "unknown key"));
     // Old measured keys must not have a compatibility path.
     for (const char* obsolete : {"noise_false_revert_rate_ppm", "effect_window_samples",
@@ -520,17 +560,17 @@ int main() {
                                  "effect_noise_floor_ns", "tail_share_noise_ppm",
                                  "effect_sample_noise_ns", "tail_lane_request_ns",
                                  "effect_requests_per_s"}) {
-        write_fixture(fixture(key) + std::string(obsolete) + " = 1\n");
+        write_fixture(fixture('a') + std::string(obsolete) + " = 1\n");
         assert(throws_with(file, key, "unknown key"));
     }
-    write_fixture(fixture(key).substr(0, fixture(key).find("copy_bytes_per_s = ")));
+    write_fixture(fixture('a').substr(0, fixture('a').find("copy_bytes_per_s = ")));
     assert(throws_with(file, key, "copy_bytes_per_s"));
     // Two records for one plan key under a single header: refused as a duplicate, never first-one-wins.
     const std::string header = "schema_version = 1\n";
-    write_fixture(fixture(key) + fixture(key).substr(header.size()));
+    write_fixture(fixture('a') + fixture('a').substr(header.size()));
     assert(throws_with(file, key, "duplicate"));
     // A second header inside a record table is malformed TOML for this schema.
-    write_fixture(fixture(key) + fixture(key));
+    write_fixture(fixture('a') + fixture('a'));
     assert(throws_with(file, key, "unknown key"));
     fs::remove(file);
 }

@@ -17,6 +17,11 @@ namespace bc::serving {
 /* The container's identity without reading its weights: sha256 over its size and its header, directory, plane and
  * encoding tables (the bytes every expert size and weight placement is computed from). */
 std::string container_identity(const std::filesystem::path& model);
+/* The digest of the detected GPUs' IDENTITY: BDF, architecture, HIP ordinal, total VRAM and the other attributes that
+   do not change while the host runs. Live VRAM use (vram_used_mib, vram_available_mib) and the negotiated PCIe link
+   change from one start to the next (the previous engine's pages are still being released), so they are not part of it:
+   a digest over the whole detection made a stored S8 replay refuse an unchanged configuration. */
+std::string gpu_inventory_digest(const nlohmann::json& gpus);
 
 /* The engine build's identity: sha256 over the engine binary and every regular file under its runtime home (plugins,
  * kernels, helpers), by relative path and content. */
@@ -29,10 +34,15 @@ std::string engine_identity(const std::filesystem::path& binary, const std::file
 nlohmann::json plan_key_inputs(const nlohmann::json& values, const nlohmann::json& facts, const std::string& model_id,
                                const std::string& engine_id, const std::string& engine_args);
 std::string plan_key(const nlohmann::json& key_inputs);
-// Calibration-store key: the plan-key inputs without engine_build. What calibration measures (copy and lane times,
-// routing noise, drift) belongs to the cards, layout, model and engine settings, not to the pinned engine commit, so a
-// record carries across pin bumps; a change of any remaining input (or of the record schema) requires recalibrating.
-std::string calibration_key(const nlohmann::json& key_inputs);
+// Separate policy-calibration scope taken from a strictly structured measured serving manifest.
+// Includes model, role-specific card identity/architectures, layout, objective, histogram period,
+// power profile and the helper/transport execution knobs that affect measured lane and copy times.
+// Excludes engine binary, measured-plan hash, host pool, helper VRAM budgets and path strings.
+nlohmann::json policy_calibration_inputs(const nlohmann::json& spec);
+std::string policy_calibration_key(const nlohmann::json& inputs);
+// MRC04: mirrors the platform-owned calibration-kinds-v1.json declaration.
+nlohmann::json policy_calibration_key_fields();
+void require_declared_policy_calibration_inputs(const nlohmann::json& inputs);
 
 /* rad0011's plan (radiance --plan-memory) through the shared v1 decoder, plus what a single plan must satisfy by itself:
  * each host consumer once, and the checkpoint floor within the want. Throws naming `where` and the decoder's path. */

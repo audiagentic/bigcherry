@@ -71,6 +71,12 @@ Json execution_projection(const Json& spec) {
         // This is an S10 startup decision, checked by live calibration and
         // runtime policy gates; it is not a static config setting.
         handoff.at("placement").erase("live_policy_state");
+        // A production manifest's live_policy is derived by the start (S10) from the calibration store and the measured
+        // plan: the replay key already binds the store's file identity and the stored plan is replayed as measured. The
+        // replay's draft is unmeasured and derives none, so comparing it would refuse every stored policy-on manifest for an
+        // unchanged config. A lab manifest's policy is explicit operator input (--live-policy) and stays compared.
+        if (spec.at("intent").at("service").at("profile") == "production")
+            handoff.at("placement").erase("live_policy");
         projected["handoff"] = std::move(handoff);
     }
     return projected;

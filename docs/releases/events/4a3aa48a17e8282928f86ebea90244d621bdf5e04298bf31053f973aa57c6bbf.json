@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_012533_run-history-is-linked-queryab_6728",
+  "files": [
+    "tools/bigcherry/core/run_records.py",
+    "tools/bigcherry/core/results.py",
+    "tools/bigcherry/core/calibration_records.py",
+    "tools/lab/radiance/flashnext_parity.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "MRC finishing slices: #1213 run-record <-> run-manifest link and results put|show|query; #1214 parity harness consumes portable records; #1220 typed calibration provenance and cross-build activation tests; #1226 metric_specs required in every record.",
+  "timestamp-utc": "2026-11-20T01:25:33.996615Z",
+  "user-summary-candidate": "Run history is linked, queryable and self-describing."
+}

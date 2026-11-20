@@ -10,7 +10,7 @@ kernel's module build link still references its former source tree.
 
 ## Observations
 
-- Searched workspace filenames and tracked references, and searched host `/mnt`
+- Searched workspace filenames and tracked references, and searched the host mount directory
   for `linux-7*` directories, gfxoff patch files, and 7.0.13 source archives.
   No original tree, patch or archive was found by these searches. Permission
   errors were suppressed; this is not proof of deletion or a complete backup audit.

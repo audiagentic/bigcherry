@@ -55,6 +55,7 @@ void usage() {
            "                     read only from --layouts\n"
            "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
            "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
+           "  calibration-prune --calibration FILE [--apply]   (drop rows the strict reader refuses)\n"
            "  calibration-ingest --from-log FILE --calibration FILE --manifest LAB_MANIFEST\n"
            "      validates one settled helper record against the strict lab manifest and atomically appends "
            "it\n"
@@ -146,6 +147,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records, lab_experiment;
     bool calibration_run = false;
     bool allow_power_apply = false;
+    bool strict_production_features = false;
     bool json = false;
     std::vector<std::string> passed; // the options as given, for `start` to hand to its detached `serve`
     for (int i = 2; i < argc; ++i) {
@@ -215,6 +217,9 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             calibration_store = need();
         } else if (arg == "--allow-power-apply") {
             allow_power_apply = true;
+            passed.push_back(arg);
+        } else if (arg == "--strict-production-features") {
+            strict_production_features = true;
             passed.push_back(arg);
         } else {
             std::string message = cmd;
@@ -314,6 +319,17 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             std::cout << "port     " << reply->at("port") << '\n';
         if (reply->contains("manifest"))
             std::cout << "manifest " << reply->at("manifest").get<std::string>() << '\n';
+        if (reply->contains("calibration_record")) {
+            const auto& selected = reply->at("calibration_record");
+            std::cout << "calibration " << selected.at("status").get<std::string>();
+            if (selected.value("status", std::string()) == "selected")
+                std::cout << " " << selected.value("kind", std::string())
+                          << " key=" << selected.value("key_sha256", std::string());
+            else
+                std::cout << " " << selected.value("reason_code", std::string())
+                          << ": " << selected.value("reason_detail", std::string());
+            std::cout << '\n';
+        }
         for (const auto& p : reply->value("processes", Json::array()))
             if (!p.value("exited", false))
                 std::cout << "process  " << p.value("role", std::string()) << " pid " << p.value("pid", 0)
@@ -416,6 +432,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (calibration_run)
         session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
+    session.publish_feature_states = true;
+    session.strict_production_features = strict_production_features;
     if (calibration_run)
         session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
     session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
@@ -549,6 +567,23 @@ int main(int argc, char** argv) {
             if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status")
                 return session_command(cmd, argc, argv);
         }
+        if (argc > 1 && std::string(argv[1]) == "calibration-prune") {
+            // Remove the rows the strict reader refuses (hash-only, no calibration_inputs). Dry run unless --apply.
+            fs::path cache;
+            bool apply = false;
+            for (int i = 2; i < argc; ++i) {
+                const std::string arg(argv[i]);
+                if (arg == "--apply") apply = true;
+                else if (arg == "--calibration" && i + 1 < argc) cache = argv[++i];
+                else throw std::runtime_error("calibration-prune: unknown or incomplete option " + arg);
+            }
+            if (cache.empty()) throw std::runtime_error("calibration-prune: --calibration FILE is required");
+            const auto removed = bc::serving::prune_live_policy_store(cache, apply);
+            for (const auto& key : removed) std::cout << (apply ? "removed " : "would remove ") << key << "\n";
+            std::cout << "calibration-prune: " << removed.size() << (apply ? " removed" : " to remove (dry run; --apply removes)")
+                      << " from " << cache.string() << "\n";
+            return 0;
+        }
         if (argc > 1 && std::string(argv[1]) == "calibration-ingest") {
             // The helper has only the *typed v1 manifest* cache key. It is
             // different from the RSC03 plan-store key used by the derivation
@@ -628,7 +663,10 @@ int main(int argc, char** argv) {
             const Json raw = Json::parse(in);
             if (raw.at("spec").at("plan").at("engine_memory").at("expected") != plan->plan_json)
                 throw std::runtime_error("calibration-ingest: cached measured plan differs from lab manifest");
-            bc::serving::ingest_live_policy_log(log, cache, manifest, bc::serving::calibration_key(inputs));
+            bc::serving::ingest_live_policy_log(
+                log, cache, manifest,
+                bc::serving::policy_calibration_key(
+                    bc::serving::policy_calibration_inputs(raw.at("spec"))));
             std::cout << "calibration: " << cache << '\n';
             return 0;
         }
@@ -686,6 +724,8 @@ int main(int argc, char** argv) {
                 opts.configs.emplace_back(need_arg("--configs"));
             else if (arg == "--model-root")
                 opts.model_root = need_arg("--model-root");
+            else if (arg == "--run-dir")
+                opts.run_dir = need_arg("--run-dir");
             else if (arg == "--calibration")
                 opts.calibration_cache = need_arg("--calibration");
             else if (arg == "--write-manifest")
@@ -737,6 +777,8 @@ int main(int argc, char** argv) {
                           int(!write_manifest.empty()) + int(publish_v2_live_room) +
                           int(!publish_v2_p1.empty());
         const bool plan_mode = !write_manifest.empty();
+        if (!plan_mode && !opts.run_dir.empty())
+            throw std::runtime_error("--run-dir in resolver mode is internal to --write-manifest");
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
             throw std::runtime_error("--plan-cache and --engine-binary go with --write-manifest");
         if (!plan_mode && !plan_extra.empty())
@@ -992,7 +1034,8 @@ int main(int argc, char** argv) {
             const auto placement =
                 has_handoff ? spec.at("handoff").at("placement") : bc::serving::Json::object();
             if (has_handoff && !placement.contains("live_policy"))
-                std::cerr << "live policy: no calibration for key " << bc::serving::calibration_key(key_inputs)
+                std::cerr << "WARNING live policy OFF: policy-calibration key " << bc::serving::policy_calibration_key(
+                                 bc::serving::policy_calibration_inputs(spec))
                           << "; " << placement.at("live_policy_state").at("reason_code").get<std::string>()
                           << ": " << placement.at("live_policy_state").at("reason_detail").get<std::string>()
                           << '\n';

@@ -180,9 +180,16 @@ The synthetic quiet-window, drift and lane-service fixture measurements in
 
 ## Store key
 
-Records are stored and looked up by `calibration_key(plan key inputs)`: the plan-key inputs without `engine_build`,
-so a record survives pin bumps. Changing the model, the cards, the layout, the engine arguments or settings, or the
-record schema needs a new calibration.
+Policy records use `policy_calibration_key(policy_calibration_inputs(manifest.spec))`, not
+the memory-plan key. The scope includes model identity, layout, objective, engine/helper
+card identities/architectures, heat period, power profile, helper execution and remote
+service settings. Engine builds, helper budgets and host pools do not alter the key;
+current budget/stride still bound the derived transaction's maximum move bytes.
+The TOML record also retains `calibration_inputs`, `source_plan_key` (full memory-plan
+identity) and `source_engine_build` as verified provenance. Old hash-only rows cannot
+be auto-activated after key changes without a matching historical manifest that
+attests the model/helper-card identity. Their measurements remain preserved for
+provenance-backed migration without another GPU run.
 
 
 ### Calibration bounds and drift retention (RHP16 step 5 follow-ups 13-14)

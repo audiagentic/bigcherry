@@ -1,0 +1,8 @@
+{
+ "format": "bmp",
+ "expected": "refused",
+ "verdict": "refused",
+ "http_status": 501,
+ "seconds": 0.01,
+ "text": "HTTP 501: image input requires a vision encoder; this model was loaded without one"
+}

@@ -62,6 +62,7 @@ class CleanupPlan:
     decisions: list
     unknown: list
     blocked: str | None = None      # a maintenance condition that stops any mutation (active measurement, lock)
+    content_decisions: list = field(default_factory=list)  # report-only: never sent to run quarantine
 
     def totals(self) -> dict:
         out = {"candidate": [0, 0], "protected": [0, 0]}
@@ -155,7 +156,7 @@ def inspect_workspace(root: Path, *, measure: bool = True) -> Inventory:
         for path in sorted(logs.iterdir()):
             inv.build_logs.append(Entry(path, "build-log", path.name,
                                         size_bytes=dir_size(path) if measure else 0))
-    known = {"build-logs", "runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", "cleanup-records", ".locks"}
+    known = {"build-logs", "runs", "builds", "sources", "cache", "objects", "evidence-hold", "trash", "cleanup-records", ".locks", "run-records"}
     if root.is_dir():
         inv.unknown += [p for p in sorted(root.iterdir()) if p.name not in known and not p.name.startswith(".")]
     return inv
@@ -243,7 +244,36 @@ def plan_cleanup(inv: Inventory, *, now: float | None = None, policy: Policy | N
             entry.path, entry.kind, entry.run_id, "protected", entry.size_bytes,
             ["build diagnostics retained indefinitely; explicit removal required"],
         ))
-    return CleanupPlan(decisions, list(inv.unknown), blocked)
+    # Run-record content lives outside runs/. Never pass these objects to the
+    # run-quarantine path. Report orphan blobs only: deletion is not implemented.
+    # Corrupt records prevent a safe reachability proof: protect everything and
+    # block run cleanup until the store is repaired.
+    from .run_records import RecordError, RunRecordStore
+
+    content = []
+    store = RunRecordStore(inv.root)
+    objects = []
+    failure = None
+    try:
+        objects = store.object_paths()
+        rooted = store.protected_paths()
+    except (RecordError, OSError) as exc:
+        rooted = set()
+        failure = f"run records unreadable: {exc}"
+        blocked = f"{blocked}; {failure}" if blocked else failure
+    for path in objects:
+        if failure or path in rooted:
+            action, reason = "protected", failure or "record root or referenced provenance blob"
+        else:
+            action, reason = "unreferenced", "unreferenced blob; inspection only (no content GC)"
+        content.append(Decision(path, "record-object", path.name, action,
+                                path.lstat().st_size, [reason]))
+    if failure:
+        for decision in decisions:
+            if decision.action == "candidate":
+                decision.action = "protected"
+                decision.reasons = [f"cleanup blocked: {blocked}"]
+    return CleanupPlan(decisions, list(inv.unknown), blocked, content)
 
 
 def render(plan: CleanupPlan, root: Path, *, verbose: bool = False) -> str:
@@ -261,6 +291,10 @@ def render(plan: CleanupPlan, root: Path, *, verbose: bool = False) -> str:
             reasons[d.reasons[0].split(":")[0].split("(")[0].strip()] = reasons.get(d.reasons[0].split(":")[0].split("(")[0].strip(), 0) + 1
     for r, n in sorted(reasons.items(), key=lambda kv: -kv[1]):
         lines.append(f"  protected, first reason: {r}: {n}")
+    if plan.content_decisions:
+        roots = sum(d.action == "protected" for d in plan.content_decisions)
+        orphan = sum(d.action == "unreferenced" for d in plan.content_decisions)
+        lines.append(f"run-record objects: {roots} protected, {orphan} unreferenced (no deletion)")
     if plan.unknown:
         lines.append(f"not part of the layout, reported and never touched: {len(plan.unknown)}")
         for p in plan.unknown[:20]:
@@ -270,3 +304,120 @@ def render(plan: CleanupPlan, root: Path, *, verbose: bool = False) -> str:
             lines.append(f"{d.action:9} {d.kind:8} {d.size_bytes / 1e6:9.1f} MB {d.run_id}  {'; '.join(d.reasons)}")
     lines.append("dry run: nothing was changed (apply arrives with harvest and quarantine)")
     return "\n".join(lines)
+
+
+def native_installed_build_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Read native installed-radiance receipts; malformed entries block all GC."""
+    import json
+    import re
+
+    base = Path(root) / "installed-radiance"
+    if not base.exists() and not base.is_symlink():
+        return {}, []
+    releases = base / "releases"
+    if (base.is_symlink() or not base.is_dir()
+            or releases.is_symlink() or not releases.is_dir()):
+        return {}, [f"native installed releases root is missing or untrusted: {releases}"]
+    refs: dict[str, list[str]] = {}
+    errors: list[str] = []
+    try:
+        for release in sorted(releases.iterdir()):
+            try:
+                if release.is_symlink() or not release.is_dir():
+                    raise ValueError("untrusted release entry")
+                receipt = release / "install.json"
+                if receipt.is_symlink() or not receipt.is_file():
+                    raise ValueError("missing or untrusted install.json")
+                doc = json.loads(receipt.read_text(encoding="utf-8"))
+                if (not isinstance(doc, dict)
+                        or doc.get("schema") != "bc-radiance-installed-v1"
+                        or doc.get("tag") != release.name
+                        or (doc.get("prefix") is not None
+                            and doc["prefix"] != str(release))):
+                    raise ValueError("invalid native install receipt identity")
+                record = doc.get("record")
+                if not isinstance(record, dict):
+                    raise TypeError("missing native release record")
+                slice_id, plan_id = record.get("source_slice_id"), record.get("plan_id")
+                if (not isinstance(slice_id, str) or not re.fullmatch(r"[0-9a-f]{32}", slice_id)
+                        or not isinstance(plan_id, str) or not re.fullmatch(r"[0-9a-f]{32}", plan_id)):
+                    raise ValueError("invalid native release build identity")
+                refs.setdefault(f"builds/{slice_id}/{plan_id}", []).append(
+                    f"native installed release {release.name}")
+            except (OSError, ValueError, TypeError) as exc:
+                errors.append(f"invalid native installed release {release.name}: {exc}")
+    except OSError as exc:
+        errors.append(f"cannot enumerate native installed releases: {exc}")
+    return refs, errors
+
+
+def measurement_record_build_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Pin immutable MRC01 build IDs; fail closed on unverified record/blob."""
+    from .run_records import RecordError, RunRecordStore
+
+    location = Path(root) / "run-records"
+    if not location.exists() and not location.is_symlink():
+        return {}, []
+    v1 = location / "v1"
+    if (location.is_symlink() or not location.is_dir()
+            or v1.is_symlink() or (v1.exists() and not v1.is_dir())):
+        return {}, [f"untrusted run-record store directory: {location}"]
+    try:
+        store = RunRecordStore(root)
+        records = store.query()
+        refs: dict[str, list[str]] = {}
+        for item in records:
+            identity = item["record"]["identity"]
+            refs.setdefault(identity["build_id"], []).append(
+                "run record " + item["sha256"][:12])
+        return refs, []
+    except (RecordError, OSError, ValueError) as exc:
+        return {}, [f"unreadable run-record store: {exc}"]
+
+
+def stored_serving_manifest_build_refs(root: Path) -> tuple[dict[str, list[str]], list[str]]:
+    """Pin typed runtime paths in saved v1/v2 serving manifests.
+
+    bc-serve writes manifest-*.json directly under its chosen run directory,
+    normally a named site directory one level beneath the work root. Replay
+    indexes and evidence sidecars are not serving manifests.
+    """
+    import json
+
+    root = Path(root)
+    refs: dict[str, list[str]] = {}
+    errors: list[str] = []
+    excluded = {"builds", "sources", "runs", "releases", "installed-radiance",
+                "run-records", "objects", "trash", "cache", "artifacts-store",
+                "test-tmp", "resource-locks", "cleanup-records", "build-logs"}
+    try:
+        sites = [root] + [site for site in sorted(root.iterdir())
+                          if site.is_dir() and not site.is_symlink()
+                          and site.name not in excluded]
+        for site in sites:
+            for saved in sorted(site.glob("manifest-*.json")):
+                if ".json." in saved.name:
+                    continue
+                try:
+                    if saved.is_symlink() or not saved.is_file():
+                        raise ValueError("untrusted manifest file")
+                    doc = json.loads(saved.read_text(encoding="utf-8"))
+                    if (not isinstance(doc, dict)
+                            or doc.get("kind") != "ServingManifest"
+                            or doc.get("apiVersion") not in ("bigcherry/v1", "bigcherry/v2")):
+                        raise ValueError("invalid stored serving manifest identity")
+                    processes = doc.get("spec", {}).get("processes", {})
+                    engine = processes.get("engine", {})
+                    runtime = engine.get("runtime", {})
+                    home = runtime.get("radiance_home")
+                    if home is None:
+                        continue  # older manifests have no typed runtime path
+                    if not isinstance(home, str) or not home.startswith("/"):
+                        raise ValueError("invalid stored runtime path")
+                    refs.setdefault(home, []).append(
+                        f"stored serving manifest {saved.name}")
+                except (OSError, ValueError, TypeError, AttributeError) as exc:
+                    errors.append(f"unreadable stored manifest {saved}: {exc}")
+    except OSError as exc:
+        errors.append(f"cannot enumerate stored serving manifests: {exc}")
+    return refs, errors

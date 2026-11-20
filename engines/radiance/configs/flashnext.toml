@@ -20,6 +20,8 @@ count = "all"
 placement = "head"
 
 [config.flashnext-2xtx.handoff]
+# Shipped under the same release root as configs/; independent of cwd or repository.
+heat = "@bundle/heat/perf51.rank0.hot-first"
 # The route-heat histogram every second: the live placement policy (RHP16) judges heat younger than about 10 s and
 # evaluates about every 5 s, so the 60 s default leaves it with a feed it calls stale (no move in 15 minutes of traffic).
 histogram_period_s = 1
@@ -77,6 +79,28 @@ description = "All four cards: the R9700 engine, the XTX pair (head) and the RX 
 
 [config.flashnext-4gpu.helper]
 combine = true
+
+[config.flashnext-4gpu.handoff]
+# The production mixed-workload ranking (the committed lab source ships in prefix/heat).
+heat = "@bundle/heat/flashnext-mixed.hot-first"
+
+# NOT the default: flashnext-4gpu serves an fp8 cache for 8 sessions of 262,144 tokens. bf16 keys and int8 values
+# (bf16_i8, rad0038) keep the keys exact (KLD against bf16 0.00269 against fp8's 0.00495) at 1.283x the bf16 capacity
+# (1,002,364 tokens), but at 8 sessions the engine card (R9700, 32 GB) is 5.47 GB short at admission (gpu_room: live
+# 32.17 GB against 37.64 GB required), so this variant serves 4 sessions (3.8 at 262,144 tokens). Two launches, policy on,
+# 451 s warmup, 2026-11-19: 256K prefill 2916 / 3051 tok/s, document prefill 3605, cold TTFT 8.45 s, one-stream decode
+# 25.8 ms/step (the fp8 default: 3085 / 3183, 3742, 8.30 s, 25.87). It is its own layout name, so it has its own
+# live-policy calibration key: calibrate it (bc-serve serve --calibration-run) before expecting the policy on.
+# Evidence: docs/evidence/2026-11-19-eng06-bf16i8/README.md.
+[config.flashnext-4gpu-bf16i8]
+base = "flashnext-4gpu"
+description = "flashnext-4gpu with a bf16_i8 cache at 4 sessions (not the default: fp8 at 8 sessions is)"
+
+[config.flashnext-4gpu-bf16i8.engine]
+kv_cache_dtype = "bf16_i8"
+
+[config.flashnext-4gpu-bf16i8.service]
+max_sessions = 4
 
 # The same cards and settings as flashnext-4gpu under its RAD23 experiment name (its own plan key).
 [config.flashnext-2xtx-rdna2-tail-combine]
@@ -141,6 +165,7 @@ max_sessions = 6
 host_pool_mib = 4096
 
 [config.flashnext-tp2xtx-r9700.handoff]
+heat = "@bundle/heat/flashnext-mixed.hot-first"
 histogram_period_s = 1   # as flashnext-2xtx
 
 [config.flashnext-tp2xtx-r9700.tuning]
