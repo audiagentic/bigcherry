@@ -1,0 +1,24 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_023355_completed-additional-plan-reco_5768",
+  "files": [
+    "docs/planning/completed/patching-radiance-rdna3/RAD42.md",
+    "docs/planning/active/patching-radiance-rdna3/RAD23.md",
+    "docs/planning/active/patching-radiance-heat-placement/RHP04.md",
+    "docs/planning/active/patching-radiance-heat-placement/RHP09.md",
+    "docs/planning/active/tuning-radiance-engine/ENG02.md",
+    "docs/planning/active/tuning-radiance-engine/ENG08.md"
+  ],
+  "plan-item-ids": [
+    "RAD42",
+    "RAD23",
+    "RHP04",
+    "RHP09",
+    "ENG02",
+    "ENG08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reconciled delivered RAD42 chunk combine and PR #520 repair; transferred remaining BAR-push ownership to RAD51 and superseded RAD42. Narrowed RAD23 to remaining method-selection gates, added current-ABI/current-owner clarifications to RHP04/RHP09, retained ENG02 for unique policy-ON multi-depth scope while ENG08 owns depth-4 A/B, and corrected ENG08's calibration-key precondition. Added and closed RV4239\u2013RV4244.",
+  "timestamp-utc": "2026-11-20T02:33:55.540527Z",
+  "user-summary-candidate": "Completed additional plan reconciliations: transferred shipped chunk-combine and residual BAR-push ownership, clarified placement and MTP gates, and preserved uncompleted hardware criteria."
+}
