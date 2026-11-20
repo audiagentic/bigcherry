@@ -127,7 +127,8 @@ NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BU
 # Installed bc-serve binds its verified runtime home and rejects an override.
 # A build-tree owner needs the runtime home supplied explicitly.
 owner_path=$(realpath -- "$BC_SERVE")
-if [[ "$owner_path" != "$BUILD/radiance_home/bin/bc-serve" || "$(basename -- "$(dirname -- "$BUILD")")" != releases ]]; then
+# (A v3 bc-serve derives it from --engine-binary; only the v2 control takes it as a setting.)
+if [ "$EDITION" = v2 ] && [[ "$owner_path" != "$BUILD/radiance_home/bin/bc-serve" || "$(basename -- "$(dirname -- "$BUILD")")" != releases ]]; then
   NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
 fi
 # The helpers need the workload heat file (it has no portable path). The default is the Flash-Next mixed-workload heat,
