@@ -1,0 +1,18 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_042557_pvps01-now-owns-the-timed-proc_8638",
+  "files": [
+    "docs/planning/active/patching-validation-package-standard/PVPS01.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS08.md",
+    "docs/planning/completed/patching-validation-package-standard/PVPS12.md"
+  ],
+  "plan-item-ids": [
+    "PVPS01",
+    "PVPS08",
+    "PVPS12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reconciled PVPS08 and PVPS12 against live lifecycle state: MRC02 is completed, and no active MRC item owns their patch-validation gates. Added timed-process HIP PCI identity and immutable run/session/withdrawal identity requirements to active PVPS01, then superseded both sources. All implementation and hardware evidence remains pending.",
+  "timestamp-utc": "2026-11-20T04:25:57.288745Z",
+  "user-summary-candidate": "PVPS01 now owns the timed-process PCI attestation and explicit withdrawal identity gates; the original sources remain preserved as superseded, with validation still open."
+}

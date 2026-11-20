@@ -2,7 +2,7 @@
 id: PVPS10
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: superseded
 created-at: '2026-09-26T03:11:15.402522+00:00'
 breadth: ''
 skill: advanced
@@ -58,6 +58,10 @@ Offline: kernel-fraction parsing, declared-kernel matching, invalid-vs-fail clas
 
 Owner direction 2026-09-26: 'we should be profiling properly to see if we can improve and validate the patch has been implemented correctly'. First step is a one-off audit via queue jobs (no perturbation of running measurements); the standard stage follows. Related: PVPS04 (tune/replay builds currently unused), PVPS09 (noise), RCD07 (stage split).
 
+2026-11-20 consolidation: profiling contribution requirements transferred to active PVPS15 after its actual-patch-activation gate. PVPS15 now owns predeclared kernel-family/workload profiles, post-verdict control/subject traces, kernel-fraction and coverage counters, expected-effect bounds, INVALID-vs-FAIL classification, and the named offline/hardware validations. The owner remains pending; no GPU profiling or acceptance is implied.
+
 ## Change Log
 
 - 2026-09-26T03:11:15.402522+00:00 (created-by): Created by agent
+- 2026-11-20T04:12:09.360610+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:12:16.597612+00:00 (state-transition): State: pending → superseded

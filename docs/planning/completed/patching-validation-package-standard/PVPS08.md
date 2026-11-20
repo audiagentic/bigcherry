@@ -2,7 +2,7 @@
 id: PVPS08
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: superseded
 created-at: '2026-09-25T23:16:40.340989+00:00'
 breadth: ''
 skill: intermediate
@@ -53,6 +53,8 @@ Unit test on a synthetic log; one dual-XTX session attests without preflight.
 
 ## Notes
 
+2026-11-20 consolidation: exact requirements transferred to active PVPS01, which owns patch-validation execution identity and evidence. The prepared MRC02 successor is now completed and does not retain the specific timed-process/withdrawal gates. PVPS01 keeps both gates pending; no dual-XTX hardware result or record migration is claimed.
+
 ## Change Log
 
 - 2026-09-25T23:16:40.340989+00:00 (created-by): Created by agent
@@ -61,3 +63,5 @@ Unit test on a synthetic log; one dual-XTX session attests without preflight.
 
 - chg_20260925_232233_correctness-checks-for-approxi_1217
 - 2026-09-25T23:22:42.336192+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T04:23:13.422054+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:23:28.252003+00:00 (state-transition): State: pending → superseded

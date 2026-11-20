@@ -25,6 +25,10 @@ Every real producer uses trace_probe="skip" and decides activation itself, after
 4. Declare per-patch test requirements (target model, n_max or layout, marker) in validation.toml so a campaign cannot be planned on a model that cannot fire it.
 5. Update tests that encode probe failure as a persisted record (rd13 test_probe_failure_still_exit_zero_with_failed_record) and decide whether a failed pre-flight still persists a BLOCKED record.
 
+### Inherited workload-contribution profiling gate from PVPS10
+
+After paired verdict lanes, run an untimed rocprofv3 kernel trace for control and subject on the declared positive-lane workload. Declare patched kernel families/symbol patterns and required workload in validation.toml `[profile]`; `bigcherry kernel-fraction` records per-kernel calls, GPU time and share. Require the subject's declared kernels to appear and the control to show the pre-patch path or no patched kernels. Run the scaffold tune build with 0200/0700 coverage counters once and retain exact per-path hits per token. Record expected-effect bound = patched-kernel share × measured kernel-only change. If patched share is below a declared floor, mark the session INVALID (not FAIL); if kernel gain is large but end-to-end share is small, report that the effect is not measurable on this workload and require a contract/workload review. Publish top kernels, occupancy, launch counts and neighboring-kernel regressions with the promotion evidence.
+
 ## Detailed Solution & Technical Design
 
 
@@ -41,6 +45,10 @@ tools/bigcherry/patch/campaign/producer.py, patches/*/validation/producer.py, to
 
 Unit test: a producer whose marker never fires aborts before any timed lane runs and never calls run_paired_llama_benchmark. Interim queue-level gate: PREFLIGHT and REQUIRES= rows in queue.sh (commit 6fd507e2).
 
+### Inherited PVPS10 validation
+
+Offline tests cover kernel-fraction parsing, declared-kernel matching, hit counts and INVALID-versus-FAIL classification. Future hardware traces cover 1256/1257, 1263, 1262 and 1265 gfx1030; known winners 1237/1253 should show patched-kernel share consistent with their observed gains. This handoff performs no GPU profiling.
+
 ## Effort & Risk
 
 
@@ -51,7 +59,7 @@ Unit test: a producer whose marker never fires aborts before any timed lane runs
 
 ## Acceptance Criteria
 
-
+Before performance interpretation or promotion, each patch declares the expected kernel family and positive-lane workload, has a control/subject trace and exact coverage counts, and includes a measured kernel-only effect and share-scaled expectation. Under-floor share is INVALID, never FAIL; a low end-to-end contribution despite a large kernel gain triggers workload review. Profile artifacts include neighboring-kernel effects and do not replace correctness, activation or paired end-to-end gates.
 
 ## Notes
 
@@ -63,13 +71,13 @@ Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/na
 
 2026-09-30 BLOCKED handling done: ValidationProducerBlocked now propagates unwrapped from execute_validation_producer; _run_validation_producer catches it, writes run_dir/producer-blocked.json (verdict=BLOCKED, reason, timed_lanes_run=false, evidence_record=null), prints it, and returns exit 3 (BLOCKED_EXIT_CODE). Deliberately NO tracked validation record is persisted for a BLOCKED run, so it cannot satisfy improvement_no_regression_v1 / patch-verify-evidence (neither PASS nor FAIL, ineligible for promotion). Tests: ProducerBlockedDispatchTests. Remaining: per-patch firing requirements in validation.toml (1263 marker, 0860 provider marker), ProducerRuntime.require_activation API to replace per-producer require_fires plumbing, an end-to-end test of the exit-3 path, rd13 27B requirement in validation.toml (fires; neutral).
 
+Consolidation update 2026-11-20: PVPS10 profiling follows PVPS15's actual-patch-activation gate. Activation is proved before timed lanes; contribution profiling follows the verdict lanes and classifies workload coverage before interpreting end-to-end effect. Source remains incomplete until the offline and hardware validations above are recorded.
+
 ## Change Log
 
 - 2026-09-29T22:19:04.336861+00:00 (created-by): Created by agent
 
 ## Ledger-events
-
-
 
 - chg_20260929_222105_patch-qualification-queues-can_5436
 - 2026-09-29T22:21:08.894835+00:00 (updated-by): Updated: section:ledger-events
@@ -82,3 +90,4 @@ Interim mitigation landed: queue.sh PREFLIGHT rows, REQUIRES= gate, tools/lab/na
 - 2026-09-30T01:03:27.769967+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260930_021419_builds-firing-checks-and-ab_8646
 - 2026-09-30T02:14:26.106622+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T04:10:01.939133+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes

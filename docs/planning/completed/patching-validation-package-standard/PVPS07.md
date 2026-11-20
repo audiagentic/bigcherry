@@ -2,7 +2,7 @@
 id: PVPS07
 order: 0
 plan: patching-validation-package-standard
-state: pending
+state: superseded
 created-at: '2026-09-25T23:16:36.887890+00:00'
 breadth: ''
 skill: intermediate
@@ -54,6 +54,8 @@ Unit tests for the round extension rule and acceptance bound; hardware run on 12
 
 ## Notes
 
+2026-11-20 consolidation: requirements transferred to active PVPS01 (patch qualification matrix), including this item's specific validation and acceptance gates. Source history is retained. The target remains pending; no implementation, hardware validation, or promotion acceptance is implied. See PVPS01 inherited qualification gates.
+
 ## Change Log
 
 - 2026-09-25T23:16:36.887890+00:00 (created-by): Created by agent
@@ -62,3 +64,5 @@ Unit tests for the round extension rule and acceptance bound; hardware run on 12
 
 - chg_20260925_232233_correctness-checks-for-approxi_1217
 - 2026-09-25T23:22:39.457794+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-20T04:11:07.178971+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T04:11:19.952002+00:00 (state-transition): State: pending → superseded
