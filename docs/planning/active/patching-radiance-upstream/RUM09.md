@@ -118,6 +118,8 @@ Packet trace captured 102 publish and 51 finish dispatches for parent 1. Both ol
 
 Integrated build freeze 0851977e4 includes main through a28b6b350, the single-publish fix, remote rank rollback/clean drain and ported diagnostic packages. Regenerated shared v3 schema fingerprint starts 63e1e00b. Three host contract CTests and 12 Python checks passed. The exact full runtime build is running. Verified local v1.17.0 build bc-radiance-1170.34.0 is the planned matched old-pin control. The newer 1170.35.0 release did not expose a runtime archive at inspection.
 
+Merged main through f40d74c5c at b0c256877. The finite native owner KL action f6c07a8ea passed the merged exact ABI44 host fixture, including helper verification, no HTTP, timeout, and cleanup. Recovered corpus matched archived FNV 66bc5f8a27eda3e6. Verified v1.17.0 1170.34.0 two-XTX TP2 exact reference recorded 8240 positions across four documents and exited 0. The shared install has since advanced; verified 1170.35.0 is the current old-pin serving/performance control. Remaining final runtime integration, live quality and performance use staged 2.2 artifacts.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -148,3 +150,4 @@ Integrated build freeze 0851977e4 includes main through a28b6b350, the single-pu
 - 2026-11-20T01:12:49.299909+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:05:25.873512+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T02:18:45.278897+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:39:23.371083+00:00 (updated-by): Updated: section:notes
