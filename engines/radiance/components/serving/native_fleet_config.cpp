@@ -197,8 +197,8 @@ std::optional<int> inspect_native_fleet_config_command(int argc, char** argv) {
                          {"max_context", cfg.max_ctx},
                          {"max_sequences", cfg.max_seqs},
                          // The tuning options the authored YAML states, as values the strict reader parsed (null: absent).
-                         {"tuning", {{"p2p", stated("--p2p", cfg.p2p == RAD_P2P_ON    ? "on"
-                                                             : cfg.p2p == RAD_P2P_OFF ? "off" : "auto")},
+                         {"tuning", {{"p2p", stated("--p2p", cfg.p2p == rad::RAD_P2P_ON    ? "on"
+                                                             : cfg.p2p == rad::RAD_P2P_OFF ? "off" : "auto")},
                                       {"pipelined_prefill", stated("--pipelined-prefill",
                                                                    cfg.pipelined_prefill == 1   ? "on"
                                                                    : cfg.pipelined_prefill == 2 ? "off" : "auto")},
