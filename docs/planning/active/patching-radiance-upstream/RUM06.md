@@ -112,6 +112,8 @@ Checkpoint cbdd21f5b frees rank-local collective buffers on pre-publication init
 
 Checkpoint c5abd3b47 poisons and wakes failed rendezvous and holds published owner buffers until joined rank workers and device contexts have drained. Four rendezvous cases, exact ordered 33-patch replay, libr3 rewrite and host/HIP syntax checks passed. Live mixed-TP, clean stop and remote callback ownership remain open.
 
+Checkpoint bedf51edb consolidates rank attachment rollback, clears the result pointer on refusal and destroys completion events on their owning device during shutdown. Exact ABI44/ROCm syntax and four focused host fixtures passed. This preserves the frozen canary SDK; engine-scoped remote lifecycle, clean-stop drain and hardware proof remain open.
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -129,3 +131,4 @@ Checkpoint c5abd3b47 poisons and wakes failed rendezvous and holds published own
 - 2026-11-19T09:12:22.140456+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:03:33.981692+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:20:26.906081+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T01:23:16.000046+00:00 (updated-by): Updated: section:notes
