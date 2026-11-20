@@ -76,9 +76,29 @@ ELF_DEBUG_POLICY = "gnu-objcopy-split-debug-strip-all-v1"
 # Deliberately explicit: unknown RSC12 configurations must be reviewed and
 # added to the engine payload contract, not silently copied from a checkout.
 SHIPPED_CONFIGS = ("flashnext.toml", "qwen27b.toml")
-# Native profiles are selected by exact name. A checkout's other YAML is local input.
-OPTIONAL_NATIVE_PROFILES = ("flashnext-4gpu.yaml",)
-NATIVE_RELEASE_PROFILES = ("flashnext-4gpu.yaml",)
+# Native profiles are selected by exact name: one per named serving config (engines/radiance/configs/NAME.yaml, the
+# single authority of that config's engine settings). A checkout's other YAML is local input.
+NATIVE_RELEASE_PROFILES = (
+    "flashnext-2xtx-combine.yaml",
+    "flashnext-2xtx-rdna2-head.yaml",
+    "flashnext-2xtx-rdna2-tail-combine.yaml",
+    "flashnext-2xtx-rdna2-tail.yaml",
+    "flashnext-2xtx.yaml",
+    "flashnext-4gpu-bf16i8.yaml",
+    "flashnext-4gpu.yaml",
+    "flashnext-r9700.yaml",
+    "flashnext-tp2xtx-r9700.yaml",
+    "flashnext-tp2xtx.yaml",
+    "qwen27b-2xtx.yaml",
+    "qwen27b-tp3-capacity.yaml",
+    "qwen27b-tp3-int8-556-long-bf16.yaml",
+    "qwen27b-tp3-int8-556-long-bf16i8.yaml",
+    "qwen27b-tp3-int8-556-long.yaml",
+    "qwen27b-tp3-int8-556.yaml",
+    "qwen27b-tp3-int8.yaml",
+    "qwen27b-tp3.yaml",
+)
+OPTIONAL_NATIVE_PROFILES = NATIVE_RELEASE_PROFILES
 NATIVE_PROFILE_MEMBERS = frozenset(f"configs/{name}" for name in OPTIONAL_NATIVE_PROFILES)
 NATIVE_PROFILE_LIMIT = 16 * 1024 * 1024
 # Approved repo-owned heat seeds. Archive members live at prefix/heat; no

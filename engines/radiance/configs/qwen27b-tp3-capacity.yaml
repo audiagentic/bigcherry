@@ -1,0 +1,25 @@
+cards: [0, 1, 2]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libr4d,libref
+models:
+  qwen27b:
+    model: radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad
+    tp: 3
+    tp-wire: exact
+    max-model-len: 262144
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    ngram-placement: disk
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+    p2p: "off"
+    pipelined-prefill: auto
+    pipelined-prefill-min-rows: 256
+    tp-ownership: "kv=1,1,2;ffn=7680,7680,2048;lk=7,7,2;lv=21,21,6"
+    tune-pin: "all_reduce:nblocks=4,nthreads=256"

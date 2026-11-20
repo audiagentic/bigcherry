@@ -1,0 +1,21 @@
+cards: [0, 1]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libr3moe,libref
+models:
+  flashnext:
+    model: radiance/bigcherry/qwen3.8-next-flash-hcbf16/qwen3.8-next-flash-hcbf16.rad
+    tp: 2
+    tp-wire: exact
+    max-model-len: 131072
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    ngram-placement: ram
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+    p2p: "off"

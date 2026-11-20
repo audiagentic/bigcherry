@@ -173,6 +173,8 @@ class Fixture {
             add("configs/flashnext-4gpu.yaml",
                 fault == Fault::native_profile_interpreter ? "# requires python3\ncards: [0]\n" : "cards: [0]\n",
                 fault == Fault::native_profile_executable ? 0755 : 0644);
+        if (native_profile)   // every named config has its profile: a second one rides with the first
+            add("configs/qwen27b-tp3-int8-556.yaml", "cards: [0, 1, 2]\n");
         if (fault == Fault::unknown_profile)
             add("configs/unreviewed.yaml", "cards: [0]\n");
         add("heat/flashnext-mixed.hot-first", "mixed production heat seed\n");
@@ -415,6 +417,8 @@ void test_optional_native_profile() {
     bc::release::install(request);
     const auto profile = request.root / "releases" / request.tag / "configs/flashnext-4gpu.yaml";
     check(read_file(profile) == "cards: [0]\n", "native profile bytes changed during installation");
+    check(read_file(request.root / "releases" / request.tag / "configs/qwen27b-tp3-int8-556.yaml") ==
+              "cards: [0, 1, 2]\n", "a second native profile was not installed");
     check(bc::release::verify(request.root, request.sdk)["current"] == request.tag,
           "native profile bundle failed verification");
     write_file(profile, "cards: [1]\n");

@@ -93,9 +93,9 @@ class CiBundleTests(unittest.TestCase):
         fingerprint = self.root / assets.SERVING_FINGERPRINT
         fingerprint.parent.mkdir(parents=True)
         fingerprint.write_text(f"schema sha256:{'1' * 64}\nsemantics sha256:{'2' * 64}\n")
-        profile = self.root / "engines/radiance/configs" / NATIVE_PROFILE
-        profile.write_text("cards: [0]\nmodels: {tiny: {model: tiny.rad}}\n")
-        return profile
+        for name in assets.NATIVE_RELEASE_PROFILES:   # the native lane ships every config's YAML
+            (self.root / "engines/radiance/configs" / name).write_text("cards: [0]\nmodels: {tiny: {model: tiny.rad}}\n")
+        return self.root / "engines/radiance/configs" / NATIVE_PROFILE
 
     def test_immutable_tag_selects_native_lane_and_legacy_keeps_stock(self):
         def git(*args):
