@@ -129,6 +129,8 @@ Codeberg refs/heads/main matched the frozen Radiance 2.2.0 recipe SHA b6b8751ccc
 
 2.2 host loader refused actual stock ABI43 DSO and an ABI44 DSO without the layout export (two cases, nine checks). Full v3 roster ABI is 44/5cc71b9c5bb7ab40. ABI44 now explicitly depends on the patch declaring RadBatch.cu_seqlens_h; exact-pin release fixture passes. Retained MoE rad0046 source lifecycle gate remains open.
 
+The annotated upstream v2.2.0 tag dereferences to the frozen recipe b6b8751c. Rebuilt ABI44 libr4d on gfx1201 passed the stock had_quant_act_fp8 reference test and a direct exact moe_gemm_fp8a8 CPU-reference comparison. Aligned classes 512/256 selected 128-column tiling and classes 512/384 selected 64-column fallback; both had zero mismatches. The first probe's shape refusal was diagnosed as wrong test-only _1 parameter names for the two-class row and corrected to N_odd/K_odd. Original and corrected logs plus binary hashes are kept. Verified patch promotion, functional quality and A/B remain open.
+
 ## Change Log
 
 - 2026-11-18T01:28:07.390588+00:00 (created-by): Created by codex
@@ -165,3 +167,4 @@ Codeberg refs/heads/main matched the frozen Radiance 2.2.0 recipe SHA b6b8751ccc
 - 2026-11-19T21:53:59.253973+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T22:48:19.649691+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:20:13.004950+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:33:16.483831+00:00 (updated-by): Updated: section:notes
