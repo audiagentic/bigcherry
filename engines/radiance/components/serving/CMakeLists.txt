@@ -209,6 +209,8 @@ if(BUILD_TESTING)
   add_dependencies(bc_session_test bc_fake_engine)
   target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   add_test(NAME bc_session_test COMMAND bc_session_test)
+  # The same executable's host-start case; a build target of the test's name so the component gate can declare it.
+  add_custom_target(bc_session_host_start_test DEPENDS bc_session_test)
   add_test(NAME bc_session_host_start_test COMMAND bc_session_test --host-start-only)
   # A build target so the component test gate can declare it; building it runs the tripwire.
   add_custom_target(bc_session_callback_guard
