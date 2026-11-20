@@ -2,7 +2,7 @@
 id: RCD06
 order: 6
 plan: run-campaign-durability
-state: pending
+state: superseded
 created-at: '2026-09-26T00:52:08.757524+00:00'
 breadth: ''
 skill: advanced
@@ -12,6 +12,46 @@ work: L
 ---
 
 # Campaign service seams and prepare/execute evolution
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+Consolidation disposition (2026-11-20): superseded into active RCD02 after RV4246. RCD02 Steps/Validation/Acceptance now carry the outstanding software hardening, host-specific acceptance, and future evolution requirements from this item. This is a planning-tracker consolidation only; it does not claim completion, tests, hardware acceptance, or production cutover. Preserve this record and its historical evidence/ledger references.
 
 ## Status — 2026-09-28
 
@@ -67,3 +107,8 @@ RCD06 is **not a monolithic-v1 cutover blocker** after the pinned-worktree/scien
 
 - 2026-09-26: original external-evidence/frozen-composition/prepare-execute design.
 - 2026-09-28: reconciled with implemented JobService isolation; retired duplicate M1 authorities and moved typed preflight/events/stage split to RCD07-era evolution.
+
+## Change Log
+
+- 2026-11-20T02:53:09.951532+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T02:53:16.645711+00:00 (state-transition): State: pending → superseded

@@ -1,0 +1,21 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_025332_merged-the-residual-job-servic_5030",
+  "files": [
+    "docs/planning/active/run-campaign-durability/RCD02.md",
+    "docs/planning/completed/run-campaign-durability/RCD04.md",
+    "docs/planning/completed/run-campaign-durability/RCD05.md",
+    "docs/planning/completed/run-campaign-durability/RCD06.md",
+    "docs/planning/completed/run-campaign-durability/reviews/RCD02/RV4246.md"
+  ],
+  "plan-item-ids": [
+    "RCD02",
+    "RCD04",
+    "RCD05",
+    "RCD06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Consolidated residual requirements from RCD04-RCD06 into the active RCD02 Steps, Validation, Acceptance Criteria and Notes after review RV4246; preserved open dev/Windows acceptance gates and superseded the duplicate source trackers.",
+  "timestamp-utc": "2026-11-20T02:53:32.811125Z",
+  "user-summary-candidate": "Merged the residual job-service and campaign execution requirements from RCD04-RCD06 into active RCD02, keeping host acceptance open."
+}

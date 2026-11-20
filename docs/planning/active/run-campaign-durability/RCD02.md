@@ -13,6 +13,50 @@ work: M
 
 # Freeze the job-service architecture and implementation boundaries
 
+## Description
+
+
+
+## Steps
+
+Consolidated residual obligations from RCD04/RCD05/RCD06 (2026-11-20; software scope only, no completion claim):
+- Retain exact attempt commit resolution, detached pinned workspaces, scientific identity recheck, stable-ID allocation attestation, durable executor start/attestation/result evidence, file-backed managed process streaming, process-group TERM/grace/KILL, CPU/output liveness detection, typed infrastructure/configuration incidents, and scientific FAIL must never trigger result-driven retries. Retry creates a new BigCherry attempt/native job; no canonical checkout mutation or stash.
+- Define/qualify dev-specific absolute free-space reserves for root/work/tmp and a nonzero stall threshold. Keep retention/cleanup fail-closed: never delete active/unharvested evidence; only eligible harvested/failed roots. Validate real disk pressure, process-tree cancellation, large server logs and gitignored vendor/environment workspace inputs; preserve Windows-local process-tree acceptance.
+- Preserve the verified isolated attempt evidence destination, exact-path harvest and record/patch/validation/contract identity checks; dirty/staged canonical destinations fail closed. Series composition is frozen and re-resolved at attempt start; mismatches block execution.
+- For future extracted producer stages, define typed ProducerPreflightResult(ok,retryable,invalid) with producer-owned examples (MTP row/source-parser and tensor topology/cap limits); generic service code must not special-case producers. Add stable phase/lane/round campaign event callbacks for progress only, never result authority. Any prepare-only/execute-only split must build on RCD07 operation identity/rehydration primitives and preserve direct CLI compatibility; do not add parallel resume authority.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+RCD04/RCD05/RCD06 software guarantees remain subject to jobs CI and owning module tests; no new implementation or implementation-completion claim is made by consolidation. Keep host validation pending: qualified dev disk reserves/stall threshold, real disk-pressure/process-tree/large-log and ignored-input acceptance, Windows process-tree acceptance, plus RCD03/RCD10/RCD11/RCD12 real-host cutover. Future producer-stage work must test typed preflight classification, producer-specific checks, stable progress callbacks as non-authoritative, and prepare/execute compatibility atop RCD07. Evidence harvest must prove exact identity, committed verified evidence, and dirty/staged destination refusal.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+RCD02 remains an active umbrella until dev cutover acceptance is recorded. RCD04/RCD05/RCD06 residuals are explicitly tracked here: pinned exact-attempt execution and scientific-identity fail-closed behavior; stable-ID allocation attestation and durable evidence; bounded file-backed output and process-tree termination; qualified host-specific disk/stall policy and safe retention; isolated verified harvest and explicit commits; retryable environment/configuration classification distinct from scientific FAIL; producer-owned typed preflight and non-authoritative stage progress callbacks; any prepare/execute split reuses RCD07 durable operation identity and preserves direct CLI compatibility. RCD03/RCD10/RCD11/RCD12 host/platform acceptance remains open; this item does not claim the job service or production cutover is accepted.
+
+## Notes
+
+Consolidated from active sources RCD04, RCD05 and RCD06 on 2026-11-20 following RV4246. Their duplicate implementation trackers may be superseded after this active owner records the inherited residual gates. Source history remains in each superseded item and in its original evidence/ledger records. No tests, hardware runs, cleanup, deletion, or implementation acceptance are implied by this plan consolidation.
+
 ## Status — 2026-09-28
 
 **Architecture frozen; software implementation exists. Remaining gates are host/hardware acceptance, not platform-choice objections.**
@@ -69,3 +113,11 @@ RCD02 itself is design-complete. Keep the plan item open only as an umbrella unt
 
 - 2026-09-26: architecture frozen and real Noble validation established.
 - 2026-09-28: reconciled final v1 implementation; removed stale buffering/native-requeue assumptions and separated hardware acceptance from architecture.
+
+## Reviews
+
+- RV4246
+
+## Change Log
+
+- 2026-11-20T02:51:50.455044+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes

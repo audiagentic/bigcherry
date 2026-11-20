@@ -1,0 +1,19 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_025638_merged-harvest-and-observabili_3489",
+  "files": [
+    "docs/planning/active/run-campaign-durability/RCD10.md",
+    "docs/planning/completed/run-campaign-durability/RCD08.md",
+    "docs/planning/completed/run-campaign-durability/RCD09.md",
+    "docs/planning/completed/run-campaign-durability/reviews/RCD10/RV4247.md"
+  ],
+  "plan-item-ids": [
+    "RCD08",
+    "RCD09",
+    "RCD10"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Consolidated RCD08/RCD09 harvest-integrity and observability requirements into active RCD10 after RV4247, preserving explicit real cutover and soak acceptance as open.",
+  "timestamp-utc": "2026-11-20T02:56:38.840747Z",
+  "user-summary-candidate": "Merged harvest and observability cutover requirements from RCD08 and RCD09 into RCD10; real cutover remains open."
+}
