@@ -2437,6 +2437,14 @@
                   "description": "Stream the sparse attention group's KV from host memory, resident tokens (`--kv-resident`).",
                   "$ref": "#/$defs/positive"
                 },
+                "hc_pf2_upmix_rt": {
+                  "description": "PF2 wide hyper-convolution up-mix row tile (`RAD_HC_UPMIX_RT`, patch rad0008).",
+                  "enum": [
+                    128,
+                    256,
+                    384
+                  ]
+                },
                 "routing_evidence": {
                   "description": "Record routing evidence (`RAD_ROUTING_EVIDENCE`, patch rad0010).",
                   "type": "boolean"
