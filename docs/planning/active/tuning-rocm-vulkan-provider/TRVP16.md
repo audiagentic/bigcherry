@@ -15,39 +15,46 @@ work: L
 
 ## Description
 
-
+Qualification owner for the existing PRVP03 Vulkan communication SPI across all-Vulkan multi-RDNA configurations. No parallel AllReduce implementation or hardware campaign is authorized by this plan update. Upstream llama.cpp #25051 merged 2026-11-02 as candidate source; merge status and external performance reports do not qualify BigCherry correctness or throughput.
 
 ## Steps
 
-
+1. Pin upstream PR #25051 at merge commit `dcbb091` and inspect its exact code against the pinned BigCherry source and PRVP03 SPI/fallback contract.
+2. Review inactive-rank source and destination behavior, post-submit failure paths, physical-device identity, synchronization, and capability checks.
+3. Decide through PRVP03 whether to adopt, compare or reject the upstream path; keep PRVP03 the sole implementation owner.
+4. Before any promotion claim, run exact correctness and negative controls on supported multi-RDNA configurations, including inactive shards, failure before/after submission and fallback.
+5. Measure matched stock versus candidate end-to-end collective and model paths with stable clocks, route markers, exact build/runtime identity and repeatable decode/prefill results; report any workload regressions.
+6. Keep the item pending until source review, correctness, hardware qualification and release evidence are complete.
 
 ## Detailed Solution & Technical Design
 
-
+The upstream implementation merged, but this is not evidence for BigCherry's pinned fork, PRVP03 integration, inactive-rank safety, or performance. Upstream #25051 discussion includes a post-merge report of a decode slowdown in one speculative-decoding setup; this observation is not transferable as a BigCherry result, but reinforces that matched end-to-end decode tests and workload regressions must be examined. Preserve PRVP03 as the communication provider implementation owner. TRVP16 owns only qualification and evidence across heterogeneous Vulkan devices.
 
 ## Code Samples & Guidance
 
-
+No new provider implementation is authorized by this qualification item.
 
 ## Files
 
-
+- TRVP16 plan and qualification evidence.
+- PRVP03 SPI implementation and pinned llama.cpp source.
+- Exact source diff/revision, correctness/negative-control results, route and runtime identity, and matched performance artifacts.
 
 ## Validation
 
-
+Review the pinned merged source and compare it with the BigCherry base and PRVP03 SPI/fallback semantics. Static source review must establish inactive-rank handling, pre-write fallback and post-submit error behavior. Hardware acceptance requires repeated exact-device multi-RDNA correctness and negative-control runs, plus matched stock/candidate end-to-end prefill/decode measurements with workload and clock telemetry. No GPU run or BigCherry acceptance is recorded by this planning update.
 
 ## Effort & Risk
 
-
+L / high. Vulkan synchronization and external-memory behavior vary by driver/device; collective safety and end-to-end decode performance remain unqualified. Upstream results and regressions are external leads only.
 
 ## Standards
 
-
+One BigCherry implementation owner (PRVP03); fail-closed fallback before irreversible writes; correctness before throughput; exact source/runtime/device identity; external benchmark results are not transferable.
 
 ## Acceptance Criteria
 
-
+A pinned source-composed decision is recorded under PRVP03. Inactive-rank and error/fallback behavior pass exact correctness/negative-control validation on each claimed multi-RDNA lane. Matched repeated stock/candidate runs preserve correctness and document end-to-end prefill/decode outcomes and regressions. Exact identity and reproducible evidence are published. Until all gates pass, keep pending and make no BigCherry performance or mixed-architecture correctness claim.
 
 ## Notes
 
@@ -103,3 +110,6 @@ Pinned-source structural checks **10/10 passed** (1290 unconditional rank read, 
 
 - RV4253
 - 2026-11-20T03:47:31.184076+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T03:50:39.344926+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
+- 2026-11-20T03:50:55.547038+00:00 (updated-by): Updated: section:code_samples, section:effort_risk, section:standards
+- 2026-11-20T03:51:42.940452+00:00 (updated-by): Updated: section:steps, section:files, section:acceptance_criteria
