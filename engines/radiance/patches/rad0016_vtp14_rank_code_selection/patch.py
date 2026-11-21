@@ -33,9 +33,11 @@ SRC = Path(__file__).resolve().parent / "src"
 # The build identity hashes this file's bytes only (patch_implementation_digest), so the src/ files it
 # creates are pinned here: a src/ change must update these digests, which changes this file and the build.
 SRC_SHA256 = {
-    "bc_rank_devices.cpp": "bf47feaef6d24638809e4806a4c78dfac702012ecc33057ceadcef27283d1715",
-    "bc_rank_devices.h": "af3c44a839db1d135f26d3de05eb66c7b9482032eb625946cd27cf07499c41a5",
-    "bc_rank_devices_test.cpp": "9de7af026b77eb625da3a74d62f5589d3792ef5dd6d1b8c17c5706af5bae1b83",
+    "bc_rank_devices.cpp": "dc61d14169d95ec7910f989ba2a395a662a7e0f355ad5563839fa108dc907038",
+    "bc_rank_devices.h": "f0f3ceb08a03929d42ca5bcb0b9101a606356ea3f305854a79baa0f9a3112e69",
+    "bc_rank_devices_test.cpp": "d84e291a6bbfef1a73667b1236d7ae233982158120801458281fd93a52038596",
+    "bc_rank_engine.cpp": "6385db0c214e32854f4901a714cecf9738c7ef1f430d74b665d5b1d11066059a",
+    "bc_rank_engine.h": "8e3f422affb9a7686e937399bb5e51b17b2997849edc6fa89f893141f7473093",
 }
 
 
@@ -128,7 +130,11 @@ REGISTRY_H = FilePatch(path="core/plugin/registry.h", language="none", descripti
         "    void set_code_runs_probe(CodeRunsProbe p) { set_->code_probe = std::move(p); }\n"
         "    /* The code_ranks bits a device row needs to be offered to `rank`: 0 without a rank list (no\n"
         "     * filter), every rank's bit for rank < 0, and a bit no row has for a rank outside the list. */\n"
-        "    uint32_t rank_bits(int rank) const;",
+        "    uint32_t rank_bits(int rank) const;\n"
+        "    /* The code_ranks bits of the ranks whose card runs `plugin`'s device code (code range [from, to)),\n"
+        "     * with the logging of the ranks that do not; 0 with `why` naming each when none does. */\n"
+        "    uint32_t rank_code_mask(const std::string& plugin, size_t code_from, size_t code_to, int n_device,\n"
+        "                            std::string* why) const;",
         guard="BC_VTP14_N1_DEVICE_LIST",
     ),
     _edit(
@@ -197,62 +203,14 @@ LOADER = FilePatch(path="core/plugin/loader.cpp", language="none", description="
         guard="BC_VTP14_N1_MASK_SCOPE",
     ),
     _edit(
-        "n1-set-devices-impl",
-        "/* ------------------------------------------------------------------ staging */\n",
-        "/* BC_VTP14_N1_DEVICE_IMPL: the rank list is fixed before any row exists, so the masks rows carry\n"
-        " * never change while rank threads select. */\n"
-        "int Registry::set_code_devices(const std::vector<int>& devices) {\n"
-        "    if (shared() || !set_->rows.empty() || devices.empty() || devices.size() > 32) return RAD_E_INVAL;\n"
-        "    for (size_t i = 0; i < devices.size(); ++i) {\n"
-        "        if (devices[i] < 0) return RAD_E_INVAL;\n"
-        "        for (size_t j = 0; j < i; ++j)\n"
-        "            if (devices[j] == devices[i]) return RAD_E_INVAL;\n"
-        "    }\n"
-        "    set_->code_devices = devices;\n"
-        "    set_->code_device = devices[0];\n"
-        "    return RAD_OK;\n"
-        "}\n"
-        "\n"
-        "uint32_t Registry::rank_bits(int rank) const {\n"
-        "    if (set_->code_devices.empty()) return 0;\n"
-        "    const size_t n = set_->code_devices.size();\n"
-        "    const uint32_t all = n >= 32 ? ~0u : ((1u << n) - 1u);\n"
-        "    if (rank < 0) return all;\n"
-        "    if ((size_t)rank >= n) return ~0u;   /* more bits than any device row carries: no match */\n"
-        "    return 1u << rank;\n"
-        "}\n"
-        "\n"
-        "/* ------------------------------------------------------------------ staging */\n",
-        guard="BC_VTP14_N1_DEVICE_IMPL",
-    ),
-    _edit(
         "n1-loader-ranks",
         _LOADER_BLOCK,
         "        /* BC_VTP14_N1_LOADER_RANKS: with a rank list, the library's code is checked against each\n"
-        "         * rank's card. Its device rows stay when any rank runs them, carrying the mask; selection\n"
-        "         * offers a row only to those ranks. A library no rank runs loses its device rows below,\n"
-        "         * exactly as on the one-device path. */\n"
-        "        if (!set_->code_devices.empty() && n_device > 0) {\n"
-        "            code_mask = 0;\n"
-        "            std::string skipped;\n"
-        "            for (size_t i = 0; i < set_->code_devices.size(); ++i) {\n"
-        "                std::string why_i;\n"
-        "                int runs = 0;\n"
-        "                if (set_->no_device_code) why_i = why;\n"
-        "                else if (set_->code_probe) runs = set_->code_probe(p.name, set_->code_devices[i], &why_i);\n"
-        "                else runs = rad::dev_code_runs(s.code_from, s.code_to, set_->code_devices[i], &why_i);\n"
-        "                if (runs > 0) {\n"
-        "                    code_mask |= 1u << i;\n"
-        "                } else {\n"
-        "                    skipped += fmt(\"%srank %zu (device %d: %s)\", skipped.empty() ? \"\" : \", \", i,\n"
-        "                                   set_->code_devices[i], why_i.empty() ? \"no code object for it\" : why_i.c_str());\n"
-        "                }\n"
-        "            }\n"
-        "            if (code_mask != 0 && !skipped.empty())\n"
-        "                RAD_INFO(\"kernel plugin '%s': its %d device kernel(s) are offered only to the ranks whose \"\n"
-        "                         \"card runs them; not to %s\", p.name.c_str(), n_device, skipped.c_str());\n"
-        "            if (code_mask == 0) why = skipped;\n"
-        "        }\n"
+        "         * rank's card (Registry::rank_code_mask). Its device rows stay when any rank runs them,\n"
+        "         * carrying the mask; a library no rank runs loses its device rows below, exactly as on the\n"
+        "         * one-device path. */\n"
+        "        if (!set_->code_devices.empty() && n_device > 0)\n"
+        "            code_mask = rank_code_mask(p.name, s.code_from, s.code_to, n_device, &why);\n"
         "        const bool no_code_here =\n"
         "            n_device > 0 &&\n"
         "            (!set_->code_devices.empty()\n"
@@ -474,7 +432,8 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
         "n1-engine-include",
         "#include \"build/startup.h\"\n",
         "#include \"build/startup.h\"\n"
-        "#include \"plugin/bc_rank_devices.h\" /* BC_VTP14_N1_ENGINE_INCLUDE */\n",
+        "#include \"plugin/bc_rank_devices.h\" /* BC_VTP14_N1_ENGINE_INCLUDE */\n"
+        "#include \"plugin/bc_rank_engine.h\"\n",
         guard="BC_VTP14_N1_ENGINE_INCLUDE",
         max_span=2,
     ),
@@ -483,54 +442,12 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
         "    if (s < 0) { RAD_ERR(\"no usable device\"); return s; }\n",
         "    if (s < 0) { RAD_ERR(\"no usable device\"); return s; }\n"
         "    /* BC_VTP14_N1_ENGINE_DEVICES: an explicit ordered list replaces the one-architecture choice,\n"
-        "     * before anything is read or loaded. */\n"
+        "     * before anything is read or loaded. The admission is bc_rank_devices_admit. */\n"
         "    if (!cfg_.rank_devices.empty()) {\n"
-        "        /* The lossy wire (tiered int8 at three ranks) faulted in a mixed-library TP3 world with an invalid\n"
-        "         * KV operand; the cause is unproven (VTP14.md), so it is refused here until it is instrumented and\n"
-        "         * validated. The exact wire is the validated contract; it is never substituted silently. */\n"
-        "        if (!cfg_.tp_wire_exact && !cfg_.tp_wire_unvalidated) {\n"
-        "            RAD_ERR(\"--rank-devices: --tp-wire %s is not validated across these ranks (a 3-rank tiered int8 run \"\n"
-        "                    \"faulted with an invalid KV operand); serve with --tp-wire exact\", \"wht6\");\n"
-        "            return RAD_E_UNSUPPORTED;\n"
-        "        }\n"
-        "        if (!cfg_.tp_wire_exact)   /* --tp-wire-unvalidated: a lab run reproducing the fault, never serving */\n"
-        "            RAD_WARN(\"--rank-devices: --tp-wire wht6 across these ranks is UNVALIDATED (--tp-wire-unvalidated); \"\n"
-        "                     \"a lab diagnosis only, not a serving configuration\");\n"
-        "        std::vector<BcDeviceInfo> inv;\n"
-        "        for (int i = 0, n = rad_dev_count(); i < n; ++i) {\n"
-        "            RadDeviceProps p{};\n"
-        "            if (rad_dev_props(i, &p) < 0) continue;\n"
-        "            inv.push_back({ i, dev_pci_address(i), p.arch, p.name, dev_integrated(i) });\n"
-        "        }\n"
-        "        std::vector<int> picked;\n"
-        "        std::string why;\n"
-        "        if (bc_rank_devices_plan(inv, cfg_.rank_devices, cfg_.tp, &picked, &why) != RAD_OK) {\n"
-        "            RAD_ERR(\"--rank-devices: %s\", why.c_str());\n"
-        "            return RAD_E_DEVICE;\n"
-        "        }\n"
-        "        if (!cfg_.devices.empty() && cfg_.devices != picked) {\n"
-        "            RAD_ERR(\"--rank-devices disagrees with the fleet device order\");\n"
-        "            return RAD_E_DEVICE;\n"
-        "        }\n"
-        "        devs = picked;\n"
-        "        const std::vector<std::string> archs = bc_rank_archs(inv, picked);\n"
-        "        std::string ranks;\n"
-        "        for (size_t r = 0; r < picked.size(); ++r)\n"
-        "            for (const BcDeviceInfo& d : inv)\n"
-        "                if (d.ordinal == picked[r])\n"
-        "                    ranks += fmt(\"%srank %zu: %s %s (device %d)\", ranks.empty() ? \"\" : \"; \", r,\n"
-        "                                 d.pci.c_str(), d.arch.c_str(), d.ordinal);\n"
-        "        decide(\"--rank-devices\", ranks,\n"
-        "               archs.size() > 1 ? \"an explicit ordered list across architectures: each rank selects the \"\n"
-        "                                  \"kernels its own card runs (BigCherry VTP14)\"\n"
-        "                                : \"an explicit ordered list\");\n"
-        "        if (archs.size() > 1) {\n"
-        "            std::string a;\n"
-        "            for (const std::string& x : archs) a += (a.empty() ? \"\" : \", \") + x;\n"
-        "            RAD_WARN(\"device: the ranks span architectures (%s). Each rank selects only kernels its own \"\n"
-        "                     \"card runs, and startup stops if a rank lacks one or the ranks' collectives differ. \"\n"
-        "                     \"Experimental (BigCherry VTP14).\", a.c_str());\n"
-        "        }\n"
+        "        BcRankDevicesAdmission admitted;\n"
+        "        RAD_TRY(bc_admit_rank_devices(cfg_, &admitted));\n"
+        "        devs = admitted.ordinals;\n"
+        "        decide(\"--rank-devices\", admitted.ranks, admitted.decision);\n"
         "    }\n",
         guard="BC_VTP14_N1_ENGINE_DEVICES",
     ),
@@ -573,26 +490,7 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
         "            const Rank& r = *rp;\n"
         "            LogRank lr(r.index);\n"
         "            RAD_TRY(rad_gate_reference_kernels(r.program, cfg_.accept_reference_kernels, \"serve\"));\n"
-        "            std::map<std::string, int> by_lib;\n"
-        "            for (const OpInfo& op : r.program.ops)\n"
-        "                for (const Band& b : op.bands) {\n"
-        "                    for (int dm = 0; dm < RAD_N_DOMAINS; ++dm)\n"
-        "                        if (const KernelRow* row = b.dom[dm].row)\n"
-        "                            ++by_lib[row->plugin + (dm == RAD_DOMAIN_HOST ? \" (host)\" : \"\")];\n"
-        "                    const KernelRow* row = b.dom[RAD_DOMAIN_DEVICE].row;\n"
-        "                    if (row && row->info && row->collective)\n"
-        "                        colls[(size_t)r.index].push_back({ op.op, row->info->name, row->plugin,\n"
-        "                                                           b.span + \": \" + b.dom[RAD_DOMAIN_DEVICE].geom.str() });\n"
-        "                }\n"
-        "            std::string libs;\n"
-        "            for (const auto& [lib, n] : by_lib) libs += fmt(\"%s%s %d\", libs.empty() ? \"\" : \", \", lib.c_str(), n);\n"
-        "            const std::vector<BcCollStep>& c = colls[(size_t)r.index];\n"
-        "            RadDeviceProps dp{};\n"
-        "            (void)rad_dev_props(r.device, &dp);\n"
-        "            RAD_INFO(\"rank receipt: rank %d on device %d %s %s; op bands by library: %s; %zu collective \"\n"
-        "                     \"band(s)%s%s\", r.index, r.device, dev_pci_address(r.device).c_str(), dp.arch,\n"
-        "                     libs.empty() ? \"none\" : libs.c_str(), c.size(), c.empty() ? \"\" : \", first \",\n"
-        "                     c.empty() ? \"\" : (c[0].kernel + \" (\" + c[0].plugin + \")\").c_str());\n"
+        "            colls[(size_t)r.index] = bc_report_rank_program(r.program, r.index, r.device);\n"
         "        }\n"
         "        std::string why;\n"
         "        if (bc_rank_collectives_agree(colls, &why) != RAD_OK) {\n"
@@ -715,5 +613,7 @@ PATCHES = (
     AQL,
     _created("core/plugin/bc_rank_devices.h", "bc_rank_devices.h", "BC_VTP14_N1: an explicit, ordered rank"),
     _created("core/plugin/bc_rank_devices.cpp", "bc_rank_devices.cpp", "BC_VTP14_N1: see bc_rank_devices.h"),
+    _created("core/plugin/bc_rank_engine.h", "bc_rank_engine.h", "BC_VTP14_N1: the engine-side parts"),
+    _created("core/plugin/bc_rank_engine.cpp", "bc_rank_engine.cpp", "BC_VTP14_N1: see bc_rank_engine.h"),
     _created("tests/bc_rank_devices_test.cpp", "bc_rank_devices_test.cpp", "BC_VTP14_N1 (BigCherry managed patch rad0016)"),
 )
