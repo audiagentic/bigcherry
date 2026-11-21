@@ -227,6 +227,9 @@ struct Session {
     // Fake-engine lifecycle tests explicitly opt in with a v2-shaped fixture.
     bool publish_feature_states = false;
     bool strict_production_features = false;
+    // Explicit native-serving diagnostic: per-pass HIP event phases under run_dir;
+    // absent means no events, no file and no change to recording.
+    bool step_phase_trace = false;
     Timing timing;
     Canary canary;
     // Optional post-canary runtime guard (MTP replay, live heat and policy).

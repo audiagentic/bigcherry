@@ -1944,6 +1944,14 @@ class Owner {
             argv.push_back("--bc-heat-launch-nonce");
             argv.push_back(plan_.heat_session_nonce);
         }
+        if (s_.step_phase_trace && !quality) {
+            const fs::path trace_dir = s_.run_dir / "step-phases";
+            std::error_code error;
+            if (!fs::create_directory(trace_dir, error) &&
+                (error || !fs::is_directory(trace_dir) || fs::is_symlink(fs::symlink_status(trace_dir))))
+                throw PlanFailed("step-phase trace: cannot create safe run-directory output");
+            argv.insert(argv.end(), {"--bc-step-phase-dir", trace_dir.string()});
+        }
         plan_.engine_launched_at = std::chrono::system_clock::now();
         return spawn(
             argv, native_launch->environment, log,
