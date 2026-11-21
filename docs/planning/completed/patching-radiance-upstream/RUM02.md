@@ -280,6 +280,8 @@ Slice 5 result (rad0016): Registry::set_code_devices, rank_bits and a new rank_c
 
 bc_native_fleet_config_test (aborted in the card-free scratch build before and after slice 5): not a scratch-build artefact. It is a stale test on main: since the 2.2 migration edition 3 is the only serving wire (bc_serving_v2.cmake refuses any other), but the test still asserted that the current wire rejects native_config as an unknown field and that an apiVersion v3 document is an unsupported successor. Fixed by dropping those two edition checks and recording the measured document as the current wire; the v3 admission of native_config stays covered by bc_serving_v3_wire_test. It runs only in the RAD_BUILD_TESTS tree (rad0009 registers it); production builds never ran it, which is why it went unnoticed. Passes in the patched host build after the fix.
 
+2026-11-22 (bigcherry-2): arch_test stale pins, found and fixed. In a host build of the production patch set arch_test failed two cases that pass on pristine upstream. Bisected by patch prefix: rad0027 (mixed one-sequence pipelined cut) changes the declared steps of qwen35_fp8 at two ranks, rank 1 (graph unchanged), moving upstream's pinned steps hash 0xdd5d65ef158c4136 to 0x1e96fe4180d0fcdf; rad0028 (rank-0 draft gather) adds ops to the qwen35_w8a8 + DFlash2 two-rank graph, moving the pinned graph hash 0x6c5267846652829f to 0x88fed8746befd12d. Both are intended behaviour of validated patches; upstream's pins were never updated by them (neither patch touched arch_test.cpp). Each owning patch now carries its own pin edit with a rationale; arch_test passes with all 33 production patches. The tests had not been run against the patched tree since the 2.2 migration. convert_test, images_test and videos_test fail identically on pristine upstream in this container: RAD_WITH_FFMPEG=ON cannot configure here (libav* dev libraries are not installed), so these are a build-config answer, not a patch defect; to be checked where FFmpeg is installed.
+
 2026-11-22 (bigcherry-2): acceptance audit against main, then completed.
 
 1. Obsolete implementations deleted first: engines/radiance/patches/archive holds rad0001, 0003, 0005, 0006, 0007, 0013, 0034, 0035, 0037, 0038, 0039, 0040, 0041 and 0047 (the 2.2-superseded set named on 2026-11-20 plus earlier retirements); rad0009/rad0011 obsolete v2 argv/manifest duplication went with RUM04. patch-rebase-check --all on main: 38 total, 38 clean, 0 failed, 0 blocked, 0 quarantined.
@@ -304,5 +306,6 @@ Footprint: 679 anchors on the 2.2 baseline (2026-11-21) to 602 on main now (-77,
 - 2026-11-21T01:48:35.924734+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T21:08:53.985793+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T21:11:08.504941+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:05:24.028152+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T22:16:20.624959+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T22:16:36.875392+00:00 (state-transition): State: pending → completed

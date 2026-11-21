@@ -20,7 +20,7 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 
-def _edit(id: str, before: str, after: str, *, guard: str) -> Edit:
+def _edit(id: str, before: str, after: str, *, guard: str, why: str = "") -> Edit:
     return Edit(
         id=id,
         anchor=re.escape(before),
@@ -29,7 +29,7 @@ def _edit(id: str, before: str, after: str, *, guard: str) -> Edit:
         guard=re.escape(guard),
         expect_matches=1,
         max_span_lines=max(2, before.count("\n") + 1),
-        rationale="VTP31: every rank verifies rank 0's block draft",
+        rationale=why or "VTP31: every rank verifies rank 0's block draft",
     )
 
 
@@ -122,4 +122,17 @@ PLUGIN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descr
     ),
 ))
 
-PATCHES = (BLOCK, PLUGIN)
+ARCH_TEST = FilePatch(path="tests/arch_test.cpp", language="none", description="VTP31 pinned graph with the draft gather",
+                      edits=(
+    _edit(
+        "rcd-arch-pin",
+        """            nullptr, 7, { "ar_rmsnorm_quant_fp8" }, 0x6c5267846652829full);
+""",
+        """            nullptr, 7, { "ar_rmsnorm_quant_fp8" }, 0x88fed8746befd12dull); /* BC_VTP31_RCD_PIN (rad0028) */
+""",
+        guard="BC_VTP31_RCD_PIN",
+        why="VTP31 pin: the rank-0 draft gather adds ops to the two-rank DFlash2 graph, so upstream's pinned graph hash moves with it",
+    ),
+))
+
+PATCHES = (BLOCK, PLUGIN, ARCH_TEST)
