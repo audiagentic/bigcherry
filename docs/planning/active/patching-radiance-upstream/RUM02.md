@@ -190,6 +190,84 @@ source, registry, footprint and native-rewrite unit tests executed with
 `TMPDIR`. These host-only tests do not replace hardware selftests or
 Flash-Next/TP3 starts; those belong to the owner GPU validation.
 
+### 2026-11-21 RUM02 slice 4: rad0017 rendezvous and rad0009 native manifest
+
+Frozen pin: Radiance 2.2 `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
+rad0017's upstream `libr4d/r4d_ar_entry.hip` keeps **two typed
+attachment sites**, with the peer/group rendezvous and poisoned-barrier body
+in `rad0017/src/bc_ar_rendezvous_impl.h`, and the rank allocation,
+publication, failure cleanup, and retirement body in
+`rad0017/src/bc_ar_lifecycle_impl.h`. Both are patch-created under
+`libr4d/` and SHA-256-bound in rad0017's implementation. Existing
+`core/plugin/bc_shared_slot.*` continues to own cross-library slots.
+Follow-on rad0021 link-weight and rad0032 duplex edits now target the
+rad0017-owned rank lifecycle, not an upstream source region removed by the
+hook. libr3's native gfx11 rewrite blocks follow the same owned header
+boundaries. This is a placement-only change, not a new scheduler or ABI.
+
+rad0009 no longer creates `core/bc_serving_manifest.{h,cpp}` via large
+patch literals. Those exact previous source bodies were moved to
+`components/serving/bc_serving_manifest.{h,cpp}`, bound by SHA-256 in
+rad0009's patch.py; the already passed `BC_SERVING_V2_CMAKE` path resolves
+the owner for `target_sources(rad_core ... bc_serving_manifest.cpp)` and
+the include path. The active 2.2 `core/main.cpp` now makes **one typed
+call** to `bc_serving_engine_entry` with its *unchanged* original YAML
+entrypoint as the typed callable. Three lexical attachments (include, open
+callable, close callable) replace nine rad0009 main edits and the two
+rad0011 main edits. The component retains the managed startup/strict reader,
+native config replay, manifest-before-plan flag order, and managed front.
+Unmanaged YAML still runs the upstream entrypoint body unchanged; rad0011's
+plan flag call moved into that owned managed entry. No vendor edits, no
+new extension bus, no duplicate YAML copy or compatibility shims.
+
+**Lexical footprint — parent commit -> slice 4**:
+
+| Measurement | Before | After |
+| --- | ---: | ---: |
+| rad0017 total/upstream anchors | 14 / 14 | 7 / 7 |
+| rad0009 total/upstream anchors | 11 / 11 | 5 / 5 |
+| rad0011 upstream anchors | 9 | 7 |
+| rad0021 upstream anchors | 6 | 3 |
+| rad0032 upstream anchors | 18 | 16 |
+| All non-create anchors | **618** | **603** |
+| All upstream-owned anchors | **588** | **568** |
+| Anchors on patch-created files | 30 | 35 |
+| All edits, including created files | 648 | 633 |
+| Upstream anchor files | 80 | 80 |
+
+**Host proof:** before/after rad0017 source reconstructed byte-for-byte
+(108,407 bytes, SHA-256 `51ceafd0029005b289b7cb7ba0817440e49711e32a209f574889c1d3c67e2943`).
+The original manifest header and .cpp bodies are exactly preserved
+(SHA-256 `2456ac119fe0291d263067fe56450754e2772efdfbe055bbcfadb1286834cd98`
+for the 3,065-byte header and
+`c93ed6a8b38de610d3e915210b55cafd13d8e1df78a72c00a2e088f71ca8345a`
+for the 30,278-byte .cpp), after factoring the new typed entry and its
+required includes/declaration. Original/extracted
+`r4d_ar_entry.hip` passed `hipcc -fsyntax-only` with pinned ROCm 7.2.4
+at nice 19 for gfx1100 and gfx1201; component-owned manifest and
+composed `core/main.cpp` passed `g++ -std=c++20 -fsyntax-only`
+on the pinned source (upstream warning about a comment suppressed only
+with `-Wno-comment`). `hipcc -E -P` yielded identical preprocessed
+rendezvous kernel tokens before and after on gfx1100
+(SHA-256 `c7f5e3064d1f8c2f30c9f618d2d36bcd58aae48039f70cac382de1a50c2713d1`)
+and gfx1201
+(`f9f83dbe5acfa76b6c63a0273fecc65783167afcdef3140f0b4f044821dc66b2`).
+The native gfx11 rewritten expanded source was byte-identical at 114,885
+bytes (SHA-256 `d7c6745fba663c35eca01324356f41ca91bb1f784c0e608f7a04e32b1ec29d08`).
+Full 32-package production source composition and
+libr3 `r3_rewrite.py --check` passed. `patch-rebase-check --all`
+was 38/38 CLEAN; the regenerated `patch-footprint --check` passed.
+Focused card-free shared-slot failure/retirement, weighted/duplex,
+manifest argv and plan admission tests passed with
+`BC_WORK_ROOT=/work/bigcherry`, `RADIANCE_SRC` on the frozen pin,
+and executable worktree `TMPDIR`: 25 manifest/plan/patch-package tests
+and 34 rendezvous, weighted/duplex, KV row, footprint, native rewrite
+tests; **59/59 pass**, no skips.
+
+This source relocation claims neither GPU/KLD parity nor a full engine
+build. Owner validation on leased hardware remains required for
+mixed-libr3/libr4d TP and Flash-Next native startup.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex

@@ -6,6 +6,7 @@ source still matches. The shared slot itself is tested in C++ by tests/bc_shared
 """
 from __future__ import annotations
 
+import hashlib
 import io
 import os
 import shutil
@@ -20,9 +21,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
-from _vtp_promotion_support import assert_focal_guards_unique, assert_promoted_recipe, load_patch_files, patched_pinned_source
-from test_vtp14_n1_rank_code_selection import radiance_checkout
+from _vtp_promotion_support import (
+    assert_focal_guards_unique,
+    assert_promoted_recipe,
+    load_patch_files,
+    patched_pinned_source,
+)
 from bigcherry.patcher import apply_all
+from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PATCHES = REPO / "engines/radiance/patches"
 N1 = PATCHES / "rad0016_vtp14_rank_code_selection"
@@ -62,14 +68,45 @@ class SharedRendezvousTests(unittest.TestCase):
             self.skipTest("no Radiance checkout with the declared pin; set RADIANCE_SRC")
         with patched_pinned_source(checkout, N3.name, full_checkout=True) as root:
             entry = (root / "libr4d/r4d_ar_entry.hip").read_text()
-            self.assertIn('dlsym(RTLD_DEFAULT, "rad_bc_shared_slot")', entry)
-            self.assertIn("Rendezvous& rv_for(long long group)", entry)
+            self.assertEqual(entry.count('#include "bc_ar_rendezvous_impl.h"'), 1)
+            self.assertEqual(entry.count('#include "bc_ar_lifecycle_impl.h"'), 1)
+            rv = (root / "libr4d/bc_ar_rendezvous_impl.h").read_text()
+            life = (root / "libr4d/bc_ar_lifecycle_impl.h").read_text()
+            self.assertIn('dlsym(RTLD_DEFAULT, "rad_bc_shared_slot")', rv)
+            self.assertIn("Rendezvous& rv_for(long long group)", rv)
+            self.assertIn("BC_VTP14_N3_POISON", rv)
+            self.assertIn("BC_VTP14_N3_UNPUBLISHED", life)
+            self.assertIn("BC_VTP14_N3_FAILED_RANK", life)
             self.assertNotRegex(entry, r"(?m)^Rendezvous g_rv;$")
-            # libr3's literal anchors in this file must survive the patch.
-            self.assertIn("#include <condition_variable>\n#include <cstdio>\n", entry)
+            # Include expansion preserves the exact frozen rad0017 ownership,
+            # poisoning, failed-rank teardown, and peer publication sequence.
+            expanded = entry
+            for name, text in (("bc_ar_rendezvous_impl.h", rv),
+                               ("bc_ar_lifecycle_impl.h", life)):
+                expanded = expanded.replace(
+                    f'#include "{name}"\n\n',
+                    text.split("#pragma once\n\n", 1)[1], 1)
+            self.assertEqual(
+                hashlib.sha256(expanded.encode()).hexdigest(),
+                "51ceafd0029005b289b7cb7ba0817440e49711e32a209f574889c1d3c67e2943",
+            )
+            # The native <condition_variable>/<cstdio> pair is in the owned
+            # rendezvous header; its gfx11 rewrite must migrate with it.
+            self.assertIn("#include <condition_variable>\n#include <cstdio>\n", rv)
+            # A rad0017-only fixture predates rad0051's created header; its
+            # native rewrite rule is checked by the full production source
+            # composition, not against a file this fixture never creates.
+            native = root / "native-rules"
+            native.mkdir()
+            for rule in (LIBR3 / "native").glob("*.rw"):
+                source = root / "libr4d" / rule.name.removesuffix(".rw")
+                if not source.is_file():
+                    self.assertEqual(rule.name, "bc_b16_prefill_impl.h.rw")
+                    continue
+                shutil.copyfile(rule, native / rule.name)
             r = subprocess.run([sys.executable, str(LIBR3 / "r3_rewrite.py"), "--source", str(root / "libr4d"),
-                                "--rules", str(LIBR3 / "rewrites.txt"), "--native", str(LIBR3 / "native"),
-                                "--check"], capture_output=True, text=True)
+                                "--rules", str(LIBR3 / "rewrites.txt"), "--native", str(native),
+                                "--check"], capture_output=True, text=True, check=False)
             self.assertEqual(r.returncode, 0, r.stdout + r.stderr)
             self.assertNotRegex(r.stdout, r'"failures": \{\s*"')
 
@@ -84,7 +121,7 @@ class SharedRendezvousTests(unittest.TestCase):
         if subprocess.run(
             ["git", "-C", checkout, "cat-file", "-e", f"{pin}^{{commit}}"],
             capture_output=True,
-        ).returncode:
+        check=False).returncode:
             self.skipTest("Radiance checkout does not contain the current recipe pin")
 
         with tempfile.TemporaryDirectory(dir=os.environ.get("TMPDIR")) as temp:
@@ -137,9 +174,9 @@ class SharedRendezvousTests(unittest.TestCase):
                  *(f"-Wl,--export-dynamic-symbol={symbol}" for symbol in exports),
                  str(fixture), str(bridge), "-ldl", "-o", str(executable)],
                 capture_output=True, text=True, timeout=30,
-            )
+            check=False)
             self.assertEqual(compiled.returncode, 0, compiled.stdout + compiled.stderr)
-            executed = subprocess.run([executable], capture_output=True, text=True, timeout=5)
+            executed = subprocess.run([executable], capture_output=True, text=True, timeout=5, check=False)
             self.assertEqual(executed.returncode, 0, executed.stdout + executed.stderr)
 
 
