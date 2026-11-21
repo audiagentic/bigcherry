@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261121_232638_internal-evidence-and-plan-com_2526",
+  "files": [
+    "docs/evidence/radiance-latest-bump/RUM05-REPLAY-KLD.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM05.md"
+  ],
+  "plan-item-ids": [
+    "RUM05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Record the card evidence for stored-manifest replay on an R9700 and a mixed XTX/R9700 config and the offline KL start on the mixed-rank config; complete RUM05.",
+  "timestamp-utc": "2026-11-21T23:26:38.159615Z",
+  "user-summary-candidate": "Internal evidence and plan completion; no user-visible change."
+}
