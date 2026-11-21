@@ -49,3 +49,7 @@ under short GPU leases. No plan completion is justified while gaps remain.
 - [Mandatory code reduction and generic reuse gates](SIMPLIFICATION-GATES.md)
 
 These artifacts propose future code changes. No RUM06 lifecycle or hardware acceptance gap has been closed by the design documents.
+
+## Separate planning candidate
+
+- [RUM12 proposed structural refactor and code-reduction plan](../radiance-rum12-refactor/RUM12-PLAN-PROPOSAL.md). This is a detailed registration candidate only; the authoritative Planning MCP item has not been created. RUM06 retains its original acceptance clauses.
