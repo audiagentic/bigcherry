@@ -247,7 +247,7 @@ def test_metadata_state_migrations_handle_old_malformed_and_repeat_shapes():
         assert view[migration_patch.path] == before
 
     fresh = (
-        "    GGML_ASSERT(ggml_is_contiguous(dst));\n"
+        "        (compute_type == GGML_TYPE_F32 && ggml_is_contiguous_1(dst)));\n"
     )
     view = {fresh_patch.path: fresh}
     result = apply_patch(fresh_patch, ROOT, dry_run=True, texts=view)
