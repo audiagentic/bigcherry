@@ -1,0 +1,20 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261121_221645_internal-cleanup-and-plan-comp_8223",
+  "files": [
+    "engines/radiance/components/serving/contract/registry.cpp",
+    "engines/radiance/components/serving/contract/serving.toml",
+    "docs/planning/completed/patching-radiance-upstream/RUM02.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM04.md",
+    "docs/planning/active/patching-radiance-upstream/RUM05.md"
+  ],
+  "plan-item-ids": [
+    "RUM02",
+    "RUM04",
+    "RUM05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove the dead edition-2 Python reader from the serving contract generator (emitted only for contract_version 2, which can no longer occur) and correct the registry header comments. Complete RUM02 and RUM04 after auditing each acceptance clause against main; record the RUM05 replay and offline-KL hardware gap.",
+  "timestamp-utc": "2026-11-21T22:16:45.118288Z",
+  "user-summary-candidate": "Internal cleanup and plan completion; no user-visible change."
+}

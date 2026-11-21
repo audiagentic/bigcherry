@@ -2,7 +2,7 @@
 id: RUM02
 order: 4
 plan: patching-radiance-upstream
-state: pending
+state: completed
 created-at: '2026-11-18T01:28:00.655993+00:00'
 breadth: ''
 skill: advanced
@@ -280,6 +280,15 @@ Slice 5 result (rad0016): Registry::set_code_devices, rank_bits and a new rank_c
 
 bc_native_fleet_config_test (aborted in the card-free scratch build before and after slice 5): not a scratch-build artefact. It is a stale test on main: since the 2.2 migration edition 3 is the only serving wire (bc_serving_v2.cmake refuses any other), but the test still asserted that the current wire rejects native_config as an unknown field and that an apiVersion v3 document is an unsupported successor. Fixed by dropping those two edition checks and recording the measured document as the current wire; the v3 admission of native_config stays covered by bc_serving_v3_wire_test. It runs only in the RAD_BUILD_TESTS tree (rad0009 registers it); production builds never ran it, which is why it went unnoticed. Passes in the patched host build after the fix.
 
+2026-11-22 (bigcherry-2): acceptance audit against main, then completed.
+
+1. Obsolete implementations deleted first: engines/radiance/patches/archive holds rad0001, 0003, 0005, 0006, 0007, 0013, 0034, 0035, 0037, 0038, 0039, 0040, 0041 and 0047 (the 2.2-superseded set named on 2026-11-20 plus earlier retirements); rad0009/rad0011 obsolete v2 argv/manifest duplication went with RUM04. patch-rebase-check --all on main: 38 total, 38 clean, 0 failed, 0 blocked, 0 quarantined.
+2. Surviving large implementations moved only where it reduces repeated attachments or build drift: slice 2 shared KV-row registration (rad0052/rad0053), slice 3 resident B16 hooks (rad0051), slice 4 rad0017 rendezvous and rad0009 native manifest, slice 5 rad0016 rank-device bodies (#1266). The remaining packages were classified and left: rad0045 is diagnostic and kernel-adjacent; the others carry little inline body text (rad0002 4.2 KB, rad0048 6.3 KB, rad0025 8.7 KB, rad0036 12 KB of which about 1.8 KB extractable for 0 anchors), and rad0051/0052/0053 are HIP kernel and geometry-row edits. Their cost is anchors, so further reduction means fewer sources or patches or upstream hooks, not body moves.
+3. Owned files participate in build identity and packaging: created sources are pinned by SRC_SHA256 / _COMPONENT_SOURCE_SHA256 in the owning patch.py (10 owned src/ files, rad0009's component sources), which changes the patch digest and so the build identity; the package tests assert created files equal their src/ bytes. Typed hooks preserve behaviour: each slice carries card-free parity (rad0016: bc_rank_devices_test 164 checks, logged texts asserted verbatim).
+4. Moving every payload is not a gate (acceptance text).
+
+Footprint: 679 anchors on the 2.2 baseline (2026-11-21) to 602 on main now (-77, -11.3%), 38 composed patches, 80 upstream files; 631 anchors and 39 patches once rad0055 (#1269, a new feature, not an extraction) lands. #1270 adds two arch_test pin edits (604). Open validation carried over, not a completion gate: the qwen27b-tp3 start/canary/stop of slice 5 on cards (bigcherry-1).
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -295,3 +304,5 @@ bc_native_fleet_config_test (aborted in the card-free scratch build before and a
 - 2026-11-21T01:48:35.924734+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T21:08:53.985793+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T21:11:08.504941+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:16:20.624959+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:16:36.875392+00:00 (state-transition): State: pending → completed
