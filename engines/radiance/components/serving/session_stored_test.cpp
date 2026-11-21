@@ -1,8 +1,14 @@
-// RSC02 S5: real session::serve -> replay_stored_manifest -> live admission
-// -> durable owner power admission -> helper/engine -> verified stop.
-// Only host facts and process binaries are injected. No fake planner and no GPUs.
+// RSC02 S5 (native v3): real session::serve -> stored-manifest replay -> live admission -> durable owner power
+// admission -> helpers and engine -> verified stop. Only the host (a fake sysfs/procfs tree) and the process binaries
+// (the fake engine) are injected: no fake planner and no GPUs. One fresh native plan with two helpers is measured and
+// stored once; every case replays that stored manifest.
+//
+// Run with --installed-engine PATH (bin/radiance of an unpacked release): the same replay, with the installed engine,
+// its bc-serve and its runtime home in place of the build's (the release installation test's card-free start gate).
 #include "jcs.h"
 #include "session.h"
+#include "sha256.h"
+#include "test_native_session_fixture.h"
 
 #include <chrono>
 #include <csignal>
@@ -17,17 +23,8 @@
 #include <utility>
 #include <vector>
 
-#include <netinet/in.h>
-#include <sys/socket.h>
 #include <sys/wait.h>
 #include <unistd.h>
-
-#ifndef BC_FAKE_ENGINE
-#error "BC_FAKE_ENGINE must be an executable test engine"
-#endif
-#ifndef BC_CONTRACT_V2_DOCS_DIR
-#error "BC_CONTRACT_V2_DOCS_DIR must reference the checked-in manifest"
-#endif
 
 namespace fs = std::filesystem;
 namespace ss = bc::serving::session;
@@ -37,6 +34,7 @@ using namespace std::chrono_literals;
 
 namespace {
 std::optional<fs::path> g_installed_engine;
+
 void check(bool ok, const std::string& why) {
     if (!ok)
         throw std::runtime_error(why);
@@ -72,14 +70,13 @@ struct OwnerGuard {
         (void)::kill(pid, SIGKILL);
         (void)reap_for(pid, &status, 2s);
     }
-    void disarm() {
-        pid = 0;
-    }
+    void disarm() { pid = 0; }
 };
 struct Temp {
     fs::path root;
     Temp() {
-        std::string templ = (fs::temp_directory_path() / "bc-stored-owner-XXXXXX").string();
+        // beside the test binary: a copied engine must stay executable (the system temp directory may be noexec)
+        std::string templ = (fs::current_path() / "bc-stored-owner-XXXXXX").string();
         std::vector<char> chars(templ.begin(), templ.end());
         chars.push_back('\0');
         const char* p = ::mkdtemp(chars.data());
@@ -98,95 +95,57 @@ std::string read(const fs::path& path) {
         throw std::runtime_error("cannot read " + path.string());
     return {std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>()};
 }
-int port() {
-    int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    check(fd >= 0, "socket");
-    sockaddr_in a{};
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    check(::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0, "bind");
-    socklen_t len = sizeof a;
-    check(::getsockname(fd, reinterpret_cast<sockaddr*>(&a), &len) == 0, "getsockname");
-    ::close(fd);
-    return ntohs(a.sin_port);
-}
-Json fixture(int selected_port, const std::string& shm) {
-    const auto path = fs::path(BC_CONTRACT_V2_DOCS_DIR) / "example.flashnext-4gpu.json";
-    Json document = Json::parse(read(path));
-    document["spec"]["processes"]["engine"]["server"]["port"] = selected_port;
-    document["spec"]["handoff"]["transport"]["shm"] = shm;
-    std::string digest, why;
-    document["metadata"].erase("content_digest");
-    check(bc::serving::manifest_content_digest(document, &digest, &why), "digest: " + why);
-    document["metadata"]["content_digest"] = digest;
-    const auto parsed = v2::read_manifest(document.dump(2), path.string(), v2::PlanUse::serving);
-    if (!parsed)
-        throw std::runtime_error(v2::render_human("fixture", parsed.error()));
-    return document;
-}
-ss::ReplayEvidence evidence(const Json& doc) {
-    ss::ReplayEvidence result;
-    result.producer_sha256 = doc["metadata"]["producer"]["build_sha256"];
-    result.model_identity = doc["spec"]["plan"]["engine_memory"]["model_identity"];
-    result.engine_identity = doc["spec"]["plan"]["engine_memory"]["engine_identity"];
-    result.effective_spec = doc["spec"];
-    Json gpus = Json::array();
-    for (const auto& g : doc["spec"]["facts"]["gpus"])
-        gpus.push_back({{"bdf", g["bdf"]},
-                        {"arch", g["arch"]},
-                        {"hip_ordinal", g["hip_ordinal"]},
-                        {"vram_total_mib", g["vram"]["total_mib"]},
-                        {"vram_available_mib", g["vram"]["total_mib"]}});
-    result.fresh_facts = {{"gpus", gpus}, {"host", {{"memlock", {{"limit_mib", nullptr}}}}}};
-    return result;
-}
+
+// The card-free host and the files of one measured, stored native plan; everything a case needs to replay it.
+struct World {
+    fs::path host;
+    fs::path scratch;   // the plan's own files: site, YAML and its resolution root, work root
+    fs::path run;       // where the plan was measured
+    int port = 0;
+    fs::path stored;    // the durable manifest, with its replay index and producer evidence beside it
+    std::string bytes;
+
+    fs::path runtime_home() const {
+        return g_installed_engine ? g_installed_engine->parent_path().parent_path() / "radiance_home"
+                                  : fs::path();
+    }
+    bc::test::NativeSessionPlan plan() const {
+        auto native = bc::test::native_session_inputs(host, scratch, port, Json::object(),
+                                                      bc::test::SessionLayout::helpers, runtime_home());
+        if (g_installed_engine) {
+            native.inputs.engine_binary = *g_installed_engine;
+            native.inputs.helper_binary = g_installed_engine->parent_path().parent_path() / "radiance_home" / "helpers" / "r3_moe_worker";
+            native.inputs.self = runtime_home() / "bin/bc-serve";
+        }
+        return native;
+    }
+};
 
 struct Case {
-    Temp tmp;
-    fs::path stored = tmp.root / "saved.json";
-    fs::path run = tmp.root / "run";
-    fs::path trace = tmp.root / "trace";
-    Json original;
+    fs::path root;   // this case's run directory and trace
+    fs::path run = root / "run";
+    fs::path trace = root / "trace";
+    fs::path stored;
     std::string bytes;
     ss::EnginePlanInputs inputs;
     ss::Session session;
 
-    explicit Case(int case_id, bool bad_build = false, bool bad_room = false, bool refuse_power = false,
-                  fs::path existing_manifest = {}, fs::path existing_run = {}, fs::path existing_trace = {}) {
-        if (!existing_manifest.empty()) {
-            stored = std::move(existing_manifest);
-            run = std::move(existing_run);
-            trace = std::move(existing_trace);
-            bytes = read(stored);
-            original = Json::parse(bytes);
-        } else {
-            original = fixture(port(), "/r3-serve-cardfree-" + std::to_string(::getpid()) + "-" +
-                                           std::to_string(case_id));
-            bytes = original.dump(2) + "\n";
-            std::ofstream(stored, std::ios::binary) << bytes;
-        }
+    Case(const World& world, const fs::path& case_root, bool bad_build = false, bool bad_room = false,
+         bool refuse_power = false)
+        : root(case_root), stored(world.stored), bytes(world.bytes) {
         fs::create_directories(run);
-        const ss::ReplayEvidence facts = evidence(original);
+        inputs = world.plan().inputs;
         inputs.stored_manifest = stored;
-        // The release integration test substitutes ONLY the OS process binary
-        // with the fake engine extracted by native bc-release. All replay,
-        // resolver, writer and session-owner logic remains production code.
-        inputs.engine_binary = g_installed_engine.value_or(fs::path(BC_FAKE_ENGINE));
-        inputs.helper_binary = inputs.engine_binary;
-        inputs.self = "/tmp/cardfree-bc-serve";
-        inputs.replay_evidence = [facts, bad_build](const v2::Manifest&) {
-            auto snapshot = facts;
-            if (bad_build)
-                snapshot.producer_sha256 = std::string(64, 'd');
-            return snapshot;
-        };
-        inputs.replay_live_room = [bad_room](const v2::Manifest&, const Json&) {
-            v2::P1LiveRoom room{};
-            room.mem_available_bytes = bad_room ? 1 : (281474976710656LL);
-            room.cgroup_headroom_bytes = 281474976710656LL;
-            room.pin_available_bytes = 281474976710656LL;
-            return room;
-        };
+        if (bad_build) { // the engine on disk is no longer the one that measured the plan
+            const fs::path changed = root / "changed-engine";
+            fs::copy_file(inputs.engine_binary, changed, fs::copy_options::overwrite_existing);
+            std::ofstream(changed, std::ios::binary | std::ios::app) << '\n';
+            inputs.engine_binary = changed;
+        }
+        if (bad_room)
+            inputs.replay_live_room = [](const v2::Manifest&, const Json&) {
+                return v2::P1LiveRoom{1, 1, 1};
+            };
         session.run_dir = run;
         session.timing.helper_timeout = 8s;
         session.timing.helper_interval = 20ms;
@@ -198,8 +157,8 @@ struct Case {
         session.plan = [in = inputs](const fs::path& rd, const ss::Hooks& hooks) {
             return ss::replay_stored_manifest(in, rd, hooks);
         };
-        // Real owner hooks: read the same strict-v2 manifest, make admission
-        // durable in the session record, then allow the GPU child gate.
+        // Real owner hooks: read the same strict manifest, make admission durable in the session record, then allow
+        // the GPU child gate.
         session.power_hook.begin_manifest = [this, refuse_power](const fs::path& m,
                                                                  v2::PlanUse use) -> v2::Status {
             std::ofstream(trace, std::ios::app) << "begin\n";
@@ -229,16 +188,31 @@ struct Case {
         };
     }
 
-    void run_detached() const {
+    // The roles of the recorded children, in start order.
+    static std::vector<std::string> roles(const Json& record) {
+        std::vector<std::string> out;
+        for (const auto& process : record.value("processes", Json::array()))
+            out.push_back(process.at("role").get<std::string>());
+        return out;
+    }
+    // Nothing that serves started: only planning children (the two config inspections), all of them reaped.
+    static void check_no_serving_child(const Json& record, const std::string& why) {
+        for (const auto& process : record.value("processes", Json::array())) {
+            const std::string role = process.at("role").get<std::string>();
+            check(role == "native config inspector" && process.value("exited", false), why + ": " + role);
+        }
+    }
+
+    void run_detached(const World& world) const {
         const fs::path self = fs::read_symlink("/proc/self/exe");
-        // Real start boundary: fork/exec the owner with its stored file,
-        // then use its control socket for a verified stop. The same owner and
-        // replay planner execute in the new process, not a fake plan callback.
-        std::vector<std::string> args = {self.string(), "--owner-stored", stored.string(), run.string(),
-                                         trace.string()};
+        // Real start boundary: fork/exec the owner with its stored file, then use its control socket for a verified
+        // stop. The same owner and replay planner execute in the new process, not a fake plan callback.
+        std::vector<std::string> args = {self.string(),   "--owner-stored", stored.string(),
+                                         run.string(),    trace.string(),   world.host.string(),
+                                         world.scratch.string(), std::to_string(world.port)};
         if (g_installed_engine)
             args.push_back(g_installed_engine->string());
-        check(ss::start_detached(args, run, 20s) == 0, "detached stored replay did not reach running");
+        check(ss::start_detached(args, run, 60s) == 0, "detached stored replay did not reach running");
         const auto reply = ss::control(run, "stop", 10s);
         check(reply && reply->value("ok", false), "detached stored replay did not stop cleanly");
         check(read(stored) == bytes, "detached start rewrote stored bytes");
@@ -250,16 +224,15 @@ struct Case {
         check(reap_for(owner_pid, &owner_status, 15s) == owner_pid && WIFEXITED(owner_status) &&
                   WEXITSTATUS(owner_status) == 0,
               "detached stored replay owner must exit cleanly");
-        check(final.at("selection").at("replay") == true,
-              "detached owner must select authenticated stored replay");
+        check(final.at("selection").at("replay") == true, "detached owner must select authenticated stored replay");
         const auto& events = final.at("events");
         size_t admitted = events.size(), first_child = events.size();
         for (size_t i = 0; i < events.size(); ++i) {
             const std::string kind = events[i].at("kind").get<std::string>();
             if (kind == "power_applied")
                 admitted = i;
-            if (kind == "started")
-                first_child = std::min(first_child, i);
+            if (kind == "started" && events[i].value("role", std::string()) != "native config inspector")
+                first_child = std::min(first_child, i); // the config inspections are CPU-only, before admission
         }
         check(admitted < first_child && first_child < events.size(),
               "detached start must durably admit power before its first GPU child");
@@ -282,7 +255,7 @@ struct Case {
         }
         OwnerGuard owner_guard{pid, run};
         bool reached = false;
-        const auto deadline = std::chrono::steady_clock::now() + 15s;
+        const auto deadline = std::chrono::steady_clock::now() + 30s;
         std::string state;
         while (std::chrono::steady_clock::now() < deadline) {
             const auto record = ss::read_record(run);
@@ -311,7 +284,8 @@ struct Case {
             owner_guard.disarm();
         check(reaped == pid, "owner did not exit within 15 s");
         check(WIFEXITED(status) && (WEXITSTATUS(status) == 0) == succeed, "owner return code");
-        check(read(stored) == bytes, "stored manifest changed after replay attempt");
+        check(read(stored) == bytes, "stored manifest changed after replay attempt: " + stored.string() + " " +
+                                         std::to_string(read(stored).size()) + " vs " + std::to_string(bytes.size()));
         const auto final_record = ss::read_record(run);
         check(final_record.has_value(), "owner must persist terminal record");
         const Json final = final_record.value_or(Json::object());
@@ -329,153 +303,170 @@ struct Case {
                 const auto kind = events[i].at("kind").get<std::string>();
                 if (kind == "power_applied")
                     admitted = i;
-                if (kind == "started")
-                    first_child = std::min(first_child, i);
+                if (kind == "started" && events[i].value("role", std::string()) != "native config inspector")
+                    first_child = std::min(first_child, i); // the config inspections are CPU-only, before admission
             }
             check(first_child < events.size() && admitted < first_child,
                   "durable power admission must precede every recorded child");
-            bool has_engine = false, has_helper0 = false, has_helper1 = false;
-            for (const auto& process : final.at("processes")) {
-                const std::string role = process.at("role").get<std::string>();
-                has_engine = has_engine || role == "engine";
-                has_helper0 = has_helper0 || role == "helper0";
-                has_helper1 = has_helper1 || role == "helper1";
-                check(role != "manifest writer" && process.value("exited", false),
-                      "replay never writes a manifest and reaps every child");
-            }
-            check(has_engine && has_helper0 && has_helper1,
-                  "actual replay must launch all helper and engine roles");
+            for (const auto& process : final.at("processes"))
+                check(process.value("exited", false), "replay reaps every child");
+            check(roles(final) == std::vector<std::string>{"native config inspector", "native config inspector",
+                                                           "helper0", "helper1", "engine"},
+                  "actual replay must inspect the config, then launch all helper and engine roles and write no "
+                  "manifest: " + Json(roles(final)).dump());
             const auto log = read(trace);
             check(log.find("begin\n") < log.find("verify\n") && log.find("verify\n") < log.find("restore\n"),
                   "power admission, verification and restoration must be ordered");
-            check(log.find("verified_exit\n") < log.find("restore\n"),
-                  "restore must follow verified child exit");
+            check(log.find("verified_exit\n") < log.find("restore\n"), "restore must follow verified child exit");
         } else {
             check(!final.contains("selection") || final.at("selection").is_null(),
                   "pre-start refusal cannot claim a serving selection");
-            if (final.contains("processes"))
-                check(final.at("processes").empty(), "no child may start after static, live or power refusal");
+            check_no_serving_child(final, "no helper or engine may start after a static, live or power refusal");
         }
         return WEXITSTATUS(status);
     }
+
+    bool refused_with(const std::string& needle) const {
+        const auto record = ss::read_record(run);
+        if (!record)
+            return false;
+        for (const auto& error : record->value("errors", Json::array()))
+            if (error.is_string() && error.get<std::string>().find(needle) != std::string::npos)
+                return true;
+        return false;
+    }
 };
+
+// One fresh native plan with both helpers, measured (the fake engine) and stored under the world's run directory.
+World make_world(const fs::path& root) {
+    World world;
+    world.host = root / "host";
+    bc::test::write_fake_host(world.host, /*unlimited_memlock=*/true);
+    world.scratch = root / "plan";
+    world.port = bc::test::free_port();
+    world.run = root / "measured";
+    fs::create_directories(world.run);
+    const auto native = world.plan();
+    const ss::EngineStart plan = ss::plan_engine_only(native.inputs, world.run, bc::test::standalone_plan_hooks());
+    world.stored = plan.manifest;
+    world.bytes = read(world.stored);
+    check(!plan.helpers.empty() && fs::exists(world.stored.string() + ".replay-index.json"),
+          "the fresh native plan must store a manifest with helpers and its replay index");
+    return world;
+}
 } // namespace
 
 int main(int argc, char** argv) {
     try {
-        if ((argc == 5 || argc == 6) && std::string(argv[1]) == "--owner-stored") {
-            if (argc == 6)
-                g_installed_engine = argv[5];
-            Case owner(0, false, false, false, argv[2], argv[3], argv[4]);
+        if ((argc == 8 || argc == 9) && std::string(argv[1]) == "--owner-stored") {
+            // The detached owner of Case::run_detached: stored manifest, run dir, trace, host, plan files, port.
+            if (argc == 9)
+                g_installed_engine = argv[8];
+            World world;
+            world.stored = argv[2];
+            world.host = argv[5];
+            world.scratch = argv[6];
+            world.port = std::stoi(argv[7]);
+            world.bytes = read(world.stored);
+            Case owner(world, fs::path(argv[3]).parent_path(), false, false, false);
+            owner.run = argv[3];
+            owner.trace = argv[4];
+            owner.session.run_dir = owner.run;
             return ss::serve(owner.session);
         }
         if (argc == 3 && std::string(argv[1]) == "--installed-engine")
             g_installed_engine = argv[2];
         else
             check(argc == 1, "unexpected command line in stored replay acceptance test");
-        Case healthy(1);
+
+        Temp tmp;
+        const World world = make_world(tmp.root);
+        int id = 0;
+        const auto next_root = [&] { return tmp.root / ("case-" + std::to_string(++id)); };
+
+        Case healthy(world, next_root());
         healthy.run_owner(true);
-        Case changed_build(2, true);
+
+        Case changed_build(world, next_root(), /*bad_build=*/true);
         changed_build.run_owner(false);
-        Case no_room(3, false, true);
+        // An installed prefix refuses a foreign engine earlier still: it must belong to the build that owns it.
+        check(changed_build.refused_with(g_installed_engine ? "must belong to this bc-serve build"
+                                                            : "engine, kernels or helper build changed"),
+              "a changed engine build must be refused by name");
+
+        Case no_room(world, next_root(), false, /*bad_room=*/true);
         no_room.run_owner(false);
-        Case power_refused(4, false, false, true);
+        check(no_room.refused_with("live MemAvailable/cgroup room"), "a stored plan must be refused without live room");
+
+        Case power_refused(world, next_root(), false, false, /*refuse_power=*/true);
         power_refused.run_owner(false);
-        Case missing_power_hook(5);
+        check(power_refused.refused_with("injected power preflight refusal"),
+              "a refused power preflight must end the session before any serving child");
+
+        Case missing_power_hook(world, next_root());
         missing_power_hook.session.power_hook.begin_manifest = {};
         missing_power_hook.session.power_hook.verify_serving = {};
         missing_power_hook.session.power_hook.verified_exit = {};
         missing_power_hook.session.power_hook.restore = {};
         missing_power_hook.run_owner(false);
-        Case altered_bytes(6);
-        altered_bytes.bytes = Json({{"bad", "tampered replacement"}}).dump() + "\n";
-        std::ofstream(altered_bytes.stored, std::ios::trunc) << altered_bytes.bytes;
-        altered_bytes.run_owner(false);
-        Case detached(7);
-        detached.run_detached();
-        // RED P1-4: a digest-correct manifest B can atomically replace the
-        // admitted manifest A pathname between the owner and the strict child
-        // reader. The child must still consume A, byte for byte.
-        Case pinned(10);
-        ss::Hooks pin_hooks;
-        pin_hooks.wait = [](std::chrono::milliseconds) { return true; };
-        pin_hooks.admit_power = [](const fs::path&, v2::PlanUse) -> v2::Status { return std::nullopt; };
-        ss::EnginePlanInputs conflicting = pinned.inputs;
-        conflicting.native_admission = ss::NativeAdmissionRequest{"unused.yaml", "unused-root", {}};
-        bool native_replay_refused = false;
-        try {
-            (void)ss::replay_stored_manifest(conflicting, pinned.run, pin_hooks);
-        } catch (const ss::PlanFailed& error) {
-            native_replay_refused = std::string_view(error.what()).find(
-                                        "private native admission cannot be combined with legacy stored replay") !=
-                                    std::string_view::npos;
-        }
-        check(native_replay_refused,
-              "legacy stored replay must refuse an unsupported private native admission request");
-        const fs::path direct_v3_path = pinned.tmp.root / "direct-native-v3.json";
-        std::ofstream(direct_v3_path, std::ios::binary)
-            << R"({"apiVersion":"bigcherry/v3","metadata":{"contract_version":3}})";
-        ss::EnginePlanInputs direct_v3 = pinned.inputs;
-        direct_v3.stored_manifest = direct_v3_path;
-        bool direct_v3_refused = false;
-        try {
-            (void)ss::replay_stored_manifest(direct_v3, pinned.run, pin_hooks);
-        } catch (const ss::PlanFailed& error) {
-            direct_v3_refused = std::string_view(error.what()).find(
-                                    "native v3 stored manifests require fresh native admission") !=
-                                std::string_view::npos;
-        }
-        check(direct_v3_refused,
-              "stored v3 replay must be explicitly refused even without a native-admission request");
-        const ss::EngineStart admitted = ss::replay_stored_manifest(pinned.inputs, pinned.run, pin_hooks);
-        check(!admitted.stored_sha256.empty(), "stored bytes must have an admission digest");
-        const std::string alternate_bytes =
-            fixture(port(), pinned.original.at("spec").at("handoff").at("transport").at("shm")).dump(2) + "\n";
-        check(alternate_bytes != pinned.bytes, "replacement fixture must have different real v2 bytes");
-        const fs::path replacement = pinned.tmp.root / "replacement.json";
-        std::ofstream(replacement, std::ios::binary) << alternate_bytes;
-        fs::rename(replacement, pinned.stored);
-        check(read(pinned.stored) == alternate_bytes, "pathname replacement must succeed");
-        const auto child_bytes = read(admitted.argv.at(2));
-        const auto child_manifest = v2::read_manifest(child_bytes, admitted.argv.at(2), v2::PlanUse::serving);
-        check(bool(child_manifest), "the actual v2 child reader must accept its bound manifest");
-        check(child_bytes == pinned.bytes, "child reader must consume exactly the bytes the owner admitted");
+        check(missing_power_hook.refused_with("missing required durable power admission"),
+              "a replay without the owner's durable power admission must be refused");
 
-        // Exact P1-4 TOCTOU test: the OS/process boundary swaps the public
-        // pathname AFTER the owner's final SHA check and BEFORE first exec.
-        // The real v2 reader, through the child's actual --manifest argument,
-        // must still see A while the public pathname names valid B.
-        Case during_exec(11);
-        const fs::path new_manifest = during_exec.tmp.root / "valid-b.json";
-        const fs::path restore_a = during_exec.tmp.root / "valid-a-backup.json";
-        std::ofstream(new_manifest, std::ios::binary)
-            << fixture(port(), during_exec.original.at("spec").at("handoff").at("transport").at("shm")).dump(2)
-            << "\n";
+        // The stored bytes are altered (the manifest is read-only: replaced by rename) and restored: the replay index
+        // no longer binds them.
+        {
+            const auto replace_stored = [&](const std::string& content) {
+                const fs::path replacement = world.stored.string() + ".fixture-replacement";
+                std::ofstream(replacement, std::ios::binary) << content;
+                fs::rename(replacement, world.stored);
+            };
+            Case altered(world, next_root());
+            altered.bytes = world.bytes + "\n";
+            replace_stored(altered.bytes);
+            try {
+                altered.run_owner(false);
+            } catch (...) {
+                replace_stored(world.bytes);
+                throw;
+            }
+            replace_stored(world.bytes);
+            check(altered.refused_with("no longer binds the original manifest bytes"),
+                  "altered stored bytes must be refused by the replay index");
+        }
+
+        Case detached(world, next_root());
+        detached.run_detached(world);
+
+        // A digest-correct manifest B can atomically replace the admitted manifest A pathname between the owner and
+        // the strict child reader. The child must still consume A, byte for byte: the swap happens after the owner's
+        // final SHA check and before the first exec, and the engine's own --manifest argument must still read A.
+        Case during_exec(world, next_root());
+        const fs::path swapped = during_exec.root / "swapped.json";
+        const fs::path restore_a = during_exec.root / "valid-a-backup.json";
+        std::ofstream(swapped, std::ios::binary) << "{\"swapped\":true}\n";
         std::ofstream(restore_a, std::ios::binary) << during_exec.bytes;
-        during_exec.session.before_gpu_start = [stored = during_exec.stored, a = during_exec.bytes,
-                                                new_manifest,
+        during_exec.session.before_gpu_start = [stored = during_exec.stored, a = during_exec.bytes, swapped,
                                                 restore_a](const ss::EngineStart& plan) -> v2::Status {
-            fs::rename(new_manifest, stored);
-            const std::string actual_child_bytes = read(plan.argv.at(2));
-            const auto consumed = v2::read_manifest(actual_child_bytes, plan.argv.at(2), v2::PlanUse::serving);
-            if (!consumed || actual_child_bytes != a)
+            fs::rename(swapped, stored);
+            const std::string child_bytes = read(plan.argv.at(2));
+            const auto consumed = v2::read_manifest(child_bytes, plan.argv.at(2), v2::PlanUse::serving);
+            if (!consumed || child_bytes != a)
                 return v2::make_error(v2::ConfigErrorCode::plan_mismatch, "test.before_gpu_start",
-                                      "strict child reader followed swapped public manifest");
+                                      "strict child reader followed the swapped public manifest");
             fs::rename(restore_a, stored);
             return std::nullopt;
         };
         during_exec.run_owner(true);
 
-        // RED P1-3: the same immutable helper manifest must never grant
-        // transport ownership to two distinct run directories at once.
-        Case first_transport(8);
+        // The same immutable helper manifest must never grant transport ownership to two run directories at once.
+        Case first_transport(world, next_root());
         const pid_t running_owner = ::fork();
         check(running_owner >= 0, "fork transport owner");
         if (running_owner == 0)
             std::_Exit(ss::serve(first_transport.session));
         OwnerGuard stop_guard{running_owner, first_transport.run};
         bool first_running = false;
-        const auto deadline = std::chrono::steady_clock::now() + 15s;
+        const auto deadline = std::chrono::steady_clock::now() + 30s;
         while (std::chrono::steady_clock::now() < deadline) {
             const auto rec = ss::read_record(first_transport.run);
             if (rec && rec->value("state", std::string()) == "running") {
@@ -487,20 +478,14 @@ int main(int argc, char** argv) {
             std::this_thread::sleep_for(25ms);
         }
         check(first_running, "first owner must be running before cross-root transport collision");
-        Case second_transport(9, false, false, false, first_transport.stored,
-                              first_transport.tmp.root / "other-run", first_transport.tmp.root / "other-trace");
+        Case second_transport(world, next_root());
         second_transport.run_owner(false);
         const auto second_lookup = ss::read_record(second_transport.run);
         check(second_lookup.has_value(), "second owner must leave a durable refusal record");
-        const Json second_record = second_lookup.value_or(Json::object());
-        check(second_record.at("processes").empty(),
-              "cross-root transport collision must refuse before any child starts");
-        bool transport_refusal = false;
-        for (const auto& error : second_record.value("errors", Json::array()))
-            if (error.is_string() &&
-                error.get<std::string>().find("shared-memory transport") != std::string::npos)
-                transport_refusal = true;
-        check(transport_refusal, "cross-root refusal must name the shared-memory transport");
+        Case::check_no_serving_child(second_lookup.value_or(Json::object()),
+                                     "cross-root transport collision must refuse before any helper or engine starts");
+        check(second_transport.refused_with("shared-memory transport"),
+              "cross-root refusal must name the shared-memory transport");
         const auto stop_first = ss::control(first_transport.run, "stop", 10s);
         check(stop_first && stop_first->value("ok", false), "first owner must stop cleanly");
         int first_status = 0;

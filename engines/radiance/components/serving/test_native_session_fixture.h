@@ -24,6 +24,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -135,13 +136,24 @@ struct NativeSessionPlan {
     Json resolved_values;
 };
 
+/* engine_only: the fixture config qwen27b-tp3-int8 (three ranks, no helper). helpers: flashnext-2xtx, the gfx1201
+ * engine with both gfx1100 cards as head helpers (fake workers, a shared-memory handoff, measured helper footprints). */
+enum class SessionLayout { engine_only, helpers };
+
+inline NativeSessionPlan native_helper_session_inputs(const fs::path& host, const fs::path& scratch, int port,
+                                                      const Json& behaviour, const fs::path& runtime_home);
+
 inline NativeSessionPlan native_session_inputs(const fs::path& host, const fs::path& scratch, int port,
-                                               const Json& behaviour = Json::object()) {
+                                               const Json& behaviour = Json::object(),
+                                               SessionLayout layout = SessionLayout::engine_only,
+                                               const fs::path& runtime_home = {}) {
     namespace ss = serving::session;
+    if (layout == SessionLayout::helpers)
+        return native_helper_session_inputs(host, scratch, port, behaviour, runtime_home);
     fs::create_directories(scratch);
     const fs::path model = host / "session-model.rad";
     if (!fs::exists(model)) write_rad(model, 0, 0, 128, 128, {});
-    const fs::path home = host / "session-build" / "radiance_home";
+    const fs::path home = runtime_home.empty() ? host / "session-build" / "radiance_home" : runtime_home;
     fs::create_directories(home);
     const fs::path site = scratch / "site.toml";
     write_file(site, "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() +
@@ -212,11 +224,103 @@ inline NativeSessionPlan native_session_inputs(const fs::path& host, const fs::p
     return out;
 }
 
+inline NativeSessionPlan native_helper_session_inputs(const fs::path& host, const fs::path& scratch, int port,
+                                                      const Json& behaviour, const fs::path& runtime_home) {
+    namespace ss = serving::session;
+    fs::create_directories(scratch);
+    // The resource ledger needs an actual bounded name table in the model's directory.
+    const fs::path model = host / "helper-session-model.rad";
+    if (!fs::exists(model)) {
+        write_rad(model, 4, 16, 128, 128, {});
+        std::fstream rad(model, std::ios::in | std::ios::out | std::ios::binary);
+        RadFileHeader header{};
+        rad.read(reinterpret_cast<char*>(&header), sizeof header);
+        header.str_off = header.file_bytes;
+        header.str_bytes = 7;
+        header.file_bytes += header.str_bytes;
+        rad.seekp(static_cast<std::streamoff>(header.str_off));
+        rad.write("weight", 7);
+        rad.seekp(0);
+        rad.write(reinterpret_cast<const char*>(&header), sizeof header);
+        if (!rad) throw std::runtime_error("cannot write the helper fixture model");
+    }
+    const fs::path home = runtime_home.empty() ? host / "session-build" / "radiance_home" : runtime_home;
+    fs::create_directories(home / "helpers");
+    if (!fs::exists(home / "helpers/r3_moe_worker")) fs::create_symlink(BC_FAKE_ENGINE, home / "helpers/r3_moe_worker");
+    const fs::path site = scratch / "site.toml";
+    write_file(site, "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() +
+                         "\"\nport = " + std::to_string(port) + "\n");
+    const fs::path heat = host / "writer.hot-first";
+    if (!fs::exists(heat)) {
+        std::vector<uint32_t> counts(128 * 16, 0);
+        for (uint32_t l = 0; l < 4; ++l)
+            for (uint32_t e = 0; e < 16; ++e) counts[l * 16 + e] = (e * 7 + l * 3) % 16 + 1;
+        std::ofstream(heat, std::ios::binary)
+            .write(reinterpret_cast<const char*>(counts.data()), static_cast<std::streamsize>(counts.size() * sizeof counts[0]));
+    }
+    NativeSessionPlan out;
+    auto& in = out.inputs;
+    in.work_root = scratch / "work";
+    fs::create_directories(in.work_root);
+    in.options.site = site;
+    in.options.sys_root = host;
+    in.options.configs = {fs::path(BC_CONFIGS_DIR)};
+    in.options.model_root = host;
+    in.options.sets = {"layout.name=\"flashnext-2xtx\"", "helper.combine_threads=1",
+                       "handoff.heat=\"" + heat.string() + "\"",
+                       "handoff.histogram=\"" + (host / "vram-histogram").string() + "\"",
+                       "memory.helper_budgets_mib=[1,1]", "memory.host_pool_mib=2048", "memory.host_kv_mib=0"};
+    in.self = BC_SERVE_EXE;
+    in.engine_binary = BC_FAKE_ENGINE;
+    in.helper_binary = BC_FAKE_ENGINE;
+    in.named_config = "flashnext-2xtx";
+    const Json facts = serving::detect(host);
+    const auto resolved = resolve_fixture(in.options, facts);
+    out.resolved_values = resolved.values;
+    const auto& engine = resolved.values.at("engine");
+    const auto& service = resolved.values.at("service");
+    Json kernels = Json::array();
+    {
+        std::istringstream list(engine.at("kernels").get<std::string>());
+        for (std::string kernel; std::getline(list, kernel, ',');) kernels.push_back(kernel);
+    }
+    for (const auto& gpu : facts.at("gpus"))
+        write_file(host / "sys/bus/pci/devices" / gpu.at("bdf").get<std::string>() / "mem_info_gtt_used", "0\n");
+    const fs::path root = scratch / "native-root";
+    fs::create_directories(root);
+    out.yaml = root / "fleet.yaml";
+    out.yaml_bytes = "cards: [0]\nmodels:\n  tiny: {model: " + Json(model.string()).dump() + "}\n";
+    {
+        std::ofstream yaml(out.yaml, std::ios::binary);
+        yaml << out.yaml_bytes;
+    }
+    ss::Env overrides = {
+        {"TEST_NATIVE_INSPECT_EXPECT_YAML", out.yaml_bytes},
+        {"TEST_NATIVE_INSPECT_MODEL", model.string()},
+        {"TEST_NATIVE_INSPECT_RANK_DEVICES", resolved.values.at("layout").at("engine_cards").dump()},
+        {"TEST_NATIVE_INSPECT_PORT", std::to_string(port)},
+        {"TEST_NATIVE_INSPECT_MAX_CONTEXT", service.at("max_context").dump()},
+        {"TEST_NATIVE_INSPECT_MAX_SEQUENCES", service.at("max_sessions").dump()},
+        {"TEST_NATIVE_INSPECT_KERNELS", kernels.dump()},
+        {"TEST_NATIVE_INSPECT_SETTINGS", Json({{"ngram_placement", engine.at("ngram_placement")}}).dump()},
+        // flashnext-2xtx: the R9700 engine, both 7900 XTX as head helpers (as engines/radiance/configs/flashnext-2xtx.yaml)
+        {"TEST_NATIVE_INSPECT_XBIGCHERRY",
+         Json{{"schema", 1}, {"description", "flashnext-2xtx fixture"},
+              {"ranks", Json::array({{{"arch", "gfx1201"}, {"count", 1}}})},
+              {"helpers", Json::array({{{"arch", "gfx1100"}, {"count", "all"}, {"placement", "head"}}})}}
+             .dump()}};
+    if (!behaviour.empty()) overrides["TEST_FAKE_BEHAVIOUR"] = behaviour.dump();
+    in.native_admission = ss::NativeAdmissionRequest{out.yaml, root, std::move(overrides)};
+    in.helper_vram.read_used = [](const fs::path&) { return uint64_t{128} << 20; };
+    return out;
+}
+
 /* The hooks of a plan step that is not run by an owner: it may wait forever and its power admission is a no-op. */
 inline serving::session::Hooks standalone_plan_hooks() {
     serving::session::Hooks hooks;
     hooks.wait = [](std::chrono::milliseconds) { return true; };
     hooks.admit_power = [](const fs::path&, serving::v2::PlanUse) { return serving::v2::Status{}; };
+    hooks.selected_segment = [](const std::string&) {};
     return hooks;
 }
 

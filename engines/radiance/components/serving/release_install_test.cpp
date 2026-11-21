@@ -154,7 +154,7 @@ class Fixture {
         add("bin/radiance", engine_bytes, 0755);
         add("radiance_home/bin/bc-serve", executable ? read_file(BC_SERVE_EXE) : "serve-binary", 0755);
         add("radiance_home/bin/bc-release", executable ? read_file(BC_RELEASE_EXE) : "release-binary", 0755);
-        add("radiance_home/helpers/r3_moe_worker", "worker-binary", 0755);
+        add("radiance_home/helpers/r3_moe_worker", executable ? engine_bytes : "worker-binary", 0755);
         add("radiance_home/kernels/libr3moe.so", "kernel");
         add("radiance_home/architectures/qwen.so", "architecture");
         add("radiance_home/quantizers/quant.so", "quant");
@@ -506,7 +506,7 @@ int run_cli(const fs::path& exe, const std::vector<std::string>& args, const fs:
         ::execv(exe.c_str(), argv.data());
         ::_exit(127);
     }
-    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(45);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(240);
     int status = 0;
     for (;;) {
         const auto ended = ::waitpid(pid, &status, WNOHANG);

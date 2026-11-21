@@ -168,10 +168,10 @@ if(BUILD_TESTING)
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
   add_executable(bc_session_stored_test EXCLUDE_FROM_ALL session_stored_test.cpp)
   target_link_libraries(bc_session_stored_test PRIVATE bc_serving)
-  add_dependencies(bc_session_stored_test bc_fake_engine)
+  add_dependencies(bc_session_stored_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_session_stored_test PRIVATE
-    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
-    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>"
+    BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_test(NAME bc_session_stored_test COMMAND bc_session_stored_test)
   add_dependencies(bc_release_install_test bc_session_stored_test)
   add_executable(bc_stored_manifest_cache_test EXCLUDE_FROM_ALL stored_manifest_cache_test.cpp)
