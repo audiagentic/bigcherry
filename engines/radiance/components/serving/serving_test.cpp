@@ -834,6 +834,25 @@ void measured_plan_cache(Fixture& t) {
            native_key.at("native_config").at("resolution_root") == t.root.string());
     assert(native_key.at("native_config").at("rank_devices").size() == r.values.at("layout").at("engine_cards").size() +
                                                                           r.values.at("layout").at("helper_cards").size());
+    // Volatile free host/GPU memory is checked by fresh admission, not
+    // included in the reusable plan identity or its derived helper budgets.
+    // Re-resolve between captures to catch a hidden dependency as well as
+    // an accidental facts field added directly to the plan key.
+    {
+        Json live = t.facts;
+        live["host"]["mem_available_mib"] = live["host"].at("mem_available_mib").get<int64_t>() - 1;
+        for (auto& card : live["gpus"])
+            card["vram_available_mib"] = card.at("vram_available_mib").get<int64_t>() - 1;
+        const Resolved changed = tresolve(t.standard(), live);
+        Json changed_native_values = changed.values;
+        changed_native_values["engine"]["radiance_home"] = native_values.at("engine").at("radiance_home");
+        assert(sv::plan_key_inputs(changed_native_values, live, id, eid, "", &native) == native_key);
+        assert(sv::plan_key_inputs(changed.values, live, id, eid, "") == k);
+        // Physical VRAM capacity, unlike availability, genuinely changes the
+        // card's identity and must invalidate this exact key.
+        live["gpus"][2]["vram_total_mib"] = live["gpus"][2].at("vram_total_mib").get<int64_t>() - 1;
+        assert(sv::plan_key_inputs(native_values, live, id, eid, "", &native) != native_key);
+    }
     // Native helper build identity must also hash in bounded memory. All
     // helper-based native layouts bind this digest in their frozen key.
     {

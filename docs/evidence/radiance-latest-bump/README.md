@@ -445,3 +445,57 @@ quality-run flags and the refusals; the v2 registry-to-flag projection cases are
 Equivalence note: the n-gram host-RAM reservation was removed from the nine Flash-Next YAMLs (RUM05, agent/rum05-planner-room 78f6375a3, merged in 5cdc6af57): it over-reserved host RAM and caused the RAM-admission refusals, and `v2/admission.cpp` was refit. The host reserve a sealed Flash-Next manifest records moved from 4705 MiB (the figure in the 2026-11-19 audit of d92592f9) to 9436 MiB.
 It is recorded as **machine state** (decided by bigcherry-1), not as a change to the config, the patches or the contract, so a
 before/after comparison must pin the host or compare plans, not throughput.
+
+## C73 — RUM09 native plan-key hashing and blocked hardware verification (2026-11-21)
+
+RUM09 investigation commits `cc800053e` and `d2bf5a392` eliminate whole-file
+copies from both engine/runtime-home identity and native helper-build key
+fingerprints. Both identities still cover exactly the same file bytes; the
+SHA-256 stream now checks the number of bytes read against the initial file
+size and refuses an incomplete read instead of silently accepting a truncated
+digest. Neither the plan-key schema nor the resource budgets were relaxed.
+Tests create large runtime and helper files and derive a child address-space
+limit from the test process and fixture size. The helper-key constrained-memory
+test **failed before** `d2bf5a392` and passed afterward.
+
+A further card-free resolver/plan-key regression varies live
+`host.mem_available_mib` and each card's `vram_available_mib`, re-resolves,
+and verifies both v2 and sealed native v3 keys are unchanged. Changing selected
+physical VRAM *capacity* continues to invalidate the native key. This confirms
+that those volatile free-memory readings are not frozen key inputs; fresh
+resource admission must still validate them. This test does not establish which
+key leaf caused each previously observed live refusal.
+
+Focused checks: an isolated Clang 23, `-O0 -g0`, nice-19 serving-component
+build succeeded; `bc_serving_test`, `bc_session_test` and
+`bc_serving_v3_writer_test` passed (3/3, 109.34 s after the two hashing
+changes), and the added volatile-input check passed in `bc_serving_test`
+(1/1, 19.10 s). Earlier attempts with GCC 14 and Clang suffered unrelated
+compiler/assembler segmentation faults; compilation was recovered in the
+isolated Clang build. `git diff --check` passed.
+
+A short-leased staged GPU check used the first hashing fix and the unchanged
+Radiance engine/plugins, **not** the final two-commit build:
+
+| Config | Observation | Gate result |
+| --- | --- | --- |
+| `flashnext-4gpu` | Native inspection, helper and engine measurement reached a written plan. All three helpers exited, but the strict 60-second VRAM release check remained above its captured zero-noise baseline. | Refused `BC_CFG_ADMISSION_REFUSED`; no serving canary or clean start |
+| `flashnext-tp2xtx-r9700` | Measuring helper entered uninterruptible kernel sleep in `__flush_workqueue`; the owner stop request did not finish. | Blocked; no serving canary or clean stop |
+| `flashnext-2xtx-combine` | Not retried after the helper hang. | Unverified |
+| `flashnext-2xtx-rdna2-head` | Not retried after the helper hang. | Unverified |
+| `flashnext-2xtx-rdna2-tail-combine` | Not retried after the helper hang. | Unverified |
+
+The scratch harness initially passed an empty model-root argument on a separate
+invalid attempt; that attempt is **not** startup evidence. The later attempt
+used the host-managed model root and the proper lease, with no hard-coded
+resource allowances. The GPU helper remained in uninterruptible sleep after a
+termination request; the test controller was stopped rather than allowing
+further launches. No tolerance, legacy path or retry masking this condition was
+introduced.
+
+**RUM09 is still open.** Before qualifying the five configs or publishing,
+recover and verify the GPU helper/driver state, run the final serving build
+under a fresh lease, capture the exact differing key leaves if a mismatch
+reappears, and complete full native start/canary/stop and release gates.
+The Planning/Ledger MCPs were not exposed to this session; authoritative plan
+state and release events were deliberately not hand-edited.
