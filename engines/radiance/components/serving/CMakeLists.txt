@@ -234,6 +234,10 @@ if(BUILD_TESTING)
     BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2"
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
+  add_executable(bc_contract_identity_test EXCLUDE_FROM_ALL contract/identity_test.cpp)
+  target_link_libraries(bc_contract_identity_test PRIVATE bc_contract bc_serving_v2)
+  target_compile_definitions(bc_contract_identity_test PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
+  add_test(NAME bc_contract_identity_test COMMAND bc_contract_identity_test)
 
   # The serving manifest wire is edition 3 (the only one): its codec test and the real writer, owner planner and P1 producer
   # test link the production libraries.
