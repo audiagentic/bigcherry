@@ -59,7 +59,7 @@ class EnvironmentSettingsGuard(unittest.TestCase):
             "(or stop reading it); see docs/design/serving-manifest-v2/spec.md amendment 14")
 
     def test_typed_engine_settings_have_no_legacy_environment_bridge(self) -> None:
-        patch = RAD0009.read_text(encoding="utf-8")
+        patch = (ROOT / "engines/radiance/components/serving/bc_serving_manifest.cpp").read_text(encoding="utf-8")
         self.assertIn("g_engine_settings = settings;", patch)
         self.assertIn("bc_serving_remote_settings", patch)
         self.assertIn("bc_serving_engine_settings", patch)

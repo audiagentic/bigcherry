@@ -762,7 +762,7 @@ class TestServingManifestPatch(unittest.TestCase):
         rewrite = entry.index("bc_serving_engine_argv(&argc, &argv)")
         plan = entry.index("bc_plan_memory_take_flag(&argc, &argv)")
         take = entry.index("bc_serving_take_native_config(&cfg)")
-        stock = entry.index("return run_stock(argc, argv)")
+        stock = entry.index('run_stock.invoke("stock YAML entry", argc, argv)')
         parse = entry.index("rad::config_parse(argc, argv, &cfg)")
         front = entry.index("bc_serving_managed_front(engine, std::move(watch))")
         self.assertLess(inspect, rewrite)
@@ -773,7 +773,7 @@ class TestServingManifestPatch(unittest.TestCase):
         self.assertLess(parse, front)
         self.assertIn("native_config == 0 && argv == original_argv", entry)
         # Existing YAML path is delegated unchanged; no additional flag table.
-        self.assertIn("return run_stock(argc, argv)", entry)
+        self.assertIn('run_stock.invoke("stock YAML entry", argc, argv)', entry)
 
     def test_manifest_is_loaded_before_config_parse_and_marked_after_it(self):
         temp, root = self._applied()
