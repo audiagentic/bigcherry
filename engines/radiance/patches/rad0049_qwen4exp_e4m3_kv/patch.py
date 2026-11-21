@@ -124,28 +124,27 @@ def _dtype_check_guard(launch: str) -> str:
 
 
 _CONSTRAINTS = r"""/* Native E4M3 on the two Flash-Next page-4 geometries. */
-#define BC_Q4_FP8_ATTN_BASE(gqa) \
-    C_EQ("window", 0), C_EQ("head_dim", 256), C_EQ("gqa", gqa), C_EQ("block_size", 4), \
-    C_IN("q_dtype", "bf16"), C_IN("kv_dtype", "fp8_e4m3")
-#define BC_Q4_FP8_ATTN_C(tag, gqa, max_decode) \
+#define BC_Q4_FP8_ATTN_BASE(gqa, q_dtype, hd, bs, kv_dtype) \
+    C_EQ("window", 0), C_EQ("head_dim", hd), C_EQ("gqa", gqa), C_EQ("block_size", bs), \
+    C_IN("q_dtype", q_dtype), C_IN("kv_dtype", kv_dtype)
+#define BC_Q4_FP8_ATTN_C(name, sym, tag, geometry, q_dtype, hd, gqa, bs, kv_dtype, max_decode) \
     static const RadConstraint cAttnPrefill##tag##Fp8[] = { \
-        BC_Q4_FP8_ATTN_BASE(gqa), C_EQ("causal", 1), \
+        BC_Q4_FP8_ATTN_BASE(gqa, q_dtype, hd, bs, kv_dtype), C_EQ("causal", 1), \
     }; \
     static const RadConstraint cAttnDecode##tag##Fp8[] = { \
-        BC_Q4_FP8_ATTN_BASE(gqa), C_GE("causal", 0), C_LE("q_len", max_decode), \
+        BC_Q4_FP8_ATTN_BASE(gqa, q_dtype, hd, bs, kv_dtype), C_GE("causal", 0), C_LE("q_len", max_decode), \
     }; \
     static const RadConstraint cAttnDecodeGq##tag##Fp8[] = { \
-        BC_Q4_FP8_ATTN_BASE(gqa), C_GE("causal", 0), C_LE("q_len", max_decode), \
+        BC_Q4_FP8_ATTN_BASE(gqa, q_dtype, hd, bs, kv_dtype), C_GE("causal", 0), C_LE("q_len", max_decode), \
         C_EQ("group", 128), C_IN("act", "sigmoid"), \
     };
-BC_Q4_FP8_ATTN_C(H256G12, 12, 5)
-BC_Q4_FP8_ATTN_C(H256G6Bs4, 6, 10)
+BC_Q4_FP8_GEOMS(BC_Q4_FP8_ATTN_C)
 #undef BC_Q4_FP8_ATTN_C
 #undef BC_Q4_FP8_ATTN_BASE
 
 """
 
-_ATTN_ROWS = r"""#define BC_Q4_FP8_ATTN_ROWS(name, sym, tag, geometry) \
+_ATTN_ROWS = r"""#define BC_Q4_FP8_ATTN_ROWS(name, sym, tag, geometry, q_dtype, hd, gqa, bs, kv_dtype, max_decode) \
 { "attn_prefill_" #name "_fp8kv", "attn_paged", "attn", \
   "Paged E4M3 cache attention with dynamic prefill splits", geometry, \
   "bf16 query and output, E4M3 K and V", RAD_DOMAIN_DEVICE, R4D_PRIO_ATTN_PREFILL, \
@@ -172,8 +171,7 @@ _ATTN_ROWS = r"""#define BC_Q4_FP8_ATTN_ROWS(name, sym, tag, geometry) \
   ROW(cAttnDecodeGq##tag##Fp8), ROW(tAttnSplit), nullptr, \
   nullptr, nullptr, r4d_rad_attn_decode_ghq_##sym##_fp8, r4d_rad_attn_decode_##sym##_fp8_scratch, \
   nullptr, nullptr, nullptr, nullptr, r4d_fuse_attn_paged_gate_had_quant },
-BC_Q4_FP8_ATTN_ROWS(h256_gqa12, h256_gqa12, H256G12, "H256/GQA12/page4")
-BC_Q4_FP8_ATTN_ROWS(h256_gqa6_bs4, h256_gqa6, H256G6Bs4, "H256/GQA6/page4")
+BC_Q4_FP8_GEOMS(BC_Q4_FP8_ATTN_ROWS)
 #undef BC_Q4_FP8_ATTN_ROWS
 
 """
@@ -271,6 +269,76 @@ _FUSED_ENUM = """enum { QK_KV_NONE = 0, QK_KV_BF16 = 2, QK_KV_STREAMED_BF16 = 6,
        QK_KV_STREAMED_I8 = 8 };
 """
 
+
+_Q4_GEOMETRY_TABLE = """/* The native Q4-Exp E4M3 attention layout/geometry inventory.
+ * One X(name, launcher geometry, tag, label, query dtype, head dimension, GQA,
+ *       page/block size, KV dtype, decode limit)
+ * line owns constraints and rows in both C++ preprocessor phases. */
+#ifndef BC_Q4_FP8_GEOMS
+#define BC_Q4_FP8_GEOMS(X) \
+    X(h256_gqa12, h256_gqa12, H256G12, "H256/GQA12/page4", "bf16", 256, 12, 4, "fp8_e4m3", 5) \
+    X(h256_gqa6_bs4, h256_gqa6, H256G6Bs4, "H256/GQA6/page4", "bf16", 256, 6, 4, "fp8_e4m3", 10)
+#endif
+
+"""
+
+# This include is patch-created, hashed with this package, and reused by dependent
+# KV patch packages. The preprocessor phase selects definitions, row entries, or
+# chained names; no standalone runtime registration table is introduced.
+_KV_FUSED_CONSTRAINT = """static const RadConstraint cQkNormRopeGateKvQ4Fp8[] = {
+    C_IN("q_dtype", "bf16"), C_EQ("head_dim", 256), C_EQ("block_size", 4),
+    C_IN("kv_dtype", "fp8_e4m3"),
+};
+"""
+
+_KV_ROWS_INC = (
+    "/* BC_KV_ROWS_SHARED */\n"
+    + _Q4_GEOMETRY_TABLE
+    + "#if defined(BC_KV_DECLS)\n"
+    + _CONSTRAINTS + _KV_FUSED_CONSTRAINT + _PAGE16_CONSTRAINT
+    + "/* BC_KV_DECL_APPEND */\n"
+    + "#elif defined(BC_KV_ROWS)\n"
+    + _ATTN_ROWS + _FUSED_ROWS + _PAGE16_ROW
+    + "/* BC_KV_ROW_APPEND */\n"
+    + "#elif defined(BC_KV_CHAIN)\n"
+    + '    "qk_norm_rope_gate_kv_store_fp8",\n'
+    + '#define BC_Q4_FP8_CHAIN(name, sym, tag, geometry, q_dtype, hd, gqa, bs, kv_dtype, max_decode) "attn_decode_" #name "_fp8kv",\n'
+    + "BC_Q4_FP8_GEOMS(BC_Q4_FP8_CHAIN)\n"
+    + "#undef BC_Q4_FP8_CHAIN\n"
+    + "/* BC_KV_CHAIN_APPEND */\n"
+    + "#else\n#error BC_KV_* phase is required\n#endif\n"
+)
+
+# Single upstream anchor: constraints before kKernels, row entries inside the
+# existing kKernels initializer; the native chain classifier retains its list.
+# Only the additional KV rows are delegated through the new table. Both symbols
+# use the same C ABI, with no new kernel plugin/API or competing registry.
+_KV_HOOK = """/* BigCherry KV row registry: sole upstream attachment. */
+#define BC_KV_DECLS
+#include "bc_kv_rows.h"
+#undef BC_KV_DECLS
+extern "C" const RadKernelInfo* rad_kernel_at(int);
+extern "C" int bc_base_rad_kernel_chain(int);
+extern "C" int rad_kernel_chain(int i) {
+    const RadKernelInfo* k = rad_kernel_at(i);
+    if (k && k->name) {
+        static const char* const kBcChained[] = {
+#define BC_KV_CHAIN
+#include "bc_kv_rows.h"
+#undef BC_KV_CHAIN
+        };
+        for (const char* name : kBcChained)
+            if (std::strcmp(name, k->name) == 0) return 2;
+    }
+    return bc_base_rad_kernel_chain(i);
+}
+#define rad_kernel_chain bc_base_rad_kernel_chain
+static const RadKernelInfo kKernels[] = {
+#define BC_KV_ROWS
+#include "bc_kv_rows.h"
+#undef BC_KV_ROWS
+"""
+
 PATCHES = (
     FilePatch(path="arch/qwen4exp_fp8/qwen4exp_fp8.cpp", language="none", edits=(
         _edit("q4-native-e4m3-geometry", "static int declare(RadBuilder* b,",
@@ -343,30 +411,14 @@ PATCHES = (
               "  if (fp8) return qk_body<QK_KV_STREAMED_FP8>(args, stream, kvs);\n",
               "if (fp8) return qk_body<QK_KV_STREAMED_FP8>", mode="insert_before"),
     )),
+    FilePatch(path="libr4d/bc_kv_rows.h", language="none", create=True, edits=(
+        Edit(id="create-bc-kv-rows", anchor=r"\A", text=_KV_ROWS_INC,
+             mode="insert_after", guard=re.escape("/* BC_KV_ROWS_SHARED */"),
+             rationale="One packaged declaration/registration and chain inventory for KV geometries"),
+    )),
     FilePatch(path="libr4d/r4d_rows.cpp", language="none", edits=(
-        _edit("q4-e4m3-attention-constraints", "static const RadConstraint cAttnPrefillH256G12I8[]",
-              _CONSTRAINTS, "#define BC_Q4_FP8_ATTN_C(", mode="insert_before"),
-        _edit("q4-e4m3-attention-rows", '{ "attn_prefill_h256_gqa12_i8",',
-              _ATTN_ROWS, "#define BC_Q4_FP8_ATTN_ROWS(", mode="insert_before"),
-        _edit("q4-e4m3-fused-constraint", "static const RadConstraint cQkNormRopeGateKvI8[]",
-              "static const RadConstraint cQkNormRopeGateKvQ4Fp8[] = {\n"
-              '    C_IN("q_dtype", "bf16"), C_EQ("head_dim", 256), C_EQ("block_size", 4),\n'
-              '    C_IN("kv_dtype", "fp8_e4m3"),\n'
-              "};\n", "static const RadConstraint cQkNormRopeGateKvQ4Fp8[]", mode="insert_before"),
-        _edit("q4-e4m3-page16-constraint", "static const RadConstraint cQkNormRopeGateKvI8[]",
-              _PAGE16_CONSTRAINT, "static const RadConstraint cQkNormRopeGateKvH256Page16Fp8[]",
-              mode="insert_before"),
-        _edit("q4-e4m3-fused-rows", '{ "qk_norm_rope_gate_kv_store_i8",',
-              _FUSED_ROWS, '{ "qk_norm_rope_gate_kv_store_fp8",', mode="insert_before"),
-        _edit("q4-e4m3-page16-row", '{ "qk_norm_rope_gate_kv_store_i8",',
-              _PAGE16_ROW, '{ "qk_norm_rope_gate_kv_store_h256_page16_fp8",',
-              mode="insert_before"),
-        _edit("q4-e4m3-chain-fused", '        "qk_norm_rope_gate_kv_store_i8", "qk_norm_rope_gate_kv_store_bf16",\n',
-              '        "qk_norm_rope_gate_kv_store_fp8",\n', '        "qk_norm_rope_gate_kv_store_fp8",\n',
-              mode="insert_after"),
-        _edit("q4-e4m3-chain-decode", '        "attn_decode_h256_gqa6_bs4_bf16kv", "attn_decode_h256_gqa6_bs4_i8",\n',
-              '        "attn_decode_h256_gqa12_fp8kv", "attn_decode_h256_gqa6_bs4_fp8kv",\n',
-              '        "attn_decode_h256_gqa12_fp8kv", "attn_decode_h256_gqa6_bs4_fp8kv",\n', mode="insert_after"),
+        _edit("bc-kv-row-registry-hook", "static const RadKernelInfo kKernels[] = {",
+              _KV_HOOK, "/* BigCherry KV row registry: sole upstream attachment. */"),
     )),
     FilePatch(path="libr4d/r4d_selftest.cpp", language="none", edits=(
         _edit("q4-e4m3-page16-selftest-signature",

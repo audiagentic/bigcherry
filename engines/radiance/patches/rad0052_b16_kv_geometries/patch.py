@@ -232,24 +232,13 @@ PATCHES = (
         _edit("b16-remaining-symbol-declarations", "int     r4d_rad_attn_prefill_h256_gqa12_b16f8(",
               _declarations(), "r4d_rad_attn_prefill_h256_gqa6_page16_b16i8(", mode="insert_before"),
     )),
-    FilePatch(path="libr4d/r4d_rows.cpp", language="none", edits=(
+    FilePatch(path="libr4d/bc_kv_rows.h", language="none", edits=(
         _edit("b16-geometry-constraints", "#define BC_B16_QSA_BASE(",
               _GEOMETRY_CONSTRAINTS + _DRAFTER_CONSTRAINTS, "cDflashH128Gqa4Fp8[]", mode="insert_before"),
         _edit("b16-geometry-rows", "#define BC_B16_QSA_ROWS(",
               _GEOMETRY_ROWS + _DRAFTER_ROW, '{ "attn_decode_h128_gqa4_fp8kv",', mode="insert_before"),
-        _edit("b16-geometry-chain-decode",
-              '        "attn_decode_h256_gqa12_b16f8", "attn_decode_h256_gqa12_b16i8",\n',
-              '        "attn_decode_h256_gqa12_b16f8", "attn_decode_h256_gqa12_b16i8",\n'
-              '        "attn_decode_h256_gqa6_bs4_b16f8", "attn_decode_h256_gqa6_bs4_b16i8",\n'
-              '        "attn_decode_h256_gqa6_b16f8", "attn_decode_h256_gqa6_b16i8",\n', guard='re:"attn_decode_h256_gqa6_bs4_b16f8", \"attn_decode_h256_gqa6_bs4_b16i8\"'),
-        _edit("b16-geometry-chain-fused",
-              '        "qk_norm_rope_gate_kv_store_b16f8", "qk_norm_rope_gate_kv_store_b16i8",\n',
-              '        "qk_norm_rope_gate_kv_store_b16f8", "qk_norm_rope_gate_kv_store_b16i8",\n'
-              '        "qk_norm_rope_gate_kv_store_page16_b16f8", "qk_norm_rope_gate_kv_store_page16_b16i8",\n', guard='re:"qk_norm_rope_gate_kv_store_page16_b16f8", \"qk_norm_rope_gate_kv_store_page16_b16i8\"'),
-        _edit("b16-drafter-native-chain",
-              '        "attn_decode_h128_gqa4_i8", "attn_decode_h128_gqa4_bf16kv",\n',
-              '        "attn_decode_h128_gqa4_i8", "attn_decode_h128_gqa4_bf16kv",\n'
-              '        "attn_decode_h128_gqa4_fp8kv",\n'),
+        _edit("bc-kv-shared-chain-rad0052", "/* BC_KV_CHAIN_APPEND */",
+              '        "qk_norm_rope_gate_kv_store_page16_b16f8",\n        "qk_norm_rope_gate_kv_store_page16_b16i8",\n        "attn_decode_h256_gqa6_bs4_b16f8",\n        "attn_decode_h256_gqa6_bs4_b16i8",\n        "attn_decode_h256_gqa6_b16f8",\n        "attn_decode_h256_gqa6_b16i8",\n        "attn_decode_h128_gqa4_fp8kv",\n/* BC_KV_CHAIN_rad0052 */\n', '/* BC_KV_CHAIN_rad0052 */', mode="insert_before"),
     )),
     FilePatch(path="arch/qwen4exp_fp8/qwen4exp_fp8.cpp", language="none", edits=(
         _edit("b16-q4-gqa6-admit", "ctx->kv_dtype != RAD_U8 || g.head_dim != 256 || g.gqa() != 12 ||",

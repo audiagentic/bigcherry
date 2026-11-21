@@ -100,6 +100,53 @@ Planning MCP progress and `ag-ledger record_change_event` remain pending: neithe
 
 2026-11-21: footprint generator `bigcherry --engine radiance patch-footprint [--check]` and the 2.2 baseline report (docs/evidence/radiance-patch-footprint/) merged into node/radiance-latest-bump (5dedbaf53, regenerated b9072bcef): 38 patches, 679 anchors, 80 upstream files. Next slices in rank order: shared KV-row registration helper (rad0052/0053, the RUM11 lesson), rad0051 kernel hooks, rad0017 rendezvous, rad0009 after the RUM04 v2 removal. Each needs a rebase check, a component build and CPU geometry tests, then leased parity.
 
+### 2026-11-21 shared KV-row registration slice (RUM02 slice 2)
+
+**Current frozen 2.2 source:** `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
+`rad0049` owns a single patch-created `libr4d/bc_kv_rows.h` with a phased
+declaration/row/chain inventory. Its one upstream `r4d_rows.cpp` attachment
+includes this header in the existing `kKernels` registry and extends chained
+eligibility. `rad0051`, `rad0052` and `rad0053` now add declarations, rows
+and chain memberships to this same owned header, through their existing
+explicit dependency chain; none attaches to upstream `r4d_rows.cpp` anymore.
+The native E4M3 page-4 layouts are generated from a single declarative
+geometry X-macro row per supported shape with query dtype, head dimension,
+required GQA, page size, KV dtype and decode bound; the RUM11 page-16 fused
+row keeps its intentionally unpinned local head counts/rotary width.
+No kernel ABI, geometry admission policy or runtime source selection changed.
+
+**Regenerated footprint (current patch definitions):** 38 composed patches,
+`679 -> 665` non-create anchor edits (**14 fewer**, -2.1%). Upstream-owned
+anchor edits `666 -> 641` (**25 fewer**); 11 attachments have moved onto the
+one patch-created row header (`13 -> 24` created-target anchors), while
+created-file edits `27 -> 28`. Total edits `706 -> 693`; upstream-owned
+files carrying anchors remain 80. These counts describe source-definition
+maintenance, not lines of binary code removed. Generated JSON/Markdown:
+`docs/evidence/radiance-patch-footprint/`.
+
+**Frozen-pin correctness:** immutable before-projection fixture
+`tools/tests/patch/fixtures/rum02-kv-row-baseline.json` was captured before
+the helper migration by applying the four original row-edit packages to the
+exact pinned source. The regression test compares the full preprocessed
+registration: **638/638 identical row initializers**, **444/444 identical
+constraint declarations** and **156/156 identical chained names**; zero
+lost/added names or modified bodies. Declaration indices move as the table is
+collected under one hook. For every changed-order pair with the same op and
+priority (285 pairs), constraints are provably mutually exclusive on a
+required, non-derived field; therefore native declaration-order tie selection
+cannot change. The test fails closed on unknown/overlapping constraints.
+Missing/ambiguous hook anchors also fail without partial writes.
+
+**Proof gates:** `patch-rebase-check --all` 38/38 clean, focused patch and
+helper tests (13 total, 12 pass and one optional pre-RUM11 historical fixture
+skipped); native C++ `-fsyntax-only` of the replayed registry and libr3 native
+rewrite `--check` through the focused suite; `patch-footprint --check`,
+Ruff and whitespace guards. No GPU job or full engine build. Owner follow-up:
+component builds, numerical/TP3/Flash-Next selftests and production starts
+on an appropriate leased GPU before concluding hardware parity. Planning MCP
+and ag-ledger event are not available in this agent session; bigcherry-1
+records external progress/ledger after integrating this commit.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
