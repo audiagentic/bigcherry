@@ -48,11 +48,17 @@
 - Prior mixed rank/TP fixtures and installed Gate E tests do not prove a new generation binding.
 - Do not silently complete RUM06 on PR merge; RV4303 remains open until proof.
 
+## S1 implementation sequencing blocker — lead decision required
+
+The approved S1 must remove `bc_moe_remote_register`, `g_plugin` and the unscoped callback route **without** leaving a compatibility path, while the approved S2 is assigned removal of DSO constructor registration. These cannot be independently green in that literal order: `moe_remote_hook.cpp::HookLifetime` constructs at dlopen and invokes `register_mailbox()`, which resolves `bc_moe_remote_register` and registers callbacks; upstream `Engine::load_plugins` claims the native owner/group **after** plugin loading. At constructor time there is no Engine generation to receive the new context.
+
+Approve either (a) move removal of DSO callback registration and the exact-handle explicit factory bind into **S1**, leaving per-generation HookState ownership and full teardown for S2, or (b) treat S1+S2 as one atomic source/ABI cutover with one final green gate. A temporary global pending registry, old ABI shim, TLS-selected generation or plugin ABI change would violate the decision. No S1 production code was changed or tests claimed. This is a slice-boundary decision, not a request to narrow any RUM06 acceptance clause.
+
 ## Slice results
 
 | Slice | Commit | Deleted/reused | Tests | Hot-path cost |
 | --- | --- | --- | --- | --- |
-| S1 | Open | — | — | — |
+| S1 | Blocked: slice-boundary decision | None | No new test | None |
 | S2 | Open | — | — | — |
 | S3 | Open | — | — | — |
 | S4 | Open | — | — | — |
