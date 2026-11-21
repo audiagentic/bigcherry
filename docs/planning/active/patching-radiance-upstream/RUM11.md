@@ -2,7 +2,7 @@
 id: RUM11
 order: 0
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-20T11:54:02.454411+00:00'
 breadth: ''
 skill: advanced
@@ -62,3 +62,4 @@ Every qwen27b fp8 config starts on the 2.2 build with no band resolving to no ke
 - 2026-11-20T11:54:02.454411+00:00 (created-by): Created by claude
 - 2026-11-20T11:54:21.655855+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
 - 2026-11-21T00:59:55.092369+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T20:17:07.225678+00:00 (state-transition): State: pending → in_progress

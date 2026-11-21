@@ -2,7 +2,7 @@
 id: RUM06
 order: 6
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-18T01:28:27.514165+00:00'
 breadth: ''
 skill: advanced
@@ -167,3 +167,4 @@ The earlier VTP36 throughput/TTFT rankings on W8A8/MXFP4 do not carry over autom
 - 2026-11-21T02:18:21.184326+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T02:35:33.763913+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T03:07:59.089816+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T20:17:02.760616+00:00 (state-transition): State: pending → in_progress
