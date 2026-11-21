@@ -7,6 +7,7 @@
 #include "rad_test.h"
 
 #include "plugin/bc_rank_devices.h"
+#include "plugin/bc_rank_engine.h"
 #include "plugin/registry.h"
 
 #include <string>
@@ -231,6 +232,120 @@ TEST(the_one_device_path_is_unchanged) {
         CHECK_EQ(picked(r.select("t_norm", norm_geom(), RAD_DOMAIN_DEVICE, nullptr, true, nullptr, rank)),
                  "t_over_norm");
     for (const KernelRow& row : r.rows()) CHECK_EQ(row.code_ranks, ~0u);
+}
+
+/* ------------------------------------------------------------------ the engine's admission */
+namespace {
+BcRankDevicesRequest xtx_xtx_r9700(bool wire_exact = true, bool unvalidated = false) {
+    BcRankDevicesRequest q;
+    q.want = { "0000:03:00.0", "0000:07:00.0", "0000:0c:00.0" };
+    q.tp = 3;
+    q.wire_exact = wire_exact;
+    q.wire_unvalidated = unvalidated;
+    return q;
+}
+}  /* namespace */
+
+TEST(the_admission_names_the_cards_the_decision_and_the_warning) {
+    BcRankDevicesAdmission a;
+    CHECK_OK(bc_rank_devices_admit(xtx_xtx_r9700(), mixed_inventory(), &a));
+    REQUIRE_EQ(a.ordinals.size(), (size_t)3);
+    CHECK_EQ(a.ordinals[0], 1);
+    CHECK_EQ(a.ordinals[1], 2);
+    CHECK_EQ(a.ordinals[2], 0);
+    CHECK_EQ(a.ranks, "rank 0: 0000:03:00.0 gfx1100 (device 1); rank 1: 0000:07:00.0 gfx1100 (device 2); "
+                      "rank 2: 0000:0c:00.0 gfx1201 (device 0)");
+    CHECK(has(a.decision, "across architectures"));
+    REQUIRE_EQ(a.warnings.size(), (size_t)1);
+    CHECK(has(a.warnings[0], "span architectures (gfx1100, gfx1201)"));
+    CHECK(has(a.warnings[0], "Experimental (BigCherry VTP14)"));
+    CHECK(a.refusal.empty());
+
+    BcRankDevicesRequest two;
+    two.want = { "0000:03:00.0", "0000:07:00.0" };
+    two.tp = 2;
+    CHECK_OK(bc_rank_devices_admit(two, mixed_inventory(), &a));
+    CHECK_EQ(a.decision, "an explicit ordered list");
+    CHECK(a.warnings.empty());
+    CHECK_EQ(a.archs.size(), (size_t)1);
+}
+
+TEST(a_lossy_wire_is_refused_unless_the_lab_flag_is_given) {
+    BcRankDevicesAdmission a;
+    CHECK_EQ(bc_rank_devices_admit(xtx_xtx_r9700(false, false), mixed_inventory(), &a), RAD_E_UNSUPPORTED);
+    CHECK(has(a.refusal, "--tp-wire wht6 is not validated across these ranks"));
+    CHECK(has(a.refusal, "serve with --tp-wire exact"));
+    CHECK(a.ordinals.empty());
+
+    /* the lab flag admits it, and says so before anything else */
+    CHECK_OK(bc_rank_devices_admit(xtx_xtx_r9700(false, true), mixed_inventory(), &a));
+    REQUIRE_EQ(a.warnings.size(), (size_t)2);
+    CHECK(has(a.warnings[0], "UNVALIDATED"));
+    CHECK(has(a.warnings[1], "span architectures"));
+    CHECK_EQ(a.ordinals.size(), (size_t)3);
+}
+
+TEST(the_admission_refuses_what_the_inventory_or_the_fleet_cannot_honour) {
+    BcRankDevicesAdmission a;
+    BcRankDevicesRequest q = xtx_xtx_r9700();
+    q.want = { "0000:03:00.0", "0000:07:00.0" };
+    CHECK_EQ(bc_rank_devices_admit(q, mixed_inventory(), &a), RAD_E_DEVICE);
+    CHECK_EQ(a.refusal.rfind("--rank-devices: ", 0), (size_t)0);
+    CHECK(has(a.refusal, "--tp 3"));
+    CHECK(a.ordinals.empty());
+
+    q = xtx_xtx_r9700();
+    q.fleet_devices = { 0, 1, 2 };   /* the fleet names another order */
+    CHECK_EQ(bc_rank_devices_admit(q, mixed_inventory(), &a), RAD_E_DEVICE);
+    CHECK_EQ(a.refusal, "--rank-devices disagrees with the fleet device order");
+    q.fleet_devices = { 1, 2, 0 };   /* the same order is no disagreement */
+    CHECK_OK(bc_rank_devices_admit(q, mixed_inventory(), &a));
+}
+
+/* ------------------------------------------------------------------ the receipt */
+TEST(a_rank_receipt_counts_bands_by_library_and_lists_its_collectives) {
+    static const RadKernelInfo gemm = { "gemm_k", "gemm" };
+    static const RadKernelInfo allreduce = { "ar_k", "allreduce" };
+    KernelRow device_gemm, device_ar, host_gemm;
+    device_gemm.info = &gemm;       device_gemm.plugin = "libr3";
+    device_ar.info = &allreduce;    device_ar.plugin = "libr3";   device_ar.collective = true;
+    host_gemm.info = &gemm;         host_gemm.plugin = "libref";
+
+    Program program;
+    OpInfo gemm_op;
+    gemm_op.op = "gemm";
+    Band both;
+    both.span = "M <= 64";
+    both.dom[RAD_DOMAIN_DEVICE].row = &device_gemm;
+    both.dom[RAD_DOMAIN_HOST].row = &host_gemm;
+    gemm_op.bands.push_back(both);
+    OpInfo ar_op;
+    ar_op.op = "allreduce";
+    Band coll;
+    coll.span = "any shape";
+    coll.dom[RAD_DOMAIN_DEVICE].row = &device_ar;
+    coll.dom[RAD_DOMAIN_DEVICE].geom = norm_geom();
+    ar_op.bands.push_back(coll);
+    program.ops = { gemm_op, ar_op };
+
+    const BcProgramReceipt receipt = bc_program_receipt(program);
+    REQUIRE_EQ(receipt.bands_by_library.size(), (size_t)2);
+    CHECK_EQ(receipt.bands_by_library.at("libr3"), 2);
+    CHECK_EQ(receipt.bands_by_library.at("libref (host)"), 1);
+    REQUIRE_EQ(receipt.collectives.size(), (size_t)1);
+    CHECK_EQ(receipt.collectives[0].op, "allreduce");
+    CHECK_EQ(receipt.collectives[0].kernel, "ar_k");
+    CHECK_EQ(receipt.collectives[0].plugin, "libr3");
+    CHECK(has(receipt.collectives[0].geom, "any shape: "));
+    CHECK(has(receipt.collectives[0].geom, "M=1"));
+    CHECK_EQ(bc_rank_receipt_line(1, 2, "0000:07:00.0", "gfx1100", receipt),
+             "rank receipt: rank 1 on device 2 0000:07:00.0 gfx1100; op bands by library: libr3 2, libref (host) 1; "
+             "1 collective band(s), first ar_k (libr3)");
+
+    const BcProgramReceipt none = bc_program_receipt(Program());
+    CHECK(none.bands_by_library.empty() && none.collectives.empty());
+    CHECK_EQ(bc_rank_receipt_line(0, 0, "0000:03:00.0", "gfx1100", none),
+             "rank receipt: rank 0 on device 0 0000:03:00.0 gfx1100; op bands by library: none; 0 collective band(s)");
 }
 
 RAD_TEST_MAIN()

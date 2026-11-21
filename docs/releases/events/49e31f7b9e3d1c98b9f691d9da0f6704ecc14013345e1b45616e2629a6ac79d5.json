@@ -1,0 +1,16 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261121_220524_internal-test-fix-no-user-vis_6672",
+  "files": [
+    "engines/radiance/patches/rad0027_mixed_one_pipelined_prefill/patch.py",
+    "engines/radiance/patches/rad0028_rank_consistent_block_drafts/patch.py",
+    "docs/evidence/radiance-patch-footprint/footprint.json"
+  ],
+  "plan-item-ids": [
+    "RUM02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Update upstream arch_test pins that rad0027 (qwen35_fp8 two-rank steps) and rad0028 (qwen35_w8a8 DFlash2 two-rank graph) intentionally change; each patch now carries its own pin edit. arch_test passes on the full production patch set.",
+  "timestamp-utc": "2026-11-21T22:05:24.099760Z",
+  "user-summary-candidate": "Internal test fix; no user-visible change."
+}

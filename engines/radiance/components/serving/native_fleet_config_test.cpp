@@ -144,18 +144,9 @@ int main() {
     Json measured = Json::parse(measured_bytes);
     measured.at("spec")["native_config"] = field;
     rehash(measured);
-    auto legacy = v2::read_manifest(measured.dump(), "current wire", v2::PlanUse::serving);
-    check(!legacy && legacy.error().code == v2::ConfigErrorCode::unknown_field,
-          "current wire ignored a native_config field");
-    // Exercise successor field storage in the measured envelope. Full v3
-    // contract admission belongs to the coordinated reader/producer migration.
-    measured["apiVersion"] = "bigcherry/v3";
-    measured.at("metadata")["contract_version"] = 3;
-    rehash(measured);
+    // Edition 3 is the only wire: the embedded native configuration is part of it, so the recorded document is the
+    // measured example with the field added, not a successor edition.
     const std::string recorded = measured.dump();
-    auto successor = v2::read_manifest(recorded, "successor wire", v2::PlanUse::serving);
-    check(!successor && successor.error().code == v2::ConfigErrorCode::unsupported_version,
-          "current launcher accepted a successor document");
     auto strict = v2::parse_strict_json(recorded, "saved manifest");
     check(strict.ok(), "stored manifest failed strict JSON parsing");
     std::string oversize = recorded;

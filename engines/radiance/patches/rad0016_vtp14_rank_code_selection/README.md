@@ -41,7 +41,10 @@ On cards (with rad0017), mixed XTX+R9700 TP2 serves Qwen3.8-27B fp8 correctly. T
       first difference.
     - A per-rank receipt is logged: card, architecture, op bands per library, and collectives.
 - **New files**
-  - `core/plugin/bc_rank_devices.{h,cpp}` hold the pure planning and agreement functions.
+  - `core/plugin/bc_rank_devices.{h,cpp}` hold the pure planning, admission and agreement functions (no engine types).
+  - `core/plugin/bc_rank_engine.{h,cpp}` hold what needs the engine's own types: the `Registry` rank-list members and
+    per-library rank mask, the inventory and configuration adapter for the admission, and the per-rank program receipt. The
+    upstream files carry only the typed calls into them (RUM02).
   - `tests/bc_rank_devices_test.cpp` tests them, plus per-rank selection and the unchanged legacy path. It uses
     radiance's `radtest_*` plugins with a code-runs probe, so it needs no card.
 

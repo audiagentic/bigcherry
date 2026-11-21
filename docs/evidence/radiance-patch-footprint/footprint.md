@@ -2,7 +2,7 @@
 
 Upstream pin: `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
 
-38 composed patches; **603 anchor edits** (568 upstream, 35 on patch-created files; 626 expected match sites); 633 total edits, 30 in created files; 80 upstream files.
+38 composed patches; **604 anchor edits** (569 upstream, 35 on patch-created files; 627 expected match sites); 636 total edits, 32 in created files; 80 upstream files.
 
 Counts are lexical, not a measure of independent semantics, net code savings, or successful application. Regex anchor bytes and full replacement text bytes are counted as authored, not as actual upstream match or net diff bytes.
 
@@ -12,7 +12,7 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `rad0053_v4_kv_layouts` | 13 | 0 | 58 | 35 | 58 | 5825 | 27765 |
 | `rad0051_b16_kv_kernels` | 11 | 3 | 44 | 41 | 47 | 3112 | 86822 |
-| `rad0016_vtp14_rank_code_selection` | 11 | 3 | 39 | 39 | 42 | 5883 | 40829 |
+| `rad0016_vtp14_rank_code_selection` | 11 | 5 | 38 | 38 | 43 | 5730 | 52269 |
 | `rad0045_expert_route_replay` | 15 | 0 | 36 | 36 | 36 | 3080 | 27756 |
 | `rad0002_moe_remote_handoff` | 8 | 5 | 35 | 35 | 40 | 2073 | 39741 |
 | `rad0036_prefill_governor` | 11 | 1 | 29 | 29 | 30 | 7396 | 37516 |
@@ -29,18 +29,18 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `rad0044_expert_route_record` | 7 | 0 | 16 | 16 | 16 | 1285 | 13897 |
 | `rad0019_vtp14_n2_tp_ownership_fp8` | 6 | 0 | 15 | 15 | 15 | 3519 | 11237 |
 | `rad0020_vtp14_tp3_pipelined_prefill` | 7 | 0 | 13 | 13 | 13 | 982 | 4474 |
-| `rad0027_mixed_one_pipelined_prefill` | 3 | 0 | 11 | 11 | 11 | 3124 | 5469 |
+| `rad0027_mixed_one_pipelined_prefill` | 4 | 0 | 12 | 12 | 12 | 3219 | 5580 |
 | `rad0046_retained_moe_rows` | 7 | 1 | 11 | 11 | 12 | 553 | 3854 |
 | `rad0026_mixed_pipelined_prefill` | 4 | 0 | 10 | 10 | 10 | 2638 | 7332 |
 | `rad0010_routing_evidence` | 2 | 1 | 10 | 10 | 11 | 488 | 14328 |
 | `rad0023_ar_timeline` | 1 | 0 | 7 | 7 | 7 | 1677 | 4552 |
 | `rad0017_vtp14_n3_shared_rendezvous` | 4 | 5 | 7 | 7 | 12 | 909 | 42219 |
+| `rad0028_rank_consistent_block_drafts` | 3 | 0 | 7 | 7 | 7 | 702 | 2382 |
 | `rad0022_tune_pin` | 4 | 0 | 7 | 7 | 7 | 574 | 2531 |
-| `rad0011_plan_memory` | 1 | 4 | 7 | 7 | 11 | 300 | 23411 |
+| `rad0011_plan_memory` | 1 | 4 | 7 | 7 | 11 | 300 | 23464 |
 | `rad0031_ts_timeline` | 1 | 0 | 6 | 6 | 6 | 1982 | 5023 |
 | `rad0021_vtp14_weighted_twoshot_3rank` | 3 | 0 | 6 | 3 | 6 | 1630 | 3196 |
 | `rad0030_int8_pipelined_prefill` | 3 | 0 | 6 | 6 | 6 | 953 | 1416 |
-| `rad0028_rank_consistent_block_drafts` | 2 | 0 | 6 | 6 | 6 | 605 | 2273 |
 | `rad0009_serving_manifest` | 3 | 0 | 5 | 5 | 5 | 236 | 2666 |
 | `rad0004_moe_remote_diagnostics` | 1 | 1 | 4 | 4 | 5 | 222 | 5540 |
 | `rad0024_ts3_decode` | 1 | 0 | 3 | 3 | 3 | 684 | 1670 |
@@ -59,11 +59,11 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `tests/config_test.cpp` | 9 | 12 | 1831 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `core/rad_core.h` | 8 | 9 | 545 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0054_attn_prefill_fp8` |
 | `libr4d/r4d_rows.cpp` | 7 | 20 | 1377 | `rad0012_helper_kernel_config`, `rad0032_ts3_duplex`, `rad0033_ts3_once`, `rad0045_expert_route_replay`, `rad0046_retained_moe_rows`, `rad0049_qwen4exp_e4m3_kv`, `rad0054_attn_prefill_fp8` |
+| `tests/arch_test.cpp` | 7 | 12 | 1094 | `rad0027_mixed_one_pipelined_prefill`, `rad0028_rank_consistent_block_drafts`, `rad0049_qwen4exp_e4m3_kv`, `rad0051_b16_kv_kernels`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `libr4d/r4d_plugin.h` | 7 | 8 | 459 | `rad0045_expert_route_replay`, `rad0046_retained_moe_rows`, `rad0049_qwen4exp_e4m3_kv`, `rad0051_b16_kv_kernels`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `core/runtime/ctx.cpp` | 6 | 26 | 1731 | `rad0002_moe_remote_handoff`, `rad0010_routing_evidence`, `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0044_expert_route_record`, `rad0045_expert_route_replay` |
 | `core/engine.cpp` | 6 | 21 | 1290 | `rad0002_moe_remote_handoff`, `rad0010_routing_evidence`, `rad0017_vtp14_n3_shared_rendezvous`, `rad0043_expert_stats_protected`, `rad0044_expert_route_record`, `rad0045_expert_route_replay` |
 | `arch/common/rad_block_attn_gated_fp8.h` | 6 | 13 | 3725 | `rad0019_vtp14_n2_tp_ownership_fp8`, `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0027_mixed_one_pipelined_prefill`, `rad0051_b16_kv_kernels`, `rad0054_attn_prefill_fp8` |
-| `tests/arch_test.cpp` | 5 | 10 | 902 | `rad0049_qwen4exp_e4m3_kv`, `rad0051_b16_kv_kernels`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `libr4d/r4d_ar_entry.hip` | 5 | 8 | 2637 | `rad0017_vtp14_n3_shared_rendezvous`, `rad0021_vtp14_weighted_twoshot_3rank`, `rad0024_ts3_decode`, `rad0032_ts3_duplex`, `rad0033_ts3_once` |
 | `libr4d/r4d_ar_twoshot_Nrank_exact.hip` | 4 | 26 | 5336 | `rad0021_vtp14_weighted_twoshot_3rank`, `rad0031_ts_timeline`, `rad0032_ts3_duplex`, `rad0033_ts3_once` |
 | `libr4d/r4d_attn_paged_gqa8.hip` | 4 | 16 | 1673 | `rad0049_qwen4exp_e4m3_kv`, `rad0051_b16_kv_kernels`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts` |
@@ -98,10 +98,10 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `core/plugin/registry.h` | 1 | 5 | 1094 | `rad0016_vtp14_rank_code_selection` |
 | `tests/abi_layout_test.cpp` | 1 | 5 | 361 | `rad0048_abi44_kv_contract` |
 | `core/place/planner.cpp` | 1 | 4 | 267 | `rad0002_moe_remote_handoff` |
-| `core/plugin/loader.cpp` | 1 | 4 | 723 | `rad0016_vtp14_rank_code_selection` |
 | `core/server/metrics.cpp` | 1 | 4 | 1607 | `rad0036_prefill_governor` |
 | `arch/qwen35_bf16/qwen35_bf16.cpp` | 1 | 3 | 447 | `rad0018_vtp14_n2_tp_ownership` |
 | `core/main.cpp` | 1 | 3 | 93 | `rad0009_serving_manifest` |
+| `core/plugin/loader.cpp` | 1 | 3 | 570 | `rad0016_vtp14_rank_code_selection` |
 | `libref/ref_attn.cpp` | 1 | 3 | 152 | `rad0051_b16_kv_kernels` |
 | `arch/common/rad_block_hc.h` | 1 | 2 | 96 | `rad0002_moe_remote_handoff` |
 | `core/engine.h` | 1 | 2 | 84 | `rad0002_moe_remote_handoff` |

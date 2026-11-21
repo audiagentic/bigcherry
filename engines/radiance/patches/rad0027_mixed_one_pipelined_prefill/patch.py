@@ -23,7 +23,7 @@ import re
 from bigcherry.patcher import Edit, FilePatch
 
 
-def _edit(id: str, before: str, after: str, *, guard: str) -> Edit:
+def _edit(id: str, before: str, after: str, *, guard: str, why: str = "") -> Edit:
     return Edit(
         id=id,
         anchor=re.escape(before),
@@ -32,7 +32,7 @@ def _edit(id: str, before: str, after: str, *, guard: str) -> Edit:
         guard=re.escape(guard),
         expect_matches=1,
         max_span_lines=max(2, before.count("\n") + 1),
-        rationale="VTP31: pipelined prefill over a mixed step of one prefill sequence",
+        rationale=why or "VTP31: pipelined prefill over a mixed step of one prefill sequence",
     )
 
 
@@ -234,4 +234,17 @@ GDN = FilePatch(path="arch/common/rad_block_gdn_fp8.h", language="none", descrip
     ),
 ))
 
-PATCHES = (PLUGIN, ATTN, GDN)
+ARCH_TEST = FilePatch(path="tests/arch_test.cpp", language="none", description="VTP31 pinned steps of the mixed cut",
+                      edits=(
+    _edit(
+        "mx1-arch-pin",
+        """        { "qwen35_fp8", 2, 1, 0xe7780f241685a18bull, 0xdd5d65ef158c4136ull },
+""",
+        """        { "qwen35_fp8", 2, 1, 0xe7780f241685a18bull, 0x1e96fe4180d0fcdfull }, /* BC_VTP31_MX1_PIN (rad0027) */
+""",
+        guard="BC_VTP31_MX1_PIN",
+        why="VTP31 pin: the mixed one-sequence cut changes the declared steps of qwen35_fp8 at two ranks (graph unchanged), so upstream's pinned steps hash moves with it",
+    ),
+))
+
+PATCHES = (PLUGIN, ATTN, GDN, ARCH_TEST)

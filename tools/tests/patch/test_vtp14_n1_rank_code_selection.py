@@ -81,6 +81,7 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
         self.assertEqual(len(paths), len(set(paths)))
         created = {f.path for f in files if f.create}
         self.assertEqual(created, {"core/plugin/bc_rank_devices.h", "core/plugin/bc_rank_devices.cpp",
+                                   "core/plugin/bc_rank_engine.h", "core/plugin/bc_rank_engine.cpp",
                                    "tests/bc_rank_devices_test.cpp"})
         guards = [e.guard for f in files for e in f.edits]
         self.assertEqual(len(guards), len(set(guards)))
@@ -136,7 +137,15 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
             self.assertIn("rad_tools_registry().set_code_device(devs[0]);", engine)
             self.assertIn("rad_gate_reference_kernels(ranks_[0]->program", engine)
             self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, set_->code_device, &why) == 0", loader)
-            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, set_->code_devices[i], &why_i)", loader)
+            # The rank bodies live in the owned sources; upstream files carry only the typed calls.
+            self.assertIn("code_mask = rank_code_mask(p.name, s.code_from, s.code_to, n_device, &why);", loader)
+            self.assertNotIn("set_->code_devices[i]", loader)
+            owned = (root / "core/plugin/bc_rank_engine.cpp").read_text()
+            self.assertIn("rad::dev_code_runs(code_from, code_to, set_->code_devices[i], &why_i)", owned)
+            self.assertIn("int Registry::set_code_devices(", owned)
+            self.assertIn("RAD_TRY(bc_admit_rank_devices(cfg_, &admitted));", engine)
+            self.assertIn("bc_report_rank_program(r.program, r.index, r.device)", engine)
+            self.assertNotIn("bc_rank_devices_plan(", engine)
             self.assertIn("if (need && (r->code_ranks & need) != need)", select)
             self.assertIn("bc_rank_collectives_agree(colls, &why)", engine)
 

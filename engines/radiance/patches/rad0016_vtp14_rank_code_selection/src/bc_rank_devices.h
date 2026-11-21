@@ -59,4 +59,31 @@ struct BcCollStep {
  * collective's peers meet by arrival order, so any difference would hang or corrupt the exchange. */
 int bc_rank_collectives_agree(const std::vector<std::vector<BcCollStep>>& per_rank, std::string* why);
 
+/* What the engine asks of --rank-devices: the named cards, the world size, the wire the engine was told to use and the
+ * device order the fleet configuration already names (empty when it names none). */
+struct BcRankDevicesRequest {
+    std::vector<std::string> want;
+    int                      tp = 0;
+    bool                     wire_exact = true;         /* --tp-wire exact */
+    bool                     wire_unvalidated = false;  /* --tp-wire-unvalidated (a lab run, never serving) */
+    std::vector<int>         fleet_devices;
+};
+
+/* The engine's admission of the list: what to use, what to record and what to say. Every line is composed here and logged
+ * by the caller in order, so the wording is tested with the decision. */
+struct BcRankDevicesAdmission {
+    std::vector<int>         ordinals;   /* rank i on ordinals[i] */
+    std::vector<std::string> archs;      /* distinct architectures, rank order of first appearance */
+    std::string              ranks;      /* "rank 0: <pci> <arch> (device N); ..." for the --rank-devices decision */
+    std::string              decision;   /* why the list was used */
+    std::vector<std::string> warnings;   /* in the order they are logged */
+    std::string              refusal;    /* the error text when the status is not RAD_OK */
+};
+
+/* RAD_OK with `out` filled, RAD_E_UNSUPPORTED for a lossy wire that is not validated across these ranks, or RAD_E_DEVICE
+ * for a list the inventory cannot honour or that disagrees with the fleet's device order. A lossy wire is a refusal unless
+ * the lab flag is given; with it the admission carries a warning. */
+int bc_rank_devices_admit(const BcRankDevicesRequest& request, const std::vector<BcDeviceInfo>& inventory,
+                          BcRankDevicesAdmission* out);
+
 }  /* namespace rad */
