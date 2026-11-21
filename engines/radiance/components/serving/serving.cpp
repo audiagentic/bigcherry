@@ -1269,6 +1269,10 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
             field.choices.clear();
         if (field.key == "engine.checkpoint_interval")
             field.lo = 0;
+        // Radiance's measured "auto" n-gram placement is an authored intent: the engine's measuring start decides the tier
+        // and the owner seals it (rad0011 rank receipt); the resolver carries the intent until then.
+        if (field.key == "engine.ngram_placement")
+            field.choices.push_back("auto");
         put(values, provenance, field, value, "native", "sealed Radiance YAML (matched native parser)");
     };
     if (native) {

@@ -1451,8 +1451,11 @@ void session_engine_plan(Fixture& t) {
             refused_for("ill-typed tuning pipelined_prefill_min_rows", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"pipelined_prefill_min_rows", "256"}}.dump(); });
             refused_for("model-defined context", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MAX_CONTEXT"] = "0"; });
-            refused_for("explicit ngram-placement", [](ss::Env& e) {
-                e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"ngram_placement", "auto"}}.dump(); });
+            // Radiance's measured auto n-gram placement is admitted as an intent (the engine decides, the owner seals it).
+            if (const std::string pass = preflight([](ss::Env& e) {
+                    e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"ngram_placement", "auto"}}.dump(); });
+                !pass.empty())
+                throw std::runtime_error("preflight: an auto ngram placement was refused: " + pass);
             refused_for("set num-speculative-tokens", [](ss::Env& e) {
                 e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"speculative_tokens", -1}}.dump(); });
             refused_for("set rope-scaling", [](ss::Env& e) {
