@@ -443,5 +443,5 @@ release archive in `release_testdata` is regenerated with the real packer from t
 quality-run flags and the refusals; the v2 registry-to-flag projection cases are gone with the projection.
 
 Equivalence note: the host reserve a sealed Flash-Next manifest records moved from 4705 MiB (the figure in the 2026-11-19 audit of d92592f9) to 9436 MiB.
-That is **machine state**: the reserve is derived from the host's detected memory and its ledger margin at plan time, not from a change to the config, the
-patches or the contract, so a before/after comparison must pin the host (same memory, same other processes) or compare plans, not throughput.
+It is recorded as **machine state** (decided by bigcherry-1), not as a change to the config, the patches or the contract, so a
+before/after comparison must pin the host or compare plans, not throughput.
