@@ -151,13 +151,13 @@
   },
   "totals": {
     "composed_patches": 38,
-    "edits": 706,
-    "anchors": 679,
-    "upstream_anchors": 666,
+    "edits": 711,
+    "anchors": 684,
+    "upstream_anchors": 671,
     "created_target_anchors": 13,
-    "anchor_sites": 714,
-    "anchor_bytes": 84957,
-    "inserted_bytes": 504883,
+    "anchor_sites": 719,
+    "anchor_bytes": 85607,
+    "inserted_bytes": 506950,
     "created_edits": 27,
     "upstream_files": 80
   },
@@ -873,6 +873,40 @@
       "created_edits": 0
     },
     {
+      "patch": "rad0019_vtp14_n2_tp_ownership_fp8",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "arch/common/rad_arch.h",
+        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_dflash2.h",
+        "arch/common/rad_block_mlp_fp8.h",
+        "arch/common/rad_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "upstream_files": [
+        "arch/common/rad_arch.h",
+        "arch/common/rad_block_attn_gated_fp8.h",
+        "arch/common/rad_block_dflash2.h",
+        "arch/common/rad_block_mlp_fp8.h",
+        "arch/common/rad_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "created_files": [],
+      "edits": 15,
+      "anchors": 15,
+      "upstream_anchors": 15,
+      "created_target_anchors": 0,
+      "anchor_sites": 15,
+      "anchor_bytes": 3519,
+      "inserted_bytes": 11237,
+      "created_edits": 0
+    },
+    {
       "patch": "rad0017_vtp14_n3_shared_rendezvous",
       "sources": [
         "radiance",
@@ -943,40 +977,6 @@
       "anchor_sites": 13,
       "anchor_bytes": 982,
       "inserted_bytes": 4474,
-      "created_edits": 0
-    },
-    {
-      "patch": "rad0019_vtp14_n2_tp_ownership_fp8",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "arch/common/rad_arch.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_dflash2.h",
-        "arch/common/rad_block_mlp_fp8.h",
-        "arch/common/rad_fp8.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
-      ],
-      "upstream_files": [
-        "arch/common/rad_arch.h",
-        "arch/common/rad_block_attn_gated_fp8.h",
-        "arch/common/rad_block_dflash2.h",
-        "arch/common/rad_block_mlp_fp8.h",
-        "arch/common/rad_fp8.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
-      ],
-      "created_files": [],
-      "edits": 12,
-      "anchors": 12,
-      "upstream_anchors": 12,
-      "created_target_anchors": 0,
-      "anchor_sites": 12,
-      "anchor_bytes": 3113,
-      "inserted_bytes": 9416,
       "created_edits": 0
     },
     {
@@ -1277,6 +1277,34 @@
       "created_edits": 0
     },
     {
+      "patch": "rad0030_int8_pipelined_prefill",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "arch/common/rad_block_mlp_fp8.h",
+        "arch/common/rad_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "upstream_files": [
+        "arch/common/rad_block_mlp_fp8.h",
+        "arch/common/rad_fp8.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp"
+      ],
+      "created_files": [],
+      "edits": 6,
+      "anchors": 6,
+      "upstream_anchors": 6,
+      "created_target_anchors": 0,
+      "anchor_sites": 6,
+      "anchor_bytes": 953,
+      "inserted_bytes": 1416,
+      "created_edits": 0
+    },
+    {
       "patch": "rad0028_rank_consistent_block_drafts",
       "sources": [
         "radiance",
@@ -1300,32 +1328,6 @@
       "anchor_sites": 6,
       "anchor_bytes": 605,
       "inserted_bytes": 2273,
-      "created_edits": 0
-    },
-    {
-      "patch": "rad0030_int8_pipelined_prefill",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "arch/common/rad_fp8.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
-      ],
-      "upstream_files": [
-        "arch/common/rad_fp8.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
-      ],
-      "created_files": [],
-      "edits": 4,
-      "anchors": 4,
-      "upstream_anchors": 4,
-      "created_target_anchors": 0,
-      "anchor_sites": 4,
-      "anchor_bytes": 709,
-      "inserted_bytes": 1170,
       "created_edits": 0
     },
     {
@@ -1533,10 +1535,10 @@
         "rad0053_v4_kv_layouts",
         "rad0054_attn_prefill_fp8"
       ],
-      "anchors": 41,
-      "anchor_sites": 41,
-      "anchor_bytes": 4866,
-      "inserted_bytes": 12375,
+      "anchors": 42,
+      "anchor_sites": 42,
+      "anchor_bytes": 4991,
+      "inserted_bytes": 13558,
       "patch_count": 10
     },
     {
@@ -1866,6 +1868,19 @@
       "patch_count": 3
     },
     {
+      "path": "arch/common/rad_fp8.h",
+      "patch_ids": [
+        "rad0019_vtp14_n2_tp_ownership_fp8",
+        "rad0025_multiseq_pipelined_prefill",
+        "rad0030_int8_pipelined_prefill"
+      ],
+      "anchors": 6,
+      "anchor_sites": 6,
+      "anchor_bytes": 831,
+      "inserted_bytes": 2994,
+      "patch_count": 3
+    },
+    {
       "path": "libr4d/r4d_shapes.cpp",
       "patch_ids": [
         "rad0045_expert_route_replay",
@@ -1876,19 +1891,6 @@
       "anchor_sites": 8,
       "anchor_bytes": 287,
       "inserted_bytes": 1434,
-      "patch_count": 3
-    },
-    {
-      "path": "arch/common/rad_fp8.h",
-      "patch_ids": [
-        "rad0019_vtp14_n2_tp_ownership_fp8",
-        "rad0025_multiseq_pipelined_prefill",
-        "rad0030_int8_pipelined_prefill"
-      ],
-      "anchors": 4,
-      "anchor_sites": 4,
-      "anchor_bytes": 550,
-      "inserted_bytes": 2332,
       "patch_count": 3
     },
     {
@@ -2010,6 +2012,18 @@
       "anchor_sites": 5,
       "anchor_bytes": 212,
       "inserted_bytes": 9742,
+      "patch_count": 2
+    },
+    {
+      "path": "arch/common/rad_block_mlp_fp8.h",
+      "patch_ids": [
+        "rad0019_vtp14_n2_tp_ownership_fp8",
+        "rad0030_int8_pipelined_prefill"
+      ],
+      "anchors": 4,
+      "anchor_sites": 4,
+      "anchor_bytes": 614,
+      "inserted_bytes": 818,
       "patch_count": 2
     },
     {
@@ -2177,17 +2191,6 @@
       "anchor_sites": 2,
       "anchor_bytes": 96,
       "inserted_bytes": 167,
-      "patch_count": 1
-    },
-    {
-      "path": "arch/common/rad_block_mlp_fp8.h",
-      "patch_ids": [
-        "rad0019_vtp14_n2_tp_ownership_fp8"
-      ],
-      "anchors": 2,
-      "anchor_sites": 2,
-      "anchor_bytes": 370,
-      "inserted_bytes": 596,
       "patch_count": 1
     },
     {
