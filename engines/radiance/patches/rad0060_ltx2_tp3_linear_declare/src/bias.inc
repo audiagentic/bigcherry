@@ -18,7 +18,7 @@
             } else if (slice && slice->defer_bias) {
                 // The partial column GEMM must never apply bias before the
                 // reduction. Name mapping is retained for a future unique
-                // output owner; no per-rank weight or table_add is declared.
+                // finalizer; no rank-partial bias weight or table_add is declared.
                 deferred_bias = true;
             } else {
                 bias = decl_w(b, bn, RAD_BF16, { N }, access, RAD_SHARD_NONE, grp_layer(group));

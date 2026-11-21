@@ -44,6 +44,10 @@ struct Lin {
         RAD_ARCH_TRY(l.declare(b, nm, g, base, N, K, RAD_SHARD_NONE, grp_layer(group), wsrc, in.a, y,
                                max_rows, parts));
     }
+    /* Input rows [ri, ri + rows) to output rows [ro, ro + rows). */
+    void step() {
+        if (op_b) RAD_ISSUE_N(c, op_b, rows, out, RAD_W(bias), out);
+    }
 };
 """
 
@@ -63,7 +67,8 @@ def patch_copy(root: Path) -> dict[str, int]:
     src = (root / CPP).read_text()
     for marker in (
         "BC_LTX3_C01_INCLUDE", "BC_LTX3_C01_ARGUMENT",
-        "BC_LTX3_C01_DEFERRED_STATE",
+        "BC_LTX3_C01_DEFERRED_STATE", "BC_LTX3_C04_REDUCE_STATE",
+        "BC_LTX3_C04_FINALIZE", "BC_LTX3_C04_ISSUE",
         "BC_LTX3_C01_PREFLIGHT", "BC_LTX3_C01_BIAS", "BC_LTX3_C01_LINEAR",
     ):
         assert src.count(marker) == 1, marker
@@ -80,10 +85,10 @@ def patch_copy(root: Path) -> dict[str, int]:
 def test_c01_patch_fixture_applies_twice(tmp_path: Path) -> None:
     make_stage(tmp_path, fake_upstream())
     result = patch_copy(tmp_path)
-    assert result == {"applied": 7, "created_headers": 1, "idempotent": 1}
+    assert result == {"applied": 9, "created_headers": 1, "idempotent": 1}
     src = (tmp_path / CPP).read_text()
     assert "RAD_SHARD_ROW" in src and "RAD_SHARD_COL" in src
-    assert "bias-once reduction not yet implemented" in src
+    assert "explicit deferred bias ownership" in src
     assert "RAD_SHARD_NONE" in src  # default TP1 branch retained
 
 
@@ -104,7 +109,7 @@ def test_c01_real_source_opt_in(tmp_path: Path) -> None:
     src = Path(source) / CPP
     assert src.is_file()
     make_stage(tmp_path, src.read_text())
-    assert patch_copy(tmp_path)["applied"] == 7
+    assert patch_copy(tmp_path)["applied"] == 9
 
 
 if __name__ == "__main__":

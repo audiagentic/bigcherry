@@ -91,3 +91,17 @@ output reductions into one real LTX attention block. Validate its native
 model payload load and numerical output against TP1 before permitting
 any TP3 serving admission. Full dual-stream DiT and device performance
 remain later gates.
+
+
+## C04 exact output reduction graph (2026-11-22)
+
+The diagnostic-only Lin::finalize_deferred_output combines an existing
+Radiance 2.2 exact world-three all_reduce with a BF16 bias-add once on
+each full reduced output replica. This reuses BigCherry TP3 collectives,
+without a new transport or any production LTX TP3 admission change.
+
+The native C04 test covers all 48 DiT blocks, both aligned uneven
+head splits, all three ranks and seven biased output types. It rejects
+duplicate finalization, non-TP3 worlds and audio K misalignment.
+See docs/evidence/2026-11-22-ltx25-c04-native-reduce/README.md.
+GPU execution and TP1 numerical parity are not established.

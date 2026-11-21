@@ -105,5 +105,7 @@ if(LTX_NATIVE_CORE_LIB)
     target_link_libraries(ltx_c02_lin_declare_test PRIVATE ${_c01_core_links})
     add_test(NAME ltx_c02_actual_lin_declare
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}")
+    add_test(NAME ltx_c04_deferred_output_reduce
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c04)
   endif()
 endif()

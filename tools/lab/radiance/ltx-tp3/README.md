@@ -85,3 +85,13 @@ compile-only gate. Full commands and limitations:
 
 **Not proven:** model payload loading, GPU kernels, TP3 full model startup,
 global Q/K RMS, collectives, bias-once reduction or video generation.
+
+
+## C04: model-backed native output reduction (2026-11-22)
+
+The diagnostic Lin finalizer reuses Radiance 2.2 exact TP3 all_reduce,
+then applies BF16 bias once on each full reduced output replica.
+The native-c01-gate now has three model-backed CTests including C04.
+The C04 test verifies 2,016 legal projection declarations across all
+48 blocks and both legal splits, but does not run a GPU collective.
+See docs/evidence/2026-11-22-ltx25-c04-native-reduce/README.md.

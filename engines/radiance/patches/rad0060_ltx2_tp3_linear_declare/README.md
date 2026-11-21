@@ -20,9 +20,10 @@ rejects `world_size > 1`; this is not an executable TP3 model.
   requires exactly one checkpoint bias source. The partial GEMM
   declares **no bias weight and no bias-add operation**; the native
   `Lin::deferred_bias` state marks its result as *not final*.
-  A future rank collective must produce the full-width output and a
-  **single owner** must apply that bias once, after the reduction.
-  Neither that collective nor its owner is implemented here.
+  C04 now declares the existing exact Radiance three-rank all_reduce
+  followed by a BF16 table_add **once per reduced output replica**.
+  No rank adds bias to a partial GEMM. This native host graph does not
+  launch a collective or enable production TP3 LTX.
 
 A biased column without explicit deferral, deferral without a bias
 source, partial IQ8R scale-group cuts, BF16/small-gate paths and
@@ -39,9 +40,10 @@ The patched architecture translation unit compiles on the released
 - 2,640 biased output-column native declarations safely defer bias;
   384 model-derived rank K cuts are not admissible.
 - Four focused negative cases and every model block's output geometry
-  are checked. Source patch applies idempotently (seven edits).
+  are checked. Source patch applies idempotently (nine edits).
 
 See `docs/evidence/2026-11-22-ltx25-c03-deferred-bias/README.md`.
-Native kernel execution, full TP3 DiT graph, all-head Q/K RMS,
-collectives, model weight payload loading and video performance remain
-unimplemented/unproven.
+C04 adds 2,016 source-backed exact reduction and post-reduction bias
+declarations. See docs/evidence/2026-11-22-ltx25-c04-native-reduce/README.md.
+Actual rank collective execution, full TP3 DiT graph, all-head Q/K RMS,
+model payload loading and video performance remain unproven.

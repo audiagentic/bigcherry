@@ -59,7 +59,7 @@ static void check_col(const rad::WeightInfo& w, const ltx2::C01Slice& slice) {
 
 enum class ProbeCase {
     Normal, WrongGroup, PrematureBias, InvalidColumn,
-    DeferredBias, InvalidDeferred, MissingDeferredBias
+    DeferredBias, InvalidDeferred, MissingDeferredBias, Reduced
 };
 static void run(const RadFile& model, Registry& reg, const std::string& base,
                 int banks, int nheads, int rank, int start_heads, int owned_heads,
@@ -74,7 +74,7 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     const int64_t hd = (rows ? e->shape[0]/banks : e->shape[1])/nheads;
     const int64_t full = hd * nheads, offset = hd*start_heads, width = hd*owned_heads;
     need(!rows || e->shape[0] == banks*full, "source banks are not equally sized");
-    const bool deferred = variant == ProbeCase::DeferredBias || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias;
+    const bool deferred = variant == ProbeCase::DeferredBias || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias || variant == ProbeCase::Reduced;
     const bool denied = variant == ProbeCase::WrongGroup || variant == ProbeCase::PrematureBias || variant == ProbeCase::InvalidColumn || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias;
     const auto slice = rows
         ? ltx2::C01Slice::rows(full,offset,width,hd,banks)
@@ -150,7 +150,34 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     }
     need(rc==RAD_OK,"real LTX Lin::declare refused the shard");
     need(linear.deferred_bias == deferred, "output bias-defer contract lost");
-    if (deferred)
+    if (variant == ProbeCase::Reduced) {
+        need(!linear.bias && !linear.op_b && !linear.post_reduce,
+             "C04 partial projection applied bias before collective");
+        need(linear.finalize_deferred_output(&b, nm, base.c_str(), 2,
+                                            RAD_ACCESS_PER_TOKEN, 0, y, 4) ==
+                 RAD_E_UNSUPPORTED,
+             "C04 admitted a non-TP3 collective");
+        need(!linear.bias && !linear.op_b && !linear.post_reduce,
+             "rejected C04 world mutated the builder");
+        need(linear.finalize_deferred_output(&b, nm, base.c_str(), 3,
+                                            RAD_ACCESS_PER_TOKEN, 0, y, 4) == RAD_OK,
+             "C04 exact reduction and post-reduce bias declaration failed");
+        need(linear.bias && linear.op_b && linear.post_reduce,
+             "C04 omitted reduce or full-width BF16 bias");
+        need(b.program().weight(linear.bias)->decl.shard == RAD_SHARD_NONE,
+             "C04 BF16 bias must be full-width after sum");
+        const auto weights_before = b.program().weights.size();
+        need(linear.finalize_deferred_output(&b, nm, base.c_str(), 3,
+                                            RAD_ACCESS_PER_TOKEN, 0, y, 4) ==
+                 RAD_E_UNSUPPORTED,
+             "C04 accepted a second bias finalization");
+        need(b.program().weights.size() == weights_before,
+             "duplicate C04 reduction allocated a second bias");
+        for (const rad_op handle : {linear.post_reduce, linear.op_b})
+            need(b.program().op(handle) != nullptr,
+                 "C04 collective or bias missing from native graph");
+    }
+    if (deferred && variant != ProbeCase::Reduced)
         need(!linear.bias && !linear.op_b,
              "partial output declared bias before collective");
     need(linear.l.i8 && linear.l.i8_rot && linear.op,
@@ -163,6 +190,10 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
         for (const auto& band : b.program().op(linear.op_b)->bands)
             need(static_cast<bool>(band.dom[RAD_DOMAIN_HOST]),
                  "real native host bias-add kernel unresolved");
+    if (variant == ProbeCase::Reduced)
+        for (const auto& band : b.program().op(linear.post_reduce)->bands)
+            need(static_cast<bool>(band.dom[RAD_DOMAIN_HOST]),
+                 "real native host exact all-reduce kernel unresolved");
     b.set_instances(false);
     need(b.finish()==RAD_OK, "native graph finish failed");
     need(b.errors().empty(),"native graph finish returned builder errors");
@@ -177,14 +208,16 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
         check_parts(*sw,slice);
         check_parts(*b.program().weight(linear.bias),slice);
     } else {
-        need(!linear.bias && !linear.op_b,"biasless Lin unexpectedly added bias");
+        if (variant != ProbeCase::Reduced)
+            need(!linear.bias && !linear.op_b,
+                 "partial or biasless Lin unexpectedly added bias");
         check_col(*cw,slice);
         check_col(*sw,slice);
     }
 }
 
 int main(int argc, char** argv) {
-    if(argc!=3) {
+    if(argc!=3 && argc!=4) {
         std::fprintf(stderr,"usage: ltx_c02_lin_declare_test MODEL.rad PLUGIN_KERNEL_DIR\n");
         return 2;
     }
@@ -204,6 +237,37 @@ int main(int argc, char** argv) {
         const int nheads = std::stoi(head_text);
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
+        if (argc == 4) {
+            need(std::string(argv[3]) == "--c04", "unexpected native test mode");
+            const char* biased[] = {
+                "attn1.out", "audio_attn1.out", "attn2.out",
+                "audio_attn2.out", "a2v.out", "v2a.out", "audio_ff_down"
+            };
+            int proven = 0;
+            for (int64_t block = 0; block < nblocks; ++block) {
+                const std::string prefix = "dit.blk." + std::to_string(block) + ".";
+                for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16}, {12,12,8}}) {
+                    int offset = 0;
+                    for (int rank = 0; rank < 3; ++rank) {
+                        for (const char* kind : biased) {
+                            run(model, reg, prefix+kind,
+                                0, nheads, rank, offset, split[rank], ProbeCase::Reduced);
+                            ++proven;
+                        }
+                        offset += split[rank];
+                    }
+                    need(offset == nheads, "C04 rank split lost model heads");
+                }
+            }
+            run(model, reg, "dit.blk.0.audio_attn1.out", 0, nheads,
+                0, 0, 10, ProbeCase::InvalidDeferred);
+            need(proven == nblocks * 2 * 3 *
+                    static_cast<int>(sizeof biased/sizeof biased[0]),
+                 "C04 source-backed graph coverage changed");
+            std::printf("LTX2 C04 native exact reductions + post-bias: %d, invalid-K=1, duplicate=refused\n", proven);
+            return 0;
+        }
         const std::pair<const char*,int> projections[] = {
             {"attn1.qkv",3}, {"audio_attn1.qkv",3},
             {"attn2.kv",2}, {"audio_attn2.kv",2},

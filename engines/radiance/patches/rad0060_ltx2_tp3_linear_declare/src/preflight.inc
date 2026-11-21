@@ -12,6 +12,6 @@
                        (parts.size() || wsrc.size() != 1 ||
                         (slice->defer_bias ? bsrc.size() != 1 : bsrc.size() != 0))))) {
             fprintf(stderr, "radiance: ltx2: C01 IQ8R shard invalid, incompatible fused banks, "
-                            "or output requires bias-once reduction not yet implemented\n");
+                            "or output requires explicit deferred bias ownership\n");
             return RAD_E_UNSUPPORTED;
         }
