@@ -1,25 +1,25 @@
 ---
-proposed-id: RUM12
-proposed-group: patching-radiance-upstream
-proposed-state: pending
+owner-plan: RUM06
+owner-group: patching-radiance-upstream
+status: implementation-annex
 priority: P0
 work: L
 skill: advanced
-type: planning-mcp-registration-candidate
+type: implementation-evidence
 ---
 
-# RUM12 — Eliminate duplicate remote-MoE ownership and simplify Radiance patch integration
+# RUM06 — Eliminate duplicate remote-MoE ownership and simplify Radiance patch integration
 
-**Registration status: candidate, NOT an authoritative Planning MCP item.** RUM12 is the next available observed RUM number in the current source checkout, but Planning MCP must verify and allocate the ID; do not manually create `docs/planning/active/patching-radiance-upstream/RUM12.md`. Proposed canonical placement when created: `patching-radiance-upstream / RUM12`, state `pending`, priority `P0`, work `L`, skill `advanced`. No linked plan is closed or superseded merely by adopting this proposal.
+**Ownership:** Detailed implementation annex to existing RUM06, NOT a second plan or a Planning MCP state change. RUM06 remains in progress; link this annex through Planning MCP when available.
 
-**Dependencies and authority:** RUM06 retains remote-MoE correctness, mixed-TP ownership and hardware qualification; RUM02 owns cross-patch extraction and footprint tooling; RUM09 owns broad released-config acceptance. RUM12 **owns the structural implementation** that RUM06 requires: removing the global remote-MoE lifecycle, duplicated policy/dispatch and avoidable integration surface. Once registered, make a *Planning MCP* cross-link and assign the implementation subwork to RUM12 to prevent two agents implementing the same ABI migration. RUM06's existing safety/quality acceptance clauses remain mandatory and are not silently reduced.
+**Planning authority:** RUM06 owns remote-MoE structural cutover and lifecycle hardware acceptance. RUM02 owns shared patch consolidation and footprint tooling; RUM09 owns broad release qualification. Preserve existing RUM06 acceptance; assign these slices to one implementation owner.
 
 **Source design and review:**
-- [Remote-generation design](../2026-11-22-rum06-lifetime-audit/ENGINE-GENERATION-DESIGN.md)
-- [Adversarial design review](../2026-11-22-rum06-lifetime-audit/DESIGN-REVIEW.md)
-- [Detailed implementation handoff](../2026-11-22-rum06-lifetime-audit/IMPLEMENTATION-PLAN-DRAFT.md)
-- [Measured deletion and reuse gates](../2026-11-22-rum06-lifetime-audit/SIMPLIFICATION-GATES.md)
-- [RUM06 audit](../2026-11-22-rum06-lifetime-audit/README.md)
+- [Remote-generation design](ENGINE-GENERATION-DESIGN.md)
+- [Adversarial design review](DESIGN-REVIEW.md)
+- [Detailed implementation handoff](IMPLEMENTATION-PLAN-DRAFT.md)
+- [Measured deletion and reuse gates](SIMPLIFICATION-GATES.md)
+- [RUM06 audit](README.md)
 - [RUM02 patch footprint](../radiance-patch-footprint/footprint.md)
 
 ## Description
@@ -34,7 +34,7 @@ This is a **refactor with guaranteed maintained behavior**, not a second engine,
 
 - Pin current `origin/main`, Radiance 2.2 source SHA, ABI, installed runtime identity and active patch composition before creating anchors. Record current `RUM06`/PR #1272 and RUM02's latest footprint so subsequent concurrent changes are not accidentally undone.
 - Trace every production consumer of `bc_moe_remote_*`, `r3_moe_*`, `rad_bc_shared_slot`, `rad_bc_rendezvous_owner`, `Engine::serve` and mailbox kernel init/fini. Produce a **source-to-owner map** and `delete/retain/reuse` inventory; differentiate host callbacks, on-device ticket/owner wires, and typed policy.
-- Run the existing `bigcherry --engine radiance patch-footprint` workflow and check into RUM12 evidence: emitted C++ LOC, authored files, non-create/upstream anchors, touched upstream files, mutable globals/lifecycle owners and exported symbols. Use RUM02's commands and existing report, not a new script/analyst framework.
+- Run the existing `bigcherry --engine radiance patch-footprint` workflow and check into RUM06 evidence: emitted C++ LOC, authored files, non-create/upstream anchors, touched upstream files, mutable globals/lifecycle owners and exported symbols. Use RUM02's commands and existing report, not a new script/analyst framework.
 - Write **failing first** card-free fixtures for: static plugin enumeration without open helper; A open/close/B reopen in same process; concurrent B helper-on refusal without altering A; helper-off C still starts; same rank different group/owner rejection; stale map and instance rejection; clean bound-ahead stop; fault wake; failed partial-init; helper session/identity mismatch.
 - Gate: tests genuinely demonstrate old failure, installed ABI and ownership seams are verified. Do not proceed on assumed ABI43 line anchors. Record all expected deletions.
 
@@ -74,8 +74,8 @@ This is a **refactor with guaranteed maintained behavior**, not a second engine,
 - Execute existing host fixtures (not just grep/string tests), exact ordered patch application, idempotence, `patch-rebase-check --all`, `patch-footprint --check`, libr3 rewrite `--check`, CMake/C++ ABI and actual `nice -n 19` builds **one build at a time**. Candidate/source pin and build identity must be logged. Retire existing tests asserting that `g_plugin` and `HookState g` remain; replace with behavior checks.
 - Run the four named mixed-TP hardware proofs already required by RUM06 under **short GPU leases**: per-rank gfx code objects, reversed visible ordinals, same/different TP-group rendezvous and timeout, and zero-width/ragged span ownership. Use actual built candidate and installed 1170.37.0 control where applicable. Record lease receipts and numerical behavior; do not treat older release logs as proof of the refactor.
 - Run one representative helper-on normal start/steps/clean stop/restart and helper-off control on the candidate. RUM09 retains all-config release/KLD qualification; do not duplicate that campaign here.
-- Review actual production diff against every critical `DESIGN-REVIEW.md` finding and deletion ledger; commit source/test/evidence in coherent slices. Coordinate plan handoff with RUM06 so only RUM12 implements the structural cutover and RUM06 validates resulting behavior.
-- Gate: all host/hardware gates recorded with commit, source pin, exact commands, exit codes, logs and comparison; linked review findings resolved. Keep RUM12 in progress until these pass.
+- Review actual production diff against every critical `DESIGN-REVIEW.md` finding and deletion ledger; commit source/test/evidence in coherent slices. Coordinate plan handoff with RUM06 so only RUM06 implements the structural cutover and RUM06 validates resulting behavior.
+- Gate: all host/hardware gates recorded with commit, source pin, exact commands, exit codes, logs and comparison; linked review findings resolved. Keep RUM06 in progress until these pass.
 
 ## Detailed Solution & Technical Design
 
@@ -115,7 +115,7 @@ ctest --test-dir <prepared-build-tree> --output-on-failure -R '<focused-lifetime
 agent-lease acquire gpu --ttl 15m --est 10m --wait
 ```
 
-Commands shown are **planned gates**, not execution claims. Confirm CLI syntax against current `bigcherry --help` at test time, and discover actual current build target names from CMake. All test logs under owning RUM12 evidence. Prior 3/3 `test_rum06_registry_lifetime.py` proves only the old registry contract and is **not** acceptance for the new design.
+Commands shown are **planned gates**, not execution claims. Confirm CLI syntax against current `bigcherry --help` at test time, and discover actual current build target names from CMake. All test logs under owning RUM06 evidence. Prior 3/3 `test_rum06_registry_lifetime.py` proves only the old registry contract and is **not** acceptance for the new design.
 
 ## Files
 
@@ -154,7 +154,7 @@ Evidence for the refactor cannot be inherited from v1.17, old ABI43 fixtures or 
 
 ## Standards
 
-Follow `docs/reference/agents/WORKFLOW.md`, `docs/reference/tooling/TOOLING.md`, `docs/reference/patches/PATCH_SYSTEM.md`, existing RUM02 footprint/source-hashing standards and the ordinary planned PR/review/evidence process. New worktree from current main for this new plan once registered; do not edit shared worktree, archive patches, generated plan state, ledger or release snapshots. No legacy, shims, hand-picked constants, extra model parsers, host names/paths or attribution lines. Short GPU leases; one nice-19 build at a time; only kill owned PIDs. Keep source, ABI and provenance evidence reproducible.
+Follow `docs/reference/agents/WORKFLOW.md`, `docs/reference/tooling/TOOLING.md`, `docs/reference/patches/PATCH_SYSTEM.md`, existing RUM02 footprint/source-hashing standards and the ordinary planned PR/review/evidence process. Implement on an isolated task worktree from current main when authorized by RUM06; do not edit shared worktree, archive patches, generated plan state, ledger or release snapshots. No legacy, shims, hand-picked constants, extra model parsers, host names/paths or attribution lines. Short GPU leases; one nice-19 build at a time; only kill owned PIDs. Keep source, ABI and provenance evidence reproducible.
 
 ## Acceptance Criteria
 
@@ -163,10 +163,10 @@ Follow `docs/reference/agents/WORKFLOW.md`, `docs/reference/tooling/TOOLING.md`,
 3. **Reuse rather than replace:** native Registry/DSO handle, `RadKernelInfo::init/fini`, native Engine ownership, existing Ledger, epoch coordinator and rad0017 cross-DSO shared-slot/release are used as the **only** state authorities. No second scheduler, owner registry, epoch service, collective or generalized plugin loader.
 4. **Correct lifecycle:** clean stop closes admission and drains bound rank/host/GPU/helper work before detach/free; faults wake all blocked peers, preserve the named cause and unwind safely; partial-init failures do not leak or free peer-visible pointers; same-process repeated generations and concurrent second helper-on refusal are proven.
 5. **Production and hardware evidence:** focused red/green tests, exact current managed patch replay/idempotence, actual ABI build, four named leased mixed-TP proofs and one helper-on+off canary meet RUM06's retained safety and quality constraints. No GPU acceptance by proxy.
-6. **Planning/PR handoff:** authoritative RUM12 and RUM06 linked via Planning MCP; RUM02 extraction ownership preserved; required findings/reviews closed; an unreleased Ledger MCP event and verified PR checks/merge recorded before marking RUM12 completed.
+6. **Planning/PR handoff:** authoritative RUM06 updated through Planning MCP; RUM02 extraction ownership preserved; linked reviews closed; unreleased Ledger MCP event and verified PR checks and merge recorded before RUM06 completion.
 
 ## Notes
 
-**Why separate RUM12:** RUM06's broad correctness/hardware scope has repeatedly accumulated partial-fix checkpoints. A focused refactor plan makes the **deletion, reuse and maintainability** deliverable explicit and auditable, while RUM06 remains the full behavioral acceptance owner. RUM02 remains the generic patch-integration owner. Do **not** start two parallel implementations of remote generation binding.
+**Why this annex:** RUM06 accumulated partial fixes; this focused implementation breakdown makes deletion, reuse, and maintainability mandatory while retaining one authoritative plan. RUM02 retains generic patch-source consolidation.
 
-**Registration action required:** Planning MCP must confirm that RUM12 is free in the owning `patching-radiance-upstream` group, create this item with the above sections, assign a review or link RV4303 as appropriate, and update RUM06's scope/notes to point to it. The current environment cannot perform that authoritative action; this committed candidate must not be treated as a completed creation or used to bypass the planning service.
+**Planning action pending:** Through Planning MCP, link this annex and acceptance gates to existing RUM06 and reconcile RV4303. Do not hand-edit Planning-managed state or create another RUM item.

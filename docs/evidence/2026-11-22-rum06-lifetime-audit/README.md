@@ -20,7 +20,7 @@ RUM06 complete. Prior release canaries do not prove helper lifecycle reuse.
 
 ## Narrow changes and reproducible checks
 
-- `moe_mailbox_plugin.cpp` reports availability from the **current** open helper generation, rather than pinning the first DSO lookup's enabled state; `moe_mailbox_lifetime_test.cpp` runs disabled → enabled → disabled → enabled.
+- `moe_mailbox_plugin.cpp` publishes a **static kernel row table** at plugin discovery, before any Engine can bind a helper, rather than freezing a first-open helper decision's enabled state; `moe_mailbox_lifetime_test.cpp` runs disabled → enabled → disabled → enabled.
 - `rad0002` rejects registration while a plugin is live, clears stale maps on unregister, and re-reads generation-selected policy instead of caching the first instance.
 - `tools/tests/patch/test_rum06_registry_lifetime.py`: 3 passed (failure reproduced before each code fix).
 - `test_radiance_patch_packages.py -k rad0002`: 5 passed.
@@ -50,6 +50,6 @@ under short GPU leases. No plan completion is justified while gaps remain.
 
 These artifacts propose future code changes. No RUM06 lifecycle or hardware acceptance gap has been closed by the design documents.
 
-## Separate planning candidate
+## Consolidated RUM06 implementation
 
-- [RUM12 proposed structural refactor and code-reduction plan](../radiance-rum12-refactor/RUM12-PLAN-PROPOSAL.md). This is a detailed registration candidate only; the authoritative Planning MCP item has not been created. RUM06 retains its original acceptance clauses.
+- [Engine-generation refactor, deletion/reuse gates and execution plan](RUM06-REFACTOR-IMPLEMENTATION.md). RUM06 is the sole implementation owner; this annex is evidence, not Planning MCP state.
