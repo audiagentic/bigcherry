@@ -519,7 +519,7 @@ int explain_command(int argc, char** argv) {
     Options opts;
     std::string name;
     bool json = false;
-    fs::path native_config, engine_binary;
+    fs::path native_config, engine_binary, work_root;
     for (int i = 2; i < argc; ++i) {
         const std::string arg = argv[i];
         auto need = [&]() {
@@ -544,6 +544,8 @@ int explain_command(int argc, char** argv) {
             native_config = need();
         } else if (arg == "--engine-binary") {
             engine_binary = need();
+        } else if (arg == "--work-root") {
+            work_root = need();
         } else if (arg == "--calibration") {
             opts.calibration_cache = need();
         } else if (arg == "--sys-root") {
@@ -585,6 +587,9 @@ int explain_command(int argc, char** argv) {
     } catch (const ss::PlanFailed& error) {
         throw std::runtime_error(std::string("explain: ") + error.what());
     }
+const std::string cache_note = work_root.empty()
+        ? "host-wide model identity cache: off (no --work-root); the model is fingerprinted per run"
+        : "host-wide model identity cache: " + work_root.string();
     const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
     if (!native_config.empty()) {
         if (bc::serving::v2::kContractVersion != 3)
@@ -608,11 +613,11 @@ int explain_command(int argc, char** argv) {
             const ss::EngineStart plan = ss::plan_engine_only(preflight, scratch, ss::Hooks{});
             const Json& report = plan.native_preflight_receipt;
             if (json) {
-                std::cout << Json{{"result", "pass"}, {"config", name}, {"values", plan.native_preflight_values}}
-                                 .dump(2) << '\n';
+                std::cout << Json{{"result", "pass"}, {"config", name}, {"values", plan.native_preflight_values},
+                                  {"model_identity_cache", cache_note}}.dump(2) << '\n';
                 return 0;
             }
-            std::cout << "native admission preflight: PASS\n  config " << name << "\n  yaml " << native_config.string()
+            std::cout << "native admission preflight: PASS\n  " << cache_note << "\n  config " << name << "\n  yaml " << native_config.string()
                       << "\n  snapshot " << report.at("snapshot").at("sha256").get<std::string>() << "\n  model "
                       << report.at("engine").at("model").get<std::string>() << "\n  tp "
                       << report.at("engine").at("tp").get<int>() << ", cards " << report.at("engine").at("cards").dump()
@@ -628,11 +633,13 @@ int explain_command(int argc, char** argv) {
                           {"values", resolved.values},
                           {"provenance", resolved.provenance},
                           {"hash", resolved.hash},
-                          {"manifest", resolved.manifest}}
+                          {"manifest", resolved.manifest},
+                          {"model_identity_cache", cache_note}}
                          .dump(2)
                   << '\n';
     } else {
         explain(resolved);
+        std::cout << cache_note << '\n';
     }
     return 0;
 }

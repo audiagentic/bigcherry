@@ -5,7 +5,11 @@ server:
   kernels: libr3,libr4d,libref
 models:
   qwen27b:
-    model: radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad
+    # Radiance 2.2 retired MXFP4 and the packed KV caches (bf16_fp8, bf16_i8); this config serves upstream's IQ8R container
+    # (StillDeadcode/qwen3.8-27b-iq8r-dflash, 29 GiB, served by qwen35_w8a8, DFlash2 drafter in IQ4R codes) with the 8-bit i8 KV cache
+    # upstream pairs with it (GUIDE 4.4: K and V as int8 with an f16 scale per token and head; mean KL 0.000436 against bf16).
+    # The measurements quoted below were taken on the earlier MXFP4 / w8a8 containers and the fp8 cache: re-measure before relying on them.
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
     tp: 3
     tp-wire: exact
     max-model-len: 262144
