@@ -834,6 +834,34 @@ void measured_plan_cache(Fixture& t) {
            native_key.at("native_config").at("resolution_root") == t.root.string());
     assert(native_key.at("native_config").at("rank_devices").size() == r.values.at("layout").at("engine_cards").size() +
                                                                           r.values.at("layout").at("helper_cards").size());
+    // Native helper build identity must also hash in bounded memory. All
+    // helper-based native layouts bind this digest in their frozen key.
+    {
+        const fs::path large_worker = t.file("engine/runtime-home/helpers/r3_moe_worker",
+                                             std::string(32u * 1024u * 1024u, 'h'));
+        const Json expected_key = sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native);
+        const pid_t child = ::fork();
+        assert(child >= 0);
+        if (child == 0) {
+            size_t pages = 0;
+            std::ifstream("/proc/self/statm") >> pages;
+            struct rlimit limit{};
+            if (pages == 0 || ::getrlimit(RLIMIT_AS, &limit) != 0) _exit(2);
+            const rlim_t extra = static_cast<rlim_t>(fs::file_size(large_worker) / 8);
+            const rlim_t requested = static_cast<rlim_t>(pages) * static_cast<rlim_t>(::sysconf(_SC_PAGESIZE)) + extra;
+            limit.rlim_cur = limit.rlim_max == RLIM_INFINITY ? requested : std::min(requested, limit.rlim_max);
+            if (::setrlimit(RLIMIT_AS, &limit) != 0) _exit(3);
+            try {
+                _exit(sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native) == expected_key ? 0 : 4);
+            } catch (...) {
+                _exit(5);
+            }
+        }
+        int status = 0;
+        assert(::waitpid(child, &status, 0) == child);
+        assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        write(worker, "helper-binary-v1");
+    }
     Json reordered_values = native_values;
     assert(reordered_values.at("layout").at("helper_cards").size() > 1);
     std::swap(reordered_values["layout"]["helper_cards"][0],

@@ -281,7 +281,7 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
                                  {"rank_devices", std::move(devices)}};
         if (!values.at("layout").at("helper_cards").empty()) {
             const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
-            key["native_config"]["helper_build"] = sha256_hex(read_file(home / "helpers" / "r3_moe_worker"));
+            key["native_config"]["helper_build"] = file_sha256_checked(home / "helpers" / "r3_moe_worker");
         }
     }
     if (!uniform) key["rank_cards"] = rank_cards;
