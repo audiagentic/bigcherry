@@ -32,14 +32,14 @@ endfunction()
 function(bc_generate_serving_v3 generated)
   bc_add_contract_generator()
   set(src "${CMAKE_CURRENT_FUNCTION_LIST_DIR}")
-  set(registry "${src}/contract/serving-v2.toml")
+  set(registry "${src}/contract/serving.toml")
   set(fingerprint "${src}/generated/v3/contract.fingerprint")
   add_custom_command(
     OUTPUT "${generated}/serving_types.h" "${generated}/serving_codec.h"
            "${generated}/serving_codec.cpp"
     BYPRODUCTS "${generated}/serving-v3.schema.json" "${generated}/serving-fields.md"
                "${generated}/contract.fingerprint"
-    COMMAND bc_contract_gen --successor "${registry}" "${generated}"
+    COMMAND bc_contract_gen "${registry}" "${generated}"
     COMMAND "${CMAKE_COMMAND}" -E compare_files "${generated}/contract.fingerprint" "${fingerprint}"
     DEPENDS bc_contract_gen "${registry}" "${fingerprint}" VERBATIM)
 endfunction()

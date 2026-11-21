@@ -650,7 +650,7 @@ int main() {
         component = (REPO / "engines" / "radiance" / "components" / "moe-remote" / "component.toml").read_text(encoding="utf-8")
         self.assertNotIn("[setting.R3_MOE_WORKER_SHADOW]", component)
         self.assertNotIn("[setting.R3_MOE_WORKER_MASK_ONLY]", component)
-        self.assertIn("std::optional<bool> shadow;", (REPO / "engines/radiance/components/serving/generated/v2/serving_types.h").read_text(encoding="utf-8"))
+        self.assertIn("/spec/experiment/engine/shadow", (REPO / "engines/radiance/components/serving/contract/serving.toml").read_text(encoding="utf-8"))
         self.assertIn('status = "diagnostic"', component)
 
     def test_missing_anchor_fails_closed_and_is_atomic(self):

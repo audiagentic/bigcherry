@@ -1,8 +1,8 @@
-// bc_contract_check: the committed generated files (generated/v2/) and the specification's schema and field-reference copies
-// (docs/design/serving-manifest-v2/) are exactly what the registry generates. Run by
-// CI as a card-free component test; on a difference it names the file and the first differing line.
+// bc_contract_check: the committed contract identity (generated/v3/contract.fingerprint: both fingerprints of the registry) and
+// the specification's schema copy (docs/design/serving-manifest-v2/serving-manifest.v3.schema.json) are exactly what the
+// registry generates. The build itself generates the types and the codec from the registry and compares the same fingerprint
+// file. Run by CI as a card-free component test; on a difference it names the file and the first differing line.
 #include "registry.h"
-#include "../generated/v2/serving_types.h"   // the committed model must compile, and match the registry
 
 #include <algorithm>
 #include <cstdio>
@@ -45,12 +45,12 @@ int main() {
     const std::string src = BC_CONTRACT_SOURCE_DIR;
     const std::string docs = BC_CONTRACT_DOCS_DIR;
     std::string text, why;
-    if (!read(src + "/contract/serving-v2.toml", &text)) {
+    if (!read(src + "/contract/serving.toml", &text)) {
         std::printf("FAIL: cannot read the registry\n");
         return 1;
     }
     bc::contract::Registry r;
-    if (!bc::contract::load_registry(text, "contract/serving-v2.toml", &r, &why)) {
+    if (!bc::contract::load_registry(text, "contract/serving.toml", &r, &why)) {
         std::printf("FAIL: %s\n", why.c_str());
         return 1;
     }
@@ -78,14 +78,10 @@ int main() {
             ++failures;
         }
     };
-    for (const auto& [name, content] : files) compare(src + "/generated/v2/" + name, content);
-    compare(docs + "/serving-manifest.v2.schema.json", files.at("serving-v2.schema.json"));
-    if (bc::serving::v2::kFingerprint != bc::contract::fingerprint(r) ||
-        bc::serving::v2::kSemanticFingerprint != bc::contract::semantic_fingerprint(r)) {
-        std::printf("FAIL: the compiled generated/v2/serving_types.h has other fingerprints\n");
-        ++failures;
-    }
-    static_assert(bc::serving::v2::kContractVersion == 2);
+    // The wire identity: the committed fingerprint file is exactly the registry's two fingerprints (what a sealed manifest and
+    // a runtime key depend on); a registry edit that moves either one must change the committed file on purpose.
+    compare(src + "/generated/v3/contract.fingerprint", files.at("contract.fingerprint"));
+    compare(docs + "/serving-manifest.v3.schema.json", files.at("serving-v3.schema.json"));
     if (failures) return 1;
     std::printf("ok %s\n", bc::contract::fingerprint(r).c_str());
     return 0;

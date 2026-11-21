@@ -1,10 +1,11 @@
-// bc_contract_gen [--successor] REGISTRY OUT_DIR [RADIANCE_SRC COMPONENT_TOML...]: write every generated contract file (registry.h,
+// bc_contract_gen REGISTRY OUT_DIR [RADIANCE_SRC COMPONENT_TOML...]: write every generated contract file (registry.h,
 // generate_all) into OUT_DIR. With RADIANCE_SRC the registry's defaults are verified against their sources first
 // (core/rad_core.h Config initialisers and the component files' [setting.R3_*] defaults) and a divergence fails.
 // Regenerate after editing the registry:
-//   bc_contract_gen engines/radiance/components/serving/contract/serving-v1.toml engines/radiance/components/serving/generated \\
+//   bc_contract_gen engines/radiance/components/serving/contract/serving.toml <out dir> \\
 //       <radiance source tree> engines/radiance/components/{moe-remote,libr3,ngram-helper}/component.toml
-// and copy generated/v2/serving-v2.schema.json to docs/design/serving-manifest-v2/serving-manifest.v2.schema.json.
+// then copy <out dir>/contract.fingerprint to generated/v3/contract.fingerprint and <out dir>/serving-v3.schema.json to
+// docs/design/serving-manifest-v2/serving-manifest.v3.schema.json.
 // bc_contract_check (CI) fails when a committed copy differs from what this writes.
 #include "registry.h"
 
@@ -17,12 +18,11 @@
 #include <vector>
 
 int main(int argc, char** argv) {
-    const bool successor = argc > 1 && std::string_view(argv[1]) == "--successor";
-    const int registry_arg = successor ? 2 : 1;
+    const int registry_arg = 1;
     const int out_arg = registry_arg + 1;
     const int source_arg = out_arg + 1;
     if (argc <= out_arg) {
-        std::fprintf(stderr, "usage: bc_contract_gen [--successor] REGISTRY.toml OUT_DIR [RADIANCE_SRC COMPONENT_TOML...]\n");
+        std::fprintf(stderr, "usage: bc_contract_gen REGISTRY.toml OUT_DIR [RADIANCE_SRC COMPONENT_TOML...]\n");
         return 2;
     }
     std::ifstream in(argv[registry_arg], std::ios::binary);
@@ -34,8 +34,7 @@ int main(int argc, char** argv) {
     text << in.rdbuf();
     bc::contract::Registry r;
     std::string why;
-    const auto edition = successor ? bc::contract::Edition::successor : bc::contract::Edition::current;
-    if (!bc::contract::load_registry(text.str(), argv[registry_arg], &r, &why, edition)) {
+    if (!bc::contract::load_registry(text.str(), argv[registry_arg], &r, &why)) {
         std::fprintf(stderr, "bc_contract_gen: %s\n", why.c_str());
         return 1;
     }

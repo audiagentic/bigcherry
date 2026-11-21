@@ -248,17 +248,10 @@ reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with 
 owner = "RUM04"
 
 [[allow]]
-path = "engines/radiance/components/serving/contract/serving-v2.toml"
+path = "engines/radiance/components/serving/contract/serving.toml"
 anchor = "values = [128, 256, 384]"
 category = "D"
 reason = "the PF2 up-mix kernel supports only these bounded row tile choices"
-owner = "RUM04"
-
-[[allow]]
-path = "engines/radiance/components/serving/generated/v2/serving_codec.cpp"
-anchor = "return int_enum_in(j, at, C::invalid_type, C::invalid_value, {128, 256, 384}, out);"
-category = "D"
-reason = "generated validator enforces the explicit PF2 up-mix tile enum"
 owner = "RUM04"
 
 [[allow]]

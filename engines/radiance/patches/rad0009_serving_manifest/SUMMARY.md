@@ -8,7 +8,7 @@
 The v1 description below records this patch's original design; the production
 patch now admits the **strict serving-v2 manifest**. Its single source of
 upstream option and environment names is
-`components/serving/contract/serving-v2.toml`, generated as
+`components/serving/contract/serving.toml`, generated as
 `v2::kFields` (113 native option bindings) and `v2::kEnvBindings`
 (15 environment bindings). No second field-to-flag table is maintained here.
 

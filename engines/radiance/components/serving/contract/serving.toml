@@ -10,58 +10,23 @@
 # them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
 # validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).
 #
-# Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); [[class_default]] provenance
+# Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); # Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
+# identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
+
+[[class_default]] provenance
 # class defaults by path prefix; [[calibration_key]] the calibrated keys and each value's type; [[field]] one entry per
 # schema node, parents before children, members in document order. Paths are JSON Pointers from the document root, or
 # from a def as "$defs/<name>/..."; "[]" is an array's item and "*" a map's value. Numbers are integers only.
 
 [contract]
-api_version = "bigcherry/v2"
+api_version = "bigcherry/v3"
 kind = "ServingManifest"
-contract_version = 2
-schema_dialect = "https://json-schema.org/draft/2020-12/schema"
-schema_id = "urn:bigcherry:serving-manifest:v2"
-title = "BigCherry ServingManifest v2 (wire)"
-namespace = "bc::serving::v2"
-lifecycle = "startup_only"
-
-# The same registry emits an explicit successor for the ABI43 migration.
-# Current builds continue to generate the closed v2 artifacts.
-[successor]
 contract_version = 3
+schema_dialect = "https://json-schema.org/draft/2020-12/schema"
 schema_id = "urn:bigcherry:serving-manifest:v3"
 title = "BigCherry ServingManifest v3 (wire)"
-
-[[successor.class_default]]
-path = "/spec/native_config"
-class = "fact"
-
-[[successor.field]]
-path = "/spec/native_config"
-kind = "object"
-cpp = "NativeConfig"
-doc = "The admitted source YAML, bound to its byte digest and execution root."
-
-[[successor.field]]
-path = "/spec/native_config/yaml_utf8"
-kind = "string"
-min_length = 1
-doc = "Original UTF-8 bytes of the admitted YAML, including comments and line endings. Secret values are excluded."
-
-[[successor.field]]
-path = "/spec/native_config/sha256"
-kind = "ref"
-ref = "hex64"
-doc = "SHA-256 of exactly the decoded yaml_utf8 bytes."
-
-[[successor.field]]
-path = "/spec/native_config/resolution_root"
-kind = "string"
-min_length = 1
-doc = "Absolute working directory used by planning, the engine and exact stored replay."
-
-# Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
-# identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
+namespace = "bc::serving::v2"
+lifecycle = "startup_only"
 
 [[class_default]]
 path = "/apiVersion"
@@ -196,6 +161,10 @@ path = "$defs/enginePlan"
 class = "derived"
 
 # Calibrated keys, in schema order; each value's type (spec §11, amendment 1: integers only).
+
+[[class_default]]
+path = "/spec/native_config"
+class = "fact"
 
 [[calibration_key]]
 key = "host_reserve.floor_mib"
@@ -816,15 +785,15 @@ doc = "Nonempty role override of power settings."
 path = ""
 kind = "object"
 cpp = "Manifest"
-doc = "A serving manifest v2 document."
+doc = "A serving manifest bigcherry/v3 document."
 
 [[field]]
 path = "/apiVersion"
 mismatch = "unsupported_version"
 cpp_member = "api_version"
 kind = "string"
-const = "bigcherry/v2"
-doc = "Contract identity; exactly `bigcherry/v2`."
+const = "bigcherry/v3"
+doc = "Contract identity; exactly `bigcherry/v3`."
 
 [[field]]
 path = "/kind"
@@ -868,8 +837,8 @@ doc = "SHA-256 of the installed bc-serve executable (64 lowercase hex)."
 path = "/metadata/contract_version"
 mismatch = "unsupported_version"
 kind = "integer"
-const = 2
-doc = "Contract version; exactly 2, matching the apiVersion suffix."
+const = 3
+doc = "Contract version; exactly 3, matching the apiVersion suffix."
 
 [[field]]
 path = "/metadata/content_digest"
@@ -3437,3 +3406,27 @@ item_kind = "ref"
 item_ref = "jsonPointer"
 min_items = 0
 doc = "JSON Pointers of the values this one was derived from."
+
+[[field]]
+path = "/spec/native_config"
+kind = "object"
+cpp = "NativeConfig"
+doc = "The admitted source YAML, bound to its byte digest and execution root."
+
+[[field]]
+path = "/spec/native_config/yaml_utf8"
+kind = "string"
+min_length = 1
+doc = "Original UTF-8 bytes of the admitted YAML, including comments and line endings. Secret values are excluded."
+
+[[field]]
+path = "/spec/native_config/sha256"
+kind = "ref"
+ref = "hex64"
+doc = "SHA-256 of exactly the decoded yaml_utf8 bytes."
+
+[[field]]
+path = "/spec/native_config/resolution_root"
+kind = "string"
+min_length = 1
+doc = "Absolute working directory used by planning, the engine and exact stored replay."

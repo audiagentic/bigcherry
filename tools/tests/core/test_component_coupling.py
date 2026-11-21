@@ -44,7 +44,7 @@ class ComponentCouplingTests(unittest.TestCase):
 
     def test_manifest_option_registry_is_the_single_native_mapping(self):
         serving = components.load_all(ROOT, engines.RADIANCE)["serving"]
-        self.assertEqual(serving.coupling["option-registry"], "contract/serving-v2.toml")
+        self.assertEqual(serving.coupling["option-registry"], "contract/serving.toml")
         import tomllib
         contract = tomllib.loads((serving.root / serving.coupling["option-registry"]).read_text())
         mapped = {f["radiance_option"] for f in contract["field"] if f.get("radiance_option")}

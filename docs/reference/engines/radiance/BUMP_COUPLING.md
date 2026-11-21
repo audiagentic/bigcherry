@@ -20,7 +20,7 @@ remote-MoE shared-memory magic, version and geometry constants are checked as
 an independent wire identity, not inferred from the plugin ABI.
 
 The typed engine option/env translation is **already** in the single
-`serving/contract/serving-v2.toml` field registry (via generated `v2::kFields`
+`serving/contract/serving.toml` field registry (via generated `v2::kFields`
 and `kEnvBindings`); rad0009 emits only from that registry and validates names
 against Radiance's parser. Native step-6 and RSC12 intent such as local
 heat/recording, budgets, lab experiments and helper settings remains distinct
@@ -111,7 +111,7 @@ The exact FilePatch target list is from docs/reviews/radiance-upstream-2026-11-1
 ## RUM gaps and rules for migration
 
 1. No numbered RUM port item owns rad0007/rad0008 (HC PF2 experimental down/upmix) or rad0023/rad0031 (AR/TS timing diagnostics). Treat them as explicit **GAPS** for RUM01's per-patch retire/reuse/port disposition, not automatic blockers for RUM09's minimal selected configuration. BHK02–BHK04, not RUM, own the host GFXOFF kernel.
-2. The current typed RSC12 and step-6 settings enter via serving/contract/serving-v2.toml, session.cpp, serving.cpp, config_loader.cpp and rad0009. For the current pin, reuse the already-generated serving-v2 field registry as the **single temporary translation authority**, with tests for every emitted upstream flag/env and unused entry; do not add a second native-field table. Its header must state that **RUM04 retires this bridge in favour of upstream fleet::parse on the same admitted immutable original YAML bytes plus the existing measured BigCherry contract**. Do not add a normalized config writer, FleetConfig serializer, parallel YAML/JSON resolver or bundle-index service.
+2. The current typed RSC12 and step-6 settings enter via serving/contract/serving.toml, session.cpp, serving.cpp, config_loader.cpp and rad0009. For the current pin, reuse the already-generated serving-v2 field registry as the **single temporary translation authority**, with tests for every emitted upstream flag/env and unused entry; do not add a second native-field table. Its header must state that **RUM04 retires this bridge in favour of upstream fleet::parse on the same admitted immutable original YAML bytes plus the existing measured BigCherry contract**. Do not add a normalized config writer, FleetConfig serializer, parallel YAML/JSON resolver or bundle-index service.
 3. Keep source/include paths and native plugin ABI separately checked. RUM03's plugin ABI migration cannot update a constant without rebuilding libr3/libr2/moe-remote/ngram-helper/bc-gfx12 for the same layout fingerprint. Preserve strict helper 16-byte ticket and v26 SHM protocol while RUM06 ports TP-group lifetimes.
 4. High-overlap patch anchors include core/main.cpp, core/config.cpp, core/engine_bringup.cpp, abi/rad_builder.h, arch/qwen35_fp8/qwen35_fp8.cpp and libr4d/r4d_rows.cpp; use the existing FilePatch dependency and patch-footprint reports rather than ad-hoc source regex edits.
 

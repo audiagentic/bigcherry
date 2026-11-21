@@ -101,12 +101,12 @@ or string def. Counts are not negative. A tuple item takes no scalar `item_*` at
 
 ## Serving manifest v2
 
-`serving-v2.toml` is the v2 registry. The committed `generated/v2/` directory contains the C++ types and codec, Python codec, schema, [field reference](../generated/v2/serving-fields.md) and fingerprints. `bc_contract_check` verifies those outputs and the published schema against the registry.
+`serving.toml` is the v2 registry. The committed `generated/v2/` directory contains the C++ types and codec, Python codec, schema, [field reference](../generated/v2/serving-fields.md) and fingerprints. `bc_contract_check` verifies those outputs and the published schema against the registry.
 
 Regenerate with:
 
 ```
-<serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving-v2.toml engines/radiance/components/serving/generated/v2
+<serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving.toml engines/radiance/components/serving/generated/v2
 ```
 
 Copy `serving-v2.schema.json` to `docs/design/serving-manifest-v2/serving-manifest.v2.schema.json`. Link to the generated field reference directly.

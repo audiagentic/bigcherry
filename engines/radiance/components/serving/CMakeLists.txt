@@ -9,7 +9,7 @@ set(RADIANCE_SRC "" CACHE PATH "Radiance source tree for contract source checks"
 # radiance's core also builds (managed patch rad0011).
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")
 
-# The serving manifest v2 contract (contract/README.md): the field registry contract/serving-v2.toml and its generator.
+# The serving manifest v2 contract (contract/README.md): the field registry contract/serving.toml and its generator.
 # GPU-free and independent of bc_serving, whose typed model it generates (generated/, committed; bc_contract_check
 # fails CI when a committed file differs from the generator's output).
 bc_add_contract_generator()

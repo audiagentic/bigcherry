@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-REGISTRY = ROOT / "engines/radiance/components/serving/contract/serving-v2.toml"
+REGISTRY = ROOT / "engines/radiance/components/serving/contract/serving.toml"
 RAD0009 = ROOT / "engines/radiance/patches/rad0009_serving_manifest/patch.py"
 
 # The handoff is a typed snapshot consumed directly by the engine and plugin.

@@ -80,7 +80,7 @@ patch-provided source declarations, target upstream file/glob presence,
 `RAD_ABI_VERSION` and the owned remote-MoE wire version/layout constants.
 The schema refuses unknown, incomplete, or unsafe declarations; absent upstream
 ABI information is not a pass. For current-pin typed native settings, the **only**
-option/env translation table is `serving/contract/serving-v2.toml`:
+option/env translation table is `serving/contract/serving.toml`:
 `radiance_option`/`radiance_switch`/`env_setting` generate `v2::kFields`
 and `v2::kEnvBindings`, consumed by `serving.cpp` and managed patch rad0009.
 Local heat, budgets, lab and helper intent are BigCherry contract fields, not

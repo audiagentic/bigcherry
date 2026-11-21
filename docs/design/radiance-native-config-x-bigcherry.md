@@ -282,7 +282,7 @@ description`; `model` -> `models.<id>.model`; `ranks` -> `x-bigcherry.ranks`; `t
 - bc-serve: RSC12 catalogue reader (TOML configs, `base` merge), layout reader, `explain`/`--schema` (YAML paths),
   `--set` (refused on a managed start; deleted with the TOML resolver keys), plan/manifest keys (drop TOML-derived inputs; digest covers the file), bundled config
   selection (`<prefix>/configs/<name>.yaml`).
-- Generated serving contract: delete the v2 contract (`components/serving/contract/serving-v2.toml`, generated
+- Generated serving contract: delete the v2 contract (`components/serving/contract/serving.toml`, generated
   codec/types/schema) with the bump; v3 is the only contract on main after it.
 - Python tooling: `tools/bigcherry/cli/layout_cmds.py`, `engines/radiance/layouts/*`, campaign plan tests
   (`tools/tests/campaign/test_radiance_plan.py`), release packer and `runtime_assets.py` (ship the YAML files only).
