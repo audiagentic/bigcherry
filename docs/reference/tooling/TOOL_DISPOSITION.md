@@ -576,6 +576,8 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/qwen35b-engine-isolation.json` | **TRANSITIONAL** | `radiance` lab topic file; ab-benchmark server configuration, the 35B engine alone with the isolation probe (five prompts solo, then in groups of 2-5), to bisect the MTP acceptance collapse (RAD14). |
 | `tools/lab/radiance/run-radiance.sh` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
 | `tools/lab/radiance/27b-native-kld.json` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
+| `tools/lab/radiance/27b-native-kld/compat.yaml` | **TRANSITIONAL** | native YAML arm of `27b-native-kld.json`, written by `arm_yaml.py` (test_native_kld_job checks it); experiment-only, disposed with that job. |
+| `tools/lab/radiance/27b-native-kld/attn-native.yaml` | **TRANSITIONAL** | native YAML arm of `27b-native-kld.json`, written by `arm_yaml.py` (test_native_kld_job checks it); experiment-only, disposed with that job. |
 | `tools/lab/smoke-models/README.md` | **TRANSITIONAL** | `smoke-models` lab topic file (see `tools/lab/smoke-models/README.md`); produces the MEN15 CPU smoke models. |
 | `tools/lab/smoke-models/fetch-tiny.sh` | **TRANSITIONAL** | `smoke-models` lab topic file (see `tools/lab/smoke-models/README.md`); produces the MEN15 CPU smoke models. |
 | `tools/lab/radiance/wire-quality/README.md` | **TRANSITIONAL** | `radiance` lab topic file (see `tools/lab/radiance/README.md`); experiment-only, disposed per that README. |
