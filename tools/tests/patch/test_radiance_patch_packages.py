@@ -23,6 +23,46 @@ sys.path.insert(0, str(REPO / "tools"))
 
 from bigcherry.patcher import apply_all  # noqa: E402
 
+
+SERVING_COMPONENT = REPO / "engines" / "radiance" / "components" / "serving"
+_GENERATED_CODEC: dict[str, Path] = {}
+
+
+def generated_serving_codec(test: unittest.TestCase, compiler: str) -> Path:
+    """The serving codec (serving_types.h, serving_codec.{h,cpp}) generated from contract/serving.toml by the
+    component's own bc_contract_gen, exactly as the build does (bc_generate_serving_v3), fingerprint-checked against
+    generated/v3/contract.fingerprint. Built once per test process."""
+    if compiler in _GENERATED_CODEC:
+        return _GENERATED_CODEC[compiler]
+    serving = SERVING_COMPONENT
+    work = Path(tempfile.mkdtemp(prefix="bc-serving-codec-"))
+    gen = work / "bc_contract_gen"
+    out = work / "generated"
+    out.mkdir()
+    build = subprocess.run(
+        [compiler, "-std=c++20", "-O1", f"-I{serving}", f"-I{serving / 'contract'}", f"-I{serving / 'third_party'}",
+         str(serving / "contract" / "generate.cpp"), str(serving / "contract" / "registry.cpp"),
+         str(serving / "jcs.cpp"), str(serving / "sha256.cpp"), "-o", str(gen)],
+        capture_output=True, text=True)
+    test.assertEqual(build.returncode, 0, f"bc_contract_gen: {build.stderr}")
+    run = subprocess.run([str(gen), str(serving / "contract" / "serving.toml"), str(out)], capture_output=True, text=True)
+    test.assertEqual(run.returncode, 0, f"bc_contract_gen run: {run.stderr}")
+    test.assertEqual((out / "contract.fingerprint").read_text(encoding="utf-8"),
+                     (serving / "generated" / "v3" / "contract.fingerprint").read_text(encoding="utf-8"))
+    _GENERATED_CODEC[compiler] = out
+    return out
+
+
+def manifest_library_sources() -> list[Path]:
+    """The v2/ sources of bc_add_manifest_library, read from bc_serving_v2.cmake (the ONE source list every build
+    compiles), so these compile tests cannot fall behind it."""
+    text = (SERVING_COMPONENT / "bc_serving_v2.cmake").read_text(encoding="utf-8")
+    body = text.split("function(bc_add_manifest_library target abi generated)", 1)[1].split("endfunction()", 1)[0]
+    names = re.findall(r'"\$\{src\}/v2/([A-Za-z0-9_]+\.cpp)"', body)
+    if not names:
+        raise AssertionError("bc_add_manifest_library lists no v2 sources")
+    return [SERVING_COMPONENT / "v2" / n for n in names]
+
 PACKAGES = REPO / "engines" / "radiance" / "patches"
 FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "4a61d72"
 
@@ -829,12 +869,13 @@ class TestServingManifestPatch(unittest.TestCase):
             scratch = work / "scratch"
             scratch.mkdir()
             test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"
+            codec = generated_serving_codec(self, compiler)
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                      "-Werror", "-DBC_RAD_HOST_POOL_MIB_AGGREGATE=1", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
-                     f"-I{serving / 'generated' / 'v2'}", f"-I{include}"]
+                     f"-I{codec}", f"-I{include}"]
             sources = [root / "core" / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
-                       *(serving / "v2" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp", "s8_rules.cpp", "s10_resolver.cpp")),
-                       serving / "generated" / "v2" / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
+                       *manifest_library_sources(),
+                       codec / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
             objects, procs = [], []
             for index, source in enumerate(sources):
                 obj = work / f"{index}-{source.stem}.o"
@@ -1059,13 +1100,14 @@ class TestPlanMemoryPatch(unittest.TestCase):
         temp, root = self._applied()
         try:
             work = Path(temp.name)
+            codec = generated_serving_codec(self, compiler)
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                      "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v2'}",
-                     f"-I{self.SERVING / 'generated' / 'v2'}", f"-I{include}"]
+                     f"-I{codec}", f"-I{include}"]
             sources = [root / "core" / "bc_plan_check.cpp", root / "core" / "bc_serving_manifest.cpp",
                        REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_flags_test.cpp",
-                       *(self.SERVING / "v2" / n for n in ("error.cpp", "strict_json.cpp", "manifest.cpp", "admission.cpp", "s8_rules.cpp", "s10_resolver.cpp")),
-                       self.SERVING / "generated" / "v2" / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
+                       *manifest_library_sources(),
+                       codec / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
             objects = []
             procs = []
             for index, source in enumerate(sources):
