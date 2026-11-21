@@ -57,6 +57,10 @@ static void check_col(const rad::WeightInfo& w, const ltx2::C01Slice& slice) {
          "actual Lin column span disagrees with model ownership");
 }
 
+constexpr const char* kBiasedOutputs[] = {
+    "attn1.out", "audio_attn1.out", "attn2.out",
+    "audio_attn2.out", "a2v.out", "v2a.out", "audio_ff_down"
+};
 enum class ProbeCase {
     Normal, WrongGroup, PrematureBias, InvalidColumn,
     DeferredBias, InvalidDeferred, MissingDeferredBias, Reduced
@@ -91,6 +95,8 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     g.w_i8h = true;
     g.w_i8_group = variant == ProbeCase::WrongGroup ? group/2 : group;
     g.w_bf16 = false;
+    g.world = 3;
+    g.wire_exact = 1;
     g.max_tok = 4;
     g.dtype = "bf16";
     ltx2::Act input{};
@@ -153,13 +159,21 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     if (variant == ProbeCase::Reduced) {
         need(!linear.bias && !linear.op_b && !linear.post_reduce,
              "C04 partial projection applied bias before collective");
-        need(linear.finalize_deferred_output(&b, nm, base.c_str(), 2,
+        ltx2::Geom wrong = g;
+        wrong.world = 2;
+        need(linear.finalize_deferred_output(&b, nm, wrong, base.c_str(),
                                             RAD_ACCESS_PER_TOKEN, 0, y, 4) ==
                  RAD_E_UNSUPPORTED,
              "C04 admitted a non-TP3 collective");
+        wrong = g;
+        wrong.wire_exact = 0;
+        need(linear.finalize_deferred_output(&b, nm, wrong, base.c_str(),
+                                            RAD_ACCESS_PER_TOKEN, 0, y, 4) ==
+                 RAD_E_UNSUPPORTED,
+             "C04 silently ignored the configured lossy wire");
         need(!linear.bias && !linear.op_b && !linear.post_reduce,
-             "rejected C04 world mutated the builder");
-        need(linear.finalize_deferred_output(&b, nm, base.c_str(), 3,
+             "rejected C04 geometry mutated the builder");
+        need(linear.finalize_deferred_output(&b, nm, g, base.c_str(),
                                             RAD_ACCESS_PER_TOKEN, 0, y, 4) == RAD_OK,
              "C04 exact reduction and post-reduce bias declaration failed");
         need(linear.bias && linear.op_b && linear.post_reduce,
@@ -167,7 +181,7 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
         need(b.program().weight(linear.bias)->decl.shard == RAD_SHARD_NONE,
              "C04 BF16 bias must be full-width after sum");
         const auto weights_before = b.program().weights.size();
-        need(linear.finalize_deferred_output(&b, nm, base.c_str(), 3,
+        need(linear.finalize_deferred_output(&b, nm, g, base.c_str(),
                                             RAD_ACCESS_PER_TOKEN, 0, y, 4) ==
                  RAD_E_UNSUPPORTED,
              "C04 accepted a second bias finalization");
@@ -239,10 +253,6 @@ int main(int argc, char** argv) {
 
         if (argc == 4) {
             need(std::string(argv[3]) == "--c04", "unexpected native test mode");
-            const char* biased[] = {
-                "attn1.out", "audio_attn1.out", "attn2.out",
-                "audio_attn2.out", "a2v.out", "v2a.out", "audio_ff_down"
-            };
             int proven = 0;
             for (int64_t block = 0; block < nblocks; ++block) {
                 const std::string prefix = "dit.blk." + std::to_string(block) + ".";
@@ -250,7 +260,7 @@ int main(int argc, char** argv) {
                          {std::array<int,3>{8,8,16}, {12,12,8}}) {
                     int offset = 0;
                     for (int rank = 0; rank < 3; ++rank) {
-                        for (const char* kind : biased) {
+                        for (const char* kind : kBiasedOutputs) {
                             run(model, reg, prefix+kind,
                                 0, nheads, rank, offset, split[rank], ProbeCase::Reduced);
                             ++proven;
@@ -263,7 +273,7 @@ int main(int argc, char** argv) {
             run(model, reg, "dit.blk.0.audio_attn1.out", 0, nheads,
                 0, 0, 10, ProbeCase::InvalidDeferred);
             need(proven == nblocks * 2 * 3 *
-                    static_cast<int>(sizeof biased/sizeof biased[0]),
+                    static_cast<int>(sizeof kBiasedOutputs/sizeof kBiasedOutputs[0]),
                  "C04 source-backed graph coverage changed");
             std::printf("LTX2 C04 native exact reductions + post-bias: %d, invalid-K=1, duplicate=refused\n", proven);
             return 0;
@@ -294,11 +304,6 @@ int main(int argc, char** argv) {
         }
         // Every biased attention/cross-modal and audio FFN-down output:
         // model source geometry decides whether the IQ8R K cut is legal.
-        const char* biased[] = {
-            "attn1.out", "audio_attn1.out",
-            "attn2.out", "audio_attn2.out",
-            "a2v.out", "v2a.out", "audio_ff_down"
-        };
         int deferred_count = 0, blocked_count = 0;
         for (int64_t block = 0; block < nblocks; ++block) {
             const std::string prefix = "dit.blk." + std::to_string(block) + ".";
@@ -306,7 +311,7 @@ int main(int argc, char** argv) {
                      {std::array<int,3>{8,8,16}, {12,12,8}, {10,10,12}}) {
                 int offset = 0;
                 for (int rank = 0; rank < 3; ++rank) {
-                    for (const char* suffix : biased) {
+                    for (const char* suffix : kBiasedOutputs) {
                         const std::string base = prefix + suffix;
                         const auto* e = model.find(base + ".weight");
                         need(e && e->rank == 2, "missing biased output weight");
@@ -343,7 +348,7 @@ int main(int argc, char** argv) {
         const int invalid_per_block = 4 * 2;
         need(blocked_count == nblocks * invalid_per_block &&
              deferred_count == nblocks *
-                 ((int)(sizeof biased / sizeof biased[0]) * rank_combinations -
+                 ((int)(sizeof kBiasedOutputs / sizeof kBiasedOutputs[0]) * rank_combinations -
                   invalid_per_block),
              "source model's biased-output partition tally changed");
         run(model,reg,"dit.blk.0.attn1.qkv",3,nheads,0,0,8,ProbeCase::WrongGroup);

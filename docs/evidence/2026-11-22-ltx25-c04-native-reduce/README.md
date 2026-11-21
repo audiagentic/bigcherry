@@ -21,8 +21,13 @@ Each rank receives a full output replica and adds the checkpoint bias
 **once to that replica**; no rank adds it to its partial GEMM.
 This is per-replica finalization, not a separate rank-0 broadcast path.
 
-The finalizer rejects non-deferred linear projections, non-TP3 worlds,
-duplicate finalization, invalid shape and missing prior projection;
+The finalizer takes the existing Radiance Geom (world, exact-wire and
+wire minimum), not a second world-size setting. It requires TP3 exact
+wire and rejects a lossy configuration rather than silently overriding it.
+Deferred projections with no finalized reduction/bias fail the runtime step
+through Radiance's existing rad_step_fail API. It also rejects
+non-deferred linear projections, non-TP3 worlds, duplicate finalization,
+invalid shape and missing prior projection;
 the C03 preflight continues to reject biased column shards without a
 single checkpoint bias source or without 256-aligned IQ8R K spans.
 The LTX `world_size > 1` production admission refusal and TP1 code
@@ -81,7 +86,8 @@ whole graph, model load, guidance and cancellation pass.
 - Patched native ABI44 LTX translation unit compiles with GCC 14.
 - Three model-backed native CTests: 3/3 pass (C01, C02 and C04).
 - C04 host graph declarations: 2,016 positive, invalid audio K refused,
-  wrong-world refusal without builder mutation, duplicate finalization refused.
+  wrong-world and lossy-wire refusals without builder mutation,
+  duplicate finalization refused.
 - C02: 3,024 fused/biasless positive, 2,640 deferred positive,
   384 invalid K cuts refused; original four negative probes retained.
 - Eleven synthetic LTX native CTests: 11/11 pass.
@@ -92,3 +98,40 @@ whole graph, model load, guidance and cancellation pass.
 These are source-backed and/or CPU test results, **not** GPU validation.
 Planning and Ledger connector actions were unavailable to this session;
 no authoritative planning or release events were synthesized.
+
+## Code-reuse and duplication review
+
+This patch adds **no new TP3 communication, rendezvous, GPU selection, wire
+tuning, serving configuration, resource admission, model loader or session
+protocol**. These are owned by BigCherry main and Radiance's native ABI.
+The C01 shard declaration reuses native LinearFP8, Builder weight spans
+and IQ8R code/scale views; C04 reuses the native all_reduce, table_add,
+Geom and rad_step_fail. No generic TP3 infrastructure needs an LTX fork.
+
+The LTX-only state is justified by its two distinct video/audio head
+widths, fused QKV/KV banks, per-256 IQ8R K restrictions and eventual
+whole-head global Q/K RMS. The common single-geometry language-model
+TP-ownership path cannot be copied wholesale into this dual-stream model.
+Use the existing native ownership parsing and admission where compatible;
+derive only these LTX-specific per-modality slices.
+
+The mock conditioning mailbox, rank guidance schedule, output owner and
+C++ numerical references in tools/lab are **test oracles only**. None is
+authorized to become a production transport, serving owner or scheduler.
+The C01 direct-weight receipts and C02/C04 real-Lin tests overlap
+deliberately at different proof levels. Any future C01 retirement must
+first preserve its two-level scale/plane selection checks in the real-Lin
+test and update the tooling disposition.
+
+There is duplicated **test-only** RAD2 header/directory parsing across
+test_ltx_tp3_reference.py, test_ltx_iq8r_planes.py and
+test_ltx_iq8r_numeric.py (and an older specialized platform adapter).
+Do not copy these readers into a production LTX path. Prefer native
+RadFile/Builder as the authoritative source; consolidate the offline
+fixtures only in a separately validated tooling cleanup. Retain the
+independent arithmetic oracle rather than importing GPU kernel logic
+into its expected results.
+
+Review status: existing production TP3 is reused; the remaining
+architecture integration is still unimplemented. No GPU claim or
+production promotion is implied by these host-only checks.

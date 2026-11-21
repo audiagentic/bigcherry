@@ -18,7 +18,7 @@ _SHA256 = {
     "preflight.inc": "67d20f9f6eae9f9b107560f771672ff8198d80fa63d39eb27d17a5038999b35f",
     "bias.inc": "7b4b7f90810a8e6387e669a8c2db11e4c160ca77466ab86ae1b3da2fb5747e50",
     "linear.inc": "5e6af267c582872681306a492769879fc90609cf2b21284f903555239a06eacb",
-    "post_reduce.inc": "8d94aee443220168736968d9ae3b304080e2a5d86dab3e464d45a6832674bd40",
+    "post_reduce.inc": "f47113a5c2f30d107a1f05f5e189447ea9b16ae35d5e64cb6aecfbaeff3cd64d",
 }
 
 
@@ -119,6 +119,10 @@ PATCHES = (
             _edit(
                 "ltx-c04-step-reduce",
                 "        if (op_b) RAD_ISSUE_N(c, op_b, rows, out, RAD_W(bias), out);\n",
+                "        if (deferred_bias && (!post_reduce || !op_b || !bias)) {\n"
+                '            rad_step_fail(c, "LTX TP3 deferred projection was not reduced and biased");\n'
+                "            return;\n"
+                "        }\n"
                 "        if (deferred_bias)\n"
                 "            RAD_ISSUE_N(c, post_reduce, rows * N, out, RAD_NONE); /* BC_LTX3_C04_ISSUE */\n"
                 "        if (op_b) RAD_ISSUE_N(c, op_b, rows, out, RAD_W(bias), out);\n",

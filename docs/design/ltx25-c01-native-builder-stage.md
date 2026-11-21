@@ -105,3 +105,20 @@ head splits, all three ranks and seven biased output types. It rejects
 duplicate finalization, non-TP3 worlds and audio K misalignment.
 See docs/evidence/2026-11-22-ltx25-c04-native-reduce/README.md.
 GPU execution and TP1 numerical parity are not established.
+
+## Reuse constraint (2026-11-22 review)
+
+For the next attention-block slice, wire LTX's **two-modality** ownership
+into the existing Radiance native Geom/TP3 collective and serving
+interfaces. Do not add an LTX-specific rendezvous, copy of
+rad_block_mlp_fp8's all-reduce transport, configuration parser,
+GPU rank selector or native serving controller. C04 now reads the
+shared Geom for world/wire settings and fails a deferred step with the
+existing rad_step_fail when finalization is absent.
+
+The independent lab/mock contracts are disposable test evidence, not a
+second implementation to migrate into production. The remaining
+architecture-owned work is global Q/K normalization, LTX-specific
+buffers/projections, guidance branch scheduling and full DiT graph
+composition. Numerical and GPU/device gates must pass before enabling
+the existing production serving route.
