@@ -53,9 +53,15 @@ int main(int argc, char** argv) {
     const std::string expected = "schema " + std::string(v3::kFingerprint) +
                                  "\nsemantics " + std::string(v3::kSemanticFingerprint) + "\n";
     check(read(argv[2]) == expected, "generated successor fingerprint differs from the recorded identity");
-    const std::string old_bytes = read(argv[1]);
-    const auto old = v3::read_manifest(old_bytes, "retired wire fixture", v3::PlanUse::serving);
-    check(!old && old.error().code == Code::unsupported_version, "successor reader accepted v2");
+    const std::string old_bytes = read(argv[1]);   // the committed example is an edition 3 manifest
+    {
+        Json retired = Json::parse(old_bytes);   // the same document under the retired edition is refused
+        retired["apiVersion"] = "bigcherry/v2";
+        retired.at("metadata")["contract_version"] = 2;
+        rehash(retired);
+        const auto old = v3::read_manifest(retired.dump(), "retired wire fixture", v3::PlanUse::serving);
+        check(!old && old.error().code == Code::unsupported_version, "reader accepted the retired v2 edition");
+    }
 
     const std::string yaml = "# café\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
     const auto execution_root = std::filesystem::canonical(std::filesystem::current_path());
