@@ -39,6 +39,17 @@ CTX_H = FilePatch(path="core/runtime/ctx.h", language="none",
         "    struct ProfSlot { RadEvent a = nullptr, b = nullptr; int32_t op = 0; uint8_t lane = 0; "
         "int32_t packet_from = -1, packet_to = -1; }; // BC_RUM09_SEGMENT_RANGE\n",
         "BC_RUM09_SEGMENT_RANGE"),
+    rep("phase-tape-spans",
+        "    struct PassTape {\n",
+        """    // BC_RUM09_TAPE_SPANS: op packet map retained only when trace is active.
+    struct TapeOpSpan { int32_t first = 0, last = 0; uint32_t op = 0; uint8_t lane = 0; };
+    struct PassTape {
+        std::vector<TapeOpSpan> trace_ops;
+""", "BC_RUM09_TAPE_SPANS"),
+    rep("phase-haz-lane",
+        "        uint32_t op = 0;\n        bool     opaque = false;\n",
+        "        uint32_t op = 0;\n        uint8_t  lane = 0; // BC_RUM09_HAZ_LANE\n        bool     opaque = false;\n",
+        "BC_RUM09_HAZ_LANE"),
     rep("phase-state", "    bool                 profiling_ = false;\n",
         """    bool                 profiling_ = false;
     // BC_RUM09_PHASE_STATE: initialized only for the native serving diagnostic.
@@ -89,20 +100,71 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none",
             break;
 """,
         """        case kTapePlay: {
-            // BC_RUM09_PHASE_TAPE: HIP events wrap each replayed device stretch,
-            // never tape capture; no profiler flag, no change to the tape's key.
-            const size_t token = phase_kv_begin(-3);
-            if (token != SIZE_MAX) {
-                prof_ring_[token].packet_from = st.a;
-                prof_ring_[token].packet_to = st.b;
+            // BC_RUM09_PHASE_TAPE: replay the identical packet sequence.
+            // When tracing, each recorded op gets its own HIP event pair.
+            // This is intentionally slower than untraced production, but
+            // preserves tape key, opcode and hazard order.
+            const auto traced_play = [&](int first, int last, int tag, uint8_t lane) {
+                if (rc < 0 || first >= last) return;
+                const int saved_lane = lane_;
+                lane_ = lane;
+                const size_t token = phase_kv_begin(tag);
+                if (token != SIZE_MAX) {
+                    prof_ring_[token].packet_from = first;
+                    prof_ring_[token].packet_to = last;
+                }
+                rc = tape_play(t.dev, first, last);
+                phase_kv_end(token);
+                lane_ = saved_lane;
+            };
+            if (!phase_tracing_ || t.trace_ops.empty()) {
+                traced_play(st.a, st.b, -3, 0);
+            } else {
+                int pos = st.a;
+                for (const TapeOpSpan& o : t.trace_ops) {
+                    if (o.first >= st.b || rc < 0) break;
+                    if (o.last <= pos) continue;
+                    if (o.first > pos) {
+                        traced_play(pos, std::min(o.first, st.b), -4, 0);
+                        pos = std::min(o.first, st.b);
+                    }
+                    if (o.first < pos) prof_overflowed_ = true;
+                    const int end = std::min(o.last, st.b);
+                    if (o.op > (uint32_t)INT32_MAX) {
+                        prof_overflowed_ = true;
+                        traced_play(pos, end, -4, o.lane);
+                    } else {
+                        traced_play(pos, end, (int)o.op, o.lane);
+                    }
+                    pos = end;
+                }
+                traced_play(pos, st.b, -4, 0);
             }
-            rc = tape_play(t.dev, st.a, st.b);
-            phase_kv_end(token);
             if (rc < 0) step_fail_ = fmt("a recorded pass could not be submitted: %s",
                                          rad_dev_last_error());
             break;
         }
 """, "BC_RUM09_PHASE_TAPE"),
+    rep("phase-store-ops",
+        """    const int bit = b->draft_pass + 8;
+    if (rank_ == 0 && bit >= 0 && bit < 64 && !(tape_told_ & (1ull << bit))) {
+""",
+        """    // BC_RUM09_STORE_OPS: retain exact packet boundaries only for selected
+    // trace; replay can then report per-op GPU event spans without inserting
+    // profiling commands into a captured tape.
+    if (phase_tracing_) {
+        out->trace_ops.reserve(haz_ops_.size());
+        for (const HazOp& h : haz_ops_)
+            if (h.rec1 > h.rec0 && h.op > 0 && (size_t)h.op < plans_.size())
+                out->trace_ops.push_back({h.rec0, h.rec1, h.op, h.lane});
+        std::sort(out->trace_ops.begin(), out->trace_ops.end(),
+            [](const TapeOpSpan& x, const TapeOpSpan& y) {
+                return x.first == y.first ? x.last < y.last : x.first < y.first;
+            });
+    }
+    const int bit = b->draft_pass + 8;
+    if (rank_ == 0 && bit >= 0 && bit < 64 && !(tape_told_ & (1ull << bit))) {
+""", "BC_RUM09_STORE_OPS"),
     rep("phase-tape-op-map",
         """    const int bit = b->draft_pass + 8;
     if (rank_ == 0 && bit >= 0 && bit < 64 && !(tape_told_ & (1ull << bit))) {
@@ -266,13 +328,20 @@ void Ctx::profile_collect() {
         if (rad_event_elapsed_ms(s.a, s.b, &ms) < 0) { valid = false; continue; }
         if (s.op == -1) { host_kv_serial_ms += ms; ++n_kv_serial; }
         else if (s.op == -2) { host_kv_wait_ms += ms; ++n_kv_wait; }
-        else if (s.op == -3) {
-            compute_ms += ms; ++n_compute;
+        else if (s.op == -3 || s.op == -4) {
+            // Device intervals that have no recorded op owner are not silently
+            // reclassified as compute (tape controls can include GPU waits).
             if (packet_spans.size() > 1) packet_spans += ',';
-            packet_spans += fmt(R"JSON({"from":%d,"to":%d,"ms":%.6f})JSON",
+            packet_spans += fmt(R"JSON({"from":%d,"to":%d,"op":"unclassified","ms":%.6f})JSON",
                                 s.packet_from, s.packet_to, (double)ms);
+            if (s.op == -3) { compute_ms += ms; ++n_compute; }
         }
         else if (s.op >= 0 && (size_t)s.op < plans_.size()) {
+            if (packet_spans.size() > 1) packet_spans += ',';
+            const char* name = plans_[(size_t)s.op].info ? plans_[(size_t)s.op].info->op.c_str()
+                                                         : "unknown";
+            packet_spans += fmt(R"JSON({"from":%d,"to":%d,"op":"%s","ms":%.6f})JSON",
+                                s.packet_from, s.packet_to, name, (double)ms);
             prof_ms_[(size_t)s.op] += (double)ms;
             prof_calls_[(size_t)s.op] += 1;
             if (plans_[(size_t)s.op].collective) {
@@ -389,4 +458,12 @@ void count_stage''', "c->phase_kv_end(trace);"),
 ''', "BC_RUM09_KV_FIRST"),
 ))
 
-PATCHES = (CTX_H, CTX_CPP, STAGE_CPP)
+ISSUE_CPP = FilePatch(path="core/runtime/issue.cpp", language="none",
+    description="Retain the actual GPU issue lane for replayed operation timing", edits=(
+    rep("phase-haz-issue-lane", "    o.op = (uint32_t)(&p - plans_.data());\n",
+        """    o.op = (uint32_t)(&p - plans_.data());
+    o.lane = (uint8_t)lane_; // BC_RUM09_HAZ_ISSUE_LANE
+""", "BC_RUM09_HAZ_ISSUE_LANE"),
+))
+
+PATCHES = (CTX_H, CTX_CPP, ISSUE_CPP, STAGE_CPP)

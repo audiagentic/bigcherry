@@ -27,3 +27,16 @@ packet boundaries (from, to) and elapsed ms; live passes have -1
 boundaries. The packet bounds describe recording partitions, not individual
 op labels or guaranteed nonoverlapping streams. They are enabled only with
 the same diagnostic switch.
+
+For replayed passes, tape_segments lists ordered HIP-event spans with immutable
+packet boundaries (from, to) and elapsed ms; live passes have -1
+boundaries. The packet bounds describe recording partitions, not individual
+op labels or guaranteed nonoverlapping streams. They are enabled only with
+the same diagnostic switch.
+
+When tracing a replayed pass, its immutable recorded operation packet
+ranges are replayed in their original order with per-op HIP event pairs
+on the recorded issue lane. Each tape_segments record then carries the
+source operation name. Gap packets are labeled unclassified, not
+silently charged to compute or collectives. Timing is more perturbed
+than coarse packet-range tracing but recording/replay remains active.
