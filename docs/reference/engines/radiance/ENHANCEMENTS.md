@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (38)
+## Engine patches (39)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -51,6 +51,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0052_b16_kv_geometries](../../../../engines/radiance/patches/rad0052_b16_kv_geometries/SUMMARY.md) | `validated` | The patch adds Qwen4exp GQA6/page4 and Qwen35 GQA6/page16 B16 rows while keeping H128/GQA4/page16 DFlash2 on native E4M3. |
 | [rad0053_v4_kv_layouts](../../../../engines/radiance/patches/rad0053_v4_kv_layouts/SUMMARY.md) | `validated` | The patch ports the historical V4/K6 stores, readers and geometry rows using descriptor-owned offsets and preserves the tested standalone and fused scale arithmetic. |
 | [rad0054_attn_prefill_fp8](../../../../engines/radiance/patches/rad0054_attn_prefill_fp8/SUMMARY.md) | `validated` | The patch restores off, QK, PV and combined prefill modes on the supported Qwen35 H256/GQA6/page16 E4M3, V4 and K6V4 rows; decode and unsupported geometries do not accept the prefill selector. |
+| [rad0060_ltx2_tp3_linear_declare](../../../../engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/SUMMARY.md) | `diagnostic` | **Diagnostic only.** Adds an opt-in C01Slice to the real Radiance 2.2 LTX2 `Lin::declare` path. For IQ8R, row-sharded QKV/KV selects the same per-bank source rows for codes, scales and BF16 bias through the existing LinearFP8/span_parts and RadBuilder APIs. Column-sharded output projections require an aligned 256-K slice and currently **refuse any output bias**: once-after-reduce ownership is not yet implemented. |
 
 ## Components (6)
 
