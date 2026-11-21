@@ -58,9 +58,7 @@ Inspect without writing: `bc-serve --explain [--json] --set ...` shows every res
 
 ## Layouts and engine-only manifests
 
-A layout names which cards run the engine and which hold experts, for one model. Layouts are run-time data: `bc-serve` reads
-them from `--layouts FILE|DIR` or `BIGCHERRY_LAYOUTS` (the `bigcherry` CLI and `lab-env.sh` default it to the repository's example
-directory `engines/radiance/layouts/`; format in its README), so a model, split or topology is defined without a rebuild. Only the
+A serving config names which cards run the engine and which hold experts, for one model. It is one native Radiance YAML file (`engines/radiance/configs/NAME.yaml`, with a closed `x-bigcherry` section; format in the [configs README](../../../../engines/radiance/configs/README.md)), read at run time from the installed bundle or `--configs DIR` / `BIGCHERRY_CONFIGS`, so a model, split or topology is defined without a rebuild. Only the
 card types (`engines/radiance/archs.toml`) are compiled in. `layout.name` is required; there is no default layout. `bc-serve`
 selects the cards by architecture from the host's detected GPUs; it never takes device indices. An engine may be a list of
 `{ arch, count }` groups in rank order, a world of more than one card type: the kernels are each group's plugin, and the engine
@@ -178,7 +176,7 @@ A campaign arm that serves from a manifest describes its configuration under `se
             "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first", "histogram": "/dev/null"}
 ```
 
-`layout` names a layout of the layout definitions (`BIGCHERRY_LAYOUTS`; required); `set` holds `bc-serve --set key=value` settings (strings, numbers,
+`layout` names the serving config (`NAME.yaml`; required); `set` holds `bc-serve --set key=value` settings (strings, numbers,
 booleans); `heat` and `histogram` are the layout's route-heat inputs and are required exactly when the layout has helpers (`/dev/null`
 for no recording). `calibration` (a calibration store, from which bc-serve derives the live policy) (the policy is absent, silently, when the store has no record for this configuration's calibration key: see [live placement](LIVE_PLACEMENT.md)), `live_policy` and `experiment` (files)
 and `calibration_run` (true) are the matching `bc-serve --calibration`, `--live-policy`, `--experiment` and `--calibration-run`; they reach

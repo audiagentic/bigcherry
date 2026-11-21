@@ -126,7 +126,7 @@ PREFIX=/path/to/installed-radiance/releases/bc-radiance-X.Y.Z
   --power-profile stock
 ```
 
-The released `configs/flashnext.toml` selects the reviewed
+The released `configs/flashnext-4gpu.yaml` (like each shipped config) selects the reviewed
 `@bundle/heat/flashnext-mixed.hot-first` seed under the same verified prefix.
 Both this seed and `perf51.rank0.hot-first` ship as immutable, manifest-digested
 `heat/` files copied from their tagged repository sources. No repository

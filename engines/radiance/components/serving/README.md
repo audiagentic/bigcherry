@@ -172,9 +172,9 @@ are native C++.
 Build with `-DCMAKE_PREFIX_PATH=<installed radiance>` and
 `-DRADIANCE_SRC=<radiance source>`; build `bc-serve bc_serving_test`
 then run `ctest --output-on-failure`. Tests are CPU-only, including a
-synthetic KFD/PCI/proc/sysfs tree and launcher-value parity. ctest sets `BIGCHERRY_LAYOUTS` to the
-repository's `engines/radiance/layouts`; run `bc_serving_test` directly with the same variable set, or the
-layout cases fail with "no layout definitions".
+synthetic KFD/PCI/proc/sysfs tree and launcher-value parity. The resolver tests are engine-free: they select a
+config through a C++ preset (`test_config_fixture.h`), generated from the shipped `engines/radiance/configs/NAME.yaml` by
+`gen_fixture_presets.py` (a test fails when they drift); the production resolver reads a config only from its YAML.
 
 Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
 `--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`,
@@ -227,7 +227,7 @@ bc-serve --explain --set engine.model=/models/model.rad \
 
 The JSON Schema `x-origin` annotations document every default source.
 Interim memory baselines and named layout GPU budget baselines come from
-the 2026-11-02 launcher and `engines/radiance/layouts.toml`; RSC03
+the 2026-11-02 launcher; RSC03
 will derive them from detected resources. A first-slice snapshot of the
 named layouts is used to select cards from live KFD discovery rather
 than reading any per-host configured GPU index list. Unsupported layouts
