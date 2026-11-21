@@ -149,13 +149,11 @@ def capture_build(build: Path, out: Path) -> dict[str, str]:
     """Hash the runtime closure as measured, using the Radiance release member layout."""
     from bigcherry.release.runtime_assets import BUILD_METADATA, RUN_MANIFEST, digest
 
-    config_dir = build if (build / "configs/flashnext.toml").is_file() else REPO / "engines/radiance"
     members = {}
-    for pattern, _ in RUN_MANIFEST:
-        base = config_dir if pattern.startswith("configs/") else build
-        for path in sorted(base.glob(pattern)):
+    for pattern, _ in RUN_MANIFEST:   # the config of a launch is its arm YAML (launch-N/native-input.yaml), not a member
+        for path in sorted(build.glob(pattern)):
             if path.is_file():
-                members[path.relative_to(base).as_posix()] = digest(path)
+                members[path.relative_to(build).as_posix()] = digest(path)
     if (build / BUILD_METADATA).is_file():
         shutil.copyfile(build / BUILD_METADATA, out / BUILD_METADATA)
     _write(out / "runtime-members.json", members)

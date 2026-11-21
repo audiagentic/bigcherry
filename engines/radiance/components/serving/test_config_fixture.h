@@ -30,15 +30,7 @@ struct Preset {
 };
 
 inline Preset preset(const std::string& name) {
-    struct Entry {
-        const char* name;
-        Preset (*make)();
-    };
-    static const Entry table[] = {
 #include "test_config_presets.inc"
-    };
-    for (const Entry& entry : table)
-        if (name == entry.name) return entry.make();
     throw std::runtime_error("no test preset named " + name + " (one per engines/radiance/configs/NAME.yaml)");
 }
 

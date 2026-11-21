@@ -38,7 +38,7 @@ def preset(path: Path) -> str:
     doc = yaml.safe_load(path.read_text(encoding="utf-8"))
     model = next(iter(doc["models"].values()))
     x = doc["x-bigcherry"]
-    lines = [f'    {{"{path.stem}", []() {{', "        Preset p;", f'        p.name = {cpp(path.stem)};',
+    lines = [f'    if (name == "{path.stem}") {{', "        Preset p;", f'        p.name = {cpp(path.stem)};',
              f"        p.description = {cpp(x['description'])};", f"        p.model = {cpp(model['model'])};"]
     if "tp-wire" in model:
         lines.append(f"        p.tp_wire = {cpp(model['tp-wire'])};")
@@ -55,7 +55,7 @@ def preset(path: Path) -> str:
     for key, value in model.items():
         if key in NATIVE:
             lines.append(f'        p.sets.push_back({cpp(NATIVE[key] + "=" + json.dumps(value))});')
-    lines += ["        return p;", "    }},"]
+    lines += ["        return p;", "    }"]
     return "\n".join(lines)
 
 

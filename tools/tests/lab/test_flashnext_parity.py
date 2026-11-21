@@ -98,7 +98,6 @@ class ProvenanceTests(unittest.TestCase):
             "radiance_home/bin/bc-serve": b"owner",
             "radiance_home/helpers/r3_moe_worker": b"worker",
             "radiance_home/kernels/libr3.so": b"kernels",
-            "configs/flashnext.toml": b"# installed catalogue\n",
             "bigcherry-build-metadata-radiance.json": b'{"build_id":"checkpoint","runtime_artifacts":{}}\n',
         }
         for name, content in files.items():
