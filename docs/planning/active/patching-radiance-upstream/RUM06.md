@@ -118,6 +118,8 @@ Checkpoint bedf51edb consolidates rank attachment rollback, clears the result po
 
 2026-11-20 progress: TP3 27B on the 2.2 build gets through admission and device selection to kernel resolution (mixed-arch rank-devices fixed in rad0009, 64bae9124). The remaining start blocker is RUM11 (E4M3 page16 store rows, per-rank head counts 6/1, 6/1, 12/2). After RUM11: TP3 start/canary/stop, then the mixed-rank code-object, ordinal, rendezvous and span tests, then the paired comparison and KLD for qwen27b-tp3-int8-556 and its long and bf16i8 variants, and flashnext-tp2xtx-r9700.
 
+2026-11-21: qwen27b-2xtx's declare refusal is not a TP split problem. Radiance 2.2 retires the MXFP4 weight format (arch/common/rad_fp8.h:1174-1194 linear_retired / linear_refuse_retired, called from rad_fp8.h:1354), and the refusal names the int8 IQ8R recipes as the replacement. It affects the three configs on the MXFP4 container: qwen27b-2xtx, qwen27b-tp3 and qwen27b-tp3-capacity. A GPT lane drafted rad0055_qwen35_plain_mxfp4 (branch agent/rum06-qwen27b-tp2, 7082337c9), which removes the retirement check. Owner decision 2026-11-21: convert, don't patch back. The three configs move to the int8 (w8a8) Qwen3.8-27B container that the qwen27b-tp3-int8* configs already use, each with its own start/canary/stop, paired comparison and KLD on the new weights. rad0055 isn't merged; its branch is kept as an archive tag for the evidence. Their TP ownership splits must be re-validated against the w8a8 container (same model dimensions, so the specs should still parse).
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -138,3 +140,4 @@ Checkpoint bedf51edb consolidates rank attachment rollback, clears the result po
 - 2026-11-20T01:23:16.000046+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T08:50:11.218145+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T12:44:44.499463+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T00:44:35.690825+00:00 (updated-by): Updated: section:notes
