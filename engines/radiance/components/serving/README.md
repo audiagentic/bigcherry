@@ -280,10 +280,16 @@ per-start transport name or the derived host pool), the ordered cards with
 their architecture and total VRAM, the power profile, the config/site/heat/
 calibration inputs and the model's canonical path, size and mtime (the model is
 never read). The engine, helper and bc-serve builds are not part of the key.
-The engine's own admission is the safety net: a stored plan the replay checks
-refuse (for example a different engine build) is measured once afresh and
-replaces the entry; an engine that then fails to come up on a stored plan
-removes the entry so the next start measures. Without `--work-root` every start
+A stored manifest is bound to the build that wrote it, its measurement is not:
+when the replay checks refuse the manifest (a different engine or helper build)
+the start reads the stored plan, rank demand and resident host memory back and
+seals them again under the current build (the draft and measured writers run, no
+helper or measuring engine does); the old build's identity and attempt are kept
+as `plan_carried_from` in the selection and in `carried-from.json` beside the new
+attempt. A stored measurement that cannot be carried (damaged, or no longer fits
+the configuration) is measured afresh. The engine's own admission is the safety
+net: an engine that fails to come up on a stored or carried plan removes the
+entry so the next start measures. Without `--work-root` every start
 measures. The old `--set layout.name=...` serving path remains on its original
 planner.
 

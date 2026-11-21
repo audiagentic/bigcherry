@@ -3037,6 +3037,50 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     return NamedCache{static_resolution_key(static_inputs), index, static_inputs.model_digest};
 }
 
+// The measurement an earlier start stored (its plan, per-rank demand and resident host memory), read back so a
+// start under another build can seal it again instead of measuring: the build that measured it is provenance.
+struct CarriedMeasurement {
+    Json plan_json, rank_demand;
+    HostResident resident;
+    int64_t host_pool_mib = 0;
+    std::string attempt, engine_identity, manifest;
+    Json provenance() const {
+        return {{"attempt", attempt}, {"engine_identity", engine_identity}, {"manifest", manifest}};
+    }
+};
+
+static std::optional<CarriedMeasurement> load_carried_measurement(const fs::path& stored) {
+    try {
+        const std::string bytes = read_manifest_file(stored);
+        const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);
+        if (!verified || !verified.value().spec.plan.engine_memory)
+            return std::nullopt;
+        const auto& m = verified.value();
+        const StoredManifestIndex bound = read_stored_index(stored.string() + ".replay-index.json");
+        if (!bound.native_measurement || bound.manifest_filename != stored.filename().string())
+            return std::nullopt;
+        const fs::path owner_dir =
+            stored.parent_path() / "measurement-attempts" / bound.native_measurement->attempt_id / "plan-cache";
+        // One entry per measuring attempt: its own recorded key inputs name it.
+        std::vector<fs::path> entries;
+        for (const auto& entry : fs::directory_iterator(owner_dir))
+            if (entry.is_regular_file() && entry.path().extension() == ".json")
+                entries.push_back(entry.path());
+        if (entries.size() != 1)
+            return std::nullopt;
+        const Json recorded = parse_plan_json(read_file(entries.front()), entries.front().string());
+        const auto cached = plan_cache_lookup(owner_dir, recorded.at("key_inputs"));
+        if (!cached || !cached->owner || cached->owner->attempt_id != bound.native_measurement->attempt_id ||
+            cached->owner_sha256 != bound.native_measurement->sha256)
+            return std::nullopt;
+        return CarriedMeasurement{cached->plan_json, cached->rank_demand, cached->resident,
+                                  m.spec.resources.host.pool_mib, bound.native_measurement->attempt_id,
+                                  m.spec.plan.engine_memory->engine_identity, stored.string()};
+    } catch (const std::exception&) {
+        return std::nullopt;
+    }
+}
+
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
     const Wait& wait = hooks.wait;
     EnginePlanInputs in = given;
@@ -3208,6 +3252,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const auto& settings = native_inspection.settings;
         const Resolved native_resolved = resolve(in.options, facts, &settings);
         const auto cache = named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
+        std::optional<CarriedMeasurement> carried;
         if (cache && !cache->index.empty()) {
             if (const auto saved = stored_manifest_for(cache->index, cache->key)) {
                 EnginePlanInputs replay = in;
@@ -3218,10 +3263,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     reused.reused_store = cache->index;
                     return reused;
                 } catch (const PlanFailed& refused) {
-                    // Nothing was admitted or started yet (power admission is replay's last step): measure
-                    // once and store the result in its place.
-                    std::cerr << "bc-serve: the stored plan is not reusable (" << refused.what()
-                              << "); measuring again\n";
+                    // Nothing was admitted or started yet (power admission is replay's last step). The stored
+                    // manifest is bound to the build that wrote it; its measurement is not: seal that again under
+                    // this build, or measure when it cannot be carried.
+                    carried = load_carried_measurement(*saved);
+                    std::cerr << "bc-serve: the stored manifest is not replayable as it is (" << refused.what() << "); "
+                              << (carried ? "reusing its measurement under this build" : "measuring") << '\n';
                 }
             }
         }
@@ -3252,6 +3299,26 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         Options round_options = in.options;
         const auto initial_pool = v.at("engine").at("host_pool_mib").get<int64_t>();
         std::set<int64_t> measured_pools{initial_pool};
+        if (carried) {
+            // The carried plan was measured with its own host pool; it must still fit this configuration and
+            // these ranks, or there is nothing to carry and this start measures.
+            try {
+                if (carried->host_pool_mib != initial_pool)
+                    round_options.sets.push_back("memory.host_pool_mib=" + std::to_string(carried->host_pool_mib));
+                const Resolved carried_resolved = resolve(round_options, detect(round_options.sys_root), &settings);
+                check_plan_for_configuration(carried_resolved.values,
+                                             decode_engine_plan(carried->plan_json, "carried plan"));
+                (void)decode_engine_rank_demand(carried->rank_demand, selected_bdfs, "carried rank demand");
+                measured_pools.insert(carried->host_pool_mib);
+            } catch (const std::exception& unusable) {
+                std::cerr << "bc-serve: the stored measurement cannot be carried (" << unusable.what()
+                          << "); measuring\n";
+                carried.reset();
+                round_options = in.options;
+            }
+        }
+        // A carried measurement that fails after this point drops the stored entry: the next start measures.
+        try {
         for (int round = 0; round <= kMaxHostPoolChanges; ++round) {
             const Json round_facts = detect(round_options.sys_root);
             const Resolved round_resolved = resolve(round_options, round_facts, &settings);
@@ -3306,9 +3373,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             const Json current_facts = detect(in.options.sys_root);
             if (const auto refusal = resources::preflight_host_pool(verified.parsed, current_facts))
                 throw PlanFailed("native resources: " + refusal->message);
-            const auto measuring_helpers = helper_starts(
-                {processes, current_facts}, frozen_runtime_home, helper_binary, measuring_execution, true);
-            const auto baseline = measure_helper_baseline(processes, in);
             if (round == 0)
                 require_callback(hooks.admit_power.invoke("session.hooks.admit_power", measuring_execution,
                                                            v2::PlanUse::measuring),
@@ -3320,9 +3384,21 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             const fs::path ranks_path = attempt_dir / "rank-demand.json";
             const fs::path measurement_log = attempt_dir / "engine-measuring.log";
             const fs::path absolute_engine = fs::absolute(engine);
+            Json measured_plan, rank_demand;
+            uint64_t measured_helpers_mib = 0;
+            if (carried) {
+                // The stored measurement is sealed again under this build: no helper or measuring engine runs.
+                measured_plan = carried->plan_json;
+                rank_demand = carried->rank_demand;
+                measured_helpers_mib = carried->resident.helpers_mib;
+                write_atomic(attempt_dir / "carried-from.json", carried->provenance().dump(2) + "\n");
+            } else {
+            const auto measuring_helpers = helper_starts(
+                {processes, current_facts}, frozen_runtime_home, helper_binary, measuring_execution, true);
+            const auto baseline = measure_helper_baseline(processes, in);
             MeasuringHelpers group(hooks);
             launch_measure_helpers(measuring_helpers, run_dir, hooks, &group.pids, verified.pinned->descriptor());
-            const uint64_t measured_helpers_mib = helper_resident_mib(group.pids);
+            measured_helpers_mib = helper_resident_mib(group.pids);
             require_segment(handoff);
             launch.root.require_matches(snapshot.resolution_root());
             const pid_t measuring_pid = spawn(
@@ -3347,24 +3423,27 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             if (!handoff.empty() && complete_file_identity(helper_binary) != helper_identity)
                 throw PlanFailed("native v3 helper worker changed during measurement");
 
-            const std::string log_text = read_file(measurement_log);
-            const Json measured_plan = parse_plan_json(read_file(plan_path), plan_path.string());
-            const Json rank_demand = parse_plan_json(read_file(ranks_path), ranks_path.string());
+            measured_plan = parse_plan_json(read_file(plan_path), plan_path.string());
+            rank_demand = parse_plan_json(read_file(ranks_path), ranks_path.string());
+            }
             const auto decoded_plan = decode_engine_plan(measured_plan, plan_path.string());
             const EngineRankDemand decoded_ranks =
                 decode_engine_rank_demand(rank_demand, selected_bdfs, ranks_path.string());
             constexpr uint64_t kMiB = uint64_t{1} << 20;
             const uint64_t engine_resident_mib =
                 std::max<uint64_t>(1, (static_cast<uint64_t>(decoded_ranks.resident_other_bytes) + kMiB - 1) / kMiB);
-            static const std::regex resident_line(
-                R"(--plan-memory: wrote .*; engine start-up took ([0-9]+) MiB of MemAvailable;)" );
-            std::vector<uint64_t> logged_resident_mib;
-            for (auto match = std::sregex_iterator(log_text.begin(), log_text.end(), resident_line);
-                 match != std::sregex_iterator(); ++match)
-                logged_resident_mib.push_back(std::stoull((*match)[1].str()));
-            if (logged_resident_mib.size() != 1 || logged_resident_mib.front() != engine_resident_mib)
-                throw PlanFailed("native v3 rank sidecar and rad0011 engine resident-memory log disagree; see " +
-                                 measurement_log.string());
+            if (!carried) {
+                static const std::regex resident_line(
+                    R"(--plan-memory: wrote .*; engine start-up took ([0-9]+) MiB of MemAvailable;)" );
+                std::vector<uint64_t> logged_resident_mib;
+                const std::string log_text = read_file(measurement_log);
+                for (auto match = std::sregex_iterator(log_text.begin(), log_text.end(), resident_line);
+                     match != std::sregex_iterator(); ++match)
+                    logged_resident_mib.push_back(std::stoull((*match)[1].str()));
+                if (logged_resident_mib.size() != 1 || logged_resident_mib.front() != engine_resident_mib)
+                    throw PlanFailed("native v3 rank sidecar and rad0011 engine resident-memory log disagree; see " +
+                                     measurement_log.string());
+            }
             check_plan_for_configuration(round_values, decoded_plan);
             if (decoded_plan.vram.cards.size() != selected_bdfs.size() || decoded_ranks.gpu.size() != selected_bdfs.size())
                 throw PlanFailed("native v3 measurement rank count differs from the selected ordered BDFs");
@@ -3504,10 +3583,19 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             out.native_helper_resident_mib = measured_helpers_mib;
             out.handoff_shm = handoff;
             out.summary["plan_measurement_attempt"] = attempt_id;
+            if (carried)
+                out.summary["plan_carried_from"] = carried->provenance();
             out.summary["manifest_digest"] = final_snapshot.parsed.metadata.content_digest;
             return out;
         }
         throw PlanFailed("native v3 host pool did not converge");
+        } catch (...) {
+            if (carried && cache && !cache->index.empty()) {
+                std::error_code ignored;
+                fs::remove(cache->index, ignored);
+            }
+            throw;
+        }
     }
 
     const ManifestRunner runner = in.runner ? in.runner : [&hooks](const std::vector<std::string>& argv) {

@@ -50,8 +50,10 @@ bc-serve explain CONFIG --native-config NAME.yaml --model-root DIR              
   back through the same strict reader the engine uses.
 - A serving manifest carries a **measured plan**. A named `serve` or `start` reuses the last measured manifest of its config from the work
   root's named-config store (`--work-root`; the key is the resolved settings, the ordered cards with their VRAM, the power profile, the config
-  inputs and the model's path, size and mtime; the engine and helper builds are not part of it) and replays it without measuring. With no stored
-  manifest, or one the replay checks refuse, it measures first: the helpers come up on their cards, the engine runs to the end of its memory
+  inputs and the model's path, size and mtime; the engine and helper builds are not part of it) and replays it without measuring. When the replay
+  checks refuse the stored manifest because the engine or helper build changed, its measurement (plan, rank demand, resident host memory) is
+  sealed again under the current build without running a measuring engine, and the old build is recorded as `plan_carried_from`. With no stored
+  manifest, or none that can be carried, it measures first: the helpers come up on their cards, the engine runs to the end of its memory
   plan (`--plan-memory FILE --plan-memory-ranks FILE` on an unmeasured manifest) and exits, and the owner writes the measured manifest from
   that plan and stores it. An engine that does not come up on a stored plan drops the entry, so the next start measures. `start --manifest FILE
   --run-dir DIR` replays one named file. Run a measuring start under the `gpu` lease. An unmeasured manifest is accepted only by a measuring start.
