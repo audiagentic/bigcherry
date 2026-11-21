@@ -90,11 +90,9 @@ NATIVE_RELEASE_PROFILES = (
     "flashnext-tp2xtx.yaml",
     "qwen27b-2xtx.yaml",
     "qwen27b-tp3-capacity.yaml",
-    "qwen27b-tp3-int8-556-long-bf16.yaml",
-    "qwen27b-tp3-int8-556-long-bf16i8.yaml",
-    "qwen27b-tp3-int8-556-long.yaml",
-    "qwen27b-tp3-int8-556.yaml",
-    "qwen27b-tp3-int8.yaml",
+    "qwen27b-tp3-long-bf16.yaml",
+    "qwen27b-tp3-long-bf16i8.yaml",
+    "qwen27b-tp3-long.yaml",
     "qwen27b-tp3.yaml",
 )
 OPTIONAL_NATIVE_PROFILES = NATIVE_RELEASE_PROFILES

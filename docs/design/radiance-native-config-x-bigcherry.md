@@ -34,25 +34,25 @@ server:
   kernels: libr3,libr4d,libref      # must cover every rank arch below
 models:
   qwen27b:                          # exactly one model for a managed start
-    model: radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
     tp: 3
     tp-wire: exact
-    max-model-len: 8192
+    max-model-len: 262144
     max-num-seqs: 8
     kv-cache-dtype: fp8
     num-speculative-tokens: 3
     ngram-placement: disk
     rope-scaling: none
     p2p: "off"
-    tp-ownership: "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"
+    tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
     pipelined-prefill: "on"
     pipelined-prefill-min-rows: 256
     tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 x-bigcherry:
   schema: 1
-  description: "Qwen3.8-27B w8a8 over XTX, XTX, R9700 (native TP3), 5,5,6 split"
-  variant-of: qwen27b-tp3-int8      # optional provenance, see Variants
-  differs: [models.qwen27b.tp-ownership]
+  description: "Qwen3.8-27B IQ8R over XTX, XTX, R9700 (native TP3), 6,6,4 split, 262,144 tokens a session"
+  variant-of: qwen27b-tp3      # optional provenance, see Variants
+  differs: [models.qwen27b.max-model-len]
   ranks: [{arch: gfx1100, count: 2}, {arch: gfx1201, count: 1}]
   memory: {host-pool-mib: 0, host-kv-mib: 0}   # explicit overrides of derived values; normally omitted
 ```

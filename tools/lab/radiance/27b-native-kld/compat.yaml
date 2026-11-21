@@ -5,7 +5,7 @@ server:
   kernels: libr3,libref
 models:
   qwen27b:
-    model: radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
     tp: 2
     tp-wire: "exact"
     max-model-len: 8192
@@ -21,7 +21,7 @@ models:
     p2p: "off"
 x-bigcherry:
   schema: 1
-  description: "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 all-reduce"
+  description: "Qwen3.8-27B IQ8R, two RDNA3 engine ranks with host-memory wht6 all-reduce"
   ranks:
     - {arch: "gfx1100", count: 2}
   memory: {host-pool-mib: 0, host-kv-mib: 0}
