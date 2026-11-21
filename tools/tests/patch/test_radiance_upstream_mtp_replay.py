@@ -189,6 +189,6 @@ def test_retirement_is_isolated_from_recipe_and_discovery():
         assert (p / "archive" / name / "patch.py").is_file()
         assert not (p / name).exists()
         assert f'"{name}"' not in recipes
-    assert 'state = "rejected"' in (
-        p / "archive/rad0047_mtp_verify_replay_summary/patch.toml"
-    ).read_text()
+    archive_index = (p / "archive/ARCHIVE.md").read_text()
+    assert "| rad0047_mtp_verify_replay_summary | rejected (was untested) |" in archive_index
+    assert "| rad0013_mtp_pass_replay | superseded (was validated) |" in archive_index
