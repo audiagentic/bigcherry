@@ -151,14 +151,14 @@
   },
   "totals": {
     "composed_patches": 38,
-    "edits": 633,
-    "anchors": 603,
-    "upstream_anchors": 568,
+    "edits": 634,
+    "anchors": 602,
+    "upstream_anchors": 567,
     "created_target_anchors": 35,
-    "anchor_sites": 626,
-    "anchor_bytes": 74492,
-    "inserted_bytes": 552526,
-    "created_edits": 30,
+    "anchor_sites": 625,
+    "anchor_bytes": 74339,
+    "inserted_bytes": 564019,
+    "created_edits": 32,
     "upstream_files": 80
   },
   "patches": [
@@ -285,6 +285,8 @@
         "core/plugin/bands.cpp",
         "core/plugin/bc_rank_devices.cpp",
         "core/plugin/bc_rank_devices.h",
+        "core/plugin/bc_rank_engine.cpp",
+        "core/plugin/bc_rank_engine.h",
         "core/plugin/loader.cpp",
         "core/plugin/registry.h",
         "core/plugin/select.cpp",
@@ -308,16 +310,18 @@
       "created_files": [
         "core/plugin/bc_rank_devices.cpp",
         "core/plugin/bc_rank_devices.h",
+        "core/plugin/bc_rank_engine.cpp",
+        "core/plugin/bc_rank_engine.h",
         "tests/bc_rank_devices_test.cpp"
       ],
-      "edits": 42,
-      "anchors": 39,
-      "upstream_anchors": 39,
+      "edits": 43,
+      "anchors": 38,
+      "upstream_anchors": 38,
       "created_target_anchors": 0,
-      "anchor_sites": 39,
-      "anchor_bytes": 5883,
-      "inserted_bytes": 40829,
-      "created_edits": 3
+      "anchor_sites": 38,
+      "anchor_bytes": 5730,
+      "inserted_bytes": 52269,
+      "created_edits": 5
     },
     {
       "patch": "rad0045_expert_route_replay",
@@ -1193,7 +1197,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 7,
       "anchor_bytes": 300,
-      "inserted_bytes": 23411,
+      "inserted_bytes": 23464,
       "created_edits": 4
     },
     {
@@ -1499,7 +1503,7 @@
       "anchors": 32,
       "anchor_sites": 32,
       "anchor_bytes": 2434,
-      "inserted_bytes": 24543,
+      "inserted_bytes": 20677,
       "patch_count": 13
     },
     {
@@ -2075,7 +2079,7 @@
       "anchors": 5,
       "anchor_sites": 5,
       "anchor_bytes": 1094,
-      "inserted_bytes": 2367,
+      "inserted_bytes": 2721,
       "patch_count": 1
     },
     {
@@ -2098,17 +2102,6 @@
       "anchor_sites": 4,
       "anchor_bytes": 267,
       "inserted_bytes": 184,
-      "patch_count": 1
-    },
-    {
-      "path": "core/plugin/loader.cpp",
-      "patch_ids": [
-        "rad0016_vtp14_rank_code_selection"
-      ],
-      "anchors": 4,
-      "anchor_sites": 4,
-      "anchor_bytes": 723,
-      "inserted_bytes": 3359,
       "patch_count": 1
     },
     {
@@ -2142,6 +2135,17 @@
       "anchor_sites": 3,
       "anchor_bytes": 93,
       "inserted_bytes": 139,
+      "patch_count": 1
+    },
+    {
+      "path": "core/plugin/loader.cpp",
+      "patch_ids": [
+        "rad0016_vtp14_rank_code_selection"
+      ],
+      "anchors": 3,
+      "anchor_sites": 3,
+      "anchor_bytes": 570,
+      "inserted_bytes": 1268,
       "patch_count": 1
     },
     {

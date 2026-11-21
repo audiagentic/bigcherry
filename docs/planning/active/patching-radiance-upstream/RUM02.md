@@ -268,6 +268,14 @@ This source relocation claims neither GPU/KLD parity nor a full engine
 build. Owner validation on leased hardware remains required for
 mixed-libr3/libr4d TP and Flash-Next native startup.
 
+2026-11-22 (bigcherry-2): rad0016 and rad0045 classified; slice 5 (rad0016 rank-device bodies) on node/rum02-rank-code-hooks.
+
+Classification (caller/lifetime, from the declared edits):
+- rad0016_vtp14_rank_code_selection (39 anchors, 42 edits, 40.8 KB inserted incl. 21 KB owned src): PRODUCTION (in source radiance). Live callers: the admitted native manifest feeds --rank-devices to the engine; the mixed TP3 XTX+XTX+R9700 configs depend on it, with rad0017 for the shared rendezvous. Lifetime: needed as long as mixed-architecture ranks exist. Bodies were already partly owned (bc_rank_devices.cpp, pure functions); about 20 KB of logic still sat inline in upstream files (engine_bringup device admission and rank gate, loader rank mask, Registry members). Worth extracting: yes, pure over plain inputs, testable without a card.
+- rad0045_expert_route_replay (36 anchors, 27.7 KB inline, no created files): DIAGNOSTIC (state diagnostic; only in radiance-vtp44-evidence, requires rad0044). Lifetime: the VTP44 routing-evidence experiment only, not production. Its bodies are inline in 15 upstream files (engine_bringup 7.4 KB, ctx.cpp 6.9 KB, r4d_moe.hip 3.7 KB), kernel-adjacent HIP and runtime context code that needs a GPU to prove parity. Not worth extracting now: no production caller, the cost is the probe count of one evidence source, and extraction cannot be proven hardware-free. Revisit only if VTP44 is revived or the patch is retired.
+
+Slice 5 result (rad0016): Registry::set_code_devices, rank_bits and a new rank_code_mask (the loader's per-rank code-mask loop), the --rank-devices admission (wire refusal, inventory plan, fleet-order check, decision and warnings) and the per-rank program receipt moved into owned core/plugin/bc_rank_devices.{h,cpp} (pure) and bc_rank_engine.{h,cpp} (engine types). Upstream files keep typed calls only. Footprint before/after (docs/evidence/radiance-patch-footprint): anchors 603 -> 602, edits for rad0016 42 -> 43 (one hook edit removed, two created files added), inline text inserted into upstream files 19,910 -> 14,307 bytes (-28%), owned non-test source 9,959 -> 21,760 bytes; total inserted bytes rose (+11.5 KB) because the owned sources and their tests count. This is relocation: the anchor count barely moves, the gain is that a bump re-anchors hooks, not bodies. Hardware-free proof: pristine pinned tree + production patch set applied, host build (RAD_WITH_HIP=OFF), bc_rank_devices_test 12 cases / 164 checks (4 new: admission decision and warnings, lossy wire refusal and lab flag, inventory and fleet refusals, per-rank receipt), plus config_test, plugin_test, shipped_plugins_test, fleet_config_test, gen_config_test pass before and after; bc_native_fleet_config_test aborts identically before and after in this scratch build (unrelated). patch-rebase-check clean on all four sources (32/32, 33/33, 33/33, 36/36), tools/tests 5833 passed. No GPU parity run: the extraction does not change any kernel, and the logged texts are asserted verbatim in the tests.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -281,3 +289,4 @@ mixed-libr3/libr4d TP and Flash-Next native startup.
 - 2026-11-18T02:28:04.354691+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - 2026-11-20T12:44:25.653062+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T01:48:35.924734+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T21:08:53.985793+00:00 (updated-by): Updated: section:notes
