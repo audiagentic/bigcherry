@@ -1,5 +1,12 @@
 # Changelog
 
+## [1170.37.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.36.0...bc-radiance-1170.37.0) (2026-11-21)
+
+
+### New and changed
+
+* **radiance:** migrate to upstream 2.2.0 native serving ([#1167](https://github.com/audiagentic/bigcherry/issues/1167)) ([4cb1925](https://github.com/audiagentic/bigcherry/commit/4cb1925c12f8c0c62127c08951bdcaffaa9a4159))
+
 ## [1170.36.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.35.0...bc-radiance-1170.36.0) (2026-11-20)
 
 
