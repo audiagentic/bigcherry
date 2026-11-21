@@ -121,6 +121,7 @@ EDITION=v2
 "$BC_SERVE" --help 2>&1 | grep -q -- '--native-config' && EDITION=v3
 NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BUILD/bin/radiance"
              --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}" --allow-power-apply)
+[ "$EDITION" = v3 ] && NATIVE_ARGS+=(--work-root "$BC_WORK_ROOT")   # the host-wide model-identity cache lives there
 # The default is stock (observe only): bc-serve refuses a named non-stock profile without its rule file, and the stored
 # baseline was taken with the cards' own settings. The power profile is explicit so a held GPU lease can apply only qualified,
 # journalled settings; a missing lease or missing qualification fails closed.
