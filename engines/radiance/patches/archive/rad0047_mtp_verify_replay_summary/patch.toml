@@ -1,7 +1,7 @@
 schema = 1
 id = "rad0047_mtp_verify_replay_summary"
 order = 47
-state = "rejected"
+state = "untested"
 kind = "enhancement"
 origin = "local"
 backend = "agnostic"
