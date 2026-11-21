@@ -69,4 +69,41 @@ if(LTX_NATIVE_CORE_LIB)
     add_test(NAME ltx_c01_weight_receipt
       COMMAND ltx_c01_weight_receipt_test "${LTX_IQ8R_MODEL}")
   endif()
+  # C02 uses the real patched Lin::declare with one ABI-matched reference
+  # kernel. Stage only libref.so: scanning the full SDK directory can load
+  # unrelated diagnostic helpers (and must not initialize a GPU).
+  if(LTX_REFERENCE_LIB)
+    if(NOT LTX_IQ8R_MODEL)
+      message(FATAL_ERROR "LTX_REFERENCE_LIB needs LTX_IQ8R_MODEL")
+    endif()
+    if(NOT EXISTS "${LTX_REFERENCE_LIB}")
+      message(FATAL_ERROR "LTX_REFERENCE_LIB is missing")
+    endif()
+    file(REAL_PATH "${LTX_REFERENCE_LIB}" _ref_source)
+    set(_ref_dir "${CMAKE_CURRENT_BINARY_DIR}/ltx_c02_ref")
+    file(MAKE_DIRECTORY "${_ref_dir}")
+    set(_ref_link "${_ref_dir}/libref.so")
+    if(EXISTS "${_ref_link}")
+      file(REAL_PATH "${_ref_link}" _ref_existing)
+      if(NOT _ref_existing STREQUAL _ref_source)
+        message(FATAL_ERROR "C02 reference kernel changed; use a fresh build directory")
+      endif()
+    else()
+      file(CREATE_LINK "${_ref_source}" "${_ref_link}" SYMBOLIC RESULT _ref_result)
+      if(NOT _ref_result STREQUAL "0")
+        message(FATAL_ERROR "C02 cannot stage isolated native kernel: ${_ref_result}")
+      endif()
+    endif()
+    add_executable(ltx_c02_lin_declare_test ltx_c02_lin_declare_test.cpp)
+    target_compile_features(ltx_c02_lin_declare_test PRIVATE cxx_std_23)
+    target_include_directories(ltx_c02_lin_declare_test PRIVATE
+      "${LTX_SOURCE_ROOT}/core" "${LTX_SOURCE_ROOT}/abi"
+      "${LTX_SOURCE_ROOT}/vendor"
+      "${LTX_STAGE_ROOT}/arch/ltx2"
+      "${CMAKE_BINARY_DIR}/rad_include")
+    get_target_property(_c01_core_links ltx_c01_weight_receipt_test LINK_LIBRARIES)
+    target_link_libraries(ltx_c02_lin_declare_test PRIVATE ${_c01_core_links})
+    add_test(NAME ltx_c02_actual_lin_declare
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}")
+  endif()
 endif()

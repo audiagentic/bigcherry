@@ -43,7 +43,7 @@ The corresponding Python test tooling can inspect the actual local IQ8R containe
 
 ## Per-component harnesses and promotion gates
 
-The lab now owns **ten independently selectable native CTests**: `ltx_tp3_reference_test`, `ltx_tp3_protocol_test`, `ltx_tp3_numerical_test`, `ltx_tp3_linear_test`, `ltx_tp3_rms_test`, `ltx_tp3_handoff_test`, `ltx_tp3_guidance_test`, `ltx_tp3_output_test` and `ltx_tp3_micro_pipeline_test` and `ltx_tp3_i8a8h_test`. The two additional real-container Python oracles inspect model planes, sampled quantized rows, all 48 DiT block layouts and both eight-layer connector stacks. For the exact matrix of component pass/fail gates, device promotion steps and end-to-end acceptance see `docs/design/ltx25-tp3-component-test-ladder.md`. All native tests are synthetic and make no production engine calls; optional real-file tests are read-only and CPU-only.
+The lab now owns **eleven independently selectable native CTests**: `ltx_tp3_reference_test`, `ltx_tp3_protocol_test`, `ltx_tp3_numerical_test`, `ltx_tp3_linear_test`, `ltx_tp3_rms_test`, `ltx_tp3_handoff_test`, `ltx_tp3_guidance_test`, `ltx_tp3_output_test` and `ltx_tp3_micro_pipeline_test` and `ltx_tp3_i8a8h_test`, plus `ltx_tp3_builder_shard_test`. The two additional real-container Python oracles inspect model planes, sampled quantized rows, all 48 DiT block layouts and both eight-layer connector stacks. For the exact matrix of component pass/fail gates, device promotion steps and end-to-end acceptance see `docs/design/ltx25-tp3-component-test-ladder.md`. The original component-suite native tests are synthetic. The separate C01/C02 gate invokes the real Radiance native builder and patched LTX source with the read-only model, but does not execute a full engine or GPU.
 
 ## IQ8R activation and real-plane C01 gate
 
@@ -59,3 +59,28 @@ weight-view receipt for all DiT blocks; see
 
 
 The new Radiance patch package `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare` adds an optional `C01Slice` argument to the real LTX `Lin::declare` builder. Its native `ltx_tp3_builder_shard_test` includes the exact packaged header. `test_ltx_tp3_builder_patch.py` checks anchored applicability, idempotence and failure on changed upstream source. `native-c01-gate/CMakeLists.txt` compiles the patched frozen 2.2 LTX translation unit using its ABI44 headers in an isolated work-root stage. The production one-rank path is unchanged; no TP3 serving admission or GPU code is activated. See `docs/design/ltx25-c01-native-builder-stage.md`.
+
+
+## C02 real LTX native Lin::declare (2026-11-22)
+
+The opt-in native-c01-gate now builds the actual patched 2.2/ABI44 LTX
+translation unit and a separate test **including that same source**. The
+C02 test calls the real `ltx2::Lin::declare` with a read-only native
+`RadFile`, the matching `RadBuilder`, and exactly one reference kernel.
+It verifies **3,024 positive declarations** across every DiT block, seven
+IQ8R projection types, three rank layouts and all ranks, with exact code,
+scale and bias spans, host kernel resolution, and `Builder::finish()`.
+Three negative cases (wrong scale group, biased output, invalid audio K
+cut) refuse before any model weight is declared. The reference kernel is
+staged alone into the CMake build root, avoiding unrelated SDK plugins.
+
+Set `LTX_SOURCE_ROOT`, `LTX_STAGE_ROOT`, `LTX_NATIVE_CORE_LIB`,
+`LTX_REFERENCE_LIB` and `BC_LTX_IQ8R_MODEL` to the exact 2.2/ABI44 source,
+isolated patched source, matching core archive, matching `libref.so`, and
+explicit model path. CMake refuses a core with a different Radiance
+version or source root. Omit `LTX_REFERENCE_LIB` to use the original
+compile-only gate. Full commands and limitations:
+`docs/evidence/2026-11-22-ltx25-main22-c02/README.md`.
+
+**Not proven:** model payload loading, GPU kernels, TP3 full model startup,
+global Q/K RMS, collectives, bias-once reduction or video generation.

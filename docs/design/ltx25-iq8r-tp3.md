@@ -1,7 +1,7 @@
 # LTX-2.5 IQ8R native TP3 + optional gfx1030 text worker
 
 **Status:** engineering design and detailed implementation backlog; **not an authoritative Planning MCP item**.
-**Source baseline:** BigCherry origin/main 358ddd197, frozen upstream candidate 3deabdaeca17b58bad90d332f4b204cf7bb8a10e.
+**Source baseline (updated 2026-11-22):** BigCherry released main `b80f37d3e` (Radiance 2.2.0 / ABI44); frozen upstream pin `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
 **Model:** https://huggingface.co/StillDeadcode/radiance-ltx-2.5-iq8r (license acceptance required).
 **Non-negotiable:** the installed inference engine and any conditioning worker are native C++/HIP. Python remains optional build/test tooling, never an engine runtime dependency.
 
@@ -45,9 +45,9 @@ TP3 must be independently deliverable **without** the 6900 text worker.
 
 ### LT3-01 — Upstream model, version and build identity (P0)
 
-**Gap:** current engines/radiance/recipes.toml production pin remains v1.17.0; published LTX-2.5 IQ8R needs newer Radiance. Active RUM01–RUM10 ports may change ABI/native YAML.
+**Updated gap (2026-11-22):** Radiance 2.2.0 / ABI44 and native YAML are on released main. The remaining gap is LTX TP3 model graph, kernel/device qualification and production admission; the C01 diagnostic patch is deliberately not selected by any production source recipe.
 
-**Implementation:** wait for RUM owner to freeze a qualifying candidate, model hash and SDK; add LTX patches to a separate opt-in managed patch-set once upstream source applicability is proven. Verify full plugin build identity; disallow stale libr2/libr3/libr4d or mixed ABI fingerprints. Preserve production recipes and old configs.
+**Implementation (2.2 baseline acquired):** use the released 2.2/ABI44 source pin and match its native SDK and model identity; retain LTX's separate diagnostic patch-set until graph correctness and device parity qualify it. Verify full plugin build identity; disallow stale libr2/libr3/libr4d or mixed ABI fingerprints. Preserve production recipes and old configs.
 
 **No-card:** patch applicability, idempotence, forbidden terms, build graph and plugin ABI validation. **Hardware:** complete mixed-card load and native generation.
 
@@ -178,7 +178,7 @@ Existing ABI already exports rad_weight_shard_span_parts (abi/rad_builder.h:553-
 ## PR sequence and acceptance boundaries
 
 1. **Foundation:** this design plus isolated native card-free oracle and CI test. The oracle is not imported into production; no new LTX runtime flags, no weakening of TP1 refusal.
-2. **Managed LTX patch package:** following RUM completion, introduce metadata-driven head/FFN ownership and encoded QKV mapping, source applicability and tests on frozen candidate. Keep launch refused until functional.
+2. **Managed LTX patch package:** on the released 2.2 base, extend the existing diagnostic C01/C02 code with metadata-driven head/FFN ownership and encoded QKV mapping, source applicability and model-backed tests. Keep launch refused until functional.
 3. **Distributed Q/K norm:** new HIP partial sum and existing exact collective; device comparison for every self/text/cross attention.
 4. **Complete DiT TP3:** output/FFN reductions, gates, guidance and leader-only generator passes, with full 48-block numerical comparisons.
 5. **TP3 only qualification:** optimize collective placement after profiling, publish native YAML/manifest and a named opt-in config, restoreable TP1 fallback.

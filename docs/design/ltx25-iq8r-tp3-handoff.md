@@ -1,5 +1,7 @@
 # LTX-2.5 TP3: agent resume and merge handoff
 
+**2026-11-22 current integration:** Released Radiance 2.2.0 / ABI44 is now on main at `b80f37d3e`. The active continuation worktree is `main.worktrees/ltx25-tp3-main22` (branch `agent/ltx25-tp3-main22`), rebased by isolated cherry-picks rather than carrying obsolete bump conflicts. C01 and C02 native real-model declaration/host-graph tests pass; see `docs/evidence/2026-11-22-ltx25-main22-c02/README.md`. The older PR #1190 and branch named below are historical foundation context, **not** the checked HEAD or a completed TP3 engine. Planning and Ledger lifecycle records still require their authoritative MCP services. Do not enable production TP3 on these tests.
+
 **Scope:** resume BigCherry PR #1190 (agent/ltx25-tp3-foundation) and complete its **foundation merge** under project conventions. Separately continue LT3-01 to LT3-15 implementation as staged production PRs. Foundation success DOES NOT mean a working TP3 LTX engine.
 
 **Last source review:** 2026-11-20; authoritative repository state is discovered at resume time (do not trust embedded commit hashes without fetching). Source evidence was gathered from the frozen Radiance candidate at upstream commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e in the project work root, not from an installed released engine.
@@ -62,7 +64,7 @@ After any change to the design or lab code, run the three native tests and tooli
 
 ## 4. Smallest genuinely productive next production slice (separate branch)
 
-Start **after** the RUM owner has a frozen ABI, exact candidate composition and a working source-applicability/compile gate. Never edit the frozen candidate's generated source in place and claim permanence: use the existing engines/radiance/patches recipe/patch-package mechanism, with an opt-in nonproduction LTX package first.
+Continue against the **released Radiance 2.2.0 / ABI44 main** with its exact pinned source and current native builder tests. Never edit the frozen candidate's generated source in place and claim permanence: use the existing engines/radiance/patches recipe/patch-package mechanism, with an opt-in nonproduction LTX package first.
 
 **Files/symbols (verified candidate):**
 

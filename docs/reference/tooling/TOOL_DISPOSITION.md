@@ -613,6 +613,7 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_builder_shard_test.cpp` | **TRANSITIONAL** | Diagnostic C01 builder admission test, compiles the actual opt-in Radiance patch header. |
 | `tools/lab/radiance/ltx-tp3/native-c01-gate/CMakeLists.txt` | **TRANSITIONAL** | Isolated LTX C01 source compile and optional ABI-matched real RadBuilder read-only model declaration gate, not production. |
 | `tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c01_weight_receipt_test.cpp` | **TRANSITIONAL** | Native 2.2 RadBuilder IQ8R weight-view/span receipts across DiT blocks; not full graph or GPU parity. |
+| `tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp` | **TRANSITIONAL** | Opt-in test including real patched LTX `Lin::declare` and 2.2 native Builder/host registry; 3,024 model-backed declarations plus three fail-closed checks, no full TP3 GPU graph or payload load. |
 | `tools/tests/lab/test_ltx_iq8r_shards.py` | **TRANSITIONAL** | C01 optional read-only real-RAD2 raw-plane sharding, fused-bank and bias contract test; CPU only, not native loader/GPU parity. |
 | `tools/lab/radiance/hostread-idle-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: does a kernel reading host-mapped memory slow down when the host CPU is idle versus busy-looping. |
 | `tools/lab/radiance/idle-gap-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: VRAM-streaming kernel with an idle gap, host waiting by event polling vs blocking-sync event. |

@@ -1,8 +1,6 @@
 # LTX-2.5 TP3 — C01 native Radiance builder stage
 
-**Status 2026-11-20:** diagnostic patch implemented, source applicability
-and host native translation-unit compile proven; **no TP3 engine
-execution or real RadBuilder weight-admission run yet**.
+**Status 2026-11-22:** diagnostic patch compiled against the released 2.2/ABI44 source; native C01 model-derived weight receipts and C02 actual `Lin::declare` host graph finalization passed. **No full model payload loading, TP3 serving or GPU generation** has been demonstrated.
 
 ## Ownership
 
@@ -11,7 +9,7 @@ execution or real RadBuilder weight-admission run yet**.
 argument to the actual `arch/ltx2/ltx2.cpp::Lin::declare`.
 No existing call site passes this argument. The canonical recipe
 `patch-set.ltx3-c01-diagnostic` references this unpromoted package,
-but **no source recipe selects that set**. Production v1.17.0 and
+but **no source recipe selects that set**. Production Radiance 2.2.0 and
 the LTX `world_size > 1` refusal are unchanged.
 
 ## Native behavior introduced
@@ -56,7 +54,9 @@ an **empty output directory** to copy only the LTX translation unit and
 apply the anchored package. It proves idempotence. The
 `tools/lab/radiance/ltx-tp3/native-c01-gate` CMake project compiles
 the **patched real LTX2 source translation unit** with its frozen
-ABI44 headers, without linking or running a model. Configure it with
+ABI44 headers. With an explicit ABI-matched native core and reference
+kernel, C01/C02 additionally test actual model-backed declarations and
+host graph finalization; no GPU execution is enabled. Configure it with
 `-DLTX_SOURCE_ROOT=<source>`, `-DLTX_STAGE_ROOT=<output>`.
 The staged path is outside source control and is never a serving
 artifact.
@@ -69,11 +69,11 @@ oversized/invalid source spans.
 
 ## Not yet proven
 
-- The 2026-11-21 native `RadBuilder` C01 weight-view receipt covers
-  actual model IQ8R codes, logical scale views and BF16 row bias.
-  It does **not** prove complete graph/kernel resolution, payload load or GPU execution.
-  See `docs/evidence/2026-11-21-ltx25-2p2-native-builder/README.md`.
-- No real rank-local activation buffer, global all-head Q/K RMS,
+- Native C01 model IQ8R weight views and C02 real `Lin::declare` host
+  graphs are proven; they do **not** establish complete TP3 architecture
+  graph declaration, model payload loading or GPU execution.
+  See `docs/evidence/2026-11-22-ltx25-main22-c02/README.md`.
+- No integrated rank-local activation scheduling, global all-head Q/K RMS,
   RoPE/attention/FFN output collective or bias-once ownership.
 - No matching mixed gfx1100/gfx1201 kernel and hardware numerical
   comparison, no model output, no device liveness or E2E parity.
@@ -81,11 +81,10 @@ oversized/invalid source spans.
 
 ## Next single proof
 
-The native C01 model-weight **declaration** receipt is now covered,
-including all DiT blocks and the actual two-level IQ8R scale views.
-Next, run the real LTX `Lin::declare` for one source-bound layer with
-declared activation buffers, native kernel-selection and full
-weight-loading receipts. Compare a single-layer numerical projection
-against TP1 before permitting any TP3 serving admission. Biased
-attention outputs require an explicitly unique after-reduction owner.
-See `docs/evidence/2026-11-21-ltx25-2p2-native-builder/README.md`.
+**C02 complete for host-only declarations:** 3,024 actual `Lin::declare` calls across all 48 DiT blocks, seven supported projection kinds, three uneven splits and three ranks; native graph finish and host kernel resolution pass, and three invalid requests fail before weight declarations. Reproducible evidence: `docs/evidence/2026-11-22-ltx25-main22-c02/README.md`.
+
+Next, integrate all-head Q/K RMS, rank-local buffers and bias-once
+output reductions into one real LTX attention block. Validate its native
+model payload load and numerical output against TP1 before permitting
+any TP3 serving admission. Full dual-stream DiT and device performance
+remain later gates.
