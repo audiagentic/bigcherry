@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261121_222509_qwen-27b-fp8-kv-store-is-valid_5083",
+  "files": [
+    "docs/evidence/2026-11-22-rum11-page16-e4m3/README.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM11.md"
+  ],
+  "plan-item-ids": [
+    "RUM11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Closed RUM11. The plain E4M3 page16 fused KV store (rad0049) passes its selftest byte-identically on gfx1100 and gfx1201 for the 6/1 and 12/2 rank-local head shapes; all six Qwen 27B configs start, canary and stop from the installed bc-radiance 1170.37.0 prefix with no unresolved-kernel markers; IQ8R TP3 KLD and top-1 are recorded from RUM06 (fp8 KV, speculative depth 0).",
+  "timestamp-utc": "2026-11-21T22:25:09.179739Z",
+  "user-summary-candidate": "Qwen 27B FP8 KV store is validated on both GPU architectures in Radiance 2.2."
+}
