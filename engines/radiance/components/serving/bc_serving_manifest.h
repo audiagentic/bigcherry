@@ -48,6 +48,10 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given);
  * serving start); false for a start without --manifest and for the measuring start (--plan-memory), which has no plan to
  * check. A serving start with no plan cannot get here: the strict reader refuses an unmeasured manifest for it. */
 bool bc_serving_expected_plan(bc::serving::v2::EnginePlan* expected, int64_t* floor_ppm);
+
+/* The selected calibrated KV backing floor, including for a measuring start
+ * before an expected plan exists. Zero only when not selected. */
+int64_t bc_serving_kv_backing_floor_ppm();
 /* BDFs are from the same strictly validated engine view, not device ordinals. */
 std::vector<std::string> bc_serving_engine_bdfs();
 

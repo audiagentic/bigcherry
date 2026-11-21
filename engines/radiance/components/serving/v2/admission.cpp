@@ -51,28 +51,32 @@ ConfigError gpu_room(const std::string& at, const std::string& what,
 
 }  // namespace
 
-Result<OneSessionPools> refit_one_session_pools(int64_t claimable, int64_t statics,
+Result<ServingPools> refit_serving_pools(int64_t claimable, int64_t statics,
                                                 int64_t experts, int64_t stage,
                                                 int64_t expert_floor, int64_t kv,
-                                                int64_t kv_one_session) {
+                                                int64_t kv_one_session, int64_t kv_ceiling,
+                                                int64_t ppm) {
     constexpr int64_t mib = int64_t{1} << 20;
-    const auto invalid = [](const char* detail) -> Result<OneSessionPools> {
+    const auto invalid = [](const char* detail) -> Result<ServingPools> {
         return make_error(ConfigErrorCode::invalid_value, kAt + ".vram",
-                          std::string("one-session pool refit: ") + detail);
+                          std::string("serving pool refit: ") + detail);
     };
-    for (int64_t n : {claimable, statics, experts, stage, expert_floor, kv, kv_one_session})
+    for (int64_t n : {claimable, statics, experts, stage, expert_floor, kv, kv_one_session, kv_ceiling})
         if (n < 0 || n > kMaxBytes)
             return invalid("nonnegative measured byte counts required");
+    if (auto e = check_kv_backing_floor_ppm(ppm)) return *e;
     if (!kv_one_session || expert_floor > experts)
         return invalid("one-session KV or expert floor inconsistent");
     if (statics > claimable || stage > claimable - statics)
         return make_error(ConfigErrorCode::admission_refused, kAt + ".vram",
                           "fixed weights and staging exceed live claimable bytes");
-    // KVManager's nominal ceiling can be smaller than the actual full-session
-    // capacity. A claim for one session must back its measured full size.
+    // A measured plan must honor the selected backing calibration at pool
+    // allocation time, not just at the subsequent admission check.
+    // KVManager's nominal ceiling can be below one full session.
     const int64_t available = claimable - statics - stage;
     const auto ceil_mib = [](int64_t n) { return n / mib + (n % mib != 0); };
-    int64_t candidate_kv = std::max(kv, kv_one_session);
+    const int64_t minimum_kv = kv_required(kv_ceiling, kv_one_session, ppm);
+    int64_t candidate_kv = std::max(kv, minimum_kv);
     for (int attempt = 0; attempt < 2; ++attempt) {
         const int64_t kv_mib = ceil_mib(candidate_kv);
         if (kv_mib <= available / mib) {
@@ -83,15 +87,15 @@ Result<OneSessionPools> refit_one_session_pools(int64_t claimable, int64_t stati
                 weights_capacity_bytes - statics >= expert_floor) {
                 const int64_t fitted_experts =
                     std::min(experts, weights_capacity_bytes - statics);
-                return OneSessionPools{fitted_experts, candidate_kv,
+                return ServingPools{fitted_experts, candidate_kv,
                                        ceil_mib(statics + fitted_experts), kv_mib};
             }
         }
-        if (candidate_kv == kv_one_session) break;
-        candidate_kv = kv_one_session; // reclaim only optional KV before refusing
+        if (candidate_kv == minimum_kv) break;
+        candidate_kv = minimum_kv; // reclaim optional KV, never calibrated backing
     }
     return make_error(ConfigErrorCode::admission_refused, kAt + ".vram",
-                      "live claimable bytes cannot hold one full session and the measured expert floor"
+                      "live claimable bytes cannot hold the calibrated KV backing and measured expert floor"
                       " after exact MiB pool rounding");
 }
 

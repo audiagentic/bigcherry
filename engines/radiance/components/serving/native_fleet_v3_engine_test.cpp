@@ -118,6 +118,12 @@ void check_native_measuring_main(const std::string& path, const wire::Manifest& 
     check(bc_serving_take_native_config(&cfg) == 1,
           "rad0009 did not replay the native Config after rad0011 captured its baseline");
     const auto& spec = manifest.spec;
+    int64_t backing_floor = 0;
+    for (const auto& entry : spec.calibration)
+        if (entry.key == wire::CalibrationKey::kKvBackingFloorFractionPpm)
+            backing_floor = std::get<int64_t>(entry.value);
+    check(bc_serving_kv_backing_floor_ppm() == backing_floor,
+          "measuring start did not bind its selected KV backing floor");
     check(cfg.mixed_step_target_ms == 17 &&
               cfg.given.at("--mixed-step-target-ms") == "models.tiny.mixed-step-target-ms",
           "native Config value or YAML provenance was lost before Engine::start");
