@@ -2,7 +2,7 @@
 id: RUM04
 order: 3
 plan: patching-radiance-upstream
-state: in_progress
+state: completed
 created-at: '2026-11-18T01:28:13.721371+00:00'
 breadth: ''
 skill: advanced
@@ -76,7 +76,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-All 18 serving configs are single YAML files (native sections plus x-bigcherry v1); no TOML catalogue, layout file, v2 serving contract or reader of them remains; every caller listed in the design is migrated; schema, agreement, single-source, variant and release tests pass; the resolved values of all 18 equal the pre-switch reference except the deletions the mapping lists; RUM09 start/canary/stop of each config passes on the 2.2 build.
+All 16 serving configs (10 Flash-Next, 6 Qwen 27B) are single YAML files (native sections plus x-bigcherry v1); no TOML catalogue, layout file, v2 serving contract or reader of them remains; every caller listed in the design is migrated; schema, agreement, single-source, variant and release tests pass; the resolved values of all configs equal the pre-switch reference except the deletions the mapping lists; RUM09 start/canary/stop of each config passes on the 2.2 build.
 
 ## Notes
 
@@ -235,6 +235,17 @@ C48 (2026-11-20, bigcherry-2): per the owner redirect (one native YAML per servi
 
 C66 (2026-11-22, bigcherry-2): step (iii)(b) on node/rum04-session-tests (PR #1265). Added bc_contract_identity_test (registry fingerprints = compiled codec kFingerprint/kSemanticFingerprint = committed contract.fingerprint; flattened registry = compiled kFields table; every field resolves in the generated schema with the same required flag). Session test deletion: not done, by measurement. Per-test gcov line coverage of all 29 card-free serving ctests shows session_test (47 unique production lines), session_stored_test (139) and session_guards_test (337) each reach lines no other test reaches; session_stored_test is also the replay binary release_install_test runs. The map is in docs/evidence/radiance-session-tests. Limit: bc_serving_test aborted under the instrumented build (timing), which can only overstate the unique counts. Per-case deletion inside a file would need a per-case selector and behaviour-level evidence, not line coverage; not attempted. Also refreshed the patch footprint and repaired the stale test_plan_check_flags_are_gone assertion (the expected-plan entry now lives in the serving component).
 
+2026-11-22 (bigcherry-2): acceptance audit against main (origin/main 618d7447e plus the fixes in this PR). The shipped set is 16 configs (10 flashnext + 6 qwen27b), so the count in the acceptance text is now 16 (the 18 of the 2026-11-20 captures included two since-retired variants).
+
+1. Single YAML with x-bigcherry: engines/radiance/configs holds 16 *.yaml and a README; each carries the closed x-bigcherry v1 section, read by xbigcherry.cpp (schema, single-source and variant checks in native_fleet_config_test, serving_test, tools/tests/release/test_native_profiles.py and tools/tests/lab/test_arm_yaml.py).
+2. No TOML catalogue, layout file, v2 contract or reader: no catalogue or layout TOML exists (engines/radiance/layouts is gone; the only layout_cmds.py left is a read-only view over bc-serve's structured resolution); BC_SERVING_CONTRACT_VERSION accepts only 3 (bc_serving_v2.cmake refuses others) and bigcherry/v2 documents are refused as unsupported edition. One real remnant found and removed in this PR: the contract generator still carried an edition-2 Python reader (emit_python_codec, emitted only for contract_version 2, which can no longer occur, 160 lines hard-coded to bigcherry/v2); its stale registry header comments are corrected. bc_contract_check, bc_contract_test and bc_contract_identity_test pass after the removal (committed generated files byte-identical). The only TOML the owner still reads is machine facts (site file, archs.toml, calibration seeds), which the design keeps.
+3. Design-listed callers: bc-serve resolver/explain/start read the YAML (native_fleet_config.cpp, config_loader.cpp); --set refused on a managed start; bundled selection from <prefix>/configs/NAME.yaml; release packer and runtime_assets ship the YAML files only (test_native_profiles); flashnext-parity.sh takes FLASHNEXT_PARITY_SETS as YAML-path --set; docs engines/radiance/configs/README.md and SERVING_MANIFEST.md describe the single file. RSC12 and VTP36 plan text is history in completed plans and is left as written.
+4. Tests: tools/tests passed in full on this branch (5833 passed) and the serving component tests pass (native fleet config, v3 engine with the writer child, contract check/identity). Two stale tests found and fixed on the way (bc_native_fleet_config_test edition assertions, #1267; arch_test pins, #1270).
+5. Equivalence: C48 recorded bc-serve explain --native-config over a directory holding only the YAMLs against the TOML-era reference: 0 differences except engine.radiance_home, with the mapping's deletions listed.
+6. RUM09 start/canary/stop of each config: all 16 from the installed bc-radiance-1170.37.0 prefix, by name, no --set, canary correct, clean stop (docs/evidence/radiance-latest-bump/RUM09-GATE-E.md).
+
+Baseline after RUM04/RUM02 work: 38 composed patches and 602 anchors on main (631 with rad0055 landing). Marked completed.
+
 ## Change Log
 
 - 2026-11-18T01:28:13.721371+00:00 (created-by): Created by codex
@@ -307,3 +318,6 @@ C66 (2026-11-22, bigcherry-2): step (iii)(b) on node/rum04-session-tests (PR #12
 - 2026-11-20T10:44:09.358513+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - 2026-11-20T12:48:16.875209+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T20:48:48.508218+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:15:58.058094+00:00 (updated-by): Updated: section:acceptance_criteria
+- 2026-11-21T22:16:02.260329+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:16:41.165622+00:00 (state-transition): State: in_progress → completed

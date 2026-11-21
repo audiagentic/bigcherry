@@ -229,30 +229,26 @@ reason = "error message names the container extension"
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
 anchor = "return (rt == 256 || rt == 384) ? rt : 128;"
-category = "D"
+category = "A"
 reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
 anchor = "else if (rad18_upmix_rt == 384)"
-category = "D"
+category = "A"
 reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
 anchor = "_launch(384)"
-category = "D"
+category = "A"
 reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/components/serving/contract/serving.toml"
 anchor = "values = [128, 256, 384]"
-category = "D"
+category = "A"
 reason = "the PF2 up-mix kernel supports only these bounded row tile choices"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0042_kv_b16_selftest/patch.py"
@@ -365,16 +361,14 @@ reason = "Generic filename suffix for the planning-only candidate artifact; not 
 [[allow]]
 path = "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py"
 anchor = "X(B16I8,  4, \"bf16_i8\",  49, 32,  0, 48, 32)"
-category = "D"
-reason = "Packed KV descriptor row widths and scale geometry belong to the ABI44 format contract."
-owner = "RUM09"
+category = "A"
+reason = "Packed KV descriptor row widths and scale geometry are the ABI44 format contract itself, not a model default."
 
 [[allow]]
 path = "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py"
 anchor = "{ RAD_KVQ_V4,    \"fp8_v4\",   400, 256,   0, 384, 32 },"
-category = "D"
-reason = "Packed KV descriptor row widths and scale geometry belong to the ABI44 format contract."
-owner = "RUM09"
+category = "A"
+reason = "Packed KV descriptor row widths and scale geometry are the ABI44 format contract itself, not a model default."
 
 [[allow]]
 path = "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/patch.toml"

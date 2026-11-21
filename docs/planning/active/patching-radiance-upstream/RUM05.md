@@ -93,6 +93,8 @@ Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gate
 - **Host gates:** S5 regression for the R9700 KV/MiB edge and strict refit/one-byte bound; S8 host-memory tests cover RAM boundary, disk fallback and neither-fitting refusal; v3 writer tests check choice/overrides, contradictory/missing receipts, YAML key identity and strict derived provenance. Managed rad0011 patch mechanics suite ran 9 tests successfully. The broader bc_serving_test fixture currently fails on unrelated old qwen27b TOML-vs-layout parity (262,144 context and RAM in the config versus 8192 context and disk in the test); source files were not touched by this slice.
 - **Remaining:** Run actual R9700 and XTX production measured starts and replay on GPU-leased host before marking full RUM05 acceptance complete.
 
+2026-11-22 (bigcherry-2): acceptance audit, no state change. Met on hardware: measured fresh starts on R9700 and XTX cards (flashnext-r9700, the 2xtx family, mixed qwen27b TP3, 4-GPU) across all 16 configs from the installed 1170.37.0 prefix, including the two defects recorded above (R9700 one-session shortfall, n-gram placement); met card-free: exact ordered BDF to child-local device binding in serving and offline Config (native_fleet_v3_engine_test, check_rank_devices, quality overlay keeps devices and rank_devices), existing measured admission and independent owner verification, no broker hook. NOT yet exercised on cards: (1) stored replay: bc-serve start --manifest <stored measured manifest> --run-dir NEW, replaying a manifest written by an earlier start, and the plan-cache-hit start (a second start by name with an unchanged YAML, build, model and host facts, which reuses the measured plan without measuring), on one R9700-only config (flashnext-r9700) and one XTX config with a nontrivial rank order (qwen27b-tp3: XTX, XTX, R9700); (2) the offline caller on cards: one native KL record/score start (--kld-record, then --kld-ref/--kld-out) on qwen27b-tp3, to show the offline Config keeps the same physical order as the serving start. Gate E records fresh starts; it does not record a replay or cache-hit start or an offline KL start. Remaining: those runs, then complete.
+
 ## Change Log
 
 - 2026-11-18T01:28:20.204242+00:00 (created-by): Created by codex
@@ -107,3 +109,4 @@ Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gate
 - 2026-11-19T22:59:23.833156+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T12:44:34.149699+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T13:12:22.293227+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:16:24.905500+00:00 (updated-by): Updated: section:notes
