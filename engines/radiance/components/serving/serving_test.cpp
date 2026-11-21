@@ -1286,9 +1286,7 @@ void session_engine_plan(Fixture& t) {
     fs::create_directories(home);
     std::string site_text = "[engine]\nmodel = \"" + model.string() +
                             "\"\nradiance_home = \"" + home.string() + "\"\n";
-#ifdef BC_NATIVE_V3_SESSION_ONLY
     site_text += "port = " + std::to_string(select_free_port()) + "\n";
-#endif
     const auto site = t.file("session-site.toml", site_text);
     const fs::path run = t.root / "session-run";
     fs::create_directories(run);
@@ -1310,9 +1308,6 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(gtt) << "0\n";
     }
     SessionManifestPair session_manifests;
-#ifndef BC_NATIVE_V3_SESSION_ONLY
-    session_manifests = session_manifest_pair(session_resolved, session_facts);
-#endif
     { // Private native admission inspects exact bytes before measurement; the v2 build refuses the v3 path.
         ss::EnginePlanInputs gated = in;
         const fs::path native_root = t.root / "native-admission-root";
@@ -1331,7 +1326,6 @@ void session_engine_plan(Fixture& t) {
             if (end == std::string::npos) break;
             begin = end + 1;
         }
-#ifdef BC_NATIVE_V3_SESSION_ONLY
         std::reverse(expected_kernels.begin(), expected_kernels.end());
         const int native_port = select_free_port();
         const Json execution_settings = {
@@ -1339,10 +1333,6 @@ void session_engine_plan(Fixture& t) {
             {"ngram_placement", session_resolved.values.at("engine").at("ngram_placement")},
             {"speculative_tokens", 2}, {"rope_scaling", "yarn:4"}, {"prefix_resume", "exact"},
             {"prefill_interleave", 1}};
-#else
-        const int native_port = session_resolved.typed.engine.port;
-        const Json execution_settings = Json::object();
-#endif
         ss::Env native_overrides = {
             {"TEST_NATIVE_INSPECT_TP", "3"},
             {"TEST_NATIVE_INSPECT_TP_WIRE", "exact"},
@@ -1473,16 +1463,7 @@ void session_engine_plan(Fixture& t) {
         fs::create_directories(gated_run);
         const fs::path cache_tripwire = gated_run /
             ("stored-" + bc::serving::sha256_hex(gated.named_config) + ".index.json");
-#ifndef BC_NATIVE_V3_SESSION_ONLY
-        std::ofstream(cache_tripwire) << "deliberately malformed cache index";
-#endif
         int writer_calls = 0;
-#ifndef BC_NATIVE_V3_SESSION_ONLY
-        gated.runner = [&](const std::vector<std::string>&) {
-            ++writer_calls;
-            return ss::ManifestRun{};
-        };
-#endif
         bool power_admitted = false;
         int power_admit_calls = 0;
         std::string admitted_measurement_manifest_sha256;
@@ -1518,18 +1499,11 @@ void session_engine_plan(Fixture& t) {
         std::string native_gate_error;
         try {
             const auto plan = ss::plan_engine_only(gated, gated_run, admission_hooks);
-#ifdef BC_NATIVE_V3_SESSION_ONLY
             admitted_expected_path = plan.native_launch && plan.pinned_manifest && plan.helpers.empty() &&
                 plan.execution_manifest() != plan.manifest;
-#endif
         } catch (const ss::PlanFailed& error) {
             native_gate_error = error.what();
-#ifndef BC_NATIVE_V3_SESSION_ONLY
-            admitted_expected_path = std::string_view(error.what()).find("native writer/P1/measurement/replay") !=
-                                     std::string_view::npos;
-#endif
         }
-#ifdef BC_NATIVE_V3_SESSION_ONLY
         const fs::path attempts = gated_run / "measurement-attempts";
         std::vector<fs::path> attempt_dirs;
         if (fs::is_directory(attempts))
@@ -1878,13 +1852,6 @@ void session_engine_plan(Fixture& t) {
               !fs::exists(drift_run / ("manifest-native-" + drift_attempt_dirs.front().filename().string() + ".json"))))
             throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
                                      "publication: " + runtime_home_drift_error);
-#else
-        if (!(admitted_expected_path && writer_calls == 0 && !power_admitted && fs::exists(cache_tripwire) &&
-              inspector_roles.size() == 1 &&
-              inspector_roles[0] == "native config inspector" && reaped.size() == 1))
-            throw std::runtime_error("native admission did not reach its expected fail-closed gate: " +
-                                     native_gate_error);
-#endif
 
         ss::EnginePlanInputs reserved_override = gated;
         reserved_override.native_admission->runtime_overrides["CUDA_VISIBLE_DEVICES"] = "0";
@@ -1904,9 +1871,7 @@ void session_engine_plan(Fixture& t) {
         assert(selector_refused && forbidden_inspector_calls == 0 &&
                power_admit_calls == power_calls_before_invalid_override);
     }
-#ifdef BC_NATIVE_V3_SESSION_ONLY
     return;
-#endif
     std::vector<std::vector<std::string>> calls;
     auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
         for (size_t i = 0; i + 1 < argv.size(); ++i)
@@ -2553,10 +2518,8 @@ void helper_vram_owner_graph(Fixture& t) {
     }
     std::string site_text = "[engine]\nmodel = \"" + model.string() +
                             "\"\nradiance_home = \"" + home.string() + "\"\n";
-#ifdef BC_NATIVE_V3_SESSION_ONLY
     const int port = select_free_port();
     site_text += "port = " + std::to_string(port) + "\n";
-#endif
     const fs::path site = t.file("helper-vram-graph.toml", site_text);
     ss::EnginePlanInputs in;
     in.work_root = t.work_root();
@@ -2570,7 +2533,6 @@ void helper_vram_owner_graph(Fixture& t) {
     in.self = BC_SERVE_EXE;
     in.engine_binary = BC_FAKE_ENGINE;
     in.helper_binary = BC_FAKE_ENGINE;
-#ifdef BC_NATIVE_V3_SESSION_ONLY
     const fs::path heat = t.root / "writer.hot-first";
     std::vector<uint32_t> counts(128 * 16, 0);
     for (uint32_t l = 0; l < 4; ++l)
@@ -2786,153 +2748,9 @@ void helper_vram_owner_graph(Fixture& t) {
         timeout_record.at("errors").dump().find("KL scoring timed out") == std::string::npos ||
         timeout_record.at("events").dump().find("power_restored") == std::string::npos)
         throw std::runtime_error("native helper finite score timeout did not clean up: " + timeout_record.dump());
-#else
-    int writers = 0;
-    std::vector<fs::path> measuring_histograms;
-    std::vector<std::vector<std::string>> serving_writer_args;
-    in.runner = [&](const std::vector<std::string>& args) -> ss::ManifestRun {
-        ++writers;
-        auto result = run_bc_serve({args.begin() + 1, args.end()});
-        const std::string file = fs::path(args.at(2)).filename().string();
-        if (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-measuring-", 0) != 0 &&
-            file.rfind("manifest-resources-", 0) != 0)
-            serving_writer_args.push_back(args);
-        if (result.exit_code == 0 && fs::is_regular_file(args.at(2))) {
-            if (file.rfind("manifest-measuring-", 0) == 0 ||
-                (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-resources-", 0) != 0)) {
-                const Json doc = Json::parse(std::ifstream(args.at(2)));
-                const fs::path prefix =
-                    doc.at("spec").at("handoff").at("telemetry").at("histogram_file").get<std::string>();
-                if (file.rfind("manifest-measuring-", 0) == 0)
-                    measuring_histograms.push_back(prefix);
-            }
-        }
-        return {result.exit_code, result.output, result.output};
-    };
-    in.helper_vram.read_used = [](const fs::path& path) -> uint64_t {
-        throw std::runtime_error("injected unreadable BDF-specific counter: " + path.string());
-    };
-    ss::Hooks hooks;
-    hooks.wait = [](std::chrono::milliseconds) { return true; };
-    bool blocked_baseline = false;
-    try {
-        (void)ss::plan_engine_only(in, t.root / "vram-graph-run", hooks);
-    } catch (const ss::PlanFailed& e) {
-        const std::string why = e.what();
-        blocked_baseline = why.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
-                           why.find("cannot read VRAM") != std::string::npos;
-        if (!blocked_baseline)
-            std::cerr << "helper graph: " << why << "\n";
-    }
-    if (!blocked_baseline || writers < 1)
-        throw std::runtime_error("helper graph did not reach the pre-start BDF baseline");
-
-    for (const std::string mode : {"immediate", "late", "never"}) {
-        ss::EnginePlanInputs active = in;
-        std::map<std::string, unsigned> samples;
-        active.helper_vram.read_used = [&](const fs::path& path) -> uint64_t {
-            std::ifstream used(path);
-            uint64_t bytes = 0;
-            if (!(used >> bytes))
-                throw std::runtime_error("missing fake BDF usage file");
-            const unsigned n = ++samples[path.string()];
-            // Three pre-start baseline observations; GPU usage lingers AFTER
-            // reaped fake helpers, then settles. No actual GPU is contacted.
-            if (n > 3 && (mode == "never" || (mode == "late" && n < 7)))
-                return bytes + uint64_t{256} * 1024 * 1024;
-            return bytes;
-        };
-        ss::Hooks live_hooks;
-        live_hooks.wait = [](std::chrono::milliseconds) { return true; };
-        live_hooks.helper_stop_timeout = std::chrono::milliseconds(400);
-        const int before = writers;
-        std::string refusal;
-        const fs::path run_dir = t.root / ("vram-graph-" + mode);
-        fs::create_directories(run_dir);
-        try {
-            (void)ss::plan_engine_only(active, run_dir, live_hooks);
-        } catch (const ss::PlanFailed& e) {
-            refusal = e.what();
-        }
-        if (mode == "never") {
-            if (refusal.find("measuring helper VRAM not released") == std::string::npos ||
-                refusal.find("baseline=") == std::string::npos || writers - before != 3)
-                throw std::runtime_error("helper graph timeout: " + refusal +
-                                         " writers=" + std::to_string(writers - before));
-        } else if (writers - before < 4) {
-            std::ostringstream message;
-            message << "helper graph " << mode << " stopped before final writer: " << refusal
-                    << " writers=" << (writers - before);
-            throw std::runtime_error(message.str());
-        }
-    }
-    // Each measuring writer gets a private telemetry generation. A future
-    // engine that publishes during --plan-memory must never replace the
-    // serving engine's rank0 histogram at the operator's destination.
-    if (measuring_histograms.empty())
-        throw std::runtime_error("real measuring writer histogram fixture did not run");
-    for (const fs::path& path : measuring_histograms) {
-        if (path == t.root / "vram-histogram" || path.parent_path().parent_path() != t.root ||
-            path.parent_path().filename().string().rfind("vram-graph-", 0) != 0 ||
-            path.filename().string().rfind("histogram-measuring-", 0) != 0)
-            throw std::runtime_error("measuring histogram not isolated: " + path.string());
-    }
-    if (serving_writer_args.empty())
-        throw std::runtime_error("real serving writer was never invoked");
-    const std::string site_recording = "handoff.histogram=" + Json((t.root / "vram-histogram").string()).dump();
-    for (const auto& args : serving_writer_args) {
-        size_t histogram_overrides = 0;
-        for (size_t i = 0; i + 1 < args.size(); ++i)
-            if (args[i] == "--set" && args[i + 1].rfind("handoff.histogram=", 0) == 0) {
-                if (args[i + 1] != site_recording)
-                    throw std::runtime_error("private measuring prefix leaked to serving writer");
-                ++histogram_overrides;
-            }
-        if (histogram_overrides != 1)
-            throw std::runtime_error("serving writer lost the operator's recording destination");
-    }
-
-    // Exercise the real CPU publisher twice as future --plan-memory and serving
-    // producers would: neither generation may overwrite the other's files.
-    std::vector<uint32_t> counts(static_cast<size_t>(r3::moe_shm::kMaxLayers) * 16, 0);
-    counts[0] = 42;
-    const std::string serving_prefix = (t.root / "vram-histogram").string();
-    const std::string measurement_prefix = measuring_histograms.back().string();
-    const std::string nonce = "0123456789abcdef0123456789abcdef";
-    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
-        !r3::heat_publication::publish(serving_prefix, 0, 16, counts, nonce))
-        throw std::runtime_error("engine CPU histogram publication failed");
-    const ss::HistogramExpectation expected{
-        4, 16, std::chrono::system_clock::now() - std::chrono::seconds(3), {}, nonce};
-    const fs::path rank = serving_prefix + ".rank0";
-    if (ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
-                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
-        throw std::runtime_error("serving producer proof must qualify independently of measurement");
-    counts[0] += 1;
-    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
-        ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
-                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
-        throw std::runtime_error("later measuring publication affected the serving generation");
-#endif
 }
 
 int main(int argc, char** argv) {
-#ifdef BC_NATIVE_V3_SESSION_ONLY
-    (void)argc;
-    (void)argv;
-    try {
-        Fixture t;
-        v3_writer_cli_rejects_unowned_imports(t);
-        build_tree_runtime_home(t);
-        session_engine_plan(t);
-        helper_vram_owner_graph(t);
-        std::cout << "PASS: native v3 sealed snapshot session draft and pre-cache gate\n";
-        return 0;
-    } catch (const std::exception& e) {
-        std::cerr << "FAIL: " << e.what() << '\n';
-        return 1;
-    }
-#else
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
             serve_test_executable = argv[++i];
@@ -2954,13 +2772,16 @@ int main(int argc, char** argv) {
         host_reserve(t);
         host_ledger_plan();
         measured_plan_cache(t);
-        std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
-                     "precedence/caps; provenance/hash; calibration store; calibrated host reserve; host ledger; "
-                     "measured plan cache\n";
+        v3_writer_cli_rejects_unowned_imports(t);
+        build_tree_runtime_home(t);
+        session_engine_plan(t);
+        helper_vram_owner_graph(t);
+        std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; precedence/caps; "
+                     "provenance/hash; calibration store; calibrated host reserve; host ledger; measured plan cache; "
+                     "native v3 sealed snapshot session, config read and pre-cache gate\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';
         return 1;
     }
-#endif
 }

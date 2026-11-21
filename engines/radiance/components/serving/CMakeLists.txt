@@ -154,17 +154,7 @@ if(BUILD_TESTING)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
-  set_tests_properties(bc_serving_test PROPERTIES TIMEOUT 180)
-  if(BC_SERVING_V3_NATIVE_TEST)
-    add_executable(bc_native_v3_session_test EXCLUDE_FROM_ALL serving_test.cpp)
-    target_link_libraries(bc_native_v3_session_test PRIVATE bc_serving bc_serving_v2_p1_producer)
-    add_dependencies(bc_native_v3_session_test bc_fake_engine bc-serve)
-    target_compile_definitions(bc_native_v3_session_test PRIVATE
-      ${bc_calibration_fixture} BC_NATIVE_V3_SESSION_ONLY BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
-      BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
-    add_test(NAME bc_native_v3_session_test COMMAND bc_native_v3_session_test)
-    set_tests_properties(bc_native_v3_session_test PROPERTIES TIMEOUT 60)
-  endif()
+  set_tests_properties(bc_serving_test PROPERTIES TIMEOUT 240)
   add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
   target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
   add_test(NAME bc_power_transaction_test COMMAND bc_power_transaction_test)
@@ -249,26 +239,16 @@ if(BUILD_TESTING)
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
 
-  # Exercise the successor using the production manifest source list with a
-  # generated v3 codec, independently of the selected runtime edition.
-  set(successor_dir "${CMAKE_CURRENT_BINARY_DIR}/generated/v3")
-  bc_generate_serving_v3("${successor_dir}")
-  bc_add_manifest_library(bc_serving_v3_wire radiance::abi "${successor_dir}")
-  set_target_properties(bc_serving_v3_wire PROPERTIES EXCLUDE_FROM_ALL TRUE)
+  # The serving manifest wire is edition 3 (the only one): its codec test and the real writer, owner planner and P1 producer
+  # test link the production libraries.
   add_executable(bc_serving_v3_wire_test EXCLUDE_FROM_ALL v2/native_config_manifest_test.cpp)
-  target_link_libraries(bc_serving_v3_wire_test PRIVATE bc_serving_v3_wire)
+  target_link_libraries(bc_serving_v3_wire_test PRIVATE bc_serving_v2)
   add_test(NAME bc_serving_v3_wire_test COMMAND bc_serving_v3_wire_test
     "${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2/example.flashnext-4gpu.json"
     "${CMAKE_CURRENT_SOURCE_DIR}/generated/v3/contract.fingerprint")
-
-  # Compile the real writer, owner planner and P1 producer with just the
-  # successor codec. Both editions export the same C++ symbols with different types.
-  add_executable(bc_serving_v3_writer_test EXCLUDE_FROM_ALL
-    manifest_writer_v3_test.cpp ${bc_manifest_writer_sources} owner_map.cpp experts.cpp
-    v2/p1_producer.cpp v2/p1_measurement.cpp v2/p1_live_room.cpp)
-  target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving_v3_wire)
-  target_include_directories(bc_serving_v3_writer_test PRIVATE
-    "${CMAKE_CURRENT_BINARY_DIR}/generated" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+  add_executable(bc_serving_v3_writer_test EXCLUDE_FROM_ALL manifest_writer_v3_test.cpp)
+  target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving bc_serving_v2_p1_producer)
+  target_include_directories(bc_serving_v3_writer_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
   add_test(NAME bc_serving_v3_writer_test COMMAND bc_serving_v3_writer_test)
 
   # S9: compile and test the inactive generated v2 codec, never production linked.
@@ -278,11 +258,6 @@ if(BUILD_TESTING)
   add_test(NAME bc_v2_s8_test COMMAND bc_v2_s8_test)
 
   # S10: all-v2 inactive resolver and writer; never linked by production.
-  add_executable(bc_v2_s10_test EXCLUDE_FROM_ALL v2/s10_resolver_test.cpp)
-  target_link_libraries(bc_v2_s10_test PRIVATE bc_serving_v2)
-  target_compile_definitions(bc_v2_s10_test PRIVATE
-    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
-  add_test(NAME bc_v2_s10_test COMMAND bc_v2_s10_test)
 
   # P1: inactive native measurement publication (no v1 activation).
   add_executable(bc_v2_p1_test EXCLUDE_FROM_ALL v2/p1_measurement_test.cpp)
@@ -329,17 +304,7 @@ if(BUILD_TESTING)
     COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_live_test> $<TARGET_FILE:bc_v2_runtime_receipt_live>
     DEPENDS bc_v2_runtime_receipt_live_test bc_v2_runtime_receipt_live)
 
-  add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
-  target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2)
-  target_compile_definitions(bc_v2_codec_test PRIVATE
-    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
-  add_test(NAME bc_v2_codec_test COMMAND bc_v2_codec_test)
 
-  add_executable(bc_v2_reader_test EXCLUDE_FROM_ALL v2/reader_test.cpp)
-  target_link_libraries(bc_v2_reader_test PRIVATE bc_serving_v2)
-  target_compile_definitions(bc_v2_reader_test PRIVATE
-    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
-  add_test(NAME bc_v2_reader_test COMMAND bc_v2_reader_test)
   add_executable(bc_s5_refusal_test EXCLUDE_FROM_ALL v2/s5_refusal_test.cpp)
   target_link_libraries(bc_s5_refusal_test PRIVATE bc_serving_v2)
   add_test(NAME bc_s5_refusal_test COMMAND bc_s5_refusal_test)
