@@ -69,3 +69,11 @@ builder graphs (48 blocks x 2 modalities x 2 legal splits x 3 ranks).
 The existing DiT step loop is reused (including STG gate slicing), but no owner selects TP3: no GPU execution, model payloads,
 full DiT or TP3 serving enabled. See
 docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.
+
+## Outcome
+
+C01-C06 native declaration and host graph tests pass; C06 per-card IQ8R GPU kernel checks and C08 mixed-card native exact all-reduce pass. Production LTX TP3 remains disabled, with no integrated model-weight GPU graph, parity or generated video.
+
+## Detail
+
+See SUMMARY.md for the indexed patch contract and the C05-C08 evidence in docs/evidence/2026-11-22-ltx25-*. The native AQL mixed-collective gate reused the installed Radiance 2.2 core and native kernels rather than adding a new transport; it does not exercise production LTX serving.
