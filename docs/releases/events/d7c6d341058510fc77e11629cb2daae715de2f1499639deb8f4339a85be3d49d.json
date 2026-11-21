@@ -1,0 +1,18 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261121_204852_internal-test-coverage-only-n_5921",
+  "files": [
+    "engines/radiance/components/serving/contract/identity_test.cpp",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/component.toml",
+    "docs/evidence/radiance-session-tests/README.md",
+    "tools/tests/lab/test_plan_check_flags_are_gone.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add bc_contract_identity_test (registry, committed fingerprint file, compiled codec and generated schema share one identity; flattened registry equals the compiled field table). Record per-test line coverage of the serving component: no session test file is redundant, none deleted. Refresh the radiance patch footprint; repoint the plan-check test at the serving component.",
+  "timestamp-utc": "2026-11-21T20:48:52.027015Z",
+  "user-summary-candidate": "Internal test coverage only; no user-visible change."
+}
