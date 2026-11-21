@@ -1,6 +1,7 @@
 """Exact candidate replay and registry checks for the retained packed caches and FP8 modes."""
 from __future__ import annotations
 
+import hashlib
 import json
 import shutil
 import subprocess
@@ -11,10 +12,16 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _vtp_promotion_support import (
+    PATCHES,
+    assert_promoted_recipe,
+    load_patch_files,
+    patched_pinned_source,
+)
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
-from test_radiance_rad0051 import PACKAGE as B16_KERNELS, PREREQUISITES
+from test_radiance_rad0051 import PACKAGE as B16_KERNELS
+from test_radiance_rad0051 import PREREQUISITES
 from test_radiance_rad0052 import PACKAGE as B16_GEOMETRIES
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
@@ -93,6 +100,18 @@ class RetainedKVTests(unittest.TestCase):
             body = body.split("  const bool fp8", 1)[0]
             self.assertIn("kvs.k_inv = 1.0f / (float)ks;", body)
             self.assertIn("kvs.v_inv = 1.0f / (float)vs;", body)
+            # Frozen ABI44 baseline template bytes after rad0051 + rad0053.
+            # The entire typed template (all B16 instantiations) must survive
+            # extraction unchanged, independently of the source-line move.
+            for name, expected in (
+                ("prefill", "d268e62ee27a25e3a446182e60bd498c0a0c30aa3b878a49ab3a0c23d5c09bd8"),
+                ("decode", "fb09f8537b5d34b2b4e5144f9cdec842b63ad1923840faa3e79e3fb7258d6b73"),
+            ):
+                body = (root / "libr4d" / f"bc_b16_{name}_impl.h").read_text()
+                start = body.index("template<int NWARPS, int TILE, int HEAD_DIM, int GQA, int BS, int KVP, int OPT,")
+                if name == "decode":
+                    body = body[:body.index("// End of rad0051-owned decode templates.", start)]
+                self.assertEqual(hashlib.sha256(body[start:].encode()).hexdigest(), expected)
             self.check_libr3_rewrites(root)
 
             cxx = shutil.which("c++")
@@ -140,7 +159,7 @@ class RetainedKVTests(unittest.TestCase):
                    "--source", str(root / "libr4d"), "--rules", str(LIBR3 / "rewrites.txt")]
         native = ["--native", str(LIBR3 / "native")]
         for options in ([], native):
-            report = subprocess.run([*command, *options, "--check"], capture_output=True, text=True)
+            report = subprocess.run([*command, *options, "--check"], check=False, capture_output=True, text=True)
             self.assertEqual(report.returncode, 0, report.stderr + report.stdout)
             self.assertEqual(json.loads(report.stdout), {"failures": {}})
 

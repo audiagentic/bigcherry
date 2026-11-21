@@ -183,7 +183,7 @@ inline RadKVLayout configured_b16_kv_layout(const char* name) {
 """,
               mode='insert_before', guard='constexpr bool r4d_v4_layout('),
     )),
-    FilePatch(path='libr4d/r4d_attn_prefill_h256_gqa6.hip', language="none", edits=(
+    FilePatch(path='libr4d/bc_b16_prefill_impl.h', language="none", edits=(
         _edit('typed-v4-cache',
               """    constexpr int V4    = ((OPT & O_V4) && !KVP) ? 1 : 0;
     constexpr int K6    = ((OPT & O_K6) && V4) ? 1 : 0;
@@ -220,7 +220,7 @@ inline RadKVLayout configured_b16_kv_layout(const char* name) {
 """,
         ),
     )),
-    FilePatch(path='libr4d/r4d_attn_decode_h256_gqa6.hip', language="none", edits=(
+    FilePatch(path='libr4d/bc_b16_decode_impl.h', language="none", edits=(
         _edit('typed-v4-cache',
               """    constexpr int V4    = ((OPT & O_V4) && !KVP) ? 1 : 0;
     constexpr int K6    = ((OPT & O_K6) && V4) ? 1 : 0;

@@ -147,6 +147,49 @@ on an appropriate leased GPU before concluding hardware parity. Planning MCP
 and ag-ledger event are not available in this agent session; bigcherry-1
 records external progress/ledger after integrating this commit.
 
+### 2026-11-21 RUM02 slice 3: resident B16 kernel hooks (rad0051)
+
+Completed on frozen Radiance 2.2 pin `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
+The 25 individual prefill and 29 individual decode edits on the two upstream
+`libr4d/r4d_attn_*_h256_gqa6.hip` sources were replaced by **one typed
+include hook per upstream file**. The complete original B16-aware template
+bodies are now rad0051-owned, hash-bound `bc_b16_prefill_impl.h` and
+`bc_b16_decode_impl.h` patch-created headers. Three rad0053 descriptor
+edits per file now target those owned headers. The gfx11 native rewrite
+retains the original O_R3NATIVE option hook and moves the eleven template
+rewrites into `native/bc_b16_prefill_impl.h.rw`. No upstream vendor edits,
+GPU jobs, full engine build or new adapters.
+
+**Measured before -> after**, using the current parent commit's checked-in
+footprint as the before state (not the earlier slice-1 historical baseline):
+
+| Item | Before | After | Effect |
+| --- | ---: | ---: | --- |
+| rad0051 upstream prefill anchors | 25 | 1 | -24 |
+| rad0051 upstream decode anchors | 29 | 1 | -28 |
+| rad0051 all anchors | 96 | 44 | -52 |
+| rad0051 upstream-owned anchors | 93 | 41 | -52 |
+| rad0053 upstream-owned anchors | 41 | 35 | -6 (relocated to owned headers) |
+| All selected patches, non-create anchors | 670 | 618 | -52 |
+| All selected patches, upstream-owned anchors | 646 | 588 | -58 |
+| All selected patches, edits including created files | 698 | 648 | -50 |
+
+**Verification:** `patch-rebase-check --all` 38/38 CLEAN;
+`patch-footprint` regenerated and `--check` clean; 32-package
+production source composition applied clean; repeated rad0051/rad0053
+application idempotent; `r3_rewrite.py --check` reports no failures on
+the composed source. Original and extracted templated definitions after
+rad0053 are byte-identical (prefill 33,446 bytes; decode 34,703 bytes),
+including all template layout variants; preprocessed kernel token
+projections matched for the target device and host passes. Both kernels
+passed HIP `-fsyntax-only` before and after for gfx1100 and gfx1201
+using `/opt/rocm-7.2.4/bin/hipcc` at nice 19 (8/8); the native gfx11
+rewritten prefill body was byte-identical (38,956 bytes). Relevant frozen
+source, registry, footprint and native-rewrite unit tests executed with
+`RADIANCE_SRC` pointing to the pinned checkout and an executable worktree
+`TMPDIR`. These host-only tests do not replace hardware selftests or
+Flash-Next/TP3 starts; those belong to the owner GPU validation.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
