@@ -103,6 +103,28 @@ int main() {
   assert(result.host.kv_mib == 1); // 4096 retained tokens x 128 measured bytes
   assert(result.host.reserve_mib == 4);
   assert(result.host.checkpoint_slots.value() == 5);
+  // RUM09: S8 produces an actual retained-KV allocation, which can be
+  // smaller than the measuring start's requested KV capacity when the
+  // measured context x session capacity saturates first. A strict equality
+  // check wrongly rejects an otherwise valid owned measurement.
+  {
+    auto admitted = result.host;
+    admitted.kv_mib += result.host.kv_mib;  // budget larger than measured retention
+    assert(!s8::require_measured_host_tiers(admitted, result.host));
+    assert(!s8::require_measured_host_tiers(result.host, result.host));
+    auto excessive = result.host;
+    excessive.kv_mib = admitted.kv_mib + 1;
+    auto refusal = s8::require_measured_host_tiers(admitted, excessive);
+    assert(refusal && refusal->path == "spec.resources.host.kv_mib");
+    auto wrong_reserve = result.host;
+    wrong_reserve.reserve_mib += 1;
+    refusal = s8::require_measured_host_tiers(admitted, wrong_reserve);
+    assert(refusal && refusal->path == "spec.resources.host.reserve_mib");
+    auto wrong_pool = result.host;
+    wrong_pool.pool_mib += 1;
+    refusal = s8::require_measured_host_tiers(admitted, wrong_pool);
+    assert(refusal && refusal->path == "spec.resources.host.pool_mib");
+  }
   auto startup_room = result.resource_inputs;
   const int64_t helper_resident_mib = 8;
   const int64_t pinned = (result.host.pool_mib + result.host.kv_mib) * MiB;

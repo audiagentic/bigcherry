@@ -510,3 +510,36 @@ under a fresh lease, capture the exact differing key leaves if a mismatch
 reappears, and complete full native start/canary/stop and release gates.
 The Planning/Ledger MCPs were not exposed to this session; authoritative plan
 state and release events were deliberately not hand-edited.
+
+
+## C74 — RUM09 measured KV tier contract (2026-11-21; not yet built)
+
+The native v3 session currently compares the measuring draft's
+`resources.host.kv_mib` to the final serving S8 `resources.host.kv_mib`
+for exact equality. These are different quantities: the draft records an
+**admitted KV capacity**, while S8 derives the **actual retained-token tier**
+from measured `kv_one_session.bytes / context_target_tokens` multiplied by
+the retained-token target, rounded up to whole MiB. The writer caps that
+retention target by both the requested tier and context times session count
+(`main.cpp`, `p1_measurement.cpp`, `s8_rules.cpp`). A tier smaller than the
+admitted capacity is valid and must not be treated as a plan-key drift.
+The host pool still matches the exact measurement, and the host reserve must
+not change. This is a separate deterministic contract defect, **not proof**
+that it caused the intermittent original writer/identity refusals.
+
+A source-level regression was written first in `v2/s8_rules_test.cpp`:
+a measured tier smaller than the admitted budget is accepted; equal tiers
+are accepted; expanding KV or changing pool/reserve is refused with the exact
+member path. The fix places the three-field comparison in the existing S8
+rules and calls it from the strict native session, preserving the quality
+score's separate path and all existing owner, S8 and live admission checks.
+No tolerance, static memory allowance or alternative parser was added.
+
+**Validation blocked:** host load remained above 99 at this checkpoint,
+exceeding the explicit under-30 compilation safety gate; neither the new
+C++ test nor the modified native serving component has been compiled or run.
+Earlier 3/3 and 1/1 passes (C73) predate this change and must not be presented
+as its validation. The GPU measuring helper also remains in uninterruptible
+kernel sleep with pending termination signals. Keep this slice pending until
+the host recovers and run `bc_v2_s8_test`, `bc_serving_test`, `bc_session_test`
+and `bc_serving_v3_writer_test` before any leased GPU retry.

@@ -64,6 +64,21 @@ std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &r) {
   return ceil_mib(pool_bytes);
 }
 
+Status require_measured_host_tiers(const HostResources &admitted,
+                                  const HostResources &measured) {
+  if (admitted.pool_mib < 0 || measured.pool_mib != admitted.pool_mib)
+    return bad(ConfigErrorCode::plan_mismatch, "spec.resources.host.pool_mib",
+               "measured host pool differs from the admitted measurement");
+  if (admitted.reserve_mib < 0 || measured.reserve_mib != admitted.reserve_mib)
+    return bad(ConfigErrorCode::plan_mismatch, "spec.resources.host.reserve_mib",
+               "measured host reserve differs from the admitted measurement");
+  if (admitted.kv_mib < 0 || measured.kv_mib < 0 ||
+      measured.kv_mib > admitted.kv_mib)
+    return bad(ConfigErrorCode::plan_mismatch, "spec.resources.host.kv_mib",
+               "measured host KV tier exceeds the admitted measuring budget");
+  return std::nullopt;
+}
+
 Status require_measured_host_room(const HostResources &host, int64_t engine_ranks,
                                   int64_t checkpoint_slot_bytes, const MeasuredResourceInputs &r,
                                   uint64_t helper_resident_mib) {

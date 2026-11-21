@@ -118,6 +118,12 @@ Result<S8Resolution> resolve_s8(const S8Measured &measured,
 // rounded up to whole MiB. A plan measured with another pool is re-measured with this one (bc-serve exit 11).
 std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &inputs);
 
+// The measuring manifest declares a host-KV budget; S8 writes the actual
+// measured retained-token tier, which may be smaller. The pool and reserve
+// remain exact. Never silently expand host KV beyond its admitted budget.
+Status require_measured_host_tiers(const HostResources &admitted,
+                                  const HostResources &measured);
+
 // Check the admitted allocation against live host, cgroup and pin room.
 // Helpers' RSS is measured by the owner outside the engine P1 record.
 Status require_measured_host_room(const HostResources &host, int64_t engine_ranks,

@@ -3430,9 +3430,15 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 throw PlanFailed("native v3 measured serving artifact changed the frozen model or ordered engine devices");
             const auto& draft_host = verified.parsed.spec.resources.host;
             const auto& final_host = final_spec.resources.host;
-            if (!in.quality_score &&
-                (draft_host.kv_mib != final_host.kv_mib || draft_host.reserve_mib != final_host.reserve_mib))
-                throw PlanFailed("native v3 measured host KV tier or reserve differs from the measurement attempt");
+            // The measuring manifest's host KV tier is a capacity ceiling,
+            // not the final number of retained-token bytes. S8 derives that
+            // smaller, exact tier from the owned engine KV measurement. The
+            // reserve and pool are unchanged; an increased tier still refuses.
+            if (!in.quality_score) {
+                if (const auto refusal = v2::require_measured_host_tiers(draft_host, final_host))
+                    throw PlanFailed("native v3 measured host tiers changed: " + refusal->path + ": " +
+                                     refusal->message);
+            }
             check_native_helper_roles(final_snapshot.parsed, processes, selected_bdfs, handoff);
             // The engine's rank receipt is the only authority for an auto
             // n-gram tier. Seal its exact RAM/disk/VRAM result; a final
