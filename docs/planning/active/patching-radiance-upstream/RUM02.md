@@ -98,6 +98,8 @@ This analysis-only change does not edit the patch packages: observed anchor coun
 
 Planning MCP progress and `ag-ledger record_change_event` remain pending: neither MCP action is available in this session. This worktree note records the technical result without pretending to submit an external plan update or ledger event.
 
+2026-11-21: footprint generator `bigcherry --engine radiance patch-footprint [--check]` and the 2.2 baseline report (docs/evidence/radiance-patch-footprint/) merged into node/radiance-latest-bump (5dedbaf53, regenerated b9072bcef): 38 patches, 679 anchors, 80 upstream files. Next slices in rank order: shared KV-row registration helper (rad0052/0053, the RUM11 lesson), rad0051 kernel hooks, rad0017 rendezvous, rad0009 after the RUM04 v2 removal. Each needs a rebase check, a component build and CPU geometry tests, then leased parity.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -110,3 +112,4 @@ Planning MCP progress and `ag-ledger record_change_event` remain pending: neithe
 - 2026-11-18T02:25:21.136200+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:28:04.354691+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - 2026-11-20T12:44:25.653062+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T01:48:35.924734+00:00 (updated-by): Updated: section:notes

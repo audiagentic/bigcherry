@@ -117,6 +117,8 @@ Rechecked the selected upstream replay seam on the composed frozen 2.2 host buil
 
 2026-11-20: to close this item for the bump: rad0047_mtp_verify_replay_summary is still state untested and in no patch set; qualify and compose it, or reject it with evidence. Then archive rad0013 (it no longer applies to 2.2: FAILED_NEEDS_RECONCILIATION in patch-rebase-check --all) once target replay coverage is shown equivalent, and record the rad0036 governor equivalence decision. The 2.2 chained-launch A/B (RUM09 notes) found no scheduling cause for the long-prefill regression.
 
+2026-11-21: host review on 2.2 b6b8751 (docs/evidence/2026-11-21-rum08-replay/README.md). rad0013 superseded by upstream pass_key (decode/verify/MTP draft keyed bound, QSA exact-side): archived unchanged. rad0047 rejected (scheduler always yields a positive full-KV summary for a wide verify): archived unchanged. rad0036 kept (not replicated by --prefill-interleave/--mixed-step-target-ms). New test tools/tests/patch/test_radiance_upstream_mtp_replay.py compiles the unmodified upstream pass_key. Merged into node/radiance-latest-bump at 1c6cc2a08. Open: GPU replay canary under RUM09.
+
 ## Change Log
 
 - 2026-11-18T01:28:40.856862+00:00 (created-by): Created by codex
@@ -141,3 +143,4 @@ Rechecked the selected upstream replay seam on the composed frozen 2.2 host buil
 - 2026-11-19T22:46:29.186651+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:07:28.977274+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T12:44:29.903864+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T01:48:31.465699+00:00 (updated-by): Updated: section:notes
