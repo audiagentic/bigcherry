@@ -40,3 +40,12 @@ close/cancel/drain/detach lifecycle. Tests must cover repeated generations,
 concurrent second-engine refusal, fault wake, partial initialization and
 published-pointer lifetime. Then run the four named mixed-TP hardware tests
 under short GPU leases. No plan completion is justified while gaps remain.
+
+## Design handoff (not implementation proof)
+
+- [Engine-generation ownership design](ENGINE-GENERATION-DESIGN.md)
+- [Implementation plan draft (Planning MCP handoff)](IMPLEMENTATION-PLAN-DRAFT.md)
+- [Adversarial design review](DESIGN-REVIEW.md)
+- [Mandatory code reduction and generic reuse gates](SIMPLIFICATION-GATES.md)
+
+These artifacts propose future code changes. No RUM06 lifecycle or hardware acceptance gap has been closed by the design documents.
