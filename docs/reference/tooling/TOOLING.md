@@ -35,6 +35,15 @@ The root `out/` directory is ignored scratch, never a durable evidence store; pr
 | Profiling/diagnostics | `bigcherry.profiling` | Real-hardware diagnostic harnesses such as rocprofv3 capture and RCCL qualification |
 | Permanent tests | `tools/tests/<domain>/` | Deterministic offline tests organized with the implementation owner |
 
+The observational `bigcherry --engine radiance patch-footprint` generator is owned
+by `bigcherry.analysis.patch_footprint` and `cli.patch_footprint`. It derives
+lexical anchor/edit/byte counts from the registry and every composed source
+in the current engine recipes, without applying edits or reading a GPU.
+`--check` compares the committed `docs/evidence/radiance-patch-footprint/`
+JSON and Markdown reports without writing; regenerate on recipe/patch updates.
+Patch-created targets are not counted as upstream-owned files, even if later
+patches anchor into them. This is an impact inventory, not a rebase proof.
+
 The normal call chain is:
 
 ```text
