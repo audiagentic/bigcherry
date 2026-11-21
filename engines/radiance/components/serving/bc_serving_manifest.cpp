@@ -157,6 +157,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_native_engine.reset();
     g_engine_bdfs.clear();
     g_have_expected = false;   /* each call starts from nothing: a start without --manifest holds no plan */
+    g_floor_ppm = 0;
     g_engine_settings = BcEngineSettings{};
     g_shm.clear();
     g_histogram.clear();
@@ -250,6 +251,12 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     if (!plan_memory.empty() && rank_out.empty())
         return fail("v3 native measurement requires --plan-memory-ranks");
     const auto& spec = manifest.value().spec;
+    // The measuring manifest already carries the selected calibration, even
+    // though its expected engine plan is not populated until measurement.
+    if (!plan_memory.empty())
+        for (const v2::CalibrationEntry& entry : spec.calibration)
+            if (entry.key == v2::CalibrationKey::kKvBackingFloorFractionPpm)
+                g_floor_ppm = std::get<int64_t>(entry.value);
     if (!run_flags.empty() && (spec.handoff || !spec.processes.helpers.empty())) {
         const auto flag = [&](const char* name) {
             return std::count_if(run_flags.begin(), run_flags.end(), [&](const auto& arg) {
@@ -605,6 +612,8 @@ bool bc_serving_expected_plan(v2::EnginePlan* expected, int64_t* floor_ppm) {
     *floor_ppm = g_floor_ppm;
     return true;
 }
+
+int64_t bc_serving_kv_backing_floor_ppm() { return g_floor_ppm; }
 
 std::vector<std::string> bc_serving_engine_bdfs() { return g_engine_bdfs; }
 

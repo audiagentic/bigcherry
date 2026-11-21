@@ -29,20 +29,21 @@ struct AdmissionMargins {
 };
 AdmissionMargins admission_margins(const EnginePlan& expected, const EnginePlan& live, int64_t kv_backing_floor_ppm);
 
-/* Refit the measured elastic weights/KV split to exact MiB pool allocations.
- * The one-session size may exceed KVManager::ceiling(), and independently
- * rounded weight/KV pools must fit live claimable bytes. The expert floor is
- * never spent to make room. */
-struct OneSessionPools {
+/* Refit elastic weights/KV to exact MiB pools using the same calibrated
+ * backing floor that admission checks, plus at least one full session.
+ * Independent pool rounding must fit live claimable bytes; the measured
+ * expert floor is never spent to make room. */
+struct ServingPools {
     int64_t experts_bytes;
     int64_t kv_bytes;
     int64_t weights_mib;
     int64_t kv_mib;
 };
-Result<OneSessionPools> refit_one_session_pools(int64_t claimable, int64_t statics,
+Result<ServingPools> refit_serving_pools(int64_t claimable, int64_t statics,
                                                 int64_t experts, int64_t stage,
                                                 int64_t expert_floor, int64_t kv,
-                                                int64_t kv_one_session);
+                                                int64_t kv_one_session, int64_t kv_ceiling,
+                                                int64_t kv_backing_floor_ppm);
 
 /* S5's host allocation admission, measured at the same pre-weight decision.
  * No guessed RAM/pin cap or byte constants: call only with a readable bound

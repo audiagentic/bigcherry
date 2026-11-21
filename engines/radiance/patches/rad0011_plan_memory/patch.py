@@ -279,13 +279,14 @@ void bc_plan_memory_note(rad::Config& cfg, const std::vector<rad::VramFacts>& fa
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
                          const rad::Program& prog) {
     if (bc_plan::mode() == bc_plan::Mode::none) return;
-    // RUM05: KVManager's reported ceiling can be smaller than a full session,
-    // and the independently MiB-rounded weights and KV pools must fit the
-    // *same* measured claimable budget used for live engine admission.
+    // RUM09: honor the selected KV backing calibration in both measuring and
+    // serving starts. Independently MiB-rounded weights and KV must fit the
+    // same measured claimable budget used for live engine admission.
     // Refit only the elastic split, never static weights or the expert floor.
-    auto fitted = bc::serving::v2::refit_one_session_pools(
+    auto fitted = bc::serving::v2::refit_serving_pools(
         vb.claimable, vb.statics, vb.experts, vb.stage,
-        vb.expert_floor, vb.kv, kv_one);
+        vb.expert_floor, vb.kv, kv_one, vb.kv_ceiling,
+        bc_serving_kv_backing_floor_ppm());
     if (!fitted) {
         std::fputs(bc::serving::v2::render_human("radiance", fitted.error()).c_str(), stderr);
         std::fflush(stderr);
