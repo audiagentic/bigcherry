@@ -103,6 +103,26 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none",
             break;
         }
 """, "BC_RUM09_PHASE_TAPE"),
+    rep("phase-tape-op-map",
+        """    const int bit = b->draft_pass + 8;
+    if (rank_ == 0 && bit >= 0 && bit < 64 && !(tape_told_ & (1ull << bit))) {
+""",
+        """    // BC_RUM09_TAPE_OP_MAP: rank-local op -> packet map is sampled at
+    // capture, before the immutable replay. These are op names, NOT
+    // speculative duration allocations across overlapping launch queues.
+    if (phase_tracing_ && b->draft_pass < 0 && b->n_draft_out > 0) {
+        for (const HazOp& h : haz_ops_) {
+            if (h.op == 0 || (size_t)h.op >= plans_.size() || !plans_[h.op].info) continue;
+            const OpInfo& op = *plans_[h.op].info;
+            const char* name = op.op.c_str();
+            RAD_INFO("RUM09 tape op rank=%d step=%d pass=%d context=%d packets=[%d,%d) op=%s collective=%d",
+                rank_, b->step, b->draft_pass, b->max_ctx_len, h.rec0, h.rec1,
+                name, plans_[h.op].collective ? 1 : 0);
+        }
+    }
+    const int bit = b->draft_pass + 8;
+    if (rank_ == 0 && bit >= 0 && bit < 64 && !(tape_told_ & (1ull << bit))) {
+""", "BC_RUM09_TAPE_OP_MAP"),
     rep("phase-run-pass-lambda", "    scratch_cur_[0] = scratch_cur_[1] = 0;\n",
         """    scratch_cur_[0] = scratch_cur_[1] = 0;
     // BC_RUM09_PHASE_PASS: a live or newly recorded pass gets one envelope;
