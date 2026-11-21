@@ -2,6 +2,8 @@
 
 BigCherry baseline: `f605d2c5619e3f86692a870567cbf97ead89b60c`. Previous production Radiance: `19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d` (v1.17.0, ABI 35). Frozen upstream input: `3deabdaeca17b58bad90d332f4b204cf7bb8a10e` (v2.1.0, ABI 43), verified from Codeberg `refs/heads/main` at kickoff. The migrated BigCherry production candidate composes this input with the local ABI44 and retained-feature packages; see checkpoint C14.
 
+For the calibrated four-GPU GPU-KV admission regression, see [RUM09-4GPU-ADMISSION.md](RUM09-4GPU-ADMISSION.md).
+
 Use individual commits as source checkpoints. For a later GPU comparison, build each qualifying checkpoint into an isolated runtime. Record exact BigCherry and upstream commits, build and installed runtime member digests, ABI and layout fingerprints, selected model/content and config hashes, physical rank/helper order, power policy, and the same workload. Keep raw run output under the project work root.
 
 | Stage | Meaning | Gate |
