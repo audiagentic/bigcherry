@@ -129,6 +129,8 @@ void usage() {
            "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
            "96 canary, 97 plan, 98 busy\n"
            "         v3 reads NAME.yaml from the verified bundle, else from --configs DIR; --native-config YAML names another file.\n"
+           "  --work-root DIR     the platform's work root (host-wide model-identity cache); without it a start\n"
+           "                     fingerprints the model per run\n"
            "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
            "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
@@ -145,7 +147,7 @@ void usage() {
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary, stored_manifest, native_config;
+    fs::path run_dir, engine_binary, stored_manifest, native_config, work_root;
     std::string config_name;
     std::optional<ss::QualityScore> quality;
     if (cmd == "quality") quality.emplace();
@@ -210,6 +212,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             passed.push_back(arg);
         } else if (arg == "--engine-binary") {
             engine_binary = need();
+        } else if (arg == "--work-root") {
+            work_root = need();   // the platform's work root: where the host-wide model-identity cache lives
         } else if (arg == "--power-profile") {
             power_profile = need();
             explicit_power_profile = true;
@@ -426,6 +430,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.options = opts;
     inputs.stored_manifest = std::move(stored_manifest);
     inputs.named_config = config_name;
+    inputs.work_root = work_root;
     inputs.quality_score = quality.has_value();
     inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_prompts_a = prompts_a;

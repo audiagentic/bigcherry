@@ -1273,7 +1273,11 @@ Resolved resolve(const Options& options, const Json& facts, const NativeEngineSe
         // and the owner seals it (rad0011 rank receipt); the resolver carries the intent until then.
         if (field.key == "engine.ngram_placement")
             field.choices.push_back("auto");
-        put(values, provenance, field, value, "native", "sealed Radiance YAML (matched native parser)");
+        const bool undecided = field.key == "engine.ngram_placement" && value == "auto";
+        put(values, provenance, field, value, "native",
+            undecided ? "sealed Radiance YAML: auto, an intent; the engine's measuring start chooses ram, disk or vram and the "
+                        "sealed manifest carries that tier (derived, rad0011 rank receipt)"
+                      : "sealed Radiance YAML (matched native parser)");
     };
     if (native) {
         native_value("engine.port", native->port);

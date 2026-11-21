@@ -2964,11 +2964,13 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     static_inputs.helper_digest =
         resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
     const fs::path index = stored_index_path(run_dir, name);
-    const char* work_root = std::getenv("BC_WORK_ROOT");
-    if (!work_root || !*work_root)
-        throw PlanFailed("named model identity requires BC_WORK_ROOT");
+    // The host-wide cache needs the platform's work root, passed explicitly (--work-root): no environment is read here.
+    // Without one the model is fingerprinted for this run, as before the shared cache.
+    const std::string model_path = values.at("engine").at("model").get<std::string>();
     const ModelIdentity artifact =
-        cached_model_identity(values.at("engine").at("model").get<std::string>(), fs::path(work_root), {}, verified_model);
+        !in.work_root.empty()
+            ? cached_model_identity(model_path, in.work_root, {}, verified_model)
+            : verified_model ? *verified_model : ModelIdentity{complete_file_identity(model_path), {}};
     static_inputs.model_digest = artifact.digest;
     static_inputs.power_profile = in.power_profile;
 

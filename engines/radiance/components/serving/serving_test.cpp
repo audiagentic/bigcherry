@@ -108,14 +108,13 @@ void write(const fs::path& path, const std::string& content) {
 struct Fixture {
     fs::path root;
     Json facts;
+    fs::path work_root() const { return root / "work"; }   // the platform work root a start gets as --work-root
 
     Fixture() : root(fs::current_path() / "bc-serving-fixture") {
         // This test only writes in its own CTest build directory.
         fs::remove_all(root);
         const auto cache_root = root / "work";
         fs::create_directories(cache_root);
-        if (::setenv("BC_WORK_ROOT", cache_root.c_str(), 1) != 0)
-            throw std::runtime_error("cannot set fixture BC_WORK_ROOT");
         const auto nodes = root / "sys/class/kfd/kfd/topology/nodes";
         write(nodes / "0/properties", "gfx_target_version 0\n");
         // KFD node order, not BDF sort or device names, defines HIP ordinals.
@@ -1294,6 +1293,7 @@ void session_engine_plan(Fixture& t) {
     const fs::path run = t.root / "session-run";
     fs::create_directories(run);
     ss::EnginePlanInputs in;
+    in.work_root = t.work_root();
     in.options.sys_root = t.root;
     in.options.site = site;
     in.options.configs = {configs};
@@ -2559,6 +2559,7 @@ void helper_vram_owner_graph(Fixture& t) {
 #endif
     const fs::path site = t.file("helper-vram-graph.toml", site_text);
     ss::EnginePlanInputs in;
+    in.work_root = t.work_root();
     in.options.site = site;
     in.options.sys_root = t.root;
     in.options.configs = {configs};

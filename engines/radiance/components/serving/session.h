@@ -357,6 +357,7 @@ struct EnginePlanInputs {
     std::filesystem::path self; // this bc-serve (writes the manifests)
     std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)
     std::string named_config;              // explicitly selected new RSC12 config; enables static-key reuse
+    std::filesystem::path work_root;       // the platform's work root (--work-root): host-wide model-identity cache; empty: per run
     bool explicit_power_profile = false;   // only an explicit override may conflict with a stored profile
     std::filesystem::path calibration_prompts_a, calibration_prompts_b, calibration_store;
     std::filesystem::path calibration_records_file; // real writer P2 source, part of static input key
