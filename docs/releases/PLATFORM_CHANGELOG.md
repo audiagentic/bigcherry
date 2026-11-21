@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.59.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.58.2...bc-platform-1.59.0) (2026-11-21)
+
+
+### New and changed
+
+* **radiance:** migrate to upstream 2.2.0 native serving ([#1167](https://github.com/audiagentic/bigcherry/issues/1167)) ([4cb1925](https://github.com/audiagentic/bigcherry/commit/4cb1925c12f8c0c62127c08951bdcaffaa9a4159))
+
 ## [1.58.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.58.1...bc-platform-1.58.2) (2026-11-21)
 
 
