@@ -114,3 +114,27 @@ def test_overlapping_passes_refused(tmp_path):
     rank.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
     with pytest.raises(ValueError, match="overlapping passes"):
         trace.analyze(bench, traces)
+
+
+def test_prefill_draft_passes_not_counted_as_decode(tmp_path):
+    bench, traces = _fixture(tmp_path)
+    rank = traces / "engine-rank-0.jsonl"
+    rows = [json.loads(line) for line in rank.read_text().splitlines()]
+    # A prefill step runs an MTP draft tagged phase=1. Both passes belong
+    # to the same prefill scheduler step and must be excluded together.
+    rows.insert(0, _step(0, 110, 120, 50.0, 0.0, phase=0, step=0))
+    rows.insert(1, _step(0, 121, 130, 90.0, 0.0, phase=1, step=0))
+    rows[1]["draft_pass"] = -1
+    rank.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    result = trace.analyze(bench, traces)["ranks"]["0"]
+    assert result["rounds"][0]["steps"] == 2
+    assert result["rounds"][0]["compute_ms_p50"] == 3.0
+
+
+def test_benchmark_decode_step_counter_must_match(tmp_path):
+    bench, traces = _fixture(tmp_path)
+    obj = json.loads(bench.read_text())
+    obj["rounds"][0]["engine"] = {"engine_steps_decode_total": 3}
+    bench.write_text(json.dumps(obj))
+    with pytest.raises(ValueError, match="decode-step count"):
+        trace.analyze(bench, traces)

@@ -79,10 +79,15 @@ def analyze(bench: Path, trace_dir: Path) -> dict:
     for rank, steps in by_rank.items():
         results = []
         for i, (start, end) in enumerate(windows):
-            # Only decode passes (RAD_PHASE_DECODE=1): prefill is reported
-            # separately by the benchmark, not mixed into decode phase means.
-            rows = [r for r in steps if r["phase"] == 1 and
-                    start <= r["wall_start_ns"] and r["wall_end_ns"] <= end]
+            # A prefill scheduler step may run the MTP draft passes as
+            # RAD_PHASE_DECODE=1. Its *model* pass (draft_pass=0) is still
+            # RAD_PHASE_PREFILL=0, so filtering individual pass phase tags
+            # falsely mixes 125 prefill steps into the cold decode median.
+            window_rows = [r for r in steps if start <= r["wall_start_ns"] and
+                           r["wall_end_ns"] <= end]
+            model_phases = {r["step"]: r["phase"] for r in window_rows
+                            if r.get("draft_pass") == 0}
+            rows = [r for r in window_rows if model_phases.get(r.get("step")) == 1]
             if not rows:
                 raise ValueError(f"rank {rank}: no decode HIP events in {'cold' if i == 0 else 'warm'} round")
             # One scheduler decode step may have several draft/verify passes.
@@ -112,6 +117,11 @@ def analyze(bench: Path, trace_dir: Path) -> dict:
                 max(0, right["wall_start_ns"] - left["wall_end_ns"])/1e6
                 for left, right in itertools.pairwise(group))
                 for _, _, group in ordered]
+            measured_steps = rounds[i].get("engine", {}).get("engine_steps_decode_total")
+            if measured_steps is not None and len(grouped) != int(measured_steps):
+                raise ValueError(
+                    f"rank {rank}: decode-step count {len(grouped)} differs "
+                    f"from benchmark counter {measured_steps}")
             item = {"phase": ("cold", "warm")[i], "rank": rank, "passes": len(rows),
                     "steps": len(grouped),
                     "rank_step_wall_ms_p50": p50([(hi-lo)/1e6 for lo, hi, _ in ordered]),
