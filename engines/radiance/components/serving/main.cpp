@@ -119,18 +119,17 @@ void usage() {
            "             no stored-manifest replay until RSC12 keys its bytes, no calibration mode\n"
            "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
            "and verified\n"
-           "         owner GPU lease; own one session in the foreground: measured manifest (measuring first on "
-           "a\n"
-           "         plan-cache miss), engine from it, /health, start canary, then serve until `stop`, a "
+           "         owner GPU lease; own one session in the foreground: measured manifest (a named start "
+           "reuses the last measured one of its config from the --work-root store, else measures), engine from it, /health, start canary, then serve until `stop`, a "
            "signal or a\n"
            "         child's exit; every child stopped and verified gone before it returns. Select the config "
            "with\n"
-           "         positional CONFIG selects the RSC12 named config. Unchanged static inputs reuse an "
-           "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
+           "         positional CONFIG selects the RSC12 named config. `start --manifest FILE --run-dir DIR` "
+           "replays one named file; live checks and per-start receipts still run. Exit 0 stopped, "
            "96 canary, 97 plan, 98 busy\n"
            "         v3 reads NAME.yaml from the verified bundle, else from --configs DIR; --native-config YAML names another file.\n"
-           "  --work-root DIR     the platform's work root (host-wide model-identity cache); without it a start\n"
-           "                     fingerprints the model per run\n"
+           "  --work-root DIR     the platform's work root: holds the named-config store, so a start reuses the\n"
+           "                     last measured plan of its config; without it every start measures\n"
            "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
            "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
@@ -213,7 +212,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         } else if (arg == "--engine-binary") {
             engine_binary = need();
         } else if (arg == "--work-root") {
-            work_root = need();   // the platform's work root: where the host-wide model-identity cache lives
+            work_root = need();   // the platform's work root: where the named-config store lives
         } else if (arg == "--power-profile") {
             power_profile = need();
             explicit_power_profile = true;
@@ -584,8 +583,8 @@ int explain_command(int argc, char** argv) {
         throw std::runtime_error(std::string("explain: ") + error.what());
     }
 const std::string cache_note = work_root.empty()
-        ? "host-wide model identity cache: off (no --work-root); the model is fingerprinted per run"
-        : "host-wide model identity cache: " + work_root.string();
+        ? "named-config store: off (no --work-root); every start measures"
+        : "named-config store: " + work_root.string();
     const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
     if (!native_config.empty()) {
         ss::EnginePlanInputs preflight;

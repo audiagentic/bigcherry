@@ -1359,9 +1359,23 @@ class Owner {
             if (s_.quality) {
                 score_quality(*s_.quality);
             } else {
-                start_engine();
-                if (!wait_health())
-                    throw Stop{};
+                try {
+                    start_engine();
+                    if (!wait_health())
+                        throw Stop{};
+                } catch (const Stop&) {
+                    throw;
+                } catch (...) {
+                    // The engine did not come up on a plan this start took from the store: the engine's own
+                    // admission is the safety net, so the entry goes and the next start measures afresh.
+                    if (!plan_.reused_store.empty()) {
+                        std::error_code ignored;
+                        fs::remove(plan_.reused_store, ignored);
+                        std::cerr << "bc-serve: the engine did not start on the stored plan; the stored entry is "
+                                     "removed, the next start measures again\n";
+                    }
+                    throw;
+                }
                 event("healthy");
                 if (s_.power_hook.gfxoff_window)
                     require_callback(s_.power_hook.gfxoff_window.invoke("session.gfxoff.loaded_idle", true),
@@ -2894,8 +2908,8 @@ std::string key_differences(const Json& was, const Json& now) {
 // by replay_stored_manifest on EVERY start.
 struct NamedCache {
     std::string key;
-    fs::path index;
-    ModelIdentity model;
+    fs::path index;          // the work root's named-config store entry; empty without a work root
+    std::string model_digest; // model_stat_identity(): path, size, mtime
 };
 
 struct NativeReplayAdmission {
@@ -2959,8 +2973,7 @@ static bool native_settings_match(const NativeEngineSettings& native, const v2::
 
 std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved& resolved, const Json& facts,
                                       const fs::path& engine, const fs::path& helper, const fs::path& run_dir,
-                                      const NativeConfigSnapshot* native = nullptr,
-                                      const ModelIdentity* verified_model = nullptr) {
+                                      const NativeConfigSnapshot* native = nullptr) {
     if (in.named_config.empty())
         return std::nullopt; // preserve the existing --set/layout serve path
     const Json& values = resolved.values;
@@ -2976,23 +2989,13 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         if (key != "layout.name" && key != "handoff.shm")
             static_inputs.operator_sets.push_back(set);
     }
-    static_inputs.producer_digest = complete_file_identity(in.self);
-    const fs::path home = values.at("engine").at("radiance_home").get<std::string>();
-    if (native)
-        static_inputs.native_config = NativeStaticIdentity{
-            native->sha256(), native->resolution_root(), fs::canonical(home).string()};
-    static_inputs.engine_digest = engine_identity(engine, home);
-    static_inputs.helper_digest =
-        resolved.manifest.at("process_helpers").empty() ? sha256_hex("") : complete_file_identity(helper);
-    const fs::path index = stored_index_path(run_dir, name);
-    // The host-wide cache needs the platform's work root, passed explicitly (--work-root): no environment is read here.
-    // Without one the model is fingerprinted for this run, as before the shared cache.
+    // What was measured is reused by the next start of this config from any run directory, whichever build
+    // runs it: the key names the inputs that decide the plan, never the engine, helper or bc-serve build. The
+    // store sits in the work root (--work-root, passed explicitly: no environment is read here); without one
+    // nothing is stored and every start measures.
+    const fs::path index = in.work_root.empty() ? fs::path{} : named_store_index(in.work_root, name);
     const std::string model_path = values.at("engine").at("model").get<std::string>();
-    const ModelIdentity artifact =
-        !in.work_root.empty()
-            ? cached_model_identity(model_path, in.work_root, {}, verified_model)
-            : verified_model ? *verified_model : ModelIdentity{complete_file_identity(model_path), {}};
-    static_inputs.model_digest = artifact.digest;
+    static_inputs.model_digest = model_stat_identity(model_path);
     static_inputs.power_profile = in.power_profile;
 
     static_inputs.ordered_devices = Json::array();
@@ -3031,7 +3034,7 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         values.at("handoff").at("heat").is_string() &&
         !values.at("handoff").at("heat").get<std::string>().empty())
         file(values.at("handoff").at("heat").get<std::string>());
-    return NamedCache{static_resolution_key(static_inputs), index, artifact};
+    return NamedCache{static_resolution_key(static_inputs), index, static_inputs.model_digest};
 }
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
@@ -3205,12 +3208,21 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const auto& settings = native_inspection.settings;
         const Resolved native_resolved = resolve(in.options, facts, &settings);
         const auto cache = named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
-        if (cache) {
-            if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache->key)) {
+        if (cache && !cache->index.empty()) {
+            if (const auto saved = stored_manifest_for(cache->index, cache->key)) {
                 EnginePlanInputs replay = in;
                 replay.stored_manifest = *saved;
                 const NativeReplayAdmission admission{snapshot, native_inspection, out.native_launch};
-                return replay_stored_manifest(replay, run_dir, hooks, &admission);
+                try {
+                    EngineStart reused = replay_stored_manifest(replay, run_dir, hooks, &admission);
+                    reused.reused_store = cache->index;
+                    return reused;
+                } catch (const PlanFailed& refused) {
+                    // Nothing was admitted or started yet (power admission is replay's last step): measure
+                    // once and store the result in its place.
+                    std::cerr << "bc-serve: the stored plan is not reusable (" << refused.what()
+                              << "); measuring again\n";
+                }
             }
         }
         out.port = settings.port;
@@ -3468,17 +3480,20 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             if (cache) {
                 const auto current =
                     named_cache(in, resolve(in.options, after_facts, &settings), after_facts, engine, helper_binary,
-                                    run_dir, &snapshot, &cache->model);
+                                    run_dir, &snapshot);
                 if (!current || current->key != cache->key)
                     throw PlanFailed("native v3 static inputs changed during measurement; refusing named cache publication");
                 if (!fs::is_regular_file(s8_source) || fs::is_symlink(s8_source))
                     throw PlanFailed("native v3 measured writer did not publish ordinary S8 replay evidence");
-                const StoredManifestIndex entry{
-                    cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model.digest,
+                StoredManifestIndex entry{
+                    cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model_digest,
                     complete_file_identity(s8_source),
                     StoredManifestIndex::NativeMeasurement{attempt_id, owned.owner_sha256}};
                 write_stored_index(measured_manifest.string() + ".replay-index.json", entry);
-                write_stored_index(cache->index, entry);
+                if (!cache->index.empty()) {
+                    entry.directory = fs::absolute(measured_manifest.parent_path()).string();
+                    write_stored_index(cache->index, entry);
+                }
             }
             out.manifest = measured_manifest;
             out.stored_sha256 = std::move(final_snapshot.sha256);
@@ -3493,17 +3508,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             return out;
         }
         throw PlanFailed("native v3 host pool did not converge");
-    }
-
-    // RSC12 has no lab experiment static key: never replay a different experiment.
-    const auto cache_selection =
-        in.experiment_file.empty() ? named_cache(in, r, facts, engine, helper_binary, run_dir) : std::nullopt;
-    if (cache_selection) {
-        if (const auto saved = stored_manifest_for(run_dir, in.named_config, cache_selection->key)) {
-            EnginePlanInputs replay = in;
-            replay.stored_manifest = *saved;
-            return replay_stored_manifest(replay, run_dir, hooks);
-        }
     }
 
     const ManifestRunner runner = in.runner ? in.runner : [&hooks](const std::vector<std::string>& argv) {
@@ -3753,20 +3757,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     bc::serving::policy_calibration_key(
                         bc::serving::policy_calibration_inputs(written.at("spec")));
             }
-            if (cache_selection) {
-                if (!fs::is_regular_file(s8_source))
-                    throw PlanFailed("writer failed to publish its original native P1/P2 replay evidence");
-                const StoredManifestIndex entry{cache_selection->key,
-                                                manifest.filename().string(),
-                                                final_snapshot.file_identity,
-                                                cache_selection->model.digest,
-                                                complete_file_identity(s8_source)};
-                // Each manifest carries an adjacent immutable replay attestation;
-                // the per-config index may point to another manifest on the next
-                // static key, but this exact file's identity remains verifiable.
-                write_stored_index(manifest.string() + ".replay-index.json", entry);
-                write_stored_index(cache_selection->index, entry);
-            }
             out.manifest = manifest;
             out.stored_sha256 = final_snapshot.sha256;
             out.pinned_manifest = std::move(final_snapshot.pinned);
@@ -3965,7 +3955,7 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
             bound->digest != complete_file_identity_bytes(bytes))
             throw ReplayFailed(ReplayRefusal::bytes_or_digest,
                                "replay: stored attestation no longer binds the original manifest bytes");
-        if (bound->model_digest.empty() || bound->model_digest != attestation->model.digest)
+        if (bound->model_digest.empty() || bound->model_digest != attestation->model_digest)
             throw ReplayFailed(ReplayRefusal::model,
                                "replay: complete model artifact bytes no longer match the original");
         if (bound->key != attestation->key)

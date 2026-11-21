@@ -39,7 +39,7 @@ It reads the YAML bytes and resolution root from the admitted manifest.
 
 The foreground `bc-serve serve` and detached `bc-serve start` owner authenticate
 the pre-measurement `v2::Manifest` with the strict reader and bind power to its
-ordered engine/helper PCI addresses. On a cache hit, the measured manifest is
+ordered engine/helper PCI addresses. On a replay of a stored measured manifest (a named start that reuses one, or `start --manifest`), that manifest is
 the initial power admission; on a miss, the unmeasured manifest is admitted
 **before** any helper or engine measuring process. Both are journaled and
 the final measured manifest is checked against the admitted role/address order,
@@ -270,29 +270,27 @@ cases without requiring any GPU, permission failure or fake planner.
 
 A foreground owner can start an RSC12 config with `bc-serve serve CONFIG --run-dir DIR
 --configs engines/radiance/configs` or `BIGCHERRY_CONFIGS` set to the config file/directory.
-`bc-serve start CONFIG` detaches the **same** owner. The first named-config
-start measures and writes a strict manifest. Later starts with the same
-versioned static resolution key reuse that exact manifest file; a changed
-effective setting, selected-card identity, power profile, engine/helper/
-kernel/runtime/producer build, full model artifact, heat input, calibration
-record or lab input forces a fresh manifest. The lookup is distinct from
-the existing engine-memory plan cache. The old `--set layout.name=...` serving
-path remains on its original planner.
-
-Named starts require `BC_WORK_ROOT`. The full model fingerprint is reused
-across run directories and configs through
-`$BC_WORK_ROOT/cache/model-identities/<sha256-of-canonical-path>.json`.
-Each ordinary file is an atomically replaced strict version-1 JSON record:
-`model` (canonical path), `stamp` (device, inode, size, mtime_ns, ctime_ns
-as decimal strings) and `digest` (the unchanged chunked SHA-256).
-An unchanged stamp skips a full-file read; a changed stamp rehashes, while
-malformed files and symlinks refuse. Stored-manifest indices retain their
-model digest only as replay attestation, not a fingerprint lookup cache.
+`bc-serve start CONFIG` detaches the **same** owner. A named start reuses the
+last measured manifest of that config when the work root (`--work-root`) holds
+one, whichever run directory wrote it and whichever build runs it; otherwise it
+measures, writes a strict manifest and stores it as the config's entry in
+`<work-root>/cache/named-configs/`. The reuse key names only what decides the
+plan: the resolved effective settings (without the installed runtime path, the
+per-start transport name or the derived host pool), the ordered cards with
+their architecture and total VRAM, the power profile, the config/site/heat/
+calibration inputs and the model's canonical path, size and mtime (the model is
+never read). The engine, helper and bc-serve builds are not part of the key.
+The engine's own admission is the safety net: a stored plan the replay checks
+refuse (for example a different engine build) is measured once afresh and
+replaces the entry; an engine that then fails to come up on a stored plan
+removes the entry so the next start measures. Without `--work-root` every start
+measures. The old `--set layout.name=...` serving path remains on its original
+planner.
 
 `bc-serve start --manifest FILE --run-dir DIR --configs FILE|DIR` replays a
 previously recorded strict manifest **without writing or normalising it**.
 A writer-produced manifest carries a separate atomic `FILE.replay-index.json`
-attestation (its original byte fingerprint, full model-file fingerprint
+attestation (its original byte fingerprint, model stat identity
 and RSC12 static key); the manifest bytes remain immutable. The RSC12 config
 sources are needed for a fresh effective-settings and calibration check.
 A missing attestation or config source, changed input, changed build/model/
