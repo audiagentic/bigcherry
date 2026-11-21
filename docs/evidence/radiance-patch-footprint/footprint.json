@@ -157,7 +157,7 @@
     "created_target_anchors": 13,
     "anchor_sites": 714,
     "anchor_bytes": 84957,
-    "inserted_bytes": 503500,
+    "inserted_bytes": 504883,
     "created_edits": 27,
     "upstream_files": 80
   },
@@ -1076,7 +1076,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 11,
       "anchor_bytes": 524,
-      "inserted_bytes": 40981,
+      "inserted_bytes": 40845,
       "created_edits": 2
     },
     {
@@ -1167,7 +1167,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 9,
       "anchor_bytes": 397,
-      "inserted_bytes": 22015,
+      "inserted_bytes": 23534,
       "created_edits": 4
     },
     {
@@ -1758,7 +1758,7 @@
       "anchors": 4,
       "anchor_sites": 4,
       "anchor_bytes": 105,
-      "inserted_bytes": 1175,
+      "inserted_bytes": 1118,
       "patch_count": 4
     },
     {
@@ -2319,7 +2319,7 @@
       "anchors": 1,
       "anchor_sites": 1,
       "anchor_bytes": 87,
-      "inserted_bytes": 2181,
+      "inserted_bytes": 2102,
       "patch_count": 1
     },
     {
