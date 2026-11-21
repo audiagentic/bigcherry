@@ -12,14 +12,18 @@ const RadKernelInfo* r3_moe_mailbox_row(int i);
 }
 
 namespace {
-int live_count() {
+int kernel_row_count() {
+    // Kernel rows are fixed by the plugin. Whether a particular engine
+    // generation owns an open mailbox is not fixed by the plugin loader.
     static const int n = [] {
         int k = 0;
-        if (r3_moe_mailbox_enabled())
-            while (r3_moe_mailbox_row(k)) ++k;
+        while (r3_moe_mailbox_row(k)) ++k;
         return k;
     }();
     return n;
+}
+int live_count() {
+    return r3_moe_mailbox_enabled() ? kernel_row_count() : 0;
 }
 }  // namespace
 

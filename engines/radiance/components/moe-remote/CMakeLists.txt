@@ -87,6 +87,15 @@ if(BUILD_TESTING)
     set_target_properties(${name} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     add_test(NAME ${name} COMMAND ${name})
   endforeach()
+  # The loader may see a disabled helper generation before a later bound one.
+  # Enumerating kernel rows must not freeze the initial availability.
+  add_executable(r3_moe_mailbox_lifetime_test EXCLUDE_FROM_ALL
+    moe_mailbox_lifetime_test.cpp moe_mailbox_plugin.cpp)
+  target_include_directories(r3_moe_mailbox_lifetime_test PRIVATE ${RADIANCE_SRC}/abi)
+  target_compile_definitions(r3_moe_mailbox_lifetime_test PRIVATE
+    R3MOE_TARGETS="${r3moe_targets_csv}")
+  set_target_properties(r3_moe_mailbox_lifetime_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_moe_mailbox_lifetime_test COMMAND r3_moe_mailbox_lifetime_test)
   # Keep the declared, card-free large-K geometry/admission target bounded.
   set_tests_properties(r3_gemv_geometry_test PROPERTIES TIMEOUT 60)
   # The typed policy and forced-schedule settings come from the manifest's generated types (bc_serving_v2's headers).

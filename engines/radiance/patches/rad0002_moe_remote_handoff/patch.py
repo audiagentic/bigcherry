@@ -178,13 +178,11 @@ extern "C" int bc_moe_remote_wanted_upto(int64_t max_step_rows) {
 }
 
 extern "C" int bc_moe_remote_shadow(void) {
-    static const bool v = kDiagBuild && remote_policy().shadow;
-    return v;
+    return kDiagBuild && remote_policy().shadow;
 }
 
 extern "C" int bc_moe_remote_mask_only(void) {
-    static const bool v = kDiagBuild && remote_policy().mask_only;
-    return v;
+    return kDiagBuild && remote_policy().mask_only;
 }
 
 extern "C" int bc_moe_remote_diag_build(void) {
@@ -197,9 +195,15 @@ extern "C" int bc_moe_remote_register(const BcMoeRemotePlugin* plugin) {
     std::lock_guard<std::mutex> lock(g_mu);
     if (!plugin) {
         g_plugin = BcMoeRemotePlugin{};
+        // A later model may publish maps before registering; never replay
+        // the previous engine's ownership into that new generation.
+        g_layer_maps.clear();
         return 0;
     }
     if (plugin->struct_size != sizeof(BcMoeRemotePlugin)) return -1;
+    // The initial helper path admits exactly one live engine. Do not let a
+    // second registrar steal callbacks and tickets from its predecessor.
+    if (g_plugin.struct_size) return -1;
     /* No scheduler backlog bound exists for no-output prefill. Use the
      * engine's route ring as a resource ceiling plus its one ahead batch.
      * Do this before map replay or graph lowering allocates rank buffers. */
@@ -345,7 +349,7 @@ extern "C" void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* 
  * no protected expert in the layer (those layers stay local; the helper drops ownership on exactly the same
  * test). */
 extern "C" int bc_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows) {
-    static const bool on = remote_policy().skip_owned != 0;
+    const bool on = remote_policy().skip_owned != 0;
     if (!on || diag_refused() || bc_moe_remote_shadow() || bc_moe_remote_mask_only()) return 0;
     if (min_rows() == (int64_t)LLONG_MAX || min_rows() > 1 || max_rows() < max_step_rows) return 0;
     int (*owns)(int, int) = nullptr;
