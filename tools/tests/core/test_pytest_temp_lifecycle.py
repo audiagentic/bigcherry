@@ -34,15 +34,15 @@ class PytestTempLifecycleTests(unittest.TestCase):
         parent.mkdir(exist_ok=True)
         return Path(tempfile.mkdtemp(prefix="pin-bump-tests-", dir=parent))
 
-    def test_no_work_root_does_not_change_environment(self):
+    def test_unset_work_root_env_resolves_the_work_root_instead_of_skipping(self):
         config = SimpleNamespace()
         with (
             patch.dict(os.environ, {"TMPDIR": "pre-existing"}, clear=True),
-            patch.object(plugin, "exec_capable_tempdir") as fallback,
+            patch.object(plugin, "exec_capable_tempdir", return_value=None) as fallback,
         ):
             plugin.pytest_configure(config)
             plugin.pytest_unconfigure(config)
-            fallback.assert_not_called()
+            fallback.assert_called_once_with(plugin.resolve_work_root() / "test-tmp")
             self.assertEqual(os.environ["TMPDIR"], "pre-existing")
             self.assertEqual(tempfile.tempdir, self.previous_tempdir)
 

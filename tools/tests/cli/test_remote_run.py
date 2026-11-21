@@ -100,6 +100,7 @@ class RemoteRunTests(unittest.TestCase):
         shim = tmp / "shim"
         shim.mkdir()
         (shim / "pgrep").write_text(_PGREP, newline="\n")
+        (shim / "pgrep").chmod(0o755)  # bash skips non-executable PATH entries and would fall through to the host's real pgrep
         self.transport = LocalBashTransport(shim)
         self.host = replace(
             environment.load(ROOT / "config" / "environment.example.toml").host(),

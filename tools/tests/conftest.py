@@ -22,6 +22,9 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
+import pytest
+
+from bigcherry.core.context import resolve_work_root
 from bigcherry.release.pin_bump import exec_capable_tempdir
 
 # The state lives on pytest's Config, not in a module global, so a nested or
@@ -30,10 +33,7 @@ _TEMP_STATE = "_bigcherry_exec_temp_state"
 
 
 def pytest_configure(config) -> None:
-    work_root = os.environ.get("BC_WORK_ROOT")
-    if not work_root:
-        return
-    parent = Path(work_root) / "test-tmp"
+    parent = resolve_work_root() / "test-tmp"
     previous_env = os.environ.get("TMPDIR")
     previous_cached = tempfile.tempdir
     directory = exec_capable_tempdir(parent)
@@ -61,6 +61,20 @@ def pytest_configure(config) -> None:
     ))
     os.environ["TMPDIR"] = str(directory)
     tempfile.tempdir = str(directory)
+
+
+@pytest.fixture(autouse=True)
+def _restore_process_environment():
+    """Undo any change a test (or the CLI entry point it drives) makes to ``os.environ``.
+
+    Campaign entry points export ROCM_PATH/HIP_PATH/PATH for their child processes. Left in place, a later test that
+    discovers a toolchain from the environment (hipcc lookup) sees a fixture path from an earlier test."""
+    saved = dict(os.environ)
+    try:
+        yield
+    finally:
+        os.environ.clear()
+        os.environ.update(saved)
 
 
 def _no_mounts_under(parent: Path) -> None:
