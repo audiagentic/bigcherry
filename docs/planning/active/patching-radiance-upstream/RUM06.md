@@ -120,6 +120,8 @@ Checkpoint bedf51edb consolidates rank attachment rollback, clears the result po
 
 2026-11-21: qwen27b-2xtx's declare refusal is not a TP split problem. Radiance 2.2 retires the MXFP4 weight format (arch/common/rad_fp8.h:1174-1194 linear_retired / linear_refuse_retired, called from rad_fp8.h:1354), and the refusal names the int8 IQ8R recipes as the replacement. It affects the three configs on the MXFP4 container: qwen27b-2xtx, qwen27b-tp3 and qwen27b-tp3-capacity. A GPT lane drafted rad0055_qwen35_plain_mxfp4 (branch agent/rum06-qwen27b-tp2, 7082337c9), which removes the retirement check. Owner decision 2026-11-21: convert, don't patch back. The three configs move to the int8 (w8a8) Qwen3.8-27B container that the qwen27b-tp3-int8* configs already use, each with its own start/canary/stop, paired comparison and KLD on the new weights. rad0055 isn't merged; its branch is kept as an archive tag for the evidence. Their TP ownership splits must be re-validated against the w8a8 container (same model dimensions, so the specs should still parse).
 
+2026-11-21 owner decision, which supersedes the int8-w8a8 note above: all eight qwen27b configs move to upstream's IQ8R container StillDeadcode/qwen3.8-27b-iq8r-dflash (revision c127a34140e4, 29 GiB, qwen35_w8a8 plugin, GPTQ int8 with u8 scale per 256 under a bf16 row scale, fwht128, DFlash2 drafter in IQ4R codes). Reasons: the MXFP4 container is retired in 2.2, and our w8a8-df2 container's DFlash2 drafter is MXFP4 (q38-27b-w8a8-df2.recipe); IQ8R matches w8a8 quality (KL 0.00039-0.00046, top-1 about 99.2%) with about 9% faster 8192-token prefill per upstream docs/IQR.md (group 256 vs 128). One model for every 27B config. Each config gets start/canary/stop, the paired comparison where it is measured production, and KLD/top-1 against qwen3.8-27b-bf16. kv-cache-dtype per config is to be confirmed against IQ8R's rows (upstream pairs it with i8).
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -141,3 +143,4 @@ Checkpoint bedf51edb consolidates rank attachment rollback, clears the result po
 - 2026-11-20T08:50:11.218145+00:00 (updated-by): Updated: section:notes
 - 2026-11-20T12:44:44.499463+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T00:44:35.690825+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T00:53:10.311864+00:00 (updated-by): Updated: section:notes
