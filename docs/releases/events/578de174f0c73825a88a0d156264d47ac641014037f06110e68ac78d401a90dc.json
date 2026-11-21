@@ -1,0 +1,14 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261121_222040_multi-model-fleet-helper-suppo_4534",
+  "files": [
+    "docs/planning/completed/patching-radiance-upstream/RUM10.md"
+  ],
+  "plan-item-ids": [
+    "RUM10"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Deferred RUM10 (multi-model fleet helper support) by owner decision: no multi-model use case exists and the item is not needed for the Radiance 2.2 migration. Marked deprecated with a note on how to reopen it for a named two-model case.",
+  "timestamp-utc": "2026-11-21T22:20:40.591644Z",
+  "user-summary-candidate": "Multi-model fleet helper support is deferred until a concrete two-model use case exists."
+}

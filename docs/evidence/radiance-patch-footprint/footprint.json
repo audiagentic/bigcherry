@@ -155,13 +155,13 @@
   },
   "totals": {
     "composed_patches": 39,
-    "edits": 663,
-    "anchors": 631,
-    "upstream_anchors": 596,
+    "edits": 665,
+    "anchors": 633,
+    "upstream_anchors": 598,
     "created_target_anchors": 35,
-    "anchor_sites": 654,
-    "anchor_bytes": 79033,
-    "inserted_bytes": 579154,
+    "anchor_sites": 656,
+    "anchor_bytes": 79225,
+    "inserted_bytes": 579374,
     "created_edits": 32,
     "upstream_files": 81
   },
@@ -994,21 +994,23 @@
       "files_touched": [
         "arch/common/rad_block_attn_gated_fp8.h",
         "arch/common/rad_block_gdn_fp8.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "tests/arch_test.cpp"
       ],
       "upstream_files": [
         "arch/common/rad_block_attn_gated_fp8.h",
         "arch/common/rad_block_gdn_fp8.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "tests/arch_test.cpp"
       ],
       "created_files": [],
-      "edits": 11,
-      "anchors": 11,
-      "upstream_anchors": 11,
+      "edits": 12,
+      "anchors": 12,
+      "upstream_anchors": 12,
       "created_target_anchors": 0,
-      "anchor_sites": 11,
-      "anchor_bytes": 3124,
-      "inserted_bytes": 5469,
+      "anchor_sites": 12,
+      "anchor_bytes": 3219,
+      "inserted_bytes": 5580,
       "created_edits": 0
     },
     {
@@ -1172,6 +1174,34 @@
       "created_edits": 5
     },
     {
+      "patch": "rad0028_rank_consistent_block_drafts",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "arch/common/rad_block_dflash2.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "tests/arch_test.cpp"
+      ],
+      "upstream_files": [
+        "arch/common/rad_block_dflash2.h",
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "tests/arch_test.cpp"
+      ],
+      "created_files": [],
+      "edits": 7,
+      "anchors": 7,
+      "upstream_anchors": 7,
+      "created_target_anchors": 0,
+      "anchor_sites": 7,
+      "anchor_bytes": 702,
+      "inserted_bytes": 2382,
+      "created_edits": 0
+    },
+    {
       "patch": "rad0022_tune_pin",
       "sources": [
         "radiance",
@@ -1313,32 +1343,6 @@
       "anchor_sites": 6,
       "anchor_bytes": 953,
       "inserted_bytes": 1416,
-      "created_edits": 0
-    },
-    {
-      "patch": "rad0028_rank_consistent_block_drafts",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "arch/common/rad_block_dflash2.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
-      ],
-      "upstream_files": [
-        "arch/common/rad_block_dflash2.h",
-        "arch/qwen35_fp8/qwen35_fp8.cpp"
-      ],
-      "created_files": [],
-      "edits": 6,
-      "anchors": 6,
-      "upstream_anchors": 6,
-      "created_target_anchors": 0,
-      "anchor_sites": 6,
-      "anchor_bytes": 605,
-      "inserted_bytes": 2273,
       "created_edits": 0
     },
     {
@@ -1652,6 +1656,23 @@
       "patch_count": 7
     },
     {
+      "path": "tests/arch_test.cpp",
+      "patch_ids": [
+        "rad0027_mixed_one_pipelined_prefill",
+        "rad0028_rank_consistent_block_drafts",
+        "rad0049_qwen4exp_e4m3_kv",
+        "rad0051_b16_kv_kernels",
+        "rad0052_b16_kv_geometries",
+        "rad0053_v4_kv_layouts",
+        "rad0054_attn_prefill_fp8"
+      ],
+      "anchors": 12,
+      "anchor_sites": 15,
+      "anchor_bytes": 1094,
+      "inserted_bytes": 12555,
+      "patch_count": 7
+    },
+    {
       "path": "libr4d/r4d_plugin.h",
       "patch_ids": [
         "rad0045_expert_route_replay",
@@ -1699,21 +1720,6 @@
       "anchor_bytes": 3725,
       "inserted_bytes": 7026,
       "patch_count": 6
-    },
-    {
-      "path": "tests/arch_test.cpp",
-      "patch_ids": [
-        "rad0049_qwen4exp_e4m3_kv",
-        "rad0051_b16_kv_kernels",
-        "rad0052_b16_kv_geometries",
-        "rad0053_v4_kv_layouts",
-        "rad0054_attn_prefill_fp8"
-      ],
-      "anchors": 10,
-      "anchor_sites": 13,
-      "anchor_bytes": 902,
-      "inserted_bytes": 12335,
-      "patch_count": 5
     },
     {
       "path": "libr4d/r4d_ar_entry.hip",
