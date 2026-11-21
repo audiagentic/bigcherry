@@ -139,6 +139,8 @@ The earlier VTP36 throughput/TTFT rankings on W8A8/MXFP4 do not carry over autom
 
 2026-11-21 bigcherry-1: IQ8R on TP3 with the port (build bdd48feb from 06bacf8ac), scored against the bf16-weights reference (rad-kld-corpus-4, 8240 positions, fp8 KV, num-speculative-tokens 0). 4,4,8 (kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24): KLD mean 0.00123, median 0.00043, p99 0.0105, top-1 97.51%, PPL x1.0005. 6,6,4 (kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12): KLD mean 0.00128, p99 0.0111, top-1 97.27%, PPL x1.0005. Both beat the w8a8 bar (0.00139, top-1 96.77%), and both start and run on all three ranks. Remaining: switch the qwen27b configs to IQ8R and pick the split per config by measured KV capacity, streams and TTFT (VTP36 method), then the 27B starts.
 
+2026-11-21 bigcherry-1, choosing the IQ8R TP3 split (build a329c651 at 45247293a, gpu lease, 2 A-B-A-B rounds on the qwen27b-tp3-int8-556 settings; stream-bench 1/4/8 streams, 4096-token prompts, 256 tokens). 6,6,4 vs 4,4,8: decode step at 1 stream 22.4 vs 27.5 ms (-18%), 71.7 vs 65.4 tok/s; 4 streams 73.5 vs 73.8; 8 streams 91.2 vs 88.1 tok/s; TTFT on a 4.2k prompt 1.93 vs 1.86 s (+3%). Capacity config (262144 ctx): 2.8 vs 2.3 full-length sessions. Decision: 6,6,4 for every TP3 config. qwen27b-tp3, -int8 and -int8-556 become identical, so they are consolidated into qwen27b-tp3, and the long variants are renamed qwen27b-tp3-long[-bf16|-bf16i8] (branch agent/rum06-27b-iq8r-configs).
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -164,3 +166,4 @@ The earlier VTP36 throughput/TTFT rankings on W8A8/MXFP4 do not carry over autom
 - 2026-11-21T01:38:17.936858+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T02:18:21.184326+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T02:35:33.763913+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T03:07:59.089816+00:00 (updated-by): Updated: section:notes
