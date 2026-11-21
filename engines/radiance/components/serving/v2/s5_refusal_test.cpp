@@ -187,6 +187,26 @@ int main() {
         r9700.kv_one_session.bytes, r9700.vram.kv_ceiling, 0);
     assert(!one_byte_short && one_byte_short.error().code ==
                  v2::ConfigErrorCode::admission_refused);
+    // An otherwise admissible split can miss the exact MiB boundary only
+    // because weights and KV are rounded independently. Keep the available
+    // KV backing, rather than dropping to the minimum one-session allowance.
+    const int64_t rounded_statics = 10 * MiB;
+    const int64_t rounded_experts = 3 * MiB + MiB / 2;
+    const int64_t rounded_kv = 20 * MiB + MiB / 2;
+    const int64_t rounded_stage = MiB;
+    const int64_t rounded_claimable =
+        rounded_statics + rounded_experts + rounded_kv + rounded_stage + MiB / 2;
+    const auto rounded = v2::refit_serving_pools(
+        rounded_claimable, rounded_statics, rounded_experts,
+        rounded_stage, rounded_experts, rounded_kv,
+        rounded_kv / 2, rounded_kv, 0);
+    assert(rounded);
+    assert(rounded.value().experts_bytes == rounded_experts);
+    assert(rounded.value().kv_mib == rounded_kv / MiB);
+    assert(rounded.value().kv_bytes == rounded_kv / MiB * MiB);
+    assert((rounded.value().weights_mib + rounded.value().kv_mib) * MiB +
+               rounded_stage <= rounded_claimable);
+
     // Repeat the owner/engine admission using the exact refitted split.
     // A changed live free-VRAM sample is allowed to change only elastic
     // experts; the same full-session KV and fixed terms must still pass.
