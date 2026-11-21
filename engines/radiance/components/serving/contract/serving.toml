@@ -2,13 +2,13 @@
 # and env_setting on the typed fields below are the ONE source of engine
 # flag/environment names consumed by the rad0009 argv bridge and bc-serve's
 # native option lookup. A rename changes this registry, then regenerates types.
-# RUM04 replaces this bridge with native fleet YAML plus a sealed runtime
-# bundle; do not add another handwritten typed-option alias table.
-# Serving manifest v2 field registry: the one authoritative description of the v1 contract
+# The original authored YAML is carried whole (spec.native_config) and read by Radiance itself; do not add another
+# handwritten typed-option alias table.
+# Serving manifest field registry (edition 3, the only edition): the one authoritative description of the contract
 # (docs/design/serving-manifest-v2/spec.md). contract/generate.cpp turns it into the JSON Schema, the typed model,
 # the field reference and the contract fingerprint (engines/radiance/components/serving/generated/); CI regenerates
-# them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
-# validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).
+# them and byte-diffs the committed copies. A change that moves either fingerprint (what validates, or a field's
+# class or Radiance binding) is an edition change; correcting a doc is not (README.md).
 #
 # Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); [[class_default]] provenance
 # class defaults by path prefix; [[calibration_key]] the calibrated keys and each value's type; [[field]] one entry per

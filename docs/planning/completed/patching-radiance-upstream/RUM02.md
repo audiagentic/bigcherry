@@ -2,7 +2,7 @@
 id: RUM02
 order: 4
 plan: patching-radiance-upstream
-state: pending
+state: completed
 created-at: '2026-11-18T01:28:00.655993+00:00'
 breadth: ''
 skill: advanced
@@ -282,6 +282,15 @@ bc_native_fleet_config_test (aborted in the card-free scratch build before and a
 
 2026-11-22 (bigcherry-2): arch_test stale pins, found and fixed. In a host build of the production patch set arch_test failed two cases that pass on pristine upstream. Bisected by patch prefix: rad0027 (mixed one-sequence pipelined cut) changes the declared steps of qwen35_fp8 at two ranks, rank 1 (graph unchanged), moving upstream's pinned steps hash 0xdd5d65ef158c4136 to 0x1e96fe4180d0fcdf; rad0028 (rank-0 draft gather) adds ops to the qwen35_w8a8 + DFlash2 two-rank graph, moving the pinned graph hash 0x6c5267846652829f to 0x88fed8746befd12d. Both are intended behaviour of validated patches; upstream's pins were never updated by them (neither patch touched arch_test.cpp). Each owning patch now carries its own pin edit with a rationale; arch_test passes with all 33 production patches. The tests had not been run against the patched tree since the 2.2 migration. convert_test, images_test and videos_test fail identically on pristine upstream in this container: RAD_WITH_FFMPEG=ON cannot configure here (libav* dev libraries are not installed), so these are a build-config answer, not a patch defect; to be checked where FFmpeg is installed.
 
+2026-11-22 (bigcherry-2): acceptance audit against main, then completed.
+
+1. Obsolete implementations deleted first: engines/radiance/patches/archive holds rad0001, 0003, 0005, 0006, 0007, 0013, 0034, 0035, 0037, 0038, 0039, 0040, 0041 and 0047 (the 2.2-superseded set named on 2026-11-20 plus earlier retirements); rad0009/rad0011 obsolete v2 argv/manifest duplication went with RUM04. patch-rebase-check --all on main: 38 total, 38 clean, 0 failed, 0 blocked, 0 quarantined.
+2. Surviving large implementations moved only where it reduces repeated attachments or build drift: slice 2 shared KV-row registration (rad0052/rad0053), slice 3 resident B16 hooks (rad0051), slice 4 rad0017 rendezvous and rad0009 native manifest, slice 5 rad0016 rank-device bodies (#1266). The remaining packages were classified and left: rad0045 is diagnostic and kernel-adjacent; the others carry little inline body text (rad0002 4.2 KB, rad0048 6.3 KB, rad0025 8.7 KB, rad0036 12 KB of which about 1.8 KB extractable for 0 anchors), and rad0051/0052/0053 are HIP kernel and geometry-row edits. Their cost is anchors, so further reduction means fewer sources or patches or upstream hooks, not body moves.
+3. Owned files participate in build identity and packaging: created sources are pinned by SRC_SHA256 / _COMPONENT_SOURCE_SHA256 in the owning patch.py (10 owned src/ files, rad0009's component sources), which changes the patch digest and so the build identity; the package tests assert created files equal their src/ bytes. Typed hooks preserve behaviour: each slice carries card-free parity (rad0016: bc_rank_devices_test 164 checks, logged texts asserted verbatim).
+4. Moving every payload is not a gate (acceptance text).
+
+Footprint: 679 anchors on the 2.2 baseline (2026-11-21) to 602 on main now (-77, -11.3%), 38 composed patches, 80 upstream files; 631 anchors and 39 patches once rad0055 (#1269, a new feature, not an extraction) lands. #1270 adds two arch_test pin edits (604). Open validation carried over, not a completion gate: the qwen27b-tp3 start/canary/stop of slice 5 on cards (bigcherry-1).
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -298,3 +307,5 @@ bc_native_fleet_config_test (aborted in the card-free scratch build before and a
 - 2026-11-21T21:08:53.985793+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T21:11:08.504941+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T22:05:24.028152+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:16:20.624959+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:16:36.875392+00:00 (state-transition): State: pending → completed
