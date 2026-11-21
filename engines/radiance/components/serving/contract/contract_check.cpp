@@ -1,5 +1,5 @@
 // bc_contract_check: the committed contract identity (generated/v3/contract.fingerprint: both fingerprints of the registry) and
-// the specification's schema copy (docs/design/serving-manifest-v2/serving-manifest.v3.schema.json) are exactly what the
+// the specification's schema copy (docs/design/serving-manifest-v2/serving-manifest.v3.schema.json) and field reference (serving-fields.md) are exactly what the
 // registry generates. The build itself generates the types and the codec from the registry and compares the same fingerprint
 // file. Run by CI as a card-free component test; on a difference it names the file and the first differing line.
 #include "registry.h"
@@ -82,6 +82,7 @@ int main() {
     // a runtime key depend on); a registry edit that moves either one must change the committed file on purpose.
     compare(src + "/generated/v3/contract.fingerprint", files.at("contract.fingerprint"));
     compare(docs + "/serving-manifest.v3.schema.json", files.at("serving-v3.schema.json"));
+    compare(docs + "/serving-fields.md", files.at("serving-fields.md"));
     if (failures) return 1;
     std::printf("ok %s\n", bc::contract::fingerprint(r).c_str());
     return 0;

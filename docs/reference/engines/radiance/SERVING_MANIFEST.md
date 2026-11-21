@@ -2,7 +2,7 @@
 
 Operator guide for the Radiance serving manifest (`bigcherry/v1`). The contract itself is
 [the v1 spec](../../../design/serving-manifest-v2/spec.md); every field and its type is in the generated
-[field table](../../../../engines/radiance/components/serving/generated/v2/serving-fields.md). This page is how to use them.
+[field table](../../../design/serving-manifest-v2/serving-fields.md). This page is how to use them.
 
 **One configuration method.** A manifest is the whole configuration of an engine or helper start: what to serve, how, and
 (for a serving start) the memory plan it must admit. Direct engine flags (`--tp`, `--kernels`, `--no-prefix-cache`, ...)
@@ -148,7 +148,7 @@ A manifest that fails the strict reader is refused with a stable error code and 
 ## Engine options
 
 Every engine option that is configuration has a manifest field (contract amendment 13; the full list is the generated field reference,
-[generated field reference](../../../../engines/radiance/components/serving/generated/v2/serving-fields.md)). Beyond the capacity and placement keys above, the engine options sit in seven optional sections under
+[generated field reference](../../../design/serving-manifest-v2/serving-fields.md)). Beyond the capacity and placement keys above, the engine options sit in seven optional sections under
 `spec.processes.engine`, set through `bc-serve --set section.name=value` or the same key in a profile TOML:
 
 | Section | What | Examples |

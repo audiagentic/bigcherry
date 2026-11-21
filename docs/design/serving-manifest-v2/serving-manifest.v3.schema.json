@@ -1,8 +1,8 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
-  "$id": "urn:bigcherry:serving-manifest:v2",
-  "title": "BigCherry ServingManifest v2 (wire)",
-  "description": "A serving manifest v2 document.",
+  "$id": "urn:bigcherry:serving-manifest:v3",
+  "title": "BigCherry ServingManifest v3 (wire)",
+  "description": "A serving manifest bigcherry/v3 document.",
   "type": "object",
   "additionalProperties": false,
   "required": [
@@ -14,8 +14,8 @@
   ],
   "properties": {
     "apiVersion": {
-      "description": "Contract identity; exactly `bigcherry/v2`.",
-      "const": "bigcherry/v2"
+      "description": "Contract identity; exactly `bigcherry/v3`.",
+      "const": "bigcherry/v3"
     },
     "kind": {
       "description": "Document kind; exactly `ServingManifest`.",
@@ -58,8 +58,8 @@
           }
         },
         "contract_version": {
-          "description": "Contract version; exactly 2, matching the apiVersion suffix.",
-          "const": 2
+          "description": "Contract version; exactly 3, matching the apiVersion suffix.",
+          "const": 3
         },
         "content_digest": {
           "description": "`sha256:` + JCS SHA-256 of the manifest with this member removed (spec §8).",
@@ -77,7 +77,8 @@
         "calibration",
         "resources",
         "processes",
-        "plan"
+        "plan",
+        "native_config"
       ],
       "properties": {
         "intent": {
@@ -2466,6 +2467,32 @@
             }
           },
           "minProperties": 1
+        },
+        "native_config": {
+          "description": "The admitted source YAML, bound to its byte digest and execution root.",
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "yaml_utf8",
+            "sha256",
+            "resolution_root"
+          ],
+          "properties": {
+            "yaml_utf8": {
+              "description": "Original UTF-8 bytes of the admitted YAML, including comments and line endings. Secret values are excluded.",
+              "type": "string",
+              "minLength": 1
+            },
+            "sha256": {
+              "description": "SHA-256 of exactly the decoded yaml_utf8 bytes.",
+              "$ref": "#/$defs/hex64"
+            },
+            "resolution_root": {
+              "description": "Absolute working directory used by planning, the engine and exact stored replay.",
+              "type": "string",
+              "minLength": 1
+            }
+          }
         }
       },
       "allOf": [

@@ -1,16 +1,19 @@
-# Serving manifest v1 contract registry
+# Serving manifest contract registry
 
-`serving-v1.toml` is the one authoritative description of the serving manifest `bigcherry/v1` wire contract
-(specification: `docs/design/serving-manifest-v2/spec.md`). Everything else about the contract is generated from it by
-`generate.cpp` into `../generated/`, and committed:
+`serving.toml` is the one authoritative description of the serving manifest wire contract (`bigcherry/v3`, the only
+edition; specification: `docs/design/serving-manifest-v2/spec.md`). The build generates everything else from it with
+`generate.cpp` (`bc_contract_gen`), into the build directory: the typed model and codec the owner and the engine link, the
+JSON Schema and the field reference. What is committed is the contract's identity and its two reference copies:
 
-| Generated file | What |
+| Committed file | What |
 |---|---|
-| `serving-v1.schema.json` | JSON Schema 2020-12. Also committed as `docs/design/serving-manifest-v2/serving-manifest.v2.schema.json` (identical bytes). |
-| `serving_types.h` | The typed model (`bc::serving::v1`): one struct per object, enum classes with wire-name tables, `kFields` (every field's path, kind, class, requiredness, Radiance binding and doc), `kFingerprint`. |
-| `serving-fields.md` | The field reference. |
-| `serving_codec.h`, `serving_codec.cpp` | One strict decoder per struct (`v1/error.h` codes, human paths) and `apply()` for each patch def. |
-| `contract.fingerprint` | Two lines: `schema sha256:...` and `semantics sha256:...` (below). |
+| `../generated/v3/contract.fingerprint` | Two lines: `schema sha256:...` and `semantics sha256:...` (below). The build compares the generated fingerprint with this file and fails on a difference. |
+| `docs/design/serving-manifest-v2/serving-manifest.v3.schema.json` | The JSON Schema 2020-12 (identical bytes to the generated `serving-v3.schema.json`). |
+| `docs/design/serving-manifest-v2/serving-fields.md` | The field reference (identical to the generated `serving-fields.md`). |
+
+Generated, not committed: `serving_types.h` (the typed model, `bc::serving::v2` namespace, one struct per object, enum classes
+with wire-name tables, `kFields`), `serving_codec.h` and `serving_codec.cpp` (one strict decoder per struct and `apply()` for
+each patch def).
 
 Two fingerprints, both pinned in `serving_types.h` (`kFingerprint`, `kSemanticFingerprint`):
 
@@ -34,15 +37,14 @@ the reader's conformance tests and reviewed implementation, not by these hashes.
 
 ```
 cmake --build <serving build> --target bc_contract_gen
-<serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving-v1.toml \
-    engines/radiance/components/serving/generated
-cp engines/radiance/components/serving/generated/serving-v1.schema.json \
-    docs/design/serving-manifest-v2/serving-manifest.v2.schema.json
+<serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving.toml <out dir>
+cp <out dir>/contract.fingerprint engines/radiance/components/serving/generated/v3/contract.fingerprint
+cp <out dir>/serving-v3.schema.json docs/design/serving-manifest-v2/serving-manifest.v3.schema.json
+cp <out dir>/serving-fields.md docs/design/serving-manifest-v2/serving-fields.md
 ```
 
 CI runs `bc_contract_check` (a card-free component test): it regenerates in memory and fails, naming the file and the
-first differing line, when any committed copy differs; it also compiles the committed `serving_types.h` and checks its
-fingerprint. `bc_contract_test` covers the loader's refusals. The Python contract test
+first differing line, when a committed copy differs, and it verifies every default against its source.
 (`tools/tests/core/test_serving_manifest_v1_contract.py`) checks the two schema copies are byte-identical and validates
 the examples against them.
 
@@ -99,16 +101,9 @@ enumerator (from an enum value or a calibration key) is a C++ identifier and uni
 their use: a map's `key_ref` is a string def, tuple elements are integer defs, a calibration value refers to an integer
 or string def. Counts are not negative. A tuple item takes no scalar `item_*` attribute.
 
-## Serving manifest v2
+## Serving manifest v3
 
-`serving.toml` is the v2 registry. The committed `generated/v2/` directory contains the C++ types and codec, Python codec, schema, [field reference](../generated/v2/serving-fields.md) and fingerprints. `bc_contract_check` verifies those outputs and the published schema against the registry.
+The registry is the v3 edition only: the v2 base and the `[successor]` layering were flattened into it (the fingerprints are
+unchanged by that, the build checks them). The C++ namespace keeps the name `bc::serving::v2`.
 
-Regenerate with:
-
-```
-<serving build>/bc_contract_gen engines/radiance/components/serving/contract/serving.toml engines/radiance/components/serving/generated/v2
-```
-
-Copy `serving-v2.schema.json` to `docs/design/serving-manifest-v2/serving-manifest.v2.schema.json`. Link to the generated field reference directly.
-
-V2 field declarations can restrict provenance through `origins` and `confidences`. Omitted attributes leave the respective value unrestricted. These restrictions are included in the semantic fingerprint. See the [manifest specification](../../../../../docs/design/serving-manifest-v2/spec.md) for resource admission and calibration.
+Field declarations can restrict provenance through `origins` and `confidences`. Omitted attributes leave the respective value unrestricted. These restrictions are included in the semantic fingerprint. See the [manifest specification](../../../../../docs/design/serving-manifest-v2/spec.md) for resource admission and calibration.
