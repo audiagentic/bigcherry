@@ -119,3 +119,15 @@ C05 Q/K norm, native RoPE/head gate/attention and C04 output reduction.
 All 48 blocks, video/audio, two legal head splits and three ranks are
 covered (576 successful host-only graphs). No separate runtime exists.
 See docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.
+
+## C07 real native exact three-rank GPU collective boundary (2026-11-22)
+
+The opt-in mixed-ar-gate lab uses the actual Radiance 2.2 ABI44 exact BF16
+host-mailbox all-reduce from libr3/libr4d and the real BigCherry shared-slot
+service. Seven video/audio Q/K/output patterns at C06 geometry are checked per
+rank. GREEN: three ranks on the R9700 (21/21 exact comparisons) and across two
+XTX cards using libr3 (21/21). RED: adding a mixed gfx1100/gfx1201 participant
+causes SIGSEGV at the first native collective kernel launch, after all three
+native rank initializations succeeded. No production TP3 execution or TP1
+parity is enabled. Evidence and commands:
+docs/evidence/2026-11-22-ltx25-c07-native-mixed-ar/README.md
