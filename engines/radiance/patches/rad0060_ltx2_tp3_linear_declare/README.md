@@ -40,7 +40,7 @@ The patched architecture translation unit compiles on the released
 - 2,640 biased output-column native declarations safely defer bias;
   384 model-derived rank K cuts are not admissible.
 - Four focused negative cases and every model block's output geometry
-  are checked. Source patch applies idempotently (ten edits).
+  are checked. Source patch applies idempotently (22 edits).
 
 See `docs/evidence/2026-11-22-ltx25-c03-deferred-bias/README.md`.
 C04 adds 2,016 source-backed exact reduction and post-reduction bias
@@ -54,3 +54,18 @@ a production kernel or an alternate collective implementation.
 See docs/evidence/2026-11-22-ltx25-c05-native-global-rms/README.md.
 Actual rank collective execution, full TP3 DiT attention wiring,
 model payload loading and video performance remain unproven.
+
+## C06: native self-attention integration
+
+C06 extends the existing Attn::declare / attn_core, optionally.
+The new TP3 branch reuses C01/C04/C05, head0 rope_split, attn_dense,
+head_gate and the original Act::step quantizers. The 32-head BF16 gate
+projection is replicated, avoiding a new small-weight shard loader.
+The same attn_core issues attention for both TP1 and diagnostic TP3,
+preserving the original single-rank operations.
+
+The model-backed ABI44 test checks 576 video/audio self-attention
+builder graphs (48 blocks x 2 modalities x 2 legal splits x 3 ranks).
+The existing DiT step loop is reused (including STG gate slicing), but no owner selects TP3: no GPU execution, model payloads,
+full DiT or TP3 serving enabled. See
+docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.

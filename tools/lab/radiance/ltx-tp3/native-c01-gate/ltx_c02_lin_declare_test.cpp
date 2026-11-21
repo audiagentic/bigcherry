@@ -298,6 +298,159 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     }
 }
 
+
+static void run_self_attn(const RadFile& model, Registry& reg,
+                          int64_t block, bool audio, int rank, int first,
+                          int owned, int total_heads) {
+    const std::string kind = audio ? "audio_attn1" : "attn1";
+    const std::string prefix = "dit.blk." + std::to_string(block) + "." + kind;
+    const auto* fused = model.find(prefix + ".qkv.weight");
+    const auto* output = model.find(prefix + ".out.weight");
+    const auto* gate = model.find(prefix + ".gate.weight");
+    const auto* gnq = model.find(prefix + ".q_norm.weight");
+    const auto* gnk = model.find(prefix + ".k_norm.weight");
+    need(fused && output && gate && gnq && gnk,
+         "C06 model missing a self-attention source");
+    const int64_t full = fused->shape[1];
+    need(fused->rank == 2 && fused->shape[0] == 3 * full &&
+         full % total_heads == 0 &&
+         output->rank == 2 && output->shape[0] == full &&
+         output->shape[1] == full &&
+         gate->rank == 2 && gate->shape[0] == total_heads &&
+         gate->shape[1] == full &&
+         gnq->rank == 1 && gnq->shape[0] == full &&
+         gnk->rank == 1 && gnk->shape[0] == full,
+         "C06 source self-attention geometry mismatch");
+    const int64_t hd = full / total_heads, local = owned * hd, lo = first * hd;
+    const auto& enc = model.encoding(*fused);
+    need(rad::arch::linear_is_iq8r(enc) &&
+         rad::arch::linear_w8h_group(enc) == rad::arch::RAD_I8_GROUP_WIDE,
+         "C06 IQ8R group encoding changed");
+    const ltx2::C01Slice slice = ltx2::C01Slice::rows(full, lo, local, hd, 3);
+    need(slice.valid(3 * local, full, rad::arch::RAD_I8_GROUP_WIDE),
+         "C06 invalid fused QKV slice");
+    Builder b(reg, metadata(), context(rank));
+    b.set_sources(rad::rad_container_sources(model));
+    ltx2::Model m{};
+    ltx2::Geom g{};
+    g.w_i8h = true;
+    g.w_i8_group = rad::arch::RAD_I8_GROUP_WIDE;
+    g.world = 3;
+    g.wire_exact = 1;
+    g.max_tok = 4;
+    g.dtype = "bf16";
+    ltx2::Act x{}, ao{};
+    need(x.declare(&b, m.nm, g, "c06.input", 4, full) == RAD_OK &&
+         ao.declare(&b, m.nm, g, "c06.attention", 4, local) == RAD_OK,
+         "C06 real activation/quantization declaration failed");
+    need(x.q.op && ao.q.op && x.a.q8_fed && ao.a.q8_fed,
+         "C06 failed to declare the exact native IQ8R activation quantizers");
+    const rad_buf qkv = ltx2::decl_b(&b, m.nm.f("c06.qkv"), RAD_BF16, {4, 3 * local});
+    const rad_buf logits = ltx2::decl_b(&b, m.nm.f("c06.gate"), RAD_BF16, {4, total_heads});
+    const rad_buf out = ltx2::decl_b(&b, m.nm.f("c06.out"), RAD_BF16, {4, full});
+    const rad_buf scratch = ltx2::decl_b(&b, m.nm.f("c06.norm_scratch"), RAD_BF16,
+                                         {4, full});
+    need(x.a.x && x.a.q8 && x.a.s8 && ao.a.x && ao.a.q8 && ao.a.s8 &&
+         qkv && logits && out && scratch, "C06 activation buffers missing");
+    const ltx2::Rope rope = audio ? ltx2::Rope{1, full, "20"} :
+                                   ltx2::Rope{3, full, "20 2048 2048"};
+    const std::string original = "transformer.transformer_blocks." +
+                                 std::to_string(block) + "." + kind;
+    ltx2::Attn a{};
+    const auto before = b.program().weights.size();
+    for(int bad=0; bad<2; ++bad) {
+        ltx2::Geom wrong = g;
+        if(bad==0) wrong.world=2;
+        else wrong.wire_exact=0;
+        need(ltx2::attn_declare(&b, m, wrong, a, prefix.c_str(), original.c_str(),
+                               total_heads, hd, full, full, full, true, x, nullptr,
+                               qkv, 0, logits, ao, out, 4, 4, RAD_ACCESS_PER_TOKEN,
+                               0, rope, 1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
+             "C06 invalid native geometry admitted");
+    }
+    ltx2::Act unquantized = x;
+    unquantized.q.op = 0;
+    need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
+                           total_heads, hd, full, full, full, true,
+                           unquantized, nullptr, qkv, 0, logits, ao, out,
+                           4, 4, RAD_ACCESS_PER_TOKEN, 0, rope,
+                           1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
+         "C06 accepted missing input IQ8R quantizer");
+    unquantized = ao;
+    unquantized.q.op = 0;
+    need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
+                           total_heads, hd, full, full, full, true,
+                           x, nullptr, qkv, 0, logits, unquantized, out,
+                           4, 4, RAD_ACCESS_PER_TOKEN, 0, rope,
+                           1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
+         "C06 accepted missing output IQ8R quantizer");
+    need(b.program().weights.size() == before && !a.tp3,
+         "C06 rejected geometry allocated weights");
+    const int rc=ltx2::attn_declare(
+        &b, m, g, a, prefix.c_str(), original.c_str(),
+        total_heads, hd, full, full, full, true, x, nullptr,
+        qkv, 0, logits, ao, out, 4, 4, RAD_ACCESS_PER_TOKEN,
+        0, rope, 1e-6, &slice, scratch);
+    if(rc != RAD_OK) {
+        std::fprintf(stderr,"C06 failed: block=%lld audio=%d rank=%d owned=%d rc=%d\n",
+                     (long long)block,(int)audio,rank,owned,rc);
+        for(const auto& e:b.errors()) std::fprintf(stderr,"  %s\n",e.c_str());
+    }
+    need(rc == RAD_OK, "C06 real Attn::declare refused TP3");
+    need(a.tp3 && a.head0 == first && a.H == owned &&
+         a.inner == local && a.hd == hd &&
+         a.tp_q.scratch == scratch && a.tp_k.scratch == scratch,
+         "C06 lost local head or scratch ownership");
+    need(a.gate.N == total_heads && a.gate.K == full && a.gate.bias,
+         "C06 replicated head gate missing");
+    need(a.op_rq && a.op_rk && a.op_attn && a.op_hg && a.op_v &&
+         a.qkv.op && a.out.op && a.out.post_reduce && a.out.op_b &&
+         a.tp_q.reduce && a.tp_k.reduce && !a.op_qn && !a.op_kn,
+         "C06 native self-attention graph incomplete");
+    for(const rad_op h:{a.op_rq,a.op_rk}) {
+        const auto* op=b.program().op(h);
+        long long head0=-1, heads=0, dim=0;
+        need(op && op->base.get_i("head0",&head0) && head0==first &&
+             op->base.get_i("n_head",&heads) && heads==owned &&
+             op->base.get_i("dim",&dim) && dim==full,
+             "C06 native RoPE lost global first-head origin");
+    }
+    for(const rad_op h:{a.tp_q.reduce,a.tp_k.reduce,a.out.post_reduce}) {
+        const auto* op=b.program().op(h);
+        long long world=0,exact=0;
+        need(op && op->base.get_i("world_size",&world) && world==3 &&
+             op->base.get_i("exact",&exact) && exact==1,
+             "C06 rank requires BigCherry's existing exact TP3 collective");
+    }
+    check_parts(*b.program().weight(a.qkv.l.w), slice);
+    check_parts(*b.program().weight(a.qkv.l.ws), slice);
+    check_parts(*b.program().weight(a.qkv.bias), slice);
+    const auto col=ltx2::C01Slice::columns_deferred(full,lo,local);
+    check_col(*b.program().weight(a.out.l.w),col);
+    check_col(*b.program().weight(a.out.l.ws),col);
+    for(auto wt : {a.w_qn, a.w_kn, a.out.bias, a.gate.w, a.gate.bias})
+        need(b.program().weight(wt) &&
+             b.program().weight(wt)->decl.shard == RAD_SHARD_NONE,
+             "C06 full checkpoint gain, gate or bias missing");
+    for(const rad_op handle : {a.qkv.op, a.qkv.op_b, a.gate.op,
+                              a.out.op, a.out.post_reduce, a.out.op_b, x.q.op, ao.q.op,
+                              a.tp_q.clear, a.tp_q.insert, a.tp_q.reduce,
+                              a.tp_q.norm, a.tp_q.extract,
+                              a.tp_k.clear, a.tp_k.insert, a.tp_k.reduce,
+                              a.tp_k.norm, a.tp_k.extract,
+                              a.op_rq, a.op_rk, a.op_attn, a.op_hg, a.op_v}) {
+        const auto* info = b.program().op(handle);
+        need(info != nullptr, "C06 native operation missing");
+        for(const auto& band : info->bands)
+            need(bool(band.dom[RAD_DOMAIN_HOST]),
+                 "C06 op unresolved on host reference kernel");
+    }
+    need(b.errors().empty(), "C06 Builder diagnostics");
+    b.set_instances(false);
+    need(b.finish() == RAD_OK && b.errors().empty(),
+         "C06 native full attention graph finish failed");
+}
+
 int main(int argc, char** argv) {
     if(argc!=3 && argc!=4) {
         std::fprintf(stderr,"usage: ltx_c02_lin_declare_test MODEL.rad PLUGIN_KERNEL_DIR\n");
@@ -320,6 +473,27 @@ int main(int argc, char** argv) {
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
         if (argc == 4) {
+            if (std::string(argv[3]) == "--c06") {
+                int tested=0;
+                for(int64_t block=0; block<nblocks; ++block)
+                    for(bool audio:{false,true})
+                        for(const std::array<int,3>& split :
+                            {std::array<int,3>{8,8,16},
+                             std::array<int,3>{12,12,8}}) {
+                            int first=0;
+                            for(int rank=0; rank<3; ++rank) {
+                                run_self_attn(model,reg,block,audio,rank,
+                                              first,split[rank],nheads);
+                                first+=split[rank];
+                                ++tested;
+                            }
+                            need(first==nheads,"C06 head ownership gap");
+                        }
+                need(tested==nblocks*2*2*3,
+                     "C06 self-attention graph matrix drift");
+                std::printf("LTX C06 source-backed self-attention: %d positive native graphs, two modalities, two splits\n", tested);
+                return 0;
+            }
             if (std::string(argv[3]) == "--c05") {
                 const std::pair<const char*, int> qkv_kv[] = {
                     {"attn1.qkv",3}, {"audio_attn1.qkv",3},

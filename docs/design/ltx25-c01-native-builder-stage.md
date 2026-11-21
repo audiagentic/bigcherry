@@ -140,3 +140,13 @@ identity. The all-reduce payload is full-width and therefore expensive;
 measure it before choosing a production implementation. Only a
 measured need should justify a compact row-statistic kernel extension.
 See docs/evidence/2026-11-22-ltx25-c05-native-global-rms/README.md.
+
+## C06 native self-attention integration
+
+The optional diagnostic uses the **existing** Attn structure,
+attn_declare and attn_core, not a shadow attention implementation.
+It reuses the original DiT step loop and both Act::step quantizers before QKV and output
+projection, rather than adding an uncalled wrapper. The real-model native test checks 576 video/audio graphs.
+The default TP1 arguments remain unchanged. This is host-only;
+guidance, full DiT, collective execution and GPU parity remain gates.
+Evidence: docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.

@@ -1,4 +1,4 @@
-"""Diagnostic LTX C01-C05: reuse native IQ8R weight, reduce and norm operations.
+"""Diagnostic LTX C01-C06: reuse native linear, collective, norm and attention operations.
 
 Targets the frozen Radiance 2.2 ABI44 candidate, never production v1.17.
 TP1 callers pass no C01Slice and keep their exact original code path.
@@ -18,6 +18,12 @@ _SHA256 = {
     "preflight.inc": "67d20f9f6eae9f9b107560f771672ff8198d80fa63d39eb27d17a5038999b35f",
     "bias.inc": "7b4b7f90810a8e6387e669a8c2db11e4c160ca77466ab86ae1b3da2fb5747e50",
     "linear.inc": "5e6af267c582872681306a492769879fc90609cf2b21284f903555239a06eacb",
+    "attn_state.inc": "8139f6349178f6d5612fb3f4e9d61f7685d1fb4b5bfeaf4f24fd04d46673fdcb",
+    "attn_geometry.inc": "0affad412d46274f186ef7d6ce483b8830a34301983824e52bec1651a53a354b",
+    "attn_output.inc": "8159c4dfd436138b16db74e1cc25a6f9ae86408e22a3df0588e9b80f7309b965",
+    "attn_norm.inc": "2758c87db3c30112f955b3db7fc82ce0d35dd4510cdeec09f32a39a6523fba83",
+    "attn_rope.inc": "d4a9fdacfee3c5752b26839bcc2eccd063d70baf5b2145b3be56553018cbc7ff",
+    "attn_core.inc": "4a52ed788b8204bede7fd898cd9b17a815d42397aef2df89b4c45a5d45a88835",
     "global_rms.inc": "18bc49f405708bd19151def2054ba626bdb808ff11924c4d049afbd6ac122bbc",
     "post_reduce.inc": "f47113a5c2f30d107a1f05f5e189447ea9b16ae35d5e64cb6aecfbaeff3cd64d",
 }
@@ -66,6 +72,90 @@ PATCHES = (
         language="none",
         description="Opt-in LTX Lin::declare sharding, all TP1 call sites unchanged",
         edits=(
+            _edit(
+                'ltx-c06-attn-state',
+                'struct Attn {\n',
+                "struct Attn {\n" + _source("attn_state.inc"),
+                'BC_LTX3_C06_ATTN_STATE',
+            ),
+            _edit(
+                'ltx-c06-attn-argument',
+                'int acc, int group, const Rope& rope, double eps) {\n',
+                "int acc, int group, const Rope& rope, double eps,\n"
+                "                        const C01Slice* tp = nullptr, rad_buf rms_scratch = 0) {\n",
+                'const C01Slice* tp = nullptr',
+            ),
+            _edit(
+                'ltx-c06-attn-geometry',
+                '    A.H = H;\n    A.hd = hd;\n    A.inner = H * hd;\n    const int64_t in = A.inner;\n',
+                _source("attn_geometry.inc"),
+                'BC_LTX3_C06_ATTN_GEOMETRY',
+            ),
+            _edit(
+                'ltx-c06-qkv-shard',
+                '                                   { bs("to_q"), bs("to_k"), bs("to_v") }, { in, in, in }, 3 * in,\n                                   qdim, acc, group, xin, bq, rows_q));\n',
+                "                                   { bs(\"to_q\"), bs(\"to_k\"), bs(\"to_v\") }, { full, full, full }, 3 * in,\n"
+                "                                   qdim, acc, group, xin, bq, rows_q, false, tp)); /* BC_LTX3_C06_QKV */\n",
+                'BC_LTX3_C06_QKV',
+            ),
+            _edit(
+                'ltx-c06-out-reduce',
+                '    RAD_ARCH_TRY(A.out.declare(b, nm, g, nm.f("%s.out", dn), { w("to_out.0") }, { bs("to_out.0") }, {},\n                               odim, in, acc, group, ao, y, rows_q));\n',
+                _source("attn_output.inc"),
+                'BC_LTX3_C06_ATTN_OUTPUT',
+            ),
+            _edit(
+                'ltx-c06-global-norm',
+                '    A.w_qn = wcopy(b, nm.f("%s.q_norm.weight", dn), w("norm_q"), RAD_BF16, { in }, acc, group);\n    A.w_kn = wcopy(b, nm.f("%s.k_norm.weight", dn), w("norm_k"), RAD_BF16, { in }, acc, group);\n    if (!A.w_qn || !A.w_kn) return RAD_E_INVAL;\n    const rad_buf kb = self ? bq : bkv;\n    A.op_qn = rms_op(b, rows_q, in, eps, A.w_qn, bq, bq);\n    A.op_kn = rms_op(b, rows_k, in, eps, A.w_kn, kb, kb);\n',
+                "    A.w_qn = wcopy(b, nm.f(\"%s.q_norm.weight\", dn), w(\"norm_q\"), RAD_BF16, { full }, acc, group);\n"
+                "    A.w_kn = wcopy(b, nm.f(\"%s.k_norm.weight\", dn), w(\"norm_k\"), RAD_BF16, { full }, acc, group);\n"
+                "    if (!A.w_qn || !A.w_kn) return RAD_E_INVAL;\n"
+                "    const rad_buf kb = self ? bq : bkv;\n"
+                + _source("attn_norm.inc"),
+                'BC_LTX3_C06_ATTN_NORM',
+            ),
+            _edit(
+                'ltx-c06-local-rope',
+                '        auto rop = [&](int64_t rows, rad_buf x) {\n            return rw(b, RAD_OP(b, "rope_split",\n                                RAD_PARAMS(RAD_RANGE("M", 1, rows), RAD_INT("n_head", H),\n                                           RAD_INT("head_dim", hd), RAD_INT("dim", rope.dim),\n                                           RAD_INT("n_dims", rope.n_dims), RAD_F64("theta", 10000.0),\n                                           RAD_STR("max", rope.max), RAD_STR("dtype", "bf16")),\n                                RAD_NOWEIGHTS),\n                      { x }, { x });\n        };\n',
+                _source("attn_rope.inc"),
+                'BC_LTX3_C06_ATTN_ROPE',
+            ),
+            _edit(
+                'ltx-c06-gate-heads',
+                'RAD_PARAMS(RAD_RANGE("M", 1, rows_q), RAD_INT("n_head", H),\n                                      RAD_INT("head_dim", hd), RAD_STR("dtype", "bf16")),\n',
+                "RAD_PARAMS(RAD_RANGE(\"M\", 1, rows_q), RAD_INT(\"n_head\", A.H),\n"
+                "                                      RAD_INT(\"head_dim\", hd), RAD_STR(\"dtype\", \"bf16\")), /* BC_LTX3_C06_GATE */\n",
+                'BC_LTX3_C06_GATE',
+            ),
+            _edit(
+                'ltx-c06-attn-return',
+                '    return A.op_qn && A.op_kn && A.op_attn && A.op_hg && (!self || A.op_v) ? RAD_OK : RAD_E_INVAL;\n',
+                "    return (tp ? A.tp_q.reduce && A.tp_k.reduce : A.op_qn && A.op_kn) &&\n"
+                "           A.op_attn && A.op_hg && (!self || A.op_v) ? RAD_OK : RAD_E_INVAL; /* BC_LTX3_C06_RETURN */\n",
+                'BC_LTX3_C06_RETURN',
+            ),
+            _edit(
+                'ltx-c06-core-norm',
+                '    RAD_ISSUE_N(c, A.op_qn, nq, q, RAD_W(A.w_qn), q);\n    RAD_ISSUE_N(c, A.op_kn, nk, k, RAD_W(A.w_kn), k);\n',
+                _source("attn_core.inc"),
+                'BC_LTX3_C06_ATTN_CORE',
+            ),
+            _edit(
+                'ltx-c06-gate-issue',
+                '    RAD_ISSUE_N(c, A.op_hg, nq, brows(bg, nq), brows(ao.a.x, nq));\n',
+                "    RAD_ISSUE_N(c, A.op_hg, nq,\n"
+                "                A.tp3 ? bcol(bg, A.head0, A.H, nq) : brows(bg, nq),\n"
+                "                brows(ao.a.x, nq)); /* BC_LTX3_C06_GATE_ISSUE */\n",
+                'BC_LTX3_C06_GATE_ISSUE',
+            ),
+            _edit(
+                "ltx-c06-stg-gate-issue",
+                '                RAD_ISSUE_N(c, At.op_hg, n, brows(bg, n), brows(ao.a.x, n));\n',
+                "                RAD_ISSUE_N(c, At.op_hg, n,\n"
+                "                            At.tp3 ? bcol(bg, At.head0, At.H, n) : brows(bg, n),\n"
+                "                            brows(ao.a.x, n)); /* BC_LTX3_C06_STG_GATE */\n",
+                "BC_LTX3_C06_STG_GATE",
+            ),
             _edit(
                 "ltx-c01-deferred-bias-state",
                 "    int64_t    N = 0, K = 0;\n",

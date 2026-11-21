@@ -6,8 +6,10 @@ ltx2 translation unit into a separate work-root directory, never the source.
 from __future__ import annotations
 
 import importlib.util
+from dataclasses import replace
 import json
 import os
+import re
 from pathlib import Path
 import shutil
 import sys
@@ -49,9 +51,12 @@ struct Lin {
         if (op_b) RAD_ISSUE_N(c, op_b, rows, out, RAD_W(bias), out);
     }
 };
-/* The C05 helper is inserted before the existing attention architecture. */
+/* C05-C06 helpers insert before the existing architecture attention. */
 struct Attn {
 };
+/* C06 original self-attention source anchors live only in real Radiance.
+ * This synthetic fixture is for C01-C05 patch applicability; it cannot
+ * stand in for the real attention builder. */
 """
 
 
@@ -61,8 +66,23 @@ def make_stage(root: Path, text: str) -> None:
     path.write_text(text)
 
 
-def patch_copy(root: Path) -> dict[str, int]:
-    patched = apply_all(list(package().PATCHES), root)
+def patches(*, full: bool):
+    definitions = list(package().PATCHES)
+    if not full:
+        # The tiny fixture exercises C01-C05's generic linear anchors.
+        # C06 anchors the actual LTX attention source; copying it here
+        # would create a second fake attention architecture.
+        definitions[1] = replace(
+            definitions[1],
+            edits=tuple(e for e in definitions[1].edits
+                        if not e.id.startswith("ltx-c06-")),
+        )
+    return definitions
+
+
+def patch_copy(root: Path, *, full: bool = True) -> dict[str, int]:
+    selected = patches(full=full)
+    patched = apply_all(selected, root)
     errors = [(r.path, x.edit_id, x.detail) for r in patched for x in r.failed]
     if errors:
         raise RuntimeError("C01 anchored patch did not apply: " + repr(errors))
@@ -75,9 +95,19 @@ def patch_copy(root: Path) -> dict[str, int]:
         "BC_LTX3_C05_GLOBAL_RMS",
         "BC_LTX3_C01_PREFLIGHT", "BC_LTX3_C01_BIAS", "BC_LTX3_C01_LINEAR",
     ):
-        assert src.count(marker) == 1, marker
+        assert len(re.findall(r"\b" + re.escape(marker) + r"\b", src)) == 1, marker
     assert 'if (ctx->world_size > 1)' in src or "struct Lin {" in src
-    again = apply_all(list(package().PATCHES), root)
+    if full:
+        for marker in (
+            "BC_LTX3_C06_ATTN_STATE", "BC_LTX3_C06_ATTN_GEOMETRY",
+            "BC_LTX3_C06_QKV", "BC_LTX3_C06_ATTN_OUTPUT",
+            "BC_LTX3_C06_ATTN_NORM", "BC_LTX3_C06_ATTN_ROPE",
+            "BC_LTX3_C06_GATE", "BC_LTX3_C06_RETURN",
+            "BC_LTX3_C06_ATTN_CORE", "BC_LTX3_C06_GATE_ISSUE",
+            "BC_LTX3_C06_STG_GATE",
+        ):
+            assert len(re.findall(r"\b" + re.escape(marker) + r"\b", src)) == 1, marker
+    again = apply_all(selected, root)
     assert all(not r.changed for r in again), "patch is not idempotent"
     return {
         "applied": sum(x.status == "applied" for r in patched for x in r.results),
@@ -88,7 +118,7 @@ def patch_copy(root: Path) -> dict[str, int]:
 
 def test_c01_patch_fixture_applies_twice(tmp_path: Path) -> None:
     make_stage(tmp_path, fake_upstream())
-    result = patch_copy(tmp_path)
+    result = patch_copy(tmp_path, full=False)
     assert result == {"applied": 10, "created_headers": 1, "idempotent": 1}
     src = (tmp_path / CPP).read_text()
     assert "RAD_SHARD_ROW" in src and "RAD_SHARD_COL" in src
@@ -99,7 +129,7 @@ def test_c01_patch_fixture_applies_twice(tmp_path: Path) -> None:
 def test_c01_patch_fixture_refuses_wrong_builder(tmp_path: Path) -> None:
     original = fake_upstream().replace("max_rows, parts));", "max_rows, replaced));")
     make_stage(tmp_path, original)
-    results = apply_all(list(package().PATCHES), tmp_path)
+    results = apply_all(patches(full=False), tmp_path)
     assert any(not r.ok for r in results)
     assert (tmp_path / CPP).read_text() == original
     assert not (tmp_path / HDR).exists()
@@ -113,7 +143,7 @@ def test_c01_real_source_opt_in(tmp_path: Path) -> None:
     src = Path(source) / CPP
     assert src.is_file()
     make_stage(tmp_path, src.read_text())
-    assert patch_copy(tmp_path)["applied"] == 10
+    assert patch_copy(tmp_path)["applied"] == 22
 
 
 if __name__ == "__main__":

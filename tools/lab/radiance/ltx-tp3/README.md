@@ -109,3 +109,13 @@ disjoint-rank reduction and local extraction against the dense
 and compact-statistic reference. No production engine call site or
 GPU path was enabled. See
 docs/evidence/2026-11-22-ltx25-c05-native-global-rms/README.md.
+
+## C06 real LTX Attn builder (2026-11-22)
+
+The same native-c01-gate executable registers
+ltx_c06_real_self_attention_graph. It exercises the real Attn::declare
+with checkpoint IQ8R QKV shards, input/output activation quantizers,
+C05 Q/K norm, native RoPE/head gate/attention and C04 output reduction.
+All 48 blocks, video/audio, two legal head splits and three ranks are
+covered (576 successful host-only graphs). No separate runtime exists.
+See docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.
