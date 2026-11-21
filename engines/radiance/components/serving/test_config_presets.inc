@@ -223,7 +223,7 @@
         Preset p;
         p.name = "qwen27b-2xtx";
         p.description = "Qwen3.8-27B MXFP4, two RDNA3 engine ranks with host-memory wht6 all-reduce";
-        p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
+        p.model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad";
         p.tp_wire = "wht6";
         p.ranks.push_back({"gfx1100", 2});
         p.memory["host-pool-mib"] = 0;
@@ -233,7 +233,7 @@
         p.sets.push_back("engine.max_num_batched_tokens=2048");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
-        p.sets.push_back("engine.kv_cache_dtype=\"i8\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
         p.sets.push_back("engine.ngram_placement=\"disk\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
@@ -245,7 +245,7 @@
         Preset p;
         p.name = "qwen27b-tp3-capacity";
         p.description = "qwen27b-tp3 for resident context: 7/7/2 delta-net, 7680/7680/2048 feed-forward, 262,144 tokens";
-        p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
+        p.model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad";
         p.tp_wire = "exact";
         p.ranks.push_back({"gfx1100", 2});
         p.ranks.push_back({"gfx1201", 1});
@@ -256,7 +256,7 @@
         p.sets.push_back("engine.max_num_batched_tokens=2048");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
-        p.sets.push_back("engine.kv_cache_dtype=\"i8\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
         p.sets.push_back("engine.ngram_placement=\"disk\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
@@ -272,7 +272,7 @@
         Preset p;
         p.name = "qwen27b-tp3-int8-556-long-bf16";
         p.description = "qwen27b-tp3-int8-556-long with a 16-bit (bf16) cache: about 624,000 tokens, no cache rounding";
-        p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
+        p.model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad";
         p.tp_wire = "exact";
         p.ranks.push_back({"gfx1100", 2});
         p.ranks.push_back({"gfx1201", 1});
@@ -297,11 +297,11 @@
         p.sets.push_back("tuning.tune_pin=\"all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1\"");
         return p;
     }
-    if (name == "qwen27b-tp3-int8-556-long") {
+    if (name == "qwen27b-tp3-int8-556-long-bf16i8") {
         Preset p;
-        p.name = "qwen27b-tp3-int8-556-long";
-        p.description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M tokens of fp8 cache";
-        p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
+        p.name = "qwen27b-tp3-int8-556-long-bf16i8";
+        p.description = "qwen27b-tp3-int8-556-long with bf16 keys and int8 values (bf16_i8): 818,896 tokens, the bf16 cache's decode speed";
+        p.model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad";
         p.tp_wire = "exact";
         p.ranks.push_back({"gfx1100", 2});
         p.ranks.push_back({"gfx1201", 1});
@@ -312,7 +312,36 @@
         p.sets.push_back("engine.max_num_batched_tokens=2048");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
-        p.sets.push_back("engine.kv_cache_dtype=\"i8\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"bf16_i8\"");
+        p.sets.push_back("engine.ngram_placement=\"disk\"");
+        p.sets.push_back("engine.num_speculative_tokens=3");
+        p.sets.push_back("engine.prefix_resume=\"nearest\"");
+        p.sets.push_back("engine.rope_scaling=\"none\"");
+        p.sets.push_back("tuning.p2p=\"off\"");
+        p.sets.push_back("tuning.pipelined_prefill=\"on\"");
+        p.sets.push_back("tuning.pipelined_prefill_min_rows=256");
+        p.sets.push_back("tuning.prefill_governor=\"kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000\"");
+        p.sets.push_back("tuning.prefill_interleave=2");
+        p.sets.push_back("tuning.tp_ownership=\"kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18\"");
+        p.sets.push_back("tuning.tune_pin=\"all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1\"");
+        return p;
+    }
+    if (name == "qwen27b-tp3-int8-556-long") {
+        Preset p;
+        p.name = "qwen27b-tp3-int8-556-long";
+        p.description = "qwen27b-tp3-int8-556 at 262,144 tokens a session: about 1.25 M tokens of fp8 cache";
+        p.model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad";
+        p.tp_wire = "exact";
+        p.ranks.push_back({"gfx1100", 2});
+        p.ranks.push_back({"gfx1201", 1});
+        p.memory["host-pool-mib"] = 0;
+        p.memory["host-kv-mib"] = 0;
+        p.sets.push_back("service.max_context=262144");
+        p.sets.push_back("service.max_sessions=8");
+        p.sets.push_back("engine.max_num_batched_tokens=2048");
+        p.sets.push_back("engine.checkpoint_interval=4096");
+        p.sets.push_back("engine.placement=\"expert_tiered\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
         p.sets.push_back("engine.ngram_placement=\"disk\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
@@ -330,7 +359,7 @@
         Preset p;
         p.name = "qwen27b-tp3-int8-556";
         p.description = "qwen27b-tp3-int8 with the 5,5,6 split: about 4x the KV cache per card";
-        p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
+        p.model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad";
         p.tp_wire = "exact";
         p.ranks.push_back({"gfx1100", 2});
         p.ranks.push_back({"gfx1201", 1});
@@ -341,7 +370,7 @@
         p.sets.push_back("engine.max_num_batched_tokens=2048");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
-        p.sets.push_back("engine.kv_cache_dtype=\"i8\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
         p.sets.push_back("engine.ngram_placement=\"disk\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
@@ -357,7 +386,7 @@
         Preset p;
         p.name = "qwen27b-tp3-int8";
         p.description = "Qwen3.8-27B w8a8 over XTX, XTX, R9700 (native TP3): delta-net 6/6/4, feed-forward 6656/6656/4096";
-        p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
+        p.model = "radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad";
         p.tp_wire = "exact";
         p.ranks.push_back({"gfx1100", 2});
         p.ranks.push_back({"gfx1201", 1});
@@ -368,7 +397,7 @@
         p.sets.push_back("engine.max_num_batched_tokens=2048");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
-        p.sets.push_back("engine.kv_cache_dtype=\"i8\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
         p.sets.push_back("engine.ngram_placement=\"disk\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
@@ -384,7 +413,7 @@
         Preset p;
         p.name = "qwen27b-tp3";
         p.description = "Qwen3.8-27B MXFP4 over XTX, XTX, R9700 (native TP3): 6/6/12 query heads, the R9700 the largest share";
-        p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
+        p.model = "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad";
         p.tp_wire = "exact";
         p.ranks.push_back({"gfx1100", 2});
         p.ranks.push_back({"gfx1201", 1});
@@ -395,7 +424,7 @@
         p.sets.push_back("engine.max_num_batched_tokens=2048");
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
-        p.sets.push_back("engine.kv_cache_dtype=\"i8\"");
+        p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
         p.sets.push_back("engine.ngram_placement=\"disk\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");

@@ -1,11 +1,11 @@
 {
- "_comment": "Post-bump 27B quality acceptance (MEN17). Radiance 2.2 retired MXFP4: the subject is now upstream's IQ8R container (StillDeadcode/qwen3.8-27b-iq8r-dflash, sha256 9388f4c0d1a050b1254f5a9c0e47b7fbf753248792a29b5072f9698957badfcc) with the i8 KV cache that upstream pairs with it, on the two XTX (tp 2, exact wire). Arms differ in kernels.attn_native / kernels.moe_native as before. NOT MIGRATED to the native-YAML start: this job format names a layout plus bc-serve --set keys (arm.serving.layout, serving.set), and a managed v3 start takes no --set; the arms need a job format that names a native config file (as tools/lab/radiance/arm_yaml.py writes). Its record args are the engine's own flags and are migrated. The first 1.7.0 evidence (MXFP4: attn-native KLD 0.0040, top-1 96.6%) is history and not comparable. Set RAD_BIN, RAD_HOME, KLD_REF_DIR before use. Not used by tests.",
+ "_comment": "MEN12: output quality of libr3's native gfx11 attention (R3_ATTN_NATIVE, production default on) on radiance 1.7.0, Qwen3.8-27B MXFP4 served by the two XTX (tp 2, exact wire) - the path where the XTX run the whole model, which the Flash-Next helper layout does not exercise. Control arm 'compat' runs the compatibility forms (kernels.attn_native and kernels.moe_native false in the arm's manifest); arm 'attn-native' turns the attention native on (kernels.attn_native true). The reference is the compat run itself, recorded on first use by quality.record (delete 'record' and 'corpus' to reuse it). On 1.3.0 the same switch gave KLD 0.0035 / top-1 96.8% against the R9700 reference (README, runs kqa2). First 1.7.0 run (2026-10-17): attn-native KLD 0.0040, median 0.0015, P99 0.031, top-1 96.6%, PPL 7.358 vs 7.368 - as on 1.3.0; the gate reported a top-1 drop only because the control reproduces its own reference exactly (KL 0, top-1 100%), so read the native arm against the 1.3.0 figures, or record the reference on a different layout. Set RAD_BIN, RAD_HOME, KLD_REF_DIR before use. Not used by tests.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
  "quality_only": true,
- "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
  "server_args": [],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0,1",
@@ -43,7 +43,7 @@
     "--tp-wire",
     "exact",
     "--kv-cache-dtype",
-    "i8",
+    "fp8",
     "--max-model-len",
     "8192",
     "--max-num-seqs",
@@ -71,7 +71,7 @@
      "engine.tp_wire": "exact",
      "service.max_context": 8192,
      "service.max_sessions": 1,
-     "engine.kv_cache_dtype": "i8",
+     "engine.kv_cache_dtype": "fp8",
      "kernels.attn_native": false,
      "kernels.moe_native": false
     }
@@ -88,7 +88,7 @@
      "engine.tp_wire": "exact",
      "service.max_context": 8192,
      "service.max_sessions": 1,
-     "engine.kv_cache_dtype": "i8",
+     "engine.kv_cache_dtype": "fp8",
      "kernels.attn_native": true,
      "kernels.moe_native": false
     }
