@@ -431,3 +431,17 @@ The direct count variant at `bb1b8a190` reproduced the same counts. A host
 launch interposer verified that both mailbox add and inject submit finish
 last, on the same stream and with matching geometry and pointers. A bounded
 first-capture and replay packet trace awaits the shared GPU lease.
+
+## C72 — Owner tests on the v3 fixture; host reserve is machine state (2026-11-21)
+
+`bc_session_test`, `bc_session_stored_test` and `bc_release_install_test` now plan through `plan_engine_only` on the shared native fixture
+(`test_native_session_fixture.h`: a fake KFD/PCI/proc host, a real native YAML, `TEST_FAKE_BEHAVIOUR` for the engine's behaviour). No v2 fixture, `fake-manifest.json`
+or legacy-admission refusal remains; the stored test replays a measured helper session (healthy, changed build, no room, refused power, missing power
+hook, altered stored bytes, detached owner, a swap between check and exec, a transport collision) and runs again on an unpacked release prefix. The golden
+release archive in `release_testdata` is regenerated with the real packer from the native YAML configs. The engine-side manifest admission test
+(`manifest_argv_test.cpp`) drives the patched reader with the v3 example through a sealed descriptor, a measuring start with `--plan-memory-ranks`, the
+quality-run flags and the refusals; the v2 registry-to-flag projection cases are gone with the projection.
+
+Equivalence note: the host reserve a sealed Flash-Next manifest records moved from 4705 MiB (the figure in the 2026-11-19 audit of d92592f9) to 9436 MiB.
+That is **machine state**: the reserve is derived from the host's detected memory and its ledger margin at plan time, not from a change to the config, the
+patches or the contract, so a before/after comparison must pin the host (same memory, same other processes) or compare plans, not throughput.
