@@ -458,6 +458,17 @@ Tests create large runtime and helper files and derive a child address-space
 limit from the test process and fixture size. The helper-key constrained-memory
 test **failed before** `d2bf5a392` and passed afterward.
 
+Read-only inspection of the prior run's plan-cache receipts found 25 owner
+records. Each has `engine_build=1371822d3de3ecf137db3dc9c21f1d81c534114afd14893c7cb29708ed60d355`,
+matching a fresh byte hash of the original runtime binary and all 101
+runtime-home files. Helper-backed receipts also agree on
+`helper_build=bab846e1dc035c3ea6eeb0ca910812913bb5207e4ca33674af6870bffdf4be42`.
+The 12 configs with two cached attempts differ only at
+`/engine/host_pool_mib`: those are explicit remeasurement/pool-convergence
+rounds, not evidence of another static key leaf moving. The exact value that
+changed in the original rejected writer/inspection calls was not persisted,
+so these receipts do not prove the five original refusals were resolved.
+
 A further card-free resolver/plan-key regression varies live
 `host.mem_available_mib` and each card's `vram_available_mib`, re-resolves,
 and verifies both v2 and sealed native v3 keys are unchanged. Changing selected
