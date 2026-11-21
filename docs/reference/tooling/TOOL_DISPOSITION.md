@@ -611,7 +611,8 @@ Radiance patches also use `bigcherry --engine radiance patch-promote <id> --evid
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_micro_pipeline_test.cpp` | **TRANSITIONAL** | Card-free synthetic LT3 component-chain contract, not engine E2E; see docs/design/ltx25-tp3-component-test-ladder.md. |
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_i8a8h_test.cpp` | **TRANSITIONAL** | Card-free source-derived H128/i8 nearest-even IQ8R activation quantization and legal TP3 K-shard invariance; see docs/design/ltx25-tp3-component-test-ladder.md. |
 | `tools/lab/radiance/ltx-tp3/ltx_tp3_builder_shard_test.cpp` | **TRANSITIONAL** | Diagnostic C01 builder admission test, compiles the actual opt-in Radiance patch header. |
-| `tools/lab/radiance/ltx-tp3/native-c01-gate/CMakeLists.txt` | **TRANSITIONAL** | Diagnostic host compile-only gate for an isolated patched LTX2 source on frozen ABI44, never production. |
+| `tools/lab/radiance/ltx-tp3/native-c01-gate/CMakeLists.txt` | **TRANSITIONAL** | Isolated LTX C01 source compile and optional ABI-matched real RadBuilder read-only model declaration gate, not production. |
+| `tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c01_weight_receipt_test.cpp` | **TRANSITIONAL** | Native 2.2 RadBuilder IQ8R weight-view/span receipts across DiT blocks; not full graph or GPU parity. |
 | `tools/tests/lab/test_ltx_iq8r_shards.py` | **TRANSITIONAL** | C01 optional read-only real-RAD2 raw-plane sharding, fused-bank and bias contract test; CPU only, not native loader/GPU parity. |
 | `tools/lab/radiance/hostread-idle-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: does a kernel reading host-mapped memory slow down when the host CPU is idle versus busy-looping. |
 | `tools/lab/radiance/idle-gap-bench.hip` | **TRANSITIONAL** | `radiance` lab topic file; RAD20 diagnosis: VRAM-streaming kernel with an idle gap, host waiting by event polling vs blocking-sync event. |

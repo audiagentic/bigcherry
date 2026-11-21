@@ -53,4 +53,9 @@ The lab now owns **ten independently selectable native CTests**: `ltx_tp3_refere
 
 ## C01 native builder diagnostic patch (2026-11-20)
 
+The 2.2 integration now adds a read-only, real-model native RadBuilder
+weight-view receipt for all DiT blocks; see
+`docs/evidence/2026-11-21-ltx25-2p2-native-builder/README.md`.
+
+
 The new Radiance patch package `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare` adds an optional `C01Slice` argument to the real LTX `Lin::declare` builder. Its native `ltx_tp3_builder_shard_test` includes the exact packaged header. `test_ltx_tp3_builder_patch.py` checks anchored applicability, idempotence and failure on changed upstream source. `native-c01-gate/CMakeLists.txt` compiles the patched frozen 2.2 LTX translation unit using its ABI44 headers in an isolated work-root stage. The production one-rank path is unchanged; no TP3 serving admission or GPU code is activated. See `docs/design/ltx25-c01-native-builder-stage.md`.

@@ -23,9 +23,9 @@ struct C01Slice {
     static constexpr C01Slice columns(int64_t full_k, int64_t start, int64_t local) {
         return {Mode::Columns, full_k, start, local, 0, 0};
     }
-    constexpr bool valid(int64_t n_out, int64_t n_in) const {
-        // C01 is deliberately only IQ8R's 256-K group and H128 transform.
-        if (n_out <= 0 || n_in <= 0 || source_width <= 0 ||
+    constexpr bool valid(int64_t n_out, int64_t n_in, int64_t group) const {
+        // The caller supplies the weight encoding's actual scale group.
+        if (n_out <= 0 || n_in <= 0 || group <= 0 || source_width <= 0 ||
             offset < 0 || width <= 0 || offset > source_width ||
             width > source_width - offset)
             return false;
@@ -34,10 +34,10 @@ struct C01Slice {
                    width <= std::numeric_limits<int64_t>::max() / banks &&
                    source_width % head_dim == 0 && offset % head_dim == 0 &&
                    width % head_dim == 0 && n_out == banks * width &&
-                   n_in % 256 == 0;
+                   n_in % group == 0;
         return mode == Mode::Columns && banks == 0 && head_dim == 0 &&
-               source_width % 256 == 0 && offset % 256 == 0 &&
-               width % 256 == 0 && n_in == width;
+               source_width % group == 0 && offset % group == 0 &&
+               width % group == 0 && n_in == width;
     }
 };
 } // namespace ltx2

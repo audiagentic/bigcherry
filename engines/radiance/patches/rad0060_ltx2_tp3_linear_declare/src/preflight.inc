@@ -1,6 +1,6 @@
         /* BC_LTX3_C01_PREFLIGHT: a diagnostic builder seam, never serving admission. */
-        if (slice && (!g.w_i8h || g.w_i8_group != 256 || g.w_bf16 || small ||
-                      !slice->valid(N, K) ||
+        if (slice && (!g.w_i8h || g.w_i8_group != RAD_I8_GROUP_WIDE || g.w_bf16 || small ||
+                      !slice->valid(N, K, g.w_i8_group) ||
                       (slice->mode == C01Slice::Mode::Rows &&
                        (wsrc.size() != (size_t)slice->banks ||
                         bsrc.size() != (size_t)slice->banks ||

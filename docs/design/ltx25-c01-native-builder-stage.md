@@ -69,9 +69,10 @@ oversized/invalid source spans.
 
 ## Not yet proven
 
-- No producer has created a native `RadBuilder` per-rank receipt for
-  actual model-weight codes, logical scale views and BF16 row bias.
-  Source compile proves types and signatures, **not loader admission**.
+- The 2026-11-21 native `RadBuilder` C01 weight-view receipt covers
+  actual model IQ8R codes, logical scale views and BF16 row bias.
+  It does **not** prove complete graph/kernel resolution, payload load or GPU execution.
+  See `docs/evidence/2026-11-21-ltx25-2p2-native-builder/README.md`.
 - No real rank-local activation buffer, global all-head Q/K RMS,
   RoPE/attention/FFN output collective or bias-once ownership.
 - No matching mixed gfx1100/gfx1201 kernel and hardware numerical
@@ -80,11 +81,11 @@ oversized/invalid source spans.
 
 ## Next single proof
 
-Add a narrowly scoped **native builder receipt test** that
-constructs a real `RadBuilder` on the frozen ABI44 source,
-calls `Lin::declare` for one fused QKV row shard and a video
-biasless FFN-down column shard with a real IQ8R model directory,
-and compares model-source weight/scale/bias span receipts against
-the existing raw-plane oracle. Only then wire it into an opt-in
-single-layer execution chain. A biased attention-output reduction
-must have a unique final bias owner before being admitted.
+The native C01 model-weight **declaration** receipt is now covered,
+including all DiT blocks and the actual two-level IQ8R scale views.
+Next, run the real LTX `Lin::declare` for one source-bound layer with
+declared activation buffers, native kernel-selection and full
+weight-loading receipts. Compare a single-layer numerical projection
+against TP1 before permitting any TP3 serving admission. Biased
+attention outputs require an explicitly unique after-reduction owner.
+See `docs/evidence/2026-11-21-ltx25-2p2-native-builder/README.md`.

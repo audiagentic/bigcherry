@@ -10,15 +10,16 @@
 #include <limits>
 
 using ltx2::C01Slice;
+constexpr int64_t group = 256; // IQ8R test-fixture scale group
 namespace {
 void rows(int64_t bank, int64_t hd, std::array<int, 3> shares, int n) {
     int64_t cursor = 0;
     for (int heads : shares) {
         const int64_t width = heads * hd;
         const auto spec = C01Slice::rows(bank, cursor, width, hd, n);
-        assert(spec.valid(n * width, bank));
-        assert(!spec.valid(n * width + 1, bank));
-        assert(!spec.valid(n * width, bank - 1)); // no IQ8R 256-K group
+        assert(spec.valid(n * width, bank, group));
+        assert(!spec.valid(n * width + 1, bank, group));
+        assert(!spec.valid(n * width, bank - 1, group)); // no IQ8R 256-K group
         cursor += width;
     }
     assert(cursor == bank);
@@ -30,8 +31,8 @@ void columns(int64_t K, std::array<int, 3> shares) {
         const int64_t width = heads * (K / 32);
         const auto spec = C01Slice::columns(K, cursor, width);
         const bool good = (cursor % 256 == 0) && (width % 256 == 0);
-        assert(spec.valid(9, width) == good);
-        assert(!spec.valid(9, width + 1));
+        assert(spec.valid(9, width, group) == good);
+        assert(!spec.valid(9, width + 1, group));
         any_bad |= !good;
         cursor += width;
     }
@@ -40,18 +41,18 @@ void columns(int64_t K, std::array<int, 3> shares) {
 }
 void negative() {
     const auto r = C01Slice::rows(4096, 1024, 1024, 128, 3);
-    assert(r.valid(3072, 4096));
-    assert(!C01Slice::rows(4096, 1025, 1024, 128, 3).valid(3072, 4096));
-    assert(!C01Slice::rows(4096, 1024, 513, 128, 3).valid(1539, 4096));
-    assert(!C01Slice::rows(4096, 1024, 1024, 0, 3).valid(3072, 4096));
-    assert(!C01Slice::rows(4096, 1024, 1024, 128, 1).valid(1024, 4096));
-    assert(!C01Slice::rows(4096, 4090, 1024, 128, 3).valid(3072, 4096));
-    assert(!C01Slice::columns(2048, 640, 640).valid(7, 640));
-    assert(!C01Slice::columns(2048, 512, 256).valid(7, 512));
-    assert(!C01Slice::columns(2048, 2048, 256).valid(7, 256));
-    assert(!C01Slice::columns(2050, 512, 256).valid(7, 256));
+    assert(r.valid(3072, 4096, group));
+    assert(!C01Slice::rows(4096, 1025, 1024, 128, 3).valid(3072, 4096, group));
+    assert(!C01Slice::rows(4096, 1024, 513, 128, 3).valid(1539, 4096, group));
+    assert(!C01Slice::rows(4096, 1024, 1024, 0, 3).valid(3072, 4096, group));
+    assert(!C01Slice::rows(4096, 1024, 1024, 128, 1).valid(1024, 4096, group));
+    assert(!C01Slice::rows(4096, 4090, 1024, 128, 3).valid(3072, 4096, group));
+    assert(!C01Slice::columns(2048, 640, 640).valid(7, 640, group));
+    assert(!C01Slice::columns(2048, 512, 256).valid(7, 512, group));
+    assert(!C01Slice::columns(2048, 2048, 256).valid(7, 256, group));
+    assert(!C01Slice::columns(2050, 512, 256).valid(7, 256, group));
     const auto huge = std::numeric_limits<int64_t>::max();
-    assert(!C01Slice::rows(huge, 0, huge, 128, 3).valid(42, 4096));
+    assert(!C01Slice::rows(huge, 0, huge, 128, 3).valid(42, 4096, group));
 }
 } // namespace
 

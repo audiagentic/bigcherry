@@ -14,8 +14,8 @@ from bigcherry.patcher import Edit, FilePatch
 
 _SRC = Path(__file__).resolve().parent / "src"
 _SHA256 = {
-    "bc_ltx_tp3_c01.h": "a976ad4100e7ef5f5bdc51e450d12a0329781f8867f068415e9f188e82d44aea",
-    "preflight.inc": "be95cfbd4fa79924e73b1be73450f459befbb75aec3b8a27c07f6c4ebb0497ed",
+    "bc_ltx_tp3_c01.h": "9fe87fe0ead38249827f4fe7a15c9d384271e9324dc1bca6762dc854cc71206d",
+    "preflight.inc": "f3afe47af8d66fb756e40b8c6c3761823a42f4624bf6eaff2894fd9d4d32a8c5",
     "bias.inc": "63d877aaa44a343ebe30d636ca83049ccf9aa974fd07ea240bb2a92f75e8e0f7",
     "linear.inc": "5e6af267c582872681306a492769879fc90609cf2b21284f903555239a06eacb",
 }
