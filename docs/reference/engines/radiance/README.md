@@ -72,6 +72,6 @@ The Flash-Next four-card layout has a documented quality trade-off.
 
 The [build and serving runbook](RUNBOOK.md) covers composition and
 measurement; [GPU layouts](LAYOUTS.md) covers helper card budgets;
-[serving manifest](SERVING_MANIFEST.md) covers writing a manifest, starting with one and the `--set` key to engine flag table.
-Manifest startup is still being qualified against the
-[v2 specification](../../../design/serving-manifest-v2/spec.md).
+[serving manifest](SERVING_MANIFEST.md) covers how the owner makes a manifest from a native config and how the engine starts from it.
+Manifest startup is qualified against the
+[serving manifest specification](../../../design/serving-manifest-v2/spec.md).

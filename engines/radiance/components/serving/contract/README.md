@@ -28,7 +28,7 @@ Two fingerprints, both pinned in `serving_types.h` (`kFingerprint`, `kSemanticFi
   order. It identifies the declared v1 contract. C++ names and docs are excluded (renaming generated code is not a wire
   change, and a consumer would not compile).
 
-v1 is closed (spec §8): a change to either fingerprint is a `bigcherry/v2` change. Correcting documentation changes
+The contract is closed (spec §8): a change to either fingerprint is a new edition. Correcting documentation changes
 neither and is allowed. The fingerprints identify declared contract data, not behaviour: the frozen procedures (JCS
 digest, provenance coverage and inheritance, semantic checks, native binding behaviour; spec §3, §7, §8) are held by
 the reader's conformance tests and reviewed implementation, not by these hashes.

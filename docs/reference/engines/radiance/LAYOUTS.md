@@ -13,7 +13,7 @@ frequently used experts and the RDNA2 RX 6900 XT for colder experts.
 | `engines/radiance/configs/NAME.yaml` (or `BIGCHERRY_CONFIGS`) | One native Radiance YAML per serving config, with a closed `x-bigcherry` section: rank architectures, helper groups, memory overrides, handoff and helper settings; read at run time. Format: [configs README](../../../../engines/radiance/configs/README.md). It names groups, expert budgets, ownership order and head/tail placement |
 | `engines/radiance/recipes.toml` | Pinned engine, patch selection and build/experiment source |
 
-The host inventory supplies the available GPU identities. Layouts do not
+The host inventory supplies the available GPU identities. Configs do not
 assume a fixed device index. The resolver rejects missing cards,
 unsupported roles and budgets exceeding the available memory.
 
@@ -35,12 +35,8 @@ combine accepts two to four. The current engine path uses one engine
 rank. Not every card can perform every role or weight format; check
 `archs.toml` and the component manifests.
 
-## Manifest transition
+## Manifest
 
-The named TOML layouts describe the existing launcher and benchmark
-configuration, not the final manifest-facing serving interface.
-The [v1 manifest contract](../../../design/serving-manifest-v2/spec.md)
-and its C++ reader are in place; process-role configuration and resource
-planning are being integrated. Follow the schema and implementation,
-rather than copying launcher environment variables into new interfaces.
-See the [serving manifest guide](SERVING_MANIFEST.md) for usage.
+A serving config is its native YAML; the owner seals it and writes an edition 3 serving manifest from it, and the engine and helpers read that
+manifest ([the spec](../../../design/serving-manifest-v2/spec.md)). Follow the config schema and the manifest, rather than copying launcher
+environment variables into new interfaces. See the [serving manifest guide](SERVING_MANIFEST.md) for usage.
