@@ -83,65 +83,72 @@ class CiBundleTests(unittest.TestCase):
         target = mock.patch.object(assets, "release_target", side_effect=lambda root, tag=None: ACTUAL_RELEASE_TARGET(root))
         target.start()
         self.addCleanup(target.stop)
+        self.serving_release()
 
-    def native_recipe(self):
-        (self.root / assets.RECIPES).write_text(
-            'pinned = "v1.17.0"\npinned-version = "2.2.0"\n'
-            '[build.native-serving]\noptions = { BC_SERVING_CONTRACT_VERSION = "3" }\n')
+    def policy(self):
+        return cb._payload_key(ACTUAL_RELEASE_TARGET(self.root), assets.NATIVE_RELEASE_PROFILES)
+
+    def serving_release(self):
+        """The release inputs every Radiance release has: the committed contract fingerprints, every shipped
+        config YAML, and a build whose engine and owner both use edition 3 with those fingerprints."""
         fingerprint = self.root / assets.SERVING_FINGERPRINT
-        fingerprint.parent.mkdir(parents=True)
+        fingerprint.parent.mkdir(parents=True, exist_ok=True)
         fingerprint.write_text(f"schema sha256:{'1' * 64}\nsemantics sha256:{'2' * 64}\n")
-        for name in assets.NATIVE_RELEASE_PROFILES:   # the native lane ships every config's YAML
+        for name in assets.NATIVE_RELEASE_PROFILES:
             (self.root / "engines/radiance/configs" / name).write_text("cards: [0]\nmodels: {tiny: {model: tiny.rad}}\n")
+        owner = self.build / "components/serving"
+        for directory, generated in ((self.build, self.build / "core/bc-serving-generated/v3"),
+                                     (owner, owner / "bc-serving-generated/v3")):
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "CMakeCache.txt").write_text("BC_SERVING_CONTRACT_VERSION:STRING=3\n")
+            generated.mkdir(parents=True, exist_ok=True)
+            (generated / "contract.fingerprint").write_bytes(fingerprint.read_bytes())
+        (owner / "bin").mkdir(exist_ok=True)
+        (owner / "bin/bc-serve").write_bytes((self.build / "radiance_home/bin/bc-serve").read_bytes())
         return self.root / "engines/radiance/configs" / NATIVE_PROFILE
 
-    def test_immutable_tag_selects_native_lane_and_legacy_keeps_stock(self):
+    def test_release_target_reads_the_committed_fingerprints_of_a_tag(self):
         def git(*args):
             subprocess.run(["git", "-C", str(self.root), *args], check=True, capture_output=True)
 
         git("init", "-q")
         git("add", assets.RECIPES)
-        git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "stock")
+        git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "recipes")
         git("tag", TAG)
-        self.native_recipe()
-        git("add", assets.RECIPES, assets.SERVING_FINGERPRINT)
-        git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "native")
-        native_tag = "bc-radiance-20200.0.0"
-        git("tag", native_tag)
-        current = self.root / assets.RECIPES
-        current.write_text(current.read_text().replace('VERSION = "3"', 'VERSION = "2"'))
-        self.assertEqual(ACTUAL_RELEASE_TARGET(self.root, TAG).lane, assets.STOCK_LANE)
-        self.assertEqual(ACTUAL_RELEASE_TARGET(self.root, native_tag).lane, assets.NATIVE_LANE)
-        with self.assertRaisesRegex(assets.BundleError, "must select serving edition 3"):
-            ACTUAL_RELEASE_TARGET(self.root)
+        self.serving_release()
+        git("add", assets.SERVING_FINGERPRINT)
+        git("-c", "user.name=Fixture", "-c", "user.email=fixture@example.test", "commit", "-qm", "contract")
+        tagged = "bc-radiance-20200.0.0"
+        git("tag", tagged)
+        with self.assertRaisesRegex(assets.BundleError, "missing .*contract.fingerprint at release tag"):
+            ACTUAL_RELEASE_TARGET(self.root, TAG)
+        target = ACTUAL_RELEASE_TARGET(self.root, tagged)
+        self.assertEqual(target.lane, assets.RELEASE_LANE)
+        self.assertEqual(target.profiles, assets.NATIVE_RELEASE_PROFILES)
+        self.assertEqual((target.schema_fingerprint, target.semantic_fingerprint), ("sha256:" + "1" * 64, "sha256:" + "2" * 64))
 
-    def test_native_pack_requires_matched_engine_owner_and_profile(self):
+    def test_pack_requires_matched_engine_owner_and_profile(self):
         opts = {"root": self.root, "work_root": self.work, "sdk": self.sdk}
-        stock = cb.pack_and_verify(TAG, **opts)
-        profile = self.native_recipe()
+        profile = self.root / "engines/radiance/configs" / NATIVE_PROFILE
         native_tag = "bc-radiance-20200.0.0"
         engine_cache = self.build / "CMakeCache.txt"
         owner_cache = self.build / "components/serving/CMakeCache.txt"
-        owner_cache.parent.mkdir(parents=True)
+        engine_fingerprint = self.build / "core/bc-serving-generated/v3/contract.fingerprint"
+        owner_fingerprint = self.build / "components/serving/bc-serving-generated/v3/contract.fingerprint"
         engine_cache.write_text("BC_SERVING_CONTRACT_VERSION:STRING=2\n")
         owner_cache.write_text("BC_SERVING_CONTRACT_VERSION:STRING=2\n")
         with self.assertRaisesRegex(assets.BundleError, "edition 3 in the engine"):
             cb.pack_and_verify(native_tag, **opts)
         engine_cache.write_text("BC_SERVING_CONTRACT_VERSION:STRING=3\n")
-        engine_fingerprint = self.build / "core/bc-serving-generated/v3/contract.fingerprint"
-        owner_fingerprint = self.build / "components/serving/bc-serving-generated/v3/contract.fingerprint"
-        for fingerprint in (engine_fingerprint, owner_fingerprint):
-            fingerprint.parent.mkdir(parents=True)
-            fingerprint.write_bytes((self.root / assets.SERVING_FINGERPRINT).read_bytes())
         with self.assertRaisesRegex(assets.BundleError, "edition 3 in the owner"):
             cb.pack_and_verify(native_tag, **opts)
         owner_cache.write_text("BC_SERVING_CONTRACT_VERSION:STRING=3\n")
+        good_fingerprint = owner_fingerprint.read_bytes()
         owner_fingerprint.write_text("mismatched fingerprint\n")
         with self.assertRaisesRegex(assets.BundleError, "generated owner serving fingerprint differs"):
             cb.pack_and_verify(native_tag, **opts)
-        owner_fingerprint.write_bytes(engine_fingerprint.read_bytes())
+        owner_fingerprint.write_bytes(good_fingerprint)
         linked_owner = self.build / "components/serving/bin/bc-serve"
-        linked_owner.parent.mkdir()
         linked_owner.write_bytes(b"stale owner")
         with self.assertRaisesRegex(assets.BundleError, "staged bc-serve differs"):
             cb.pack_and_verify(native_tag, **opts)
@@ -155,9 +162,8 @@ class CiBundleTests(unittest.TestCase):
         receipt = cb.pack_and_verify(native_tag, **opts)
         target = ACTUAL_RELEASE_TARGET(self.root)
         self.assertIn(f"configs/{NATIVE_PROFILE}", receipt["file_names"])
-        self.assertNotEqual(stock["runtime_key"], receipt["runtime_key"])
         self.assertEqual(receipt["serving_contract"], {
-            "edition": 3, "lane": assets.NATIVE_LANE,
+            "edition": 3, "lane": assets.RELEASE_LANE,
             "schema_fingerprint": target.schema_fingerprint,
             "semantic_fingerprint": target.semantic_fingerprint,
             "engine_sha256": assets.digest(self.build / "bin/radiance"),
@@ -196,7 +202,7 @@ class CiBundleTests(unittest.TestCase):
         self.assertTrue((out / receipt["name"]).is_file() and (out / receipt["checksum_name"]).is_file())
         written = json.loads((out / (receipt["name"][:-7] + cb.ra.CI_RECEIPT_SUFFIX)).read_text())
         self.assertEqual(written, receipt)
-        self.assertEqual(receipt["runtime_key"], {**TREE_ID, "build_inputs": "e" * 64, "payload_contract": assets.payload_contract_key(), "rocm_version": "7.2.4"})
+        self.assertEqual(receipt["runtime_key"], {**TREE_ID, "build_inputs": "e" * 64, "payload_contract": self.policy(), "rocm_version": "7.2.4"})
         self.assertEqual((receipt["release_tag"], receipt["plan_id"]), (TAG, PLAN))
         self.assertEqual(list(out.glob("ci-bundle-verify-*")), [])      # the scratch restore is gone
 
@@ -241,23 +247,20 @@ class CiBundleTests(unittest.TestCase):
         self.assertEqual(self.verify_staged(TAG, stage), receipt)
         self.assertTrue((stage / receipt["name"]).is_file())
 
-    def test_optional_native_profile_requires_explicit_selection_and_tagged_bytes(self):
+    def test_every_release_ships_each_config_and_checks_it_against_the_tag(self):
         config = self.root / "engines/radiance/configs" / NATIVE_PROFILE
         config.write_bytes(b"cards: [0]\r\nmodels: {tiny: {model: tiny.rad}}\r\n")
         opts = {"root": self.root, "work_root": self.work, "sdk": self.sdk}
-        default = cb.pack_and_verify(TAG, **opts)
         member = f"configs/{NATIVE_PROFILE}"
-        self.assertNotIn(member, default["file_names"])
-
         candidate = "bc-radiance-1170.13.0"
-        selected = cb.pack_and_verify(candidate, **opts, native_profiles=(NATIVE_PROFILE,))
-        self.assertEqual(set(selected["file_names"]) - set(default["file_names"]), {member})
-        self.assertNotEqual(selected["runtime_key"]["payload_contract"], default["runtime_key"]["payload_contract"])
+        selected = cb.pack_and_verify(candidate, **opts)
+        self.assertTrue({f"configs/{name}" for name in assets.NATIVE_RELEASE_PROFILES} <= set(selected["file_names"]))
+        self.assertIn(member, selected["file_names"])
         stage = self.work / "release-assets" / candidate
         self.assertEqual(self.verify_staged(candidate, stage), selected)
 
         receipt_path = next(stage.glob("*.receipt.json"))
-        bad = {**selected, "runtime_key": default["runtime_key"]}
+        bad = {**selected, "runtime_key": {**selected["runtime_key"], "payload_contract": "0" * 64}}
         receipt_path.write_text(json.dumps(bad))
         with self.assertRaisesRegex(cb.CiBundleError, "runtime key differs"):
             self.verify_staged(candidate, stage)
@@ -271,6 +274,7 @@ class CiBundleTests(unittest.TestCase):
         for bad in (("other.yaml",), (NATIVE_PROFILE, NATIVE_PROFILE)):
             with self.assertRaisesRegex(assets.BundleError, "unapproved or repeated native profile"):
                 assets.runtime_files(self.build, self.root, native_profiles=bad)
+        config.unlink()
         with self.assertRaisesRegex(assets.BundleError, "missing or unsafe RSC12 config"):
             assets.runtime_files(self.build, self.root, native_profiles=(NATIVE_PROFILE,))
         config.symlink_to("flashnext.toml")
@@ -397,13 +401,13 @@ class CiBundleTests(unittest.TestCase):
         cb.pack_and_verify(TAG, root=self.root, work_root=self.work, sdk=self.sdk, plan_id=PLAN)
 
     def test_find_reusable_matches_the_runtime_key_and_skips_the_tag_itself(self):
-        key = {**TREE_ID, "build_inputs": "e" * 64, "payload_contract": assets.payload_contract_key(), "rocm_version": "7.2.4"}
+        key = {**TREE_ID, "build_inputs": "e" * 64, "payload_contract": self.policy(), "rocm_version": "7.2.4"}
         receipts = {
             "bc-radiance-1170.11.0": {"schema": assets.SCHEMA, "payload_scope": assets.RUN_SCOPE,
                                        "runtime_key": {**key, "engine_tree": "f" * 40}},
             "bc-radiance-1170.10.0": {"schema": assets.SCHEMA, "payload_scope": assets.RUN_SCOPE,
                                        "runtime_key": key, "plan_id": PLAN,
-                                       "file_names": sorted(assets.runtime_files(self.build, self.root))},
+                                       "file_names": sorted(assets.runtime_files(self.build, self.root, native_profiles=assets.NATIVE_RELEASE_PROFILES))},
         }
         def fake_gh(args, root):
             if args[:2] == ["release", "list"]:
@@ -425,13 +429,10 @@ class CiBundleTests(unittest.TestCase):
         with mock.patch.object(cb, "_gh", fake_gh), mock.patch.object(cb, "verify_reusable_archive"):
             self.assertIsNone(cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4"))
         old_receipt["file_names"] = names
-        member = f"configs/{NATIVE_PROFILE}"
-        old_receipt["file_names"] = sorted([*names, member])
+        # A bundle that lacks one of the shipped configs is not this runtime, whatever its key says.
+        old_receipt["file_names"] = [n for n in names if n != f"configs/{NATIVE_PROFILE}"]
         with mock.patch.object(cb, "_gh", fake_gh), mock.patch.object(cb, "verify_reusable_archive"):
             self.assertIsNone(cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4"))
-            old_receipt["runtime_key"] = cb.runtime_key(self.root, "7.2.4", native_profiles=(NATIVE_PROFILE,))
-            found = cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4", native_profiles=(NATIVE_PROFILE,))
-            self.assertEqual(found[0], "bc-radiance-1170.10.0")
         old_receipt["file_names"] = names
         old_receipt["runtime_key"] = key
         old_receipt.pop("payload_scope")
@@ -455,7 +456,8 @@ class CiBundleTests(unittest.TestCase):
                         shutil.copy2(out / args[i + 1], dest / args[i + 1])
                 return ""
             raise AssertionError(args)
-        with mock.patch.object(cb, "_gh", gh):
+        with mock.patch.object(cb, "_gh", gh), \
+             mock.patch.object(cb, "tagged_config", return_value=(self.root / "engines/radiance/configs" / NATIVE_PROFILE).read_bytes()):
             self.assertEqual(cb.find_reusable(TAG, root=self.root, rocm_version="7.2.4")[0], old)
             archive = out / receipt["name"]
             archive.write_bytes(archive.read_bytes() + b"corrupt")

@@ -13,10 +13,11 @@ import dataclasses
 import unittest
 from pathlib import Path
 
+from bigcherry.core.paths import REPO_ROOT
 from bigcherry.experiment import contract as ec
 
-REGISTRY = Path("config/experiment-contracts.toml")
-MANIFEST = Path(ec.LEGACY_MANIFEST_PATH)
+REGISTRY = REPO_ROOT / "config/experiment-contracts.toml"
+MANIFEST = REPO_ROOT / ec.LEGACY_MANIFEST_PATH
 
 
 class LegacyMigrationLintTests(unittest.TestCase):
@@ -57,7 +58,7 @@ class LegacyMigrationLintTests(unittest.TestCase):
     def test_a_lost_manifest_fails_closed(self):
         """No manifest must mean 'everything needs the strong policy', never
         'everything is waived'."""
-        empty = ec.load_legacy_waivers(Path("config/does-not-exist.toml"))
+        empty = ec.load_legacy_waivers(REPO_ROOT / "config/does-not-exist.toml")
         self.assertEqual(empty, {})
         problems = ec.lint_effect_evidence_policy(self.registry, empty)
         self.assertTrue(problems)

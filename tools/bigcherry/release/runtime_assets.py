@@ -25,14 +25,13 @@ from pathlib import Path, PurePosixPath
 from ..core import engines
 
 SCHEMA = "bigcherry-radiance-runtime-v1"
-STOCK_LANE = "radiance:stock:linux-radiance"
-NATIVE_LANE = "radiance:native-serving:linux-radiance"
+RELEASE_LANE = "radiance:stock:linux-radiance"
 RECIPES = "engines/radiance/recipes.toml"
 SERVING_COMPONENT = "engines/radiance/components/serving"
 SERVING_FINGERPRINT = f"{SERVING_COMPONENT}/generated/v3/contract.fingerprint"
-SERVING_EDITION = "BC_SERVING_CONTRACT_VERSION"
+SERVING_EDITION = "BC_SERVING_CONTRACT_VERSION"   # a build-cache entry; the only edition is 3
 PLAN = re.compile(r"(?m)^(?:pin-bump lane build|release asset lane build): "
-                  r"(radiance:(?:stock|native-serving):linux-radiance) "
+                  r"(radiance:stock:linux-radiance) "
                   r"build_plan_id=([0-9a-f]{32}) binary_sha256=([0-9a-f]{64})$")
 FILE_LIMIT = 10000
 BYTE_LIMIT = 16 * 1024**3
@@ -158,21 +157,17 @@ class BundleError(RuntimeError):
 @dataclass(frozen=True)
 class ReleaseTarget:
     lane: str
-    profiles: tuple[str, ...] = ()
-    schema_fingerprint: str = ""
-    semantic_fingerprint: str = ""
+    profiles: tuple[str, ...]
+    schema_fingerprint: str
+    semantic_fingerprint: str
 
     def select_profiles(self, requested: tuple[str, ...]) -> tuple[str, ...]:
         check_native_profile_selection(requested)
-        if not self.profiles:
-            return requested
         if requested and requested != self.profiles:
             raise BundleError("native release requires its declared YAML profiles")
         return self.profiles
 
-    def serving_contract(self, files: dict) -> dict | None:
-        if self.lane == STOCK_LANE:
-            return None
+    def serving_contract(self, files: dict) -> dict:
         return {"edition": 3, "lane": self.lane, "schema_fingerprint": self.schema_fingerprint,
                 "semantic_fingerprint": self.semantic_fingerprint,
                 "engine_sha256": files["bin/radiance"]["sha256"],
@@ -190,22 +185,16 @@ def release_target(root: Path, tag: str | None = None) -> ReleaseTarget:
             raise BundleError(f"missing {path} at release tag {tag}")
         return result.stdout
 
-    recipes = tomllib.loads(read(RECIPES))
-    native = recipes.get("build", {}).get("native-serving")
-    if native is None and not re.fullmatch(r"2\.2\.\d+", recipes.get("pinned-version", "")):
-        return ReleaseTarget(STOCK_LANE)
-    if native is None or native.get("options", {}).get(SERVING_EDITION) != "3":
-        raise BundleError("native release recipe must select serving edition 3")
     fingerprint = re.fullmatch(
         r"schema (sha256:[0-9a-f]{64})\nsemantics (sha256:[0-9a-f]{64})\n?",
         read(SERVING_FINGERPRINT),
     )
     if fingerprint is None:
         raise BundleError("invalid committed v3 serving contract fingerprints")
-    return ReleaseTarget(NATIVE_LANE, NATIVE_RELEASE_PROFILES, *fingerprint.groups())
+    return ReleaseTarget(RELEASE_LANE, NATIVE_RELEASE_PROFILES, *fingerprint.groups())
 
 
-def verify_native_build(build: Path, root: Path, target: ReleaseTarget) -> None:
+def verify_serving_build(build: Path, root: Path, target: ReleaseTarget) -> None:
     """Require both halves of the shipped startup protocol to use the same edition."""
     from ..campaign.runtime_bundle import component_build_dir
 
@@ -278,7 +267,7 @@ def source_tree_marker(asset: dict, sdk: Path) -> str:
             f"{sdk.resolve()} {version} ")
 
 
-def select_build(record: dict, work_root: Path, lane: str = STOCK_LANE) -> tuple[Path, str, str]:
+def select_build(record: dict, work_root: Path, lane: str = RELEASE_LANE) -> tuple[Path, str, str]:
     found = PLAN.findall(record.get("notes", ""))
     if not found:
         raise BundleError("release record has no pin-bump lane build plan ID and binary SHA-256")
@@ -497,9 +486,8 @@ def pack(record: dict, root: Path, work_root: Path, sdk: Path, tag: str,
     target = target or release_target(root)
     build, plan_id, binary_sha = select_build(record, work_root, target.lane)
     native_profiles = target.select_profiles(native_profiles)
-    if target.lane == NATIVE_LANE:
-        verify_native_build(build, root, target)
     files = runtime_files(build, root, native_profiles=native_profiles)
+    verify_serving_build(build, root, target)
     identity = stock_identity(root)
     version = sdk_version(sdk)
     built_identity = built_from(root)

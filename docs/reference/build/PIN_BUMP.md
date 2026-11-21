@@ -101,7 +101,7 @@ the llama.cpp repin/transition procedure below is independent.
    of its 128-wide Hadamard rotation. Preflight before device allocation.
 5. **Build and test one complete runtime.** Use
    `python3 -m bigcherry --engine radiance pin-bump <ref> --source
-   radiance --build native-serving --platform linux-radiance`
+   radiance --build stock --platform linux-radiance`
    (resumable with `--resume`). Gates include the component coupling
    and libr3 native rewrite checks, engine and component compilation,
    CTests, plugin ABI + **layout fingerprint**, lane build and CPU smoke.
@@ -482,7 +482,7 @@ them without any patch anchor failing. The compile phase runs three checks in or
 
 The radiance bump command (`--build` names the lane's build profile; pin-bump builds the bumped engine and smokes that build):
 
-    python -m bigcherry --engine radiance pin-bump <ref> --source radiance --build native-serving --platform linux-radiance
+    python -m bigcherry --engine radiance pin-bump <ref> --source radiance --build stock --platform linux-radiance
 
 These need a radiance checkout and a Linux host with the toolchain; on a host without `cmake`/`ninja`/`ctest` the phase STOPs
 with `SOURCE_COMPILE_UNAVAILABLE` (or `--skip-compile`, recorded in the release record).

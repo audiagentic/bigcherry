@@ -136,8 +136,6 @@ def build_inputs_tree(root: Path) -> str:
 
 def _payload_key(target: ra.ReleaseTarget, native_profiles: tuple[str, ...]) -> str:
     policy = ra.payload_contract_key(native_profiles=native_profiles)
-    if target.lane == ra.STOCK_LANE:
-        return policy
     return hashlib.sha256(f"{policy} {target.lane} {target.schema_fingerprint} "
                           f"{target.semantic_fingerprint}".encode()).hexdigest()
 
@@ -372,7 +370,7 @@ def find_reusable(tag: str, *, root: Path, rocm_version: str, limit: int = 40,
             continue
         try:
             ra.check_run_manifest(set(names))
-            if ra.selected_native_profiles(set(names)) != tuple(sorted(native_profiles)):
+            if set(ra.selected_native_profiles(set(names))) != set(native_profiles):
                 continue
             verify_reusable_archive(other, root, receipt)
         except (ra.BundleError, CiBundleError, OSError, ValueError, KeyError, tarfile.TarError):

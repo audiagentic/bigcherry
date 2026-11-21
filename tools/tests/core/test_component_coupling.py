@@ -51,12 +51,7 @@ class ComponentCouplingTests(unittest.TestCase):
         self.assertGreater(len(mapped), 100)
         self.assertEqual(len(mapped), sum(bool(f.get("radiance_option")) for f in contract["field"]))
         bridge = (PATCH_ROOT / "rad0009_serving_manifest/patch.py").read_text()
-        self.assertIn("kFields", bridge)
         self.assertIn("kEnvBindings", bridge)
-        self.assertIn("project_native_options(doc, v2::kFields, known)", bridge)
-        self.assertIn("projected.argv()", bridge)
-        projection = (serving.root / "v2/native_option_projection.h").read_text()
-        self.assertIn("field.radiance_option", projection)
         self.assertIn("bc_serving_engine_argv", bridge)
 
 

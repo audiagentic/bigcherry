@@ -80,7 +80,7 @@ footprint should make the **next** bump smaller to reason about.
 
 ```sh
 nice -n 15 python3 -m bigcherry --engine radiance pin-bump <ref> \
-    --source radiance --build native-serving --platform linux-radiance
+    --source radiance --build stock --platform linux-radiance
 # After an interrupted phase, use the recorded run:
 python3 -m bigcherry --engine radiance pin-bump <ref> --resume
 ```

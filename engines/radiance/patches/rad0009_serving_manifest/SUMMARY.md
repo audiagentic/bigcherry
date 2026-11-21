@@ -3,6 +3,16 @@
 **Status:** validated
 **Plan item:** RSC07
 
+## Edition 2 projection removed (RUM04, 2026-11-21)
+
+The seam described in the next section is gone. Edition 3 is the only wire edition, so the patched
+`bc_serving_engine_argv` has no `kContractVersion` fork: every start admits the sealed native YAML snapshot
+(`--role engine`) or a measuring manifest file, and the engine's options come from that YAML. Removed with it:
+`v2/native_option_projection.h` and its test `bc_v2_native_projection_test`, the registry-to-flag projection, the
+`bc_serving_manifest_host_pool_total` aggregate conversion with its `BC_RAD_HOST_POOL_MIB_AGGREGATE` compile
+definition, and the `g_emitted` given-check that only the projection fed. The history below and the evidence
+files describe the earlier design and are left as written.
+
 ## Current v2 projection boundary (RUM04 migration seam, 2026-11-18)
 
 The v1 description below records this patch's original design; the production

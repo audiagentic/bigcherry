@@ -21,8 +21,8 @@ cutover, so this is not yet a fully qualified v1 launch.
 
 ## Native YAML candidate
 
-Build the patched `radiance` source with the `native-serving` recipe to select
-wire edition 3 for the engine, `bc-serve` and the MoE worker. Each build generates
+Build the patched `radiance` source with the `stock` recipe: the engine, `bc-serve` and
+the MoE worker all use wire edition 3. Each build generates
 the codec from the same registry and verifies the tracked fingerprint.
 
 For a fresh v3 start, select the BigCherry hardware profile and author the

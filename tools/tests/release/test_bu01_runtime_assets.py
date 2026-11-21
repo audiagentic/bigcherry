@@ -74,6 +74,20 @@ class RuntimeAssetsTests(unittest.TestCase):
             target = self.build / rel
             target.parent.mkdir(parents=True, exist_ok=True)
             target.write_bytes(b"runtime data")
+        fingerprint = self.root / assets.SERVING_FINGERPRINT
+        fingerprint.parent.mkdir(parents=True)
+        fingerprint.write_text(f"schema sha256:{'1' * 64}\nsemantics sha256:{'2' * 64}\n")
+        for name in assets.NATIVE_RELEASE_PROFILES:
+            (config_dir / name).write_text("cards: [0]\nmodels: {tiny: {model: tiny.rad}}\n")
+        owner = self.build / "components/serving"
+        for directory, generated in ((self.build, self.build / "core/bc-serving-generated/v3"),
+                                     (owner, owner / "bc-serving-generated/v3")):
+            directory.mkdir(parents=True, exist_ok=True)
+            (directory / "CMakeCache.txt").write_text("BC_SERVING_CONTRACT_VERSION:STRING=3\n")
+            generated.mkdir(parents=True)
+            (generated / "contract.fingerprint").write_bytes(fingerprint.read_bytes())
+        (owner / "bin").mkdir()
+        (owner / "bin/bc-serve").symlink_to(serving)   # the staged owner is a copy of the built one
         binary_sha = assets.digest(self.build / "bin/radiance")
         self.record = {"notes": f"pin-bump lane build: radiance:stock:linux-radiance "
                                 f"build_plan_id={PLAN} binary_sha256={binary_sha}"}
@@ -276,7 +290,7 @@ class RuntimeAssetsTests(unittest.TestCase):
         with tarfile.open(archive, "r:gz") as tar:
             manifest = json.loads(tar.extractfile("bundle.json").read())
             names = set(tar.getnames()) - {"bundle.json"}
-        expected = set(assets.runtime_files(self.build, self.root))
+        expected = set(assets.runtime_files(self.build, self.root, native_profiles=assets.NATIVE_RELEASE_PROFILES))
         self.assertEqual(names, expected)
         self.assertEqual(set(manifest["files"]), expected)
         self.assertEqual(asset["payload_scope"], assets.RUN_SCOPE)

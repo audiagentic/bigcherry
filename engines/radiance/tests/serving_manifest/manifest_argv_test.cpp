@@ -193,13 +193,6 @@ int main(int, char** argv) {
               shape.at("spec").at("processes").at("engine").at("device").at("gpus").get<std::vector<std::string>>());
     }
 
-    // The arithmetic of the host-pool budget (per rank in the manifest, the aggregate in Radiance 2.1's own parser).
-    int64_t aggregate_pool_mib = 0;
-    CHECK(bc_serving_manifest_host_pool_total(2048, 3, &aggregate_pool_mib));
-    CHECK(aggregate_pool_mib == 6144);
-    CHECK(!bc_serving_manifest_host_pool_total(std::numeric_limits<int64_t>::max(), 2, &aggregate_pool_mib));
-    CHECK(!bc_serving_manifest_host_pool_total(2048, 0, &aggregate_pool_mib));
-
     // A serving start takes only the owner's descriptor and --role engine: a path, a missing role, a wrong role, an unsealed
     // or partly sealed descriptor and any other descriptor path are each refused before the manifest is read.
     CHECK(run({"--manifest", example, "--role", "engine"}) == "ERROR");              // a file on disk is not the owner's

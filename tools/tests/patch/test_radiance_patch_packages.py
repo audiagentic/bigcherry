@@ -121,9 +121,9 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("f3ab4f3", "9e6d964"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "149f010"),
-        "core/bc_serving_manifest.cpp": (None, "adc3822"),
-        "core/CMakeLists.txt": ("921debd", "60f500f"),
+        "core/bc_serving_manifest.h": (None, "53c1d9d"),
+        "core/bc_serving_manifest.cpp": (None, "88425c6"),
+        "core/CMakeLists.txt": ("921debd", "2404fcc"),
         "core/main.cpp": ("4cb6d43", "7feb7b6"),
         "tests/CMakeLists.txt": ("9531405", "fb30463"),
     },
@@ -818,8 +818,6 @@ class TestServingManifestPatch(unittest.TestCase):
                 "BC_SERVING_GENERATED_DIR",
                 'include("${BC_SERVING_V2_CMAKE}")',
                 "target_link_libraries(rad_core PUBLIC bc_serving_v2)",
-                'if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")',
-                "target_compile_definitions(rad_core PRIVATE BC_RAD_HOST_POOL_MIB_AGGREGATE=1)",
                 "add_executable(bc_native_v3_engine_test",
                 "target_link_libraries(bc_native_v3_engine_test PRIVATE rad_core)",
                 "elseif(RAD_BUILD_TESTS)",
@@ -857,21 +855,18 @@ class TestServingManifestPatch(unittest.TestCase):
             # The real patched-engine entry point must use the same table-driven
             # emitter exercised by the card-free C++ rename test.
             bridge = (root / "core" / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
-            self.assertIn('v2::project_native_options(doc, v2::kFields, known)', bridge)
-            self.assertIn("if (!native)", bridge)
+            self.assertNotIn("project_native_options", bridge)
+            self.assertNotIn("kContractVersion", bridge)
             self.assertIn("NativeFleetConfig::replay", bridge)
             self.assertIn("bc_serving_take_native_config", bridge)
             self.assertIn("v2::read_sealed_document(fd,", bridge)
             self.assertIn("v3 native offline quality cannot be combined with memory measurement", bridge)
-            core_cmake = (root / "core" / "CMakeLists.txt").read_text(encoding="utf-8")
-            self.assertIn('if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")', core_cmake)
-            self.assertIn("BC_RAD_HOST_POOL_MIB_AGGREGATE=1", core_cmake)
             scratch = work / "scratch"
             scratch.mkdir()
             test = REPO / "engines" / "radiance" / "tests" / "serving_manifest" / "manifest_argv_test.cpp"
             codec = generated_serving_codec(self, compiler)
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
-                     "-Werror", "-DBC_RAD_HOST_POOL_MIB_AGGREGATE=1", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
+                     "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
                      f"-I{codec}", f"-I{include}"]
             sources = [root / "core" / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
                        *manifest_library_sources(),

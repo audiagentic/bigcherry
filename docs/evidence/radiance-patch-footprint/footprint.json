@@ -157,7 +157,7 @@
     "created_target_anchors": 24,
     "anchor_sites": 705,
     "anchor_bytes": 84472,
-    "inserted_bytes": 508025,
+    "inserted_bytes": 503729,
     "created_edits": 28,
     "upstream_files": 80
   },
@@ -1076,7 +1076,7 @@
       "created_target_anchors": 0,
       "anchor_sites": 11,
       "anchor_bytes": 524,
-      "inserted_bytes": 40845,
+      "inserted_bytes": 36549,
       "created_edits": 2
     },
     {
@@ -2319,7 +2319,7 @@
       "anchors": 1,
       "anchor_sites": 1,
       "anchor_bytes": 87,
-      "inserted_bytes": 2102,
+      "inserted_bytes": 1966,
       "patch_count": 1
     },
     {

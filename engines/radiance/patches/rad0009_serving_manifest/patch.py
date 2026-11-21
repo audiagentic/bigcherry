@@ -59,9 +59,6 @@ bool bc_serving_expected_plan(bc::serving::v2::EnginePlan* expected, int64_t* fl
 /* BDFs are from the same strictly validated engine view, not device ordinals. */
 std::vector<std::string> bc_serving_engine_bdfs();
 
-/* Convert the manifest's per-rank host-pool budget to Radiance 2.1's aggregate CLI value. */
-bool bc_serving_manifest_host_pool_total(int64_t per_rank_mib, int64_t tp, int64_t* total_mib);
-
 #endif /* BC_SERVING_MANIFEST_H */
 """
 
@@ -73,7 +70,6 @@ _BC_SERVING_MANIFEST_CPP = r"""/* bc_serving_manifest.cpp -- policy behind bc_se
 #include "document_bytes.h"
 #include "manifest.h"
 #include "serving_types.h"
-#include "native_option_projection.h"
 #ifdef BC_RAD_NATIVE_FLEET_CONFIG
 #include "native_fleet_config.h"
 #include "fleet/fleet.h"
@@ -120,7 +116,6 @@ namespace v2 = bc::serving::v2;
 
 std::vector<std::string> g_store;   /* the synthetic argv, kept for the life of the process */
 std::vector<char*> g_ptrs;
-std::vector<std::string> g_emitted;  /* the options the manifest produced, for bc_serving_mark_given */
 std::string g_label;                /* "manifest <12 hex>" once a manifest was loaded, else empty */
 v2::EnginePlan g_expected;          /* a serving start's expected plan, from the manifest's measured plan */
 int64_t g_floor_ppm = 0;
@@ -219,13 +214,6 @@ bool matched_quality_owner(const std::string& home, int manifest_fd) {
 
 }  // namespace
 
-bool bc_serving_manifest_host_pool_total(int64_t per_rank_mib, int64_t tp, int64_t* total_mib) {
-    if (!total_mib || tp <= 0 || per_rank_mib < 0 || per_rank_mib > std::numeric_limits<int64_t>::max() / tp)
-        return false;
-    *total_mib = per_rank_mib * tp;
-    return true;
-}
-
 bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_native_engine.reset();
     g_engine_bdfs.clear();
@@ -290,12 +278,11 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     if (!rank_out.empty() && plan_memory.empty()) return fail("--plan-memory-ranks requires --plan-memory");
     if (!heat_nonce.empty() && (!plan_memory.empty() || !rank_out.empty() || !run_flags.empty()))
         return fail("--bc-heat-launch-nonce is valid only for serving, not measurement or quality runs");
-    const bool native = v2::kContractVersion == 3;
-    if (native && !run_flags.empty() && !plan_memory.empty())
+    if (!run_flags.empty() && !plan_memory.empty())
         return fail("v3 native offline quality cannot be combined with memory measurement");
     std::string text;
     int sealed_fd = -1;
-    if (native && plan_memory.empty()) {
+    if (plan_memory.empty()) {
         if (role != "engine") return fail("v3 serving requires --role engine");
         try {
             text = read_native_serving_manifest(path, sealed_fd);
@@ -321,28 +308,26 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         return fail("--bc-heat-launch-nonce requires an authenticated histogram publisher");
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
     if (doc.is_discarded()) return fail("'" + path + "' is not JSON");   /* unreachable after the strict reader */
-    if (native) {
-        if (!plan_memory.empty() && rank_out.empty())
-            return fail("v3 native measurement requires --plan-memory-ranks");
-        const auto& spec = manifest.value().spec;
-        if (!run_flags.empty() && (spec.handoff || !spec.processes.helpers.empty())) {
-            const auto flag = [&](const char* name) {
-                return std::count_if(run_flags.begin(), run_flags.end(), [&](const auto& arg) {
-                    return arg.first == name && std::filesystem::path(arg.second).is_absolute();
-                }) == 1;
-            };
-            if (run_flags.size() != 2 || !flag("--kld-ref") || !flag("--kld-out") ||
-                !matched_quality_owner(spec.processes.engine.runtime.radiance_home, sealed_fd))
-                return fail("v3 native helper KL scoring requires its matched owner and retained manifest");
-        }
-        const auto view = v2::native_config_view(manifest.value());
-        if (!view) return fail("v3 manifest has no admitted native YAML snapshot");
-        auto admitted = native_engine_inputs(spec, *view);
-        if (!complete_native_engine_inputs(admitted))
-            return fail("v3 manifest has incomplete native engine admission inputs");
-        admitted.offline_quality = !run_flags.empty();
-        g_native_engine = std::move(admitted);
+    if (!plan_memory.empty() && rank_out.empty())
+        return fail("v3 native measurement requires --plan-memory-ranks");
+    const auto& spec = manifest.value().spec;
+    if (!run_flags.empty() && (spec.handoff || !spec.processes.helpers.empty())) {
+        const auto flag = [&](const char* name) {
+            return std::count_if(run_flags.begin(), run_flags.end(), [&](const auto& arg) {
+                return arg.first == name && std::filesystem::path(arg.second).is_absolute();
+            }) == 1;
+        };
+        if (run_flags.size() != 2 || !flag("--kld-ref") || !flag("--kld-out") ||
+            !matched_quality_owner(spec.processes.engine.runtime.radiance_home, sealed_fd))
+            return fail("v3 native helper KL scoring requires its matched owner and retained manifest");
     }
+    const auto view = v2::native_config_view(manifest.value());
+    if (!view) return fail("v3 manifest has no admitted native YAML snapshot");
+    auto admitted = native_engine_inputs(spec, *view);
+    if (!complete_native_engine_inputs(admitted))
+        return fail("v3 manifest has incomplete native engine admission inputs");
+    admitted.offline_quality = !run_flags.empty();
+    g_native_engine = std::move(admitted);
     g_have_expected = false;
     /* A quality run (the KL mode) scores the trunk's own rows and never serves: it holds no checkpoint slots and a smaller
      * static VRAM set, so the serving plan's admission check does not describe it and none is armed. */
@@ -364,50 +349,6 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         g_have_expected = true;
     }
 
-    std::vector<std::pair<std::string, std::string>> flags;
-    std::vector<std::string> projected_argv;
-    if (!native) {
-      std::set<std::string> known;
-      for (const std::string& n : rad::diag::config_option_names()) known.insert(n);
-
-    /* Every registry field bound to a radiance option, in registry order. A field the manifest leaves out is left to
-     * radiance's own default. The argv shape follows the JSON type alone; a shape the option does not accept is left
-     * for radiance's own config_parse to reject, which makes main exit 2. */
-    // Exactly one projection: the generated serving-v2 registry supplies ALL
-    // Radiance option names. This narrow hook is replaced by RUM04's immutable
-    // upstream runtime bundle; neither the manifest writer nor the engine
-    // maintains an independent option-name map.
-      auto projected = v2::project_native_options(doc, v2::kFields, known);
-      if (!projected.error.empty()) return fail(projected.error);
-#ifdef BC_RAD_HOST_POOL_MIB_AGGREGATE
-    /* The manifest records the admitted host-pool budget per rank, while Radiance 2.1's --host-pool-mib
-     * parser accepts the aggregate and divides it by TP. Convert at this adapter boundary so config_parse
-     * reconstructs the exact per-rank value that BigCherry admitted. */
-    const auto& typed_spec = manifest.value().spec;
-    const int64_t tp = typed_spec.processes.engine.scheduler.tp;
-    const int64_t host_pool_per_rank = typed_spec.resources.host.pool_mib;
-    int64_t host_pool_total = 0;
-    if (!bc_serving_manifest_host_pool_total(host_pool_per_rank, tp, &host_pool_total))
-        return fail("resources.host.pool_mib x engine.tp exceeds Radiance's signed MiB limit");
-    const auto host_pool_flag = std::find_if(projected.flags.begin(), projected.flags.end(), [](const auto& flag) {
-        return flag.first == "--host-pool-mib";
-    });
-    if (host_pool_flag == projected.flags.end()) return fail("resources.host.pool_mib has no --host-pool-mib projection");
-    host_pool_flag->second = std::to_string(host_pool_total);
-#endif
-      projected_argv = projected.argv();
-      flags = std::move(projected.flags);
-      for (const char* required : {"--radiance-home", "--kernels"}) {
-        bool found = false;
-        for (const auto& kv : flags)
-            if (kv.first == required && !kv.second.empty()) found = true;
-        if (!found)
-            return fail(std::string(required) + " must be present and non-empty: it is required so that " +
-                        (std::strcmp(required, "--kernels") == 0 ? "RADIANCE_KERNELS" : "RADIANCE_HOME") +
-                        " cannot silently supply it");
-      }
-    }
-
     g_store.clear();
     g_store.push_back((*argv)[0]);
     for (const std::string& v : verbosity) g_store.push_back(v);
@@ -423,9 +364,6 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         g_store.push_back(kv.first);
         g_store.push_back(kv.second);
     }
-    g_emitted.clear();
-    for (const auto& kv : flags) g_emitted.push_back(kv.first);
-    g_store.insert(g_store.end(), projected_argv.begin(), projected_argv.end());
     g_ptrs.clear();
     for (std::string& s : g_store) g_ptrs.push_back(&s[0]);
     g_ptrs.push_back(nullptr);
@@ -433,7 +371,6 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     *argv = g_ptrs.data();
     // Fill one immutable typed snapshot from the strict reader's decoded manifest.
     // Dynamic plugins consume this via bc_serving_engine_settings, not getenv.
-    const auto& spec = manifest.value().spec;
     BcEngineSettings settings{};
     settings.manifest = 1;
     if (spec.handoff) {
@@ -734,15 +671,6 @@ std::vector<std::string> bc_serving_engine_bdfs() { return g_engine_bdfs; }
 
 bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
     if (g_label.empty()) return true;
-    /* The argv shape came from the JSON types alone, so an option the parser took as another option's argument never
-     * reaches `given`: the parse was not the manifest's. */
-    for (const std::string& opt : g_emitted) {
-        const auto it = given->find(opt);
-        if (it == given->end() || it->second != "command line") {
-            std::fprintf(stderr, "radiance: --manifest: %s was not parsed as given\n", opt.c_str());
-            return false;
-        }
-    }
     for (auto& kv : *given)
         if (kv.second == "command line" && kv.first != "-v" && kv.first != "-vv" && kv.first != "--plan-memory" &&
             kv.first != "--kld-record" && kv.first != "--kld-corpus" && kv.first != "--kld-ref" && kv.first != "--kld-out") kv.second = g_label;
@@ -767,9 +695,6 @@ if(BC_SERVING_V3_NATIVE_TEST)
 endif()
 include("${BC_SERVING_V2_CMAKE}")
 target_link_libraries(rad_core PUBLIC bc_serving_v2)
-if(PROJECT_VERSION VERSION_GREATER_EQUAL "2.0")
-  target_compile_definitions(rad_core PRIVATE BC_RAD_HOST_POOL_MIB_AGGREGATE=1)
-endif()
 
 if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/fleet/config.h")
   target_compile_definitions(rad_core PRIVATE BC_RAD_NATIVE_FLEET_CONFIG=1)
