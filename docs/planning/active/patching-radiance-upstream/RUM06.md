@@ -137,6 +137,8 @@ The earlier VTP36 throughput/TTFT rankings on W8A8/MXFP4 do not carry over autom
 
 2026-11-21 bigcherry-1: IQ8R TP port 45fd1eb4a reviewed and merged into node/radiance-latest-bump (06bacf8ac). patch-rebase-check --all 38/38 clean; focused tests pass. Engine build queued from that tree, then IQ8R KLD vs the bf16 ref at 4,4,8 and 6,6,4 under the gpu lease (task scratch runner run-iq8r-tp.sh, rum06-27b-kld).
 
+2026-11-21 bigcherry-1: IQ8R on TP3 with the port (build bdd48feb from 06bacf8ac), scored against the bf16-weights reference (rad-kld-corpus-4, 8240 positions, fp8 KV, num-speculative-tokens 0). 4,4,8 (kv=1,1,2;ffn=5120,4864,7424;lk=4,4,8;lv=12,12,24): KLD mean 0.00123, median 0.00043, p99 0.0105, top-1 97.51%, PPL x1.0005. 6,6,4 (kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12): KLD mean 0.00128, p99 0.0111, top-1 97.27%, PPL x1.0005. Both beat the w8a8 bar (0.00139, top-1 96.77%), and both start and run on all three ranks. Remaining: switch the qwen27b configs to IQ8R and pick the split per config by measured KV capacity, streams and TTFT (VTP36 method), then the 27B starts.
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -161,3 +163,4 @@ The earlier VTP36 throughput/TTFT rankings on W8A8/MXFP4 do not carry over autom
 - 2026-11-21T00:53:10.311864+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T01:38:17.936858+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T02:18:21.184326+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T02:35:33.763913+00:00 (updated-by): Updated: section:notes
