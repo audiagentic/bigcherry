@@ -15,13 +15,17 @@ struct C01Slice {
     int64_t width;        // local rows per fused bank, or local input K
     int64_t head_dim;     // Rows: whole-head test; Columns: 0
     int banks;            // Rows: 2 or 3; Columns: 0
+    bool defer_bias = false; // output columns: requires one later post-reduction bias owner
 
     static constexpr C01Slice rows(int64_t full_bank, int64_t start, int64_t local,
                                     int64_t hd, int count) {
-        return {Mode::Rows, full_bank, start, local, hd, count};
+        return {Mode::Rows, full_bank, start, local, hd, count, false};
     }
     static constexpr C01Slice columns(int64_t full_k, int64_t start, int64_t local) {
-        return {Mode::Columns, full_k, start, local, 0, 0};
+        return {Mode::Columns, full_k, start, local, 0, 0, false};
+    }
+    static constexpr C01Slice columns_deferred(int64_t full_k, int64_t start, int64_t local) {
+        return {Mode::Columns, full_k, start, local, 0, 0, true};
     }
     constexpr bool valid(int64_t n_out, int64_t n_in, int64_t group) const {
         // The caller supplies the weight encoding's actual scale group.
@@ -30,7 +34,7 @@ struct C01Slice {
             width > source_width - offset)
             return false;
         if (mode == Mode::Rows)
-            return (banks == 2 || banks == 3) && head_dim > 0 &&
+            return !defer_bias && (banks == 2 || banks == 3) && head_dim > 0 &&
                    width <= std::numeric_limits<int64_t>::max() / banks &&
                    source_width % head_dim == 0 && offset % head_dim == 0 &&
                    width % head_dim == 0 && n_out == banks * width &&

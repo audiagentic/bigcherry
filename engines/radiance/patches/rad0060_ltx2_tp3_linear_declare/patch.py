@@ -14,9 +14,9 @@ from bigcherry.patcher import Edit, FilePatch
 
 _SRC = Path(__file__).resolve().parent / "src"
 _SHA256 = {
-    "bc_ltx_tp3_c01.h": "9fe87fe0ead38249827f4fe7a15c9d384271e9324dc1bca6762dc854cc71206d",
-    "preflight.inc": "f3afe47af8d66fb756e40b8c6c3761823a42f4624bf6eaff2894fd9d4d32a8c5",
-    "bias.inc": "63d877aaa44a343ebe30d636ca83049ccf9aa974fd07ea240bb2a92f75e8e0f7",
+    "bc_ltx_tp3_c01.h": "c13114e5726441235e0a4a92f8f61c57c1b3cb351dade5290bbfb15530c7484a",
+    "preflight.inc": "edfbd9753a8d9fc489cc43526c595a238fef6856329e55bababa35de3ae46257",
+    "bias.inc": "ca8701172fb02baf0211f4bbdc55d25bbb219a4c2835f19e0676953bc6f86e3e",
     "linear.inc": "5e6af267c582872681306a492769879fc90609cf2b21284f903555239a06eacb",
 }
 
@@ -65,6 +65,13 @@ PATCHES = (
         description="Opt-in LTX Lin::declare sharding, all TP1 call sites unchanged",
         edits=(
             _edit(
+                "ltx-c01-deferred-bias-state",
+                "    int64_t    N = 0, K = 0;\n",
+                "    int64_t    N = 0, K = 0;\n"
+                "    bool deferred_bias = false; /* BC_LTX3_C01_DEFERRED_STATE */\n",
+                "BC_LTX3_C01_DEFERRED_STATE",
+            ),
+            _edit(
                 "ltx-c01-include",
                 "#include <arch/rad_fp8.h>\n",
                 "#include <arch/rad_fp8.h>\n"
@@ -88,7 +95,8 @@ PATCHES = (
             ),
             _edit(
                 "ltx-c01-bias",
-                "            bias = decl_w(b, bn, RAD_BF16, { N }, access, RAD_SHARD_NONE, grp_layer(group));\n",
+                "            bias = decl_w(b, bn, RAD_BF16, { N }, access, RAD_SHARD_NONE, grp_layer(group));\n"
+                "            if (!bias) return RAD_E_INVAL;\n",
                 _source("bias.inc"),
                 "BC_LTX3_C01_BIAS",
             ),

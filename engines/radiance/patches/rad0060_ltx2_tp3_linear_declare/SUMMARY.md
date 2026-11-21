@@ -1,35 +1,38 @@
-# rad0060 — LTX2 TP3 native C01 declaration staging
+# rad0060 — LTX2 TP3 diagnostic IQ8R declarations
 
-**Status:** diagnostic
-**Plan item:** LT3
+**Status:** diagnostic, not in any production source recipe
+**Plan:** LT3 engineering backlog (not a Planning MCP identifier)
 
 ## Summary
 
-**Diagnostic only.** Adds an opt-in C01Slice to the real Radiance 2.2
-LTX2 `Lin::declare` path. For IQ8R, row-sharded QKV/KV selects the same
-per-bank source rows for codes, scales and BF16 bias through the existing
-LinearFP8/span_parts and RadBuilder APIs. Column-sharded output projections
-require an aligned 256-K slice and currently **refuse any output bias**:
-once-after-reduce ownership is not yet implemented.
+Optional `C01Slice` in the real 2.2 / ABI44 LTX `Lin::declare`.
+Fused QKV/KV row shards record per-bank code, two-level IQ8R scales
+and BF16 bias spans. Output columns use native aligned `RAD_SHARD_COL`
+views. Biasless columns declare no bias; biased columns require
+`C01Slice::columns_deferred`, record `Lin::deferred_bias`, and declare
+**no partial-rank bias weight or table-add**. An output collective and
+unique post-reduction bias owner remain separate, unimplemented gates.
 
-Existing TP1 calls pass the default null slice and stay unchanged.
-The LTX `world_size > 1` refusal is preserved; no runtime TP3 graph,
-Q/K all-head RMS or mixed-card liveness is claimed.
+The existing TP1 calls and LTX `world_size > 1` rejection are
+unchanged. No activated GPU TP3 inference or numerical parity is claimed.
 
 ## Outcome
 
-**Host validation:** patch applies and is idempotent against the observed
-frozen candidate's actual `arch/ltx2/ltx2.cpp`; C++23 compilation of
-the patched translation unit and independent C01Slice tests pass.
-This is compile/applicability evidence only, not a run of an actual
-RadBuilder with model weights, a GPU projection or full model inference.
+**Host-only validation:** seven idempotent source edits compile on Radiance 2.2 / ABI44; the actual LTX declaration tests pass with explicitly deferred output biases, not GPU execution.
 
-**Required before activation:** canonical RUM source/ABI44 composition,
-an actual builder weight-view receipt test, controlled native one-rank
-projection parity, rank-local buffers, global RMS/all-reduce, bias-once
-and request/owner graph acceptance. No promotion or merge without the
-project's Planning/Ledger and standard CI gates.
+- Seven anchored edits to the pinned Radiance 2.2 LTX source;
+  applicability and idempotence pass.
+- Patched full LTX translation unit compiles with the native ABI44 SDK.
+- Source-backed C01/C02 real-model declarations: 3,024 fused/biasless
+  and 2,640 deferred-biased projections pass; 384 rank K cuts refuse.
+- Four explicit negative cases; native CTests pass.
+- Evidence: `docs/evidence/2026-11-22-ltx25-c03-deferred-bias/README.md`.
 
 ## Detail
 
-See README.md.
+Actual model payload loading, end-to-end per-rank DiT architecture
+and activation buffers, global Q/K RMS reduction, attention/FFN
+collectives, once-only output bias application, native multi-rank
+serving and resource admission, device numerical quality/liveness,
+and a recorded video-generation performance result. Planning/Ledger,
+CI and review remain independent project gates.

@@ -70,8 +70,9 @@ C02 test calls the real `ltx2::Lin::declare` with a read-only native
 It verifies **3,024 positive declarations** across every DiT block, seven
 IQ8R projection types, three rank layouts and all ranks, with exact code,
 scale and bias spans, host kernel resolution, and `Builder::finish()`.
-Three negative cases (wrong scale group, biased output, invalid audio K
-cut) refuse before any model weight is declared. The reference kernel is
+Four negative cases (wrong scale group, biased output without deferral,
+invalid audio K cut, deferral without a source) refuse before any model
+weight is declared. The reference kernel is
 staged alone into the CMake build root, avoiding unrelated SDK plugins.
 
 Set `LTX_SOURCE_ROOT`, `LTX_STAGE_ROOT`, `LTX_NATIVE_CORE_LIB`,

@@ -51,6 +51,11 @@ void negative() {
     assert(!C01Slice::columns(2048, 512, 256).valid(7, 512, group));
     assert(!C01Slice::columns(2048, 2048, 256).valid(7, 256, group));
     assert(!C01Slice::columns(2050, 512, 256).valid(7, 256, group));
+    // A biased output is admitted only with an explicit deferred-bias contract.
+    const auto defer = C01Slice::columns_deferred(4096, 1024, 1024);
+    assert(defer.valid(4096, 1024, group));
+    assert(defer.defer_bias);
+    assert(!C01Slice::columns_deferred(2048, 640, 640).valid(2048, 640, group));
     const auto huge = std::numeric_limits<int64_t>::max();
     assert(!C01Slice::rows(huge, 0, huge, 128, 3).valid(42, 4096, group));
 }

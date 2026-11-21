@@ -1,47 +1,47 @@
-# rad0060: LTX-2.5 IQ8R C01 native linear declaration (diagnostic only)
+# rad0060: diagnostic LTX-2.5 IQ8R TP3 linear declarations
 
 ## Summary
 
-An opt-in, diagnostic-only C01Slice for the LTX2 `Lin::declare` path (details below); TP1 behaviour is unchanged and the
-`world_size > 1` refusal is preserved.
+**Unselected diagnostic patch only.** Adds an optional `C01Slice` to
+the real Radiance 2.2 / ABI44 `ltx2::Lin::declare` path. Original TP1
+call sites have a null slice and remain unchanged. The engine still
+rejects `world_size > 1`; this is not an executable TP3 model.
 
-## Outcome
+## Shard declarations
 
-See SUMMARY.md: compile and applicability evidence only; nothing here is selected by a production patch set.
+- **Fused row banks:** each rank gets the same offset and whole-head width
+  from each of the two KV or three QKV banks. Native `LinearFP8::span_parts`
+  and `rad_weight_shard_span_parts` apply to code and two-level scale
+  planes and to the matching BF16 row bias.
+- **Biasless output columns:** `C01Slice::columns` declares a
+  `RAD_SHARD_COL` IQ8R K view only at complete, model-derived
+  scale-group boundaries, with no bias weight or `table_add`.
+- **Biased output columns:** `C01Slice::columns_deferred` additionally
+  requires exactly one checkpoint bias source. The partial GEMM
+  declares **no bias weight and no bias-add operation**; the native
+  `Lin::deferred_bias` state marks its result as *not final*.
+  A future rank collective must produce the full-width output and a
+  **single owner** must apply that bias once, after the reduction.
+  Neither that collective nor its owner is implemented here.
 
-## Detail
+A biased column without explicit deferral, deferral without a bias
+source, partial IQ8R scale-group cuts, BF16/small-gate paths and
+incompatible fused-bank geometry fail closed before model-weight
+declarations. The opt-in patch is never selected by production recipes.
 
-**Status:** native staging slice, source-pinned to Radiance's frozen 2.2 / ABI44
-candidate. Not selected by any production patch set or engine launch. This
-package creates `arch/ltx2/bc_ltx_tp3_c01.h` and changes only
-`arch/ltx2/ltx2.cpp::Lin::declare` to accept an *optional* `C01Slice`.
-Every existing caller passes no slice and keeps exactly the original TP1
-behavior. The existing rejection of `world_size > 1` is untouched.
+## Evidence and next work
 
-C01's Rows form records whole-head [start, start + width) in **each** of
-two KV or three QKV source banks. It declares each native IQ8R weight and
-its `scale,scale.1` logical view as a `RAD_SHARD_ROW` weight with per-bank
-parts; `LinearFP8::span_parts` and `rad_weight_shard_span_parts` record
-the same model-source bank offsets for codes/scales and the BF16 bias.
-A plain contiguous slice of fused QKV would be incorrect.
+The patched architecture translation unit compiles on the released
+2.2 / ABI44 SDK; the host-only, model-backed C01/C02 CTests use actual
+`RadFile`, `RadBuilder`, `Lin::declare` and reference kernel schemas.
 
-C01's Columns form declares an aligned IQ8R `RAD_SHARD_COL` weight
-using `LinearFP8::declare` with [start, start + width); **only biasless
-outputs** are admitted. Biased attention outputs need an explicit
-once-after-collective bias owner and are refused at this stage. Invalid
-geometry, a 128-wide/partial scale group, plain/other encoding or a
-small-bf16 gate are refused.
+- 3,024 fused-row/biasless column native declarations pass.
+- 2,640 biased output-column native declarations safely defer bias;
+  384 model-derived rank K cuts are not admissible.
+- Four focused negative cases and every model block's output geometry
+  are checked. Source patch applies idempotently (seven edits).
 
-No rank-local activation buffer, all-reduce, Q/K RMS, graph schedule or
-serving/owner path is introduced by this patch. An actual production
-activation needs all those dependencies, plus identity and GPU numerical
-evidence. This patch's inclusion in a diagnostic source, separately from
-the production recipe, must be explicitly reviewed.
-
-## Proof gates
-
-The lab's `ltx_tp3_builder_shard_test` compiles the **same** header from
-this package and tests head/scale/bank admission. The actual Radiance
-`ltx2.cpp` patch requires source-applicability and host syntax/ABI
-compile checks; passing the header test alone is not a builder proof.
-See `docs/design/ltx25-tp3-component-test-ladder.md`.
+See `docs/evidence/2026-11-22-ltx25-c03-deferred-bias/README.md`.
+Native kernel execution, full TP3 DiT graph, all-head Q/K RMS,
+collectives, model weight payload loading and video performance remain
+unimplemented/unproven.

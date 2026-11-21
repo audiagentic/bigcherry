@@ -9,7 +9,8 @@
                             return part == slice->source_width;
                         }))) ||
                       (slice->mode == C01Slice::Mode::Columns &&
-                       (bsrc.size() || parts.size() || wsrc.size() != 1)))) {
+                       (parts.size() || wsrc.size() != 1 ||
+                        (slice->defer_bias ? bsrc.size() != 1 : bsrc.size() != 0))))) {
             fprintf(stderr, "radiance: ltx2: C01 IQ8R shard invalid, incompatible fused banks, "
                             "or output requires bias-once reduction not yet implemented\n");
             return RAD_E_UNSUPPORTED;

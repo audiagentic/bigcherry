@@ -57,9 +57,13 @@ static void check_col(const rad::WeightInfo& w, const ltx2::C01Slice& slice) {
          "actual Lin column span disagrees with model ownership");
 }
 
+enum class ProbeCase {
+    Normal, WrongGroup, PrematureBias, InvalidColumn,
+    DeferredBias, InvalidDeferred, MissingDeferredBias
+};
 static void run(const RadFile& model, Registry& reg, const std::string& base,
                 int banks, int nheads, int rank, int start_heads, int owned_heads,
-                int refusal = 0) {
+                ProbeCase variant = ProbeCase::Normal) {
     const bool rows = banks > 0;
     const std::string weight = base + ".weight";
     const RadFileEntry* e = model.find(weight);
@@ -70,10 +74,13 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     const int64_t hd = (rows ? e->shape[0]/banks : e->shape[1])/nheads;
     const int64_t full = hd * nheads, offset = hd*start_heads, width = hd*owned_heads;
     need(!rows || e->shape[0] == banks*full, "source banks are not equally sized");
+    const bool deferred = variant == ProbeCase::DeferredBias || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias;
+    const bool denied = variant == ProbeCase::WrongGroup || variant == ProbeCase::PrematureBias || variant == ProbeCase::InvalidColumn || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias;
     const auto slice = rows
         ? ltx2::C01Slice::rows(full,offset,width,hd,banks)
-        : ltx2::C01Slice::columns(e->shape[1],offset,width);
-    need(refusal || slice.valid(rows?banks*width:e->shape[0],
+        : deferred ? ltx2::C01Slice::columns_deferred(e->shape[1],offset,width)
+                   : ltx2::C01Slice::columns(e->shape[1],offset,width);
+    need(denied || slice.valid(rows?banks*width:e->shape[0],
                                    rows?e->shape[1]:width,group),
          "test generated invalid positive C01 geometry");
 
@@ -82,7 +89,7 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     ltx2::Names nm;
     ltx2::Geom g{};
     g.w_i8h = true;
-    g.w_i8_group = refusal == 1 ? group/2 : group;
+    g.w_i8_group = variant == ProbeCase::WrongGroup ? group/2 : group;
     g.w_bf16 = false;
     g.max_tok = 4;
     g.dtype = "bf16";
@@ -110,26 +117,42 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
              {"checkpoint.to_k.weight","checkpoint.to_v.weight"},
              {"checkpoint.to_k.bias","checkpoint.to_v.bias"},
              {full,full},out_dim,e->shape[1],RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
-    } else if(refusal == 2) {
+    } else if (variant == ProbeCase::MissingDeferredBias) {
         rc = linear.declare(&b,nm,g,base.c_str(),
-             {"checkpoint.audio_ff_down.weight"},{"checkpoint.audio_ff_down.bias"},{},
+             {"checkpoint.ff_down.weight"},{},{},
+             out_dim,width,RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
+    } else if(variant == ProbeCase::PrematureBias || deferred) {
+        const std::string bias_name = base + ".bias";
+        need(model.find(bias_name) != nullptr, "source bias missing");
+        // These aliases are checkpoint-side convert names; the native RAD2
+        // builder resolves the declared 'base.weight' and 'base.bias' directly.
+        // Mapping a declared native name to itself would form a map cycle.
+        rc = linear.declare(&b,nm,g,base.c_str(),
+             {"checkpoint.to_out.weight"},{"checkpoint.to_out.bias"},{},
              out_dim,width,RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
     } else {
         rc = linear.declare(&b,nm,g,base.c_str(),
              {"checkpoint.ff_down.weight"},{},{},
              out_dim,width,RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
     }
-    if (refusal) {
+    if (denied) {
         need(rc==RAD_E_UNSUPPORTED, "unsupported C01 projection did not fail closed");
         need(b.program().weights.size()==1,"refused slice still allocated model weights");
         return;
     }
     if(rc!=RAD_OK) {
-        std::fprintf(stderr,"Lin::declare rc=%d, rank=%d, shape=%lldx%lld\n",
-                     rc,rank,(long long)out_dim,(long long)input.n);
+        std::fprintf(stderr,"Lin::declare rc=%d, rank=%d, shape=%lldx%lld, l.i8=%d, op=%u, w=%u, bias=%u, defer=%d, src=%s\n",
+                     rc,rank,(long long)out_dim,(long long)input.n,
+                     (int)linear.l.i8,(unsigned)linear.op,
+                     (unsigned)linear.l.w,(unsigned)linear.bias,
+                     (int)linear.deferred_bias,weight.c_str());
         for(const auto& msg:b.errors()) std::fprintf(stderr,"  %s\n",msg.c_str());
     }
     need(rc==RAD_OK,"real LTX Lin::declare refused the shard");
+    need(linear.deferred_bias == deferred, "output bias-defer contract lost");
+    if (deferred)
+        need(!linear.bias && !linear.op_b,
+             "partial output declared bias before collective");
     need(linear.l.i8 && linear.l.i8_rot && linear.op,
          "actual Lin did not select rotated IQ8R GEMM");
     need(b.errors().empty(),"native builder errors in actual Lin");
@@ -205,10 +228,68 @@ int main(int argc, char** argv) {
                 }
             }
         }
-        run(model,reg,"dit.blk.0.attn1.qkv",3,nheads,0,0,8,1);
-        run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,2);
-        run(model,reg,"dit.blk.0.audio_attn1.out",0,nheads,0,0,10,3);
-        std::printf("LTX2 C02 real Lin::declare model-weight and op receipts: %d, fail-closed=3\n",count);
+        // Every biased attention/cross-modal and audio FFN-down output:
+        // model source geometry decides whether the IQ8R K cut is legal.
+        const char* biased[] = {
+            "attn1.out", "audio_attn1.out",
+            "attn2.out", "audio_attn2.out",
+            "a2v.out", "v2a.out", "audio_ff_down"
+        };
+        int deferred_count = 0, blocked_count = 0;
+        for (int64_t block = 0; block < nblocks; ++block) {
+            const std::string prefix = "dit.blk." + std::to_string(block) + ".";
+            for (const std::array<int,3>& split :
+                     {std::array<int,3>{8,8,16}, {12,12,8}, {10,10,12}}) {
+                int offset = 0;
+                for (int rank = 0; rank < 3; ++rank) {
+                    for (const char* suffix : biased) {
+                        const std::string base = prefix + suffix;
+                        const auto* e = model.find(base + ".weight");
+                        need(e && e->rank == 2, "missing biased output weight");
+                        need(e->shape[1] % nheads == 0,
+                             "biased output K cannot be owned by whole heads");
+                        const auto* be = model.find(base + ".bias");
+                        need(be && be->rank == 1 && be->shape[0] == e->shape[0],
+                             "missing or incompatible post-collective bias");
+                        const auto& enc = model.encoding(*e);
+                        need(rad::arch::linear_is_iq8r(enc),
+                             "output encoding changed");
+                        const int64_t hd = e->shape[1] / nheads;
+                        const int64_t wg = rad::arch::linear_w8h_group(enc);
+                        const int64_t local = hd * split[rank];
+                        const auto slice = ltx2::C01Slice::columns_deferred(
+                                e->shape[1], hd * offset, local);
+                        const bool valid = slice.valid(e->shape[0], local, wg);
+                        // Every model shape is checked. Only one block
+                        // needs to trigger each native negative preflight.
+                        if (valid || block == 0)
+                            run(model, reg, base, 0, nheads, rank, offset,
+                                split[rank], valid ? ProbeCase::DeferredBias : ProbeCase::InvalidDeferred);
+                        deferred_count += valid;
+                        blocked_count += !valid;
+                    }
+                    offset += split[rank];
+                }
+                need(offset == nheads, "biased rank slices do not cover heads");
+            }
+        }
+        // 10/10/12 cuts four audio K projections on the first two
+        // ranks per block; rank 2 begins on a scale-group boundary.
+        const int rank_combinations = 3 * 3;
+        const int invalid_per_block = 4 * 2;
+        need(blocked_count == nblocks * invalid_per_block &&
+             deferred_count == nblocks *
+                 ((int)(sizeof biased / sizeof biased[0]) * rank_combinations -
+                  invalid_per_block),
+             "source model's biased-output partition tally changed");
+        run(model,reg,"dit.blk.0.attn1.qkv",3,nheads,0,0,8,ProbeCase::WrongGroup);
+        run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,ProbeCase::PrematureBias);
+        run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,ProbeCase::Normal);
+        run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,ProbeCase::DeferredBias);
+        run(model,reg,"dit.blk.0.audio_attn1.out",0,nheads,0,0,10,ProbeCase::InvalidColumn);
+        run(model,reg,"dit.blk.0.ff_down",0,nheads,0,0,8,ProbeCase::MissingDeferredBias);
+        std::printf("LTX2 native Lin declarations: fused/biasless=%d, deferred-bias=%d, rejected-K=%d, negative=4\n",
+                    count, deferred_count, blocked_count);
         return 0;
     } catch(const std::exception& e) {
         std::fprintf(stderr,"LTX2 C02 native Lin failure: %s\n",e.what());

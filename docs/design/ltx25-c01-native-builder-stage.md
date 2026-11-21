@@ -25,14 +25,17 @@ the LTX `world_size > 1` refusal are unchanged.
 - **Output-column weights:** `C01Slice::columns(full_K, offset,
   local_K)` uses `RAD_SHARD_COL` and the existing
   `LinearFP8::declare` span to select the local 256-aligned IQ8R K
-  slice. **Only biasless output projections are supported in C01.**
-  Attention outputs with bias are refused rather than adding bias
-  on all ranks. In the actual LTX model, video `ff_down` is
-  biasless; the audio FFN-down and six attention outputs are biased.
+  slice. The ordinary `columns` form remains **biasless**.
+  The opt-in `columns_deferred` form requires one bias source but
+  declares no per-rank bias weight or bias-add; `Lin::deferred_bias`
+  requires a later unique post-reduction owner (not implemented).
+  In the actual LTX model, video `ff_down` is biasless; the
+  audio FFN-down and six attention outputs are biased.
 - **Conservative admission:** unsupported BF16/small-gate paths,
   non-IQ8R groups, mismatched bank/input declarations, invalid
   heads, incomplete scale groups, malformed geometry and
-  biased output-column requests are explicitly refused.
+  biased columns without explicit safe deferral, and deferred
+  columns without a bias source, are explicitly refused.
 - **TP1 unchanged:** `slice == nullptr` retains the original
   unsharded `LinearFP8` branch and bias declaration.
 
@@ -81,7 +84,7 @@ oversized/invalid source spans.
 
 ## Next single proof
 
-**C02 complete for host-only declarations:** 3,024 actual `Lin::declare` calls across all 48 DiT blocks, seven supported projection kinds, three uneven splits and three ranks; native graph finish and host kernel resolution pass, and three invalid requests fail before weight declarations. Reproducible evidence: `docs/evidence/2026-11-22-ltx25-main22-c02/README.md`.
+**C02/C03 host-only declarations:** 3,024 original fused/biasless `Lin::declare` calls plus 2,640 safely deferred-biased output columns across all 48 DiT blocks, seven output types, three head splits and three ranks; 384 rank K cuts are incompatible with IQ8R group alignment. Four explicit invalid requests fail before model-weight declarations. Native host kernel resolution and graph finalization pass. Evidence: `docs/evidence/2026-11-22-ltx25-c03-deferred-bias/README.md`.
 
 Next, integrate all-head Q/K RMS, rank-local buffers and bias-once
 output reductions into one real LTX attention block. Validate its native
