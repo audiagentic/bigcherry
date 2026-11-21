@@ -365,16 +365,14 @@ reason = "Generic filename suffix for the planning-only candidate artifact; not 
 [[allow]]
 path = "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py"
 anchor = "X(B16I8,  4, \"bf16_i8\",  49, 32,  0, 48, 32)"
-category = "D"
-reason = "Packed KV descriptor row widths and scale geometry belong to the ABI44 format contract."
-owner = "RUM09"
+category = "A"
+reason = "Packed KV descriptor row widths and scale geometry are the ABI44 format contract itself, not a model default."
 
 [[allow]]
 path = "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py"
 anchor = "{ RAD_KVQ_V4,    \"fp8_v4\",   400, 256,   0, 384, 32 },"
-category = "D"
-reason = "Packed KV descriptor row widths and scale geometry belong to the ABI44 format contract."
-owner = "RUM09"
+category = "A"
+reason = "Packed KV descriptor row widths and scale geometry are the ABI44 format contract itself, not a model default."
 
 [[allow]]
 path = "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/patch.toml"
