@@ -46,3 +46,16 @@ Only after a **mixed three-card exact BF16 collective passes** should the C06 Q/
 ## Host proof / safeguards
 
 The mixed-ar gate compiles against a version/source-verified native core and the existing upstream shared-slot implementation. The runner is an explicitly selected, timeout-bounded script with per-card/row JSON receipts. It does **not** run automatically in normal CTest and makes no GPU measurements without an agent lease. All test code is restricted to `tools/lab/radiance/ltx-tp3/mixed-ar-gate/`.
+
+
+## C08 follow-up: production AQL dispatch clears this limitation
+
+The next gated test linked a HIP-enabled Radiance 2.2 core whole, used
+rad_dev_set, rad_stream_create, rad_dev_peer_launch and rad_stream_sync,
+and preserved the same native exact all-reduce rows, heterogeneous GPU
+libraries and real BigCherry shared-slot rendezvous. Mixed gfx1100/gfx1201
+one-shot **and** two-shot host-mailbox runs each passed 33 of 33 exact BF16
+comparisons, including 64-row batches. The direct-HIP SIGSEGV above is
+specific to the original standalone launch path; it does not prove a
+production native transport defect. See
+docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md.

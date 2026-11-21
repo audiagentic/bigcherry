@@ -131,3 +131,16 @@ causes SIGSEGV at the first native collective kernel launch, after all three
 native rank initializations succeeded. No production TP3 execution or TP1
 parity is enabled. Evidence and commands:
 docs/evidence/2026-11-22-ltx25-c07-native-mixed-ar/README.md
+
+
+## C08 Radiance AQL three-card collective (2026-11-22)
+
+The follow-up links the HIP-enabled Radiance 2.2 core as a whole archive
+and executes both native exact BF16 three-rank host-mailbox rows through
+Radiance's actual AQL streams, HIP fat-binary registration and collective
+launch fencing. With two XTX (gfx1100) cards plus an R9700 (gfx1201),
+one-shot and two-shot both passed 33/33 exact output checks, including
+16- and 64-row video/audio cases. The C07 direct-HIP crash does not
+reproduce on the actual AQL device backend. Native full self-attention,
+TP1 model parity, and production admission remain open. Evidence:
+docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md
