@@ -1,6 +1,9 @@
 // GPU-free RSC11 S8 acceptance: v2 typed measurements, scopes, admission,
 // calibration.
 #include "v2/s8_rules.h"
+#ifdef NDEBUG
+#undef NDEBUG  // Keep this test's assertions live in RelWithDebInfo builds.
+#endif
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -116,6 +119,23 @@ int main() {
   startup_room.mem_available_bytes = committed - 1;
   const auto ram_shortage = check_startup_room();
   assert(ram_shortage && ram_shortage->code == s8::ConfigErrorCode::admission_refused);
+  // RUM05 B: a measured RAM n-gram consumer at the boundary needs every
+  // byte of its pinned table. If the *engine* selected disk instead, the
+  // measured plan contains zero n-gram RAM bytes and that same host can
+  // admit the rest of the serving allocations. No guessed RAM margin.
+  auto disk_room = startup_room;
+  disk_room.ngram_bytes = 0;  // measured disk tier: no pinned table
+  assert(!s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                         disk_room, helper_resident_mib));
+  disk_room.ngram_bytes = startup_room.ngram_bytes;  // forced RAM, one byte short
+  assert(s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                        disk_room, helper_resident_mib));
+  // If the other measured allocations alone do not fit, even an n-gram
+  // disk fallback cannot admit this host. Refusal remains exact in bytes.
+  disk_room.ngram_bytes = 0;
+  disk_room.mem_available_bytes = committed - startup_room.ngram_bytes - 1;
+  assert(s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                        disk_room, helper_resident_mib));
   startup_room.mem_available_bytes = committed;
   startup_room.cgroup_headroom_bytes = committed - 1;
   const auto cgroup_shortage = check_startup_room();

@@ -5,6 +5,8 @@
 #include "manifest_power.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
+#include "rank_demand.h"
+#include "sha256.h"
 #include "config_loader.h"
 #include "release_runtime.h"
 #include "runtime_guards.h"
@@ -1077,7 +1079,7 @@ int main(int argc, char** argv) {
                 native = bc::serving::session::read_native_writer_input(native_config_fd);
             // The writer takes the config as the owner's inspector parsed it from the same sealed YAML bytes.
             if (native && !opts.inspected) opts.inspected = native->inspected;
-            const auto r = bc::serving::resolve(opts, facts, native ? &native->settings : nullptr);
+            auto r = bc::serving::resolve(opts, facts, native ? &native->settings : nullptr);
             const auto& v = r.values;
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
             // Prepare the selected configuration once. P1 consumes this same
@@ -1151,6 +1153,28 @@ int main(int argc, char** argv) {
                           << bc::serving::plan_key(key_inputs).substr(0, 16)
                           << "); the launcher measures it on a start with the helpers up\n";
                 return 10;
+            }
+            if (native && native->settings.ngram_placement == "auto") {
+                const auto selected = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
+                const auto ranks = bc::serving::decode_engine_rank_demand(
+                    plan->rank_demand, selected, "native n-gram placement receipt");
+                const bool measured_ram = std::any_of(
+                    plan->plan.host.begin(), plan->plan.host.end(),
+                    [](const auto& consumer) { return consumer.name == "ngram_table"; });
+                const std::string chosen = bc::serving::admitted_ngram_placement(
+                    ranks, measured_ram, native->settings.ngram_placement);
+                r.values["engine"]["ngram_placement"] = chosen;
+                r.typed.engine.ngram_placement = chosen;
+                r.provenance["engine.ngram_placement"] =
+                    Json{{"origin", "derived"}, {"source", "rad0011 measured rank n-gram tier"},
+                         {"lifecycle", "startup-only"}};
+                r.manifest["values"] = r.values;
+                r.manifest["provenance"] = r.provenance;
+                r.hash = bc::serving::sha256_hex(r.manifest.dump());
+                // The manifest inputs were frozen before the measured cache
+                // was consulted. Propagate the new resolved value to that
+                // exact input rather than sealing the stale auto intent.
+                in.resolved = r;
             }
             if (!expected_owner_attempt.empty() &&
                 (!plan->owner || plan->owner->attempt_id != expected_owner_attempt))

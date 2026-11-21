@@ -508,6 +508,12 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         spec["experiment"] = in.experiment;
     }
     Json provenance = provenance_of(in, derived_provenance, engine_only);
+    if (in.native_config && in.measured && in.resolved.provenance.contains("engine.ngram_placement") &&
+        in.resolved.provenance.at("engine.ngram_placement").value("origin", "") == "derived")
+        provenance["/spec/processes/engine/execution/ngram_placement"] =
+            record("derived", "native --plan-memory resolved n-gram tier (rad0011 rank receipt)",
+                   "policy", "measured", Json::array({"/spec/plan/engine_memory/expected",
+                                                     "/spec/native_config"}));
     if (in.native_config) {
         spec["native_config"] = in.native_config->manifest_field();
         provenance["/spec/native_config"] = record("detected", "admitted native fleet YAML", "fact", "exact");

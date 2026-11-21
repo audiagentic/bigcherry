@@ -216,7 +216,12 @@ Json plan_key_inputs(const Json& values, const Json& facts, const std::string& m
     const bool uniform = std::all_of(rank_cards.begin(), rank_cards.end(), [&](const Json& c) { return c == rank_cards.at(0); });
     Json engine = Json::object();
     for (auto it = values.at("engine").begin(); it != values.at("engine").end(); ++it)
-        if (!kNonPlanEngineKeys.count(it.key())) engine[it.key()] = it.value();
+        if (!kNonPlanEngineKeys.count(it.key()) &&
+            // v3 YAML digest pins the authored policy. An omitted native auto
+            // placement resolves from the engine's measured rank receipt,
+            // not a new cache identity or an authored BigCherry option.
+            !(native_config && it.key() == "ngram_placement"))
+            engine[it.key()] = it.value();
     Json key = {{"cache_version", native_config ? 3 : 2},
             {"model", model_id},
             {"engine_build", engine_id},
@@ -274,9 +279,12 @@ void check_plan_for_configuration(const Json& values, const v2::EnginePlan& plan
     const bool has_table = std::any_of(plan.host.begin(), plan.host.end(),
                                        [](const v2::PlanHostConsumer& c) { return c.name == "ngram_table"; });
     const std::string placement = engine.at("ngram_placement").get<std::string>();
-    if (placement == "ram" && !has_table)
+    if (placement == "auto") {
+        // Unmeasured native YAML requests the engine's real tier selection.
+        // The strict rank receipt supplies its resolved choice after P1.
+    } else if (placement == "ram" && !has_table)
         throw std::runtime_error("this configuration keeps the n-gram table in RAM but the plan has no ngram_table consumer");
-    if (placement != "ram" && has_table)
+    if (placement != "ram" && placement != "auto" && has_table)
         throw std::runtime_error("this configuration places the n-gram table on " + placement +
                                  " but the plan holds an ngram_table consumer");
     for (const v2::PlanHostConsumer& c : plan.host)

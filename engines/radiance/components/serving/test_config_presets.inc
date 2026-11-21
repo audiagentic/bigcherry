@@ -15,7 +15,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -37,7 +36,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -60,7 +58,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -83,7 +80,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -104,7 +100,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -127,7 +122,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"bf16_i8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -151,7 +145,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -195,7 +188,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
@@ -221,7 +213,6 @@
         p.sets.push_back("engine.checkpoint_interval=4096");
         p.sets.push_back("engine.placement=\"expert_tiered\"");
         p.sets.push_back("engine.kv_cache_dtype=\"fp8\"");
-        p.sets.push_back("engine.ngram_placement=\"ram\"");
         p.sets.push_back("engine.num_speculative_tokens=3");
         p.sets.push_back("engine.prefix_resume=\"nearest\"");
         p.sets.push_back("engine.rope_scaling=\"none\"");
