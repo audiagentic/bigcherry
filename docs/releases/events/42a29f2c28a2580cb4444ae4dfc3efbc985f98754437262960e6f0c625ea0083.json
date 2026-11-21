@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261121_234139_starting-a-configuration-again_5183",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/main.cpp",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md"
+  ],
+  "plan-item-ids": [
+    "RUM12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A named serve/start reuses the last measured manifest of its config from a work-root store, from any run directory and any build; the key names the resolved settings, ordered cards and VRAM, power profile, config inputs and the model's path, size and mtime. The model is identified by stat and never read (a replay without --work-root no longer fingerprints it). A stored plan the replay checks refuse is measured once afresh and replaces the entry; an engine that fails to come up on a stored plan drops it.",
+  "timestamp-utc": "2026-11-21T23:41:39.452752Z",
+  "user-summary-candidate": "Starting a configuration again now reuses its last measured plan instead of measuring again, and no longer hashes the whole model on each start."
+}
