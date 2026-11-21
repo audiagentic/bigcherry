@@ -1,0 +1,20 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_023302_enabled-an-owner-supervised-fl_2157",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added a finite native-v3 KL score action to the serving owner. It reuses sealed inputs, device and power admission, child supervision, and verified shutdown. The engine checks custody of the sealed helper manifest against the matched owner executable. Exact ABI44 syntax checks, patch mechanics and the process identity fixture passed.",
+  "timestamp-utc": "2026-11-20T02:33:02.948454Z",
+  "user-summary-candidate": "Enabled an owner-supervised Flash-Next helper quality score on the native Radiance configuration."
+}

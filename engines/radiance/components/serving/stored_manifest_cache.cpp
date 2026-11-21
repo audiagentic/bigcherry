@@ -6,9 +6,11 @@
 
 #include <algorithm>
 #include <cerrno>
+#include <cstdlib>
 #include <cstdint>
 #include <cstring>
 #include <fstream>
+#include <iostream>
 #include <iterator>
 #include <limits>
 #include <stdexcept>
@@ -40,6 +42,25 @@ void check_filename(const std::string& filename) {
         filename.find("..") != std::string::npos || filename.size() > 220 ||
         filename.rfind("manifest-", 0) != 0 || path.extension() != ".json")
         throw std::runtime_error("stored manifest index has unsafe filename");
+}
+
+void check_native_measurement(const StoredManifestIndex& entry) {
+    if (!entry.native_measurement)
+        return;
+    const auto& measurement = *entry.native_measurement;
+    const std::string& attempt = measurement.attempt_id;
+    if (attempt.size() != 36)
+        throw std::runtime_error("stored native measurement has an invalid attempt ID");
+    for (size_t i = 0; i < attempt.size(); ++i) {
+        const char c = attempt[i];
+        const bool hyphen = i == 8 || i == 13 || i == 18 || i == 23;
+        if (hyphen ? c != '-' : !((c >= '0' && c <= '9') || (c >= 'a' && c <= 'f')))
+            throw std::runtime_error("stored native measurement has an invalid attempt ID");
+    }
+    if (entry.manifest_filename != "manifest-native-" + attempt + ".json" ||
+        entry.model_digest.empty() || entry.s8_digest.empty())
+        throw std::runtime_error("stored native measurement is missing its manifest, model or S8 attestation");
+    check_digest(measurement.sha256, "stored native measurement");
 }
 
 int64_t nanoseconds(const timespec& timestamp) {
@@ -109,7 +130,30 @@ Json write_stamp(const FileStamp& stamp) {
             {"ctime_ns", std::to_string(stamp.ctime_ns)}};
 }
 
+void seed_file_identity(Sha256& accumulator, uint64_t size) {
+    accumulator.update("bytes=" + std::to_string(size) + "\n");
+    accumulator.update("bigcherry/rsc12/chunked-file-v1\n");
+}
+
+void add_file_identity_chunk(Sha256& accumulator, std::string_view chunk) {
+    accumulator.update(std::to_string(chunk.size()));
+    accumulator.update(":");
+    Sha256 chunk_hash;
+    chunk_hash.update(chunk);
+    accumulator.update(chunk_hash.hex_digest());
+    accumulator.update("\n");
+}
+
 } // namespace
+
+std::string complete_file_identity_bytes(std::string_view bytes) {
+    Sha256 accumulator;
+    seed_file_identity(accumulator, bytes.size());
+    constexpr size_t chunk_bytes = 1024ULL * 1024ULL;
+    for (size_t offset = 0; offset < bytes.size(); offset += chunk_bytes)
+        add_file_identity_chunk(accumulator, bytes.substr(offset, std::min(chunk_bytes, bytes.size() - offset)));
+    return accumulator.hex_digest();
+}
 
 std::string complete_file_identity(const std::filesystem::path& path) {
     // The historical v1 chunked-file digest is kept BYTE FOR BYTE: only the
@@ -120,8 +164,7 @@ std::string complete_file_identity(const std::filesystem::path& path) {
     if (!in)
         throw std::runtime_error("cannot open static input file " + path.string());
     Sha256 accumulator;
-    accumulator.update("bytes=" + std::to_string(before.size) + "\n");
-    accumulator.update("bigcherry/rsc12/chunked-file-v1\n");
+    seed_file_identity(accumulator, before.size);
     std::string chunk(1024ULL * 1024ULL, '\0');
     uint64_t read_bytes = 0;
     for (;;) {
@@ -134,10 +177,7 @@ std::string complete_file_identity(const std::filesystem::path& path) {
         if (read_bytes > UINT64_MAX - static_cast<uint64_t>(count))
             throw std::runtime_error("static input file size overflows");
         read_bytes += static_cast<uint64_t>(count);
-        accumulator.update(std::to_string(static_cast<uint64_t>(count)));
-        accumulator.update(":");
-        accumulator.update(sha256_hex(std::string(chunk.data(), static_cast<size_t>(count))));
-        accumulator.update("\n");
+        add_file_identity_chunk(accumulator, std::string_view(chunk.data(), static_cast<size_t>(count)));
         if (in.eof())
             break;
     }
@@ -146,25 +186,187 @@ std::string complete_file_identity(const std::filesystem::path& path) {
     return accumulator.hex_digest();
 }
 
-ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& index,
-                                    const FullFileReader& full_reader) {
-    // ctime_ns cannot be restored by normal in-place writes: even a same-size
-    // write followed by a manual mtime reset changes this identity. An actor
-    // capable of forging kernel inode/ctime fields is outside the threat model.
-    const FileStamp before = file_stamp(model);
-    if (std::filesystem::exists(index)) {
-        if (!std::filesystem::is_regular_file(index) || std::filesystem::is_symlink(index))
-            throw std::runtime_error("stored model identity index is not an ordinary file");
-        const StoredManifestIndex recorded = read_stored_index(index);
-        if (recorded.model_stamp && recorded.model_stamp.value() == before && !recorded.model_digest.empty())
-            return {recorded.model_digest, before};
+namespace {
+
+// Strict, bounded, ordinary-file cache reader. O_NOFOLLOW + fstat prevents a
+// symlink swap between a path check and open from bypassing the contract.
+std::optional<ModelIdentity> read_shared_model_identity(const std::filesystem::path& cache,
+                                                         const std::string& canonical) {
+    struct stat st{};
+    if (::lstat(cache.c_str(), &st) != 0) {
+        if (errno == ENOENT)
+            return std::nullopt;
+        throw std::runtime_error("cannot inspect shared model identity cache " + cache.string());
     }
+    if (!S_ISREG(st.st_mode))
+        throw std::runtime_error("shared model identity cache is not an ordinary file");
+    const int fd = ::open(cache.c_str(), O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK);
+    if (fd < 0)
+        throw std::runtime_error("cannot open shared model identity cache " + cache.string());
+    bool opened = true;
+    try {
+        if (::fstat(fd, &st) != 0 || !S_ISREG(st.st_mode) || st.st_size < 0 || st.st_size > 4096)
+            throw std::runtime_error("shared model identity cache is not a bounded ordinary file");
+        std::string bytes(static_cast<size_t>(st.st_size), '\0');
+        size_t read = 0;
+        while (read < bytes.size()) {
+            const ssize_t count = ::read(fd, bytes.data() + read, bytes.size() - read);
+            if (count < 0 && errno == EINTR)
+                continue;
+            if (count <= 0)
+                throw std::runtime_error("cannot read shared model identity cache");
+            read += static_cast<size_t>(count);
+        }
+        // Detect a growth race rather than accepting a valid prefix of a
+        // concurrently mutated file (normal writers always rename).
+        char trailing = 0;
+        const ssize_t extra = ::read(fd, &trailing, 1);
+        if (extra != 0)
+            throw std::runtime_error("shared model identity cache changed while reading");
+        const auto parsed = v2::parse_strict_json(bytes, cache.string());
+        if (!parsed)
+            throw std::runtime_error("invalid shared model identity cache: " + parsed.error().message);
+        const Json& record = parsed.value();
+        if (!record.is_object() || record.size() != 4 || !record.contains("version") ||
+            !record.at("version").is_number_integer() || record.at("version") != 1 ||
+            !record.contains("model") || !record.at("model").is_string() ||
+            record.at("model").get<std::string>() != canonical ||
+            !record.contains("stamp") || !record.contains("digest") || !record.at("digest").is_string())
+            throw std::runtime_error("shared model identity cache has an invalid shape or path");
+        ModelIdentity result{record.at("digest").get<std::string>(), parse_stamp(record.at("stamp"))};
+        check_digest(result.digest, "shared model identity cache");
+        const int closed = ::close(fd);
+        opened = false;
+        if (closed != 0)
+            throw std::runtime_error("cannot close shared model identity cache");
+        return result;
+    } catch (...) {
+        if (opened)
+            ::close(fd);
+        throw;
+    }
+}
+
+void ensure_private_directory(const std::filesystem::path& directory) {
+    if (::mkdir(directory.c_str(), 0700) != 0 && errno != EEXIST)
+        throw std::runtime_error("cannot create shared model identity directory " + directory.string());
+    struct stat st{};
+    if (::lstat(directory.c_str(), &st) != 0 || !S_ISDIR(st.st_mode))
+        throw std::runtime_error("shared model identity directory must be ordinary, not a symlink");
+}
+
+std::filesystem::path shared_cache_dir(const std::filesystem::path& work_root) {
+    if (work_root.empty() || !work_root.is_absolute())
+        throw std::runtime_error("shared model identity requires an absolute BC_WORK_ROOT");
+    struct stat st{};
+    if (::lstat(work_root.c_str(), &st) != 0 || !S_ISDIR(st.st_mode))
+        throw std::runtime_error("BC_WORK_ROOT must be an ordinary directory");
+    const auto cache = work_root / "cache";
+    ensure_private_directory(cache);
+    const auto identities = cache / "model-identities";
+    ensure_private_directory(identities);
+    return identities;
+}
+
+void write_shared_model_identity(const std::filesystem::path& cache, const std::string& canonical,
+                                 const ModelIdentity& identity) {
+    // The path hash is an index only. A strict file also stores the complete
+    // canonical model pathname, so a collision never becomes a trusted hit.
+    const std::string bytes =
+        Json{{"version", 1}, {"model", canonical}, {"stamp", write_stamp(identity.stamp)},
+             {"digest", identity.digest}}.dump(2) + "\n";
+    const std::string pattern = cache.string() + ".tmp.XXXXXX";
+    std::vector<char> temp(pattern.begin(), pattern.end());
+    temp.push_back('\0');
+    const int fd = ::mkstemp(temp.data());
+    if (fd < 0)
+        throw std::runtime_error("cannot create shared model identity temporary file");
+    bool opened = true;
+    bool renamed = false;
+    try {
+        if (::fcntl(fd, F_SETFD, FD_CLOEXEC) != 0)
+            throw std::runtime_error("cannot mark shared model identity temporary file close-on-exec");
+        size_t written = 0;
+        while (written < bytes.size()) {
+            const ssize_t count = ::write(fd, bytes.data() + written, bytes.size() - written);
+            if (count < 0 && errno == EINTR)
+                continue;
+            if (count <= 0)
+                throw std::runtime_error("cannot write shared model identity cache");
+            written += static_cast<size_t>(count);
+        }
+        if (::fdatasync(fd) != 0)
+            throw std::runtime_error("cannot sync shared model identity cache");
+        const int closed = ::close(fd);
+        opened = false;
+        if (closed != 0)
+            throw std::runtime_error("cannot close shared model identity cache");
+        // Reject a malicious symlink, including a dangling one, rather than
+        // accepting it as a miss. rename is atomic across racing writers.
+        struct stat st{};
+        if (::lstat(cache.c_str(), &st) == 0) {
+            if (!S_ISREG(st.st_mode))
+                throw std::runtime_error("shared model identity destination is not an ordinary file");
+        } else if (errno != ENOENT) {
+            throw std::runtime_error("cannot inspect shared model identity destination");
+        }
+        if (::rename(temp.data(), cache.c_str()) != 0)
+            throw std::runtime_error("cannot atomically update shared model identity cache");
+        renamed = true;
+        const int dir_fd = ::open(cache.parent_path().c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+        if (dir_fd < 0)
+            throw std::runtime_error("cannot open shared model identity directory for sync");
+        const int synced = ::fsync(dir_fd);
+        ::close(dir_fd);
+        if (synced != 0)
+            throw std::runtime_error("cannot sync shared model identity directory");
+    } catch (...) {
+        if (opened)
+            ::close(fd);
+        if (!renamed)
+            ::unlink(temp.data());
+        throw;
+    }
+}
+
+} // namespace
+
+std::filesystem::path model_identity_cache_path(const std::filesystem::path& model,
+                                                const std::filesystem::path& work_root) {
+    const auto canonical = std::filesystem::canonical(model);
+    return shared_cache_dir(work_root) / (sha256_hex(canonical.string()) + ".json");
+}
+
+ModelIdentity cached_model_identity(const std::filesystem::path& model, const std::filesystem::path& work_root,
+                                    const FullFileReader& full_reader, const ModelIdentity* verified) {
+    // Keep the historic exact stamp: size, device, inode, mtime_ns, ctime_ns.
+    // Cache files are independent of any run dir, config or manifest index.
+    const auto canonical = std::filesystem::canonical(model);
+    const auto cache = shared_cache_dir(work_root) / (sha256_hex(canonical.string()) + ".json");
+    const FileStamp before = file_stamp(model);
+    const auto recorded = read_shared_model_identity(cache, canonical.string());
+    if (recorded && recorded->stamp == before) {
+        if (!(file_stamp(model) == before) || std::filesystem::canonical(model) != canonical)
+            throw std::runtime_error("model artifact changed while reading cached identity");
+        return *recorded;
+    }
+    if (verified && verified->stamp == before) {
+        check_digest(verified->digest, "verified model identity");
+        if (!(file_stamp(model) == before) || std::filesystem::canonical(model) != canonical)
+            throw std::runtime_error("model artifact changed while reusing verified identity");
+        write_shared_model_identity(cache, canonical.string(), *verified);
+        return *verified;
+    }
+    if (!full_reader)
+        std::cerr << "plan: fingerprinting " << before.size << " bytes of model content\n";
     const std::string digest = full_reader ? full_reader.require("stored.model.full_fingerprint", model)
                                            : complete_file_identity(model);
     check_digest(digest, "full model identity");
-    if (!(file_stamp(model) == before))
+    if (!(file_stamp(model) == before) || std::filesystem::canonical(model) != canonical)
         throw std::runtime_error("model artifact changed while calculating full identity");
-    return {digest, before};
+    const ModelIdentity result{digest, before};
+    write_shared_model_identity(cache, canonical.string(), result);
+    return result;
 }
 
 std::string static_resolution_key(const StaticResolutionInputs& in) {
@@ -195,7 +397,7 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
         static_values["memory"].erase("host_pool_mib");
         static_values["memory"].erase("host_kv_mib");
     }
-    Json inputs = {{"version", 2},
+    Json inputs = {{"version", in.native_config ? 3 : 2},
                    {"effective_values", std::move(static_values)},
                    {"operator_sets", in.operator_sets},
                    {"ordered_devices", in.ordered_devices},
@@ -205,6 +407,15 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
                    {"model_artifact", in.model_digest},
                    {"power_profile", in.power_profile},
                    {"inputs", in.file_digests}};
+    if (in.native_config) {
+        const auto& native = *in.native_config;
+        check_digest(native.yaml_sha256, "static native YAML");
+        if (!std::filesystem::path(native.resolution_root).is_absolute() ||
+            !std::filesystem::path(native.runtime_home).is_absolute())
+            throw std::runtime_error("static native identity requires absolute execution and runtime directories");
+        inputs["native_config"] = {{"sha256", native.yaml_sha256}, {"resolution_root", native.resolution_root},
+                                    {"runtime_home", native.runtime_home}};
+    }
     for (const auto& [key, digest] : in.file_digests) {
         if (key.empty())
             throw std::runtime_error("static resolution key has an unnamed file");
@@ -243,16 +454,21 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
     if (!j.is_object() || j.value("version", 0) != 1 || !j.contains("key") || !j.at("key").is_string() ||
         !j.contains("manifest") || !j.at("manifest").is_string() || !j.contains("digest") ||
         !j.at("digest").is_string() ||
-        j.size() != 4U + size_t(j.contains("model_digest")) + size_t(j.contains("model_stat")) +
-                        size_t(j.contains("s8_digest")) ||
+        j.size() != 4U + size_t(j.contains("model_digest")) +
+                        size_t(j.contains("s8_digest")) + size_t(j.contains("native_measurement")) ||
         (j.contains("model_digest") && !j.at("model_digest").is_string()) ||
-        (j.contains("s8_digest") && !j.at("s8_digest").is_string()) ||
-        (j.contains("model_stat") && !j.contains("model_digest")))
+        (j.contains("s8_digest") && !j.at("s8_digest").is_string()))
         throw std::runtime_error("stored manifest index has an unknown or missing field");
     StoredManifestIndex result{j.at("key").get<std::string>(), j.at("manifest").get<std::string>(),
                                j.at("digest").get<std::string>(), j.value("model_digest", std::string())};
-    if (j.contains("model_stat"))
-        result.model_stamp = parse_stamp(j.at("model_stat"));
+    if (const auto native = j.find("native_measurement"); native != j.end()) {
+        if (!native->is_object() || native->size() != 2 ||
+            !native->contains("attempt_id") || !native->at("attempt_id").is_string() ||
+            !native->contains("sha256") || !native->at("sha256").is_string())
+            throw std::runtime_error("stored native measurement has an invalid shape");
+        result.native_measurement = StoredManifestIndex::NativeMeasurement{
+            native->at("attempt_id").get<std::string>(), native->at("sha256").get<std::string>()};
+    }
     result.s8_digest = j.value("s8_digest", std::string());
     if (!result.s8_digest.empty())
         check_digest(result.s8_digest, "stored S8 writer evidence");
@@ -261,6 +477,7 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
     if (!result.model_digest.empty())
         check_digest(result.model_digest, "stored model artifact");
     check_filename(result.manifest_filename);
+    check_native_measurement(result);
     return result;
 }
 
@@ -270,15 +487,14 @@ void write_stored_index(const std::filesystem::path& index, const StoredManifest
     if (!entry.model_digest.empty())
         check_digest(entry.model_digest, "stored model artifact");
     check_filename(entry.manifest_filename);
+    check_native_measurement(entry);
     Json record = {
         {"version", 1}, {"key", entry.key}, {"manifest", entry.manifest_filename}, {"digest", entry.digest}};
+    if (entry.native_measurement)
+        record["native_measurement"] = {{"attempt_id", entry.native_measurement->attempt_id},
+                                        {"sha256", entry.native_measurement->sha256}};
     if (!entry.model_digest.empty())
         record["model_digest"] = entry.model_digest;
-    if (entry.model_stamp) {
-        if (entry.model_digest.empty())
-            throw std::runtime_error("model stat requires the full model digest");
-        record["model_stat"] = write_stamp(*entry.model_stamp);
-    }
     if (!entry.s8_digest.empty()) {
         check_digest(entry.s8_digest, "stored S8 writer evidence");
         record["s8_digest"] = entry.s8_digest;

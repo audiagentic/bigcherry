@@ -1,0 +1,21 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_221032_carry-native-radiance-yaml-int_9922",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_v3_engine_test.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "tools/bigcherry/campaign/quality_capture.py",
+    "tools/bigcherry/engine_adapters/base.py",
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/engine_adapters/radiance_manifest.py",
+    "tools/tests/campaign/test_quality_capture.py",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Use sealed measured manifest and retained directory for native v3 KL record and score. Retain source YAML Config and parse only offline launch flags. Exact ABI44 fixture 1/1, Python 71 plus 16 subtests, patch fixtures 14/14 passed.",
+  "timestamp-utc": "2026-11-19T22:10:32.320190Z",
+  "user-summary-candidate": "Carry native Radiance YAML intact into offline quality runs."
+}

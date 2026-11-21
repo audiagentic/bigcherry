@@ -1,7 +1,7 @@
 #pragma once
 // RSC02 lab calibration: bounded ABBA workload and measured-drift envelope.
 // No launcher, Python watchdog or shell operations in this module.
-#include "generated/v2/serving_types.h"
+#include "serving_types.h"
 #include "v2/error.h"
 
 #include <chrono>

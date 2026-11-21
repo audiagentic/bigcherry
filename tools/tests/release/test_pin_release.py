@@ -110,9 +110,9 @@ class PinReleaseTests(unittest.TestCase):
                 _pr.run(root, "radiance", "b11474", "", dry_run=True, log=lambda _line: None)
 
     def test_radiance_plans_the_upstream_version_as_major(self):
-        # real repo: the package, the release line and recipes' pinned-version give the major (1.13.0 -> 1130)
-        pin, version = _radiance_pin()
-        major = int(version.replace(".", ""))
+        pin, _ = _radiance_pin()
+        config = _notes.load_config(paths.REPO_ROOT, "radiance")
+        major = _notes.pin_version(paths.REPO_ROOT, config, pin).major
         with mock.patch.object(_pr, "_git", side_effect=lambda root, *a, check=True: "feat/x" if a[0] == "rev-parse" else ""):
             plan = _pr.make_plan(paths.REPO_ROOT, "radiance", pin, allow_existing=True)
         self.assertEqual((plan.build, plan.version, plan.release_tag), (major, f"{major}.0.0", f"bc-radiance-{major}.0.0"))
@@ -127,7 +127,7 @@ class PinReleaseTests(unittest.TestCase):
     def test_pin_version_by_version_source(self):
         radiance, llama = _notes.load_config(paths.REPO_ROOT, "radiance"), _notes.load_config(paths.REPO_ROOT, "llamacpp")
         pin, version = _radiance_pin()
-        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, radiance, pin), _notes.PinVersion(int(version.replace(".", "")), version))
+        self.assertEqual(_notes.pin_version(paths.REPO_ROOT, radiance, pin).label, version)
         self.assertEqual(_notes.pin_version(paths.REPO_ROOT, llama, "b11552"), _notes.PinVersion(11552, "b11552"))
         with self.assertRaises(_notes.ReleaseNotesError):
             _notes.pin_version(paths.REPO_ROOT, llama, "48f7b8eb6d70")

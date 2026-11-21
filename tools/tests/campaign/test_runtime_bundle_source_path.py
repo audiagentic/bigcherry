@@ -59,6 +59,7 @@ class BuildRuntimeTests(unittest.TestCase):
     def test_a_component_cached_for_another_checkout_is_built_in_its_own_tree(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
             build, root = Path(tmp) / "build", Path(tmp) / "src"
+            _cache(build, root).write_text("BC_SERVING_CONTRACT_VERSION:STRING=3\n", encoding="utf-8")
             declared = components.load_all(paths.REPO_ROOT, "radiance")
             name, comp = sorted(declared.items())[0]
             old = build / "components" / name
@@ -72,6 +73,8 @@ class BuildRuntimeTests(unittest.TestCase):
                 if cmd[:2] == ["cmake", "-S"]:
                     src, tree = cmd[2], Path(cmd[cmd.index("-B") + 1])
                     configured.append((src, str(tree)))
+                    native_consumers = {str(declared[name].root) for name in ("serving", "moe-remote")}
+                    self.assertEqual(src in native_consumers, "-DBC_SERVING_CONTRACT_VERSION=3" in cmd)
                     _cache(tree, Path(src))
                     for output in comp.outputs if src == str(comp.root) else ():
                         (tree / Path(output).name).write_text("x", encoding="utf-8")

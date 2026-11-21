@@ -6,8 +6,8 @@ schema = 1
 name = "libr3"
 engine = "radiance"
 targets = ["gfx1100"]
-# radiance v1.14.0: rewrite rules target the pinned libr4d source and reject unmatched revisions.
-built-against = "v1.17.0"
+# radiance source b6b8751cccb0e834a13ae9e5afca824ee9a487aa: rewrite rules target the pinned libr4d source and reject unmatched revisions.
+built-against = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
 outputs = ["kernels/libr3.so"]
 
 # How the build lane builds it: CMake against the engine installed from the lane's own build (CMAKE_PREFIX_PATH) and
@@ -71,10 +71,10 @@ targets = ["r3_rewrite_check", "r3_helper_config_exports", "r3_moe_settings_test
 # checks literals and source inventory; RUM02-07 own the eventual migration.
 [coupling]
 upstream-headers = ["rad_abi.h"]
-upstream-files = ["abi/rad_abi.h", "libr4d/CMakeLists.txt"]
+upstream-files = ["abi/rad_abi.h", "cmake/RadSimdLevels.cmake", "libr4d/CMakeLists.txt"]
 upstream-source-globs = ["libr4d/r4d_*.cpp", "libr4d/r4d_*.hip"]
 patch-provided-files = ["libr4d/bc_helper_config.h"]
 protocol-flags = []
 owned-flags = []
 runtime-env = []
-abi-version = 35
+abi-version = 43

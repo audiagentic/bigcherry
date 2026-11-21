@@ -43,6 +43,7 @@ jobs:
     timeout-minutes: 10
     outputs:
       tag: ${{ steps.plan.outputs.tag }}
+      lane: ${{ steps.plan.outputs.lane }}
       reuse: ${{ steps.plan.outputs.reuse }}
     steps:
       - name: Check the tag
@@ -74,9 +75,11 @@ jobs:
           if gh release view "$TAG" --repo "$GITHUB_REPOSITORY" --json assets --jq '.assets[].name' | grep -q '\.receipt\.json$'; then
             echo "::error::$TAG already has a runtime bundle" >&2; exit 1
           fi
+          lane=$(python3 -m bigcherry --engine radiance release-bundle "$TAG" --root src --print-lane)
           found=$(python3 -m bigcherry --engine radiance release-bundle "$TAG" --root src --find-reusable)
           echo "$found"
           echo "tag=$TAG" >> "$GITHUB_OUTPUT"
+          echo "lane=$lane" >> "$GITHUB_OUTPUT"
           echo "reuse=$(printf '%s' "$found" | python3 -c 'import json,sys; print(json.load(sys.stdin)["reuse"] or "")')" >> "$GITHUB_OUTPUT"
 
   build:
@@ -84,6 +87,7 @@ jobs:
     if: needs.plan.outputs.reuse == ''
     uses: ./.github/workflows/radiance-build.yml
     with:
+      build_lane: ${{ needs.plan.outputs.lane }}
       source_ref: ${{ needs.plan.outputs.tag }}
       bundle_tag: ${{ needs.plan.outputs.tag }}
 

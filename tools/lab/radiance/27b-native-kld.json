@@ -1,11 +1,11 @@
 {
- "_comment": "MEN12: output quality of libr3's native gfx11 attention (R3_ATTN_NATIVE, production default on) on radiance 1.7.0, Qwen3.8-27B MXFP4 served by the two XTX (tp 2, exact wire) - the path where the XTX run the whole model, which the Flash-Next helper layout does not exercise. Control arm 'compat' runs the compatibility forms (kernels.attn_native and kernels.moe_native false in the arm's manifest); arm 'attn-native' turns the attention native on (kernels.attn_native true). The reference is the compat run itself, recorded on first use by quality.record (delete 'record' and 'corpus' to reuse it). On 1.3.0 the same switch gave KLD 0.0035 / top-1 96.8% against the R9700 reference (README, runs kqa2). First 1.7.0 run (2026-10-17): attn-native KLD 0.0040, median 0.0015, P99 0.031, top-1 96.6%, PPL 7.358 vs 7.368 - as on 1.3.0; the gate reported a top-1 drop only because the control reproduces its own reference exactly (KL 0, top-1 100%), so read the native arm against the 1.3.0 figures, or record the reference on a different layout. Set RAD_BIN, RAD_HOME, KLD_REF_DIR before use. Not used by tests.",
+ "_comment": "MEN12: output quality of libr3's native gfx11 attention (x-bigcherry kernels.attn-native, production default on) on Qwen3.8-27B IQ8R served by the two XTX (tp 2, exact wire) - the path where the XTX run the whole model, which the Flash-Next helper layout does not exercise. Each arm is its own native YAML (27b-native-kld/*.yaml, written by arm_yaml.py from engines/radiance/configs/qwen27b-2xtx.yaml with tp-wire exact, max-num-seqs 1 and the kernels table); regenerate one with: python3 tools/lab/radiance/arm_yaml.py --base engines/radiance/configs/qwen27b-2xtx.yaml --out tools/lab/radiance/27b-native-kld/ARM.yaml --set models.qwen27b.tp-wire=exact --set models.qwen27b.max-num-seqs=1 --set x-bigcherry.kernels.attn-native=BOOL --set x-bigcherry.kernels.moe-native=false. Control arm 'compat' has attn-native and moe-native false; arm 'attn-native' turns the attention native on. bc-serve quality scores each arm against a stored reference (quality.reference_dir and reference_metadata: pin, layout, recorded_on; set KLD_REF_DIR); it does not record one, so record the reference first on a different layout than the control, or the control reproduces it exactly (KL 0, top-1 100%) and the gate reads the native arm as a top-1 drop. Readings below are on the MXFP4 weights (retired in Radiance 2.2), radiance 1.7.0 (2026-10-17, recorded then with the compat run): attn-native KLD 0.0040, median 0.0015, P99 0.031, top-1 96.6%, PPL 7.358 vs 7.368; on 1.3.0 KLD 0.0035 / top-1 96.8%. Set BC_MODEL_ROOT, RAD_BIN and KLD_REF_DIR before use. Not used by tests.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
  "quality_only": true,
- "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad",
  "server_args": [],
  "environment": {
   "HIP_VISIBLE_DEVICES": "0,1",
@@ -24,32 +24,9 @@
  },
  "quality": {
   "reference_dir": "${KLD_REF_DIR}",
-  "corpus": "${BC_WORK_ROOT}/corpus/rad-kld-corpus-4.jsonl",
   "control": "compat",
   "timeout_s": 5400,
   "args": [],
-  "record": {
-   "environment": {
-    "R3_ATTN_NATIVE": "0",
-    "R3_MOE_NATIVE": "0"
-   },
-   "args": [
-    "--radiance-home",
-    "${RAD_HOME}",
-    "--kernels",
-    "libr3,libref",
-    "--tp",
-    "2",
-    "--tp-wire",
-    "exact",
-    "--kv-cache-dtype",
-    "fp8",
-    "--max-model-len",
-    "8192",
-    "--max-num-seqs",
-    "1"
-   ]
-  },
   "thresholds": {
    "max_kld_mean_increase": 0.01,
    "max_kld_median_increase": 0.005,
@@ -57,7 +34,8 @@
    "max_kld_p999_increase": 0.3,
    "max_top1_drop_points": 1.0,
    "max_ppl_ratio_increase": 0.02
-  }
+  },
+  "reference_metadata": "${KLD_REF_DIR}/reference.json"
  },
  "arms": [
   {
@@ -66,15 +44,8 @@
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
    "serving": {
-    "layout": "qwen27b-2xtx",
-    "set": {
-     "engine.tp_wire": "exact",
-     "service.max_context": 8192,
-     "service.max_sessions": 1,
-     "engine.kv_cache_dtype": "fp8",
-     "kernels.attn_native": false,
-     "kernels.moe_native": false
-    }
+    "config": "qwen27b-2xtx",
+    "native_config": "tools/lab/radiance/27b-native-kld/compat.yaml"
    }
   },
   {
@@ -83,15 +54,8 @@
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
    "serving": {
-    "layout": "qwen27b-2xtx",
-    "set": {
-     "engine.tp_wire": "exact",
-     "service.max_context": 8192,
-     "service.max_sessions": 1,
-     "engine.kv_cache_dtype": "fp8",
-     "kernels.attn_native": true,
-     "kernels.moe_native": false
-    }
+    "config": "qwen27b-2xtx",
+    "native_config": "tools/lab/radiance/27b-native-kld/attn-native.yaml"
    }
   }
  ]

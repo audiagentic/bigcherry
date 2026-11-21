@@ -1,0 +1,17 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_152202_added-a-card-free-successor-te_9961",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added the real P1 producer, measurement serializer and live-room sampler source closure to the isolated v3 writer test target. The card-free test deletes the admitted authored YAML, runs real P1 using the same ManifestInputs, and feeds the measurement into the real v3 writer with fake GTT sysfs and consistent host-pool evidence. bc_serving_v3_writer_test built and passed 1/1. Production remains v2; this does not enable native launch.",
+  "timestamp-utc": "2026-11-19T15:22:02.657029Z",
+  "user-summary-candidate": "Added a card-free successor test that carries an admitted YAML snapshot through real P1 measurement and the v3 writer after the source file is gone. The focused test passes; production stays gated."
+}

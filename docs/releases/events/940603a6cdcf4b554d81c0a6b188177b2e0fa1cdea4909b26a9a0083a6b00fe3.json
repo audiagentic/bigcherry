@@ -1,0 +1,17 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_172036_hardened-the-isolated-v3-candi_4178",
+  "files": [
+    "engines/radiance/components/serving/bc_serving_v2.cmake",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Restricted BC_SERVING_GENERATED_DIR to the isolated v3 native-consumer test mode; require the test build, generated codec, writer executable/config and upstream fleet parser before configuring v3. Strengthened patch assertions for the aggregate host-pool compile definition. Verified using a fresh exact current recipe composition (Radiance 2.1.0 revision 3deabdaeca17b58bad90d332f4b204cf7bb8a10; source tree 8ca1308f23c0eaef5fdaa0ce29b9cfa7225925fd; 33 serving-core patches including B16). Serial ABI44 build succeeded, focused v3 engine consumer CTest passed 1/1 and linked exactly one serving manifest archive; focused patch tests passed 5/5; diff check clean. No GPU or production enablement.",
+  "timestamp-utc": "2026-11-19T17:20:36.041270Z",
+  "user-summary-candidate": "Hardened the isolated v3 candidate test configuration and verified its native consumer against the exact current Radiance recipe composition. No production runtime gate was opened."
+}

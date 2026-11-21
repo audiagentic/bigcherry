@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_214950_restore-the-generated-v3-owner_7417",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Share the merged production calibration fixture definition with generated v3 session tests that compile the same serving fixture source. Combined v3 owner test passed 1/1.",
+  "timestamp-utc": "2026-11-19T21:49:50.828614Z",
+  "user-summary-candidate": "Restore the generated v3 owner check after integrating main\u2019s calibration fixture."
+}

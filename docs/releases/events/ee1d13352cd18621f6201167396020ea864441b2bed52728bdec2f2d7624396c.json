@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_013446_allow-remote-moe-work-that-was_8139",
+  "files": [
+    "engines/radiance/components/moe-remote/admission_ledger.h",
+    "engines/radiance/components/moe-remote/admission_ledger_test.cpp",
+    "engines/radiance/components/moe-remote/moe_remote_hook.cpp",
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py",
+    "engines/radiance/tests/admission_bridge_test.cpp",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Close remote MoE admission permanently during normal Front detach while preserving bound work and terminal polling. Promote the existing issue-ahead parent and prove all bound rank seals and helper request consumption before aborting rank barriers, with a bounded timeout and immediate interrupt on faults. Exact ABI44 patch application and reapplication, engine and hook host syntax, CPU ledger and bridge fixtures, and 25 package tests passed. GPU shutdown and helper process exit were not exercised.",
+  "timestamp-utc": "2026-11-20T01:34:46.783241Z",
+  "user-summary-candidate": "Allow remote MoE work that was already issued to finish during normal managed shutdown."
+}

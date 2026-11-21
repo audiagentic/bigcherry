@@ -339,7 +339,7 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none", description="V
     ),
     _after(
         "rp-free",
-        "    if (route_dev_)  { rad_dev_free(route_dev_, RAD_MEM_DEVICE);        route_dev_  = nullptr; }",
+        "    if (route_rec_dev_) { rad_dev_free(route_rec_dev_, RAD_MEM_DEVICE); route_rec_dev_ = nullptr; } /* BC_VTP44_ROUTE_RECORD_FREE */",
         "    if (route_rp_dev_) { rad_dev_free(route_rp_dev_, RAD_MEM_DEVICE); route_rp_dev_ = nullptr; } /* BC_VTP44_ROUTE_REPLAY_FREE */",
         guard="BC_VTP44_ROUTE_REPLAY_FREE",
     ),

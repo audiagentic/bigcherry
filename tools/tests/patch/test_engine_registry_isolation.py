@@ -32,7 +32,7 @@ class EngineRegistryIsolationTests(unittest.TestCase):
             self.assertTrue(implementation)
         with self.assertRaises(registry.PatchRegistryError):
             registry.load_implementation(
-                "llamacpp", radiance.get("rad0001_drain_mover_before_arena_free"),
+                "llamacpp", radiance.get("rad0002_moe_remote_handoff"),
                 root=radiance.root,
             )
 

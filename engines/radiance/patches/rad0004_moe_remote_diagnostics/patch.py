@@ -156,7 +156,7 @@ PATCHES = (
             ),
             Edit(
                 id="diag-after-down",
-                anchor=r"^[ \t]*if \(shared\) sh_down\.step\(c_, w\.sff, w\.sout, T, r0, rows\);$",
+                anchor=r"^[ \t]*if \(shared(?: && !sh_dn_first)?\) sh_down\.step\(c_, w\.sff, w\.sout, T, r0, rows\);$",
                 mode="insert_before",
                 text="#ifdef BC_MOE_REMOTE_DIAG\n    bc_diag.after_down(c_, *this, bc_remote, T, r0, rows, ecnt);\n#endif\n",
                 guard=r"bc_diag\.after_down\(c_, \*this, bc_remote, T, r0, rows, ecnt\);",

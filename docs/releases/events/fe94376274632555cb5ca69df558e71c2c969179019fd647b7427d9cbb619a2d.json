@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_140449_added-and-verified-the-session_5273",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/session_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added an owner-tracked native YAML inspection child using the existing captured-output planner path. It inherits only a sealed snapshot FD, changes cwd only in the child via a root FD, runs the absolute matched engine, bounds stdout/stderr, validates strict report identity and typed admission fields, and remains before durable power admission. Added positive and identity-mismatch CPU session cases.",
+  "timestamp-utc": "2026-11-19T14:04:49.197549Z",
+  "user-summary-candidate": "Added and verified the session-owner boundary for native YAML inspection, including sealed handoff, root handling, descriptor isolation, process journaling, and fail-closed report validation. The card-free session test passes; production YAML planner integration and actual engine invocation remain open."
+}

@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_022536_the-flash-next-parity-runner-c_2756",
+  "files": [
+    "tools/lab/radiance/flashnext-parity.sh"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Detect a verified-release owner by its canonical executable path and omit the runtime-home override rejected by the installed owner. Build-tree launch keeps explicit runtime home.",
+  "timestamp-utc": "2026-11-20T02:25:36.316259Z",
+  "user-summary-candidate": "The Flash-Next parity runner can use the verified installed Radiance release as its control."
+}

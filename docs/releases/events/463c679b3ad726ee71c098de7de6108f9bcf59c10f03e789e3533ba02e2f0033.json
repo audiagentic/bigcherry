@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_223413_reject-stored-radiance-replay_8081",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/stored_manifest_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Include retained host KV in replay host allocation and cgroup demand, using the checked pin total. Exact-fit and one-byte-short admission fixtures with sufficient pin room passed, along with stored session and v3 lifecycle checks.",
+  "timestamp-utc": "2026-11-19T22:34:13.639840Z",
+  "user-summary-candidate": "Reject stored Radiance replay when host RAM cannot fit retained KV."
+}

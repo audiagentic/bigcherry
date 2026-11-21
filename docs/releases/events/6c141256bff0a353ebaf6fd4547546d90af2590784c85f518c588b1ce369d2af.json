@@ -1,0 +1,28 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_020007_updated-the-libr2libr3-abi43_6097",
+  "files": [
+    "engines/radiance/components/libr2/CMakeLists.txt",
+    "engines/radiance/components/libr2/README.md",
+    "engines/radiance/components/libr2/component.toml",
+    "engines/radiance/components/libr2/native/r4d_moe.hip.rw",
+    "engines/radiance/components/libr2/r2_registry.cpp",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/components/libr3/README.md",
+    "engines/radiance/components/libr3/component.toml",
+    "engines/radiance/components/libr3/native-shelved/r4d_moe_mxfp4.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_attn_paged_h256_gqa6.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_gemm_8a8_prefill.h.rw",
+    "engines/radiance/components/libr3/native/r4d_gemm_fp8a8.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_moe.hip.rw",
+    "engines/radiance/components/libr3/native/r4d_selftest.cpp.rw",
+    "engines/radiance/components/libr3/r3_registry.cpp",
+    "engines/radiance/components/libr3/r4d_declaration.cmake",
+    "engines/radiance/components/moe-remote/moe_remote_gpu.h",
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Ported the managed libr2/libr3 component layer to the ABI 43 candidate: shared upstream declaration/SIMD objects, row-indexed chain forwarding, native gfx11 rewrite adjustments, and exact remote-MoE row selection/admission placement. The removed upstream grouped MXFP4 override is shelved. Targeted libr2 and libr3 source/object builds and card-free replay/patch checks passed. Full plugin link and GPU numerical/performance qualification remain pending.",
+  "timestamp-utc": "2026-11-19T02:00:07.998083Z",
+  "user-summary-candidate": "Updated the libr2/libr3 ABI43 component ports, preserved upstream registry chain settings, and tightened remote MoE row selection and admission timing. Targeted source builds passed; device validation remains pending."
+}

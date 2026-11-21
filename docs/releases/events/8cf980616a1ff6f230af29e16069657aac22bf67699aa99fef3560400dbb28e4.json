@@ -1,0 +1,21 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_133948_added-a-card-free-way-for-the_6817",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config.h",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "engines/radiance/components/serving/v2/native_config_snapshot.h",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added a read-only sealed-descriptor native fleet inspection entry to the matched Radiance executable. Compiled NativeFleetConfig once into rad_core, propagated the header to the executable, validated strict snapshot bytes/root and upstream fleet support, and emitted an admission-focused report without YAML or credentials. Added focused patch ordering, parser, seal, digest and root coverage.",
+  "timestamp-utc": "2026-11-19T13:39:48.592580Z",
+  "user-summary-candidate": "Added a card-free way for the matched Radiance engine to inspect the exact admitted YAML snapshot and report the settings BigCherry needs for admission."
+}

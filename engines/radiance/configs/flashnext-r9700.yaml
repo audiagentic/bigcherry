@@ -1,0 +1,25 @@
+cards: [0]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr4d,libref
+models:
+  flashnext:
+    model: radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+    tp: 1
+    max-model-len: 8192
+    max-num-seqs: 1
+    max-num-batched-tokens: 64
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    ngram-placement: disk
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+x-bigcherry:
+  schema: 1
+  description: "Flash-Next on the R9700 alone: no helpers, the experts tiered to host memory"
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  memory: {host-pool-mib: 45056, host-kv-mib: 0}

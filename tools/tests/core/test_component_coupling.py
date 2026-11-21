@@ -40,23 +40,18 @@ class ComponentCouplingTests(unittest.TestCase):
             component, upstream_paths={"abi/rad_abi.h"},
             upstream_abi=40)
         self.assertTrue(any("upstream file no longer exists: abi/rad_abi_layout.h" in x for x in result), result)
-        self.assertTrue(any("plugin ABI 35 differs from upstream 40" in x for x in result), result)
+        self.assertTrue(any("plugin ABI 43 differs from upstream 40" in x for x in result), result)
 
     def test_manifest_option_registry_is_the_single_native_mapping(self):
         serving = components.load_all(ROOT, engines.RADIANCE)["serving"]
-        self.assertEqual(serving.coupling["option-registry"], "contract/serving-v2.toml")
+        self.assertEqual(serving.coupling["option-registry"], "contract/serving.toml")
         import tomllib
         contract = tomllib.loads((serving.root / serving.coupling["option-registry"]).read_text())
         mapped = {f["radiance_option"] for f in contract["field"] if f.get("radiance_option")}
         self.assertGreater(len(mapped), 100)
         self.assertEqual(len(mapped), sum(bool(f.get("radiance_option")) for f in contract["field"]))
-        bridge = (PATCH_ROOT / "rad0009_serving_manifest/patch.py").read_text()
-        self.assertIn("kFields", bridge)
+        bridge = (serving.root / "bc_serving_manifest.cpp").read_text()
         self.assertIn("kEnvBindings", bridge)
-        self.assertIn("project_native_options(doc, v2::kFields, known)", bridge)
-        self.assertIn("projected.argv()", bridge)
-        projection = (serving.root / "v2/native_option_projection.h").read_text()
-        self.assertIn("field.radiance_option", projection)
         self.assertIn("bc_serving_engine_argv", bridge)
 
 

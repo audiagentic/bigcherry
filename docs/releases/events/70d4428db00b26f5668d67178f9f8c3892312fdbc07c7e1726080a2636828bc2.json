@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_224504_native-radiance-helper-session_7311",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Bind native v3 stored helper replay to the original worker build and requalify helper segment ownership before power admission. Generated v3 owner and four targeted v2 host tests passed.",
+  "timestamp-utc": "2026-11-19T22:45:04.987095Z",
+  "user-summary-candidate": "Native Radiance helper sessions can replay named configurations and explicit stored manifests."
+}

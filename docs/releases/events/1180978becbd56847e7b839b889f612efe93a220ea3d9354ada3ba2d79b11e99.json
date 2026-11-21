@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_040031_radiance-22-retains-both-prod_4619",
+  "files": [
+    "engines/radiance/recipes.toml",
+    "engines/radiance/patches/rad0005_mp4_ffmpeg6_writer/SUMMARY.md",
+    "engines/radiance/patches/rad0046_retained_moe_rows/patch.toml",
+    "engines/radiance/patches/rad0046_retained_moe_rows/evidence/promotion.json",
+    "releases/evidence/rad0046_retained_moe_rows-promotion.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Restore exact gfx1201 MoE row registration and qualify the scoped restoration with byte-identical patch replay, matched-SDK registry isolation and two device numerical cases. Focal G0\u2013G5 and the 32-patch production rebase passed. Drop rad0005 from the v2.2 recipe because upstream supplies the FFmpeg 6/7 callback implementation. Deployment regression gates remain open.",
+  "timestamp-utc": "2026-11-20T04:00:31.579614Z",
+  "user-summary-candidate": "Radiance 2.2 retains both production FP8 helper rows and uses upstream FFmpeg callback compatibility."
+}

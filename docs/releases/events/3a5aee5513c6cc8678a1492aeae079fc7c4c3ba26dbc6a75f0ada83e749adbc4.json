@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_003818_managed-radiance-accepts-reque_6867",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Register default as an alias of the admitted single-model managed engine when the canonical name and authored aliases do not already provide it.",
+  "timestamp-utc": "2026-11-20T00:38:18.116460Z",
+  "user-summary-candidate": "Managed Radiance accepts requests for the default model while retaining the model name from YAML."
+}

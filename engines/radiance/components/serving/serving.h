@@ -1,10 +1,13 @@
 #pragma once
 #include <cstdint>
 #include <filesystem>
+#include <map>
 #include <optional>
 #include <string>
 #include <vector>
 #include <nlohmann/json.hpp>
+
+#include "xbigcherry.h"
 
 namespace bc::serving {
 
@@ -66,13 +69,33 @@ struct Config {
     Helper helper;
     Engine engine;
 };
+// The representable engine settings reported by the matched native parser.
+struct NativeEngineSettings {
+    uint32_t port, max_context, max_sequences, max_batched_tokens, checkpoint_interval, speculative_tokens;
+    std::vector<std::string> kernels;
+    std::string placement, ngram_placement, kv_dtype, rope_scaling, prefix_resume;
+    bool prefix_cache;
+    std::optional<uint32_t> prefill_interleave;
+    // The tuning options the YAML states (resolver key tuning.NAME, strings except pipelined_prefill_min_rows, an
+    // integer). The engine's strict reader validated their form; the resolver validates their type and range.
+    std::map<std::string, nlohmann::json> tuning;
+};
+// One serving config as its native YAML states it, read by the engine's own parser through the device-free inspector
+// (session.h inspect_config_file): the config name is the file stem. This replaces the RSC12 TOML catalogue as the
+// resolver's source of a config's model, ranks, helpers, wire and BigCherry-owned settings.
+struct InspectedConfig {
+    std::string name;
+    std::filesystem::path yaml_path;   // the file read; its directory's sibling heat/ holds @bundle/heat seeds
+    std::string sha256;                // digest of the exact bytes the inspector parsed
+    std::filesystem::path radiance_home;   // the canonical runtime home that parsed them (a start must keep it)
+    std::string model;                 // as authored: absolute, or relative to the model root
+    std::optional<std::string> tp_wire;
+    XBigcherry x;
+};
 struct Options {
     std::filesystem::path sys_root = "/";
     std::filesystem::path site, profile;
-    // The layout definition files or directories (--layouts); empty: BIGCHERRY_LAYOUTS. Never compiled in.
-    std::vector<std::filesystem::path> layouts;
-    // RSC12 config files or directories (--configs); empty: BIGCHERRY_CONFIGS. When configs are given, their names are the
-    // named layouts, and layout files are read only when --layouts is given as well (never BIGCHERRY_LAYOUTS).
+    // Directories holding NAME.yaml configs (--configs); empty: BIGCHERRY_CONFIGS, else the installed bundle's configs/.
     std::vector<std::filesystem::path> configs;
     // The root a config's relative model path is under (--model-root); bc-serve reads no environment for it.
     std::filesystem::path model_root;
@@ -82,7 +105,13 @@ struct Options {
     // A calibration cache (RHP12 refits) layered over the compiled-in seeds; empty: seeds only.
     std::filesystem::path calibration_cache;
     std::vector<std::string> sets;
+    // The config named by layout.name, read from its YAML: when set, it is the one config the resolver knows (the
+    // catalogue readers are gone); the caller runs the inspector first. Empty only for tests of layout files.
+    std::optional<InspectedConfig> inspected;
 };
+// The string a layered setting `section.key` takes before any config is resolved: the last --set, else the profile, else the
+// site file (the resolver's own precedence among them); nothing when none sets it. A --set value is JSON or bare text.
+std::optional<std::string> layered_string(const Options& options, const std::string& section, const std::string& key);
 struct Resolved {
     Config typed;
     Json values, provenance, facts, manifest;
@@ -90,10 +119,10 @@ struct Resolved {
 };
 Json detect(const std::filesystem::path& root = "/");
 Json json_schema();
-Resolved resolve(const Options& options, const Json& facts);
-/* The layout definition files (--layouts, else BIGCHERRY_LAYOUTS; a directory gives its *.toml), and every named layout
- * in them with the file it came from: {"layout": {name: table}, "source": {name: path}}. A name defined twice is refused. */
-std::vector<std::filesystem::path> layout_sources(const Options& options);
+Resolved resolve(const Options& options, const Json& facts,
+                 const NativeEngineSettings* native = nullptr);
+/* The one named config of Options::inspected as a layout, with its file: {"layout": {name: table}, "source": {name: path},
+ * "kind": {name: "config"}}. Refused when no config was read. */
 Json load_layouts(const Options& options);
 /* archs.toml reserve-mib of a card type: the VRAM a card of it keeps free. */
 uint64_t arch_reserve_mib(const std::string& arch);

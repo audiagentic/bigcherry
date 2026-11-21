@@ -5,7 +5,7 @@
 // production linkage. Bounded snapshots are derived only from authoritative
 // worker_epoch.h PlacementControl/PlacementJournal telemetry; missing evidence
 // is fail-closed and never reported as successful runtime policy.
-#include "generated/v2/serving_types.h"
+#include "serving_types.h"
 #include "v2/error.h"
 #include "../../moe-remote/moe_remote_shm.h"
 

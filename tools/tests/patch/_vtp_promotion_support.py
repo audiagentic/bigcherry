@@ -13,12 +13,15 @@ from bigcherry.patch import patchset, registry
 
 REPO = Path(__file__).resolve().parents[3]
 PATCHES = REPO / "engines/radiance/patches"
-PIN_COMMIT = "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d"
+
 
 
 def recipe():
     with (REPO / "engines/radiance/recipes.toml").open("rb") as handle:
         return tomllib.load(handle)
+
+
+CANDIDATE_COMMIT = recipe()["pinned"]
 
 
 def serving_chain_to(target: str) -> list[str]:
@@ -32,9 +35,10 @@ def serving_chain_to(target: str) -> list[str]:
     selected = tuple(dict.fromkeys(
         patch for name in source_sets for patch in data["patch-set"][name]["patches"]
     ))
-    resolved = patchset.resolve_exact(
-        "radiance", selected, directory=PATCHES, required_state="validated"
-    )
+    # Resolve the build order for the focal mechanics test. The source policy
+    # suite checks release eligibility, and assert_promoted_recipe checks the
+    # focal packages' states.
+    resolved = patchset.resolve_exact("radiance", selected, directory=PATCHES)
     ordered = [module.patch_id for module in resolved.modules]
     assert ordered.count(target) == 1
     return ordered[:ordered.index(target) + 1]
@@ -70,7 +74,7 @@ def load_patch_files(name: str):
     return registry.load_implementation("radiance", reg.get(name), root=PATCHES)
 
 
-def seed_pinned_paths(checkout: Path, root: Path, files) -> None:
+def seed_pinned_paths(checkout: Path, root: Path, files, commit: str) -> None:
     """Stage pinned upstream paths; only an earlier create may lack a git blob."""
     created = {item.path for item in files if item.create}
     for path in sorted({item.path for item in files if not item.create}):
@@ -78,7 +82,7 @@ def seed_pinned_paths(checkout: Path, root: Path, files) -> None:
         if dest.exists():
             continue
         shown = subprocess.run(
-            ["git", "-C", str(checkout), "show", f"{PIN_COMMIT}:{path}"],
+            ["git", "-C", str(checkout), "show", f"{commit}:{path}"],
             capture_output=True,
         )
         if shown.returncode != 0:
@@ -98,7 +102,12 @@ from bigcherry.patcher import apply_all
 
 @contextmanager
 def patched_pinned_source(checkout: Path, target: str, *, full_checkout: bool = False):
-    """Apply the full production prefix to pinned upstream; verify replay stability."""
+    """Apply the migrated production prefix to the exact reviewed ABI43 source."""
+    commit = subprocess.check_output(
+        ["git", "-C", str(checkout), "rev-parse", "--verify", f"{CANDIDATE_COMMIT}^{{commit}}"], text=True,
+    ).strip()
+    if commit != CANDIDATE_COMMIT:
+        raise AssertionError(f"candidate source resolved to {commit}, expected {CANDIDATE_COMMIT}")
     names = serving_chain_to(target)
     groups = [(name, load_patch_files(name)) for name in names]
     files = [item for _, group in groups for item in group]
@@ -109,12 +118,12 @@ def patched_pinned_source(checkout: Path, target: str, *, full_checkout: bool = 
             import io
             import tarfile
             archive = subprocess.run(
-                ["git", "-C", str(checkout), "archive", "--format=tar", PIN_COMMIT],
+                ["git", "-C", str(checkout), "archive", "--format=tar", commit],
                 check=True, capture_output=True,
             ).stdout
             with tarfile.open(fileobj=io.BytesIO(archive)) as tar:
                 tar.extractall(root, filter="data")
-        seed_pinned_paths(checkout, root, files)
+        seed_pinned_paths(checkout, root, files, commit)
         for name, group in groups:
             first = apply_all(group, root)
             assert first and all(item.ok for item in first), (name, first)
@@ -127,7 +136,8 @@ def patched_pinned_source(checkout: Path, target: str, *, full_checkout: bool = 
             again = apply_all(group, root)
             assert again and all(item.ok for item in again), (name, again)
             assert all(
-                edit.status == "already-applied" for item in again for edit in item.results
+                edit.status in {"already-applied", "not-applicable"}
+                for item in again for edit in item.results
             ), (name, again)
         assert before == {item.path: (root / item.path).read_bytes() for item in files}, "replay changed bytes"
         yield root

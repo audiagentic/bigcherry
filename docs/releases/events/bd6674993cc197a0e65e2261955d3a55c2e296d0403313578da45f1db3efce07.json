@@ -1,0 +1,17 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_115029_integrated-latest-main-into-th_1067",
+  "files": [
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/runtime_guards.h",
+    "engines/radiance/components/serving/session_guards_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Merged current origin/main commit 5e814a1d8 into the Radiance bump branch and rebuilt/reran the focused bc_session_guards_test, including the new proof_lag publication case. The merge is now based on current main; the targeted test binary passed. This checkpoint does not claim GPU or performance qualification.",
+  "timestamp-utc": "2026-11-19T11:50:29.982333Z",
+  "user-summary-candidate": "Integrated latest main into the Radiance bump branch and verified its heat-proof publication guard with the focused CPU test."
+}

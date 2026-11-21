@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_234911_allow-native-radiance-launches_2479",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/components/serving/native_fleet_v3_engine_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "When native v3 YAML omits host-pool-mib, carry the already normalized per-rank host pool and its provenance from the admitted typed manifest into the engine Config. Keep explicit YAML pool values subject to exact equality and cover both routes in the sealed-manifest host fixture.",
+  "timestamp-utc": "2026-11-19T23:49:11.001980Z",
+  "user-summary-candidate": "Allow native Radiance launches to use their admitted host-pool size when the runtime YAML leaves it unset."
+}

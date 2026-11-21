@@ -1,0 +1,22 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_054018_documented-the-staged-radiance_6400",
+  "files": [
+    "engines/radiance/patches/rad0047_mtp_verify_replay_summary/SUMMARY.md",
+    "engines/radiance/patches/rad0048_abi44_kv_contract/SUMMARY.md",
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/SUMMARY.md",
+    "engines/radiance/patches/rad0050_b16_kv_runtime_contract/SUMMARY.md",
+    "engines/radiance/patches/rad0051_b16_kv_kernels/SUMMARY.md",
+    "engines/radiance/patches/rad0052_b16_kv_geometries/SUMMARY.md",
+    "engines/radiance/patches/rad0053_v4_kv_layouts/SUMMARY.md",
+    "engines/radiance/patches/rad0054_attn_prefill_fp8/SUMMARY.md"
+  ],
+  "plan-item-ids": [
+    "RUM07",
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added lifecycle-consistent summaries for the ABI44 KV migration packages and the replay-summary package, clarifying that the legacy feature behavior has prior evidence while new-base integration and the final bumped production promotion are still gated. Corrected the multi-plan item identifier to canonical RUM03/RUM07. Repository patch-lint passes (warnings remain for long anchors in some new and older package edits).",
+  "timestamp-utc": "2026-11-19T05:40:18.097730Z",
+  "user-summary-candidate": "Documented the staged Radiance migration packages and confirmed package lint passes."
+}

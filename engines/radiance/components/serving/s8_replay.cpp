@@ -3,6 +3,7 @@
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "sha256.h"
+#include "stored_manifest_cache.h"
 #include "v2/s8_rules.h"
 #include "v2/strict_json.h"
 
@@ -103,7 +104,8 @@ v2::Status same_s8(const v2::Manifest& saved, const v2::S8Resolution& before, co
 } // namespace
 
 StoredS8Evidence read_stored_s8_evidence(const std::filesystem::path& path,
-                                         const std::string& expected_digest) {
+                                         const std::string& expected_digest,
+                                         const std::string& expected_file_identity) {
     namespace fs = std::filesystem;
     constexpr uint64_t max_bytes = 16ULL * 1024ULL * 1024ULL;
     if (!fs::is_regular_file(path) || fs::is_symlink(path) || fs::file_size(path) > max_bytes)
@@ -117,6 +119,8 @@ StoredS8Evidence read_stored_s8_evidence(const std::filesystem::path& path,
     if (count > static_cast<std::streamsize>(max_bytes) || in.bad())
         throw std::runtime_error("replay: native S8 evidence exceeds bound or could not be read");
     bytes.resize(static_cast<size_t>(count));
+    if (complete_file_identity_bytes(bytes) != expected_file_identity)
+        throw std::runtime_error("replay: original measured S8 producer evidence was tampered");
     const auto decoded = v2::parse_strict_json(bytes, path.string());
     if (!decoded)
         throw std::runtime_error("replay: invalid native S8 producer record: " + decoded.error().message);

@@ -13,6 +13,10 @@
 
 #include <nlohmann/json.hpp>
 
+namespace bc::serving::v2 {
+struct Manifest;
+}
+
 namespace bc::serving::resources {
 
 struct ModelFootprint {
@@ -54,6 +58,7 @@ struct ResourceRequest {
     RetentionTarget target;
     HostCapacity host;
     std::vector<HelperCapacity> helpers;
+    uint64_t engine_ranks = 1; // host_pool_mib is allocated once per selected engine rank
 };
 
 enum class Allocation : uint8_t {
@@ -107,6 +112,11 @@ struct LaunchDocuments {
 };
 v2::Result<ResourceLedger> derive_launch(const LaunchDocuments& documents,
                                          const std::filesystem::path& calibration_cache = {});
+
+// The measuring start has no measured engine footprint yet. Still admit the
+// effective allocation from the exact measuring manifest against fresh RAM, cgroup and pin room.
+v2::Status preflight_host_pool(const v2::Manifest& measuring_manifest,
+                               const nlohmann::json& detected_facts);
 
 // Wire format is needed only for status and the frozen Python-oracle parity fixture.
 nlohmann::json to_json(const ResourceLedger& ledger);

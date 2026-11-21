@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_021455_kept-the-active-radiance-upmix_1654",
+  "files": [
+    "engines/radiance/components/serving/contract/serving-v2.toml",
+    "engines/radiance/components/serving/generated/v2",
+    "engines/radiance/components/serving/generated/v3/contract.fingerprint",
+    "docs/design/serving-manifest-v2/serving-manifest.v2.schema.json"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Preserved the typed RAD_HC_UPMIX_RT diagnostic carrier for active patch rad0008 when merging the retired patch carrier removals, and regenerated the v2 contract and v3 successor fingerprint.",
+  "timestamp-utc": "2026-11-20T02:14:55.639602Z",
+  "user-summary-candidate": "Kept the active Radiance upmix tile setting available through serving manifests while removing obsolete experiment settings."
+}

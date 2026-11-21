@@ -1,0 +1,17 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_091047_the-focused-patch-integration_1977",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "engines/radiance/components/serving/component.toml"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Registered the existing rad_core-linked bc_native_fleet_config_test with CTest and the serving component test target. Updated the exact old-source patch output pin. Focused patch-package suite passes: 24 passed and 8 subtests passed, using task-local executable temporary storage. C++ serving/parser and ABI44 build gates remain pending.",
+  "timestamp-utc": "2026-11-19T09:10:47.746306Z",
+  "user-summary-candidate": "The focused patch integration suite passes after registering the matched-core parser fixture and updating its exact output pin. C++ build and parser tests remain pending."
+}

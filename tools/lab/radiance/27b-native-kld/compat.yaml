@@ -1,0 +1,28 @@
+cards: [0, 1]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libref
+models:
+  qwen27b:
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
+    tp: 2
+    tp-wire: "exact"
+    max-model-len: 8192
+    max-num-seqs: 1
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    ngram-placement: disk
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+    p2p: "off"
+x-bigcherry:
+  schema: 1
+  description: "Qwen3.8-27B IQ8R, two RDNA3 engine ranks with host-memory wht6 all-reduce"
+  ranks:
+    - {arch: "gfx1100", count: 2}
+  memory: {host-pool-mib: 0, host-kv-mib: 0}
+  kernels: {attn-native: false, moe-native: false}

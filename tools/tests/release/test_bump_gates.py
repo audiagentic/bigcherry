@@ -129,8 +129,12 @@ class ComponentGateTests(unittest.TestCase):
                     for output in component.outputs:
                         (tree / Path(output).name).write_bytes(b"x")
             else:
-                (tree / "radiance_home" / "kernels").mkdir(parents=True, exist_ok=True)
-                (tree / "radiance_home" / "kernels" / "libr4d.so").write_bytes(b"x")
+                home = tree / "radiance_home"
+                for directory in radiance_bump.PLUGIN_DIRS:
+                    (home / directory).mkdir(parents=True, exist_ok=True)
+                (home / "kernels" / "libr4d.so").write_bytes(b"x")
+                (home / "architectures" / "qwen.so").write_bytes(b"x")
+                (home / "quantizers" / "q4.so").write_bytes(b"x")
 
     def lister(self, tree: Path, cwd: Path) -> dict[str, list[str]]:
         """A fake `ctest --show-only=json-v1`: the component's declared tests (unless withheld), moe-remote's two
@@ -242,21 +246,29 @@ class ComponentGateTests(unittest.TestCase):
         failures = checks["component-plugin-abi"].run()
         self.assertTrue(failures)
         self.assertTrue(all("is 6" in f and "RAD_ABI_VERSION 7" in f for f in failures))
-        self.assertTrue(any(f.startswith("libr3.so") for f in failures))
+        self.assertTrue(any(f.startswith("kernels/libr3.so") for f in failures))
+
+    def test_abi_gate_checks_architecture_and_quantizer_plugins(self):
+        for plugin in ("architectures/qwen.so", "quantizers/q4.so"):
+            with self.subTest(plugin=plugin):
+                checks = self.checks(abi=6)
+                self.assertEqual(checks["components-build"].run(), [])
+                failures = checks["component-plugin-abi"].run()
+                self.assertTrue(any(f.startswith(plugin + ":") for f in failures), failures)
 
     def test_plugin_without_layout_export_fails(self):
         checks = self.checks(layouts={"libr3.so": None})
         checks["components-build"].run()
         failures = checks["component-plugin-abi"].run()
         self.assertEqual(len(failures), 1)
-        self.assertTrue(failures[0].startswith("libr3.so") and "RAD_PLUGIN_ABI_LAYOUT_EXPORT" in failures[0])
+        self.assertTrue(failures[0].startswith("kernels/libr3.so") and "RAD_PLUGIN_ABI_LAYOUT_EXPORT" in failures[0])
 
     def test_plugin_layout_differing_from_libr4d_fails(self):
         checks = self.checks(layouts={"libr3.so": LAYOUT + 1})
         checks["components-build"].run()
         failures = checks["component-plugin-abi"].run()
         self.assertEqual(len(failures), 1)
-        self.assertTrue(failures[0].startswith("libr3.so") and "libr4d.so reports" in failures[0])
+        self.assertTrue(failures[0].startswith("kernels/libr3.so") and "libr4d.so reports" in failures[0])
 
     def test_reference_plugin_without_layout_refuses_to_judge(self):
         checks = self.checks(layouts={"libr4d.so": None})

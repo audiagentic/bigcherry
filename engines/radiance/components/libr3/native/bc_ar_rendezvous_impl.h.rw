@@ -1,0 +1,11 @@
+# gfx11 native include/engine settings on the rad0017-owned rendezvous hook.
+@@ find 1
+#include <condition_variable>
+#include <cstdio>
+@@ replace
+#include <algorithm>
+#include <chrono>
+#include <condition_variable>
+#include <cstdio>
+#include "bc_engine_settings.h"
+@@ end

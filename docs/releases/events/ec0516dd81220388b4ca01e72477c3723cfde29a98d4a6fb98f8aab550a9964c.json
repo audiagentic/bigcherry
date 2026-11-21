@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_060003_fixed-the-rdna3-attention-buil_3020",
+  "files": [
+    "engines/radiance/components/libr3/native/r4d_attn_paged_h256_gqa6.hip.rw",
+    "tools/tests/patch/test_radiance_rad0053_54.py"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Fixed the default gfx1100 native prefill rewrite for the local ABI44 typed KV layout. Paired exact anchors preserve the v1.17 call form and both plain and split ABI44 native/fallback launches forward 0, Layout. The rule preserves the source CAN_SPLIT gate for opt-in lossy QK/PV products. Exact rad0048\u201354 replay and common/native rewrite checks passed with no failures, and the selected generated H256/GQA6/page16 object compiled for gfx1100. Native generation on exact v1.17 production serving-core emitted byte-identical attention HIP with the original and updated rule, SHA-256 e293add9107f46684ae9f57808ae08146bdaa572464c38826729c8a8ba76cda2. No GPU execution.",
+  "timestamp-utc": "2026-11-19T06:00:03.733336Z",
+  "user-summary-candidate": "Fixed the RDNA3 attention build for the Radiance bump while preserving the current production prefill output. Rewrite and targeted compile checks passed."
+}

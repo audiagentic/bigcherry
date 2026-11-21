@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_214002_bring-mains-serving-and-measu_7761",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/configs/flashnext.toml",
+    "tools/lab/radiance/flashnext-parity.sh",
+    "tools/lab/radiance/flashnext_parity.py"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Integrate origin/main d611e7997 into the Radiance 2.1 candidate, retaining sealed manifest calibration evidence, launch argument capture, shared JSON dependency, FlashNext heat seed and explicit prefill interleave. Three focused serving tests and 18 parity harness tests passed.",
+  "timestamp-utc": "2026-11-19T21:40:02.044960Z",
+  "user-summary-candidate": "Bring main\u2019s serving and measurement changes into the Radiance bump candidate."
+}

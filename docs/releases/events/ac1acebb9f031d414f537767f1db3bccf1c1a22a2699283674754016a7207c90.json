@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_230217_radiance-releases-host-and-gpu_9113",
+  "files": [
+    "engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/patch.py",
+    "tools/tests/patch/test_vtp14_n3_shared_rendezvous.py",
+    "tools/tests/patch/fixtures/radiance_ar_allocation_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Own all-reduce allocation results as soon as they succeed. Reuse rank-local teardown for failures before peer publication and free an IPC allocation if its initial memset or synchronization fails. Verify the real initialization entry points with CPU fault injection for host and VRAM buffers.",
+  "timestamp-utc": "2026-11-19T23:02:17.887585Z",
+  "user-summary-candidate": "Radiance releases host and GPU memory when tensor-parallel all-reduce initialization fails before sharing its buffers."
+}

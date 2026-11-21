@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_033410_made-the-replay-guard-fixture_4814",
+  "files": [
+    "tools/tests/patch/test_radiance_rad0047.py"
+  ],
+  "plan-item-ids": [
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Removed the machine-local default from the candidate-source fixture. It now uses the explicit RADIANCE_CANDIDATE_SRC setting, derives from BC_WORK_ROOT when configured, and otherwise skips cleanly.",
+  "timestamp-utc": "2026-11-19T03:34:10.053209Z",
+  "user-summary-candidate": "Made the replay-guard fixture portable across workspaces while preserving its explicit-source test path.",
+  "validation": [
+    "Focused RUM08 fixture: 2 passed.",
+    "git diff --check passed."
+  ]
+}

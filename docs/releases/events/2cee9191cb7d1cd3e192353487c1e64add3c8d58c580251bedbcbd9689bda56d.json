@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_000543_allow-native-v3-serving-to-ret_5883",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Handle v3 measured writer exit 11 with a bounded owner-controlled repeat at the derived per-rank pool. Preserve the sealed native YAML and helper ownership, generate fresh attempt keys, publish only the converged result, and keep named replay bound to the original static selection and final measurement receipt.",
+  "timestamp-utc": "2026-11-20T00:05:43.874939Z",
+  "user-summary-candidate": "Allow native v3 serving to retry a memory measurement when it needs a different host pool."
+}

@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_005042_radiance-22-can-publish-flash_7838",
+  "files": [
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Declare and issue a separate group-128 FP8 input for managed MoE mailbox publication when the stock routed GEMM consumes another format. Preserve required activation handles and the stock scatter argument form.",
+  "timestamp-utc": "2026-11-20T00:50:42.724520Z",
+  "user-summary-candidate": "Radiance 2.2 can publish FlashNext MoE work to helpers while keeping the local routed path in int8."
+}

@@ -1,0 +1,18 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_073413_the-bump-records-now-clearly-d_3204",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM07.md",
+    "docs/planning/active/patching-radiance-upstream/RUM09.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM09/RV4245.md"
+  ],
+  "plan-item-ids": [
+    "RUM07",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Recorded the ABI44 production feature migration checkpoint, clarified the frozen ABI43 upstream input versus the ABI44 composed production candidate, and revised RUM09 to separate source/package promotion from the still-pending card-free runtime, hardware quality/performance, and install/relocate release gates. Closed review RV4245 after incorporating the plan correction.",
+  "timestamp-utc": "2026-11-19T07:34:13.192557Z",
+  "user-summary-candidate": "The bump records now clearly distinguish previously proven BigCherry feature behavior, new-base compatibility evidence, and the final runtime/performance checks still required before release."
+}

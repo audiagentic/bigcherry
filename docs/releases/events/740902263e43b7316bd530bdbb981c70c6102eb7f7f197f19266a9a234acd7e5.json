@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_113539_fixed-an-early-start-memory-ad_1095",
+  "files": [
+    "engines/radiance/components/serving/resources.cpp",
+    "engines/radiance/components/serving/resources.h",
+    "engines/radiance/components/serving/resources_parity_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added a fresh host-pool admission preflight for cache-miss measuring starts. Checked pool per TP rank, KV and reserve against current MemAvailable, cgroup and pin room before power admission or any process start. Added a TP3 session regression proving one-rank headroom is insufficient; retained zero as an explicit disabled-pool value.",
+  "timestamp-utc": "2026-11-19T11:35:39.089877Z",
+  "user-summary-candidate": "Fixed an early-start memory-admission gap: a measuring run now reserves the host pool for every engine rank using freshly detected host room before it can change power settings or start a child."
+}

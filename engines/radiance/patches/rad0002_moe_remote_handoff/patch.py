@@ -51,6 +51,8 @@ typedef struct BcMoeRemotePlugin {
     void (*poll)(void);
     void (*shutdown)(void);
     int (*capacity)(uint32_t parent_limit);
+    void (*finish_admission)(void);
+    int (*wait_finished)(int64_t timeout_ms);
 } BcMoeRemotePlugin;
 /* Register the plugin (NULL unregisters). Layer maps published before registration are replayed to it.
  * Returns 0, or -1 when struct_size does not match. */
@@ -78,6 +80,8 @@ int bc_moe_remote_cancel(BcMoeRemoteTicket ticket);
 int bc_moe_remote_host_done(BcMoeRemoteTicket ticket);
 void bc_moe_remote_poll(void);
 void bc_moe_remote_shutdown(void);
+int bc_moe_remote_finish_admission(void);
+int bc_moe_remote_wait_finished(int64_t timeout_ms);
 /* Per-release value handed explicitly from scheduler thread through the rank
  * barrier. The rank thread stores it in TLS for Ctx::run_pass to consume. */
 void bc_moe_remote_rank_ticket(BcMoeRemoteTicket ticket);
@@ -287,6 +291,24 @@ extern "C" void bc_moe_remote_shutdown(void) {
     }
     if (fn) fn();
 }
+extern "C" int bc_moe_remote_finish_admission(void) {
+    void (*fn)() = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        fn = g_plugin.finish_admission;
+    }
+    if (!fn) return 0;
+    fn();
+    return 1;
+}
+extern "C" int bc_moe_remote_wait_finished(int64_t timeout_ms) {
+    int (*fn)(int64_t) = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(g_mu);
+        fn = g_plugin.wait_finished;
+    }
+    return fn ? fn(timeout_ms) : -1;
+}
 static thread_local BcMoeRemoteTicket g_rank_ticket{};
 extern "C" void bc_moe_remote_rank_ticket(BcMoeRemoteTicket t) { g_rank_ticket = t; }
 extern "C" BcMoeRemoteTicket bc_moe_remote_current_ticket(void) { return g_rank_ticket; }
@@ -345,10 +367,12 @@ _BC_MOE_REMOTE_ENGINE_H = r"""/* Scheduler/rank admission bridge. Scheduler chan
 #pragma once
 #include "bc_moe_remote.h"
 #include "device/device.h"
+#include <atomic>
 
 class BcMoeRemoteAdmission {
     BcMoeRemoteTicket current_{}, ahead_{}, issued_{};
     int ahead_status_ = 0;
+    std::atomic<bool> finishing_{false}, stepper_finished_{false};
 public:
     // Engine::step_loop holds one scalar ahead batch, not a queue.
     static constexpr uint32_t kIssueAheadDepth = 1;
@@ -359,7 +383,8 @@ public:
             current_ = ahead_;
             ahead_ = {};
         } else {
-            if (bc_moe_remote_admit(&current_, 0, ranks) < 0) return RAD_E_STATE;
+            const int admission = bc_moe_remote_admit(&current_, 0, ranks);
+            if (admission != 0) return admission < 0 ? RAD_E_STATE : admission;
             b = scheduler.step();
             if (!b) {
                 if (bc_moe_remote_cancel(current_) < 0) return RAD_E_STATE;
@@ -403,6 +428,14 @@ public:
         return RAD_OK;
     }
     int host_done() { return bc_moe_remote_host_done(current_); }
+    bool finish() {
+        if (!bc_moe_remote_finish_admission()) return false;
+        finishing_.store(true, std::memory_order_release);
+        return true;
+    }
+    bool finishing() const { return finishing_.load(std::memory_order_acquire); }
+    bool stepper_finished() const { return stepper_finished_.load(std::memory_order_acquire); }
+    void note_stepper_finished() { stepper_finished_.store(true, std::memory_order_release); }
 };
 """
 
@@ -525,6 +558,8 @@ inline bool bc_moe_remote_hc_open(int64_t moe_top_k, const Geom& g, int64_t T, i
 struct BcMoeRemote {
     /* publish_fused: the same op for a step whose helper rows join the fused gather (param fused = 1: no combine) */
     rad_op publish = 0, publish_fused = 0, add = 0, inject = 0;
+    rad_op quantize = 0;
+    rad_buf aq = 0, as = 0;
 
     /* The step `T` is handed off (shadow keeps the local path and only publishes). */
     bool policy(int64_t T) const { return publish && add && bc_moe_remote_wanted(T); }
@@ -549,9 +584,46 @@ struct BcMoeRemote {
         return m.ar_out_take != kArOutNorm && active(T) && !fused(m, T);
     }
 
-    /* Block declare, after the quantised experts' order `reg` is final: publish the layer's runtime slot map,
-     * and declare the two mailbox ops when the step gate admits any step. The gate comes from libr3moe, so an
-     * absent op while the gate is open is an error, never a silent local fallback. */
+    /* Keep mailbox-only buffers beside their first use in the declared graph. The helpers
+     * consume group-128 E4M3, even when the local grouped GEMM uses rotated int8. */
+    template <class Moe>
+    int declare_publish(RadBuilder* b, const Moe& m, int layer, Names* materialize = nullptr) {
+        const auto& c = m.c;
+        const auto& g = m.g;
+        const auto& w = m.w;
+        if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
+        aq = c.expert_rot ? w.hr.q : w.h.q;
+        as = c.expert_rot ? w.hr.s : w.h.s;
+        if (materialize) {
+            aq = decl_b(b, materialize->f("blk.%d.moe_mailbox.q", layer), RAD_F8E4M3, {g.max_tok, g.n_embd});
+            as = decl_b(b, materialize->f("blk.%d.moe_mailbox.s", layer), RAD_F32,
+                        {g.max_tok, g.n_embd / RAD_FP8_BLOCK});
+            if (aq && as && g.n_embd % RAD_FP8_BLOCK == 0)
+                quantize = rw(b, RAD_OP(b, c.expert_rot ? "had_quant_act_fp8" : "quant_act_fp8",
+                               RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                          RAD_INT("group", RAD_FP8_BLOCK), RAD_STR("dtype", g.dtype)),
+                               RAD_NOWEIGHTS),
+                              {w.h.x}, {aq, as});
+        }
+        if (!aq || !as || (materialize && !quantize)) {
+            std::fprintf(stderr, "radiance: MoE remote hand-off is missing the required E4M3 activation "
+                         "planes or quantizer at layer %d\n", layer);
+            return RAD_E_INVAL;
+        }
+        for (int f = 0; f < 2; ++f)
+            (f ? publish_fused : publish) =
+                rw(b, RAD_OP(b, "moe_mailbox_publish",
+                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
+                                        RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
+                                        RAD_INT("expert_base", c.expert_base),
+                                        RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
+                             RAD_NOWEIGHTS),
+                   {w.ids, w.ew, w.h.x, aq, as}, {w.ids});
+        return publish && publish_fused ? RAD_OK : RAD_E_INVAL;
+    }
+
+    /* Publish the final runtime slot map and declare merge operators. Legacy graphs without
+     * independent int8 input planes declare their publish operators here as well. */
     template <class Moe>
     int declare(RadBuilder* b, const Moe& m, const std::vector<int64_t>& reg, int layer) {
         const auto& c = m.c;
@@ -564,17 +636,7 @@ struct BcMoeRemote {
         bc_moe_remote_layer_map(layer, (int)ne, slot.data());
 
         if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
-        const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
-        const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
-        for (int f = 0; f < 2; ++f)
-            (f ? publish_fused : publish) =
-                rw(b, RAD_OP(b, "moe_mailbox_publish",
-                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
-                                        RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
-                                        RAD_INT("expert_base", c.expert_base),
-                                        RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
-                             RAD_NOWEIGHTS),
-                   {w.ids, w.ew, w.h.x, q, s, q}, {w.ids});
+        if (!publish && declare_publish(b, m, layer) < 0) return RAD_E_INVAL;
         add = RAD_OP(b, "moe_mailbox_add",
                      RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
                      RAD_NOWEIGHTS);
@@ -597,7 +659,7 @@ struct BcMoeRemote {
         if (!publish || !publish_fused || !add || !inject) {
             std::fprintf(stderr, "radiance: MoE remote hand-off is on but its mailbox ops are not declared at layer "
                          "%d (publish %d/%d merge %d inject %d; q %d s %d rot %d); is libr3moe loaded?\n", layer,
-                         publish != 0, publish_fused != 0, add != 0, inject != 0, q != 0, s != 0, (int)c.expert_rot);
+                         publish != 0, publish_fused != 0, add != 0, inject != 0, aq != 0, as != 0, (int)c.expert_rot);
             return RAD_E_INVAL;
         }
         return RAD_OK;
@@ -607,22 +669,29 @@ struct BcMoeRemote {
      * the helper-owned routes are masked out of the local sort. In mask-only (diagnostic) the publish comes
      * later, from the diagnostic hook. */
     template <class Moe>
-    void after_route(RadCtx* c_, const Moe& m, int64_t T, int64_t r0, int64_t rows, const RadOperand& ecnt) const {
+    void after_route(RadCtx* c_, const Moe& m, int64_t T, int64_t r0, int64_t rows, const RadOperand& ecnt,
+                     const RadOperand& inv = RAD_NONE) const {
         if (!policy(T) || bc_moe_remote_mask_only()) return;
         const auto& c = m.c;
         const auto& g = m.g;
         const auto& w = m.w;
         const int64_t k = c.top_k;
-        const rad_buf q = c.expert_rot ? w.hr.q : w.h.q;
-        const rad_buf s = c.expert_rot ? w.hr.s : w.h.s;
+        if (quantize)
+            RAD_ISSUE_N(c_, quantize, rows, brow_slice(w.h.x, r0, rows, g.n_embd),
+                        brow_slice(aq, r0, rows, g.n_embd),
+                        brow_slice(as, r0, rows, g.n_embd / RAD_FP8_BLOCK));
         RAD_ISSUE_N(c_, fused(m, T) ? publish_fused : publish, rows,
                     brow_slice(w.ids, r0, rows, k),
                     brow_slice(w.ew, r0, rows, k),
                     brow_slice(w.h.x, r0, rows, g.n_embd),
-                    brow_slice(q, r0, rows, g.n_embd),
-                    brow_slice(s, r0, rows, g.n_embd / RAD_FP8_BLOCK),
-                    brows(q, T));
-        if (active(T))
+                    brow_slice(aq, r0, rows, g.n_embd),
+                    brow_slice(as, r0, rows, g.n_embd / RAD_FP8_BLOCK),
+                    brows(aq, T));
+        if (!active(T)) return;
+        if (inv.kind != RAD_OPK_NONE)
+            RAD_ISSUE_N(c_, m.op_scatter, rows, brow_slice(w.ids, r0, rows, k),
+                        brows(w.sorted, rows * k), brows(w.eoff, c.n_expert + 1), ecnt, inv);
+        else
             RAD_ISSUE_N(c_, m.op_scatter, rows, brow_slice(w.ids, r0, rows, k),
                         brows(w.sorted, rows * k), brows(w.eoff, c.n_expert + 1), ecnt);
     }
@@ -751,7 +820,34 @@ PATCHES = (
                 rationale="The end of the residual add declaration: reg[] (the runtime slots) is final and the gathered output buffers exist.",
             ),
             Edit(
+                id="bc-remote-declare-publish",
+                anchor=r"^    if \(!gin_q \|\| !gin_s \|\| g\.n_embd % gin_g\) return RAD_E_INVAL;$",
+                text=(
+                    "\n    RAD_ARCH_TRY(bc_remote.declare_publish(b, *this, l,"
+                    "\n        (c.expert_rot ? gin_q != w.hr.q || gin_s != w.hr.s"
+                    "\n                      : gin_q != w.h.q || gin_s != w.h.s) ? &nm : nullptr));"
+                ),
+                guard=r"RAD_ARCH_TRY\(bc_remote\.declare_publish\(b, \*this, l,",
+                applies_if=r"rad_buf gin_q = 0, gin_s = 0;",
+                expect_matches=1,
+                rationale="Declare scratch and publish at their issue position, with a separate E4M3 pair when the local pair differs.",
+            ),
+            Edit(
+                id="bc-remote-after-route-inverse",
+                anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
+                mode="insert_before",
+                text=(
+                    "    bc_remote.after_route(c_, *this, T, r0, rows, ecnt,\n"
+                    "                          scatter_inv ? brows(w.inv, rows * k) : RAD_NONE);\n"
+                ),
+                guard=r"bc_remote\.after_route\(c_, \*this, T, r0, rows, ecnt,",
+                applies_if=r"bool[ \t]+scatter_inv = false",
+                expect_matches=1,
+                rationale="The remasked scatter must write the same inverse slot table as the original scatter.",
+            ),
+            Edit(
                 id="bc-remote-after-route",
+                applies_if=r"\A(?![\s\S]*bool[ \t]+scatter_inv = false)",
                 anchor=r"^[ \t]*const int64_t n4\[4\] = \{",
                 mode="insert_before",
                 text="    bc_remote.after_route(c_, *this, T, r0, rows, ecnt);\n",
@@ -941,11 +1037,13 @@ PATCHES = (
             ),
             Edit(
                 id="bc-remote-ahead-try-admit",
-                anchor=r"^    if \(!pipelining_\) return RAD_OK;$",
-                text="\n    if (!bc_remote_admission_.try_ahead((int)ranks_.size())) return bc_remote_admission_.ahead_status();",
+                anchor=r"^    for \(int i = 0; i < serial_rows_ && serial_done_ > 0; \+\+i\)$",
+                mode="insert_before",
+                text=("    if (bc_remote_admission_.finishing()) return RAD_OK;\n"
+                      "    if (!bc_remote_admission_.try_ahead((int)ranks_.size())) return bc_remote_admission_.ahead_status();\n"),
                 guard=r"bc_remote_admission_\.try_ahead\(",
                 expect_matches=1,
-                rationale="Nonblocking call before step_next, advance_all and prepare_release.",
+                rationale="Reserve only after upstream's flex/quiet early exits and before expect_draft or step_next mutates scheduler state.",
             ),
             Edit(
                 id="bc-remote-ahead-bind",
@@ -960,7 +1058,9 @@ PATCHES = (
                 id="bc-remote-scheduler-admit",
                 anchor=r"^        if \(issued\) sched_\.promote_next\(\);\n        else        b = sched_\.step\(\);$",
                 mode="replace",
-                text="        if (bc_remote_admission_.step(issued, b, sched_, (int)ranks_.size()) < 0) return fail_loop(RAD_E_STATE);",
+                text=("        const int bc_remote_status = bc_remote_admission_.step(issued, b, sched_, (int)ranks_.size());\n"
+                      "        if (bc_remote_status < 0) return fail_loop(RAD_E_STATE);\n"
+                      "        if (bc_remote_status > 0) break;"),
                 guard=r"bc_remote_admission_\.step\(issued, b, sched_,",
                 expect_matches=1,
                 rationale="Admission precedes scheduler mutation, checkpoint restore and prepare_release.",
@@ -983,13 +1083,69 @@ PATCHES = (
                 rationale="Host completion only after finish_block_drafter/finish_serial_drafter returns.",
             ),
             Edit(
-                id="bc-remote-shutdown-interrupt",
-                anchor=r"^    stopping_\.store\(true, std::memory_order_release\);$",
+                id="bc-remote-fault-interrupt",
+                anchor=r"^int Engine::fail_loop\(int st\) \{$",
+                text="\n    bc_moe_remote_shutdown();",
+                guard=r"^int Engine::fail_loop\(int st\) \{\n    bc_moe_remote_shutdown\(\);$",
+                expect_matches=1,
+                rationale="Fault shutdown interrupts the admission and completion waiters immediately.",
+            ),
+            Edit(
+                id="bc-remote-finish-issued-ahead",
+                anchor=r"^    while \(!stopping_\.load\(std::memory_order_acquire\)\) \{\n        step_watch\.progress\(\);$",
+                mode="replace",
+                text=("    while (!stopping_.load(std::memory_order_acquire) && (ahead || !bc_remote_admission_.finishing())) {\n"
+                      "        step_watch.progress();"),
+                guard=r"ahead \|\| !bc_remote_admission_\.finishing\(\)",
+                expect_matches=1,
+                rationale="A clean stop finishes the already-issued batch without starting a new parent.",
+            ),
+            Edit(
+                id="bc-remote-note-stepper-finished",
+                anchor=r"^        if \(gen_\) gen_loop\(\); else step_loop\(\);$",
+                text="\n        bc_remote_admission_.note_stepper_finished();",
+                guard=r"bc_remote_admission_\.note_stepper_finished\(\);",
+                applies_if=r"front_->detach\(cfg_\.served_model_name",
+                expect_matches=1,
+                rationale="Let the live Server frame wait for the stepper before rank teardown.",
+            ),
+            Edit(
+                id="bc-remote-finish-before-server-destruction",
+                anchor=r"^    srv\.retire\(\);\n    if \(live\) live->stop\(\);\n    const int st = loop_status_\.load\(std::memory_order_acquire\);$",
+                mode="insert_before",
+                text="""    if (!gen_ && loop_status_.load(std::memory_order_acquire) >= 0 &&
+        bc_remote_admission_.finish()) {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
+        while (!bc_remote_admission_.stepper_finished()) {
+            if (std::chrono::steady_clock::now() >= deadline) {
+                bc_moe_remote_shutdown();
+                fatal("model %s: remote MoE stepper did not finish within its shutdown deadline",
+                      cfg_.served_model_name.c_str());
+            }
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        }
+        const int stepper_status = loop_status_.load(std::memory_order_acquire);
+        if (stepper_status < 0) return stepper_status;
+        const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
+            deadline - std::chrono::steady_clock::now()).count();
+        if (bc_moe_remote_wait_finished(std::max<int64_t>(0, remaining)) < 0)
+            return fail_loop(RAD_E_STATE);
+        bc_moe_remote_engine_idle();
+    }
+""",
+                guard=r"bc_moe_remote_wait_finished\(std::max<int64_t>",
+                applies_if=r"front_->detach\(cfg_\.served_model_name",
+                expect_matches=1,
+                rationale="Use the bound parents' existing terminal proof before server and rank teardown.",
+            ),
+            Edit(
+                id="bc-remote-after-server-interrupt",
+                anchor=r"^    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);$",
                 mode="insert_before",
                 text="    bc_moe_remote_shutdown();\n",
-                guard=r"bc_moe_remote_shutdown\(\);",
-                expect_matches=2,
-                rationale="Both fault and normal shutdown wake admission/drain before joining stepper.",
+                guard=r"bc_moe_remote_shutdown\(\);\n    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);",
+                expect_matches=1,
+                rationale="Wake remaining waits only after the clean server drain or error stop path.",
             ),
             Edit(
                 id="include-bc-moe-remote-engine",
@@ -1015,6 +1171,30 @@ PATCHES = (
                 guard=r"bc_moe_remote_engine_step\(\);",
                 expect_matches=1,
                 rationale="The loop resets its idle backoff exactly when the scheduler returned a step, before the ranks are released or any recorded pass is replayed.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="tests/arch_fakes.h",
+        edits=(
+            Edit(
+                id="bc-remote-arch-fakes",
+                anchor=r'^#include "rad_runtime\.h"$',
+                mode="insert_after",
+                text='''
+
+#include "bc_moe_remote.h"
+
+/* Architecture fixtures run without a remote helper or the engine core. */
+extern "C" int bc_moe_remote_wanted(int64_t) { return 0; }
+extern "C" int bc_moe_remote_wanted_upto(int64_t) { return 0; }
+extern "C" int bc_moe_remote_shadow(void) { return 0; }
+extern "C" int bc_moe_remote_mask_only(void) { return 0; }
+extern "C" void bc_moe_remote_layer_map(int, int, const int32_t*) {}
+''',
+                guard=r'extern "C" int bc_moe_remote_wanted\(int64_t\)',
+                expect_matches=1,
+                rationale="Standalone architecture tests fake core entry points and declare no remote handoff.",
             ),
         ),
     ),

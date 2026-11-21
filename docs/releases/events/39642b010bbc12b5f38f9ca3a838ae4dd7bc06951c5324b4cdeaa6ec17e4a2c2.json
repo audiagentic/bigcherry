@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_142001_hardened-the-native-inspection_4629",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/session_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Hardened native inspection into a typed NativeConfigInspection projection. Enforced exact report field sets, matched ABI, typed arrays and admission ranges; tested explicit environment overlay against inherited RADIANCE_HOME/RADIANCE_KERNELS contamination. Negative session tests now assert the exact digest and malformed-card refusal diagnostics, child reaping, and no power/engine start.",
+  "timestamp-utc": "2026-11-19T14:20:01.201809Z",
+  "user-summary-candidate": "Hardened the native inspection result so planner code receives validated typed admission fields. Card-free tests prove environment overrides and fail-closed behavior for a wrong snapshot digest and malformed card ordinals."
+}

@@ -1,0 +1,15 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_103807_added-regression-coverage-for_2467",
+  "files": [
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Strengthened the real session-owner planner admission fixture to use production bc-serve named-cache inputs, create synthetic S8 replay evidence, and verify the stored named manifest's chunked identity on successful miss/hit runs while confirming partial power admission publishes no cache index. Rebuilt and passed bc_serving_test.",
+  "timestamp-utc": "2026-11-19T10:38:07.917792Z",
+  "user-summary-candidate": "Added regression coverage for planner-produced named manifest cache identity and partial-admission refusal."
+}

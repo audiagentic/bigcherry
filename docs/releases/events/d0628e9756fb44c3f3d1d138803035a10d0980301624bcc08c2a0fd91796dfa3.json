@@ -1,0 +1,14 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_122726_verified-that-both-restored-he_3927",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The exact rad0046 patch apply/replay passed on the frozen ABI43 candidate. The focused `r3_moe_worker` target built, and an isolated `R3_ONLY` libr3 plugin build compiled the restored quantizer and grouped MoE HIP units with the candidate SDK. A no-GPU dlopen probe confirmed `had_quant_act_fp8` / `had_quant_act_fp8` and `moe_gemm_fp8a8` / `moe_gemm_q` are both present with live launch callbacks after libr3 row filtering. This was ABI43 source composition; rad0046 remains untested in package metadata until the same row/build gate is repeated against the composed ABI44 source. Numerical/hardware activation remains RUM09.",
+  "timestamp-utc": "2026-11-19T12:27:26.331924Z",
+  "user-summary-candidate": "Verified that both restored helper rows compile and remain available through the candidate libr3 plugin registry, without GPU execution. This is an ABI43 checkpoint; the required ABI44 repeat and later numerical qualification remain open."
+}

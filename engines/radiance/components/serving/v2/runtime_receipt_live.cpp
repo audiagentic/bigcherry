@@ -3,7 +3,7 @@
 // run-bound receipt. Never linked to production bc-serve or the v1 worker.
 #include "v2/runtime_receipt.h"
 #include "v2/strict_json.h"
-#include "generated/v2/serving_codec.h"
+#include "serving_codec.h"
 #include "jcs.h"
 
 #include <cerrno>

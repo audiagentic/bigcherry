@@ -7,6 +7,7 @@
 #include "live_policy.h"
 #include "lab_trace_experiment.h"
 #include "owner_map.h"
+#include "plan_cache.h"
 #include "serving_codec.h"
 #include "sha256.h"
 #include "third_party/toml.hpp"
@@ -164,7 +165,8 @@ Json resources_of(const ManifestInputs& in, const Json& calibration) {
     const bool has_helpers = !in.resolved.manifest.at("process_helpers").empty();
     if ((has_helpers && in.measured->plan.resident.helpers_mib == 0) || in.measured->plan.resident.engine_mib == 0)
         fail("the measured plan has no resident host memory of the helpers and the engine: measure it again");
-    // radiance pins --host-pool-mib once per rank (engine_bringup.cpp: "is pinned once per rank"), so a TP engine holds tp pools.
+    // The manifest pool is per rank; Radiance 2.1's CLI takes its aggregate, while the launch adapter preserves this value after parsing.
+    // Account for the physical pool once per engine rank before power/helper startup.
     const uint64_t ranks = in.resolved.values.at("engine").at("tp").get<uint64_t>();
     li.consumers.push_back({"host_pool", ranks * mem.at("host_pool_mib").get<uint64_t>() * kMiB, Residence::pinned,
                             "resources.host.pool_mib x engine.tp (the launcher's pool; the engine pins it once per rank at start)",
@@ -364,11 +366,13 @@ Json provenance_of(const ManifestInputs& in, const Json& derived_policy_provenan
         if (engine_only && (pointer.rfind("/spec/handoff", 0) == 0 || pointer.rfind("/spec/processes/helper_common", 0) == 0)) continue;
         const Json& rp = r.provenance.at(key);
         const std::string origin = rp.at("origin").get<std::string>();
-        if (origin != "cli" && origin != "site" && origin != "profile") continue;
+        if (origin != "cli" && origin != "site" && origin != "profile" && origin != "native") continue;
         const Json* base = covering(p, pointer);
         if (!base) continue;
-        p[pointer] = record(origin.c_str(), rp.at("source").get<std::string>().c_str(), base->at("class").get<std::string>().c_str(),
-                            "exact");
+        p[pointer] = record(origin == "native" ? "detected" : origin.c_str(),
+                            rp.at("source").get<std::string>().c_str(),
+                            base->at("class").get<std::string>().c_str(), "exact",
+                            origin == "native" ? Json::array({"/spec/native_config"}) : Json::array());
     }
     return p;
 }
@@ -403,6 +407,23 @@ std::string new_instance_id() {
 std::string file_sha256(const fs::path& file) { return sha256_hex(slurp(file)); }
 
 BuiltManifest build_manifest(const ManifestInputs& in) {
+    if (!in.native_config)
+        fail("the serving manifest requires an admitted native fleet YAML snapshot");
+    if (in.measured) {
+        const auto& key = in.measured->key_inputs;
+        if (!key.is_object() || !in.measured->plan.owner || in.engine_binary.empty())
+            fail("the native measured plan is missing its exact key or owner measurement receipt");
+        const std::string model_id = container_identity(in.resolved.values.at("engine").at("model").get<std::string>());
+        const fs::path home = in.resolved.values.at("engine").at("radiance_home").get<std::string>();
+        const std::string build_id = engine_identity(in.engine_binary, home);
+        const Json expected = plan_key_inputs(in.resolved.values, in.resolved.facts,
+                                              model_id, build_id, in.plan_engine_args, &*in.native_config);
+        if (key != expected)
+            fail("the measured plan key differs from the resolved native YAML, root or ordered device identity");
+        if (in.measured->plan.key != plan_key(key))
+            fail("the cached native measured plan key does not match its key inputs");
+    }
+
     const Json& values = in.resolved.values;
     const Json calibration = calibration_entries(in.resolved, in.calibration_cache);
     const std::string model = values.at("engine").at("model");
@@ -482,11 +503,22 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         if (in.profile != "lab") fail("an experiment needs the lab profile");
         spec["experiment"] = in.experiment;
     }
+    Json provenance = provenance_of(in, derived_provenance, engine_only);
+    if (in.native_config && in.measured && in.resolved.provenance.contains("engine.ngram_placement") &&
+        in.resolved.provenance.at("engine.ngram_placement").value("origin", "") == "derived")
+        provenance["/spec/processes/engine/execution/ngram_placement"] =
+            record("derived", "native --plan-memory resolved n-gram tier (rad0011 rank receipt)",
+                   "policy", "measured", Json::array({"/spec/plan/engine_memory/expected",
+                                                     "/spec/native_config"}));
+    if (in.native_config) {
+        spec["native_config"] = in.native_config->manifest_field();
+        provenance["/spec/native_config"] = record("detected", "admitted native fleet YAML", "fact", "exact");
+    }
     Json doc = {{"apiVersion", v2::kApiVersion}, {"kind", v2::kKind},
                 {"metadata",
                  {{"instance_id", in.instance_id}, {"producer", {{"name", "bc-serve"}, {"build_sha256", in.producer_sha256}}},
                   {"contract_version", v2::kContractVersion}, {"content_digest", "sha256:" + sha_hex_of_zero()}}},
-                {"spec", std::move(spec)}, {"provenance", provenance_of(in, derived_provenance, engine_only)}};
+                {"spec", std::move(spec)}, {"provenance", std::move(provenance)}};
 
     // The owner map is the planner's answer for the placement this very document declares: decode a draft with an empty
     // map, ask the shared planner (the policies come from the draft), write its sets and digests into the document.

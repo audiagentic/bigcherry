@@ -1,6 +1,6 @@
 """VTP14 N1 (rad0016): per-rank kernel code eligibility and --rank-devices, as a managed source patch.
 
-Card-free. The contract tests run everywhere. The pinned-source test applies the patch to real radiance v1.17.0 when
+Card-free. The contract tests run everywhere. The pinned-source test applies the patch to real the pinned Radiance source when
 a radiance checkout carrying that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance) and is skipped
 otherwise; it is what catches anchor drift against upstream, which a fixture built from the patch's own anchors cannot.
 The C++ behaviour (refusals, per-rank selection, legacy path unchanged) is tested by tests/bc_rank_devices_test.cpp,
@@ -21,11 +21,11 @@ REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import assert_focal_guards_unique, assert_promoted_recipe, load_patch_files, patched_pinned_source
+from _vtp_promotion_support import (CANDIDATE_COMMIT, assert_focal_guards_unique, assert_promoted_recipe,
+                                   load_patch_files, patched_pinned_source)
 
 PACKAGE = REPO / "engines/radiance/patches/rad0016_vtp14_rank_code_selection"
-PIN = "v1.17.0"
-PIN_COMMIT = "19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d"
+PIN = CANDIDATE_COMMIT
 
 
 def patch_files():
@@ -46,7 +46,7 @@ def radiance_checkout() -> Path | None:
             continue
         r = subprocess.run(["git", "-C", c, "rev-parse", "--verify", "-q", PIN + "^{commit}"],
                            capture_output=True, text=True)
-        if r.returncode == 0 and r.stdout.strip() == PIN_COMMIT:
+        if r.returncode == 0:
             return Path(c)
     return None
 
@@ -127,7 +127,7 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
     def test_applies_to_pinned_radiance_source(self):
         checkout = radiance_checkout()
         if checkout is None:
-            self.skipTest(f"no radiance checkout with {PIN} ({PIN_COMMIT[:8]}); set RADIANCE_SRC")
+            self.skipTest(f"no radiance checkout with {PIN}; set RADIANCE_SRC")
         with patched_pinned_source(checkout, PACKAGE.name) as root:
             engine = (root / "core/engine_bringup.cpp").read_text()
             loader = (root / "core/plugin/loader.cpp").read_text()
@@ -135,8 +135,8 @@ class NativeRankCodeEligibilityTests(unittest.TestCase):
             # Inert without the flag: the upstream calls survive on the legacy branch.
             self.assertIn("rad_tools_registry().set_code_device(devs[0]);", engine)
             self.assertIn("rad_gate_reference_kernels(ranks_[0]->program", engine)
-            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, code_device_, &why) == 0", loader)
-            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, code_devices_[i], &why_i)", loader)
+            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, set_->code_device, &why) == 0", loader)
+            self.assertIn("rad::dev_code_runs(s.code_from, s.code_to, set_->code_devices[i], &why_i)", loader)
             self.assertIn("if (need && (r->code_ranks & need) != need)", select)
             self.assertIn("bc_rank_collectives_agree(colls, &why)", engine)
 

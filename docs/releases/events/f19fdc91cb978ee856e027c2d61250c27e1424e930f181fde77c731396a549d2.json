@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_222413_carry-disjoint-remote-helpers_2641",
+  "files": [
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reuse measured helper lifecycle for native v3 fresh serving, validate disjoint ordered BDFs, drain measuring workers and verify VRAM release, then launch from sealed measured manifest. Card-free v3 1/1, v2 2/2 and focused patch fixtures 14/14 passed.",
+  "timestamp-utc": "2026-11-19T22:24:13.610447Z",
+  "user-summary-candidate": "Carry disjoint remote helpers through native v3 measurement and fresh startup."
+}

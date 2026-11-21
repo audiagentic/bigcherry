@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_094001_fixed-test-registration-orderi_2997",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/tests/fixtures/4a61d72/tests/CMakeLists.txt",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Registered bc_native_fleet_config_test in tests/CMakeLists because core/CMakeLists is configured before top-level enable_testing; the target builds in core but add_test there was silently absent from CTestTestfile. Updated exact 4a61 fixture and pinned output hashes. Applied the changed rad0009 core/test CMake edits to an isolated copy of pinned upstream 3deabdaeca17b58bad90d332f4b204cf7bb8a10e, configured and built bc_native_fleet_config_test against rad_core plus current serving sources, and CTest discovered and passed 1/1. Patch package suite passed 11 tests.",
+  "timestamp-utc": "2026-11-19T09:40:01.383913Z",
+  "user-summary-candidate": "Fixed test registration ordering and verified the native YAML parser test on the pinned Radiance source."
+}

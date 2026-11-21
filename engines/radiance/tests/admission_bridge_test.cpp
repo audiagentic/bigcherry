@@ -6,17 +6,19 @@
 
 static uint64_t sequence = 0, cancelled = 0, host = 0;
 static uint32_t epoch = 7;
-static bool closed = false, fault = false, reject_cancel = false;
+static bool closed = false, finishing = false, fault = false, reject_cancel = false;
 static std::vector<uint64_t> terminal;
 
 extern "C" int bc_moe_remote_admit(BcMoeRemoteTicket* out, int try_only, int ranks) {
     assert(ranks == 2);
     *out = {};
     if (fault) return -1;
+    if (finishing) return 1;
     if (closed) { assert(try_only); return 1; }
     *out = BcMoeRemoteTicket{epoch, uint8_t(epoch % 2), {}, ++sequence};
     return 0;
 }
+extern "C" int bc_moe_remote_finish_admission() { finishing = true; return 1; }
 extern "C" int bc_moe_remote_bind(BcMoeRemoteTicket t, int64_t step) {
     assert(t.ticket_id && step >= 40); // scheduler IDs are unrelated to tickets
     return 0;
@@ -90,4 +92,16 @@ int main() {
     assert(bridge.step(false, b, scheduler, 2) < 0);
     reject_cancel = false;
     assert(bridge.step(false, b, scheduler, 2) == 0 && bridge.issued_ticket().ticket_id == 0); // accepted cancel
+
+    scheduler.empty = false;
+    assert(bridge.step(false, b, scheduler, 2) == 0 && bridge.try_ahead(2));
+    assert(bridge.bind_ahead(&next) == 0);
+    const auto issued = bridge.issued_ticket().ticket_id;
+    const auto steps_before_stop = scheduler.steps;
+    assert(bridge.finish() && bridge.finishing());
+    assert(bridge.seal(ranks) == 0 && bridge.host_done() == 0 && host < issued);
+    b = &next;
+    assert(bridge.step(true, b, scheduler, 2) == 0 && bridge.issued_ticket().ticket_id == issued);
+    assert(bridge.seal(ranks) == 0 && bridge.host_done() == 0 && host == issued);
+    assert(bridge.step(false, b, scheduler, 2) > 0 && scheduler.steps == steps_before_stop);
 }

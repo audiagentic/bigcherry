@@ -50,9 +50,3 @@
 @@ replace
     const bool full = ((uint32_t)N % fm == 0) &&   // libr3: tokens are always guarded, so M may be ragged
 @@ end
-
-@@ find 1
-    const bool full = ((uint32_t)M % (nt * 16u) == 0) && (K % (int)kBlock == 0);
-@@ replace
-    const bool full = (K % (int)kBlock == 0);   // libr3: tokens are always guarded, so M may be ragged
-@@ end

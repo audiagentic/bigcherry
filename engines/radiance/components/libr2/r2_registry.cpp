@@ -11,6 +11,7 @@ int r4d_up_kernel_count(void);
 const RadKernelInfo* r4d_up_kernel_at(int i);
 int r4d_up_kernel_concurrent(int i);
 int r4d_up_kernel_collective(int i);
+int r4d_up_kernel_chain(int i);
 const RadPluginInfo* r4d_up_plugin_info(void);
 extern const char r3_stub_begin[];
 extern const char r3_stub_end[];
@@ -59,6 +60,13 @@ extern "C" int rad_kernel_concurrent(int i) {
     const auto& rows = live();
     if (i < 0 || i >= static_cast<int>(rows.size()) || rows[i].custom) return 0;
     return r4d_up_kernel_concurrent(rows[i].upstream);
+}
+// Chaining is row-indexed like concurrency. Preserve the upstream distinction between a
+// chained row (1) and a row whose device wait supplies the acquire fence (2).
+extern "C" int rad_kernel_chain(int i) {
+    const auto& rows = live();
+    if (i < 0 || i >= static_cast<int>(rows.size()) || rows[i].custom) return 0;
+    return r4d_up_kernel_chain(rows[i].upstream);
 }
 // ABI 17 (rad_abi.h, RadKernelCollectiveFn): the engine indexes this library's live table, so the answer is mapped
 // from the live index to the upstream index like rad_kernel_concurrent. 1 is forwarded as 1; 2 (the row ends the

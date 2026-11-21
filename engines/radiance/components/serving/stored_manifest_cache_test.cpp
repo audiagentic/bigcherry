@@ -5,6 +5,7 @@
 #include "stored_manifest_cache.h"
 
 #include <cassert>
+#include <array>
 #include <cstdlib>
 #include <filesystem>
 #include <fstream>
@@ -97,11 +98,18 @@ int main() {
         const fs::path model = t.root / "model.bin";
         const fs::path saved = t.root / "manifest-record.json";
         const fs::path index = ss::stored_index_path(t.root, "fixture");
+        const fs::path work_root = t.root / "work";
+        fs::create_directory(work_root);
+        const fs::path another_run = work_root / "runs" / "new-start";
+        fs::create_directories(another_run);
+        const fs::path new_index = ss::stored_index_path(another_run, "different-config");
         // More than one block: changing weights past any header/table must
         // invalidate a complete artifact identity, without loading it all.
         std::string contents((2U * 1024U * 1024U) + 5U, 'm');
         write(model, contents);
         const std::string first = ss::complete_file_identity(model);
+        expect(first == ss::complete_file_identity_bytes(contents),
+               "identity from authenticated multi-megabyte bytes must match the streamed path identity");
         // Compare with the original chunk-accumulator wire digest, not a new
         // similarly named hash; persisted static keys must remain compatible.
         std::string old_accumulator = "bigcherry/rsc12/chunked-file-v1\n";
@@ -163,28 +171,105 @@ int main() {
         s = base();
 
         write(saved, "unchanged strict-v2 manifest bytes\n");
-        const std::string digest = ss::complete_file_identity(saved);
-        // RED P2-6: the actual config-index writer stores a full model digest
-        // keyed by stat identity, and the replay lookup must not even call the
-        // counting full-file reader when all identity fields are unchanged.
+        const std::string digest = ss::complete_file_identity_bytes("unchanged strict-v2 manifest bytes\n");
+        expect(digest == ss::complete_file_identity(saved),
+               "fingerprint over authenticated bytes must preserve the persisted chunked identity");
+        // Fresh run/config must reuse the shared fingerprint. An index
+        // only binds a saved manifest to its original model digest.
         unsigned full_model_reads = 0;
         const auto counting_model_reader = [&](const fs::path& source) {
             ++full_model_reads;
             return ss::complete_file_identity(source);
         };
-        const ss::ModelIdentity model_first = ss::cached_model_identity(model, index, counting_model_reader);
-        expect(full_model_reads == 1 && model_first.digest == second,
-               "first start fingerprints all model bytes");
-        ss::write_stored_index(
-            index, {original, saved.filename().string(), digest, model_first.digest, model_first.stamp});
-        const ss::ModelIdentity model_hit = ss::cached_model_identity(model, index, counting_model_reader);
+        const auto cache_file = ss::model_identity_cache_path(model, work_root);
+        const ss::ModelIdentity model_first = ss::cached_model_identity(model, work_root, counting_model_reader);
+        expect(full_model_reads == 1 && model_first.digest == second && fs::is_regular_file(cache_file),
+               "first start fingerprints all bytes and writes the shared cache file");
+        ss::write_stored_index(index, {original, saved.filename().string(), digest, model_first.digest});
+        expect(ss::stored_manifest_for(t.root, "fixture", original) == saved,
+               "named index must resolve using the existing manifest fingerprint");
+        ss::write_stored_index(new_index, {original, saved.filename().string(), digest, model_first.digest});
+        const auto model_hit = ss::cached_model_identity(model, work_root, counting_model_reader);
         expect(full_model_reads == 1 && model_hit.digest == model_first.digest,
-               "unchanged model must be a true cache hit with zero model reader calls");
-        // A size (or inode, device, mtime_ns, ctime_ns) change must invalidate.
+               "fresh run dir and config must make zero model reader calls");
+        const auto same_attempt = ss::cached_model_identity(model, work_root, counting_model_reader, &model_first);
+        expect(full_model_reads == 1 && same_attempt.digest == model_first.digest,
+               "verified unchanged model remains a zero-read identity");
+        // Same-size rewrite with restored mtime must still invalidate ctime.
+        const auto prior_mtime = fs::last_write_time(model);
+        write(model, contents);
+        fs::last_write_time(model, prior_mtime);
+        const auto model_changed = ss::cached_model_identity(model, work_root, counting_model_reader, &model_first);
+        expect(full_model_reads == 2 && model_changed.digest == second,
+               "same-size ctime change must recompute despite restored mtime");
         write(model, contents + "changed");
-        const ss::ModelIdentity model_changed = ss::cached_model_identity(model, index, counting_model_reader);
-        expect(full_model_reads == 2 && model_changed.digest != model_first.digest,
-               "changed model stat identity must invalidate full digest");
+        const auto model_changed_size = ss::cached_model_identity(model, work_root, counting_model_reader);
+        expect(full_model_reads == 3 && model_changed_size.digest != second,
+               "changed size must recompute and replace the shared cache");
+        write(cache_file, "{bad json");
+        bool cache_refused = false;
+        try {
+            (void)ss::cached_model_identity(model, work_root, counting_model_reader);
+        } catch (const std::exception&) {
+            cache_refused = true;
+        }
+        expect(cache_refused && full_model_reads == 3,
+               "malformed shared cache must be refused, not trusted or recomputed");
+        fs::remove(cache_file);
+        fs::create_symlink(model, cache_file);
+        cache_refused = false;
+        try {
+            (void)ss::cached_model_identity(model, work_root, counting_model_reader);
+        } catch (const std::exception&) {
+            cache_refused = true;
+        }
+        expect(cache_refused && full_model_reads == 3, "symlink cache must be rejected");
+        fs::remove(cache_file);
+
+        // Forked readers race through a cold cache key; independent atomic
+        // writers may all win, but every published record must be complete.
+        std::array<pid_t, 6> writers{};
+        for (auto& pid : writers) {
+            pid = ::fork();
+            expect(pid >= 0, "fork shared cache writer");
+            if (pid == 0) {
+                try {
+                    (void)ss::cached_model_identity(model, work_root, [&](const fs::path& source) {
+                        ::usleep(50000);
+                        return ss::complete_file_identity(source);
+                    });
+                    ::_exit(0);
+                } catch (...) {
+                    ::_exit(40);
+                }
+            }
+        }
+        for (const pid_t pid : writers) {
+            int status = 0;
+            expect(::waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0,
+                   "parallel cache writers must each succeed");
+        }
+        const auto after_race = ss::cached_model_identity(model, work_root, counting_model_reader);
+        expect(full_model_reads == 3 && after_race.digest == model_changed_size.digest,
+               "concurrent writes must yield parseable JSON with a correct cache hit");
+        // Retargeting a model symlink mid-read must refuse, not cache old bytes.
+        const fs::path alias = t.root / "model-alias.bin";
+        const fs::path alternate = t.root / "alternate.bin";
+        write(alternate, "different model bytes");
+        fs::remove(cache_file);
+        fs::create_symlink(model, alias);
+        bool swapped_refused = false;
+        try {
+            (void)ss::cached_model_identity(alias, work_root, [&](const fs::path& source) {
+                fs::remove(alias);
+                fs::create_symlink(alternate, alias);
+                return ss::complete_file_identity(source);
+            });
+        } catch (const std::exception&) {
+            swapped_refused = true;
+        }
+        expect(swapped_refused && !fs::exists(cache_file),
+               "retargeted model alias must refuse without caching a stale digest");
         ss::write_stored_index(index, {original, saved.filename().string(), digest});
         const auto found = ss::stored_manifest_for(t.root, "fixture", original);
         expect(found && *found == saved, "equal static key must reuse unchanged manifest");

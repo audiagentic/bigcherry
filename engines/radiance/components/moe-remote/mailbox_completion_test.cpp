@@ -154,6 +154,31 @@ static void V23Consumption_SealFollowsFinalCombinedPlaneReader() {
           ledger.outstanding()==0, "event completion makes per-parent seal consumable");
     std::puts("V23Consumption_SealFollowsFinalCombinedPlaneReader: PASS");
 }
+static void invalid_seal_receipt_poisoned_without_retirement() {
+    for (const uint32_t invalid_slot : {0u, UINT32_MAX, UINT32_MAX - 1, UINT32_MAX - 2}) {
+        Ledger ledger(3);
+        ConsumptionStamp host[3]{};
+        Completion rank;
+        StepTicket t{};
+        check(ledger.initialize(5,0) && rank.prepare(3,host) &&
+              ledger.try_admit(1,&t)==Ledger::Result::Ok &&
+              ledger.bind(t.ticket_id,42) && rank.arm(t), "invalid receipt setup");
+        // A real count mismatch, or an impossible generation slot even when the counts match.
+        host[t.ticket_id % 3] = ConsumptionStamp{
+            t.ticket_id, t.placement_epoch, invalid_slot, 2u, invalid_slot ? 2u : 1u};
+        check(rank.record(t.ticket_id,&ledger) && ledger.host_complete(t.ticket_id),
+              "invalid receipt still reaches the terminal event");
+        auto prove = [&](const StepTicket& v, uint32_t) { return rank.prove(v); };
+        check(ledger.poll(prove) && ledger.outstanding()==1 && !ledger.stopped(),
+              "invalid receipt is pending until the terminal event completes");
+        *FakeEvent::last_recorded = 1;
+        check(!ledger.poll(prove) && ledger.outstanding()==1 && ledger.stopped(),
+              "invalid receipt poisons without retiring");
+        StepTicket next{};
+        check(ledger.try_admit(1,&next)!=Ledger::Result::Ok,
+              "a poisoned ledger refuses the next parent");
+    }
+}
 static void V23Consumption_AllRanksWaitForLastTicketSeal() {
     Ledger ledger(3);
     check(ledger.initialize(11,0), "two-rank ledger epoch");
@@ -212,5 +237,6 @@ int main() {
     V23RouteMark_StaleCompletionIdentityRejected();
     V23Consumption_SealFollowsFinalCombinedPlaneReader();
     V23Consumption_AllRanksWaitForLastTicketSeal();
+    invalid_seal_receipt_poisoned_without_retirement();
     return 0;
 }

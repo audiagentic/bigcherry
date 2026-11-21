@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_042237_fixed-candidate-patch-metadata_8804",
+  "files": [
+    "engines/radiance/patches/rad0047_mtp_verify_replay_summary/patch.toml"
+  ],
+  "plan-item-ids": [
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Changed the candidate-only replay-summary patch kind to a registry-supported value so patch catalog loading remains valid when the new package is present.",
+  "timestamp-utc": "2026-11-19T04:22:37.006066Z",
+  "user-summary-candidate": "Fixed candidate patch metadata that prevented the patch catalog from loading."
+}

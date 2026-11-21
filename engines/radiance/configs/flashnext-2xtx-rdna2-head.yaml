@@ -1,0 +1,29 @@
+cards: [0]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr4d,libr3moe,libref
+models:
+  flashnext:
+    model: radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+    tp: 1
+    max-model-len: 262144
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+x-bigcherry:
+  schema: 1
+  description: "flashnext-2xtx plus the RX 6900 XT as a head helper with a small share of the hottest experts"
+  variant-of: "flashnext-2xtx"
+  differs: ["x-bigcherry.helpers"]
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  helpers:
+    - {arch: "gfx1100", count: "all", placement: "head", share: 5}
+    - {arch: "gfx1030", count: 1, placement: "head", share: 1}
+  handoff: {heat: "@bundle/heat/perf51.rank0.hot-first", histogram-period-s: 1}

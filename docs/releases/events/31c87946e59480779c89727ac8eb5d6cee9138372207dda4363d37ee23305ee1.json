@@ -1,0 +1,17 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_033921_rum07-now-guides-a-staged-migr_3700",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream/RUM07.md"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Expanded the migration design beyond the required B16 formats to retain all four custom cache options still advertised by BigCherry, preserve the separate attn_prefill_fp8 QK/PV control, and specify exact ABI43 geometries, row sizes, numeric behavior, streamed-mode handling and focused gates.",
+  "timestamp-utc": "2026-11-19T03:39:21.565941Z",
+  "user-summary-candidate": "RUM07 now guides a staged migration of every advertised cache format and prefill control onto ABI43, with exact callsites and bounded validation.",
+  "validation": [
+    "Planning item updated through Planning MCP with staged steps, detailed ABI/kernel guidance, focused gates and acceptance criteria."
+  ]
+}

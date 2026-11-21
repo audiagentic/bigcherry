@@ -1,0 +1,15 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_030742_recorded-the-passing-v3-wire-a_5860",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Recorded C12 evidence for the generated v3 manifest wire checkpoint and its remaining production cutover gate.",
+  "timestamp-utc": "2026-11-19T03:07:42.096066Z",
+  "user-summary-candidate": "Recorded the passing v3 wire and v2 compatibility checkpoint; native fresh, measured and stored launch integration remains open."
+}

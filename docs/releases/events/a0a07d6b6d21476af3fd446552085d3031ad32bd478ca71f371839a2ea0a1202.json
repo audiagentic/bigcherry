@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_194408_tightened-measurement-evidence_5558",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/patches/rad0011_plan_memory/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Require post-split rad0011 rank configs' actual process-visible PCI BDFs to match the selected ordered BDF list before writing the rank-demand sidecar. Require plan_cache_store_owned to reconcile each sidecar claimable_bytes with the corresponding EnginePlan card free-VRAM fact. Added tests for patch output, mismatch refusal, and coherent v3 fixture. Targeted rad0011 Python composition test passes 1/1; v2 serving and stored-session CTests pass 2/2; generated-v3 session and writer CTests pass 2/2. No GPU used.",
+  "timestamp-utc": "2026-11-19T19:44:08.574645Z",
+  "user-summary-candidate": "Tightened measurement evidence so each rank receipt proves both which physical card it used and that its claimed free VRAM matches the engine plan. Focused v2/v3 and patch tests pass."
+}

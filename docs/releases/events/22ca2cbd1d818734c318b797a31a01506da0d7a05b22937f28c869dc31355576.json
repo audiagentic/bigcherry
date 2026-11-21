@@ -1,0 +1,43 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_041932_radiance-22-now-carries-verif_8056",
+  "files": [
+    "docs/evidence/radiance-latest-bump/RETAINED-KV-G4.md",
+    "engines/radiance/patches/rad0048_abi44_kv_contract/README.md",
+    "engines/radiance/patches/rad0048_abi44_kv_contract/SUMMARY.md",
+    "engines/radiance/patches/rad0048_abi44_kv_contract/evidence/promotion.json",
+    "releases/evidence/rad0048_abi44_kv_contract-promotion.md",
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/README.md",
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/SUMMARY.md",
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/evidence/promotion.json",
+    "releases/evidence/rad0049_qwen4exp_e4m3_kv-promotion.md",
+    "engines/radiance/patches/rad0050_b16_kv_runtime_contract/README.md",
+    "engines/radiance/patches/rad0050_b16_kv_runtime_contract/SUMMARY.md",
+    "engines/radiance/patches/rad0050_b16_kv_runtime_contract/evidence/promotion.json",
+    "releases/evidence/rad0050_b16_kv_runtime_contract-promotion.md",
+    "engines/radiance/patches/rad0051_b16_kv_kernels/README.md",
+    "engines/radiance/patches/rad0051_b16_kv_kernels/SUMMARY.md",
+    "engines/radiance/patches/rad0051_b16_kv_kernels/evidence/promotion.json",
+    "releases/evidence/rad0051_b16_kv_kernels-promotion.md",
+    "engines/radiance/patches/rad0052_b16_kv_geometries/README.md",
+    "engines/radiance/patches/rad0052_b16_kv_geometries/SUMMARY.md",
+    "engines/radiance/patches/rad0052_b16_kv_geometries/evidence/promotion.json",
+    "releases/evidence/rad0052_b16_kv_geometries-promotion.md",
+    "engines/radiance/patches/rad0053_v4_kv_layouts/README.md",
+    "engines/radiance/patches/rad0053_v4_kv_layouts/SUMMARY.md",
+    "engines/radiance/patches/rad0053_v4_kv_layouts/evidence/promotion.json",
+    "releases/evidence/rad0053_v4_kv_layouts-promotion.md",
+    "engines/radiance/patches/rad0054_attn_prefill_fp8/README.md",
+    "engines/radiance/patches/rad0054_attn_prefill_fp8/SUMMARY.md",
+    "engines/radiance/patches/rad0054_attn_prefill_fp8/evidence/promotion.json",
+    "releases/evidence/rad0054_attn_prefill_fp8-promotion.md"
+  ],
+  "plan-item-ids": [
+    "RUM07",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Bind the seven retained ABI44 cache and prefill patches to verified historical activation, identity and comparison records plus focused RUM07 compatibility evidence. The exact Radiance 2.2 production rebase passed all 32 packages and the retained features reapplied byte-identically. The seven package profiles pass the existing G4 verifier with grandfathering disabled. These records preserve the historical scope of the measurements and leave integrated RUM09 deployment, quality and parity gates separate.",
+  "timestamp-utc": "2026-11-20T04:19:32.740566Z",
+  "user-summary-candidate": "Radiance 2.2 now carries verified promotion evidence for the retained KV formats and prefill precision controls, so the normal build admission gate can check those patches."
+}

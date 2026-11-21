@@ -125,6 +125,7 @@ struct R3MoeMailboxDevice {
                              rank (consumer_of(layer, world)) is the one that publishes and adds it (RAD49) */
     uint32_t slots = 0;     /* total validated helper/rank slots */
     uint32_t lanes = 0;     /* count of lane sequences and consumed records */
+    uint32_t ticket_begin = 0; /* offset in published scratch, sized from the shared segment layout */
     uint32_t published_words = 0;
     uint32_t helpers = 1; /* helper h is served from this rank's slot slot_of(h, rank, world) */
     uint32_t* heat = nullptr;   /* [kMaxLayers][kExperts] route counts (R3_MOE_WORKER_HISTOGRAM) */

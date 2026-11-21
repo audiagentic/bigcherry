@@ -2,7 +2,7 @@
 id: RUM05
 order: 5
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-18T01:28:20.204242+00:00'
 breadth: ''
 skill: advanced
@@ -79,6 +79,20 @@ Prerequisites RUM02/RUM03/RUM04. RHP13 remains unified-allocator scope owner and
 
 Astra source review ASTRA-CONSOLIDATION.md supersedes the earlier mandatory Fleet::grant external-reservation proposal for the initial bump; dependencies RUM02/RUM03/RUM04. Shared-card integration is RUM10 only.
 
+Native owner now repeats the shared S8 host/cgroup/pin room and ordered BDF gates after power admission, before any serving child forks. The new gate uses authenticated helper RSS and the sealed manifest; existing VRAM checks remain. Final v3 owner and S8 tests passed 2/2. Focused v2 serving, session, stored and S8 tests passed 4/4. Leased physical placement and offline rank-order qualification remain open.
+
+2026-11-20 defect from the RUM09 per-config smokes: flashnext-r9700 (single card, no helpers) is refused at the engine's live admission: vram on 0000:09:00.0 live 32999625720 bytes short of required 33000662008 (shortfall 1036288 bytes; statics 5800083456, experts 26852451320, kv_required 348127232, headroom 0, prefill chunks 64). The plan sizes the elastic budget to the exact claimable bytes with zero headroom, and 2.2 holds slightly more at serve time (driver context 329 vs 258 MiB and queue scratch observed on flashnext-4gpu). Fix in the planner: derive the serve-time residency from the same measured inputs the engine admits against (or remeasure at admission and re-plan), not a hand-picked margin. Also fixed on the branch for mixed-arch worlds: rank-devices omitted from the YAML takes the admitted BDF order (64bae9124).
+
+2026-11-21 second admission defect from the RUM09 smokes: flashnext-2xtx, flashnext-2xtx-combine and flashnext-2xtx-rdna2-head stop at engine start with '--ngram-placement ram: the n-gram table (47.68 GiB) cannot be held in memory as a pinned copy': host 91 GiB, available about 76-82 GiB, 27-30 GiB more still to allocate (pinned host pools 11-17 GiB for two-card helper layouts, prefix-cache host tier, checkpoint slots, host activation arenas). The configs inherit ngram_placement=ram from the flashnext base; v1.17 could fall back, but 2.2 admission requires an explicit placement and refuses auto. Fix in the planner, not per config: derive the n-gram placement (ram or disk) from the measured host room and the other host allocations, record it explicitly in the plan and manifest, and refuse with both numbers only when neither fits. Same principle as the flashnext-r9700 VRAM case above: one measured derivation, no hand-picked margins.
+
+2026-11-21 RUM05 planner-room implementation on branch agent/rum05-planner-room (host-only; GPU qualification still outstanding):
+
+- **VRAM:** The engine vram_budget split based elastic expert residency on a rounded-down KV ceiling (347,090,944 bytes), while admission requires one full 348,127,232-byte session: a 1,036,288-byte shortage in the R9700 evidence, even where planned claimable VRAM was fully spent. The rad0011 managed hook now calls the shared native refit_one_session_pools against its actual VramBudget::claimable, one full KV session, expert floor and exact MiB pool rounding before writing/checking the plan. Elastic expert bytes are reduced rather than inventing headroom; immutable expert/static floors refuse when impossible.
+- **Host RAM/n-gram:** The affected FlashNext YAML configs forced 47.68 GiB of RAM pinning while 27–30 GiB of other allocations remained. Native Radiance resolve_table_placement already evaluates available RAM, cgroups, memlock and allocations yet to come and can select disk if RAM fails. The native planner now accepts omitted YAML placement as auto intent; the engine chooses the measured tier, and rad0011 records RAM, disk or VRAM in the engine rank-demand receipt. The final native manifest resolves that tier explicitly, checks it against pinned-table inventory and marks its leaf as derived/measured, while the YAML SHA remains authoritative for cache and explicit overrides. No second x-bigcherry selector or platform host allocator was introduced.
+- **Explain:** Native device-free preflight can only display auto intent before measuring. The measured engine plan receipt, engine placement explanation/log and final v3 manifest show the actual tier and provenance after measuring. Stale auto cache receipts without a tier fail closed and require remeasurement.
+- **Host gates:** S5 regression for the R9700 KV/MiB edge and strict refit/one-byte bound; S8 host-memory tests cover RAM boundary, disk fallback and neither-fitting refusal; v3 writer tests check choice/overrides, contradictory/missing receipts, YAML key identity and strict derived provenance. Managed rad0011 patch mechanics suite ran 9 tests successfully. The broader bc_serving_test fixture currently fails on unrelated old qwen27b TOML-vs-layout parity (262,144 context and RAM in the config versus 8192 context and disk in the test); source files were not touched by this slice.
+- **Remaining:** Run actual R9700 and XTX production measured starts and replay on GPU-leased host before marking full RUM05 acceptance complete.
+
 ## Change Log
 
 - 2026-11-18T01:28:20.204242+00:00 (created-by): Created by codex
@@ -89,3 +103,7 @@ Astra source review ASTRA-CONSOLIDATION.md supersedes the earlier mandatory Flee
 - 2026-11-18T02:23:07.396066+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:26:08.989224+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:28:17.614303+00:00 (updated-by): Updated: section:validation
+- 2026-11-19T22:18:39.878379+00:00 (state-transition): State: pending → in_progress
+- 2026-11-19T22:59:23.833156+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T12:44:34.149699+00:00 (updated-by): Updated: section:notes
+- 2026-11-20T13:12:22.293227+00:00 (updated-by): Updated: section:notes

@@ -11,13 +11,16 @@
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "resources.h"
+#include "test_config_fixture.h"
 #include "runtime_guards.h"
 #include "s8_replay.h"
 #include "sdk_check.h"
 #include "serving.h"
 #include "session.h"
 #include "sha256.h"
+#include "serving_codec.h"
 #include "stored_manifest_cache.h"
+#include "test_manifest_fixture.h"
 #include "test_rad_fixture.h"
 #include "v2/helper_settings.h"
 #include "v2/manifest.h"
@@ -28,7 +31,10 @@
 #include <arpa/inet.h>
 #include <csignal>
 #include <cstdio>
+#include <fcntl.h>
 #include <netinet/in.h>
+#include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -45,6 +51,7 @@
 #include <filesystem>
 #include <fstream>
 #include <functional>
+#include <future>
 #include <iostream>
 #include <map>
 #include <regex>
@@ -57,10 +64,37 @@
 #include <vector>
 
 namespace {
+// An engine-free resolver test names a config; production gets it from its YAML through the inspector, so the test hands
+// the resolver the matching preset (test_config_fixture.h: one per shipped engines/radiance/configs/NAME.yaml).
+bc::serving::Resolved tresolve(bc::serving::Options options, const nlohmann::json& facts,
+                               const bc::serving::NativeEngineSettings* native = nullptr) {
+    if (!options.inspected)
+        if (const auto name = bc::serving::layered_string(options, "layout", "name");
+            name && bc::serving::fixture::has_preset(*name))
+            bc::serving::fixture::use(options, *name);
+    return bc::serving::resolve(options, facts, native);
+}
+}  // namespace
+
+namespace {
 namespace fs = std::filesystem;
 using bc::serving::Json;
 using bc::serving::Options;
 using bc::serving::Resolved;
+Json g_session_manifest_template = Json::object();
+
+int select_free_port() {
+    const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
+    assert(sock >= 0);
+    sockaddr_in addr{};
+    addr.sin_family = AF_INET;
+    addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
+    assert(::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
+    socklen_t len = sizeof addr;
+    assert(::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
+    ::close(sock);
+    return int(ntohs(addr.sin_port));
+}
 
 void write(const fs::path& path, const std::string& content) {
     fs::create_directories(path.parent_path());
@@ -75,10 +109,13 @@ void write(const fs::path& path, const std::string& content) {
 struct Fixture {
     fs::path root;
     Json facts;
+    fs::path work_root() const { return root / "work"; }   // the platform work root a start gets as --work-root
 
     Fixture() : root(fs::current_path() / "bc-serving-fixture") {
         // This test only writes in its own CTest build directory.
         fs::remove_all(root);
+        const auto cache_root = root / "work";
+        fs::create_directories(cache_root);
         const auto nodes = root / "sys/class/kfd/kfd/topology/nodes";
         write(nodes / "0/properties", "gfx_target_version 0\n");
         // KFD node order, not BDF sort or device names, defines HIP ordinals.
@@ -148,7 +185,7 @@ struct Fixture {
 
 void fail(const Options& opts, const Json& facts, const std::string& needle) {
     try {
-        (void)bc::serving::resolve(opts, facts);
+        (void)tresolve(opts, facts);
     } catch (const std::exception& e) {
         if (std::string(e.what()).find(needle) == std::string::npos) {
             throw std::runtime_error("wrong diagnostic for " + needle + ": " + e.what());
@@ -261,33 +298,10 @@ void unknown_keys(Fixture& t) {
     fail(opts, t.facts, "nearest valid key: engine.port");
 }
 
-/* The layouts are run-time data: no default layout, no built-in table, and a name defined twice is refused. */
-void layout_sources(Fixture& t) {
-    auto opts = t.standard();
-    opts.site = t.file("nolayout-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
-                                                 "\"\n"
-                                                 "radiance_home = \"/runtime\"\n");
-    fail(opts, t.facts, "layout.name is required");
-    opts = t.standard();
-    opts.layouts = {t.root / "no-such-layouts"};
-    fail(opts, t.facts, "neither a layout file nor a directory");
-    const std::string one = "schema = 1\n[layout.solo]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n";
-    opts.layouts = {t.file("a.toml", one), t.file("b.toml", one)};
-    opts.sets = {"layout.name=\"solo\""};
-    fail(opts, t.facts, "layout solo is defined in both");
-    opts.layouts = {t.file("noschema.toml", "[layout.solo]\nengine = { arch = \"gfx1201\" }\n")};
-    fail(opts, t.facts, "schema = 1 is required");
-    const Json all =
-        bc::serving::load_layouts(Options{}); // BIGCHERRY_LAYOUTS: the repository's example layouts
-    assert(all.at("layout").contains("flashnext-4gpu") && all.at("layout").contains("qwen27b-2xtx"));
-}
 
 void type_range_required(Fixture& t) {
-    Options opts;
-    opts.sets = {"layout.name=\"flashnext-4gpu\""};
-    fail(opts, t.facts, "missing required key: engine.model");
-    opts.sets.clear();
-    opts = t.standard();
+    // (engine.model is no longer a missing-key case: a config's YAML always names its model.)
+    Options opts = t.standard();
     opts.profile = t.file("type.toml", "[service]\nmax_sessions = \"many\"\n");
     fail(opts, t.facts, "service.max_sessions: expected non-negative integer");
     opts.profile = t.file("range.toml", "[helper]\ncombine_threads = 0\n");
@@ -299,7 +313,7 @@ void type_range_required(Fixture& t) {
     opts.profile = t.file("badcount.toml", "[helper]\ncount = 1\nindex = 2\n");
     fail(opts, t.facts, "helper.index must be below helper.count");
     opts.profile = t.file("invalidlayout.toml", "[layout]\nname = \"not-a-layout\"\n");
-    fail(opts, t.facts, "unknown named layout");
+    fail(opts, t.facts, "no config was read");
     opts.profile = t.file("derived.toml", "[engine]\nmax_num_seqs = 99\n");
     fail(opts, t.facts, "derived and cannot be overridden");
     { // the combine thread count is derived from the discovered CPUs, never a literal the host may not have
@@ -307,7 +321,7 @@ void type_range_required(Fixture& t) {
         const auto threads_on = [&](uint64_t cpus, Options o) {
             Json host = t.facts;
             host["host"]["cpu_count"] = cpus;
-            return sv::resolve(o, host);
+            return tresolve(o, host);
         };
         const Options standard = t.standard();
         const auto four = threads_on(4, standard);
@@ -338,17 +352,17 @@ void precedence_and_caps(Fixture& t) {
                            std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
     opts.profile = t.file("precedence-profile.toml", "[engine]\nport = 4800\n");
     opts.sets = {"engine.port=4900"};
-    const auto r = bc::serving::resolve(opts, t.facts);
+    const auto r = tresolve(opts, t.facts);
     assert(r.typed.engine.port == 4900);
     assert(r.provenance.at("engine.port").at("origin") == "cli");
     opts.sets.clear();
-    const auto p = bc::serving::resolve(opts, t.facts);
+    const auto p = tresolve(opts, t.facts);
     assert(p.typed.engine.port == 4800);
     opts.profile.clear();
-    const auto s = bc::serving::resolve(opts, t.facts);
+    const auto s = tresolve(opts, t.facts);
     assert(s.typed.engine.port == 4700);
     opts.site = t.standard().site;
-    const auto d = bc::serving::resolve(opts, t.facts);
+    const auto d = tresolve(opts, t.facts);
     assert(d.typed.engine.port == 36080);
 
     opts.site =
@@ -358,7 +372,7 @@ void precedence_and_caps(Fixture& t) {
                                     "[hard_caps.memory]\nhost_pool_mib = 8000\n"
                                     "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n" +
                                     std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    auto good = bc::serving::resolve(opts, t.facts);
+    auto good = tresolve(opts, t.facts);
     assert(good.typed.memory.host_pool_mib == 7000);
     opts.profile = t.file("cap-profile.toml", "[memory]\nhost_pool_mib = 9000\n");
     fail(opts, t.facts, "hard cap refusal: memory.host_pool_mib");
@@ -380,8 +394,8 @@ void precedence_and_caps(Fixture& t) {
 void provenance_hash_and_parity(Fixture& t) {
     auto opts = t.standard();
     opts.sets = {"layout.name=flashnext-2xtx-rdna2-tail"};
-    const auto r = bc::serving::resolve(opts, t.facts);
-    const auto again = bc::serving::resolve(opts, t.facts);
+    const auto r = tresolve(opts, t.facts);
+    const auto again = tresolve(opts, t.facts);
     assert(r.hash == again.hash);
     assert(r.manifest.dump() == again.manifest.dump());
     assert(bc::serving::sha256_hex(r.manifest.dump()) == r.hash);
@@ -397,69 +411,6 @@ void provenance_hash_and_parity(Fixture& t) {
             assert(pv.contains(field));
         assert(pv.at("inputs").is_array());
     }
-
-    // RSC01 launcher-equivalence golden. Values transcribed from the
-    // 2026-11-02 launch-flashnext-best.sh engine argv and COMMON/WorkerConfig.
-    // RSC02 deletes the launcher and replaces this with a manifest golden.
-    const auto& e = r.values.at("engine");
-    const std::vector<std::pair<std::string, Json>> expected_engine = {
-        {"model", (t.root / "model.rad").string()},
-        {"radiance_home", "/runtime"},
-        {"port", 36080},
-        {"kernels", "libr4d,libr3moe,libref"},
-        {"placement", "expert_tiered"},
-        {"ngram_placement", "ram"},
-        {"host_pool_mib", 9216},
-        {"prefix_cache_mib", 12288},
-        {"tp", 1},
-        {"max_num_seqs", 8},
-        {"max_num_batched_tokens", 2048},
-        {"checkpoint_interval", 4096},
-        {"kv_cache_dtype", "fp8"},
-        {"num_speculative_tokens", 3},
-        {"max_model_len", 262144},
-        {"rope_scaling", "none"},
-        {"prefix_resume", "nearest"}};
-    for (const auto& [name, value] : expected_engine)
-        if (e.at(name) != value)
-            throw std::runtime_error("launcher engine parity failed: " + name);
-    // The launcher COMMON values; paths are required rather than guessed.
-    const auto& a = r.values.at("handoff");
-    const std::vector<std::pair<std::string, Json>> expected_common = {
-        {"shm", "/r3-moe-helper"},  {"heat", "/heat.hot-first"}, {"histogram", "/heat.live"},
-        {"histogram_period_s", 60}, {"max_rows", 4096},          {"small_rows", 8},
-        {"gemv_large_rows", 32},    {"moe_down_tile", true},     {"skip_owned", true},
-        {"placement", "tail"}};
-    for (const auto& [key, val] : expected_common)
-        if (a.at(key) != val)
-            throw std::runtime_error("launcher COMMON parity failed: " + key);
-    const auto& h = r.values.at("helper");
-    const std::vector<std::pair<std::string, Json>> expected_helper = {
-        {"count", 3},           {"index", 0},          {"engine_ranks", 1}, {"cpu", false},
-        {"power_save", true},   {"queue_warm", false}, {"combine", false},  {"combine_min_rows", 256},
-        {"combine_threads", 8}, {"cpu_set_auto", true}};
-    for (const auto& [name, value] : expected_helper)
-        if (h.at(name) != value)
-            throw std::runtime_error("launcher WorkerConfig parity failed: " + name);
-    const auto& derived_budgets = r.typed.memory.helper_budgets_mib;
-    assert(derived_budgets.size() == 3);
-    for (size_t i = 0; i < derived_budgets.size(); ++i)
-        assert(derived_budgets[i] > 0 &&
-               derived_budgets[i] < t.facts.at("gpus")[i < 2 ? i : 3].at("vram_total_mib").get<uint64_t>());
-    assert(r.typed.memory.tail_budget_mib == derived_budgets.back());
-    assert(r.manifest.at("process_helpers").size() == 3);
-    const auto& helpers = r.manifest.at("process_helpers");
-    assert(helpers[0]["plugin_file"] == "libr3.so");
-    assert(helpers[1]["formats"].size() == 2);
-    assert(helpers[2]["plugin_file"] == "libr2.so");
-    assert(helpers[2]["rows_kernel"] == true);
-    assert(helpers[2]["placement"] == "tail");
-    assert(helpers[2]["share"] == 0);
-
-    for (size_t i = 0; i < 3; ++i)
-        assert(r.manifest.at("process_helpers")[i]["config"]["index"] == i);
-    assert(r.typed.layout.engine_cards == std::vector<std::string>{"0000:09:00.0"});
-    assert(r.typed.layout.helper_cards[2] == "0000:17:00.0");
 
     const auto schema = bc::serving::json_schema();
     assert(schema["properties"]["helper"]["properties"].size() == 10);
@@ -571,7 +522,7 @@ void calibration_store(Fixture& t) {
 
 void host_reserve(Fixture& t) {
     // 128 GiB fixture: 5% of 131072 MiB is 6554 MiB, above the 4096 MiB floor.
-    auto r = bc::serving::resolve(t.standard(), t.facts);
+    auto r = tresolve(t.standard(), t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 6554);
     assert(r.values.at("engine").at("host_headroom_mib") == 6554);
     assert(r.provenance.at("engine.host_headroom_mib").at("inputs") ==
@@ -589,7 +540,7 @@ void host_reserve(Fixture& t) {
                                       "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
                                       "[hard_floors.memory]\nhost_reserve_mib = 8192\n" +
                                       std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    r = bc::serving::resolve(opts, t.facts);
+    r = tresolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 8192);
     assert(r.provenance.at("memory.host_reserve_mib").at("origin") == "site");
     opts.site =
@@ -598,7 +549,7 @@ void host_reserve(Fixture& t) {
                                           "[handoff]\nheat = \"/heat.hot-first\"\nhistogram = \"/heat.live\"\n"
                                           "[hard_floors.memory]\nhost_reserve_mib = 1024\n" +
                                           std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    r = bc::serving::resolve(opts, t.facts);
+    r = tresolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 6554);
     opts.site =
         t.file("bad-floor-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
@@ -620,7 +571,7 @@ void host_reserve(Fixture& t) {
                "schema_version = 1\n[[entry]]\nkey = \"calibration.host_reserve.total_fraction_ppm\"\n"
                "match = { layout = \"flashnext-4gpu\" }\nvalue = 100000\nseeded = \"2026-12-01\"\nevidence = "
                "\"refit\"\n");
-    r = bc::serving::resolve(opts, t.facts);
+    r = tresolve(opts, t.facts);
     assert(r.values.at("memory").at("host_reserve_mib") == 13108);
     assert(r.provenance.at("memory.host_reserve_mib")
                .at("source")
@@ -834,16 +785,117 @@ void measured_plan_cache(Fixture& t) {
     const std::string eid = sv::engine_identity(bin, t.root / "engine/runtime-home");
     (void)t.file("engine/runtime-home/kernels/libr4d.so", "kernels-v2");
     assert(sv::engine_identity(bin, t.root / "engine/runtime-home") != eid);
+    // Identity validation must not allocate entire runtime libraries on the
+    // heap: that changes live host room while a native start measures it.
+    // The child derives a memory limit from its own address space and the
+    // fixture size; there is no machine-specific memory budget in this test.
+    {
+        const fs::path large = t.file("engine/runtime-home/kernels/large-test.so",
+                                      std::string(32u * 1024u * 1024u, 'x'));
+        const std::string expected = sv::engine_identity(bin, t.root / "engine/runtime-home");
+        const pid_t child = ::fork();
+        assert(child >= 0);
+        if (child == 0) {
+            size_t pages = 0;
+            std::ifstream("/proc/self/statm") >> pages;
+            struct rlimit limit{};
+            if (pages == 0 || ::getrlimit(RLIMIT_AS, &limit) != 0) _exit(2);
+            const rlim_t extra = static_cast<rlim_t>(fs::file_size(large) / 8);
+            const rlim_t requested = static_cast<rlim_t>(pages) * static_cast<rlim_t>(::sysconf(_SC_PAGESIZE)) + extra;
+            limit.rlim_cur = limit.rlim_max == RLIM_INFINITY ? requested : std::min(requested, limit.rlim_max);
+            if (::setrlimit(RLIMIT_AS, &limit) != 0) _exit(3);
+            try {
+                _exit(sv::engine_identity(bin, t.root / "engine/runtime-home") == expected ? 0 : 4);
+            } catch (...) {
+                _exit(5);
+            }
+        }
+        int status = 0;
+        assert(::waitpid(child, &status, 0) == child);
+        assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    }
     // The key covers the planning inputs, the card and the host pool the plan echoes; not the memory outputs
     // the plan feeds (host KV tier, headroom) nor where the engine listens or lives (port, runtime home, model
     // path).
-    const auto r = sv::resolve(t.standard(), t.facts);
+    const auto r = tresolve(t.standard(), t.facts);
     const Json k = sv::plan_key_inputs(r.values, t.facts, id, eid, "");
     assert(k.at("card").at("arch") == "gfx1201" && k.at("card").at("vram_total_mib") == 32624);
     assert(k.at("layout") == "flashnext-4gpu");
     for (const char* absent : {"prefix_cache_mib", "host_headroom_mib", "port", "radiance_home", "model"})
         assert(!k.at("engine").contains(absent));
     assert(k.at("engine").contains("host_pool_mib") && k.at("engine").contains("max_num_seqs"));
+    const auto native_file = t.file("plan-key-fleet.yaml", "cards: [0]\nmodels: {tiny: {model: tiny.rad}}\n");
+    const auto native = sv::NativeConfigSnapshot::read(native_file, t.root);
+    const auto worker = t.file("engine/runtime-home/helpers/r3_moe_worker", "helper-binary-v1");
+    Json native_values = r.values;
+    native_values["engine"]["radiance_home"] = (t.root / "engine/runtime-home").string();
+    const Json native_key = sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native);
+    assert(native_key.at("cache_version") == 3 && native_key.at("native_config").at("sha256") == native.sha256() &&
+           native_key.at("native_config").at("resolution_root") == t.root.string());
+    assert(native_key.at("native_config").at("rank_devices").size() == r.values.at("layout").at("engine_cards").size() +
+                                                                          r.values.at("layout").at("helper_cards").size());
+    // Volatile free host/GPU memory is checked by fresh admission, not
+    // included in the reusable plan identity or its derived helper budgets.
+    // Re-resolve between captures to catch a hidden dependency as well as
+    // an accidental facts field added directly to the plan key.
+    {
+        Json live = t.facts;
+        live["host"]["mem_available_mib"] = live["host"].at("mem_available_mib").get<int64_t>() - 1;
+        for (auto& card : live["gpus"])
+            card["vram_available_mib"] = card.at("vram_available_mib").get<int64_t>() - 1;
+        const Resolved changed = tresolve(t.standard(), live);
+        Json changed_native_values = changed.values;
+        changed_native_values["engine"]["radiance_home"] = native_values.at("engine").at("radiance_home");
+        assert(sv::plan_key_inputs(changed_native_values, live, id, eid, "", &native) == native_key);
+        assert(sv::plan_key_inputs(changed.values, live, id, eid, "") == k);
+        // Physical VRAM capacity, unlike availability, genuinely changes the
+        // card's identity and must invalidate this exact key.
+        live["gpus"][2]["vram_total_mib"] = live["gpus"][2].at("vram_total_mib").get<int64_t>() - 1;
+        assert(sv::plan_key_inputs(native_values, live, id, eid, "", &native) != native_key);
+    }
+    // Native helper build identity must also hash in bounded memory. All
+    // helper-based native layouts bind this digest in their frozen key.
+    {
+        const fs::path large_worker = t.file("engine/runtime-home/helpers/r3_moe_worker",
+                                             std::string(32u * 1024u * 1024u, 'h'));
+        const Json expected_key = sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native);
+        const pid_t child = ::fork();
+        assert(child >= 0);
+        if (child == 0) {
+            size_t pages = 0;
+            std::ifstream("/proc/self/statm") >> pages;
+            struct rlimit limit{};
+            if (pages == 0 || ::getrlimit(RLIMIT_AS, &limit) != 0) _exit(2);
+            const rlim_t extra = static_cast<rlim_t>(fs::file_size(large_worker) / 8);
+            const rlim_t requested = static_cast<rlim_t>(pages) * static_cast<rlim_t>(::sysconf(_SC_PAGESIZE)) + extra;
+            limit.rlim_cur = limit.rlim_max == RLIM_INFINITY ? requested : std::min(requested, limit.rlim_max);
+            if (::setrlimit(RLIMIT_AS, &limit) != 0) _exit(3);
+            try {
+                _exit(sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native) == expected_key ? 0 : 4);
+            } catch (...) {
+                _exit(5);
+            }
+        }
+        int status = 0;
+        assert(::waitpid(child, &status, 0) == child);
+        assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+        write(worker, "helper-binary-v1");
+    }
+    Json reordered_values = native_values;
+    assert(reordered_values.at("layout").at("helper_cards").size() > 1);
+    std::swap(reordered_values["layout"]["helper_cards"][0],
+              reordered_values["layout"]["helper_cards"][1]);
+    assert(sv::plan_key(sv::plan_key_inputs(reordered_values, t.facts, id, eid, "", &native)) !=
+           sv::plan_key(native_key));
+    assert(sv::plan_key(native_key) != sv::plan_key(k));
+    const auto other_root = t.root / "other-root";
+    std::filesystem::create_directories(other_root);
+    const auto same_bytes_other_root = sv::NativeConfigSnapshot::read(native_file, other_root);
+    assert(sv::plan_key(sv::plan_key_inputs(native_values, t.facts, id, eid, "", &same_bytes_other_root)) !=
+           sv::plan_key(native_key));
+    write(worker, "helper-binary-v2");
+    assert(sv::plan_key(sv::plan_key_inputs(native_values, t.facts, id, eid, "", &native)) !=
+           sv::plan_key(native_key));
     Json v = r.values;
     for (const char* moved : {"prefix_cache_mib", "host_headroom_mib", "port"}) {
         v = r.values;
@@ -886,7 +938,7 @@ void measured_plan_cache(Fixture& t) {
             auto opts = t.standard();
             opts.sets = {std::string(key) + "=" + value};
             try {
-                const auto changed = sv::resolve(opts, t.facts);
+                const auto changed = tresolve(opts, t.facts);
                 if (sv::plan_key(sv::plan_key_inputs(changed.values, t.facts, id, eid, "")) == base_key)
                     throw std::runtime_error(std::string("the plan key ignores ") + key);
             } catch (const std::exception& e) {
@@ -900,7 +952,7 @@ void measured_plan_cache(Fixture& t) {
         for (const auto& [key, value] : same) {
             auto opts = t.standard();
             opts.sets = {std::string(key) + "=" + value};
-            assert(sv::plan_key(sv::plan_key_inputs(sv::resolve(opts, t.facts).values, t.facts, id, eid, "")) ==
+            assert(sv::plan_key(sv::plan_key_inputs(tresolve(opts, t.facts).values, t.facts, id, eid, "")) ==
                    base_key);
         }
     }
@@ -923,6 +975,75 @@ void measured_plan_cache(Fixture& t) {
     const auto found = sv::plan_cache_lookup(dir, k);
     assert(found && found->key == stored.key && found->plan.checkpoints.want_slots == 72 &&
            !found->measured_at.empty());
+    const auto native_dir = t.root / "native-plan-cache";
+    bool raw_native_refused = false;
+    try {
+        (void)sv::plan_cache_store(native_dir, native_key, plan, ranks, sv::HostResident{2304, 1536});
+    } catch (const std::runtime_error& error) {
+        raw_native_refused = std::string(error.what()).find("require owner measurement provenance") !=
+                             std::string::npos;
+    }
+    assert(raw_native_refused);
+    Json native_plan = plan;
+    if (r.values.at("engine").at("ngram_placement") == "ram")
+        native_plan["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
+                                       {"residence", "pinned"}, {"from", "rad0011 native test"},
+                                       {"remedy", ""}});
+    Json native_ranks = ranks;
+    native_ranks["gpu"].push_back({{"bdf", r.values.at("layout").at("engine_cards").at(0)},
+                                   {"required_bytes", 10}, {"fixed_bytes", 1}, {"claimable_bytes", 10},
+                                   {"evidence", "rad0011 test rank"}});
+    auto refuse_owned_ranks = [&](Json bad_ranks, const std::string& expected) {
+        try {
+            (void)sv::plan_cache_store_owned(
+                native_dir, native_key, native_plan, bad_ranks, r.values, sv::HostResident{2304, 1536},
+                sv::OwnerMeasurementEvidence{"invalid-native-attempt", sv::sha256_hex("measuring-manifest")});
+        } catch (const std::runtime_error& error) {
+            assert(std::string(error.what()).find(expected) != std::string::npos);
+            return;
+        }
+        assert(false && "invalid owned rank demand must refuse");
+    };
+    Json bad_bdf = native_ranks;
+    bad_bdf["gpu"][0]["bdf"] = "0000:ff:00.0";
+    refuse_owned_ranks(bad_bdf, "differs from selected ordered engine devices");
+    Json bad_bytes = native_ranks;
+    bad_bytes["gpu"][0]["required_bytes"] = 0;
+    refuse_owned_ranks(bad_bytes, "out of measured wire range");
+    Json inconsistent_claimable = native_ranks;
+    inconsistent_claimable["gpu"][0]["claimable_bytes"] = 11;
+    refuse_owned_ranks(inconsistent_claimable,
+                       "owner rank claimable VRAM differs from the engine plan's same-rank free VRAM facts");
+    const auto native_stored = sv::plan_cache_store_owned(
+        native_dir, native_key, native_plan, native_ranks, r.values, sv::HostResident{2304, 1536},
+        sv::OwnerMeasurementEvidence{"native-test-attempt", sv::sha256_hex("measuring-manifest")});
+    const auto native_found = sv::plan_cache_lookup(native_dir, native_key);
+    assert(native_found && native_found->key == native_stored.key);
+    const fs::path native_entry_path = native_dir / (native_stored.key + ".json");
+    Json native_entry;
+    {
+        std::ifstream in(native_entry_path, std::ios::binary);
+        in >> native_entry;
+    }
+    assert(native_entry.at("cache_version") == 3);
+    Json changed_resident = native_entry;
+    changed_resident["resident"]["engine_mib"] = 1537;
+    write(native_entry_path, changed_resident.dump(2) + "\n");
+    try {
+        (void)sv::plan_cache_lookup(native_dir, native_key);
+        assert(false && "owned measurement receipt must bind resident memory");
+    } catch (const std::runtime_error& error) {
+        assert(std::string(error.what()).find("owner measurement digest mismatch") != std::string::npos);
+    }
+    write(native_entry_path, native_entry.dump(2) + "\n");
+    native_entry["cache_version"] = 2;
+    write(native_entry_path, native_entry.dump(2) + "\n");
+    try {
+        (void)sv::plan_cache_lookup(native_dir, native_key);
+        assert(false && "native cache entry with v2 envelope must be refused");
+    } catch (const std::runtime_error& error) {
+        assert(std::string(error.what()).find("cache_version differs from key inputs") != std::string::npos);
+    }
     // A plan is stored only for the configuration it belongs to: the host pool it echoes and the expected host
     // consumer list (the n-gram table exactly when it lives in RAM; nothing unknown).
     {
@@ -1058,1735 +1179,12 @@ void measured_plan_cache(Fixture& t) {
     assert(refused);
 }
 
-/* BRVP06 item 5: bc-serve refuses to run against a ROCm SDK other than the one its build recorded. */
-void sdk_environment_step(Fixture& t) {
-    namespace sv = bc::serving;
-    namespace fs = std::filesystem;
-    const fs::path build = t.root / "sdk-build";
-    const fs::path exe = build / "radiance_home" / "bin" / "bc-serve";
-    fs::create_directories(exe.parent_path());
-    std::ofstream(exe) << "";
-    const fs::path sdk = t.root / "rocm-7.2.4", other = t.root / "rocm-7.14";
-    for (const fs::path& d : {sdk / "lib", other / "lib"}) {
-        fs::create_directories(d);
-        std::ofstream(d / "libamdhip64.so") << "";
-    }
-    auto metadata = [&](const std::string& toolchain) {
-        std::ofstream(build / "bigcherry-build-metadata-radiance.json", std::ios::trunc)
-            << "{\"toolchain\": " << toolchain << "}";
-    };
-    metadata("[[\"rocm_root\", \"" + sdk.string() + "\"], [\"rocm_version\", \"7.2.4\"]]");
-    assert(!sv::sdk_refusal(exe, {})); // the recorded SDK, nothing set
-    assert(
-        !sv::sdk_refusal(exe, {sdk.string(), sdk.string(), (sdk / "lib").string()})); // the environment agrees
-    assert(
-        !sv::sdk_refusal(exe, {sdk.string() + "/", "", "/usr/lib/x86_64-linux-gnu:" + (sdk / "lib").string()}));
-    auto refused = [&](const sv::SdkEnvironment& env, const std::string& needle) {
-        const auto r = sv::sdk_refusal(exe, env);
-        return r && r->find(needle) != std::string::npos;
-    };
-    assert(refused({other.string(), "", ""}, "ROCM_PATH=")); // another SDK by ROCM_PATH
-    assert(refused({"", other.string(), ""}, "HIP_PATH="));  // ... or HIP_PATH
-    assert(refused({"", "", (other / "lib").string()},
-                   "outside the recorded SDK")); // ... or its libraries on the path
-    assert(refused({"", "", "/usr/lib:" + (other / "lib").string()}, "outside the recorded SDK"));
-    assert(!sv::sdk_refusal(exe,
-                            {"", "", (t.root / "no-rocm-libs").string()})); // a directory with no ROCm runtime
-    metadata("[[\"rocm_version\", \"7.2.4\"]]");
-    assert(refused({}, "records no rocm_root"));
-    metadata("[[\"rocm_root\", \"" + (t.root / "gone").string() + "\"]]");
-    assert(refused({}, "is not installed"));
-    std::ofstream(build / "bigcherry-build-metadata-radiance.json", std::ios::trunc) << "{not json";
-    assert(refused({}, "cannot be read"));
-    // A recognizable build/release path without provenance is not a reason to bypass SDK admission.
-    fs::remove(build / "bigcherry-build-metadata-radiance.json");
-    assert(refused({}, "metadata missing"));
-    // an executable that is not inside a build has no recorded SDK and is not checked
-    assert(!sv::sdk_refusal(t.root / "elsewhere" / "bc-serve",
-                            {other.string(), other.string(), (other / "lib").string()}));
-    assert(!sv::sdk_refusal(build / "bin" / "bc-serve", {other.string(), "", ""}));
-}
 
-/* A native P1 measurement record (bc_serve_v2_measured_inputs) consistent with the manifest `unmeasured`
- * describes: its owner map and helpers, a host pool that sums to `pool_mib` with the given margin, and live
- * room far above the need. Test-only: real records come from bc-serve --publish-v2-p1 on the cards. */
-Json p1_record_for(const Json& unmeasured, int64_t pool_mib, int64_t margin_mib, int64_t reserve_mib) {
-    constexpr int64_t MiB = 1048576;
-    const Json& spec = unmeasured.at("spec");
-    const std::string owner = spec.at("plan").at("owner_map").at("owner_map_sha256");
-    Json footprints = Json::array();
-    for (const Json& h : spec.at("processes").at("helpers"))
-        footprints.push_back({{"role", h.at("role")},
-                              {"bdf", h.at("gpu")},
-                              {"lanes_bytes", MiB},
-                              {"pointer_banks_bytes", MiB},
-                              {"slot_map_bytes", MiB},
-                              {"incoming_slot_bytes", MiB},
-                              {"total_bytes", 4 * MiB}});
-    const Json scope = {{"model_digest", std::string(64, '1')},
-                        {"engine_build_digest", std::string(64, '2')},
-                        {"helper_build_digest", std::string(64, '3')},
-                        {"layout_digest", std::string(64, '4')},
-                        {"inventory_digest", std::string(64, '5')},
-                        {"owner_map_digest", owner},
-                        {"context_target_tokens", 4096},
-                        {"retention_target_tokens", 4096},
-                        {"kv_bytes_per_token", 1}};
-    const Json inputs = {
-        {"host_embedding_bytes", (pool_mib - margin_mib) * MiB},
-        {"unowned_expert_bytes", 0},
-        {"staging_bytes", 0},
-        {"ngram_bytes", MiB},
-        {"checkpoint_bytes", 0},
-        {"resident_other_bytes", 0},
-        {"kv_bytes_per_token", 1},
-        {"context_target_tokens", 4096},
-        {"retention_target_tokens", 4096},
-        {"mem_available_bytes", 92160 * MiB},
-        {"cgroup_headroom_bytes", 92160 * MiB},
-        {"pin_available_bytes", 92160 * MiB},
-        {"owner_map_digest", owner},
-        {"host_pool_margin_calibration",
-         {{"key", "host_ledger_margin.mib"}, {"source", "cache"}, {"evidence", "test"}, {"mib", margin_mib}}},
-        {"helper_footprints", footprints}};
-    return {{"schema_version", 1},
-            {"kind", "bc_serve_v2_measured_inputs"},
-            {"planning_key", std::string(64, '6')},
-            {"provenance", "serving_test synthetic record"},
-            {"resource_inputs", inputs},
-            {"gpu", Json::array({{{"bdf", spec.at("processes").at("engine").at("device").at("gpus")[0]},
-                                  {"required_bytes", 10},
-                                  {"fixed_bytes", 1},
-                                  {"claimable_bytes", 10}}})},
-            {"concurrent_sessions", 1},
-            {"host_reserve_bytes", reserve_mib * MiB},
-            {"scope", scope}};
-}
-
-void manifest_writer_step(Fixture& t) {
-    namespace sv = bc::serving;
-    // The container, its heat ranking and the measured plan this configuration's manifest is built from.
-    const auto model = t.root / "writer-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
-    // The original minimal planner fixture has no string table. RSC03's real RAD v2
-    // resource reader (Python and now C++) requires valid name offsets even for experts.
-    // Attach an expert-only name table without touching tensor payloads or model geometry.
-    {
-        std::fstream file(model, std::ios::binary | std::ios::in | std::ios::out);
-        RadFileHeader header{};
-        file.read(reinterpret_cast<char*>(&header), sizeof(header));
-        assert(file && header.str_bytes == 0);
-        constexpr char label[] = "expert";
-        header.str_off = header.file_bytes;
-        header.str_bytes = sizeof(label);
-        header.file_bytes += sizeof(label);
-        file.seekp(std::streamoff(header.str_off));
-        file.write(label, sizeof(label));
-        file.seekp(0);
-        file.write(reinterpret_cast<const char*>(&header), sizeof(header));
-        assert(file);
-    }
-    const auto heat = t.root / "writer.hot-first";
-    {
-        std::vector<uint32_t> counts(128 * 16, 0);
-        for (uint32_t l = 0; l < 4; ++l)
-            for (uint32_t e = 0; e < 16; ++e)
-                counts[(l * 16) + e] = (((e * 7) + (l * 3)) % 16) + 1;
-        std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()),
-                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
-    }
-    Options opts;
-    opts.site = t.file("writer-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                               "\"\nradiance_home = \"/runtime\"\n"
-                                               "[handoff]\nheat = \"" +
-                                               heat.string() + "\"\nhistogram = \"/heat.live\"\n" +
-                                               std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    const auto r = sv::resolve(opts, t.facts);
-    const Json plan = Json::parse(R"json({
-      "plan_version": 1, "producer": "radiance --plan-memory (rad0011)",
-      "host": [{"name": "ngram_table", "bytes": 1048576, "residence": "pinned", "from": "engine plan (test)", "remedy": ""}],
-      "checkpoints": {"slot_bytes": 1048576, "floor_slots": 8, "want_slots": 72, "from": "engine plan (test)"},
-      "kv_one_session": {"bytes": 4096, "from": "engine plan (test)"},
-      "vram": {"claimable": 10, "statics": 1, "elastic": 9, "experts": 0, "kv": 9, "stage": 0, "kv_resolved": 9, "expert_floor": 0,
-               "kv_ceiling": 9, "expert_ceiling": 0, "from": "engine plan (test)",
-               "cards": [{"capacity": 10, "free": 10, "engine_expert_plane": 0, "expert_unit_max": 1}]},
-      "host_pool_mib": 9216})json");
-    sv::ManifestInputs in;
-    in.resolved = r;
-    in.instance_id = "11111111-1111-4111-8111-111111111111";
-    in.producer_sha256 = std::string(64, 'a');
-    in.profile = "production";
-    in.s10.power_profile = "stock";
-    in.s10.now_unix_s = 1800000000;
-    in.s10.calibration_records = Json::array();
-    {
-        // The unmeasured manifest of the same configuration has the owner map the P1 record is measured
-        // against.
-        const auto unmeasured = sv::build_manifest(in);
-        // RSC02 step 2: exercise real RAD directory, the exact published owner map and this
-        // synthetic KFD/cgroup/pin detector fixture. The standalone parity test checks the pure
-        // arithmetic against Python, this test proves the wiring into native manifest inputs.
-        const auto ledger = sv::resources::derive_launch(
-            {r.values, r.manifest.at("process_helpers"), t.facts, unmeasured.document});
-        assert(ledger.ok());
-        assert(ledger.value().helpers.size() == r.manifest.at("process_helpers").size());
-        assert(ledger.value().owner_map_digest == unmeasured.document.at("spec")
-                                                      .at("plan")
-                                                      .at("owner_map")
-                                                      .at("owner_map_sha256")
-                                                      .get<std::string>());
-        assert(ledger.value().host_pool_mib > 0 && ledger.value().host_kv_mib > 0);
-        {
-            auto altered = r.manifest.at("process_helpers");
-            altered[0]["bdf"] = "0000:fe:00.0";
-            assert(!sv::resources::derive_launch({r.values, altered, t.facts, unmeasured.document}));
-        }
-        {
-            auto altered = unmeasured.document;
-            altered["spec"]["plan"]["owner_map"]["owner_map_sha256"] = "forged";
-            assert(
-                !sv::resources::derive_launch({r.values, r.manifest.at("process_helpers"), t.facts, altered}));
-        }
-        {
-            auto constrained = t.facts;
-            constrained["host"]["mem_available_mib"] = 1;
-            assert(!sv::resources::derive_launch(
-                {r.values, r.manifest.at("process_helpers"), constrained, unmeasured.document}));
-        }
-        in.s10.p1_record = p1_record_for(unmeasured.document, 9216, 1024,
-                                         r.values.at("memory").at("host_reserve_mib").get<int64_t>());
-    }
-    {
-        sv::MeasuredPlan measured;
-        measured.plan.plan = sv::decode_engine_plan(plan, "writer plan");
-        measured.plan.plan_json = plan;
-        measured.plan.resident = {1536, 1024};
-        measured.key_inputs =
-            sv::plan_key_inputs(r.values, t.facts, sv::container_identity(model), std::string(64, 'b'), "");
-        in.measured = std::move(measured);
-    }
-
-    const auto built = sv::build_manifest(in);
-    // It is a v1 manifest a consumer accepts, and says what the resolver resolved.
-    const auto back =
-        bc::serving::v2::read_manifest(built.text, "writer test", bc::serving::v2::PlanUse::serving);
-    assert(back.ok());
-    { // RED: strict native writer + real runtime guard must not kill recording-only serving.
-        namespace ss = bc::serving::session;
-        const fs::path file = t.root / "recording-only-guard-manifest.json";
-        sv::write_manifest_file(file, built.text);
-        const fs::path log = t.file("recording-only-guard-engine.log", "recorded pass: draft pass 8 token\n");
-        ss::EngineStart engine;
-        engine.manifest = file;
-        engine.handoff_shm =
-            built.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
-        engine.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
-        engine.heat_session_nonce = "0123456789abcdef0123456789abcdef";
-        ss::RuntimeGuards guard;
-        const auto result = guard.startup(engine, log, {});
-        if (result)
-            throw std::runtime_error("recording-only native runtime guard refused: " + result->message);
-        if (guard.policy_enabled())
-            throw std::runtime_error("uncalibrated recording-only manifest incorrectly activated policy");
-        if (const auto ongoing = guard.poll())
-            throw std::runtime_error("recording-only heat file affected serving: " + ongoing->message);
-    }
-    // RED P1-5: measured producer P1 + raw P2 with a bounded valid_until.
-    // Build the strict v2 consumer document via the REAL S10 writer, and
-    // re-qualify that same native P1 with today's scope using the same S8.
-    // The P2 value deliberately equals the operator fallback seed: expiry
-    // must still invalidate its evidence, rather than comparing only values.
-    {
-        namespace ss = bc::serving::session;
-        namespace v2 = bc::serving::v2;
-        sv::ManifestInputs qualified = in;
-        sv::Resolved current = qualified.resolved;
-        const fs::path home = t.root / "s8-native-home";
-        const fs::path binary = t.root / "s8-native-engine";
-        fs::create_directories(home);
-        std::ofstream(binary, std::ios::binary) << "S8 fake process binary identity";
-        current.values["engine"]["radiance_home"] = home.string();
-        current.typed.engine.radiance_home = home;
-        qualified.resolved = current;
-        Json& native = qualified.s10.p1_record;
-        Json& scope = native["scope"];
-        scope["model_digest"] = sv::container_identity(model);
-        scope["engine_build_digest"] = sv::engine_identity(binary, home);
-        scope["helper_build_digest"] = sv::file_sha256(binary);
-        scope["layout_digest"] = sv::sha256_hex(current.values.at("layout").dump());
-        scope["inventory_digest"] = sv::gpu_inventory_digest(t.facts.at("gpus"));
-        scope["context_target_tokens"] = current.values.at("service").at("max_context");
-        native["resource_inputs"]["context_target_tokens"] = scope["context_target_tokens"];
-        const int64_t same_seed = current.values.at("handoff").at("small_rows").get<int64_t>();
-        constexpr int64_t expiry = 1800000110;
-        qualified.s10.calibration_records =
-            Json::array({{{"key", "handoff.small_rows"},
-                          {"value", same_seed},
-                          {"evidence_id", "s8-expiry-same-seed"},
-                          {"raw_run", "runs/s8-typed-acceptance"},
-                          {"method", "bounded native P2 check"},
-                          {"recorded_date", "2027-01-15"},
-                          {"source", "cache"},
-                          {"measured_at_unix_s", 1800000000},
-                          {"valid_until_unix_s", expiry},
-                          {"measured_candidates", Json::array({same_seed, same_seed + 1})},
-                          {"scope", scope}}});
-        // The actual P1 producer must generate the same typed wire domain
-        // the S10/S8 consumer accepts, rather than a hand-made alternate P1.
-        // All OS facts here originate in the test detector's real sysroot.
-        const Json rank = {{"schema_version", 1},
-                           {"kind", "radiance_p1_rank_demand"},
-                           {"gpu", Json::array({{{"bdf", current.values.at("layout").at("engine_cards").at(0)},
-                                                 {"required_bytes", 10},
-                                                 {"fixed_bytes", 1},
-                                                 {"claimable_bytes", 10},
-                                                 {"evidence", "rad0011 rank split fixture"}}})},
-                           {"resident_other_bytes", 0}};
-        // A tiny test RAD has all experts fitting into two of three helpers.
-        // The REAL tail placement contract requires at least two helpers, so
-        // select exactly those two actually owning experts. Never invent a
-        // third helper's footprint, which the producer would refuse.
-        sv::Resolved producer_config = current;
-        producer_config.typed.layout.helper_cards.resize(2);
-        producer_config.values["layout"]["helper_cards"] =
-            Json::array({current.values.at("layout").at("helper_cards").at(0),
-                         current.values.at("layout").at("helper_cards").at(1)});
-        producer_config.manifest["process_helpers"] = Json::array(
-            {current.manifest.at("process_helpers").at(0), current.manifest.at("process_helpers").at(1)});
-        producer_config.typed.helper.count = 2;
-        producer_config.values["helper"]["count"] = 2;
-        producer_config.manifest["process_helpers"][1]["placement"] = "tail";
-        producer_config.manifest["process_helpers"][1]["share"] = 0;
-        for (size_t i = 0; i < 2; ++i) {
-            producer_config.manifest["process_helpers"][i]["config"]["count"] = 2;
-            producer_config.manifest["process_helpers"][i]["config"]["index"] = i;
-        }
-        // 64 tiny routed experts together take about 1.6 MiB. A 1 MiB
-        // expert budget makes both selected helpers actually own experts
-        // under the real worker footprint and tail placement contract.
-        producer_config.typed.memory.helper_budgets_mib = {1, 1};
-        producer_config.values["memory"]["helper_budgets_mib"] = Json::array({1, 1});
-        producer_config.typed.memory.tail_budget_mib = 1;
-        producer_config.values["memory"]["tail_budget_mib"] = 1;
-        for (auto& row : producer_config.manifest["process_helpers"])
-            row["budget_mib"] = 1;
-        Json native_plan = plan;
-        native_plan["kv_one_session"]["bytes"] = current.typed.service.max_context;
-        // The actual native owner map covers all routed experts; the host
-        // pool is the 1024 MiB P2 margin and no unowned/embedding/staging.
-        native_plan["host_pool_mib"] = 1024;
-        const Json native_sources = {{"engine_plan", native_plan},
-                                     {"rank_demand", rank},
-                                     {"engine_binary", binary.string()},
-                                     {"helper_binary", binary.string()},
-                                     {"retention_target_tokens", 4096},
-                                     {"margin",
-                                      {{"key", "host_ledger_margin.mib"},
-                                       {"source", "cache"},
-                                       {"evidence", "typed S8 fixture"},
-                                       {"mib", 1024}}},
-                                     {"run_id", "rsc02-test-real-p1-producer"}};
-        for (const auto& gpu : t.facts.at("gpus"))
-            write(t.root / "sys/bus/pci/devices" / gpu.at("bdf").get<std::string>() / "mem_info_gtt_used",
-                  "0\n");
-        const Json published = v2::produce_p1(producer_config, t.facts, t.root, native_sources);
-        assert(published.at("kind") == "bc_serve_v2_measured_inputs");
-        assert(published.at("resource_inputs").at("helper_footprints").size() == 2);
-        assert(published.at("resource_inputs").at("owner_map_digest") ==
-               published.at("scope").at("owner_map_digest"));
-        // The strict manifest consumes the exact native producer bytes.
-        qualified.resolved = producer_config;
-        qualified.measured->plan.plan = sv::decode_engine_plan(native_plan, "native S8 plan");
-        qualified.measured->plan.plan_json = native_plan;
-        native = published;
-        for (auto& rec : qualified.s10.calibration_records)
-            rec["scope"] = published.at("scope");
-        const auto issued = sv::build_manifest(qualified);
-        const auto typed = v2::read_manifest(issued.text, "native S8 expiry document", v2::PlanUse::serving);
-        assert(typed.ok());
-        const Json raw = {{"version", 1},
-                          {"manifest_digest", issued.digest},
-                          {"produced_at_unix_s", qualified.s10.now_unix_s},
-                          {"p1_record", native},
-                          {"calibration_records", qualified.s10.calibration_records}};
-        const fs::path sibling = t.root / "native-s8-evidence.json";
-        sv::write_manifest_file(sibling, raw.dump(2) + "\n");
-        const ss::StoredS8Evidence measured = ss::read_stored_s8_evidence(sibling, issued.digest);
-        v2::P1LiveRoom room{};
-        constexpr int64_t MiB = 1048576;
-        room.mem_available_bytes = 92160LL * MiB;
-        room.cgroup_headroom_bytes = 92160LL * MiB;
-        room.pin_available_bytes = 92160LL * MiB;
-        const auto before = ss::verify_stored_s8(typed.value(), producer_config, t.facts, room, measured,
-                                                 binary, binary, expiry - 1);
-        if (before)
-            throw std::runtime_error("valid native S8 replay failed: " +
-                                     v2::render_human("valid before expiry", *before));
-        { // The stored inventory scope is an identity snapshot (selected card, BDF, architecture, VRAM total). Live VRAM
-          // use and the PCIe link state differ from one start to the next (the previous engine's pages are still being
-          // released), and must never refuse the replay of an unchanged configuration.
-            Json drifted = t.facts;
-            for (Json& g : drifted["gpus"]) {
-                g["vram_used_mib"] = g.value("vram_used_mib", 0) + 7;
-                g["vram_available_mib"] = std::max<int64_t>(0, g.value("vram_available_mib", 0) - 7);
-                g["current_link_speed"] = "2.5 GT/s PCIe";
-                g["current_link_width"] = 1;
-            }
-            const auto drift = ss::verify_stored_s8(typed.value(), producer_config, drifted, room, measured, binary,
-                                                    binary, expiry - 1);
-            if (drift)
-                throw std::runtime_error("replay refused for live VRAM drift: " + v2::render_human("drift", *drift));
-            // ... while a changed card identity still refuses.
-            Json moved = t.facts;
-            moved["gpus"][0]["arch"] = "gfx-foreign";
-            const auto changed = ss::verify_stored_s8(typed.value(), producer_config, moved, room, measured, binary,
-                                                      binary, expiry - 1);
-            assert(changed.has_value());
-            Json resized = t.facts;
-            resized["gpus"][0]["vram_total_mib"] = resized["gpus"][0].at("vram_total_mib").get<int64_t>() + 1024;
-            assert(ss::verify_stored_s8(typed.value(), producer_config, resized, room, measured, binary, binary,
-                                        expiry - 1).has_value());
-        }
-        const auto after = ss::verify_stored_s8(typed.value(), producer_config, t.facts, room, measured, binary,
-                                                binary, expiry);
-        assert(after.has_value());
-        assert(after->message.find("valid_until_unix_s=1800000110") != std::string::npos &&
-               "expired calibrated P2 must give its exact live deadline, not silently use identical seed");
-    }
-    const Json& d = built.document;
-    assert(d.at("metadata").at("content_digest") == built.digest && built.digest.rfind("sha256:", 0) == 0);
-    const Json& spec = d.at("spec");
-    assert(spec.at("intent").at("layout") == "flashnext-4gpu" &&
-           spec.at("intent").at("model") == model.string());
-    assert(spec.at("processes").at("helpers").size() == 3 &&
-           spec.at("processes").at("helpers")[2].at("tier") == "tail");
-    assert(spec.at("processes").at("helpers")[2].at("rows_kernel") == true &&
-           spec.at("processes").at("helpers")[2].at("share") == 0);
-    assert(spec.at("processes").at("engine").at("scheduler").at("tp") == r.values.at("engine").at("tp"));
-    assert(spec.at("handoff").at("transport").at("max_rows") == r.values.at("handoff").at("max_rows"));
-    assert(spec.at("handoff").at("kernels").at("moe_down_tile") == 1);
-    assert(spec.at("resources").at("host").at("pool_mib") == r.values.at("memory").at("host_pool_mib"));
-    size_t leaves = 0;
-    for (const auto& [group, body] : spec.at("processes").at("helper_common").items())
-        leaves += body.size();
-    assert(leaves == 25); // every helper_common leaf of helper_profile.toml; balance_speeds_milli is absent
-                          // while balance is off
-    size_t owned = 0;
-    for (const Json& h : spec.at("plan").at("owner_map").at("helpers"))
-        owned += h.at("count").get<size_t>();
-    assert(owned == 64); // 4 layers x 16 experts: with budgets this large the helpers own them all
-    assert(spec.at("plan").at("engine_memory").at("expected") == plan);
-    // The checkpoint slots follow what is really free (RSC08 S3): the host pool and the memory the helpers and
-    // the engine hold are counted against MemAvailable as read when the manifest is written. With the tier at
-    // its target (12288 MiB), a store floor of 8 and the plan's 1 MiB consumer, the room above the tier is
-    // `left` MiB and the store takes 8 + left of its want 72.
-    {
-        const uint64_t reserve = r.values.at("memory").at("host_reserve_mib").get<uint64_t>();
-        // the calibrated margin the ledger leaves unplanned (amendment 11) is part of the manifest's
-        // calibration and of the room
-        uint64_t margin = 0;
-        for (const Json& e : spec.at("calibration"))
-            if (e.at("key") == "host_ledger_margin.mib")
-                margin = e.at("value").get<uint64_t>();
-        assert(margin == 1024);
-        auto slots_for = [&](uint64_t helpers_mib, int64_t extra_left_mib,
-                             int64_t available_shift_mib) -> uint64_t {
-            sv::ManifestInputs in3 = in;
-            in3.measured->plan.resident = {helpers_mib, 1024};
-            const int64_t available = int64_t(reserve + margin + 9216 + 1 + 8 + 12288 + helpers_mib + 1024) +
-                                      extra_left_mib + available_shift_mib;
-            in3.resolved.facts["host"]["mem_available_mib"] = available;
-            const auto built3 = sv::build_manifest(in3);
-            return built3.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>();
-        };
-        assert(slots_for(1536, 22, 0) == 8 + 22); // 22 MiB above the tier: 22 more slots than the floor
-        assert(slots_for(1536, 22, -10) ==
-               8 + 12); // a manifest written when MemAvailable is lower: fewer slots
-        assert(slots_for(1536, 22, +10) == 8 + 32); // and when it is higher: more
-        // the margin is a seed with its evidence in spec.calibration, and a refit (a cache entry) replaces it:
-        // the manifest says so (source cache), its digest moves, and the slots follow; the engine plan and its
-        // key do not (the margin is not part of what the engine measured)
-        {
-            const Json* seed_entry = nullptr;
-            for (const Json& e : spec.at("calibration"))
-                if (e.at("key") == "host_ledger_margin.mib")
-                    seed_entry = &e;
-            assert(seed_entry && seed_entry->at("source") == "seed" &&
-                   !seed_entry->at("evidence").get<std::string>().empty());
-            sv::ManifestInputs seeded = in;
-            seeded.measured->plan.resident = {1536, 1024};
-            seeded.resolved.facts["host"]["mem_available_mib"] =
-                reserve + margin + 9216 + 1 + 8 + 12288 + 1536 + 1024 + 30;
-            const auto before = sv::build_manifest(seeded);
-            sv::ManifestInputs refit = seeded;
-            refit.calibration_cache = t.file(
-                "margin-refit.toml",
-                "schema_version = 1\n[[entry]]\nkey = \"calibration.host_ledger_margin.mib\"\nvalue = 1052\n"
-                "seeded = \"2026-11-06\"\nevidence = \"a start stopped 28 MiB short at the engine's host-room "
-                "check\"\n");
-            const auto after = sv::build_manifest(refit);
-            const Json* refit_entry = nullptr;
-            for (const Json& e : after.document.at("spec").at("calibration"))
-                if (e.at("key") == "host_ledger_margin.mib")
-                    refit_entry = &e;
-            assert(refit_entry && refit_entry->at("source") == "cache" &&
-                   refit_entry->at("value") == margin + 28);
-            assert(after.digest != before.digest);
-            auto slots_of = [](const sv::BuiltManifest& b) {
-                return b.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>();
-            };
-            assert(slots_of(before) == 8 + 30 &&
-                   slots_of(after) == 8 + 2); // 28 MiB more margin, 28 fewer slots of 1 MiB
-            assert(before.document.at("spec").at("plan").at("engine_memory").at("cache_key") ==
-                   after.document.at("spec").at("plan").at("engine_memory").at("cache_key"));
-        }
-        // helpers holding more resident memory take the same room: fewer slots at the same MemAvailable
-        {
-            sv::ManifestInputs in3 = in;
-            in3.measured->plan.resident = {1536, 1024};
-            const uint64_t available = in3.resolved.facts.at("host").at("mem_available_mib").get<uint64_t>();
-            in3.resolved.facts["host"]["mem_available_mib"] =
-                reserve + margin + 9216 + 1 + 8 + 12288 + 1536 + 1024 + 22;
-            const auto base = sv::build_manifest(in3);
-            in3.measured->plan.resident = {1536 + 10, 1024};
-            const auto more = sv::build_manifest(in3);
-            assert(more.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>() +
-                       10 ==
-                   base.document.at("spec").at("resources").at("host").at("checkpoint_slots").get<uint64_t>());
-            (void)available;
-        }
-        // the figures are measured, never defaulted: a plan stored without them is refused, and a cache entry
-        // written before they were measured is a miss (the configuration is measured again)
-        sv::ManifestInputs in4 = in;
-        in4.measured->plan.resident = {0, 0};
-        bool refused = false;
-        try {
-            (void)sv::build_manifest(in4);
-        } catch (const std::exception&) {
-            refused = true;
-        }
-        assert(refused);
-    }
-    // The kv_backing_floor the engine admits with is the selected calibration, carried in the manifest (never a
-    // launcher literal): balanced 600000, latency 500000, throughput none (0). engine_view hands the engine
-    // exactly this.
-    {
-        auto floor_for = [&](const char* objective) {
-            Options o = opts;
-            o.sets = {std::string("service.objective=") + objective};
-            const auto r2 = sv::resolve(o, t.facts);
-            sv::ManifestInputs in2 = in;
-            in2.resolved = r2;
-            in2.measured->key_inputs = sv::plan_key_inputs(r2.values, t.facts, sv::container_identity(model),
-                                                           std::string(64, 'b'), "");
-            const auto built2 = sv::build_manifest(in2);
-            const auto m2 =
-                bc::serving::v2::read_manifest(built2.text, "floor test", bc::serving::v2::PlanUse::serving);
-            assert(m2.ok());
-            const auto view = bc::serving::v2::engine_view(m2.value());
-            assert(view.ok());
-            return view.value().kv_backing_floor_ppm;
-        };
-        assert(floor_for("balanced") == 600000 && floor_for("latency") == 500000 &&
-               floor_for("throughput") == 0);
-    }
-    assert(spec.at("plan").at("state") == "measured" &&
-           spec.at("resources").at("host").contains("checkpoint_slots"));
-    assert(!spec.at("handoff").at("placement").contains("live_policy") && !spec.contains("experiment"));
-
-    // RHP16: a matching measured cache record derives production policy leaves; v1
-    // read-back validates the digest, each leaf's provenance and the pinned contract.
-    // The transaction, copy, heat-gap, margin and k figures are from policy-live-9.
-    // This synthetic tiny model has synthetic additional effect/lanes/drift readings.
-    {
-        sv::ManifestInputs calibrated = in;
-        const Json policy_inputs = sv::policy_calibration_inputs(built.document.at("spec"));
-        const std::string key = sv::policy_calibration_key(policy_inputs);
-        { // Rebuilds, helper VRAM budgets and host memory do not change measured policy scope.
-            auto changed = built.document.at("spec");
-            changed["plan"]["engine_memory"]["engine_identity"] = std::string(64, 'f');
-            changed["processes"]["helpers"][0]["vram_budget_mib"] = 1234;
-            changed["resources"]["host"]["pool_mib"] = 1234;
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) == key);
-            changed = built.document.at("spec");
-            changed["intent"]["layout"] = "another-layout";
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
-            changed = built.document.at("spec");
-            changed["intent"]["service"]["objective"] = "latency";
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
-            changed = built.document.at("spec");
-            changed["handoff"]["telemetry"]["period_s"] = 1;
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
-            changed = built.document.at("spec");
-            changed["processes"]["helpers"][0]["gpu"] = "0000:06:00.0";
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
-            changed = built.document.at("spec");
-            changed["plan"]["engine_memory"]["model_identity"] = std::string(64, 'f');
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
-            changed = built.document.at("spec");
-            changed["facts"]["gpus"][0]["arch"] = "gfx1030";
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(changed)) != key);
-        }
-        calibrated.calibration_cache =
-            t.file("live-policy-record.toml",
-                   "schema_version = 1\n[[live_policy_record]]\n"
-                   "plan_cache_key = \"" +
-                       key +
-                       "\"\n" +
-
-                       "record_schema_version = 1\n"
-                       "calibration_kind = \"radiance.live_policy\"\n"
-                       "calibration_key_fields = " + sv::policy_calibration_key_fields().dump() + "\n" +
-                       "calibration_inputs = " + Json(policy_inputs.dump()).dump() + "\n" +
-                       "source_plan_key = \"" + sv::plan_key(calibrated.measured->key_inputs) + "\"\n" +
-                       "source_engine_build = \"" +
-                       calibrated.measured->key_inputs.at("engine_build").get<std::string>() + "\"\n" +
-                       "source_revision = \"source_slice:fixture\"\n"
-                       "run_id = \"00000000-0000-4000-8000-000000000001\"\n"
-                       "host_facts_digest = \"" + std::string(64,'3') + "\"\n" +
-                       "layout = \"flashnext-4gpu\"\nobjective = \"balanced\"\n"
-                       "seeded = \"2026-11-05\"\nevidence = \"policy-live-9 timing and sampling; synthetic "
-                       "noise/drift/lane readings\"\n"
-                       "txn_p50_ns = 1770000000\ntxn_p95_ns = 2720000000\n"
-                       "copy_bytes_per_s = 160000000\nheat_gap_max_ns = 5040000000\nheat_watermarked = 0\n"
-                       "hot_set_k = 5931\nmarginal_error_ppm = 23000\n"
-                       "marginal_observations = 3\ndrift_half_life_observations = 59000000\n"
-                       "observation_rate_per_s = 10000000\n"
-                       "tail_share_gain_ppm = 45000\ntail_lane_service_ns_per_s = 750000000\ntail_lane_row_ns "
-                       "= 22222222\n"
-                       "lane_lost_ns = 100000000\neffect_rows_per_s = 64\n"
-                       "effect_noise_max_ns = 2500000\n"
-                       "effect_row_noise_ns = 1550000\n"
-                       "effect_window_noise_ladder = [[8, 80000], [16, 40000], [32, 16000], [64, 10000]]\n"
-                       "abort_quiescent_ns = 1500000000\n");
-        // A record in an older format is refused, never read as evidence: the pre-v1 scoped record (no
-        // record_schema_version) and the hash-only one (no calibration_inputs either).
-        {
-            std::ifstream input(calibrated.calibration_cache);
-            std::string historical((std::istreambuf_iterator<char>(input)),
-                                    std::istreambuf_iterator<char>());
-            const auto refused_with_unsupported_format = [&](const std::string& file, const std::string& text) {
-                sv::ManifestInputs old = calibrated;
-                old.calibration_cache = t.file(file.c_str(), text);
-                try { (void)sv::build_manifest(old); }
-                catch (const std::exception& e) {
-                    return std::string(e.what()).find("unsupported record format") != std::string::npos;
-                }
-                return false;
-            };
-            for (const std::string field : {"record_schema_version", "calibration_kind",
-                                            "calibration_key_fields", "source_revision",
-                                            "run_id", "host_facts_digest"}) {
-                const auto at = historical.find(field + " = ");
-                assert(at != std::string::npos);
-                const auto end_line = historical.find('\n', at);
-                assert(end_line != std::string::npos);
-                historical.erase(at, end_line - at + 1);
-            }
-            assert(refused_with_unsupported_format("pre-v1-policy.toml", historical));
-
-            for (const std::string field : {"calibration_inputs", "source_plan_key",
-                                            "source_engine_build"}) {
-                const auto at = historical.find(field + " = ");
-                assert(at != std::string::npos);
-                const auto end_line = historical.find('\n', at);
-                assert(end_line != std::string::npos);
-                historical.erase(at, end_line - at + 1);
-            }
-            assert(refused_with_unsupported_format("hash-only-policy.toml", historical));
-        }
-        // The production store (one native v1 record keyed c2a1...). Derive with the
-        // *actual recorded scope* and this CPU-only synthetic model geometry.
-        // No production file is modified.
-        {
-            constexpr const char* production_key =
-                "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
-            const fs::path store = BC_CALIBRATION_PRODUCTION_FIXTURE;
-            std::ifstream input(store, std::ios::binary);
-            assert(input);
-            const std::string before((std::istreambuf_iterator<char>(input)),
-                                      std::istreambuf_iterator<char>());
-            const auto production_record = sv::read_live_policy_record(store, production_key);
-            assert(production_record && production_record->record_schema_version == 1);
-            assert(production_record->calibration_inputs &&
-                   sv::live_policy_record_complete(*production_record));
-            const Json& scope = *production_record->calibration_inputs;
-            Json production_spec = built.document.at("spec");
-            production_spec["plan"]["engine_memory"]["model_identity"] = scope.at("model");
-            production_spec["intent"]["layout"] = scope.at("layout");
-            production_spec["intent"]["service"]["objective"] = scope.at("objective");
-            production_spec["intent"]["power"]["profile"] = scope.at("power_profile");
-            production_spec["processes"]["engine"]["device"]["gpus"] = Json::array();
-            for (const auto& card : scope.at("engine_cards"))
-                production_spec["processes"]["engine"]["device"]["gpus"].push_back(card.at("bdf"));
-            auto& helpers = production_spec["processes"]["helpers"];
-            assert(helpers.size() == scope.at("helper_cards").size());
-            for (size_t i = 0; i < helpers.size(); ++i) {
-                const auto& card = scope.at("helper_cards")[i];
-                helpers[i]["gpu"] = card.at("bdf");
-                helpers[i]["tier"] = card.at("tier");
-                helpers[i]["formats"] = card.at("formats");
-                helpers[i]["rows_kernel"] = card.at("rows_kernel");
-            }
-            production_spec["processes"]["helper_common"] = scope.at("helper_runtime");
-            production_spec["handoff"]["telemetry"]["period_s"] = scope.at("histogram_period_s");
-            for (const auto& field : {"max_rows", "small_rows", "gemv_large_rows", "skip_owned"})
-                production_spec["handoff"]["transport"][field] = scope.at("remote_service").at(field);
-            production_spec["handoff"]["kernels"]["moe_down_tile"] =
-                scope.at("remote_service").at("moe_down_tile");
-            assert(sv::policy_calibration_inputs(production_spec) == scope);
-            assert(sv::policy_calibration_key(sv::policy_calibration_inputs(production_spec)) ==
-                   production_key);
-            bc::experts::Container container;
-            assert(container.open(model.c_str()));
-            sv::ManifestInputs production = calibrated;
-            production.calibration_cache = store;
-            std::string skip;
-            const auto derived = sv::derive_manifest_live_policy(production, container,
-                                                                  production_spec, &skip);
-            if (!derived || !derived->policy.is_object() || derived->policy.empty())
-                throw std::runtime_error("production policy did not derive: " + skip);
-            std::ifstream check(store, std::ios::binary);
-            const std::string after((std::istreambuf_iterator<char>(check)),
-                                     std::istreambuf_iterator<char>());
-            assert(before == after);
-        }
-        const auto with_calibration = sv::build_manifest(calibrated);
-        { // A different engine build consumes the SAME qualified hardware evidence,
-          // with a distinct strict memory-plan identity and a new manifest digest.
-            sv::ManifestInputs rebuilt = calibrated;
-            rebuilt.measured->key_inputs["engine_build"] = std::string(64, 'f');
-            // Native cross-build activation: fixture was written by build A,
-            // the effective measured plan on build B has a different identity.
-            const auto persisted_a = sv::read_live_policy_record(calibrated.calibration_cache, key);
-            assert(persisted_a && persisted_a->calibration_inputs &&
-                   persisted_a->source_engine_build ==
-                       calibrated.measured->key_inputs.at("engine_build").get<std::string>());
-            assert(persisted_a->source_engine_build !=
-                   rebuilt.measured->key_inputs.at("engine_build").get<std::string>());
-            const auto carried = sv::build_manifest(rebuilt);
-            assert(sv::policy_calibration_key(
-                       sv::policy_calibration_inputs(carried.document.at("spec"))) == key);
-            assert(carried.document.at("spec").at("handoff").at("placement").contains("live_policy"));
-            assert(carried.document.at("spec").at("handoff").at("placement").at("live_policy") ==
-                   with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy"));
-            assert(carried.document.at("spec").at("plan").at("engine_memory").at("engine_identity") !=
-                   with_calibration.document.at("spec").at("plan").at("engine_memory").at("engine_identity"));
-            assert(carried.digest != with_calibration.digest);
-            assert(bc::serving::v2::read_manifest(carried.text, "carried calibration",
-                                                  bc::serving::v2::PlanUse::serving).ok());
-        }
-        { // A policy-enabled manifest must STILL refuse missing live heat.
-            namespace ss = bc::serving::session;
-            const fs::path document = t.root / "policy-enabled-guard-manifest.json";
-            sv::write_manifest_file(document, with_calibration.text);
-            ss::EngineStart active;
-            active.manifest = document;
-            active.handoff_shm =
-                with_calibration.document.at("spec").at("handoff").at("transport").at("shm").get<std::string>();
-            active.engine_launched_at = std::chrono::system_clock::now() - std::chrono::seconds(3);
-            active.heat_session_nonce = "0123456789abcdef0123456789abcdef";
-            ss::RuntimeGuards guard;
-            const auto failure = guard.startup(active, t.root / "recording-only-guard-engine.log", {});
-            if (!guard.policy_enabled() || !failure || failure->message.find("histogram") == std::string::npos)
-                throw std::runtime_error("qualified live policy lost strict histogram admission");
-        }
-        const auto& lp = with_calibration.document.at("spec").at("handoff").at("placement").at("live_policy");
-        const uint64_t quiet_windows = lp.at("effect_min_quiet_windows").get<uint64_t>();
-        const uint64_t window_samples = lp.at("effect_window_samples").get<uint64_t>();
-        const uint64_t window_ns = ((window_samples * 1000000000ULL) + 63ULL) / 64ULL;
-        assert(lp.at("cadence_ns") == (2720000000ULL + (quiet_windows * window_ns)));
-        assert(lp.at("accept_unwatermarked_heat") == true);
-        assert(lp.at("max_moved_bytes") == 435200000ull && lp.at("margin_ppm") == 23000);
-        assert(lp.at("half_life_observations_milli") == 59000000000ull);
-        const auto& pv = with_calibration.document.at("provenance");
-        assert(pv.at("/spec/handoff/placement/live_policy/cadence_ns").at("origin") == "derived");
-        assert(pv.at("/spec/handoff/placement/live_policy/margin_ppm").at("class") == "policy");
-        assert(bc::serving::v2::read_manifest(with_calibration.text, "calibrated policy",
-                                              bc::serving::v2::PlanUse::serving)
-                   .ok());
-        assert(with_calibration.digest != built.digest);
-        std::ifstream cal_input(calibrated.calibration_cache);
-        const std::string cal_text((std::istreambuf_iterator<char>(cal_input)),
-                                   std::istreambuf_iterator<char>());
-        // Capture the production diagnostic, not only the helper's return value.
-        auto no_policy = [&](const std::string& file_text, const std::string& reason) {
-            sv::ManifestInputs failed = calibrated;
-            failed.calibration_cache = t.file("failed-live-policy.toml", file_text);
-            FILE* log = std::tmpfile();
-            assert(log);
-            std::fflush(stderr);
-            const int saved = ::dup(STDERR_FILENO);
-            assert(saved >= 0 && ::dup2(::fileno(log), STDERR_FILENO) >= 0);
-            sv::BuiltManifest no_live;
-            try {
-                no_live = sv::build_manifest(failed);
-            } catch (...) {
-                std::fflush(stderr);
-                assert(::dup2(saved, STDERR_FILENO) >= 0);
-                ::close(saved);
-                std::fclose(log);
-                throw;
-            }
-            std::fflush(stderr);
-            assert(::dup2(saved, STDERR_FILENO) >= 0);
-            ::close(saved);
-            std::rewind(log);
-            std::string diagnostic;
-            char chunk[512];
-            while (const size_t count = std::fread(chunk, 1, sizeof(chunk), log))
-                diagnostic.append(chunk, count);
-            std::fclose(log);
-            const auto& placement = no_live.document.at("spec").at("handoff").at("placement");
-            assert(!placement.contains("live_policy"));
-            const auto& origin = no_live.document.at("provenance")
-                                     .at("/spec/handoff/placement")
-                                     .at("source")
-                                     .get_ref<const std::string&>();
-            assert(origin.find(key) != std::string::npos && origin.find(reason) != std::string::npos);
-            assert(diagnostic.find("serving without live_policy") != std::string::npos &&
-                   diagnostic.find(key) != std::string::npos && diagnostic.find(reason) != std::string::npos);
-            assert(bc::serving::v2::read_manifest(no_live.text, "fallback", bc::serving::v2::PlanUse::serving)
-                       .ok());
-            sv::write_manifest_file(t.root / ("fallback-" + reason + ".json"), no_live.text);
-        };
-        auto replace_line = [&](std::string src, const std::string& name, const std::string& value) {
-            const auto from = src.find(name + " = ");
-            assert(from != std::string::npos);
-            const auto end = src.find('\n', from);
-            assert(end != std::string::npos);
-            src.replace(from, end - from, name + " = " + value);
-            return src;
-        };
-        const std::string calib9_ladder = "[[10012, 256051], [20024, 199777], [40048, 110659], "
-                                          "[80096, 79012], [160192, 64111], [320384, 63886], "
-                                          "[640768, 42779], [1281536, 32781], [2563072, 53553]]";
-        auto noisy = replace_line(cal_text, "effect_window_noise_ladder", calib9_ladder);
-        noisy = replace_line(noisy, "tail_share_gain_ppm", "66249");
-        noisy = replace_line(noisy, "tail_lane_row_ns", "4287");
-        noisy = replace_line(noisy, "effect_rows_per_s", "175034");
-        sv::ManifestInputs noisy_input = calibrated;
-        noisy_input.calibration_cache = t.file("unresolvable-noise.toml", noisy);
-        const auto gate_off = sv::build_manifest(noisy_input);
-        const auto& off = gate_off.document.at("spec").at("handoff").at("placement").at("live_policy");
-        assert(off.at("effect_gate") == false);
-        assert(off.at("margin_ppm") == 23000 && off.at("max_moves") > 0);
-        assert(gate_off.document.at("provenance")
-                   .at("/spec/handoff/placement/live_policy/effect_gate")
-                   .at("source")
-                   .get<std::string>()
-                   .find("cannot resolve predicted tail effect") != std::string::npos);
-        assert(bc::serving::v2::read_manifest(gate_off.text, "unresolvable", bc::serving::v2::PlanUse::serving)
-                   .ok());
-        // Calib12-shaped: all planner measurements present, but no peer
-        // reference on the tail LARGE lane and all effect fields absent.
-        auto structural = cal_text;
-        for (const char* name : {"effect_rows_per_s", "effect_noise_max_ns", "effect_row_noise_ns",
-                                 "effect_window_noise_ladder"}) {
-            const auto pos = structural.find(std::string(name) + " = ");
-            assert(pos != std::string::npos);
-            const auto end = structural.find('\n', pos);
-            assert(end != std::string::npos);
-            structural.erase(pos, end - pos + 1);
-        }
-        structural +=
-            "absent = { effect_rows_per_s = \"tail large lane has no peer reference on this layout\", "
-            "effect_noise_max_ns = \"tail large lane has no peer reference on this layout\", "
-            "effect_row_noise_ns = \"tail large lane has no peer reference on this layout\", "
-            "effect_window_noise_ladder = \"tail large lane has no peer reference on this layout\" }\n";
-        sv::ManifestInputs structural_input = calibrated;
-        structural_input.calibration_cache = t.file("calib12-structural.toml", structural);
-        const auto structural_manifest = sv::build_manifest(structural_input);
-        const auto& structural_policy =
-            structural_manifest.document.at("spec").at("handoff").at("placement").at("live_policy");
-        assert(structural_policy.at("effect_gate") == false);
-        assert(structural_policy.at("max_moved_bytes") == 435200000ULL);
-        assert(structural_policy.at("margin_ppm") == 23000);
-        assert(structural_manifest.document.at("provenance")
-                   .at("/spec/handoff/placement/live_policy/effect_gate")
-                   .at("source")
-                   .get<std::string>()
-                   .find("tail large lane has no peer reference") != std::string::npos);
-        assert(bc::serving::v2::read_manifest(structural_manifest.text, "calib12",
-                                              bc::serving::v2::PlanUse::serving)
-                   .ok());
-        auto incomplete = replace_line(cal_text, "copy_bytes_per_s", "1");
-        // A schema-valid but unusable positive reading is not a malformed file.
-        no_policy(incomplete, "measured budget buys fewer");
-        auto missing = cal_text;
-        const std::string copy_line = "copy_bytes_per_s = 160000000\n";
-        assert(missing.find(copy_line) != std::string::npos);
-        missing.erase(missing.find(copy_line), copy_line.size());
-        missing += "absent = { copy_bytes_per_s = \"no DMA observation\" }\n";
-        no_policy(missing, "copy_bytes_per_s");
-        auto malformed = calibrated;
-        malformed.calibration_cache =
-            t.file("malformed-live-policy.toml", cal_text + "unexpected_guess = 12\n");
-        try {
-            (void)sv::build_manifest(malformed);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("unknown key") != std::string::npos);
-        }
-        malformed.calibration_cache =
-            t.file("unparseable-live-policy.toml", cal_text + "unexpected_guess = \"unterminated\n");
-        try {
-            (void)sv::build_manifest(malformed);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("TOML parse error") != std::string::npos);
-        }
-
-        sv::ManifestInputs forbidden = calibrated;
-        forbidden.live_policy = lp;
-        forbidden.live_policy_from = "--live-policy lab-policy.json";
-        try {
-            (void)sv::build_manifest(forbidden);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("lab-only") != std::string::npos);
-        }
-        // The calibration run (bc-serve --calibration-run, the launcher's --calibrate): lab profile, the
-        // explicit policy and no experiment. calibration-ingest accepts exactly that manifest, and refuses the
-        // production one.
-        sv::ManifestInputs calibration_run = in;
-        calibration_run.profile = "lab";
-        calibration_run.live_policy = lp;
-        calibration_run.live_policy_from = "--live-policy policy.json";
-        const auto cr = sv::build_manifest(calibration_run);
-        assert(!cr.document.at("spec").contains("experiment"));
-        // The record a calibration run files must be the one a production start of the same configuration looks up:
-        // the lab and production manifests carry the same calibrated scope.
-        assert(sv::policy_calibration_key(sv::policy_calibration_inputs(cr.document.at("spec"))) ==
-                   sv::policy_calibration_key(sv::policy_calibration_inputs(built.document.at("spec"))) &&
-               sv::policy_calibration_inputs(cr.document.at("spec")) ==
-                   sv::policy_calibration_inputs(built.document.at("spec")));
-        const auto cr_path = t.root / "calibration-run-manifest.json";
-        const auto prod_path = t.root / "production-manifest.json";
-        sv::write_manifest_file(cr_path, cr.text);
-        sv::write_manifest_file(prod_path, built.text);
-        const auto cr_loaded = bc::serving::v2::load_manifest(cr_path, bc::serving::v2::PlanUse::serving);
-        assert(cr_loaded.ok());
-        const auto& crm = cr_loaded.value();
-        Json measured = {
-            {"txn_p50_ns", 1770000000ULL},
-            {"txn_p95_ns", 2720000000ULL},
-            {"copy_bytes_per_s", 160000000ULL},
-            {"heat_gap_max_ns", 5040000000ULL},
-            {"heat_watermarked", 0},
-            {"hot_set_k", 5931},
-            {"marginal_error_ppm", 23000},
-            {"marginal_observations", 3},
-            {"drift_half_life_observations", 59000000},
-            {"observation_rate_per_s", 10000000},
-            {"tail_share_gain_ppm", 45000},
-            {"tail_lane_service_ns_per_s", 750000000},
-            {"lane_lost_ns", 100000000},
-            {"effect_rows_per_s", 64},
-            {"tail_lane_row_ns", 22222222},
-            {"effect_noise_max_ns", 2500000},
-            {"effect_row_noise_ns", 1550000},
-            {"effect_window_noise_ladder",
-             Json::array(
-                 {Json::array({uint64_t(8), uint64_t(80000)}), Json::array({uint64_t(16), uint64_t(40000)}),
-                  Json::array({uint64_t(32), uint64_t(16000)}), Json::array({uint64_t(64), uint64_t(10000)})})},
-            {"abort_quiescent_ns", 1500000000ULL}};
-        { // the v2 plan key covers the engine tuning settings (a changed TP split is another plan) and, in a
-          // world of
-            // more than one card type, every rank's card; an absent or empty tuning section keeps the key
-            namespace v2 = bc::serving::v2;
-            auto a = crm;
-            a.spec.processes.engine.tuning.reset();
-            const std::string k0 = v2::plan_cache_key(a);
-            assert(!k0.empty());
-            auto b = a;
-            b.spec.processes.engine.tuning = v2::EngineTuning{};
-            assert(v2::plan_cache_key(b) == k0);
-            b.spec.processes.engine.tuning->tp_ownership = "kv=1,1,2;ffn=8,8,16";
-            const std::string k1 = v2::plan_cache_key(b);
-            assert(k1 != k0);
-            b.spec.processes.engine.tuning->tp_ownership = "kv=1,1,2;ffn=8,16,8";
-            assert(v2::plan_cache_key(b) != k1);
-            if (a.spec.processes.engine.device.gpus.size() == 1 && a.spec.facts.gpus.size() > 1) {
-                auto c = a; // a second rank on another card type moves the key
-                for (const auto& g : c.spec.facts.gpus)
-                    if (g.arch != c.spec.facts.gpus.front().arch &&
-                        g.bdf != c.spec.processes.engine.device.gpus[0]) {
-                        c.spec.processes.engine.device.gpus.push_back(g.bdf);
-                        break;
-                    }
-                if (c.spec.processes.engine.device.gpus.size() == 2)
-                    assert(v2::plan_cache_key(c) != k0);
-            }
-        }
-        const Json row = {
-            {"plan_cache_key", bc::serving::v2::plan_cache_key(crm)},
-            {"layout", crm.spec.intent.layout},
-            {"objective",
-             std::string(
-                 bc::serving::v2::kObjectiveNames[static_cast<size_t>(crm.spec.intent.service.objective)])},
-            {"seeded", "2026-11-06"},
-            {"evidence", "calibration-run ingest test"},
-            {"measurements", measured},
-            {"absent", Json::object()}};
-        const auto helper_log = t.root / "calibration-helper0.log";
-        {
-            std::ofstream out(helper_log);
-            out << "RHP16_CALIBRATION_JSON " << row.dump() << "\n";
-        }
-        const auto store = t.root / "calibration-run-store.toml";
-        const std::string store_key = sv::policy_calibration_key(
-            sv::policy_calibration_inputs(cr.document.at("spec")));
-        try {
-            sv::ingest_live_policy_log(helper_log, store, prod_path, store_key);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("calibration-run manifest") != std::string::npos);
-        }
-        assert(!fs::exists(store));
-        bool bad_scope_rejected = false;
-        try {
-            sv::ingest_live_policy_log(helper_log, store, cr_path, std::string(64, 'e'));
-        } catch (const std::runtime_error& e) {
-            bad_scope_rejected = std::string(e.what()).find("target policy key") != std::string::npos;
-        }
-        assert(bad_scope_rejected && !fs::exists(store));
-        sv::ingest_live_policy_log(helper_log, store, cr_path, store_key);
-        const auto ingested = sv::read_live_policy_record(store, store_key);
-        assert(ingested && sv::live_policy_record_complete(*ingested) &&
-               ingested->layout == crm.spec.intent.layout &&
-               ingested->calibration_inputs &&
-               *ingested->calibration_inputs == sv::policy_calibration_inputs(cr.document.at("spec")));
-    }
-    // The unmeasured manifest of the measuring start: owner map and settings, no plan and nothing derived from
-    // one. A serving start refuses it, a measuring start reads it, and the measured manifest is the reverse.
-    {
-        sv::ManifestInputs u = in;
-        u.measured.reset();
-        const auto um = sv::build_manifest(u);
-        const Json& us = um.document.at("spec");
-        assert(us.at("plan").at("state") == "unmeasured" && !us.at("plan").contains("engine_memory"));
-        assert(!us.at("resources").at("host").contains("checkpoint_slots") &&
-               us.at("plan").at("owner_map").at("helpers").size() == 3);
-        assert(us.at("resources").at("host").at("pool_mib") == spec.at("resources").at("host").at("pool_mib"));
-        assert(um.document.at("provenance").at("/spec/resources").at("inputs").size() == 2);
-        assert(!bc::serving::v2::read_manifest(um.text, "unmeasured", bc::serving::v2::PlanUse::serving).ok());
-        assert(bc::serving::v2::read_manifest(um.text, "unmeasured", bc::serving::v2::PlanUse::measuring).ok());
-        assert(
-            !bc::serving::v2::read_manifest(built.text, "measured", bc::serving::v2::PlanUse::measuring).ok());
-        assert(sv::build_manifest(u).text == um.text); // deterministic, like the measured one
-    }
-    // A live policy and a lab experiment come from operator-supplied objects, are written verbatim with their
-    // own provenance record, and are read back by the shared reader; a partial policy or a production
-    // experiment is an error, never a file.
-    {
-        sv::ManifestInputs c = in;
-        c.profile = "lab";
-        c.live_policy = Json::parse(
-            R"json({"effect_gate": true, "accept_unwatermarked_heat": false, "cadence_ns": 60000000000,
-            "max_moves": 8, "max_moved_bytes": 4294967296, "min_residency_ns": 300000000000, "max_heat_age_ns": 120000000000,
-            "min_samples": 1000, "abort_cooldown_ns": 30000000000, "learned_eligibility_ttl_ns": 600000000000,
-            "effect_window_samples": 5000, "effect_min_quiet_windows": 3, "effect_revert_ttl_ns": 120000000000,
-            "margin_ppm": 100000, "half_life_observations_milli": 4000, "effect_noise_multiplier_milli": 2000,
-            "protected_layers": [0, 1]})json");
-        c.live_policy_from = "--live-policy policy.json";
-        const auto with_policy = sv::build_manifest(c);
-        assert(
-            with_policy.document.at("spec").at("handoff").at("placement").at("live_policy").at("max_moves") ==
-            8);
-        const Json& rec = with_policy.document.at("provenance").at("/spec/handoff/placement/live_policy");
-        assert(rec.at("origin") == "cli" && rec.at("source") == "--live-policy policy.json" &&
-               rec.at("class") == "policy");
-        assert(with_policy.digest != built.digest);
-        sv::ManifestInputs partial = c;
-        partial.live_policy.erase("margin_ppm");
-        try {
-            (void)sv::build_manifest(partial);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("margin_ppm") != std::string::npos);
-        }
-        sv::ManifestInputs lab = in;
-        lab.profile = "lab";
-        lab.experiment = Json::parse(R"json({"placement": {"mode": "observe", "epoch_cycle_s": 30}})json");
-        lab.experiment_from = "--experiment lab.json";
-        const auto with_experiment = sv::build_manifest(lab);
-        assert(with_experiment.document.at("spec").at("intent").at("service").at("profile") == "lab");
-        assert(with_experiment.document.at("spec").at("experiment").at("placement").at("epoch_cycle_s") == 30);
-        assert(with_experiment.document.at("provenance").at("/spec/experiment").at("origin") == "experiment");
-        sv::ManifestInputs forbidden = lab;
-        forbidden.profile = "production";
-        try {
-            (void)sv::build_manifest(forbidden);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("needs the lab profile") != std::string::npos);
-        }
-    }
-    // RSC11 A1: the three production engine options with no default are written only when set (--set), each at
-    // its registry path, and an unset one leaves no trace in the document or the resolved typed view.
-    {
-        const Json& base_engine = built.document.at("spec").at("processes").at("engine");
-        assert(!base_engine.at("execution").contains("tp_wire") &&
-               !base_engine.at("execution").contains("no_prefix_cache"));
-        assert(!base_engine.at("device").contains("headroom_mib"));
-        assert(!r.typed.engine.tp_wire && !r.typed.engine.no_prefix_cache && !r.typed.engine.gpu_headroom_mib);
-        Options with = opts;
-        with.sets = {"engine.tp_wire=\"wht6\"", "engine.no_prefix_cache=\"on\"", "engine.gpu_headroom_mib=320"};
-        const auto r2 = sv::resolve(with, t.facts);
-        assert(r2.typed.engine.tp_wire == "wht6" && r2.typed.engine.no_prefix_cache &&
-               r2.typed.engine.gpu_headroom_mib == 320U);
-        assert(r2.provenance.at("engine.tp_wire").at("origin") == "cli");
-        sv::ManifestInputs c = in;
-        c.resolved = r2;
-        c.measured.reset();
-        const auto set_built = sv::build_manifest(c);
-        const Json& eng = set_built.document.at("spec").at("processes").at("engine");
-        assert(eng.at("execution").at("tp_wire") == "wht6" &&
-               eng.at("execution").at("no_prefix_cache") == "on");
-        assert(eng.at("device").at("headroom_mib") == 320);
-        assert(
-            bc::serving::v2::read_manifest(set_built.text, "options test", bc::serving::v2::PlanUse::measuring)
-                .ok());
-        Options bad = opts;
-        bad.sets = {"engine.tp_wire=\"lossy\""};
-        try {
-            (void)sv::resolve(bad, t.facts);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("tp_wire") != std::string::npos);
-        }
-    }
-    // The helper section follows the resolver (a layout, the site file or --set), not the table's defaults.
-    {
-        sv::ManifestInputs c = in;
-        c.resolved.values["helper"]["combine"] = true;
-        c.resolved.values["helper"]["combine_min_rows"] = 512;
-        c.resolved.values["helper"]["combine_threads"] = 4;
-        const Json hc =
-            sv::build_manifest(c).document.at("spec").at("processes").at("helper_common").at("combine");
-        assert(hc.at("enabled") == true && hc.at("min_rows") == 512 && hc.at("threads") == 4);
-        c.resolved.values["helper"]["combine"] = false;
-        assert(sv::build_manifest(c)
-                   .document.at("spec")
-                   .at("processes")
-                   .at("helper_common")
-                   .at("combine")
-                   .at("enabled") == false);
-    }
-    // One value for the host KV tier: the ledger plans for the manifest's kv_mib, and a calibration target that
-    // disagrees is refused.
-    {
-        sv::ManifestInputs c = in;
-        c.resolved.values["memory"]["host_kv_mib"] = 8192;
-        try {
-            (void)sv::build_manifest(c);
-            assert(false);
-        } catch (const std::runtime_error& e) {
-            assert(std::string(e.what()).find("differs from calibration host_kv_tier.target_mib") !=
-                   std::string::npos);
-        }
-    }
-    // An operator override keeps its own origin: --set and the site file are never filed under the section's
-    // default.
-    {
-        sv::ManifestInputs c = in;
-        c.resolved.provenance["service.max_sessions"] = {
-            {"origin", "cli"}, {"source", "--set"}, {"inputs", Json::array({"service.max_sessions=4"})}};
-        c.resolved.provenance["engine.port"] = {
-            {"origin", "site"}, {"source", "site.toml"}, {"inputs", Json::array()}};
-        c.resolved.provenance["engine.prefix_resume"] = {
-            {"origin", "derived"}, {"source", "rule"}, {"inputs", Json::array()}};
-        const auto overridden = sv::build_manifest(c);
-        const Json& pv = overridden.document.at("provenance");
-        assert(pv.at("/spec/intent/service/max_sessions").at("origin") == "cli" &&
-               pv.at("/spec/intent/service/max_sessions").at("source") == "--set");
-        assert(pv.at("/spec/intent/service/max_sessions").at("class") ==
-               pv.at("/spec/intent/service").at("class"));
-        assert(pv.at("/spec/processes/engine/server/port").at("origin") == "site");
-        assert(pv.at("/spec/processes/engine/server/port").at("source") == "site.toml");
-        assert(!pv.contains(
-            "/spec/processes/engine/execution/prefix_resume")); // derived keeps its section's record
-        assert(!built.document.at("provenance").contains("/spec/intent/service/max_sessions"));
-    }
-    // Same inputs, same bytes; another instance, another digest; nothing else moves it.
-    assert(sv::build_manifest(in).text == built.text);
-    sv::ManifestInputs other = in;
-    other.instance_id = "22222222-2222-4222-8222-222222222222";
-    assert(sv::build_manifest(other).digest != built.digest);
-    // A model it cannot open, or a plan that is not this configuration's, is an error, never a file.
-    sv::ManifestInputs bad = in;
-    bad.resolved.values["engine"]["model"] = (t.root / "no-such.rad").string();
-    try {
-        (void)sv::build_manifest(bad);
-        assert(false);
-    } catch (const std::runtime_error& e) {
-        assert(std::string(e.what()).find("cannot open the model container") != std::string::npos);
-    }
-    // Written once, read-only, atomically; an existing path is never replaced.
-    const auto path = t.root / "written-manifest.json";
-    sv::write_manifest_file(path, built.text);
-    struct stat st{};
-    assert(::stat(path.c_str(), &st) == 0 && (st.st_mode & 0777U) == 0444 &&
-           !fs::exists(path.string() + ".tmp"));
-    assert(bc::serving::v2::load_manifest(path, bc::serving::v2::PlanUse::serving).ok());
-    try {
-        sv::write_manifest_file(path, built.text);
-        assert(false);
-    } catch (const std::runtime_error& e) {
-        assert(std::string(e.what()).find("immutable") != std::string::npos);
-    }
-    // Racing writers to one path: exactly one wins, the others are refused, the winner's bytes are intact, and
-    // no temporary file is left behind.
-    const auto race = t.root / "raced-manifest.json";
-    std::atomic<int> won{0}, refused{0};
-    std::vector<std::thread> writers;
-    for (int i = 0; i < 8; ++i)
-        writers.emplace_back([&, i] {
-            try {
-                sv::write_manifest_file(race, "writer-" + std::to_string(i) + "\n");
-                ++won;
-            } catch (const std::runtime_error& e) {
-                if (std::string(e.what()).find("immutable") != std::string::npos)
-                    ++refused;
-            }
-        });
-    for (auto& w : writers)
-        w.join();
-    assert(won == 1 && refused == 7);
-    for (const auto& e : fs::directory_iterator(t.root))
-        assert(e.path().filename().string().find("raced-manifest.json.tmp") == std::string::npos);
-    std::ifstream in_race(race);
-    std::string got((std::istreambuf_iterator<char>(in_race)), {});
-    assert(got.rfind("writer-", 0) == 0 && got.back() == '\n');
-}
-
-// The named layouts' unmeasured manifests, digested: the layout data in layouts.toml must produce exactly these
-// documents (RSC11 A2). `bc_serving_test --write-golden` rewrites golden/layout_manifests.txt (a deliberate
-// change, reviewed against the old file); `--dump-manifests DIR` writes the documents.
-void layout_manifests_golden(Fixture& t, bool write_golden, const char* dump_dir) {
-    namespace sv = bc::serving;
-    const auto model = t.root / "golden-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
-    const auto heat = t.root / "golden.hot-first";
-    {
-        std::vector<uint32_t> counts(128 * 16, 0);
-        for (uint32_t l = 0; l < 4; ++l)
-            for (uint32_t e = 0; e < 16; ++e)
-                counts[(l * 16) + e] = (((e * 7) + (l * 3)) % 16) + 1;
-        std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()),
-                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
-    }
-    std::string got;
-    for (const char* name :
-         {"flashnext-4gpu", "flashnext-2xtx", "flashnext-2xtx-combine", "flashnext-2xtx-rdna2-head",
-          "flashnext-2xtx-rdna2-tail", "flashnext-2xtx-rdna2-tail-combine", "flashnext-tp2xtx-r9700",
-          "flashnext-tp2xtx"}) {
-        Options opts;
-        opts.site = t.file("golden-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                   "\"\nradiance_home = \"/runtime\"\n"
-                                                   "[handoff]\nheat = \"" +
-                                                   heat.string() + "\"\nhistogram = \"/heat.live\"\n" +
-                                                   std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-        opts.sets = {std::string("layout.name=\"") + name + "\""};
-        sv::ManifestInputs in;
-        in.resolved = sv::resolve(opts, t.facts);
-        in.instance_id = "11111111-1111-4111-8111-111111111111";
-        in.producer_sha256 = std::string(64, 'a');
-        in.profile = "production";
-        in.s10.power_profile = "stock";
-        const auto built = sv::build_manifest(in);
-        if (dump_dir)
-            write(fs::path(dump_dir) / (std::string(name) + ".json"), built.text);
-        // Normalised to what the layout decides: not this run's directory, the host's free /dev/shm, or the
-        // digest they feed.
-        std::string text = built.text;
-        for (size_t at; (at = text.find(t.root.string())) != std::string::npos;)
-            text.replace(at, t.root.string().size(), "<root>");
-        text =
-            std::regex_replace(text, std::regex("\"shm_available_mib\": [0-9]+"), "\"shm_available_mib\": 0");
-        text = std::regex_replace(text, std::regex("\"content_digest\": \"sha256:[0-9a-f]+\""),
-                                  "\"content_digest\": \"-\"");
-        got += std::string(name) + " sha256:" + sv::sha256_hex(text) + "\n";
-    }
-    const fs::path golden = fs::path(__FILE__).parent_path() / "golden/layout_manifests.txt";
-    if (write_golden) {
-        write(golden, got);
-        return;
-    }
-    std::ifstream in(golden);
-    std::string want((std::istreambuf_iterator<char>(in)), {});
-    if (want != got)
-        throw std::runtime_error("layout manifests differ from golden/layout_manifests.txt:\n" + got);
-}
-
-// An engine-only layout (contract amendment 12): two RDNA3 ranks, no helpers, no handoff, read back by the
-// strict reader.
-void engine_only_layout(Fixture& t) {
-    namespace sv = bc::serving;
-    // A dense model: a container with no routed experts, which the expert reader refuses. Engine-only needs no
-    // experts.
-    const auto model = t.root / "dense-model.rad";
-    bc::test::write_rad(model, 0, 0, 128, 128, {});
-    {
-        bc::experts::Container refused;
-        assert(!refused.open(model.c_str()));
-    }
-    Options opts;
-    opts.site = t.file("dense-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                              "\"\nradiance_home = \"/runtime\"\n" +
-                                              std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    opts.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
-    const auto r = sv::resolve(opts, t.facts); // no [handoff] heat/histogram: nothing here uses them
-    assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.empty());
-    { // no helper, so no combine threads: a host with fewer CPUs than the combine default resolves it
-        Json few = t.facts;
-        few["host"]["cpu_count"] = 4;
-        (void)sv::resolve(opts, few);
-    }
-    assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "wht6" &&
-           r.typed.engine.kernels == "libr3,libref");
-    assert(r.typed.helper.count == 0 && r.manifest.at("process_helpers").empty());
-    assert(r.provenance.at("engine.tp").at("origin") == "derived");
-    sv::ManifestInputs in;
-    in.resolved = r;
-    in.instance_id = "11111111-1111-4111-8111-111111111111";
-    in.producer_sha256 = std::string(64, 'a');
-    in.profile = "production";
-    in.s10.power_profile = "stock";
-    const auto built = sv::build_manifest(in);
-    const Json& spec = built.document.at("spec");
-    assert(!spec.contains("handoff") && !spec.at("processes").contains("helper_common"));
-    assert(spec.at("processes").at("helpers").empty() && spec.at("plan").at("owner_map").at("helpers").empty());
-    assert(spec.at("processes").at("engine").at("device").at("gpus").size() == 2);
-    assert(spec.at("processes").at("engine").at("execution").at("tp_wire") == "wht6");
-    assert(spec.at("processes").at("engine").at("runtime").at("kernels") == Json::array({"libr3", "libref"}));
-    assert(!built.document.at("provenance").contains("/spec/handoff/transport") &&
-           !built.document.at("provenance").contains("/spec/processes/helper_common"));
-    assert(bc::serving::v2::read_manifest(built.text, "engine-only", bc::serving::v2::PlanUse::measuring).ok());
-    // the sections tie to the helpers both ways, and an engine-only manifest refuses a helper-side experiment
-    Json with_handoff = built.document;
-    with_handoff["spec"]["handoff"] = Json::object();
-    assert(!bc::serving::v2::read_manifest(with_handoff.dump(), "x", bc::serving::v2::PlanUse::measuring).ok());
-    // Amendment 13: engine options with a field of their own are `section.name` keys and manifest leaves; a
-    // switch's one value is "on"
-    {
-        Options more = opts;
-        more.sets = {"layout.name=\"qwen27b-2xtx\"",
-                     "sampling.temp=\"0.7\"",
-                     "sampling.top_k=40",
-                     "limits.max_body_mib=64",
-                     "limits.no_cors=\"on\"",
-                     "tuning.p2p=\"off\"",
-                     "vision.video_fps=\"2\"",
-                     "diagnostics.debug_placement=\"on\"",
-                     "kernels.moe_native=true",
-                     "kernels.dec11=false"};
-        sv::ManifestInputs mi = in;
-        mi.resolved = sv::resolve(more, t.facts);
-        const auto with_options = sv::build_manifest(mi);
-        const Json& e = with_options.document.at("spec").at("processes").at("engine");
-        assert(e.at("sampling").at("temp") == "0.7" && e.at("sampling").at("top_k") == 40);
-        assert(e.at("limits").at("max_body_mib") == 64 && e.at("limits").at("no_cors") == "on");
-        assert(e.at("tuning").at("p2p") == "off" && e.at("vision").at("video_fps") == "2" &&
-               e.at("diagnostics").at("debug_placement") == "on");
-        assert(e.at("kernels") == Json({{"moe_native", true},
-                                        {"dec11", false}})); // amendment 14: environment settings are keys too
-        assert(!e.contains("lora") && !e.contains("chat"));  // a section appears only with its members
-        assert(bc::serving::v2::read_manifest(with_options.text, "options", bc::serving::v2::PlanUse::measuring)
-                   .ok());
-        assert(
-            bc::serving::engine_option_fields().size() ==
-            96 /* VTP44: --expert-route-record and --expert-route-replay join; VTP42: four prefill options become one governor spec (87 flags + 9 environment settings) */);
-        Options bad = opts;
-        bad.sets = {"layout.name=\"qwen27b-2xtx\"", "sampling.no_such_option=1"};
-        fail(bad, t.facts, "no_such_option");
-        bad.sets = {"layout.name=\"qwen27b-2xtx\"", "limits.max_body_mib=\"big\""};
-        fail(bad, t.facts, "max_body_mib");
-        bad.sets = {"layout.name=\"qwen27b-2xtx\"", "limits.no_cors=\"off\""};
-        fail(bad, t.facts, "no_cors");
-    }
-    // a layout with helpers still needs its heat and histogram files
-    Options helpers = opts;
-    // A helper layout needs routed experts before it can derive a VRAM budget;
-    // keep this test focused on the missing handoff inputs.
-    helpers.site =
-        t.file("helper-required-site.toml", "[engine]\nmodel = \"" + (t.root / "model.rad").string() +
-                                                "\"\nradiance_home = \"/runtime\"\n" +
-                                                std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    helpers.sets = {"layout.name=\"flashnext-2xtx\""};
-    fail(helpers, t.facts, "missing required key: handoff.heat");
-    // a two-rank engine without its transport is refused
-    Options no_wire = opts;
-    no_wire.sets = {"layout.name=\"qwen27b-2xtx\"", "engine.tp_wire=\"exact\""};
-    (void)sv::resolve(no_wire, t.facts);
-}
-
-// RAD49: a tensor-parallel engine (the two RDNA3 cards) with the one remote-MoE helper the mailbox protocol
-// allows behind it. The expert budget bc-serve derives for an omitted budget-mib (RAD49): the card less its
-// archs.toml reserve less the helper's own lanes, pointer banks, slot map and incoming slot
-// (worker_footprint.h, which the worker checks its lanes against), for this model and this helper's lanes (one
-// small class of handoff.small_rows, the large lane of handoff.max_rows, power save on).
-uint64_t derived_budget_mib(const fs::path& model, uint64_t card_mib, uint64_t reserve_mib, uint32_t helpers,
-                            uint32_t index, uint32_t world, const r3::worker_footprint::SmallClasses& classes,
-                            uint32_t max_rows, bool power_save) {
-    namespace fp = r3::worker_footprint;
-    bc::experts::Container c;
-    MoeShape cs{};
-    assert(c.open(model.c_str()) && bc::experts::container_shape(c, &cs));
-    uint64_t largest = 0;
-    for (uint32_t l = 0; l < c.layers; ++l)
-        for (uint32_t e = 0; e < c.experts; ++e)
-            if (c.weight(l, e, 0) && c.weight(l, e, 1))
-                largest = std::max(largest, uint64_t(bc::experts::laid_out_bytes(c, true, l, e)));
-    const fp::Lanes lanes = fp::lanes_for(classes, max_rows, helpers, index, world, power_save);
-    const fp::Shape shape{c.layers,
-                          cs.experts,
-                          cs.hidden,
-                          cs.intermediate,
-                          cs.top_k ? cs.top_k : r3::moe_shm::kTopK,
-                          r3::moe_shm::kActGroup};
-    const uint64_t fixed = fp::fixed_bytes(shape, lanes, fp::stride_bound(largest));
-    const uint64_t budget = fp::expert_budget_bytes(card_mib << 20, reserve_mib << 20, fixed) >> 20;
-    assert(budget > 0 &&
-           budget < card_mib - reserve_mib); /* strictly less than the old whole-card derivation */
-    return budget;
-}
-
-/* the schema defaults: helper_profile.toml's empty small-lane list (one class of handoff.small_rows 8),
- * max_rows 4096, power save */
-uint64_t derived_budget_mib(const fs::path& model, uint64_t card_mib, uint64_t reserve_mib, uint32_t helpers,
-                            uint32_t index, uint32_t world) {
-    return derived_budget_mib(model, card_mib, reserve_mib, helpers, index, world,
-                              r3::worker_footprint::small_classes({}, 8, 4096), 4096, true);
-}
-
-/* PR #771 review: the budget bc-serve derives is the one the worker's own settings imply. For both power-save
- * modes the manifest's helper_common carries the resolved value, and each helper's settings as the worker reads
- * them (v1 helper settings: its small lanes, hand-off rows, index, engine width, power save) give, through the
- * worker's functions (small_classes, lanes_for), exactly the budget the manifest declares. An experiment that
- * patches a helper's lanes is refused while the budgets are derived. */
-void derived_budget_is_the_workers(Fixture& t) {
-    namespace sv = bc::serving;
-    const auto model = t.root / "derived-budget-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
-    const auto heat = t.root / "derived-budget.hot-first";
-    {
-        std::vector<uint32_t> counts(128 * 16, 1);
-        std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()),
-                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
-    }
-    uint64_t budgets_on[2] = {}, budgets_off[2] = {};
-    for (const bool power_save : {true, false}) {
-        Options opts;
-        opts.site =
-            t.file("derived-budget-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                   "\"\nradiance_home = \"/runtime\"\n"
-                                                   "[handoff]\nheat = \"" +
-                                                   heat.string() + "\"\nhistogram = \"/heat.live\"\n" +
-                                                   std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-        opts.sets = {"layout.name=\"flashnext-tp2xtx\"",
-                     std::string("helper.power_save=") + (power_save ? "true" : "false")};
-        sv::ManifestInputs in;
-        in.resolved = sv::resolve(opts, t.facts);
-        in.instance_id = "11111111-1111-4111-8111-111111111111";
-        in.producer_sha256 = std::string(64, 'a');
-        in.profile = "lab";
-        in.s10.power_profile = "stock";
-        const auto built = sv::build_manifest(in);
-        assert(built.document.at("spec").at("processes").at("helper_common").at("runtime").at("power_save") ==
-               power_save);
-        auto read =
-            bc::serving::v2::read_manifest(built.text, "derived-budget", bc::serving::v2::PlanUse::measuring);
-        assert(read.ok());
-        const uint64_t card[2] = {32624, 16368}, reserve[2] = {2048, 1024};
-        for (uint32_t i = 0; i < 2; ++i) {
-            auto s = bc::serving::helper_settings(read.value(), "helper" + std::to_string(i));
-            assert(s.ok());
-            const auto& hs = s.value();
-            assert(hs.helper.power_save == power_save); /* the worker runs the mode the budget was sized for */
-            const auto classes =
-                r3::worker_footprint::small_classes(hs.small_lanes, hs.handoff.small_rows, hs.handoff.max_rows);
-            const uint64_t want =
-                derived_budget_mib(model, card[i], reserve[i], hs.helper.count, hs.helper.index,
-                                   hs.helper.engine_ranks, classes, hs.handoff.max_rows, hs.helper.power_save);
-            assert(hs.budget_mib == want);
-            (power_save ? budgets_on : budgets_off)[i] = hs.budget_mib;
-        }
-        if (!power_save) { /* an experiment patching a helper's lanes while the budgets are derived is refused
-                            */
-            sv::ManifestInputs patched = in;
-            patched.experiment = Json{
-                {"shape",
-                 {{"helpers",
-                   Json::array({Json{{"role", "helper1"},
-                                     {"settings", {{"lanes", {{"small_lanes", Json::array({4, 8})}}}}}}})}}}};
-            patched.experiment_from = "test";
-            bool refused = false;
-            try {
-                (void)sv::build_manifest(patched);
-            } catch (const std::exception& e) {
-                refused = std::string(e.what()).find("budget-mib") != std::string::npos;
-                if (!refused)
-                    std::fprintf(stderr, "derived_budget_is_the_workers: refused for another reason: %s\n",
-                                 e.what());
-            }
-            assert(refused);
-        }
-    }
-    /* power save off opens every protocol lane: more lanes, smaller budgets */
-    assert(budgets_off[0] < budgets_on[0] && budgets_off[1] < budgets_on[1]);
-}
-
-/* A world of two card types: engine groups in rank order, one plugin each, and every rank's card in the plan
- * key. */
-void mixed_arch_engine_layout(Fixture& t) {
-    namespace sv = bc::serving;
-    const auto model = t.root / "mixed-model.rad";
-    bc::test::write_rad(model, 0, 0, 128, 128, {});
-    Options opts;
-    opts.site = t.file("mixed-site.toml",
-                       "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
-    opts.layouts = {t.file(
-        "mixed-layouts.toml",
-        "schema = 1\n[layout.mixed-tp3]\nmodel = \"m.rad\"\n"
-        "engine = [{ arch = \"gfx1100\", count = 2 }, { arch = \"gfx1201\", count = 1 }]\ntp-wire = \"exact\"\n"
-        "[layout.mixed-tp3.settings]\ntuning.tp_ownership = \"kv=1,1,2;ffn=8,8,16\"\ntuning.pipelined_prefill "
-        "= \"on\"\n"
-        "tuning.tune_pin = \"all_reduce:nblocks=4,nthreads=256\"\n"
-        "[layout.badtuning]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" "
-        "}\n[layout.badtuning.settings]\ntuning.no_such = 1\n"
-        "[layout.twice]\nmodel = \"m.rad\"\nengine = [{ arch = \"gfx1100\" }, { arch = \"gfx1100\" }]\ntp-wire "
-        "= \"exact\"\n")};
-    opts.sets = {"layout.name=\"mixed-tp3\"", "service.max_sessions=4", "service.max_context=8192"};
-    const auto r = sv::resolve(opts, t.facts);
-    const auto& g = t.facts.at("gpus");
-    assert(r.typed.layout.engine_cards.size() == 3);
-    for (size_t i = 0; i < 3; ++i)
-        assert(r.typed.layout.engine_cards[i] == g[i].at("bdf").get<std::string>());
-    assert(r.typed.engine.tp == 3 && r.typed.engine.kernels == "libr3,libr4d,libref");
-    // a mixed world hands the engine its ranks' cards (--rank-devices); the layout's tuning is a policy layer
-    assert(r.values.at("layout").at("rank_devices") == r.values.at("layout").at("engine_cards"));
-    assert(r.values.at("tuning").at("tp_ownership") == "kv=1,1,2;ffn=8,8,16");
-    assert(r.values.at("tuning").at("pipelined_prefill") == "on");
-    assert(r.values.at("tuning").at("tune_pin") == "all_reduce:nblocks=4,nthreads=256");
-    assert(r.provenance.at("tuning.tp_ownership").at("source").get<std::string>().find("layout mixed-tp3") ==
-           0);
-    {
-        Options over = opts; // a profile (or --set) overrides the layout's tuning
-        over.sets.push_back("tuning.pipelined_prefill=\"off\"");
-        assert(sv::resolve(over, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
-        over.sets = {"layout.name=\"badtuning\""};
-        fail(over, t.facts, "unknown key tuning.no_such");
-        over.layouts = {t.file(
-            "oldenv.toml", "schema = 1\n[layout.oldenv]\nmodel = \"m.rad\"\nengine = { arch = \"gfx1201\" }\n"
-                           "[layout.oldenv.env]\nR3_MOE_WORKER_COMBINE = \"1\"\n")};
-        over.sets = {"layout.name=\"oldenv\""};
-        fail(over, t.facts, "env is not a layout key");
-    }
-    const Json key = sv::plan_key_inputs(r.values, t.facts, "m", "e", "");
-    assert(key.contains("rank_cards") && key.at("rank_cards").size() == 3 &&
-           key.at("rank_cards")[2].at("arch") == "gfx1201");
-    opts.sets = {"layout.name=\"twice\""};
-    fail(opts, t.facts, "in two groups");
-    // a single-architecture world keys as before: no rank_cards member
-    Options dense = opts;
-    dense.layouts.clear();
-    dense.sets = {"layout.name=\"qwen27b-2xtx\"", "service.max_sessions=6", "service.max_context=8192"};
-    const auto uniform = sv::resolve(dense, t.facts);
-    assert(!sv::plan_key_inputs(uniform.values, t.facts, "m", "e", "").contains("rank_cards"));
-    assert(!uniform.values.at("layout").contains("rank_devices")); // a uniform world needs no --rank-devices
-}
-
-void tp_engine_with_helper_layout(Fixture& t) {
-    namespace sv = bc::serving;
-    const auto model = t.root / "tp-helper-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
-    const auto heat = t.root / "tp-helper.hot-first";
-    {
-        std::vector<uint32_t> counts(128 * 16, 1);
-        std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()),
-                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
-    }
-    Options opts;
-    opts.site = t.file("tp-helper-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                  "\"\nradiance_home = \"/runtime\"\n"
-                                                  "[handoff]\nheat = \"" +
-                                                  heat.string() + "\"\nhistogram = \"/heat.live\"\n" +
-                                                  std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    opts.sets = {"layout.name=\"flashnext-tp2xtx-r9700\"", "service.max_sessions=6",
-                 "service.max_context=65536"};
-    const auto r = sv::resolve(opts, t.facts);
-    assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.size() == 1);
-    assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "exact");
-    assert(r.typed.engine.kernels == "libr3,libr3moe,libref");
-    assert(r.typed.helper.count == 1 && r.typed.helper.engine_ranks == 2);
-    // no budget-mib in the layout: the helper's card (the fixture's R9700, 32624 MiB) less its archs.toml
-    // reserve, less its own lanes and tables (one slot a TP rank: both lanes of both ranks), the planner's and
-    // the worker's one derivation
-    assert(r.values.at("memory").at("helper_budgets_mib") ==
-           Json::array({derived_budget_mib(model, 32624, 2048, 1, 0, 2)}));
-    assert(r.provenance.at("memory.helper_budgets_mib").at("origin") == "derived");
-    sv::ManifestInputs in;
-    in.resolved = r;
-    in.instance_id = "11111111-1111-4111-8111-111111111111";
-    in.producer_sha256 = std::string(64, 'a');
-    in.profile = "production";
-    in.s10.power_profile = "stock";
-    const auto built = sv::build_manifest(in);
-    const Json& spec = built.document.at("spec");
-    assert(spec.at("processes").at("engine").at("device").at("gpus").size() == 2);
-    assert(spec.at("processes").at("engine").at("scheduler").at("tp") == 2);
-    assert(spec.at("processes").at("engine").at("execution").at("tp_wire") == "exact");
-    assert(spec.at("processes").at("helpers").size() == 1 && spec.contains("handoff"));
-    assert(bc::serving::v2::read_manifest(built.text, "tp-helper", bc::serving::v2::PlanUse::measuring).ok());
-    // the transport is required with helpers too
-    Options no_wire = opts;
-    no_wire.sets.push_back("engine.tp_wire=\"wht6\"");
-    assert(sv::resolve(no_wire, t.facts).typed.engine.tp_wire == "wht6");
-}
 
 // RAD49 steps 3-4: two helpers behind a TP2 engine. The budgets are each card less its archs.toml reserve (no
 // budget-mib), the RX 6900 XT is the tail, the combine is on, and the manifest carries both helpers behind the
 // two ranks.
-void tp_engine_with_two_helpers_layout(Fixture& t) {
-    namespace sv = bc::serving;
-    const auto model = t.root / "tp-two-helper-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
-    const auto heat = t.root / "tp-two-helper.hot-first";
-    {
-        std::vector<uint32_t> counts(128 * 16, 1);
-        std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()),
-                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
-    }
-    Options opts;
-    opts.site = t.file("tp-two-helper-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                      "\"\nradiance_home = \"/runtime\"\n"
-                                                      "[handoff]\nheat = \"" +
-                                                      heat.string() + "\"\nhistogram = \"/heat.live\"\n" +
-                                                      std::string("[layout]\nname = \"flashnext-4gpu\"\n"));
-    opts.sets = {"layout.name=\"flashnext-tp2xtx\""};
-    const auto r = sv::resolve(opts, t.facts);
-    assert(r.typed.layout.engine_cards.size() == 2 && r.typed.layout.helper_cards.size() == 2);
-    assert(r.typed.engine.tp == 2 && r.typed.engine.tp_wire == "exact");
-    assert(r.typed.helper.count == 2 && r.typed.helper.engine_ranks == 2 && r.typed.helper.combine);
-    // no budget-mib: the R9700 (32624 MiB) less 2048, the RX 6900 XT (16368 MiB) less 1024; the tail is the
-    // last one
-    const uint64_t head = derived_budget_mib(model, 32624, 2048, 2, 0, 2),
-                   tail = derived_budget_mib(model, 16368, 1024, 2, 1, 2);
-    assert(r.values.at("memory").at("helper_budgets_mib") == Json::array({head, tail}));
-    assert(r.typed.memory.tail_budget_mib == tail);
-    sv::ManifestInputs in;
-    in.resolved = r;
-    in.instance_id = "11111111-1111-4111-8111-111111111111";
-    in.producer_sha256 = std::string(64, 'a');
-    in.profile = "production";
-    in.s10.power_profile = "stock";
-    const auto built = sv::build_manifest(in);
-    const Json& spec = built.document.at("spec");
-    assert(spec.at("processes").at("engine").at("scheduler").at("tp") == 2);
-    assert(spec.at("processes").at("helpers").size() == 2 && spec.contains("handoff"));
-    // the manifest's helper budgets are the derived expert budgets the owner map was planned with
-    // (build_manifest checks the map against them with verify_owner_map), and the ones the worker sizes its
-    // arena from
-    assert(spec.at("processes").at("helpers")[0].at("vram_budget_mib") == head &&
-           spec.at("processes").at("helpers")[1].at("vram_budget_mib") == tail);
-    assert(
-        bc::serving::v2::read_manifest(built.text, "tp-two-helper", bc::serving::v2::PlanUse::measuring).ok());
-    // a helper count other than the cards the layout selects is refused (the typed v26 representation of
-    // helpers x ranks is checked on the same path; moe_remote_shm_test covers slots_fit)
-    Options three = opts;
-    three.sets = {"layout.name=\"flashnext-tp2xtx\"", "helper.count=3"};
-    bool refused = false;
-    try {
-        (void)sv::resolve(three, t.facts);
-    } catch (const std::exception&) {
-        refused = true;
-    }
-    assert(refused);
-}
 
-/* RSC02 S16: preserve the production static session identity invariant.
- * This exercises real RSC12 named configs and the native resolver, but does
- * not inspect or emulate retired shell launcher text. The old layout-vs-shell
- * parity test was retired with the launcher and is no longer an acceptance gate. */
-void native_static_resolution_identity(Fixture& t) {
-    namespace sv = bc::serving;
-    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
-    if (!env || !fs::is_directory(env))
-        throw std::runtime_error("native_static_resolution_identity: BIGCHERRY_LAYOUTS required");
-    const fs::path configs = fs::path(env).parent_path() / "configs";
-    const auto model = t.root / "parity-model.rad";
-    bc::test::write_rad(model, 4, 16, 128, 128, {});
-    const auto heat = t.root / "parity.hot-first";
-    {
-        std::vector<uint32_t> counts(128 * 16, 1);
-        std::ofstream(heat, std::ios::binary)
-            .write(reinterpret_cast<const char*>(counts.data()),
-                   static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
-    }
-    const auto site = t.file("parity-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                     "\"\nradiance_home = \"/runtime\"\n"
-                                                     "[handoff]\nheat = \"" +
-                                                     heat.string() + "\"\nhistogram = \"/heat.live\"\n");
-    // RED P0-1: project the real RSC12 config resolver's producer values,
-    // not a hand-built "manifest-shaped" JSON. The actual writer chooses
-    // ephemeral shm and S8-derived pool/KV, which a replay must not turn into
-    // new operator settings when authenticating the same static resolution.
-    {
-        namespace ss = bc::serving::session;
-        Options selected;
-        selected.site = site;
-        selected.configs = {configs};
-        selected.model_root = t.root;
-        selected.sets = {"layout.name=\"flashnext-tp2xtx-r9700\""};
-        const Resolved actual = sv::resolve(selected, t.facts);
-        ss::StaticResolutionInputs input;
-        input.effective_values = actual.values;
-        input.ordered_devices = Json::array();
-        for (const char* group : {"engine_cards", "helper_cards"}) {
-            for (const Json& selected_bdf : actual.values.at("layout").at(group)) {
-                bool found = false;
-                for (const Json& gpu : t.facts.at("gpus")) {
-                    if (gpu.at("bdf") != selected_bdf)
-                        continue;
-                    input.ordered_devices.push_back({{"role_group", group},
-                                                     {"bdf", selected_bdf},
-                                                     {"arch", gpu.at("arch")},
-                                                     {"hip_ordinal", gpu.at("hip_ordinal")},
-                                                     {"vram_total_mib", gpu.at("vram_total_mib")}});
-                    found = true;
-                    break;
-                }
-                assert(found);
-            }
-        }
-        input.producer_digest = ss::complete_file_identity("/proc/self/exe");
-        input.engine_digest = ss::complete_file_identity(BC_FAKE_ENGINE);
-        input.helper_digest = ss::complete_file_identity(BC_FAKE_ENGINE);
-        input.model_digest = ss::complete_file_identity(model);
-        input.power_profile = "stock";
-        input.file_digests[site.string()] = ss::complete_file_identity(site);
-        for (const fs::path& file : sv::config_sources({configs}))
-            input.file_digests[file.string()] = ss::complete_file_identity(file);
-        const auto original_key = ss::static_resolution_key(input);
-        input.effective_values["handoff"]["shm"] = "/r3-serve-immutable-real-fixture";
-        input.effective_values["memory"]["host_pool_mib"] =
-            actual.values.at("memory").at("host_pool_mib").get<int64_t>() + 256;
-        input.effective_values["memory"]["host_kv_mib"] =
-            actual.values.at("memory").at("host_kv_mib").get<int64_t>() + 128;
-        assert(ss::static_resolution_key(input) == original_key &&
-               "one static projection must ignore S8-derived budgets and per-start shm");
-        input.effective_values["service"]["max_context"] = 4096;
-        assert(ss::static_resolution_key(input) != original_key &&
-               "operator-controlled context remains a static identity input");
-    }
-}
 
 /* RSC12: a config resolves exactly as the layout it replaces (every effective value; only the provenance names
  * the config file), a variant changes only what it states, and the loader refuses what it does not know. */
@@ -2842,466 +1240,111 @@ CommandResult run_bc_serve(const std::vector<std::string>& arguments) {
         throw std::runtime_error("cli test: child wait failed");
     return {WIFEXITED(status) ? WEXITSTATUS(status) : -1, output};
 }
-void native_explain_cli(Fixture& t) {
-    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
-    if (!env || !fs::is_directory(env))
-        throw std::runtime_error("native_explain_cli: BIGCHERRY_LAYOUTS required");
-    const fs::path configs = fs::path(env).parent_path() / "configs";
-    const auto model = t.root / "explain-model.rad";
-    bc::test::write_rad(model, 0, 0, 128, 128, {});
-    const auto site = t.file("explain-site.toml",
-                             "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
-    auto command = [&](const std::string& name) {
-        return std::vector<std::string>{"explain",
-                                        name,
-                                        "--json",
-                                        "--configs",
-                                        configs.string(),
-                                        "--site",
-                                        site.string(),
-                                        "--model-root",
-                                        (t.root / "model-root").string(),
-                                        "--sys-root",
-                                        t.root.string()};
-    };
-    const auto base = run_bc_serve(command("qwen27b-tp3-int8"));
-    assert(base.exit_code == 0);
-    const Json base_doc = Json::parse(base.output);
-    assert(base_doc.at("config") == "qwen27b-tp3-int8");
-    assert(base_doc.at("values").at("layout").at("name") == "qwen27b-tp3-int8");
-    assert(base_doc.at("values").at("service").at("max_context") == 8192);
-    assert(base_doc.at("provenance")
-               .at("tuning.tp_ownership")
-               .at("source")
-               .get<std::string>()
-               .find("config qwen27b.toml") != std::string::npos);
-    const auto variant = run_bc_serve(command("qwen27b-tp3-int8-556"));
-    assert(variant.exit_code == 0);
-    const Json variant_doc = Json::parse(variant.output);
-    assert(variant_doc.at("values").at("tuning").at("tp_ownership") !=
-           base_doc.at("values").at("tuning").at("tp_ownership"));
-    assert(variant_doc.at("provenance")
-               .at("tuning.tp_ownership")
-               .at("source")
-               .get<std::string>()
-               .find("config qwen27b.toml") != std::string::npos);
-    const auto text_args = std::vector<std::string>{
-        "explain",    "qwen27b-tp3-int8", "--configs",    configs.string(),
-        "--site",     site.string(),      "--model-root", (t.root / "model-root").string(),
-        "--sys-root", t.root.string()};
-    const auto text_result = run_bc_serve(text_args);
-    assert(text_result.exit_code == 0);
-    assert(text_result.output.find("layout: qwen27b-tp3-int8") != std::string::npos);
+struct SessionManifestPair {
+    Json measuring;
+    Json serving;
+};
 
-    auto bad = command("absent-config");
-    assert(run_bc_serve(bad).exit_code != 0);
-    bad = command("qwen27b-tp3-int8");
-    bad.push_back("--set");
-    bad.push_back("layout.name=\"qwen27b-tp3-int8-556\"");
-    const auto override = run_bc_serve(bad);
-    assert(override.exit_code != 0);
-    assert(override.output.find("cannot be replaced") != std::string::npos);
-    bad = command("qwen27b-tp3-int8");
-    bad.push_back("--unexpected-flag");
-    assert(run_bc_serve(bad).exit_code != 0);
+namespace sv = bc::serving;
+
+SessionManifestPair session_manifest_pair(const sv::Resolved& resolved, const Json& facts) {
+    sv::ManifestInputs inputs;
+    inputs.resolved = resolved;
+    inputs.instance_id = "11111111-1111-4111-8111-111111111111";
+    inputs.producer_sha256 = std::string(64, 'a');
+    inputs.profile = "production";
+    inputs.s10.power_profile = "stock";
+    inputs.s10.now_unix_s = 1800000000;
+    inputs.s10.calibration_records = Json::array();
+    const sv::BuiltManifest unmeasured = sv::build_manifest(inputs);
+
+    bc::test::set_measured_manifest_fixture(inputs, unmeasured, facts);
+    const sv::BuiltManifest serving = sv::build_manifest(inputs);
+    return {unmeasured.document, serving.document};
 }
 
-void config_files(Fixture& t) {
-    namespace sv = bc::serving;
-    const char* env = std::getenv("BIGCHERRY_LAYOUTS");
-    if (!env || !fs::is_directory(env))
-        throw std::runtime_error("config_files: BIGCHERRY_LAYOUTS must name the layouts directory");
-    const fs::path configs = fs::path(env).parent_path() / "configs";
-    const auto model = t.root / "config-model.rad";
-    bc::test::write_rad(model, 0, 0, 128, 128, {});
-    const auto site = t.file("config-site.toml",
-                             "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"/runtime\"\n");
-    // Native RSC12 dense config: host pool/KV and ngram placement are explicit
-    // effective values, and a TP engine defaults to no peer-to-peer transfers.
-    Options layout;
-    layout.site = site;
-    layout.sets = {"layout.name=\"qwen27b-tp3-int8\"",
-                   "service.max_context=8192",
-                   "service.max_sessions=8",
-                   "engine.kv_cache_dtype=\"fp8\"",
-                   "engine.num_speculative_tokens=3",
-                   "memory.host_pool_mib=0",
-                   "memory.host_kv_mib=0",
-                   "engine.ngram_placement=\"disk\"",
-                   "tuning.p2p=\"off\""};
-    const auto from_layout = sv::resolve(layout, t.facts);
-    Options config;
-    config.site = site;
-    config.configs = {configs};
-    config.model_root = t.root / "model-root"; // the site's model wins over the config's (config < site)
-    config.sets = {"layout.name=\"qwen27b-tp3-int8\""};
-    const auto from_config = sv::resolve(config, t.facts);
-    if (from_layout.values != from_config.values) {
-        std::fprintf(stderr, "layout: %s\nconfig: %s\n", from_layout.values.dump().c_str(),
-                     from_config.values.dump().c_str());
-        assert(false);
-    }
-    assert(from_config.provenance.at("tuning.tp_ownership")
-               .at("source")
-               .get<std::string>()
-               .find("config qwen27b.toml") != std::string::npos);
-    assert(from_config.provenance.at("service.max_context")
-               .at("source")
-               .get<std::string>()
-               .find("config qwen27b.toml") != std::string::npos);
-    { // VTP42: the prefill governor is one optional string field that reaches the engine options
-        Options gov = config;
-        gov.sets = {"layout.name=\"qwen27b-tp3-int8\"", "tuning.prefill_governor=\"kind=budget;factor=1.5\""};
-        assert(sv::resolve(gov, t.facts).values.at("tuning").at("prefill_governor") ==
-               "kind=budget;factor=1.5");
-        const auto& options = bc::serving::engine_option_fields();
-        auto it = std::find_if(options.begin(), options.end(),
-                               [](const auto& f) { return f.key == "tuning.prefill_governor"; });
-        assert(it != options.end() && it->path == "/spec/processes/engine/tuning/prefill_governor");
-        gov.sets.back() = "tuning.prefill_governor=\"\"";
-        fail(gov, t.facts, "prefill_governor");
-    }
-    // the variant: only the split differs
-    config.sets = {"layout.name=\"qwen27b-tp3-int8-556\""};
-    const auto variant = sv::resolve(config, t.facts);
-    Json a = from_config.values, b = variant.values;
-    assert(b.at("tuning").at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
-    a["tuning"].erase("tp_ownership");
-    b["tuning"].erase("tp_ownership");
-    a["layout"].erase("name");
-    b["layout"].erase("name");
-    assert(a == b);
-    { // where each value came from: the variant's own key, and the base's for the rest
-        const auto set = sv::load_configs(sv::config_sources({configs}));
-        const Json& o = set.origin.at("qwen27b-tp3-int8-556");
-        assert(o.at("tuning.tp_ownership") == "qwen27b-tp3-int8-556");
-        assert(o.at("tuning.pipelined_prefill") == "qwen27b-tp3-int8" && o.at("ranks") == "qwen27b-tp3-int8");
-        assert(set.chain.at("qwen27b-tp3-int8-556") ==
-               Json::array({"qwen27b-tp3-int8-556", "qwen27b-tp3-int8"}));
-    }
-    { // the long-context variants: the 5,5,6 split at 262,144 tokens, fp8 and bf16 cache, VTP39/VTP42 prefill
-      // tuning; nothing else moves
-        Options lv = config;
-        lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long\""};
-        const auto fp8 = sv::resolve(lv, t.facts);
-        lv.sets = {"layout.name=\"qwen27b-tp3-int8-556-long-bf16\""};
-        const auto bf16 = sv::resolve(lv, t.facts);
-        assert(fp8.values.at("service").at("max_context") == 262144 &&
-               fp8.values.at("engine").at("kv_cache_dtype") == "fp8");
-        assert(bf16.values.at("service").at("max_context") == 262144 &&
-               bf16.values.at("engine").at("kv_cache_dtype") == "bf16");
-        // VTP39/VTP42 scheduling defaults for long prompts, inherited by -long-bf16
-        for (const auto* r : {&fp8, &bf16}) {
-            assert(r->values.at("tuning").at("prefill_interleave") == 2);
-            assert(r->values.at("tuning").at("prefill_governor") ==
-                   "kind=budget;factor=1.5;long_tokens=16384;order=remaining;age_ms=120000");
-        }
-        Json x = variant.values, y = fp8.values, z = bf16.values;
-        for (Json* j : {&x, &y, &z}) {
-            (*j)["tuning"].erase("prefill_interleave");
-            (*j)["tuning"].erase("prefill_governor");
-        }
-        for (Json* j : {&x, &y, &z}) {
-            (*j)["layout"].erase("name");
-            (*j)["service"].erase("max_context");
-            (*j)["engine"].erase("max_model_len");
-            (*j)["engine"].erase("kv_cache_dtype");
-        }
-        if (!(x == y && y == z)) {
-            std::fprintf(stderr, "long variants differ beyond context and cache: %s / %s\n",
-                         Json::diff(x, y).dump().c_str(), Json::diff(y, z).dump().c_str());
-            assert(false);
-        }
-    }
-    // a profile and --set still override a config (config < site < profile < --set)
-    config.sets.push_back("tuning.pipelined_prefill=\"off\"");
-    assert(sv::resolve(config, t.facts).values.at("tuning").at("pipelined_prefill") == "off");
-    { // every cache format the engine offers is a setting, bf16 (16-bit K and V) included, and reaches the
-      // manifest
-        Options kv = config;
-        kv.sets = {"layout.name=\"qwen27b-tp3-int8\"", "engine.kv_cache_dtype=\"bf16\""};
-        const auto r = sv::resolve(kv, t.facts);
-        assert(r.values.at("engine").at("kv_cache_dtype") == "bf16");
-        sv::ManifestInputs in;
-        in.resolved = r;
-        in.instance_id = "11111111-1111-4111-8111-111111111111";
-        in.producer_sha256 = std::string(64, 'a');
-        in.profile = "production";
-        in.s10.power_profile = "stock";
-        const auto built = sv::build_manifest(in);
-        assert(built.document.at("spec").at("processes").at("engine").at("execution").at("kv_cache_dtype") ==
-               "bf16");
-        assert(
-            bc::serving::v2::read_manifest(built.text, "qwen27b-tp3-int8", bc::serving::v2::PlanUse::measuring)
-                .ok());
-        kv.sets.back() = "engine.kv_cache_dtype=\"int8\"";
-        bool refused = false;
+// A build-tree start takes no --set for its runtime home: it is <build>/radiance_home of the --engine-binary, and this bc-serve
+// must be the one in it.
+void build_tree_runtime_home(Fixture& t) {
+    namespace ss = bc::serving::session;
+    const fs::path build = t.root / "tree-build";
+    fs::create_directories(build / "bin");
+    fs::create_directories(build / "radiance_home/bin");
+    std::ofstream(build / "bin/radiance") << "#!/bin/sh\n";
+    const fs::path owner = build / "radiance_home/bin/bc-serve";
+    std::ofstream(owner) << "#!/bin/sh\n";
+    const fs::path home = fs::weakly_canonical(build / "radiance_home");
+    assert(ss::derive_build_runtime_home(owner, build / "bin/radiance") == home);
+    const auto refused = [&](const fs::path& self, const fs::path& engine, const std::string& why) {
         try {
-            (void)sv::resolve(kv, t.facts);
-        } catch (const std::exception&) {
-            refused = true;
-        }
-        assert(refused); // not an engine format
-    }
-
-    const std::string head =
-        "schema = 1\n[config.base]\ndescription = \"b\"\nmodel = \"m.rad\"\n"
-        "ranks = [{ arch = \"gfx1201\" }]\n[config.base.service]\nmax_context = 8192\nmax_sessions = 4\n";
-    auto refuses = [&](const std::string& name, const std::string& text, const std::string& needle) {
-        const auto f = t.file(name.c_str(), text);
-        try {
-            (void)sv::load_configs({f});
-        } catch (const std::exception& e) {
-            if (std::string(e.what()).find(needle) == std::string::npos) {
-                std::fprintf(stderr, "config refusal %s: wanted '%s', got: %s\n", name.c_str(), needle.c_str(),
-                             e.what());
-                assert(false);
-            }
+            (void)ss::derive_build_runtime_home(self, engine);
+        } catch (const ss::PlanFailed& error) {
+            assert(std::string(error.what()).find(why) != std::string::npos);
             return;
         }
-        std::fprintf(stderr, "config %s: not refused\n", name.c_str());
-        assert(false);
+        throw std::runtime_error("derive_build_runtime_home accepted: " + why);
     };
-    refuses("c-unknown.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\ncontext = 1\n",
-            "unknown key context");
-    refuses("c-flat-setting.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nmax_context = 1\n",
-            "unknown key max_context");
-    refuses("c-server-args.toml",
-            head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nserver-args = [\"--max-model-len\"]\n",
-            "unknown key server-args");
-    refuses("c-nobase.toml", head + "[config.v]\nbase = \"gone\"\ndescription = \"v\"\n",
-            "base gone is not a defined config");
-    refuses(
-        "c-cycle.toml",
-        head + "[config.x]\nbase = \"y\"\ndescription = \"x\"\n[config.y]\nbase = \"x\"\ndescription = \"y\"\n",
-        "a cycle");
-    refuses("c-nodesc.toml", head + "[config.v]\nbase = \"base\"\n", "description is required");
-    refuses("c-nomodel.toml", "schema = 1\n[config.v]\ndescription = \"v\"\nranks = [{ arch = \"gfx1201\" }]\n",
-            "model is required");
-    refuses("c-rankkey.toml",
-            "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1201\", "
-            "devices = [0] }]\n",
-            "ranks: unknown key devices");
-    refuses("c-schema.toml", "[config.v]\ndescription = \"v\"\n", "schema = 1 is required");
-    { // a name defined in two files
-        const auto f1 = t.file("c-dup1.toml", head);
-        const auto f2 = t.file("c-dup2.toml", head);
-        bool refused = false;
-        try {
-            (void)sv::load_configs({f1, f2});
-        } catch (const std::exception& e) {
-            refused = std::string(e.what()).find("defined in both") != std::string::npos;
-        }
-        assert(refused);
-    }
-    { // tables merge key by key; a list replaces
-        const auto f =
-            t.file("c-merge.toml", head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nranks = [{ arch = "
-                                          "\"gfx1100\", count = 2 }]\ntp_wire = \"exact\"\n"
-                                          "[config.v.service]\nmax_sessions = 2\n");
-        const auto set = sv::load_configs({f});
-        const Json& v = set.config.at("v");
-        assert(v.at("service").at("max_context") == 8192 && v.at("service").at("max_sessions") == 2);
-        assert(v.at("ranks").size() == 1 && v.at("ranks")[0].at("arch") == "gfx1100");
-        assert(set.origin.at("v").at("service.max_context") == "base" &&
-               set.origin.at("v").at("service.max_sessions") == "v");
-        assert(set.origin.at("v").at("ranks") == "v" &&
-               set.origin.at("base").at("ranks") == "base"); // a replaced list
-        const Json l = sv::config_as_layout(v);
-        assert(l.at("engine") == v.at("ranks") && l.at("tp-wire") == "exact" && !l.contains("server-args"));
-        assert(l.at("settings").at("service").at("max_sessions") == 2);
-    }
-    { // the config's model: under the model root, the lowest engine.model; a site's model wins; relative with
-      // no root
-        // is refused when that config is selected
-        const auto root = t.root / "models";
-        fs::create_directories(root / "m");
-        bc::test::write_rad(root / "m" / "own.rad", 0, 0, 128, 128, {});
-        const auto own = t.file("c-model.toml",
-                                "schema = 1\n[config.own]\ndescription = \"o\"\nmodel = \"m/own.rad\"\n"
-                                "ranks = [{ arch = \"gfx1201\" }]\n[config.own.service]\nmax_context = 8192\n"
-                                "max_sessions = 4\n");
-        Options o;
-        o.site = t.file("c-nomodel-site.toml", "[engine]\nradiance_home = \"/runtime\"\n");
-        o.configs = {own};
-        o.model_root = root;
-        o.sets = {"layout.name=\"own\""};
-        const auto r = sv::resolve(o, t.facts);
-        assert(r.values.at("engine").at("model") == (root / "m" / "own.rad").string());
-        o.site = site;
-        assert(sv::resolve(o, t.facts).values.at("engine").at("model") == model.string());
-        o.model_root.clear();
-        fail(o, t.facts, "is relative and no model root is given");
-    }
-    refuses("c-placement.toml",
-            head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
-                   "[[config.v.helpers]]\narch = \"gfx1100\"\ncount = 1\nplacement = \"sideways\"\n",
-            "placement is required");
-    refuses("c-helper-count.toml",
-            head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
-                   "[[config.v.helpers]]\narch = \"gfx1100\"\nplacement = \"head\"\n",
-            "count is required");
-    refuses("c-budget.toml",
-            head +
-                "[config.v]\nbase = \"base\"\ndescription = \"v\"\n"
-                "[[config.v.helpers]]\narch = \"gfx1100\"\ncount = 1\nplacement = \"head\"\nbudget_mib = 1.5\n",
-            "budget_mib");
-    refuses("c-frac.toml",
-            "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1100\", count "
-            "= 2.5 }]\n",
-            "count is a whole number");
-    refuses("c-bool.toml",
-            "schema = 1\n[config.v]\ndescription = \"v\"\nmodel = \"m\"\nranks = [{ arch = \"gfx1100\", count "
-            "= true }]\n",
-            "count is a whole number");
-    refuses("c-schema-float.toml", "schema = 1.0\n", "schema = 1 is required");
-    refuses("c-date.toml", head + "[config.base.tuning]\nwhen = 2026-11-14\n", "unsupported TOML value");
-    refuses("c-config-scalar.toml", "schema = 1\nconfig = 3\n", "config is a table");
-    refuses("c-model-escape.toml",
-            head + "[config.v]\nbase = \"base\"\ndescription = \"v\"\nmodel = \"../other.rad\"\n",
-            "leaves the model root");
-    refuses("c-engine-model.toml", head + "[config.base.engine]\nmodel = \"x\"\n", "give the model as `model`");
-    { // dotted keys are tables: `tuning.x = ...` in the config table is the tuning table; three levels of
-      // bases;
-        // a scalar replaced by a table keeps no stale origin
-        const auto f = t.file(
-            "c-dotted.toml",
-            head + "[config.v1]\nbase = \"base\"\ndescription = \"1\"\ntuning.pipelined_prefill = \"on\"\n"
-                   "[config.v2]\nbase = \"v1\"\ndescription = \"2\"\n[config.v2.service]\nmax_sessions = 2\n"
-                   "[config.v3]\nbase = \"v2\"\ndescription = \"3\"\ntuning.tp_ownership = \"kv=1\"\n");
-        const auto set = sv::load_configs({f});
-        const Json& v3 = set.config.at("v3");
-        assert(v3.at("tuning").at("pipelined_prefill") == "on" && v3.at("tuning").at("tp_ownership") == "kv=1");
-        assert(v3.at("service").at("max_sessions") == 2 && v3.at("service").at("max_context") == 8192);
-        assert(set.origin.at("v3").at("tuning.pipelined_prefill") == "v1" &&
-               set.origin.at("v3").at("service.max_sessions") == "v2");
-        assert(set.chain.at("v3") == Json::array({"v3", "v2", "v1", "base"}));
-        const auto g =
-            t.file("c-replace.toml",
-                   head + "[config.w]\nbase = \"base\"\ndescription = \"w\"\nmodel = { x = \"y\" }\n");
-        try {
-            (void)sv::load_configs({g});
-            assert(false);
-        } // a model that is a table is not a string
-        catch (const std::exception& e) {
-            assert(std::string(e.what()).find("model is a string") != std::string::npos);
-        }
-    }
-    { // --configs wins over BIGCHERRY_CONFIGS
-        const auto f = t.file("c-given.toml", head);
-        const char* before = std::getenv("BIGCHERRY_CONFIGS");
-        const std::optional<std::string> saved = before ? std::optional<std::string>(before) : std::nullopt;
-        ::setenv("BIGCHERRY_CONFIGS", (t.root / "no-such-dir").c_str(), 1);
-        assert(sv::config_sources({f}) == std::vector<fs::path>{f});
-        bool refused = false;
-        try {
-            (void)sv::config_sources({});
-        } catch (const std::exception&) {
-            refused = true;
-        }
-        assert(refused);
-        ::unsetenv("BIGCHERRY_CONFIGS");
-        assert(sv::config_sources({}).empty());
-        if (saved)
-            ::setenv("BIGCHERRY_CONFIGS", saved->c_str(), 1);
-    }
-    { // the resolver checks the settings: an unknown tuning key is refused, naming the config file
-        Options bad;
-        bad.site = site;
-        bad.configs = {t.file("c-badtuning.toml", head + "[config.base.tuning]\nno_such = 1\n")};
-        bad.model_root = t.root;
-        bad.sets = {"layout.name=\"base\""};
-        fail(bad, t.facts, "unknown key tuning.no_such");
-        // with --layouts given as well, a config may not take a layout's name
-        bad.configs = {configs};
-        bad.layouts = {fs::path(env)};
-        bad.sets = {"layout.name=\"qwen27b-tp3-int8\""};
-        fail(bad, t.facts, "has the name of a layout");
-    }
+    // another build's bc-serve with this build's engine
+    const fs::path other = t.root / "other-build";
+    fs::create_directories(other / "radiance_home/bin");
+    std::ofstream(other / "radiance_home/bin/bc-serve") << "#!/bin/sh\n";
+    refused(other / "radiance_home/bin/bc-serve", build / "bin/radiance", "run the bc-serve of the build");
+    // an engine that is not <build>/bin/radiance, and a build without a runtime home
+    refused(owner, build / "radiance", "is not <build>/bin/radiance");
+    fs::create_directories(t.root / "bare/bin");
+    std::ofstream(t.root / "bare/bin/radiance") << "#!/bin/sh\n";
+    refused(owner, t.root / "bare/bin/radiance", "has no radiance_home");
+}
+
+void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
+    const auto no_snapshot = run_bc_serve(
+        {"--write-manifest", "unused.json", "--measured-plan", "missing-plan.json", "--rank-demand",
+         "missing-ranks.json"});
+    if (no_snapshot.exit_code != 2 ||
+        no_snapshot.output.find("v3 --write-manifest requires --bc-native-config-fd") == std::string::npos ||
+        no_snapshot.output.find("cannot read missing-plan.json") != std::string::npos)
+        throw std::runtime_error("v3 writer did not reject a missing sealed snapshot before plan-file access: " +
+                                 no_snapshot.output);
+
+    const auto raw_import = run_bc_serve(
+        {"--write-manifest", "unused.json", "--bc-native-config-fd", "3", "--measured-plan",
+         "missing-plan.json", "--rank-demand", "missing-ranks.json"});
+    if (raw_import.exit_code != 2 ||
+        raw_import.output.find("v3 --write-manifest does not import --measured-plan or --rank-demand") ==
+            std::string::npos ||
+        raw_import.output.find("cannot read missing-plan.json") != std::string::npos)
+        throw std::runtime_error("v3 writer did not refuse raw measured-plan imports before file access: " +
+                                 raw_import.output);
+
+    // A native v3 measured writer must accept the frozen-key guard too. Use an
+    // invalid descriptor so the CLI reaches sealed-snapshot loading without
+    // opening cache files or starting any process.
+    const fs::path configs_dir = fs::path(BC_CONFIGS_DIR);
+    const fs::path model = t.root / "v3-measured-key-model.rad";
+    bc::test::write_rad(model, 0, 0, 128, 128, {});
+    const fs::path site = t.file("v3-measured-key-site.toml", "[engine]\nmodel = \"" + model.string() +
+                                                                   "\"\nradiance_home = \"/runtime\"\n");
+    const std::vector<std::string> measured_args = {
+        "--write-manifest", "unused.json", "--bc-native-config-fd", "99", "--expected-plan-key",
+        std::string(64, '0'), "--expected-owner-attempt", "native-test-attempt", "--plan-cache", "missing-cache",
+        "--engine-binary", "/missing/radiance", "--power-profile", "stock", "--configs", configs_dir.string(),
+        "--site", site.string(), "--model-root", (t.root / "model-root").string(), "--sys-root", t.root.string(),
+        "--set", "layout.name=\"qwen27b-tp3\""};
+    const auto measured_key = run_bc_serve(measured_args);
+    if (measured_key.output.find("native writer descriptor must be a fully sealed memfd") == std::string::npos)
+        throw std::runtime_error("v3 measured writer rejected the frozen-key guard before snapshot loading: " +
+                                 measured_key.output);
+    std::vector<std::string> missing_owner_args = measured_args;
+    const auto owner_arg = std::find(missing_owner_args.begin(), missing_owner_args.end(), "--expected-owner-attempt");
+    missing_owner_args.erase(owner_arg, owner_arg + 2);
+    const auto missing_owner = run_bc_serve(missing_owner_args);
+    if (missing_owner.output.find("v3 measured cache reads require --expected-owner-attempt") == std::string::npos)
+        throw std::runtime_error("v3 measured writer did not require its owner attempt before snapshot access: " +
+                                 missing_owner.output);
 }
 
 
-// Release layout: configs and heat live in an immutable prefix, while mutable
-// histogram telemetry is confined to this session's run directory.
-void installed_site_defaults(Fixture& t) {
-    namespace sv = bc::serving;
-    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
-    const fs::path prefix = t.root / "installed-release";
-    fs::create_directories(prefix / "configs");
-    fs::create_directories(prefix / "heat");
-    fs::copy_file(configs / "flashnext.toml", prefix / "configs/flashnext.toml");
-    // Reuse the valid synthetic RAD and route heat made by manifest_writer_step.
-    // This tests the real S10 writer without requiring a card or model download.
-    fs::copy_file(t.root / "writer.hot-first", prefix / "heat/flashnext-mixed.hot-first");
-    write(prefix / "heat/perf51.rank0.hot-first", "1\n");
-    const auto site = t.file("installed-site.toml",
-        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
-        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
-        "\"\n[layout]\nname = \"flashnext-4gpu\"\n"
-        // One combine thread: the native writer below discovers the real CPU count, and a small CI runner
-        // has fewer CPUs than the layout's default.
-        "[helper]\ncombine_threads = 1\n");
-    Options opts;
-    opts.site = site;
-    opts.configs = {prefix / "configs"};
-    opts.model_root = t.root;
-    opts.run_dir = t.root / "sessions/production";
-    assert(opts.sets.empty());  // production site, no --set flags
-    const auto r = sv::resolve(opts, t.facts);
-    const auto heat = (prefix / "heat/flashnext-mixed.hot-first").string();
-    const auto histogram = (opts.run_dir / "heat.live").string();
-    assert(r.values.at("handoff").at("heat") == heat);
-    assert(r.values.at("handoff").at("histogram") == histogram);
-    assert(r.values.at("handoff").at("histogram_period_s") == 1);
-    sv::ManifestInputs in;
-    in.resolved = r;
-    in.instance_id = "11111111-1111-4111-8111-111111111111";
-    in.producer_sha256 = std::string(64, 'a');
-    in.profile = "production";
-    in.s10.power_profile = "stock";
-    in.s10.now_unix_s = 1800000000;
-    in.s10.calibration_records = Json::array();
-    const auto built = sv::build_manifest(in);
-    const auto& handoff = built.document.at("spec").at("handoff");
-    assert(handoff.at("placement").at("heat_file") == heat);
-    assert(handoff.at("telemetry").at("histogram_file") == histogram);
-    assert(handoff.at("telemetry").at("period_s") == 1);
-    assert(r.provenance.at("handoff.histogram").at("origin") == "derived");
-    // The session owner passes --run-dir to this actual separate native
-    // manifest writer. No --set flags, no checkout path or hardware needed.
-    const fs::path writer_output = t.root / "installed-unmeasured-manifest.json";
-    const auto result = run_bc_serve({
-        "--write-manifest", writer_output.string(), "--unmeasured",
-        "--power-profile", "stock", "--sys-root", t.root.string(),
-        "--site", site.string(), "--configs", (prefix / "configs").string(),
-        "--model-root", t.root.string(), "--run-dir", opts.run_dir.string()
-    });
-    if (result.exit_code != 0)
-        throw std::runtime_error("installed native manifest writer: " + result.output);
-    const Json cli_doc = Json::parse(std::ifstream(writer_output));
-    assert(cli_doc.at("spec").at("handoff").at("placement").at("heat_file") == heat);
-    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("histogram_file") == histogram);
-    assert(cli_doc.at("spec").at("handoff").at("telemetry").at("period_s") == 1);
 
-    // Every layer can override the bundled seed; explicit off must stay off.
-    opts.site = t.file("installed-site-override.toml",
-        "[engine]\nmodel = \"" + (t.root / "writer-model.rad").string() +
-        "\"\nradiance_home = \"" + (prefix / "radiance_home").string() +
-        "\"\n[layout]\nname = \"flashnext-4gpu\"\n[handoff]\nheat = \"/site/seed\"\nhistogram = \"off\"\nhistogram_period_s = 7\n");
-    const auto overridden = sv::resolve(opts, t.facts);
-    assert(overridden.values.at("handoff").at("heat") == "/site/seed");
-    assert(overridden.values.at("handoff").at("histogram") == "off");
-    assert(overridden.values.at("handoff").at("histogram_period_s") == 7);
-    opts.sets.push_back("handoff.histogram=\"/cli/histogram\"");
-    assert(sv::resolve(opts, t.facts).values.at("handoff").at("histogram") == "/cli/histogram");
-
-    // The run-directory default is a session-owner choice, not a fabricated
-    // default in general resolver/explain calls that lack a run directory.
-    opts.site = site;
-    opts.sets.pop_back();
-    opts.run_dir.clear();
-    fail(opts, t.facts, "missing required key: handoff.histogram");
-}
 
 #ifndef BC_FAKE_ENGINE
 #error "BC_FAKE_ENGINE must name the fake engine binary (session_fake_engine.cpp)"
@@ -3313,23 +1356,599 @@ void installed_site_defaults(Fixture& t) {
 // more, and the plan-extra is the bash launcher's.
 void session_engine_plan(Fixture& t) {
     namespace ss = bc::serving::session;
-    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path configs = fs::path(BC_CONFIGS_DIR);
     const auto model = t.root / "session-model.rad";
     bc::test::write_rad(model, 0, 0, 128, 128, {});
     const fs::path home = t.root / "session-build" / "radiance_home";
     fs::create_directories(home);
-    const auto site = t.file("session-site.toml", "[engine]\nmodel = \"" + model.string() +
-                                                      "\"\nradiance_home = \"" + home.string() + "\"\n");
+    std::string site_text = "[engine]\nmodel = \"" + model.string() +
+                            "\"\nradiance_home = \"" + home.string() + "\"\n";
+    site_text += "port = " + std::to_string(select_free_port()) + "\n";
+    const auto site = t.file("session-site.toml", site_text);
     const fs::path run = t.root / "session-run";
     fs::create_directories(run);
     ss::EnginePlanInputs in;
+    in.work_root = t.work_root();
     in.options.sys_root = t.root;
     in.options.site = site;
     in.options.configs = {configs};
     in.options.model_root = t.root / "model-root"; // the site's model wins; the root is still required
-    in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
-    in.self = "/build/radiance_home/bin/bc-serve";
+    in.options.sets = {"layout.name=\"qwen27b-tp3\"", "memory.host_pool_mib=1024"};
+    in.self = t.root / "bc-serve-test";
+    fs::create_symlink(BC_SERVE_EXE, in.self);
     in.engine_binary = BC_FAKE_ENGINE;
+    const Json session_facts = bc::serving::detect(t.root);
+    const auto session_resolved = tresolve(in.options, session_facts);
+    for (const Json& bdf : session_resolved.values.at("layout").at("engine_cards")) {
+        const fs::path gtt = t.root / "sys/bus/pci/devices" / bdf.get<std::string>() / "mem_info_gtt_used";
+        fs::create_directories(gtt.parent_path());
+        std::ofstream(gtt) << "0\n";
+    }
+    SessionManifestPair session_manifests;
+    { // Private native admission inspects exact bytes before measurement; the v2 build refuses the v3 path.
+        ss::EnginePlanInputs gated = in;
+        const fs::path native_root = t.root / "native-admission-root";
+        fs::create_directories(native_root);
+        const fs::path native_yaml = native_root / "fleet.yaml";
+        const std::string native_yaml_bytes = "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: " +
+                                               Json(model.string()).dump() + "}\r\n";
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        Json expected_kernels = Json::array();
+        const std::string kernel_text = session_resolved.values.at("engine").at("kernels").get<std::string>();
+        for (size_t begin = 0; begin < kernel_text.size();) {
+            const size_t end = kernel_text.find(',', begin);
+            expected_kernels.push_back(kernel_text.substr(begin, end == std::string::npos
+                                                                    ? std::string::npos
+                                                                    : end - begin));
+            if (end == std::string::npos) break;
+            begin = end + 1;
+        }
+        std::reverse(expected_kernels.begin(), expected_kernels.end());
+        const int native_port = select_free_port();
+        const Json execution_settings = {
+            {"max_batched_tokens", 384}, {"checkpoint_interval", 1536}, {"kv_dtype", "bf16"},
+            {"ngram_placement", session_resolved.values.at("engine").at("ngram_placement")},
+            {"speculative_tokens", 2}, {"rope_scaling", "yarn:4"}, {"prefix_resume", "exact"},
+            {"prefill_interleave", 1}};
+        ss::Env native_overrides = {
+            {"TEST_NATIVE_INSPECT_TP", "3"},
+            {"TEST_NATIVE_INSPECT_TP_WIRE", "exact"},
+            {"TEST_NATIVE_INSPECT_XBIGCHERRY",
+             Json{{"schema", 1}, {"description", "qwen27b-tp3 fixture"},
+                  {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 2}}, {{"arch", "gfx1201"}, {"count", 1}}})},
+                  {"memory", {{"host-pool-mib", 0}, {"host-kv-mib", 0}}}}   // a dense model: the engine sizes its own
+                 .dump()},
+            {"TEST_NATIVE_INSPECT_RANK_DEVICES", session_resolved.values.at("layout").at("engine_cards").dump()},
+            {"TEST_NATIVE_INSPECT_CARDS", "[0,1,2]"},
+            {"TEST_NATIVE_INSPECT_MODEL", model.string()},
+            {"TEST_NATIVE_INSPECT_EXPECT_YAML", native_yaml_bytes},
+            {"TEST_NATIVE_INSPECT_PORT", std::to_string(native_port)},
+            {"TEST_NATIVE_INSPECT_SETTINGS", execution_settings.dump()},
+            {"TEST_NATIVE_INSPECT_MAX_CONTEXT",
+             std::to_string(session_resolved.values.at("service").at("max_context").get<int>())},
+            {"TEST_NATIVE_INSPECT_MAX_SEQUENCES",
+             std::to_string(session_resolved.values.at("service").at("max_sessions").get<int>())},
+            {"TEST_NATIVE_INSPECT_KERNELS", expected_kernels.dump()}};
+        gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root, std::move(native_overrides)};
+        gated.named_config = "qwen27b-tp3";
+        // Offline preflight (`bc-serve explain CONFIG --native-config YAML`): the planner's inspection and reconcile,
+        // stopped before any writer, power admission, engine or helper child. One pass and one refusal per rule.
+        if (bc::serving::v2::kContractVersion == 3) {
+            int preflight_runs = 0;
+            const auto preflight = [&](auto&& tweak) -> std::string {
+                ss::EnginePlanInputs pre = gated;
+                pre.native_preflight = true;
+                tweak(pre.native_admission->runtime_overrides);
+                const fs::path pre_run = run / ("native-preflight-" + std::to_string(++preflight_runs));
+                fs::create_directories(pre_run);
+                std::vector<ss::ChildKind> kinds;
+                ss::Hooks hooks;
+                hooks.wait = [](std::chrono::milliseconds) { return true; };
+                hooks.started = [&](ss::ChildKind kind, const std::string&, pid_t, const fs::path&) {
+                    kinds.push_back(kind);
+                };
+                std::string refusal;
+                try {
+                    const ss::EngineStart plan = ss::plan_engine_only(pre, pre_run, hooks);
+                    assert(plan.native_preflight_receipt.at("protocol") == "bigcherry.native-fleet-inspect/v2");
+                    assert(plan.argv.empty() && plan.helpers.empty());   // nothing was prepared to start
+                } catch (const ss::PlanFailed& error) {
+                    refusal = error.what();
+                }
+                for (const ss::ChildKind kind : kinds)
+                    assert(kind == ss::ChildKind::native_config_inspector);   // never a writer, helper or engine
+                return refusal;
+            };
+            const auto refused_for = [&](const std::string& why, auto&& tweak) {
+                const std::string refusal = preflight(tweak);
+                if (refusal.find(why) == std::string::npos)
+                    throw std::runtime_error("preflight: expected a refusal naming '" + why + "', got '" + refusal + "'");
+            };
+            if (const std::string pass = preflight([](ss::Env&) {}); !pass.empty())
+                throw std::runtime_error("preflight: a matching YAML was refused: " + pass);
+            // The tuning options the YAML states are the resolver's tuning values; ill-typed ones are refused.
+            {
+                ss::EnginePlanInputs pre = gated;
+                pre.native_preflight = true;
+                pre.native_admission->runtime_overrides["TEST_NATIVE_INSPECT_TUNING"] =
+                    Json{{"tp_ownership", "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"},
+                         {"tune_pin", "all_reduce:nblocks=4"}, {"p2p", "off"}, {"pipelined_prefill_min_rows", 256}}
+                        .dump();
+                const fs::path tuned_run = run / "native-preflight-tuning";
+                fs::create_directories(tuned_run);
+                const ss::EngineStart tuned = ss::plan_engine_only(pre, tuned_run, ss::Hooks{});
+                const Json& tuning = tuned.native_preflight_values.at("tuning");
+                assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
+                assert(tuning.at("tune_pin") == "all_reduce:nblocks=4" && tuning.at("p2p") == "off");
+                assert(tuning.at("pipelined_prefill_min_rows") == 256 && !tuning.contains("prefill_governor"));
+            }
+            {   // The BigCherry-owned section: one pass with every table, then one refusal per rule.
+                const auto section = [](Json section) {
+                    return [section](ss::Env& e) { e["TEST_NATIVE_INSPECT_XBIGCHERRY"] = section.dump(); };
+                };
+                const Json ranks = Json::array({{{"arch", "gfx1100"}, {"count", 2}}, {{"arch", "gfx1201"}, {"count", 1}}});
+                const Json full = {{"schema", 1}, {"description", "d"}, {"ranks", ranks},
+                                   {"service", {{"objective", "balanced"}}},
+                                   {"memory", {{"host-pool-mib", 0}}},
+                                   {"handoff", {{"heat", "@bundle/heat/x"}, {"moe-down-tile", true}}},
+                                   {"helper", {{"combine", true}}}, {"kernels", {{"dec11", true}}}};
+                if (const std::string pass = preflight(section(full)); !pass.empty())
+                    throw std::runtime_error("preflight: a full x-bigcherry section was refused: " + pass);
+                const auto with = [&](const char* key, Json value) { Json j = full; j[key] = value; return j; };
+                refused_for("x-bigcherry.ranks name 2 ranks, but the YAML's tp is 3",
+                            section({{"schema", 1}, {"description", "d"},
+                                     {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 2}}})}}));
+                refused_for("x-bigcherry.bogus is not a key", section(with("bogus", 1)));
+                refused_for("x-bigcherry.helper.combine must be true or false", section(with("helper", {{"combine", "yes"}})));
+                refused_for("x-bigcherry.helper.nope is not a key", section(with("helper", {{"nope", true}})));
+                refused_for("x-bigcherry.schema is 2", section(with("schema", 2)));
+                refused_for("x-bigcherry.description is required", section({{"schema", 1}, {"ranks", ranks}}));
+                refused_for("x-bigcherry.helpers[0].placement must be head or tail",
+                            section(with("helpers", Json::array({{{"arch", "a"}, {"count", 1}, {"placement", "mid"}}}))));
+                refused_for("x-bigcherry.memory.host-pool-mib must be an integer",
+                            section(with("memory", {{"host-pool-mib", "0"}})));
+                refused_for("x-bigcherry.variant-of needs differs",
+                            section(with("variant-of", "other")));
+                refused_for("is required: a serving config file carries an x-bigcherry section", section(nullptr));
+            }
+            refused_for("ill-typed tuning tp_ownership", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tp_ownership", 5}}.dump(); });
+            refused_for("ill-typed tuning tune_pin", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"tune_pin", ""}}.dump(); });
+            refused_for("ill-typed tuning pipelined_prefill_min_rows", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_TUNING"] = Json{{"pipelined_prefill_min_rows", "256"}}.dump(); });
+            refused_for("model-defined context", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MAX_CONTEXT"] = "0"; });
+            // Radiance's measured auto n-gram placement is admitted as an intent (the engine decides, the owner seals it).
+            if (const std::string pass = preflight([](ss::Env& e) {
+                    e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"ngram_placement", "auto"}}.dump(); });
+                !pass.empty())
+                throw std::runtime_error("preflight: an auto ngram placement was refused: " + pass);
+            refused_for("set num-speculative-tokens", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"speculative_tokens", -1}}.dump(); });
+            refused_for("set rope-scaling", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_SETTINGS"] = Json{{"rope_scaling", ""}}.dump(); });
+            refused_for("YAML model differs", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_MODEL"] = "/elsewhere/other.rad"; });
+            // (tp against the selected ranks cannot differ: the resolver's ranks are the YAML's x-bigcherry.ranks, and
+            // their count against the YAML's tp is the refusal tested above.)
+            refused_for("card ordinals differ", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_CARDS"] = "[2,1,0]"; });
+            refused_for("rank-device order differs", [](ss::Env& e) {
+                e["TEST_NATIVE_INSPECT_RANK_DEVICES"] = Json::array({"0000:09:00.0", "0000:09:01.0", "0000:09:02.0"}).dump(); });
+            refused_for("loopback listener", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_HOST"] = "0.0.0.0"; });
+            refused_for("runtime home differs", [](ss::Env& e) { e["TEST_NATIVE_INSPECT_REPORTED_HOME"] = "/another/home"; });
+        }
+        const fs::path gated_run = run / "native-admission";
+        fs::create_directories(gated_run);
+        const fs::path cache_tripwire = gated_run /
+            ("stored-" + bc::serving::sha256_hex(gated.named_config) + ".index.json");
+        int writer_calls = 0;
+        bool power_admitted = false;
+        int power_admit_calls = 0;
+        std::string admitted_measurement_manifest_sha256;
+        std::vector<std::string> inspector_roles;
+        std::vector<pid_t> reaped;
+        ss::Hooks admission_hooks;
+        admission_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        admission_hooks.started = [&](ss::ChildKind kind, const std::string& role, pid_t,
+                                      const fs::path&) {
+            assert(kind == ss::ChildKind::native_config_inspector || kind == ss::ChildKind::manifest_writer ||
+                   kind == ss::ChildKind::measuring_engine);
+            inspector_roles.push_back(role);
+        };
+        admission_hooks.ended = [&](pid_t pid) {
+            if (reaped.empty()) {
+                std::error_code remove_error;
+                fs::remove(native_yaml, remove_error);
+                if (remove_error) throw std::runtime_error("cannot remove authored YAML after inspection");
+            }
+            reaped.push_back(pid);
+        };
+        admission_hooks.admit_power = [&](const fs::path& manifest_path, bc::serving::v2::PlanUse) {
+            power_admitted = true;
+            ++power_admit_calls;
+            std::ifstream manifest_file(manifest_path, std::ios::binary);
+            if (!manifest_file) throw std::runtime_error("cannot read pinned native measuring manifest in test hook");
+            const std::string manifest_bytes((std::istreambuf_iterator<char>(manifest_file)),
+                                             std::istreambuf_iterator<char>());
+            admitted_measurement_manifest_sha256 = bc::serving::sha256_hex(manifest_bytes);
+            return bc::serving::v2::Status{};
+        };
+        bool admitted_expected_path = false;
+        std::string native_gate_error;
+        try {
+            const auto plan = ss::plan_engine_only(gated, gated_run, admission_hooks);
+            admitted_expected_path = plan.native_launch && plan.pinned_manifest && plan.helpers.empty() &&
+                plan.execution_manifest() != plan.manifest;
+        } catch (const ss::PlanFailed& error) {
+            native_gate_error = error.what();
+        }
+        const fs::path attempts = gated_run / "measurement-attempts";
+        std::vector<fs::path> attempt_dirs;
+        if (fs::is_directory(attempts))
+            for (const auto& attempt : fs::directory_iterator(attempts))
+                if (attempt.is_directory()) attempt_dirs.push_back(attempt.path());
+        bool owner_receipt_verified = false;
+        bool measured_artifact_verified = false;
+        fs::path original_manifest;
+        if (attempt_dirs.size() == 1 && !admitted_measurement_manifest_sha256.empty()) {
+            const fs::path attempt = attempt_dirs.front();
+            std::vector<fs::path> cache_entries;
+            const fs::path owner_cache = attempt / "plan-cache";
+            if (fs::is_directory(owner_cache))
+                for (const auto& entry : fs::directory_iterator(owner_cache))
+                    if (entry.is_regular_file() && entry.path().extension() == ".json")
+                        cache_entries.push_back(entry.path());
+            if (cache_entries.size() == 1) {
+                std::ifstream cache_file(cache_entries.front(), std::ios::binary);
+                Json cache_record;
+                cache_file >> cache_record;
+                const Json& owner = cache_record.at("owner");
+                const Json& rank_demand = cache_record.at("rank_demand");
+                owner_receipt_verified = owner.at("attempt_id") == attempt.filename().string() &&
+                    owner.at("measuring_manifest_sha256") == admitted_measurement_manifest_sha256 &&
+                    cache_record.at("resident").at("engine_mib") ==
+                        std::max<int64_t>(1, (rank_demand.at("resident_other_bytes").get<int64_t>() +
+                                               ((int64_t{1} << 20) - 1)) / (int64_t{1} << 20));
+                const fs::path measured_path = gated_run / ("manifest-native-" + attempt.filename().string() + ".json");
+                std::ifstream measured_file(measured_path, std::ios::binary);
+                if (owner_receipt_verified && measured_file) {
+                    const std::string measured_bytes((std::istreambuf_iterator<char>(measured_file)),
+                                                     std::istreambuf_iterator<char>());
+                    const auto parsed = bc::serving::v2::read_manifest(
+                        measured_bytes, "native v3 session measurement test", bc::serving::v2::PlanUse::serving);
+                    if (parsed.ok()) {
+                        const auto& spec = parsed.value().spec;
+                        const auto native = bc::serving::v2::native_config_view(parsed.value());
+                        const auto& engine = spec.processes.engine;
+                        measured_artifact_verified = native && native->yaml_utf8 == native_yaml_bytes &&
+                            engine.server.port == native_port &&
+                            engine.runtime.kernels == expected_kernels.get<std::vector<std::string>>() &&
+                            engine.scheduler.max_num_batched_tokens == 384 &&
+                            engine.scheduler.checkpoint_interval == 1536 &&
+                            engine.execution.kv_cache_dtype == bc::serving::v2::KvCacheDtype::kBf16 &&
+                            engine.execution.num_speculative_tokens == 2 &&
+                            engine.execution.rope_scaling == "yarn:4" &&
+                            engine.execution.prefix_resume == bc::serving::v2::PrefixResume::kExact &&
+                            engine.tuning && engine.tuning->prefill_interleave == 1 &&
+                            spec.intent.model == model.string() && spec.processes.engine.device.gpus ==
+                                session_resolved.values.at("layout").at("engine_cards").get<std::vector<std::string>>() &&
+                            spec.plan.engine_memory &&
+                            bc::serving::v2::encode(spec.plan.engine_memory->expected) == cache_record.at("plan") &&
+                            spec.plan.engine_memory->model_identity == bc::serving::container_identity(model) &&
+                            spec.plan.resource_inputs &&
+                            spec.plan.resource_inputs->resident_other_bytes ==
+                                rank_demand.at("resident_other_bytes").get<int64_t>();
+                        if (measured_artifact_verified) original_manifest = measured_path;
+                    }
+                }
+            }
+        }
+        if (!(admitted_expected_path && writer_calls == 0 && power_admitted && inspector_roles.size() == 5 &&
+              inspector_roles[0] == "native config inspector" &&   // the device-free parse that resolves the config
+              inspector_roles[1] == "native config inspector" &&   // the admission inspect with the selected cards
+              inspector_roles[2] == "native v3 measuring draft writer" &&
+              inspector_roles[3] == "native v3 measuring engine" &&
+              inspector_roles[4] == "native v3 measured writer" && reaped.size() == 5 && owner_receipt_verified &&
+              measured_artifact_verified && !fs::exists(native_yaml) && fs::exists(cache_tripwire)))
+            throw std::runtime_error("native v3 session did not complete one owner-tracked measurement and measured "
+                                     "writer with a sealed serving handoff: " +
+                                     native_gate_error);
+
+        write(t.root / "proc/self/limits",
+              "Limit                     Soft Limit           Hard Limit          Units\n"
+              "Max locked memory         unlimited            unlimited           bytes\n");
+        const auto attestation_path = original_manifest.string() + ".replay-index.json";
+        const auto original_index = ss::read_stored_index(attestation_path);
+        assert(original_index.native_measurement &&
+               original_index.manifest_filename == original_manifest.filename().string());
+        ss::EnginePlanInputs replay = gated;
+        replay.stored_manifest = original_manifest;
+        replay.options.model_root.clear();
+        ss::Hooks stored_hooks;
+        stored_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        unsigned replay_inspections = 0;
+        unsigned replay_admissions = 0;
+        stored_hooks.started = [&](ss::ChildKind kind, const std::string&, pid_t, const fs::path&) {
+            assert(kind == ss::ChildKind::native_config_inspector);
+            ++replay_inspections;
+        };
+        stored_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse use) {
+            assert(use == bc::serving::v2::PlanUse::serving && replay_inspections > replay_admissions);
+            ++replay_admissions;
+            return bc::serving::v2::Status{};
+        };
+        const auto refuse_stored = [&](const ss::EnginePlanInputs& rejected, std::string_view why) {
+            try {
+                (void)ss::replay_stored_manifest(rejected, gated_run, stored_hooks);
+            } catch (const std::exception& error) {
+                if (std::string_view(error.what()).find(why) != std::string_view::npos) return;
+                throw;
+            }
+            throw std::runtime_error("stored v3 replay unexpectedly admitted: " + std::string(why));
+        };
+        auto tampered = original_index;
+        tampered.native_measurement->sha256 = std::string(64, '0');
+        ss::write_stored_index(attestation_path, tampered);
+        refuse_stored(replay, "owner measurement no longer matches");
+        ss::write_stored_index(attestation_path, original_index);
+        const auto replace_fixture_bytes = [&](const fs::path& path, const std::string& bytes) {
+            const fs::path replacement = path.string() + ".fixture-replacement";
+            write(replacement, bytes);
+            fs::rename(replacement, path);
+        };
+        const auto change_bytes_and_refuse = [&](const fs::path& path, std::string_view why) {
+            std::ifstream original(path, std::ios::binary);
+            const std::string bytes((std::istreambuf_iterator<char>(original)), std::istreambuf_iterator<char>());
+            assert(!bytes.empty());
+            replace_fixture_bytes(path, bytes + '\n');
+            assert(ss::complete_file_identity(path) != ss::complete_file_identity_bytes(bytes));
+            refuse_stored(replay, why);
+            replace_fixture_bytes(path, bytes);
+        };
+        change_bytes_and_refuse(original_manifest, "no longer binds the original manifest bytes");
+        change_bytes_and_refuse(original_manifest.string() + ".s8-evidence.json", "producer evidence was tampered");
+        auto changed_build = replay;
+        changed_build.engine_binary = t.root / "changed-native-engine";
+        fs::copy_file(BC_FAKE_ENGINE, changed_build.engine_binary);
+        std::ofstream(changed_build.engine_binary, std::ios::binary | std::ios::app) << '\n';
+        refuse_stored(changed_build, "engine, kernels or helper build changed");
+        auto wrong_root = replay;
+        wrong_root.native_admission->resolution_root = t.root;
+        refuse_stored(wrong_root, "requested resolution root differs");
+        auto low_replay = replay;
+        low_replay.replay_live_room = [](const auto&, const auto&) {
+            return bc::serving::v2::P1LiveRoom{1, 1, 1};
+        };
+        refuse_stored(low_replay, "live MemAvailable/cgroup room");
+        assert(replay_admissions == 0 && !fs::exists(native_yaml));
+        replay_inspections = 0;
+
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        const auto hit = ss::plan_engine_only(gated, gated_run, stored_hooks);
+        assert(hit.manifest == original_manifest && hit.summary.at("replay") == true &&
+               hit.stored_sha256 == bc::serving::file_sha256(original_manifest));
+        assert(replay_inspections == 2 && replay_admissions == 1);   // the device-free config parse and the admission inspect
+        fs::remove(native_yaml);
+
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        const fs::path owner_run = run / "native-serving-owner";
+        fs::create_directories(owner_run);
+        ss::EnginePlanInputs fresh = gated;
+        fresh.native_admission->runtime_overrides["TEST_NATIVE_EXPECT_FROZEN"] = "before";
+        assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
+        ss::Session owner;
+        owner.run_dir = owner_run;
+        owner.timing.health_timeout = std::chrono::seconds(6);
+        owner.timing.health_interval = std::chrono::milliseconds(30);
+        owner.timing.stop_grace = std::chrono::seconds(1);
+        owner.timing.poll = std::chrono::milliseconds(20);
+        owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
+            return fresh.stored_manifest.empty() ? ss::plan_engine_only(fresh, dir, hooks)
+                                                : ss::replay_stored_manifest(fresh, dir, hooks);
+        };
+        bool serving_power_verified = false;
+        bool cleared_children = false;
+        owner.power_hook.begin_manifest = [&](const fs::path& path, bc::serving::v2::PlanUse use) {
+            assert(use == (fresh.stored_manifest.empty() ? bc::serving::v2::PlanUse::measuring
+                                                        : bc::serving::v2::PlanUse::serving));
+            assert(bc::serving::v2::load_manifest(path, use));
+            fs::remove(native_yaml);
+            return bc::serving::v2::Status{};
+        };
+        owner.power_hook.verify_serving = [&](const fs::path& path) {
+            const auto parsed = bc::serving::v2::load_manifest(path, bc::serving::v2::PlanUse::serving);
+            assert(parsed && parsed.value().spec.plan.engine_memory);
+            serving_power_verified = true;
+            return bc::serving::v2::Status{};
+        };
+        owner.power_hook.verified_exit = [&] { cleared_children = true; };
+        owner.power_hook.restore = [&] {
+            assert(cleared_children);
+            return bc::serving::v2::Status{};
+        };
+        owner.before_gpu_start = [&](const ss::EngineStart& plan) {
+            assert(serving_power_verified && plan.execution_manifest() != plan.manifest);
+            replace_fixture_bytes(plan.manifest, "{}\n");
+            assert(::setenv("TEST_NATIVE_FROZEN", "changed-after-admission", 1) == 0);
+            return bc::serving::v2::Status{};
+        };
+        bool serving_handoff_seen = false;
+        owner.runtime_guard = [&](const ss::EngineStart&, const fs::path& log) {
+            std::ifstream file(log);
+            const std::string contents((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+            serving_handoff_seen = contents.find("native v3 serving snapshot, root and environment verified") !=
+                                   std::string::npos;
+            return bc::serving::v2::Status{};
+        };
+        const auto run_owner = [&] {
+            auto stop_owner = std::async(std::launch::async, [&] {
+                const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(12);
+                while (std::chrono::steady_clock::now() < deadline) {
+                    const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+                    const std::string state = record.value("state", std::string());
+                    if (state == "failed" || state == "stopped") return false;
+                    if (state == "running") {
+                        const auto reply = ss::control(owner.run_dir, "stop", std::chrono::seconds(3));
+                        return reply && reply->value("ok", false);
+                    }
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+                (void)ss::control(owner.run_dir, "stop", std::chrono::seconds(3));
+                return false;
+            });
+            const int owner_result = ss::serve(owner);
+            const bool owner_stopped = stop_owner.get();
+            assert(::unsetenv("TEST_NATIVE_FROZEN") == 0);
+            const auto completed = ss::read_record(owner.run_dir).value_or(Json::object());
+            if (!(owner_result == 0 && owner_stopped && serving_handoff_seen && cleared_children &&
+                  completed.value("state", std::string()) == "stopped" && ss::alive_recorded(completed).empty()))
+                throw std::runtime_error("native v3 session did not complete sealed serving and verified stop: " +
+                                         completed.dump());
+            return completed;
+        };
+        (void)run_owner();
+        assert(!fs::exists(native_yaml));
+        owner.run_dir = run / "native-stored-owner";
+        fs::create_directories(owner.run_dir);
+        fresh.stored_manifest = original_manifest;
+        assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
+        serving_power_verified = cleared_children = serving_handoff_seen = false;
+        const auto replay_record = run_owner();
+        if (replay_record.at("selection").value("replay", false) != true ||
+            replay_record.at("selection").at("plan_measurement_attempt") != original_index.native_measurement->attempt_id ||
+            replay_record.at("processes").size() != 3)   // the two inspectors (config parse, admission) and the engine
+            throw std::runtime_error("native v3 stored replay record: " + replay_record.at("processes").dump() + replay_record.at("selection").dump());
+        assert(replay_record.at("selection").at("replay") == true &&
+               replay_record.at("selection").at("plan_measurement_attempt") == original_index.native_measurement->attempt_id &&
+               replay_record.at("processes").size() == 3);
+
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        const fs::path low_room_run = run / "native-low-room";
+        fs::create_directories(low_room_run);
+        const fs::path meminfo = t.root / "proc/meminfo";
+        std::ifstream prior_room_file(meminfo);
+        const std::string prior_room((std::istreambuf_iterator<char>(prior_room_file)), std::istreambuf_iterator<char>());
+        ss::Hooks low_room = admission_hooks;
+        pid_t measuring_child = -1;
+        int measured_children = 0;
+        low_room.started = [&](ss::ChildKind kind, const std::string&, pid_t pid, const fs::path&) {
+            if (kind == ss::ChildKind::measuring_engine) {
+                measuring_child = pid;
+                ++measured_children;
+            }
+        };
+        const auto& memory = session_resolved.values.at("memory");
+        const int64_t ranks = session_resolved.values.at("engine").at("tp").get<int64_t>();
+        const int64_t room_mib = memory.at("host_pool_mib").get<int64_t>() * ranks +
+            memory.at("host_kv_mib").get<int64_t>() + memory.at("host_reserve_mib").get<int64_t>();
+        std::string reduced_room = prior_room;
+        const size_t available = reduced_room.find("MemAvailable:");
+        assert(available != std::string::npos);
+        reduced_room.replace(available, reduced_room.find('\n', available) - available,
+                             "MemAvailable: " + std::to_string(room_mib * 1024) + " kB");
+        low_room.ended = [&](pid_t pid) {
+            if (pid == measuring_child)
+                write(meminfo, reduced_room);
+        };
+        std::string low_room_error;
+        try {
+            (void)ss::plan_engine_only(gated, low_room_run, low_room);
+        } catch (const ss::PlanFailed& error) {
+            low_room_error = error.what();
+        }
+        write(meminfo, prior_room);
+        const auto measured_attempts = low_room_run / "measurement-attempts";
+        const auto attempt = fs::is_directory(measured_attempts) ? fs::directory_iterator(measured_attempts)
+                                                                : fs::directory_iterator{};
+        if (measured_children != 1 ||
+            low_room_error.find("native v3 measured writer refused") == std::string::npos ||
+            low_room_error.find("host memory plan refused") == std::string::npos ||
+            low_room_error.find("MemAvailable (" + std::to_string(room_mib) + " MiB)") == std::string::npos ||
+            low_room_error.find("checkpoint floor") == std::string::npos ||
+            attempt == fs::directory_iterator{} ||
+            fs::exists(low_room_run / ("manifest-native-" + attempt->path().filename().string() + ".json")))
+            throw std::runtime_error("native v3 post-measure admission did not refuse live host room: " + low_room_error);
+
+        const fs::path home_alias = t.root / "native-runtime-home-link";
+        const fs::path replacement_home = t.root / "native-runtime-home-identical";
+        fs::create_directories(replacement_home);
+        fs::create_directory_symlink(home, home_alias);
+        const fs::path drift_site = t.file(
+            "session-site-runtime-link.toml", "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" +
+                home_alias.string() + "\"\nport = " +
+                std::to_string(session_resolved.values.at("engine").at("port").get<int>()) + "\n");
+        const fs::path drift_yaml = native_root / "fleet-runtime-drift.yaml";
+        std::ofstream(drift_yaml, std::ios::binary) << native_yaml_bytes;
+        ss::EnginePlanInputs home_drift = gated;
+        home_drift.options.site = drift_site;
+        home_drift.native_admission = ss::NativeAdmissionRequest{
+            drift_yaml, native_root, gated.native_admission->runtime_overrides};
+        const fs::path drift_run = t.root / "native-runtime-drift-run";
+        fs::create_directories(drift_run);
+        ss::Hooks drift_hooks;
+        std::map<pid_t, std::string> drift_roles;
+        std::vector<std::string> drift_role_order;
+        drift_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        drift_hooks.started = [&](ss::ChildKind, const std::string& role, pid_t pid, const fs::path&) {
+            drift_roles.emplace(pid, role);
+            drift_role_order.push_back(role);
+        };
+        int drift_inspections = 0;
+        drift_hooks.ended = [&](pid_t pid) {
+            // The first inspector is the device-free config parse; the drift lands after the admission inspect.
+            if (drift_roles.at(pid) == "native config inspector" && ++drift_inspections == 2) {
+                fs::remove(drift_yaml);
+                fs::remove(home_alias);
+                fs::create_directory_symlink(replacement_home, home_alias);
+            }
+        };
+        bool drift_power_admitted = false;
+        drift_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+            drift_power_admitted = true;
+            return bc::serving::v2::Status{};
+        };
+        bool runtime_home_drift_refused = false;
+        std::string runtime_home_drift_error;
+        try {
+            (void)ss::plan_engine_only(home_drift, drift_run, drift_hooks);
+        } catch (const ss::PlanFailed& error) {
+            runtime_home_drift_error = error.what();
+            runtime_home_drift_refused =
+                std::string_view(error.what()).find("runtime home changed during measurement") != std::string_view::npos;
+        }
+        std::vector<fs::path> drift_attempt_dirs;
+        const fs::path drift_attempts = drift_run / "measurement-attempts";
+        if (fs::is_directory(drift_attempts))
+            for (const auto& attempt : fs::directory_iterator(drift_attempts))
+                if (attempt.is_directory()) drift_attempt_dirs.push_back(attempt.path());
+        if (!(runtime_home_drift_refused && drift_power_admitted && drift_role_order.size() == 4 &&
+              drift_role_order[0] == "native config inspector" &&
+              drift_role_order[1] == "native config inspector" &&
+              drift_role_order[2] == "native v3 measuring draft writer" &&
+              drift_role_order[3] == "native v3 measuring engine" && drift_attempt_dirs.size() == 1 &&
+              !fs::exists(drift_attempt_dirs.front() / "plan-cache") &&
+              !fs::exists(drift_run / ("manifest-native-" + drift_attempt_dirs.front().filename().string() + ".json"))))
+            throw std::runtime_error("native v3 session did not refuse runtime-home symlink retarget before owner-cache "
+                                     "publication: " + runtime_home_drift_error);
+
+        ss::EnginePlanInputs reserved_override = gated;
+        reserved_override.native_admission->runtime_overrides["CUDA_VISIBLE_DEVICES"] = "0";
+        int forbidden_inspector_calls = 0;
+        reserved_override.runner = [&](const std::vector<std::string>&) {
+            ++forbidden_inspector_calls;
+            return ss::ManifestRun{};
+        };
+        const int power_calls_before_invalid_override = power_admit_calls;
+        bool selector_refused = false;
+        try {
+            (void)ss::plan_engine_only(reserved_override, gated_run, admission_hooks);
+        } catch (const ss::PlanFailed& error) {
+            selector_refused = std::string_view(error.what()).find("runtime override cannot select CUDA_VISIBLE_DEVICES") !=
+                               std::string_view::npos;
+        }
+        assert(selector_refused && forbidden_inspector_calls == 0 &&
+               power_admit_calls == power_calls_before_invalid_override);
+    }
+    return;
     std::vector<std::vector<std::string>> calls;
     auto has = [](const std::vector<std::string>& argv, const std::string& flag, const std::string& value) {
         for (size_t i = 0; i + 1 < argv.size(); ++i)
@@ -3349,16 +1968,24 @@ void session_engine_plan(Fixture& t) {
             break; // no measured plan
         case 2:
             assert(flag(argv, "--unmeasured"));
-            std::ofstream(argv[2]) << "{}";
+            r = ss::run_to_completion(argv, ss::child_environment(environ, {}));
             break;
         case 3:
             r.exit = 11;
             r.out = "derived_host_pool_mib=2048\n";
             break; // stored; another pool wanted
         case 4:
+            r.exit = 10;
+            break; // the changed pool has a different measured-plan key
+        case 5: {
+            assert(flag(argv, "--unmeasured"));
+            r = ss::run_to_completion(argv, ss::child_environment(environ, {}));
+            break;
+        }
+        case 6:
             r.exit = 0;
             r.out = "manifest: x\ndigest: 0123abcd\n";
-            std::ofstream(argv[2]) << "{}";
+            std::ofstream(argv[2]) << session_manifests.serving.dump(2) << '\n';
             break;
         default:
             assert(!"unexpected bc-serve call");
@@ -3374,40 +2001,206 @@ void session_engine_plan(Fixture& t) {
     };
     wait.ended = [&](pid_t pid) { ended.push_back(pid); };
     const ss::EngineStart s = ss::plan_engine_only(in, run, wait);
-    assert(calls.size() == 4);
+    assert(calls.size() == 6);
     // the measuring engine was the owner's to know about, and its exit was verified
-    assert(started.size() == 1 && started[0].rfind("measuring engine ", 0) == 0 && ended.size() == 1 &&
-           started[0] == "measuring engine " + std::to_string(ended[0]));
+    assert(started.size() == 2 && ended.size() == 2);
+    for (size_t i = 0; i < started.size(); ++i)
+        assert(started[i].rfind("measuring engine ", 0) == 0 &&
+               started[i] == "measuring engine " + std::to_string(ended[i]));
     for (const auto& c : calls) {
         assert(c[0] == in.self.string() && c[1] == "--write-manifest" && has(c, "--power-profile", "stock"));
         assert(has(c, "--site", site.string()) && has(c, "--configs", (configs / "qwen27b.toml").string()) &&
-               !flag(c, "--layouts") && has(c, "--set", "layout.name=\"qwen27b-tp3-int8\"") &&
+               !flag(c, "--layouts") && has(c, "--set", "layout.name=\"qwen27b-tp3\"") &&
                has(c, "--sys-root", t.root.string()));
     }
-    for (size_t i : {0, 2, 3})
+    for (size_t i : {0, 2, 3, 5})
         assert(has(calls[i], "--plan-extra", "budgets: default") &&
                has(calls[i], "--engine-binary", BC_FAKE_ENGINE) &&
                has(calls[i], "--plan-cache", (run / "plan-cache").string()));
-    assert(!flag(calls[1], "--plan-extra") && !flag(calls[1], "--plan-cache"));
-    // the measuring start's plan and its reported start-up memory are stored; the engine is alone
-    assert(has(calls[2], "--measured-plan", (run / "plan-measured.json").string()) &&
-           has(calls[2], "--rank-demand", (run / "plan-ranks.json").string()) &&
-           has(calls[2], "--engine-resident-mib", "1234") && has(calls[2], "--helpers-resident-mib", "0"));
+    for (size_t i : {size_t(1), size_t(4)})
+        assert(flag(calls[i], "--plan-extra") && has(calls[i], "--engine-binary", BC_FAKE_ENGINE) &&
+               flag(calls[i], "--expected-plan-key") && !flag(calls[i], "--plan-cache"));
+    // The owner publishes exact artifacts from the tracked attempt, then the writer reads cache-only and checks its attempt receipt.
+    assert(flag(calls[2], "--expected-owner-attempt") && !flag(calls[2], "--measured-plan") &&
+           !flag(calls[2], "--rank-demand") && flag(calls[5], "--expected-owner-attempt"));
     assert(!flag(calls[2], "memory.host_pool_mib=2048") && has(calls[3], "--set", "memory.host_pool_mib=2048"));
+    {
+        std::set<std::string> expected_attempts;
+        for (size_t i : {size_t(2), size_t(5)})
+            for (size_t j = 0; j + 1 < calls[i].size(); ++j)
+                if (calls[i][j] == "--expected-owner-attempt")
+                    expected_attempts.insert(calls[i][j + 1]);
+        std::set<std::string> published_attempts;
+        for (const auto& entry : fs::directory_iterator(run / "plan-cache")) {
+            std::ifstream file(entry.path(), std::ios::binary);
+            Json record;
+            file >> record;
+            assert(record.at("cache_version") == 2 && record.contains("owner"));
+            published_attempts.insert(record.at("owner").at("attempt_id").get<std::string>());
+        }
+        assert(expected_attempts.size() == 2 && published_attempts == expected_attempts);
+    }
     // the engine: from the measured manifest only, its three ranks on the resolver's cards in rank order
     assert(s.argv.size() == 5 && s.argv[0] == BC_FAKE_ENGINE && s.argv[1] == "--manifest" &&
-           s.argv[2] == calls[3][2] && s.argv[3] == "--role" && s.argv[4] == "engine" &&
-           s.manifest == calls[3][2]);
+           s.argv[2].rfind("/proc/self/fd/", 0) == 0 && s.argv[3] == "--role" && s.argv[4] == "engine" &&
+           s.manifest == calls[3][2] && s.execution_manifest() == s.argv[2] && s.pinned_manifest &&
+           s.stored_sha256 == bc::serving::sha256_hex(session_manifests.serving.dump(2) + "\n"));
     std::string rocr;
-    const Json resolved = bc::serving::resolve(in.options, bc::serving::detect(t.root)).values;
+    const Json resolved = tresolve(in.options, bc::serving::detect(t.root)).values;
     for (const Json& bdf : resolved.at("layout").at("engine_cards"))
         for (const Json& g : t.facts.at("gpus"))
             if (g.at("bdf") == bdf)
                 rocr += (rocr.empty() ? "" : ",") + std::to_string(g.at("hip_ordinal").get<int>());
     assert(s.runtime.at("ROCR_VISIBLE_DEVICES") == rocr && s.runtime.at("HIP_VISIBLE_DEVICES") == "0,1,2");
     assert(s.runtime.at("RADIANCE_HOME") == home.string() && s.runtime.size() == 3);
-    assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3-int8" &&
+    assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3" &&
            s.summary.at("manifest_digest") == "0123abcd");
+    { // A profile changed only while the unmeasured child resolves must not slip behind the frozen cache key.
+        ss::EnginePlanInputs drifting = in;
+        const fs::path profile = t.file("transient-profile.toml", "[engine]\nnum_speculative_tokens = 2\n");
+        drifting.options.profile = profile;
+        const fs::path drift_run = run / "transient-drift";
+        fs::create_directories(drift_run);
+        int writer_calls = 0;
+        drifting.runner = [&](const std::vector<std::string>& argv) {
+            if (++writer_calls == 1)
+                return ss::ManifestRun{10, "", "cache miss"};
+            assert(writer_calls == 2 && flag(argv, "--expected-plan-key"));
+            std::ofstream(profile, std::ios::trunc) << "[engine]\nnum_speculative_tokens = 1\n";
+            return ss::run_to_completion(argv, ss::child_environment(environ, {}));
+        };
+        bool drift_refused = false;
+        try {
+            (void)ss::plan_engine_only(drifting, drift_run, {});
+        } catch (const ss::PlanFailed& error) {
+            drift_refused = std::string(error.what()).find(
+                                "effective measuring-manifest inputs differ from the session's frozen plan key") !=
+                            std::string::npos;
+        }
+        assert(drift_refused && writer_calls == 2 &&
+               !fs::exists(drift_run / "measurement-attempts"));
+    }
+    { // Engine-only TP3 cache miss refuses a pool that fits one rank but not all ranks, before power or child hooks.
+        ss::EnginePlanInputs limited = in;
+        const fs::path limited_root = t.root / "tp3-low-room-root";
+        fs::create_directories(limited_root);
+        for (const char* name : {"proc", "sys", "dev"})
+            fs::copy(t.root / name, limited_root / name, fs::copy_options::recursive);
+        write(limited_root / "proc/meminfo", "MemTotal:       134217728 kB\n"
+                                              "MemAvailable:     9216000 kB\n"
+                                              "SwapTotal:        8388608 kB\n");
+        limited.options.sys_root = limited_root;
+        limited.options.sets.insert(limited.options.sets.end(), {
+            "memory.host_pool_mib=2048", "memory.host_kv_mib=256"});
+        const Json low_room_facts = bc::serving::detect(limited_root);
+        const SessionManifestPair low_room_manifests = session_manifest_pair(
+            tresolve(limited.options, session_facts), session_facts);
+        int writer_calls = 0;
+        limited.runner = [&](const std::vector<std::string>& argv) {
+            if (++writer_calls == 1)
+                return ss::ManifestRun{10, "", "uncached"};
+            assert(writer_calls == 2 && flag(argv, "--unmeasured"));
+            std::ofstream(argv[2]) << low_room_manifests.measuring.dump(2) << '\n';
+            return ss::ManifestRun{};
+        };
+        bool power_admitted = false;
+        bool child_started = false;
+        ss::Hooks preflight_hooks;
+        preflight_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        preflight_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+            power_admitted = true;
+            return bc::serving::v2::Status{};
+        };
+        preflight_hooks.started = [&](ss::ChildKind, const std::string&, pid_t, const fs::path&) {
+            child_started = true;
+        };
+        bool refused_all_ranks = false;
+        try {
+            (void)ss::plan_engine_only(limited, run / "tp3-low-room", preflight_hooks);
+        } catch (const ss::PlanFailed& error) {
+            refused_all_ranks = std::string(error.what()).find(
+                "host RAM admission refused for host pool across 3 engine ranks") != std::string::npos;
+        }
+        assert(refused_all_ranks && writer_calls == 2 && !power_admitted && !child_started);
+    }
+    { // A later plan miss must recheck the effective pool from its sealed manifest, not the original resolver values.
+        ss::EnginePlanInputs revised = in;
+        const fs::path revised_root = t.root / "tp3-revised-room-root";
+        fs::create_directories(revised_root);
+        for (const char* name : {"proc", "sys", "dev"})
+            fs::copy(t.root / name, revised_root / name, fs::copy_options::recursive);
+        revised.options.sys_root = revised_root;
+        revised.options.sets = {"layout.name=\"qwen27b-tp3\"", "memory.host_pool_mib=0",
+                                "memory.host_kv_mib=0"};
+        const auto original_resolved = tresolve(revised.options, session_facts);
+        assert(original_resolved.values.at("memory").at("host_pool_mib").get<int64_t>() == 0);
+        auto effective_options = revised.options;
+        effective_options.sets.push_back("memory.host_pool_mib=2048");
+        const auto effective_resolved = tresolve(effective_options, session_facts);
+        const auto original_manifests = session_manifest_pair(original_resolved, session_facts);
+        const auto effective_manifests = session_manifest_pair(effective_resolved, session_facts);
+        const uint64_t kv_mib = effective_resolved.values.at("memory").at("host_kv_mib").get<uint64_t>();
+        const uint64_t reserve_mib = effective_resolved.values.at("memory").at("host_reserve_mib").get<uint64_t>();
+        const uint64_t room_mib = reserve_mib + std::max<uint64_t>(kv_mib, 4096) + 1;
+        assert(room_mib < reserve_mib + kv_mib + 3 * 2048);
+        const uint64_t total_kib = session_facts.at("host").at("mem_total_mib").get<uint64_t>() * 1024;
+        write(revised_root / "proc/meminfo", std::string("MemTotal:       ") + std::to_string(total_kib) + " kB\n" +
+                                                "MemAvailable:     " + std::to_string(room_mib * 1024) + " kB\n" +
+                                                "SwapTotal:        8388608 kB\n");
+        int writer_calls = 0;
+        revised.runner = [&](const std::vector<std::string>& argv) {
+            ss::ManifestRun result;
+            switch (++writer_calls) {
+            case 1:
+                result.exit = 10;
+                break;
+            case 2:
+                assert(flag(argv, "--unmeasured"));
+                assert(original_manifests.measuring.at("spec").at("resources").at("host").at("pool_mib") == 0);
+                std::ofstream(argv[2]) << original_manifests.measuring.dump(2) << '\n';
+                break;
+            case 3:
+                result.exit = 11;
+                result.out = "derived_host_pool_mib=2048\n";
+                break;
+            case 4:
+                result.exit = 10;
+                break; // the increased pool has no measured plan yet
+            case 5:
+                assert(flag(argv, "--unmeasured") && has(argv, "--set", "memory.host_pool_mib=2048"));
+                assert(effective_manifests.measuring.at("spec").at("resources").at("host").at("pool_mib") ==
+                       2048);
+                std::ofstream(argv[2]) << effective_manifests.measuring.dump(2) << '\n';
+                break;
+            default:
+                assert(!"unexpected writer call after the effective-pool refusal");
+            }
+            return result;
+        };
+        int power_admissions = 0;
+        std::vector<std::string> revised_started;
+        std::vector<pid_t> revised_ended;
+        ss::Hooks revised_hooks;
+        revised_hooks.wait = [](std::chrono::milliseconds) { return true; };
+        revised_hooks.admit_power = [&](const fs::path&, bc::serving::v2::PlanUse) {
+            ++power_admissions;
+            return bc::serving::v2::Status{};
+        };
+        revised_hooks.started = [&](ss::ChildKind, const std::string& role, pid_t pid, const fs::path&) {
+            revised_started.push_back(role + " " + std::to_string(pid));
+        };
+        revised_hooks.ended = [&](pid_t pid) { revised_ended.push_back(pid); };
+        bool refused_effective_pool = false;
+        try {
+            (void)ss::plan_engine_only(revised, run / "tp3-revised-room", revised_hooks);
+        } catch (const ss::PlanFailed& error) {
+            refused_effective_pool = std::string(error.what()).find(
+                "host RAM admission refused for host pool across 3 engine ranks") != std::string::npos;
+        }
+        assert(refused_effective_pool && writer_calls == 5 && power_admissions == 1 &&
+               revised_started.size() == 1 && revised_started.front().rfind("measuring engine ", 0) == 0 &&
+               revised_ended.size() == 1);
+    }
     { // configs from BIGCHERRY_CONFIGS alone reach the manifest writer, whose environment has no BIGCHERRY_*:
       // as files
         ss::EnginePlanInputs env_only = in;
@@ -3421,7 +2214,7 @@ void session_engine_plan(Fixture& t) {
         env_only.runner = [&](const std::vector<std::string>& argv) {
             calls.push_back(argv);
             ss::ManifestRun r;
-            std::ofstream(argv[2]) << "{}";
+            std::ofstream(argv[2]) << session_manifests.serving.dump(2) << '\n';
             return r;
         };
         ss::plan_engine_only(env_only, run, wait);
@@ -3435,21 +2228,6 @@ void session_engine_plan(Fixture& t) {
     { // A calibration run files its record under the key of the manifest it served with: the one production looks
       // up. The host pool is re-measured between the two writes (1033 -> 2247 MiB on flashnext-4gpu), so a key that
       // depended on it, or on the engine args, could never match; the written manifest's own scope is the key.
-        namespace sv = bc::serving;
-        using Json = nlohmann::json;
-        auto scope_manifest = [](int pool_mib) {
-            return Json{{"facts", {{"gpus", Json::array({{{"bdf", "0000:03:00.0"}, {"arch", "gfx1201"},
-                                                            {"vram", {{"total_mib", 32624}}}}})}}},
-                        {"processes", {{"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}}}},
-                                       {"helpers", Json::array()}, {"helper_common", Json::object()}}},
-                        {"handoff", {{"transport", {{"max_rows", 64}, {"small_rows", 4}, {"gemv_large_rows", 16},
-                                                    {"skip_owned", true}}},
-                                     {"kernels", {{"moe_down_tile", 8}}}, {"telemetry", {{"period_s", 5}}}}},
-                        {"plan", {{"engine_memory", {{"model_identity", std::string(64, 'm')}}}}},
-                        {"intent", {{"layout", "flashnext-4gpu"}, {"service", {{"objective", "balanced"}}},
-                                    {"power", {{"profile", "stock"}}}}},
-                        {"resources", {{"host", {{"pool_mib", pool_mib}}}}}};
-        };
         ss::EnginePlanInputs cal = in;
         cal.calibration_run = true;
         cal.live_policy_file = t.file("session-cal-policy.json", "{\"accept_unwatermarked_heat\": true}\n");
@@ -3459,7 +2237,9 @@ void session_engine_plan(Fixture& t) {
         std::string keys[2];
         int i = 0;
         for (const int pool : {1033, 2247}) {
-            const Json written = {{"spec", scope_manifest(pool)}};
+            const Json written = g_session_manifest_template;
+            Json calibration_scope = written.at("spec");
+            calibration_scope["resources"]["host"]["pool_mib"] = pool;
             cal.runner = [&](const std::vector<std::string>& argv) {
                 ss::ManifestRun r;
                 std::ofstream(argv[2]) << written.dump();
@@ -3467,7 +2247,8 @@ void session_engine_plan(Fixture& t) {
             };
             const ss::EngineStart cs = ss::plan_engine_only(cal, run, wait);
             keys[i++] = cs.summary.at("calibration_store_key").get<std::string>();
-            assert(keys[i - 1] == sv::policy_calibration_key(sv::policy_calibration_inputs(written.at("spec"))));
+            assert(keys[i - 1] ==
+                   sv::policy_calibration_key(sv::policy_calibration_inputs(calibration_scope)));
         }
         assert(keys[0] == keys[1]); // a re-measured host pool does not move the record
     }
@@ -3505,18 +2286,6 @@ void session_engine_plan(Fixture& t) {
         }
         assert(typed_refusal && started.size() == original_starts);
     }
-    ss::EnginePlanInputs layout = in;
-    layout.options.configs.clear();
-    layout.options.layouts = {fs::path(std::getenv("BIGCHERRY_LAYOUTS"))};
-    layout.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
-    refused = false;
-    calls.clear();
-    try {
-        ss::plan_engine_only(layout, run, wait);
-    } catch (const ss::PlanFailed& e) {
-        refused = std::string(e.what()).find("is a layout") != std::string::npos;
-    }
-    assert(refused && calls.empty());
     { // bc-serve inside a build serves only that build's engine and runtime home
         const fs::path build = t.root / "session-build";
         fs::create_directories(build / "bin");
@@ -3535,7 +2304,7 @@ void session_engine_plan(Fixture& t) {
     }
     { // Calibration parity: invalid prompt batches must be refused before the writer or any GPU child.
         ss::EnginePlanInputs bad_calibration = in;
-        bad_calibration.named_config = "qwen27b-tp3-int8";
+        bad_calibration.named_config = "qwen27b-tp3";
         bad_calibration.self = BC_SERVE_EXE;
         bad_calibration.calibration_run = true;
         bad_calibration.live_policy_file = t.file("session-calibration-policy.json", "{}");
@@ -3679,7 +2448,7 @@ void session_engine_plan(Fixture& t) {
     in.runner = [&](const std::vector<std::string>& argv) {
         ss::ManifestRun r;
         if (std::find(argv.begin(), argv.end(), "--unmeasured") != argv.end()) {
-            std::ofstream(argv[2]) << "{}";
+            std::ofstream(argv[2]) << session_manifests.measuring.dump(2) << '\n';
             return r;
         }
         r.exit = 10;
@@ -3695,11 +2464,12 @@ void session_engine_plan(Fixture& t) {
     assert(refused);
     { // Real named resolver and process owner, fake measuring engine OS boundary.
         ss::EnginePlanInputs ram = in;
-        ram.engine_binary = BC_FAKE_ENGINE;
+        ram.engine_binary = t.root / "ram-measurement-error.sh";
+        write(ram.engine_binary, "#!/bin/sh\nprintf '%s\\n' 'E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare' >&2\nexit 1\n");
+        fs::permissions(ram.engine_binary, fs::perms::owner_exec | fs::perms::owner_read | fs::perms::owner_write);
         ram.runner = [&](const std::vector<std::string>& argv) {
             if (flag(argv, "--unmeasured")) {
-                std::ofstream(argv[2])
-                    << R"json({"measure_error":"E --ngram-placement ram: the n-gram table (47.68 GiB) cannot be held as a pinned copy: 82.00 GiB of memory is available, 64.60 GiB more is still to be allocated, and this wants 47.69 GiB with 4.59 GiB to spare"})json";
+                std::ofstream(argv[2]) << session_manifests.measuring.dump(2) << '\n';
                 return ss::ManifestRun{};
             }
             return ss::ManifestRun{10, "", "cache miss"};
@@ -3718,7 +2488,7 @@ void session_engine_plan(Fixture& t) {
     }
     { // RSC04 lab experiments use the real named resolver and writer call graph.
         ss::EnginePlanInputs lab = in;
-        lab.named_config = "qwen27b-tp3-int8";
+        lab.named_config = "qwen27b-tp3";
         lab.experiment_file =
             t.file("lab-geometry.json", R"({"placement":{"mode":"observe","epoch_cycle_s":30}})");
         lab.engine_binary = BC_FAKE_ENGINE;
@@ -3750,7 +2520,7 @@ void session_engine_plan(Fixture& t) {
         const auto native = bc::serving::v2::load_manifest(produced, bc::serving::v2::PlanUse::measuring);
         assert(native && native.value().spec.experiment &&
                native.value().spec.intent.service.profile == bc::serving::v2::Profile::kLab);
-        const auto detached = run_bc_serve({"start", "qwen27b-tp3-int8", "--run-dir", run.string(),
+        const auto detached = run_bc_serve({"start", "qwen27b-tp3", "--run-dir", run.string(),
                                             "--lab-experiment", lab.experiment_file.string()});
         assert(detached.exit_code != 0 && detached.output.find("requires foreground") != std::string::npos);
         // ENG05: exact existing trace_level is the one extra, non-mutating
@@ -3799,187 +2569,12 @@ void session_engine_plan(Fixture& t) {
 // a child-gated CPU manifest writer and a fake engine. Both manifest cache
 // branches must preserve writer -> durable power admission -> first GPU child.
 // The injected writer response and power transaction never touch hardware.
-void session_owner_real_planner_admission(Fixture& t) {
-    namespace ss = bc::serving::session;
-    namespace v2 = bc::serving::v2;
-    const fs::path config_dir = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
-    const fs::path model = t.root / "owner-plan-model.rad";
-    bc::test::write_rad(model, 0, 0, 128, 128, {});
-    const fs::path home = t.root / "owner-plan-home" / "radiance_home";
-    fs::create_directories(home);
-    auto select_free_port = [] {
-        const int sock = ::socket(AF_INET, SOCK_STREAM, 0);
-        assert(sock >= 0);
-        sockaddr_in addr{};
-        addr.sin_family = AF_INET;
-        addr.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-        assert(::bind(sock, reinterpret_cast<sockaddr*>(&addr), sizeof addr) == 0);
-        socklen_t len = sizeof addr;
-        assert(::getsockname(sock, reinterpret_cast<sockaddr*>(&addr), &len) == 0);
-        ::close(sock);
-        return int(ntohs(addr.sin_port));
-    };
-
-    for (const std::string mode : {"miss", "hit", "partial"}) {
-        const fs::path run = t.root / ("owner-plan-" + mode);
-        fs::create_directories(run);
-        const int port = select_free_port();
-        const fs::path site = t.file(("owner-plan-" + mode + ".toml").c_str(),
-                                     "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" +
-                                         home.string() + "\"\nport = " + std::to_string(port) + "\n");
-        ss::EnginePlanInputs in;
-        in.options.sys_root = t.root;
-        in.options.site = site;
-        in.options.configs = {config_dir};
-        in.options.model_root = t.root / "model-root";
-        in.options.sets = {"layout.name=\"qwen27b-tp3-int8\""};
-        in.self = "/build/radiance_home/bin/bc-serve";
-        in.engine_binary = BC_FAKE_ENGINE;
-
-        const fs::path trace = run / "power.trace";
-        ss::Session session;
-        session.run_dir = run;
-        session.timing.health_timeout = std::chrono::seconds(6);
-        session.timing.health_interval = std::chrono::milliseconds(40);
-        session.timing.canary_timeout = std::chrono::seconds(5);
-        session.timing.stop_grace = std::chrono::seconds(1);
-        session.timing.poll = std::chrono::milliseconds(20);
-        session.plan = [in, mode, port](const fs::path& dir, const ss::Hooks& hooks) -> ss::EngineStart {
-            ss::EnginePlanInputs actual = in;
-            unsigned call = 0;
-            actual.runner = [mode, port, &hooks,
-                             &call](const std::vector<std::string>& argv) mutable -> ss::ManifestRun {
-                // One real fork + start-gate + registration + verified reap for
-                // *each* writer attempt. Only its output is synthetic.
-                const auto child = ss::run_to_completion({"/bin/true"}, {}, hooks);
-                assert(child.exit == 0);
-                ss::ManifestRun result;
-                const unsigned turn = ++call;
-                if (mode != "hit" && turn == 1) {
-                    result.exit = 10; // planner cache miss
-                } else {
-                    const auto output = fs::path(argv.at(2));
-                    std::ofstream(output) << Json({{"port", port}}).dump();
-                }
-                return result;
-            };
-            return ss::plan_engine_only(actual, dir, hooks);
-        };
-        session.power_hook.begin_manifest = [mode, trace](const fs::path&, v2::PlanUse use) -> v2::Status {
-            // Partial begin models a hardware write after durable journalling,
-            // followed by a returned error. The owner must still finish/reap.
-            std::ofstream(trace, std::ios::app) << "begin\n";
-            if (mode == "partial")
-                return v2::make_error(v2::ConfigErrorCode::admission_refused, "test.power",
-                                      "partial admission refused");
-            assert(use == (mode == "hit" ? v2::PlanUse::serving : v2::PlanUse::measuring));
-            return std::nullopt;
-        };
-        session.power_hook.verify_serving = [](const fs::path&) -> v2::Status { return std::nullopt; };
-        session.power_hook.verified_exit = [trace] {
-            std::ofstream(trace, std::ios::app) << "verified_exit\n";
-        };
-        session.power_hook.restore = [trace]() -> v2::Status {
-            std::ofstream(trace, std::ios::app) << "restore\n";
-            return std::nullopt;
-        };
-
-        std::cout.flush();
-        const pid_t owner = ::fork();
-        assert(owner >= 0);
-        if (owner == 0) {
-            try {
-                std::_Exit(ss::serve(session));
-            } catch (const std::exception& e) {
-                std::cerr << "real planner owner failed: " << e.what() << '\n';
-                std::_Exit(98);
-            }
-        }
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(18);
-        Json terminal;
-        bool observed_running = false;
-        for (;;) {
-            terminal = ss::read_record(run).value_or(Json::object());
-            const auto state = terminal.value("state", std::string());
-            if (mode != "partial" && state == "running") {
-                observed_running = true;
-                break;
-            }
-            if (state == "failed" || state == "stopped" || std::chrono::steady_clock::now() > deadline)
-                break;
-            std::this_thread::sleep_for(std::chrono::milliseconds(30));
-        }
-        if (observed_running) {
-            const auto reply = ss::control(run, "stop", std::chrono::seconds(5));
-            assert(reply && reply->value("ok", false));
-        }
-        int status = 0;
-        bool reaped = false;
-        for (int n = 0; n < 200; ++n) {
-            if (::waitpid(owner, &status, WNOHANG) == owner) {
-                reaped = true;
-                break;
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(25));
-        }
-        if (!reaped) {
-            ::kill(owner, SIGTERM);
-            ::waitpid(owner, &status, 0);
-        }
-        assert(reaped && WIFEXITED(status));
-        assert((WEXITSTATUS(status) == 0) == (mode != "partial"));
-        assert(observed_running == (mode != "partial"));
-        const auto completed = ss::read_record(run);
-        if (!completed)
-            throw std::runtime_error("real planner owner failed to persist its terminal record");
-        terminal = *completed;
-        assert(terminal.value("state", std::string()) == (mode == "partial" ? "failed" : "stopped"));
-
-        size_t first_writer = SIZE_MAX, admit = SIZE_MAX, first_gpu = SIZE_MAX;
-        size_t writer_count = 0, gpu_count = 0;
-        const auto& events = terminal.at("events");
-        for (size_t i = 0; i < events.size(); ++i) {
-            const auto& item = events.at(i);
-            const std::string kind = item.value("kind", std::string());
-            const std::string role = item.value("role", std::string());
-            if (kind == "started" && role == "manifest writer") {
-                first_writer = std::min(first_writer, i);
-                ++writer_count;
-            }
-            if (kind == "power_applied")
-                admit = i;
-            if (kind == "started" && (role == "measuring engine" || role == "engine")) {
-                first_gpu = std::min(first_gpu, i);
-                ++gpu_count;
-            }
-        }
-        assert(writer_count == (mode == "hit" ? 1U : mode == "miss" ? 3U : 2U));
-        assert(first_writer != SIZE_MAX);
-        if (mode == "partial") {
-            assert(admit == SIZE_MAX && gpu_count == 0);
-        } else {
-            assert(first_writer < admit && admit < first_gpu);
-            assert(gpu_count == (mode == "miss" ? 2U : 1U));
-        }
-        for (const auto& child : terminal.at("processes")) {
-            assert(child.value("exited", false));
-            assert(child.value("pid", 0) > 0);
-        }
-        const auto evidence = [&] {
-            std::stringstream out;
-            out << std::ifstream(trace).rdbuf();
-            return out.str();
-        }();
-        assert(evidence.find("begin\n") == 0 && evidence.find("verified_exit\n") != std::string::npos &&
-               evidence.find("restore\n") > evidence.find("verified_exit\n"));
-    }
-}
 
 // End-to-end CPU-only planner boundary: real resolver and bc-serve writer,
 // fake engine/helper process boundary and BDF-specific sysfs fixtures.
 void helper_vram_owner_graph(Fixture& t) {
     namespace ss = bc::serving::session;
-    const fs::path configs = fs::path(std::getenv("BIGCHERRY_LAYOUTS")).parent_path() / "configs";
+    const fs::path configs = fs::path(BC_CONFIGS_DIR);
     const fs::path home = t.root / "session-build" / "radiance_home";
     // The normal lightweight RAD fixture omits name strings. The real
     // resource ledger requires an actual bounded name table in its directory.
@@ -3998,10 +2593,13 @@ void helper_vram_owner_graph(Fixture& t) {
         rad.write(reinterpret_cast<const char*>(&header), sizeof header);
         assert(rad);
     }
-    const fs::path site =
-        t.file("helper-vram-graph.toml",
-               "[engine]\nmodel = \"" + model.string() + "\"\nradiance_home = \"" + home.string() + "\"\n");
+    std::string site_text = "[engine]\nmodel = \"" + model.string() +
+                            "\"\nradiance_home = \"" + home.string() + "\"\n";
+    const int port = select_free_port();
+    site_text += "port = " + std::to_string(port) + "\n";
+    const fs::path site = t.file("helper-vram-graph.toml", site_text);
     ss::EnginePlanInputs in;
+    in.work_root = t.work_root();
     in.options.site = site;
     in.options.sys_root = t.root;
     in.options.configs = {configs};
@@ -4012,146 +2610,229 @@ void helper_vram_owner_graph(Fixture& t) {
     in.self = BC_SERVE_EXE;
     in.engine_binary = BC_FAKE_ENGINE;
     in.helper_binary = BC_FAKE_ENGINE;
-    int writers = 0;
-    std::vector<fs::path> measuring_histograms;
-    std::vector<std::vector<std::string>> serving_writer_args;
-    in.runner = [&](const std::vector<std::string>& args) -> ss::ManifestRun {
-        ++writers;
-        auto result = run_bc_serve({args.begin() + 1, args.end()});
-        const std::string file = fs::path(args.at(2)).filename().string();
-        if (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-measuring-", 0) != 0 &&
-            file.rfind("manifest-resources-", 0) != 0)
-            serving_writer_args.push_back(args);
-        if (result.exit_code == 0 && fs::is_regular_file(args.at(2))) {
-            if (file.rfind("manifest-measuring-", 0) == 0 ||
-                (file.rfind("manifest-", 0) == 0 && file.rfind("manifest-resources-", 0) != 0)) {
-                const Json doc = Json::parse(std::ifstream(args.at(2)));
-                const fs::path prefix =
-                    doc.at("spec").at("handoff").at("telemetry").at("histogram_file").get<std::string>();
-                if (file.rfind("manifest-measuring-", 0) == 0)
-                    measuring_histograms.push_back(prefix);
-            }
-        }
-        return {result.exit_code, result.output, result.output};
+    const fs::path heat = t.root / "writer.hot-first";
+    std::vector<uint32_t> counts(128 * 16, 0);
+    for (uint32_t l = 0; l < 4; ++l)
+        for (uint32_t e = 0; e < 16; ++e)
+            counts[l * 16 + e] = (e * 7 + l * 3) % 16 + 1;
+    std::ofstream(heat, std::ios::binary).write(reinterpret_cast<const char*>(counts.data()),
+        static_cast<std::streamsize>(counts.size() * sizeof(counts[0])));
+    fs::create_directories(home / "helpers");
+    fs::create_symlink(BC_FAKE_ENGINE, home / "helpers/r3_moe_worker");
+    in.named_config = "flashnext-2xtx";
+    in.options.sets.insert(in.options.sets.end(),
+                          {"memory.helper_budgets_mib=[1,1]", "memory.host_pool_mib=2048", "memory.host_kv_mib=0"});
+    const auto selected = tresolve(in.options, bc::serving::detect(t.root));
+    const auto& value = selected.values;
+    const auto& engine = value.at("engine");
+    const auto& service = value.at("service");
+    Json kernels = Json::array();
+    std::istringstream list(engine.at("kernels").get<std::string>());
+    for (std::string kernel; std::getline(list, kernel, ',');)
+        kernels.push_back(kernel);
+    for (const auto& gpu : t.facts.at("gpus"))
+        write(t.root / "sys/bus/pci/devices" / gpu.at("bdf").get<std::string>() / "mem_info_gtt_used", "0\n");
+    const std::string yaml = "cards: [0]\nmodels:\n  tiny: {model: " + Json(model.string()).dump() + "}\n";
+    const auto authored = t.file("native-helpers.yaml", yaml);
+    in.native_admission = ss::NativeAdmissionRequest{authored, t.root, {
+        {"TEST_NATIVE_INSPECT_EXPECT_YAML", yaml},
+        {"TEST_NATIVE_INSPECT_MODEL", model.string()},
+        {"TEST_NATIVE_INSPECT_RANK_DEVICES", value.at("layout").at("engine_cards").dump()},
+        {"TEST_NATIVE_INSPECT_PORT", std::to_string(port)},
+        {"TEST_NATIVE_INSPECT_MAX_CONTEXT", service.at("max_context").dump()},
+        {"TEST_NATIVE_INSPECT_MAX_SEQUENCES", service.at("max_sessions").dump()},
+        {"TEST_NATIVE_INSPECT_KERNELS", kernels.dump()},
+        {"TEST_NATIVE_INSPECT_SETTINGS", Json({{"ngram_placement", engine.at("ngram_placement")}}).dump()},
+        // flashnext-2xtx: the R9700 engine, both 7900 XTX as head helpers (as engines/radiance/configs/flashnext-2xtx.yaml)
+        {"TEST_NATIVE_INSPECT_XBIGCHERRY",
+         Json{{"schema", 1}, {"description", "flashnext-2xtx fixture"},
+              {"ranks", Json::array({{{"arch", "gfx1201"}, {"count", 1}}})},
+              {"helpers", Json::array({{{"arch", "gfx1100"}, {"count", "all"}, {"placement", "head"}}})}}.dump()},
+    }};
+    std::map<std::string, unsigned> samples;
+    in.helper_vram.read_used = [&](const fs::path& path) {
+        ++samples[path.parent_path().filename().string()];
+        return uint64_t{128} << 20;
     };
-    in.helper_vram.read_used = [](const fs::path& path) -> uint64_t {
-        throw std::runtime_error("injected unreadable BDF-specific counter: " + path.string());
+    ss::Session owner;
+    owner.run_dir = t.root / "native-helper-owner";
+    fs::create_directories(owner.run_dir);
+    owner.timing.health_timeout = owner.timing.helper_timeout = std::chrono::seconds(6);
+    owner.timing.health_interval = owner.timing.helper_interval = std::chrono::milliseconds(30);
+    owner.timing.stop_grace = std::chrono::seconds(1);
+    owner.timing.poll = std::chrono::milliseconds(20);
+    owner.plan = [&](const fs::path& dir, const ss::Hooks& hooks) {
+        return in.stored_manifest.empty() ? ss::plan_engine_only(in, dir, hooks)
+                                          : ss::replay_stored_manifest(in, dir, hooks);
     };
-    ss::Hooks hooks;
-    hooks.wait = [](std::chrono::milliseconds) { return true; };
-    bool blocked_baseline = false;
-    try {
-        (void)ss::plan_engine_only(in, t.root / "vram-graph-run", hooks);
-    } catch (const ss::PlanFailed& e) {
-        const std::string why = e.what();
-        blocked_baseline = why.find("BC_CFG_ADMISSION_REFUSED") != std::string::npos &&
-                           why.find("cannot read VRAM") != std::string::npos;
-        if (!blocked_baseline)
-            std::cerr << "helper graph: " << why << "\n";
-    }
-    if (!blocked_baseline || writers < 1)
-        throw std::runtime_error("helper graph did not reach the pre-start BDF baseline");
-
-    for (const std::string mode : {"immediate", "late", "never"}) {
-        ss::EnginePlanInputs active = in;
-        std::map<std::string, unsigned> samples;
-        active.helper_vram.read_used = [&](const fs::path& path) -> uint64_t {
-            std::ifstream used(path);
-            uint64_t bytes = 0;
-            if (!(used >> bytes))
-                throw std::runtime_error("missing fake BDF usage file");
-            const unsigned n = ++samples[path.string()];
-            // Three pre-start baseline observations; GPU usage lingers AFTER
-            // reaped fake helpers, then settles. No actual GPU is contacted.
-            if (n > 3 && (mode == "never" || (mode == "late" && n < 7)))
-                return bytes + uint64_t{256} * 1024 * 1024;
-            return bytes;
-        };
-        ss::Hooks live_hooks;
-        live_hooks.wait = [](std::chrono::milliseconds) { return true; };
-        live_hooks.helper_stop_timeout = std::chrono::milliseconds(400);
-        const int before = writers;
-        std::string refusal;
-        const fs::path run_dir = t.root / ("vram-graph-" + mode);
-        fs::create_directories(run_dir);
-        try {
-            (void)ss::plan_engine_only(active, run_dir, live_hooks);
-        } catch (const ss::PlanFailed& e) {
-            refusal = e.what();
-        }
-        if (mode == "never") {
-            if (refusal.find("measuring helper VRAM not released") == std::string::npos ||
-                refusal.find("baseline=") == std::string::npos || writers - before != 3)
-                throw std::runtime_error("helper graph timeout: " + refusal +
-                                         " writers=" + std::to_string(writers - before));
-        } else if (writers - before < 4) {
-            std::ostringstream message;
-            message << "helper graph " << mode << " stopped before final writer: " << refusal
-                    << " writers=" << (writers - before);
-            throw std::runtime_error(message.str());
-        }
-    }
-    // Each measuring writer gets a private telemetry generation. A future
-    // engine that publishes during --plan-memory must never replace the
-    // serving engine's rank0 histogram at the operator's destination.
-    if (measuring_histograms.empty())
-        throw std::runtime_error("real measuring writer histogram fixture did not run");
-    for (const fs::path& path : measuring_histograms) {
-        if (path == t.root / "vram-histogram" || path.parent_path().parent_path() != t.root ||
-            path.parent_path().filename().string().rfind("vram-graph-", 0) != 0 ||
-            path.filename().string().rfind("histogram-measuring-", 0) != 0)
-            throw std::runtime_error("measuring histogram not isolated: " + path.string());
-    }
-    if (serving_writer_args.empty())
-        throw std::runtime_error("real serving writer was never invoked");
-    const std::string site_recording = "handoff.histogram=" + Json((t.root / "vram-histogram").string()).dump();
-    for (const auto& args : serving_writer_args) {
-        size_t histogram_overrides = 0;
-        for (size_t i = 0; i + 1 < args.size(); ++i)
-            if (args[i] == "--set" && args[i + 1].rfind("handoff.histogram=", 0) == 0) {
-                if (args[i + 1] != site_recording)
-                    throw std::runtime_error("private measuring prefix leaked to serving writer");
-                ++histogram_overrides;
+    std::vector<bc::serving::v2::PlanUse> admissions;
+    owner.power_hook.begin_manifest = [&](const fs::path& manifest, bc::serving::v2::PlanUse use) {
+        assert(bc::serving::v2::load_manifest(manifest, use));
+        admissions.push_back(use);
+        if (use == bc::serving::v2::PlanUse::measuring)
+            fs::remove(authored);
+        return bc::serving::v2::Status{};
+    };
+    owner.power_hook.verify_serving = [](const fs::path& manifest) {
+        const auto measured = bc::serving::v2::load_manifest(manifest, bc::serving::v2::PlanUse::serving);
+        assert(measured && measured.value().spec.plan.resource_inputs &&
+               measured.value().spec.plan.resource_inputs->helper_footprints.size() == 2);
+        return bc::serving::v2::Status{};
+    };
+    owner.power_hook.verified_exit = [] {};
+    owner.power_hook.restore = [] { return bc::serving::v2::Status{}; };
+    const auto serve_and_stop = [&](const std::vector<std::string>& expected_roles) {
+        auto stop = std::async(std::launch::async, [&] {
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(15);
+            while (std::chrono::steady_clock::now() < deadline) {
+                const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+                const auto state = record.value("state", std::string{});
+                if (state == "failed") return false;
+                if (state == "running") {
+                    const auto reply = ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
+                    return reply && reply->value("ok", false);
+                }
+                std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
-        if (histogram_overrides != 1)
-            throw std::runtime_error("serving writer lost the operator's recording destination");
+            (void)ss::control(owner.run_dir, "stop", std::chrono::seconds(4));
+            return false;
+        });
+        const int code = ss::serve(owner);
+        const bool stopped = stop.get();
+        const auto record = ss::read_record(owner.run_dir).value_or(Json::object());
+        if (code != 0 || !stopped || record.value("state", std::string{}) != "stopped" ||
+            !ss::alive_recorded(record).empty())
+            throw std::runtime_error("native helper owner did not serve and stop: " + record.dump());
+        std::vector<std::string> roles;
+        for (const auto& child : record.at("processes")) {
+            assert(child.at("exited") == true);
+            roles.push_back(child.at("role").get<std::string>());
+        }
+        if (roles != expected_roles)
+            throw std::runtime_error("native helper owner started unexpected roles: " + record.dump());
+        return record;
+    };
+    // The first inspector is the device-free config parse; the second is the admission inspect.
+    const auto fresh = serve_and_stop({"native config inspector", "native config inspector",
+        "native v3 measuring draft writer",
+        "helper0 measuring", "helper1 measuring", "native v3 measuring engine", "native v3 measured writer",
+        "native v3 measuring draft writer", "helper0 measuring", "helper1 measuring",
+        "native v3 measuring engine", "native v3 measured writer", "helper0", "helper1", "engine"});
+    assert(samples.size() == 2 && !fs::exists(authored));
+    for (const auto& [bdf, count] : samples) {
+        assert(count >= 4);
+        assert(std::find(value.at("layout").at("engine_cards").begin(),
+                         value.at("layout").at("engine_cards").end(), bdf) ==
+               value.at("layout").at("engine_cards").end());
     }
+    const auto measured_samples = samples;
+    const auto stored = fs::path(fresh.at("manifest").get<std::string>());
+    const auto attempt = fresh.at("selection").at("plan_measurement_attempt");
+    size_t attempts = 0;
+    for (const auto& dir : fs::directory_iterator(owner.run_dir / "measurement-attempts")) {
+        ++attempts;
+        assert(fs::is_regular_file(dir.path() / "plan.json"));
+        if (dir.path().filename() != attempt.get<std::string>())
+            assert(!fs::exists(owner.run_dir / ("manifest-native-" + dir.path().filename().string() + ".json")));
+    }
+    assert(attempts == 2);
+    const auto final = bc::serving::v2::load_manifest(stored, bc::serving::v2::PlanUse::serving);
+    assert(final && final.value().spec.resources.host.pool_mib == 1024 &&
+           final.value().spec.native_config.yaml_utf8 == yaml);
+    const std::vector<std::string> replay_roles{"native config inspector", "native config inspector", "helper0",
+                                                "helper1", "engine"};
+    const auto check_replay = [&](const Json& replayed) {
+        assert(replayed.at("selection").at("replay") == true);
+        assert(replayed.at("manifest") == stored.string());
+        assert(replayed.at("handoff_shm") == fresh.at("handoff_shm"));
+        assert(replayed.at("selection").at("plan_measurement_attempt") == attempt);
+        assert(replayed.at("selection").at("manifest_digest") == fresh.at("selection").at("manifest_digest"));
+        assert(samples == measured_samples);
+    };
+    write(authored, yaml);
+    check_replay(serve_and_stop(replay_roles));
+    fs::remove(authored);
+    in.stored_manifest = stored;
+    check_replay(serve_and_stop(replay_roles));
+    using PlanUse = bc::serving::v2::PlanUse;
+    assert(admissions == std::vector<PlanUse>({PlanUse::measuring, PlanUse::serving, PlanUse::serving}));
 
-    // Exercise the real CPU publisher twice as future --plan-memory and serving
-    // producers would: neither generation may overwrite the other's files.
-    std::vector<uint32_t> counts(static_cast<size_t>(r3::moe_shm::kMaxLayers) * 16, 0);
-    counts[0] = 42;
-    const std::string serving_prefix = (t.root / "vram-histogram").string();
-    const std::string measurement_prefix = measuring_histograms.back().string();
-    const std::string nonce = "0123456789abcdef0123456789abcdef";
-    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
-        !r3::heat_publication::publish(serving_prefix, 0, 16, counts, nonce))
-        throw std::runtime_error("engine CPU histogram publication failed");
-    const ss::HistogramExpectation expected{
-        4, 16, std::chrono::system_clock::now() - std::chrono::seconds(3), {}, nonce};
-    const fs::path rank = serving_prefix + ".rank0";
-    if (ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
-                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
-        throw std::runtime_error("serving producer proof must qualify independently of measurement");
-    counts[0] += 1;
-    if (!r3::heat_publication::publish(measurement_prefix, 0, 16, counts) ||
-        ss::histogram_verdict(rank, std::chrono::system_clock::now() + std::chrono::seconds(1),
-                              std::chrono::seconds(30), expected) != ss::HistogramVerdict::fresh)
-        throw std::runtime_error("later measuring publication affected the serving generation");
+    const std::string segment = fresh.at("handoff_shm");
+    const int occupied = ::shm_open(segment.c_str(), O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
+    assert(occupied >= 0);
+    ::close(occupied);
+    const int conflict = ss::serve(owner);
+    const auto refused = ss::read_record(owner.run_dir).value_or(Json::object());
+    const int still_occupied = ::shm_open(segment.c_str(), O_RDONLY | O_CLOEXEC, 0);
+    if (still_occupied >= 0)
+        ::close(still_occupied);
+    const int cleaned = ::shm_unlink(segment.c_str());
+    assert(conflict != 0 && still_occupied >= 0 && cleaned == 0);
+    assert(admissions.size() == 3 && samples == measured_samples);
+    assert(refused.at("errors").dump().find("still exists after an unverified stop") != std::string::npos);
+    assert(refused.at("processes").size() == 2 &&   // the config parse and the admission inspect, then the refusal
+           refused.at("processes").at(0).at("role") == "native config inspector" &&
+           refused.at("processes").at(1).at("role") == "native config inspector" &&
+           ss::alive_recorded(refused).empty());
+
+    const auto meminfo = t.root / "proc/meminfo";
+    std::ifstream prior(meminfo);
+    const std::string prior_room((std::istreambuf_iterator<char>(prior)), std::istreambuf_iterator<char>());
+    const auto reduced = std::regex_replace(prior_room, std::regex("MemAvailable:[^\n]+"),
+                                           "MemAvailable: 1024 kB");
+    assert(reduced != prior_room);
+    owner.before_gpu_start = [&](const ss::EngineStart& plan) {
+        assert(plan.summary.at("replay") == true && admissions.size() == 4);
+        write(meminfo, reduced);
+        return bc::serving::v2::Status{};
+    };
+    const int low_room = ss::serve(owner);
+    write(meminfo, prior_room);
+    const auto room_refused = ss::read_record(owner.run_dir).value_or(Json::object());
+    assert(low_room != 0 && admissions.size() == 4 && samples == measured_samples);
+    assert(room_refused.at("errors").dump().find("host bytes required=") != std::string::npos);
+    assert(room_refused.at("processes").size() == 2 &&
+           room_refused.at("processes").at(0).at("role") == "native config inspector" &&
+           room_refused.at("processes").at(1).at("role") == "native config inspector" &&
+           ss::alive_recorded(room_refused).empty());
+
+    owner.before_gpu_start = {};
+    const fs::path reference = t.root / "recorded-quality";
+    fs::create_directory(reference);
+    write(reference / "kld.json", "{}");
+    owner.quality = ss::QualityScore{reference, t.root / "helper-quality.json"};
+    const int scored = ss::serve(owner);
+    const auto quality = ss::read_record(owner.run_dir).value_or(Json::object());
+    check_replay(quality);
+    const auto& engine_args = quality.at("processes").back().at("argv");
+    const auto events = quality.at("events").dump();
+    if (scored != 0 || quality.value("state", "") != "stopped" || !ss::alive_recorded(quality).empty() ||
+        engine_args.size() != 9 || engine_args[5] != "--kld-ref" || engine_args[6] != reference.string() ||
+        engine_args[7] != "--kld-out" || engine_args[8] != owner.quality->output.string() ||
+        events.find("quality_completed") == std::string::npos || events.find("power_restored") == std::string::npos ||
+        events.find("canary_passed") != std::string::npos || events.find("healthy") != std::string::npos)
+        throw std::runtime_error("native helper finite score did not complete and clean up: " + quality.dump());
+    assert(admissions.size() == 5 && fs::file_size(owner.quality->output.string() + ".rows") == 16);
+
+    // A finite run that times out still stops every helper and restores power.
+    owner.quality->output = t.root / "helper-quality-timeout.json";
+    owner.timing.quality_timeout = std::chrono::milliseconds(100);
+    write(reference / "kld.json", R"({"fake_delay_ms":5000})");
+    const int timed_out = ss::serve(owner);
+    const auto timeout_record = ss::read_record(owner.run_dir).value_or(Json::object());
+    if (timed_out == 0 || timeout_record.value("state", "") != "failed" ||
+        !ss::alive_recorded(timeout_record).empty() ||
+        timeout_record.at("errors").dump().find("KL scoring timed out") == std::string::npos ||
+        timeout_record.at("events").dump().find("power_restored") == std::string::npos)
+        throw std::runtime_error("native helper finite score timeout did not clean up: " + timeout_record.dump());
 }
 
 int main(int argc, char** argv) {
-    bool write_golden = false;
-    const char* dump_dir = nullptr;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--write-golden") {
-            write_golden = true;
-        } else if (std::string(argv[i]) == "--dump-manifests" && i + 1 < argc) {
-            dump_dir = argv[++i];
-        } else if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
+        if (std::string(argv[i]) == "--bc-serve-exe" && i + 1 < argc) {
             serve_test_executable = argv[++i];
         } else {
-            std::cerr << "usage: bc_serving_test [--write-golden] [--dump-manifests DIR] [--bc-serve-exe PATH]\n";
+            std::cerr << "usage: bc_serving_test [--bc-serve-exe PATH]\n";
             return 2;
         }
     }
@@ -4161,7 +2842,6 @@ int main(int argc, char** argv) {
         detection(t);
         detection_limits(t);
         unknown_keys(t);
-        layout_sources(t);
         type_range_required(t);
         precedence_and_caps(t);
         provenance_hash_and_parity(t);
@@ -4169,25 +2849,13 @@ int main(int argc, char** argv) {
         host_reserve(t);
         host_ledger_plan();
         measured_plan_cache(t);
-        manifest_writer_step(t);
-        layout_manifests_golden(t, write_golden, dump_dir);
-        engine_only_layout(t);
-        tp_engine_with_helper_layout(t);
-        tp_engine_with_two_helpers_layout(t);
-        mixed_arch_engine_layout(t);
-        config_files(t);
-        installed_site_defaults(t);
-        native_explain_cli(t);
-        native_static_resolution_identity(t);
+        v3_writer_cli_rejects_unowned_imports(t);
+        build_tree_runtime_home(t);
         session_engine_plan(t);
         helper_vram_owner_graph(t);
-        session_owner_real_planner_admission(t);
-        derived_budget_is_the_workers(t);
-        sdk_environment_step(t);
-        std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; "
-                     "precedence/caps; provenance/hash; launcher engine/WorkerConfig parity; "
-                     "calibration store; calibrated host reserve; host ledger; measured plan cache; measuring "
-                     "step; manifest writer\n";
+        std::cout << "PASS: fake KFD/PCI/proc detection; strict keys; types/ranges; required; precedence/caps; "
+                     "provenance/hash; calibration store; calibrated host reserve; host ledger; measured plan cache; "
+                     "native v3 sealed snapshot session, config read and pre-cache gate\n";
         return 0;
     } catch (const std::exception& e) {
         std::cerr << "FAIL: " << e.what() << '\n';

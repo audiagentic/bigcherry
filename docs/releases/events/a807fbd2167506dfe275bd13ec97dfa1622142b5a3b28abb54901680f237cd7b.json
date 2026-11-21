@@ -1,0 +1,11 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_215851_preserve-remote-moe-diagnostic_8107",
+  "files": [
+    "engines/radiance/patches/rad0004_moe_remote_diagnostics/patch.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Keep the remote MoE diagnostic hook after routed and protected down writers when the Radiance shared down projection can run before the routed projection.",
+  "timestamp-utc": "2026-11-19T21:58:51.622239Z",
+  "user-summary-candidate": "Preserve remote MoE diagnostics on the Radiance 2.2 migration candidate."
+}

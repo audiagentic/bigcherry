@@ -1,8 +1,9 @@
 #include "manifest.h"
 
 #include "../jcs.h"
-#include "../generated/v2/serving_codec.h"
 #include "../sha256.h"
+#include "native_config_snapshot.h"
+#include "serving_codec.h"
 #include "strict_json.h"
 #include "s10_resolver.h"
 
@@ -13,13 +14,26 @@
 #include <regex>
 #include <set>
 #include <sstream>
+#include <stdexcept>
 
 namespace bc::serving::v2 {
 namespace {
 
 using Json = nlohmann::json;
 using C = ConfigErrorCode;
-const char* const kHint = "regenerate the manifest with bc-serve; a v2 manifest is never edited by hand";
+const char* const kHint = "regenerate the manifest with bc-serve; the manifest is immutable";
+
+template <typename SpecType>
+constexpr bool has_native_config = requires(const SpecType& spec) { spec.native_config; };
+
+template <typename SpecType>
+std::optional<NativeConfigView> native_config_view(const SpecType& spec) {
+    if constexpr (has_native_config<SpecType>) {
+        const auto& native = spec.native_config;
+        return NativeConfigView{native.yaml_utf8, {native.sha256, native.resolution_root}};
+    }
+    return std::nullopt;
+}
 
 ConfigError err(C code, std::string path, std::string message, std::string hint = kHint) {
     return make_error(code, std::move(path), std::move(message), std::move(hint));
@@ -35,7 +49,8 @@ Status identity(const Json& doc) {
         return err(C::unsupported_version, "apiVersion",
                    "apiVersion must be \"" + std::string(kApiVersion) + "\"" +
                        (api == doc.end() ? std::string(", is absent") : ", is " + api->dump()),
-                   "this reader supports bigcherry/v2 only; resolve the manifest with the matching bc-serve");
+                   "this reader supports " + std::string(kApiVersion) +
+                       " only; resolve the manifest with the matching bc-serve");
     const auto kind = doc.find("kind");
     if (kind == doc.end() || !kind->is_string() || *kind != kKind)
         return err(C::unsupported_version, "kind", "kind must be \"" + std::string(kKind) + "\"");
@@ -349,6 +364,10 @@ std::string plan_cache_key(const Manifest& m) {
     // KV and weight shares), and a world of more than one card type keys every rank's card. Both are added only when
     // present, so a single-card or uniform configuration without tuning keeps its key (and its calibration records).
     Json keyed = inputs;
+    if (const auto native = native_config_view(s)) {
+        keyed["native_config"] = {
+            {"sha256", native->identity.sha256}, {"resolution_root", native->identity.resolution_root}};
+    }
     if (e.tuning) {
         const Json tuning = encode(*e.tuning);
         if (tuning.is_object() && !tuning.empty()) keyed["planning_options"]["tuning"] = tuning;
@@ -416,8 +435,21 @@ static Status live_policy_semantics(const Manifest& m) {
     return std::nullopt;
 }
 
+Status validate_native_config(const Manifest& m) {
+    if constexpr (has_native_config<Spec>) {
+        const auto native = *native_config_view(m.spec);
+        try {
+            NativeConfigSnapshot::verify(native.yaml_utf8, native.identity.sha256, native.identity.resolution_root);
+        } catch (const std::invalid_argument& e) {
+            return err(C::invalid_value, "spec.native_config", e.what());
+        }
+    }
+    return std::nullopt;
+}
+
 Status validate_semantics(const Manifest& m) {
     const Spec& s = m.spec;
+    if (auto e = validate_native_config(m)) return e;
     // §6: experiments are lab-only; a lab placement experiment's step follows its mode
     if (s.experiment && s.intent.service.profile == Profile::kProduction)
         return err(C::experiment_forbidden, "spec.experiment",
@@ -658,7 +690,11 @@ Result<EngineView> engine_view(const Manifest& m) {
     for (const CalibrationEntry& c : m.spec.calibration)
         if (c.key == CalibrationKey::kKvBackingFloorFractionPpm) ppm = std::get<int64_t>(c.value);
     return EngineView{m.spec.intent, m.spec.resources, m.spec.handoff, m.spec.processes.engine,
-                      *m.spec.plan.engine_memory, ppm};
+                      *m.spec.plan.engine_memory, ppm, native_config_view(m.spec)};
+}
+
+std::optional<NativeConfigView> native_config_view(const Manifest& m) {
+    return native_config_view(m.spec);
 }
 
 Result<HelperView> helper_view(const Manifest& m, std::string_view role) {
@@ -667,7 +703,9 @@ Result<HelperView> helper_view(const Manifest& m, std::string_view role) {
         if (helpers[i].role == role) {
             HelperCommon settings = effective(m, i);
             const bool rows = helpers[i].rows_kernel || settings.lanes.rows;
-            return HelperView{i, helpers[i], m.spec.plan.owner_map.helpers.at(i), *m.spec.handoff, std::move(settings), rows};
+            const auto native = native_config_view(m.spec);
+            return HelperView{i, helpers[i], m.spec.plan.owner_map.helpers.at(i), *m.spec.handoff, std::move(settings),
+                              rows, native ? std::optional(native->identity) : std::nullopt};
         }
     return err(C::unresolved_reference, "spec.processes.helpers", "no helper has role " + std::string(role),
                "start the helper with a role the manifest defines");

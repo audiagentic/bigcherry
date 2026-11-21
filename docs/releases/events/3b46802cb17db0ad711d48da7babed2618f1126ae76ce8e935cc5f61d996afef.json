@@ -1,0 +1,17 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_051531_fixed-a-helper-on-scoring-faul_6229",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_remote_hook.h",
+    "engines/radiance/components/moe-remote/moe_remote_hook.cpp",
+    "engines/radiance/components/moe-remote/moe_mailbox_ops.hip",
+    "engines/radiance/components/moe-remote/moe_v26_gpu_contract_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Fix v26 helper mailbox completion ticket lookup: publish the ticket offset from shared segment scratch geometry into the device launch state, and use that offset in all add/inject/shadow completion kernels instead of recomputing it from the dispatch row cap. Add a focused host contract test with a 4096-row shared allocation and 64-row dispatch cap.",
+  "timestamp-utc": "2026-11-20T05:15:31.819482Z",
+  "user-summary-candidate": "Fixed a helper-on scoring fault caused by completion kernels deriving ticket storage from a smaller row dispatch cap than the shared mailbox allocation. The exact-source card-free contract test passes; matched runtime scoring remains to be run."
+}

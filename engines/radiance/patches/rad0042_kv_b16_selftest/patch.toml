@@ -6,6 +6,6 @@ kind = "enhancement"
 origin = "local"
 backend = "agnostic"
 plan-ids = ["VTP44"]
-requires = ["rad0041_kv_b16_flashnext"]
+requires = ["rad0053_v4_kv_layouts"]
 conflicts = []
 tags = ["kv-cache"]

@@ -1,0 +1,11 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_225444_keep-the-full-gfx1100-kernel-l_6992",
+  "files": [
+    "engines/radiance/components/libr3/CMakeLists.txt"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Disable GVN memory-dependence analysis only in the gfx1100 device compilation of the IQR p3 unit with ROCm 7.2.4 Clang 22.0.0. This avoids the compiler crash while preserving the full kernel roster and standard release optimization elsewhere.",
+  "timestamp-utc": "2026-11-19T22:54:44.711146Z",
+  "user-summary-candidate": "Keep the full gfx1100 kernel library buildable with ROCm 7.2.4."
+}

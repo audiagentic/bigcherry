@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_015728_radiance-publishes-each-remote_6297",
+  "files": [
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Anchor the legacy MoE post-route fallback at the start of the whole source so it cannot accompany the inverse-scatter-aware hook. Assert exactly one publication site in the patched graph.",
+  "timestamp-utc": "2026-11-20T01:57:28.239417Z",
+  "user-summary-candidate": "Radiance publishes each remote MoE pass once, preserving its pending helper requests through completion."
+}

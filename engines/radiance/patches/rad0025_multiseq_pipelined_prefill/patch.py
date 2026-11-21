@@ -45,9 +45,9 @@ def _edit(id: str, before: str, after: str, *, guard: str) -> Edit:
 ABI = FilePatch(path="abi/rad_runtime.h", language="none", description="VTP31 host cu_seqlens", edits=(
     _edit(
         "msp-abi",
-        "    const int32_t* bidi_used;          /* device */\n"
+        "    const int32_t* ckpt_cu;\n"
         "} RadBatch;\n",
-        "    const int32_t* bidi_used;          /* device */\n"
+        "    const int32_t* ckpt_cu;\n"
         "    /* BC_VTP31_MSP_ABI (rad0025): [n_seq + 1] host copy of cu_seqlens, or null (a driver that does\n"
         "     * not fill it), so a plugin can cut a step between sequences without reading the card. */\n"
         "    const int32_t* cu_seqlens_h;\n"
@@ -73,9 +73,9 @@ KEY = FilePatch(path="core/runtime/ctx.cpp", language="none", description="VTP31
                 edits=(
     _edit(
         "msp-key-size",
-        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 472,\n",
+        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 496,\n",
         "/* BC_VTP31_MSP_KEY_SIZE (rad0025): RadBatch::cu_seqlens_h, keyed below. */\n"
-        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 480,\n",
+        "static_assert(sizeof(void*) != 8 || sizeof(RadBatch) == 504,\n",
         guard="BC_VTP31_MSP_KEY_SIZE",
     ),
     _edit(
@@ -177,9 +177,11 @@ GDN = FilePatch(path="arch/common/rad_block_gdn_fp8.h", language="none", descrip
     ),
     _edit(
         "msp-gdn-seqs",
+        "                        brow_slice(w.ab, r0, n, 2 * H));\n"
         "            RAD_ISSUE_N(c, op_conv_prep, n,\n"
         "                        bcol(w.in.x, 0, conv_dim, T), RAD_W(w_conv), RAD_NONE, RAD_W(w_a_log),\n"
         "                        RAD_W(w_dt_bias), kv_cache(kv_conv, layer), praw(cu, RAD_I32, 2),\n",
+        "                        brow_slice(w.ab, r0, n, 2 * H));\n"
         "            if (pieces->seq_cut > 0) {\n"
         "                /* BC_VTP31_MSP_GDN_SEQS (rad0025): whole sequences [s0, s0 + ns), as the serial path's\n"
         "                 * prefill half: their slice of the per-sequence arrays, token operands at their base\n"
@@ -213,10 +215,12 @@ GDN = FilePatch(path="arch/common/rad_block_gdn_fp8.h", language="none", descrip
     _edit(
         "msp-gdn-close",
         "                        brows(w.o.x, T), kv_cache(kv_state, layer),\n"
-        "                        praw2(st_idx, RAD_I32, 1, st_w));\n",
+        "                        praw2(st_idx, RAD_I32, 1, st_w));\n"
+        "            RAD_ISSUE_N(c, op_gnorm, n,\n",
         "                        brows(w.o.x, T), kv_cache(kv_state, layer),\n"
         "                        praw2(st_idx, RAD_I32, 1, st_w));\n"
-        "            } /* BC_VTP31_MSP_GDN_CLOSE (rad0025) */\n",
+        "            } /* BC_VTP31_MSP_GDN_CLOSE (rad0025) */\n"
+        "            RAD_ISSUE_N(c, op_gnorm, n,\n",
         guard="BC_VTP31_MSP_GDN_CLOSE",
     ),
 ))
@@ -247,6 +251,13 @@ PLUGIN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descr
         "static const int32_t* pipe_ready(RadCtx* c, const RadBatch* batch, Model& m, bool* failed,\n"
         "                                 int64_t* rows_out, int64_t* seq_cut_out) { /* BC_VTP31_MSP_READY_SIG */\n",
         guard="BC_VTP31_MSP_READY_SIG",
+    ),
+    _edit(
+        "msp-checkpoint-serial",
+        '    if (!batch->positions) return serial("no positions");',
+        '    if (batch->ckpt_cut > 0) return serial("checkpoint inside this step"); /* BC_VTP31_MSP_CKPT */\n'
+        '    if (!batch->positions) return serial("no positions");',
+        guard="BC_VTP31_MSP_CKPT",
     ),
     _edit(
         "msp-ready-seqs",

@@ -85,11 +85,9 @@ def _created(path: str, source: str, guard: str) -> FilePatch:
 RAD_CORE = FilePatch(path="core/rad_core.h", language="none", description="VTP14 N1 row mask and config", edits=(
     _edit(
         "n1-rowmask",
-        "    /* rad_kernel_chain: its launches can wait in the kernel instead of behind the barrier bit. */\n"
-        "    bool                 chain = false;\n"
+        "    bool                 chain_fenced = false;\n"
         "};",
-        "    /* rad_kernel_chain: its launches can wait in the kernel instead of behind the barrier bit. */\n"
-        "    bool                 chain = false;\n"
+        "    bool                 chain_fenced = false;\n"
         "    /* BC_VTP14_N1_ROW_RANKS: bit r is set when rank r's card runs this device row's code\n"
         "     * (Registry::set_code_devices). All ones on the one-device path and for host rows. Fixed at\n"
         "     * load, read-only while the rank threads select. */\n"
@@ -115,19 +113,19 @@ RAD_CORE = FilePatch(path="core/rad_core.h", language="none", description="VTP14
 REGISTRY_H = FilePatch(path="core/plugin/registry.h", language="none", description="VTP14 N1 registry API", edits=(
     _edit(
         "n1-set-devices",
-        "    void set_code_device(int device) { code_device_ = device; }",
-        "    void set_code_device(int device) { code_devices_.clear(); code_device_ = device; }\n"
+        "    void set_code_device(int device) { set_->code_device = device; }",
+        "    void set_code_device(int device) { set_->code_devices.clear(); set_->code_device = device; }\n"
         "    /* BC_VTP14_N1_DEVICE_LIST: rank r runs on devices[r]. Each library's device code is checked\n"
         "     * against every rank's card at load, and a device row is offered only to ranks whose card runs\n"
         "     * it (KernelRow::code_ranks). RAD_E_INVAL for an empty or over-long list (32 ranks), a negative\n"
         "     * or repeated device, or once kernel rows exist. set_code_device returns to the one-device\n"
         "     * path. */\n"
         "    int set_code_devices(const std::vector<int>& devices);\n"
-        "    const std::vector<int>& code_devices() const { return code_devices_; }\n"
+        "    const std::vector<int>& code_devices() const { return set_->code_devices; }\n"
         "    /* Tests: answers in place of the fat binaries a dlopen registered (dev_code_runs). 1 when the\n"
         "     * plugin's device code runs on the card, 0 with `why` when not. */\n"
         "    using CodeRunsProbe = std::function<int(const std::string& plugin, int device, std::string* why)>;\n"
-        "    void set_code_runs_probe(CodeRunsProbe p) { code_probe_ = std::move(p); }\n"
+        "    void set_code_runs_probe(CodeRunsProbe p) { set_->code_probe = std::move(p); }\n"
         "    /* The code_ranks bits a device row needs to be offered to `rank`: 0 without a rank list (no\n"
         "     * filter), every rank's bit for rank < 0, and a bit no row has for a rank outside the list. */\n"
         "    uint32_t rank_bits(int rank) const;",
@@ -166,13 +164,13 @@ REGISTRY_H = FilePatch(path="core/plugin/registry.h", language="none", descripti
     ),
     _edit(
         "n1-storage",
-        "    int code_device_ = 0;\n"
-        "    bool no_device_code_ = false;",
-        "    int code_device_ = 0;\n"
-        "    /* BC_VTP14_N1_STORAGE: set before loading, by one thread; read-only afterwards. */\n"
-        "    std::vector<int> code_devices_;\n"
-        "    CodeRunsProbe code_probe_;\n"
-        "    bool no_device_code_ = false;",
+        "        int                      code_device = 0;\n"
+        "        bool                     no_device_code = false;",
+        "        int                      code_device = 0;\n"
+        "        /* BC_VTP14_N1_STORAGE: all engine views share the code masks and their device order. */\n"
+        "        std::vector<int>         code_devices;\n"
+        "        CodeRunsProbe            code_probe;\n"
+        "        bool                     no_device_code = false;",
         guard="BC_VTP14_N1_STORAGE",
     ),
 ))
@@ -181,9 +179,9 @@ REGISTRY_H = FilePatch(path="core/plugin/registry.h", language="none", descripti
 _LOADER_BLOCK = (
     "        const bool no_code_here =\n"
     "            n_device > 0 &&\n"
-    "            (no_device_code_ ||\n"
+    "            (set_->no_device_code ||\n"
     "             (s.code_to > s.code_from &&\n"
-    "              rad::dev_code_runs(s.code_from, s.code_to, code_device_, &why) == 0));\n"
+    "              rad::dev_code_runs(s.code_from, s.code_to, set_->code_device, &why) == 0));\n"
     "        if (no_code_here) {"
 )
 
@@ -204,20 +202,20 @@ LOADER = FilePatch(path="core/plugin/loader.cpp", language="none", description="
         "/* BC_VTP14_N1_DEVICE_IMPL: the rank list is fixed before any row exists, so the masks rows carry\n"
         " * never change while rank threads select. */\n"
         "int Registry::set_code_devices(const std::vector<int>& devices) {\n"
-        "    if (!rows_.empty() || devices.empty() || devices.size() > 32) return RAD_E_INVAL;\n"
+        "    if (shared() || !set_->rows.empty() || devices.empty() || devices.size() > 32) return RAD_E_INVAL;\n"
         "    for (size_t i = 0; i < devices.size(); ++i) {\n"
         "        if (devices[i] < 0) return RAD_E_INVAL;\n"
         "        for (size_t j = 0; j < i; ++j)\n"
         "            if (devices[j] == devices[i]) return RAD_E_INVAL;\n"
         "    }\n"
-        "    code_devices_ = devices;\n"
-        "    code_device_ = devices[0];\n"
+        "    set_->code_devices = devices;\n"
+        "    set_->code_device = devices[0];\n"
         "    return RAD_OK;\n"
         "}\n"
         "\n"
         "uint32_t Registry::rank_bits(int rank) const {\n"
-        "    if (code_devices_.empty()) return 0;\n"
-        "    const size_t n = code_devices_.size();\n"
+        "    if (set_->code_devices.empty()) return 0;\n"
+        "    const size_t n = set_->code_devices.size();\n"
         "    const uint32_t all = n >= 32 ? ~0u : ((1u << n) - 1u);\n"
         "    if (rank < 0) return all;\n"
         "    if ((size_t)rank >= n) return ~0u;   /* more bits than any device row carries: no match */\n"
@@ -234,20 +232,20 @@ LOADER = FilePatch(path="core/plugin/loader.cpp", language="none", description="
         "         * rank's card. Its device rows stay when any rank runs them, carrying the mask; selection\n"
         "         * offers a row only to those ranks. A library no rank runs loses its device rows below,\n"
         "         * exactly as on the one-device path. */\n"
-        "        if (!code_devices_.empty() && n_device > 0) {\n"
+        "        if (!set_->code_devices.empty() && n_device > 0) {\n"
         "            code_mask = 0;\n"
         "            std::string skipped;\n"
-        "            for (size_t i = 0; i < code_devices_.size(); ++i) {\n"
+        "            for (size_t i = 0; i < set_->code_devices.size(); ++i) {\n"
         "                std::string why_i;\n"
         "                int runs = 0;\n"
-        "                if (no_device_code_) why_i = why;\n"
-        "                else if (code_probe_) runs = code_probe_(p.name, code_devices_[i], &why_i);\n"
-        "                else runs = rad::dev_code_runs(s.code_from, s.code_to, code_devices_[i], &why_i);\n"
+        "                if (set_->no_device_code) why_i = why;\n"
+        "                else if (set_->code_probe) runs = set_->code_probe(p.name, set_->code_devices[i], &why_i);\n"
+        "                else runs = rad::dev_code_runs(s.code_from, s.code_to, set_->code_devices[i], &why_i);\n"
         "                if (runs > 0) {\n"
         "                    code_mask |= 1u << i;\n"
         "                } else {\n"
         "                    skipped += fmt(\"%srank %zu (device %d: %s)\", skipped.empty() ? \"\" : \", \", i,\n"
-        "                                   code_devices_[i], why_i.empty() ? \"no code object for it\" : why_i.c_str());\n"
+        "                                   set_->code_devices[i], why_i.empty() ? \"no code object for it\" : why_i.c_str());\n"
         "                }\n"
         "            }\n"
         "            if (code_mask != 0 && !skipped.empty())\n"
@@ -257,23 +255,23 @@ LOADER = FilePatch(path="core/plugin/loader.cpp", language="none", description="
         "        }\n"
         "        const bool no_code_here =\n"
         "            n_device > 0 &&\n"
-        "            (!code_devices_.empty()\n"
+        "            (!set_->code_devices.empty()\n"
         "                 ? code_mask == 0\n"
-        "                 : (no_device_code_ ||\n"
+        "                 : (set_->no_device_code ||\n"
         "                    (s.code_to > s.code_from &&\n"
-        "                     rad::dev_code_runs(s.code_from, s.code_to, code_device_, &why) == 0)));\n"
+        "                     rad::dev_code_runs(s.code_from, s.code_to, set_->code_device, &why) == 0)));\n"
         "        if (no_code_here) {",
         guard="BC_VTP14_N1_LOADER_RANKS",
         max_span=8,
     ),
     _edit(
         "n1-row-mask",
-        "        row.chain        = chainable && chainable(sr.second) != 0;\n"
-        "        rows_.push_back(row);",
-        "        row.chain        = chainable && chainable(sr.second) != 0;\n"
+        "        row.chain_fenced = chains == 2;\n"
+        "        set_->rows.push_back(row);",
+        "        row.chain_fenced = chains == 2;\n"
         "        /* BC_VTP14_N1_ROW_MASK: published once at load, read-only during selection. */\n"
         "        if (sr.first->domain == RAD_DOMAIN_DEVICE) row.code_ranks = code_mask;\n"
-        "        rows_.push_back(row);",
+        "        set_->rows.push_back(row);",
         guard="BC_VTP14_N1_ROW_MASK",
     ),
 ))
@@ -510,6 +508,10 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
         "            RAD_ERR(\"--rank-devices: %s\", why.c_str());\n"
         "            return RAD_E_DEVICE;\n"
         "        }\n"
+        "        if (!cfg_.devices.empty() && cfg_.devices != picked) {\n"
+        "            RAD_ERR(\"--rank-devices disagrees with the fleet device order\");\n"
+        "            return RAD_E_DEVICE;\n"
+        "        }\n"
         "        devs = picked;\n"
         "        const std::vector<std::string> archs = bc_rank_archs(inv, picked);\n"
         "        std::string ranks;\n"
@@ -534,18 +536,29 @@ ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description=
     ),
     _edit(
         "n1-engine-code-devices",
-        "    rad_tools_registry().set_code_device(devs[0]);\n",
-        "    if (!cfg_.rank_devices.empty()) { /* BC_VTP14_N1_ENGINE_CODE_DEVICES */\n"
-        "        const std::vector<int> rank_devs(devs.begin(), devs.begin() + cfg_.tp);\n"
-        "        if (rad_tools_registry().set_code_devices(rank_devs) != RAD_OK) {\n"
-        "            RAD_ERR(\"--rank-devices: the kernel registry already holds rows; the rank list must be set \"\n"
-        "                    \"before any kernel library loads\");\n"
-        "            return RAD_E_STATE;\n"
-        "        }\n"
-        "    } else {\n"
-        "        rad_tools_registry().set_code_device(devs[0]);\n"
-        "    }\n",
+        "    RAD_TRY(check_configuration(devs));\n",
+        """    /* BC_VTP14_N1_ENGINE_CODE_DEVICES: the rank mask and its device order live in the
+     * process-wide plugin set. Check compatibility before spawning the vocabulary loader. */
+    Registry& registry = rad_tools_registry();
+    if (!cfg_.rank_devices.empty() || !registry.code_devices().empty()) {
+        const std::vector<int> rank_devs(devs.begin(), devs.begin() + cfg_.tp);
+        if (registry.plugins().empty()) {
+            RAD_TRY(registry.set_code_devices(rank_devs));
+        } else if (registry.code_devices() != rank_devs) {
+            RAD_ERR("--rank-devices: the loaded kernel set uses a different device order");
+            return RAD_E_STATE;
+        }
+    }
+    RAD_TRY(check_configuration(devs));
+""",
         guard="BC_VTP14_N1_ENGINE_CODE_DEVICES",
+    ),
+    _edit(
+        "n1-engine-native-code-device",
+        "        rad_tools_registry().set_code_device(devs[0]);",
+        "        if (cfg_.rank_devices.empty()) /* BC_VTP14_N1_NATIVE_CODE_DEVICE */\n"
+        "            rad_tools_registry().set_code_device(devs[0]);",
+        guard="BC_VTP14_N1_NATIVE_CODE_DEVICE",
     ),
     _edit(
         "n1-engine-gate",

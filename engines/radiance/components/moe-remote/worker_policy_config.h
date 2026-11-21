@@ -1,10 +1,10 @@
 #pragma once
-// The live placement policy's settings, typed from the manifest's spec.handoff.placement.live_policy (serving manifest v1).
+// The live placement policy's settings, typed from the selected manifest's spec.handoff.placement.live_policy.
 // Every member is explicit there (no defaults, scaled integers), so this only converts and re-checks the control invariants
 // the policy relies on; a policy that is absent from the manifest never constructs a Settings.
 #include "worker_policy_input.h"
 #include "worker_share.h"
-#include "../serving/generated/v2/serving_types.h"
+#include "serving_types.h"
 #include <chrono>
 #include <cmath>
 #include <cstdint>

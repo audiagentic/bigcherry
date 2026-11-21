@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_230631_radiance-release-packaging-can_6709",
+  "files": [
+    "tools/bigcherry/release/runtime_assets.py",
+    "tools/bigcherry/release/ci_bundle.py",
+    "engines/radiance/components/serving/release_archive.cpp",
+    "engines/radiance/components/serving/release_install_test.cpp",
+    "tools/tests/release/test_ci_bundle.py"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add opt-in exact-name Flash-Next YAML packaging with payload-key separation, tagged-source matching and native verify of member type, mode and digest. Default payload policy stays byte-identical.",
+  "timestamp-utc": "2026-11-19T23:06:31.977864Z",
+  "user-summary-candidate": "Radiance release packaging can include the reviewed Flash-Next native YAML profile when explicitly selected."
+}

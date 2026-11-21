@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_045949_added-and-compiled-the-first-r_8020",
+  "files": [
+    "engines/radiance/patches/rad0051_b16_kv_kernels/patch.py",
+    "engines/radiance/patches/rad0051_b16_kv_kernels/patch.toml",
+    "tools/tests/patch/test_radiance_rad0051.py",
+    "docs/planning/active/patching-radiance-upstream/RUM07.md"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added candidate-only paired B16F8/B16I8 resident store and fused store codecs, typed H256/GQA12/page4 Flash-Next prefill/decode/gated rows, U8 operand sizing, model admission, and host reference refusal. Exact apply/reapply and row/architecture host checks passed (6 focused package tests); NDEBUG shape callback check covers native E4M3/I8 and B16 row extents; selected gfx1201 objects compiled. No device numerical execution; Qwen4exp GQA6, Qwen35 page16/DFlash2, and recipe promotion remain pending.",
+  "timestamp-utc": "2026-11-19T04:59:49.123296Z",
+  "user-summary-candidate": "Added and compiled the first resident B16 cache kernel slice for Flash-Next, with host checks for the two cache layouts and unchanged native row sizes. Device numerical validation and the remaining supported model geometries are still pending."
+}

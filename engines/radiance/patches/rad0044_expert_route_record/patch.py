@@ -130,11 +130,13 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none", description="V
         text="!profiling_ && !oracle_ && !taps && route_rec_cap_ == 0; /* BC_VTP44_ROUTE_RECORD_TAPE: a played pass would not re-run the record */",
         guard=re.escape("BC_VTP44_ROUTE_RECORD_TAPE"), expect_matches=1, max_span_lines=1, rationale=RATIONALE,
     ),
-    _after(
-        "rr-free",
-        "    if (route_dev_)  { rad_dev_free(route_dev_, RAD_MEM_DEVICE);        route_dev_  = nullptr; }",
-        "    if (route_rec_dev_) { rad_dev_free(route_rec_dev_, RAD_MEM_DEVICE); route_rec_dev_ = nullptr; } /* BC_VTP44_ROUTE_RECORD_FREE */",
-        guard="BC_VTP44_ROUTE_RECORD_FREE",
+    Edit(
+        id="rr-free",
+        anchor="^(?:" + re.escape("    route_dev_ = nullptr;") + "|"
+        + re.escape("    if (route_dev_)  { rad_dev_free(route_dev_, RAD_MEM_DEVICE);        route_dev_  = nullptr; }") + ")$",
+        mode="insert_after",
+        text="\n    if (route_rec_dev_) { rad_dev_free(route_rec_dev_, RAD_MEM_DEVICE); route_rec_dev_ = nullptr; } /* BC_VTP44_ROUTE_RECORD_FREE */",
+        guard=re.escape("BC_VTP44_ROUTE_RECORD_FREE"), expect_matches=1, max_span_lines=1, rationale=RATIONALE,
     ),
     _after(
         "rr-report", "    s.reported = step;",

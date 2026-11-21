@@ -1,6 +1,7 @@
 """Card-free tests of the Flash-Next parity harness (flashnext-parity.sh, flashnext_parity.py) with synthetic raw files."""
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import statistics
@@ -75,6 +76,94 @@ def quiet(fn, *a):
     with redirect_stdout(buf):
         rc = fn(*a)
     return rc, buf.getvalue()
+
+
+class ProvenanceTests(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.tmp.cleanup)
+        self.dir = Path(self.tmp.name)
+        self.out = self.dir / "out"
+        self.out.mkdir()
+
+    def write(self, name, content):
+        path = self.dir / name
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_bytes(content)
+        return path
+
+    def test_captures_actual_runtime_bytes_and_build_metadata(self):
+        files = {
+            "bin/radiance": b"engine",
+            "radiance_home/bin/bc-serve": b"owner",
+            "radiance_home/helpers/r3_moe_worker": b"worker",
+            "radiance_home/kernels/libr3.so": b"kernels",
+            "bigcherry-build-metadata-radiance.json": b'{"build_id":"checkpoint","runtime_artifacts":{}}\n',
+        }
+        for name, content in files.items():
+            self.write(f"build/{name}", content)
+        fp.capture_build(self.dir / "build", self.out)
+        members = json.loads((self.out / "runtime-members.json").read_bytes())
+        self.assertEqual(members, {name: hashlib.sha256(content).hexdigest() for name, content in files.items()})
+        self.assertEqual((self.out / "bigcherry-build-metadata-radiance.json").read_bytes(),
+                         files["bigcherry-build-metadata-radiance.json"])
+
+    def test_run_info_names_measured_release_source(self):
+        engine = b"release engine"
+        self.write("old/bin/radiance", engine)
+        release = self.write("old/source-bundle.json", json.dumps({
+            "built_from": {"pinned": "v1.17.0", "pinned_version": "1.17.0"},
+            "binary_sha256": hashlib.sha256(engine).hexdigest(),
+        }).encode())
+        build = release.parent
+        args = ["run-info", str(self.out), "--build", str(build), "--launches", "1", "--port", "18450"]
+        self.assertEqual(fp.main(args), 0)
+        record = json.loads((self.out / "run.json").read_text())
+        self.assertEqual(record["radiance_pin"], {
+            "pinned": "v1.17.0", "pinned_version": "1.17.0", "source": "source-bundle.json",
+        })
+        self.write("old/bin/radiance", b"unrelated engine")
+        with self.assertRaisesRegex(fp.ParityError, "published source does not identify"):
+            fp.measured_radiance_pin(build, hashlib.sha256(b"unrelated engine").hexdigest())
+
+    def test_pin_requires_matching_candidate_source_and_engine(self):
+        binary = hashlib.sha256(b"candidate").hexdigest()
+        revision = "frozen-catalog"
+        pin = "upstream-sha"
+        build = self.dir / "candidate"
+        self.write("candidate/source-provenance.json", json.dumps({
+            "catalog_revision": revision, "upstream": pin,
+            "source_identity": {"upstream_revision": pin, "source_slice_id": "source-slice"},
+        }).encode())
+        self.write("candidate/qualification-build-metadata.json", json.dumps({
+            "catalog_revision": revision, "binary_hash": binary, "source_slice_id": "source-slice",
+        }).encode())
+        self.write("candidate/catalog/engines/radiance/recipes.toml",
+                   b'pinned = "upstream-sha"\npinned-version = "2.2.0"\n')
+        self.assertEqual(fp.measured_radiance_pin(build, binary), {
+            "pinned": pin, "pinned_version": "2.2.0", "source": "source-provenance.json",
+        })
+        self.assertEqual(fp.measured_radiance_pin(self.dir, binary)["source"], "invoking_catalog")
+
+    def test_archives_failed_session_logs_only_for_the_launch_owner(self):
+        manifest = self.write("native/manifest.json", b"{}\n")
+        processes = [
+            {"role": role, "log": str(self.write(f"native/{role}-1.log", role.encode()))}
+            for role in ("engine", "helper0", "helper1")
+        ]
+        record = json.dumps({"owner_pid": 91, "state": "failed", "processes": processes,
+                             "manifest": str(manifest)}).encode()
+        session = self.write("native/session.json", record)
+        def archive(pid):
+            return fp.main(["archive-session", str(session), "--owner-pid", str(pid), "--out", str(self.out)])
+
+        self.assertEqual(archive(92), 0)
+        self.assertEqual(list(self.out.iterdir()), [])
+        self.assertEqual(archive(91), 0)
+        self.assertEqual((self.out / "session.json").read_bytes(), record)
+        self.assertEqual((self.out / "manifest.json").read_bytes(), b"{}\n")
+        self.assertEqual((self.out / "native-logs/helper1-1.log").read_bytes(), b"helper1")
+        self.assertEqual((self.out / "helper0.log").read_bytes(), b"helper0")
 
 
 class LaunchMetricsTests(unittest.TestCase):
@@ -187,6 +276,7 @@ class RunRecordsTests(unittest.TestCase):
         out = self.root / name
         make_run(out, scales)
         info = json.loads((out / "run.json").read_text())
+        (out / "runtime-members.json").write_text(json.dumps({"bin/radiance": "e" * 64}))
         info["build"] = str(self.build)
         info["build_identity"] = fp.build_identity(self.build)
         (out / "run.json").write_text(json.dumps(info))
@@ -195,13 +285,12 @@ class RunRecordsTests(unittest.TestCase):
             manifest = {
                 "metadata": {"instance_id": f"{name}-launch-{i}"},
                 "spec": {
-                    "plan": {"engine_memory": {"model_identity": "m" * 64}},
+                    "plan": {"engine_memory": {"model_identity": "m" * 64}, "power": {"profile": "stock"}},
                     "intent": {"layout": "flashnext-4gpu"},
                     "handoff": {"placement": {"live_policy_state": {
                         "configured": False, "requested": "off",
                         "reason_code": "no_calibration", "calibration_key": ""
                     }}},
-                    "power": {"profile": "stock"}
                 }
             }
             (launch / "manifest.json").write_text(json.dumps(manifest))
@@ -253,6 +342,8 @@ class RunRecordsTests(unittest.TestCase):
         ) as publish:
             digest = fp.publish_launch_record(out, out / "launch-1", work_root=self.root)
         self.assertEqual(publish.call_count, 1)
+        self.assertEqual(publish.call_args.kwargs["identity"]["binary_sha256"], "e" * 64)
+        self.assertEqual(publish.call_args.kwargs["power_settings"]["effective"], {"profile": "stock"})
         self.assertEqual(
             run_records.RunRecordStore(self.root).get_record(digest)["run_id"],
             "sole-writer-launch-1",

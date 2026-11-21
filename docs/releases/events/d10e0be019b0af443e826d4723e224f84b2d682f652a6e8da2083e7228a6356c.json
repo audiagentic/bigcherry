@@ -1,0 +1,22 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_153303_merged-the-latest-main-into-th_2595",
+  "files": [
+    "tools/bigcherry/core/host_facts.py",
+    "tools/bigcherry/core/run_manifest.py",
+    "tools/bigcherry/core/run_records.py",
+    "tools/bigcherry/bench/workloads.py",
+    "tools/tests/core/test_host_facts.py",
+    "tools/tests/core/test_run_records.py",
+    "tools/tests/bench/test_workloads.py",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Integrated current origin/main 224456e53 (including 068776438) into the isolated Radiance bump worktree and verified it is an ancestor of HEAD. Focused tests for newly merged host facts, run records, and benchmark workloads passed: 32 tests. No Radiance runtime behavior changed in this merge.",
+  "timestamp-utc": "2026-11-19T15:33:03.451829Z",
+  "user-summary-candidate": "Merged the latest main into the isolated bump branch and passed 32 focused tests covering its host-facts, run-record, and workload changes."
+}

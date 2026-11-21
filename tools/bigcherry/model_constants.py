@@ -10,6 +10,9 @@ model-specific value on an execution, selection or planning branch (a defect for
 that belongs in the manifest, layout or arch data; E naming, a message or a comment only. C and D entries must name
 an OPEN plan item as owner: when that item is completed (or does not exist) the entry is invalid and the guard
 fails, so an execution-path debt cannot outlive the change that owns it, and no calendar date is invented.
+
+Archived patches (`engines/<engine>/patches/archive/`) are retired evidence that is never loaded, composed or built,
+so they are not an execution path and are not scanned.
 """
 from __future__ import annotations
 
@@ -17,6 +20,8 @@ import re
 import tomllib
 from dataclasses import dataclass
 from pathlib import Path
+
+from bigcherry.patch.registry import ARCHIVE_DIR
 
 CONFIG = Path("engines/radiance/model_constant_guard.toml")
 PLANNING = Path("docs/planning/active")
@@ -60,7 +65,7 @@ def scan(root: Path, config: dict) -> list[Hit]:
         for path in sorted((root / base).rglob("*")):
             rel = path.relative_to(root).as_posix()
             if (not path.is_file() or not rel.endswith(exts) or "/build" in rel
-                    or _is_test(rel, scope["test_patterns"])):
+                    or f"/patches/{ARCHIVE_DIR}/" in rel or _is_test(rel, scope["test_patterns"])):
                 continue
             for number, line in enumerate(path.read_text(encoding="utf-8", errors="replace").splitlines(), 1):
                 code = _code(line)

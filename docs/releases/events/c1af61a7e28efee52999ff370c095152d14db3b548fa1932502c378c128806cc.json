@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_031211_lab-mailbox-trace-instrumentat_3962",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+  ],
+  "plan-item-ids": [
+    "RUM06",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Preserve mailbox finish pass-ticket, pointer and lane validation before optional ENG05 stamp access to the shared request ring. Reuse the validated sequence for the normal consumed record. Integrated HIP rebuild and targeted runtime checks are pending.",
+  "timestamp-utc": "2026-11-20T03:12:11.264769Z",
+  "user-summary-candidate": "Lab mailbox trace instrumentation uses the same checked request lane as the production completion path."
+}

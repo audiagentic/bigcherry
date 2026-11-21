@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_145235_added-and-verified-a-private-f_1489",
+  "files": [
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_test.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added an internal-only NativeAdmissionRequest path in plan_engine_only. After selecting the matched engine and local devices, it snapshots authored YAML once, captures the filtered effective child environment once, runs the tracked inspector with that complete map, reconciles TP and rank-device BDF order and loopback listener support, then refuses before cache, writer/P1, power admission or GPU child work. No public CLI path is exposed.",
+  "timestamp-utc": "2026-11-19T14:52:35.541345Z",
+  "user-summary-candidate": "Added and verified a private fail-closed native YAML admission gate that checks settings and device order against the selected local profile before stopping ahead of v2-only cache, writer, power or GPU work."
+}

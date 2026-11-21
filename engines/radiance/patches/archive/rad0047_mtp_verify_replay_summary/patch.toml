@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0047_mtp_verify_replay_summary"
+order = 47
+state = "untested"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["RUM08"]
+requires = []
+conflicts = []
+tags = ["mtp", "speculative-decoding"]

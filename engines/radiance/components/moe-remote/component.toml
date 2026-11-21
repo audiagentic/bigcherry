@@ -8,7 +8,7 @@ engine = "radiance"
 # the cards the ENGINE itself serves (the build configures the engine for the union of the components targets); the helper and the mailbox plugin are built for
 # every card type in engines/radiance/archs.toml (CMakeLists.txt)
 targets = ["gfx1100", "gfx1201"]
-built-against = "v1.17.0"
+built-against = "b6b8751cccb0e834a13ae9e5afca824ee9a487aa"
 outputs = ["kernels/libr3moe.so", "helpers/r3_moe_worker"]
 
 [build]
@@ -322,11 +322,11 @@ manifest = "/spec/processes/helper_common/cpu/affinity"
 # checks literals and source inventory; RUM02-07 own the eventual migration.
 [coupling]
 upstream-headers = ["r4d_args.h", "r4d_fwht.h", "r4d_plugin.h", "r4d_q8.h", "rad_abi.h", "rad_abi_layout.h", "rad_device.h", "rad_encoding.h", "rad_format.h"]
-upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "abi/rad_device.h", "abi/rad_encoding.h", "abi/rad_format.h", "libr4d/CMakeLists.txt", "libr4d/r4d_args.h", "libr4d/r4d_fwht.h", "libr4d/r4d_plugin.h", "libr4d/r4d_q8.h", "vendor/nlohmann/json.hpp"]
+upstream-files = ["abi/rad_abi.h", "abi/rad_abi_layout.h", "abi/rad_device.h", "abi/rad_encoding.h", "abi/rad_format.h", "libr4d/CMakeLists.txt", "libr4d/r4d_args.h", "libr4d/r4d_fwht.h", "libr4d/r4d_plugin.h", "libr4d/r4d_q8.h"]
 upstream-source-globs = []
 patch-provided-files = ["libr4d/bc_helper_config.h"]
 protocol-flags = ["--manifest", "--measuring", "--role"]
 owned-flags = ["--compare", "--describe", "--layer", "--replay", "--replay-sweep", "--route-selftest", "--rows", "--synthetic-protect"]
 runtime-env = ["GPU_MAX_HW_QUEUES", "R3_MOE_PROBE", "RAD_R4D_TRACE"]
 wire-constants = ["moe_remote_shm.h::kMagic = 0x31454f4d33485253", "moe_remote_shm.h::kVersion = 26", "moe_remote_shm.h::kPage = 4096", "moe_remote_shm.h::kMaxTopK = 16", "moe_remote_shm.h::kMaxRows = 4096", "moe_remote_shm.h::kMaxLayers = 128"]
-abi-version = 35
+abi-version = 43

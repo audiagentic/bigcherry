@@ -6,7 +6,7 @@
 #include "experts.h"
 #include "worker_footprint.h"
 #include "sha256.h"
-#include "generated/v2/serving_types.h"
+#include "serving_types.h"
 #include "third_party/toml.hpp"
 
 #include <cstdlib>
@@ -77,7 +77,7 @@ const std::vector<Field>& schema_fields() {
             "launcher: baseline fp8 KV policy", "policy", "startup-only",
             0, 0, {"baseline", "strict"});
         add("layout.name", "string", nullptr,
-            "the named layout (--layouts / BIGCHERRY_LAYOUTS); required, no default");
+            "the named config (its YAML, read by the caller); required, no default");
         add("layout.engine_cards", "string_array", nullptr,
             "RSC05: selected PCI BDFs from KFD GPU nodes, in rank order", "discovered");
         // present only when the layout's engine holds more than one card type (radiance --rank-devices; amendment 18)
@@ -453,80 +453,17 @@ ArchInfo arch_info(const std::string& arch) {
 
 } // namespace
 
-/* The layout definition files: --layouts, else BIGCHERRY_LAYOUTS (a ':'-separated list), each a TOML file or a
- * directory whose *.toml files are read in name order. There is no built-in table and no default. */
-std::vector<fs::path> layout_sources(const Options& options) {
-    std::vector<fs::path> given = options.layouts;
-    if (given.empty())
-        if (const char* env = std::getenv("BIGCHERRY_LAYOUTS"); env && *env) {
-            std::string s(env);
-            for (size_t at = 0; at <= s.size();) {
-                const size_t colon = std::min(s.find(':', at), s.size());
-                if (colon > at) given.emplace_back(s.substr(at, colon - at));
-                at = colon + 1;
-            }
-        }
-    if (given.empty())
-        throw std::runtime_error("layout: no layout definitions: pass --layouts FILE|DIR or set BIGCHERRY_LAYOUTS");
-    std::vector<fs::path> files;
-    for (const auto& g : given) {
-        if (fs::is_directory(g)) {
-            std::vector<fs::path> in_dir;
-            for (const auto& e : fs::directory_iterator(g))
-                if (e.is_regular_file() && e.path().extension() == ".toml") in_dir.push_back(e.path());
-            std::sort(in_dir.begin(), in_dir.end());
-            if (in_dir.empty()) throw std::runtime_error("layout: " + g.string() + " holds no *.toml layout file");
-            files.insert(files.end(), in_dir.begin(), in_dir.end());
-        } else if (fs::is_regular_file(g)) {
-            files.push_back(g);
-        } else {
-            throw std::runtime_error("layout: " + g.string() + " is neither a layout file nor a directory");
-        }
-    }
-    return files;
-}
-
-/* Every named layout of the sources, and the file each came from. A name defined twice is refused. */
+/* The named layouts: the one config the caller read from its native YAML (Options::inspected), and the file it came from.
+ * There is no catalogue, layout file or built-in table. */
 Json load_layouts(const Options& options) {
+    if (!options.inspected)
+        throw std::runtime_error("layout: no config was read: a config is its native YAML, which the caller inspects "
+                                 "first (bc-serve reads NAME.yaml from the bundle or --configs)");
     Json out = {{"layout", Json::object()}, {"source", Json::object()}, {"kind", Json::object()}};
-    // RSC12: configs (--configs, BIGCHERRY_CONFIGS) replace the layout sources unless --layouts is given as well.
-    const auto config_files = config_sources(options.configs);
-    const std::vector<fs::path> layout_files =
-        config_files.empty() || !options.layouts.empty() ? layout_sources(options) : std::vector<fs::path>{};
-    for (const auto& f : layout_files) {
-        Json doc;
-        try { doc = toml_to_json(toml::parse_file(f.string())); }
-        catch (const toml::parse_error& e) { throw std::runtime_error(f.string() + ": TOML parse error: " + e.what()); }
-        for (auto it = doc.begin(); it != doc.end(); ++it)
-            if (it.key() != "schema" && it.key() != "layout")
-                throw std::runtime_error(f.string() + ": unknown top-level key " + it.key() + " (schema, layout)");
-        if (doc.value("schema", 0) != 1) throw std::runtime_error(f.string() + ": schema = 1 is required");
-        if (!doc.contains("layout")) continue;
-        for (auto it = doc.at("layout").begin(); it != doc.at("layout").end(); ++it) {
-            if (out["layout"].contains(it.key()))
-                throw std::runtime_error("layout " + it.key() + " is defined in both " +
-                                         out["source"][it.key()].get<std::string>() + " and " + f.string());
-            out["layout"][it.key()] = it.value();
-            out["source"][it.key()] = f.string();
-            out["kind"][it.key()] = "layout";
-        }
-    }
-    if (!config_files.empty()) {
-        // each config, variants applied, as the layout table the resolver reads: one resolver, its own checks
-        const ConfigSet configs = load_configs(config_files);
-        for (auto it = configs.config.begin(); it != configs.config.end(); ++it) {
-            if (out["layout"].contains(it.key()))
-                throw std::runtime_error("config " + it.key() + " (" + configs.source.at(it.key()).get<std::string>() +
-                                         ") has the name of a layout in " + out["source"][it.key()].get<std::string>());
-            // The heat path belongs to its defining base/config, even when a
-            // variant resides in a different file.
-            const std::string heat_owner = configs.origin.at(it.key()).value("handoff.heat", it.key());
-            const fs::path heat_source = configs.source.at(heat_owner).get<std::string>();
-            out["layout"][it.key()] = config_as_layout(it.value(), options.model_root, heat_source);
-            out["source"][it.key()] = configs.source.at(it.key());
-            out["kind"][it.key()] = "config";
-        }
-    }
+    const InspectedConfig& c = *options.inspected;
+    out["layout"][c.name] = inspected_as_layout(c, options.model_root);
+    out["source"][c.name] = c.yaml_path.string();
+    out["kind"][c.name] = "config";
     return out;
 }
 
@@ -1073,7 +1010,24 @@ Json json_schema() {
     return root;
 }
 
-Resolved resolve(const Options& options, const Json& facts) {
+std::optional<std::string> layered_string(const Options& options, const std::string& section, const std::string& key) {
+    const std::string dotted = section + "." + key + "=";
+    for (auto it = options.sets.rbegin(); it != options.sets.rend(); ++it)
+        if (it->starts_with(dotted)) {
+            const std::string text = it->substr(dotted.size());
+            const Json parsed = Json::parse(text, nullptr, false);
+            return parsed.is_string() ? parsed.get<std::string>() : text;
+        }
+    for (const fs::path* file : {&options.profile, &options.site}) {
+        const Json layer = read_toml(*file);
+        if (layer.contains(section) && layer.at(section).is_object() && layer.at(section).contains(key) &&
+            layer.at(section).at(key).is_string())
+            return layer.at(section).at(key).get<std::string>();
+    }
+    return std::nullopt;
+}
+
+Resolved resolve(const Options& options, const Json& facts, const NativeEngineSettings* native) {
     Json values = Json::object(), provenance = Json::object();
     for (const auto& f : schema_fields())
         if (!f.fallback.is_null())
@@ -1308,6 +1262,62 @@ Resolved resolve(const Options& options, const Json& facts) {
     }
 
 
+    const auto native_value = [&](const char* key, const Json& value) {
+        Field field = *field_for(key);
+        // The native parser has already validated the RoPE syntax.
+        if (field.key == "engine.rope_scaling")
+            field.choices.clear();
+        if (field.key == "engine.checkpoint_interval")
+            field.lo = 0;
+        // Radiance's measured "auto" n-gram placement is an authored intent: the engine's measuring start decides the tier
+        // and the owner seals it (rad0011 rank receipt); the resolver carries the intent until then.
+        if (field.key == "engine.ngram_placement")
+            field.choices.push_back("auto");
+        const bool undecided = field.key == "engine.ngram_placement" && value == "auto";
+        put(values, provenance, field, value, "native",
+            undecided ? "sealed Radiance YAML: auto, an intent; the engine's measuring start chooses ram, disk or vram and the "
+                        "sealed manifest carries that tier (derived, rad0011 rank receipt)"
+                      : "sealed Radiance YAML (matched native parser)");
+    };
+    if (native) {
+        native_value("engine.port", native->port);
+        native_value("service.max_context", native->max_context);
+        native_value("service.max_sessions", native->max_sequences);
+        native_value("engine.max_num_batched_tokens", native->max_batched_tokens);
+        native_value("engine.checkpoint_interval", native->checkpoint_interval);
+        native_value("engine.placement", native->placement);
+        native_value("engine.ngram_placement", native->ngram_placement);
+        native_value("engine.kv_cache_dtype", native->kv_dtype);
+        native_value("engine.num_speculative_tokens", native->speculative_tokens);
+        native_value("engine.rope_scaling", native->rope_scaling);
+        native_value("engine.prefix_resume", native->prefix_resume);
+        if (native->prefix_cache) {
+            values.at("engine").erase("no_prefix_cache");
+            provenance.erase("engine.no_prefix_cache");
+        } else {
+            native_value("engine.no_prefix_cache", "on");
+        }
+        // The YAML is the one source of the tuning options: nothing else (config, site, profile, --set) sets them.
+        for (const char* name : {"p2p", "pipelined_prefill", "pipelined_prefill_min_rows", "prefill_governor",
+                                 "tp_ownership", "tune_pin"}) {
+            if (values.contains("tuning") && values.at("tuning").contains(name)) {
+                values.at("tuning").erase(name);
+                provenance.erase(std::string("tuning.") + name);
+            }
+        }
+        for (const auto& [name, value] : native->tuning)
+            native_value(("tuning." + name).c_str(), value);
+        if (native->prefill_interleave) {
+            native_value("tuning.prefill_interleave", *native->prefill_interleave);
+        } else {
+            if (values.contains("tuning")) {
+                values.at("tuning").erase("prefill_interleave");
+                if (values.at("tuning").empty()) values.erase("tuning");
+            }
+            provenance.erase("tuning.prefill_interleave");
+        }
+    }
+
     // Canonical derived engine option names. There is no argv/env conversion.
     auto alias = [&](const std::string& key, const Json& v,
                      const std::string& source, const std::string& input) {
@@ -1335,9 +1345,21 @@ Resolved resolve(const Options& options, const Json& facts) {
             archs += (archs.empty() ? "" : "+") + arch;
             if (have.insert(stem).second) stems += (stems.empty() ? "" : ",") + stem;
         }
-        alias("engine.kernels", stems + (engine_only ? "" : ",libr3moe") + ",libref",
-              "engines/radiance/archs.toml " + archs + " plugin; launcher ENGINE_KERNELS",
-              "layout.engine_cards");
+        const std::string required = stems + (engine_only ? "" : ",libr3moe") + ",libref";
+        if (native) {
+            std::istringstream tokens(required);
+            for (std::string kernel; std::getline(tokens, kernel, ',');)
+                if (std::find(native->kernels.begin(), native->kernels.end(), kernel) == native->kernels.end())
+                    throw std::runtime_error("native config admission: kernel list lacks topology plugin " + kernel);
+            std::string order;
+            for (const auto& kernel : native->kernels)
+                order += (order.empty() ? "" : ",") + kernel;
+            native_value("engine.kernels", order);
+        } else {
+            alias("engine.kernels", required,
+                  "engines/radiance/archs.toml " + archs + " plugin; launcher ENGINE_KERNELS",
+                  "layout.engine_cards");
+        }
     }
 
     for (const char* key : {"engine.model", "engine.radiance_home"})

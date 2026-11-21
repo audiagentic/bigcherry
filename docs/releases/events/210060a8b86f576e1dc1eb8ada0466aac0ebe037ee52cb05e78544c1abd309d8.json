@@ -1,0 +1,15 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_101333_strengthened-the-fake-engine-s_2250",
+  "files": [
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Make the card-free fake engine reject a fresh/sealed /proc/self/fd manifest argument unless it can parse a strict document containing spec. This turns descriptor inheritance from an argv-only assertion into an executed-child check. Rebuilt bc_serving_test and bc_session_stored_test; serving, stored replay, native option projection and v3 wire test executables all passed.",
+  "timestamp-utc": "2026-11-19T10:13:33.871329Z",
+  "user-summary-candidate": "Strengthened the fake engine so the focused launch check proves the child can read the inherited sealed manifest descriptor."
+}

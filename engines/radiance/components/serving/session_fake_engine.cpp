@@ -11,6 +11,8 @@
 //   descendant       fork a process that ignores SIGINT and SIGTERM, outlives this one, and writes its PID here
 //   fd_dump          write what each open descriptor points at, one a line, to this file
 // A manifest that is not such an object (a real one, from a test's fake bc-serve) gives the defaults with port 0.
+// A native (v3) serving manifest takes its port from the manifest and the same keys from the JSON object in the
+// environment variable TEST_FAKE_BEHAVIOUR (the serving engine only; not a measuring run, a helper or the inspector).
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -22,15 +24,22 @@
 #include <dirent.h>
 
 #include <chrono>
+#include <algorithm>
+#include <cerrno>
 #include <csignal>
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <filesystem>
+#include <iostream>
+#include <cstdlib>
 #include <sstream>
 #include <string>
+#include <thread>
 #include <utility>
 
 #include <nlohmann/json.hpp>
+#include <rad_abi.h>
 
 extern char** environ;
 
@@ -80,22 +89,213 @@ void reply(int fd, int status, const std::string& body) {
 int main(int argc, char** argv) {
     using nlohmann::json;
     using Clock = std::chrono::steady_clock;
+    if (argc == 3 && std::strcmp(argv[1], "--bc-inspect-native-config") == 0) {
+        const int fd = std::atoi(argv[2]);
+        constexpr int seals_required = F_SEAL_WRITE | F_SEAL_GROW | F_SEAL_SHRINK | F_SEAL_SEAL;
+        struct stat info {};
+        const int seals = fd < 3 ? -1 : ::fcntl(fd, F_GET_SEALS);
+        if (fd < 3 || seals < 0 || (seals & seals_required) != seals_required ||
+            ::fstat(fd, &info) != 0 || info.st_size <= 0 || info.st_size > 1024 * 1024) {
+            std::fprintf(stderr, "fake inspector: invalid sealed input descriptor\n");
+            return 10;
+        }
+        std::string bytes(static_cast<size_t>(info.st_size), '\0');
+        if (::pread(fd, bytes.data(), bytes.size(), 0) != static_cast<ssize_t>(bytes.size())) return 11;
+        const json input = json::parse(bytes, nullptr, false);
+        const char* configured_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
+        const std::string expected_yaml = configured_yaml
+                                              ? configured_yaml
+                                              : "# caf\xc3\xa9\r\ncards: [0]\r\nmodels:\r\n  tiny: {model: tiny.rad}\r\n";
+        if (!input.is_object() || input.value("yaml_utf8", std::string()) != expected_yaml ||
+            input.value("sha256", std::string()).empty() || !input.contains("resolution_root") ||
+            !input.at("resolution_root").is_string()) {
+            std::fprintf(stderr, "fake inspector: snapshot bytes did not match the sealed fixture\n");
+            return 12;
+        }
+        std::error_code ec;
+        const std::string cwd = std::filesystem::canonical(std::filesystem::current_path(), ec).string();
+        if (ec || cwd != input.at("resolution_root").get<std::string>()) {
+            std::fprintf(stderr, "fake inspector: execution root did not match snapshot\n");
+            return 13;
+        }
+        if (const char* sentinel = std::getenv("TEST_SENTINEL_FD")) {
+            errno = 0;
+            if (::fcntl(std::atoi(sentinel), F_GETFD) >= 0 || errno != EBADF) {
+                std::fprintf(stderr, "fake inspector: unrelated descriptor survived exec\n");
+                return 14;
+            }
+        }
+        if (const char* expected_home = std::getenv("TEST_EXPECT_RADIANCE_HOME")) {
+            const char* actual = std::getenv("RADIANCE_HOME");
+            if (!actual || std::strcmp(actual, expected_home) != 0) {
+                std::fprintf(stderr, "fake inspector: explicit native environment was not applied\n");
+                return 15;
+            }
+        }
+        if (const char* expected_kernels = std::getenv("TEST_EXPECT_RADIANCE_KERNELS")) {
+            const char* actual = std::getenv("RADIANCE_KERNELS");
+            if (!actual || std::strcmp(actual, expected_kernels) != 0) {
+                std::fprintf(stderr, "fake inspector: native kernel environment differs\n");
+                return 16;
+            }
+        }
+        const char* mode = std::getenv("TEST_INSPECTOR_MISMATCH");
+        const std::string reported_digest = mode && std::strcmp(mode, "digest") == 0
+                                                ? std::string(64, '0')
+                                                : input.at("sha256").get<std::string>();
+        int tp = 1;
+        if (const char* configured_tp = std::getenv("TEST_NATIVE_INSPECT_TP"))
+            tp = std::atoi(configured_tp);
+        json rank_devices = json::array({"0000:01:00.0"});
+        if (const char* configured_devices = std::getenv("TEST_NATIVE_INSPECT_RANK_DEVICES")) {
+            const json parsed = json::parse(configured_devices, nullptr, false);
+            if (!parsed.is_array()) {
+                std::fprintf(stderr, "fake inspector: invalid test rank-device list\n");
+                return 17;
+            }
+            rank_devices = parsed;
+        }
+        json cards = json::array({0});
+        if (const char* configured_cards = std::getenv("TEST_NATIVE_INSPECT_CARDS")) {
+            const json parsed = json::parse(configured_cards, nullptr, false);
+            if (!parsed.is_array()) {
+                std::fprintf(stderr, "fake inspector: invalid test card list\n");
+                return 18;
+            }
+            cards = parsed;
+        }
+        const char* reported_home = std::getenv("TEST_NATIVE_INSPECT_REPORTED_HOME");
+        if (!reported_home) reported_home = std::getenv("RADIANCE_HOME");
+        if (!reported_home) reported_home = "runtime";
+        const char* reported_model = std::getenv("TEST_NATIVE_INSPECT_MODEL");
+        if (!reported_model) reported_model = "tiny.rad";
+        auto configured_integer = [](const char* name, int fallback) {
+            const char* value = std::getenv(name);
+            return value ? std::atoi(value) : fallback;
+        };
+        json kernels = json::array({"k0"});
+        if (const char* configured_kernels = std::getenv("TEST_NATIVE_INSPECT_KERNELS")) {
+            const json parsed = json::parse(configured_kernels, nullptr, false);
+            if (!parsed.is_array()) {
+                std::fprintf(stderr, "fake inspector: invalid test kernel list\n");
+                return 19;
+            }
+            kernels = parsed;
+        }
+        json native_tuning = {{"p2p", nullptr}, {"pipelined_prefill", nullptr}, {"pipelined_prefill_min_rows", nullptr},
+                              {"prefill_governor", nullptr}, {"tp_ownership", nullptr}, {"tune_pin", nullptr}};
+        if (const char* configured_tuning = std::getenv("TEST_NATIVE_INSPECT_TUNING"))
+            native_tuning.update(json::parse(configured_tuning));
+        json x_bigcherry = {{"schema", 1}, {"description", "fake inspector config"},
+                            {"ranks", json::array({{{"arch", "gfx1100"}, {"count", tp}}})}};
+        if (const char* configured = std::getenv("TEST_NATIVE_INSPECT_XBIGCHERRY"))
+            x_bigcherry = json::parse(configured);
+        json native_settings = {{"max_batched_tokens", 2048}, {"checkpoint_interval", 4096},
+                                {"placement", "expert_tiered"}, {"ngram_placement", "ram"}, {"kv_dtype", "fp8"},
+                                {"speculative_tokens", 3}, {"rope_scaling", "none"}, {"prefix_resume", "nearest"},
+                                {"prefix_cache", true}, {"prefill_interleave", nullptr}};
+        if (const char* configured_settings = std::getenv("TEST_NATIVE_INSPECT_SETTINGS"))
+            native_settings.update(json::parse(configured_settings));
+        json report = {{"protocol", "bigcherry.native-fleet-inspect/v2"},
+                       {"snapshot", {{"sha256", reported_digest},
+                                     {"resolution_root", input.at("resolution_root")}}},
+                       {"engine", {{"abi_version", RAD_ABI_VERSION},
+                                    {"model", reported_model},
+                                    {"radiance_home", reported_home},
+                                    {"radiance_home_source", nullptr},
+                                    {"kernels", kernels},
+                                    {"kernels_source", nullptr},
+                                    {"listener", {{"host", std::getenv("TEST_NATIVE_INSPECT_HOST") ? std::getenv("TEST_NATIVE_INSPECT_HOST") : "127.0.0.1"},
+                                                   {"port", configured_integer("TEST_NATIVE_INSPECT_PORT", 8123)}}},
+                                    {"tp_wire", std::getenv("TEST_NATIVE_INSPECT_TP_WIRE")
+                                                    ? json(std::getenv("TEST_NATIVE_INSPECT_TP_WIRE")) : json(nullptr)},
+                                    {"tuning", native_tuning},
+                                    {"x_bigcherry", x_bigcherry},
+                                    {"tp", tp},
+                                    {"cards", cards},
+                                    {"rank_devices", rank_devices},
+                                    {"max_context", configured_integer("TEST_NATIVE_INSPECT_MAX_CONTEXT", 4096)},
+                                    {"max_sequences", configured_integer("TEST_NATIVE_INSPECT_MAX_SEQUENCES", 1)},
+                                    {"settings", native_settings}}}};
+        if (mode && std::strcmp(mode, "cards") == 0) report["engine"]["cards"] = json::array({"0"});
+        std::cout << report.dump() << '\n';
+        return 0;
+    }
     const std::string manifest = arg_after(argc, argv, "--manifest");
+    const std::string role = arg_after(argc, argv, "--role");
     json m = json::object();
     {
         std::ifstream in(manifest);
         std::stringstream s;
         s << in.rdbuf();
         const json parsed = json::parse(s.str(), nullptr, false);
+        // Fresh and measuring launches deliberately pass the manifest as an
+        // inherited sealed descriptor. Fail loudly if spawn omitted it; a
+        // default fake-engine response would otherwise hide the broken handoff.
+        if (manifest.rfind("/proc/self/fd/", 0) == 0 &&
+            (!parsed.is_object() || !parsed.contains("spec"))) {
+            std::fprintf(stderr, "fake engine: inherited manifest descriptor is not readable\n");
+            return 9;
+        }
         if (parsed.is_object() && !parsed.contains("spec")) {
             m = parsed;
         } else if (parsed.is_object() && parsed.contains("spec")) {
-            // The actual owner replay path consumes a strict v2 file. This
-            // card-free engine reads ONLY its fixture port and mailbox.
+            // The card-free engine uses the manifest's fixture port and mailbox.
             const auto& spec = parsed.at("spec");
+            bool apply_behaviour = false;   // TEST_FAKE_BEHAVIOUR is for the serving engine, not a measuring run
+            if (parsed.value("apiVersion", std::string()) == "bigcherry/v3") {
+                const auto& native = spec.at("native_config");
+                const char* expected_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
+                const char* expected_frozen = std::getenv("TEST_NATIVE_EXPECT_FROZEN");
+                const char* frozen = std::getenv("TEST_NATIVE_FROZEN");
+                const bool helper = role.rfind("helper", 0) == 0;
+                const bool measuring = !arg_after(argc, argv, "--plan-memory").empty() ||
+                    std::find_if(argv + 1, argv + argc, [](const char* arg) {
+                        return std::strcmp(arg, "--measuring") == 0;
+                    }) != argv + argc;
+                if (manifest.rfind("/proc/self/fd/", 0) != 0 ||
+                    (!helper && std::filesystem::current_path() != native.at("resolution_root").get<std::string>()) ||
+                    (expected_yaml && native.at("yaml_utf8") != expected_yaml) ||
+                    (expected_frozen && (!frozen || std::strcmp(frozen, expected_frozen) != 0)) ||
+                    spec.at("plan").contains("engine_memory") == measuring) {
+                    std::fprintf(stderr, "fake engine: v3 manifest, execution root, environment or role mismatch\n");
+                    return 9;
+                }
+                if (helper) {
+                    const auto& helpers = spec.at("processes").at("helpers");
+                    const auto worker = std::find_if(helpers.begin(), helpers.end(),
+                        [&](const json& h) { return h.at("role") == role; });
+                    const auto& gpus = spec.at("facts").at("gpus");
+                    const auto gpu = worker == helpers.end() ? gpus.end() : std::find_if(gpus.begin(), gpus.end(),
+                        [&](const json& card) { return card.at("bdf") == worker->at("gpu"); });
+                    const char* rocr = std::getenv("ROCR_VISIBLE_DEVICES");
+                    const char* hip = std::getenv("HIP_VISIBLE_DEVICES");
+                    if (gpu == gpus.end() || !rocr || !hip || std::strcmp(hip, "0") != 0 ||
+                        std::to_string(gpu->at("hip_ordinal").get<int>()) != rocr) {
+                        std::fprintf(stderr, "fake engine: helper visibility differs from its manifest BDF\n");
+                        return 9;
+                    }
+                }
+                apply_behaviour = !helper && !measuring;
+                std::printf("fake engine: native v3 %s snapshot, root and environment verified\n",
+                            measuring ? "measuring" : "serving");
+            }
             m["port"] = spec.at("processes").at("engine").at("server").at("port");
+            m["engine_cards"] = spec.at("processes").at("engine").at("device").at("gpus");
+            m["host_pool_mib"] = spec.at("resources").at("host").at("pool_mib");
+            m["max_context"] = spec.at("intent").at("service").at("max_context_tokens");
+            m["ngram_placement"] = spec.at("processes").at("engine").at("execution").at("ngram_placement");
             if (spec.contains("handoff"))
                 m["shm"] = spec.at("handoff").at("transport").at("shm");
+            if (const char* behaviour = apply_behaviour ? std::getenv("TEST_FAKE_BEHAVIOUR") : nullptr) {
+                const json given = json::parse(behaviour, nullptr, false);
+                if (!given.is_object()) {
+                    std::fprintf(stderr, "fake engine: TEST_FAKE_BEHAVIOUR is not a JSON object\n");
+                    return 9;
+                }
+                for (const auto& [key, value] : given.items())
+                    if (key != "port") m[key] = value;   // the port is the manifest's
+            }
         }
     }
     std::printf("fake engine: pid %d manifest %s\n", int(::getpid()), manifest.c_str());
@@ -127,7 +327,6 @@ int main(int argc, char** argv) {
     }
     // A fake helper shares the same manifest fixture. It reports a fresh readiness line, holds its
     // process group until stopped, and can fail before/after readiness or ignore SIGINT.
-    const std::string role = arg_after(argc, argv, "--role");
     if (role.rfind("helper", 0) == 0) {
         const json h = m.value("helpers", json::object()).value(role, json::object());
         if (h.contains("env_dump")) {
@@ -160,6 +359,20 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    const std::string reference = arg_after(argc, argv, "--kld-ref");
+    if (!reference.empty()) {
+        const std::string output = arg_after(argc, argv, "--kld-out");
+        std::ifstream metadata(std::filesystem::path(reference) / "kld.json");
+        const auto fixture = json::parse(metadata, nullptr, false);
+        if (output.empty() || !fixture.is_object() ||
+            !std::filesystem::path(reference).is_absolute() || !std::filesystem::path(output).is_absolute() ||
+            !arg_after(argc, argv, "--bc-heat-launch-nonce").empty())
+            return 9;
+        std::this_thread::sleep_for(std::chrono::milliseconds(fixture.value("fake_delay_ms", 0)));
+        std::ofstream(output) << json{{"all", {{"positions", 1}}}}.dump() << '\n';
+        std::ofstream(output + ".rows", std::ios::binary).write("0123456789abcdef", 16);
+        return 0;
+    }
     const std::string plan = arg_after(argc, argv, "--plan-memory");
     if (!plan.empty()) {
         if (m.contains("measure_error")) {
@@ -167,10 +380,41 @@ int main(int argc, char** argv) {
             std::fflush(stdout);
             return 42;
         }
-        std::ofstream(plan) << "{\"plan\": \"measured\"}\n";
-        std::ofstream(arg_after(argc, argv, "--plan-memory-ranks")) << "[{\"rank\": 0}]\n";
-        std::printf("I --plan-memory: wrote %s; engine start-up took %d MiB of MemAvailable; done\n", plan.c_str(),
-                    m.value("engine_mib", 1234));
+        const json cards = m.value("engine_cards", json::array({"0000:01:00.0"}));
+        json plan_doc = {
+            {"plan_version", 1}, {"producer", "radiance --plan-memory (rad0011)"},
+            {"host", json::array()},
+            {"checkpoints", {{"slot_bytes", 1048576}, {"floor_slots", 8}, {"want_slots", 72},
+                              {"from", "engine plan (fake measurement)"}}},
+            {"kv_one_session", {{"bytes", std::max<int64_t>(4096, m.value("max_context", int64_t{4096}))},
+                                  {"from", "engine plan (fake measurement)"}}},
+            {"vram", {{"claimable", 10}, {"statics", 1}, {"elastic", 9}, {"experts", 0}, {"kv", 9},
+                       {"stage", 0}, {"kv_resolved", 9}, {"expert_floor", 0}, {"kv_ceiling", 9},
+                       {"expert_ceiling", 0}, {"from", "engine plan (fake measurement)"},
+                       {"cards", json::array()}}},
+            {"host_pool_mib", m.value("host_pool_mib", 9216)}};
+        for (size_t i = 0; i < cards.size(); ++i)
+            plan_doc["vram"]["cards"].push_back(
+                {{"capacity", 10}, {"free", 10}, {"engine_expert_plane", 0}, {"expert_unit_max", 1}});
+        if (m.value("ngram_placement", std::string()) == "ram")
+            plan_doc["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
+                                        {"residence", "pinned"}, {"from", "engine plan (fake measurement)"},
+                                        {"remedy", ""}});
+        const int64_t engine_resident_mib = m.value("engine_mib", int64_t{1234});
+        if (engine_resident_mib <= 0 || engine_resident_mib > ((int64_t{1} << 53) - 1) / (int64_t{1} << 20))
+            throw std::runtime_error("fake engine_mib is outside the measured wire range");
+        // A non-integral MiB sidecar exercises rad0011's ceiling-to-MiB resident receipt.
+        const int64_t resident_other_bytes = engine_resident_mib * (int64_t{1} << 20) - 1024;
+        json ranks = {{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
+                      {"gpu", json::array()},
+                      {"resident_other_bytes", resident_other_bytes}};
+        for (const auto& bdf : cards)
+            ranks["gpu"].push_back({{"bdf", bdf}, {"required_bytes", 10}, {"fixed_bytes", 1},
+                                    {"claimable_bytes", 10}, {"evidence", "rad0011 fake measurement"}});
+        std::ofstream(plan) << plan_doc.dump(2) << '\n';
+        std::ofstream(arg_after(argc, argv, "--plan-memory-ranks")) << ranks.dump(2) << '\n';
+        std::printf("I --plan-memory: wrote %s; engine start-up took %lld MiB of MemAvailable; done\n", plan.c_str(),
+                    static_cast<long long>(engine_resident_mib));
         return 0;
     }
     if (m.contains("exit_at_start")) return m.at("exit_at_start").get<int>();

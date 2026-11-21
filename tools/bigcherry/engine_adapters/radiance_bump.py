@@ -41,7 +41,7 @@ AbiReader = Callable[[Path], "tuple[int, int | None]"]
 ABI_HEADER = Path("abi") / "rad_abi.h"
 ABI_MACRO = "RAD_ABI_VERSION"
 #: the engine loads every library in this directory of its runtime home as a plugin and refuses one without the symbol
-PLUGIN_DIR = "kernels"
+PLUGIN_DIRS = ("kernels", "architectures", "quantizers")
 #: the engine's own kernel plugin, built from the engine's abi/ headers: its layout fingerprint is the reference
 REFERENCE_PLUGIN = "libr4d.so"
 _ABI_DECLARATION = re.compile(rf"^[ \t]*(?:#[ \t]*define[ \t]+{ABI_MACRO}[ \t]+|.*\b{ABI_MACRO}\b[ \t]*=[ \t]*)\(?[ \t]*(\d+)", re.MULTILINE)
@@ -180,27 +180,31 @@ class ComponentGate:
             return []
         self._require_built()
         expected = expected_abi_version(self.source_dir)
-        plugins = sorted((self.home / PLUGIN_DIR).glob("*.so"))
+        plugins = sorted(
+            so for directory in PLUGIN_DIRS for so in (self.home / directory).glob("*.so")
+        )
         if not plugins:
-            raise BumpCheckError(f"no plugin libraries in {self.home / PLUGIN_DIR}")
+            searched = ", ".join(str(self.home / directory) for directory in PLUGIN_DIRS)
+            raise BumpCheckError(f"no plugin libraries in {searched}")
         for output in (o for component in self.declared.values() for o in component.outputs):
-            if output.startswith(f"{PLUGIN_DIR}/") and not (self.home / output).is_file():
+            if output.split("/", 1)[0] in PLUGIN_DIRS and not (self.home / output).is_file():
                 raise BumpCheckError(f"declared plugin {output} is missing from {self.home}")
-        reference = self.home / PLUGIN_DIR / REFERENCE_PLUGIN
+        reference = self.home / "kernels" / REFERENCE_PLUGIN
         if not reference.is_file():
-            raise BumpCheckError(f"the engine's own plugin {REFERENCE_PLUGIN} is missing from {self.home / PLUGIN_DIR}")
+            raise BumpCheckError(f"the engine's own plugin {REFERENCE_PLUGIN} is missing from {self.home / 'kernels'}")
         _, expected_layout = self.abi_reader(reference)
         if expected_layout is None:
             raise BumpCheckError(f"{REFERENCE_PLUGIN} exports no rad_plugin_abi_layout; the ABI check needs updating for this revision")
         failures = []
         for so in plugins:
+            label = so.relative_to(self.home).as_posix()
             version, layout = self.abi_reader(so)
             if version != expected:
-                failures.append(f"{so.name}: rad_plugin_abi_version() is {version}, the engine source declares {ABI_MACRO} {expected}")
+                failures.append(f"{label}: rad_plugin_abi_version() is {version}, the engine source declares {ABI_MACRO} {expected}")
             if layout is None:
-                failures.append(f"{so.name}: exports no rad_plugin_abi_layout (add RAD_PLUGIN_ABI_LAYOUT_EXPORT, rad_abi_layout.h)")
+                failures.append(f"{label}: exports no rad_plugin_abi_layout (add RAD_PLUGIN_ABI_LAYOUT_EXPORT, rad_abi_layout.h)")
             elif layout != expected_layout:
-                failures.append(f"{so.name}: rad_plugin_abi_layout() is {layout:#018x}, {REFERENCE_PLUGIN} reports {expected_layout:#018x}")
+                failures.append(f"{label}: rad_plugin_abi_layout() is {layout:#018x}, {REFERENCE_PLUGIN} reports {expected_layout:#018x}")
         return failures
 
     def component_tests(self) -> list[str]:

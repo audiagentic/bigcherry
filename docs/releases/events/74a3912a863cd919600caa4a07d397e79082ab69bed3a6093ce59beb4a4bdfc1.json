@@ -1,0 +1,17 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_035621_rum07-now-covers-all-advertise_3437",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream/RUM07.md"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Integrated the Sol and GPT design reviews into RUM07: retain V4/K6 as well as both B16 layouts, preserve the independent prefill QK/PV modes, use typed layout tags to avoid the ABI43 I8 option collision, keep Qwen35 draft KV separate, enforce model/head/GQA/page eligibility, and preserve the historical warning-and-resident fallback for packed stream requests.",
+  "timestamp-utc": "2026-11-19T03:56:21.109223Z",
+  "user-summary-candidate": "RUM07 now covers all advertised cache and prefill features with ABI43 callsites, exact row geometry and compatibility-preserving gates.",
+  "validation": [
+    "Updated staged implementation guidance, exact geometry/numeric constraints, focused device gates and acceptance criteria through Planning MCP."
+  ]
+}

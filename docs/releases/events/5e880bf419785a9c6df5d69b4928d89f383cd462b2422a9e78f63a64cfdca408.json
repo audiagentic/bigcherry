@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_031640_added-and-host-verified-a-narr_7165",
+  "files": [
+    "engines/radiance/patches/rad0047_mtp_verify_replay_summary/patch.py",
+    "engines/radiance/patches/rad0047_mtp_verify_replay_summary/patch.toml",
+    "tools/tests/patch/test_radiance_rad0047.py",
+    "tools/tests/patch/test_radiance_mtp_pass_replay.py",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM08.md"
+  ],
+  "plan-item-ids": [
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added a candidate-only replay-key refusal for wide speculative decode with unknown/nonpositive full-KV summary; exact ABI43 apply/replay and compiled host fixture passed.",
+  "timestamp-utc": "2026-11-19T03:16:40.075012Z",
+  "user-summary-candidate": "Added and host-verified a narrow ABI43 guard that prevents wide speculative verification from replaying a cached graph when full-KV split geometry is unknown."
+}

@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_001911_managed-radiance-22-starts-no_7793",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Attach the admitted Radiance engine to a stock one-model HTTP front after startup. Preserve native front aliases and timeouts, and drain the existing engine on listener failure or termination.",
+  "timestamp-utc": "2026-11-20T00:19:11.899213Z",
+  "user-summary-candidate": "Managed Radiance 2.2 starts now open the HTTP listener and report model readiness."
+}

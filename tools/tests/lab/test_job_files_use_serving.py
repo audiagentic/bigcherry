@@ -23,7 +23,7 @@ class JobFileTests(unittest.TestCase):
                 self.assertEqual(doc["server_args"], [])
                 for arm in doc["arms"]:
                     self.assertNotIn("server_args", arm)
-                    self.assertIn(arm["serving"]["layout"], layouts)
+                    self.assertIn(arm["serving"].get("layout") or arm["serving"]["config"], layouts)
                     self.assertFalse([k for k in arm.get("settings", {}) if k.startswith("R3_MOE_WORKER")])
                     self.assertEqual(doc["execution_evidence"], "observe")
                     seen += 1

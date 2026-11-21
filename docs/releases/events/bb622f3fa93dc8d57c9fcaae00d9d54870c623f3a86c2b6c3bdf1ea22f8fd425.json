@@ -1,0 +1,21 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_180256_proved-the-sealed-native-yaml_9446",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/manifest_writer.h",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added an isolated v3 owner-to-draft path: after native snapshot inspection, the session computes the frozen full native key and invokes the real bc-serve writer with an owner-held sealed descriptor; it strictly pins the measuring manifest and checks exact snapshot identity, ordered engine devices and measuring role, then fails closed before named cache, P1, power and GPU startup. The fixture deletes authored YAML after inspector exit and verifies sealed handoff, child reaping and untouched cache tripwire. Writer key validation now derives model and engine build identities independently from selected model/binary and uses the actual plan arguments; re-keyed model/build/args/device mutations are refused. `bc_native_v3_session_test`, `bc_serving_v3_writer_test`, and ordinary v2 `bc_serving_test` passed (1/1 each); no GPU. Production remains v2 and native measurement/replay gates are open.",
+  "timestamp-utc": "2026-11-19T18:02:56.170171Z",
+  "user-summary-candidate": "Proved the sealed native YAML can pass from session inspection through the real v3 measuring-draft writer after the authored file is deleted. The candidate then stops before cache, P1, power, or GPU startup; production remains gated."
+}

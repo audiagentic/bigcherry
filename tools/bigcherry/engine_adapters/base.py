@@ -17,7 +17,7 @@ from abc import ABC, abstractmethod
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, ContextManager
 
 from ..core.engines import ServeSpec
 
@@ -55,6 +55,14 @@ class SidecarSpec:
 
 
 @dataclass(frozen=True)
+class QualityLaunch:
+    argv: tuple[str, ...]
+    cwd: Path | None = None
+    pass_fds: tuple[int, ...] = ()
+    manifest_sha256: str | None = None
+
+
+@dataclass(frozen=True)
 class QualityCommand:
     """One offline quality-measurement process (a KL run) for an arm cell."""
 
@@ -63,6 +71,7 @@ class QualityCommand:
     log_path: Path
     result_path: Path | None            # the JSON document the run writes; None for a reference recording
     timeout_s: float
+    prepare: Callable[[], ContextManager[QualityLaunch]] | None = None
 
 
 @dataclass(frozen=True)

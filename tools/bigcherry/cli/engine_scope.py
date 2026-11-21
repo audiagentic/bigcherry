@@ -28,6 +28,7 @@ SELF = "self"
 _ENGINE_COMMANDS: frozenset[str] = frozenset(
     {
         "patches",
+        "patch-footprint",
         "patch-status",
         "patch-explain",
         "patch-graph",

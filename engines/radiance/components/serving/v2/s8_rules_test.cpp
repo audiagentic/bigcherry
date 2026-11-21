@@ -1,6 +1,9 @@
 // GPU-free RSC11 S8 acceptance: v2 typed measurements, scopes, admission,
 // calibration.
 #include "v2/s8_rules.h"
+#ifdef NDEBUG
+#undef NDEBUG  // Keep this test's assertions live in RelWithDebInfo builds.
+#endif
 #include <cassert>
 #include <iostream>
 #include <string>
@@ -100,6 +103,65 @@ int main() {
   assert(result.host.kv_mib == 1); // 4096 retained tokens x 128 measured bytes
   assert(result.host.reserve_mib == 4);
   assert(result.host.checkpoint_slots.value() == 5);
+  // RUM09: S8 produces an actual retained-KV allocation, which can be
+  // smaller than the measuring start's requested KV capacity when the
+  // measured context x session capacity saturates first. A strict equality
+  // check wrongly rejects an otherwise valid owned measurement.
+  {
+    auto admitted = result.host;
+    admitted.kv_mib += result.host.kv_mib;  // budget larger than measured retention
+    assert(!s8::require_measured_host_tiers(admitted, result.host));
+    assert(!s8::require_measured_host_tiers(result.host, result.host));
+    auto excessive = result.host;
+    excessive.kv_mib = admitted.kv_mib + 1;
+    auto refusal = s8::require_measured_host_tiers(admitted, excessive);
+    assert(refusal && refusal->path == "spec.resources.host.kv_mib");
+    auto wrong_reserve = result.host;
+    wrong_reserve.reserve_mib += 1;
+    refusal = s8::require_measured_host_tiers(admitted, wrong_reserve);
+    assert(refusal && refusal->path == "spec.resources.host.reserve_mib");
+    auto wrong_pool = result.host;
+    wrong_pool.pool_mib += 1;
+    refusal = s8::require_measured_host_tiers(admitted, wrong_pool);
+    assert(refusal && refusal->path == "spec.resources.host.pool_mib");
+  }
+  auto startup_room = result.resource_inputs;
+  const int64_t helper_resident_mib = 8;
+  const int64_t pinned = (result.host.pool_mib + result.host.kv_mib) * MiB;
+  const int64_t committed = pinned + result.host.reserve_mib * MiB + startup_room.ngram_bytes +
+      *result.host.checkpoint_slots * fixture_input.checkpoint_slot_bytes +
+      startup_room.resident_other_bytes + helper_resident_mib * MiB;
+  startup_room.mem_available_bytes = startup_room.cgroup_headroom_bytes = committed;
+  startup_room.pin_available_bytes = pinned;
+  const auto check_startup_room = [&] {
+    return s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                         startup_room, helper_resident_mib);
+  };
+  assert(!check_startup_room());
+  startup_room.mem_available_bytes = committed - 1;
+  const auto ram_shortage = check_startup_room();
+  assert(ram_shortage && ram_shortage->code == s8::ConfigErrorCode::admission_refused);
+  // RUM05 B: a measured RAM n-gram consumer at the boundary needs every
+  // byte of its pinned table. If the *engine* selected disk instead, the
+  // measured plan contains zero n-gram RAM bytes and that same host can
+  // admit the rest of the serving allocations. No guessed RAM margin.
+  auto disk_room = startup_room;
+  disk_room.ngram_bytes = 0;  // measured disk tier: no pinned table
+  assert(!s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                         disk_room, helper_resident_mib));
+  disk_room.ngram_bytes = startup_room.ngram_bytes;  // forced RAM, one byte short
+  assert(s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                        disk_room, helper_resident_mib));
+  // If the other measured allocations alone do not fit, even an n-gram
+  // disk fallback cannot admit this host. Refusal remains exact in bytes.
+  disk_room.ngram_bytes = 0;
+  disk_room.mem_available_bytes = committed - startup_room.ngram_bytes - 1;
+  assert(s8::require_measured_host_room(result.host, 1, fixture_input.checkpoint_slot_bytes,
+                                        disk_room, helper_resident_mib));
+  startup_room.mem_available_bytes = committed;
+  startup_room.cgroup_headroom_bytes = committed - 1;
+  const auto cgroup_shortage = check_startup_room();
+  assert(cgroup_shortage && cgroup_shortage->code == s8::ConfigErrorCode::admission_refused);
   assert(result.helpers.size() == 1 &&
          result.helpers[0].expert_budget_mib == 23548);
   assert(result.transport->max_rows == 512 && result.transport->skip_owned);
@@ -117,6 +179,17 @@ int main() {
   assert(result.live_cadence_ns.value() == 5000000000LL);
   assert(result.evidence_by_path.at("/spec/handoff/transport/max_rows")
              .find("maxrows-run") != std::string::npos);
+
+  auto multirank = fixture_input;
+  multirank.engine_ranks = 3;
+  multirank.resource_inputs.mem_available_bytes = 30 * MiB;
+  multirank.resource_inputs.cgroup_headroom_bytes = 30 * MiB;
+  multirank.resource_inputs.pin_available_bytes = 100 * MiB;
+  const auto multirank_refusal = s8::resolve_s8(multirank, calibrated, now);
+  assert(!multirank_refusal &&
+         multirank_refusal.error().code == s8::ConfigErrorCode::admission_refused);
+  multirank.engine_ranks = 0;
+  assert(!s8::resolve_s8(multirank, calibrated, now));
 
   auto changed = fixture_input;
   changed.resource_inputs.host_embedding_bytes += 3 * MiB;

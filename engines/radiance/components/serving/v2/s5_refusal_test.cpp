@@ -2,6 +2,9 @@
 
 #include <nlohmann/json.hpp>
 
+#ifdef NDEBUG
+#undef NDEBUG  // Keep this test's assertions live in RelWithDebInfo builds.
+#endif
 #include <cassert>
 #include <cstdint>
 #include <string>
@@ -81,6 +84,45 @@ int main() {
     refused = v2::check_engine_plan(expected, live, 0);
     assert(refused && !refused->room_refusal);
 
+    // The calibrated backing fraction applies when the engine allocates its
+    // pools, not merely after it has committed a one-session GPU KV pool.
+    // A measuring start and a serving start must derive the same floor from
+    // the selected calibration, including when experts are already at floor.
+    {
+        constexpr int64_t calibrated_ppm = 600000;  // selected seed in the manifest fixture
+        auto backed = expected;
+        backed.vram.claimable = backed.vram.statics + backed.vram.experts +
+                                backed.vram.stage + 6 * MiB;
+        backed.vram.kv = backed.kv_one_session.bytes;
+        backed.vram.kv_resolved = backed.vram.kv;
+        assert(v2::check_engine_plan(backed, backed, calibrated_ppm));
+        const auto fitted_backing = v2::refit_serving_pools(
+            backed.vram.claimable, backed.vram.statics, backed.vram.experts,
+            backed.vram.stage, backed.vram.expert_floor, backed.vram.kv,
+            backed.kv_one_session.bytes, backed.vram.kv_ceiling, calibrated_ppm);
+        assert(fitted_backing);
+        assert(fitted_backing.value().kv_bytes >=
+               v2::kv_required(backed.vram.kv_ceiling,
+                               backed.kv_one_session.bytes, calibrated_ppm));
+        assert(fitted_backing.value().experts_bytes == backed.vram.experts);
+        assert((fitted_backing.value().weights_mib +
+                fitted_backing.value().kv_mib) * MiB +
+                backed.vram.stage <= backed.vram.claimable);
+        backed.vram.experts = fitted_backing.value().experts_bytes;
+        backed.vram.kv = fitted_backing.value().kv_bytes;
+        backed.vram.kv_resolved = fitted_backing.value().kv_mib * MiB;
+        assert(!v2::check_engine_plan(backed, backed, calibrated_ppm, kBdf));
+        // Preserve the expert ownership floor, rather than silently reducing
+        // its resident set to satisfy an impossible calibrated backing floor.
+        const auto impossible = v2::refit_serving_pools(
+            backed.vram.claimable - 2 * MiB, backed.vram.statics,
+            backed.vram.experts, backed.vram.stage, backed.vram.expert_floor,
+            3 * MiB, backed.kv_one_session.bytes, backed.vram.kv_ceiling,
+            calibrated_ppm);
+        assert(!impossible &&
+               impossible.error().code == v2::ConfigErrorCode::admission_refused);
+    }
+
     // Host/pinned memory near miss: required = exact measured components +
     // measured headroom, not a guessed reserve or a coarse MiB threshold.
     const int64_t pool = 8 * MiB;
@@ -104,5 +146,71 @@ int main() {
            v2::exit_code_of(*invalid) == 2 && !invalid->room_refusal);
     invalid = v2::check_host_room("host_ram", 0, 1, {});
     assert(invalid && invalid->code == v2::ConfigErrorCode::invalid_value);
+    // RUM05: the R9700 measured KV ceiling (347090944) was 1036288 bytes
+    // smaller than the engine's own one-session KV size (348127232).
+    // A budget that caps KV at the ceiling fails admission even against
+    // the very measurement that produced it.
+    v2::EnginePlan r9700 = expected;
+    r9700.vram.statics = 5800083456LL;
+    r9700.vram.experts = 26852414456LL;
+    r9700.vram.expert_floor = 0;
+    r9700.vram.stage = 0;
+    r9700.vram.kv_ceiling = 347090944LL;
+    r9700.vram.kv_resolved = 348127232LL;
+    r9700.kv_one_session.bytes = 348127232LL;
+    r9700.vram.claimable = 32999588856LL;
+    refused = v2::check_engine_plan(r9700, r9700, 0, kBdf);
+    assert(refused && refused->room_refusal);
+    check_wire(*refused, "gpu_room", "vram", 1036288LL, true);
+    // Spending exactly the one-session shortfall from the *elastic expert*
+    // share admits at the boundary, with no hand-picked VRAM allowance.
+    const auto fitted = v2::refit_serving_pools(
+        r9700.vram.claimable, r9700.vram.statics, r9700.vram.experts,
+        r9700.vram.stage, r9700.vram.expert_floor, r9700.vram.kv_ceiling,
+        r9700.kv_one_session.bytes, r9700.vram.kv_ceiling, 0);
+    assert(fitted);
+    assert(fitted.value().experts_bytes < r9700.vram.experts);
+    assert(fitted.value().kv_bytes >= r9700.kv_one_session.bytes);
+    assert(fitted.value().weights_mib * MiB + fitted.value().kv_mib * MiB
+               <= r9700.vram.claimable);
+    assert(fitted.value().experts_bytes >= r9700.vram.expert_floor);
+    const int64_t exact_pool_bytes =
+        (fitted.value().weights_mib + fitted.value().kv_mib) * MiB;
+    const auto exact = v2::refit_serving_pools(
+        exact_pool_bytes, r9700.vram.statics, fitted.value().experts_bytes,
+        0, fitted.value().experts_bytes, r9700.vram.kv_ceiling,
+        r9700.kv_one_session.bytes, r9700.vram.kv_ceiling, 0);
+    assert(exact);
+    const auto one_byte_short = v2::refit_serving_pools(
+        exact_pool_bytes - 1, r9700.vram.statics, fitted.value().experts_bytes,
+        0, fitted.value().experts_bytes, r9700.vram.kv_ceiling,
+        r9700.kv_one_session.bytes, r9700.vram.kv_ceiling, 0);
+    assert(!one_byte_short && one_byte_short.error().code ==
+                 v2::ConfigErrorCode::admission_refused);
+    // Repeat the owner/engine admission using the exact refitted split.
+    // A changed live free-VRAM sample is allowed to change only elastic
+    // experts; the same full-session KV and fixed terms must still pass.
+    v2::EnginePlan planned = r9700;
+    planned.vram.experts = fitted.value().experts_bytes;
+    planned.vram.kv = fitted.value().kv_bytes;
+    planned.vram.kv_resolved = fitted.value().kv_mib * MiB;
+    assert(!v2::check_engine_plan(planned, planned, 0, kBdf));
+    auto drifting = planned;
+    drifting.vram.claimable -= 1;
+    auto live_fit = v2::refit_serving_pools(
+        drifting.vram.claimable, drifting.vram.statics, drifting.vram.experts,
+        drifting.vram.stage, drifting.vram.expert_floor, drifting.vram.kv,
+        drifting.kv_one_session.bytes, drifting.vram.kv_ceiling, 0);
+    assert(live_fit);
+    drifting.vram.experts = live_fit.value().experts_bytes;
+    drifting.vram.kv = live_fit.value().kv_bytes;
+    drifting.vram.kv_resolved = live_fit.value().kv_mib * MiB;
+    assert(!v2::check_engine_plan(planned, drifting, 0, kBdf));
+    r9700.vram.experts -= 1036288LL;
+    assert(!v2::check_engine_plan(r9700, r9700, 0, kBdf));
+    r9700.vram.claimable -= 1;
+    refused = v2::check_engine_plan(r9700, r9700, 0, kBdf);
+    assert(refused && refused->room_refusal);
+    check_wire(*refused, "gpu_room", "vram", 1, true);
     return 0;
 }

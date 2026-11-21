@@ -2,7 +2,7 @@
 // Inactive P1 native publication boundary. The caller must supply the actual
 // engine plan, owner map, selected worker geometry and live host observations.
 // No v1 manifest or calibrated KV target is accepted.
-#include "generated/v2/serving_types.h"
+#include "serving_types.h"
 #include "v2/error.h"
 #include "worker_footprint.h"
 

@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_053720_restored-the-two-historical-in_2579",
+  "files": [
+    "engines/radiance/patches/rad0053_v4_kv_layouts/patch.toml",
+    "engines/radiance/patches/rad0053_v4_kv_layouts/patch.py",
+    "tools/tests/patch/test_radiance_rad0053_54.py"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Restored fp8_v4 and k6_v4 through rad0048's ABI44 descriptor, resident planner, typed attention and standalone/fused writers, and Qwen4exp/Qwen35 historical geometries. On frozen upstream 3deabdaeca17b58bad90d332f4b204cf7bb8a10e, 63 exact edits applied and reapplied byte-identically. Release host checks covered cache configuration, 400/352-byte rows, allocation/binding, Qwen4exp GQA12/GQA6 with MTP/QSA, and Qwen35 with native E4M3 DFlash2. Six selected gfx1201 objects compiled across the final package chain. Comparison against v1.17.0 source commit 19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d matched the device codec bodies after descriptor and tag substitution and checked K6 high-bit packing against both reader sites. A host check reconstructed all 64 K6 codes in each H256 lane. The replay test locks standalone double-then-float and fused float reciprocal arithmetic separately. Historical characterization is carried forward. Integrated new-base serving and recipe promotion remain pending.",
+  "timestamp-utc": "2026-11-19T05:37:20.813161Z",
+  "user-summary-candidate": "Restored the two historical int4-value KV caches for the Radiance bump. Focused host and compile checks passed, and the port preserves the recorded cache layout, quantization and separate DFlash2 cache."
+}
