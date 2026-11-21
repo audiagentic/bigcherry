@@ -365,7 +365,6 @@ struct EnginePlanInputs {
     // OS/dependency seams: only the production default calls the real detector,
     // compiled-in resolver, model/build identity and live P1 probe. Tests supply
     // card-free facts but still call replay_stored_manifest through Session::plan.
-    Callback<ReplayEvidence(const v2::Manifest&)> replay_evidence;
     Callback<v2::P1LiveRoom(const v2::Manifest&, const nlohmann::json&)> replay_live_room;
 
     std::filesystem::path engine_binary;    // empty: <radiance_home>/../bin/radiance

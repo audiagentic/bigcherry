@@ -119,7 +119,6 @@ if(BUILD_TESTING)
     BC_RELEASE_GOLDEN_DIR="${CMAKE_CURRENT_SOURCE_DIR}/release_testdata"
     BC_RELEASE_BINARY_PATH="$<TARGET_FILE:bc-release>")
   add_test(NAME bc_release_install_test COMMAND bc_release_install_test)
-  set_tests_properties(bc_release_install_test PROPERTIES TIMEOUT 300)
   # The shared header must compile at the HIP remote-MoE worker standard.
   add_executable(bc_callback_boundary_cpp17_test EXCLUDE_FROM_ALL callback_boundary_cpp17_test.cpp)
   set_target_properties(bc_callback_boundary_cpp17_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON CXX_EXTENSIONS OFF)
@@ -199,7 +198,6 @@ if(BUILD_TESTING)
     BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>"
     BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_test(NAME bc_session_test COMMAND bc_session_test)
-  set_tests_properties(bc_session_test PROPERTIES TIMEOUT 600)
   add_executable(bc_lab_trace_experiment_test EXCLUDE_FROM_ALL lab_trace_experiment_test.cpp)
   target_link_libraries(bc_lab_trace_experiment_test PRIVATE bc_json_dependency)
   set_target_properties(bc_lab_trace_experiment_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
@@ -334,5 +332,8 @@ if(BUILD_TESTING)
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
-  set_tests_properties(bc_session_stored_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
+  # The owner tests plan every case through plan_engine_only (minutes, not seconds).
+  set_tests_properties(bc_session_test PROPERTIES TIMEOUT 600)
+  set_tests_properties(bc_release_install_test PROPERTIES TIMEOUT 300)
+  set_tests_properties(bc_session_stored_test bc_session_test bc_session_host_start_test bc_release_install_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
 endif()
