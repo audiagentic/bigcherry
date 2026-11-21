@@ -151,14 +151,14 @@
   },
   "totals": {
     "composed_patches": 38,
-    "edits": 711,
-    "anchors": 684,
-    "upstream_anchors": 671,
-    "created_target_anchors": 13,
-    "anchor_sites": 719,
-    "anchor_bytes": 85607,
-    "inserted_bytes": 506950,
-    "created_edits": 27,
+    "edits": 698,
+    "anchors": 670,
+    "upstream_anchors": 646,
+    "created_target_anchors": 24,
+    "anchor_sites": 705,
+    "anchor_bytes": 84472,
+    "inserted_bytes": 508025,
+    "created_edits": 28,
     "upstream_files": 80
   },
   "patches": [
@@ -173,6 +173,7 @@
       "files_touched": [
         "arch/common/rad_block_attn_gated_fp8.h",
         "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "libr4d/bc_kv_rows.h",
         "libr4d/r4d_attn_decode_h256_gqa6.hip",
         "libr4d/r4d_attn_paged_gqa8.hip",
         "libr4d/r4d_attn_prefill_h256_gqa6.hip",
@@ -180,7 +181,6 @@
         "libr4d/r4d_model_bf16.hip",
         "libr4d/r4d_plugin.h",
         "libr4d/r4d_qk_norm_rope_gate.hip",
-        "libr4d/r4d_rows.cpp",
         "libr4d/r4d_shapes.cpp",
         "libref/ref_attn.cpp",
         "tests/arch_test.cpp"
@@ -194,7 +194,6 @@
         "libr4d/r4d_model_bf16.hip",
         "libr4d/r4d_plugin.h",
         "libr4d/r4d_qk_norm_rope_gate.hip",
-        "libr4d/r4d_rows.cpp",
         "libr4d/r4d_shapes.cpp",
         "libref/ref_attn.cpp",
         "tests/arch_test.cpp"
@@ -202,13 +201,13 @@
       "created_files": [
         "libr4d/r4d_b16_kv.h"
       ],
-      "edits": 98,
-      "anchors": 97,
-      "upstream_anchors": 97,
-      "created_target_anchors": 0,
-      "anchor_sites": 116,
-      "anchor_bytes": 6138,
-      "inserted_bytes": 22905,
+      "edits": 97,
+      "anchors": 96,
+      "upstream_anchors": 93,
+      "created_target_anchors": 3,
+      "anchor_sites": 115,
+      "anchor_bytes": 6030,
+      "inserted_bytes": 22830,
       "created_edits": 1
     },
     {
@@ -227,6 +226,7 @@
         "core/engine_bringup.cpp",
         "core/mem/kv.cpp",
         "core/mem/packed_kv.h",
+        "libr4d/bc_kv_rows.h",
         "libr4d/r4d_attn_decode_h256_gqa6.hip",
         "libr4d/r4d_attn_paged_gqa8.hip",
         "libr4d/r4d_attn_paged_h256_gqa6.hip",
@@ -235,7 +235,6 @@
         "libr4d/r4d_model_bf16.hip",
         "libr4d/r4d_plugin.h",
         "libr4d/r4d_qk_norm_rope_gate.hip",
-        "libr4d/r4d_rows.cpp",
         "tests/arch_test.cpp",
         "tests/bc_b16_kv_runtime_test.cpp",
         "tests/config_test.cpp"
@@ -254,18 +253,17 @@
         "libr4d/r4d_model_bf16.hip",
         "libr4d/r4d_plugin.h",
         "libr4d/r4d_qk_norm_rope_gate.hip",
-        "libr4d/r4d_rows.cpp",
         "tests/arch_test.cpp",
         "tests/config_test.cpp"
       ],
       "created_files": [],
-      "edits": 62,
-      "anchors": 62,
-      "upstream_anchors": 50,
-      "created_target_anchors": 12,
-      "anchor_sites": 73,
-      "anchor_bytes": 6241,
-      "inserted_bytes": 28093,
+      "edits": 58,
+      "anchors": 58,
+      "upstream_anchors": 41,
+      "created_target_anchors": 17,
+      "anchor_sites": 69,
+      "anchor_bytes": 5825,
+      "inserted_bytes": 27765,
       "created_edits": 0
     },
     {
@@ -465,42 +463,6 @@
       "created_edits": 1
     },
     {
-      "patch": "rad0049_qwen4exp_e4m3_kv",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
-        "libr4d/r4d_attn_paged_gqa8.hip",
-        "libr4d/r4d_plugin.h",
-        "libr4d/r4d_qk_norm_rope_gate.hip",
-        "libr4d/r4d_rows.cpp",
-        "libr4d/r4d_selftest.cpp",
-        "tests/arch_test.cpp"
-      ],
-      "upstream_files": [
-        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
-        "libr4d/r4d_attn_paged_gqa8.hip",
-        "libr4d/r4d_plugin.h",
-        "libr4d/r4d_qk_norm_rope_gate.hip",
-        "libr4d/r4d_rows.cpp",
-        "libr4d/r4d_selftest.cpp",
-        "tests/arch_test.cpp"
-      ],
-      "created_files": [],
-      "edits": 28,
-      "anchors": 28,
-      "upstream_anchors": 28,
-      "created_target_anchors": 0,
-      "anchor_sites": 30,
-      "anchor_bytes": 2373,
-      "inserted_bytes": 14338,
-      "created_edits": 0
-    },
-    {
       "patch": "rad0048_abi44_kv_contract",
       "sources": [
         "radiance",
@@ -599,12 +561,12 @@
       "files_touched": [
         "arch/qwen35_fp8/qwen35_fp8.cpp",
         "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "libr4d/bc_kv_rows.h",
         "libr4d/r4d.h",
         "libr4d/r4d_attn_paged_gqa8.hip",
         "libr4d/r4d_attn_paged_h128_gqa4.hip",
         "libr4d/r4d_attn_paged_h256_gqa6.hip",
         "libr4d/r4d_plugin.h",
-        "libr4d/r4d_rows.cpp",
         "tests/arch_test.cpp"
       ],
       "upstream_files": [
@@ -615,17 +577,16 @@
         "libr4d/r4d_attn_paged_h128_gqa4.hip",
         "libr4d/r4d_attn_paged_h256_gqa6.hip",
         "libr4d/r4d_plugin.h",
-        "libr4d/r4d_rows.cpp",
         "tests/arch_test.cpp"
       ],
       "created_files": [],
-      "edits": 24,
-      "anchors": 24,
-      "upstream_anchors": 24,
-      "created_target_anchors": 0,
-      "anchor_sites": 25,
-      "anchor_bytes": 1947,
-      "inserted_bytes": 21184,
+      "edits": 22,
+      "anchors": 22,
+      "upstream_anchors": 19,
+      "created_target_anchors": 3,
+      "anchor_sites": 23,
+      "anchor_bytes": 1725,
+      "inserted_bytes": 21014,
       "created_edits": 0
     },
     {
@@ -663,6 +624,45 @@
       "anchor_bytes": 3767,
       "inserted_bytes": 8728,
       "created_edits": 0
+    },
+    {
+      "patch": "rad0049_qwen4exp_e4m3_kv",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "libr4d/bc_kv_rows.h",
+        "libr4d/r4d_attn_paged_gqa8.hip",
+        "libr4d/r4d_plugin.h",
+        "libr4d/r4d_qk_norm_rope_gate.hip",
+        "libr4d/r4d_rows.cpp",
+        "libr4d/r4d_selftest.cpp",
+        "tests/arch_test.cpp"
+      ],
+      "upstream_files": [
+        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "libr4d/r4d_attn_paged_gqa8.hip",
+        "libr4d/r4d_plugin.h",
+        "libr4d/r4d_qk_norm_rope_gate.hip",
+        "libr4d/r4d_rows.cpp",
+        "libr4d/r4d_selftest.cpp",
+        "tests/arch_test.cpp"
+      ],
+      "created_files": [
+        "libr4d/bc_kv_rows.h"
+      ],
+      "edits": 22,
+      "anchors": 21,
+      "upstream_anchors": 21,
+      "created_target_anchors": 0,
+      "anchor_sites": 23,
+      "anchor_bytes": 1984,
+      "inserted_bytes": 15986,
+      "created_edits": 1
     },
     {
       "patch": "rad0042_kv_b16_selftest",
@@ -1502,26 +1502,6 @@
       "patch_count": 13
     },
     {
-      "path": "libr4d/r4d_rows.cpp",
-      "patch_ids": [
-        "rad0012_helper_kernel_config",
-        "rad0032_ts3_duplex",
-        "rad0033_ts3_once",
-        "rad0045_expert_route_replay",
-        "rad0046_retained_moe_rows",
-        "rad0049_qwen4exp_e4m3_kv",
-        "rad0051_b16_kv_kernels",
-        "rad0052_b16_kv_geometries",
-        "rad0053_v4_kv_layouts",
-        "rad0054_attn_prefill_fp8"
-      ],
-      "anchors": 45,
-      "anchor_sites": 45,
-      "anchor_bytes": 2853,
-      "inserted_bytes": 44389,
-      "patch_count": 10
-    },
-    {
       "path": "arch/qwen35_fp8/qwen35_fp8.cpp",
       "patch_ids": [
         "rad0019_vtp14_n2_tp_ownership_fp8",
@@ -1597,6 +1577,23 @@
       "anchor_bytes": 545,
       "inserted_bytes": 2084,
       "patch_count": 8
+    },
+    {
+      "path": "libr4d/r4d_rows.cpp",
+      "patch_ids": [
+        "rad0012_helper_kernel_config",
+        "rad0032_ts3_duplex",
+        "rad0033_ts3_once",
+        "rad0045_expert_route_replay",
+        "rad0046_retained_moe_rows",
+        "rad0049_qwen4exp_e4m3_kv",
+        "rad0054_attn_prefill_fp8"
+      ],
+      "anchors": 20,
+      "anchor_sites": 20,
+      "anchor_bytes": 1377,
+      "inserted_bytes": 13054,
+      "patch_count": 7
     },
     {
       "path": "libr4d/r4d_plugin.h",

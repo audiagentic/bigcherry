@@ -1,22 +1,27 @@
 """Exact-source replay and host registry checks for Flash-Next native E4M3 KV."""
 from __future__ import annotations
 
-import re
-import os
 import json
-import tempfile
+import os
+import re
 import shutil
 import subprocess
 import sys
+import tempfile
 import unittest
 from pathlib import Path
 
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _vtp_promotion_support import (
+    PATCHES,
+    assert_promoted_recipe,
+    load_patch_files,
+    patched_pinned_source,
+)
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PACKAGE = "rad0049_qwen4exp_e4m3_kv"
@@ -55,7 +60,7 @@ class Qwen4expNativeFp8Tests(unittest.TestCase):
             self.assertEqual(snapshot, {patch.path: (root / patch.path).read_bytes() for patch in files})
 
             # RUM11: exercise the actual source-generated page16 row and its card selftest.
-            rows = (root / "libr4d/r4d_rows.cpp").read_text()
+            rows = (root / "libr4d/bc_kv_rows.h").read_text()
             self.assertIn('cQkNormRopeGateKvH256Page16Fp8[]', rows)
             self.assertIn('C_EQ("block_size", 16), C_IN("kv_dtype", "fp8_e4m3")', rows)
             self.assertIn('ROW(cQkNormRopeGateKvH256Page16Fp8)', rows)
@@ -169,7 +174,7 @@ class Qwen4expNativeFp8Tests(unittest.TestCase):
                  "--source", str(root / "libr4d"),
                  "--rules", str(REPO / "engines/radiance/components/libr3/rewrites.txt"),
                  "--native", str(REPO / "engines/radiance/components/libr3/native"), "--check"],
-                capture_output=True, text=True)
+                check=False, capture_output=True, text=True)
             self.assertEqual(rewritten.returncode, 0, rewritten.stdout + rewritten.stderr)
             self.assertEqual(json.loads(rewritten.stdout)["failures"], {})
 

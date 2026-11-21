@@ -474,18 +474,13 @@ PATCHES += (
         _before("b16-plugin-declarations", "int     r4d_rad_attn_prefill_h256_gqa12_fp8(",
                 _b16_declarations(), "r4d_rad_kv_store_b16i8("),
     )),
-    FilePatch(path="libr4d/r4d_rows.cpp", language="none", edits=(
+    FilePatch(path="libr4d/bc_kv_rows.h", language="none", edits=(
         _before("b16-register-constraints", "#define BC_Q4_FP8_ATTN_BASE(",
                 _B16_CONSTRAINTS, "#define BC_B16_QSA_CONSTRAINTS("),
         _before("b16-register-rows", "#define BC_Q4_FP8_ATTN_ROWS(",
                 _B16_ROWS, "#define BC_B16_QSA_ROWS("),
-        _replace("b16-register-chain-fused", '        "qk_norm_rope_gate_kv_store_fp8",\n',
-                 '        "qk_norm_rope_gate_kv_store_fp8",\n'
-                 '        "qk_norm_rope_gate_kv_store_b16f8", "qk_norm_rope_gate_kv_store_b16i8",\n'),
-        _replace("b16-register-chain-decode",
-                 '        "attn_decode_h256_gqa12_fp8kv", "attn_decode_h256_gqa6_bs4_fp8kv",\n',
-                 '        "attn_decode_h256_gqa12_fp8kv", "attn_decode_h256_gqa6_bs4_fp8kv",\n'
-                 '        "attn_decode_h256_gqa12_b16f8", "attn_decode_h256_gqa12_b16i8",\n'),
+        _before("b16-kv-shared-chain", "/* BC_KV_CHAIN_APPEND */",
+                '        "qk_norm_rope_gate_kv_store_b16f8",\n        "qk_norm_rope_gate_kv_store_b16i8",\n        "attn_decode_h256_gqa12_b16f8",\n        "attn_decode_h256_gqa12_b16i8",\n/* BC_KV_CHAIN_rad0051 */\n', '/* BC_KV_CHAIN_rad0051 */'),
     )),
     FilePatch(path="libr4d/r4d_shapes.cpp", language="none", edits=(
         _before("b16-shapes-header", '#include "r4d_plugin.h"\n', '#include "rad_builder.h"\n',
