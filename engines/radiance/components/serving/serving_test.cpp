@@ -34,6 +34,7 @@
 #include <fcntl.h>
 #include <netinet/in.h>
 #include <sys/mman.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
@@ -784,6 +785,35 @@ void measured_plan_cache(Fixture& t) {
     const std::string eid = sv::engine_identity(bin, t.root / "engine/runtime-home");
     (void)t.file("engine/runtime-home/kernels/libr4d.so", "kernels-v2");
     assert(sv::engine_identity(bin, t.root / "engine/runtime-home") != eid);
+    // Identity validation must not allocate entire runtime libraries on the
+    // heap: that changes live host room while a native start measures it.
+    // The child derives a memory limit from its own address space and the
+    // fixture size; there is no machine-specific memory budget in this test.
+    {
+        const fs::path large = t.file("engine/runtime-home/kernels/large-test.so",
+                                      std::string(32u * 1024u * 1024u, 'x'));
+        const std::string expected = sv::engine_identity(bin, t.root / "engine/runtime-home");
+        const pid_t child = ::fork();
+        assert(child >= 0);
+        if (child == 0) {
+            size_t pages = 0;
+            std::ifstream("/proc/self/statm") >> pages;
+            struct rlimit limit{};
+            if (pages == 0 || ::getrlimit(RLIMIT_AS, &limit) != 0) _exit(2);
+            const rlim_t extra = static_cast<rlim_t>(fs::file_size(large) / 8);
+            const rlim_t requested = static_cast<rlim_t>(pages) * static_cast<rlim_t>(::sysconf(_SC_PAGESIZE)) + extra;
+            limit.rlim_cur = limit.rlim_max == RLIM_INFINITY ? requested : std::min(requested, limit.rlim_max);
+            if (::setrlimit(RLIMIT_AS, &limit) != 0) _exit(3);
+            try {
+                _exit(sv::engine_identity(bin, t.root / "engine/runtime-home") == expected ? 0 : 4);
+            } catch (...) {
+                _exit(5);
+            }
+        }
+        int status = 0;
+        assert(::waitpid(child, &status, 0) == child);
+        assert(WIFEXITED(status) && WEXITSTATUS(status) == 0);
+    }
     // The key covers the planning inputs, the card and the host pool the plan echoes; not the memory outputs
     // the plan feeds (host KV tier, headroom) nor where the engine listens or lives (port, runtime home, model
     // path).

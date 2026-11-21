@@ -10,6 +10,7 @@
 #include "rad_format.h"
 
 #include <algorithm>
+#include <array>
 #include <cerrno>
 #include <cstring>
 #include <spawn.h>
@@ -67,6 +68,30 @@ std::string read_file(const fs::path& p) {
     std::ostringstream s;
     s << in.rdbuf();
     return s.str();
+}
+
+// Hash runtime binaries without materialising them in the serving owner's
+// heap. Repeated full-file string copies compete with live host admission and
+// an ostream can silently return a truncated string if an allocation fails;
+// a short/error read must refuse identity rather than invent a new digest.
+std::string file_sha256_checked(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    if (!in) throw std::runtime_error("cannot read " + path.string());
+    const uintmax_t expected = fs::file_size(path);
+    Sha256 digest;
+    std::array<char, 64 * 1024> chunk{};
+    uintmax_t received = 0;
+    while (in) {
+        in.read(chunk.data(), static_cast<std::streamsize>(chunk.size()));
+        const std::streamsize n = in.gcount();
+        if (n > 0) {
+            digest.update(std::string_view(chunk.data(), static_cast<size_t>(n)));
+            received += static_cast<uintmax_t>(n);
+        }
+    }
+    if (!in.eof() || received != expected)
+        throw std::runtime_error("runtime identity: incomplete or changed file " + path.string());
+    return digest.hex_digest();
 }
 
 // What is not part of what decides whether a measurement applies (spec section 5.1): the host KV tier and headroom (memory
@@ -193,8 +218,8 @@ std::string engine_identity(const fs::path& binary, const fs::path& radiance_hom
     for (const auto& e : fs::recursive_directory_iterator(radiance_home))
         if (e.is_regular_file()) files.push_back(fs::relative(e.path(), radiance_home));
     std::sort(files.begin(), files.end());
-    std::string text = "binary\n" + sha256_hex(read_file(binary)) + "\n";
-    for (const auto& f : files) text += f.generic_string() + "\n" + sha256_hex(read_file(radiance_home / f)) + "\n";
+    std::string text = "binary\n" + file_sha256_checked(binary) + "\n";
+    for (const auto& f : files) text += f.generic_string() + "\n" + file_sha256_checked(radiance_home / f) + "\n";
     return sha256_hex(text);
 }
 
