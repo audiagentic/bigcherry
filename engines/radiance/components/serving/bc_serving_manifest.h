@@ -16,6 +16,8 @@
 #include <string>
 #include <vector>
 
+#include "callback_boundary.h"
+
 namespace rad { struct Config; class Engine; class StallWatch; }
 namespace bc::serving::v2 { struct EnginePlan; struct Manifest; enum class PlanUse; }
 
@@ -26,7 +28,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv);
 
 /* One typed production entry: preserve the vendor's YAML entrypoint exactly
  * as a callable and let owned serving admission handle only managed starts. */
-int bc_serving_engine_entry(int argc, char** argv, int (*run_stock)(int, char**));
+int bc_serving_engine_entry(int argc, char** argv, const bc::serving::callback::Guarded<int(int, char**)>& run_stock);
 
 /* After rad0011 extracts launch flags, prepare the single native Config from the strict
  * v3 snapshot. Returns 1 when prepared, 0 for other starts, and -1 on refusal. */

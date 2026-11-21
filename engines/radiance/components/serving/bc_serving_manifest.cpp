@@ -14,6 +14,7 @@
 #include "util/stallwatch.h"
 #include "bc_plan_memory.h"
 #include "hf_model.h"
+#include <iostream>
 #include <atomic>
 #include <chrono>
 #include <csignal>
@@ -621,7 +622,7 @@ bool bc_serving_mark_given(std::map<std::string, std::string>* given) {
 // native inspection precedes --manifest, and plan flags are extracted only
 // after the strict manifest reader sees measuring vs serving.
 #ifdef BC_RAD_NATIVE_FLEET_CONFIG
-int bc_serving_engine_entry(int argc, char** argv, int (*run_stock)(int, char**)) {
+int bc_serving_engine_entry(int argc, char** argv, const bc::serving::callback::Guarded<int(int, char**)>& run_stock) {
     if (const auto rc = bc::serving::inspect_native_fleet_config_command(argc, argv); rc.has_value())
         return *rc;
     char** const original_argv = argv;
@@ -631,8 +632,14 @@ int bc_serving_engine_entry(int argc, char** argv, int (*run_stock)(int, char**)
     rad::Config cfg;
     const int native_config = bc_serving_take_native_config(&cfg);
     if (native_config < 0) return 2;
-    if (native_config == 0 && argv == original_argv)
-        return run_stock(argc, argv);
+    if (native_config == 0 && argv == original_argv) {
+        const auto stock = run_stock.invoke("stock YAML entry", argc, argv);
+        if (!stock) {
+            std::cerr << "radiance: " << stock.error().message << "\n";
+            return 2;
+        }
+        return stock.value();
+    }
     if (native_config == 0 &&
         (rad::config_parse(argc, argv, &cfg) != RAD_OK || !bc_serving_mark_given(&cfg.given)))
         return 2;

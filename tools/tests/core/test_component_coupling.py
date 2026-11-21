@@ -50,7 +50,7 @@ class ComponentCouplingTests(unittest.TestCase):
         mapped = {f["radiance_option"] for f in contract["field"] if f.get("radiance_option")}
         self.assertGreater(len(mapped), 100)
         self.assertEqual(len(mapped), sum(bool(f.get("radiance_option")) for f in contract["field"]))
-        bridge = (PATCH_ROOT / "rad0009_serving_manifest/patch.py").read_text()
+        bridge = (serving.root / "bc_serving_manifest.cpp").read_text()
         self.assertIn("kEnvBindings", bridge)
         self.assertIn("bc_serving_engine_argv", bridge)
 
