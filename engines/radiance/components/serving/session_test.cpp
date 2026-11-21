@@ -1,10 +1,13 @@
 // RSC02 step 1: the session owner's lifecycle, card-free, against a fake engine (session_fake_engine.cpp) that
-// serves /health and /v1/completions and misbehaves on request. Ported from the Python supervisor's
+// serves /health and /v1/completions and misbehaves on request (TEST_FAKE_BEHAVIOUR). Every start is a native (v3)
+// one: the engine's plan is the real plan step (plan_engine_only) over the card-free native host of
+// test_native_session_fixture.h, so the owner launches from a sealed manifest, root and environment as in production. Ported from the Python supervisor's
 // fake-process tests (tools/tests/serving/test_supervisor.py): ordered start and stop, a failure at every stage
 // unwinds what started, a survivor is never reported stopped, one session at a time, stop through the control
 // socket only, inherited configuration never reaches a child.
 #include "power_transaction.h"
 #include "session.h"
+#include "test_native_session_fixture.h"
 
 #include <rad_abi.h>
 
@@ -44,19 +47,10 @@ using namespace std::chrono_literals;
 
 namespace {
 
-int free_port() {
-    const int fd = ::socket(AF_INET, SOCK_STREAM, 0);
-    sockaddr_in a{};
-    a.sin_family = AF_INET;
-    a.sin_addr.s_addr = htonl(INADDR_LOOPBACK);
-    ::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a);
-    socklen_t len = sizeof a;
-    ::getsockname(fd, reinterpret_cast<sockaddr*>(&a), &len);
-    ::close(fd);
-    return ntohs(a.sin_port);
-}
+int free_port() { return bc::test::free_port(); }
 
 fs::path g_root;
+fs::path g_host; // the card-free native host every start plans against
 int g_case = 0;
 // owners still running when an assertion aborts the test: stopped (SIGTERM: they stop their engines) so none is
 // orphaned
@@ -75,6 +69,8 @@ struct Case {
     int helpers = 0;
     bool capture_owner_log = false;
     ss::Session session;
+    ss::EngineStart prepared;
+    bool planned = false;
 
     explicit Case(const std::string& name) : run(g_root / (std::to_string(++g_case) + "-" + name)) {
         fs::create_directories(run);
@@ -84,20 +80,10 @@ struct Case {
         session.timing.canary_timeout = 5s;
         session.timing.stop_grace = 1s;
         session.timing.poll = 20ms;
-        session.plan = [this](const fs::path& rd, const ss::Hooks& hooks) {
-            Json m = behaviour;
-            m["port"] = port;
-            const fs::path manifest = rd / "fake-manifest.json";
-            std::ofstream(manifest) << m.dump();
-            ss::EngineStart s;
-            s.manifest = manifest;
-            s.argv = {BC_FAKE_ENGINE, "--manifest", manifest.string(), "--role", "engine"};
-            s.runtime = {
-                {"RADIANCE_HOME", "/runtime"}, {"ROCR_VISIBLE_DEVICES", "3"}, {"HIP_VISIBLE_DEVICES", "0"}};
-            s.port = port;
-            s.summary = {{"config", "fake"}};
-            if (m.contains("shm")) {
-                s.handoff_shm = m.at("shm").get<std::string>();
+        session.plan = [this](const fs::path&, const ss::Hooks& hooks) {
+            ss::EngineStart s = prepared;
+            if (behaviour.contains("shm")) {
+                s.handoff_shm = behaviour.at("shm").get<std::string>();
                 if (hooks.selected_segment) {
                     const auto status =
                         hooks.selected_segment.invoke("session.test.selected_segment", s.handoff_shm);
@@ -105,6 +91,7 @@ struct Case {
                         throw ss::PlanFailed(status->message);
                 }
             }
+            const fs::path manifest = run / "fake-manifest.json";
             for (int i = 0; i < helpers; ++i) {
                 const std::string role = "helper" + std::to_string(i);
                 ss::HelperStart h;
@@ -119,8 +106,24 @@ struct Case {
         };
     }
 
+    // The engine's plan is made here, in the test process, the way `bc-serve` plans before the owner exists: the
+    // real plan step (inspect, measure, seal) over the native host, with the fake engine's behaviour in its
+    // environment. The owner then launches that sealed plan. Helpers (card-free fakes) are added to it in the owner.
+    void prepare() {
+        if (planned)
+            return;
+        planned = true;
+        Json m = behaviour;
+        m["port"] = port;
+        std::ofstream(run / "fake-manifest.json") << m.dump(); // the fake helpers' behaviour
+        const auto native = bc::test::native_session_inputs(g_host, run / "native", port, behaviour);
+        fs::create_directories(run / "plan");
+        prepared = ss::plan_engine_only(native.inputs, run / "plan", bc::test::standalone_plan_hooks());
+    }
+
     // the owner in its own process, as `bc-serve serve` runs
     pid_t owner() {
+        prepare();
         std::cout.flush();
         const pid_t pid = ::fork();
         if (pid == 0) {
@@ -208,32 +211,11 @@ bool any_error_contains(const Json& record, const std::string& needle) {
 }
 
 void feature_state_start_status_and_warning() {
+    // A real engine-only native start: the owner records its host facts before any child, publishes the feature
+    // states of the sealed manifest (status and file agree), and reports that no calibration applies.
     Case c("feature-state");
     c.capture_owner_log = true;
-    c.helpers = 1;
     c.session.publish_feature_states = true;
-    c.behaviour["spec"] = {
-        {"intent", {{"service", {{"profile", "production"}, {"max_context_tokens", 32768}}}}},
-        {"resources", {{"host", {{"pool_mib", 1024}, {"kv_mib", 4096}}}}},
-        {"processes", {
-            {"helpers", Json::array({{{"role", "helper0"}}})},
-            {"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}},
-                        {"execution", {{"num_speculative_tokens", 2}, {"ngram_placement", "disk"}}},
-                        {"vision", {{"vision_tower_placement", "gpu"}, {"mm_max_patches", 64}}}}},
-            {"helper_common", {{"combine", {{"enabled", false}}}}},
-        }},
-        {"handoff", {{"placement", {{"live_policy_state", {
-            {"requested", "off"}, {"configured", false},
-            {"reason_code", "calibration_key_absent"},
-            {"reason_detail", "no matching calibration"},
-        }}}}}},
-    };
-    c.behaviour["provenance"] = {{"/spec/handoff/placement",
-                                  {{"source", "live policy disabled: orphaned key"}}}};
-    // The fake engine consumes the server port and handoff transport from
-    // any manifest with a spec object, just as it does for stored-v2 tests.
-    c.behaviour["spec"]["processes"]["engine"]["server"] = {{"port", c.port}};
-    c.behaviour["spec"]["handoff"]["transport"] = {{"shm", ""}};
     const pid_t owner = c.owner();
     c.wait_state({"running"});
     const Json host_start = Json::parse(text(c.run / "host-facts.start.v1.json"));
@@ -250,37 +232,64 @@ void feature_state_start_status_and_warning() {
     assert(Json::parse(text(c.run / "feature-states.v1.json")) == features);
     assert(features.at(0).at("feature_id") == "live_policy");
     assert(features.at(0).at("state") == "inactive");
-    assert(features.at(0).at("reason_code") == "calibration_key_absent");
+    assert(features.at(0).at("reason_code") == "no_helpers");
+    assert(features.at(1).at("feature_id") == "mtp" && features.at(1).at("state") == "active");
     assert(reply->at("calibration_record").at("status") == "none");
-    assert(reply->at("calibration_record").at("reason_code") == "calibration_key_absent");
-    assert(features.at(0).at("reason_detail").get<std::string>().find("orphaned key") != std::string::npos);
-    assert(text(c.run / "owner.log").find("WARNING production feature live_policy inactive") != std::string::npos);
-    assert(text(c.run / "owner.log").find("calibration_key_absent") != std::string::npos);
+    assert(reply->at("calibration_record").at("reason_code") == "no_helpers");
+    assert(text(c.run / "owner.log").find("WARNING production feature") == std::string::npos); // engine-only: none
     const auto stopped = ss::control(c.run, "stop", 10s);
     assert(stopped && stopped->value("ok", false));
     assert(exit_code(owner) == 0);
     assert(c.record().at("feature_states") == features);
 
-    // Strict production admission refuses an inactive required feature before
-    // fork/exec, while retaining the diagnostic snapshot in status.
-    Case strict_case("feature-state-strict");
-    strict_case.capture_owner_log = true;
-    strict_case.helpers = 1;
-    strict_case.session.publish_feature_states = true;
-    strict_case.session.strict_production_features = true;
-    strict_case.behaviour = c.behaviour;
-    strict_case.behaviour["spec"]["processes"]["engine"]["server"]["port"] = strict_case.port;
-    const pid_t strict_owner = strict_case.owner();
-    assert(exit_code(strict_owner) != 0);
-    const auto failed = strict_case.record();
-    assert(failed.at("state") == "failed" && failed.at("processes").empty());
-    assert(failed.at("feature_states").is_array());
-    assert(text(strict_case.run / "owner.log").find("strict production feature refusal") != std::string::npos);
+    // A helper-backed manifest whose live policy is inactive: the owner warns in its log, reports the calibration
+    // reason, and strict production admission refuses before any child (the plan's manifest is replaced by a
+    // helper-backed document; nothing past the refusal reads it as a launch manifest).
+    const Json helper_manifest = {
+        {"spec",
+         {{"intent", {{"service", {{"profile", "production"}, {"max_context_tokens", 32768}}}}},
+          {"resources", {{"host", {{"pool_mib", 1024}, {"kv_mib", 4096}}}}},
+          {"processes",
+           {{"helpers", Json::array({{{"role", "helper0"}}})},
+            {"engine", {{"device", {{"gpus", Json::array({"0000:03:00.0"})}}},
+                        {"execution", {{"num_speculative_tokens", 2}, {"ngram_placement", "disk"}}},
+                        {"vision", {{"vision_tower_placement", "gpu"}, {"mm_max_patches", 64}}}}},
+            {"helper_common", {{"combine", {{"enabled", false}}}}}}},
+          {"handoff", {{"placement", {{"live_policy_state", {{"requested", "off"}, {"configured", false},
+                                                              {"reason_code", "calibration_key_absent"},
+                                                              {"reason_detail", "no matching calibration"}}}}}}}}},
+        {"provenance", {{"/spec/handoff/placement", {{"source", "live policy disabled: orphaned key"}}}}}};
+    for (bool strict : {false, true}) {
+        Case h(strict ? "feature-state-strict" : "feature-state-helpers");
+        h.capture_owner_log = true;
+        h.session.publish_feature_states = true;
+        h.session.strict_production_features = strict;
+        h.prepare();
+        h.prepared.pinned_manifest.reset();
+        h.prepared.manifest = h.run / "helper-manifest.json";
+        std::ofstream(h.prepared.manifest) << helper_manifest.dump();
+        const pid_t o = h.owner();
+        assert(exit_code(o) != 0); // strict: refused here; otherwise the manifest is no native launch manifest
+        const auto failed = h.record();
+        assert(failed.at("state") == "failed" && failed.at("processes").empty());
+        assert(failed.at("feature_states").is_array() && failed.at("feature_states").at(0).at("reason_code") ==
+                                                              "calibration_key_absent");
+        assert(failed.at("calibration_record").at("reason_code") == "calibration_key_absent");
+        const std::string log = text(h.run / "owner.log");
+        assert(log.find("WARNING production feature live_policy inactive") != std::string::npos);
+        assert(log.find("calibration_key_absent") != std::string::npos &&
+               log.find("orphaned key") != std::string::npos);
+        assert((log.find("strict production feature refusal") != std::string::npos) == strict);
+    }
 }
 
 void feature_state_invalid_manifest_prevents_child() {
     Case c("feature-invalid");
     c.session.publish_feature_states = true;
+    c.prepare();
+    c.prepared.pinned_manifest.reset();
+    c.prepared.manifest = c.run / "not-a-manifest.json";
+    std::ofstream(c.prepared.manifest) << "{}";
     const pid_t owner = c.owner();
     assert(exit_code(owner) != 0);
     assert(c.record().at("state") == "failed");
@@ -315,10 +324,12 @@ void serve_status_stop() {
     const std::string env = text(c.run / "engine.env");
     assert(env.find("R3_MOE_FP16") == std::string::npos && env.find("BC_MODEL_ROOT") == std::string::npos &&
            env.find("BIGCHERRY_CONFIGS") == std::string::npos);
-    assert(env.find("HIP_VISIBLE_DEVICES=0\n") != std::string::npos &&
+    // the admitted plan's own device visibility replaces the inherited choice; the runtime home is the build's
+    assert(env.find("HIP_VISIBLE_DEVICES=0,1,2\n") != std::string::npos &&
            env.find("HIP_VISIBLE_DEVICES=2,3") == std::string::npos);
-    assert(env.find("ROCR_VISIBLE_DEVICES=3\n") != std::string::npos &&
-           env.find("RADIANCE_HOME=/runtime\n") != std::string::npos);
+    assert(env.find("ROCR_VISIBLE_DEVICES=0,1,2\n") != std::string::npos &&
+           env.find("\nRADIANCE_HOME=/runtime\n") == std::string::npos &&
+           env.find("\nRADIANCE_HOME=/") != std::string::npos);
     assert(env.find("RSC02_TEST_KEEP=yes\n") != std::string::npos); // the runtime's own environment stays
     for (const char* v :
          {"R3_MOE_FP16", "BC_MODEL_ROOT", "BIGCHERRY_CONFIGS", "HIP_VISIBLE_DEVICES", "RSC02_TEST_KEEP"})
@@ -709,11 +720,9 @@ void start_detached_runs_and_stops() {
     Case c("detached");
     // the detached owner is this test binary in its owner mode (main below), as `bc-serve start` re-runs
     // `serve`
-    Json behaviour = {{"port", c.port}};
-    std::ofstream(c.run / "fake-manifest.json") << behaviour.dump();
     const std::vector<std::string> self = {fs::read_symlink("/proc/self/exe").string(), "--owner",
-                                           c.run.string(), std::to_string(c.port)};
-    assert(ss::start_detached(self, c.run, 20s) == 0);
+                                           c.run.string(), std::to_string(c.port), g_host.string(), "{}"};
+    assert(ss::start_detached(self, c.run, 60s) == 0);
     const auto status = ss::control(c.run, "status", 2s);
     assert(status && status->at("state") == "running");
     const int owner = status->at("owner_pid");
@@ -724,8 +733,9 @@ void start_detached_runs_and_stops() {
     assert(!ss::running(owner) && gone(owner));
     // a start whose session fails reports the failure
     Case f("detached-fail");
-    std::ofstream(f.run / "fake-manifest.json") << Json({{"port", f.port}, {"exit_at_start", 3}}).dump();
-    assert(ss::start_detached({self[0], "--owner", f.run.string(), std::to_string(f.port)}, f.run, 20s) == 1);
+    assert(ss::start_detached({self[0], "--owner", f.run.string(), std::to_string(f.port), g_host.string(),
+                               Json({{"exit_at_start", 3}}).dump()},
+                              f.run, 60s) == 1);
 }
 
 void descendant_outliving_the_engine() {
@@ -1324,6 +1334,7 @@ void manifest_writer_before_durable_admission() {
 
 void native_config_inspector_before_admission() {
     Case c("native-config-inspector");
+    c.prepare(); // the engine's plan is made before this test sets the inspector's own expectations below
     const fs::path root_path = c.run / "yaml-root";
     fs::create_directories(root_path);
     const fs::path root = fs::canonical(root_path);
@@ -1494,6 +1505,7 @@ void native_config_inspector_invalid_report_refused() {
              {"digest", "report failed strict protocol or snapshot identity validation"},
              {"cards", "cards must contain nonnegative integer ordinals"}}}) {
         Case c(std::string("native-config-inspector-") + mode);
+        c.prepare(); // planned before the mismatching inspector is armed: only the plan wrapper below meets it
         const fs::path root = c.run / "yaml-root";
         fs::create_directories(root);
         const fs::path authored = root / "fleet.yaml";
@@ -1573,7 +1585,7 @@ void premeasurement_manifest_hook_integration() {
         };
         c.session.power_hook.verify_serving = [stage,
                                                log](const fs::path& manifest) -> bc::serving::v2::Status {
-            assert(manifest.filename() == "fake-manifest.json");
+            assert(manifest.string().rfind("/proc/self/fd/", 0) == 0); // the sealed descriptor, never a path
             log("verify");
             if (stage == "verify_throw")
                 throw 91; // NOLINT(bugprone-std-exception-baseclass): injected nonstandard callback
@@ -1640,20 +1652,27 @@ void premeasurement_manifest_hook_integration() {
 }
 
 int test_main(int argc, char** argv) {
-    if (argc == 4 && std::string(argv[1]) == "--owner") {
-        // owner mode for start_detached_runs_and_stops: serve the fake manifest already in the run directory
+    if (argc == 6 && std::string(argv[1]) == "--owner") {
+        // owner mode for start_detached_runs_and_stops: `bc-serve start` re-runs `serve`, which plans in the owner
+        // (the real plan step over the native host, its power admission a no-op) and then serves
         ss::Session s;
         s.run_dir = argv[2];
         s.timing.health_interval = 50ms;
         s.timing.stop_grace = 1s;
         s.timing.poll = 20ms;
         const int port = std::stoi(argv[3]);
-        s.plan = [port](const fs::path& rd, const ss::Hooks&) {
-            ss::EngineStart e;
-            e.manifest = rd / "fake-manifest.json";
-            e.argv = {BC_FAKE_ENGINE, "--manifest", e.manifest.string(), "--role", "engine"};
-            e.port = port;
-            return e;
+        const fs::path host = argv[4];
+        const Json behaviour = Json::parse(argv[5]);
+        s.power_hook.begin_manifest = [](const fs::path&, bc::serving::v2::PlanUse) -> bc::serving::v2::Status {
+            return std::nullopt;
+        };
+        s.power_hook.verify_serving = [](const fs::path&) -> bc::serving::v2::Status { return std::nullopt; };
+        s.power_hook.verified_exit = [] {};
+        s.power_hook.restore = []() -> bc::serving::v2::Status { return std::nullopt; };
+        s.plan = [port, host, behaviour](const fs::path& rd, const ss::Hooks& hooks) {
+            const auto native = bc::test::native_session_inputs(host, rd / "native", port, behaviour);
+            fs::create_directories(rd / "plan");
+            return ss::plan_engine_only(native.inputs, rd / "plan", hooks);
         };
         return ss::serve(s);
     }
@@ -1661,6 +1680,8 @@ int test_main(int argc, char** argv) {
     g_root = fs::current_path() / "bc-session-fixture";
     fs::remove_all(g_root);
     fs::create_directories(g_root);
+    g_host = g_root / "host";
+    bc::test::write_fake_host(g_host, /*unlimited_memlock=*/true);
     if (argc == 2 && std::string(argv[1]) == "--host-start-only") {
         // Focused CPU-only MRC02 owner receipt regression (no hardware lease).
         feature_state_start_status_and_warning();

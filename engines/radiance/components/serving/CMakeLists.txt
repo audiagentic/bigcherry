@@ -193,8 +193,10 @@ if(BUILD_TESTING)
 
   add_executable(bc_session_test EXCLUDE_FROM_ALL session_test.cpp)
   target_link_libraries(bc_session_test PRIVATE bc_serving)
-  add_dependencies(bc_session_test bc_fake_engine)
-  target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
+  add_dependencies(bc_session_test bc_fake_engine bc-serve)
+  target_compile_definitions(bc_session_test PRIVATE
+    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>"
+    BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_test(NAME bc_session_test COMMAND bc_session_test)
   add_executable(bc_lab_trace_experiment_test EXCLUDE_FROM_ALL lab_trace_experiment_test.cpp)
   target_link_libraries(bc_lab_trace_experiment_test PRIVATE bc_json_dependency)
