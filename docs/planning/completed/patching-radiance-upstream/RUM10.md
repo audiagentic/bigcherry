@@ -2,7 +2,7 @@
 id: RUM10
 order: 10
 plan: patching-radiance-upstream
-state: pending
+state: deprecated
 created-at: '2026-11-18T01:28:59.863720+00:00'
 breadth: ''
 skill: advanced
@@ -69,6 +69,8 @@ Astra source review ASTRA-CONSOLIDATION.md: optional after RUM09; engine/helper 
 
 The current managed owner starts one engine. Its upstream-parsed configuration now rejects non-default lifecycle fields reserved for Fleet, including fleet budgets, parking, TTL and aliases; ordinary model settings retain upstream provenance. Exact 2.2 CPU parser test passed. After RUM09, the minimum positive fleet case is two named models on fixed, disjoint engine and helper BDFs with aggregate host/pin room, independent sealed settings/owner maps/transports and per-engine collective identities. Verify concurrent starts, live ownership, drain and group/rank reuse on leased cards before enabling it.
 
+2026-11-22 deferred by the project owner. No multi-model use case exists: every shipped config serves one model per start, and Radiance 2.2's own Fleet (load, park, restore, reload, card flex pools) is not used for concurrent models. Not implemented and not needed for the 2.2 migration (RUM09 complete). Reopen as a new item if a named two-model case appears (which pair, which cards); start from the plan above: fleet-level helper reservations per model, drain before reclaim or group-id reuse, refuse incompatible power sharing, one two-model case first.
+
 ## Change Log
 
 - 2026-11-18T01:28:59.863720+00:00 (created-by): Created by codex
@@ -79,3 +81,5 @@ The current managed owner starts one engine. Its upstream-parsed configuration n
 - 2026-11-18T02:24:22.080593+00:00 (updated-by): Updated: section:notes
 - 2026-11-18T02:27:21.643448+00:00 (updated-by): Updated: section:notes
 - 2026-11-19T23:16:11.862203+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:20:33.797372+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T22:20:38.155908+00:00 (state-transition): State: pending → deprecated
