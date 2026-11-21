@@ -41,6 +41,8 @@ SRC_SHA256 = {
     "bc_shared_slot.cpp": "663c5618be297b2f8b3e9e67f187940e4aaa56cdb2b92e5846aa859d9d832bec",
     "bc_shared_slot.h": "5c68f1b7bc09fa31d846022c6f468e9219197f146f4e7a9b60bd62094d521506",
     "bc_shared_slot_test.cpp": "e820233bf87f51ea8b038e07cb81612be4b226280e1d8424865d74fb62480492",
+    "bc_ar_rendezvous_impl.h": "cb3aaf141d8bb5d9f7c46da79faa6cbb79328d41e0306b826cd357dc853cd834",
+    "bc_ar_lifecycle_impl.h": "6a367c98b00cbc63f77ede81d8854e303ad2f025d11fb2276a3db7dfc355fae7",
 }
 
 
@@ -87,389 +89,33 @@ def _created(path: str, source: str, guard: str) -> FilePatch:
     )
 
 
-AR_ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="VTP14 N3 shared rendezvous", edits=(
-    _edit(
-        "n3-include",
-        "#include \"r4d_ar_links.h\"\n",
-        "#include \"r4d_ar_links.h\"\n"
-        "\n"
-        "#include <dlfcn.h> /* BC_VTP14_N3_INCLUDE: the engine's shared-slot service */\n"
-        "#include <new>\n",
-        guard="BC_VTP14_N3_INCLUDE",
-        max_span=2,
+# The two owned headers preserve the frozen C++ typed definitions. They live
+# at two stable attachment sites in the all-reduce unit; failed ranks remain
+# published until the owning engine retires their allocations.
+AR_ENTRY = FilePatch(
+    path="libr4d/r4d_ar_entry.hip", language="none",
+    description="Two typed rad0017 rendezvous/lifecycle implementation hooks",
+    edits=(
+        Edit(
+            id="n3-rendezvous-hook",
+            anchor=(r"(?s)\#include \"r4d_ar_links\.h\"\n.*?"
+                    r"(?=/\* One resolved instance's view of the world:)"),
+            mode="replace", text='#include "bc_ar_rendezvous_impl.h"\n\n\n',
+            guard=re.escape('#include "bc_ar_rendezvous_impl.h"'),
+            expect_matches=1, max_span_lines=240,
+            rationale="long-anchor: replace one bounded rendezvous section with the typed owned definition",
+        ),
+        Edit(
+            id="n3-lifecycle-hook",
+            anchor=(r"(?s)struct ArInst \{.*?"
+                    r"(?=\}  /\* namespace \*/)"),
+            mode="replace", text='#include "bc_ar_lifecycle_impl.h"\n\n\n',
+            guard=re.escape('#include "bc_ar_lifecycle_impl.h"'),
+            expect_matches=1, max_span_lines=650,
+            rationale="long-anchor: replace one bounded rank lifecycle section with its typed owned implementation",
+        ),
     ),
-    _edit(
-        "n3-rv-owner",
-        r"""    int  failed = 0;""",
-        r"""    int  failed = 0;
-    int  owner = 0;  /* BC_VTP14_N3_OWNER: engine lifetime within this group */""",
-        guard="BC_VTP14_N3_OWNER",
-    ),
-    _edit(
-        "n3-shared-rv",
-        r"""Rendezvous& rv_for(long long group) {
-    std::lock_guard<std::mutex> lk(g_rv_mu);
-    std::unique_ptr<Rendezvous>& r = g_rvs[group];
-    if (!r) r.reset(new Rendezvous());
-    return *r;
-}
-
-""",
-        r"""Rendezvous& rv_for(long long group) {
-    using SlotFn = int (*)(const char*, size_t, size_t, void (*)(void*), void**, char*, size_t);
-    using OwnerFn = int (*)();
-    static const auto slot = reinterpret_cast<SlotFn>(dlsym(RTLD_DEFAULT, "rad_bc_shared_slot"));
-    static const auto current_owner =
-        reinterpret_cast<OwnerFn>(dlsym(RTLD_DEFAULT, "rad_bc_rendezvous_owner"));
-    // BC_VTP14_N3_SHARED_RV: standalone tools use their local per-group rendezvous.
-    if (slot && current_owner) {
-        char key[96], why[320] = {};
-        std::snprintf(key, sizeof key, "libr4d.ar.rendezvous/v2/group=%lld", group);
-        void* storage = nullptr;
-        if (slot(key, sizeof(Rendezvous), alignof(Rendezvous),
-                 [](void* p) { new (p) Rendezvous(); }, &storage, why, sizeof why) == RAD_OK && storage) {
-            auto& rv = *static_cast<Rendezvous*>(storage);
-            const int owner = current_owner();
-            std::lock_guard<std::mutex> lk(rv.m);
-            if (rv.owner != owner) {
-                // A slot base can be claimed again after all prior ranks have joined.
-                rv.owner = owner;
-                rv.failed = 0;
-                rv.arrived = 0;
-                rv.epoch = 0;
-                std::memset(rv.scratch, 0, sizeof rv.scratch);
-                std::memset(rv.flags, 0, sizeof rv.flags);
-                std::memset(rv.seq, 0, sizeof rv.seq);
-                std::memset(rv.dev, 0, sizeof rv.dev);
-            }
-            return rv;
-        }
-        std::fprintf(stderr, "[r4d] shared all-reduce group %lld: %s\n", group, why);
-    }
-    std::lock_guard<std::mutex> lk(g_rv_mu);
-    std::unique_ptr<Rendezvous>& r = g_rvs[group];
-    if (!r) {
-        r.reset(new Rendezvous());
-        if (slot || current_owner) r->failed = 1;
-    }
-    return *r;
-}
-
-""",
-        guard="BC_VTP14_N3_SHARED_RV",
-    ),
-    _edit(
-        "n3-barrier-poison",
-        r"""int rv_barrier(Rendezvous& rv, int world) {
-    std::unique_lock<std::mutex> lk(rv.m);
-    const int e = rv.epoch;
-    if (++rv.arrived == world) {
-        rv.arrived = 0;
-        rv.epoch++;
-        rv.cv.notify_all();
-        return RAD_OK;
-    }
-    const bool ok = rv.cv.wait_for(lk, std::chrono::seconds(60),
-                                   [&] { return rv.epoch != e; });
-    /* A rank that gave up takes its arrival back: a peer that failed before arriving would
-     * otherwise leave it counted, and the group's next engine (its id is reused) would be released
-     * one rank early. */
-    if (!ok) --rv.arrived;
-    return ok ? RAD_OK : RAD_E_STATE;
-}
-
-""",
-        r"""int rv_barrier(Rendezvous& rv, int world) {
-    std::unique_lock<std::mutex> lk(rv.m);
-    if (rv.failed) return RAD_E_STATE;  /* BC_VTP14_N3_POISON */
-    const int e = rv.epoch;
-    if (++rv.arrived == world) {
-        rv.arrived = 0;
-        rv.epoch++;
-        rv.cv.notify_all();
-        return RAD_OK;
-    }
-    const bool ok = rv.cv.wait_for(lk, std::chrono::seconds(60),
-                                   [&] { return rv.epoch != e || rv.failed; });
-    /* A rank that gave up takes its arrival back: a peer that failed before arriving would
-     * otherwise leave it counted, and the group's next engine (its id is reused) would be released
-     * one rank early. */
-    if (rv.failed) return RAD_E_STATE;
-    if (!ok) {
-        --rv.arrived;
-        if (rv.owner != 0) {
-            std::fprintf(stderr, "[r4d] all-reduce group timed out at %d of %d ranks\n",
-                         rv.arrived + 1, world);
-            rv.failed = 1;
-            rv.cv.notify_all();
-        }
-    }
-    return ok ? RAD_OK : RAD_E_STATE;
-}
-
-""",
-        guard="BC_VTP14_N3_POISON",
-    ),
-    _edit(
-        "n3-rank-buffer-cleanup",
-        r"""/* Build the world. `max_numel` is the largest message any launch on this instance carries.""",
-        r"""void free_rank_buffers(ArInst* in) {  /* BC_VTP14_N3_RANK_FREE */
-    /* Free only this rank's own allocations; peer pointers belong to the peer. */
-    if (in->host) {
-        r4d_ar_host_free(in->my_scratch);
-        r4d_ar_host_free(in->my_flags);
-    } else {
-        r4d_ar_ipc_free(in->my_scratch);
-        r4d_ar_ipc_free(in->my_flags);
-    }
-    r4d_ar_ipc_free(in->my_seq);
-    r4d_ar_ipc_free(in->locpack);
-    r4d_ar_ipc_free(in->my_stage);
-}
-
-void free_failed_rank(void* instance) {
-    auto* in = static_cast<ArInst*>(instance);
-    int previous = -1;
-    const bool restore = hipGetDevice(&previous) == hipSuccess && previous != in->allocation_device;
-    if (hipSetDevice(in->allocation_device) != hipSuccess)
-        std::fprintf(stderr, "[r4d] could not bind device %d for failed all-reduce cleanup\n",
-                     in->allocation_device);
-    free_rank_buffers(in);
-    if (restore) (void)hipSetDevice(previous);
-    delete in;
-}
-
-using DeferRankCleanup = int (*)(void*, void*, void (*)(void*));
-using ForgetRankCleanup = void (*)(void*, void*);
-
-struct RankCleanupBridge {
-    DeferRankCleanup defer = reinterpret_cast<DeferRankCleanup>(
-        dlsym(RTLD_DEFAULT, "rad_bc_defer_rank_cleanup"));
-    ForgetRankCleanup forget = reinterpret_cast<ForgetRankCleanup>(
-        dlsym(RTLD_DEFAULT, "rad_bc_forget_rank_cleanup"));
-};
-
-const RankCleanupBridge& rank_cleanup_bridge() {
-    static const RankCleanupBridge bridge;
-    return bridge;
-}
-
-/* Build the world. `max_numel` is the largest message any launch on this instance carries.""",
-        guard="BC_VTP14_N3_RANK_FREE",
-        rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
-    ),
-    _edit(
-        "n3-own-buffers-before-publication",
-        r"""    char handle[R4D_AR_HANDLE_BYTES];
-    int  hlen = 0;
-    long sc = 0, fl = 0, sq = 0, lp = 0;
-    int  dev = 0;
-
-    /* Fine-grained: the peer writes the scratch and this rank reads it bypassing L2, so a
-     * coarse-grained allocation could leave the peer's bytes in a cache this rank never
-     * invalidates, and the launches run without an acquire fence. r4d_ar_ipc_alloc throws when it
-     * cannot allocate fine-grained memory; there is no coarse fallback.
-     *
-     * Without peer access the scratch and flags move to pinned host memory and nothing else
-     * changes: kernels touch other ranks only through those two, so no card addresses another's
-     * VRAM. A message then crosses two links instead of one; only rows requiring device.p2p == 0
-     * take this path (r4d_rows.cpp). Sequence counters stay in VRAM, since only their own rank
-     * reads them, and coarse-grained: only this rank's kernels touch them, with device- and
-     * agent-scope atomics, which then complete in L2 rather than past it -- the first returning
-     * atomic of every launch (r4d_ar_seq_take) is on the push's path. */
-    R4D_TRY("ar_ipc_alloc",
-        if (hipGetDevice(&dev) != hipSuccess) return RAD_E_DEVICE;
-        if (host) {
-            sc = r4d_ar_host_alloc((long)nslots * in->slot_bytes);
-            fl = r4d_ar_host_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes);
-        } else {
-            sc = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 1, handle, &hlen);
-            fl = r4d_ar_ipc_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes, 1, handle, &hlen);
-        }
-        sq = r4d_ar_ipc_alloc(kSeqWords(maxb) * 4, 0, handle, &hlen));
-
-    /* A host mailbox is read over the link past every cache, so the 2-rank kernels' push check
-     * copies what it reads into this VRAM mirror for the reduce, crossing the link once
-     * (r4d_ar_seq.h). Coarse-grained: only this rank's kernels touch it, each block its own words.
-     * The wide family has no push check and reads its slots once. Host-memory slots free the same
-     * VRAM over P2P, so the mirror keeps the footprint where the P2P instance has it. */
-    long stg = 0;
-    if (host && world == 2) {
-        R4D_TRY("ar_ipc_alloc(stage)",
-            stg = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 0, handle, &hlen));
-    }
-
-    /* This rank's own packed copy, for the rotated 6-bit wire only: the reduce must fold exactly
-     * the bytes it sent. The 6-bit payload is 3/8 of the bf16 message and the f32 scales 1/32 of
-     * it, laid out from half the slot; a row padded to whole 512-element chunks
-     * (ar_rmsnorm_quant_fp8) adds up to 7 groups' scales a row, so the scales get a sixteenth
-     * (enough for any row of 512 or more) plus a page. ar_rmsnorm_quant checks the fit. */
-    if (in->dtype != 2) {
-        R4D_TRY("ar_ipc_alloc(locpack)",
-            lp = r4d_ar_ipc_alloc(in->slot_bytes / 2 + in->slot_bytes / 16 + 4096, 0,
-                                  handle, &hlen));
-    }
-
-    in->my_scratch = sc;
-    in->my_flags   = fl;
-    in->my_seq     = sq;
-    in->locpack    = lp;
-    in->my_stage   = stg;
-    in->gate_ctr   = sq + 2L * maxb * 4;   /* the word after the sequence counters (r4d_ar_seq.h) */
-
-    Rendezvous& rv = rv_for(group);
-    {
-        std::lock_guard<std::mutex> lk(rv.m);
-        rv.scratch[rank] = sc;
-        rv.flags[rank]   = fl;
-        rv.seq[rank]     = sq;
-        rv.dev[rank]     = dev;
-    }
-""",
-        r"""    char handle[R4D_AR_HANDLE_BYTES];
-    int  hlen = 0;
-    int  dev = 0;
-
-    /* Fine-grained: the peer writes the scratch and this rank reads it bypassing L2, so a
-     * coarse-grained allocation could leave the peer's bytes in a cache this rank never
-     * invalidates, and the launches run without an acquire fence. r4d_ar_ipc_alloc throws when it
-     * cannot allocate fine-grained memory; there is no coarse fallback.
-     *
-     * Without peer access the scratch and flags move to pinned host memory and nothing else
-     * changes: kernels touch other ranks only through those two, so no card addresses another's
-     * VRAM. A message then crosses two links instead of one; only rows requiring device.p2p == 0
-     * take this path (r4d_rows.cpp). Sequence counters stay in VRAM, since only their own rank
-     * reads them, and coarse-grained: only this rank's kernels touch them, with device- and
-     * agent-scope atomics, which then complete in L2 rather than past it -- the first returning
-     * atomic of every launch (r4d_ar_seq_take) is on the push's path. */
-    // BC_VTP14_N3_UNPUBLISHED: clean up any acquired buffers if allocation or setup fails.
-    std::unique_ptr<ArInst, decltype(&free_rank_buffers)> unpublished(in, &free_rank_buffers);
-    R4D_TRY("ar_ipc_alloc",
-        if (hipGetDevice(&dev) != hipSuccess) return RAD_E_DEVICE;
-        if (host) {
-            in->my_scratch = r4d_ar_host_alloc((long)nslots * in->slot_bytes);
-            in->my_flags = r4d_ar_host_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes);
-        } else {
-            in->my_scratch = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 1, handle, &hlen);
-            in->my_flags = r4d_ar_ipc_alloc((flag_words + 2L * maxb) * 4 + kWakeBytes, 1, handle, &hlen);
-        }
-        in->my_seq = r4d_ar_ipc_alloc(kSeqWords(maxb) * 4, 0, handle, &hlen));
-
-    /* A host mailbox is read over the link past every cache, so the 2-rank kernels' push check
-     * copies what it reads into this VRAM mirror for the reduce, crossing the link once
-     * (r4d_ar_seq.h). Coarse-grained: only this rank's kernels touch it, each block its own words.
-     * The wide family has no push check and reads its slots once. Host-memory slots free the same
-     * VRAM over P2P, so the mirror keeps the footprint where the P2P instance has it. */
-    if (host && world == 2) {
-        R4D_TRY("ar_ipc_alloc(stage)",
-            in->my_stage = r4d_ar_ipc_alloc((long)nslots * in->slot_bytes, 0, handle, &hlen));
-    }
-
-    /* This rank's own packed copy, for the rotated 6-bit wire only: the reduce must fold exactly
-     * the bytes it sent. The 6-bit payload is 3/8 of the bf16 message and the f32 scales 1/32 of
-     * it, laid out from half the slot; a row padded to whole 512-element chunks
-     * (ar_rmsnorm_quant_fp8) adds up to 7 groups' scales a row, so the scales get a sixteenth
-     * (enough for any row of 512 or more) plus a page. ar_rmsnorm_quant checks the fit. */
-    if (in->dtype != 2) {
-        R4D_TRY("ar_ipc_alloc(locpack)",
-            in->locpack = r4d_ar_ipc_alloc(in->slot_bytes / 2 + in->slot_bytes / 16 + 4096, 0,
-                                  handle, &hlen));
-    }
-
-    in->gate_ctr   = in->my_seq + 2L * maxb * 4;   /* the word after the sequence counters (r4d_ar_seq.h) */
-
-    Rendezvous& rv = rv_for(group);
-    {
-        std::lock_guard<std::mutex> lk(rv.m);
-        if (rv.failed) return RAD_E_STATE;
-        if (rv.owner != 0) {
-            const auto& bridge = rank_cleanup_bridge();
-            const int rc = bridge.defer && bridge.forget
-                ? bridge.defer(&rv, in, free_failed_rank) : RAD_E_STATE;
-            if (rc != RAD_OK) {
-                rv.failed = 1;
-                rv.cv.notify_all();
-                return rc;
-            }
-            in->allocation_device = dev;
-            in->pending_rv = &rv;
-        }
-        rv.scratch[rank] = in->my_scratch;
-        rv.flags[rank]   = in->my_flags;
-        rv.seq[rank]     = in->my_seq;
-        rv.dev[rank]     = dev;
-        // Published peer pointers require group-level unwind on failure.
-        unpublished.release();
-    }
-""",
-        guard="BC_VTP14_N3_UNPUBLISHED",
-        rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
-    ),
-    _edit(
-        "n3-release-rank-buffers",
-        r"""    /* Free only this rank's own allocations; peer pointers belong to the peer. */
-    if (in->host) {
-        r4d_ar_host_free(in->my_scratch);
-        r4d_ar_host_free(in->my_flags);
-    } else {
-        r4d_ar_ipc_free(in->my_scratch);
-        r4d_ar_ipc_free(in->my_flags);
-    }
-    r4d_ar_ipc_free(in->my_seq);
-    r4d_ar_ipc_free(in->locpack);
-    r4d_ar_ipc_free(in->my_stage);
-    delete in;""",
-        r"""    free_rank_buffers(in);  /* BC_VTP14_N3_RELEASE */
-    delete in;""",
-        guard="BC_VTP14_N3_RELEASE",
-        rationale="Free rank-local all-reduce allocations when initialization fails before publication.",
-    ),
-    _edit(
-        "n3-own-published-rank",
-        r"""    long my_scratch = 0, my_flags = 0, my_seq = 0, locpack = 0;""",
-        r"""    long my_scratch = 0, my_flags = 0, my_seq = 0, locpack = 0;
-    Rendezvous* pending_rv = nullptr;  /* BC_VTP14_N3_RANK_PENDING */
-    int allocation_device = -1;""",
-        guard="BC_VTP14_N3_RANK_PENDING",
-    ),
-    _edit(
-        "n3-defer-failed-rank",
-        r"""    int rc = build(in, k.group, k.rank, k.world, k.numel, k.dtype, k.host);
-    if (rc != RAD_OK) { delete in; return rc; }
-    {
-        std::lock_guard<std::mutex> lk(g_cache_mu);
-        g_cache.push_back(CacheSlot{ k, in, 1 });
-    }
-    *out = in;""",
-        r"""    // BC_VTP14_N3_FAILED_RANK: once published, failed instances stay live until the owner retires them.
-    int rc = build(in, k.group, k.rank, k.world, k.numel, k.dtype, k.host);
-    if (rc == RAD_OK) {
-        try {
-            std::lock_guard<std::mutex> lk(g_cache_mu);
-            g_cache.push_back(CacheSlot{ k, in, 1 });
-        } catch (const std::bad_alloc&) {
-            rc = RAD_E_NOMEM;
-        }
-    }
-    Rendezvous* rv = in->pending_rv;
-    if (rc != RAD_OK) {
-        if (rv) {
-            std::lock_guard<std::mutex> lk(rv->m);
-            rv->failed = 1;
-            rv->cv.notify_all();
-        } else {
-            delete in;
-        }
-        return rc;
-    }
-    if (rv) {
-        rank_cleanup_bridge().forget(rv, in);
-        in->pending_rv = nullptr;
-    }
-    *out = in;""",
-        guard="BC_VTP14_N3_FAILED_RANK",
-    ),
-))
+)
 
 ENGINE = FilePatch(path="core/engine_bringup.cpp", language="none", description="VTP14 N3 receipt", edits=(
     _edit(
@@ -551,6 +197,8 @@ ENGINE_RETIRE = FilePatch(path="core/engine.cpp", language="none",
 
 PATCHES = (
     AR_ENTRY,
+    _created("libr4d/bc_ar_rendezvous_impl.h", "bc_ar_rendezvous_impl.h", "BC_VTP14_N3_OWNER"),
+    _created("libr4d/bc_ar_lifecycle_impl.h", "bc_ar_lifecycle_impl.h", "BC_VTP14_N3_RANK_FREE"),
     AR_IPC,
     ENGINE,
     ENGINE_RETIRE,

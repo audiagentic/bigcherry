@@ -503,33 +503,6 @@ PATCHES = (
     _created("core/bc_plan_check.cpp", _BC_PLAN_CHECK_CPP, r"^int take_flags\(int\* argc, char\*\*\* argv\) \{$",
              "Create the plan flags, the expected-plan read and the check through bc_serving_v2."),
     FilePatch(
-        path="core/main.cpp",
-        description="Take --plan-memory off the command line after rad0009's manifest reader has run and arm the check.",
-        edits=(
-            Edit(
-                id="include-bc-plan-memory",
-                anchor=r'^#include "bc_serving_manifest\.h"$',
-                text='\n#include "bc_plan_memory.h"\n#include "bc_plan_check.h"',
-                guard=r'^#include "bc_plan_memory\.h"$',
-                max_span_lines=1,
-                expect_matches=1,
-                rationale="rad0009's include is main.cpp's unique last include once it applies (rad0011 requires rad0009).",
-            ),
-            Edit(
-                id="bc-plan-memory-take-flag",
-                anchor=r"^    if \(!bc_serving_engine_argv\(&argc, &argv\)\) return 2;$",
-                text="\n    if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
-                guard=r"bc_plan_memory_take_flag\(&argc, &argv\)",
-                max_span_lines=1,
-                expect_matches=1,
-                rationale="Inserted right after rad0009's manifest call (rad0011 requires rad0009): the manifest reader decides "
-                          "measuring or serving from --plan-memory and hands the flag on, and this call then takes it off and "
-                          "arms the check with the manifest's plan. Run before it, it would strip --plan-memory first and a "
-                          "measuring start would read its own unmeasured manifest as a serving start.",
-            ),
-        ),
-    ),
-    FilePatch(
         path="core/engine_bringup.cpp",
         description="Record (and, started from a measured manifest, check) plan()'s sizes at the end of its VRAM split; with "
                     "--plan-memory, write them and exit after plan().",

@@ -21,8 +21,7 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 
-from bigcherry.patcher import apply_all  # noqa: E402
-
+from bigcherry.patcher import apply_all
 
 SERVING_COMPONENT = REPO / "engines" / "radiance" / "components" / "serving"
 _GENERATED_CODEC: dict[str, Path] = {}
@@ -43,9 +42,9 @@ def generated_serving_codec(test: unittest.TestCase, compiler: str) -> Path:
         [compiler, "-std=c++20", "-O1", f"-I{serving}", f"-I{serving / 'contract'}", f"-I{serving / 'third_party'}",
          str(serving / "contract" / "generate.cpp"), str(serving / "contract" / "registry.cpp"),
          str(serving / "jcs.cpp"), str(serving / "sha256.cpp"), "-o", str(gen)],
-        capture_output=True, text=True)
+        capture_output=True, text=True, check=False)
     test.assertEqual(build.returncode, 0, f"bc_contract_gen: {build.stderr}")
-    run = subprocess.run([str(gen), str(serving / "contract" / "serving.toml"), str(out)], capture_output=True, text=True)
+    run = subprocess.run([str(gen), str(serving / "contract" / "serving.toml"), str(out)], capture_output=True, text=True, check=False)
     test.assertEqual(run.returncode, 0, f"bc_contract_gen run: {run.stderr}")
     test.assertEqual((out / "contract.fingerprint").read_text(encoding="utf-8"),
                      (serving / "generated" / "v3" / "contract.fingerprint").read_text(encoding="utf-8"))
@@ -121,10 +120,8 @@ PIN_BLOBS = {
         "arch/common/rad_block_moe_fp8.h": ("f3ab4f3", "9e6d964"),
     },
     RAD0009: {
-        "core/bc_serving_manifest.h": (None, "53c1d9d"),
-        "core/bc_serving_manifest.cpp": (None, "88425c6"),
-        "core/CMakeLists.txt": ("921debd", "2404fcc"),
-        "core/main.cpp": ("4cb6d43", "7feb7b6"),
+        "core/CMakeLists.txt": ("921debd", "5d01f54"),
+        "core/main.cpp": ("4cb6d43", "7f8a947"),
         "tests/CMakeLists.txt": ("9531405", "fb30463"),
     },
 }
@@ -603,9 +600,9 @@ int main() {
                  "-I", str(root / "abi"), "-I", str(root / "core/place"),
                  str(source), "-o", str(binary)],
                 capture_output=True, text=True,
-            )
+            check=False)
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
-            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=10, check=False)
             self.assertEqual(result.returncode, 0, result.stderr)
         finally:
             temp.cleanup()
@@ -620,7 +617,7 @@ int main() {
 
             def fields(text: str, opener: str) -> list[str]:
                 body = text.split(opener, 1)[1].split("}", 1)[0]
-                body = re.sub(r"/\*.*?\*/", "", body, flags=re.S)
+                body = re.sub(r"/\*.*?\*/", "", body, flags=re.DOTALL)
                 body = body.replace("struct BcMoeRemoteTicket", "StepTicket")
                 return [re.sub(r"\s+", " ", f.strip()) for f in body.split(";") if f.strip()]
 
@@ -730,72 +727,67 @@ class TestServingManifestPatch(unittest.TestCase):
 
     def test_main_edits_are_thin_calls_into_the_extension_point(self):
         patches = _load(RAD0009)
-        # config.cpp (the option table) is deliberately not touched: --manifest is handled before config_parse
         self.assertEqual({p.path for p in patches if not p.create},
                          {"core/main.cpp", "core/CMakeLists.txt", "tests/CMakeLists.txt"})
-        self.assertEqual(sum(1 for p in patches if p.create), 2)
+        self.assertFalse(any(p.create for p in patches))
+        main_patch = next(p for p in patches if p.path == "core/main.cpp")
+        self.assertEqual(len(main_patch.edits), 3)  # include, typed callable, closure
+        for file in ("bc_serving_manifest.h", "bc_serving_manifest.cpp"):
+            self.assertTrue((SERVING_COMPONENT / file).is_file())
+            self.assertFalse((FIXTURE / "core" / file).exists())
         temp, root = self._applied()
         try:
-            added = TestRadiancePatchPackages._added_lines(
-                (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"),
-                (root / "core/main.cpp").read_text(encoding="utf-8"),
-            )
-            code = [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
-            self.assertEqual(
-                code,
-                [
-                    '#include "bc_serving_manifest.h"',
-                    "if (!bc_serving_engine_argv(&argc, &argv)) return 2;",
-                    "if (!bc_serving_mark_given(&cfg.given)) return 2;",
-                ],
-            )
+            original = (FIXTURE / "core/main.cpp").read_text(encoding="utf-8")
+            patched = (root / "core/main.cpp").read_text(encoding="utf-8")
+            self.assertEqual(patched.count("bc_serving_engine_entry("), 1)
+            self.assertIn('return bc_serving_engine_entry(argc, argv, [](int argc, char** argv) -> int {', patched)
+            self.assertIn('    return 0;\n    });\n}', patched)
+            self.assertIn('#include "bc_serving_manifest.h"', patched)
+            self.assertIn("s = engine.serve(std::move(watch));", patched)
+            # Restore only the three narrow hooks: vendor startup remains
+            # byte-for-byte identical rather than copied into the component.
+            restored = patched.replace('#include "bc_serving_manifest.h"\n', "", 1)
+            restored = restored.replace(
+                "    return bc_serving_engine_entry(argc, argv, [](int argc, char** argv) -> int {\n",
+                "", 1)
+            restored = restored.replace("    return 0;\n    });\n}", "    return 0;\n}", 1)
+            self.assertEqual(restored, original)
         finally:
             temp.cleanup()
 
     def test_fleet_native_inspection_precedes_manifest_rewriting(self):
-        temp = tempfile.TemporaryDirectory()
-        root = Path(temp.name)
-        shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
-        main_path = root / "core/main.cpp"
-        main = main_path.read_text(encoding="utf-8")
-        main = main.replace('#include "engine.h"\n', '#include "engine.h"\n#include "fleet/config.h"\n', 1)
-        main = main.replace(
-            "int main(int argc, char** argv) {\n    rad::Config cfg;\n",
-            "int main(int argc, char** argv) {\n    std::string path;\n"
-            "    rad::fleet::FleetConfig fleet;\n"
-            "    rad::Config cfg = std::move(fleet.models[0].cfg);\n",
-            1,
-        )
-        main_path.write_text(main, encoding="utf-8")
-        try:
-            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0009)), root)))
-            patched = main_path.read_text(encoding="utf-8")
-            inspect = patched.index("inspect_native_fleet_config_command(argc, argv)")
-            marker = patched.index("char** const bc_original_argv = argv;")
-            rewrite = patched.index("bc_serving_engine_argv(&argc, &argv)")
-            self.assertIn('#include "native_fleet_config.h"', patched)
-            self.assertIn("bc_serving_take_native_config(&cfg)", patched)
-            take_config = patched.index("bc_serving_take_native_config(&cfg)")
-            parse = patched.index("rad::config_parse(argc, argv, &cfg)")
-            self.assertLess(rewrite, take_config)
-            self.assertLess(take_config, parse)
-            self.assertIn("bc_native_config == 0", patched[parse - 80:parse])
-            self.assertLess(inspect, marker)
-            self.assertLess(marker, rewrite)
-        finally:
-            temp.cleanup()
+        source = (SERVING_COMPONENT / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
+        entry = source[source.index("int bc_serving_engine_entry("):]
+        inspect = entry.index("inspect_native_fleet_config_command(argc, argv)")
+        rewrite = entry.index("bc_serving_engine_argv(&argc, &argv)")
+        plan = entry.index("bc_plan_memory_take_flag(&argc, &argv)")
+        take = entry.index("bc_serving_take_native_config(&cfg)")
+        stock = entry.index("return run_stock(argc, argv)")
+        parse = entry.index("rad::config_parse(argc, argv, &cfg)")
+        front = entry.index("bc_serving_managed_front(engine, std::move(watch))")
+        self.assertLess(inspect, rewrite)
+        self.assertLess(rewrite, plan)
+        self.assertLess(plan, take)
+        self.assertLess(take, stock)
+        self.assertLess(stock, parse)
+        self.assertLess(parse, front)
+        self.assertIn("native_config == 0 && argv == original_argv", entry)
+        # Existing YAML path is delegated unchanged; no additional flag table.
+        self.assertIn("return run_stock(argc, argv)", entry)
 
     def test_manifest_is_loaded_before_config_parse_and_marked_after_it(self):
         temp, root = self._applied()
         try:
             main = (root / "core/main.cpp").read_text(encoding="utf-8")
-            argv = main.index("bc_serving_engine_argv(&argc, &argv)")
-            parse = main.index("rad::config_parse(argc, argv, &cfg)")
-            usage_exit = main.index("if (s < 0)  { rad::config_usage(argv[0]); return 2; }")
-            mark = main.index("if (!bc_serving_mark_given(&cfg.given)) return 2;")
+            owned = (SERVING_COMPONENT / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
+            entry = owned[owned.index("int bc_serving_engine_entry("):]
+            argv = entry.index("bc_serving_engine_argv(&argc, &argv)")
+            parse = entry.index("rad::config_parse(argc, argv, &cfg)")
+            mark = entry.index("bc_serving_mark_given(&cfg.given)")
             self.assertLess(argv, parse)
-            self.assertLess(usage_exit, mark)
-            self.assertNotIn("--manifest", (root / "core/main.cpp").read_text(encoding="utf-8").split("int main")[1])
+            self.assertLess(parse, mark)
+            self.assertIn("bc_serving_engine_entry", main)
+            self.assertNotIn("--manifest", main.split("int main", 1)[1])
         finally:
             temp.cleanup()
 
@@ -806,6 +798,8 @@ class TestServingManifestPatch(unittest.TestCase):
             guard = cmake.index("if(NOT DEFINED BC_SERVING_V2_CMAKE)")
             self.assertLess(cmake.index("target_link_libraries(rad_core PUBLIC rad_abi"), guard)
             self.assertIn("message(FATAL_ERROR", cmake[guard:guard + 400])
+            self.assertIn('target_sources(rad_core PRIVATE "${_bc_serving}/bc_serving_manifest.cpp")', cmake)
+            self.assertIn('target_include_directories(rad_core PUBLIC "${_bc_serving}")', cmake)
             self.assertLess(guard, cmake.index('include("${BC_SERVING_V2_CMAKE}")'))
             self.assertLess(cmake.index('include("${BC_SERVING_V2_CMAKE}")'),
                             cmake.index("target_link_libraries(rad_core PUBLIC bc_serving_v2)"))
@@ -838,7 +832,7 @@ class TestServingManifestPatch(unittest.TestCase):
             temp.cleanup()
 
     def test_manifest_to_argv_logic_compiled_and_run(self):
-        """Compile the patch's own bc_serving_manifest.cpp with the shared v1 sources (the strict reader and the generated
+        """Compile the component-owned bc_serving_manifest.cpp with the shared v1 sources (the strict reader and the generated
         registry) under radiance's own warning flags plus -Werror, against a stub of config_option_names, and run the
         card-free test on a real v1 manifest."""
         compiler = shutil.which("g++") or shutil.which("c++")
@@ -852,9 +846,9 @@ class TestServingManifestPatch(unittest.TestCase):
         temp, root = TestPlanMemoryPatch._applied(self)   # both patches: the test runs main()'s real order (manifest reader, then plan flags)
         try:
             work = Path(temp.name)
-            # The real patched-engine entry point must use the same table-driven
-            # emitter exercised by the card-free C++ rename test.
-            bridge = (root / "core" / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
+            # The owned entry uses the same table-driven emitter as the
+            # card-free C++ replay test, bound from the patched engine.
+            bridge = (SERVING_COMPONENT / "bc_serving_manifest.cpp").read_text(encoding="utf-8")
             self.assertNotIn("project_native_options", bridge)
             self.assertNotIn("kContractVersion", bridge)
             self.assertIn("NativeFleetConfig::replay", bridge)
@@ -868,7 +862,7 @@ class TestServingManifestPatch(unittest.TestCase):
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                      "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{serving}", f"-I{serving / 'v2'}",
                      f"-I{codec}", f"-I{include}"]
-            sources = [root / "core" / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
+            sources = [SERVING_COMPONENT / "bc_serving_manifest.cpp", root / "core" / "bc_plan_check.cpp", test,
                        *manifest_library_sources(),
                        codec / "serving_codec.cpp", serving / "jcs.cpp", serving / "sha256.cpp"]
             objects, procs = [], []
@@ -881,7 +875,7 @@ class TestServingManifestPatch(unittest.TestCase):
                 _, err = proc.communicate()
                 self.assertEqual(proc.returncode, 0, f"{source.name}: {err}")
             exe = work / "manifest_argv_test"
-            link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True)
+            link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True, check=False)
             self.assertEqual(link.returncode, 0, link.stderr)
             # radiance's real option table (g_flags at the pin), so the C++ test uses exactly the engine's option names
             # and value shapes, not a hand-written list
@@ -895,7 +889,7 @@ class TestServingManifestPatch(unittest.TestCase):
             options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
                                        for n, a in rows if n != "--help"))
             example = REPO / "docs" / "design" / "serving-manifest-v2" / "example.flashnext-4gpu.json"
-            run = subprocess.run([str(exe), str(scratch), str(example), str(options)], capture_output=True, text=True)
+            run = subprocess.run([str(exe), str(scratch), str(example), str(options)], capture_output=True, text=True, check=False)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:
@@ -924,24 +918,25 @@ class TestPlanMemoryPatch(unittest.TestCase):
     def test_upstream_edits_are_thin_calls_into_the_extension_point(self):
         patches = _load(RAD0011)
         self.assertEqual({p.path for p in patches if not p.create},
-                         {"core/main.cpp", "core/engine_bringup.cpp"})
+                         {"core/engine_bringup.cpp"})
         self.assertEqual({p.path for p in patches if p.create},
                          {"core/bc_plan_memory.h", "core/bc_plan_memory.cpp", "core/bc_plan_check.h",
                           "core/bc_plan_check.cpp"})
         temp, root = self._applied()
         try:
-            self.assertEqual(self._added_code(root, "core/main.cpp"), [
-                "if (!bc_serving_engine_argv(&argc, &argv)) return 2;",
-                "if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
-                "if (!bc_serving_mark_given(&cfg.given)) return 2;",
-            ])
+            main = (root / "core/main.cpp").read_text()
+            self.assertEqual(main.count("bc_serving_engine_entry("), 1)
+            self.assertNotIn("bc_plan_memory_take_flag(&argc, &argv)", main)
+            entry = (SERVING_COMPONENT / "bc_serving_manifest.cpp").read_text()
+            self.assertLess(entry.index("bc_serving_engine_argv(&argc, &argv)"),
+                            entry.index("bc_plan_memory_take_flag(&argc, &argv)"))
             added = self._added_code(root, "core/engine_bringup.cpp")
             for expected in (
                 ("bc_plan_memory_note(cfg_, facts, vb, emb_bytes, wfs, ngram_bytes, ck_slot, host_arenas, kv_floor, ctx, "
                  "ranks_[0]->program);"),
-                "if (ri == 0) { std::vector<int> actual_rank_devices; actual_rank_devices.reserve(ranks_.size()); "
-                "for (const auto& rank : ranks_) actual_rank_devices.push_back(rank->device); "
-                "bc_plan_memory_note_ranks(rank_cfg_, actual_rank_devices); }",
+                ("if (ri == 0) { std::vector<int> actual_rank_devices; actual_rank_devices.reserve(ranks_.size()); "
+                 "for (const auto& rank : ranks_) actual_rank_devices.push_back(rank->device); "
+                 "bc_plan_memory_note_ranks(rank_cfg_, actual_rank_devices); }"),
                 "RAD_TRY(bc_plan_memory_done());",
             ):
                 self.assertIn(expected, " ".join(added))
@@ -978,7 +973,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             source = (root / "core/engine_bringup.cpp").read_text()
             plan = (root / "core/bc_plan_memory.cpp").read_text()
             flags = (root / "core/bc_plan_check.cpp").read_text()
-            manifest = (root / "core/bc_serving_manifest.cpp").read_text()
+            manifest = (SERVING_COMPONENT / "bc_serving_manifest.cpp").read_text()
             assert source.index("bc_plan_memory_note(cfg_, facts, vb,") < source.index("vram_budget_rank_split(")
             assert source.index("vram_budget_rank_split(") < source.index(
                 "if (ri == 0) {") < source.index("r->pools.configure(")
@@ -1053,30 +1048,33 @@ class TestPlanMemoryPatch(unittest.TestCase):
             temp.cleanup()
 
     def test_without_rad0009_it_fails_closed_and_writes_nothing(self):
-        with tempfile.TemporaryDirectory() as temp:
-            root = Path(temp)
-            shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
-            results = apply_all(list(_load(RAD0011)), root)
-            self.assertFalse(all(r.ok for r in results))
-            self.assertEqual((root / "core/main.cpp").read_text(encoding="utf-8"),
-                             (FIXTURE / "core/main.cpp").read_text(encoding="utf-8"))
-            self.assertFalse((root / "core/bc_plan_memory.cpp").exists())
+        # The source system's requires edge, not a new main.cpp shim, prevents
+        # a production composition of rad0011 without its manifest owner.
+        from bigcherry.patch import patchset
+        root = REPO / "engines/radiance/patches"
+        with (root / RAD0011 / "patch.toml").open("rb") as f:
+            meta = tomllib.load(f)
+        self.assertIn(RAD0009, meta["requires"])
+        expanded = patchset.expand_composition("radiance", (RAD0011,), directory=root)
+        self.assertIn(RAD0009, expanded.expanded)
+        self.assertFalse(any(p.path == "core/main.cpp" for p in _load(RAD0011)))
 
     def test_plan_flags_are_taken_after_the_manifest_reader(self):
-        """rad0011's call sits after rad0009's in main(): the manifest reader decides measuring or serving from --plan-memory
-        and hands the flag on. Before it, the flag would be stripped first and a measuring start would read its own
-        unmeasured manifest as a serving start (found 2026-11-05: no gate had started the engine from a manifest)."""
+        # The owned entry runs the strict manifest admission before plan flag
+        # extraction; measured vs serving is decided by the reader first.
+        source = (SERVING_COMPONENT / "bc_serving_manifest.cpp").read_text()
+        entry = source[source.index("int bc_serving_engine_entry("):]
+        reader = entry.index("bc_serving_engine_argv(&argc, &argv)")
+        flags = entry.index("bc_plan_memory_take_flag(&argc, &argv)")
+        parse = entry.index("rad::config_parse(argc, argv, &cfg)")
+        self.assertLess(reader, flags)
+        self.assertLess(flags, parse)
         temp, root = self._applied()
         try:
-            main = (root / "core" / "main.cpp").read_text(encoding="utf-8")
-            reader = main.index("bc_serving_engine_argv(&argc, &argv)")
-            flags = main.index("bc_plan_memory_take_flag(&argc, &argv)")
-            parse = main.index("rad::config_parse(argc, argv, &cfg)")
-            self.assertLess(reader, flags)
-            self.assertLess(flags, parse)
-            for text in (main, (root / "core" / "bc_plan_check.cpp").read_text(encoding="utf-8")):
-                self.assertNotIn('"--plan-check"', text)
-                self.assertNotIn("plan-check-floor-ppm", text)
+            main = (root / "core/main.cpp").read_text()
+            self.assertEqual(main.count("bc_serving_engine_entry(argc, argv"), 1)
+            self.assertNotIn("bc_plan_memory_take_flag(&argc, &argv)", main)
+            self.assertEqual(main.count("rad::config_parse(argc, argv, &cfg)"), 1)
         finally:
             temp.cleanup()
 
@@ -1098,7 +1096,7 @@ class TestPlanMemoryPatch(unittest.TestCase):
             flags = ["-std=c++20", "-O0", "-Wall", "-Wextra", "-Wno-unused-parameter", "-Wno-missing-field-initializers",
                      "-Werror", f"-I{root / 'core'}", f"-I{root / 'abi'}", f"-I{self.SERVING}", f"-I{self.SERVING / 'v2'}",
                      f"-I{codec}", f"-I{include}"]
-            sources = [root / "core" / "bc_plan_check.cpp", root / "core" / "bc_serving_manifest.cpp",
+            sources = [root / "core" / "bc_plan_check.cpp", SERVING_COMPONENT / "bc_serving_manifest.cpp",
                        REPO / "engines" / "radiance" / "tests" / "plan_memory" / "plan_flags_test.cpp",
                        *manifest_library_sources(),
                        codec / "serving_codec.cpp", self.SERVING / "jcs.cpp", self.SERVING / "sha256.cpp"]
@@ -1113,12 +1111,12 @@ class TestPlanMemoryPatch(unittest.TestCase):
                 _, err = proc.communicate()
                 self.assertEqual(proc.returncode, 0, f"{source.name}: {err}")
             exe = work / "plan_flags_test"
-            link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True)
+            link = subprocess.run([compiler, *map(str, objects), "-o", str(exe)], capture_output=True, text=True, check=False)
             self.assertEqual(link.returncode, 0, link.stderr)
             vectors = REPO / "docs" / "design" / "serving-manifest-v2" / "admission-vectors.json"
             scratch = work / "scratch"
             scratch.mkdir()
-            run = subprocess.run([str(exe), str(vectors), str(scratch)], capture_output=True, text=True)
+            run = subprocess.run([str(exe), str(vectors), str(scratch)], capture_output=True, text=True, check=False)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:

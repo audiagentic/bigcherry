@@ -31,3 +31,20 @@ Mechanics: patch tests (tools/tests/patch) and the card-free manifest_argv_test 
 Activation: every option in the KL run's startup report is labelled [manifest ...]; on flashnext-4gpu started from the manifest alone (main b58adaca5, no hand-set R3_MOE_WORKER* or histogram variable) the engine wrote the route histogram from spec.handoff.telemetry and the three helpers started with --manifest M --role helperN and became ready; 162 live swaps committed during one forced-churn KL pass, 0 aborted. Re-checked after #720 on the flashnext-2xtx layout from manifests only, no hand-set environment (build 4d808005a1b9): the helper arm placed 21.43 GiB of weights in VRAM against 31.07 GiB for the engine alone (helper-owned experts are not placed: R3_MOE_WORKER_SKIP_OWNED set from the manifest), host-pool experts 77 MiB.
 Identity: KL from the manifest equals KL from raw flags on the same binary to every digit (R9700, one corpus pass, 8240 positions, build 503069237359): KLD mean 0.063926, median 0.015956, p99 0.726998, p99.9 1.764050, top-1 88.556 %, PPL 8.8485, repeat arm identical; on flashnext-4gpu policy-off from the manifest alone equals the earlier env-set run (mean 0.0660, p99.9 3.0029, top-1 88.5437 %) and policy-on with no moves equals policy-off. Same re-check, KL against the exact two-XTX reference (8240 positions): helper-on mean 0.06374, median 0.01497, p99 0.7191, top-1 88.228 % against helper-off mean 0.06393, median 0.01596, p99 0.7270, top-1 88.556 %; control gate passed (p99.9 2.03 against 1.76, the RAD46 tail).
 A/B: no serving-speed claim: the serving start path is unchanged (the plan check is armed for it as before, the earlier rad0009 A/B of manifest against argv, runs/rsc08-s3-gate, stands); the new paths are the KL-mode start and the hand-off environment, checked by the identity runs above; the 4-GPU gate's p99.9 +0.94 failure is the RAD46 static tail, present with and without the policy.
+
+### RUM02 slice 4 — native 2.2 component ownership
+
+The current sealed-v3 native manifest bridge lives in ordinary BigCherry
+`components/serving/bc_serving_manifest.{h,cpp}`, not patch-created
+`core/` files. The source bodies were moved from rad0009's literals,
+with their SHA-256 identities bound by patch.py, and are compiled in
+`rad_core` from the component via the already passed
+`BC_SERVING_V2_CMAKE` path. The 2.2 upstream `core/main.cpp` retains
+its own YAML startup body and makes a single typed
+`bc_serving_engine_entry` call. Managed manifest admission, offline
+quality and plan-memory flag parsing retain their order in the owned
+component, which calls the stock YAML entry when no manifest is present.
+The rad0011-owned plan-memory implementation remains separate; its
+former main.cpp attachment was eliminated. The historical v1/v1.17
+promotion evidence above is retained only as history; it does not
+qualify native v3 starts on the new 2.2 source.
