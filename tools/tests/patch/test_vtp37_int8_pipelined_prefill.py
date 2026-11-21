@@ -47,7 +47,7 @@ class Int8PipelinedPrefillTests(unittest.TestCase):
     def test_plain_norm_writes_the_pair_step_writes(self):
         text = {e.id: e.text for f in load(PKG) for e in f.edits}["plain-norm-fed-pair"]
         self.assertIn("brow_slice(hi8 ? a.q8 : a.q, r0, rows, n),", text)
-        self.assertIn("brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / RAD_FP8_BLOCK),", text)
+        self.assertIn("brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / (hi8 ? a.g8 : (int64_t)RAD_FP8_BLOCK)),", text)
 
     def test_int8_trunk_is_opt_in(self):
         edits = {e.id: e.text for f in load(PKG) for e in f.edits}
