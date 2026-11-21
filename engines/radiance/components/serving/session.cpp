@@ -2862,6 +2862,31 @@ int64_t requested_host_pool(const ManifestRun& writer) {
 
 constexpr int kMaxHostPoolChanges = 2;
 
+// Names every leaf where two plan-key inputs differ, so a refusal says which input moved (a host fact, a derived
+// budget, a device field) and not only that "something changed".
+void collect_key_differences(const Json& was, const Json& now, const std::string& path, std::vector<std::string>& out) {
+    if (was.is_object() && now.is_object()) {
+        for (auto it = was.begin(); it != was.end(); ++it) {
+            if (!now.contains(it.key())) out.push_back(path + "/" + it.key() + ": " + it.value().dump() + " -> absent");
+            else collect_key_differences(it.value(), now.at(it.key()), path + "/" + it.key(), out);
+        }
+        for (auto it = now.begin(); it != now.end(); ++it)
+            if (!was.contains(it.key())) out.push_back(path + "/" + it.key() + ": absent -> " + it.value().dump());
+    } else if (was.is_array() && now.is_array() && was.size() == now.size()) {
+        for (size_t i = 0; i < was.size(); ++i) collect_key_differences(was[i], now[i], path + "/" + std::to_string(i), out);
+    } else if (was != now) {
+        out.push_back(path + ": " + was.dump() + " -> " + now.dump());
+    }
+}
+
+std::string key_differences(const Json& was, const Json& now) {
+    std::vector<std::string> out;
+    collect_key_differences(was, now, "", out);
+    std::string text;
+    for (const std::string& line : out) text += (text.empty() ? "" : "; ") + line;
+    return text.empty() ? "no leaf differs" : text;
+}
+
 } // namespace
 
 // A named RSC12 config may have a prior immutable manifest. Its key covers
@@ -3227,7 +3252,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             Json static_key = frozen_key;
             static_key["engine"]["host_pool_mib"] = initial_pool;
             if (static_key != initial_key)
-                throw PlanFailed("native v3 static plan inputs changed before measurement");
+                throw PlanFailed("native v3 static plan inputs changed before measurement: " + key_differences(initial_key, static_key));
 
             const std::string attempt_id = new_instance_id();
             const fs::path draft = run_dir / ("manifest-native-draft-" + attempt_id + ".json");
@@ -3347,7 +3372,8 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 engine_identity(engine, frozen_runtime_home), "budgets: default", &snapshot);
             if (plan_key(after_key) != plan_key(frozen_key))
                 throw PlanFailed("native v3 plan inputs, native snapshot, model or engine build changed during "
-                                 "measurement; refusing to publish or re-key the result");
+                                 "measurement; refusing to publish or re-key the result: " +
+                                 key_differences(frozen_key, after_key));
 
             const fs::path owner_cache = attempt_dir / "plan-cache";
             const CachedPlan owned = plan_cache_store_owned(
