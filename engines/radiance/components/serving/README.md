@@ -39,8 +39,8 @@ It reads the YAML bytes and resolution root from the admitted manifest.
 
 The foreground `bc-serve serve` and detached `bc-serve start` owner authenticate
 the pre-measurement `v2::Manifest` with the strict reader and bind power to its
-ordered engine/helper PCI addresses. On a cache hit, the measured manifest is
-the initial power admission; on a miss, the unmeasured manifest is admitted
+ordered engine/helper PCI addresses. On a replay of a stored measured manifest (`start --manifest`), that manifest is
+the initial power admission; on a named start, which always measures, the unmeasured manifest is admitted
 **before** any helper or engine measuring process. Both are journaled and
 the final measured manifest is checked against the admitted role/address order,
 profile digest and tuning. An owner that fails to record admission durably

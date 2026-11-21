@@ -48,10 +48,13 @@ bc-serve explain CONFIG --native-config NAME.yaml --model-root DIR              
   `x-bigcherry` section and writes the manifest. `bc-serve --write-manifest` exists only as that internal step (it takes a private
   `--bc-native-config-fd`) and is not an operator interface. A manifest is immutable: an existing file is refused, and the result is read
   back through the same strict reader the engine uses.
-- A serving manifest carries a **measured plan**. A plan-cache hit for this exact configuration (same YAML bytes, resolution root, build,
-  model and host facts) reuses it; a miss measures first: the helpers come up on their cards, the engine runs to the end of its memory plan
-  (`--plan-memory FILE --plan-memory-ranks FILE` on an unmeasured manifest) and exits, and the owner writes the measured manifest from that
-  plan. Run the measuring start under the `gpu` lease. An unmeasured manifest is accepted only by a measuring start.
+- A serving manifest carries a **measured plan**. A named `serve` or `start` always measures first, whatever ran before: the helpers come up
+  on their cards, the engine runs to the end of its memory plan (`--plan-memory FILE --plan-memory-ranks FILE` on an unmeasured manifest)
+  and exits, and the owner writes the measured manifest from that plan. The plan is kept with its start, under `<run-dir>/measurement-attempts/`;
+  `--work-root` holds only the host-wide model-identity cache, so a second start with another run directory measures again. To skip
+  measuring, replay the stored manifest of an earlier start (`start --manifest FILE --run-dir DIR`): it checks the YAML bytes, resolution
+  root, build, model and the owner's measurement receipt against the stored manifest, runs the live room and power checks, and does not
+  measure. Run the measuring start under the `gpu` lease. An unmeasured manifest is accepted only by a measuring start.
 - Lab-only: `--lab-experiment FILE` (a JSON object for `spec.experiment`: `profile_ops`, `kv_resident`, `debug_selection`, `deterministic`,
   placement experiments) writes the manifest with profile `lab`; `--live-policy FILE` sets the helper's live placement policy. A production
   manifest carries neither.

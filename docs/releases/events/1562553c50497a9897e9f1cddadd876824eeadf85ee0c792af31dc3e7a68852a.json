@@ -1,0 +1,17 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261121_231207_documentation-correction-no-b_4557",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/README.md",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md",
+    "docs/planning/active/patching-radiance-upstream/RUM05.md"
+  ],
+  "plan-item-ids": [
+    "RUM05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Correct the serving usage text and docs: a named serve or start always measures and keeps its plan under its own run dir; reuse is stored-manifest replay (start --manifest). Record the measured fresh vs replay start times for a single-R9700 config in RUM05.",
+  "timestamp-utc": "2026-11-21T23:12:07.160749Z",
+  "user-summary-candidate": "Documentation correction; no behaviour change."
+}
