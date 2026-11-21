@@ -10,10 +10,7 @@
 # them and byte-diffs the committed copies. v1 is closed (spec §8): a change that moves either fingerprint (what
 # validates, or a field's class or Radiance binding) is a bigcherry/v2 change; correcting a doc is not (README.md).
 #
-# Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); # Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
-# identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
-
-[[class_default]] provenance
+# Format (see contract/README.md): [contract] identity; [[def]] shared types ($defs); [[class_default]] provenance
 # class defaults by path prefix; [[calibration_key]] the calibrated keys and each value's type; [[field]] one entry per
 # schema node, parents before children, members in document order. Paths are JSON Pointers from the document root, or
 # from a def as "$defs/<name>/..."; "[]" is an array's item and "*" a map's value. Numbers are integers only.
@@ -3430,3 +3427,6 @@ path = "/spec/native_config/resolution_root"
 kind = "string"
 min_length = 1
 doc = "Absolute working directory used by planning, the engine and exact stored replay."
+
+# Provenance class of each subtree (the longest matching prefix wins). `envelope` marks the integrity fields that
+# identify the document; it is not a provenance record class and decides nothing about coverage (spec §7; README.md).
