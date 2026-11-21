@@ -59,6 +59,9 @@ class RadianceAdapter(EngineAdapter):
         if kind not in ("record", "score"):
             raise ValueError(f"quality kind must be record or score, not {kind!r}")
         manifest = arm.get("manifest")
+        serving = arm.get("serving") or {}
+        if "native_config" in serving:
+            return self._native_quality_command(kind, arm, env, run_dir, binary, quality)
         if manifest is None:
             argv = [str(binary), "--model", str(model), *quality["args"]]
         else:
@@ -80,6 +83,28 @@ class RadianceAdapter(EngineAdapter):
             result_path=result, timeout_s=float(quality.get("timeout_s", KLD_TIMEOUT_S)),
             prepare=partial(radiance_manifest.quality_launch, tuple(argv)) if manifest is not None else None,
         )
+
+    def _native_quality_command(self, kind, arm, env, run_dir, binary, quality) -> QualityCommand:
+        """A native arm: the owner reads and seals the arm's YAML, plans it and scores it (``bc-serve quality``). The owner
+        only scores; a reference is recorded beforehand and named by the job (reference_dir with its reference_metadata)."""
+        if kind != "score":
+            raise ValueError(f"{arm['name']}: bc-serve quality scores only; the native arm's reference must already be recorded "
+                             "(quality.reference_dir and quality.reference_metadata)")
+        if quality["args"]:
+            raise ValueError(f"{arm['name']}: a native arm takes its engine configuration from its YAML, so quality.args must be empty")
+        serving = arm["serving"]
+        host = _host()
+        root = os.environ.get("BC_MODEL_ROOT") or host.model_root
+        if not root:
+            raise ValueError(f"{arm['name']}: no model root (BC_MODEL_ROOT or host model-root)")
+        bc_serve = binary.parent.parent / "radiance_home" / "bin" / "bc-serve"
+        result = run_dir / f"{arm['name']}.kld.json"
+        argv = (str(bc_serve), "quality", serving["config"], "--native-config", serving["native_config"],
+                "--model-root", str(root), "--engine-binary", str(binary), "--run-dir", str(run_dir / f"{arm['name']}.owner"),
+                "--kld-ref", str(quality["reference_dir"]), "--kld-out", str(result))
+        return QualityCommand(
+            argv=argv, env=dict(env), log_path=run_dir / f"{arm['name']}.{kind}.log", result_path=result,
+            timeout_s=float(quality.get("timeout_s", KLD_TIMEOUT_S)))
 
     def cpu_smoke(self, context: ProjectContext, build_dir: Path, model_root: Path) -> CpuSmokeSpec | None:
         """radiance on its CPU kernel plugins only: ``--kernels libavx,libref`` (libavx is the CPU host backend, libref

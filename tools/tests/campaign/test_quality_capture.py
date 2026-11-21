@@ -125,6 +125,26 @@ else:
             self.assertEqual(result["returncode"], 0, recorded.log_path.read_text())
             self.assertEqual(result["manifest_sha256"], env["EXPECTED_SHA"])
 
+    def test_native_arm_is_scored_by_the_owner_from_its_own_yaml(self):
+        from types import SimpleNamespace
+        arm = {"name": "attn-native", "model": Path("/m.rad"), "settings": {},
+               "serving": {"config": "qwen27b-2xtx", "native_config": "/arms/attn-native.yaml"}}
+        quality = {"reference_dir": "/ref", "args": [], "timeout_s": 60}
+        rad = adapter("radiance")
+        with patch("bigcherry.engine_adapters.radiance._host", return_value=SimpleNamespace(model_root="/models")), \
+                patch.dict(os.environ, {"BC_MODEL_ROOT": ""}):
+            command = rad.quality_command("score", arm, {}, Path("/run"), Path("/b/bin/radiance"), Path("/m.rad"), quality)
+            self.assertEqual(command.argv, (
+                "/b/radiance_home/bin/bc-serve", "quality", "qwen27b-2xtx", "--native-config", "/arms/attn-native.yaml",
+                "--model-root", "/models", "--engine-binary", "/b/bin/radiance", "--run-dir", "/run/attn-native.owner",
+                "--kld-ref", "/ref", "--kld-out", "/run/attn-native.kld.json"))
+            self.assertIsNone(command.prepare)
+            with self.assertRaisesRegex(ValueError, "must already be recorded"):
+                rad.quality_command("record", arm, {}, Path("/run"), Path("/b/bin/radiance"), Path("/m.rad"), quality)
+            with self.assertRaisesRegex(ValueError, "quality.args must be empty"):
+                rad.quality_command("score", arm, {}, Path("/run"), Path("/b/bin/radiance"), Path("/m.rad"),
+                                    {**quality, "args": ["--tp", "2"]})
+
     def test_record_and_score_invocations(self):
         rad = adapter("radiance")
         arm = {"name": "on", "model": Path("/m.rad"), "settings": {}}
