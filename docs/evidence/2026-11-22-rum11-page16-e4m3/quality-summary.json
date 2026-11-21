@@ -1,0 +1,54 @@
+{
+  "provenance": "RUM06 measurements, 2026-11-21; reused, not new RUM11 measurements",
+  "reference": "Qwen3.8-27B BF16",
+  "kv_cache_dtype": "fp8",
+  "num_speculative_tokens": 0,
+  "corpus_documents": 4,
+  "candidates": [
+    {
+      "candidate": "W8A8, prior 5/5/6",
+      "tp_lk_split": "5/5/6",
+      "evaluated_positions": 8240,
+      "kld_mean": 0.0013915704938133452,
+      "kld_p99_9": 0.038597088124603204,
+      "top1_agreement": 0.9677184466019417,
+      "perplexity_ratio": 0.9997725048626296,
+      "per_document_kld_p99_9": [
+        0.035914388310161124,
+        0.054193940311669575,
+        0.03588176888600119,
+        0.03509528871625695
+      ]
+    },
+    {
+      "candidate": "IQ8R 4/4/8",
+      "tp_lk_split": "4/4/8",
+      "evaluated_positions": 8240,
+      "kld_mean": 0.0012288659141000417,
+      "kld_p99_9": 0.04692061632127042,
+      "top1_agreement": 0.975121359223301,
+      "perplexity_ratio": 1.0005387318488446,
+      "per_document_kld_p99_9": [
+        0.0810024030953628,
+        0.047245144173502514,
+        0.018613985186442916,
+        0.016720156509429346
+      ]
+    },
+    {
+      "candidate": "IQ8R 6/6/4 (released qwen27b-tp3 layout)",
+      "tp_lk_split": "6/6/4",
+      "evaluated_positions": 8240,
+      "kld_mean": 0.0012822843544710756,
+      "kld_p99_9": 0.038078299507499865,
+      "top1_agreement": 0.9726941747572816,
+      "perplexity_ratio": 1.0004905057023996,
+      "per_document_kld_p99_9": [
+        0.05205975969135315,
+        0.11099480666219919,
+        0.02146341166645329,
+        0.02883309525623938
+      ]
+    }
+  ]
+}

@@ -1,0 +1,77 @@
+{
+  "release": "bc-radiance-1170.37.0",
+  "radiance_version": "2.2.0",
+  "qwen27b_released_configs": [
+    {
+      "config": "qwen27b-2xtx",
+      "kv_dtype": "fp8",
+      "serve_healthy": true,
+      "canary_passed": true,
+      "canary_completion_present": true,
+      "clean_stop": true,
+      "engine_log_count": 1,
+      "unresolved_kernel_markers": 0
+    },
+    {
+      "config": "qwen27b-tp3",
+      "kv_dtype": "fp8",
+      "serve_healthy": true,
+      "canary_passed": true,
+      "canary_completion_present": true,
+      "clean_stop": true,
+      "engine_log_count": 1,
+      "unresolved_kernel_markers": 0
+    },
+    {
+      "config": "qwen27b-tp3-capacity",
+      "kv_dtype": "fp8",
+      "serve_healthy": true,
+      "canary_passed": true,
+      "canary_completion_present": true,
+      "clean_stop": true,
+      "engine_log_count": 1,
+      "unresolved_kernel_markers": 0
+    },
+    {
+      "config": "qwen27b-tp3-long",
+      "kv_dtype": "fp8",
+      "serve_healthy": true,
+      "canary_passed": true,
+      "canary_completion_present": true,
+      "clean_stop": true,
+      "engine_log_count": 1,
+      "unresolved_kernel_markers": 0
+    },
+    {
+      "config": "qwen27b-tp3-long-bf16",
+      "kv_dtype": "bf16",
+      "serve_healthy": true,
+      "canary_passed": true,
+      "canary_completion_present": true,
+      "clean_stop": true,
+      "engine_log_count": 1,
+      "unresolved_kernel_markers": 0
+    },
+    {
+      "config": "qwen27b-tp3-long-bf16i8",
+      "kv_dtype": "bf16_i8",
+      "serve_healthy": true,
+      "canary_passed": true,
+      "canary_completion_present": true,
+      "clean_stop": true,
+      "engine_log_count": 1,
+      "unresolved_kernel_markers": 0
+    }
+  ],
+  "prior_candidate": {
+    "serve_healthy": true,
+    "canary_passed": true,
+    "canary_completion_present": true,
+    "clean_stop": true,
+    "engine_log_count": 1,
+    "unresolved_kernel_markers": 0,
+    "config": "qwen27b-tp3-int8-556",
+    "release_context": "earlier Radiance 2.2 candidate, not shipped in bc-radiance-1170.37.0",
+    "serve_exit_code": 0
+  }
+}

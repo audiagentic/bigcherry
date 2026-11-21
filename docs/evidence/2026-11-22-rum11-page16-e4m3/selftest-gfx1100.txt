@@ -1,0 +1,15 @@
+GPU index: 0
+GPU arch: gfx1100
+Case: qk_norm_rope_gate_kv_store_h256_page16_fp8
+Exit: 0
+
+  ok    rope_table_f32
+  ok    qk_norm_rope_gate
+  ok    kv_store_fp8
+  ok    qk_norm_rope_gate_kv_store_h256_page16_fp8
+  ok    qk_norm_rope_gate_kv_store_h256_page16_fp8 is byte-identical to the prologue + kv_store
+  ok    rope_table_f32
+  ok    qk_norm_rope_gate
+  ok    kv_store_fp8
+  ok    qk_norm_rope_gate_kv_store_h256_page16_fp8
+  ok    qk_norm_rope_gate_kv_store_h256_page16_fp8 is byte-identical to the prologue + kv_store
