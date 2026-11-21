@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261121_214235_radiance-22-migration-is-comp_3185",
+  "files": [
+    "docs/evidence/radiance-latest-bump/RUM09-GATE-E.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM09.md"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Closed RUM09. Radiance 2.2 is released as bc-radiance 1170.37.0: the Gate D paired comparison passed, all 16 shipped configs start, answer the canary and stop cleanly from the installed prefix, and the installed release verifies natively. Relocation is by reinstalling at the new root; moving an installed root is refused by design.",
+  "timestamp-utc": "2026-11-21T21:42:35.996256Z",
+  "user-summary-candidate": "Radiance 2.2 migration is complete and verified from the installed release."
+}
