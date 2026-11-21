@@ -1199,8 +1199,8 @@ class Owner {
         int code = 0;
         std::vector<std::string> failures;
         try {
-            if (s_.quality && (v2::kContractVersion != 3 || s_.laboratory))
-                throw PlanFailed("quality requires a native v3 owner");
+            if (s_.quality && s_.laboratory)
+                throw PlanFailed("quality requires a production native owner");
             if (s_.quality)
                 validate_quality_paths(*s_.quality);
             if (s_.power_hook.apply && s_.power_hook.begin_manifest)
@@ -1354,8 +1354,7 @@ class Owner {
             if (s_.before_gpu_start)
                 require_callback(s_.before_gpu_start.invoke("session.before_gpu_start", plan_),
                                  "pre-exec process boundary");
-            if (v2::kContractVersion == 3 || plan_.native_launch)
-                recheck_native_host_room();
+            recheck_native_host_room();
             start_helpers();
             if (s_.quality) {
                 score_quality(*s_.quality);
@@ -1929,16 +1928,14 @@ class Owner {
         const fs::path execution_manifest = plan_.execution_manifest();
         const auto manifest = v2::load_manifest(execution_manifest, v2::PlanUse::serving);
         const auto& native_launch = plan_.native_launch;
-        if (v2::kContractVersion == 3 || native_launch) {
-            if (!native_launch || !plan_.pinned_manifest || !manifest)
-                throw PlanFailed("native serving: missing admitted launch inputs or sealed manifest");
-            const auto native = v2::native_config_view(manifest.value());
-            if (!native || argv.empty() || !fs::path(argv.front()).is_absolute() ||
-                argv != std::vector<std::string>{argv.front(), "--manifest", execution_manifest.string(),
-                                                 "--role", "engine"})
-                throw PlanFailed("native serving: launch does not match the admitted engine manifest");
-            native_launch->root.require_matches(native->identity.resolution_root);
-        }
+        if (!native_launch || !plan_.pinned_manifest || !manifest)
+            throw PlanFailed("native serving: missing admitted launch inputs or sealed manifest");
+        const auto native = v2::native_config_view(manifest.value());
+        if (!native || argv.empty() || !fs::path(argv.front()).is_absolute() ||
+            argv != std::vector<std::string>{argv.front(), "--manifest", execution_manifest.string(),
+                                             "--role", "engine"})
+            throw PlanFailed("native serving: launch does not match the admitted engine manifest");
+        native_launch->root.require_matches(native->identity.resolution_root);
         if (quality) {
             argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
         } else if (manifest && manifest.value().spec.handoff &&
@@ -1949,10 +1946,9 @@ class Owner {
         }
         plan_.engine_launched_at = std::chrono::system_clock::now();
         return spawn(
-            argv, native_launch ? native_launch->environment : child_environment(environ, plan_.runtime), log,
+            argv, native_launch->environment, log,
             [&](pid_t pid) { track("engine", pid, log, &argv); },
-            plan_.pinned_manifest ? plan_.pinned_manifest->descriptor() : -1,
-            native_launch ? native_launch->root.descriptor() : -1);
+            plan_.pinned_manifest->descriptor(), native_launch->root.descriptor());
     }
 
     std::optional<std::string> exited_child() {
@@ -3165,8 +3161,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const NativeConfigSnapshot snapshot = *sealed_snapshot;
         launch.root.require_matches(snapshot.resolution_root());
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
-        const std::string matched_engine_identity =
-            v2::kContractVersion == 3 ? engine_identity(engine, frozen_runtime_home) : std::string{};
+        const std::string matched_engine_identity = engine_identity(engine, frozen_runtime_home);
         const NativeConfigInspection native_inspection = inspect_and_reconcile_native_config(
             engine, snapshot, frozen_runtime_home, v.at("engine").at("model").get<std::string>(),
             launch.environment, selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, launch.root.descriptor());
@@ -3178,10 +3173,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             out.port = native_inspection.settings.port;
             return out;
         }
-        if (v2::kContractVersion != 3)
-            throw PlanFailed("native config admission was inspected, but native writer/P1/measurement/replay "
-                             "integration is incomplete; refusing before cache reuse, manifest writing, power "
-                             "admission, or GPU child startup");
         if (engine_identity(engine, frozen_runtime_home) != matched_engine_identity)
             throw PlanFailed("native v3 engine or runtime changed during YAML inspection");
         if (in.runner || in.calibration_run || !in.experiment_file.empty())
@@ -3773,9 +3764,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
 
 static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const fs::path& run_dir,
                                           const Hooks& hooks, const NativeReplayAdmission* expected_native) {
-    if (given.native_admission && v2::kContractVersion != 3)
-        throw PlanFailed("replay: private native admission cannot be combined with legacy stored replay; "
-                         "replay must consume the embedded native snapshot");
     if (!hooks.admit_power || !hooks.wait)
         throw PlanFailed("replay: missing required durable power admission or owner stop gate");
     if (given.stored_manifest.empty())
@@ -3783,12 +3771,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     const fs::path stored = fs::absolute(given.stored_manifest);
     if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16ULL * 1024ULL * 1024ULL)
         throw PlanFailed("replay: manifest must be an existing bounded regular file");
-    const std::string bytes = v2::kContractVersion == 3 ? read_manifest_file(stored) : read_file(stored);
+    const std::string bytes = read_manifest_file(stored);
     const Json source = Json::parse(bytes, nullptr, false);
-    if (const auto api = source.find("apiVersion");
-        v2::kContractVersion != 3 && api != source.end() && *api == "bigcherry/v3")
-        throw PlanFailed("replay: native v3 stored manifests require fresh native admission; stored replay is "
-                         "not available until the v3 owner/cache/replay chain is complete");
     const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);
     if (!verified)
         throw PlanFailed(v2::render_human("bc-serve replay", verified.error()));

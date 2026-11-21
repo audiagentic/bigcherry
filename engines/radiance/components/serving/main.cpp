@@ -378,7 +378,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
         opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
     }
-    if (bc::serving::v2::kContractVersion == 3 && native_config.empty() && stored_manifest.empty() &&
+    if (native_config.empty() && stored_manifest.empty() &&
         !config_name.empty() && (cmd == "serve" || cmd == "start")) {
         // A config is its YAML: NAME.yaml of the verified bundle, else of --configs / BIGCHERRY_CONFIGS.
         std::vector<fs::path> sources = opts.configs;
@@ -387,17 +387,14 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             native_config = found;
     }
     if (!native_config.empty()) {
-        if (bc::serving::v2::kContractVersion != 3)
-            throw std::runtime_error("--native-config requires a v3 serving build");
         if (config_name.empty() || !stored_manifest.empty() || opts.model_root.empty())
             throw std::runtime_error("--native-config requires a named CONFIG and --model-root DIR");
         if (!fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root))
             throw std::runtime_error("--native-config and --model-root must name an existing file and directory");
         if (calibration_run || !lab_experiment.empty())
             throw std::runtime_error("--native-config requires a normal serving start");
-    } else if ((cmd == "serve" || cmd == "start") && bc::serving::v2::kContractVersion == 3 &&
-               stored_manifest.empty()) {
-        throw std::runtime_error("v3 serving needs " + config_name + ".yaml in the bundle or --configs DIR (or --native-config YAML) for a fresh start");
+    } else if ((cmd == "serve" || cmd == "start") && stored_manifest.empty()) {
+        throw std::runtime_error("serving needs " + config_name + ".yaml in the bundle or --configs DIR (or --native-config YAML) for a fresh start");
     }
     if (quality) {
         if (native_config.empty() || quality->reference.empty() || quality->output.empty() ||
@@ -406,8 +403,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         quality->reference = fs::canonical(quality->reference);
         quality->output = fs::absolute(quality->output);
     }
-    const bool installed_native_replay =
-        prefix && bc::serving::v2::kContractVersion == 3 && !stored_manifest.empty();
+    const bool installed_native_replay = prefix && !stored_manifest.empty();
     if ((!config_name.empty() || installed_native_replay) && opts.configs.empty()) {
         const char* env = std::getenv("BIGCHERRY_CONFIGS");
         if (!env || !*env) {
@@ -592,8 +588,6 @@ const std::string cache_note = work_root.empty()
         : "host-wide model identity cache: " + work_root.string();
     const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
     if (!native_config.empty()) {
-        if (bc::serving::v2::kContractVersion != 3)
-            throw std::runtime_error("explain: --native-config requires a v3 serving build");
         ss::EnginePlanInputs preflight;
         preflight.options = opts;
         preflight.named_config = name;
@@ -908,9 +902,7 @@ int main(int argc, char** argv) {
         const bool plan_mode = !write_manifest.empty();
         if (native_config_fd >= 0 && !plan_mode)
             throw std::runtime_error("--bc-native-config-fd is an internal --write-manifest input");
-        if (native_config_fd >= 0 && bc::serving::v2::kContractVersion != 3)
-            throw std::runtime_error("--bc-native-config-fd requires the isolated v3 manifest edition");
-        if (plan_mode && bc::serving::v2::kContractVersion == 3) {
+        if (plan_mode) {
             // The v3 measuring/writing path is owner-bound to the sealed native
             // YAML snapshot. Never fall back to the v2 key or import caller-
             // supplied plan files: that would create an unowned cache entry
@@ -937,13 +929,13 @@ int main(int argc, char** argv) {
                                      "--plan-memory and --plan-memory-ranks)");
         if (!expected_owner_attempt.empty() && !measured_plan_file.empty())
             throw std::runtime_error("--expected-owner-attempt is for cache-only writer reads");
-        if (plan_mode && bc::serving::v2::kContractVersion == 3 && !unmeasured &&
+        if (plan_mode && !unmeasured &&
             expected_owner_attempt.empty())
             throw std::runtime_error("v3 measured cache reads require --expected-owner-attempt");
-        if (plan_mode && bc::serving::v2::kContractVersion == 3 && !unmeasured && expected_plan_key.empty())
+        if (plan_mode && !unmeasured && expected_plan_key.empty())
             throw std::runtime_error("v3 measured cache reads require --expected-plan-key");
         if (!expected_plan_key.empty() && !unmeasured &&
-            !(plan_mode && bc::serving::v2::kContractVersion == 3 && native_config_fd >= 3))
+            !(plan_mode && native_config_fd >= 3))
             throw std::runtime_error(
                 "--expected-plan-key is for a session-owned unmeasured call or v3 measured cache read");
         if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)

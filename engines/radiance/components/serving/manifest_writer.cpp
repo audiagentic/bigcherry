@@ -407,25 +407,21 @@ std::string new_instance_id() {
 std::string file_sha256(const fs::path& file) { return sha256_hex(slurp(file)); }
 
 BuiltManifest build_manifest(const ManifestInputs& in) {
-    if constexpr (v2::kContractVersion == 3) {
-        if (!in.native_config)
-            fail("the v3 serving manifest requires an admitted native fleet YAML snapshot");
-        if (in.measured) {
-            const auto& key = in.measured->key_inputs;
-            if (!key.is_object() || !in.measured->plan.owner || in.engine_binary.empty())
-                fail("the native measured plan is missing its exact key or owner measurement receipt");
-            const std::string model_id = container_identity(in.resolved.values.at("engine").at("model").get<std::string>());
-            const fs::path home = in.resolved.values.at("engine").at("radiance_home").get<std::string>();
-            const std::string build_id = engine_identity(in.engine_binary, home);
-            const Json expected = plan_key_inputs(in.resolved.values, in.resolved.facts,
-                                                  model_id, build_id, in.plan_engine_args, &*in.native_config);
-            if (key != expected)
-                fail("the measured plan key differs from the resolved native YAML, root or ordered device identity");
-            if (in.measured->plan.key != plan_key(key))
-                fail("the cached native measured plan key does not match its key inputs");
-        }
-    } else if (in.native_config) {
-        fail("the v2 serving manifest cannot carry a native fleet YAML snapshot");
+    if (!in.native_config)
+        fail("the serving manifest requires an admitted native fleet YAML snapshot");
+    if (in.measured) {
+        const auto& key = in.measured->key_inputs;
+        if (!key.is_object() || !in.measured->plan.owner || in.engine_binary.empty())
+            fail("the native measured plan is missing its exact key or owner measurement receipt");
+        const std::string model_id = container_identity(in.resolved.values.at("engine").at("model").get<std::string>());
+        const fs::path home = in.resolved.values.at("engine").at("radiance_home").get<std::string>();
+        const std::string build_id = engine_identity(in.engine_binary, home);
+        const Json expected = plan_key_inputs(in.resolved.values, in.resolved.facts,
+                                              model_id, build_id, in.plan_engine_args, &*in.native_config);
+        if (key != expected)
+            fail("the measured plan key differs from the resolved native YAML, root or ordered device identity");
+        if (in.measured->plan.key != plan_key(key))
+            fail("the cached native measured plan key does not match its key inputs");
     }
 
     const Json& values = in.resolved.values;
