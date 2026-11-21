@@ -25,14 +25,14 @@ models:
     # (VTP31 experiment 7).
     pipelined-prefill-min-rows: 256
     tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
-    # The all-reduce grid without the two-shot form, as the resident-context config was set (VTP33, on an earlier split and
-    # model; not re-measured on IQ8R).
-    tune-pin: "all_reduce:nblocks=4,nthreads=256"
+    # Re-measured on IQ8R (A B A B against the grid without the two-shot forms): the two-shot grid cuts the time to first
+    # token by 25% and raises 8-stream throughput by 18%; decode step is equal at 1 and 4 streams and about 2 ms longer at 8.
+    tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
 x-bigcherry:
   schema: 1
-  description: "qwen27b-tp3 for resident context: 262,144 tokens a session, the all-reduce grid without the two-shot form"
+  description: "qwen27b-tp3 for resident context: 262,144 tokens a session"
   variant-of: "qwen27b-tp3"
-  differs: ["models.qwen27b.max-model-len", "models.qwen27b.tune-pin"]
+  differs: ["models.qwen27b.max-model-len"]
   ranks:
     - {arch: "gfx1100", count: 2}
     - {arch: "gfx1201", count: 1}

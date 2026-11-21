@@ -244,7 +244,7 @@
     if (name == "qwen27b-tp3-capacity") {
         Preset p;
         p.name = "qwen27b-tp3-capacity";
-        p.description = "qwen27b-tp3 for resident context: 262,144 tokens a session, the all-reduce grid without the two-shot form";
+        p.description = "qwen27b-tp3 for resident context: 262,144 tokens a session";
         p.model = "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad";
         p.tp_wire = "exact";
         p.ranks.push_back({"gfx1100", 2});
@@ -265,7 +265,7 @@
         p.sets.push_back("tuning.pipelined_prefill=\"on\"");
         p.sets.push_back("tuning.pipelined_prefill_min_rows=256");
         p.sets.push_back("tuning.tp_ownership=\"kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12\"");
-        p.sets.push_back("tuning.tune_pin=\"all_reduce:nblocks=4,nthreads=256\"");
+        p.sets.push_back("tuning.tune_pin=\"all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1\"");
         return p;
     }
     if (name == "qwen27b-tp3-long-bf16") {
