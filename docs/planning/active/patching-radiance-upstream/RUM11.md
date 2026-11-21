@@ -55,9 +55,10 @@ Every qwen27b fp8 config starts on the 2.2 build with no band resolving to no ke
 
 ## Notes
 
-
+2026-11-21 hardware: qwen27b-tp3-int8-556 starts on the 2.2 build of f5c82c33d (build 8451d2f1/8c64b580; RUM11 rows 5d9735720 plus the rank-devices fix 64bae9124). Ranks gfx1100, gfx1100, gfx1201, config read from its YAML with no --set, runtime home derived from --engine-binary. The canary returns ' Paris.\nThe capital of Germany is Berlin.' and the stop is clean. DFlash2 speculation is active at depth 3 (the w8a8-df2 container's MXFP4 drafter serves). The canary ran at 89-102 tok/s. Remaining for this item: the page16 selftest on gfx1100/gfx1201 and KLD/top-1, which will now run on the IQ8R container (RUM06 owner decision) against qwen3.8-27b-bf16.
 
 ## Change Log
 
 - 2026-11-20T11:54:02.454411+00:00 (created-by): Created by claude
 - 2026-11-20T11:54:21.655855+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-21T00:59:55.092369+00:00 (updated-by): Updated: section:notes
