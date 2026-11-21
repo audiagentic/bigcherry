@@ -38,10 +38,30 @@ void rows(int width, Shares shares, int nrows, int phase, double eps) {
             }
         const double global = 1.0 / std::sqrt(sq / width + eps);
         const auto distributed = global_rms(x, gain, eps);
+        // C05's existing-op assembly: put disjoint shard columns into a
+        // zeroed whole-width row, sum rank replicas, full-width RMS,
+        // then extract each rank's local columns. Independent of the
+        // direct sum-of-squares TP3 oracle above.
+        std::array<Vec, 3> padded;
+        for (int rank = 0; rank < 3; ++rank) {
+            padded[rank].assign(width, 0.0f);
+            for (std::size_t j = 0; j < x[rank].size(); ++j)
+                padded[rank][cut[rank].offset + j] = x[rank][j];
+        }
+        Vec assembled(width, 0.0f);
+        for (int i = 0; i < width; ++i)
+            for (int rank = 0; rank < 3; ++rank)
+                assembled[i] += padded[rank][i];
+        double ss = 0;
+        for (float v : assembled) ss += double(v) * v;
+        const double packed_factor = 1.0 / std::sqrt(ss / width + eps);
         for (int rank = 0; rank < 3; ++rank)
             for (std::size_t j = 0; j < x[rank].size(); ++j) {
                 const double dense = x[rank][j] * global * gain[rank][j];
+                const double packed = assembled[cut[rank].offset + j] *
+                                      packed_factor * gain[rank][j];
                 assert(std::abs(distributed[rank][j] - dense) < 2e-6 * (1 + std::abs(dense)));
+                assert(std::abs(packed - dense) < 2e-6 * (1 + std::abs(dense)));
             }
     }
 }

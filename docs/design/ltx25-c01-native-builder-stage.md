@@ -122,3 +122,21 @@ architecture-owned work is global Q/K normalization, LTX-specific
 buffers/projections, guidance branch scheduling and full DiT graph
 composition. Numerical and GPU/device gates must pass before enabling
 the existing production serving route.
+
+## C05 full-width all-head Q/K RMS diagnostic
+
+The same opt-in architecture patch now includes
+ltx2::Tp3GlobalRms, a **native operation composition** with no new
+kernel, collective, configuration or serving component.
+It zero-packs local head columns, performs the existing exact all-reduce,
+calls the original full-width RMS with full checkpoint gain, and
+extracts the owned columns. The caller supplies one reusable Q/K scratch.
+This is host graph proof, not an activated TP3 attention call site.
+
+The real-model C05 test exercises 1,728 fused QKV/KV cases across the
+48 blocks, six attention kinds, two legal rank layouts and three ranks.
+The standalone RMS numerical oracle checks the pack/reduce/extract
+identity. The all-reduce payload is full-width and therefore expensive;
+measure it before choosing a production implementation. Only a
+measured need should justify a compact row-statistic kernel extension.
+See docs/evidence/2026-11-22-ltx25-c05-native-global-rms/README.md.

@@ -63,7 +63,7 @@ constexpr const char* kBiasedOutputs[] = {
 };
 enum class ProbeCase {
     Normal, WrongGroup, PrematureBias, InvalidColumn,
-    DeferredBias, InvalidDeferred, MissingDeferredBias, Reduced
+    DeferredBias, InvalidDeferred, MissingDeferredBias, Reduced, GlobalRms
 };
 static void run(const RadFile& model, Registry& reg, const std::string& base,
                 int banks, int nheads, int rank, int start_heads, int owned_heads,
@@ -191,6 +191,74 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
             need(b.program().op(handle) != nullptr,
                  "C04 collective or bias missing from native graph");
     }
+    if (variant == ProbeCase::GlobalRms) {
+        need(rows && (banks == 2 || banks == 3),
+             "C05 global Q/K norm needs a real fused QKV/KV projection");
+        // Native RAD2 supplies BOTH full-width gains. A KV-only probe uses
+        // a local-Q activation stand-in, not another projection.
+        const std::string attn = base.substr(0, base.rfind('.'));
+        const std::string qname = attn + ".q_norm.weight";
+        const std::string kname = attn + ".k_norm.weight";
+        for (const auto& name : {qname, kname}) {
+            const RadFileEntry* gain_source = model.find(name);
+            need(gain_source && gain_source->rank == 1 &&
+                 gain_source->shape[0] == full,
+                 "C05 source-backed global Q/K gain has wrong shape");
+        }
+        const rad_weight wq = ltx2::decl_w(
+            &b, nm.f("%s", qname.c_str()), RAD_BF16, {full},
+            RAD_ACCESS_PER_TOKEN, RAD_SHARD_NONE, ltx2::grp_layer(0));
+        const rad_weight wk = ltx2::decl_w(
+            &b, nm.f("%s", kname.c_str()), RAD_BF16, {full},
+            RAD_ACCESS_PER_TOKEN, RAD_SHARD_NONE, ltx2::grp_layer(0));
+        need(wq && wk, "C05 full Q/K gain declaration failed");
+        const rad_buf scratch = ltx2::decl_b(
+            &b, nm.f("c05.global.scratch"), RAD_BF16, {4,full});
+        const rad_buf query = banks == 3 ? y : ltx2::decl_b(
+            &b, nm.f("c05.query.local"), RAD_BF16, {4,width});
+        need(scratch && query, "C05 missing Q/K buffers");
+        ltx2::Tp3GlobalRms nq{}, nk{}, negative{};
+        ltx2::Geom wrong = g;
+        wrong.world = 2;
+        need(negative.declare(&b, wrong, query, scratch, wq, full,
+                              offset, width, 0, hd, 4, 1e-6) ==
+             RAD_E_UNSUPPORTED, "C05 allowed non-TP3 world");
+        wrong = g;
+        wrong.wire_exact = 0;
+        need(negative.declare(&b, wrong, query, scratch, wq, full,
+                              offset, width, 0, hd, 4, 1e-6) ==
+             RAD_E_UNSUPPORTED, "C05 silently accepted lossy wire");
+        need(negative.declare(&b, g, query, scratch, wq, full,
+                              offset+1, width, 0, hd, 4, 1e-6) ==
+             RAD_E_UNSUPPORTED, "C05 allowed fractional head span");
+        need(!negative.clear && !negative.scratch,
+             "C05 rejected geometry left builder state behind");
+        need(nq.declare(&b, g, query, scratch, wq, full,
+                        offset, width, 0, hd, 4, 1e-6) == RAD_OK,
+             "C05 source-backed Q all-head normalization failed");
+        need(nk.declare(&b, g, y, scratch, wk, full,
+                        offset, width, banks == 3 ? width : 0,
+                        hd, 4, 1e-6) == RAD_OK,
+             "C05 source-backed K all-head normalization failed");
+        need(nq.scratch == nk.scratch && nq.scratch == scratch &&
+             nq.full == full && nk.full == full && nq.local == width &&
+             nk.local == width && nq.lo == offset && nk.lo == offset,
+             "C05 duplicated scratch or lost rank geometry");
+        for (const rad_weight h : {wq,wk})
+            need(b.program().weight(h)->decl.shard == RAD_SHARD_NONE,
+                 "C05 gain must cover all heads");
+        for (const rad_op h : {nq.clear,nq.insert,nq.reduce,nq.norm,nq.extract,
+                               nk.clear,nk.insert,nk.reduce,nk.norm,nk.extract}) {
+            need(h && b.program().op(h) != nullptr,
+                 "C05 omitted an existing Radiance operation");
+            for (const auto& band : b.program().op(h)->bands)
+                need(static_cast<bool>(band.dom[RAD_DOMAIN_HOST]),
+                     "C05 native host kernel unavailable");
+        }
+        need(nq.declare(&b, g, query, scratch, wq, full,
+                        offset, width, 0, hd, 4, 1e-6) ==
+             RAD_E_UNSUPPORTED, "C05 allowed repeated declaration");
+    }
     if (deferred && variant != ProbeCase::Reduced)
         need(!linear.bias && !linear.op_b,
              "partial output declared bias before collective");
@@ -252,6 +320,40 @@ int main(int argc, char** argv) {
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
         if (argc == 4) {
+            if (std::string(argv[3]) == "--c05") {
+                const std::pair<const char*, int> qkv_kv[] = {
+                    {"attn1.qkv",3}, {"audio_attn1.qkv",3},
+                    {"attn2.kv",2}, {"audio_attn2.kv",2},
+                    {"a2v.kv",2}, {"v2a.kv",2}
+                };
+                int proven = 0;
+                for (int64_t block = 0; block < nblocks; ++block) {
+                    const std::string prefix =
+                        "dit.blk." + std::to_string(block) + ".";
+                    for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16},
+                          std::array<int,3>{12,12,8}}) {
+                        int offset = 0;
+                        for (int rank = 0; rank < 3; ++rank) {
+                            for (const auto& kind : qkv_kv) {
+                                run(model, reg, prefix+kind.first, kind.second,
+                                    nheads, rank, offset, split[rank],
+                                    ProbeCase::GlobalRms);
+                                ++proven;
+                            }
+                            offset += split[rank];
+                        }
+                        need(offset == nheads,
+                             "C05 ownership does not cover all heads");
+                    }
+                }
+                need(proven == nblocks * 2 * 3 *
+                    static_cast<int>(sizeof qkv_kv/sizeof qkv_kv[0]),
+                    "C05 graph census changed");
+                std::printf("LTX2 C05 global Q/K RMS: %d fused projections, %d native graph ops, geometry refusals passed\n",
+                            proven, proven * 10);
+                return 0;
+            }
             need(std::string(argv[3]) == "--c04", "unexpected native test mode");
             int proven = 0;
             for (int64_t block = 0; block < nblocks; ++block) {

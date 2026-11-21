@@ -107,5 +107,7 @@ if(LTX_NATIVE_CORE_LIB)
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}")
     add_test(NAME ltx_c04_deferred_output_reduce
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c04)
+    add_test(NAME ltx_c05_global_qk_rms_graph
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c05)
   endif()
 endif()

@@ -1,4 +1,4 @@
-"""Diagnostic LTX C01: native IQ8R fused-bank/column weight declaration only.
+"""Diagnostic LTX C01-C05: reuse native IQ8R weight, reduce and norm operations.
 
 Targets the frozen Radiance 2.2 ABI44 candidate, never production v1.17.
 TP1 callers pass no C01Slice and keep their exact original code path.
@@ -18,6 +18,7 @@ _SHA256 = {
     "preflight.inc": "67d20f9f6eae9f9b107560f771672ff8198d80fa63d39eb27d17a5038999b35f",
     "bias.inc": "7b4b7f90810a8e6387e669a8c2db11e4c160ca77466ab86ae1b3da2fb5747e50",
     "linear.inc": "5e6af267c582872681306a492769879fc90609cf2b21284f903555239a06eacb",
+    "global_rms.inc": "18bc49f405708bd19151def2054ba626bdb808ff11924c4d049afbd6ac122bbc",
     "post_reduce.inc": "f47113a5c2f30d107a1f05f5e189447ea9b16ae35d5e64cb6aecfbaeff3cd64d",
 }
 
@@ -108,6 +109,12 @@ PATCHES = (
                 "                               max_rows, parts));\n",
                 _source("linear.inc"),
                 "BC_LTX3_C01_LINEAR",
+            ),
+            _edit(
+                "ltx-c05-global-rms",
+                "struct Attn {\n",
+                _source("global_rms.inc") + "struct Attn {\n",
+                "BC_LTX3_C05_GLOBAL_RMS",
             ),
             _edit(
                 "ltx-c04-finalize",

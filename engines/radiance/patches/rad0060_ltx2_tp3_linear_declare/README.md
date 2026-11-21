@@ -40,10 +40,17 @@ The patched architecture translation unit compiles on the released
 - 2,640 biased output-column native declarations safely defer bias;
   384 model-derived rank K cuts are not admissible.
 - Four focused negative cases and every model block's output geometry
-  are checked. Source patch applies idempotently (nine edits).
+  are checked. Source patch applies idempotently (ten edits).
 
 See `docs/evidence/2026-11-22-ltx25-c03-deferred-bias/README.md`.
 C04 adds 2,016 source-backed exact reduction and post-reduction bias
 declarations. See docs/evidence/2026-11-22-ltx25-c04-native-reduce/README.md.
-Actual rank collective execution, full TP3 DiT graph, all-head Q/K RMS,
+C05 adds 1,728 native model-backed global-Q/K-norm graph cases
+(3,456 Q/K gains) with zero-fill, local cast, exact all_reduce,
+the unchanged full-width rmsnorm and local extract. Q and K reuse one
+caller-owned scratch buffer; non-TP3, lossy and bad-head settings
+refuse. This is a correctness-first, high-bandwidth diagnostic, not
+a production kernel or an alternate collective implementation.
+See docs/evidence/2026-11-22-ltx25-c05-native-global-rms/README.md.
+Actual rank collective execution, full TP3 DiT attention wiring,
 model payload loading and video performance remain unproven.

@@ -95,3 +95,17 @@ The native-c01-gate now has three model-backed CTests including C04.
 The C04 test verifies 2,016 legal projection declarations across all
 48 blocks and both legal splits, but does not run a GPU collective.
 See docs/evidence/2026-11-22-ltx25-c04-native-reduce/README.md.
+
+## C05 native all-head RMS graph (2026-11-22)
+
+The real-source native-c01-gate CMake project now registers
+ltx_c05_global_qk_rms_graph next to C01, C02 and C04. It calls the
+**actual patched LTX architecture** through an opt-in diagnostic,
+reuses native Radiance fill, cast, exact all_reduce and
+full-width rmsnorm, and checks two uneven layouts across all DiT
+blocks and six projection types with the read-only IQ8R model.
+The existing ltx_tp3_rms_test additionally checks zero-packing,
+disjoint-rank reduction and local extraction against the dense
+and compact-statistic reference. No production engine call site or
+GPU path was enabled. See
+docs/evidence/2026-11-22-ltx25-c05-native-global-rms/README.md.

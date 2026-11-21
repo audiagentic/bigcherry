@@ -19,9 +19,9 @@ unchanged. No activated GPU TP3 inference or numerical parity is claimed.
 
 ## Outcome
 
-**Host-only validation:** nine idempotent source edits compile on Radiance 2.2 / ABI44; the actual LTX declaration tests pass with explicitly deferred output biases, not GPU execution.
+**Host-only validation:** ten idempotent source edits compile on Radiance 2.2 / ABI44; the actual LTX declaration tests pass with explicitly deferred output biases, not GPU execution.
 
-- Nine anchored edits to the pinned Radiance 2.2 LTX source;
+- Ten anchored edits to the pinned Radiance 2.2 LTX source;
   applicability and idempotence pass.
 - Patched full LTX translation unit compiles with the native ABI44 SDK.
 - Source-backed C01/C02 real-model declarations: 3,024 fused/biasless
@@ -29,12 +29,16 @@ unchanged. No activated GPU TP3 inference or numerical parity is claimed.
 - Original C02 negatives plus C04 duplicate-finalizer, non-TP3 world
   and invalid-K refusal.
 - C04 verifies 2,016 source-backed native collective + bias graphs.
+- C05 verifies 1,728 source-backed, 3,456 Q/K all-head native
+  RMS graph declarations using existing fill/cast/all_reduce/rmsnorm.
+  Q and K reuse caller-owned scratch; this is a host-only, full-width
+  network diagnostic, not a qualified GPU performance path.
 - Evidence: `docs/evidence/2026-11-22-ltx25-c04-native-reduce/README.md`.
 
 ## Detail
 
 Actual model payload loading, end-to-end per-rank DiT architecture
-and activation buffers, global Q/K RMS reduction, attention/FFN
+and activation buffers, real GPU global Q/K RMS reduction, attention/FFN
 actual three-rank collective execution, native multi-rank
 serving and resource admission, device numerical quality/liveness,
 and a recorded video-generation performance result. Planning/Ledger,
