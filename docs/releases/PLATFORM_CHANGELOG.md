@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.58.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.58.1...bc-platform-1.58.2) (2026-11-21)
+
+
+### Fixes
+
+* **tests:** make tool tests hermetic (stub pgrep, exec temp dir, env restore, stale fixture) ([#1257](https://github.com/audiagentic/bigcherry/issues/1257)) ([a9824f2](https://github.com/audiagentic/bigcherry/commit/a9824f2077791a0fbdff3bc5a86ac7f213776b21))
+
 ## [1.58.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.58.0...bc-platform-1.58.1) (2026-11-20)
 
 
