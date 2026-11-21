@@ -71,6 +71,33 @@ QWEN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descrip
         guard="BC_VTP14_N2F_GDN_HEADS",
     ),
     _edit(
+        "n2f-iq8r-group-ownership",
+        "    /* ---- activation buffers. Every activation that feeds a GEMM has an fp8 copy: an E4M3 plane\n",
+        "    /* BC_RUM06_TP_SCALE: the container's probed group, not its Hadamard width,\n"
+        "     * must divide this rank's V and FFN shards (and their starting columns).\n"
+        "     * Refuse the split before declaring activation buffers or linears. */\n"
+        "    if (g.tp_owned && m.trunk_i8) {\n"
+        "        const int64_t group = m.trunk_g8;\n"
+        "        const int64_t v_width = gc.v_dim();\n"
+        "        const int64_t v_start = gc.v_first * gc.head_v;\n"
+        "        const int64_t ff_width = g.n_ff;\n"
+        "        const int64_t ff_start = g.own_ff_lo;\n"
+        "        if (group <= 0 || v_width % group || v_start % group ||\n"
+        "            ff_width % group || ff_start % group) {\n"
+        "            fprintf(stderr, \"radiance: qwen35: --tp-ownership rank %d: V shard %lld columns \"\n"
+        "                            \"(start %lld), FFN shard %lld columns (start %lld) must be whole \"\n"
+        "                            \"multiples of the container's int8 scale group %lld\\n\",\n"
+        "                    g.rank, (long long)v_width, (long long)v_start, (long long)ff_width,\n"
+        "                    (long long)ff_start, (long long)group);\n"
+        "            return RAD_E_SHAPE;\n"
+        "        }\n"
+        "    }\n"
+        "\n"
+        "    /* ---- activation buffers. Every activation that feeds a GEMM has an fp8 copy: an E4M3 plane\n",
+        guard="BC_RUM06_TP_SCALE",
+        max_span=2,
+    ),
+    _edit(
         "n2f-vocab",
         "    m.op_embed = rw(b, RAD_OP(b, \"embed_lookup\",",
         "    /* BC_VTP14_N2F_VOCAB: the vocabulary does not divide by three; this rank's rows are\n"
@@ -150,20 +177,41 @@ LINEAR = FilePatch(path="arch/common/rad_fp8.h", language="none", description="V
         "     * Call after declare(). */\n"
         "    int span(RadBuilder* b, int shard, int64_t lo, int64_t hi) const {\n"
         "        const bool rows = shard == RAD_SHARD_ROW;\n"
-        "        const int64_t div = (mx || m2x) ? (rows ? 1 : RAD_MX_GROUP) : RAD_FP8_BLOCK;\n"
-        "        if (lo < 0 || hi <= lo || lo % div || hi % div || ((mx || m2x) && rows && (lo % 16 || hi % 16))) {\n"
+        "        const int64_t div = w8h ? (rows ? 1 : g8) : (mx || m2x) ? (rows ? 1 : RAD_MX_GROUP) : RAD_FP8_BLOCK;\n"
+        "        if (lo < 0 || hi <= lo || lo % div || hi % div || ((mx || m2x || w8h) && rows && (lo % 16 || hi % 16))) {\n"
         "            fprintf(stderr, \"radiance: a span [%lld, %lld) cuts this weight's scale blocks\\n\",\n"
         "                    (long long)lo, (long long)hi);\n"
         "            return RAD_E_INVAL;\n"
         "        }\n"
         "        RAD_ARCH_TRY(rad_weight_shard_span(b, w, lo, hi));\n"
-        "        if (s) RAD_ARCH_TRY(rad_weight_shard_span(b, s, lo / div, hi / div));\n"
+        "        /* Two-level int8 scales have logical [N,K] views, one-level scales [N,K/group]. */\n"
+        "        if (s) RAD_ARCH_TRY(rad_weight_shard_span(b, s,\n"
+        "            (w8h && (rows || w8h_s_full)) ? lo : lo / div,\n"
+        "            (w8h && (rows || w8h_s_full)) ? hi : hi / div));\n"
         "        if (ref) RAD_ARCH_TRY(rad_weight_shard_span(b, ref, lo / div, hi / div));\n"
         "        return RAD_OK;\n"
         "    }\n"
         "    /* Rows [lo, hi) of the stored block-fp8 weight `src_wn` (codes and scale plane; mapped by\n",
         guard="BC_VTP14_N2F_DENSE_SPAN",
         max_span=2,
+    ),
+    _edit(
+        "n2f-dense-scale-view-field",
+        "    int64_t    g8 = RAD_FP8_BLOCK;\n"
+        "    int64_t    w_rb = 0;\n",
+        "    int64_t    g8 = RAD_FP8_BLOCK;\n"
+        "    bool       w8h_s_full = false; /* BC_RUM06_DENSE_SCALE_VIEW: two-level [N,K] scale view. */\n"
+        "    int64_t    w_rb = 0;\n",
+        guard="BC_RUM06_DENSE_SCALE_VIEW",
+    ),
+    _edit(
+        "n2f-dense-scale-view-probe",
+        "            const bool iq8r = linear_is_iq8r(enc);\n"
+        "            w = decl_view(b, wn, nullptr, cv, enc.plane[0].dtype, { N, K }, access, shard, grp,\n",
+        "            const bool iq8r = linear_is_iq8r(enc);\n"
+        "            w8h_s_full = linear_w8h_rowf(enc) || linear_w8h_scale2(enc) || iq8r; /* BC_RUM06_DENSE_SCALE_PROBE */\n"
+        "            w = decl_view(b, wn, nullptr, cv, enc.plane[0].dtype, { N, K }, access, shard, grp,\n",
+        guard="BC_RUM06_DENSE_SCALE_PROBE",
     ),
     _edit(
         "n2f-span-parts-wref",
