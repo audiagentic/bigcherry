@@ -1,7 +1,9 @@
 """The resident B16 cache kernels and declarations on the composed ABI44 source."""
 from __future__ import annotations
 
+import hashlib
 import re
+from pathlib import Path
 
 from bigcherry.patcher import Edit, FilePatch
 
@@ -214,114 +216,62 @@ PATCHES = (
     )),
 )
 
-_TPL_BODY = "int GQA, int BS, int KVP, int OPT, int WIN = 0>"
-_TPL_TYPED = "int GQA, int BS, int KVP, int OPT, int WIN = 0, RadKVLayout Layout = RAD_KVQ_NONE>"
-_TPL_DECODE = "int GQA, int BS, int KVP, int OPT,\n         int WIN = 0>"
-_TPL_DECODE_TYPED = _TPL_DECODE.replace("int WIN = 0>", "int WIN = 0, RadKVLayout Layout = RAD_KVQ_NONE>")
-_I8_TEST = "    constexpr int I8    = ((OPT & O_I8) && K6) ? 1 : 0;\n"
-_HYBRID_CONSTS = """    constexpr bool KB   = r4d_b16_layout(Layout);
-    constexpr bool KI   = Layout == RAD_KVQ_B16I8;
-    constexpr bool KBF  = KVP || KB;
-    constexpr bool VI8  = I8 || KI;
-    constexpr bool VSTAGE = V4 || KI;
-    constexpr int VG    = KI ? R4dKvBytes<Layout>::group : 32;
-    static_assert(!KB || (HEAD_DIM == 256 && !KVP && !V4 && F16), "hybrid rows stage BF16 K");
-"""
-_ROWBEFORE = "    constexpr int ROWB  = I8 ? 2 * HEAD_DIM + 4"
-_ROWAFTER = """    constexpr int ROWB  = KB ? HEAD_DIM / 16 * R4dKvBytes<Layout>::row16
-                        : I8 ? 2 * HEAD_DIM + 4"""
-_VOFFSET = """    constexpr int VBOFF = KB ? HEAD_DIM / 16 * R4dKvBytes<Layout>::value16 : HEAD_DIM;
-    constexpr int VISOFF = HEAD_DIM / 16 * R4dKvBytes<Layout>::value_scale16;
-"""
-_VSTAGE_START = """                    if constexpr (I8) {
-                        const uint2 cw = *(const uint2*)(base + VOFF + o * 8);"""
-_VSCALE = "                        sc[j]             = *(const uint16_t*)(base + VSOFF);"
+# The B16 implementation is owned source; upstream is now just the two typed
+# template attachment sites. rad0053 patches these owned headers, not vendor
+# templates. The package's implementation identity includes owned inputs.
+def _verified_owned_source(filename: str, digest: str) -> str:
+    # The patch registry identifies patch.py. Bind each external source to it
+    # so changing either owned header without updating this digest fails closed.
+    data = Path(__file__).with_name(filename).read_bytes()
+    if hashlib.sha256(data).hexdigest() != digest:
+        raise ValueError(f"rad0051 owned source identity mismatch: {filename}")
+    return data.decode("utf-8")
 
-def _v_staging() -> tuple[Edit, ...]:
-    """Carry the typed B16I8 group scales through the existing byte-code V stage."""
-    return (
-        _replace("b16-template-row", _ROWBEFORE, _ROWAFTER, "re:constexpr int ROWB(?:  = KB \\?| = Layout != RAD_KVQ_NONE)"),
-        _before("b16-template-value-offsets", "    constexpr int VOFF  = I8 ?", _VOFFSET,
-                "constexpr int VBOFF = KB"),
-        _replace("b16-value-stage-rounds", "constexpr int U4  = V4 ?", "constexpr int U4  = VSTAGE ?"),
-        _replace("b16-value-stage-registers", "uint32_t v4c[U4][I8 ? 4 : 2]", "uint32_t v4c[U4][VI8 ? 4 : 2]"),
-        _replace("b16-value-code-load", _VSTAGE_START, """                    if constexpr (VI8) {
-                        const uint2 cw = *(const uint2*)(base + (KI ? VBOFF : VOFF) + o * 8);"""),
-        _replace("b16-value-group-scale", _VSCALE,
-                 "                        sc[j] = *(const uint16_t*)(base + (KI ? VISOFF + 2 * (o * 8 / VG) : VSOFF));"),
-        _replace("b16-byte-code-transform", "I8 ? v4c[r][", "VI8 ? v4c[r][", count=4),
-        _replace("b16-byte-code-k1-low", "[I8 ? 2 : 1]", "[VI8 ? 2 : 1]"),
-        _replace("b16-byte-code-k1-high", "[I8 ? 3 : 1]", "[VI8 ? 3 : 1]"),
-        _replace("b16-i8-widen-bias", "(I8 ? 1152.0f : 1032.0f)", "(VI8 ? 1152.0f : 1032.0f)", count=2),
-        _replace("b16-byte-stage-index-lo", "(I8 ? b : 2 * b)", "(VI8 ? b : 2 * b)"),
-        _replace("b16-byte-stage-index-hi", "(I8 ? 4 + b : 2 * b + 1)", "(VI8 ? 4 + b : 2 * b + 1)"),
-        _replace("b16-fp8-value-offset", "* ROWB + HEAD_DIM + d0;", "* ROWB + VBOFF + d0;"),
-    )
 
+_B16_PREFILL_IMPL = _verified_owned_source(
+    "bc_b16_prefill_impl.h", "4900193650a7c8574cc9bdba29234d6f1a116f3506621c9081b2327c82ad60f5")
+_B16_DECODE_IMPL = _verified_owned_source(
+    "bc_b16_decode_impl.h", "f8f828045f40141c43eb7515865ce16a69fd1cfd4afb112bb63d22c8ab5f764b")
+
+
+def _owned_kernel(path: str, edit_id: str, contents: str) -> FilePatch:
+    return FilePatch(path=path, language="none", create=True, edits=(
+        Edit(id=edit_id, anchor=r"\A", mode="insert_after", text=contents,
+             guard=re.escape(contents.splitlines()[0]), expect_matches=1,
+             rationale="long-anchor: create the entire rad0051-owned typed implementation as one patch-created source; no vendor edit"),
+    ))
+
+
+# These two single-site hooks replace the kernel template definitions.
+# Bounds and suffixes are constrained: section-boundary drift fails the rebase
+# check rather than truncating a new upstream definition.
+_PREFILL_SECTION = (
+    r"(?s)template<int NWARPS, int TILE, int HEAD_DIM, int GQA, int BS, int KVP, int OPT, int WIN = 0>\n"
+    r"__global__ __launch_bounds__\(NWARPS \* 32\)\n"
+    r"void r4d_attn_prefill_kernel\(const R4DArgs a\)\n\{.*\}\n\Z"
+)
+_DECODE_SECTION = (
+    r"(?s)template<int NWARPS, int TILE, int HEAD_DIM, int GQA, int BS, int KVP, int OPT,\n"
+    r"         int WIN = 0>\n__device__ __forceinline__\n"
+    r"void r4d_attn_decode_body\(const R4DArgs& a, int splits\)\n"
+    r"\{.*?(?=// Vectorised merge, used by the h256 launcher)"
+)
 PATCHES += (
+    _owned_kernel("libr4d/bc_b16_prefill_impl.h", "b16-prefill-owned-source", _B16_PREFILL_IMPL),
+    _owned_kernel("libr4d/bc_b16_decode_impl.h", "b16-decode-owned-source", _B16_DECODE_IMPL),
     FilePatch(path="libr4d/r4d_attn_prefill_h256_gqa6.hip", language="none", edits=(
-        _replace("b16-prefill-header", '#include "r4d_common.h"\n', '#include "r4d_b16_kv.h"\n'),
-        _replace("b16-prefill-kernel-type", _TPL_BODY, _TPL_TYPED),
-        _replace("b16-prefill-layout-constants", _I8_TEST, _I8_TEST + _HYBRID_CONSTS, "constexpr bool KB   = r4d_b16_layout(Layout);"),
-        *_v_staging(),
-        _replace("b16-prefill-kreg-width", "constexpr int KREGS   = KPASS * (KVP ? 2 : 1);",
-                 "constexpr int KREGS   = KPASS * (KBF ? 2 : 1);"),
-        _replace("b16-prefill-kprefetch", "&& !KVP && !OLDV4) ?", "&& !KBF && !OLDV4) ?"),
-        _replace("b16-prefill-value-prefetch", "((OPT & O_GPREV) && !V4) ?", "((OPT & O_GPREV) && !VSTAGE) ?"),
-        _replace("b16-prefill-precision",
-                 '''    static_assert(!(OPT & (O_QK8 | O_PV8)) || !KVP,
-                  "the e4m3 legs need an 8-bit cache, or they compile to the exact form");''',
-                 '''    static_assert(!(OPT & (O_QK8 | O_PV8)) || (!KVP && !KB),
-                  "lossy prefill products require the supported native or V4/K6 cache rows");'''),
-        _replace("b16-prefill-read-k",
-                 """                if (KVP) {
-                    const uint16_t* g = (const uint16_t*)a.kv + o + ch * KEL;
-                    #pragma unroll
-                    for (int q = 0; q < (KVP ? (KEL / 8) : 1); ++q)""",
-                 """                if constexpr (KBF) {
-                    const auto* row = (const uint8_t*)a.kv + o * (KVP ? 2 : 1);
-                    const uint16_t* g = (const uint16_t*)row + ch * KEL;
-                    #pragma unroll
-                    for (int q = 0; q < KEL / 8; ++q)"""),
-        _replace("b16-prefill-stage-k", "if (KVP) {\n                        const uint4 r = kreg[p",
-                 "if constexpr (KBF) {\n                        const uint4 r = kreg[p"),
-        _replace("b16-prefill-fetch-first-v", "if (V4) fetchV4(tstart", "if (VSTAGE) fetchV4(tstart"),
-        _replace("b16-prefill-stage-v", "if constexpr (V4) { storeV4(); }",
-                 "if constexpr (VSTAGE) { storeV4(); }"),
-        _replace("b16-prefill-fetch-next-v", "if (V4 && ti + 1 < ntiles) fetchV4",
-                 "if (VSTAGE && ti + 1 < ntiles) fetchV4"),
+        Edit(id="b16-prefill-typed-hook", anchor=_PREFILL_SECTION, mode="replace",
+             text='#include "bc_b16_prefill_impl.h"\n',
+             guard=re.escape('#include "bc_b16_prefill_impl.h"'), expect_matches=1,
+             max_span_lines=750,
+             rationale="long-anchor: replace the frozen prefill template as one bounded section with the owned B16 hook; fail on boundary drift"),
     )),
     FilePatch(path="libr4d/r4d_attn_decode_h256_gqa6.hip", language="none", edits=(
-        _replace("b16-decode-header", '#include "r4d_common.h"\n', '#include "r4d_b16_kv.h"\n'),
-        _replace("b16-decode-kernel-type", _TPL_DECODE, _TPL_DECODE_TYPED, count=3),
-        _replace("b16-decode-kernel-forward",
-                 "r4d_attn_decode_body<NWARPS, TILE, HEAD_DIM, GQA, BS, KVP, OPT, WIN>",
-                 "r4d_attn_decode_body<NWARPS, TILE, HEAD_DIM, GQA, BS, KVP, OPT, WIN, Layout>", count=2),
-        _replace("b16-decode-layout-constants", _I8_TEST, _I8_TEST + _HYBRID_CONSTS, "constexpr bool KB   = r4d_b16_layout(Layout);"),
-        *_v_staging(),
-        _replace("b16-decode-v8-guard", "((OPT & O_V8) && !KVP && !V4)", "((OPT & O_V8) && !KVP && !VSTAGE)"),
-        _replace("b16-decode-gprev-guard", "VREGS <= 3 && !V4)", "VREGS <= 3 && !VSTAGE)"),
-        _replace("b16-decode-vsk", "(V4 && TILE == 16", "(VSTAGE && TILE == 16"),
-        _replace("b16-decode-vstage-waves", "if constexpr (K6) __builtin_assume(tid < NTHR);",
-                 "if constexpr (K6 || KI) __builtin_assume(tid < NTHR);"),
-        _replace("b16-decode-vstage-round", "(K6 ? ((r + 1) * NTHR <= NP4",
-                 "((K6 || KI) ? ((r + 1) * NTHR <= NP4", count=2),
-        _replace("b16-decode-stage-v", "if constexpr (V4) { fetchV4(k0, blk); storeV4(); }",
-                 "if constexpr (VSTAGE) { fetchV4(k0, blk); storeV4(); }"),
-        _replace("b16-decode-stage-k-lds",
-                 """                if (KVP) {
-                    const uint4 r = *(const uint4*)((const uint16_t*)a.kv + o + ch * 8);""",
-                 """                if constexpr (KBF) {
-                    const auto* row = (const uint8_t*)a.kv + o * (KVP ? 2 : 1);
-                    const uint4 r = *(const uint4*)((const uint16_t*)row + ch * 8);"""),
-        _replace("b16-decode-k-register-width", "std::conditional<KVP != 0, uint4, uint2>",
-                 "std::conditional<KBF, uint4, uint2>"),
-        _replace("b16-decode-k-fragment-stride", "(16 * t + 8 * h) * (KVP ? 2 : 1)",
-                 "(16 * t + 8 * h) * (KBF ? 2 : 1)"),
-        _replace("b16-decode-k-from-bf16", "} else if (KVP) {\n                        const uint16_t* kp",
-                 "} else if constexpr (KBF) {\n                        const uint16_t* kp"),
-        _replace("b16-decode-kraw-bf16", "if constexpr (KRAW && KVP != 0)", "if constexpr (KRAW && KBF)"),
-        _replace("b16-decode-kraw-fp8", "if constexpr (KRAW && KVP == 0)", "if constexpr (KRAW && !KBF)"),
+        Edit(id="b16-decode-typed-hook", anchor=_DECODE_SECTION, mode="replace",
+             text='#include "bc_b16_decode_impl.h"\n\n',
+             guard=re.escape('#include "bc_b16_decode_impl.h"'), expect_matches=1,
+             max_span_lines=750,
+             rationale="long-anchor: replace the frozen decode templates as one bounded section with the owned B16 hook; fail on boundary drift"),
     )),
 )
 

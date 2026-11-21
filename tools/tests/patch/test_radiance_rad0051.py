@@ -1,6 +1,7 @@
 """Mechanics checks for the matched ABI44 Flash-Next B16 row and store set."""
 from __future__ import annotations
 
+import hashlib
 import re
 import shutil
 import subprocess
@@ -11,9 +12,14 @@ from pathlib import Path
 REPO = Path(__file__).resolve().parents[3]
 sys.path.insert(0, str(REPO / "tools"))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
+from _vtp_promotion_support import (
+    PATCHES,
+    assert_promoted_recipe,
+    load_patch_files,
+    patched_pinned_source,
+)
 from bigcherry.patch import patchset
 from bigcherry.patcher import apply_all
-from _vtp_promotion_support import PATCHES, assert_promoted_recipe, load_patch_files, patched_pinned_source
 from test_vtp14_n1_rank_code_selection import radiance_checkout
 
 PACKAGE = "rad0051_b16_kv_kernels"
@@ -53,6 +59,22 @@ int main() {
 
 
 class Qwen4expB16Tests(unittest.TestCase):
+    def test_kernel_source_identity_and_single_upstream_hook(self):
+        files = {fp.path: fp for fp in load_patch_files(PACKAGE)}
+        for name, sha in (
+            ("prefill", "4900193650a7c8574cc9bdba29234d6f1a116f3506621c9081b2327c82ad60f5"),
+            ("decode", "f8f828045f40141c43eb7515865ce16a69fd1cfd4afb112bb63d22c8ab5f764b"),
+        ):
+            upstream = files[f"libr4d/r4d_attn_{name}_h256_gqa6.hip"]
+            owned = files[f"libr4d/bc_b16_{name}_impl.h"]
+            self.assertEqual(len(upstream.edits), 1)
+            self.assertEqual(len(owned.edits), 1)
+            self.assertTrue(owned.create)
+            source = REPO / "engines/radiance/patches" / PACKAGE / f"bc_b16_{name}_impl.h"
+            self.assertEqual(hashlib.sha256(source.read_bytes()).hexdigest(), sha)
+            self.assertEqual(owned.edits[0].text, source.read_text())
+            self.assertIn(f"bc_b16_{name}_impl.h", upstream.edits[0].text)
+
     def test_promoted_package_requires_both_composition_prerequisites(self):
         expanded = patchset.expand_composition("radiance", (PACKAGE,), directory=PATCHES)
         resolved = patchset.resolve_exact("radiance", expanded.expanded, directory=PATCHES)

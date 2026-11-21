@@ -151,17 +151,71 @@
   },
   "totals": {
     "composed_patches": 38,
-    "edits": 698,
-    "anchors": 670,
-    "upstream_anchors": 646,
-    "created_target_anchors": 24,
-    "anchor_sites": 705,
-    "anchor_bytes": 84472,
-    "inserted_bytes": 503729,
-    "created_edits": 28,
+    "edits": 648,
+    "anchors": 618,
+    "upstream_anchors": 588,
+    "created_target_anchors": 30,
+    "anchor_sites": 641,
+    "anchor_bytes": 81554,
+    "inserted_bytes": 567721,
+    "created_edits": 30,
     "upstream_files": 80
   },
   "patches": [
+    {
+      "patch": "rad0053_v4_kv_layouts",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "core/build/rad_builder.cpp",
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/mem/kv.cpp",
+        "core/mem/packed_kv.h",
+        "libr4d/bc_b16_decode_impl.h",
+        "libr4d/bc_b16_prefill_impl.h",
+        "libr4d/bc_kv_rows.h",
+        "libr4d/r4d_attn_paged_gqa8.hip",
+        "libr4d/r4d_attn_paged_h256_gqa6.hip",
+        "libr4d/r4d_b16_kv.h",
+        "libr4d/r4d_model_bf16.hip",
+        "libr4d/r4d_plugin.h",
+        "libr4d/r4d_qk_norm_rope_gate.hip",
+        "tests/arch_test.cpp",
+        "tests/bc_b16_kv_runtime_test.cpp",
+        "tests/config_test.cpp"
+      ],
+      "upstream_files": [
+        "arch/qwen35_fp8/qwen35_fp8.cpp",
+        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "core/build/rad_builder.cpp",
+        "core/config.cpp",
+        "core/engine_bringup.cpp",
+        "core/mem/kv.cpp",
+        "libr4d/r4d_attn_paged_gqa8.hip",
+        "libr4d/r4d_attn_paged_h256_gqa6.hip",
+        "libr4d/r4d_model_bf16.hip",
+        "libr4d/r4d_plugin.h",
+        "libr4d/r4d_qk_norm_rope_gate.hip",
+        "tests/arch_test.cpp",
+        "tests/config_test.cpp"
+      ],
+      "created_files": [],
+      "edits": 58,
+      "anchors": 58,
+      "upstream_anchors": 35,
+      "created_target_anchors": 23,
+      "anchor_sites": 69,
+      "anchor_bytes": 5825,
+      "inserted_bytes": 27765,
+      "created_edits": 0
+    },
     {
       "patch": "rad0051_b16_kv_kernels",
       "sources": [
@@ -173,6 +227,8 @@
       "files_touched": [
         "arch/common/rad_block_attn_gated_fp8.h",
         "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
+        "libr4d/bc_b16_decode_impl.h",
+        "libr4d/bc_b16_prefill_impl.h",
         "libr4d/bc_kv_rows.h",
         "libr4d/r4d_attn_decode_h256_gqa6.hip",
         "libr4d/r4d_attn_paged_gqa8.hip",
@@ -199,72 +255,18 @@
         "tests/arch_test.cpp"
       ],
       "created_files": [
+        "libr4d/bc_b16_decode_impl.h",
+        "libr4d/bc_b16_prefill_impl.h",
         "libr4d/r4d_b16_kv.h"
       ],
-      "edits": 97,
-      "anchors": 96,
-      "upstream_anchors": 93,
-      "created_target_anchors": 3,
-      "anchor_sites": 115,
-      "anchor_bytes": 6030,
-      "inserted_bytes": 22830,
-      "created_edits": 1
-    },
-    {
-      "patch": "rad0053_v4_kv_layouts",
-      "sources": [
-        "radiance",
-        "radiance-diag",
-        "radiance-routing-evidence",
-        "radiance-vtp44-evidence"
-      ],
-      "files_touched": [
-        "arch/qwen35_fp8/qwen35_fp8.cpp",
-        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
-        "core/build/rad_builder.cpp",
-        "core/config.cpp",
-        "core/engine_bringup.cpp",
-        "core/mem/kv.cpp",
-        "core/mem/packed_kv.h",
-        "libr4d/bc_kv_rows.h",
-        "libr4d/r4d_attn_decode_h256_gqa6.hip",
-        "libr4d/r4d_attn_paged_gqa8.hip",
-        "libr4d/r4d_attn_paged_h256_gqa6.hip",
-        "libr4d/r4d_attn_prefill_h256_gqa6.hip",
-        "libr4d/r4d_b16_kv.h",
-        "libr4d/r4d_model_bf16.hip",
-        "libr4d/r4d_plugin.h",
-        "libr4d/r4d_qk_norm_rope_gate.hip",
-        "tests/arch_test.cpp",
-        "tests/bc_b16_kv_runtime_test.cpp",
-        "tests/config_test.cpp"
-      ],
-      "upstream_files": [
-        "arch/qwen35_fp8/qwen35_fp8.cpp",
-        "arch/qwen4exp_fp8/qwen4exp_fp8.cpp",
-        "core/build/rad_builder.cpp",
-        "core/config.cpp",
-        "core/engine_bringup.cpp",
-        "core/mem/kv.cpp",
-        "libr4d/r4d_attn_decode_h256_gqa6.hip",
-        "libr4d/r4d_attn_paged_gqa8.hip",
-        "libr4d/r4d_attn_paged_h256_gqa6.hip",
-        "libr4d/r4d_attn_prefill_h256_gqa6.hip",
-        "libr4d/r4d_model_bf16.hip",
-        "libr4d/r4d_plugin.h",
-        "libr4d/r4d_qk_norm_rope_gate.hip",
-        "tests/arch_test.cpp",
-        "tests/config_test.cpp"
-      ],
-      "created_files": [],
-      "edits": 58,
-      "anchors": 58,
+      "edits": 47,
+      "anchors": 44,
       "upstream_anchors": 41,
-      "created_target_anchors": 17,
-      "anchor_sites": 69,
-      "anchor_bytes": 5825,
-      "inserted_bytes": 27765,
-      "created_edits": 0
+      "created_target_anchors": 3,
+      "anchor_sites": 51,
+      "anchor_bytes": 3112,
+      "inserted_bytes": 86822,
+      "created_edits": 3
     },
     {
       "patch": "rad0016_vtp14_rank_code_selection",
@@ -1904,30 +1906,6 @@
       "patch_count": 3
     },
     {
-      "path": "libr4d/r4d_attn_decode_h256_gqa6.hip",
-      "patch_ids": [
-        "rad0051_b16_kv_kernels",
-        "rad0053_v4_kv_layouts"
-      ],
-      "anchors": 32,
-      "anchor_sites": 40,
-      "anchor_bytes": 2539,
-      "inserted_bytes": 2873,
-      "patch_count": 2
-    },
-    {
-      "path": "libr4d/r4d_attn_prefill_h256_gqa6.hip",
-      "patch_ids": [
-        "rad0051_b16_kv_kernels",
-        "rad0053_v4_kv_layouts"
-      ],
-      "anchors": 28,
-      "anchor_sites": 32,
-      "anchor_bytes": 2602,
-      "inserted_bytes": 2874,
-      "patch_count": 2
-    },
-    {
       "path": "libr4d/r4d_selftest.cpp",
       "patch_ids": [
         "rad0042_kv_b16_selftest",
@@ -2411,6 +2389,17 @@
       "patch_count": 1
     },
     {
+      "path": "libr4d/r4d_attn_decode_h256_gqa6.hip",
+      "patch_ids": [
+        "rad0051_b16_kv_kernels"
+      ],
+      "anchors": 1,
+      "anchor_sites": 1,
+      "anchor_bytes": 250,
+      "inserted_bytes": 33,
+      "patch_count": 1
+    },
+    {
       "path": "libr4d/r4d_attn_paged_h128_gqa4.hip",
       "patch_ids": [
         "rad0052_b16_kv_geometries"
@@ -2419,6 +2408,17 @@
       "anchor_sites": 1,
       "anchor_bytes": 39,
       "inserted_bytes": 153,
+      "patch_count": 1
+    },
+    {
+      "path": "libr4d/r4d_attn_prefill_h256_gqa6.hip",
+      "patch_ids": [
+        "rad0051_b16_kv_kernels"
+      ],
+      "anchors": 1,
+      "anchor_sites": 1,
+      "anchor_bytes": 203,
+      "inserted_bytes": 33,
       "patch_count": 1
     },
     {

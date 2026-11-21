@@ -25,3 +25,19 @@ A/B: The historical VTP43/VTP44 27B long-corpus BF16-reference comparison measur
 Focused Radiance 2.2 attachment checks and historical behavior evidence. Integrated deployment KL and parity are tracked separately in RUM09.
 
 [Historical sources and port checks](../../../../docs/evidence/radiance-latest-bump/RETAINED-KV-G4.md)
+
+### Typed kernel ownership after RUM02 slice 3
+
+The prefill and decode resident B16 kernel bodies live in patch-owned
+`bc_b16_prefill_impl.h` and `bc_b16_decode_impl.h`, emitted into
+`libr4d/` by rad0051. Each upstream `r4d_attn_*.hip` file has one
+bounded include hook in place of its entire template body. rad0053's
+V4/K6V4 additions attach to the owned headers. The patch.py SHA-256
+checks bind these inputs to its registry implementation digest; any
+unreviewed header modification refuses composition. libr3 gfx11
+native template rewriting attaches to the owned prefill header.
+
+See RUM02 slice 3 notes for pre/post source and preprocessing equality,
+HIP syntax checks for both GPU targets, 38/38 rebase results, and
+regenerated footprint counts. Kernel relocation is not a GPU parity
+claim: the runtime owner separately tests the compiled starts.

@@ -2,7 +2,7 @@
 
 Upstream pin: `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
 
-38 composed patches; **670 anchor edits** (646 upstream, 24 on patch-created files; 705 expected match sites); 698 total edits, 28 in created files; 80 upstream files.
+38 composed patches; **618 anchor edits** (588 upstream, 30 on patch-created files; 641 expected match sites); 648 total edits, 30 in created files; 80 upstream files.
 
 Counts are lexical, not a measure of independent semantics, net code savings, or successful application. Regex anchor bytes and full replacement text bytes are counted as authored, not as actual upstream match or net diff bytes.
 
@@ -10,8 +10,8 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 
 | Patch | Upstream files | Created files | Anchors | Upstream anchors | Edits | Anchor bytes | Inserted bytes |
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
-| `rad0051_b16_kv_kernels` | 11 | 1 | 96 | 93 | 97 | 6030 | 22830 |
-| `rad0053_v4_kv_layouts` | 15 | 0 | 58 | 41 | 58 | 5825 | 27765 |
+| `rad0053_v4_kv_layouts` | 13 | 0 | 58 | 35 | 58 | 5825 | 27765 |
+| `rad0051_b16_kv_kernels` | 11 | 3 | 44 | 41 | 47 | 3112 | 86822 |
 | `rad0016_vtp14_rank_code_selection` | 11 | 3 | 39 | 39 | 42 | 5883 | 40829 |
 | `rad0045_expert_route_replay` | 15 | 0 | 36 | 36 | 36 | 3080 | 27756 |
 | `rad0002_moe_remote_handoff` | 8 | 5 | 35 | 35 | 40 | 2073 | 39741 |
@@ -81,8 +81,6 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `arch/common/rad_fp8.h` | 3 | 6 | 831 | `rad0019_vtp14_n2_tp_ownership_fp8`, `rad0025_multiseq_pipelined_prefill`, `rad0030_int8_pipelined_prefill` |
 | `libr4d/r4d_shapes.cpp` | 3 | 6 | 287 | `rad0045_expert_route_replay`, `rad0046_retained_moe_rows`, `rad0051_b16_kv_kernels` |
 | `libr4d/r4d_args.h` | 3 | 4 | 165 | `rad0012_helper_kernel_config`, `rad0032_ts3_duplex`, `rad0033_ts3_once` |
-| `libr4d/r4d_attn_decode_h256_gqa6.hip` | 2 | 32 | 2539 | `rad0051_b16_kv_kernels`, `rad0053_v4_kv_layouts` |
-| `libr4d/r4d_attn_prefill_h256_gqa6.hip` | 2 | 28 | 2602 | `rad0051_b16_kv_kernels`, `rad0053_v4_kv_layouts` |
 | `libr4d/r4d_selftest.cpp` | 2 | 23 | 3037 | `rad0042_kv_b16_selftest`, `rad0049_qwen4exp_e4m3_kv` |
 | `core/main.cpp` | 2 | 11 | 478 | `rad0009_serving_manifest`, `rad0011_plan_memory` |
 | `core/runtime/ctx.h` | 2 | 7 | 542 | `rad0044_expert_route_record`, `rad0045_expert_route_replay` |
@@ -126,7 +124,9 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `core/runtime/kvbind.cpp` | 1 | 1 | 85 | `rad0050_b16_kv_runtime_contract` |
 | `core/sched/batch.cpp` | 1 | 1 | 113 | `rad0025_multiseq_pipelined_prefill` |
 | `libr4d/r4d_ar_oneshot_2rank_exact.hip` | 1 | 1 | 303 | `rad0017_vtp14_n3_shared_rendezvous` |
+| `libr4d/r4d_attn_decode_h256_gqa6.hip` | 1 | 1 | 250 | `rad0051_b16_kv_kernels` |
 | `libr4d/r4d_attn_paged_h128_gqa4.hip` | 1 | 1 | 39 | `rad0052_b16_kv_geometries` |
+| `libr4d/r4d_attn_prefill_h256_gqa6.hip` | 1 | 1 | 203 | `rad0051_b16_kv_kernels` |
 | `libr4d/r4d_fp8_layout.cpp` | 1 | 1 | 47 | `rad0046_retained_moe_rows` |
 | `libr4d/r4d_hc_bf16.hip` | 1 | 1 | 360 | `rad0008_hc_upmix_rt_sweep` |
 | `libr4d/r4d_layout.cpp` | 1 | 1 | 42 | `rad0046_retained_moe_rows` |
