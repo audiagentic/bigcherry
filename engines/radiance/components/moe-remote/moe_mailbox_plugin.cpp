@@ -5,7 +5,6 @@
 #include "rad_abi_layout.h"
 
 extern "C" {
-int r3_moe_mailbox_enabled(void);
 int r3_moe_mailbox_schema_count(void);
 const RadOpSchema* r3_moe_mailbox_schema_at(int i);
 const RadKernelInfo* r3_moe_mailbox_row(int i);
@@ -22,9 +21,6 @@ int kernel_row_count() {
     }();
     return n;
 }
-int live_count() {
-    return r3_moe_mailbox_enabled() ? kernel_row_count() : 0;
-}
 }  // namespace
 
 extern "C" uint32_t rad_plugin_abi_version(void) { return RAD_ABI_VERSION; }
@@ -38,8 +34,8 @@ extern "C" const RadPluginInfo* rad_plugin_info(void) {
 }
 extern "C" int rad_kernel_schema_count(void) { return r3_moe_mailbox_schema_count(); }
 extern "C" const RadOpSchema* rad_kernel_schema_at(int i) { return r3_moe_mailbox_schema_at(i); }
-extern "C" int rad_kernel_count(void) { return live_count(); }
+extern "C" int rad_kernel_count(void) { return kernel_row_count(); }
 extern "C" const RadKernelInfo* rad_kernel_at(int i) {
-    return i >= 0 && i < live_count() ? r3_moe_mailbox_row(i) : nullptr;
+    return i >= 0 && i < kernel_row_count() ? r3_moe_mailbox_row(i) : nullptr;
 }
 extern "C" int rad_kernel_concurrent(int) { return 0; }

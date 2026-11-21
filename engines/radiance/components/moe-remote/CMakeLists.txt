@@ -87,8 +87,8 @@ if(BUILD_TESTING)
     set_target_properties(${name} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     add_test(NAME ${name} COMMAND ${name})
   endforeach()
-  # The loader may see a disabled helper generation before a later bound one.
-  # Enumerating kernel rows must not freeze the initial availability.
+  # Registry enumerates kernel rows before Engine group/helper binding.
+  # Rows remain fixed while runtime eligibility is bound per generation.
   add_executable(r3_moe_mailbox_lifetime_test EXCLUDE_FROM_ALL
     moe_mailbox_lifetime_test.cpp moe_mailbox_plugin.cpp)
   target_include_directories(r3_moe_mailbox_lifetime_test PRIVATE ${RADIANCE_SRC}/abi)

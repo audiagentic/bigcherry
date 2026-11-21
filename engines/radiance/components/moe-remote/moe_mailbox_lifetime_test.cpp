@@ -19,7 +19,7 @@ extern "C" const RadKernelInfo* r3_moe_mailbox_row(int index) {
 }
 
 int main() {
-    assert(rad_kernel_count() == 0);
+    assert(rad_kernel_count() == 2);
     enabled = true;
     assert(rad_kernel_count() == 2);
     assert(rad_kernel_at(0) == &rows[0]);
@@ -27,8 +27,8 @@ int main() {
     assert(rad_kernel_at(2) == nullptr);
 
     enabled = false;
-    assert(rad_kernel_count() == 0);
-    assert(rad_kernel_at(0) == nullptr);
+    assert(rad_kernel_count() == 2);
+    assert(rad_kernel_at(0) == &rows[0]);
     enabled = true;
     assert(rad_kernel_count() == 2);
     assert(rad_kernel_at(0) == &rows[0]);

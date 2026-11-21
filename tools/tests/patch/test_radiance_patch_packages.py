@@ -107,7 +107,7 @@ PIN_BLOBS = {
         "core/engine.cpp": ("7544310", "010989d"),
         "core/engine.h": ("b10743c", "11473eb"),
         "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
-        "core/place/bc_moe_remote.cpp": (None, "3edd659"),
+        "core/place/bc_moe_remote.cpp": (None, "0031a61"),
         "core/place/bc_moe_remote_engine.h": (None, "8065009"),
         "core/place/bc_moe_remote_place.h": (None, "da896b6"),
         "core/place/planner.cpp": ("2ea4220", "7944888"),
