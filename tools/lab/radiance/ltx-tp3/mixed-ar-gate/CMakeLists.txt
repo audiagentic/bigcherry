@@ -75,13 +75,18 @@ if(LTX_ENGINE_NATIVE_CORE_LIB)
     target_include_directories(ltx25_mixed_ar_engine_gate PRIVATE
         "${LTX_SOURCE_ROOT}/abi" "${LTX_SOURCE_ROOT}/core"
         "${LTX_SOURCE_ROOT}/core/plugin" "${LTX_SOURCE_ROOT}/vendor")
+    # Match the explicitly resolved HIP package SDK, not the system ROCm path.
+    get_filename_component(_ltx_sdk_lib_dir "${hip_DIR}/../.." REALPATH)
+    find_library(LTX_HSA_RUNTIME NAMES hsa-runtime64
+        PATHS "${_ltx_sdk_lib_dir}" NO_DEFAULT_PATH REQUIRED)
+    set_property(TARGET ltx25_mixed_ar_engine_gate APPEND PROPERTY
+        BUILD_RPATH "${_ltx_sdk_lib_dir}")
     target_link_options(ltx25_mixed_ar_engine_gate PRIVATE
         -Wl,--export-dynamic
-        -Wl,-rpath,/opt/rocm/lib
         -Wl,-rpath,/opt/ffmpeg6/lib)
     target_link_libraries(ltx25_mixed_ar_engine_gate PRIVATE
         "$<LINK_LIBRARY:WHOLE_ARCHIVE,${LTX_ENGINE_NATIVE_CORE_LIB}>"
-        hip::host "/opt/rocm/lib/libhsa-runtime64.so"
+        hip::host ${LTX_HSA_RUNTIME}
         "${_engine_core_dir}/libbc_serving_v2.a"
         "${_engine_core_dir}/libbc_jcs.a"
         "${_engine_root}/vendor/librad_vendor_llama.a"

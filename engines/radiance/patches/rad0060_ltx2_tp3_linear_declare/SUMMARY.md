@@ -1,7 +1,9 @@
 # rad0060 — LTX2 TP3 diagnostic IQ8R declarations
 
-**Status:** diagnostic, not in any production source recipe
-**Plan:** LT3 engineering backlog (not a Planning MCP identifier)
+**Status:** diagnostic
+**Plan item:** LT3
+
+No production source recipe selects this patch.
 
 ## Summary
 
