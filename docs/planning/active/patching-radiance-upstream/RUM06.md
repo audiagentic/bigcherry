@@ -135,6 +135,8 @@ IQ8R group=256 valid candidate ownerships, for bigcherry-1's **measured** VTP36-
 
 The earlier VTP36 throughput/TTFT rankings on W8A8/MXFP4 do not carry over automatically to IQ8R. `4,4,8` is also a valid fallback for the former `7,7,2` profile if it wins the measured tradeoff. The new host C++ fixture executes the exact C++ admission check for group=256 failing `5,5,6` and `7,7,2`, and passing all ranks of `4,4,8` and `6,6,4`; checks FFN and start offsets, group=128 backward behavior, and `DenseFP8` scale views. Complete serving-prefix patch apply/idempotence, the focused Python suites and libr3 native rewrite `--check` pass. GPU startup, per-config KV admission receipts, IQ8R KLD/top-1, TTFT, streams and stop/drain are still for bigcherry-1; RUM06 is not closed.
 
+2026-11-21 bigcherry-1: IQ8R TP port 45fd1eb4a reviewed and merged into node/radiance-latest-bump (06bacf8ac). patch-rebase-check --all 38/38 clean; focused tests pass. Engine build queued from that tree, then IQ8R KLD vs the bf16 ref at 4,4,8 and 6,6,4 under the gpu lease (task scratch runner run-iq8r-tp.sh, rum06-27b-kld).
+
 ## Change Log
 
 - 2026-11-18T01:28:27.514165+00:00 (created-by): Created by codex
@@ -158,3 +160,4 @@ The earlier VTP36 throughput/TTFT rankings on W8A8/MXFP4 do not carry over autom
 - 2026-11-21T00:44:35.690825+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T00:53:10.311864+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T01:38:17.936858+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T02:18:21.184326+00:00 (updated-by): Updated: section:notes

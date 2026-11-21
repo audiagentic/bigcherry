@@ -1,0 +1,23 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261121_021821_qwen-27b-tensor-parallel-patch_7822",
+  "files": [
+    "engines/radiance/patches/rad0019_vtp14_n2_tp_ownership_fp8/patch.py",
+    "engines/radiance/patches/rad0030_int8_pipelined_prefill/patch.py",
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/patch.py",
+    "engines/radiance/patches/rad0051_b16_kv_kernels/patch.py",
+    "engines/radiance/patches/rad0052_b16_kv_geometries/patch.py",
+    "engines/radiance/patches/rad0053_v4_kv_layouts/patch.py",
+    "tools/tests/patch/test_rum06_iq8r_tp.py",
+    "tools/tests/patch/test_radiance_kv_row_helper.py",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM06",
+    "RUM02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "TP ownership and int8 pipelined prefill derive shard and scale spans from the container's int8 scale group (IQ8R group 256) with a named refusal; KV geometry rows for rad0049/0051/0052/0053 are registered through one patch-owned bc_kv_rows.h (identical 638 rows, 444 constraints, 156 chains on the frozen pin; 25 fewer upstream anchors); patch compile tests generate the serving codec with bc_contract_gen.",
+  "timestamp-utc": "2026-11-21T02:18:21.273364Z",
+  "user-summary-candidate": "Qwen 27B tensor-parallel patches now work with the IQ8R model format, and KV-cache kernel rows are registered from one table so future bumps touch fewer upstream lines."
+}
