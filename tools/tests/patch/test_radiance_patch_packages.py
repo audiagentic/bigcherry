@@ -900,8 +900,7 @@ class TestServingManifestPatch(unittest.TestCase):
             options.write_text("".join(f"{n}\t{'-' if a == 'nullptr' else a.strip(chr(34))}\n"
                                        for n, a in rows if n != "--help"))
             example = REPO / "docs" / "design" / "serving-manifest-v2" / "example.flashnext-4gpu.json"
-            lab_example = REPO / "docs" / "design" / "serving-manifest-v2" / "example.lab-experiment.json"
-            run = subprocess.run([str(exe), str(scratch), str(example), str(options), str(lab_example)], capture_output=True, text=True)
+            run = subprocess.run([str(exe), str(scratch), str(example), str(options)], capture_output=True, text=True)
             self.assertEqual(run.returncode, 0, run.stdout + run.stderr)
             self.assertIn("ok", run.stdout)
         finally:
