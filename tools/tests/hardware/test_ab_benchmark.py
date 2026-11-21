@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import re
 import json
 import itertools
@@ -50,6 +51,8 @@ class Pairing(unittest.TestCase):
             completed = subprocess.run(
                 [_python_executable(), "-m", "bigcherry", "ab-benchmark", "--inspect-build", str(root)],
                 capture_output=True, text=True,
+                env={**os.environ, "PYTHONPATH": os.pathsep.join(
+                    [str(Path(__file__).resolve().parents[2]), *filter(None, [os.environ.get("PYTHONPATH")])])},
             )
             self.assertEqual(completed.returncode, 0, completed.stderr)
             self.assertTrue(json.loads(completed.stdout)["instrumented"])
