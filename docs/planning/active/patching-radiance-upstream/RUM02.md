@@ -268,6 +268,8 @@ This source relocation claims neither GPU/KLD parity nor a full engine
 build. Owner validation on leased hardware remains required for
 mixed-libr3/libr4d TP and Flash-Next native startup.
 
+2026-11-22 (bigcherry-2): CONCLUSION, extraction stops. After slice 5 the remaining production packages carry little inline body text (rad0002 4.2 KB, rad0048 6.3 KB, rad0025 8.7 KB, rad0036 12 KB, of which only gov_key/prefill_load, about 1.8 KB, are extractable and moving them saves 0 anchors); rad0051/0052/0053 are HIP kernel and geometry-row edits provable only on cards. Their cost is anchors, not bodies. Further anchor reduction therefore means fewer sources or patches (retire the diag/evidence sources, or rad0045 when VTP44 is done) or upstream hooks, not moving bodies. Slice 5 stays merged-unvalidated on cards until the qwen27b-tp3 start/canary/stop smoke.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -281,3 +283,4 @@ mixed-libr3/libr4d TP and Flash-Next native startup.
 - 2026-11-18T02:28:04.354691+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - 2026-11-20T12:44:25.653062+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T01:48:35.924734+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T21:44:23.437681+00:00 (updated-by): Updated: section:notes

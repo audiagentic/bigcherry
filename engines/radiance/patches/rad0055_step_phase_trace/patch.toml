@@ -8,4 +8,4 @@ backend = "agnostic"
 plan-ids = ["RUM09"]
 requires = ["rad0009_serving_manifest"]
 conflicts = []
-tags = ["diagnostics", "performance", "native"]
+tags = []

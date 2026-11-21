@@ -14,11 +14,12 @@ from bigcherry.patcher import Edit, FilePatch
 
 
 def rep(id: str, before: str, after: str, guard: str) -> Edit:
+    span = max(6, before.count("\n") + 2)
     return Edit(
         id=id, anchor=re.escape(before), mode="replace", text=after,
-        guard=re.escape(guard), expect_matches=1,
-        max_span_lines=max(6, before.count("\n") + 2),
-        rationale="RUM09: native sealed-owner per-rank HIP phase timing, absent by default",
+        guard=re.escape(guard), expect_matches=1, max_span_lines=span,
+        rationale=("long-anchor: the whole upstream body is replaced; " if span > 6 else "")
+        + "RUM09: native sealed-owner per-rank HIP phase timing, absent by default",
     )
 
 
@@ -117,7 +118,9 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none",
                 phase_kv_end(token);
                 lane_ = saved_lane;
             };
-            if (!phase_tracing_ || t.trace_ops.empty()) {
+            if (!phase_tracing_) {
+                rc = tape_play(t.dev, st.a, st.b);   /* untraced: exactly the upstream call */
+            } else if (t.trace_ops.empty()) {
                 traced_play(st.a, st.b, -3, 0);
             } else {
                 int pos = st.a;

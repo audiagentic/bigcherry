@@ -37,7 +37,8 @@
       "rad0051_b16_kv_kernels",
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
-      "rad0054_attn_prefill_fp8"
+      "rad0054_attn_prefill_fp8",
+      "rad0055_step_phase_trace"
     ],
     "radiance-diag": [
       "rad0002_moe_remote_handoff",
@@ -72,7 +73,8 @@
       "rad0051_b16_kv_kernels",
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
-      "rad0054_attn_prefill_fp8"
+      "rad0054_attn_prefill_fp8",
+      "rad0055_step_phase_trace"
     ],
     "radiance-native": [],
     "radiance-routing-evidence": [
@@ -108,7 +110,8 @@
       "rad0051_b16_kv_kernels",
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
-      "rad0054_attn_prefill_fp8"
+      "rad0054_attn_prefill_fp8",
+      "rad0055_step_phase_trace"
     ],
     "radiance-vtp44-evidence": [
       "rad0002_moe_remote_handoff",
@@ -146,20 +149,21 @@
       "rad0052_b16_kv_geometries",
       "rad0053_v4_kv_layouts",
       "rad0042_kv_b16_selftest",
-      "rad0054_attn_prefill_fp8"
+      "rad0054_attn_prefill_fp8",
+      "rad0055_step_phase_trace"
     ]
   },
   "totals": {
-    "composed_patches": 38,
-    "edits": 633,
-    "anchors": 603,
-    "upstream_anchors": 568,
+    "composed_patches": 39,
+    "edits": 662,
+    "anchors": 632,
+    "upstream_anchors": 597,
     "created_target_anchors": 35,
-    "anchor_sites": 626,
-    "anchor_bytes": 74492,
-    "inserted_bytes": 552579,
+    "anchor_sites": 655,
+    "anchor_bytes": 79186,
+    "inserted_bytes": 567714,
     "created_edits": 30,
-    "upstream_files": 80
+    "upstream_files": 81
   },
   "patches": [
     {
@@ -463,6 +467,36 @@
       "anchor_bytes": 7396,
       "inserted_bytes": 37516,
       "created_edits": 1
+    },
+    {
+      "patch": "rad0055_step_phase_trace",
+      "sources": [
+        "radiance",
+        "radiance-diag",
+        "radiance-routing-evidence",
+        "radiance-vtp44-evidence"
+      ],
+      "files_touched": [
+        "core/kvstream/stage.cpp",
+        "core/runtime/ctx.cpp",
+        "core/runtime/ctx.h",
+        "core/runtime/issue.cpp"
+      ],
+      "upstream_files": [
+        "core/kvstream/stage.cpp",
+        "core/runtime/ctx.cpp",
+        "core/runtime/ctx.h",
+        "core/runtime/issue.cpp"
+      ],
+      "created_files": [],
+      "edits": 29,
+      "anchors": 29,
+      "upstream_anchors": 29,
+      "created_target_anchors": 0,
+      "anchor_sites": 29,
+      "anchor_bytes": 4694,
+      "inserted_bytes": 15135,
+      "created_edits": 0
     },
     {
       "patch": "rad0048_abi44_kv_contract",
@@ -1580,6 +1614,23 @@
       "patch_count": 8
     },
     {
+      "path": "core/runtime/ctx.cpp",
+      "patch_ids": [
+        "rad0002_moe_remote_handoff",
+        "rad0010_routing_evidence",
+        "rad0025_multiseq_pipelined_prefill",
+        "rad0026_mixed_pipelined_prefill",
+        "rad0044_expert_route_record",
+        "rad0045_expert_route_replay",
+        "rad0055_step_phase_trace"
+      ],
+      "anchors": 44,
+      "anchor_sites": 44,
+      "anchor_bytes": 5352,
+      "inserted_bytes": 28563,
+      "patch_count": 7
+    },
+    {
       "path": "libr4d/r4d_rows.cpp",
       "patch_ids": [
         "rad0012_helper_kernel_config",
@@ -1612,22 +1663,6 @@
       "anchor_bytes": 459,
       "inserted_bytes": 7211,
       "patch_count": 7
-    },
-    {
-      "path": "core/runtime/ctx.cpp",
-      "patch_ids": [
-        "rad0002_moe_remote_handoff",
-        "rad0010_routing_evidence",
-        "rad0025_multiseq_pipelined_prefill",
-        "rad0026_mixed_pipelined_prefill",
-        "rad0044_expert_route_record",
-        "rad0045_expert_route_replay"
-      ],
-      "anchors": 26,
-      "anchor_sites": 26,
-      "anchor_bytes": 1731,
-      "inserted_bytes": 15732,
-      "patch_count": 6
     },
     {
       "path": "core/engine.cpp",
@@ -1788,6 +1823,19 @@
       "patch_count": 3
     },
     {
+      "path": "core/runtime/ctx.h",
+      "patch_ids": [
+        "rad0044_expert_route_record",
+        "rad0045_expert_route_replay",
+        "rad0055_step_phase_trace"
+      ],
+      "anchors": 13,
+      "anchor_sites": 13,
+      "anchor_bytes": 915,
+      "inserted_bytes": 5210,
+      "patch_count": 3
+    },
+    {
       "path": "arch/common/rad_block_gdn_fp8.h",
       "patch_ids": [
         "rad0025_multiseq_pipelined_prefill",
@@ -1917,18 +1965,6 @@
       "patch_count": 2
     },
     {
-      "path": "core/runtime/ctx.h",
-      "patch_ids": [
-        "rad0044_expert_route_record",
-        "rad0045_expert_route_replay"
-      ],
-      "anchors": 7,
-      "anchor_sites": 7,
-      "anchor_bytes": 542,
-      "inserted_bytes": 4046,
-      "patch_count": 2
-    },
-    {
       "path": "libr4d/r4d_moe.hip",
       "patch_ids": [
         "rad0045_expert_route_replay",
@@ -1998,6 +2034,18 @@
       "anchor_sites": 2,
       "anchor_bytes": 129,
       "inserted_bytes": 805,
+      "patch_count": 2
+    },
+    {
+      "path": "core/runtime/issue.cpp",
+      "patch_ids": [
+        "rad0045_expert_route_replay",
+        "rad0055_step_phase_trace"
+      ],
+      "anchors": 2,
+      "anchor_sites": 2,
+      "anchor_bytes": 167,
+      "inserted_bytes": 346,
       "patch_count": 2
     },
     {
@@ -2087,6 +2135,17 @@
       "anchor_sites": 5,
       "anchor_bytes": 361,
       "inserted_bytes": 308,
+      "patch_count": 1
+    },
+    {
+      "path": "core/kvstream/stage.cpp",
+      "patch_ids": [
+        "rad0055_step_phase_trace"
+      ],
+      "anchors": 4,
+      "anchor_sites": 4,
+      "anchor_bytes": 638,
+      "inserted_bytes": 1041,
       "patch_count": 1
     },
     {
@@ -2340,17 +2399,6 @@
       "anchor_sites": 1,
       "anchor_bytes": 45,
       "inserted_bytes": 68,
-      "patch_count": 1
-    },
-    {
-      "path": "core/runtime/issue.cpp",
-      "patch_ids": [
-        "rad0045_expert_route_replay"
-      ],
-      "anchors": 1,
-      "anchor_sites": 1,
-      "anchor_bytes": 105,
-      "inserted_bytes": 247,
       "patch_count": 1
     },
     {

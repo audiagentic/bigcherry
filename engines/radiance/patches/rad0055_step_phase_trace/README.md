@@ -1,4 +1,23 @@
-# RUM09: Native per-rank phase timeline
+# rad0055_step_phase_trace
+
+**Status:** validated
+**Plan item:** RUM09
+
+Scope: Per-rank, per-op decode timing for a native serving start, selected by `--step-phase-trace`.
+
+## Summary
+
+The serving owner passes an authenticated run-directory path to the engine only when `--step-phase-trace` is given on a
+native `serve` or `start`. The engine then brackets recorded device stretches, live passes and KV copy/wait intervals
+with HIP events and writes one JSONL file per rank.
+
+## Outcome
+
+Without the switch the engine takes the upstream paths: no event is created, no file is opened, and the recorded-pass
+replay is the upstream call. It needs no lab experiment, environment variable or YAML key, so it works with a native
+configuration. The Radiance 2.2 warm decode gap is the question it exists to answer; it carries no throughput claim.
+
+## Detail
 
 The serving owner admits an explicit `--step-phase-trace` switch on
 native v3 `serve` and `start`. The strict manifest reader accepts only
@@ -21,12 +40,6 @@ asynchronous DMA activity cannot be timed with compute-stream HIP event
 pairs; `host_kv_dma_ms` is always null, never falsely reported as zero.
 A null value indicates no events in a class; `valid=false` marks overflow
 or failed collection and must be excluded.
-
-For replayed passes, tape_segments lists ordered HIP-event spans with immutable
-packet boundaries (from, to) and elapsed ms; live passes have -1
-boundaries. The packet bounds describe recording partitions, not individual
-op labels or guaranteed nonoverlapping streams. They are enabled only with
-the same diagnostic switch.
 
 For replayed passes, tape_segments lists ordered HIP-event spans with immutable
 packet boundaries (from, to) and elapsed ms; live passes have -1
