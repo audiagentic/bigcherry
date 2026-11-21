@@ -1,181 +1,148 @@
 ---
 name: bump-radiance
-description: Decide whether to move bigcherry's pinned Radiance revision forward and run the bump -- triage upstream's diff against what bigcherry anchors on, run `pin-bump`, re-port libr3's native rewrite blocks, and the hardware checks after. Use when asked "do we bump", to move the Radiance pin, or when upstream publishes a new Radiance tag.
+description: Triage, port, qualify and release a change to BigCherry's pinned Radiance source. Use for upstream tags, Radiance pin moves and cross-pin compatibility investigations.
 ---
 
-# Bump the pinned Radiance revision
+# Bump Radiance without duplicating its contracts
 
-Radiance is the engine bigcherry pins (`engines/radiance/recipes.toml`: `pinned`, `pinned-version`). bigcherry
-changes it only through managed patches and the components under `engines/radiance/components/` (libr3 compiles
-libr4d for gfx11 through `rewrites.txt` and `native/*.rw` block rules that FAIL CLOSED when upstream changes a
-line they anchor on). A bump is therefore: find what upstream changed, see which of OUR anchors it touches,
-run the `pin-bump` gates, repair what drifted, then measure on hardware. Never skip the triage: it is what tells
-you whether the bump is worth doing at all.
+The source pin and version live in `engines/radiance/recipes.toml`. Work in an
+isolated bump worktree; never hand-edit vendor sources or modify tracked files
+in the primary checkout. See [PIN_BUMP.md](../../../docs/reference/build/PIN_BUMP.md)
+for the orchestrator and [BUMP_COUPLING.md](../../../docs/reference/engines/radiance/BUMP_COUPLING.md)
+for the executable coupling checklist. Plans under
+`docs/planning/active/patching-radiance-upstream/` own unfinished acceptance;
+passing patch application never proves runtime compatibility.
 
-## Target and ownership boundary
+## 1. Triage the candidate before moving the pin
 
-Read RUM01–RUM10 and `docs/reviews/radiance-upstream-2026-11-18/ASTRA-CONSOLIDATION.md`
-before changing the pin. The current migration order is **RUM03 dependency/ABI -> RUM04 native-config
-boundary -> RUM02 extraction**, followed by dependent placement/remote/KV/scheduler slices.
-RUM04 reuses **upstream native YAML parsing of the exact admitted immutable original bytes** and the
-existing strictly measured BigCherry manifest; it does **not** authorize a normalized native-option
-registry, a FleetConfig serializer, a new bundle index or a second allocator. Current RSC12/RSC02
-native-option bridging is temporary and native-only rows are deleted only after actual callers migrate.
-BHK02–BHK04 own host-kernel/GFXOFF, not the Radiance patch series.
+1. Identify the **exact commit**, version, `RAD_ABI_VERSION`, layout fingerprint
+   and relevant upstream changes. Do not equate the newest tag with the reviewed
+   target. Run `python3 -m bigcherry --engine radiance pin-triage <ref> --json`;
+   its non-clean verdict is advisory, not an acceptance decision.
+2. Diff upstream against the *registered patch targets* and the libr3
+   `rewrites.txt` / `native/*.rw` anchors. Test libr3 rewrites against an
+   exact-ref `libr4d` archive with `r3_rewrite.py --check`, without disturbing
+   the primary vendor checkout.
+3. Check every deployed `engines/radiance/configs/*.yaml` against retired or
+   changed **model weight encodings, kernel row constraints, KV formats and
+   rank-local shape assumptions**. An upstream format retirement is a
+   **model-roster migration**, not a reason to resurrect the old kernel:
+   MXFP4/block-FP8 retirement requires an approved replacement container.
+   For IQ8R, the container's int8 scale group is 256 despite FWHT128;
+   per-rank V and FFN widths and offsets must be whole encoding scale groups.
+   Check proposed `tp-ownership` splits *before* GPU starts.
+4. Capture the current composed patch footprint before modifying packages:
+   `python3 -m bigcherry --engine radiance patch-footprint --check`.
+   Review `docs/evidence/radiance-patch-footprint/footprint.md` for the
+   upstream files with the most patch attachments; compare a regenerated
+   report after the port. Anchor counts are lexical, not semantic coverage.
+   Record the before/after delta and the remaining coupling, not just lines moved.
 
-See `docs/reference/engines/radiance/BUMP_COUPLING.md` for the full six-component,
-42-patch inventory and its **DECLARED/UNDECLARED** rule. Matching patch anchors and
-component `built-against` alone do not establish ABI or wire compatibility.
+## 2. Port only surviving changes
 
-## 1. Is there something to bump to? (read-only, a minute)
+Use `engines/radiance/recipes.toml` for the authoritative `[source.*]`
+selections. On the new exact upstream source, run rebase checks for **each**
+deployed source composition, *then* the catalog-wide check:
 
-Run `python3 -m bigcherry --engine radiance pin-triage <target-tag>` (or
-`--json` for a machine-readable report) before committing to a bump.
-It covers the pin range, anchors, patch targets, core commit subjects
-and exact drift with upstream line suggestions without touching vendor.
-The commands below explain its inputs.
+```sh
+python3 -m bigcherry --engine radiance patch-rebase-check --source radiance-native  # unpatched control
+python3 -m bigcherry --engine radiance patch-rebase-check --source radiance
+python3 -m bigcherry --engine radiance patch-rebase-check --source radiance-diag
+python3 -m bigcherry --engine radiance patch-rebase-check --source radiance-routing-evidence
+python3 -m bigcherry --engine radiance patch-rebase-check --source radiance-vtp44-evidence
+python3 -m bigcherry --engine radiance patch-rebase-check --all
+```
 
-    git -C ${BC_WORK_ROOT}/upstream/radiance.git fetch -q origin "+refs/*:refs/*"
-    git -C ${BC_WORK_ROOT}/upstream/radiance.git tag -l 'v*' | sort -V | tail -5      # newest tags
-    grep -n '^pinned' engines/radiance/recipes.toml                                    # what we are on
+Reconcile `FAILED_NEEDS_RECONCILIATION`, `BLOCKED_BY_DEPENDENCY` and
+`QUARANTINED` against the actual upstream diff. A clean `--source` does
+**not** cover independent diagnostic or unselected registered patches;
+`--all` does not substitute for proof of each exact production composition.
+When upstream supersedes a patch, move its **whole package unchanged** into
+`engines/radiance/patches/archive/` and add an `ARCHIVE.md` row (reason,
+successor and evidence); remove it from recipes and re-run the checks.
+Never re-port, rewrite or delete a superseded package for convenience.
+See `docs/reference/patches/PATCH_SYSTEM.md`.
 
-`${BC_WORK_ROOT}/upstream/radiance.git` is the shared bare mirror (CI uses the same layout). Do not clone
-anything else and do not touch `vendor/radiance` for triage.
+Keep remaining changes in managed patches or owned components. Prefer a narrow
+typed hook over multiple source-body attachments, without duplicating upstream
+policy. For KV kernel registrations use the owned `libr4d/bc_kv_rows.h`
+(declared through `rad0049`, extended by `rad0051`–`rad0053`): a supported
+geometry is described in the shared row inventory, with *actual* query/KV
+dtype, head geometry, page size and kernel limits; do not pin per-rank heads
+or rotary dimensions that the kernel does not require. Run the KV-row
+registration fixture and native rewrite gate on any new row.
 
-## 2. Triage the diff against OUR anchors (no checkout, no build)
+Regenerate `patch-footprint` after the final exact recipe composition;
+commit its report and verify with `patch-footprint --check`. The archive and
+footprint should make the **next** bump smaller to reason about.
 
-Read the `pin-triage` verdict and each failing block; a non-clean verdict is
-advice, not a gate. The manual commands below explain its checks and
-can inspect a particular change:
+## 3. Build and verify one coherent identity
 
-    A=v1.16.0 B=v1.17.0; G=${BC_WORK_ROOT}/upstream/radiance.git
-    git -C $G log --oneline $A..$B | wc -l ; git -C $G diff --stat $A $B | tail -1
-    git -C $G diff --name-only $A $B > changed.txt
+```sh
+nice -n 15 python3 -m bigcherry --engine radiance pin-bump <ref> \
+    --source radiance --build native-serving --platform linux-radiance
+# After an interrupted phase, use the recorded run:
+python3 -m bigcherry --engine radiance pin-bump <ref> --resume
+```
 
-Then intersect `changed.txt` with what bigcherry depends on:
+Follow the reported phase failure, rather than bypassing it. The drift gate
+checks component coupling and native rewrites; the compile gate rebuilds
+components, checks exported plugin ABI **and layout fingerprint**, and runs
+component CTests. Follow with lane build, CPU smoke and the exact patch
+application/idempotence tests. All six component `built-against` identities,
+the pin, runtime SDK, kernel roster and bundle digest must match.
 
-- **libr3 native blocks and rewrites**: every file name under `engines/radiance/components/libr3/native/*.rw`
-  (strip `.rw`) and every `r4d_*.{hip,cpp,h}` named in `rewrites.txt`. A hit means a block may drift.
-  The exact test, with no checkout: extract only libr4d and run the rewriter's own check against it:
+The serving wire is **edition 3 only**. The single flat registry is
+`engines/radiance/components/serving/contract/serving.toml`; generation
+produces `generated/v3` schema/codec/fingerprints. Run `bc_contract_check`
+and the component tests that verify generated fingerprint equality and v3
+reader/writer/stored replay. Do not introduce a second native option mapping,
+an old-edition reader or a parallel manifest index.
 
-      mkdir -p ${BC_WORK_ROOT}/tmp
-      S=$(mktemp -d ${BC_WORK_ROOT}/tmp/radiance-rewrite.XXXXXX)
-      git -C $G archive $B libr4d | tar -x -C $S
-      python3 engines/radiance/components/libr3/r3_rewrite.py --source $S/libr4d \
-          --rules engines/radiance/components/libr3/rewrites.txt \
-          --native engines/radiance/components/libr3/native --check      # {"failures": {}} when all apply
+Every managed serving config is one native `NAME.yaml` with a closed
+`x-bigcherry` section. Upstream-owned options stay in the native YAML;
+BigCherry intent lives only in `x-bigcherry`. Inspect **all** shipped YAMLs
+offline, with the matching candidate engine and `bc-serve explain NAME
+--native-config engines/radiance/configs/NAME.yaml --model-root ${BC_MODEL_ROOT}
+--engine-binary <candidate-binary> --json`, then validate variant/roster
+consistency. No catalogue, layout file, `--layouts` or managed-start
+`--set` projection is involved. The sealed original YAML bytes, canonical
+root and parser/build identity must bind the measured plan and stored replay;
+fresh resource admission is required on every start, including cache hits.
 
-- **Managed patches**: the files each `engines/radiance/patches/*/patch.py` anchors on (rad0002 hand-off and the
-  routing-evidence / manifest patches touch `core/engine.cpp`, `core/runtime/ctx.cpp`, `core/mem/*`). Changed
-  there = expect an anchor failure, read the commit subjects (`git log --format='%h %s' $A..$B -- core/mem core/runtime core/engine.cpp`).
-- **What the commits are about**: skim `git log --format=%s $A..$B`. A bump that is all another model family
-  (e.g. Gemma) and a new drafter with no change to the Qwen3.8 paths we serve is a low-value bump; one that
-  touches the loan/KV-tier/vram-budget code or the rows we tune (MXFP4 gemm rows, the 8a8 prefill tile) is
-  worth doing and worth measuring.
+Pass the platform's absolute work root as `--work-root ${BC_WORK_ROOT}`
+to enable the shared model-identity cache at
+`${BC_WORK_ROOT}/cache/model-identities/<sha256-of-canonical-model-path>.json`.
+It stores a full-file digest, validated against file identity; missing
+`--work-root` fingerprints the model on each run. Never substitute a header
+hash or reuse historical free-VRAM estimates as static identity.
 
-Write the verdict (bump / not now, and why) before running anything heavy.
+## 4. Qualify on leased hardware before publishing
 
-### BigCherry-owned coupling preflight (read-only)
+Run the **entire deployed YAML roster** from the installed, relocatable
+runtime: offline explain, measured start, health, short completion, stop/drain,
+named replay and explicit stored replay. Exercise engine-only, helper-on and
+mixed-rank topologies where the roster advertises them. Check ordinal order,
+code objects, exact collective rendezvous and host/VRAM admission. Fix a
+shared planner defect in the measured owner, not by adding per-config
+headroom constants.
 
-1. Record the exact candidate commit, its `abi/rad_abi.h` `RAD_ABI_VERSION`, and whether it
-   is RUM01's **reviewed target**. The newest tag may differ. The 2026-11-18 `v2.1.0`
-   tag is ABI 40; RUM03's reviewed migration candidate is ABI 41.
-2. Inspect `BUMP_COUPLING.md`, `docs/reviews/radiance-upstream-2026-11-18/patch-footprint.json`,
-   all six `component.toml` packages, every `patch.py` source anchor and `libr3/native/*.rw`.
-   The `[coupling]` declarations on all six `component.toml` files are checked against
-   owned C++/HIP literal uses, target upstream paths, plugin ABI and owned wire constants.
-   `pin-triage --json` reports `coupling_failures`, `upstream_abi` and the
-   `coupling-affected` advisory verdict. A missing target ABI is a failure, not a clean finding.
-   This gate covers the declared surface only; undeclared patch semantics and RUM migration
-   acceptance remain open, never infer them from a clean declaration check.
-3. Use the **existing generated serving-v2 registry** to check RSC12/RSC02 names in
-   `session.cpp`, `serving.cpp`, `config_loader.cpp` and rad0009. Distinguish native
-   options from local/derived/helper fields. RUM04 removes proven native duplication:
-   do not create a second native mapping authority or serializer.
-4. Verify the Python-free engine asset records the exact Radiance `pinned`,
-   `pinned-version`, every component's `built-against`, and release tag/digest.
-   Any mixed-version plugin bundle must refuse packaging; the interpreter exclusion
-   and SDK checks must remain in place.
-5. An exit 0 from `pin-triage` means the advisory analysis completed, not that
-   the bump is accepted. Run exact-ref `git archive` + `r3_rewrite.py --check`
-   separately. A drift or ABI failure is **not ready**; do not run `pin-bump`,
-   alter vendor or use GPU during a read-only readiness check.
+For raw model KLD/top-1 against a fixed BF16 reference, make a **temporary
+YAML arm** with `num-speculative-tokens: 0` (disable draft) and match
+tokenizer, corpus, positions and KV dtype. Do **not** change the production
+draft depth merely for this quality test; the performance and replay gates
+run at their authored depth.
 
-The timestamped verdict and explicit gaps live in `BUMP_COUPLING.md`.
-No local machine paths, private environment or hardware fingerprints belong
-in committed evidence.
+Use matched old/new builds and identical helper topology/inputs for paired
+prefill, cold TTFT and decode comparisons. Run **at least three interleaved
+pairs** and inspect per-pair spread; long-prefill/long-8 can be bimodal, so
+a single adverse result or apparent chain improvement is not decisive.
+Repeat only to resolve genuine noise or regression. Baselines, KLD, kernel
+rows and newly qualified formats must bind exact model, source, build and
+runtime identities. Do not claim a clean bump from compile, one canary or
+unpaired throughput alone.
 
-## 3. Run the bump (hours; detached; a slice worktree)
-
-The orchestrator is `pin-bump`; its reference is `docs/reference/build/PIN_BUMP.md` ("Per-engine bump gates").
-
-    git worktree add -b bump/radiance-<ver> worktrees/bump/radiance-<ver> origin/main
-    # in a detached script (setsid nohup), after sourcing tools/env/bigcherry-env.sh with BIGCHERRY_ENVIRONMENT set:
-    nice -n 15 python3 -m bigcherry --engine radiance pin-bump <tag> \
-        --source radiance --build stock --platform linux-radiance > <run dir>/pin-bump.log 2>&1
-    # after a stop and a fix:  ... pin-bump <tag> --resume
-
-Phases, in order: fetch and rebase patches (the `drift` phase first enforces
-`component-coupling` as `COMPONENT_COUPLING_DRIFT`, then runs the libr3 native-rewrite check), compile
-gate (`components-build`, `component-plugin-abi`, `component-tests`), lane build and CPU smoke, optional
-`--accept` (hardware acceptance against stored baselines: needs the `gpu` lease). A failure writes
-`artifacts/pin-bump/radiance/resume-<tag>/failure.json` in the worktree: read `failure.code` and
-`evidence`, fix, then `--resume`.
-
-### Things to know
-
-- **The declare phase moves everything that names the pin**: `pinned`, `pinned-version` and every component's
-  `built-against` (one commit with the transition marker). Before this, the last two were edited by hand and the
-  core suite (`test_components`, `test_engine_recipes`) was the first thing to notice.
-- **`pin-bump` moves `vendor/radiance` in the PRIMARY checkout to the target tag.** That is by design (the vendor
-  clone belongs to the primary, `BC_PRIMARY_ROOT` must name a primary checkout) and `vendor/` is gitignored, so no
-  tracked file changes, but every tool reading that clone now sees the new source. A `--resume` puts the tree back
-  on the run's recorded target by itself (it refuses only when the tree has tracked changes a checkout would lose:
-  `VENDOR_TREE_NOT_AT_TARGET`). If you ABANDON the bump, restore the old pin yourself:
-  `git -C vendor/radiance checkout <old tag>`. Builds are not affected (they read content-addressed copies under
-  `${BC_WORK_ROOT}/sources/`).
-- **A bare `--resume` is enough**: the run records its compile platform and lane-build profile when it starts, and the
-  tool commits its own release records (`releases/index.json`, `releases/<tag>.json`) before the lane build, which
-  refuses a dirty tree. (Both needed workarounds until 2026-11-05: repeating `--source/--build/--platform`, and
-  committing the records by hand.)
-- **Native `.rw` blocks chain**: a later block's `find` text is the OUTPUT of the earlier block. When upstream edits
-  a line (it added `perf_vocab = 0, perf_iqr = 0` to a declaration), update the first block's find AND replace
-  with upstream's new text, and the following block's find to the first block's new replace. Re-run the
-  extract-and-check from step 2 until `failures` is empty, then commit the `.rw` change in the bump branch.
-- A bump that stops on `NATIVE_REWRITE_DRIFT` is the cheap case; a patch-anchor failure means re-anchoring the
-  patch (see `bigcherry-patch-author` and `bigcherry-patch-verify`), which can be real work.
-- **A passing bump can still carry failing patch tests**: the final report lists "patch test(s) fail against the
-  pristine new revision" (v1.17.0: two rad0002 admission-bridge tests). Compile, lane build and CPU smoke pass
-  without them; read them before adopting, they mean the patch's behaviour no longer holds on the new source.
-
-## 4. After the gates pass: measure, do not assume
-
-A green bump says it builds and loads. It does not say it is as fast.
-
-- **Parity A/B on Flash-Next** (launcher defaults, four cards, `temperature: 0`, alternate A B A B under the `gpu`
-  lease): compare COLD PREFILL and STEP TIME. Do not compare tokens/s across builds: draft acceptance differs
-  per build even with the text pinned (`bigcherry-benchmark` for the harness rules).
-- **The parity harness** (`tools/lab/radiance/flashnext-parity.sh`, under the `gpu` lease, run detached):
-  - Before the bump: `measure --build <current main build> --out <run dir>`, then `baseline --out <run dir> --name
-    <current pin>`, and commit `docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json` in a PR. Its
-    tolerances come from the spread the run measured; a single launch is refused.
-  - After the bump: `measure --build <bump build> --out <new run dir>`, then `compare --out <new run dir> --baseline
-    docs/reference/engines/radiance/baselines/flashnext-4gpu-parity.json`. It gates cold prefill and step time
-    one-sided (better never fails) and prints draft acceptance and policy transactions without gating them.
-  - A regression (exit 1) is investigated, not waived: find the cause before the pin moves. First confirm it in one
-    session: a stored baseline drifts a few percent from day to day, so alternate the old build (reinstall the previous
-    release with `release-install`) and the new one, A B A B under the same lease, before calling it a regression.
-  - The 8-session decode step is gated on the cold round only. Later rounds hit the prefix cache to a varying degree,
-    so a different number of sessions decode together per step (all 8 on a full hit: longer steps, several times the
-    throughput); their ms/step (`sess8_warm_ms_per_step`) is informational.
-- **Kernel rows** touched by upstream (rows, prefill tile): `rad-kbench` replay with `kbench_ab.py` against the
-  previous build, per row, minutes each.
-- **Quality**: KLD and top-1 against BF16 if numerics could move.
-- Then `pin-release` (see `docs/reference/build/RELEASES.md`) and the pin PR through the slice workflow
-  (`bigcherry-slice-workflow`); release PRs are merged by the lead once clean.
-
-## Rules that apply throughout
-
-Never edit the primary checkout's tracked files; heavy builds `nice`, one at a time, never beside a serving
-engine; no machine names or attribution lines in commits or PRs; managed patches and components only (no
-hand-edited vendor source).
+Only after runtime, short quality, paired performance and installed-bundle
+gates pass: record evidence and use the release workflow in
+`docs/reference/build/RELEASES.md`. Do not push or publish as part of
+read-only triage.
