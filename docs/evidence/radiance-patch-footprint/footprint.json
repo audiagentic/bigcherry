@@ -155,14 +155,14 @@
   },
   "totals": {
     "composed_patches": 39,
-    "edits": 662,
-    "anchors": 632,
-    "upstream_anchors": 597,
+    "edits": 663,
+    "anchors": 631,
+    "upstream_anchors": 596,
     "created_target_anchors": 35,
-    "anchor_sites": 655,
-    "anchor_bytes": 79186,
-    "inserted_bytes": 567714,
-    "created_edits": 30,
+    "anchor_sites": 654,
+    "anchor_bytes": 79033,
+    "inserted_bytes": 579154,
+    "created_edits": 32,
     "upstream_files": 81
   },
   "patches": [
@@ -289,6 +289,8 @@
         "core/plugin/bands.cpp",
         "core/plugin/bc_rank_devices.cpp",
         "core/plugin/bc_rank_devices.h",
+        "core/plugin/bc_rank_engine.cpp",
+        "core/plugin/bc_rank_engine.h",
         "core/plugin/loader.cpp",
         "core/plugin/registry.h",
         "core/plugin/select.cpp",
@@ -312,16 +314,18 @@
       "created_files": [
         "core/plugin/bc_rank_devices.cpp",
         "core/plugin/bc_rank_devices.h",
+        "core/plugin/bc_rank_engine.cpp",
+        "core/plugin/bc_rank_engine.h",
         "tests/bc_rank_devices_test.cpp"
       ],
-      "edits": 42,
-      "anchors": 39,
-      "upstream_anchors": 39,
+      "edits": 43,
+      "anchors": 38,
+      "upstream_anchors": 38,
       "created_target_anchors": 0,
-      "anchor_sites": 39,
-      "anchor_bytes": 5883,
-      "inserted_bytes": 40829,
-      "created_edits": 3
+      "anchor_sites": 38,
+      "anchor_bytes": 5730,
+      "inserted_bytes": 52269,
+      "created_edits": 5
     },
     {
       "patch": "rad0045_expert_route_replay",
@@ -1533,7 +1537,7 @@
       "anchors": 32,
       "anchor_sites": 32,
       "anchor_bytes": 2434,
-      "inserted_bytes": 24543,
+      "inserted_bytes": 20677,
       "patch_count": 13
     },
     {
@@ -2123,7 +2127,7 @@
       "anchors": 5,
       "anchor_sites": 5,
       "anchor_bytes": 1094,
-      "inserted_bytes": 2367,
+      "inserted_bytes": 2721,
       "patch_count": 1
     },
     {
@@ -2160,17 +2164,6 @@
       "patch_count": 1
     },
     {
-      "path": "core/plugin/loader.cpp",
-      "patch_ids": [
-        "rad0016_vtp14_rank_code_selection"
-      ],
-      "anchors": 4,
-      "anchor_sites": 4,
-      "anchor_bytes": 723,
-      "inserted_bytes": 3359,
-      "patch_count": 1
-    },
-    {
       "path": "core/server/metrics.cpp",
       "patch_ids": [
         "rad0036_prefill_governor"
@@ -2201,6 +2194,17 @@
       "anchor_sites": 3,
       "anchor_bytes": 93,
       "inserted_bytes": 139,
+      "patch_count": 1
+    },
+    {
+      "path": "core/plugin/loader.cpp",
+      "patch_ids": [
+        "rad0016_vtp14_rank_code_selection"
+      ],
+      "anchors": 3,
+      "anchor_sites": 3,
+      "anchor_bytes": 570,
+      "inserted_bytes": 1268,
       "patch_count": 1
     },
     {

@@ -1,0 +1,14 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261121_211108_internal-test-fix-no-user-vis_7341",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc_native_fleet_config_test: drop the stale edition-2 assertions (current wire rejects native_config; v3 document is an unsupported successor) now that edition 3 is the only serving wire. The test passes again in the radiance test build.",
+  "timestamp-utc": "2026-11-21T21:11:08.541755Z",
+  "user-summary-candidate": "Internal test fix; no user-visible change."
+}

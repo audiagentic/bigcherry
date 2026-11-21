@@ -2,7 +2,7 @@
 
 Upstream pin: `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
 
-39 composed patches; **632 anchor edits** (597 upstream, 35 on patch-created files; 655 expected match sites); 662 total edits, 30 in created files; 81 upstream files.
+39 composed patches; **631 anchor edits** (596 upstream, 35 on patch-created files; 654 expected match sites); 663 total edits, 32 in created files; 81 upstream files.
 
 Counts are lexical, not a measure of independent semantics, net code savings, or successful application. Regex anchor bytes and full replacement text bytes are counted as authored, not as actual upstream match or net diff bytes.
 
@@ -12,7 +12,7 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | --- | ---: | ---: | ---: | ---: | ---: | ---: | ---: |
 | `rad0053_v4_kv_layouts` | 13 | 0 | 58 | 35 | 58 | 5825 | 27765 |
 | `rad0051_b16_kv_kernels` | 11 | 3 | 44 | 41 | 47 | 3112 | 86822 |
-| `rad0016_vtp14_rank_code_selection` | 11 | 3 | 39 | 39 | 42 | 5883 | 40829 |
+| `rad0016_vtp14_rank_code_selection` | 11 | 5 | 38 | 38 | 43 | 5730 | 52269 |
 | `rad0045_expert_route_replay` | 15 | 0 | 36 | 36 | 36 | 3080 | 27756 |
 | `rad0002_moe_remote_handoff` | 8 | 5 | 35 | 35 | 40 | 2073 | 39741 |
 | `rad0036_prefill_governor` | 11 | 1 | 29 | 29 | 30 | 7396 | 37516 |
@@ -101,10 +101,10 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `tests/abi_layout_test.cpp` | 1 | 5 | 361 | `rad0048_abi44_kv_contract` |
 | `core/kvstream/stage.cpp` | 1 | 4 | 638 | `rad0055_step_phase_trace` |
 | `core/place/planner.cpp` | 1 | 4 | 267 | `rad0002_moe_remote_handoff` |
-| `core/plugin/loader.cpp` | 1 | 4 | 723 | `rad0016_vtp14_rank_code_selection` |
 | `core/server/metrics.cpp` | 1 | 4 | 1607 | `rad0036_prefill_governor` |
 | `arch/qwen35_bf16/qwen35_bf16.cpp` | 1 | 3 | 447 | `rad0018_vtp14_n2_tp_ownership` |
 | `core/main.cpp` | 1 | 3 | 93 | `rad0009_serving_manifest` |
+| `core/plugin/loader.cpp` | 1 | 3 | 570 | `rad0016_vtp14_rank_code_selection` |
 | `libref/ref_attn.cpp` | 1 | 3 | 152 | `rad0051_b16_kv_kernels` |
 | `arch/common/rad_block_hc.h` | 1 | 2 | 96 | `rad0002_moe_remote_handoff` |
 | `core/engine.h` | 1 | 2 | 84 | `rad0002_moe_remote_handoff` |

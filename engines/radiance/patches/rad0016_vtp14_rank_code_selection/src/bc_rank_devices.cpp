@@ -145,4 +145,49 @@ int bc_rank_collectives_agree(const std::vector<std::vector<BcCollStep>>& per_ra
     return RAD_OK;
 }
 
+int bc_rank_devices_admit(const BcRankDevicesRequest& request, const std::vector<BcDeviceInfo>& inventory,
+                          BcRankDevicesAdmission* out) {
+    *out = BcRankDevicesAdmission{};
+    /* The lossy wire (tiered int8 at three ranks) faulted in a mixed-library TP3 world with an invalid KV operand; the cause
+     * is unproven (VTP14.md), so it is refused here until it is instrumented and validated. The exact wire is the validated
+     * contract; it is never substituted silently. */
+    if (!request.wire_exact && !request.wire_unvalidated) {
+        out->refusal = "--rank-devices: --tp-wire wht6 is not validated across these ranks (a 3-rank tiered int8 run "
+                       "faulted with an invalid KV operand); serve with --tp-wire exact";
+        return RAD_E_UNSUPPORTED;
+    }
+    if (!request.wire_exact)   /* --tp-wire-unvalidated: a lab run reproducing the fault, never serving */
+        out->warnings.push_back("--rank-devices: --tp-wire wht6 across these ranks is UNVALIDATED (--tp-wire-unvalidated); "
+                                "a lab diagnosis only, not a serving configuration");
+    std::vector<int> picked;
+    std::string why;
+    if (bc_rank_devices_plan(inventory, request.want, request.tp, &picked, &why) != RAD_OK) {
+        out->refusal = "--rank-devices: " + why;
+        return RAD_E_DEVICE;
+    }
+    if (!request.fleet_devices.empty() && request.fleet_devices != picked) {
+        out->refusal = "--rank-devices disagrees with the fleet device order";
+        return RAD_E_DEVICE;
+    }
+    out->ordinals = picked;
+    out->archs = bc_rank_archs(inventory, picked);
+    for (size_t r = 0; r < picked.size(); ++r)
+        for (const BcDeviceInfo& d : inventory)
+            if (d.ordinal == picked[r])
+                out->ranks += (out->ranks.empty() ? "" : "; ") + std::string("rank ") + std::to_string(r) + ": " + d.pci +
+                              " " + d.arch + " (device " + std::to_string(d.ordinal) + ")";
+    const bool mixed = out->archs.size() > 1;
+    out->decision = mixed ? "an explicit ordered list across architectures: each rank selects the kernels its own card runs "
+                            "(BigCherry VTP14)"
+                          : "an explicit ordered list";
+    if (mixed) {
+        std::string a;
+        for (const std::string& x : out->archs) a += (a.empty() ? "" : ", ") + x;
+        out->warnings.push_back("device: the ranks span architectures (" + a + "). Each rank selects only kernels its own "
+                                "card runs, and startup stops if a rank lacks one or the ranks' collectives differ. "
+                                "Experimental (BigCherry VTP14).");
+    }
+    return RAD_OK;
+}
+
 }  /* namespace rad */
