@@ -132,6 +132,9 @@ struct EngineStart {
     std::string heat_session_nonce;
     // Native launches retain the admitted working directory and exact environment across child starts.
     std::shared_ptr<const NativeEngineLaunch> native_launch;
+    // Set when this start reused the work root's stored measurement: if the engine then fails to come up on that
+    // plan, the owner drops the entry so the next start measures afresh.
+    std::filesystem::path reused_store;
     std::uint64_t native_helper_resident_mib = 0; // measured by the owner, outside the engine's P1 record
     // Set only by a native preflight: the inspector's strict receipt for the admitted YAML (no child was started).
     nlohmann::json native_preflight_receipt = nlohmann::json::object();
@@ -357,7 +360,7 @@ struct EnginePlanInputs {
     std::filesystem::path self; // this bc-serve (writes the manifests)
     std::filesystem::path stored_manifest; // explicit immutable replay input (never a writer output)
     std::string named_config;              // explicitly selected new RSC12 config; enables static-key reuse
-    std::filesystem::path work_root;       // the platform's work root (--work-root): host-wide model-identity cache; empty: per run
+    std::filesystem::path work_root;       // the platform's work root (--work-root): holds the named-config store; empty: every start measures
     bool explicit_power_profile = false;   // only an explicit override may conflict with a stored profile
     std::filesystem::path calibration_prompts_a, calibration_prompts_b, calibration_store;
     std::filesystem::path calibration_records_file; // real writer P2 source, part of static input key

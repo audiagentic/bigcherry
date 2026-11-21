@@ -70,9 +70,9 @@ inventory snapshot or a semantic acceptance certificate. Read
    container's declared group. Explain/preflight all YAMLs offline
    before GPU allocation. Then qualify canary, helper and mixed-rank
    start/stop, fresh/named/stored replay, KLD and interleaved paired
-   performance on the *installed* exact bundle. The shared model
-   identity cache under `${BC_WORK_ROOT}/cache/model-identities/`
-   caches full digest identity only, never fresh resource admission.
+   performance on the *installed* exact bundle. The named-config
+   store under `${BC_WORK_ROOT}/cache/named-configs/` keeps the last
+   measured manifest of a config, never fresh resource admission.
 
 A **DECLARED** coupling gate means the corresponding source/header/option
 or wire literal is checked. It does not establish end-to-end safety,
