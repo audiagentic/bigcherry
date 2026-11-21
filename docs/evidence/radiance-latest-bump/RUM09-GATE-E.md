@@ -11,6 +11,18 @@ the tag-bound `.receipt.json`.
 | install with the ROCm 10.1 SDK | refused: `BC_RELEASE_9` SDK version mismatch (the receipt pins 7.2.4), as designed |
 | installed `bc-serve serve flashnext-4gpu` (named, from the installed prefix, no `--set`, no explicit native config), gpu lease | up; canary `" Paris. The capital of Germany is Berlin. The capital of"`; stop clean, exit 0 |
 
-The installed bundle ships all 16 configs (10 Flash-Next, 6 Qwen 27B). Only `flashnext-4gpu` was started from the
-installed prefix; the other configs were started from the identical build before release (see RUM09-GATE-D.md and the
-plan note). Starting the full roster from the installed prefix and relocating the root are still to do before RUM09 closes.
+## Full roster from the installed prefix
+
+All 16 shipped configs (10 Flash-Next, 6 Qwen 27B) were started by name from the installed prefix, one short gpu lease
+each, with no `--set` and no explicit native config: every one reached `up`, answered the canary with the expected
+completion and stopped cleanly (exit 0). That includes the mixed-rank TP3 Qwen configs and the helper-offload Flash-Next
+configs.
+
+## Relocation
+
+Moving an installed root is refused by design, by both `bc-release verify` and `bc-serve`: `BC_RELEASE_4: stored install
+prefix changed`, because the install receipt binds the absolute prefix. The supported way to place a release elsewhere is
+a fresh `bc-release install` of the same tag, archive and receipt at the new root. That install verified, and
+`bc-serve serve qwen27b-tp3` from it reached `up`, answered the canary and stopped cleanly.
+
+Explicitly unsupported: relocating an installed root by moving or copying it.
