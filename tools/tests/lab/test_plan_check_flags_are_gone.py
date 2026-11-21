@@ -36,10 +36,11 @@ class PlanCheckFlagsAreGoneTests(unittest.TestCase):
         self.assertEqual(survivors, [])
 
     def test_the_engine_checks_the_plan_its_manifest_carries(self) -> None:
-        rad0009 = (REPO / "engines/radiance/patches/rad0009_serving_manifest/patch.py").read_text(encoding="utf-8")
+        component = (REPO / "engines/radiance/components/serving/bc_serving_manifest.cpp").read_text(encoding="utf-8")
         rad0011 = (REPO / "engines/radiance/patches/rad0011_plan_memory/patch.py").read_text(encoding="utf-8")
-        self.assertIn("bc_serving_expected_plan", rad0009)
-        self.assertRegex(rad0009, r"engine_view\(manifest\.value\(\)\)")
+        # The owned component admits the manifest and publishes its measured plan; rad0011 checks the engine's plan against it.
+        self.assertIn("bool bc_serving_expected_plan(", component)
+        self.assertRegex(component, r"v2::engine_view\(manifest\.value\(\)\)")
         self.assertIn("bc_serving_expected_plan(&expected, &floor_ppm)", rad0011)
 
     def test_the_guard_can_fail(self) -> None:
