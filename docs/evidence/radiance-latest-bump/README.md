@@ -442,6 +442,6 @@ release archive in `release_testdata` is regenerated with the real packer from t
 (`manifest_argv_test.cpp`) drives the patched reader with the v3 example through a sealed descriptor, a measuring start with `--plan-memory-ranks`, the
 quality-run flags and the refusals; the v2 registry-to-flag projection cases are gone with the projection.
 
-Equivalence note: the host reserve a sealed Flash-Next manifest records moved from 4705 MiB (the figure in the 2026-11-19 audit of d92592f9) to 9436 MiB.
+Equivalence note: the n-gram host-RAM reservation was removed from the nine Flash-Next YAMLs (RUM05, agent/rum05-planner-room 78f6375a3, merged in 5cdc6af57): it over-reserved host RAM and caused the RAM-admission refusals, and `v2/admission.cpp` was refit. The host reserve a sealed Flash-Next manifest records moved from 4705 MiB (the figure in the 2026-11-19 audit of d92592f9) to 9436 MiB.
 It is recorded as **machine state** (decided by bigcherry-1), not as a change to the config, the patches or the contract, so a
 before/after comparison must pin the host or compare plans, not throughput.
