@@ -7,6 +7,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <filesystem>
 #include <fstream>
 #include <map>
 #include <set>
@@ -154,41 +155,44 @@ static void production_layout_parity() {
     check(stride == 2534400 &&
           uint64_t(bc::experts::laid_out_bytes(f, true, 0, 0)) == stride,
           "real model's padded slot equals main's expert bytes");
-    std::ifstream in(R3_LAYOUTS_TOML);
-    check(in.good(), "layouts.toml readable");
+    // Helper groups come from the shipped flashnext YAML configs: each file's
+    // `helpers:` list is one production layout (flow-style entries).
     std::map<std::string,std::vector<HelperConfig>> layouts;
-    std::string name, line;
-    HelperConfig group;
-    bool open = false;
-    auto flush = [&] {
-        if (!open) return;
-        check(!group.arch.empty(), "valid helper group");
-        for (uint32_t i=0; i<group.count; ++i)
-            layouts[name].push_back({group.budget, group.arch, group.placement, group.share, 1});
-        open=false;
+    const auto field = [](const std::string& line, const char* key) {
+        const std::string k = std::string(key) + ": ";
+        size_t at = line.find(k);
+        if (at == std::string::npos) return std::string();
+        at += k.size();
+        size_t end = line.find_first_of(",}", at);
+        std::string v = line.substr(at, end == std::string::npos ? end : end - at);
+        if (v.size() >= 2 && v.front() == '"') v = v.substr(1, v.size() - 2);
+        return v;
     };
-    while (std::getline(in,line)) {
-        if (line.rfind("[[layout.",0)==0) {
-            flush();
-            size_t end=line.find(".helper]]");
-            check(end!=std::string::npos,"helper stanza");
-            name=line.substr(9,end-9); group=HelperConfig{}; open=true;
-        } else if (line.rfind("[layout.",0)==0) {
-            flush();
-        } else if (open) {
-            size_t eq=line.find('=');
-            if(eq==std::string::npos) continue;
-            auto key=line.substr(0,eq);
-            size_t q=line.find('"'), end=q==std::string::npos ? q : line.find('"',q+1);
-            if(key=="count ") group.count = line.find("all")!=std::string::npos ?
-                2u : uint32_t(std::stoul(line.substr(eq+1)));
-            if(key=="budget-mib ") group.budget=std::stoull(line.substr(eq+1))<<20;
-            if(key=="share ") group.share=uint32_t(std::stoul(line.substr(eq+1)));
-            if(key=="arch " && end!=std::string::npos) group.arch=line.substr(q+1,end-q-1);
-            if(key=="placement " && end!=std::string::npos) group.placement=line.substr(q+1,end-q-1);
+    for (const auto& entry : std::filesystem::directory_iterator(R3_CONFIGS_DIR)) {
+        const std::string file = entry.path().filename().string();
+        if (file.rfind("flashnext-", 0) != 0 || entry.path().extension() != ".yaml") continue;
+        std::ifstream in(entry.path());
+        check(in.good(), "config readable");
+        const std::string name = entry.path().stem().string();
+        std::string line;
+        bool in_helpers = false;
+        while (std::getline(in, line)) {
+            if (line.find("helpers:") != std::string::npos) { in_helpers = true; continue; }
+            if (!in_helpers) continue;
+            if (line.find("- {") == std::string::npos) { in_helpers = false; continue; }
+            HelperConfig group;
+            group.arch = field(line, "arch");
+            group.placement = field(line, "placement");
+            const std::string count = field(line, "count");
+            const std::string share = field(line, "share");
+            check(!group.arch.empty() && !count.empty(), "valid helper group");
+            group.count = count == "all" ? 2u : uint32_t(std::stoul(count));
+            if (!share.empty()) group.share = uint32_t(std::stoul(share));
+            for (uint32_t i = 0; i < group.count; ++i)
+                layouts[name].push_back({group.budget, group.arch, group.placement, group.share, 1});
         }
     }
-    flush(); check(!layouts.empty(),"production layouts present");
+    check(!layouts.empty(),"production layouts present");
     for(const auto& [name,helpers]:layouts) {
         check(!helpers.empty() && r3::moe_shm::slots_fit(uint32_t(helpers.size()),1),
               "production layout helper count");
