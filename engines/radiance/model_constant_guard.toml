@@ -229,30 +229,26 @@ reason = "error message names the container extension"
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
 anchor = "return (rt == 256 || rt == 384) ? rt : 128;"
-category = "D"
+category = "A"
 reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
 anchor = "else if (rad18_upmix_rt == 384)"
-category = "D"
+category = "A"
 reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0008_hc_upmix_rt_sweep/patch.py"
 anchor = "_launch(384)"
-category = "D"
+category = "A"
 reason = "bounded PF2 up-mix tile values are an explicit manifest setting, with the previous tile as the fallback"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/components/serving/contract/serving.toml"
 anchor = "values = [128, 256, 384]"
-category = "D"
+category = "A"
 reason = "the PF2 up-mix kernel supports only these bounded row tile choices"
-owner = "RUM04"
 
 [[allow]]
 path = "engines/radiance/patches/rad0042_kv_b16_selftest/patch.py"
