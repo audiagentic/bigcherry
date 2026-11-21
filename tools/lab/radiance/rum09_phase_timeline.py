@@ -7,6 +7,7 @@ An absent phase or invalid event trace refuses the comparison.
 from __future__ import annotations
 
 import argparse
+import itertools
 import json
 import math
 import statistics
@@ -93,12 +94,29 @@ def analyze(bench: Path, trace_dir: Path) -> dict:
                 if type(step_key) is not int or step_key < 0:
                     raise ValueError(f"rank {rank}: missing or invalid scheduler step")
                 grouped.setdefault(step_key, []).append(r)
+            ordered = []
+            for step_id, group in grouped.items():
+                group.sort(key=lambda r: r["wall_start_ns"])
+                for prev, curr in itertools.pairwise(group):
+                    if curr["wall_start_ns"] < prev["wall_end_ns"]:
+                        raise ValueError(f"rank {rank}: overlapping passes of step {step_id}")
+                ordered.append((group[0]["wall_start_ns"], group[-1]["wall_end_ns"], group))
+            ordered.sort(key=lambda entry: entry[0])
+            between_step = []
+            for previous, following in itertools.pairwise(ordered):
+                gap = following[0] - previous[1]
+                if gap < 0:
+                    raise ValueError(f"rank {rank}: overlapping scheduler steps")
+                between_step.append(gap / 1e6)
+            within_step = [sum(
+                max(0, right["wall_start_ns"] - left["wall_end_ns"])/1e6
+                for left, right in itertools.pairwise(group))
+                for _, _, group in ordered]
             item = {"phase": ("cold", "warm")[i], "rank": rank, "passes": len(rows),
                     "steps": len(grouped),
-                    "device_span_ms_p50": p50([
-                        (max(r["wall_end_ns"] for r in group) -
-                         min(r["wall_start_ns"] for r in group)) / 1e6
-                        for group in grouped.values()])}
+                    "rank_step_wall_ms_p50": p50([(hi-lo)/1e6 for lo, hi, _ in ordered]),
+                    "inter_pass_host_gap_ms_p50": p50(within_step),
+                    "between_step_host_gap_ms_p50": p50(between_step)}
             for key in CATEGORIES:
                 samples = [sum(r[key] for r in group if r.get(key) is not None)
                            for group in grouped.values()
@@ -112,8 +130,9 @@ def analyze(bench: Path, trace_dir: Path) -> dict:
             delta[key] = round(b - a, 6) if a is not None and b is not None else None
         outputs[str(rank)] = {"rounds": results, "warm_minus_cold_ms_p50": delta}
     return {"schema_version": 1, "benchmark": bench.name, "ranks": outputs,
-            "caveat": ("Profiled timings are perturbed by HIP event sync and disabled pass playback; "
-                       "per-lane GPU intervals can overlap. Async DMA device activity is unavailable "
+            "caveat": ("HIP event synchronization perturbs timing; recorded-pass playback remains enabled. "
+                       "Rank step spans and between-step host gaps are wall-clock measurements, not HIP events. "
+                       "Per-lane GPU intervals can overlap. Async DMA device activity is unavailable "
                        "rather than zero.")}
 
 

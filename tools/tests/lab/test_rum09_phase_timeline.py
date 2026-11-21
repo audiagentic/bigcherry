@@ -46,6 +46,9 @@ def test_cold_warm_rank_and_null_category(tmp_path):
     bench, traces = _fixture(tmp_path)
     result = trace.analyze(bench, traces)["ranks"]["0"]
     assert result["rounds"][0]["passes"] == 2
+    assert result["rounds"][0]["rank_step_wall_ms_p50"] == (100/1e6 + 150/1e6)/2
+    assert result["rounds"][0]["between_step_host_gap_ms_p50"] == 100/1e6
+    assert result["rounds"][0]["inter_pass_host_gap_ms_p50"] == 0
     assert result["rounds"][0]["compute_ms_p50"] == 3
     assert result["rounds"][1]["compute_ms_p50"] == 7
     assert result["warm_minus_cold_ms_p50"]["compute_ms"] == 4
@@ -99,4 +102,15 @@ def test_json_lines_are_strict_not_multiline(tmp_path):
     rank = traces / "engine-rank-0.jsonl"
     rank.write_text('{"schema_version":1\n"rank":0}\n')
     with pytest.raises(ValueError, match="invalid JSON"):
+        trace.analyze(bench, traces)
+
+
+def test_overlapping_passes_refused(tmp_path):
+    bench, traces = _fixture(tmp_path)
+    rank = traces / "engine-rank-0.jsonl"
+    rows = [json.loads(line) for line in rank.read_text().splitlines()]
+    rows[1]["step"] = rows[0]["step"]
+    rows[1]["wall_start_ns"] = rows[0]["wall_end_ns"] - 1
+    rank.write_text("\n".join(json.dumps(row) for row in rows) + "\n")
+    with pytest.raises(ValueError, match="overlapping passes"):
         trace.analyze(bench, traces)
