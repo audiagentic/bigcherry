@@ -268,6 +268,10 @@ This source relocation claims neither GPU/KLD parity nor a full engine
 build. Owner validation on leased hardware remains required for
 mixed-libr3/libr4d TP and Flash-Next native startup.
 
+2026-11-22 (bigcherry-2): OPEN VALIDATION for slice 5 (PR #1266, rad0016 rank-device bodies moved into owned sources). The relocation is proven card-free (host build, bc_rank_devices_test 164 checks, logged texts asserted verbatim) but nothing has exercised it on hardware. After #1266 merges and the next release bundle exists, a qwen27b-tp3 start/canary/stop is the proof (owner: bigcherry-1 runs the smoke). Until then slice 5 is merged-unvalidated on cards.
+
+bc_native_fleet_config_test (aborted in the card-free scratch build before and after slice 5): not a scratch-build artefact. It is a stale test on main: since the 2.2 migration edition 3 is the only serving wire (bc_serving_v2.cmake refuses any other), but the test still asserted that the current wire rejects native_config as an unknown field and that an apiVersion v3 document is an unsupported successor. Fixed by dropping those two edition checks and recording the measured document as the current wire; the v3 admission of native_config stays covered by bc_serving_v3_wire_test. It runs only in the RAD_BUILD_TESTS tree (rad0009 registers it); production builds never ran it, which is why it went unnoticed. Passes in the patched host build after the fix.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -281,3 +285,4 @@ mixed-libr3/libr4d TP and Flash-Next native startup.
 - 2026-11-18T02:28:04.354691+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
 - 2026-11-20T12:44:25.653062+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T01:48:35.924734+00:00 (updated-by): Updated: section:notes
+- 2026-11-21T21:11:08.504941+00:00 (updated-by): Updated: section:notes
