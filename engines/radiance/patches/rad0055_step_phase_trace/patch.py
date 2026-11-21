@@ -34,6 +34,11 @@ CTX_H = FilePatch(path="core/runtime/ctx.h", language="none",
     size_t phase_kv_begin(int tag);
     void phase_kv_end(size_t token);
 """, "BC_RUM09_PHASE_API"),
+    rep("phase-slot-range",
+        "    struct ProfSlot { RadEvent a = nullptr, b = nullptr; int32_t op = 0; uint8_t lane = 0; };\n",
+        "    struct ProfSlot { RadEvent a = nullptr, b = nullptr; int32_t op = 0; uint8_t lane = 0; "
+        "int32_t packet_from = -1, packet_to = -1; }; // BC_RUM09_SEGMENT_RANGE\n",
+        "BC_RUM09_SEGMENT_RANGE"),
     rep("phase-state", "    bool                 profiling_ = false;\n",
         """    bool                 profiling_ = false;
     // BC_RUM09_PHASE_STATE: initialized only for the native serving diagnostic.
@@ -87,6 +92,10 @@ CTX_CPP = FilePatch(path="core/runtime/ctx.cpp", language="none",
             // BC_RUM09_PHASE_TAPE: HIP events wrap each replayed device stretch,
             // never tape capture; no profiler flag, no change to the tape's key.
             const size_t token = phase_kv_begin(-3);
+            if (token != SIZE_MAX) {
+                prof_ring_[token].packet_from = st.a;
+                prof_ring_[token].packet_to = st.b;
+            }
             rc = tape_play(t.dev, st.a, st.b);
             phase_kv_end(token);
             if (rc < 0) step_fail_ = fmt("a recorded pass could not be submitted: %s",
@@ -201,6 +210,8 @@ size_t Ctx::phase_kv_begin(int tag) {
     ProfSlot& p = prof_ring_[slot];
     p.op = tag;
     p.lane = (uint8_t)lane_;
+    p.packet_from = -1;
+    p.packet_to = -1;
     if (rad_event_record(p.a, cur_stream()) < 0) {
         prof_n_ = slot;
         prof_overflowed_ = true;
@@ -226,13 +237,21 @@ void Ctx::profile_collect() {
     double compute_ms = 0, collective_ms = 0, host_kv_serial_ms = 0;
     double host_kv_wait_ms = 0, idle_wait_ms = 0;
     int n_compute = 0, n_collective = 0, n_kv_serial = 0, n_kv_wait = 0;
+    // BC_RUM09_SEGMENT_COLLECT: packet boundaries map replay spans back to
+    // the immutable tape, without injecting events into tape capture.
+    std::string packet_spans = "[";
     for (size_t i = 0; i < prof_n_; ++i) {
         ProfSlot& s = prof_ring_[i];
         float ms = 0.0f;
         if (rad_event_elapsed_ms(s.a, s.b, &ms) < 0) { valid = false; continue; }
         if (s.op == -1) { host_kv_serial_ms += ms; ++n_kv_serial; }
         else if (s.op == -2) { host_kv_wait_ms += ms; ++n_kv_wait; }
-        else if (s.op == -3) { compute_ms += ms; ++n_compute; }
+        else if (s.op == -3) {
+            compute_ms += ms; ++n_compute;
+            if (packet_spans.size() > 1) packet_spans += ',';
+            packet_spans += fmt(R"JSON({"from":%d,"to":%d,"ms":%.6f})JSON",
+                                s.packet_from, s.packet_to, (double)ms);
+        }
         else if (s.op >= 0 && (size_t)s.op < plans_.size()) {
             prof_ms_[(size_t)s.op] += (double)ms;
             prof_calls_[(size_t)s.op] += 1;
@@ -249,6 +268,7 @@ void Ctx::profile_collect() {
         }
         p = &s;
     }
+    packet_spans += ']';
     if (prof_overflowed_) {
         RAD_WARN("per-op timing: the step issued more than %zu ops or phase marks were lost",
                  prof_ring_.size());
@@ -275,7 +295,7 @@ void Ctx::profile_collect() {
                 return count ? std::to_string(value) : std::string(absent);
             };
             if (std::fprintf(phase_file_,
-                R"JSON({"schema_version":1,"rank":%d,"step":%d,"draft_pass":%d,"phase":%d,"n_tok":%lld,"ctx":%d,"wall_start_ns":%lld,"wall_end_ns":%lld,"valid":%s,"compute_ms":%s,"collective_ms":%s,"host_kv_serial_ms":%s,"host_kv_wait_ms":%s,"host_kv_dma_ms":null,"idle_wait_ms":%s,"n_compute":%d,"n_collective":%d,"n_kv_serial":%d,"n_kv_wait":%d}
+                R"JSON({"schema_version":1,"rank":%d,"step":%d,"draft_pass":%d,"phase":%d,"n_tok":%lld,"ctx":%d,"wall_start_ns":%lld,"wall_end_ns":%lld,"valid":%s,"compute_ms":%s,"collective_ms":%s,"host_kv_serial_ms":%s,"host_kv_wait_ms":%s,"host_kv_dma_ms":null,"idle_wait_ms":%s,"n_compute":%d,"n_collective":%d,"n_kv_serial":%d,"n_kv_wait":%d,"tape_segments":%s}
 )JSON",
                 rank_, batch_->step, batch_->draft_pass, (int)batch_->phase,
                 (long long)batch_->n_tok, (int)batch_->max_ctx_len,
@@ -286,7 +306,7 @@ void Ctx::profile_collect() {
                 number(host_kv_serial_ms, n_kv_serial).c_str(),
                 number(host_kv_wait_ms, n_kv_wait).c_str(),
                 number(idle_wait_ms, prof_n_ > 1 ? 1 : 0).c_str(),
-                n_compute, n_collective, n_kv_serial, n_kv_wait) < 0 ||
+                n_compute, n_collective, n_kv_serial, n_kv_wait, packet_spans.c_str()) < 0 ||
                 std::fflush(phase_file_) != 0) {
                 step_status_ = RAD_E_IO;
                 step_fail_ = "RUM09 phase trace: output write failed";

@@ -21,3 +21,9 @@ asynchronous DMA activity cannot be timed with compute-stream HIP event
 pairs; `host_kv_dma_ms` is always null, never falsely reported as zero.
 A null value indicates no events in a class; `valid=false` marks overflow
 or failed collection and must be excluded.
+
+For replayed passes, tape_segments lists ordered HIP-event spans with immutable
+packet boundaries (from, to) and elapsed ms; live passes have -1
+boundaries. The packet bounds describe recording partitions, not individual
+op labels or guaranteed nonoverlapping streams. They are enabled only with
+the same diagnostic switch.
