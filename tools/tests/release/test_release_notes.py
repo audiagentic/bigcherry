@@ -6,6 +6,7 @@ import json
 import re
 import sys
 import tempfile
+import tomllib
 import unittest
 from unittest import mock
 from datetime import datetime, timezone
@@ -53,6 +54,18 @@ class ReleaseNotesTests(unittest.TestCase):
         self.assertIn("Ported kernel components", text)
         self.assertNotIn("PRIVATE LOG", text)
 
+    def test_radiance_release_major_keeps_old_tags_and_orders_v2_pins(self):
+        config = notes.load_config(_REPO, "radiance")
+        revision = "123456789abcdef0"
+        pins = {"1.17.0": 1170, "2.2.0": 20200, "2.2.1": 20201, "2.10.0": 21000}
+        for upstream, expected in pins.items():
+            with self.subTest(upstream=upstream), mock.patch.object(
+                notes, "_show", return_value=f'pinned = "{revision}"\npinned-version = "{upstream}"\n'
+            ):
+                pin = notes.pin_version(_REPO, config, revision)
+                self.assertEqual(pin, notes.PinVersion(expected, upstream))
+                self.assertEqual(notes.release_version(pin), f"{expected}.0.0")
+
     def test_radiance_render_does_not_read_ledger_or_dump_record_notes(self):
         config = notes.load_config(_REPO, "radiance")
         record = {"revision": "123456789abcdef0", "notes": "secret audit material",
@@ -77,7 +90,8 @@ class ReleaseNotesTests(unittest.TestCase):
     def test_radiance_has_its_own_release_line(self):
         config = notes.load_config(_REPO, "radiance")
         self.assertEqual(config.tag_prefix, "bc-radiance-")
-        self.assertEqual(config.build_patch_sets, ("serving-core", "host-compat", "serving-manifest", "mtp-pass-replay"))
+        recipe = tomllib.loads((_REPO / config.recipes).read_text(encoding="utf-8"))
+        self.assertEqual(config.build_patch_sets, tuple(recipe["source"]["radiance"]["patch-sets"]))
         self.assertEqual((config.recipes, config.patches, config.upstream_name),
                          ("engines/radiance/recipes.toml", "engines/radiance/patches", "radiance"))
         self.assertIn("engines/radiance", config.owned_paths)
@@ -209,13 +223,11 @@ class ReleasePleaseWiringTests(unittest.TestCase):
 
     def test_manifest_versions(self):
         self.assertEqual(sorted(self.manifest), [".", "engines/llamacpp", "engines/radiance"])
-        # radiance's major is its pinned upstream version's digits (1.8.0 -> 180). The manifest holds the last RELEASED
-        # version, so after a pin bump it stays on the previous line (170.x) until pin-release states the first release
-        # of the new pin with release-as (RELEASES.md); it can never be ahead of the pin.
-        import tomllib
-        pinned = tomllib.loads((_REPO / "engines" / "radiance" / "recipes.toml").read_text(encoding="utf-8"))["pinned-version"]
+        # This manifest records the last published line. The recipe may be ahead during a pin bump.
+        pinned = tomllib.loads((_REPO / "engines" / "radiance" / "recipes.toml").read_text(encoding="utf-8"))["pinned"]
+        pin = notes.pin_version(_REPO, notes.load_config(_REPO, "radiance"), pinned)
         self.assertRegex(self.manifest["engines/radiance"], r"^\d+\.\d+\.\d+$")
-        self.assertLessEqual(int(self.manifest["engines/radiance"].split(".")[0]), int(pinned.replace(".", "")))
+        self.assertLessEqual(int(self.manifest["engines/radiance"].split(".")[0]), pin.major)
         # the llama.cpp line's major is a llama build number; the platform line is a plain semantic version
         self.assertRegex(self.manifest["engines/llamacpp"], r"^\d{4,6}\.\d+\.\d+$")
         self.assertRegex(self.manifest["."], r"^\d{1,3}\.\d+\.\d+$")

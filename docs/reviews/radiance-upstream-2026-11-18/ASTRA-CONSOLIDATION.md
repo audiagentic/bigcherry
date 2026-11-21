@@ -62,3 +62,10 @@ The largest generated files are outputs of the contract generator. Count handwri
 | RUM10 | Optional after single-model parity. Decide on fleet resource sharing, cross-engine plugin safety, hot reload and immutable multi-model binding only for an actual co-residency requirement. |
 
 **Minimum source-to-runtime proof during implementation.** A native option absent from BigCherry's registry passes through the real named launcher under native validation; a wrong-level native key fails there. Two starts consume the same admitted YAML/contract despite a later author-file edit, or refuse a changed digest before any child/power mutation. Measurement and serving see the identical model, TP ranks and memory semantics. A cached start still refuses inadequate fresh room and a partial helper start still rolls back. Use the existing short hardware gate for the selected workload and the existing helper-off control. No compile, device, quality or performance result was obtained during this review.
+# Historical source assessment — target advanced after this review
+
+This assessment used ABI41 candidate `b8bca7885a5a118bfa65a62dde74e0a6e2d4e42e`.
+The active migration target is ABI43 `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`.
+Use RUM01–RUM10 and [IMPLEMENTATION-HANDOFF.md](IMPLEMENTATION-HANDOFF.md) as
+the current execution authority; recheck any source-specific recommendation
+against that candidate. In particular, its RUM03 references to ABI 41 are stale.

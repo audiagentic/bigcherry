@@ -1,0 +1,11 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_020133_added-the-c7-build-and-test-re_7310",
+  "files": [
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Recorded C7 ABI43 libr2/libr3 component port, targeted CMake and object build evidence, focused test results, compiler warnings, and remaining full-link, generated-code, runtime and performance gates.",
+  "timestamp-utc": "2026-11-19T02:01:33.508787Z",
+  "user-summary-candidate": "Added the C7 build and test report, with GPU qualification still open."
+}

@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_033128_the-radiance-22-release-advan_5647",
+  "files": [
+    "tools/bigcherry/release/notes.py",
+    "tools/tests/release/test_release_notes.py",
+    "tools/tests/release/test_pin_release.py",
+    "docs/reference/build/RELEASES.md",
+    "config/release.toml",
+    ".github/workflows/release-please.yml"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Preserve the published 1.x Radiance release series and encode v2 and later upstream minor/patch ordering in the release major. Align release note selection with the v2.2 composition. Focused version and release note fixtures passed.",
+  "timestamp-utc": "2026-11-20T03:31:28.202912Z",
+  "user-summary-candidate": "The Radiance 2.2 release advances past the existing release tags while retaining its upstream version in the readable tag."
+}

@@ -1,0 +1,20 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_090237_added-focused-parser-and-launc_1095",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "engines/radiance/components/serving/v2/native_config_manifest_test.cpp",
+    "engines/radiance/components/serving/v2/native_option_projection_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/components/serving/component.toml"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM08"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Extended the matched ABI43 parser fixture to verify explicit prefill-interleave: 0 sets Config.prefill_interleave_set and YAML provenance. Added malformed root cases for relative, file, NUL and invalid UTF-8 values, plus isolated mismatch-root fixture. Registered the parser fixture via the rad0009 core-side CTest target. Build and tests are pending.",
+  "timestamp-utc": "2026-11-19T09:02:37.838044Z",
+  "user-summary-candidate": "Added focused parser and launch-projection coverage for explicit interleave zero and malformed execution roots; the test run is pending."
+}

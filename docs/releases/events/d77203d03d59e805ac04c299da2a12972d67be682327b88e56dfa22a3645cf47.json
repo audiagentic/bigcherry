@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_025230_prepare-native-radiance-config_3243",
+  "files": [
+    "engines/radiance/components/serving/bc_serving_v2.cmake",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config.h",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "engines/radiance/components/serving/v2/native_config_snapshot.cpp",
+    "engines/radiance/components/serving/v2/native_config_snapshot.h"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Move exact native YAML capture and snapshot field validation into the shared card-free serving manifest library. The matched ABI43 parser consumes the typed snapshot under its recorded execution root. The focused test uses the same encoded field after author-file removal and checks digest and root refusal.",
+  "timestamp-utc": "2026-11-19T02:52:30.630693Z",
+  "user-summary-candidate": "Prepare native Radiance configuration replay by preserving the original YAML bytes and verifying their digest and execution root before parsing."
+}

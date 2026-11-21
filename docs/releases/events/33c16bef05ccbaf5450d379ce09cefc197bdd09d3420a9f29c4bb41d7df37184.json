@@ -1,0 +1,20 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_154316_closed-the-native-admission-ga_8226",
+  "files": [
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/session_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Native inspection reconciliation now compares the parser-reported model path with the selected model, resolving relative YAML paths under the immutable snapshot root and weakly canonicalizing both paths. The fake inspector and planner fixture support matching absolute and relative model paths; negative model mismatch refuses before cache or startup. ABI44 bc_serving_test and bc_session_test passed 1/1 each. Production native launch remains gated.",
+  "timestamp-utc": "2026-11-19T15:43:16.708539Z",
+  "user-summary-candidate": "Closed the native admission gap that checked home and device topology but not the model path. Relative paths resolve against the sealed YAML root; mismatch is refused. Focused serving/session checks pass."
+}

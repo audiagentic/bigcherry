@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_114329_reduced-generated-v2-hardcodin_1790",
+  "files": [
+    "engines/radiance/components/serving/calibration_lab.h",
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/v2/native_measurement.h",
+    "engines/radiance/components/serving/v2/p1_measurement.h",
+    "engines/radiance/components/serving/v2/p1_producer.cpp",
+    "engines/radiance/components/serving/v2/runtime_receipt.h",
+    "engines/radiance/components/serving/v2/runtime_receipt_live.cpp",
+    "engines/radiance/components/serving/v2/s10_inputs.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Removed runtime-owner hardcoded generated/v2 include paths so production sources consume the generated edition selected by their linked manifest target. Removed a duplicate explicit v2 codec include from P1 producer. This is a build-seam refactor; it does not activate the v3 edition or native YAML production launch.",
+  "timestamp-utc": "2026-11-19T11:43:29.138839Z",
+  "user-summary-candidate": "Reduced generated-v2 hardcoding in the serving runtime so the same sources can follow the manifest edition selected by CMake, a prerequisite for the native YAML migration."
+}

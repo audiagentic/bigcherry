@@ -1,0 +1,22 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261121_014840_retired-two-replay-patches-mad_3834",
+  "files": [
+    "engines/radiance/patches/archive/ARCHIVE.md",
+    "engines/radiance/patches/archive/rad0013_mtp_pass_replay",
+    "engines/radiance/patches/archive/rad0047_mtp_verify_replay_summary",
+    "tools/tests/patch/test_radiance_upstream_mtp_replay.py",
+    "docs/evidence/2026-11-21-rum08-replay/README.md",
+    "tools/bigcherry/analysis/patch_footprint.py",
+    "tools/bigcherry/cli/patch_footprint.py",
+    "docs/evidence/radiance-patch-footprint/footprint.json"
+  ],
+  "plan-item-ids": [
+    "RUM08",
+    "RUM02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Archive rad0013 (superseded by Radiance 2.2 upstream replay keying) and rad0047 (rejected) unchanged; add a compiled upstream pass_key test; add the patch-footprint generator and its 2.2 baseline report.",
+  "timestamp-utc": "2026-11-21T01:48:40.650918Z",
+  "user-summary-candidate": "Retired two replay patches made redundant by Radiance 2.2 and added a patch footprint report to make future bumps easier."
+}

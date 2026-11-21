@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0052_b16_kv_geometries"
+order = 52
+state = "validated"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["RUM07"]
+requires = ["rad0051_b16_kv_kernels"]
+conflicts = []
+tags = ["kv-cache"]

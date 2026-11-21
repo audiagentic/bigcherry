@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_194631_v3-measured-cache-reads-now-re_4762",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Require both the frozen native plan key and the expected owner attempt for every generated-v3 measured cache read before resolver/cache processing. Recompute and compare the key before lookup, then match the receipt attempt after lookup. Real CLI coverage exercises both missing-attempt refusal and accepted owner-bound argument shape. Generated-v3 bc_native_v3_session_test passes (1/1), no GPU.",
+  "timestamp-utc": "2026-11-19T19:46:31.440803Z",
+  "user-summary-candidate": "V3 measured cache reads now require explicit frozen-key and owner-attempt binding before they can reuse a measurement. Focused candidate session test passes."
+}

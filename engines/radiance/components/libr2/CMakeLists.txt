@@ -26,13 +26,14 @@ find_package(Python3 REQUIRED COMPONENTS Interpreter)
 set(r4d ${CMAKE_CURRENT_BINARY_DIR}/r4d-src)
 execute_process(
   COMMAND ${Python3_EXECUTABLE} ${LIBR3}/r3_rewrite.py --source ${RADIANCE_SRC}/libr4d --out ${r4d}
-          --rules ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt
+          --rules ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt --native ${CMAKE_CURRENT_SOURCE_DIR}/native
   RESULT_VARIABLE rewrite_rc OUTPUT_VARIABLE rewrite_out ERROR_VARIABLE rewrite_err)
 message(STATUS "libr2: ${rewrite_out}")
 if(NOT rewrite_rc EQUAL 0)
   message(FATAL_ERROR "libr2: r3_rewrite.py failed: ${rewrite_err}")
 endif()
-set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${CMAKE_CURRENT_SOURCE_DIR}/units.txt)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/rewrites.txt ${CMAKE_CURRENT_SOURCE_DIR}/units.txt
+  ${CMAKE_CURRENT_SOURCE_DIR}/native/r4d_moe.hip.rw)
 
 # The unit list and each unit's flags are libr4d's own, read from its build file: `"unit|flags"`. libr2 builds the units in units.txt.
 file(STRINGS ${RADIANCE_SRC}/libr4d/CMakeLists.txt unit_lines REGEX "^  \"r4d_[a-z0-9_]+\\|")
@@ -63,10 +64,11 @@ endforeach()
 list(LENGTH built n_built)
 message(STATUS "libr2: ${n_built} unit(s) built for ${R2_TARGETS}")
 
-set(declaration ${r4d}/r4d_rows.cpp ${r4d}/r4d_layout.cpp ${r4d}/r4d_fp8_layout.cpp ${r4d}/r4d_shapes.cpp ${r4d}/r4d_fuse.cpp)
+include(${CMAKE_CURRENT_SOURCE_DIR}/../libr3/r4d_declaration.cmake)
 # libr4d's registry exports become r4d_up_*; libr2's own (r2_registry.cpp) take their place
+# Keep libr4d's gfx12-only open hook private to the upstream registry.
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
-  "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective")
+  "rad_plugin_open=r4d_up_plugin_open;rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective;rad_kernel_chain=r4d_up_kernel_chain")
 
 # r3_mma16.h is looked up with <>: libr2's directory first, so its tile replaces libr3's WMMA one; r3_compat.h itself is libr3's.
 rad_add_plugin(libr2 kernels
@@ -87,7 +89,7 @@ find_program(R2_NM nm REQUIRED)
 set(stub_src ${CMAKE_CURRENT_BINARY_DIR}/r3_stubs.S)
 set(stub_obj ${CMAKE_CURRENT_BINARY_DIR}/r3_stubs.o)
 add_custom_command(TARGET libr2 PRE_LINK
-  COMMAND ${Python3_EXECUTABLE} ${LIBR3}/r3_gen_stubs.py ${R2_NM} ${stub_src} $<TARGET_OBJECTS:libr2>
+  COMMAND ${Python3_EXECUTABLE} ${LIBR3}/r3_gen_stubs.py ${R2_NM} ${stub_src} $<TARGET_OBJECTS:libr2> ${r4d_simd_objects}
   COMMAND ${CMAKE_CXX_COMPILER} -c ${stub_src} -o ${stub_obj}
   COMMAND_EXPAND_LISTS VERBATIM)
 target_link_options(libr2 PRIVATE ${stub_obj})

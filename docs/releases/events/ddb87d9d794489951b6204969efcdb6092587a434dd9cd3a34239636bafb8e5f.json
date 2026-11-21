@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_192111_stored-v3-replay-now-has-an-ex_9317",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_stored_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Explicitly refuse bounded bigcherry/v3 stored-manifest envelopes in replay_stored_manifest before the legacy v2 strict reader, regardless of whether the caller supplied NativeAdmissionRequest. Added direct card-free replay-entry test coverage. Focused runtime test is pending while the candidate build configuration is refreshed.",
+  "timestamp-utc": "2026-11-19T19:21:11.919593Z",
+  "user-summary-candidate": "Stored v3 replay now has an explicit owner-admission refusal, including direct callers without the private native request. Focused runtime verification remains pending."
+}

@@ -1,0 +1,16 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_080147_the-corrected-source-pin-and-s_6541",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/bc_serving_v2.cmake",
+    "tools/tests/core/test_engine_recipes.py"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Validation following the source-pin and JSON dependency-target correction: 121 focused recipe, engine-recipe, pin-bump and pin-triage tests passed (5 subtests); serving CMake configure passed; bc_v2_p1_live_test, bc_fake_engine and bc-release built, and the bc_v2_p1_live_test executable passed. Full component build, full CTest, canonical patch replay and ABI44 loader fixtures remain pending.",
+  "timestamp-utc": "2026-11-19T08:01:47.636472Z",
+  "user-summary-candidate": "The corrected source pin and shared JSON dependency pass focused metadata tests and targeted serving CMake/build checks. Full ABI44 and patch replay gates are still pending."
+}

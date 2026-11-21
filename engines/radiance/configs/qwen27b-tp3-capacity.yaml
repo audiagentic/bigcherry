@@ -1,0 +1,39 @@
+cards: [0, 1, 2]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libr4d,libref
+models:
+  qwen27b:
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
+    tp: 3
+    tp-wire: exact
+    max-model-len: 262144
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    ngram-placement: disk
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+    p2p: "off"
+    # The pipelined prefill on an int8 trunk is opt-in (rad0030): "on", not "auto", which keeps such a trunk serial.
+    pipelined-prefill: "on"
+    # Pipeline a one-sequence prefill step from 256 rows rather than 1024, so a 512-token prompt overlaps its all-reduces too
+    # (VTP31 experiment 7).
+    pipelined-prefill-min-rows: 256
+    tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
+    # Re-measured on IQ8R (A B A B against the grid without the two-shot forms): the two-shot grid cuts the time to first
+    # token by 25% and raises 8-stream throughput by 18%; decode step is equal at 1 and 4 streams and about 2 ms longer at 8.
+    tune-pin: "all_reduce:nblocks=4,nthreads=256,ts_pieces=4,ts_fuse=1,ts_once=1,ts_duplex=1"
+x-bigcherry:
+  schema: 1
+  description: "qwen27b-tp3 for resident context: 262,144 tokens a session"
+  variant-of: "qwen27b-tp3"
+  differs: ["models.qwen27b.max-model-len"]
+  ranks:
+    - {arch: "gfx1100", count: 2}
+    - {arch: "gfx1201", count: 1}
+  memory: {host-pool-mib: 0, host-kv-mib: 0}

@@ -33,12 +33,12 @@ int bc_plan_memory_take_flag(int* argc, char*** argv);
 
 /* Records what plan() sized, and started from a measured manifest checks it. Called once, right after its VRAM split resolves, with
  * plan()'s own values. A refused check exits here. */
-void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
+void bc_plan_memory_note(rad::Config& cfg, const std::vector<rad::VramFacts>& facts, rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
                          const rad::Program& prog);
 /* Publish rank demand only after the rank split, before configuring pools. */
-void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg);
+void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg, const std::vector<int>& actual_rank_devices);
 
 /* After plan(): with --plan-memory, writes the plan and exits (status 0, or 2 when nothing was recorded or FILE cannot be
  * written). Otherwise returns 0 and start-up goes on. */
@@ -237,9 +237,11 @@ _BC_PLAN_MEMORY_CPP = r"""/* bc_plan_memory.cpp -- see bc_plan_memory.h (BigCher
 #include "bc_plan_memory.h"
 
 #include "bc_plan_check.h"
+#include "admission.h"
 #include "bc_serving_manifest.h"
 #include "serving_codec.h"
 
+#include "device/device.h"
 #include "mem/prefix.h"
 #include "mem/vram_budget.h"
 #include "place/planner.h"
@@ -262,6 +264,7 @@ nlohmann::json g_rank_gpu = nlohmann::json::array();
 bool g_rank_noted = false;
 std::vector<rad::VramFacts> g_rank_facts;
 int64_t g_rank_stage = 0;
+std::string g_rank_ngram_placement;
 long long g_taken_kb = 0;   /* MemAvailable fallen since this process's first line, at the end of the VRAM split (before any pool) */
 
 v2::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from, const char* remedy) {
@@ -271,11 +274,36 @@ v2::PlanHostConsumer consumer(const char* name, int64_t bytes, const char* from,
 
 int bc_plan_memory_take_flag(int* argc, char*** argv) { return bc_plan::take_flags(argc, argv); }
 
-void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFacts>& facts, const rad::VramBudget& vb,
+void bc_plan_memory_note(rad::Config& cfg, const std::vector<rad::VramFacts>& facts, rad::VramBudget& vb,
                          const std::vector<int64_t>& emb_bytes, const std::vector<rad::WeightFootprint>& wfs,
                          int64_t ngram_bytes, int64_t ck_slot, int64_t host_arenas, int64_t kv_one, int64_t ctx,
                          const rad::Program& prog) {
     if (bc_plan::mode() == bc_plan::Mode::none) return;
+    // RUM09: honor the selected KV backing calibration in both measuring and
+    // serving starts. Independently MiB-rounded weights and KV must fit the
+    // same measured claimable budget used for live engine admission.
+    // Refit only the elastic split, never static weights or the expert floor.
+    auto fitted = bc::serving::v2::refit_serving_pools(
+        vb.claimable, vb.statics, vb.experts, vb.stage,
+        vb.expert_floor, vb.kv, kv_one, vb.kv_ceiling,
+        bc_serving_kv_backing_floor_ppm());
+    if (!fitted) {
+        std::fputs(bc::serving::v2::render_human("radiance", fitted.error()).c_str(), stderr);
+        std::fflush(stderr);
+        std::_Exit(bc::serving::v2::exit_code_of(fitted.error()));
+    }
+    if (fitted.value().experts_bytes != vb.experts ||
+        fitted.value().kv_bytes != vb.kv) {
+        RAD_INFO("BigCherry memory: full-session KV %lld bytes, fitted elastic experts %lld"
+                 " bytes; exact MiB weights %lld, KV %lld",
+                 (long long)kv_one, (long long)fitted.value().experts_bytes,
+                 (long long)fitted.value().weights_mib, (long long)fitted.value().kv_mib);
+    }
+    vb.experts = fitted.value().experts_bytes;
+    vb.kv = fitted.value().kv_bytes;
+    vb.weights = vb.statics + vb.experts;
+    cfg.vram_weights_mib = fitted.value().weights_mib;
+    cfg.vram_kv_mib = fitted.value().kv_mib;
     /* The checkpoint interval the store is sized with is the resolved chunk geometry's (configure_kv resolves it after
      * plan(); the same function is called here), not the raw flag: it rounds up to the step quantum. */
     rad::ChunkGeometry geo;
@@ -331,6 +359,7 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
     if (!bc_plan::rank_measure_out().empty()) {
         g_rank_facts = facts;
         g_rank_stage = vb.stage;
+        g_rank_ngram_placement = rad::table_placement_name(cfg.ngram_resolved);
     }
     if (bc_plan::mode() == bc_plan::Mode::check) {
         // before any pool is configured (Engine::plan() configures them after this call): RSC08 S4
@@ -350,11 +379,12 @@ void bc_plan_memory_note(const rad::Config& cfg, const std::vector<rad::VramFact
     g_noted = true;
 }
 
-void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg) {
+void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg, const std::vector<int>& actual_rank_devices) {
     /* Capture each rank's split only after vram_budget_rank_split. */
     if (!bc_plan::rank_measure_out().empty()) {
         const auto bdfs = bc_serving_engine_bdfs();
         if (bdfs.size() != g_rank_facts.size() || rank_cfg.size() != g_rank_facts.size() ||
+            actual_rank_devices.size() != g_rank_facts.size() ||
             g_rank_facts.empty()) {
             g_error = "P1 rank/BDF/VRAM g_rank_facts do not match the measured layout";
             return;
@@ -366,6 +396,10 @@ void bc_plan_memory_note_ranks(const std::vector<rad::Config>& rank_cfg) {
         for (size_t i = 0; i < g_rank_facts.size(); ++i) {
             const auto& f = g_rank_facts[i];
             const auto& c = rank_cfg[i];
+            if (rad::dev_pci_address(actual_rank_devices[i]) != bdfs[i]) {
+                g_error = "P1 actual rank device BDF differs from the selected ordered engine BDFs";
+                return;
+            }
             const __int128 overhead = (__int128)f.arena + f.staging +
                 (__int128)f.n_queues * f.queue_bytes + g_rank_stage;
             const __int128 fixed = overhead + f.statics;
@@ -421,6 +455,7 @@ int bc_plan_memory_done() {
         const std::string rank_tmp = rank_path + ".tmp";
         std::ofstream out(rank_tmp, std::ios::binary | std::ios::trunc);
         out << nlohmann::json{{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
+                              {"ngram_placement", g_rank_ngram_placement},
                               {"gpu", g_rank_gpu},
                               /* MemAvailable can rise while the engine starts (other processes free memory): the engine
                                * took none of that, so the fall is clamped at zero. */
@@ -469,33 +504,6 @@ PATCHES = (
     _created("core/bc_plan_check.cpp", _BC_PLAN_CHECK_CPP, r"^int take_flags\(int\* argc, char\*\*\* argv\) \{$",
              "Create the plan flags, the expected-plan read and the check through bc_serving_v2."),
     FilePatch(
-        path="core/main.cpp",
-        description="Take --plan-memory off the command line after rad0009's manifest reader has run and arm the check.",
-        edits=(
-            Edit(
-                id="include-bc-plan-memory",
-                anchor=r'^#include "bc_serving_manifest\.h"$',
-                text='\n#include "bc_plan_memory.h"\n#include "bc_plan_check.h"',
-                guard=r'^#include "bc_plan_memory\.h"$',
-                max_span_lines=1,
-                expect_matches=1,
-                rationale="rad0009's include is main.cpp's unique last include once it applies (rad0011 requires rad0009).",
-            ),
-            Edit(
-                id="bc-plan-memory-take-flag",
-                anchor=r"^    if \(!bc_serving_engine_argv\(&argc, &argv\)\) return 2;$",
-                text="\n    if (int rc = bc_plan_memory_take_flag(&argc, &argv)) return rc;",
-                guard=r"bc_plan_memory_take_flag\(&argc, &argv\)",
-                max_span_lines=1,
-                expect_matches=1,
-                rationale="Inserted right after rad0009's manifest call (rad0011 requires rad0009): the manifest reader decides "
-                          "measuring or serving from --plan-memory and hands the flag on, and this call then takes it off and "
-                          "arms the check with the manifest's plan. Run before it, it would strip --plan-memory first and a "
-                          "measuring start would read its own unmeasured manifest as a serving start.",
-            ),
-        ),
-    ),
-    FilePatch(
         path="core/engine_bringup.cpp",
         description="Record (and, started from a measured manifest, check) plan()'s sizes at the end of its VRAM split; with "
                     "--plan-memory, write them and exit after plan().",
@@ -521,8 +529,13 @@ PATCHES = (
             Edit(
                 id="bc-plan-memory-ranks-post-split",
                 anchor=r"^        const Config& rc = rank_cfg_\[ri\];$",
-                text="\n        if (ri == 0) bc_plan_memory_note_ranks(rank_cfg_);",
-                guard=r"if \(ri == 0\) bc_plan_memory_note_ranks\(rank_cfg_\);",
+                text=("\n        if (ri == 0) {"
+                      "\n            std::vector<int> actual_rank_devices;"
+                      "\n            actual_rank_devices.reserve(ranks_.size());"
+                      "\n            for (const auto& rank : ranks_) actual_rank_devices.push_back(rank->device);"
+                      "\n            bc_plan_memory_note_ranks(rank_cfg_, actual_rank_devices);"
+                      "\n        }"),
+                guard=r"bc_plan_memory_note_ranks\(rank_cfg_, actual_rank_devices\);",
                 max_span_lines=1,
                 expect_matches=1,
                 rationale="Unique rank config access occurs after the rank split and before any per-rank pool is configured.",
@@ -543,13 +556,13 @@ PATCHES = (
             ),
             Edit(
                 id="s5-embedding-terminal-host-room",
-                anchor=r"^            if \(emb_asked\) \{$",
+                anchor=r"^            if \(emb_asked(?: \|\| broker_)?\) \{$",
                 text=('\n                if (int rc = bc_plan::report_host_room_if_short("host_ram", 0,'
      '\n                    {{"pending_pools_and_host_kv", pools_still}, {"embedding", emb_pin}})) {'
      ' std::fflush(nullptr); std::_Exit(rc); }'),
                 guard=r"pools_still\}, \{[^\n}]+, emb_pin\}\}",
                 max_span_lines=1, expect_matches=1,
-                rationale="Only an explicit RAM embedding that cannot fit is terminal; default placement may fall back.",
+                rationale="The upstream terminal branch covers explicit RAM placement and a fleet claim that already excluded the embedding from VRAM.",
             ),
             Edit(
                 id="s5-ngram-terminal-host-room",

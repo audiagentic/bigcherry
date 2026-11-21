@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_231916_avoid-reading-an-unchanged-mod_2842",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.h",
+    "engines/radiance/components/serving/stored_manifest_cache_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reuse the full model digest from the same owner measurement attempt when the complete file stamp matches, preserving the existing fingerprint bytes and index checks. Avoid per-chunk copies and log the cold full-file scan.",
+  "timestamp-utc": "2026-11-19T23:19:16.083776Z",
+  "user-summary-candidate": "Avoid reading an unchanged model twice on a cold native serving start."
+}

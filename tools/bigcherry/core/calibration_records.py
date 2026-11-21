@@ -430,4 +430,3 @@ class CalibrationStore:
             fcntl.flock(lock_fd, fcntl.LOCK_UN)
             os.close(lock_fd)
         return path
-

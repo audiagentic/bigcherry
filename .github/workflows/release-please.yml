@@ -105,7 +105,7 @@ jobs:
         run: |
           set -euo pipefail
           git fetch -q --tags origin
-          # the upstream version is the engine's declared pinned-version at the release commit (major = its digits)
+          # the upstream version is the engine's declared pinned-version at the release commit
           upstream=$(git show "${RP_SHA}:engines/radiance/recipes.toml" | python3 -c 'import sys, tomllib; print(tomllib.loads(sys.stdin.read())["pinned-version"])')
           # N = releases at this major before this one (the tag of record for this release already exists)
           count=$(git tag --list "bc-radiance-${RAD_MAJOR}.*" | wc -l)

@@ -1,0 +1,547 @@
+# Radiance bump checkpoints
+
+BigCherry baseline: `f605d2c5619e3f86692a870567cbf97ead89b60c`. Previous production Radiance: `19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d` (v1.17.0, ABI 35). Frozen upstream input: `3deabdaeca17b58bad90d332f4b204cf7bb8a10e` (v2.1.0, ABI 43), verified from Codeberg `refs/heads/main` at kickoff. The migrated BigCherry production candidate composes this input with the local ABI44 and retained-feature packages; see checkpoint C14.
+
+For the calibrated four-GPU GPU-KV admission regression, see [RUM09-4GPU-ADMISSION.md](RUM09-4GPU-ADMISSION.md).
+
+Use individual commits as source checkpoints. For a later GPU comparison, build each qualifying checkpoint into an isolated runtime. Record exact BigCherry and upstream commits, build and installed runtime member digests, ABI and layout fingerprints, selected model/content and config hashes, physical rank/helper order, power policy, and the same workload. Keep raw run output under the project work root.
+
+| Stage | Meaning | Gate |
+| --- | --- | --- |
+| C0 | Existing production control | Use the current-main Flash-Next parity baseline and retained qualified asset. No new measurement at this stage. |
+| C1 | Standalone serving JSON dependency | Reuse nlohmann 3.12.0 bytes from v1.17.0, SHA-256 `aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63`. Run the existing card-free manifest-to-argv and plan-memory fixture tests against that include. Pin and runtime behavior stay at C0. |
+| C2 | Native upstream control | Record exact upstream-only composition, build/CLI and available harness scope. A native control without BigCherry helper/layout support cannot replace the matched C0 comparison. |
+| C3+ | Reviewed implementation slices | Record applicability, compilation, ABI, activation, numerical checks and timings separately. A retired patch needs evidence of replacement or an explicit unsupported mode. |
+
+Initial direct patch audit against the candidate reported 18 drifted, 8 blocked by dependency, and 4 clean out of 30 production patches. Dependency-blocked patches must be rechecked after their parents are ported. GPU parity remains a separate gate and will use the existing Flash-Next parity harness; a stored cross-day difference needs a same-session paired check before attributing a regression.
+
+## Observed checks
+
+- C1 (`596c6b17a`): both manifest-to-argv and plan-memory fixture builds ran and passed. The local `/tmp` mount refused execution; rerun with an executable task-local `TMPDIR`.
+- C2: unmodified candidate configured with GCC 14, HIP and FFmpeg disabled. The exact native `fleet/config.cpp` object compiled. Upstream emits one comment warning. No full executable, native serving or hardware claim is attached to this control.
+- C3: the managed YAML byte fixture linked against the actual candidate parser and exited zero. It exercised exact original bytes and digest (including CRLF), native provenance, replay without the authored file, and refusal of malformed input, changed digest, multiple models and literal API keys. This establishes the parser seam. Measured manifest persistence, sealed exec handoff and native engine entry wiring are later checkpoints.
+- `e7800920f`: PF2 and host-room attachment port. Exact-ref edit application; candidate semantics still need activation evidence.
+- C4 (`a6a2758e9`): measured-manifest bootstrap and plan-memory apply together to the exact candidate. Candidate `main.cpp` and `engine_bringup.cpp` passed C++ syntax checks. 13 historical card-free manifest and plan-memory tests passed. This temporary single-engine bridge preserves the prior path for isolation before native managed launch integration.
+- `6c6645840`: parity harness now records per-member SHA-256, build metadata, per-launch session and available native logs, including failed launches. 23 offline parity tests and shell syntax passed. Workload and baseline-reading behavior are unchanged.
+- `6fa45364c`, `4243d9239`, `a681fe785`: independently committed ranked code selection and group-scoped rendezvous, ownership/prefill, and governor. 20 related packages applied in dependency order to the exact candidate. Host syntax checked registry, Qwen front ends, engine and scheduler/governor. Cross-DSO CPU fixture checked group isolation, wake/reuse and layout refusal. Device execution and wire/quality qualification are pending.
+
+For the end-of-bump paired comparison, use the current-main **policy-off** baseline `docs/reference/engines/radiance/baselines/flashnext-4gpu-parity-main-20261119.json`. The older default baseline measured live policy on; it is a different workload. Use the same policy, installed sources, device ordering and parity script inputs for each arm. Keep the independent upstream-native control separate if it cannot run the same model/format/layout.
+
+- C5 (`candidate replay suite`, 2026-11-19): 58 focused VTP patch and contract tests passed against the frozen ABI43 source commit `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`. The fixture helper verifies that exact commit, applies the selected patch prefix, and checks replay stability. ABI43 upstream already keys Qwen4-Exp decode, verification, and MTP draft passes using the keyed context bound and QSA exactness side. Candidate replay omits `rad0013_mtp_pass_replay`; its production v1.17 recipe membership remains until matched replay qualification. The first attempt exposed that source selection had resolved the old v1.17 tag and that one test referenced a retired edit ID. Both were corrected before the passing run. This checkpoint covers source patch applicability and card-free contracts only.
+- C6 (`rad0046` source slice): restored the two exact E4M3 helper rows and a block-scale-safe wide-tile check in the managed source package. The check applies only to block-E4M3 GEMM and requires each expert class's per-part width to align to the 128-column scale grid. This prevents an odd class beginning at row 192 from using one scale across the boundary at row 256. The package applied and replayed on the exact ABI43 source, its generated libr3 rewrite preserved the guard, and the focused replay test passed. No plugin build, numerical run, or GPU activation is claimed. Following review RV4313, the package is now selected in the candidate serving-core recipe because the ABI43 helper requires these rows; its package state remains untested until the ABI44 helper build and row-resolution fixture pass.
+
+- C7 (`99bd05225`): ported the libr2/libr3 component layer to the ABI43 source. Both component CMake configurations succeeded (115 upstream units selected for libr3 and 3 for libr2). Targeted current-source object builds passed for the libr3 registry/declaration, changed gfx1100 attention, GEMM and MoE kernels, self-test source, and the libr2 registry/declaration and MoE kernel. The source/rewrite and component tests passed (27 passed, 1 skipped); relevant remote-MoE package tests passed after using an executable task-local temporary directory. The wider package suite had 26 passed and 1 skipped, with one unrelated `rad0009_serving_manifest` idempotence assertion failing because three optional edits were reported `not-applicable` for the fixture. The full plugin link, generated-code inspection, numerical replay, runtime activation and performance comparison remain open. The HIP compiler reported MoE occupancy-target warnings and one ignored `hipFree` result warning; the selected objects compiled successfully. Sol's source review confirmed the chain callback's row mapping and wrapper acquire/release structure. Confirm `s_dcache_inv` and completion increments in generated gfx1100 code, then run the planned chain-on versus chain-off paired replay with rotating operands after GPU validation is scheduled.
+- C8 (RUM01 exact composition, 2026-11-19): reran the canonical ordered `serving-core` set from `1f1547e72953` against the v1.17.0 source commit `19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d` and the frozen ABI43 candidate `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`. The base control applied all 30 selected packages: 474 edits applied, zero failed. The candidate dry run reported 334 applied, 1 not applicable, 6 already applied and 141 failed edits across five packages: `rad0013` (1), `rad0037` (56), `rad0038` (60), `rad0040` (10), and `rad0041` (14). The run used the maintained `resolve_exact` / `load_resolved` / `apply_patch(dry_run=True)` APIs with a shared in-memory text map; neither upstream tree was modified. Current selected patch implementation digest list SHA-256: `0b6380a2cdae89a98845b8bd5bed9dd9ee03cc94f2fb32383f044ad8042622cf`. The failures align with separate RUM07 format/layout work and RUM08 replay retirement; they are not safe to waive. This is patch applicability evidence only, not compilation, package, numerical, runtime or performance acceptance.
+- C9 (ABI43 host plugin refusal, 2026-11-19): configured a fresh `rum03-plugin-abi-build` from the exact frozen source with `RAD_WITH_HIP=OFF`, built `plugin_test`, `radtest_badabi` and `radtest_badlayout`, then ran only `abi_mismatch_is_refused_by_name_with_both_versions` and `a_foreign_layout_under_the_right_version_is_refused`. Both passed (10 checks). The loader refused a version-50 fixture against ABI43 and a version-43 fixture with layout fingerprint `1260f5fc8445d3a1` against engine `1260f5fc8445d3a0`. This proves host-side loader rejection only; it does not show all packaged plugins were rebuilt or accepted, and does not cover HIP, activation, numerics or performance.
+- C10 (ABI43 MTP replay host fixtures, 2026-11-19): built candidate `arch_test` and `runtime_test` with HIP disabled. `qsa_reads_the_exact_host_bound_and_keys_its_side_of_the_exact_bound` passed 30 checks; `an_arch_keyed_program_issues_decode_passes_at_the_keyed_bound` passed 6. These establish the existing exact-bound key and effective decode/verify/draft bound behavior. The separate missing-summary versus above-bound wide-verify case remains unproven and RUM08 stays open.
+- C11 (RUM04 immutable native-config snapshot seam, 2026-11-19): added `NativeConfigSnapshot` to the existing strict manifest library and made the ABI43 `NativeFleetConfig` consume it before parsing. Sol's standalone library build and focused `manifest_snapshot_roundtrip` CTest passed (1/1); the test links headers/objects from the frozen candidate source and checks CRLF/UTF-8 byte preservation, replay after deleting the author file, parser provenance, digest and root refusal, malformed input, and old-wire refusal. `git diff --check` is clean for the serving component. This is a real config identity/parser fixture, not yet generated v3 persistence or fresh/stored sealed exec integration.
+- C12 (RUM04 generated v3 wire, 2026-11-19): generated an explicit v3 edition from the existing TOML registry and compiled the same shared manifest writer/reader sources against it. The focused v3 wire test and existing v2 reader test passed (2/2), covering measured write/read, old-wire refusal, role views, and measured-plan identity invalidation. All seven regenerated v2 artifacts matched their checked-in versions byte-for-byte; the generated v3 schema fingerprint is recorded under the serving component. Sol's scoped `git diff --check` passed. Production still selects v2, and fresh/measure/stored launch through the matched ABI43 parser and sealed descriptor remains open. Full CTest output remains in the task-local build scratch.
+- C13 (RUM08 ABI43 unknown-summary replay guard, 2026-11-19): added candidate-only `rad0047_mtp_verify_replay_summary`, which reuses the located `m.kv_full` group and returns a zero pass key only for wide speculative decode verify without a positive full-group host summary. Exact apply/idempotent replay and a compiled host pass-key fixture passed (2 tests). The fixture reproduces the missing-summary versus positive-1504 input from the review; missing returns zero (live path), positive remains recordable. The patch is not selected in a production recipe yet; validate it with the candidate prefix and effective issue fallback before migrating recipe membership. The v1.17 `rad0013` patch and membership are unchanged.
+
+
+## C14 — ABI44 retained-feature migration and latest-main sync (2026-11-19)
+
+The production recipe now pins Radiance v2.1.0 and selects the complete migrated feature chain `rad0048` through `rad0054`: native E4M3, B16F8, B16I8, V4, K6V4 and the independent prefill-FP8 control. The seven packages are `validated`; their old-base behavior remains supported by the historical device, codec, quality and performance evidence. This bump replays and adapts those implementations to the new APIs rather than dropping or requalifying the old behavior from scratch. The six Radiance components declare `built-against = v2.1.0`. Legacy packed-format package membership and the obsolete local MTP replay patch-set membership are removed from active production composition; historical package/evidence files remain preserved.
+
+The exact production closure resolves to 32 packages, all validated. Ordered apply and byte-identical replay for the complete retained-feature chain passed. Focused new-base host, row/geometry, prefill-mode, selected object, full component build, ABI44 plugin and component test gates passed. The v2.1.0 serving component tests for stored-manifest replay and runtime-receipt placement passed 3/3 after synchronizing latest `origin/main` through `31bd5b9e9`; the new parity harness unit tests and production-membership checks passed as part of 30 focused tests. `patch-lint` and `git diff --check` pass.
+
+This checkpoint proves source composition, feature migration compatibility, build/plugin ABI and focused component behavior. It does not claim a new GPU numerical run or performance result. RUM09 still owns card-free launch lifecycle gate B, leased hardware quality/performance gate C/D, and install/relocate gate E before release publication.
+
+## C15 — Fresh manifest sealed handoff (2026-11-19)
+
+Fresh measuring and serving writer outputs are opened without following symlinks, bounded as regular files, validated for their specific role from the exact bytes read, and copied into sealed descriptors before power admission or child launch. The serving owner uses that same sealed document for power verification, runtime guards, calibration scope/log ingestion, engine/helper argv and stored-byte integrity checks. Measuring helper and engine children inherit the sealed descriptor. Stored replay attestation now compares against the digest of the already-authenticated bytes instead of reopening the pathname for a second identity read.
+
+Focused evidence: `bc_serving_test`, `bc_session_stored_test`, `bc_v2_native_projection_test`, and `bc_serving_v3_wire_test` all passed when run directly from the isolated build; their targets built successfully and `git diff --check` passed. CTest itself could not launch because this container disallows unprivileged user namespaces, so the same test executables were invoked directly (with the wire test's registered fixture arguments). No GPU test or performance claim is attached. The initial serving invocation was against a stale executable and failed; rebuilding the target before rerun produced the passing result. This stage proves the session's sealed-manifest handoff, not completion of native YAML integration or RUM04's remaining production consumers.
+
+Verification hardening: the card-free fake engine now fails if a `/proc/self/fd/N` manifest cannot be opened and parsed as a strict document. Rebuilt `bc_serving_test` and `bc_session_stored_test`; both passed with that executed-child assertion active. The companion `bc_v2_native_projection_test` and `bc_serving_v3_wire_test` also passed. Ledger event `chg_20261119_101333_strengthened-the-fake-engine-s_2250` records this verification hardening.
+
+Stored-cache follow-up: new index entries and authenticated replay now use the existing `bigcherry/rsc12/chunked-file-v1` file identity, computed directly from the already-read bytes. The raw SHA-256 remains a separate in-memory execution check. `bc_stored_manifest_cache_test` now proves byte/path identity equivalence and named-index resolution. All five focused executables (`bc_stored_manifest_cache_test`, `bc_serving_test`, `bc_session_stored_test`, `bc_v2_native_projection_test`, `bc_serving_v3_wire_test`) passed. Ledger event `chg_20261119_102043_fixed-a-stored-manifest-cache_9243` records the compatibility fix.
+
+## C16 — Native parser value transport (2026-11-19)
+
+Changed the native YAML fixture to set `mixed-step-target-ms: 17` and assert both the parsed value and its native YAML provenance. The non-default sentinel makes this a value transport check, not a default-equivalence check. Rebuilt and ran `bc_native_fleet_config_test` linked to `rad_core` from the exact pinned Radiance v2.1.0 source; it exited 0. This still exercises the parser fixture, not the production managed launch path. Ledger event `chg_20261119_102412_made-the-upstream-parser-fixtu_9474` records the check.
+
+## C17 — Latest-main cache and component-test gate (2026-11-19)
+
+Merged `origin/main` through `f47633e91` (`1b9902703`) before continuing; it changes the S8 GPU inventory digest to exclude live VRAM. Removed `bc_native_fleet_config_test` from the serving component target roster because the package creates it in the Radiance root build. Strengthened the cache identity test to compare bytes and path fingerprints on a multi-megabyte input and serialize the named index from the bytes-derived digest. Rebuilt and passed `bc_stored_manifest_cache_test`, `bc_serving_test`, and `bc_session_stored_test`; `git diff --check` passed. Ledger event `chg_20261119_103151_fixed-a-component-test-gate-th_3585` records the correction.
+
+## C18 — Planner-produced named-cache identity (2026-11-19)
+
+Extended the real session-owner planner fixture to use production `bc-serve` named-cache inputs, emit synthetic S8 replay evidence, and verify the persisted manifest index resolves to the expected chunked file identity after both cache miss and hit paths. The partial power-admission refusal path asserts that no cache index is published. The first run exposed that the refusal case correctly has no index; the assertion was scoped to successful paths and the test then passed. Rebuilt `bc_serving_test`; the focused CTest passed. No GPU behavior or performance claim is attached. Ledger event `chg_20261119_103807_added-regression-coverage-for_2467` records the test.
+
+## C19 — TP host-pool projection compatibility (2026-11-19)
+
+The v2 manifest carries `resources.host.pool_mib` as a per-rank value, while the pinned Radiance 2.1 CLI accepts an aggregate `--host-pool-mib` and divides it by TP. The existing bridge now performs checked `per_rank_mib * tp` at the projection boundary, refusing zero TP, signed-MiB overflow, and a missing option projection. This preserves the admitted per-rank amount after Radiance parses the command line. The focused `TestServingManifestPatch.test_manifest_to_argv_logic_compiled_and_run` compiled the patched bridge and passed, including the TP3 2048→6144 arithmetic and refusal cases. No GPU behavior or performance claim is attached. Ledger event `chg_20261119_105151_preserved-the-manifests-per-r_3154` records the change.
+
+## C20 — Rank-aware host-pool admission and replay (2026-11-19)
+
+Radiance 2.x receives the aggregate host-pool value at the CLI boundary, while BigCherry's manifest and admission model retain a per-rank pool. The adapter now reads the validated typed manifest, checks multiplication against Radiance's signed MiB limit, and emits the aggregate value only for Radiance 2.x builds; the patch-package test asserts that CMake version guard and compile definition. Fresh resource admission, S8 measured admission, and stored-manifest replay now charge the per-rank host pool once per TP rank before launch, while the user-facing pool value remains per rank. Focused C++ tests for serving, resource parity, S8, and stored replay passed together earlier in this work; the adapter compile/run test also passed with a valid TP3 manifest and asserted `--host-pool-mib 6144` and `--tp 3`. A rerun from this session was blocked before test execution because the container could not create an unprivileged namespace (`bwrap`); `git diff --check` passed. No GPU behavior or performance claim is attached. Ledger event `chg_20261119_111343_fixed-tp-host-pool-accounting_3736` records this slice.
+
+## C21 — Measuring-start TP host-pool preflight (2026-11-19)
+
+Added a fresh host-room preflight for cache-miss measuring starts, where no measured plan exists yet. It checks checked `pool_mib × engine.tp`, KV, reserve, current MemAvailable/cgroup headroom, and pin capacity after creating the sealed unmeasured manifest but before power admission or child startup. This covers engine-only profiles that skip the model/helper resource ledger; zero pool remains a valid disabled-pool setting. A TP3 session fixture sets a per-rank 2048 MiB pool with 9000 MiB available: one rank fits, all three do not, and the test verifies refusal before power and child hooks. `bc_resources_parity_test` passed its TP3 refusal/TP1 acceptance cases, and the full focused `bc_serving_test` passed with the added session gate. Both focused targets built successfully; no GPU behavior or performance claim is attached. Ledger event `chg_20261119_113539_fixed-an-early-start-memory-ad_1095` records this slice.
+
+## C22 — S10 generated-edition resolver boundary (2026-11-19)
+
+Changed `resolve_s10` to validate against the selected generated `kApiVersion` and `kContractVersion`, removing a hardcoded v2-only guard that prevented reuse of the same resolver with the explicit v3 codec. Extended the card-free successor test to resolve an unmeasured v3 manifest through S10 and verify that a v2-edition document is still refused. `bc_serving_v3_wire_test` and `bc_v2_s10_test` both built and passed. This proves the shared resolver's edition boundary only; the production writer, component runtime switch, and native YAML launch path remain open under RUM04. Ledger event `chg_20261119_113851_unblocked-the-shared-s10-resol_2647` records this slice.
+
+## C23 — Generated-edition include seam (2026-11-19)
+
+Changed serving runtime owners from explicit `generated/v2/...` includes to the generated header names exported by their linked manifest target. Removed the duplicate explicit v2 codec include in the P1 producer. The existing v2 component build succeeded, and the focused v2 S10 and generated-v3 wire tests passed. The build still selected v2 for `bc-serve`; this removes a source-level edition lock but does not prove a full v3 component build or activate native YAML launch. Ledger event `chg_20261119_114329_reduced-generated-v2-hardcodin_1790` records this refactor.
+
+## C24 — Current-main heat-proof merge (2026-11-19)
+
+Merged current `origin/main` at `5e814a1d8` into the isolated Radiance bump branch. The merge base now matches `origin/main`; the main change adds a period-aware retry when a heat histogram and its launch-bound proof are briefly published at different times, with field-level mismatch diagnostics. Rebuilt and directly ran `bc_session_guards_test`, including its `proof_lag` case; it exited successfully. This validates the merged CPU guard path only. No GPU behavior or performance claim is attached. Ledger event `chg_20261119_115029_integrated-latest-main-into-th_1067` records the integration.
+
+## C25 — Effective measuring-pool preflight (2026-11-19)
+
+Changed measuring-start preflight to use host pool, KV, reserve, and TP from the exact strictly parsed measuring manifest instead of the original resolver values. Fresh host room is still detected immediately before admission. The session regression simulates an initial cache miss, an exit-11 increase to a 2,048 MiB per-rank pool, and a second cache miss; it verifies that the sealed TP3 allocation is refused with room sufficient for the old allocation but insufficient for the revised one, before a second measuring child starts. `bc_resources_parity_test` and the full focused `bc_serving_test` both passed after incremental builds. The first direct `bc_serving_test` invocation used the TOML file instead of the registered layouts directory and failed its fixture setup; rerunning with the registered directory passed. No GPU behavior or performance claim is attached. Ledger event `chg_20261119_120029_fixed-measuring-start-memory-a_1732` records the fix.
+
+## C26 — Worker generated-header selection (2026-11-19)
+
+Changed the remote-MoE worker policy header to include `serving_types.h` through the manifest target's public include path, removing its remaining production source include that pinned it to `generated/v2`. Rebuilt and directly ran `r3_policy_config_test`; the typed policy and invariant cases passed with the current v2 target selected. This establishes source ownership of the generated header path, not a full v3 helper build. Ledger event `chg_20261119_120946_removed-the-helper-workers-ha_3343` records this refactor.
+
+## C27 — Successor writer native-config snapshot (2026-11-19)
+
+The shared manifest writer now requires an admitted `NativeConfigSnapshot` for generated contract v3 and rejects one for v2. The v3 document records the exact authored bytes, digest, canonical root and detected provenance before strict decode. Extracted the synthetic measured-manifest fixture from `serving_test.cpp` and added an isolated real-writer test target linked only to `bc_serving_v3_wire` and JCS, avoiding same-namespace v2/v3 collisions. Its measuring and serving cases remove the author file before invoking the production writer and verify snapshot identity plus missing-snapshot refusal. The focused CTest passed 1/1 under the approved launcher; a direct rerun also exited 0, and `git diff --check` passed. Production continues selecting v2, so this proves successor writer behavior only; native YAML launch and consumer migration remain open. Ledger event `chg_20261119_122249_added-a-verified-successor-man_4213` records the slice.
+
+## C28 — rad0046 helper rows in the candidate RDNA3 plugin (2026-11-19)
+
+The exact rad0046 apply/replay test passed on the frozen ABI43 candidate. Built `r3_moe_worker` and an isolated `R3_ONLY` libr3 plugin with only the restored quantizer and grouped-MoE HIP units selected. A no-GPU `dlopen` probe of the linked plugin confirmed both exact helper lookups survive the real `r3_registry` filtering with live launch callbacks: `had_quant_act_fp8` / `had_quant_act_fp8` and `moe_gemm_fp8a8` / `moe_gemm_q`. The existing card-free `r3_rad46_rows_policy_test` also passed; it tests RDNA3 rows-policy dispatch, not rad0046's block-E4M3 boundary guard. This build source was ABI43; package state remains `untested` until the row/build gate is repeated on composed ABI44. Numerical/hardware activation remains RUM09. Ledger event `chg_20261119_122726_verified-that-both-restored-he_3927` records this ABI43 checkpoint.
+
+## C29 — ABI44 rad0046 geometry and native compile gate (2026-11-19)
+
+Extracted the block-E4M3 wide-tile rule into a dependency-free constexpr helper called by the real HIP launcher. The focused exact-source apply/replay test now compiles and runs that same helper: aligned `{512, 256}` at two parts allows the 128-column tile; `{512, 384}` refuses it because the second class splits at 192; non-block-E4M3 formats preserve the prior max-width decision. The test passed 1/1.
+
+The ordered production recipe prefix through `rad0048_abi44_kv_contract` composed 27 packages cleanly from upstream SHA `3deabdaeca17b58bad90d332f4b204cf7bb8a10e` at ABI44. The ABI44 KV layout/fingerprint C fixture passed. A narrow ABI44 `libr3` plugin built from the updated composition and the no-GPU registry probe again found both exact helper rows with live launch callbacks. Native `libr4d` row-table and MoE HIP objects compiled for gfx1201. The ABI44 `r3_moe_worker` and `libr3moe` mailbox plugin both built against the same composition and SDK. The HIP compiler emitted occupancy-target warnings for some MoE kernels; all targeted builds completed successfully. No device execution occurred. `rad0046` stays `untested` until the required activation/correctness evidence and review are recorded under PATCH_SYSTEM; RUM09 owns numerical qualification. Ledger event `chg_20261119_124601_made-the-e4m3-scale-boundary-r_8302` records this checkpoint.
+
+
+## C30 — Native YAML inspection seam in the matched engine (2026-11-20)
+
+`NativeFleetConfig` is now compiled once into `rad_core`, and rad0009 adds a fleet-only `radiance --bc-inspect-native-config FD` entry before serving-manifest argv rewriting. The handler accepts a bounded regular descriptor only when all memfd seals are present, parses the existing three-field native snapshot through the strict JSON decoder, and lets the matched Radiance parser enforce execution-root, one-model, literal-key and unsupported-setting rules. Its closed JSON report includes the snapshot digest/root and admission-relevant model, runtime, listener, rank/card, context and sequence fields; it omits raw YAML and credentials. Runtime home and kernel values carry upstream provenance labels.
+
+Validation: the focused rad0009 patch suite passed 5 tests; the handler and fixture each compiled with `-Wall -Wextra -Werror` against the pinned ABI44 source headers; exact rad0009 apply and byte-identical replay passed on upstream SHA `3deabdaeca17b58bad90d332f4b204cf7bb8a10`, with the inspection hook before argv rewriting. At C30, a fresh engine invocation was still pending; C33 below records that follow-up. `session.cpp` descriptor inheritance, serving consumers, manifest/cache migration and hardware gates remain open. No GPU execution or performance claim is attached.
+
+## C31 — Owner-tracked native config inspection (2026-11-20)
+
+Added the session-owner side of the native inspection boundary. The inspector uses the existing captured-output planning child runner, is durably registered and reaped, and is permitted before power admission while measuring/serving children remain gated. It receives only a sealed snapshot descriptor plus an explicit native environment overlay; its child changes to the recorded root with `fchdir`, keeps unrelated descriptors close-on-exec, and executes the matched engine through an absolute path. The owner bounds both captured streams, strict-decodes the report, validates the protocol and snapshot digest/root, and requires typed engine admission fields. The owner's working directory and the authored YAML path are not used after snapshot admission.
+
+The card-free session fixture checks exact CRLF/UTF-8 bytes after replacing the author file, the sealed descriptor, execution-root selection, unrelated-FD closure, owner cwd preservation, process journaling and inspector-before-power ordering. A mismatched report identity is refused before power admission or engine start, and its inspector process is verified reaped. `bc_session_test` built and passed through CTest (1/1); `git diff --check` passed. This validates the owner boundary against the fake engine only: the actual matched Radiance command has not yet been freshly linked and invoked, and no native snapshot is selected by the production planner yet. No GPU execution or performance claim is attached.
+
+## C32 — Typed native inspection admission projection (2026-11-20)
+
+Replaced the inspector's untyped JSON return with `NativeConfigInspection`. The owner now requires exact protocol/snapshot/engine/listener field sets; validates array element types, nonnegative card ordinals, positive TP and sequence count, legal listener port, nonnegative context limit, nonempty model/listener, and ABI equality with the matched BigCherry build; then converts the closed report into typed fields. The fake engine now emits the native `rank_devices` string representation.
+
+The positive session fixture sets inherited `RADIANCE_HOME` and `RADIANCE_KERNELS` to incorrect values, passes explicit overrides, and checks the inspector sees the selected values (including the inherited variable that is not stripped by the legacy filter). It also asserts the typed admission projection. Negative cases return a mismatched snapshot digest and a malformed card array; each test asserts the corresponding inspector refusal diagnostic, verifies the inspector was reaped, and proves power admission and engine startup did not occur. `bc_session_test` rebuilt and passed through CTest (1/1); `git diff --check` passed. This remains a fake-engine owner test. The production planner does not yet capture one effective environment for both inspection and eventual execution, choose a native YAML snapshot, or consume the typed result; actual matched-engine invocation remains open. No GPU execution or performance claim is attached.
+
+## C33 — Matched ABI44 engine inspector invocation (2026-11-20)
+
+Built the `radiance` target from the ABI44 candidate composition with the current rad0009 inspector hook linked into `rad_core` and `main.cpp`. A sealed memfd fixture with a canonical temporary root was passed through the actual `radiance --bc-inspect-native-config FD` entry point. The command exited 0 and returned protocol v1, the exact snapshot digest/root, ABI 44, the parsed model/listener/card order, the upstream native TP default, and no YAML bytes. Two fail-closed probes through that binary returned exit 2 with empty stdout for an unsealed descriptor and for a sealed descriptor with a wrong digest. The initial fixture expectation incorrectly inferred TP=2 from two selected cards; the parser correctly returned its native TP default of 1, and the assertion was corrected to the actual YAML semantics.
+
+This is a card-free parser command probe, not a serving launch or GPU/runtime test. The binary was built in task-local candidate scratch and was not installed. Production `bc-serve` still selects the TOML/v2 planner and does not yet carry the native snapshot through writer, P1, measurement, replay or cache identity. No GPU execution or performance claim is attached.
+
+## C34 — Native snapshot-bound measured-plan identity (2026-11-20)
+
+Extended the operational measured-plan key with the exact native YAML SHA-256 and canonical resolution root when a native snapshot is selected. Such keys use cache version 3; existing non-native version-2 key construction is unchanged. The generated-v3 real writer now refuses measured-manifest finalization unless the measured key carries the exact snapshot digest and root being written. Focused assertions cover digest and root invalidation and reject a stale/mismatched measured-plan identity.
+
+Rebuilt and passed `bc_serving_test` (1/1) and `bc_serving_v3_writer_test` (1/1); `git diff --check` passed. This closes the snapshot-to-plan-key/writer check only. It does not attest imported plans to an owner-tracked measurement, pass the snapshot through the real P1 owner-map producer, or migrate production `bc-serve` from TOML/v2. Those remain required before enabling the native path. No GPU execution or performance claim is attached.
+
+## C35 — Private native admission gate (2026-11-20)
+
+Added an internal-only planner input for a native YAML source and resolution root; it has no public CLI spelling and cannot enable serving. The planner selects and verifies its matched engine first, snapshots the authored YAML once, composes the filtered child environment once with selected runtime/device values taking precedence, and gives that complete environment to the tracked inspector child. It reconciles the parser's TP and ordered rank-device BDFs with the selected local profile and requires the loopback listener supported by the current owner. After successful inspection it refuses before named-cache lookup, writer/P1, power admission, measurement, or serving startup until the v3 production chain is complete.
+
+Focused ABI44 `bc_serving_test` and `bc_session_test` both passed (1/1 each). The planner fixture proves a matching native profile is inspected and then stopped with zero writer calls, zero power admission, and no measuring/serving child; the owner fixture checks environment capture and TP/BDF mismatch refusal. `git diff --check` passed. This gate does not migrate production CLI selection or permit native launches. No GPU execution or performance claim is attached.
+
+## C36 — Native admission topology and legacy-path bypass guards (2026-11-20)
+
+Hardened C35 after review: require native-reported runtime home to resolve to the verified matched build home; require YAML `cards` to be exactly the local child-visible ordinal order `[0..rank_count)` as well as matching TP and ordered BDFs; reject runtime overrides for `RADIANCE_HOME` and all GPU visibility selectors, including `CUDA_VISIBLE_DEVICES` and `GPU_DEVICE_ORDINAL`; and refuse private native requests at the legacy stored-replay entry point until replay consumes the manifest's embedded snapshot. The planner test now sets a named config and a deliberately malformed cache index as a tripwire, proving inspection stops before cache reading. Additional cases reject wrong card order, mismatched home, visibility overrides, and the legacy replay bypass.
+
+Rebuilt and passed ABI44 `bc_serving_test`, `bc_session_test`, and `bc_session_stored_test` (1/1 each); `git diff --check` passed. This remains an internal fail-closed gate, not a native launch path. P1, measured writer, native cache identity, and stored replay migration remain open. No GPU execution or performance claim is attached.
+
+## C37 — Shared prepared inputs for P1 owner planning (2026-11-20)
+
+Changed both P1 producer entry points to accept the prepared `ManifestInputs` object instead of a separate `Resolved` configuration. `bc-serve --write-manifest` now prepares the selected resolved configuration once and passes that same input to P1 and the final writer; `--publish-v2-p1` constructs the same narrow input boundary while retaining its existing request format. P1's temporary owner-map manifest copies only `resolved` and `native_config`, then preserves its established production profile, fresh identity, and stock-power projection. This allows the admitted snapshot to reach owner planning without leaking final measured/lab/calibration fields into the legacy v2 calculation.
+
+Built `bc-serve`, `bc_serving_test`, and `bc_v2_p1_producer_test`. Focused CTest passed `bc_serving_test` (1/1) and `bc_v2_p1_producer_test` (1/1). No native snapshot is selected by production `bc-serve`, and no native P1-to-v3 writer path, owner-attested measurement, or stored replay migration is claimed. No GPU execution or performance claim is attached.
+
+## C38 — Real P1 producer through the v3 writer (2026-11-20)
+
+Extended only the isolated successor writer test target to compile the P1 producer, measurement serializer, and live-room sampler against the v3 wire library. The fixture now deletes its authored YAML after snapshot admission, executes the real P1 producer with the same `ManifestInputs`, local model, engine-plan/rank-demand records, and fake sysroot, and passes that returned measurement into the real v3 writer. Its embedding consumer plus the calibrated margin derive the same configured host pool, so the writer validates an internally consistent measured plan. Production remains linked to v2.
+
+Built `bc_serving_v3_writer_test`; its focused CTest passed (1/1). This proves the card-free snapshot → P1 owner planning/measurement → v3 measured writer path against the ABI44 successor codec and fake host facts. It does not attest imported plans to an owner-tracked measurement, migrate production selection or stored replay, or exercise GPU/runtime launch. No GPU execution or performance claim is attached.
+
+## C39 — Native measured-plan cache identity (2026-11-20)
+
+Completed the version-3 measured-plan key boundary: native keys now include the exact ordered engine and helper device identities (role, ordinal, BDF, HIP ordinal, architecture and VRAM), in addition to snapshot SHA-256 and resolution root. Native plan-cache files now persist version 3 and lookup requires the envelope version to match the key; v2 cache identity and files remain version 2. Tests verify helper reorder invalidation, v3 store/read, and refusal of a v2 envelope for a v3 key.
+
+Built `bc-serve` and `bc_serving_test`; focused CTest passed (1/1). This is cache identity groundwork only: production does not yet select native YAML, and the session owner still needs to bind measured artifacts to the exact tracked attempt before publishing a native cache entry. No GPU execution or performance claim is attached.
+
+## C40 — Latest main integration (2026-11-20)
+
+Merged current `origin/main` at `224456e53`, including `068776438` and the intervening run-record/host-facts changes, into the isolated bump branch. Verified `origin/main` is an ancestor of the bump HEAD and the worktree is clean after the merge. Focused Python checks for host facts, run records, and benchmark workloads passed: 32 tests. Pytest emitted only the repository's existing `pytest-asyncio` fixture-scope deprecation warning. Radiance-specific work remains on the same task branch and its checkpoints are preserved.
+
+## C41 — Native model-path reconciliation (2026-11-20)
+
+The native inspector's reported model path is now reconciled against the selected model before any native admission can advance. Relative YAML paths resolve under the sealed snapshot's recorded root; both paths are weakly canonicalized and mismatches fail closed. The fake inspector can vary its reported model and expected YAML bytes, and tests cover a matching relative model plus a mismatched model. This closes an omission in the earlier home/TP/device/card checks without enabling native planning.
+
+Built `bc_serving_test` and `bc_session_test`; both focused CTests passed (1/1 each). The planner still refuses after successful inspection and before named-cache access, manifest writing, power admission, or engine startup. No GPU execution or performance claim is attached.
+
+## C42 — Session-owned measured-plan cache publication (2026-11-20)
+
+Moved measured-plan publication from CLI raw-file import into the session owner after the tracked engine exits, helpers are reaped, and helper VRAM release is confirmed. Each measuring attempt now has unique plan/rank paths and an attempt ID. The session freezes its effective resolver values, model/build identities, plan arguments and cache key before measurement; after measurement it recomputes and refuses source/build drift instead of re-keying. It validates ordered engine BDFs, full rank-demand shape and the plan's pool/host-consumer contract before publishing. Cache-only writer reads carry the expected attempt ID and refuse a missing or replaced owner receipt. Native v3 entries require owner provenance; legacy v2 raw imports remain supported, while newly owned v2 entries preserve the old key format. Cache publication uses unique exclusive temporary files and atomic rename. Owner receipts bind the attempt, measuring-manifest SHA-256, measured plan/ranks, resident memory, cache key and optional native snapshot identity.
+
+The session fixture now performs two real fake-engine measuring attempts: the writer requests a 2,048 MiB pool on the first round, causing a new key and second measurement. `bc_serving_test` and `bc_session_test` were rebuilt and passed (2/2 focused CTests). A cache tamper case changes the recorded resident memory and is refused by the owner receipt digest. `git diff --check` passed. This migrates the existing v2 owner path and establishes v3 cache ownership checks, but production still selects v2 and the private native-admission gate remains closed before writer/P1/measurement/replay. No GPU execution or performance claim is attached.
+
+## C43 — Bind unmeasured draft to frozen plan inputs (2026-11-20)
+
+Closed a race between the session's pre-measurement key and the independently resolved unmeasured draft. The session now supplies its expected plan key to the real `bc-serve` child. At the same point where the child resolves options and builds the unmeasured manifest, it recomputes the key from that exact `Resolved` input and refuses a mismatch. Before measurement startup the session also checks the pinned draft's config name, model path and ordered engine BDFs against the frozen selection. The attempt summary is set only for the final successful round, so an exit-11 retry cannot leave a stale attempt identifier.
+
+`bc_serving_test` now launches the actual built `bc-serve` for both successful unmeasured drafts. A separate race case changes `engine.num_speculative_tokens` after the session freezes its key; the real writer child refuses before any measurement-attempt directory or measuring engine is created. Rebuilt and passed `bc_serving_test` and `bc_session_test` (2/2 focused CTests); `git diff --check` passed. This proves key-to-draft binding in the v2 writer path. Native v3 writer/P1/replay and GPU/performance gates remain open; no hardware claim is attached.
+
+## C44 — Shared strict engine rank-demand decoding (2026-11-20)
+
+Extracted rad0011's ordered GPU rank-demand checks into one decoder used by both owner cache publication and the P1 producer. It enforces the exact wire fields, selected engine BDF order, rad0011 evidence, positive required/fixed/claimable values within the measured integer range, and `fixed <= required <= claimable`. This removes the previous gap where the cache publisher accepted records that P1 would later refuse, and it removes a second handwritten validation block.
+
+Rebuilt `bc_serving_test`, `bc_v2_p1_producer_test`, and their library dependencies. Focused CTests passed: `bc_serving_test` and `bc_v2_p1_producer_test` (2/2); serving coverage includes wrong-BDF and zero-byte refusal. `git diff --check` passed. This is shared validation for v2 owner publication and P1; it does not open native v3 session admission. No GPU or performance claim is attached.
+
+## C45 — Role-neutral native snapshot view (2026-11-20)
+
+Exposed `native_config_view(const Manifest&)` from the shared strict reader so an engine consumer can obtain the admitted YAML bytes, digest and resolution root after either measuring or serving role validation. The measured-only `engine_view` still requires `EngineMemory`; callers preparing an unmeasured measuring manifest now have a narrow typed accessor instead of parsing the document again.
+
+Extended the isolated v3 real-writer test to assert this accessor returns the exact snapshot for both unmeasured and measured documents after the authored YAML file has been deleted. Rebuilt both the normal v2 serving test and isolated v3 writer test; `bc_serving_test` and `bc_serving_v3_writer_test` passed (2/2). This is a reader API seam only; it does not link the upstream `NativeFleetConfig` parser, migrate stored replay or enable the production session gate. No GPU or performance claim is attached.
+
+## C46 — ABI44 v3 native fleet consumer (2026-11-20)
+
+Added a narrow `NativeFleetConfig::replay` overload that accepts the strict reader's admitted typed snapshot view and rechecks its byte digest without reparsing the enclosing manifest as generic JSON. The v3 writer fixture now emits both measuring and serving documents, after deleting the authored YAML, and can pass them to a separate matched-engine consumer. A test-only generated-code directory override lets the candidate build reuse the normal manifest source list while selecting the successor codec; rad0009's v3 test mode links that one reader into `rad_core` and leaves the default v2 configuration unchanged.
+
+Configured a fresh ABI44 candidate build with `RAD_BUILD_TESTS=ON`, `RAD_WITH_HIP=OFF`, and `RAD_WITH_FFMPEG=OFF`. The consumer compile-time assertions require contract version 3 and ABI 44; its link command contains one manifest archive, built from the generated v3 codec. The registered `bc_native_v3_engine_test` passed (1/1): the strict engine reader accepted measuring and serving roles separately, the upstream fleet parser retained the native-only `mixed-step-target-ms: 17` value and `cfg.given` path, exact YAML bytes/root identity matched, and swapped roles were refused. The real v3 writer fixture passed separately (1/1), and the focused rad0009 patch test class passed (5/5) with its temporary binaries placed outside the host's no-exec `/tmp`.
+
+This is the first card-free proof through the real successor writer, strict v3 reader, and upstream ABI44 fleet parser. It does not enable production native selection, session measuring, stored replay/cache migration, reload, GPU execution, or performance qualification. No GPU was used. The first parallel writer rebuild triggered a GCC 14 internal compiler crash; serial rebuild passed. Existing upstream warning output during the ABI44 build was non-fatal.
+
+## C47 — Exact-recipe v3 consumer provenance and test-mode guards (2026-11-20)
+
+Corrected the candidate build provenance against the current `recipes.toml` selection rather than the stale `initial-composition.json`. Fresh materialization used upstream Radiance revision `3deabdaeca17b58bad90d332f4b204cf7bb8a10e`, source tree `8ca1308f23c0eaef5fdaa0ce29b9cfa7225925fd`, and all 33 currently selected serving-core patches, including B16 cache patches rad0050–rad0053. The generated CMake retains the Radiance 2.0+ aggregate-host-pool compile definition and registers the v3 test.
+
+Hardened the candidate-only generated directory override so it is rejected outside explicit v3 test mode, and v3 mode now fails configure unless the test build, generated codec, writer executable/config, and upstream fleet parser are present. Strengthened the patch-package test to preserve assertions for the aggregate host-pool branch. Against this exact materialization, the serial ABI44 candidate build completed, `bc_native_v3_engine_test` passed (1/1), and its link command contains exactly one serving manifest archive (`libbc_serving_v2.a`, generated with contract v3). Focused rad0009 patch tests passed (5/5), and `git diff --check` passed. The host's restricted `/tmp` requires `TMPDIR` on the executable task-local filesystem.
+
+This replaces the earlier manually staged C46 candidate provenance; it does not change the C46 behavioral claim. No production gate was opened; no GPU execution or performance claim is made. Next: replace C46's hand-built native key fixture with the production key including ordered `rank_devices`, then connect the owner cache receipt path to P1 and writer using isolated engine identity home and fake mutable state.
+
+## C48 — Bind v3 serving to the owned native plan key (2026-11-20)
+
+`build_manifest()` now recomputes the complete v3 plan key from resolved values, detected facts, the admitted YAML snapshot and the measured model/build/engine-argument identities. It refuses a measured record without its owner receipt, rejects key drift including ordered engine/helper device identity, and confirms the retrieved cache record's own key matches its key inputs. This replaces the former SHA/root-only comparison that disagreed with the production key's `rank_devices` field.
+
+Extended the real v3 writer fixture to keep engine runtime identity in a dedicated empty runtime-home, publish its measured plan and rank-demand through `plan_cache_store_owned()` with the measuring-manifest digest, retrieve the exact cache entry, and use that same entry as P1 input and final serving plan. Assertions cover the owner attempt/digest, real model/build identities in the emitted manifest, and refusal of altered YAML digest, resolution root and ordered device BDF.
+
+Focused verification passed: `bc_serving_v3_writer_test` (1/1), exact-recipe ABI44 `bc_native_v3_engine_test` including the writer child (1/1), and ordinary `bc_serving_test` (1/1). The ABI44 link still contains exactly one generated manifest archive; `git diff --check` passed. No GPU was used. This closes the isolated writer/cache/P1/key-identity seam only; session-owned native measurement, stored/offline replay and production admission remain gated.
+
+## C49 — Shared sealed native snapshot descriptor reader (2026-11-20)
+
+Moved sealed memfd validation and snapshot reconstruction into `NativeConfigSnapshot::from_sealed_fd()`: it requires all four immutability seals, a bounded regular file, reads with `pread`, applies strict JSON validation, and checks the snapshot digest/root. Radiance's native config inspector now uses this shared implementation instead of a second reader. The private `bc-serve --bc-native-config-fd` writer input is restricted to the v3 manifest edition, reconstructs the typed snapshot before either draft or measured plan-key calculation, and places the snapshot into `ManifestInputs`.
+
+The real v3 writer fixture round-tripped its admitted snapshot through a sealed descriptor. The fixture passed (1/1); exact-recipe ABI44 engine-consumer CTest passed (1/1); ordinary v2 serving CTest passed (1/1). The real standalone `bc-serve` was compiled against the isolated generated v3 codec, and an invocation outside manifest-writing mode was rejected with the intended private-input diagnostic. No production session caller exists yet: `plan_engine_only()` still refuses after inspection in the default v2 build, and native measurement/cache/replay/start gates remain closed. No GPU was used.
+
+## C50 — Owner-to-v3 measuring draft handoff (2026-11-20)
+
+In the isolated v3 candidate lane, `plan_engine_only()` now carries the admitted snapshot from inspection into a sealed owner-held descriptor, computes the frozen native key from selected values/facts/model/build/plan arguments, and invokes the real `bc-serve --write-manifest --unmeasured` child with that descriptor and expected key. It pins and strictly reads the measuring-role output, then verifies exact YAML bytes, digest, resolution root and ordered engine BDFs and confirms no measured plan is present. The v2 route retains its existing inspector-only refusal.
+
+Added a v3-only focused session test target. Its inspector completion hook deletes the authored YAML before the writer runs; the writer still emits the exact admitted snapshot. The fixture confirms inspector and writer children are both reaped, the malformed named-cache tripwire is untouched, no plan-cache directory is created, and no P1, power-admission or GPU child starts. `bc_native_v3_session_test` passed (1/1), `bc_serving_v3_writer_test` passed (1/1), and the default v2 `bc_serving_test` passed (1/1). No GPU was used.
+
+This proves only the owner-to-unmeasured-draft boundary and remains deliberately fail-closed before named cache reuse, P1, actual native `--plan-memory`, owner cache publication, stored/offline replay, power admission and GPU startup. Upstream `NativeFleetConfig::replay()` still needs to replace the native measurement argv bridge; parser-affecting environment, native context/sequence/pool semantics, stored-key relationships and reload refusal remain future gates.
+
+## C51 — Reject unowned v3 measured-plan imports (2026-11-20)
+
+The v3 `bc-serve --write-manifest` CLI now requires the sealed native snapshot descriptor for every write and refuses `--measured-plan`/`--rank-demand` imports before opening either file. This prevents the v3 edition from falling through to a legacy v2 cache key or creating an unowned cache entry. Raw measured results remain an owner-session responsibility.
+
+Added real-CLI card-free coverage for the missing-snapshot path and for raw plan/rank imports supplied with a descriptor-shaped argument. Both cases assert the specific early refusal and verify the deliberately missing files are never opened. Rebuilt and directly ran `bc_native_v3_session_test` (PASS), which includes those cases and the sealed draft handoff; rebuilt and directly ran ordinary `bc_serving_test` (PASS) to verify the v2 path remains unchanged. `git diff --check` passed. No GPU was used; production v3 admission remains gated before actual `--plan-memory`, owner cache publication, P1, stored replay and power admission.
+
+## C52 — Native Config replay for v3 memory measurement (2026-11-20)
+
+The isolated ABI44 candidate now uses the admitted native fleet YAML for a v3 measuring start. `bc_serving_engine_argv()` keeps strict manifest validation and the `--plan-memory` output flags but skips argv projection for the native measurement role. After rad0011 consumes those flags and captures its memory baseline, the new `bc_serving_take_native_measuring_config()` replays the exact retained snapshot through upstream `NativeFleetConfig`, verifies the single-model/card order, TP, loopback listener, port, context, sequence count, per-rank host pool, kernels, rank-device list, canonical model/runtime paths and supported online mode, then passes the native `Config` to `Engine::start()` without reparsing or replacing YAML provenance.
+
+The focused handoff found and fixed two defects before acceptance: the reconciliation predicate directions were inverted, and the Radiance 2.0+ aggregate host-pool value was changed after the projected argv had already been materialized. The aggregate is now applied to the projection before argv generation, preserving the expected 6144 MiB argument for the 3-rank compatibility fixture. The v3 writer fixture now places runtime home and kernels at Radiance's server level and emits all card ordinals for its configured TP.
+
+Verification: CPU-only ABI44 candidate target `bc_native_v3_engine_test` built successfully; its real writer child and native Config handoff passed (1/1). Focused rad0009 patch tests passed (5/5), including the v2 argv compatibility fixture and host-pool aggregate case. `git diff --check` passed. No GPU was used and no production v3 admission was opened. The session still stops before plan-cache publication, P1, power admission, or GPU startup; stored/offline replay, retained root-fd handling, environment controls, reload refusal and production migration remain separate gates.
+
+## C53 — Retain the native execution root across owner children (2026-11-20)
+
+`plan_engine_only()` now opens the canonical resolution root before reading the authored native YAML and keeps that directory descriptor under RAII for the full native admission call. It verifies the descriptor still names the recorded root after snapshot creation, passes the same borrowed descriptor through the inspector/reconciler, and checks its path/inode identity again after the inspector and before the future native measuring spawn. The inspector child already uses post-registration `fchdir`; `spawn()` now supports the same gated `fchdir` for engine children. The root descriptor stays close-on-exec; only the sealed manifest is deliberately inherited. The native measuring branch is prepared to use the exact inspection environment and absolute engine/plan/rank-output paths when that gate is integrated.
+
+Native `rank_devices` is an optional upstream YAML setting. When present, its order must match the selected local BDF order; when absent, selected TP/BDF count and YAML card ordinals provide the local-device ordering check. The fake inspector now reports the current compiled Radiance ABI instead of a fixed ABI44 value, so this session test remains accurate against the current installed SDK.
+
+A card-free session test renames and replaces the root path while the child waits behind its durable registration gate. The child enters the retained original directory, reads its original marker, does not inherit the root fd after exec, and writes plan/rank files to absolute owner attempt paths. Focused `bc_session_test` build and CTest passed (1/1); `git diff --check` passed. This validates descriptor and reconciliation plumbing only. The native v3 planner still stops before cache selection, P1, power admission and actual measurement; stored/offline replay, reload policy and production admission remain gated. No GPU was used.
+
+## C54 — Freeze the measured v3 writer key before cache access (2026-11-20)
+
+The v3 writer CLI now accepts `--expected-plan-key` for a measured, sealed-snapshot cache read in addition to its existing unmeasured draft use. After reconstructing the effective key from the resolver output and the admitted snapshot, it compares the owner-frozen key before measured-plan cache lookup or publication. Other editions and non-owner modes retain the existing restriction. Added a real-CLI test that confirms the v3 measured invocation passes argument validation and reaches sealed-snapshot descriptor loading before cache access.
+
+The earlier C51 build did not contain `bc_native_v3_session_test`; a fresh isolated candidate build was configured from this worktree against the installed ABI44 SDK. The rebuilt `bc_native_v3_session_test` passed (1/1), including this measured-key CLI assertion. No GPU was used; production v3 admission remains closed.
+
+## C55 — Refuse direct stored v3 replay (2026-11-20)
+
+`replay_stored_manifest()` now inspects the bounded JSON envelope and explicitly refuses a `bigcherry/v3` stored manifest before passing it to the legacy v2 reader. The refusal applies even when the caller did not supply the private `NativeAdmissionRequest`, preventing a direct stored-manifest caller from relying on the incidental v2 schema rejection. Added card-free session coverage using a minimal v3 envelope and the real replay entry point.
+
+The default-v2 `bc_session_stored_test` was built separately from this worktree and passed (1/1), covering both existing v2 replay and the direct-v3 refusal. The isolated generated-v3 session build passed `bc_native_v3_session_test` (1/1). No GPU was used; stored/offline native replay remains intentionally closed until the owner/cache/replay chain is complete.
+
+## C56 — Reconcile inspector values with the native measuring draft (2026-11-20)
+
+The owner now retains the strict native inspection report and compares the emitted measuring draft's listener port, max context, max sequences and ordered runtime kernels against the parsed YAML values before any power admission or GPU child. The card-free inspector fixture now reports those values from the selected local profile, so the test checks the equality gate instead of relying on unrelated constants.
+
+Verification: configured a fresh generated-v3 serving build from this task worktree against the installed ABI44 SDK; built and passed `bc_native_v3_session_test` (1/1). Separately configured and built the default-v2 serving path; `bc_session_stored_test` passed (1/1). `git diff --check` passed. No GPU was used. Native measurement, owner cache publication, P1 and production start remain gated.
+
+## C57 — Bind per-rank receipt facts to actual devices and plan facts (2026-11-20)
+
+The rad0011 post-split hook was intended to check each rank's actual process-visible device PCI address against the selected ordered BDF before emitting its rank-demand sidecar. Review RV4315 later found the first implementation read `rank_cfg_[i].devices`, which is a copy of the common config and does not identify each physical rank device. C59 corrects that source to `ranks_[i]->device`; the C57 CPU-side verification below did not prove physical BDF ordering and is superseded for that claim by C59. The session owner cache publisher also verifies each sidecar `claimable_bytes` equals the same-rank `EnginePlan.vram.cards[].free` fact, rejecting internally inconsistent measurement pairs.
+
+Verification: `TestPlanMemoryPatch.test_p1_native_rank_demand_is_post_split_and_v1_plan_is_unchanged` passed (1/1); default-v2 `bc_serving_test` and `bc_session_stored_test` passed (2/2); generated-v3 `bc_native_v3_session_test` and `bc_serving_v3_writer_test` passed (2/2). `git diff --check` passed. No GPU was used; rank identity and receipt consistency are checked in CPU-side fixtures, not hardware behavior.
+
+## C58 — Require owner identity on v3 measured cache reads (2026-11-20)
+
+The v3 measured writer now requires both `--expected-plan-key` and `--expected-owner-attempt` before resolving or reading any measured cache entry. The expected key is checked against the effective native snapshot key before lookup; the attempt ID is checked against the stored owner receipt after the keyed lookup. Added CLI assertions for missing-attempt refusal and for acceptance of the complete owner-bound argument shape up to sealed-snapshot validation.
+
+Verification: rebuilt and passed generated-v3 `bc_native_v3_session_test` (1/1). No GPU was used; this is a CLI/cache-ingress gate, not a completed owner measurement path.
+
+## C59 — Run one owner-bound native v3 measurement attempt (2026-11-20)
+
+Connected the isolated generated-v3 session through one engine-only measurement attempt: sealed native measuring manifest, tracked engine child, rad0011 plan and rank sidecar, owner-attempt cache publication, measured writer with frozen key/attempt, and strict serving-role artifact read. Serving start, helpers, named-cache reuse, retries, stored/offline replay and index publication remain gated.
+
+Follow-up review RV4315 found and corrected a physical-rank identity bug in C57. `rank_cfg_` is copied from `cfg_` and carries the common configured device list, so it cannot identify the physical rank. rad0011 now passes the ordered `ranks_[i]->device` values from the post-split engine loop and compares their `rad::dev_pci_address()` values against admitted BDF order. The session also derives resident MiB from `resident_other_bytes` in the validated sidecar using rad0011's ceil/minimum-one rounding and requires the log to agree; C60 further freezes the canonical runtime-home target before inspection, compares later resolved and final typed homes to it, and checks the final build identity. The serving manifest's contract cache key remains a distinct key domain from the operational owner key; strict serving-role decode validates the former while the final measured plan and owner provenance are checked independently.
+
+Verification: `TestPlanMemoryPatch` passed (9/9); generated-v3 `bc_native_v3_session_test` passed (1/1); default-v2 `bc_serving_test` and `bc_session_stored_test` passed (2/2); fresh exact-pin ABI44 `bc_native_v3_engine_test` built and passed (1/1). `git diff --check` passed. No GPU was used, so physical rank-order behavior is still a hardware gate. The standard exact-recipe resolver currently refuses because the named `radiance` source includes rad0046 while the serving-core set requires state `validated` and rad0046 remains `untested`; this status was not changed. The exact-pin compile used the 33 patch IDs explicitly named in the source recipe and did not establish that strict resolver gate. No production or release gate is claimed complete.
+
+## C60 — Freeze runtime-home identity through measurement (2026-11-20)
+
+The owner captures the canonical runtime-home target before native inspection and passes that frozen path to the inspector and measuring child as `RADIANCE_HOME`; post-measure resolution and the final typed manifest must still resolve to that same directory. The content-only engine identity is computed from the frozen target, so retargeting a symlink to a byte-identical directory no longer passes. The fake rank sidecar reports a valid value one KiB below a whole-MiB boundary, and the engine log reports rad0011's rounded-up MiB value.
+
+Added a native v3 session regression that retargets the runtime-home symlink after inspection to an empty, byte-identical directory. The session refuses after measurement and before owner-cache or measured-manifest publication. The normal one-shot owner-measurement case still verifies one exact owner receipt, sealed measuring-manifest digest, final plan and P1 resident bytes.
+
+Verification: generated-v3 `bc_native_v3_session_test` passed (1/1), including both successful owner verification and symlink-retarget refusal; default-v2 `bc_serving_test` and `bc_session_stored_test` passed (2/2). No GPU was used. Physical rank-order verification, strict recipe state resolution, stored/offline replay and production admission remain open.
+
+## C61 — Recheck the retained E4M3 patch fixture on the pinned source (2026-11-20)
+
+Repeated the focused `rad0046_retained_moe_rows` exact-source apply/replay test against pinned Radiance source `3deabdaeca17b58bad90d332f4b204cf7bb8a10`. The test passed (1/1), including compilation and execution of the shared block-E4M3 geometry predicate for aligned classes, the 192-column split boundary, and non-block-E4M3 legacy behavior. This confirms the patch mechanics and CPU-side boundary rule. It does not itself establish GPU numerical activation or authorize lifecycle promotion; the ABI44 build/row-probe evidence is C29 and hardware qualification remains in RUM09.
+
+## C62 — Prepare native Config from a measured serving manifest
+
+The rad0009 bridge shares native YAML replay between measurement and serving Config preparation. The exact-pin ABI44 host fixture passed (1/1), preserving YAML provenance and the measured plan after replacement of the artifact path, rejecting a wrong role and confirming direct startup refusal. Two focused patch checks passed. Session launch still needs to carry the retained execution root and environment. Ledger event: chg_20261119_212559_verified-native-yaml-and-measu_7390.
+
+## C63 — Retain native launch inputs across the session owner handoff
+
+Commit `5539f42fb` carries the working directory descriptor and frozen environment from native measurement into the serving owner. The owner verifies the strict serving manifest, sealed descriptor, launch arguments, and directory identity before using that context. The generated v3 session fixture passed (1/1). Default v2 serving and stored manifest fixtures passed (2/2). These checks cover measurement and existing v2 behavior. Native serving execution still stops at the post-measure gate at this checkpoint. Ledger event `chg_20261119_213343_preserve-the-admitted-native-c_6376`.
+
+## C64 — Start and stop an engine-only native session
+
+Commit `a4af18f3e` connects the generated v3 session owner to sealed native engine startup. Before combining with main, the owner fixture passed (1/1), covering inspect, measure, start, health, canary, verified shutdown, a drop in available host memory after measurement, and runtime-home drift. The pinned ABI44 consumer fixture passed (1/1), including measured plan admission. Both default v2 session checks and all 14 patch checks passed. The built engine refused an unsealed direct serving start with exit 2. No GPU execution was performed. The combined source is `9ab98f7de`, which includes main through `d611e7997`. Its session checks are tracked separately.
+
+Post-merge verification: the generated v3 owner fixture passed (1/1) with main integrated and the shared calibration fixture definition fixed in `51f396787`. The ledger validated on that revision.
+
+The isolated default v2 serving and stored replay checks passed (2/2) at committed revision `71f00e155`. The separate checkout kept this result independent of the in-progress native replay edits.
+
+## Radiance 2.2 source replay
+
+The ordered 33-package serving roster applies and reapplies on upstream `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`. This used the explicit patch list. Canonical production resolution still requires qualification of rad0046. The separate rad0004 remote MoE diagnostic needs its post-down hook adapted to the new upstream branch structure. The same-SDK build and hardware checks remain open.
+
+## C65 — Replay measured native sessions
+
+Commit `ea62472e4` reuses the named cache and stored replay index for the generated v3 owner. The v3 session fixture passed (1/1) and the v2 serving, stored replay, and cache fixtures passed (3/3). Coverage includes a named cache hit and explicit replay after deletion of the authored YAML, without another measuring child. Changed manifest or S8 bytes, owner receipt, engine build, runtime root, and insufficient live room were refused. Replacing the artifact pathname before launch still used the already sealed bytes. The owner verified shutdown for fresh and stored sessions. GPU and offline qualification remain open.
+
+The rad0004 hook adjustment landed as `6a3e291e7`. It applies and reapplies on the previous candidate as well as 2.2. Candidate commit `ddd9f21bc` adjusts the libr2/libr3 registry rewrite to hide the inherited gfx12-only open hook and supplies remote handoff stubs for standalone host architecture fixtures. Host object symbol checks and 22 focused patch tests passed (2 skipped). Two Qwen35 golden comparisons still differ. The targeted ABI44 engine and parser build is in progress.
+
+The Qwen35 W8A8 DFlash2 and FP8 4096 no-span rank-1 graph and step mismatches reproduced with identical observed hashes on both patched bases. Stock 2.2 passed both upstream pins. The goldens were preserved. The focused 2.2 build compiled the engine and rad_core. The CMake-configured libr2 and libr3 registry objects built with ROCm 7.2.4 and the same ABI44 SDK, and their symbol checks passed.
+
+## C66 — Native offline KL and the Radiance 2.2 candidate pin
+
+Commit `e1db9fb42` carries the sealed measured manifest and retained working directory into managed offline KL. The previous pinned ABI44 engine fixture passed (1/1) for record and score configuration, native YAML provenance, device settings and refusal of incompatible flags. The Python checks passed 71 tests and 16 subtests, including relative KL paths and artifact pathname replacement. Numerical KL remains open.
+
+Commit `6ec5e4013` pins the task candidate to Radiance 2.2.0 and aligns all six component build references. Recipe checks passed (5/5). The ABI44 and config changes in `b57796612` passed the layout suite on both upstream bases and the config suite on 2.2. The 2.2 native consumer check, final plugin rebuild and hardware qualification remain open.
+
+The targeted 2.2 native v3 writer and consumer fixture passed with the offline facade from `e1db9fb42` and the 2.2 host support archive. The candidate CLI YAML check passed. ROCm 7.2.4 compiled focused gfx1100 and gfx1030 objects, and both derived registry export checks passed. Device execution and the final plugin roster rebuild remain open.
+
+## C67 — Native helper replay and current main
+
+Native v3 named and explicit stored starts now reacquire the admitted helper
+segment and bind the worker binary to the original measurement. The v3 owner
+fixture and four v2 host checks passed for `9e74425b8`. The owner refused an
+occupied segment before power admission and left it intact.
+
+Main through `176f2e4b5` was integrated at `51d68e955`. The resulting v3 owner
+test passed, as did 119 focused Python tests and eight subtests. The six v2
+checks passed after the fake engine fixture correction in `8751272f7`.
+
+## C68 — Radiance 2.2 native serving entry point
+
+Codeberg main matched the frozen 2.2 pin
+`b6b8751cccb0e834a13ae9e5afca824ee9a487aa`. The retained E4M3 patch applied
+and replayed byte-identically, and the compiled host geometry fixture passed.
+The full ROCm 7.2.4 roster linked after applying the gfx1100 IQR p3 compiler
+workaround in `3fca1b1f1`. All ten kernel modules reported ABI44 with layout
+fingerprint `5cc71b9c5bb7ab40`.
+
+The `native-serving` recipe and real `bc-serve` YAML entry point landed at
+`ec28406a2`. Engine, serving and MoE build directories generated byte-identical
+codec sources and verified the same tracked fingerprint. The v3 wire and
+contract checks passed 2/2. Build, recipe and coupling checks passed 23 tests
+and 10 subtests. The 2.2 parser accepted the Flash-Next YAML and refused a
+listener port placed under the model. No GPU activation was run.
+
+At `e58a35b43` the native owner repeats S8 checks with a fresh host and device
+inventory after power admission and before forking serving children. This
+includes measured helper RSS. The v3 owner and S8 fixtures passed 2/2 and
+focused v2 serving, session, stored and S8 fixtures passed 4/4.
+
+## C69 — First leased admission and host-pool retry
+
+The first Flash-Next run measured the helpers, then the engine refused an
+omitted YAML host pool when the admitted per-rank pool was nonzero. The
+measurement log records the exact refusal. No serving or replay ran.
+
+Checkpoint `1d1ce5be7` gives an omitted YAML value the admitted per-rank pool
+and records its provenance. An explicit mismatch still refuses. The exact
+2.2 ABI44 host fixture passed for measurement, serving and offline preparation.
+The separate retry runtime preserves the original plugins and worker, and
+includes the owner model-digest reuse from `4a03a8172`. The retry is running
+with the same YAML and stock power.
+
+## C70 — Automatic pool convergence and HTTP readiness
+
+On the leased Flash-Next run, `be89849c0` measured at 9216 MiB and then
+converged at 2247 MiB with the same YAML. Two distinct attempt directories
+record the engine plans. Only the converged attempt published a serving
+manifest. The earlier engine then exited because it needed a server front.
+
+The engine containing `7ef6186a2` attached the stock Radiance 2.2 front and
+passed the live health gate. Completion returned 404 because the owner asked
+for `default` while the native model name was `flashnext`. Checkpoint
+`77fd71cf6` restores the managed default alias and retains canonical model
+discovery. The host HTTP suite verified both names, unknown-name refusal and
+clean shutdown. A separate leased retry uses that engine. Its copied, verified
+model stamp avoids another full fingerprint read, and the changed engine
+identity requires a fresh measurement.
+
+## C71 — Live mailbox producer and terminal proof
+
+The live run with `77fd71cf6` routed the default completion to Flash-Next.
+It refused a zero activation buffer handle before the first mailbox dispatch.
+Checkpoint `e36f584f0` stages an E4M3 activation slice and scales for the
+mailbox while retaining INT8 activations for the local GEMM. The real
+architecture host graph passed 39 assertions. The live retry advanced into
+GPU execution and hit a queue exception during the mailbox seal.
+
+The diagnostic at `d466f696a` reported a matching parent ticket, epoch, and
+slot, with 139 publications and zero consumptions. The host refused the
+terminal proof without acknowledging those slots or allowing more admission.
+The direct count variant at `bb1b8a190` reproduced the same counts. A host
+launch interposer verified that both mailbox add and inject submit finish
+last, on the same stream and with matching geometry and pointers. A bounded
+first-capture and replay packet trace awaits the shared GPU lease.
+
+## C72 — Owner tests on the v3 fixture; host reserve is machine state (2026-11-21)
+
+`bc_session_test`, `bc_session_stored_test` and `bc_release_install_test` now plan through `plan_engine_only` on the shared native fixture
+(`test_native_session_fixture.h`: a fake KFD/PCI/proc host, a real native YAML, `TEST_FAKE_BEHAVIOUR` for the engine's behaviour). No v2 fixture, `fake-manifest.json`
+or legacy-admission refusal remains; the stored test replays a measured helper session (healthy, changed build, no room, refused power, missing power
+hook, altered stored bytes, detached owner, a swap between check and exec, a transport collision) and runs again on an unpacked release prefix. The golden
+release archive in `release_testdata` is regenerated with the real packer from the native YAML configs. The engine-side manifest admission test
+(`manifest_argv_test.cpp`) drives the patched reader with the v3 example through a sealed descriptor, a measuring start with `--plan-memory-ranks`, the
+quality-run flags and the refusals; the v2 registry-to-flag projection cases are gone with the projection.
+
+Equivalence note: the n-gram host-RAM reservation was removed from the nine Flash-Next YAMLs (RUM05, agent/rum05-planner-room 78f6375a3, merged in 5cdc6af57): it over-reserved host RAM and caused the RAM-admission refusals, and `v2/admission.cpp` was refit. The host reserve a sealed Flash-Next manifest records moved from 4705 MiB (the figure in the 2026-11-19 audit of d92592f9) to 9436 MiB.
+It is recorded as **machine state** (decided by bigcherry-1), not as a change to the config, the patches or the contract, so a
+before/after comparison must pin the host or compare plans, not throughput.
+
+## C73 — RUM09 native plan-key hashing and blocked hardware verification (2026-11-21)
+
+RUM09 investigation commits `cc800053e` and `d2bf5a392` eliminate whole-file
+copies from both engine/runtime-home identity and native helper-build key
+fingerprints. Both identities still cover exactly the same file bytes; the
+SHA-256 stream now checks the number of bytes read against the initial file
+size and refuses an incomplete read instead of silently accepting a truncated
+digest. Neither the plan-key schema nor the resource budgets were relaxed.
+Tests create large runtime and helper files and derive a child address-space
+limit from the test process and fixture size. The helper-key constrained-memory
+test **failed before** `d2bf5a392` and passed afterward.
+
+Read-only inspection of the prior run's plan-cache receipts found 25 owner
+records. Each has `engine_build=1371822d3de3ecf137db3dc9c21f1d81c534114afd14893c7cb29708ed60d355`,
+matching a fresh byte hash of the original runtime binary and all 101
+runtime-home files. Helper-backed receipts also agree on
+`helper_build=bab846e1dc035c3ea6eeb0ca910812913bb5207e4ca33674af6870bffdf4be42`.
+The 12 configs with two cached attempts differ only at
+`/engine/host_pool_mib`: those are explicit remeasurement/pool-convergence
+rounds, not evidence of another static key leaf moving. The exact value that
+changed in the original rejected writer/inspection calls was not persisted,
+so these receipts do not prove the five original refusals were resolved.
+
+A further card-free resolver/plan-key regression varies live
+`host.mem_available_mib` and each card's `vram_available_mib`, re-resolves,
+and verifies both v2 and sealed native v3 keys are unchanged. Changing selected
+physical VRAM *capacity* continues to invalidate the native key. This confirms
+that those volatile free-memory readings are not frozen key inputs; fresh
+resource admission must still validate them. This test does not establish which
+key leaf caused each previously observed live refusal.
+
+Focused checks: an isolated Clang 23, `-O0 -g0`, nice-19 serving-component
+build succeeded; `bc_serving_test`, `bc_session_test` and
+`bc_serving_v3_writer_test` passed (3/3, 109.34 s after the two hashing
+changes), and the added volatile-input check passed in `bc_serving_test`
+(1/1, 19.10 s). Earlier attempts with GCC 14 and Clang suffered unrelated
+compiler/assembler segmentation faults; compilation was recovered in the
+isolated Clang build. `git diff --check` passed.
+
+A short-leased staged GPU check used the first hashing fix and the unchanged
+Radiance engine/plugins, **not** the final two-commit build:
+
+| Config | Observation | Gate result |
+| --- | --- | --- |
+| `flashnext-4gpu` | Native inspection, helper and engine measurement reached a written plan. All three helpers exited, but the strict 60-second VRAM release check remained above its captured zero-noise baseline. | Refused `BC_CFG_ADMISSION_REFUSED`; no serving canary or clean start |
+| `flashnext-tp2xtx-r9700` | Measuring helper entered uninterruptible kernel sleep in `__flush_workqueue`; the owner stop request did not finish. | Blocked; no serving canary or clean stop |
+| `flashnext-2xtx-combine` | Not retried after the helper hang. | Unverified |
+| `flashnext-2xtx-rdna2-head` | Not retried after the helper hang. | Unverified |
+| `flashnext-2xtx-rdna2-tail-combine` | Not retried after the helper hang. | Unverified |
+
+The scratch harness initially passed an empty model-root argument on a separate
+invalid attempt; that attempt is **not** startup evidence. The later attempt
+used the host-managed model root and the proper lease, with no hard-coded
+resource allowances. The GPU helper remained in uninterruptible sleep after a
+termination request; the test controller was stopped rather than allowing
+further launches. No tolerance, legacy path or retry masking this condition was
+introduced.
+
+**RUM09 is still open.** Before qualifying the five configs or publishing,
+recover and verify the GPU helper/driver state, run the final serving build
+under a fresh lease, capture the exact differing key leaves if a mismatch
+reappears, and complete full native start/canary/stop and release gates.
+The Planning/Ledger MCPs were not exposed to this session; authoritative plan
+state and release events were deliberately not hand-edited.
+
+
+## C74 — RUM09 measured KV tier contract (2026-11-21; not yet built)
+
+The native v3 session currently compares the measuring draft's
+`resources.host.kv_mib` to the final serving S8 `resources.host.kv_mib`
+for exact equality. These are different quantities: the draft records an
+**admitted KV capacity**, while S8 derives the **actual retained-token tier**
+from measured `kv_one_session.bytes / context_target_tokens` multiplied by
+the retained-token target, rounded up to whole MiB. The writer caps that
+retention target by both the requested tier and context times session count
+(`main.cpp`, `p1_measurement.cpp`, `s8_rules.cpp`). A tier smaller than the
+admitted capacity is valid and must not be treated as a plan-key drift.
+The host pool still matches the exact measurement, and the host reserve must
+not change. This is a separate deterministic contract defect, **not proof**
+that it caused the intermittent original writer/identity refusals.
+
+A source-level regression was written first in `v2/s8_rules_test.cpp`:
+a measured tier smaller than the admitted budget is accepted; equal tiers
+are accepted; expanding KV or changing pool/reserve is refused with the exact
+member path. The fix places the three-field comparison in the existing S8
+rules and calls it from the strict native session, preserving the quality
+score's separate path and all existing owner, S8 and live admission checks.
+No tolerance, static memory allowance or alternative parser was added.
+
+**Validation blocked:** host load remained above 99 at this checkpoint,
+exceeding the explicit under-30 compilation safety gate; neither the new
+C++ test nor the modified native serving component has been compiled or run.
+Earlier 3/3 and 1/1 passes (C73) predate this change and must not be presented
+as its validation. The GPU measuring helper also remains in uninterruptible
+kernel sleep with pending termination signals. Keep this slice pending until
+the host recovers and run `bc_v2_s8_test`, `bc_serving_test`, `bc_session_test`
+and `bc_serving_v3_writer_test` before any leased GPU retry.

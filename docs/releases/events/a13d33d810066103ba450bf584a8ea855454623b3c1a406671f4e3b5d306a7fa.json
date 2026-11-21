@@ -1,0 +1,20 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261119_090041_pinned-flash-next-interleave-t_7364",
+  "files": [
+    "engines/radiance/configs/flashnext.toml",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/v2/native_option_projection_test.cpp",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "docs/planning/active/patching-radiance-upstream/RUM08.md"
+  ],
+  "plan-item-ids": [
+    "RUM08",
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RUM08 small production-compatibility slice: pin flashnext-4gpu prefill_interleave=0, matching the saved v1.17 parity launches; ABI43 changes an omitted value to auto:1. Add resolver/contract assertions and an exact native argv projection assertion that preserves explicit zero. Register the matched rad_core YAML parser fixture with CTest. Focused tests and regenerated manifest-golden review are pending.",
+  "timestamp-utc": "2026-11-19T09:00:41.641765Z",
+  "user-summary-candidate": "Pinned Flash-Next interleave to its recorded baseline and added checks that explicit zero reaches the native option projection. Tests and the resulting manifest-golden changes remain pending."
+}

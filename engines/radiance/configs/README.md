@@ -1,110 +1,47 @@
 # Radiance serving configs
 
-A config says what to serve and how: the model, the cards its engine ranks and helpers run on, and every setting that
-differs from the resolver's defaults. One file per model; a variant of a config is a named entry that lists only what
-it changes. Configs are run-time data: nothing compiles them in. Plan: RSC12
-(`docs/planning/active/run-serving-configuration/RSC12.md`).
+A serving config is **one native Radiance YAML file**, `engines/radiance/configs/NAME.yaml`; the file name is the config name
+(`bc-serve start NAME`). There is no other catalogue: the RSC12 TOML files and the layout files are gone. Plan: RUM04, design:
+[radiance-native-config-x-bigcherry.md](../../../docs/design/radiance-native-config-x-bigcherry.md).
 
-Configs replace the layout files in `../layouts/`: every layout has a config of the same name (until the v2 manifest
-switch), in `flashnext.toml` and `qwen27b.toml`. The layout files stay until the bash launcher that reads them is retired
-(RSC12 step 6); the two are never read together. A test resolves each config and its layout, started as the launcher
-starts it, and requires the same values and the same manifest spec.
-
-A config states what its start does not derive. Helper configs leave out the host pool and the host KV tier (the
-launch derives them) unless a layout pinned one, which the config keeps and marks interim; helper-free configs state
-the engine-only values (no pool, no KV tier, the n-gram table on disk, no P2P between ranks), as the launcher does.
-
-## Where configs come from
-
-`bc-serve --configs FILE|DIR` (repeatable), else `BIGCHERRY_CONFIGS` (a `:`-separated list; a directory gives its
-`*.toml` files in name order). When configs are given, layout files are read only from an explicit `--layouts`. A config
-is selected like a layout, by `layout.name` (`--set layout.name='"qwen27b-tp3-int8-556"'`).
-
-The config's `model` is its lowest `engine.model` setting: a relative path is under `--model-root DIR` (bc-serve reads
-no environment variable for it); a site file, profile or `--set` that names a model wins. A config with a relative
-model and no root is refused when it is selected.
-
-## Release-owned heat and session recording
-
-Helper configs may set `handoff.heat = "@bundle/heat/<name>.hot-first"`.
-The native config loader resolves this narrow token relative to the source
-config's directory: `<prefix>/configs/flashnext.toml` refers to
-`<prefix>/heat/<name>.hot-first`, regardless of the current working directory.
-Variants inherit the value from the defining base config. Path traversal and
-non-`heat/` bundle references are refused. The source heat files remain under
-`tools/lab/radiance/heat/` in Git; release CI copies the approved seeds to
-`heat/` and binds their content to the archive's digests, receipt and
-payload-reuse key. The release bundle is sufficient to resolve the production
-seed, without exposing a repository path.
-
-A session with helpers and no configured `handoff.histogram` records under
-`<run-dir>/heat.live`. If no period is otherwise selected, the owner chooses
-`handoff.histogram_period_s = 1` for live placement freshness. Site, profile
-and `--set` overrides win in normal order, including explicit
-`handoff.histogram = "off"`. `bc-serve explain` outside a session has no
-run directory and does not invent one; the session owner propagates the same
-run root to its subprocess manifest writer and stored-manifest replay.
-
-## Serving a config
-
-`bc-serve` of the build that serves (`<build>/radiance_home/bin/bc-serve`; RSC02) owns the whole session: it makes the
-measured manifest (measuring first on a plan-cache miss), starts the engine from it, waits for `/health`, sends the
-start canary, and stops everything it started, verified, on `stop`, a signal or a child's exit. Engine-only configs for
-now; helper configs still start with the lab launcher.
-
-```
-agent-lease acquire gpu --ttl 4h --purpose "..." -- \
-  bc-serve serve --run-dir RUN --configs engines/radiance/configs --model-root MODELS --site SITE \
-                 --set layout.name='"qwen27b-tp3-int8-556"'      # in the foreground; the lease covers the session
-bc-serve start ...same options...                                # detached (hosts without a lease system)
-bc-serve status --run-dir RUN                                    # config, model, cards, port, manifest, processes
-bc-serve stop --run-dir RUN                                      # 0 once every process has exited
+```yaml
+cards: [0, 1, 2]                    # Radiance: rank visibility order (a managed start requires [0..tp-1])
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libr4d,libref
+models:
+  qwen27b:                          # exactly one model
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
+    tp: 3
+    tp-wire: exact
+    max-model-len: 262144           # context and sessions are authored here, once
+    max-num-seqs: 8
+    kv-cache-dtype: fp8
+    tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
+x-bigcherry:                        # what BigCherry owns and Radiance has no option for
+  schema: 1
+  description: "..."
+  variant-of: qwen27b-tp3      # optional: provenance of a variant, with differs
+  differs: [models.qwen27b.max-model-len]
+  ranks: [{arch: "gfx1100", count: 2}, {arch: "gfx1201", count: 1}]
+  helpers: [{arch: "gfx1030", count: 1, placement: "tail"}]       # helper configs
+  memory: {host-pool-mib: 0, host-kv-mib: 0}
+  handoff: {heat: "@bundle/heat/flashnext-mixed.hot-first"}
+  helper: {combine: true}
 ```
 
-The run directory holds the session's lock, control socket, record (`session.json`), plan cache, manifests and logs.
-The site file names the machine's values (`engine.radiance_home`, the port); the engine gets no configuration but its
-manifest.
-
-## Format
-
-```toml
-schema = 1
-
-[config.NAME]
-description = "what this config is for"          # required
-model       = "radiance/.../model.rad"           # relative to the model root
-ranks       = [{ arch = "gfx1100", count = 2 }, { arch = "gfx1201", count = 1 }]   # engine ranks in order
-tp_wire     = "exact"                            # required when there is more than one rank
-
-[[config.NAME.helpers]]                          # remote-MoE helper card groups, in order (optional)
-arch = "gfx1100"
-count = "all"                                    # a number, or "all" unused cards of the arch
-placement = "head"                               # "head" or "tail" (only the last group, after a head group)
-budget_mib = 23500                               # optional explicit override; left out, derived from the card
-share = 1                                        # weight in a head group (optional)
-
-[config.NAME.service]                            # settings tables: the resolver's own keys,
-max_context = 8192                               # the names --set and bc-serve --explain use
-[config.NAME.engine]                             # (service, engine, tuning, memory, helper, handoff)
-kv_cache_dtype = "fp8"
-[config.NAME.tuning]
-tp_ownership = "kv=1,1,2;ffn=..."
-
-[config.VARIANT]
-base = "NAME"                                    # inherits every value of NAME
-description = "what differs"
-[config.VARIANT.tuning]
-tp_ownership = "kv=1,1,2;ffn=..."                # only what changes
-```
-
-Rules:
-
-- **Strict.** An unknown key, a setting outside a settings table, a missing base, a cycle of bases or a name defined twice
-  is refused, naming the file and the key. A setting the resolver does not know is refused by the resolver.
-- **Variants.** A variant inherits every value of its base (a chain of bases is allowed). Tables merge key by key; a
-  scalar or a list (`ranks`, `helpers`) replaces, so a variant that changes the helper groups restates the list.
-- **No flag spellings.** There is no `server-args`: a context length is `service.max_context`, not `--max-model-len`.
-- **Not in a config:** what belongs to the machine (ports, model root, run root, power profile definitions; the site
-  file) and what is derived (host pool, host KV tier, checkpoint slots: the memory plan).
-- **Precedence:** config < site file < profile < `--set`. A `--set` is for a one-off experiment; a setting worth keeping
-  becomes a variant.
+- **Two halves, one file.** Everything Radiance has an option for is in its own sections, parsed only by Radiance's parser (the
+  engine's `--bc-inspect-native-config` returns what it read). `x-bigcherry` is skipped by Radiance and is a closed, typed schema
+  (`schema: 1`: service, memory, handoff, helper, kernels, ranks, helpers) that bc-serve decodes from the same sealed bytes.
+  A value is authored once: never both in the native section and in `x-bigcherry`.
+- **Machine facts are not authored:** the runtime home (derived from the bundle or from `--engine-binary`), device addresses,
+  host pool and KV tier (the memory plan unless `x-bigcherry.memory` overrides one). `server.port` is the one in the file.
+- **No `--set` on a managed start.** A lab arm authors its own YAML (`tools/lab/radiance/arm_yaml.py` writes a copy with targeted
+  text edits at named YAML paths) and passes it with `--native-config`.
+- **Variants** are whole files that say what they change (`variant-of`, `differs`); a test over every pair fails when the files
+  differ anywhere else.
+- **Evidence** stays in comments above the key it justifies. Quote strings that YAML 1.1 reads as booleans (`"off"`, `"on"`).
+- `bc-serve explain NAME --native-config NAME.yaml [--json]` runs the same admission as a start (inspect and reconcile with the
+  matched engine) offline: no engine or helper child, no GPU. The released bundle ships every `NAME.yaml`
+  (`tools/bigcherry/release/runtime_assets.py NATIVE_RELEASE_PROFILES`).

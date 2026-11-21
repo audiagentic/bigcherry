@@ -29,6 +29,7 @@
 #include <cstring>
 #include <ctime>
 #include <fcntl.h>
+#include <memory>
 #include <mutex>
 #include <thread>
 #include <string>
@@ -80,6 +81,8 @@ struct EnginePlugin {
     void (*poll)(void);
     void (*shutdown)(void);
     int (*capacity)(uint32_t parent_limit);
+    void (*finish_admission)(void);
+    int (*wait_finished)(int64_t timeout_ms);
 };
 using RegisterFn = int (*)(const EnginePlugin*);
 
@@ -209,7 +212,7 @@ int admit_ticket(StepTicket* out, int try_only, int world_size) {
         : g.ledger.admit(ranks, out,
                          [] { return helper_faulted(); },
                          [] { poll_tickets(); });
-    if (try_only && (r == Result::Closed || r == Result::Full)) return 1;
+    if (r == Result::Closed || (try_only && r == Result::Full)) return 1;
     if (r != Result::Ok) {
         if (r == Result::Full)
             std::fprintf(stderr, "libr3moe: admission route-ring ceiling exhausted; high-water %zu, capacity %zu\n",
@@ -287,6 +290,15 @@ void poll_tickets() {
     (void)g.ledger.poll([](const StepTicket& t, uint32_t rank) {
         return g.completion[rank].prove(t);
     });
+}
+
+int wait_finished_tickets(int64_t timeout_ms) {
+    if (timeout_ms < 0) return RAD_E_INVAL;
+    const auto cutoff = g.ledger.finish_admission();
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(timeout_ms);
+    const auto result = g.ledger.wait_drained(cutoff.old_epoch, cutoff.latest_ticket, deadline,
+                                              [] { poll_tickets(); }, [] { return helper_faulted(); });
+    return result == r3::admission::Ledger::Result::Ok ? RAD_OK : RAD_E_STATE;
 }
 
 bool served_lane(uint32_t lane) {
@@ -504,6 +516,25 @@ void free_owner_generations(RankState& s) {
     s.owner_bytes = 0;
 }
 
+/* With the rank's device current. Serving streams have drained on normal close;
+ * a failed attach has only its private owner-upload stream to drain. */
+void release_rank(RankState& s, RankCompletion& completion) {
+    completion.release();
+    free_owner_generations(s);
+    if (s.heat_host) (void)hipHostFree(s.heat_host);
+    if (s.dev.shadow_first) (void)hipFree(s.dev.shadow_first);
+    if (s.dev.shadow_stats) (void)hipFree(s.dev.shadow_stats);
+    if (s.mask_ref) (void)hipFree(s.mask_ref);
+    if (s.maps) (void)hipFree(s.maps);
+    if (s.published) (void)hipFree(s.published);
+    if (s.sequence) (void)hipFree(s.sequence);
+    if (s.ticket) (void)hipFree(s.ticket);
+    if (s.consumed_host) (void)hipHostFree(s.consumed_host);
+    if (s.stamps) (void)hipFree(s.stamps);
+    if (s.consumed_rec) (void)hipFree(s.consumed_rec);
+    s = RankState{};
+}
+
 /* Under g.mu, on the owning device. The host bitmap and binding live in
  * pinned per-slot staging until the rank-private event completes. No host
  * stream wait or system-scope GPU operation is added to inference. */
@@ -662,7 +693,8 @@ void register_mailbox() {
                                      before_pass, admit_ticket, bind_ticket, cancel_ticket,
                                      host_done_ticket, rank_done_ticket, poll_tickets,
                                      [] { g.ledger.interrupt(); },
-                                     [](uint32_t limit) -> int { return g.ledger.configure(limit) ? RAD_OK : RAD_E_STATE; }};
+                                     [](uint32_t limit) -> int { return g.ledger.configure(limit) ? RAD_OK : RAD_E_STATE; },
+                                     [] { (void)g.ledger.finish_admission(); }, wait_finished_tickets};
     if (g.engine_register(&plugin) != 0) {
         std::fprintf(stderr, "libr3: R3_MOE_WORKER engine rejected the plugin registration (struct size)\n");
         g.watch.stop();
@@ -885,27 +917,14 @@ void close_mailbox() {
         std::fprintf(stderr, "libr3moe: admission high-water %zu, capacity %zu, outstanding %zu\n",
                      g.ledger.high_water(), g.ledger.capacity(), g.ledger.outstanding());
     g.watch.stop();   /* first: helpers may exit while the engine tears down, and that is not a fault */
-    for (RankCompletion& c : g.completion) c.release();   /* after interrupt(): no poll can query them */
     for (uint32_t r = 0; r < g.rank.size(); ++r) {
         RankState& s = g.rank[r];
-        if (!s.ready) continue;
         if (s.device >= 0) (void)hipSetDevice(s.device);
-        report_shadow(r, s);
-        write_heat(r, s, true);
-        if (s.heat_host) (void)hipHostFree(s.heat_host);
-        s.heat_host = nullptr;
-        if (s.dev.shadow_first) (void)hipFree(s.dev.shadow_first);
-        if (s.dev.shadow_stats) (void)hipFree(s.dev.shadow_stats);
-        if (s.mask_ref) (void)hipFree(s.mask_ref);
-        if (s.maps) (void)hipFree(s.maps);
-        if (s.published) (void)hipFree(s.published);
-        if (s.sequence) (void)hipFree(s.sequence);
-        free_owner_generations(s);
-        if (s.ticket) (void)hipFree(s.ticket);
-        if (s.consumed_host) (void)hipHostFree(s.consumed_host);
-        if (s.stamps) (void)hipFree(s.stamps);
-        if (s.consumed_rec) (void)hipFree(s.consumed_rec);
-        s = RankState{};
+        if (s.ready) {
+            report_shadow(r, s);
+            write_heat(r, s, true);
+        }
+        release_rank(s, g.completion[r]);
     }
     if (g.engine_register) (void)g.engine_register(nullptr);
     g.engine_register = nullptr;
@@ -1064,7 +1083,9 @@ extern "C" int r3_moe_mailbox_enabled(void) {
 }
 
 extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevice** out) {
-    if (!out || !g.hdr || !g.pinned || world_size < 1 || !g.hdr || world_size != (int)g.hdr->rank_count ||
+    if (!out) return RAD_E_INVAL;
+    *out = nullptr;
+    if (!g.hdr || !g.pinned || world_size < 1 || world_size != (int)g.hdr->rank_count ||
         rank < 0 || rank >= world_size)
         return RAD_E_INVAL;
 
@@ -1124,14 +1145,16 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (!r3::owner_generation::build_bitmap(g.map, active_slot,
             sealed.active_epoch, digest, &owner_bitmap))
         return RAD_E_STATE;
+    s.device = device;
+    RankCompletion& completion = g.completion[rank];
+    const auto rollback = [&completion](RankState* partial) { release_rank(*partial, completion); };
+    std::unique_ptr<RankState, decltype(rollback)> attaching(&s, rollback);
     if (!allocate_owner_generations(s, owner_bitmap.size()) ||
         !queue_owner_upload(s, active_slot, sealed.active_epoch,
                             digest, owner_bitmap) ||
         !hip_ok(hipEventSynchronize(s.owner_event[active_slot]),
-                "finish bootstrap owner upload")) {
-        free_owner_generations(s);
+                "finish bootstrap owner upload"))
         return RAD_E_DEVICE;
-    }
     r3::moe_shm::v26::gpu::Scratch scratch{};
     r3::moe_shm::v26::gpu::FinishLaunch finish{};
     int max_threads = 0;
@@ -1152,18 +1175,8 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
                 "hipMalloc merge slot maps") ||
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.ticket), sizeof(StepTicket)),
                 "hipMalloc step ticket cell") ||
-        !hip_ok(hipMemset(s.ticket, 0, sizeof(StepTicket)), "zero step ticket cell")) {
-        if (s.ticket) (void)hipFree(s.ticket);
-        s.ticket = nullptr;
-        if (s.maps) (void)hipFree(s.maps);
-        if (s.published) (void)hipFree(s.published);
-        if (s.sequence) (void)hipFree(s.sequence);
-        free_owner_generations(s);
-        s.maps = nullptr;
-        s.published = nullptr;
-        s.sequence = nullptr;
+        !hip_ok(hipMemset(s.ticket, 0, sizeof(StepTicket)), "zero step ticket cell"))
         return RAD_E_DEVICE;
-    }
 
     const bool shadow = shadow_env();
     const bool mask_only = mask_only_env();
@@ -1171,47 +1184,20 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     if (mask_only) {
         const size_t bytes = (size_t)row_cap * g.hdr->top_k * g.hdr->hidden * sizeof(uint16_t);
         if (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.mask_ref), bytes),
-                    "hipMalloc mask-only engine rows")) {
-            (void)hipFree(s.ticket);
-            s.ticket = nullptr;
-            (void)hipFree(s.maps);
-            (void)hipFree(s.published);
-            (void)hipFree(s.sequence);
-            free_owner_generations(s);
-            s.maps = nullptr;
-            s.published = nullptr;
-            s.sequence = nullptr;
-                return RAD_E_NOMEM;
-        }
+                    "hipMalloc mask-only engine rows")) return RAD_E_NOMEM;
     }
-    R3MoeShadowLayerStats* shadow_stats = nullptr;
-    R3MoeShadowFirst* shadow_first = nullptr;
     if (shadow &&
-        (!hip_ok(hipMalloc(reinterpret_cast<void**>(&shadow_stats),
+        (!hip_ok(hipMalloc(reinterpret_cast<void**>(&s.dev.shadow_stats),
                            sizeof(R3MoeShadowLayerStats) * kMaxLayers),
                  "hipMalloc shadow stats") ||
-         !hip_ok(hipMemset(shadow_stats, 0, sizeof(R3MoeShadowLayerStats) * kMaxLayers),
+         !hip_ok(hipMemset(s.dev.shadow_stats, 0, sizeof(R3MoeShadowLayerStats) * kMaxLayers),
                  "zero shadow stats") ||
-         !hip_ok(hipMalloc(reinterpret_cast<void**>(&shadow_first),
+         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.dev.shadow_first),
                            sizeof(R3MoeShadowFirst) * kMaxLayers),
                  "hipMalloc shadow first") ||
-         !hip_ok(hipMemset(shadow_first, 0, sizeof(R3MoeShadowFirst) * kMaxLayers),
-                 "zero shadow first"))) {
-        if (shadow_first) (void)hipFree(shadow_first);
-        if (shadow_stats) (void)hipFree(shadow_stats);
-        if (s.mask_ref) (void)hipFree(s.mask_ref);
-        s.mask_ref = nullptr;
-        (void)hipFree(s.maps);
-        s.maps = nullptr;
-        (void)hipFree(s.ticket);
-        s.ticket = nullptr;
-        (void)hipFree(s.published);
-        (void)hipFree(s.sequence);
-        free_owner_generations(s);
-        s.published = nullptr;
-        s.sequence = nullptr;
+         !hip_ok(hipMemset(s.dev.shadow_first, 0, sizeof(R3MoeShadowFirst) * kMaxLayers),
+                 "zero shadow first")))
         return RAD_E_DEVICE;
-    }
 
     /* One stable mapped completion buffer per rank, with distinct slots for
      * all permitted concurrent parents. Must be allocated before publishing
@@ -1227,26 +1213,12 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
         !hip_ok(hipMalloc(reinterpret_cast<void**>(&s.consumed_rec), scratch.consumed_bytes),
                 "device consumed records") ||
         !hip_ok(hipMemset(s.consumed_rec, 0, scratch.consumed_bytes), "zero device consumed records") ||
-        !rank_completion_ok(g.completion[rank].prepare(g.ledger.capacity(), s.consumed_host))) {
-        if (s.consumed_host) (void)hipHostFree(s.consumed_host);
-        if (s.stamps) (void)hipFree(s.stamps);
-        if (s.consumed_rec) (void)hipFree(s.consumed_rec);
-        if (shadow_first) (void)hipFree(shadow_first);
-        if (shadow_stats) (void)hipFree(shadow_stats);
-        if (s.mask_ref) (void)hipFree(s.mask_ref);
-        if (s.ticket) (void)hipFree(s.ticket);
-        if (s.maps) (void)hipFree(s.maps);
-        if (s.published) (void)hipFree(s.published);
-        if (s.sequence) (void)hipFree(s.sequence);
-        free_owner_generations(s);
-        s = RankState{};
+        !rank_completion_ok(completion.prepare(g.ledger.capacity(), s.consumed_host)))
         return RAD_E_DEVICE;
-    }
     std::memset(s.consumed_host, 0, consume_bytes);
     s.dev.consumed_capacity = (uint32_t)g.ledger.capacity();
     s.dev.stamps = s.stamps;
     s.dev.consumed_rec = s.consumed_rec;
-    s.device = device;
     s.dev.mailbox = dev_map;
     s.dev.owner[0] = s.owner[0];
     s.dev.owner[1] = s.owner[1];
@@ -1258,8 +1230,6 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.inv = static_cast<int32_t*>(s.maps);
     s.dev.rmask = reinterpret_cast<uint32_t*>(s.dev.inv + (size_t)row_cap * g.hdr->top_k);
     s.dev.inject_next = s.dev.rmask + (size_t)row_cap * g.hdr->top_k;   /* the word past the maps (allocated with them) */
-    s.dev.shadow_stats = shadow_stats;
-    s.dev.shadow_first = shadow_first;
     s.dev.max_rows = row_cap;
     s.dev.hidden = g.hdr->hidden;
     s.dev.top_k = g.hdr->top_k;
@@ -1289,6 +1259,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
     s.dev.layer_count = g.hdr->layer_count;
     s.dev.slots = g.hdr->slot_count;
     s.dev.lanes = g.hdr->counts.lanes;
+    s.dev.ticket_begin = scratch.ticket_begin;
     s.dev.published_words = scratch.published_words;
     s.dev.shadow = shadow ? 1u : 0u;
     /* 1: add the engine's captured rows; 2: same late publish/mask/rescatter, but add the helper's rows. */
@@ -1302,6 +1273,7 @@ extern "C" int r3_moe_mailbox_device(int rank, int world_size, R3MoeMailboxDevic
             std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
     }
     s.ready = true;
+    attaching.release();
     g.bootstrap_ready_ranks.fetch_or(1u << rank, std::memory_order_release);
     *out = &s.dev;
     return RAD_OK;

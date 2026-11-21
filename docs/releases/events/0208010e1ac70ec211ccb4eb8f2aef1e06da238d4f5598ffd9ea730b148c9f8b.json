@@ -1,0 +1,22 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_214702_start-and-stop-the-isolated-na_2464",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_v3_engine_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/session_stored_test.cpp",
+    "engines/radiance/components/serving/v2/document_bytes.h",
+    "engines/radiance/components/serving/v2/native_config_snapshot.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Connect private generated-v3 engine-only fresh serving through owner measurement and sealed native Config startup. Recheck measured host room and retain runtime-home drift refusal. Focused v3 owner and pinned ABI44 engine each passed 1/1; v2 checks 2/2; patch checks 14/14; unsealed direct entry refused.",
+  "timestamp-utc": "2026-11-19T21:47:02.269483Z",
+  "user-summary-candidate": "Start and stop the isolated native Radiance serving candidate using the same admitted YAML and measured plan."
+}

@@ -1,0 +1,21 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_202517_added-a-one-shot-native-v3-mea_8777",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/patches/rad0011_plan_memory/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM04/RV4249.md",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Integrated the isolated engine-only native v3 owner measurement path through sealed measuring manifest, tracked measuring child, rank sidecar, owner-attempt cache and measured writer; verify final plan, P1 resident input, model/build and runtime home before closing serving start. Corrected rad0011 to obtain per-rank physical device IDs from ranks_[i]->device after the split, then validate ordered BDFs. Derive and cross-check engine resident MiB from the sidecar. Exact v3 serving-contract key is validated separately from the operational owner-cache key. RV4249 findings are incorporated and closed; physical GPU rank-order test and strict recipe resolution remain open.",
+  "timestamp-utc": "2026-11-19T20:25:17.030509Z",
+  "user-summary-candidate": "Added a one-shot native v3 measurement and owner-cache verification path, corrected rank-to-GPU identity at the source, and recorded focused v2/v3 and exact-pin build evidence. Production serving/replay and hardware BDF verification remain gated."
+}

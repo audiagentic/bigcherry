@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_105151_preserved-the-manifests-per-r_3154",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/tests/serving_manifest/manifest_argv_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Adapted the manifest-to-Radiance option bridge to multiply its admitted per-rank host pool by TP for Radiance 2.1's aggregate --host-pool-mib parser input. Rejects TP zero, signed-MiB overflow, and missing registry projection. The focused manifest bridge patch test compiled and passed, including TP3 arithmetic and overflow/invalid cases.",
+  "timestamp-utc": "2026-11-19T10:51:51.763659Z",
+  "user-summary-candidate": "Preserved the manifest\u2019s per-rank host-memory admission when launching through Radiance 2.1\u2019s aggregate pool option."
+}

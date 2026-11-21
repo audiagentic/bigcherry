@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_043723_added-the-next-candidate-only_2002",
+  "files": [
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/patch.py",
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/patch.toml",
+    "tools/tests/patch/test_radiance_rad0049.py"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added candidate-only native E4M3 KV rows and store bindings for Qwen4exp H256/GQA12/page4 and GQA6/page4 after ABI44. Exact-source apply/reapply and row-constraint checks pass; host arch fixture link is blocked by existing rad0002 remote-MoE callback symbols, so execution, device compilation and numerical qualification remain open. Package is not selected in the production recipe.",
+  "timestamp-utc": "2026-11-19T04:37:23.564902Z",
+  "user-summary-candidate": "Added the next candidate-only E4M3 cache slice for Flash-Next, with focused replay checks. It is not yet production-selected; architecture execution, device compilation, and numerical validation remain."
+}

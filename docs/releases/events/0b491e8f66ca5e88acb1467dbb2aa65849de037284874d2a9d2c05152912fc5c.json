@@ -1,0 +1,19 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261119_040245_the-bump-plan-now-separates-th_6678",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream/RUM03.md",
+    "docs/planning/active/patching-radiance-upstream/RUM07.md"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Recorded the local ABI boundary required for KV layout fields: upstream remains frozen at ABI43, while all local exported fields (KV layouts/capabilities, ownership and pipelining) are composed into one ABI44 version/fingerprint change followed by a same-SDK rebuild and loader gate for every shipped plugin.",
+  "timestamp-utc": "2026-11-19T04:02:45.725988Z",
+  "user-summary-candidate": "The bump plan now separates the ABI43 upstream base from the required local ABI44 extension and its plugin rebuild gate.",
+  "validation": [
+    "Updated RUM03 and RUM07 through Planning MCP with versioning, fingerprint, stale-plugin refusal and same-SDK acceptance gates."
+  ]
+}

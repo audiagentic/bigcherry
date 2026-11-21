@@ -1,0 +1,34 @@
+cards: [0, 1]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr3,libr3moe,libref
+models:
+  flashnext:
+    model: radiance/bigcherry/qwen3.8-next-flash-hcbf16/qwen3.8-next-flash-hcbf16.rad
+    tp: 2
+    tp-wire: exact
+    max-model-len: 131072
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+    # The ranks exchange through host memory: this host has no peer-to-peer path.
+    p2p: "off"
+x-bigcherry:
+  schema: 1
+  description: "Flash-Next tensor-parallel on the two 7900 XTX; the R9700 (head) and the RX 6900 XT (tail) as helpers with the combine; 8 sessions of up to 131,072 tokens"
+  variant-of: "flashnext-tp2xtx-r9700"
+  differs: ["models.flashnext.max-model-len", "models.flashnext.max-num-seqs", "x-bigcherry.helper.combine", "x-bigcherry.helpers", "x-bigcherry.memory.host-pool-mib"]
+  ranks:
+    - {arch: "gfx1100", count: 2}
+  helpers:
+    - {arch: "gfx1201", count: 1, placement: "head"}
+    - {arch: "gfx1030", count: 1, placement: "tail"}
+  memory: {host-pool-mib: 2048}
+  handoff: {heat: "@bundle/heat/flashnext-mixed.hot-first", histogram-period-s: 1}
+  helper: {combine: true}

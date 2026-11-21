@@ -1,0 +1,22 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_221328_update-the-radiance-bump-candi_9844",
+  "files": [
+    "engines/radiance/components/bc-gfx12/component.toml",
+    "engines/radiance/components/libr2/component.toml",
+    "engines/radiance/components/libr3/component.toml",
+    "engines/radiance/components/moe-remote/component.toml",
+    "engines/radiance/components/ngram-helper/component.toml",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/recipes.toml",
+    "tools/tests/core/test_engine_recipes.py"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Advance isolated bump candidate to Radiance 2.2.0 b6b8751c; align six build metadata declarations. Ordered 33-package apply/replay and focused ABI and config checks passed. Five recipe checks passed. GPU and production qualification remain open.",
+  "timestamp-utc": "2026-11-19T22:13:28.595820Z",
+  "user-summary-candidate": "Update the Radiance bump candidate to upstream 2.2.0."
+}

@@ -247,7 +247,14 @@ def pin_version(repo_root: Path, config: ReleaseConfig, pin: str, ref: str = "HE
             raise ReleaseNotesError(f"{pin!r} is not the pinned {config.upstream_name} revision {pinned[:12]!r} ({config.recipes})")
         if not re.fullmatch(r"\d+(\.\d+)*", version):
             raise ReleaseNotesError(f"{config.recipes} declares no pinned-version for {config.upstream_name} {pinned[:12]}")
-        return PinVersion(int(version.replace(".", "")), version)
+        parts = version.split(".")
+        if int(parts[0]) < 2:
+            # Keep the release numbers already published on Radiance 1.x.
+            return PinVersion(int("".join(parts)), version)
+        if len(parts) != 3 or any(not 0 <= int(part) < 100 for part in parts[1:]):
+            raise ReleaseNotesError(f"unsupported upstream release version {version!r}; expected major.minor.patch with two-digit minor and patch limits")
+        major, minor, patch = map(int, parts)
+        return PinVersion(major * 10_000 + minor * 100 + patch, version)
     raise ReleaseNotesError(f"engine {config.engine}: unknown version-source {config.version_source!r}")
 
 

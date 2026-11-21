@@ -57,11 +57,9 @@ def _edit(id: str, before: str, after: str, *, guard: str, max_span: int | None 
 ABI = FilePatch(path="abi/rad_builder.h", language="none", description="VTP14 N2 build context", edits=(
     _edit(
         "n2-ctx-field",
-        "    int64_t  gen_max_pixels;\n"
-        "    int64_t  gen_max_refs;\n"
+        "    int      span_pass_step;\n"
         "} RadBuildCtx;",
-        "    int64_t  gen_max_pixels;\n"
-        "    int64_t  gen_max_refs;\n"
+        "    int      span_pass_step;\n"
         "\n"
         "    /* ---- BC_VTP14_N2_CTX (BigCherry rad0018) */\n"
         "    /* --tp-ownership NAME: an asymmetric tensor-parallel ownership profile (rad_arch.h geom_from), or\n"
@@ -70,6 +68,16 @@ ABI = FilePatch(path="abi/rad_builder.h", language="none", description="VTP14 N2
         "    const char* tp_ownership;\n"
         "} RadBuildCtx;",
         guard="BC_VTP14_N2_CTX",
+    ),
+))
+
+ABI_LAYOUT = FilePatch(path="abi/rad_abi_layout_rows.h", language="none", description="VTP14 N2 ABI layout fingerprint", edits=(
+    _edit(
+        "n2-layout-tp-ownership",
+        "ABI_FIELD(RadBuildCtx, span_pass_step)\n",
+        "ABI_FIELD(RadBuildCtx, span_pass_step)\n"
+        "ABI_FIELD(RadBuildCtx, tp_ownership)\n",
+        guard="ABI_FIELD(RadBuildCtx, tp_ownership)\n",
     ),
 ))
 
@@ -451,4 +459,4 @@ MLP = FilePatch(path="arch/common/rad_block_mlp.h", language="none", description
     ),
 ))
 
-PATCHES = (ABI, RAD_CORE, CONFIG, CONFIG_TEST, ENGINE, RAD_ARCH, QWEN, ATTN, GDN, MLP)
+PATCHES = (ABI, ABI_LAYOUT, RAD_CORE, CONFIG, CONFIG_TEST, ENGINE, RAD_ARCH, QWEN, ATTN, GDN, MLP)

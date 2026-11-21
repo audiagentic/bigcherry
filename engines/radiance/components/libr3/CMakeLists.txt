@@ -24,7 +24,7 @@ if(NOT EXISTS "${RADIANCE_SRC}/libr4d/CMakeLists.txt")
 endif()
 # RSC06's helper ABI is mandatory; never build an environment-dependent helper path.
 if(NOT EXISTS "${RADIANCE_SRC}/libr4d/bc_helper_config.h")
-  message(FATAL_ERROR "Apply managed patch rad0009_helper_kernel_config to RADIANCE_SRC before building this component")
+  message(FATAL_ERROR "Apply managed patch rad0012_helper_kernel_config to RADIANCE_SRC before building this component")
 endif()
 
 # libr4d's sources, copied into the build tree with rewrites.txt applied (text r3_compat.h cannot supply as a
@@ -77,6 +77,16 @@ foreach(line ${unit_lines})
   # Relative to the wrapper (units/ beside r4d-src/) so its bytes do not depend on where the build tree lives; an
   # absolute path changes with every new build directory and turns each unit into a compiler-cache miss.
   file(GENERATE OUTPUT ${wrapper} CONTENT "#include \"r3_compat.h\"\n#include \"../r4d-src/${unit}.hip\"\n")
+  # ROCm 7.2.4 crashes in GVN when optimizing the gfx1100 IQR p3 GEMM.
+  # Disabling GVN's memory-dependence analysis avoids the crash at the normal release optimization level.
+  if(unit STREQUAL "r4d_gemm_iqr_p3" AND "gfx1100" IN_LIST R3_TARGETS
+      AND CMAKE_HIP_COMPILER_ID STREQUAL "Clang"
+      AND CMAKE_HIP_COMPILER_VERSION VERSION_EQUAL "22.0.0")
+    execute_process(COMMAND "${CMAKE_HIP_COMPILER}" --version OUTPUT_VARIABLE r3_clang_version)
+    if(r3_clang_version MATCHES "roc-7[.]2[.]4([ )]|$)")
+      list(APPEND flags "-Xarch_gfx1100" "-mllvm=-enable-gvn-memdep=false")
+    endif()
+  endif()
   if(flags)
     set_source_files_properties(${wrapper} PROPERTIES COMPILE_OPTIONS "${flags}")
   endif()
@@ -90,22 +100,11 @@ if(NOT device)
   message(FATAL_ERROR "libr3: no unit to build")
 endif()
 
-# The host declaration sources are libr4d's own list (R4D_DECLARATION), so one libr4d adds is built here too; a
-# hand-kept copy once missed r4d_iqr_layout.cpp and every IQR layout became a stub.
-file(READ ${RADIANCE_SRC}/libr4d/CMakeLists.txt r4d_cmake)
-string(REGEX MATCH "set\\(R4D_DECLARATION([^)]*)\\)" _ "${r4d_cmake}")
-string(REGEX REPLACE "[ \t\r\n]+" ";" r4d_decl "${CMAKE_MATCH_1}")
-list(FILTER r4d_decl INCLUDE REGEX "\\.cpp$")
-if(NOT "r4d_rows.cpp" IN_LIST r4d_decl)
-  message(FATAL_ERROR "libr3: could not read R4D_DECLARATION from ${RADIANCE_SRC}/libr4d/CMakeLists.txt")
-endif()
-set(declaration "")
-foreach(f ${r4d_decl})
-  list(APPEND declaration ${r4d}/${f})
-endforeach()
+include(${CMAKE_CURRENT_SOURCE_DIR}/r4d_declaration.cmake)
 # libr4d's registry exports become r4d_up_*; libr3's own (r3_registry.cpp) take their place
+# Keep libr4d's gfx12-only open hook private to the upstream registry.
 set_source_files_properties(${r4d}/r4d_rows.cpp PROPERTIES COMPILE_DEFINITIONS
-  "rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective")
+  "rad_plugin_open=r4d_up_plugin_open;rad_plugin_info=r4d_up_plugin_info;rad_kernel_schema_count=r4d_up_kernel_schema_count;rad_kernel_schema_at=r4d_up_kernel_schema_at;rad_kernel_count=r4d_up_kernel_count;rad_kernel_at=r4d_up_kernel_at;rad_kernel_concurrent=r4d_up_kernel_concurrent;rad_kernel_collective=r4d_up_kernel_collective;rad_kernel_chain=r4d_up_kernel_chain")
 
 rad_add_plugin(libr3 kernels
   SOURCES     ${declaration} ${CMAKE_CURRENT_SOURCE_DIR}/r3_registry.cpp
@@ -125,7 +124,7 @@ find_program(R3_NM nm REQUIRED)
 set(stub_src ${CMAKE_CURRENT_BINARY_DIR}/r3_stubs.S)
 set(stub_obj ${CMAKE_CURRENT_BINARY_DIR}/r3_stubs.o)
 add_custom_command(TARGET libr3 PRE_LINK
-  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_gen_stubs.py ${R3_NM} ${stub_src} $<TARGET_OBJECTS:libr3>
+  COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/r3_gen_stubs.py ${R3_NM} ${stub_src} $<TARGET_OBJECTS:libr3> ${r4d_simd_objects}
   COMMAND ${CMAKE_CXX_COMPILER} -c ${stub_src} -o ${stub_obj}
   COMMAND_EXPAND_LISTS VERBATIM)
 target_link_options(libr3 PRIVATE ${stub_obj})

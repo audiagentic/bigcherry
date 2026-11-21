@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261120_032252_installed-flash-next-can-selec_3172",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/configs/flashnext-4gpu.yaml",
+    "engines/radiance/configs/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "For named stock Flash-Next starts on a verified wire-v3 install, select the authenticated bundled native YAML when no explicit YAML is supplied. The exact v2.2 engine's sealed inspector accepted the portable profile. Installed no-override test remains pending.",
+  "timestamp-utc": "2026-11-20T03:22:52.445129Z",
+  "user-summary-candidate": "Installed Flash-Next can select the release's native Radiance YAML by name."
+}

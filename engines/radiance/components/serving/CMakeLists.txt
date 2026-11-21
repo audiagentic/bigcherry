@@ -3,24 +3,16 @@ project(bc_serving_component LANGUAGES CXX)
 find_package(radiance REQUIRED)
 rad_plugin_defaults()
 
-set(RADIANCE_SRC "" CACHE PATH "Radiance source tree, for the engine's vendored nlohmann/json")
-if(NOT EXISTS "${RADIANCE_SRC}/vendor/nlohmann/json.hpp")
-  message(FATAL_ERROR "serving: -DRADIANCE_SRC must contain vendor/nlohmann/json.hpp")
-endif()
+set(RADIANCE_SRC "" CACHE PATH "Radiance source tree for contract source checks")
 
 # RFC 8785 JCS, SHA-256 and the shared strict v1 reader (RSC08 slice 2): one source list, bc_serving_v2.cmake, which
 # radiance's core also builds (managed patch rad0011).
-set(BC_SERVING_V2_NLOHMANN_INCLUDE "${RADIANCE_SRC}/vendor")
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")
 
-# The serving manifest v2 contract (contract/README.md): the field registry contract/serving-v2.toml and its generator.
+# The serving manifest v2 contract (contract/README.md): the field registry contract/serving.toml and its generator.
 # GPU-free and independent of bc_serving, whose typed model it generates (generated/, committed; bc_contract_check
 # fails CI when a committed file differs from the generator's output).
-add_library(bc_contract STATIC contract/registry.cpp)
-target_link_libraries(bc_contract PUBLIC bc_jcs)
-target_include_directories(bc_contract PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}/contract")
-add_executable(bc_contract_gen contract/generate.cpp)
-target_link_libraries(bc_contract_gen PRIVATE bc_contract)
+bc_add_contract_generator()
 
 # The helpers' expert ownership, shared with moe-remote's r3_moe_worker (bc_experts.cmake). bc-serve's manifest writer plans owner maps with it (manifest_writer.cpp).
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_experts.cmake")
@@ -33,7 +25,7 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/calibration_seed.inc"
 set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/calibration.toml")
 
 # The card types (engines/radiance/archs.toml) are compiled in: the same file the platform inventory tools read, so the
-# resolver has no copy. The layouts are run-time data (--layouts / BIGCHERRY_LAYOUTS), never compiled in.
+# resolver has no copy. A config is a run-time YAML file (NAME.yaml of the bundle or --configs), never compiled in.
 foreach(bc_data archs)
   file(READ "${CMAKE_CURRENT_SOURCE_DIR}/../../${bc_data}.toml" bc_data_seed)
   file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/${bc_data}_seed.inc" "R\"bcdata(${bc_data_seed})bcdata\"\n")
@@ -51,29 +43,32 @@ set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_
 add_library(bc_serving_v2_runtime_receipt STATIC v2/runtime_receipt.cpp)
 target_link_libraries(bc_serving_v2_runtime_receipt PUBLIC bc_serving_v2)
 target_include_directories(bc_serving_v2_runtime_receipt PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote" "${RADIANCE_SRC}/vendor")
+  "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
 target_compile_features(bc_serving_v2_runtime_receipt PUBLIC cxx_std_20)
 
 add_library(bc_feature_state STATIC feature_state.cpp)
 target_compile_features(bc_feature_state PUBLIC cxx_std_20)
-target_include_directories(bc_feature_state PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+target_include_directories(bc_feature_state PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
+target_link_libraries(bc_feature_state PUBLIC bc_json_dependency)
 
-add_library(bc_serving STATIC serving.cpp config_loader.cpp session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp calibration.cpp live_policy.cpp live_policy_manifest.cpp live_policy_ingest.cpp ledger.cpp plan_cache.cpp manifest_writer.cpp sdk_check.cpp v2/s10_inputs.cpp)
+set(bc_manifest_writer_sources
+  manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp rank_demand.cpp
+  live_policy.cpp live_policy_manifest.cpp plan_cache.cpp xbigcherry.cpp v2/s10_inputs.cpp)
+add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt bc_feature_state)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
-target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+target_include_directories(bc_serving PUBLIC "${CMAKE_CURRENT_SOURCE_DIR}")
 target_link_libraries(bc_serving PUBLIC radiance::abi)
-target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/third_party"
-                           "${CMAKE_CURRENT_BINARY_DIR}/generated")
+target_include_directories(bc_serving PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 
 # Inactive P1 native live-room publication. This option is linked into
 # bc-serve but does not generate or activate a v2 serving manifest.
 add_library(bc_serving_v2_p1_live STATIC v2/p1_live_room.cpp v2/error.cpp)
-target_link_libraries(bc_serving_v2_p1_live PUBLIC radiance::abi)
+target_link_libraries(bc_serving_v2_p1_live PUBLIC radiance::abi bc_json_dependency)
 target_compile_features(bc_serving_v2_p1_live PUBLIC cxx_std_20)
 target_include_directories(bc_serving_v2_p1_live PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+  "${CMAKE_CURRENT_SOURCE_DIR}")
 
 target_link_libraries(bc_serving PUBLIC bc_serving_v2_p1_live)
 add_library(bc_serving_v2_p1 STATIC v2/p1_measurement.cpp)
@@ -102,9 +97,9 @@ add_library(bc_release_core STATIC release_install.cpp release_archive.cpp sha25
 # runtime implementation or Python/batch wrapper is involved.
 target_link_libraries(bc-serve PRIVATE bc_release_core)
 target_compile_features(bc_release_core PUBLIC cxx_std_20)
-target_link_libraries(bc_release_core PUBLIC ZLIB::ZLIB)
+target_link_libraries(bc_release_core PUBLIC ZLIB::ZLIB bc_json_dependency)
 target_include_directories(bc_release_core PUBLIC
-  "${CMAKE_CURRENT_SOURCE_DIR}" "${RADIANCE_SRC}/vendor")
+  "${CMAKE_CURRENT_SOURCE_DIR}")
 add_executable(bc-release release_cli.cpp)
 target_link_libraries(bc-release PRIVATE bc_release_core)
 set_target_properties(bc-release PROPERTIES RUNTIME_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/bin")
@@ -135,16 +130,17 @@ if(BUILD_TESTING)
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
+  set(bc_calibration_fixture BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml")
   add_executable(bc_live_policy_ingest_test EXCLUDE_FROM_ALL live_policy_ingest_test.cpp)
   target_link_libraries(bc_live_policy_ingest_test PRIVATE bc_serving)
   target_compile_definitions(bc_live_policy_ingest_test PRIVATE
-    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml"
+    ${bc_calibration_fixture}
     BC_CALIBRATION_HASH_ONLY_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-19-with-hash-only.toml")
   add_test(NAME bc_live_policy_ingest_test COMMAND bc_live_policy_ingest_test)
 
   # RSC02: a card-free stand-in for the engine (/health, /v1/completions, --plan-memory), for the session owner's tests.
   add_executable(bc_fake_engine EXCLUDE_FROM_ALL session_fake_engine.cpp)
-  target_include_directories(bc_fake_engine PRIVATE "${RADIANCE_SRC}/vendor")
+  target_link_libraries(bc_fake_engine PRIVATE bc_json_dependency radiance::abi)
   target_compile_features(bc_fake_engine PRIVATE cxx_std_20)
   add_dependencies(bc_release_install_test bc-serve bc-release bc_fake_engine)
   add_executable(bc_helper_vram_test EXCLUDE_FROM_ALL helper_vram_test.cpp)
@@ -153,21 +149,12 @@ if(BUILD_TESTING)
   add_executable(bc_serving_test EXCLUDE_FROM_ALL serving_test.cpp)
   target_link_libraries(bc_serving_test PRIVATE bc_serving bc_serving_v2_p1_producer)
   target_compile_definitions(bc_serving_test PRIVATE
-    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml")
+    ${bc_calibration_fixture} BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_dependencies(bc_serving_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_serving_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
   target_compile_definitions(bc_serving_test PRIVATE BC_SERVE_EXE="$<TARGET_FILE:bc-serve>")
   add_test(NAME bc_serving_test COMMAND bc_serving_test)
-  set_tests_properties(bc_serving_test PROPERTIES TIMEOUT 180)
-  # RSC04: real named resolver and strict-v2 writer with only fake OS hardware facts.
-  add_executable(bc_typed_settings_test EXCLUDE_FROM_ALL typed_settings_test.cpp)
-  target_link_libraries(bc_typed_settings_test PRIVATE bc_serving)
-  add_dependencies(bc_typed_settings_test bc-serve)
-  target_compile_definitions(bc_typed_settings_test PRIVATE
-    BC_SERVE_EXE=\"$<TARGET_FILE:bc-serve>\"
-    BC_CONFIGS_DIR=\"${CMAKE_CURRENT_SOURCE_DIR}/../../configs\")
-  add_test(NAME bc_typed_settings_test COMMAND bc_typed_settings_test)
-  set_tests_properties(bc_typed_settings_test PROPERTIES TIMEOUT 60)
+  set_tests_properties(bc_serving_test PROPERTIES TIMEOUT 240)
   add_executable(bc_power_transaction_test EXCLUDE_FROM_ALL power_transaction_acceptance_test.cpp)
   target_link_libraries(bc_power_transaction_test PRIVATE bc_serving)
   add_test(NAME bc_power_transaction_test COMMAND bc_power_transaction_test)
@@ -181,10 +168,10 @@ if(BUILD_TESTING)
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
   add_executable(bc_session_stored_test EXCLUDE_FROM_ALL session_stored_test.cpp)
   target_link_libraries(bc_session_stored_test PRIVATE bc_serving)
-  add_dependencies(bc_session_stored_test bc_fake_engine)
+  add_dependencies(bc_session_stored_test bc_fake_engine bc-serve)
   target_compile_definitions(bc_session_stored_test PRIVATE
-    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>"
-    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
+    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>"
+    BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_test(NAME bc_session_stored_test COMMAND bc_session_stored_test)
   add_dependencies(bc_release_install_test bc_session_stored_test)
   add_executable(bc_stored_manifest_cache_test EXCLUDE_FROM_ALL stored_manifest_cache_test.cpp)
@@ -206,11 +193,13 @@ if(BUILD_TESTING)
 
   add_executable(bc_session_test EXCLUDE_FROM_ALL session_test.cpp)
   target_link_libraries(bc_session_test PRIVATE bc_serving)
-  add_dependencies(bc_session_test bc_fake_engine)
-  target_compile_definitions(bc_session_test PRIVATE BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>")
+  add_dependencies(bc_session_test bc_fake_engine bc-serve)
+  target_compile_definitions(bc_session_test PRIVATE
+    BC_FAKE_ENGINE="$<TARGET_FILE:bc_fake_engine>" BC_SERVE_EXE="$<TARGET_FILE:bc-serve>"
+    BC_CONFIGS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../configs")
   add_test(NAME bc_session_test COMMAND bc_session_test)
   add_executable(bc_lab_trace_experiment_test EXCLUDE_FROM_ALL lab_trace_experiment_test.cpp)
-  target_include_directories(bc_lab_trace_experiment_test PRIVATE "${RADIANCE_SRC}/vendor")
+  target_link_libraries(bc_lab_trace_experiment_test PRIVATE bc_json_dependency)
   set_target_properties(bc_lab_trace_experiment_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   add_test(NAME bc_lab_trace_experiment_test COMMAND bc_lab_trace_experiment_test)
   # The same executable's host-start case; a build target of the test's name so the component gate can declare it.
@@ -239,18 +228,25 @@ if(BUILD_TESTING)
   target_link_libraries(bc_contract_test PRIVATE bc_contract)
   target_compile_definitions(bc_contract_test PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}")
   add_test(NAME bc_contract_test COMMAND bc_contract_test)
-  # Same C++17 native option/argv projection invoked by patched Radiance
-  # (rad0009). Never fork a second option-name translation table.
-  add_executable(bc_v2_native_projection_test EXCLUDE_FROM_ALL v2/native_option_projection_test.cpp)
-  target_link_libraries(bc_v2_native_projection_test PRIVATE bc_serving_v2)
-  add_test(NAME bc_v2_native_projection_test COMMAND bc_v2_native_projection_test)
-  set_tests_properties(bc_v2_native_projection_test PROPERTIES TIMEOUT 60)
   add_executable(bc_contract_check EXCLUDE_FROM_ALL contract/contract_check.cpp)
   target_link_libraries(bc_contract_check PRIVATE bc_contract)
   target_compile_definitions(bc_contract_check PRIVATE BC_CONTRACT_SOURCE_DIR="${CMAKE_CURRENT_SOURCE_DIR}"
     BC_CONTRACT_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2"
     BC_CONTRACT_RADIANCE_SRC="${RADIANCE_SRC}")
   add_test(NAME bc_contract_check COMMAND bc_contract_check)
+
+  # The serving manifest wire is edition 3 (the only one): its codec test and the real writer, owner planner and P1 producer
+  # test link the production libraries.
+  add_executable(bc_serving_v3_wire_test EXCLUDE_FROM_ALL v2/native_config_manifest_test.cpp)
+  target_link_libraries(bc_serving_v3_wire_test PRIVATE bc_serving_v2)
+  add_test(NAME bc_serving_v3_wire_test COMMAND bc_serving_v3_wire_test
+    "${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2/example.flashnext-4gpu.json"
+    "${CMAKE_CURRENT_SOURCE_DIR}/generated/v3/contract.fingerprint")
+  add_executable(bc_serving_v3_writer_test EXCLUDE_FROM_ALL manifest_writer_v3_test.cpp)
+  target_link_libraries(bc_serving_v3_writer_test PRIVATE bc_serving bc_serving_v2_p1_producer)
+  target_include_directories(bc_serving_v3_writer_test PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
+  add_test(NAME bc_serving_v3_writer_test COMMAND bc_serving_v3_writer_test)
+
   # S9: compile and test the inactive generated v2 codec, never production linked.
   # S8: inactive typed resource and handoff rules, linked only by card-free tests.
   add_executable(bc_v2_s8_test EXCLUDE_FROM_ALL v2/s8_rules_test.cpp)
@@ -258,11 +254,6 @@ if(BUILD_TESTING)
   add_test(NAME bc_v2_s8_test COMMAND bc_v2_s8_test)
 
   # S10: all-v2 inactive resolver and writer; never linked by production.
-  add_executable(bc_v2_s10_test EXCLUDE_FROM_ALL v2/s10_resolver_test.cpp)
-  target_link_libraries(bc_v2_s10_test PRIVATE bc_serving_v2)
-  target_compile_definitions(bc_v2_s10_test PRIVATE
-    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
-  add_test(NAME bc_v2_s10_test COMMAND bc_v2_s10_test)
 
   # P1: inactive native measurement publication (no v1 activation).
   add_executable(bc_v2_p1_test EXCLUDE_FROM_ALL v2/p1_measurement_test.cpp)
@@ -280,8 +271,7 @@ if(BUILD_TESTING)
   add_library(bc_serving_v2_native_measurement STATIC EXCLUDE_FROM_ALL v2/native_measurement.cpp)
   target_link_libraries(bc_serving_v2_native_measurement PUBLIC bc_serving_v2)
   target_include_directories(bc_serving_v2_native_measurement PUBLIC
-    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote"
-    "${RADIANCE_SRC}/vendor")
+    "${CMAKE_CURRENT_SOURCE_DIR}" "${CMAKE_CURRENT_SOURCE_DIR}/../moe-remote")
   target_compile_features(bc_serving_v2_native_measurement PUBLIC cxx_std_20)
   add_executable(bc_v2_native_measurement_test EXCLUDE_FROM_ALL v2/native_measurement_test.cpp)
   target_link_libraries(bc_v2_native_measurement_test PRIVATE bc_serving_v2_native_measurement)
@@ -310,17 +300,7 @@ if(BUILD_TESTING)
     COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_live_test> $<TARGET_FILE:bc_v2_runtime_receipt_live>
     DEPENDS bc_v2_runtime_receipt_live_test bc_v2_runtime_receipt_live)
 
-  add_executable(bc_v2_codec_test EXCLUDE_FROM_ALL contract/v2_codec_test.cpp)
-  target_link_libraries(bc_v2_codec_test PRIVATE bc_serving_v2)
-  target_compile_definitions(bc_v2_codec_test PRIVATE
-    BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
-  add_test(NAME bc_v2_codec_test COMMAND bc_v2_codec_test)
 
-  add_executable(bc_v2_reader_test EXCLUDE_FROM_ALL v2/reader_test.cpp)
-  target_link_libraries(bc_v2_reader_test PRIVATE bc_serving_v2)
-  target_compile_definitions(bc_v2_reader_test PRIVATE
-    BC_CONTRACT_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
-  add_test(NAME bc_v2_reader_test COMMAND bc_v2_reader_test)
   add_executable(bc_s5_refusal_test EXCLUDE_FROM_ALL v2/s5_refusal_test.cpp)
   target_link_libraries(bc_s5_refusal_test PRIVATE bc_serving_v2)
   add_test(NAME bc_s5_refusal_test COMMAND bc_s5_refusal_test)
@@ -342,12 +322,12 @@ if(BUILD_TESTING)
         target_compile_options(${_bc_test} PRIVATE -UNDEBUG)
       endif()
     endif()
-    # The tests resolve the repository's example layouts; the binaries have no built-in layouts (BIGCHERRY_LAYOUTS).
-    set_property(TEST ${_bc_test} APPEND PROPERTY ENVIRONMENT
-                 "BIGCHERRY_LAYOUTS=${CMAKE_CURRENT_SOURCE_DIR}/../../layouts")
   endforeach()
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
-  set_tests_properties(bc_session_stored_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
+  # The owner tests plan every case through plan_engine_only (minutes, not seconds).
+  set_tests_properties(bc_session_test PROPERTIES TIMEOUT 600)
+  set_tests_properties(bc_release_install_test PROPERTIES TIMEOUT 300)
+  set_tests_properties(bc_session_stored_test bc_session_test bc_session_host_start_test bc_release_install_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
 endif()

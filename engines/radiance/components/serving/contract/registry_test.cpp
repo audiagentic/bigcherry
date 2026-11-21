@@ -466,11 +466,11 @@ int main() {
         std::filesystem::remove_all(tmp);
     }
 
-    std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving-v2.toml", std::ios::binary);
+    std::ifstream in(std::string(BC_CONTRACT_SOURCE_DIR) + "/contract/serving.toml", std::ios::binary);
     std::ostringstream text;
     text << in.rdbuf();
     bc::contract::Registry real;
-    check(bc::contract::load_registry(text.str(), "serving-v2.toml", &real, &why), "the v2 registry loads: " + why);
+    check(bc::contract::load_registry(text.str(), "serving.toml", &real, &why), "the v2 registry loads: " + why);
     if (failures) return 1;
     check(bc::contract::generate_all(real).size() == 7, "seven generated files");
     std::printf("ok\n");

@@ -1,0 +1,16 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_080639_the-corrected-abi43-source-met_3067",
+  "files": [
+    "tools/tests/core/test_component_coupling.py",
+    "tools/tests/patch/test_radiance_rad0048.py",
+    "tools/tests/release/test_bu01_runtime_assets.py"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "After aligning coupling metadata to source ABI43, component-coupling checks pass (9 passed, 1 skipped, 10 subtests). ABI44 contract tests pass 2/2 against the exact frozen 3deabdaeca17b58bad90d332f4b204cf7bb8a10e checkout, including apply/replay and release fixture. Runtime asset metadata tests pass 26 tests with 15 subtests.",
+  "timestamp-utc": "2026-11-19T08:06:39.607372Z",
+  "user-summary-candidate": "The corrected ABI43 source metadata now passes coupling, ABI44 prefix replay and runtime-asset checks."
+}

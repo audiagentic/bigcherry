@@ -50,3 +50,16 @@ Mechanics: the patch's tests in tools/tests/patch pass and patch-lint is clean o
 Activation: the TP3 world over (XTX, XTX, R9700) starts and serves only with this chain (rad0016 per-rank code selection, rad0017 shared rendezvous, rad0018/rad0019 uneven ownership); without rad0017 any libr3+libr4d world hangs in all-reduce init (reproduced on cards, VTP14.md), the engine reports the rendezvous as shared by libr3.so and libr4d.so and the ownership split in its startup report.
 Identity: TP3 6/6/12 against an exact TP2 reference over 42,761 positions: KLD mean 0.00307, p99.9 0.084, top-1 96.80%, PPL x0.9993; the production TP2 wht6 wire scores 0.00391 / 0.111 / 96.57% on the same corpus (VTP14.md, N7, build a0979ca2). Launchers qwen27b-tp3, -int8 and -capacity start from their layouts with greedy output identical to hand-flag runs.
 A/B: control cannot run (mixed-library world hangs without the chain); TP3 6/6/12 serves 64-65 tok/s at about 0.05 s TTFT, correct (VTP14.md milestone table); w8a8 TP3 KLD against BF16 within TP2's median/p99/p99.9 (VTP14.md N6).
+
+### RUM02 slice 4 — owned rendezvous sections on Radiance 2.2
+
+`src/bc_ar_rendezvous_impl.h` owns the process-wide rendezvous, poisoned
+barrier and shared-slot lookup. `src/bc_ar_lifecycle_impl.h` owns the typed
+rank allocation, published peers, deferred failure cleanup and retirement.
+rad0017 materializes these files at two bounded include hooks in
+`libr4d/r4d_ar_entry.hip`; hash pins bind source bytes to patch.py.
+rad0021 and rad0032 attach subsequent shard and duplex edits to the owned
+rank header. The three gfx11 native source rewrite files follow their
+new owners. The frozen original entry source reconstructs byte-identically
+when the headers are expanded; existing failed-rank retirement/concurrency
+tests and native rewrite checks remain authoritative. No runtime redesign.

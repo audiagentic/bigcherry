@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_184932_added-and-verified-the-isolate_9673",
+  "files": [
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "engines/radiance/components/serving/native_fleet_v3_engine_test.cpp",
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "C52: add a closed candidate-only native Config replay path after rad0011 takes memory-plan flags; reconcile admitted v3 YAML against engine settings and preserve native cfg.given; correct inverted checks and generate aggregate-host-pool argv after mutation. ABI44 CPU candidate consumer handoff passed; focused rad0009 tests 5/5; diff check clean.",
+  "timestamp-utc": "2026-11-19T18:49:32.293372Z",
+  "user-summary-candidate": "Added and verified the isolated native-config measuring handoff. Production admission remains closed."
+}

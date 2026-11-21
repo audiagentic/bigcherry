@@ -71,6 +71,15 @@ public:
         interrupted_ = true;
         cv_.notify_all();
     }
+    // Terminal closure is independent of the placement gate. A placement
+    // already in progress may settle, but neither it nor a waiter can
+    // admit another parent. Bound tickets still need their terminal proof.
+    Snapshot finish_admission() {
+        std::lock_guard<std::mutex> lock(mu_);
+        finishing_ = true;
+        cv_.notify_all();
+        return {last_id_, active_epoch_, count_, high_water_, capacity_};
+    }
     void fault() {
         std::lock_guard<std::mutex> lock(mu_);
         fault_ = true;
@@ -90,6 +99,7 @@ public:
                 fault_ = true;
                 return Result::Fault;
             }
+            if (finishing_) return Result::Closed;
             if (!closed_) return allocate(active_epoch_, active_slot_, ranks, out);
             lock.unlock();
             if (progress) progress();
@@ -270,7 +280,7 @@ private:
     Result allocate(uint32_t epoch, uint8_t slot, uint32_t ranks, StepTicket* out) {
         if (interrupted_) return Result::Interrupted;
         if (fault_) return Result::Fault;
-        if (closed_) return Result::Closed;
+        if (finishing_ || closed_) return Result::Closed;
         if (!capacity_ || !out || !epoch || slot > 1 || ranks == 0 ||
             !r3::moe_shm::slots_fit(1, ranks) ||
             (active_epoch_ && epoch != active_epoch_)) return Result::Invalid;
@@ -341,7 +351,7 @@ private:
     uint32_t active_epoch_ = 0;
     uint8_t active_slot_ = 0;
     size_t high_water_ = 0;
-    bool closed_ = false, interrupted_ = false, fault_ = false;
+    bool closed_ = false, finishing_ = false, interrupted_ = false, fault_ = false;
 };
 } // namespace admission
 } // namespace r3

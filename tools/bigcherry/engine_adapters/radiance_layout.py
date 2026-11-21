@@ -1,7 +1,7 @@
 """How the cards of a host are used by radiance's remote-MoE offload (RAD23): card types and layouts as data.
 
 ``engines/radiance/archs.toml`` describes a card type (its kernel plugin, the weight formats it runs, whether it takes the few-rows
-kernel); the layout definitions (``BIGCHERRY_LAYOUTS``, default ``engines/radiance/layouts/``) name which cards play which part. This module reads both, resolves a layout against a host's
+kernel); the serving configs (native YAML files, ``BIGCHERRY_CONFIGS``, default ``engines/radiance/configs/``) name which cards play which part. This module reads both, resolves a layout against a host's
 device inventory (``config/environment.local.toml``) and produces the environment each process needs. It checks everything that can be
 checked without a GPU, so an inconsistent layout is refused before a card is touched. No architecture, device index or budget is named in
 code: the helper, the launcher and the harness adapter get them from here.
@@ -185,41 +185,63 @@ def load_archs(repo_root: Path | None = None) -> dict[str, Arch]:
 
 
 def layout_sources(repo_root: Path | None = None) -> list[Path]:
-    """The layout definition files: BIGCHERRY_LAYOUTS (os.pathsep-separated files or directories of *.toml), else the
-    repository's example directory engines/radiance/layouts/. Layouts are run-time data; bc-serve reads the same list."""
-    # an explicit repository root (a test's, a checkout's) names its own example layouts; otherwise BIGCHERRY_LAYOUTS
-    env = "" if repo_root is not None else os.environ.get("BIGCHERRY_LAYOUTS", "")
-    given = [Path(x) for x in env.split(os.pathsep) if x] or [_root(repo_root) / "engines" / "radiance" / "layouts"]
+    """The serving configs the host tools read: the native YAML files (NAME.yaml, with a closed x-bigcherry section) of
+    BIGCHERRY_CONFIGS (os.pathsep-separated directories or files), else the repository's engines/radiance/configs/. A config is
+    its YAML: there is no separate layout file; bc-serve reads the same files."""
+    env = "" if repo_root is not None else os.environ.get("BIGCHERRY_CONFIGS", "")
+    given = [Path(x) for x in env.split(os.pathsep) if x] or [_root(repo_root) / "engines" / "radiance" / "configs"]
     files: list[Path] = []
     for g in given:
         if g.is_dir():
-            found = sorted(f for f in g.glob("*.toml") if f.is_file())
+            found = sorted(f for f in g.glob("*.yaml") if f.is_file())
             if not found:
-                raise LayoutError(f"{g}: holds no *.toml layout file")
+                raise LayoutError(f"{g}: holds no *.yaml config file")
             files += found
         elif g.is_file():
             files.append(g)
         else:
-            raise LayoutError(f"{g}: neither a layout file nor a directory")
+            raise LayoutError(f"{g}: neither a config file nor a directory")
     return files
 
 
 def bc_serve_env(repo_root: Path | None = None) -> dict[str, str]:
-    """BIGCHERRY_LAYOUTS for a bc-serve child: the same sources this module reads."""
-    return {"BIGCHERRY_LAYOUTS": ":".join(str(f) for f in layout_sources(repo_root))}
+    """BIGCHERRY_CONFIGS for a bc-serve child: the directories this module reads."""
+    return {"BIGCHERRY_CONFIGS": os.pathsep.join(dict.fromkeys(str(f.parent) for f in layout_sources(repo_root)))}
+
+
+def _layout_of(path: Path) -> dict:
+    """The topology a config's YAML states, as the table this module resolves against an inventory (the shape the layout
+    files had): its model, rank groups, helper groups, tp wire and helper.combine. Everything else in the file (engine
+    options, tuning, memory, handoff) is the engine's and bc-serve's, not the host tools'."""
+    import yaml   # tooling dependency, imported here so a command that reads no config needs no PyYAML
+
+    doc = yaml.safe_load(path.read_text(encoding="utf-8"))
+    try:
+        section = doc["x-bigcherry"]
+        model_id, model = next(iter(doc["models"].items()))
+    except (TypeError, KeyError, StopIteration) as exc:
+        raise LayoutError(f"{path}: not a serving config (needs models and an x-bigcherry section)") from exc
+    layout: dict = {"description": section["description"], "model": model["model"],
+                    "engine": [{"arch": r["arch"], "count": r["count"]} for r in section["ranks"]]}
+    if "tp-wire" in model:
+        layout["tp-wire"] = model["tp-wire"]
+    if section.get("helpers"):
+        layout["helper"] = [{k: v for k, v in h.items()} for h in section["helpers"]]
+    if "combine" in (section.get("helper") or {}):
+        layout["settings"] = {"helper": {"combine": section["helper"]["combine"]}}
+    del model_id
+    return layout
 
 
 def load_layouts(repo_root: Path | None = None) -> dict[str, dict]:
     out: dict[str, dict] = {}
     seen: dict[str, Path] = {}
     for path in layout_sources(repo_root):
-        raw = _load(path)
-        _allow(raw, {"schema", "layout"}, str(path))
-        for name, table in (raw.get("layout") or {}).items():
-            if name in seen:
-                raise LayoutError(f"layout {name} is defined in both {seen[name]} and {path}")
-            seen[name] = path
-            out[name] = table
+        name = path.stem
+        if name in seen:
+            raise LayoutError(f"config {name} is defined in both {seen[name]} and {path}")
+        seen[name] = path
+        out[name] = _layout_of(path)
     return out
 
 

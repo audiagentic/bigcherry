@@ -1,0 +1,23 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_220059_replay-a-measured-native-confi_9011",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/plan_cache.h",
+    "engines/radiance/components/serving/s8_replay.cpp",
+    "engines/radiance/components/serving/s8_replay.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.h"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reuse the named manifest cache for native v3 stored replay, binding manifest, YAML, measured owner receipt, build and S8 evidence. Recheck live resource room before parser/power and reuse sealed owner launch. Focused final host v3 replay 1/1 and v2 regressions 3/3 passed.",
+  "timestamp-utc": "2026-11-19T22:00:59.857254Z",
+  "user-summary-candidate": "Replay a measured native configuration from its stored YAML after fresh resource admission."
+}

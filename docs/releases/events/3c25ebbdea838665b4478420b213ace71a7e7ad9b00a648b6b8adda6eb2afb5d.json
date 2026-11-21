@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_231113_radiance-releases-failed-tenso_9744",
+  "files": [
+    "engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/patch.py",
+    "engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/src/bc_shared_slot.cpp",
+    "engines/radiance/patches/rad0017_vtp14_n3_shared_rendezvous/src/bc_shared_slot.h",
+    "tools/tests/patch/fixtures/radiance_ar_allocation_test.cpp",
+    "tools/tests/patch/test_vtp14_n3_shared_rendezvous.py"
+  ],
+  "plan-item-ids": [
+    "RUM06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Reserve failed collective cleanup in the existing cross-DSO rendezvous slot before publishing rank buffers. Poison and wake peers on post-publication failure, then dispose of failed rank allocations on their original devices after the owning engine's ranks and device streams drain. Verify exact-once retirement, unrelated-owner isolation and TP group reuse with the real bridge and CPU fault injection.",
+  "timestamp-utc": "2026-11-19T23:11:13.229118Z",
+  "user-summary-candidate": "Radiance releases failed tensor-parallel collective buffers after peers have finished using them, so the next engine can reuse that group."
+}

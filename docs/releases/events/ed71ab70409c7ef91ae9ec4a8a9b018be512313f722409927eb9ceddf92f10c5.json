@@ -1,0 +1,17 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_163823_the-strict-manifest-reader-now_3526",
+  "files": [
+    "engines/radiance/components/serving/v2/manifest.h",
+    "engines/radiance/components/serving/v2/manifest.cpp",
+    "engines/radiance/components/serving/manifest_writer_v3_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RUM04 C45 exposes native_config_view(const Manifest&) from the shared strict reader. It returns the admitted immutable YAML bytes and snapshot digest/root for any validated role, including unmeasured measuring manifests, without requiring EngineMemory. The isolated real-v3-writer test verifies exact snapshot identity through the accessor for both measuring and serving outputs after authored-file removal.",
+  "timestamp-utc": "2026-11-19T16:38:23.178202Z",
+  "user-summary-candidate": "The strict manifest reader now exposes the same admitted native YAML snapshot for both measuring and serving roles, and the isolated v3 writer test verifies both."
+}

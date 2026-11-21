@@ -7,6 +7,8 @@
 
 int main() {
   const bc::serving::Resolved empty{};
+  bc::serving::ManifestInputs manifest_inputs;
+  manifest_inputs.resolved = empty;
   const nlohmann::json request = {
       {"engine_plan_file", "/does/not/exist/plan.json"},
       {"rank_demand_file", "/does/not/exist/ranks.json"},
@@ -17,7 +19,7 @@ int main() {
       {"run_id", "native-start"}, {"retention_target_tokens", 128}};
   auto rejected = [&](const nlohmann::json& j, const std::string& reason) {
     try {
-      (void)bc::serving::v2::produce_p1_inputs(empty,nlohmann::json::object(),"/",j);
+      (void)bc::serving::v2::produce_p1_inputs(manifest_inputs,nlohmann::json::object(),"/",j);
       assert(false && "invalid P1 request must refuse");
     } catch (const std::runtime_error& e) {
       assert(std::string(e.what()).find(reason) != std::string::npos);

@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_012421_restored-the-e4m3-helper-rows_1760",
+  "files": [
+    "engines/radiance/patches/rad0046_retained_moe_rows/patch.py",
+    "tools/tests/patch/test_radiance_rad0046.py",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added rad0046 restoration of exact ABI43 E4M3 quantizer and MoE GEMM rows. Added a W4=0/non-I8 wide-tile guard requiring every class per-part N width to align to the 128-column scale grid, avoiding scale crossing on unequal classes. Candidate package apply/replay passed, and applying the package before libr3 rewrite preserved the guard in generated source. New focused candidate replay test passed.",
+  "timestamp-utc": "2026-11-19T01:24:21.468880Z",
+  "user-summary-candidate": "Restored the E4M3 helper rows and guarded the wide MoE tile against unequal expert classes crossing a weight-scale boundary. The candidate patch and rewrite checks pass on CPU, with compilation and numerical qualification still pending."
+}

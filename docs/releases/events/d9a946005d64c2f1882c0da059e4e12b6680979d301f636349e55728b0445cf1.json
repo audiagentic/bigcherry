@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_225906_native-radiance-starts-refuse_3226",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/v2/s8_rules.cpp",
+    "engines/radiance/components/serving/v2/s8_rules.h",
+    "engines/radiance/components/serving/v2/s8_rules_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM05"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Recheck live host, cgroup, pinned memory and ordered BDF facts against sealed native resource requirements after power and before serving fork. Include authenticated helper RSS; reuse S8 host accounting.",
+  "timestamp-utc": "2026-11-19T22:59:06.688510Z",
+  "user-summary-candidate": "Native Radiance starts refuse if available resources change before the session launches."
+}

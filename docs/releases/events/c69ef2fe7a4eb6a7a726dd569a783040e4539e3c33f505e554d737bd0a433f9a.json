@@ -1,0 +1,20 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_042626_added-and-verified-a-candidate_4873",
+  "files": [
+    "engines/radiance/patches/rad0048_abi44_kv_contract/patch.py",
+    "engines/radiance/patches/rad0048_abi44_kv_contract/patch.toml",
+    "tools/tests/patch/test_radiance_rad0048.py",
+    "docs/planning/active/patching-radiance-upstream/RUM03.md",
+    "docs/planning/active/patching-radiance-upstream/RUM07.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM03/RV4242.md"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added a candidate-only ABI44 patch after rad0020 that fingerprints the existing ownership/pipeline extensions and new KV layout, architecture capability, and independent prefill-mode fields. It provides a shared four-format descriptor/row-size helper and an always-on Release CPU contract fixture; production runtime wiring remains unimplemented.",
+  "timestamp-utc": "2026-11-19T04:26:26.536818Z",
+  "user-summary-candidate": "Added and verified a candidate-only ABI44 contract for the existing plugin extensions and required cache formats, with an always-on CPU fixture; runtime support remains the next stage."
+}

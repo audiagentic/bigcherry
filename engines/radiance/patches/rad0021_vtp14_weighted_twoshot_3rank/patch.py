@@ -88,6 +88,20 @@ ENTRY = FilePatch(path="libr4d/r4d_ar_entry.hip", language="none", description="
     ),
 ))
 
+# Follow-on typed shard/weight and lifecycle edits operate on the
+# rad0017-owned implementation, not on the upstream attachment site.
+_LIFECYCLE_EDIT_IDS = frozenset(('ts3w-settle', 'ts3w-size', 'ts3w-log'))
+ENTRY_OWNED = FilePatch(
+    path="libr4d/bc_ar_lifecycle_impl.h", language="none",
+    description="Follow-on changes to the rad0017-owned lifecycle",
+    edits=tuple(e for e in ENTRY.edits if e.id in _LIFECYCLE_EDIT_IDS),
+)
+ENTRY = FilePatch(
+    path="libr4d/r4d_ar_entry.hip", language="none",
+    description="Unmoved all-reduce launcher attachment",
+    edits=tuple(e for e in ENTRY.edits if e.id not in _LIFECYCLE_EDIT_IDS),
+)
+
 KERNEL = FilePatch(path="libr4d/r4d_ar_twoshot_Nrank_exact.hip", language="none", description="VTP14 weighted 3-rank two-shot", edits=(
     _edit(
         "ts3w-wrapper",
@@ -131,4 +145,4 @@ HEADER = FilePatch(path="libr4d/r4d.h", language="none", description="VTP14 weig
     ),
 ))
 
-PATCHES = (ENTRY, KERNEL, HEADER)
+PATCHES = (ENTRY, ENTRY_OWNED, KERNEL, HEADER)

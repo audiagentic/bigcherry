@@ -1,0 +1,14 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_213151_prevent-failed-native-configur_3253",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Clear stale native staging admission state on entry and publish expected plan and device order only after native Config reconciliation. Focused rad0009 patch suite passed 5/5.",
+  "timestamp-utc": "2026-11-19T21:31:51.215411Z",
+  "user-summary-candidate": "Prevent failed native configuration preparation from retaining measured admission state."
+}

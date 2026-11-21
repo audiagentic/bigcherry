@@ -1,0 +1,23 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_035148_native-radiance-yaml-now-suppl_8709",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/native_fleet_config.cpp",
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "engines/radiance/components/serving/serving.cpp",
+    "engines/radiance/components/serving/serving.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session_fake_engine.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Use the matched native Radiance inspector's typed settings and sealed YAML in the owner, manifest writer, P1 measurement, and stored replay. The sealed internal writer descriptor binds the receipt to the snapshot SHA and resolution root. Keep ordered BDFs, required topology plugins, measured owner evidence, model and build identity, and host admission checks. Disallow model-selected context and RoPE, automatic speculative depth, and an automatic n-gram tier until their required wire and premeasurement resource semantics can be represented. Installed explicit replay defaults to its verified bundled configs and the stored resolution root.",
+  "timestamp-utc": "2026-11-20T03:51:48.094366Z",
+  "user-summary-candidate": "Native Radiance YAML now supplies managed listener, scheduler, kernel order, and cache settings throughout planning and replay. Installed explicit replay can use the verified package configuration and the saved model root."
+}

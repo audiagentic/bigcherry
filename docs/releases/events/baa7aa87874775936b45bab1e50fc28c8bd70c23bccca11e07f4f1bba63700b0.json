@@ -1,0 +1,25 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_075826_synced-the-radiance-bump-branc_3450",
+  "files": [
+    "engines/radiance/recipes.toml",
+    "engines/radiance/components/ngram-helper/component.toml",
+    "engines/radiance/components/libr2/component.toml",
+    "engines/radiance/components/libr3/component.toml",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/components/bc-gfx12/component.toml",
+    "engines/radiance/components/moe-remote/component.toml",
+    "engines/radiance/components/serving/bc_serving_v2.cmake",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "tools/tests/core/test_engine_recipes.py",
+    "docs/planning/active/patching-radiance-upstream/RUM03.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM03/RV4246.md"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Correct the Radiance source identity to frozen upstream main ABI43 commit 3deabdaeca17b58bad90d332f4b204cf7bb8a10e instead of v2.1.0 tag ABI40; retain pinned-version 2.1.0 for BigCherry release numbering. Align six component source/coupling declarations. Replace serving CMake raw nlohmann include propagation with a shared INTERFACE dependency and link direct consumers. Update engine recipe coverage for full-SHA source pins. Latest origin/main 58beb76e9 is merged into task branch.",
+  "timestamp-utc": "2026-11-19T07:58:26.235422Z",
+  "user-summary-candidate": "Synced the Radiance bump branch with latest BigCherry main and corrected the recipe to the exact upstream ABI43 source used by the migration. The source metadata checks pass; serving CMake changes still need configure/build validation."
+}

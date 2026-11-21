@@ -1,0 +1,28 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_111343_fixed-tp-host-pool-accounting_3736",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py",
+    "engines/radiance/tests/serving_manifest/manifest_argv_test.cpp",
+    "tools/tests/patch/test_radiance_patch_packages.py",
+    "engines/radiance/components/serving/resources.cpp",
+    "engines/radiance/components/serving/resources.h",
+    "engines/radiance/components/serving/resources_parity_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/stored_manifest.cpp",
+    "engines/radiance/components/serving/stored_manifest_test.cpp",
+    "engines/radiance/components/serving/manifest_writer.cpp",
+    "engines/radiance/components/serving/v2/s10_inputs.cpp",
+    "engines/radiance/components/serving/v2/s8_rules.cpp",
+    "engines/radiance/components/serving/v2/s8_rules.h",
+    "engines/radiance/components/serving/v2/s8_rules_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Preserved per-rank host-pool semantics across Radiance 2.x CLI projection and BigCherry launch admissions. The typed manifest adapter performs checked rank aggregation only for Radiance 2.x builds; fresh resource admission, measured S8 admission, and stored replay charge host pool per TP rank. Added TP3 bridge and resource admission regressions and documented scoped evidence.",
+  "timestamp-utc": "2026-11-19T11:13:43.689058Z",
+  "user-summary-candidate": "Fixed TP host-pool accounting for the Radiance 2.1 bump. BigCherry continues to store and expose the pool per rank, translates it to Radiance 2.x's aggregate CLI value safely, and reserves memory for all TP ranks before launch."
+}

@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_010653_mailbox-finish-counts-every-co_7940",
+  "files": [
+    "engines/radiance/components/moe-remote/moe_mailbox_ops.hip"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Count each validated helper-slot consumption directly in the finish kernel instead of using a partial-wave workgroup reduction. Preserve the separate combine record and exact terminal seal proof.",
+  "timestamp-utc": "2026-11-20T01:06:53.294823Z",
+  "user-summary-candidate": "Mailbox finish counts every consumed helper request on small GPU workgroups."
+}

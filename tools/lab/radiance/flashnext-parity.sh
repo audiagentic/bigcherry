@@ -4,7 +4,7 @@
 # Tokens/s is never compared across builds (MTP draft acceptance differs per build); acceptance is reported, never gated.
 #
 # Usage:
-#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P]
+#   bash tools/lab/radiance/flashnext-parity.sh measure --build DIR --out DIR [--launches N] [--port P] [--native-config YAML]   (YAML: the config to copy; default flashnext-4gpu)
 #   bash tools/lab/radiance/flashnext-parity.sh baseline --out DIR --name NAME --to FILE
 #   bash tools/lab/radiance/flashnext-parity.sh compare --out DIR --baseline FILE
 #
@@ -64,13 +64,14 @@ usage() {
 
 CMD=${1:-}
 [ $# -gt 0 ] && shift
-BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO=""
+BUILD="" OUT="" LAUNCHES=2 PORT=18450 BASELINE="" NAME="" TO="" NATIVE_CONFIG=""
 while [ $# -gt 0 ]; do
   case "$1" in
     --build) [ $# -ge 2 ] || usage; BUILD=$2; shift 2 ;;
     --out) [ $# -ge 2 ] || usage; OUT=$2; shift 2 ;;
     --launches) [ $# -ge 2 ] || usage; LAUNCHES=$2; shift 2 ;;
     --port) [ $# -ge 2 ] || usage; PORT=$2; shift 2 ;;
+    --native-config) [ $# -ge 2 ] || usage; NATIVE_CONFIG=$2; shift 2 ;;
     --baseline) [ $# -ge 2 ] || usage; BASELINE=$2; shift 2 ;;
     --name) [ $# -ge 2 ] || usage; NAME=$2; shift 2 ;;
     --to) [ $# -ge 2 ] || usage; TO=$2; shift 2 ;;
@@ -108,30 +109,49 @@ source tools/env/bigcherry-env.sh >/dev/null 2>&1
 [ -n "${BC_WORK_ROOT:-}" ] || { echo "flashnext-parity: BC_WORK_ROOT not set (tools/env/bigcherry-env.sh)" >&2; exit 1; }
 RUN=$BC_WORK_ROOT/flashnext
 URL=http://127.0.0.1:$PORT
-BUILD=$(cd "$BUILD" && pwd)
+BUILD=$(cd "$BUILD" && pwd -P)
 BC_SERVE="$BUILD/radiance_home/bin/bc-serve"
 [ -x "$BC_SERVE" ] || { echo "flashnext-parity: $BUILD has no native radiance_home/bin/bc-serve" >&2; exit 2; }
 [ -n "${BC_MODEL_ROOT:-}" ] || { echo "flashnext-parity: BC_MODEL_ROOT not set" >&2; exit 2; }
+# A v3 bc-serve (it takes --native-config) reads a config from its native YAML and takes no --set: an arm authors its own
+# YAML (arm_yaml.py: a copy of the bundled or given config with the changed values) and passes it with --native-config.
+# The 1170.35 control (a v2 bc-serve with a TOML catalogue) is the one build that still takes --set; its arm keeps the
+# old arguments until that control is retired.
+EDITION=v2
+"$BC_SERVE" --help 2>&1 | grep -q -- '--native-config' && EDITION=v3
 NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BUILD/bin/radiance"
-             --set "engine.port=$PORT"
              --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}" --allow-power-apply)
+[ "$EDITION" = v3 ] && NATIVE_ARGS+=(--work-root "$BC_WORK_ROOT")   # the host-wide model-identity cache lives there
 # The default is stock (observe only): bc-serve refuses a named non-stock profile without its rule file, and the stored
 # baseline was taken with the cards' own settings. The power profile is explicit so a held GPU lease can apply only qualified,
 # journalled settings; a missing lease or missing qualification fails closed.
-# Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
-[ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
-# A build directory (not an installed bundle) has no site file naming the engine home: say it, or the owner refuses
-# with "missing required key: engine.radiance_home".
-[ -d "$BUILD/radiance_home" ] && NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
+# Installed bc-serve binds its verified runtime home and rejects an override.
+# A build-tree owner needs the runtime home supplied explicitly.
+owner_path=$(realpath -- "$BC_SERVE")
+# (A v3 bc-serve derives it from --engine-binary; only the v2 control takes it as a setting.)
+if [ "$EDITION" = v2 ] && [[ "$owner_path" != "$BUILD/radiance_home/bin/bc-serve" || "$(basename -- "$(dirname -- "$BUILD")")" != releases ]]; then
+  NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
+fi
 # The helpers need the workload heat file (it has no portable path). The default is the Flash-Next mixed-workload heat,
 # the launcher's default when the v1.17.0 baseline was taken (that run's own copy was lost; this is the 2026-11-18
 # re-recording). perf51 (a different layout's recording) costs ~10% of 256K prefill on flashnext-4gpu
 # (docs/evidence/2026-11-19-flashnext-4gpu-regression). FLASHNEXT_PARITY_HEAT overrides it for a heat comparison.
 HEAT="${FLASHNEXT_PARITY_HEAT:-$REPO/tools/lab/radiance/heat/flashnext-mixed.hot-first}"
 [ -f "$HEAT" ] || { echo "flashnext-parity: heat file $HEAT not found" >&2; exit 2; }
-NATIVE_ARGS+=(--set "handoff.heat=$HEAT")
-# FLASHNEXT_PARITY_SETS: extra space-separated dotted.key=value settings for an experiment arm; the owner log records them.
-for s in ${FLASHNEXT_PARITY_SETS:-}; do NATIVE_ARGS+=(--set "$s"); done
+# FLASHNEXT_PARITY_SETS: extra space-separated PATH=VALUE changes for an experiment arm, as YAML paths of the config
+# (models.flashnext.kv-cache-dtype=bf16_i8, x-bigcherry.helper.combine=false); the arm's YAML in OUT records them.
+if [ "$EDITION" = v3 ]; then
+  if [ -n "$NATIVE_CONFIG" ]; then BASE_YAML=$NATIVE_CONFIG
+  elif [ -f "$BUILD/configs/flashnext-4gpu.yaml" ]; then BASE_YAML=$BUILD/configs/flashnext-4gpu.yaml
+  else BASE_YAML=$REPO/engines/radiance/configs/flashnext-4gpu.yaml; fi
+  [ -f "$BASE_YAML" ] || { echo "flashnext-parity: no flashnext-4gpu.yaml for this build" >&2; exit 2; }
+else
+  NATIVE_ARGS+=(--set "engine.port=$PORT")
+  # Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
+  [ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
+  NATIVE_ARGS+=(--set "handoff.heat=$HEAT")
+  for s in ${FLASHNEXT_PARITY_SETS:-}; do NATIVE_ARGS+=(--set "$s"); done
+fi
 CALIBRATION_FILE=""
 if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
   CALIBRATION_FILE="$BC_WORK_ROOT/live-policy-calibration.toml"
@@ -140,10 +160,10 @@ fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
 # Route-heat recording at the period the live policy needs (RSC12), into the run's own folder.
-NATIVE_ARGS+=(--set "handoff.histogram=$OUT/heat.live" --set "handoff.histogram_period_s=1")
+[ "$EDITION" = v3 ] || NATIVE_ARGS+=(--set "handoff.histogram=$OUT/heat.live" --set "handoff.histogram_period_s=1")
 
 LONG_COUNT=$(wc -w <<< "$LONG_SEEDS")
-python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port "$PORT" \
+PYTHONPATH=tools python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port "$PORT" \
   --set COLD_FILLS=$COLD_FILLS --set COLD_SEED0=$COLD_SEED0 --set COLD_PROMPT_TOKENS=$COLD_PROMPT_TOKENS \
   --set COLD_MAX_TOKENS=$COLD_MAX_TOKENS --set DOC_FILLS=$DOC_FILLS --set DOC_PROMPT_TOKENS=$DOC_PROMPT_TOKENS \
   --set "DECODE_STREAMS=$DECODE_STREAMS" --set DECODE_PROMPT_TOKENS=$DECODE_PROMPT_TOKENS \
@@ -159,11 +179,17 @@ NATIVE_PID=
 stop_native() {
   [ "$LAUNCHED" = 1 ] || return 0
   # Native stop verifies exit of each child; never kill a recorded PID.
-  "$BC_SERVE" stop --run-dir "$RUN" >> "$L/owner.log" 2>&1 ||
-    { echo "flashnext-parity: native stop failed (see $L/owner.log)" >&2; return 1; }
-  wait "$NATIVE_PID" ||
-    { echo "flashnext-parity: owner exited with error (see $L/owner.log)" >&2; return 1; }
-  LAUNCHED=0
+  local result=0
+  if "$BC_SERVE" stop --run-dir "$RUN" >> "$L/owner.log" 2>&1; then
+    wait "$NATIVE_PID" ||
+      { echo "flashnext-parity: owner exited with error (see $L/owner.log)" >&2; result=1; }
+    LAUNCHED=0
+  else
+    echo "flashnext-parity: native stop failed (see $L/owner.log)" >&2
+    result=1
+  fi
+  python3 "$PARITY" archive-session "$RUN/session.json" --owner-pid "$NATIVE_PID" --out "$L" || result=1
+  return "$result"
 }
 trap 'stop_native' EXIT
 trap 'stop_native; exit 130' INT TERM HUP
@@ -185,18 +211,16 @@ except (ValueError,AssertionError):
   done
   return 1
 }
-# Native session record owns the committed manifest and precise per-role log paths.
-session_value() {
-  python3 - "$RUN/session.json" "$1" <<'PY'
+# Native session record owns the committed manifest path.
+session_manifest() {
+  python3 - "$RUN/session.json" "$NATIVE_PID" <<'PYTHON'
 import json,sys
 with open(sys.argv[1], encoding="utf-8") as f:
     r=json.load(f)
-if sys.argv[2]=="manifest":
-    print(r["manifest"])
-else:
-    paths=[p["log"] for p in r["processes"] if p.get("role")==sys.argv[2]]
-    if paths: print(paths[-1])
-PY
+if r["owner_pid"] != int(sys.argv[2]):
+    sys.exit(1)
+print(r["manifest"])
+PYTHON
 }
 # stream-bench NAME STREAMS PROMPT_TOKENS MAX_TOKENS REPS SEED: one record, raw JSON in $L/NAME.json, log in $L/NAME.log
 stream_bench() {
@@ -221,18 +245,30 @@ for i in $(seq 1 "$LAUNCHES"); do
   if [ -n "$CALIBRATION_FILE" ]; then
     cp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "cannot snapshot calibration store"
   fi
+  OWNER_ARGS=("${NATIVE_ARGS[@]}")
+  if [ "$EDITION" = v3 ]; then
+    ARM_SETS=(--set "server.port=$PORT" --set "x-bigcherry.handoff.heat=$HEAT"
+              --set "x-bigcherry.handoff.histogram=$OUT/heat.live" --set "x-bigcherry.handoff.histogram-period-s=1")
+    for s in ${FLASHNEXT_PARITY_SETS:-}; do ARM_SETS+=(--set "$s"); done
+    python3 tools/lab/radiance/arm_yaml.py --base "$BASE_YAML" --out "$L/native-input.yaml" "${ARM_SETS[@]}" ||
+      fail "cannot write this launch's arm YAML"
+    OWNER_ARGS+=(--native-config "$L/native-input.yaml")
+  elif [ -n "$NATIVE_CONFIG" ]; then
+    cp -- "$NATIVE_CONFIG" "$L/native-input.yaml" || fail "cannot snapshot native YAML"
+    OWNER_ARGS+=(--native-config "$L/native-input.yaml")
+  fi
   CAPTURE_ARGS=(--heat "$L/heat-input.hot-first" --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}")
   if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
-  python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" ||
+  python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${OWNER_ARGS[@]}" ||
     fail "cannot capture native owner invocation"
   echo "flashnext-parity: launch $i/$LAUNCHES -> $L" >&2
-  "$BC_SERVE" serve flashnext-4gpu "${NATIVE_ARGS[@]}" > "$L/owner.log" 2>&1 &
+  "$BC_SERVE" serve flashnext-4gpu "${OWNER_ARGS[@]}" > "$L/owner.log" 2>&1 &
   NATIVE_PID=$!
   LAUNCHED=1
   wait_native_ready || fail "native bc-serve refused or exited (see $L/owner.log)"
-  MANIFEST=$(session_value manifest) || fail "native session has no committed manifest"
-  [ -f "$MANIFEST" ] || fail "native session did not commit a strict-v2 manifest"
-  cp "$MANIFEST" "$L/manifest.json"
+  MANIFEST=$(session_manifest) || fail "native session has no committed manifest"
+  [ -f "$MANIFEST" ] || fail "native session did not commit a serving manifest"
+  cp "$MANIFEST" "$L/manifest.json" || fail "cannot archive the manifest"
   cp "$RUN/feature-states.v1.json" "$L/feature-states.v1.json" ||
     fail "native MRC03 feature-state snapshot is absent"
   cmp "$HEAT" "$L/heat-input.hot-first" ||
@@ -288,11 +324,8 @@ p.write_text(json.dumps(data,sort_keys=True)+chr(10))' "$L/launch.json" "$WARMUP
     stream_bench "long-$s" 1 "$LONG_PROMPT_TOKENS" "$LONG_MAX_TOKENS" "$LONG_REPS" "$s"
   done
 
-  ENGINE_LOG=$(session_value engine) || fail "native session has no engine log"
-  HELPER_LOG=$(session_value helper0) || fail "native session has no helper0 log"
-  stop_native || fail "native stop did not verify every child exited"
-  [ -z "$ENGINE_LOG" ] || cp "$ENGINE_LOG" "$L/engine.log" 2>/dev/null
-  if [ -n "$HELPER_LOG" ] && cp "$HELPER_LOG" "$L/helper0.log" 2>/dev/null; then
+  stop_native || fail "native session shutdown or evidence collection failed"
+  if [ -f "$L/helper0.log" ]; then
     grep 'policy placement' "$L/helper0.log" | tail -1 > "$L/policy-placement.txt" || :
   fi
   python3 "$PARITY" policy-line "$L/helper0.log" --out "$L/policy.json" >&2

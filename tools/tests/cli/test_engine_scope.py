@@ -81,6 +81,7 @@ class EngineScopeTests(unittest.TestCase):
         code, out, _ = self._run(["--engine", "radiance", "patches"])
         self.assertEqual(code, 0)
         self.assertIn("rad0002_moe_remote_handoff", out)
+        self.assertNotIn("rad0001_drain_mover_before_arena_free", out)
         self.assertNotIn("0100_cmake_options", out)
 
     def test_patches_on_llamacpp_lists_its_own_tree(self):
@@ -151,12 +152,15 @@ class EngineScopeTests(unittest.TestCase):
                     self.assertNotIn("Traceback", err)
 
     def test_radiance_release_commands_resolve_its_release_line(self):
-        # the release line, version scheme and pin-bump record (releases/<pin>.json) exist: the notes render
-        pinned = tomllib.loads(
-            engines.load(paths.REPO_ROOT, "radiance").recipes_path(paths.REPO_ROOT).read_text(encoding="utf-8")
-        )["pinned"]
-        code, out, err = self._run(["--engine", "radiance", "release-notes", pinned, "--stdout"])
+        # Release notes require a completed bump record. Use a published release.
+        pinned = "v1.17.0"
+        release = "bc-radiance-1170.27.0"
+        code, out, err = self._run([
+            "--engine", "radiance", "release-notes", pinned,
+            "--ref", release, "--version", "1170.27.0", "--stdout",
+        ])
         self.assertEqual(code, 0, err)
+        self.assertIn(f"# {release}", out)
         self.assertIn(pinned, out)
 
     def test_pin_bump_defaults_its_source_only_where_the_recipes_declare_it(self):

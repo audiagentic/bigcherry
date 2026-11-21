@@ -1,0 +1,29 @@
+cards: [0]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr4d,libr3moe,libref
+models:
+  flashnext:
+    model: radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+    tp: 1
+    max-model-len: 262144
+    max-num-seqs: 8
+    max-num-batched-tokens: 2048
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    num-speculative-tokens: 3
+    prefix-resume: nearest
+    rope-scaling: none
+x-bigcherry:
+  schema: 1
+  description: "flashnext-2xtx with the helper-row combine"
+  variant-of: "flashnext-2xtx"
+  differs: ["x-bigcherry.helper.combine"]
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  helpers:
+    - {arch: "gfx1100", count: "all", placement: "head"}
+  handoff: {heat: "@bundle/heat/perf51.rank0.hot-first", histogram-period-s: 1}
+  helper: {combine: true}

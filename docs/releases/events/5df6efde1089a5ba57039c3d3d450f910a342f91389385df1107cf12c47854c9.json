@@ -1,0 +1,15 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261119_102412_made-the-upstream-parser-fixtu_9474",
+  "files": [
+    "engines/radiance/components/serving/native_fleet_config_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Strengthen the parser integration fixture with a non-default native mixed-step-target-ms value (17) and its provenance assertion, so the test proves value transport rather than matching Radiance's default of zero. Rebuilt the rad_core-linked bc_native_fleet_config_test against the exact pinned v2.1.0 source and ran it successfully.",
+  "timestamp-utc": "2026-11-19T10:24:12.524220Z",
+  "user-summary-candidate": "Made the upstream parser fixture prove that a non-default YAML setting and its provenance reach Radiance unchanged."
+}

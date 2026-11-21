@@ -299,10 +299,11 @@ def _prepare_runtime_asset(plan: Plan, record: dict) -> None:
     if plan.engine != engines.RADIANCE:
         return
     try:
-        # Re-resolve and build the CURRENT stock lane, rather than trusting
-        # a historical pin-bump note that predates later patch promotions.
+        # Re-resolve the current release recipe before building. A pin-bump
+        # receipt may predate a patch promotion or a serving edition change.
         from .pin_bump import execute_lane_build, LaneBuildError
-        lane = f"radiance:stock:{RADIANCE_LANE_PLATFORM}"
+        target = _runtime_assets.release_target(plan.repo_root)
+        lane = target.lane
         outcome = execute_lane_build(
             engine=plan.engine, lane=lane,
             run_id=f"bu01-release-{plan.version.replace(chr(46), chr(45))}-{uuid.uuid4().hex[:8]}")
@@ -310,7 +311,7 @@ def _prepare_runtime_asset(plan: Plan, record: dict) -> None:
                             f"build_plan_id={outcome.build_plan_id} "
                             f"binary_sha256={outcome.binary_sha256}\n")
         work, sdk = _asset_environment(plan)
-        asset = _runtime_assets.pack(record, plan.repo_root, work, sdk, plan.release_tag)
+        asset = _runtime_assets.pack(record, plan.repo_root, work, sdk, plan.release_tag, target=target)
     except (OSError, ValueError, _runtime_assets.BundleError, LaneBuildError) as exc:
         raise PinReleaseError("record", f"could not package verified Radiance lane build: {exc}") from exc
     record.setdefault("runtime_assets", {})[plan.release_tag] = asset

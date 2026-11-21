@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0046_retained_moe_rows"
+order = 46
+state = "validated"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["RUM03"]
+requires = []
+conflicts = []
+tags = ["moe-routing"]

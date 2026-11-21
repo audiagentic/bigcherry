@@ -51,6 +51,55 @@ ConfigError gpu_room(const std::string& at, const std::string& what,
 
 }  // namespace
 
+Result<ServingPools> refit_serving_pools(int64_t claimable, int64_t statics,
+                                                int64_t experts, int64_t stage,
+                                                int64_t expert_floor, int64_t kv,
+                                                int64_t kv_one_session, int64_t kv_ceiling,
+                                                int64_t ppm) {
+    constexpr int64_t mib = int64_t{1} << 20;
+    const auto invalid = [](const char* detail) -> Result<ServingPools> {
+        return make_error(ConfigErrorCode::invalid_value, kAt + ".vram",
+                          std::string("serving pool refit: ") + detail);
+    };
+    for (int64_t n : {claimable, statics, experts, stage, expert_floor, kv, kv_one_session, kv_ceiling})
+        if (n < 0 || n > kMaxBytes)
+            return invalid("nonnegative measured byte counts required");
+    if (auto e = check_kv_backing_floor_ppm(ppm)) return *e;
+    if (!kv_one_session || expert_floor > experts)
+        return invalid("one-session KV or expert floor inconsistent");
+    if (statics > claimable || stage > claimable - statics)
+        return make_error(ConfigErrorCode::admission_refused, kAt + ".vram",
+                          "fixed weights and staging exceed live claimable bytes");
+    // A measured plan must honor the selected backing calibration at pool
+    // allocation time, not just at the subsequent admission check.
+    // KVManager's nominal ceiling can be below one full session.
+    const int64_t available = claimable - statics - stage;
+    const auto ceil_mib = [](int64_t n) { return n / mib + (n % mib != 0); };
+    const int64_t minimum_kv = kv_required(kv_ceiling, kv_one_session, ppm);
+    const int64_t preferred_kv = std::max(kv, minimum_kv);
+    // Allocate the largest admissible KV pool up to the measured preference.
+    // Rounding weights and KV independently can make the original split miss
+    // by a fraction of a MiB. Falling straight back to minimum_kv in that
+    // case loses the rest of the cache even though only one MiB was needed.
+    if (expert_floor <= available) {
+        const int64_t weights_floor_mib = ceil_mib(statics + expert_floor);
+        const int64_t max_kv_mib = (claimable - stage) / mib - weights_floor_mib;
+        if (max_kv_mib >= ceil_mib(minimum_kv)) {
+            const int64_t kv_mib = std::min(ceil_mib(preferred_kv), max_kv_mib);
+            const int64_t weights_capacity_mib =
+                (claimable - stage - kv_mib * mib) / mib;
+            const int64_t fitted_experts =
+                std::min(experts, weights_capacity_mib * mib - statics);
+            const int64_t fitted_kv = std::min(preferred_kv, kv_mib * mib);
+            return ServingPools{fitted_experts, fitted_kv,
+                                ceil_mib(statics + fitted_experts), kv_mib};
+        }
+    }
+    return make_error(ConfigErrorCode::admission_refused, kAt + ".vram",
+                      "live claimable bytes cannot hold the calibrated KV backing and measured expert floor"
+                      " after exact MiB pool rounding");
+}
+
 Status check_host_room(std::string_view resource, int64_t available_bytes, int64_t headroom_bytes,
                        const std::vector<std::pair<std::string, int64_t>>& components) {
     const bool pin = resource == "host_pool";

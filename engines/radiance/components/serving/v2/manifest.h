@@ -7,7 +7,7 @@
  * A stale manifest whose hash and semantics are both wrong fails on the digest; a correctly rehashed one with wrong
  * semantics fails with its semantic code. */
 #include "error.h"
-#include "../generated/v2/serving_types.h"
+#include "serving_types.h"
 
 #include <cstdint>
 #include <filesystem>
@@ -29,6 +29,19 @@ Result<Manifest> load_manifest(const std::filesystem::path& path, PlanUse use);
 /* The cross-field rules a decoded manifest must satisfy (spec §2-§6). read_manifest runs it; exposed for producers. */
 Status validate_semantics(const Manifest& m);
 
+/* Verify the native snapshot bytes and recorded identity before serving or writing them. */
+Status validate_native_config(const Manifest& m);
+
+struct NativeConfigIdentity {
+    std::string_view sha256;
+    std::string_view resolution_root;
+};
+
+struct NativeConfigView {
+    std::string_view yaml_utf8;
+    NativeConfigIdentity identity;
+};
+
 /* The engine's typed view: the sections it reads, by reference into the manifest it was built from. */
 struct EngineView {
     const Intent& intent;
@@ -37,9 +50,12 @@ struct EngineView {
     const EngineProcess& engine;
     const EngineMemory& memory;
     int64_t kv_backing_floor_ppm;   // the selected kv_backing_floor.fraction_ppm, or 0
+    std::optional<NativeConfigView> native_config;
 };
 /* BC_CFG_INVALID_STATE for an unmeasured manifest: only a measured one has an engine plan to check. */
 Result<EngineView> engine_view(const Manifest& m);
+/* The immutable native snapshot for any admitted role, including unmeasured measuring manifests. */
+std::optional<NativeConfigView> native_config_view(const Manifest& m);
 
 /* One helper's typed view: its process entry, owned set, the shared handoff, and its effective settings
  * (helper_common, then its role patch, then lab experiment.shape common and role patches; spec §2.2). */
@@ -50,6 +66,7 @@ struct HelperView {
     const Handoff& handoff;
     HelperCommon settings;
     bool rows_active;   // spec §2.2: the rows kernel runs when the architecture requires it or the policy asks for it
+    std::optional<NativeConfigIdentity> native_config;
 };
 
 /* spec §5.1: the plan cache key, lowercase hex SHA-256 of the JCS key_inputs built from the manifest and the effective

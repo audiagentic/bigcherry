@@ -1,6 +1,6 @@
 """VTP31 (rad0024): the three-rank host one-shot hands decode-sized messages to the weighted two-shot.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0024 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0024 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations

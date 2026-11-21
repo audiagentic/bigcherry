@@ -1,0 +1,23 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261120_120343_radiance-22-measured-against_2285",
+  "files": [
+    "tools/lab/radiance/flashnext_parity.py",
+    "tools/tests/lab/test_flashnext_parity.py",
+    "docs/planning/active/patching-radiance-upstream/RUM09.md",
+    "docs/planning/active/patching-radiance-upstream/RUM06.md",
+    "docs/planning/active/patching-radiance-upstream/RUM04.md",
+    "docs/planning/active/patching-radiance-upstream/RUM11.md",
+    "docs/design/radiance-native-config-x-bigcherry.md"
+  ],
+  "plan-item-ids": [
+    "RUM09",
+    "RUM04",
+    "RUM06",
+    "RUM11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RUM09 matched 3-pair Flash-Next 4-GPU comparison, Radiance 2.2 candidate (7c6737638) vs 1170.35.0, policy off, identical prompts and token counts per pair: decode step -5 to -6.5% (better), long7 prefill +1.7%, cold TTFT -0.3%; gate FAIL on prefill.long8_prefill_tps -2.75% and prefill.doc_prefill_tps -0.34%. A 10-launch chained-launch on/off A/B (bigcherry-2) clears chaining: the candidate's long-8 TTFT is bimodal (about 102 s or 104.5-105 s) in both arms; doc prefill unaffected. Parity run records now carry the hash of the executable actually measured (27da42525). Owner re-scope: the bump carries every serving config (RUM09 acceptance, RUM06 a blocker); single native YAML per config with an x-bigcherry section designed with a full key mapping (RUM04). TP3 27B start on 2.2 found: rank-devices engine/owner mismatch on mixed-arch worlds (rad0009) and a missing plain E4M3 page16 fused KV store for Qwen 27B (RUM11).",
+  "timestamp-utc": "2026-11-20T12:03:43.491926Z",
+  "user-summary-candidate": "Radiance 2.2 measured against the current release: decode about 5-6% faster, a small long-prompt prefill regression still under investigation; the bump now carries every serving config and gaps for the Qwen 27B TP3 configs are found and planned."
+}

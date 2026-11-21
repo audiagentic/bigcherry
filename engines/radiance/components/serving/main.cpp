@@ -1,10 +1,13 @@
 #include "serving.h"
 
-#include "generated/v2/serving_codec.h"
+#include "serving_codec.h"
 #include "live_policy_ingest.h"
 #include "manifest_power.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
+#include "rank_demand.h"
+#include "sha256.h"
+#include "config_loader.h"
 #include "release_runtime.h"
 #include "runtime_guards.h"
 #include "sdk_check.h"
@@ -14,6 +17,7 @@
 #include "v2/p1_producer.h"
 #include "v2/s8_rules.h"
 #include <algorithm>
+#include <charconv>
 #include <cstdlib>
 #include <ctime>
 
@@ -45,14 +49,9 @@ void usage() {
            "  --validate <site.toml> [profile.toml] [--set key=value]\n"
            "  --explain [--json] [--site FILE] [--profile FILE] [--set key=value]\n"
            "  explain CONFIG [--json] [--configs DIR] [--site FILE] [--set key=value]\n"
-           "  --layouts FILE|DIR  layout definitions (repeatable; a directory gives its *.toml); default "
-           "BIGCHERRY_LAYOUTS,\n"
-           "                     a ':'-separated list. Layouts are run-time data: none is compiled in\n"
-           "  --configs FILE|DIR  RSC12 configs (repeatable; default BIGCHERRY_CONFIGS): one file per model, "
-           "named configs and\n"
-           "                     variants (base = ...); their names select as layout.name. Given configs, "
-           "layout files are\n"
-           "                     read only from --layouts\n"
+           "  --configs DIR       directories of NAME.yaml configs (repeatable; default BIGCHERRY_CONFIGS, else the\n"
+           "                     installed bundle's configs/): a config is one native Radiance YAML with an x-bigcherry\n"
+           "                     section; its name selects as layout.name\n"
            "  --model-root DIR    the directory a config's relative model path is under (none by default)\n"
            "  --calibration FILE  calibration cache over seeds, including RHP16 per-plan measurement records\n"
            "  calibration-prune --calibration FILE [--apply]   (drop rows the strict reader refuses)\n"
@@ -112,6 +111,7 @@ void usage() {
            "DIR] "
            "[--set k=v]\n"
            "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
+           "         [--native-config YAML --model-root DIR]  select native YAML for a v3 named start\n"
            "         --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B\n"
            "             --calibration-store FILE   foreground finite ABBA workload, strict measured-drift "
            "gate\n"
@@ -128,10 +128,17 @@ void usage() {
            "         positional CONFIG selects the RSC12 named config. Unchanged static inputs reuse an "
            "immutable stored manifest; live checks and per-start receipts still run. Exit 0 stopped, "
            "96 canary, 97 plan, 98 busy\n"
+           "         v3 reads NAME.yaml from the verified bundle, else from --configs DIR; --native-config YAML names another file.\n"
+           "  --work-root DIR     the platform's work root (host-wide model-identity cache); without it a start\n"
+           "                     fingerprints the model per run\n"
+           "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
+           "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
            "  start  --manifest FILE --run-dir DIR [--configs FILE|DIR]   replay exact strict-v2 bytes "
            "after current static/live/power checks; refuses changed build/model/devices, missing "
            "attestation or gates; never rewrites FILE\n"
+           "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
+           "                 --kld-ref DIR --kld-out FILE   run a finite native KL score\n"
            "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
@@ -140,8 +147,10 @@ void usage() {
 int session_command(const std::string& cmd, int argc, char** argv) {
     namespace ss = bc::serving::session;
     Options opts;
-    fs::path run_dir, engine_binary, stored_manifest;
+    fs::path run_dir, engine_binary, stored_manifest, native_config, work_root;
     std::string config_name;
+    std::optional<ss::QualityScore> quality;
+    if (cmd == "quality") quality.emplace();
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
     fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records, lab_experiment;
@@ -159,7 +168,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             passed.push_back(argv[i + 1]);
             return std::string(argv[++i]);
         };
-        const bool session_cmd = cmd == "serve" || cmd == "start";
+        const bool session_cmd = cmd == "serve" || cmd == "start" || quality.has_value();
         if (arg == "--help" || arg == "-h") {
             usage();
             return 0;
@@ -180,8 +189,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             opts.site = need();
         } else if (arg == "--profile") {
             opts.profile = need();
-        } else if (arg == "--layouts") {
-            opts.layouts.emplace_back(need());
         } else if (arg == "--configs") {
             opts.configs.emplace_back(need());
         } else if (arg == "--model-root") {
@@ -194,11 +201,19 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             opts.sets.push_back(need());
         } else if (arg == "--manifest") {
             stored_manifest = need();
+        } else if (arg == "--native-config") {
+            native_config = need();
+        } else if (arg == "--kld-ref" && quality && quality->reference.empty()) {
+            quality->reference = need();
+        } else if (arg == "--kld-out" && quality && quality->output.empty()) {
+            quality->output = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
         } else if (arg == "--engine-binary") {
             engine_binary = need();
+        } else if (arg == "--work-root") {
+            work_root = need();   // the platform's work root: where the host-wide model-identity cache lives
         } else if (arg == "--power-profile") {
             power_profile = need();
             explicit_power_profile = true;
@@ -363,7 +378,33 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
         opts.sets.push_back("engine.radiance_home=" + Json(home.string()).dump());
     }
-    if (!config_name.empty() && opts.configs.empty()) {
+    if (native_config.empty() && stored_manifest.empty() &&
+        !config_name.empty() && (cmd == "serve" || cmd == "start")) {
+        // A config is its YAML: NAME.yaml of the verified bundle, else of --configs / BIGCHERRY_CONFIGS.
+        std::vector<fs::path> sources = opts.configs;
+        if (prefix) sources.insert(sources.begin(), *prefix / "configs");
+        if (const fs::path found = bc::serving::config_yaml_for(config_name, sources); !found.empty())
+            native_config = found;
+    }
+    if (!native_config.empty()) {
+        if (config_name.empty() || !stored_manifest.empty() || opts.model_root.empty())
+            throw std::runtime_error("--native-config requires a named CONFIG and --model-root DIR");
+        if (!fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root))
+            throw std::runtime_error("--native-config and --model-root must name an existing file and directory");
+        if (calibration_run || !lab_experiment.empty())
+            throw std::runtime_error("--native-config requires a normal serving start");
+    } else if ((cmd == "serve" || cmd == "start") && stored_manifest.empty()) {
+        throw std::runtime_error("serving needs " + config_name + ".yaml in the bundle or --configs DIR (or --native-config YAML) for a fresh start");
+    }
+    if (quality) {
+        if (native_config.empty() || quality->reference.empty() || quality->output.empty() ||
+            calibration_run || !lab_experiment.empty())
+            throw std::runtime_error("quality requires named native YAML, --kld-ref DIR and --kld-out FILE");
+        quality->reference = fs::canonical(quality->reference);
+        quality->output = fs::absolute(quality->output);
+    }
+    const bool installed_native_replay = prefix && !stored_manifest.empty();
+    if ((!config_name.empty() || installed_native_replay) && opts.configs.empty()) {
         const char* env = std::getenv("BIGCHERRY_CONFIGS");
         if (!env || !*env) {
             if (!prefix)
@@ -385,6 +426,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.options = opts;
     inputs.stored_manifest = std::move(stored_manifest);
     inputs.named_config = config_name;
+    inputs.work_root = work_root;
+    inputs.quality_score = quality.has_value();
     inputs.explicit_power_profile = explicit_power_profile;
     inputs.calibration_prompts_a = prompts_a;
     inputs.calibration_prompts_b = prompts_b;
@@ -393,6 +436,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
 
     inputs.self = self;
     inputs.engine_binary = engine_binary;
+    if (!native_config.empty())
+        inputs.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
     inputs.power_profile = power_profile;
     inputs.live_policy_file = std::move(live_policy_file);
     inputs.calibration_run = calibration_run;
@@ -432,6 +477,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (calibration_run)
         session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
+    session.quality = std::move(quality);
     session.publish_feature_states = true;
     session.strict_production_features = strict_production_features;
     if (calibration_run)
@@ -469,6 +515,7 @@ int explain_command(int argc, char** argv) {
     Options opts;
     std::string name;
     bool json = false;
+    fs::path native_config, engine_binary, work_root;
     for (int i = 2; i < argc; ++i) {
         const std::string arg = argv[i];
         auto need = [&]() {
@@ -489,6 +536,12 @@ int explain_command(int argc, char** argv) {
             opts.profile = need();
         } else if (arg == "--model-root") {
             opts.model_root = need();
+        } else if (arg == "--native-config") {
+            native_config = need();
+        } else if (arg == "--engine-binary") {
+            engine_binary = need();
+        } else if (arg == "--work-root") {
+            work_root = need();
         } else if (arg == "--calibration") {
             opts.calibration_cache = need();
         } else if (arg == "--sys-root") {
@@ -509,17 +562,78 @@ int explain_command(int argc, char** argv) {
     if (name.empty())
         throw std::runtime_error("explain: a named CONFIG is required");
     opts.sets.push_back("layout.name=" + Json(name).dump());
+    namespace ss = bc::serving::session;
+    const fs::path self = fs::read_symlink("/proc/self/exe");
+    if (const auto prefix = bc::serving::installed_prefix(self)) {
+        // An installed bundle binds its own runtime home and engine, as a start does.
+        if (!engine_binary.empty() && fs::canonical(engine_binary) != fs::canonical(*prefix / "bin/radiance"))
+            throw std::runtime_error("installed release refusal: engine binary differs from verified prefix");
+        engine_binary = *prefix / "bin/radiance";
+        if (std::any_of(opts.sets.begin(), opts.sets.end(),
+                        [](const std::string& s) { return s.starts_with("engine.radiance_home="); }))
+            throw std::runtime_error("installed release refusal: runtime home is bound to verified prefix");
+        opts.sets.push_back("engine.radiance_home=" + Json((*prefix / "radiance_home").string()).dump());
+    }
+    if (!native_config.empty() &&
+        (opts.model_root.empty() || !fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root)))
+        throw std::runtime_error("explain: --native-config and --model-root must name an existing file and directory");
+    // The config is its native YAML: read it, device-free, through the engine's parser before resolving.
+    try {
+        ss::attach_inspected_config(opts, name, native_config, self, engine_binary, ss::Hooks{});
+    } catch (const ss::PlanFailed& error) {
+        throw std::runtime_error(std::string("explain: ") + error.what());
+    }
+const std::string cache_note = work_root.empty()
+        ? "host-wide model identity cache: off (no --work-root); the model is fingerprinted per run"
+        : "host-wide model identity cache: " + work_root.string();
     const auto resolved = bc::serving::resolve(opts, bc::serving::detect(opts.sys_root));
+    if (!native_config.empty()) {
+        ss::EnginePlanInputs preflight;
+        preflight.options = opts;
+        preflight.named_config = name;
+        preflight.self = self;
+        preflight.engine_binary = engine_binary;
+        preflight.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
+        preflight.native_preflight = true;
+        // The planner's scratch directory: nothing persistent is written, no child outlives the inspector.
+        char scratch[] = "/tmp/bc-explain-XXXXXX";
+        if (!::mkdtemp(scratch))
+            throw std::runtime_error("explain: cannot create a scratch directory");
+        struct Cleanup {
+            fs::path path;
+            ~Cleanup() { std::error_code ignored; fs::remove_all(path, ignored); }
+        } cleanup{scratch};
+        try {
+            const ss::EngineStart plan = ss::plan_engine_only(preflight, scratch, ss::Hooks{});
+            const Json& report = plan.native_preflight_receipt;
+            if (json) {
+                std::cout << Json{{"result", "pass"}, {"config", name}, {"values", plan.native_preflight_values},
+                                  {"model_identity_cache", cache_note}}.dump(2) << '\n';
+                return 0;
+            }
+            std::cout << "native admission preflight: PASS\n  " << cache_note << "\n  config " << name << "\n  yaml " << native_config.string()
+                      << "\n  snapshot " << report.at("snapshot").at("sha256").get<std::string>() << "\n  model "
+                      << report.at("engine").at("model").get<std::string>() << "\n  tp "
+                      << report.at("engine").at("tp").get<int>() << ", cards " << report.at("engine").at("cards").dump()
+                      << ", port " << plan.port << '\n';
+            return 0;
+        } catch (const ss::PlanFailed& error) {
+            std::cout << "native admission preflight: REFUSED\n  config " << name << "\n  " << error.what() << '\n';
+            return 1;
+        }
+    }
     if (json) {
         std::cout << Json{{"config", name},
                           {"values", resolved.values},
                           {"provenance", resolved.provenance},
                           {"hash", resolved.hash},
-                          {"manifest", resolved.manifest}}
+                          {"manifest", resolved.manifest},
+                          {"model_identity_cache", cache_note}}
                          .dump(2)
                   << '\n';
     } else {
         explain(resolved);
+        std::cout << cache_note << '\n';
     }
     return 0;
 }
@@ -564,7 +678,7 @@ int main(int argc, char** argv) {
             const std::string cmd(argv[1]);
             if (cmd == "explain")
                 return explain_command(argc, argv);
-            if (cmd == "serve" || cmd == "start" || cmd == "stop" || cmd == "status")
+            if (cmd == "serve" || cmd == "start" || cmd == "quality" || cmd == "stop" || cmd == "status")
                 return session_command(cmd, argc, argv);
         }
         if (argc > 1 && std::string(argv[1]) == "calibration-prune") {
@@ -612,8 +726,6 @@ int main(int argc, char** argv) {
                     ingest_opts.site = argv[++i];
                 else if (arg == "--profile")
                     ingest_opts.profile = argv[++i];
-                else if (arg == "--layouts")
-                    ingest_opts.layouts.emplace_back(argv[++i]);
                 else if (arg == "--configs")
                     ingest_opts.configs.emplace_back(argv[++i]);
                 else if (arg == "--model-root")
@@ -676,9 +788,12 @@ int main(int argc, char** argv) {
         fs::path measured_plan_file;
         std::optional<uint64_t> helpers_resident_mib, engine_resident_mib;
         std::string plan_extra;
+        std::string expected_plan_key;
+        int native_config_fd = -1;
         fs::path plan_cache, engine_binary;
         fs::path write_manifest, live_policy_file, experiment_file, rank_demand_file, calibration_records_file,
             s8_replay_evidence_file;
+        std::string expected_owner_attempt;
         std::string power_profile;
         // --calibration-run: the launcher's lab calibration start (--calibrate). A lab-profile manifest with an
         // explicit live policy and NO experiment, so the plan it measures is the production plan.
@@ -718,8 +833,6 @@ int main(int argc, char** argv) {
                 opts.site = need_arg("--site");
             else if (arg == "--profile")
                 opts.profile = need_arg("--profile");
-            else if (arg == "--layouts")
-                opts.layouts.emplace_back(need_arg("--layouts"));
             else if (arg == "--configs")
                 opts.configs.emplace_back(need_arg("--configs"));
             else if (arg == "--model-root")
@@ -740,8 +853,18 @@ int main(int argc, char** argv) {
                 experiment_file = need_arg("--experiment");
             else if (arg == "--plan-extra")
                 plan_extra = need_arg("--plan-extra");
+            else if (arg == "--expected-plan-key")
+                expected_plan_key = need_arg("--expected-plan-key");
+            else if (arg == "--bc-native-config-fd") {
+                const std::string value = need_arg("--bc-native-config-fd");
+                const auto [end, error] = std::from_chars(value.data(), value.data() + value.size(), native_config_fd);
+                if (error != std::errc{} || end != value.data() + value.size() || native_config_fd < 3)
+                    throw std::runtime_error("--bc-native-config-fd requires a descriptor greater than 2");
+            }
             else if (arg == "--rank-demand")
                 rank_demand_file = need_arg("--rank-demand");
+            else if (arg == "--expected-owner-attempt")
+                expected_owner_attempt = need_arg("--expected-owner-attempt");
             else if (arg == "--calibration-records")
                 calibration_records_file = need_arg("--calibration-records");
             else if (arg == "--s8-replay-evidence")
@@ -777,6 +900,20 @@ int main(int argc, char** argv) {
                           int(!write_manifest.empty()) + int(publish_v2_live_room) +
                           int(!publish_v2_p1.empty());
         const bool plan_mode = !write_manifest.empty();
+        if (native_config_fd >= 0 && !plan_mode)
+            throw std::runtime_error("--bc-native-config-fd is an internal --write-manifest input");
+        if (plan_mode) {
+            // The v3 measuring/writing path is owner-bound to the sealed native
+            // YAML snapshot. Never fall back to the v2 key or import caller-
+            // supplied plan files: that would create an unowned cache entry
+            // before the strict v3 writer can reject the missing snapshot.
+            if (native_config_fd < 3)
+                throw std::runtime_error("v3 --write-manifest requires --bc-native-config-fd");
+            if (!measured_plan_file.empty() || !rank_demand_file.empty())
+                throw std::runtime_error(
+                    "v3 --write-manifest does not import --measured-plan or --rank-demand; "
+                    "measurement results must come from the session-owned attempt");
+        }
         if (!plan_mode && !opts.run_dir.empty())
             throw std::runtime_error("--run-dir in resolver mode is internal to --write-manifest");
         if (!plan_mode && (!plan_cache.empty() || !engine_binary.empty()))
@@ -790,6 +927,17 @@ int main(int argc, char** argv) {
         if (measured_plan_file.empty() != rank_demand_file.empty())
             throw std::runtime_error("--measured-plan and --rank-demand go together (the engine's "
                                      "--plan-memory and --plan-memory-ranks)");
+        if (!expected_owner_attempt.empty() && !measured_plan_file.empty())
+            throw std::runtime_error("--expected-owner-attempt is for cache-only writer reads");
+        if (plan_mode && !unmeasured &&
+            expected_owner_attempt.empty())
+            throw std::runtime_error("v3 measured cache reads require --expected-owner-attempt");
+        if (plan_mode && !unmeasured && expected_plan_key.empty())
+            throw std::runtime_error("v3 measured cache reads require --expected-plan-key");
+        if (!expected_plan_key.empty() && !unmeasured &&
+            !(plan_mode && native_config_fd >= 3))
+            throw std::runtime_error(
+                "--expected-plan-key is for a session-owned unmeasured call or v3 measured cache read");
         if (!live_policy_file.empty() && experiment_file.empty() && !calibration_run)
             throw std::runtime_error("--live-policy is a lab override; supply --experiment for an explicit lab "
                                      "profile, or --calibration-run");
@@ -823,7 +971,9 @@ int main(int argc, char** argv) {
             const auto request = bc::serving::parse_plan_json(bytes, publish_v2_p1);
             const auto facts = bc::serving::detect(opts.sys_root);
             const auto resolved = bc::serving::resolve(opts, facts);
-            const auto record = bc::serving::v2::produce_p1_inputs(resolved, facts, opts.sys_root, request);
+            bc::serving::ManifestInputs manifest_inputs;
+            manifest_inputs.resolved = resolved;
+            const auto record = bc::serving::v2::produce_p1_inputs(manifest_inputs, facts, opts.sys_root, request);
             std::cout << record.dump(2) << '\n';
             return 0;
         }
@@ -898,9 +1048,14 @@ int main(int argc, char** argv) {
             if (!positional.empty())
                 throw std::runtime_error(
                     "--write-manifest takes --site, --profile, --set and --calibration only");
-            if (unmeasured && (!plan_cache.empty() || !engine_binary.empty() || !plan_extra.empty()))
+            if (unmeasured && !plan_cache.empty())
+                throw std::runtime_error("--unmeasured has no plan: it takes no --plan-cache");
+            if (unmeasured && expected_plan_key.empty() && (!engine_binary.empty() || !plan_extra.empty()))
                 throw std::runtime_error(
-                    "--unmeasured has no plan: it takes no --plan-cache, --engine-binary or --plan-extra");
+                    "--unmeasured takes --engine-binary and --plan-extra only with --expected-plan-key");
+            if (unmeasured && !expected_plan_key.empty() && (engine_binary.empty() || plan_extra.empty()))
+                throw std::runtime_error(
+                    "session-owned --unmeasured requires --expected-plan-key, --engine-binary and --plan-extra");
             if (!unmeasured && (plan_cache.empty() || engine_binary.empty()))
                 throw std::runtime_error("--write-manifest needs --plan-cache DIR and --engine-binary PATH");
             if (power_profile.empty())
@@ -923,17 +1078,37 @@ int main(int argc, char** argv) {
                                              " is not a JSON array");
             }
             const auto facts = bc::serving::detect(opts.sys_root);
-            const auto r = bc::serving::resolve(opts, facts);
+            std::optional<bc::serving::session::NativeWriterInput> native;
+            if (native_config_fd >= 0)
+                native = bc::serving::session::read_native_writer_input(native_config_fd);
+            // The writer takes the config as the owner's inspector parsed it from the same sealed YAML bytes.
+            if (native && !opts.inspected) opts.inspected = native->inspected;
+            auto r = bc::serving::resolve(opts, facts, native ? &native->settings : nullptr);
             const auto& v = r.values;
             const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
+            // Prepare the selected configuration once. P1 consumes this same
+            // input as the final writer so a native snapshot can flow through
+            // both without reopening or reconstructing engine configuration.
+            bc::serving::ManifestInputs in;
+            in.resolved = r;
+            if (native) in.native_config = std::move(native->snapshot);
+            in.engine_binary = engine_binary;
+            in.plan_engine_args = plan_extra;
             if (unmeasured) {
-                bc::serving::ManifestInputs in;
-                in.resolved = r;
-                in.s10 = s10;
-                in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
+                if (!expected_plan_key.empty()) {
+                    const Json effective_key = bc::serving::plan_key_inputs(
+                        v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
+                        bc::serving::engine_identity(engine_binary, home), plan_extra,
+                        in.native_config ? &*in.native_config : nullptr);
+                    if (bc::serving::plan_key(effective_key) != expected_plan_key)
+                        throw std::runtime_error(
+                            "the effective measuring-manifest inputs differ from the session's frozen plan key");
+                }
                 in.instance_id = bc::serving::new_instance_id();
                 in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
                 in.calibration_cache = opts.calibration_cache;
+                in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
+                in.s10 = s10;
                 load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);
                 load_json_input(experiment_file, "--experiment", &in.experiment, &in.experiment_from);
                 const auto built = bc::serving::build_manifest(in);
@@ -946,7 +1121,14 @@ int main(int argc, char** argv) {
             }
             const auto key_inputs = bc::serving::plan_key_inputs(
                 v, facts, bc::serving::container_identity(v.at("engine").at("model").get<std::string>()),
-                bc::serving::engine_identity(engine_binary, home), plan_extra);
+                bc::serving::engine_identity(engine_binary, home), plan_extra,
+                in.native_config ? &*in.native_config : nullptr);
+            // A v3 owner pins the same native key at draft, measurement and
+            // measured-cache read. Check it before touching or publishing any
+            // cache entry so a changed resolver input cannot reuse the attempt.
+            if (!expected_plan_key.empty() && bc::serving::plan_key(key_inputs) != expected_plan_key)
+                throw std::runtime_error(
+                    "the effective measured-manifest inputs differ from the session's frozen plan key");
             // The v1 manifest for this configuration from its measured plan: given by a measuring start
             // (--measured-plan, checked against the configuration and stored in the cache under this key) or
             // found in the cache. A miss is exit 10: a manifest without a measured plan is not written.
@@ -976,6 +1158,35 @@ int main(int argc, char** argv) {
                           << "); the launcher measures it on a start with the helpers up\n";
                 return 10;
             }
+            if (native && native->settings.ngram_placement == "auto") {
+                const auto selected = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
+                const auto ranks = bc::serving::decode_engine_rank_demand(
+                    plan->rank_demand, selected, "native n-gram placement receipt");
+                const bool measured_ram = std::any_of(
+                    plan->plan.host.begin(), plan->plan.host.end(),
+                    [](const auto& consumer) { return consumer.name == "ngram_table"; });
+                const std::string chosen = bc::serving::admitted_ngram_placement(
+                    ranks, measured_ram, native->settings.ngram_placement);
+                r.values["engine"]["ngram_placement"] = chosen;
+                r.typed.engine.ngram_placement = chosen;
+                r.provenance["engine.ngram_placement"] =
+                    Json{{"origin", "derived"}, {"source", "rad0011 measured rank n-gram tier"},
+                         {"lifecycle", "startup-only"}};
+                r.manifest["values"] = r.values;
+                r.manifest["provenance"] = r.provenance;
+                r.hash = bc::serving::sha256_hex(r.manifest.dump());
+                // The manifest inputs were frozen before the measured cache
+                // was consulted. Propagate the new resolved value to that
+                // exact input rather than sealing the stale auto intent.
+                in.resolved = r;
+            }
+            if (!expected_owner_attempt.empty() &&
+                (!plan->owner || plan->owner->attempt_id != expected_owner_attempt))
+                throw std::runtime_error("the measured plan cache entry is not owned by the expected measuring attempt");
+            in.instance_id = bc::serving::new_instance_id();
+            in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
+            in.calibration_cache = opts.calibration_cache;
+            in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
             {
                 // P1: measure now, at every manifest written: the cached plan and per-rank demand, the owner
                 // map, and the host's live room. The retention target is the host KV tier the launcher runs
@@ -997,7 +1208,7 @@ int main(int argc, char** argv) {
                     {"retention_target_tokens", retention},
                     {"margin", bc::serving::host_ledger_margin(r, opts.calibration_cache)},
                     {"run_id", "bc-serve --write-manifest " + write_manifest.filename().string()}};
-                s10.p1_record = bc::serving::v2::produce_p1(r, facts, opts.sys_root, sources);
+                s10.p1_record = bc::serving::v2::produce_p1(in, facts, opts.sys_root, sources);
                 // The plan echoes the host pool it was measured with; S8 derives the pool from what was
                 // measured. When they differ, the plan is for another pool: exit 11 with the derived one, and
                 // the launcher measures once more with it (that configuration has its own cache key, so this
@@ -1016,12 +1227,6 @@ int main(int argc, char** argv) {
                     return 11;
                 }
             }
-            bc::serving::ManifestInputs in;
-            in.resolved = r;
-            in.instance_id = bc::serving::new_instance_id();
-            in.producer_sha256 = bc::serving::file_sha256("/proc/self/exe");
-            in.calibration_cache = opts.calibration_cache;
-            in.profile = (experiment_file.empty() && !calibration_run) ? "production" : "lab";
             in.measured = bc::serving::MeasuredPlan{*plan, key_inputs};
             in.s10 = s10;
             load_json_input(live_policy_file, "--live-policy", &in.live_policy, &in.live_policy_from);

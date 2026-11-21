@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_230740_flash-next-parity-runs-can-com_7002",
+  "files": [
+    "tools/lab/radiance/flashnext-parity.sh"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Allow the existing Flash-Next parity harness to snapshot and pass an explicit native YAML per v3 launch while retaining the existing default invocation and run-record ownership.",
+  "timestamp-utc": "2026-11-19T23:07:40.655976Z",
+  "user-summary-candidate": "Flash-Next parity runs can compare the native YAML candidate with the existing baseline launcher."
+}

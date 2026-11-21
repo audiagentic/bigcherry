@@ -19,6 +19,22 @@ manifests they start from. The engine still starts from flags until the S4
 cutover, so this is not yet a fully qualified v1 launch.
 
 
+## Native YAML candidate
+
+Build the patched `radiance` source with the `stock` recipe: the engine, `bc-serve` and
+the MoE worker all use wire edition 3. Each build generates
+the codec from the same registry and verifies the tracked fingerprint.
+
+For a fresh v3 start, select the BigCherry hardware profile and author the
+Radiance settings in YAML. Relative YAML paths resolve under the model root.
+
+```sh
+bc-serve start CONFIG --native-config fleet.yaml --model-root MODEL_DIR --run-dir RUN_DIR
+```
+
+For an exact replay, use `bc-serve start --manifest MANIFEST --run-dir RUN_DIR`.
+It reads the YAML bytes and resolution root from the admitted manifest.
+
 ## RSC02 step 3: manifest-bound power and native runtime guards
 
 The foreground `bc-serve serve` and detached `bc-serve start` owner authenticate
@@ -33,7 +49,7 @@ process groups before calling `SessionPower::finish()`; every returned power
 or receipt error surfaces as a failed session, never a clean stop.
 
 The default `--power-profile stock` is observational. Hardware-changing
-v2 profiles require **both** a qualified profile and the opt-in
+power profiles that change hardware require **both** a qualified profile and the opt-in
 `--allow-power-apply`, plus an unexpired, ancestor-and-instance-bound
 GPU lease. With no opt-in the owner rejects apply before a hardware write.
 No unit test calls the real Linux write interface: power tests use injected
@@ -97,7 +113,7 @@ Every executable is a CMake target and declared in `component.toml`.
 
 ## MRC03 native feature states
 
-At startup, after the exact measured or sealed strict-v2 manifest has been
+At startup, after the exact measured or sealed strict manifest has been
 selected and before serving children launch, the `bc-serve` owner serializes
 `run_dir/feature-states.v1.json` (platform v1 JSON array). Its seven
 manifest-derived entries cover the live placement policy and its startup
@@ -156,9 +172,9 @@ are native C++.
 Build with `-DCMAKE_PREFIX_PATH=<installed radiance>` and
 `-DRADIANCE_SRC=<radiance source>`; build `bc-serve bc_serving_test`
 then run `ctest --output-on-failure`. Tests are CPU-only, including a
-synthetic KFD/PCI/proc/sysfs tree and launcher-value parity. ctest sets `BIGCHERRY_LAYOUTS` to the
-repository's `engines/radiance/layouts`; run `bc_serving_test` directly with the same variable set, or the
-layout cases fail with "no layout definitions".
+synthetic KFD/PCI/proc/sysfs tree and launcher-value parity. The resolver tests are engine-free: they select a
+config through a C++ preset (`test_config_fixture.h`), generated from the shipped `engines/radiance/configs/NAME.yaml` by
+`gen_fixture_presets.py` (a test fails when they drift); the production resolver reads a config only from its YAML.
 
 Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
 `--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`,
@@ -211,17 +227,16 @@ bc-serve --explain --set engine.model=/models/model.rad \
 
 The JSON Schema `x-origin` annotations document every default source.
 Interim memory baselines and named layout GPU budget baselines come from
-the 2026-11-02 launcher and `engines/radiance/layouts.toml`; RSC03
+the 2026-11-02 launcher; RSC03
 will derive them from detected resources. A first-slice snapshot of the
 named layouts is used to select cards from live KFD discovery rather
 than reading any per-host configured GPU index list. Unsupported layouts
 and unavailable GPUs fail closed; layout/catalog generalization is later
 RSC05 work.
 
-The one document processes load is the serving manifest v1 (`--write-manifest`; spec in
-`docs/design/serving-manifest-v2/`), read by the shared strict reader. The resolver's own record (`--explain --json`,
-the hash `--validate` prints) is not a file any process reads. The engine starts from the v1 manifest (rad0009, shared
-`bc_serving_v1` library); helper-side manifest consumption and process supervision are still pending.
+The one document processes load is the serving manifest (edition 3, written by the owner from the config's sealed native YAML; spec in
+`docs/design/serving-manifest-v2/`), read by the shared strict reader. `explain`'s record is not a file any process reads. The engine and
+helpers start from that manifest (rad0009, shared `bc_serving_v2` library).
 The owner now launches and verifies measuring/serving process groups;
 legacy shell and Python paths remain reference oracles until the later
 hardware A/B and retirement gate.
@@ -256,7 +271,7 @@ cases without requiring any GPU, permission failure or fake planner.
 A foreground owner can start an RSC12 config with `bc-serve serve CONFIG --run-dir DIR
 --configs engines/radiance/configs` or `BIGCHERRY_CONFIGS` set to the config file/directory.
 `bc-serve start CONFIG` detaches the **same** owner. The first named-config
-start measures and writes a strict-v2 manifest. Later starts with the same
+start measures and writes a strict manifest. Later starts with the same
 versioned static resolution key reuse that exact manifest file; a changed
 effective setting, selected-card identity, power profile, engine/helper/
 kernel/runtime/producer build, full model artifact, heat input, calibration
@@ -264,8 +279,18 @@ record or lab input forces a fresh manifest. The lookup is distinct from
 the existing engine-memory plan cache. The old `--set layout.name=...` serving
 path remains on its original planner.
 
+Named starts require `BC_WORK_ROOT`. The full model fingerprint is reused
+across run directories and configs through
+`$BC_WORK_ROOT/cache/model-identities/<sha256-of-canonical-path>.json`.
+Each ordinary file is an atomically replaced strict version-1 JSON record:
+`model` (canonical path), `stamp` (device, inode, size, mtime_ns, ctime_ns
+as decimal strings) and `digest` (the unchanged chunked SHA-256).
+An unchanged stamp skips a full-file read; a changed stamp rehashes, while
+malformed files and symlinks refuse. Stored-manifest indices retain their
+model digest only as replay attestation, not a fingerprint lookup cache.
+
 `bc-serve start --manifest FILE --run-dir DIR --configs FILE|DIR` replays a
-previously recorded strict-v2 manifest **without writing or normalising it**.
+previously recorded strict manifest **without writing or normalising it**.
 A writer-produced manifest carries a separate atomic `FILE.replay-index.json`
 attestation (its original byte fingerprint, full model-file fingerprint
 and RSC12 static key); the manifest bytes remain immutable. The RSC12 config
@@ -288,7 +313,7 @@ loader dependency: this step binds the existing explicit owner
 `--power-profile` mechanism but does not introduce an unofficial power
 table schema. RSC02 step 6 adds a separate, explicit **foreground lab observation** mode:
 `bc-serve serve CONFIG --configs DIR --run-dir DIR --lab-experiment FILE`.
-FILE is parsed as a v2 lab experiment object; only a placement object with
+FILE is parsed as a lab experiment object (`spec.experiment`); only a placement object with
 `mode: observe` (and no forced schedule) is accepted in the actual
 `plan_engine_only` path, before the writer or any GPU child. The C++ owner
 reuses the production named resolver, measuring owner, strict writer/reader,
@@ -309,7 +334,7 @@ identity refusals), `bc_stored_manifest_cache_test` (static reuse and
 invalidation), `bc_session_stored_test` (real owner call graph with fake
 GPU processes/OS facts). The dependency probes used by tests are explicit
 C++ callbacks; production always uses `detect`, the single RSC12 resolver,
-the strict v2 reader and P1 live-room measurement.
+the strict manifest reader and P1 live-room measurement.
 
 ## RSC02 step 6: typed lab inputs, not shell flag aliases
 
@@ -324,10 +349,10 @@ recorded `--set key=value` values are resolved with source provenance;
 `--ngram-device` has no typed contract field and remains refused.
 
 **Design source:** RSC04's mode table, RSC12 named-config precedence,
-and the native serving-v2 process contract. **Difference from the bash
+and the native serving manifest process contract. **Difference from the bash
 launcher:** no second syntax translates `--port`, `--heat`, `--budget`,
 or other legacy flags into environment variables; the one resolver writes
-the typed manifest. `bc_typed_settings_test` executes the compiled `bc-serve
+the typed manifest (edition 3, sealed with the native YAML). `bc_typed_settings_test` executes the compiled `bc-serve
 explain` and `--write-manifest --unmeasured` against a synthetic KFD/
 PCI/proc filesystem, real named configs, and producer-shaped route heat,
 checking provenance, manifest fields and typed refusal cases. The test's

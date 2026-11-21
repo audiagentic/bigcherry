@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_193519_the-native-admission-draft-is_2404",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Retain the strict native inspector report and reconcile listener port, context limit, sequence limit and ordered kernels against the pinned generated-v3 measuring draft before power admission or GPU children. Update the fake inspector to report selected fixture values. Fresh worktree-built generated-v3 bc_native_v3_session_test passes 1/1; separate default-v2 bc_session_stored_test passes 1/1, covering the prior measured-key and direct-v3 replay checks. No GPU used.",
+  "timestamp-utc": "2026-11-19T19:35:19.703329Z",
+  "user-summary-candidate": "The native admission draft is now checked against the YAML-inspected listener and service settings before proceeding. Focused v3 and v2 session tests pass; native measurement and production start remain gated."
+}

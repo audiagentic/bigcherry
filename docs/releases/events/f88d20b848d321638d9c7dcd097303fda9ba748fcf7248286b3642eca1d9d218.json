@@ -1,0 +1,21 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_163320_owner-publication-and-p1-now-u_2269",
+  "files": [
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/rank_demand.cpp",
+    "engines/radiance/components/serving/rank_demand.h",
+    "engines/radiance/components/serving/v2/p1_producer.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RUM04 C44 extracts exact rad0011 rank-demand validation into a shared decoder used by owner cache publication and P1. It binds exact record shape, selected ordered engine BDFs, source evidence and positive <=2^53-1 demand fields, enforcing fixed <= required <= claimable. Serving coverage rejects wrong BDF and zero demand; focused serving and P1 producer tests pass.",
+  "timestamp-utc": "2026-11-19T16:33:20.766317Z",
+  "user-summary-candidate": "Owner publication and P1 now use one strict decoder for ordered GPU rank demand, so malformed measurements are rejected before they enter the cache."
+}

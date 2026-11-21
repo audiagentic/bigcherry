@@ -1,0 +1,20 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_161120_measured-plans-are-now-publish_8514",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/plan_cache.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session_fake_engine.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "RUM04 C42 moves measured-plan cache publication from raw CLI file import into the tracked session owner. Each measurement gets a unique attempt ID and paths; the owner freezes and rechecks effective inputs/build identity, validates ordered ranks and plan configuration, publishes with an exclusive temporary file and atomic rename, and requires the post-store writer to read the same owner receipt. Owner receipts bind manifest, plan/ranks, resident values, cache key and optional native snapshot identity. Native v3 imports require owner provenance; legacy v2 imports and keys remain available.",
+  "timestamp-utc": "2026-11-19T16:11:20.997655Z",
+  "user-summary-candidate": "Measured plans are now published by the session that owns the measurement, with the measured inputs and resident-memory figures tied to a specific attempt. A host-pool retry measures and caches under a new key."
+}

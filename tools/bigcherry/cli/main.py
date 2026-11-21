@@ -45,6 +45,7 @@ from .patch import (
     cmd_patch_verify_evidence,
     cmd_patches,
 )
+from .patch_footprint import cmd_patch_footprint
 from .calibration import cmd_calibration
 from .accept import cmd_accept
 from .profiling import cmd_profile_campaign
@@ -374,6 +375,14 @@ def build_parser() -> argparse.ArgumentParser:
         help="bounded reconciliation context lines around a failed anchor (default: 3)",
     )
     patch_rebase_check_cmd.set_defaults(func=cmd_patch_rebase_check)
+
+    patch_footprint_cmd = sub.add_parser(
+        "patch-footprint",
+        help="generate or check the lexical footprint of composed engine patch definitions",
+    )
+    patch_footprint_cmd.add_argument("--check", action="store_true", help="fail if committed reports are stale")
+    patch_footprint_cmd.add_argument("--out-dir", type=Path, default=None, help="report directory override")
+    patch_footprint_cmd.set_defaults(func=cmd_patch_footprint)
 
     patch_doc_cmd = sub.add_parser(
         "patch-doc",
@@ -2398,10 +2407,10 @@ def _configure_output() -> None:
 
 def main(argv: list[str] | None = None) -> int:
     """Run the existing parser/handler implementation through the new entrypoint."""
-    # bc-serve has no built-in layouts: its children read BIGCHERRY_LAYOUTS. Unset, it is the repository's example layouts
-    # (engines/radiance/layouts/), which a site or a run replaces by pointing it at its own files.
+    # bc-serve reads a config from its native YAML: its children read BIGCHERRY_CONFIGS. Unset, it is the repository's
+    # engines/radiance/configs/, which a site or a run replaces by pointing it at its own files.
     import os
     from ..engine_adapters import radiance_layout
-    if not os.environ.get("BIGCHERRY_LAYOUTS"):
+    if not os.environ.get("BIGCHERRY_CONFIGS"):
         os.environ.update(radiance_layout.bc_serve_env())
     return int(_legacy_main(argv))

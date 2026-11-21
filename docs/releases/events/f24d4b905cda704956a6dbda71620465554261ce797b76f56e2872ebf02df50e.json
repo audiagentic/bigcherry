@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_102043_fixed-a-stored-manifest-cache_9243",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest_cache.h",
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "docs/evidence/radiance-latest-bump/README.md"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Preserve the RSC12 chunked-file-v1 identity format when producing a fresh manifest cache index and when checking authenticated stored bytes. Factor the existing digest grammar into shared chunk accumulation helpers and expose a bytes-based path for already-read manifest bytes; keep raw SHA-256 as the EngineStart execution integrity value. A regression test compares path and in-memory identities and resolves a serialized index through the named-cache reader. The focused stored-cache, serving, stored-replay, native-projection and v3-wire tests pass.",
+  "timestamp-utc": "2026-11-19T10:20:43.649688Z",
+  "user-summary-candidate": "Fixed a stored-manifest cache digest mismatch while keeping the existing index format, and verified the focused serving and replay checks."
+}

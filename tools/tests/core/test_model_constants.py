@@ -79,6 +79,13 @@ class Synthetic(unittest.TestCase):
         self.config()
         self.assertEqual(self.problems(), [])
 
+    def test_archived_patches_are_not_scanned(self):
+        archived = self.root / "engines/radiance/patches/archive/rad9999_x"
+        archived.mkdir(parents=True)
+        (archived / "patch.py").write_text("X = 2560\n")
+        self.config()
+        self.assertEqual(self.problems(), [])
+
     def test_a_stale_entry_fails(self):
         self.source("a.h", "int x = 1;\n")
         self.config(entry("engines/radiance/components/c/a.h", "kW = 2560", "B"))

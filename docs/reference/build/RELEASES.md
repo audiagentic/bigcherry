@@ -126,7 +126,7 @@ PREFIX=/path/to/installed-radiance/releases/bc-radiance-X.Y.Z
   --power-profile stock
 ```
 
-The released `configs/flashnext.toml` selects the reviewed
+The released `configs/flashnext-4gpu.yaml` (like each shipped config) selects the reviewed
 `@bundle/heat/flashnext-mixed.hot-first` seed under the same verified prefix.
 Both this seed and `perf51.rank0.hot-first` ship as immutable, manifest-digested
 `heat/` files copied from their tagged repository sources. No repository
@@ -205,7 +205,7 @@ version-source` in `engines/<engine>/engine.toml`; the first release of a pin is
 | Line | version-source | Major | Readable alias (added by the release workflow) |
 |---|---|---|---|
 | llama.cpp | `build-tag` | the upstream build number: b11474 -> 11474 | `bc-llamacpp-b<build>-r<N>` |
-| radiance | `pinned-version` | the upstream version's digits, from `pinned-version` in `engines/radiance/recipes.toml`: 1.3.0 -> 130 (an upstream 1.4.0 starts at 140.0.0) | `bc-radiance-<upstream version>-r<N>`, e.g. `bc-radiance-1.3.0-r1` |
+| radiance | `pinned-version` | From `pinned-version` in `engines/radiance/recipes.toml`. Published 1.x retains concatenated digits (1.17.0 → 1170). From 2.x, the major is upstream major × 10000 + minor × 100 + patch (2.2.0 → 20200). | `bc-radiance-<upstream version>-r<N>`, e.g. `bc-radiance-1.3.0-r1` |
 | platform | - | plain semantic version from conventional commits | none |
 
 `N` counts the releases at that major from 0. The radiance pin is a commit, so its commands take the revision (at least 7

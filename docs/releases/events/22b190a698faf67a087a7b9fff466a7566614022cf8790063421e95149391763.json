@@ -1,0 +1,14 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261119_213034_share-manifest-input-validatio_4063",
+  "files": [
+    "engines/radiance/patches/rad0009_serving_manifest/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Consolidate native engine field extraction and completeness checks shared by v3 measuring and measured serving Config preparation. TestServingManifestPatch passed 5/5.",
+  "timestamp-utc": "2026-11-19T21:30:34.087310Z",
+  "user-summary-candidate": "Share manifest input validation across native measurement and serving preparation."
+}

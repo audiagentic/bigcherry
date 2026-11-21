@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_030139_the-release-plan-now-starts-wi_3593",
+  "files": [
+    "docs/planning/active/patching-radiance-upstream/RUM09.md",
+    "docs/planning/completed/patching-radiance-upstream/reviews/RUM09/RV4240.md",
+    "docs/reviews/radiance-upstream-2026-11-18/CONSOLIDATION.md",
+    "docs/reviews/radiance-upstream-2026-11-18/SERVING-OPTION-INVENTORY.md"
+  ],
+  "plan-item-ids": [
+    "RUM09",
+    "RUM01"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Corrected the RUM09 release gates to match the selected TP1 Flash-Next first lane and make the candidate runtime roster enforceable. Mixed-TP hardware qualification is required only for profiles actually included in the package. Updated stale source-review artifacts to mark ABI41 target inventories as historical.",
+  "timestamp-utc": "2026-11-19T03:01:39.774480Z",
+  "user-summary-candidate": "The release plan now starts with the selected TP1 deployment and explicitly requires packaging to exclude any unqualified profiles. Mixed-TP proof is only required if those profiles are shipped."
+}

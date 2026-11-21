@@ -1,6 +1,6 @@
 """VTP31 (rad0023): the exact one-shot all-reduce's diagnostic timeline.
 
-Card-free. The pinned-source test applies rad0023 to radiance v1.17.0 when a checkout with that tag is reachable
+Card-free. The pinned-source test applies rad0023 to the pinned Radiance source when a checkout with that tag is reachable
 (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations

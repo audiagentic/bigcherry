@@ -11,7 +11,7 @@ mean the migration was implemented. Edit their scope/state through Planning MCP.
 | Stage | Item | Small deliverable and cleanup boundary |
 | --- | --- | --- |
 | 1 | [RUM01](../../planning/active/patching-radiance-upstream/RUM01.md) | Exact target, one deployed configuration, ownership and patch dispositions. Approve exclusions before coding. |
-| 2 | [RUM03](../../planning/active/patching-radiance-upstream/RUM03.md) | Pin JSON independently and rebuild matched ABI/SDK; port only required eligibility. |
+| 2 | [RUM03](../../planning/completed/patching-radiance-upstream/RUM03.md) | Pin JSON independently and rebuild matched ABI/SDK; port only required eligibility. |
 | 3 | [RUM04](../../planning/active/patching-radiance-upstream/RUM04.md) | Original native YAML bytes bound to existing measured admission; delete native-only resolver/registry/argv duplication. No new bundle index or native serializer. |
 | 4A | [RUM02](../../planning/active/patching-radiance-upstream/RUM02.md) | Extract only surviving implementations after removal decisions; record deleted attachments separately from moved lines. |
 | 4B | [RUM05](../../planning/active/patching-radiance-upstream/RUM05.md) | Fresh per-BDF admission, ordered child-local devices in normal/offline paths, disjoint helpers; retain independent owner verification. |

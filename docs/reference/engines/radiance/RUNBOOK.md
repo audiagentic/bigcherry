@@ -45,6 +45,6 @@ Obtain the exclusive `gpu` lease **before** a hardware start, measure, calibrati
 
 ## Configs and quality
 
-The packaged RSC12 configs are `flashnext.toml` and `qwen27b.toml`. Use native `bc-serve explain CONFIG` to inspect effective intent and `bc-serve status` to inspect the owned run. See [SERVING_MANIFEST.md](SERVING_MANIFEST.md) for manifest semantics, [LIVE_PLACEMENT.md](LIVE_PLACEMENT.md) for heat policy, and [enhancements](ENHANCEMENTS.md) for patch validation state.
+The packaged serving configs are one native YAML per config (`configs/NAME.yaml`, 18 of them). Use native `bc-serve explain CONFIG --native-config NAME.yaml` to inspect effective intent (it runs the same admission as a start, offline) and `bc-serve status` to inspect the owned run. See [SERVING_MANIFEST.md](SERVING_MANIFEST.md) for manifest semantics, [LIVE_PLACEMENT.md](LIVE_PLACEMENT.md) for heat policy, and [enhancements](ENHANCEMENTS.md) for patch validation state.
 
 For paired hardware experiments prefer `bigcherry ab-benchmark`; preserve the exact build/model/SDK hashes, immutable manifest, observed helper roles, quality digests, temperatures and power receipts. The RDNA2 helper tail has a documented worst-case quality penalty (RAD46); performance alone is not an acceptance result.

@@ -1,6 +1,7 @@
 #include "release_archive.h"
 
 #include "sha256.h"
+#include "v2/document_bytes.h"
 
 #include <zlib.h>
 
@@ -27,6 +28,33 @@ constexpr size_t kMaxFiles = 10000;
 constexpr uint64_t kMaxManifest = 2ULL * kIoChunk;
 constexpr uint64_t kMaxPax = 64ULL * 1024;
 constexpr size_t kBlock = 512;
+// The native profiles a release may carry: configs/NAME.yaml, one per named serving config, exactly the set the packer
+// approves (tools/bigcherry/release/runtime_assets.py NATIVE_RELEASE_PROFILES; a test keeps the two lists equal).
+constexpr std::array<std::string_view, 16> kNativeProfiles = {
+    "flashnext-2xtx-combine",
+    "flashnext-2xtx-rdna2-head",
+    "flashnext-2xtx-rdna2-tail-combine",
+    "flashnext-2xtx-rdna2-tail",
+    "flashnext-2xtx",
+    "flashnext-4gpu-bf16i8",
+    "flashnext-4gpu",
+    "flashnext-r9700",
+    "flashnext-tp2xtx-r9700",
+    "flashnext-tp2xtx",
+    "qwen27b-2xtx",
+    "qwen27b-tp3-capacity",
+    "qwen27b-tp3-long-bf16",
+    "qwen27b-tp3-long-bf16i8",
+    "qwen27b-tp3-long",
+    "qwen27b-tp3",
+};
+bool is_native_profile(std::string_view name) {
+    constexpr std::string_view head = "configs/", tail = ".yaml";
+    if (!name.starts_with(head) || !name.ends_with(tail) || name.size() <= head.size() + tail.size())
+        return false;
+    const std::string_view stem = name.substr(head.size(), name.size() - head.size() - tail.size());
+    return std::ranges::find(kNativeProfiles, stem) != kNativeProfiles.end();
+}
 
 [[noreturn]] void refuse(ErrorCode code, const std::string& what) {
     throw Error(code, what);
@@ -55,12 +83,10 @@ bool runtime_member(const std::string& name) {
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
         "bigcherry-build-metadata-radiance.json",
-        "configs/flashnext.toml",
-        "configs/qwen27b.toml",
         "heat/flashnext-mixed.hot-first",
         "heat/perf51.rank0.hot-first",
     };
-    if (exact.contains(name))
+    if (exact.contains(name) || is_native_profile(name))
         return true;
     if (prefix(name, "radiance_home/vectors/"))
         return name.size() > std::string("radiance_home/vectors/").size();
@@ -117,7 +143,9 @@ void check_interpreter(const fs::path& path, const std::string& name) {
     require(!(input.gcount() == 2 && shebang[0] == '#' && shebang[1] == '!'), ErrorCode::unsafe_archive,
             "script shebang: " + name);
     const auto suffix = fs::path(name).extension().string();
-    if (suffix != ".toml" && suffix != ".json" && suffix != ".txt" && suffix != ".ini" && suffix != ".conf")
+    const bool native_profile = is_native_profile(name);
+    if (!native_profile && suffix != ".toml" && suffix != ".json" && suffix != ".txt" &&
+        suffix != ".ini" && suffix != ".conf")
         return;
     static const std::regex interpreter(R"(\b(?:python(?:[0-9]+(?:\.[0-9]+)*)?|pypy(?:[0-9]+)?)\b)",
                                         std::regex_constants::icase);
@@ -125,6 +153,10 @@ void check_interpreter(const fs::path& path, const std::string& name) {
     input.seekg(0);
     std::string line;
     while (std::getline(input, line)) {
+        if (native_profile)
+            require(line.find('\0') == std::string::npos &&
+                        bc::serving::v2::bad_utf8(line) == std::string_view::npos,
+                    ErrorCode::unsafe_archive, "invalid UTF-8 metadata: " + name);
         require(!std::regex_search(line, interpreter), ErrorCode::unsafe_archive,
                 "interpreter reference in metadata: " + name);
     }
@@ -178,7 +210,10 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
                 "invalid file digest: " + name);
         const auto mode = required_size(it.value(), "mode", ErrorCode::invalid_install);
         require(mode == 0644 || mode == 0755, ErrorCode::unsafe_archive, "disallowed file mode: " + name);
-        required_size(it.value(), "size", ErrorCode::invalid_install);
+        const auto size = required_size(it.value(), "size", ErrorCode::invalid_install);
+        if (is_native_profile(name))
+            require(mode == 0644 && size > 0 && size <= bc::serving::v2::kMaxDocumentBytes,
+                    ErrorCode::unsafe_archive, "native profile must be bounded non-executable YAML: " + name);
         names.insert(name);
         sorted.push_back(name);
     }
@@ -188,8 +223,7 @@ std::set<std::string> file_map(const Json& manifest, const Json& record) {
         "radiance_home/bin/bc-release",
         "radiance_home/helpers/r3_moe_worker",
         "bigcherry-build-metadata-radiance.json",
-        "configs/flashnext.toml",
-        "configs/qwen27b.toml",
+        "configs/flashnext-4gpu.yaml",   // the production config; the other named configs are its siblings
     };
     require(std::includes(names.begin(), names.end(), must_have.begin(), must_have.end()),
             ErrorCode::invalid_install, "required native runtime member missing");

@@ -1,0 +1,20 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_083446_restored-the-retained-e4m3-ker_2900",
+  "files": [
+    "engines/radiance/recipes.toml",
+    "docs/planning/active/patching-radiance-upstream/RUM03.md",
+    "docs/planning/active/patching-radiance-upstream/reviews/RUM03/RV4247.md",
+    "engines/radiance/patches/rad0046_retained_moe_rows/patch.py",
+    "engines/radiance/patches/rad0046_retained_moe_rows/patch.toml",
+    "engines/radiance/patches/rad0046_retained_moe_rows/SUMMARY.md",
+    "tools/tests/patch/test_radiance_rad0046.py"
+  ],
+  "plan-item-ids": [
+    "RUM03"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add the retained E4M3 row compatibility port rad0046 to the candidate production serving-core composition before rad0048. The production helper currently resolves had_quant_act_fp8 unconditionally and moe_gemm_fp8a8 for its E4M3 route; ABI43 upstream removed these registrations while retaining implementations. Exact-source apply/replay passes. Full recipe resolution correctly refuses while patch state remains untested and the production required-state is validated; helper component build and row-resolution proof remain.",
+  "timestamp-utc": "2026-11-19T08:34:46.090077Z",
+  "user-summary-candidate": "Restored the retained E4M3 kernel rows required by the existing production helper in the candidate recipe. Exact-source replay passes; the ABI44 helper build is still required before promotion."
+}

@@ -1,0 +1,22 @@
+# rad0046_retained_moe_rows
+
+## Summary
+
+Restores the `had_quant_act_fp8` and `moe_gemm_fp8a8` rows on the retained implementations. The grouped GEMM keeps 64-column fallback tiling unless every expert class and part aligns to the 128-column block-scale grid. The shared pure width predicate lives in `libr4d/r4d_moe_block_fp8_geometry.h` so the launcher and card-free boundary fixture exercise the same rule.
+
+## Outcome
+
+Validated on the promotion evidence below.
+
+## Detail
+
+### Promotion record
+
+Tier: profile-evidence
+
+Model: Qwen3.8-Next-Flash FP8/IQ4R, gfx1201 engine with gfx1100 and gfx1030 remote helpers
+
+Mechanics: The exact Radiance v2.2.0 focal rebase passed 32 ordered patches. The focused patch test proved both rows are absent upstream, applied the restoration, checked the tile predicate, and reproduced byte-identical replay. The matched ABI44 SDK and plugin exports use layout fingerprint 5cc71b9c5bb7ab40.
+Activation: The matching gfx1201 DSO exported and executed the had_quant_act_fp8 and moe_gemm_fp8a8 rows. The direct row device probe exercised aligned 512/256 and split 512/384 class widths at 128 and 64 columns respectively. The staged Flash-Next helper topology served a mixed four-card token stream and drained all outstanding work.
+Identity: The quantizer and paired reference-GEMM checks passed on the exact staged gfx1201 library. The grouped reference checks reported zero out-of-tolerance values and worst error 0.015625 for both widths. This is row-level reference agreement. The integrated Flash-Next KL and deployment parity gates have separate evidence in RUM09 and remain in progress.
+A/B: A card-free matched-SDK registry control used exact v2.2 source with the restoration removed from the registry translation unit and reused the subject launch objects. The control exposed 677 rows with both names absent; the subject exposed 679 with both present. Both exported ABI44/5cc71b9c5bb7ab40. Subject plugin SHA-256 8243ba11fb607aee7f80797be8c7d2f7feed280bf9804dcdf7cd017cb690bdf9; control 32500d8bcda02da3614a1b9635140d3224ce28139eda6bce21abbd1aca4e4755. This comparison establishes registry isolation and carries no throughput claim.

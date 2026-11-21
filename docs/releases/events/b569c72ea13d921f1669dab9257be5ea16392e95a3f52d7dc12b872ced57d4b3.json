@@ -1,0 +1,16 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261119_053720_restored-the-independent-qk-an_2320",
+  "files": [
+    "engines/radiance/patches/rad0054_attn_prefill_fp8/patch.toml",
+    "engines/radiance/patches/rad0054_attn_prefill_fp8/patch.py",
+    "tools/tests/patch/test_radiance_rad0053_54.py"
+  ],
+  "plan-item-ids": [
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Restored the independent attention-prefill off, QK, PV and combined modes for historical Qwen35 H256/GQA6/page16 native E4M3, fp8_v4 and k6_v4 cache rows. The 24 edits applied and reapplied byte-identically on frozen upstream 3deabdaeca17b58bad90d332f4b204cf7bb8a10e and the preceding candidate packages. Tightened the config insertion anchor to the typed option-catalog row. Focused Release host checks covered CLI, YAML and the supported architecture mode/cache matrix. The combined package and registry suite passed 57 tests, and selected gfx1201 attention and registry objects compiled. The prefill rows keep the v1.17.0 19d4e8fe0e18071b9b6300f15fc4ccf38dc4fa3d compute behavior and opt-in semantics. Integrated new-base serving and recipe promotion remain pending.",
+  "timestamp-utc": "2026-11-19T05:37:20.824045Z",
+  "user-summary-candidate": "Restored the independent QK and PV prefill precision controls for their tested cache formats. Exact attention remains the default, and host checks and targeted GPU compilation passed."
+}

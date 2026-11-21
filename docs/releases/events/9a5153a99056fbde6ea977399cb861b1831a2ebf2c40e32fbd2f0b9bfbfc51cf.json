@@ -1,0 +1,20 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_032941_radiance-22-release-bundles-u_9849",
+  "files": [
+    ".github/workflows/radiance-build.yml",
+    ".github/workflows/radiance-release-bundle.yml",
+    "tools/bigcherry/release/ci_bundle.py",
+    "tools/bigcherry/release/pin_release.py",
+    "tools/bigcherry/release/runtime_assets.py",
+    "tools/tests/release/test_bu01_lane_binding.py",
+    "tools/tests/release/test_ci_bundle.py"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Select the native-serving lane for the Radiance 2.2 release recipe in hosted CI and record-backed releases. Verify effective edition, both generated serving fingerprints and the staged owner binary before packing, bind the matched binaries and committed YAML into the release archive, and enforce the same tagged contract on reuse and upload. Keep stock release policy and receipt keys compatible with published 1.17 tags.",
+  "timestamp-utc": "2026-11-20T03:29:41.780262Z",
+  "user-summary-candidate": "Radiance 2.2 release bundles use the native v3 engine and serving owner with the verified Flash-Next YAML profile. The release process checks those bindings on fresh and reused bundles."
+}

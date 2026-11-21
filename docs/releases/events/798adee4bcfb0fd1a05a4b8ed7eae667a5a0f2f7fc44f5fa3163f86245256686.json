@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_231013_abi44-and-retained-mixed-tp-fi_6418",
+  "files": [
+    "engines/radiance/patches/rad0048_abi44_kv_contract/patch.toml",
+    "tools/tests/patch/_vtp_promotion_support.py",
+    "tools/tests/patch/test_radiance_rad0048.py"
+  ],
+  "plan-item-ids": [
+    "RUM03",
+    "RUM06",
+    "RUM07"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Declare the multisequence prefill producer as ABI44's dependency because ABI44 fingerprints its RadBatch field. Drive exact-source mechanics fixtures from the production recipe pin and keep source lifecycle validation in its own gate.",
+  "timestamp-utc": "2026-11-19T23:10:13.427682Z",
+  "user-summary-candidate": "ABI44 and retained mixed-TP fixtures now validate the current Radiance source and require the patch that supplies the fingerprinted batch field."
+}

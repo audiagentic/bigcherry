@@ -56,6 +56,17 @@ ABI = FilePatch(path="abi/rad_builder.h", language="none", description="VTP14 pi
     ),
 ))
 
+ABI_LAYOUT = FilePatch(path="abi/rad_abi_layout_rows.h", language="none", description="VTP14 pipelined prefill ABI layout fingerprint", edits=(
+    _edit(
+        "pipe-layout-fields",
+        "ABI_FIELD(RadBuildCtx, tp_ownership)\n",
+        "ABI_FIELD(RadBuildCtx, tp_ownership)\n"
+        "ABI_FIELD(RadBuildCtx, pipelined_prefill)\n"
+        "ABI_FIELD(RadBuildCtx, pipelined_prefill_min_rows)\n",
+        guard="ABI_FIELD(RadBuildCtx, pipelined_prefill_min_rows)\n",
+    ),
+))
+
 RAD_CORE = FilePatch(path="core/rad_core.h", language="none", description="VTP14 pipelined prefill config", edits=(
     _edit(
         "pipe-config",
@@ -187,4 +198,4 @@ QWEN = FilePatch(path="arch/qwen35_fp8/qwen35_fp8.cpp", language="none", descrip
     ),
 ))
 
-PATCHES = (ABI, RAD_CORE, CONFIG, CONFIG_TEST, ENGINE, QWEN)
+PATCHES = (ABI, ABI_LAYOUT, RAD_CORE, CONFIG, CONFIG_TEST, ENGINE, QWEN)

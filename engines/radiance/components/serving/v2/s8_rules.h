@@ -1,7 +1,7 @@
 #pragma once
 // RSC11 S8: card-free, inactive v2 derivations. S10 is the first consumer.
 // No v1 reader, writer, engine, or launcher is linked to this module.
-#include "generated/v2/serving_types.h"
+#include "serving_types.h"
 #include "v2/error.h"
 
 #include <cstdint>
@@ -65,6 +65,7 @@ struct S8Setting {
 
 struct S8Measured {
   MeasuredResourceInputs resource_inputs; // S9 typed v2 wire members
+  int64_t engine_ranks = 1; // host_pool_mib is allocated once for each rank in the selected engine TP
   S8Scope scope;
   std::string
       actual_owner_map_digest; // from the engine's real owner-map publisher
@@ -116,6 +117,18 @@ Result<S8Resolution> resolve_s8(const S8Measured &measured,
 // The pinned host pool S8 derives from the measured inputs: host embeddings, unowned experts, staging and the margin,
 // rounded up to whole MiB. A plan measured with another pool is re-measured with this one (bc-serve exit 11).
 std::optional<int64_t> derived_host_pool_mib(const MeasuredResourceInputs &inputs);
+
+// The measuring manifest declares a host-KV budget; S8 writes the actual
+// measured retained-token tier, which may be smaller. The pool and reserve
+// remain exact. Never silently expand host KV beyond its admitted budget.
+Status require_measured_host_tiers(const HostResources &admitted,
+                                  const HostResources &measured);
+
+// Check the admitted allocation against live host, cgroup and pin room.
+// Helpers' RSS is measured by the owner outside the engine P1 record.
+Status require_measured_host_room(const HostResources &host, int64_t engine_ranks,
+                                  int64_t checkpoint_slot_bytes, const MeasuredResourceInputs &inputs,
+                                  uint64_t helper_resident_mib);
 
 // Reusable engine VRAM admission: no hidden tolerance (including the observed
 // 2026-11 R9700 1,036,288-byte shortfall).

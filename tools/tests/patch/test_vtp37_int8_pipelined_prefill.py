@@ -1,6 +1,6 @@
 """VTP37 (rad0030): the pipelined prefill on a rotated-int8 trunk, under --pipelined-prefill on.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0030 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0030 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
@@ -47,7 +47,7 @@ class Int8PipelinedPrefillTests(unittest.TestCase):
     def test_plain_norm_writes_the_pair_step_writes(self):
         text = {e.id: e.text for f in load(PKG) for e in f.edits}["plain-norm-fed-pair"]
         self.assertIn("brow_slice(hi8 ? a.q8 : a.q, r0, rows, n),", text)
-        self.assertIn("brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / RAD_FP8_BLOCK),", text)
+        self.assertIn("brow_slice(hi8 ? a.s8 : a.s, r0, rows, n / (hi8 ? a.g8 : (int64_t)RAD_FP8_BLOCK)),", text)
 
     def test_int8_trunk_is_opt_in(self):
         edits = {e.id: e.text for f in load(PKG) for e in f.edits}

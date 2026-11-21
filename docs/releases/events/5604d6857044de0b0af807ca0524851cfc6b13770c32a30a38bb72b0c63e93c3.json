@@ -1,0 +1,18 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_231210_restore-native-e4m3-and-packed_9640",
+  "files": [
+    "engines/radiance/patches/rad0049_qwen4exp_e4m3_kv/patch.py",
+    "engines/radiance/patches/rad0051_b16_kv_kernels/patch.py",
+    "tools/tests/patch/test_radiance_rad0049.py",
+    "tools/tests/patch/test_radiance_rad0051.py"
+  ],
+  "plan-item-ids": [
+    "RUM07",
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Attach native E4M3 dtype checks to all four H256 page-4 byte-cache launchers and carry the checks forward when the ABI44 packed KV patch generalizes the launchers. Use guards recognizing both the standalone and generalized checks so exact-source patch replay remains byte-identical.",
+  "timestamp-utc": "2026-11-19T23:12:10.047037Z",
+  "user-summary-candidate": "Restore native E4M3 and packed KV attention launch validation on the Radiance 2.2 candidate."
+}

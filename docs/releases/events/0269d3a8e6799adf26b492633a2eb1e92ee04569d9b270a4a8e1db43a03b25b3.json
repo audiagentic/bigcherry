@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261119_220442_preserve-gfx10-and-gfx11-plugi_5901",
+  "files": [
+    "engines/radiance/components/libr2/CMakeLists.txt",
+    "engines/radiance/components/libr3/CMakeLists.txt",
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py",
+    "engines/radiance/tests/fixtures/4a61d72/tests/arch_fakes.h",
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Keep libr4d's gfx12-only open hook outside the derived GPU library interface. Provide no-handoff entry points to the standalone architecture fixtures, which use a fake engine ABI.",
+  "timestamp-utc": "2026-11-19T22:04:42.678338Z",
+  "user-summary-candidate": "Preserve gfx10 and gfx11 plugin admission and restore standalone architecture test linkage on the Radiance 2.2 candidate."
+}

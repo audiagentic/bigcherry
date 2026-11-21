@@ -1,0 +1,11 @@
+schema = 1
+id = "rad0051_b16_kv_kernels"
+order = 51
+state = "validated"
+kind = "enhancement"
+origin = "local"
+backend = "agnostic"
+plan-ids = ["RUM07"]
+requires = ["rad0049_qwen4exp_e4m3_kv", "rad0050_b16_kv_runtime_contract"]
+conflicts = []
+tags = ["kv-cache"]

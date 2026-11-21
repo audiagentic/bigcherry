@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261120_015152_the-vtp44-expert-route-recorde_9499",
+  "files": [
+    "engines/radiance/patches/rad0044_expert_route_record/patch.py",
+    "engines/radiance/patches/rad0045_expert_route_replay/patch.py"
+  ],
+  "plan-item-ids": [
+    "RUM04",
+    "PRQ06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Anchor the diagnostic route-record and route-replay buffer teardown after Radiance releases or drops its route-count buffer. Preserve the 1.17 fixture and Radiance 2.2 arena ownership.",
+  "timestamp-utc": "2026-11-20T01:51:52.044296Z",
+  "user-summary-candidate": "The VTP44 expert-route recorder and replayer compose with Radiance 2.2."
+}

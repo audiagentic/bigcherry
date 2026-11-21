@@ -40,8 +40,8 @@ move and the transition marker together, before moving the checkout**.
 is the declaration that a bump is in flight, and every tree that shares the
 bigcherry history reads the same state from it. A manual
 `git -C vendor/llama.cpp checkout <sha>` that skips the pin move is exactly
-the state the guard exists to catch — it is how the 2026-08-21 S1 stale-trace
-incident happened (evidence captured on b10257 while the pin said b10502):
+the state the guard exists to catch — it is how a stale-trace
+incident occurred (evidence captured on b10257 while the pin said b10502):
 a release record for the stale revision existed, and "record exists" was
 once the only rule — which is why the marker supersedes it.
 
@@ -58,59 +58,81 @@ with counts and, for Radiance, `coupling_failures` and `upstream_abi`. Non-clean
 results exit zero: triage is advice, not a bump gate. Usage and environment
 errors exit 2.
 
-### Radiance-specific coupling readiness (before `pin-bump`)
+### Radiance-specific readiness and acceptance
 
-Radiance's source and component dependencies are inventoried in
-[`BUMP_COUPLING.md`](../engines/radiance/BUMP_COUPLING.md) (six components, 42 patches).
-Read it with RUM01–RUM10 and the
-[Astra source review](../../reviews/radiance-upstream-2026-11-18/ASTRA-CONSOLIDATION.md).
-**RUM03 -> RUM04 -> RUM02** is the current migration order. The newest tag
-can differ from RUM01's reviewed target; record the exact commit and ABI.
+The Radiance recipe pin, patch selections and build profiles are in
+`engines/radiance/recipes.toml`. Follow the current
+[bump-radiance skill](../../../.claude/skills/bump-radiance/SKILL.md)
+and the live [coupling checklist](../engines/radiance/BUMP_COUPLING.md),
+not a frozen patch-count table. This subsection is Radiance-only;
+the llama.cpp repin/transition procedure below is independent.
 
-Before moving a pin, compare (a) managed patch targets and `libr3/native/*.rw`
-rewrite blocks, (b) each component's upstream source/header/ABI and wire
-version, (c) the exact target `RAD_ABI_VERSION` and layout fingerprint,
-(d) source emissions from the **existing generated serving-v2 mapping**
-without adding another native-field table, and (e) the Python-free runtime
-asset's pinned version and **complete** component `built-against` closure.
-The mechanical `[coupling]` gate (all six `component.toml` files) is enforced
-in pin-bump's `drift` phase, and reported read-only in `pin-triage`. It compares
-owned C++/HIP upstream-header references, literal process flag/environment names,
-patch-provided source declarations, target upstream file/glob presence,
-`RAD_ABI_VERSION` and the owned remote-MoE wire version/layout constants.
-The schema refuses unknown, incomplete, or unsafe declarations; absent upstream
-ABI information is not a pass. For current-pin typed native settings, the **only**
-option/env translation table is `serving/contract/serving-v2.toml`:
-`radiance_option`/`radiance_switch`/`env_setting` generate `v2::kFields`
-and `v2::kEnvBindings`, consumed by `serving.cpp` and managed patch rad0009.
-Local heat, budgets, lab and helper intent are BigCherry contract fields, not
-independently invented upstream flags. RUM04 replaces this narrow projection
-with upstream native YAML plus the immutable original-byte runtime bundle.
+1. **Triage an exact revision.** Run
+   `python3 -m bigcherry --engine radiance pin-triage <ref> --json`,
+   review changed patch targets and libr3 `native/*.rw` anchors,
+   and record upstream ABI and exported layout fingerprint. The verdict
+   is advisory; missing ABI/coupling/rewrite compatibility blocks the bump.
+2. **Prove every composition.** Once the new exact source is checked out,
+   run `patch-rebase-check --source NAME` separately for each current
+   recipe `[source.*]` (`radiance-native` as the unpatched control, `radiance`,
+   `radiance-diag`, `radiance-routing-evidence`, `radiance-vtp44-evidence`), then
+   `patch-rebase-check --all` across the non-rejected registry.
+   An unselected patch failure is still a catalog disposition. Archive
+   upstream-superseded packages **whole and unchanged** with a reason,
+   successor and evidence row in `patches/archive/ARCHIVE.md`; do not
+   re-port obsolete patches simply to satisfy the check.
+3. **Minimise attachment drift.** Run
+   `python3 -m bigcherry --engine radiance patch-footprint --check`
+   before modifications; after an exact composition change regenerate
+   `patch-footprint`, record upstream anchor counts before/after, and
+   rerun `--check`. Prefer owned typed hooks and the common
+   `libr4d/bc_kv_rows.h` registration inventory for new KV geometries
+   over repeated upstream row edits. Kernel constraints must reflect
+   actual kernel limits, including rank-local shapes.
+4. **Check the installed model roster before GPU.** All managed
+   `engines/radiance/configs/NAME.yaml` files are single native
+   Radiance YAML + `x-bigcherry` v1: inspect every file with the
+   matched engine using `bc-serve explain NAME --native-config
+   engines/radiance/configs/NAME.yaml --model-root ${BC_MODEL_ROOT}
+   --engine-binary <candidate-binary> --json`. Do not use separate
+   layouts/catalogues or managed `--set`. Explicitly inspect upstream
+   **retired weight encodings** and per-rank TP ownership against the
+   replacement container: IQ8R uses 256-column int8 scales regardless
+   of its 128-wide Hadamard rotation. Preflight before device allocation.
+5. **Build and test one complete runtime.** Use
+   `python3 -m bigcherry --engine radiance pin-bump <ref> --source
+   radiance --build stock --platform linux-radiance`
+   (resumable with `--resume`). Gates include the component coupling
+   and libr3 native rewrite checks, engine and component compilation,
+   CTests, plugin ABI + **layout fingerprint**, lane build and CPU smoke.
+   The serving contract is **edition 3 only**, generated from the flat
+   `components/serving/contract/serving.toml`; run
+   `bc_contract_check` to enforce generated-v3 schema/semantic
+   fingerprint equality, plus v3 writer/reader/replay tests. Bind sealed
+   exact YAML bytes, root, parser/build and fresh measured admission.
+   `bc-serve --work-root ${BC_WORK_ROOT}` enables the host-wide full
+   model identity cache; no cache hit waives resource re-admission.
+6. **Hardware acceptance before release.** Qualify each shipped
+   config from the installed bundle (canary, stop/drain, fresh/named/
+   explicit stored replay), with helper-on/off and mixed-rank paths
+   wherever the roster requires them. For model-quality KLD/top-1 use
+   a temporary YAML arm with `num-speculative-tokens: 0`; leave
+   production draft depth unchanged for throughput tests. Compare
+   matched old/new model, KV dtype, prompts and topology using at
+   least **three interleaved pairs** for prefill, TTFT and decode.
+   Long-prefill/long-8 may be bimodal: evaluate spread and repeat
+   inconclusive comparisons instead of gating on a single pair.
+   No release or production pin change until the exact acceptance
+   matrix and installed/relocated runtime pass.
 
-A clean textual patch or component declaration is not proof of ABI/layout
-semantics beyond the checked surfaces. Missing source, undeclared upstream names,
-failed native rewrite
-or ABI mismatch means **not ready**, even if advisory triage returns zero.
-
-For the exact-ref rewrite check, extract only target `libr4d` from the
-shared bare mirror into project-local scratch and run `r3_rewrite.py --check`
-against checked-in `rewrites.txt` and `native/`. Do not move
-`vendor/radiance` during read-only triage. The 2026-11-18 `v2.1.0` preflight
-found 19 rewrite failures and ABI 40 (not RUM03's ABI-41 candidate).
-
-RUM04 replaces native-only BigCherry option mirroring with upstream
-`fleet::parse` of **the exact admitted immutable original YAML bytes**,
-while preserving the existing strictly measured BigCherry contract and
-fresh resource/power admission. No normalized YAML writer, new Config
-schema, FleetConfig serializer or independent bundle index is needed.
-BHK02–BHK04 own GFXOFF host-kernel prerequisites outside Radiance.
-After these source/ABI checks, component CTests, runtime asset verification
-and RUM09 minimal hardware acceptance remain mandatory.
+The `pin-bump` drift gate's mechanical `[coupling]` result does
+not certify semantic protocol compatibility, supported model formats,
+KLD or hardware performance. Record those as separate release evidence.
 
 ## The procedure
 
-Work on ONE tree at a time. Do not bump H: and J: (the build server) in the same
-window; bump one, record, then bump the other.
+Work on one deployment checkout at a time. Record the first bump and its
+acceptance before changing the next deployment.
 
 1. **Move the pin, then commit — in that order, in the same minute.**
 
@@ -240,7 +262,7 @@ window; bump one, record, then bump the other.
    `[[trees]]` in `config/recipes.toml` is where the required trees are
    declared; the aggregate additionally reports pin divergence across trees
    (each tree can be individually consistent and still disagree with its
-   neighbours — the 2026-08-21 incident had three upstream revisions live at
+   neighbours — a prior incident had three upstream revisions live at
    once).
 
    **Release.** Once the hardware evidence is in (step 4b of the bump skill:
@@ -268,7 +290,7 @@ window; bump one, record, then bump the other.
    package in `release-please-config.json`; it is removed after the release
    tag exists. Commit-message `Release-As` footers are not used.
 
-   Main's ruleset requires `conventional-title` and `index-line-endings`. A release-please PR created or updated by the default `GITHUB_TOKEN` never triggers workflows (GitHub's anti-recursion rule), so those checks never run and the base-branch policy blocks the merge (bc-radiance 170.0.0, PR #253; bc-radiance/bc-llamacpp/bc-platform PRs #306/#218/#204, 2026-10-21). `release-please.yml` now passes `secrets.RELEASE_PLEASE_TOKEN` (a PAT) to the action so its PRs act as a real account and trigger checks normally; if that secret is ever absent, unblock a stuck release-please PR by hand with `gh pr close <n> && gh pr reopen <n>`. For `pin-release`'s own main/release/unpin PRs, the tool brings each branch up to current `main` first (only the shared release manifest may conflict: the released package keeps the release side's version, every other package main's), waits for the ruleset-required checks, and if none is reported triggers them once as the account (the same close/reopen) and waits again. A failing or missing required check stops the command. Built on #208.
+   Required PR checks include conventional-title and index-line-endings. Release-please uses RELEASE_PLEASE_TOKEN to trigger workflows; PRs created with GITHUB_TOKEN may not trigger required checks. If no checks run, close and reopen the PR as the account. The pin-release main/release/unpin branches must be updated against main, preserve the released package version, wait for required checks and refuse on failures.
 
    Versions and tags. release-please owns the tags: `bc-llamacpp-<llama build>.<minor>.<patch>` (the llama.cpp engine's release line; the shared platform has its own, `bc-platform-<version>`).
    A pin bump is released as `<build>.0.0` (`bc-11474.0.0`; the workflow also
@@ -326,10 +348,10 @@ be named, not silently reused.
 | inventory DBs (`*.sqlite` / `*.json`) | signatures reference revision-specific canonical shapes | regenerate from a fresh record at the new pin |
 | campaign build descriptors (`artifacts/<rev>/`) | content-addressed by `upstream_revision` | regenerate; old descriptors stay as historical evidence |
 | build directories (`~/bc-build-*`) | compiled from a specific tree | rebuild (ccache makes this cheap) |
-| committed evidence bundles (e.g. `docs/evidence/2026-08-21-hi35-hi36-27b-r9700/`) | the README names the `source_revision`; every checksum is for that revision | the bundle is *of* that pin — never mutate it; new pin = new bundle |
+| committed evidence bundles (e.g. `docs/evidence/<run-id>/`) | the README names the `source_revision`; every checksum is for that revision | the bundle is *of* that pin — never mutate it; new pin = new bundle |
 | `releases/` records + index | monotonic per-revision evidence; the old record stays at its stage | new record for the new revision; old records are never edited |
 
-Patch validation evidence (`evidence/validation.json`, `evidence/promotion.json`, the legacy baseline) is **not** on
+Patch validation evidence (`evidence/validation.json`, `evidence/promotion.json`, the prior baseline) is **not** on
 this list. It carries across the bump: the pin-bump evidence phase and every build apply the same qualification rule as
 before the bump, and report the old recorded pin as a note. A patch is rerun only when someone decides its change
 warrants it and demotes the patch; a genuine failure (the patch no longer applies, a build or check fails) still stops
@@ -452,8 +474,9 @@ them without any patch anchor failing. The compile phase runs three checks in or
    with `SOURCE_COMPILE_FAILED`. It is saved in `state.json` (`compile.platform`); a `--resume` with none reuses it and a
    different one is refused (`RESUME_PLATFORM_MISMATCH`).
 2. `component-plugin-abi` (`PLUGIN_ABI_MISMATCH`): every `*.so` in the build's `radiance_home/kernels` (the engine's own and
-   the components') is loaded in a child process and its exported `rad_plugin_abi_version()` must equal `RAD_ABI_VERSION`
-   from the bumped source's `abi/rad_abi.h`. This is the engine's own load handshake; `nm` could show the symbol but not its value.
+   the components') is loaded in a child process. Its exported `rad_plugin_abi_version()` must equal `RAD_ABI_VERSION`
+   from the bumped source's `abi/rad_abi.h`, and its exported `rad_plugin_abi_layout()` must match the layout fingerprint
+   from the engine's own `libr4d`. The loader enforces both; `nm` could show symbols but not their values or agreement.
 3. `component-tests` (`COMPONENT_TEST_FAILED`; needs `ctest`): each component's `[test] targets` in `component.toml` are
    built and run with `ctest` in the component's build tree.
 

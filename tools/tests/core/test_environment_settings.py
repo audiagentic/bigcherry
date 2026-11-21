@@ -12,7 +12,7 @@ import unittest
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[3]
-REGISTRY = ROOT / "engines/radiance/components/serving/contract/serving-v2.toml"
+REGISTRY = ROOT / "engines/radiance/components/serving/contract/serving.toml"
 RAD0009 = ROOT / "engines/radiance/patches/rad0009_serving_manifest/patch.py"
 
 # The handoff is a typed snapshot consumed directly by the engine and plugin.
@@ -59,7 +59,7 @@ class EnvironmentSettingsGuard(unittest.TestCase):
             "(or stop reading it); see docs/design/serving-manifest-v2/spec.md amendment 14")
 
     def test_typed_engine_settings_have_no_legacy_environment_bridge(self) -> None:
-        patch = RAD0009.read_text(encoding="utf-8")
+        patch = (ROOT / "engines/radiance/components/serving/bc_serving_manifest.cpp").read_text(encoding="utf-8")
         self.assertIn("g_engine_settings = settings;", patch)
         self.assertIn("bc_serving_remote_settings", patch)
         self.assertIn("bc_serving_engine_settings", patch)

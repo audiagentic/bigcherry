@@ -1,6 +1,6 @@
 """VTP31 (rad0028): every rank verifies rank 0's DFlash2 draft.
 
-Card-free. The pinned-source test applies the production serving-core chain up to rad0028 to radiance v1.17.0 when a checkout
+Card-free. The pinned-source test applies the production serving-core chain up to rad0028 to the pinned Radiance source when a checkout
 with that tag is reachable (RADIANCE_SRC, or the workspace's vendor/radiance), and is skipped otherwise.
 """
 from __future__ import annotations
