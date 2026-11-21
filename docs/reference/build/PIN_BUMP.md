@@ -72,6 +72,11 @@ the llama.cpp repin/transition procedure below is independent.
    review changed patch targets and libr3 `native/*.rw` anchors,
    and record upstream ABI and exported layout fingerprint. The verdict
    is advisory; missing ABI/coupling/rewrite compatibility blocks the bump.
+   Native rewrite rules whose target source is created by a managed patch
+   (the `bc_*_impl.h` files) cannot be judged against pristine upstream, so
+   triage lists them as "checked on the patched tree after rebase" instead
+   of drift; the `pin-bump` drift phase checks them after the patches apply.
+   A missing source that no registered patch creates is still drift.
 2. **Prove every composition.** Once the new exact source is checked out,
    run `patch-rebase-check --source NAME` separately for each current
    recipe `[source.*]` (`radiance-native` as the unpatched control, `radiance`,
@@ -118,12 +123,59 @@ the llama.cpp repin/transition procedure below is independent.
    wherever the roster requires them. For model-quality KLD/top-1 use
    a temporary YAML arm with `num-speculative-tokens: 0`; leave
    production draft depth unchanged for throughput tests. Compare
-   matched old/new model, KV dtype, prompts and topology using at
-   least **three interleaved pairs** for prefill, TTFT and decode.
-   Long-prefill/long-8 may be bimodal: evaluate spread and repeat
-   inconclusive comparisons instead of gating on a single pair.
+   matched old/new model, KV dtype, prompts and topology with
+   interleaved A B B A pairs for prefill, TTFT and decode. Two launches
+   per arm is the minimum the baseline tolerance needs (it is derived
+   from the spread between the old launches; one launch is refused);
+   run a third pair when a result lies within the old arms' spread or
+   an arm fails. Long-prefill/long-8 may be bimodal: evaluate spread
+   and repeat inconclusive comparisons instead of gating on a single pair.
    No release or production pin change until the exact acceptance
    matrix and installed/relocated runtime pass.
+
+7. **Sync the checkouts after the release.** When the release PR is merged
+   and its runtime bundle is published, and the bundle is installed and
+   smoke-tested natively:
+   - In the primary checkout run `git fetch` then `git pull --ff-only`
+     only; never edit it. Confirm `HEAD` equals `origin/main` and
+     `python3 -m bigcherry --engine radiance pin-status` reports
+     **consistent** (the vendor clone is at the pinned commit; `pin-bump`
+     moves it during the bump, and a pull of the new pin must leave the two
+     agreeing).
+   - Close the bump's gateway sessions, then remove the task worktrees with
+     `audiagentic worktree finish` (see [WORKTREES.md](../../guides/WORKTREES.md)).
+     Archive evidence and scratch you want to keep first; `finish` refuses
+     to discard ignored files without `discard-ignored N`.
+   - Record the new pin in the plan and ledger.
+
+### Lessons from the 2.2 bump (RUM09)
+
+- **Read the engine's KV sizing before measuring.** The 2.2 build first
+  failed one gated decode metric (long-8 +16.6%). The cause was the GPU KV
+  pool: 17.6 GiB a card against 20.97 GiB on the old build, because the
+  pool refit fell back to the calibrated minimum whenever independent
+  whole-MiB rounding missed the budget by one MiB. Compare the engine log
+  line "the cache can grow to N GiB a card" between the old and new build
+  first; it is the quickest explanation for a warm (prefix-hit) decode
+  difference, which cold and aggregate numbers hide.
+- **Tracing is not free to add later.** The old owner refused lab tracing
+  and the 2.2 owner refused native-config plus `--lab-experiment`, so no
+  per-rank timing could be taken when it was needed. Per-op rank-0 timing
+  from the phase-trace tooling is what located the slowdown to paged
+  attention. Keep a native-config-compatible phase trace available.
+- **Paired-run harness.** Seed a stored manifest index only into the old
+  arm (the 2.2 owner rejects the old format). Each arm writes run records
+  under its own work root: merge them into the environment's work root
+  before `baseline` and `compare`. Take a short per-arm `gpu` lease. A
+  cold native start fingerprints the whole model; pass `--work-root` so the
+  identity cache is used and do not reuse a measurement directory across
+  differing configs (stored replay validation will refuse it).
+- **Triage at the current pin must be clean.** Run `pin-triage` at the
+  pinned commit; a non-clean verdict there is a defect in the check, not
+  upstream drift (the patch-owned rule false positives were found this way).
+- **`audiagentic worktree start` names the branch by account prefix**, and
+  that prefix fails the forbidden-terms check: rename the branch before the
+  first commit (`git branch -m`).
 
 The `pin-bump` drift gate's mechanical `[coupling]` result does
 not certify semantic protocol compatibility, supported model formats,

@@ -126,6 +126,23 @@ class PinTriageTests(unittest.TestCase):
         self.assertEqual(report["counts"]["changed_files"], 0)
         self.assertFalse(report["drift_details"])
 
+    def test_rule_for_a_source_a_patch_creates_is_not_pristine_drift(self):
+        (self.component_root / "native" / "bc_made.h.rw").write_text("@@ find 1\nx\n@@ replace\ny\n@@ end\n")
+        files = [SimpleNamespace(path="core/engine.cpp"), SimpleNamespace(path="libr4d/bc_made.h")]
+        with patch.object(pin_triage.patch_registry, "load_implementation", return_value=files):
+            report = pin_triage.run(engine="radiance", target_ref="v1", context=self.context)
+        self.assertEqual(report["patch_owned_rewrites"], ["libfix/native/bc_made.h.rw"])
+        self.assertNotIn("libfix/native/bc_made.h.rw", report["drift_failures"])
+        self.assertEqual(report["verdict"], "patches-affected" if report["patch_anchors"] else "clean")
+        self.assertIn("checked on the patched tree after rebase", pin_triage.format_report(report))
+
+    def test_rule_for_a_missing_source_no_patch_creates_stays_drift(self):
+        (self.component_root / "native" / "bc_orphan.h.rw").write_text("@@ find 1\nx\n@@ replace\ny\n@@ end\n")
+        report = pin_triage.run(engine="radiance", target_ref="v1", context=self.context)
+        self.assertEqual(report["patch_owned_rewrites"], [])
+        self.assertEqual(report["drift_failures"]["libfix/native/bc_orphan.h.rw"], ["libr4d has no source bc_orphan.h"])
+        self.assertEqual(report["verdict"], "drift-only")
+
     def test_coupling_breaks_clean_verdict_at_same_revision(self):
         self.component.coupling["upstream-files"] = ("abi/renamed_header.h",)
         report = pin_triage.run(engine="radiance", target_ref="v1", context=self.context)

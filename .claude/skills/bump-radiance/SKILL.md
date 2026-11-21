@@ -18,7 +18,9 @@ passing patch application never proves runtime compatibility.
 1. Identify the **exact commit**, version, `RAD_ABI_VERSION`, layout fingerprint
    and relevant upstream changes. Do not equate the newest tag with the reviewed
    target. Run `python3 -m bigcherry --engine radiance pin-triage <ref> --json`;
-   its non-clean verdict is advisory, not an acceptance decision.
+   its non-clean verdict is advisory, not an acceptance decision. Run it once
+   at the **current pin** first: it must be `clean`. Native rules for sources a
+   managed patch creates are listed as checked after rebase, not as drift.
 2. Diff upstream against the *registered patch targets* and the libr3
    `rewrites.txt` / `native/*.rw` anchors. Test libr3 rewrites against an
    exact-ref `libr4d` archive with `r3_rewrite.py --check`, without disturbing
@@ -134,10 +136,14 @@ draft depth merely for this quality test; the performance and replay gates
 run at their authored depth.
 
 Use matched old/new builds and identical helper topology/inputs for paired
-prefill, cold TTFT and decode comparisons. Run **at least three interleaved
-pairs** and inspect per-pair spread; long-prefill/long-8 can be bimodal, so
-a single adverse result or apparent chain improvement is not decisive.
-Repeat only to resolve genuine noise or regression. Baselines, KLD, kernel
+prefill, cold TTFT and decode comparisons. Run **interleaved pairs, at least
+two launches per arm** (the baseline tolerance is derived from the old arms'
+spread, so one launch is refused) and a third pair when a result is within
+that spread or an arm fails; long-prefill/long-8 can be bimodal, so a single
+adverse result is not decisive. On a decode regression compare the engine
+log's "the cache can grow to N GiB a card" line between builds before
+anything else: a smaller GPU KV pool shows up first in warm (prefix-hit)
+rounds. Repeat only to resolve genuine noise or regression. Baselines, KLD, kernel
 rows and newly qualified formats must bind exact model, source, build and
 runtime identities. Do not claim a clean bump from compile, one canary or
 unpaired throughput alone.
@@ -146,3 +152,19 @@ Only after runtime, short quality, paired performance and installed-bundle
 gates pass: record evidence and use the release workflow in
 `docs/reference/build/RELEASES.md`. Do not push or publish as part of
 read-only triage.
+
+## 5. After the release: sync and clean up
+
+Once the release PR is merged, the bundle published, and installed bundle
+smoke passes (`bc-release install`, `verify`, `status`, then a start):
+
+1. In the **primary** checkout run `git fetch` and `git pull --ff-only` only,
+   never edit; then `python3 -m bigcherry --engine radiance pin-status` must
+   report the vendor clone consistent with the new pin.
+2. Close the bump's gateway sessions and cancel orphaned requests, then
+   `audiagentic worktree finish` each task worktree (`abandon TIP` only after
+   confirming its commits are in the merged branch; archive scratch first).
+3. Rename a branch that `audiagentic worktree start` prefixed with the account
+   name before its first commit.
+4. Record the pin move in the plan and the ledger. Lessons from the 2.2 bump
+   are in the PIN_BUMP.md Radiance subsection; add new ones there.
