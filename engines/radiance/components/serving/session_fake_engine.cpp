@@ -11,6 +11,8 @@
 //   descendant       fork a process that ignores SIGINT and SIGTERM, outlives this one, and writes its PID here
 //   fd_dump          write what each open descriptor points at, one a line, to this file
 // A manifest that is not such an object (a real one, from a test's fake bc-serve) gives the defaults with port 0.
+// A native (v3) serving manifest takes its port from the manifest and the same keys from the JSON object in the
+// environment variable TEST_FAKE_BEHAVIOUR (the serving engine only; not a measuring run, a helper or the inspector).
 #include <arpa/inet.h>
 #include <netinet/in.h>
 #include <poll.h>
@@ -240,6 +242,7 @@ int main(int argc, char** argv) {
         } else if (parsed.is_object() && parsed.contains("spec")) {
             // The card-free engine uses the manifest's fixture port and mailbox.
             const auto& spec = parsed.at("spec");
+            bool apply_behaviour = false;   // TEST_FAKE_BEHAVIOUR is for the serving engine, not a measuring run
             if (parsed.value("apiVersion", std::string()) == "bigcherry/v3") {
                 const auto& native = spec.at("native_config");
                 const char* expected_yaml = std::getenv("TEST_NATIVE_INSPECT_EXPECT_YAML");
@@ -273,6 +276,7 @@ int main(int argc, char** argv) {
                         return 9;
                     }
                 }
+                apply_behaviour = !helper && !measuring;
                 std::printf("fake engine: native v3 %s snapshot, root and environment verified\n",
                             measuring ? "measuring" : "serving");
             }
@@ -283,6 +287,15 @@ int main(int argc, char** argv) {
             m["ngram_placement"] = spec.at("processes").at("engine").at("execution").at("ngram_placement");
             if (spec.contains("handoff"))
                 m["shm"] = spec.at("handoff").at("transport").at("shm");
+            if (const char* behaviour = apply_behaviour ? std::getenv("TEST_FAKE_BEHAVIOUR") : nullptr) {
+                const json given = json::parse(behaviour, nullptr, false);
+                if (!given.is_object()) {
+                    std::fprintf(stderr, "fake engine: TEST_FAKE_BEHAVIOUR is not a JSON object\n");
+                    return 9;
+                }
+                for (const auto& [key, value] : given.items())
+                    if (key != "port") m[key] = value;   // the port is the manifest's
+            }
         }
     }
     std::printf("fake engine: pid %d manifest %s\n", int(::getpid()), manifest.c_str());
