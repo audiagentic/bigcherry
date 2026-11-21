@@ -88,7 +88,7 @@ class ResolveTests(unittest.TestCase):
         self.assertEqual(r.engine_indices, (0, 1))
         self.assertEqual(r.engine_arch, "gfx1100")
         self.assertEqual(r.engine_plugin, "libr3.so")
-        self.assertEqual(r.model, "radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad")
+        self.assertEqual(r.model, "radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad")
         self.assertEqual(r.common_env, {})
         self.assertEqual(r.helpers, ())
         lines = "\n".join(_env_lines(r))

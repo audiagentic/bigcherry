@@ -5,7 +5,7 @@ server:
   kernels: libr3,libr4d,libref
 models:
   qwen27b:
-    model: radiance/StillDeadcode/qwen3.8-27b-mxfp4/qwen3.8-27b-mxfp4.rad
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
     tp: 3
     tp-wire: exact
     max-model-len: 262144
@@ -19,18 +19,20 @@ models:
     prefix-resume: nearest
     rope-scaling: none
     p2p: "off"
-    pipelined-prefill: auto
-    # Pipeline a one-sequence prefill step from 256 rows rather than 1024, so a 512-token prompt overlaps its all-reduces too:
-    # +7.6% / +2.9% / +1.6% at 1/4/8 streams, identical output (VTP31 experiment 7).
+    # The pipelined prefill on an int8 trunk is opt-in (rad0030): "on", not "auto", which keeps such a trunk serial.
+    pipelined-prefill: "on"
+    # Pipeline a one-sequence prefill step from 256 rows rather than 1024, so a 512-token prompt overlaps its all-reduces too
+    # (VTP31 experiment 7).
     pipelined-prefill-min-rows: 256
-    tp-ownership: "kv=1,1,2;ffn=7680,7680,2048;lk=7,7,2;lv=21,21,6"
-    # the all-reduce grid without the two-shot form, as this split was measured (VTP33)
+    tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
+    # The all-reduce grid without the two-shot form, as the resident-context config was set (VTP33, on an earlier split and
+    # model; not re-measured on IQ8R).
     tune-pin: "all_reduce:nblocks=4,nthreads=256"
 x-bigcherry:
   schema: 1
-  description: "qwen27b-tp3 for resident context: 7/7/2 delta-net, 7680/7680/2048 feed-forward, 262,144 tokens"
+  description: "qwen27b-tp3 for resident context: 262,144 tokens a session, the all-reduce grid without the two-shot form"
   variant-of: "qwen27b-tp3"
-  differs: ["models.qwen27b.max-model-len", "models.qwen27b.tp-ownership", "models.qwen27b.tune-pin"]
+  differs: ["models.qwen27b.max-model-len", "models.qwen27b.tune-pin"]
   ranks:
     - {arch: "gfx1100", count: 2}
     - {arch: "gfx1201", count: 1}

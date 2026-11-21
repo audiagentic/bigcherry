@@ -1252,7 +1252,7 @@ void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
         std::string(64, '0'), "--expected-owner-attempt", "native-test-attempt", "--plan-cache", "missing-cache",
         "--engine-binary", "/missing/radiance", "--power-profile", "stock", "--configs", configs_dir.string(),
         "--site", site.string(), "--model-root", (t.root / "model-root").string(), "--sys-root", t.root.string(),
-        "--set", "layout.name=\"qwen27b-tp3-int8\""};
+        "--set", "layout.name=\"qwen27b-tp3\""};
     const auto measured_key = run_bc_serve(measured_args);
     if (measured_key.output.find("native writer descriptor must be a fully sealed memfd") == std::string::npos)
         throw std::runtime_error("v3 measured writer rejected the frozen-key guard before snapshot loading: " +
@@ -1296,7 +1296,7 @@ void session_engine_plan(Fixture& t) {
     in.options.site = site;
     in.options.configs = {configs};
     in.options.model_root = t.root / "model-root"; // the site's model wins; the root is still required
-    in.options.sets = {"layout.name=\"qwen27b-tp3-int8\"", "memory.host_pool_mib=1024"};
+    in.options.sets = {"layout.name=\"qwen27b-tp3\"", "memory.host_pool_mib=1024"};
     in.self = t.root / "bc-serve-test";
     fs::create_symlink(BC_SERVE_EXE, in.self);
     in.engine_binary = BC_FAKE_ENGINE;
@@ -1337,7 +1337,7 @@ void session_engine_plan(Fixture& t) {
             {"TEST_NATIVE_INSPECT_TP", "3"},
             {"TEST_NATIVE_INSPECT_TP_WIRE", "exact"},
             {"TEST_NATIVE_INSPECT_XBIGCHERRY",
-             Json{{"schema", 1}, {"description", "qwen27b-tp3-int8 fixture"},
+             Json{{"schema", 1}, {"description", "qwen27b-tp3 fixture"},
                   {"ranks", Json::array({{{"arch", "gfx1100"}, {"count", 2}}, {{"arch", "gfx1201"}, {"count", 1}}})},
                   {"memory", {{"host-pool-mib", 0}, {"host-kv-mib", 0}}}}   // a dense model: the engine sizes its own
                  .dump()},
@@ -1353,7 +1353,7 @@ void session_engine_plan(Fixture& t) {
              std::to_string(session_resolved.values.at("service").at("max_sessions").get<int>())},
             {"TEST_NATIVE_INSPECT_KERNELS", expected_kernels.dump()}};
         gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root, std::move(native_overrides)};
-        gated.named_config = "qwen27b-tp3-int8";
+        gated.named_config = "qwen27b-tp3";
         // Offline preflight (`bc-serve explain CONFIG --native-config YAML`): the planner's inspection and reconcile,
         // stopped before any writer, power admission, engine or helper child. One pass and one refusal per rule.
         if (bc::serving::v2::kContractVersion == 3) {
@@ -1933,7 +1933,7 @@ void session_engine_plan(Fixture& t) {
     for (const auto& c : calls) {
         assert(c[0] == in.self.string() && c[1] == "--write-manifest" && has(c, "--power-profile", "stock"));
         assert(has(c, "--site", site.string()) && has(c, "--configs", (configs / "qwen27b.toml").string()) &&
-               !flag(c, "--layouts") && has(c, "--set", "layout.name=\"qwen27b-tp3-int8\"") &&
+               !flag(c, "--layouts") && has(c, "--set", "layout.name=\"qwen27b-tp3\"") &&
                has(c, "--sys-root", t.root.string()));
     }
     for (size_t i : {0, 2, 3, 5})
@@ -1976,7 +1976,7 @@ void session_engine_plan(Fixture& t) {
                 rocr += (rocr.empty() ? "" : ",") + std::to_string(g.at("hip_ordinal").get<int>());
     assert(s.runtime.at("ROCR_VISIBLE_DEVICES") == rocr && s.runtime.at("HIP_VISIBLE_DEVICES") == "0,1,2");
     assert(s.runtime.at("RADIANCE_HOME") == home.string() && s.runtime.size() == 3);
-    assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3-int8" &&
+    assert(s.port == 36080 && s.summary.at("config") == "qwen27b-tp3" &&
            s.summary.at("manifest_digest") == "0123abcd");
     { // A profile changed only while the unmeasured child resolves must not slip behind the frozen cache key.
         ss::EnginePlanInputs drifting = in;
@@ -2053,7 +2053,7 @@ void session_engine_plan(Fixture& t) {
         for (const char* name : {"proc", "sys", "dev"})
             fs::copy(t.root / name, revised_root / name, fs::copy_options::recursive);
         revised.options.sys_root = revised_root;
-        revised.options.sets = {"layout.name=\"qwen27b-tp3-int8\"", "memory.host_pool_mib=0",
+        revised.options.sets = {"layout.name=\"qwen27b-tp3\"", "memory.host_pool_mib=0",
                                 "memory.host_kv_mib=0"};
         const auto original_resolved = tresolve(revised.options, session_facts);
         assert(original_resolved.values.at("memory").at("host_pool_mib").get<int64_t>() == 0);
@@ -2227,7 +2227,7 @@ void session_engine_plan(Fixture& t) {
     }
     { // Calibration parity: invalid prompt batches must be refused before the writer or any GPU child.
         ss::EnginePlanInputs bad_calibration = in;
-        bad_calibration.named_config = "qwen27b-tp3-int8";
+        bad_calibration.named_config = "qwen27b-tp3";
         bad_calibration.self = BC_SERVE_EXE;
         bad_calibration.calibration_run = true;
         bad_calibration.live_policy_file = t.file("session-calibration-policy.json", "{}");
@@ -2411,7 +2411,7 @@ void session_engine_plan(Fixture& t) {
     }
     { // RSC04 lab experiments use the real named resolver and writer call graph.
         ss::EnginePlanInputs lab = in;
-        lab.named_config = "qwen27b-tp3-int8";
+        lab.named_config = "qwen27b-tp3";
         lab.experiment_file =
             t.file("lab-geometry.json", R"({"placement":{"mode":"observe","epoch_cycle_s":30}})");
         lab.engine_binary = BC_FAKE_ENGINE;
@@ -2443,7 +2443,7 @@ void session_engine_plan(Fixture& t) {
         const auto native = bc::serving::v2::load_manifest(produced, bc::serving::v2::PlanUse::measuring);
         assert(native && native.value().spec.experiment &&
                native.value().spec.intent.service.profile == bc::serving::v2::Profile::kLab);
-        const auto detached = run_bc_serve({"start", "qwen27b-tp3-int8", "--run-dir", run.string(),
+        const auto detached = run_bc_serve({"start", "qwen27b-tp3", "--run-dir", run.string(),
                                             "--lab-experiment", lab.experiment_file.string()});
         assert(detached.exit_code != 0 && detached.output.find("requires foreground") != std::string::npos);
         // ENG05: exact existing trace_level is the one extra, non-mutating

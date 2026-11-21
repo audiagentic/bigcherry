@@ -12,18 +12,18 @@ server:
   kernels: libr3,libr4d,libref
 models:
   qwen27b:                          # exactly one model
-    model: radiance/bigcherry/qwen3.8-27b-w8a8/qwen3.8-27b-w8a8-df2.rad
+    model: radiance/StillDeadcode/qwen3.8-27b-iq8r-dflash/qwen3.8-27b-iq8r-dflash.rad
     tp: 3
     tp-wire: exact
-    max-model-len: 8192             # context and sessions are authored here, once
+    max-model-len: 262144           # context and sessions are authored here, once
     max-num-seqs: 8
     kv-cache-dtype: fp8
-    tp-ownership: "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18"
+    tp-ownership: "kv=1,1,2;ffn=6656,6656,4096;lk=6,6,4;lv=18,18,12"
 x-bigcherry:                        # what BigCherry owns and Radiance has no option for
   schema: 1
   description: "..."
-  variant-of: qwen27b-tp3-int8      # optional: provenance of a variant, with differs
-  differs: [models.qwen27b.tp-ownership]
+  variant-of: qwen27b-tp3      # optional: provenance of a variant, with differs
+  differs: [models.qwen27b.max-model-len]
   ranks: [{arch: "gfx1100", count: 2}, {arch: "gfx1201", count: 1}]
   helpers: [{arch: "gfx1030", count: 1, placement: "tail"}]       # helper configs
   memory: {host-pool-mib: 0, host-kv-mib: 0}
