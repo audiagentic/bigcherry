@@ -691,7 +691,8 @@ int main(int argc, char** argv) {
                 std::vector<uint64_t>(budgets,budgets+helper_count),
                 gpu->expert_stride(),std::move(protected_experts),epoch_clock,
                 &tail_service_signal,
-                settings.lab_profile ?
+                // A calibrating policy reports under the launch's own identity; the lab profile is no longer required.
+                (settings.lab_profile || cfg.policy.calibrating) ?
                     std::optional<r3::policy::CalibrationIdentity>{
                         r3::policy::CalibrationIdentity{settings.plan_cache_key,settings.layout,settings.objective}} :
                     std::nullopt);

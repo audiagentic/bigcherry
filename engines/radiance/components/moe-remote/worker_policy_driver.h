@@ -6,6 +6,8 @@
 #include "worker_policy_effect.h"
 #include "worker_policy_measure.h"
 #include "worker_policy_calibration.h"
+#include "worker_policy_probe.h"
+#include "worker_policy_derive.h"
 #include <ctime>
 #include <optional>
 #include "worker_epoch.h"
@@ -45,6 +47,7 @@ private:
         std::vector<uint64_t> last_move;
         std::map<std::pair<uint32_t,uint32_t>, Negative> excluded;
         uint64_t now_ns=0, cooldown_until_ns=0, terminal_generation=0;
+        PolicyControls controls; // the planner limits of THIS evaluation (the probe ramp while calibrating)
     };
     struct Result {
         OwnerSnapshot owners;
@@ -91,7 +94,11 @@ private:
     Evidence evidence_;
     std::mutex lock_;
     std::condition_variable cv_;
-    bool stop_=false, queued_=false, ready_=false;
+    bool stop_=false, queued_=false, ready_=false, evaluating_=false;
+    // RHP16: calibrating mode proposes only probes (probe.h) until the record settles, then adopts derived settings.
+    ProbeRamp ramp_;
+    std::optional<Settings> pending_adopt_;   // guarded by lock_; applied by submit between epochs
+    std::string pending_digest_;
     Snapshot job_;
     Result result_;
     std::thread worker_;
@@ -263,7 +270,7 @@ private:
             }
         }
         heat::Input input;
-        if(!build_input(copy.owners,experts,ledgers,heat_,delta,settings_.controls,
+        if(!build_input(copy.owners,experts,ledgers,heat_,delta,copy.controls,
                         poll_now,copy.cooldown_until_ns,false,&input,
                         &why,settings_.accept_unwatermarked_heat)) {
             r.reason="input_invalid";return r;
@@ -287,10 +294,12 @@ private:
                 if(stop_)return;
                 copy=std::move(job_);
                 queued_=false;
+                evaluating_=true;
             }
             Result res=evaluate(copy);
             {
                 std::lock_guard<std::mutex> guard(lock_);
+                evaluating_=false;
                 if(stop_)return;
                 result_=std::move(res);
                 ready_=true;
@@ -333,6 +342,7 @@ public:
         reset_drift();
         measured_.effect_required_quiet_windows=settings_.effect_gate?settings_.effect_min_quiet_windows:0;
         measured_.effect_cadence_ns=settings_.cadence_ns;
+        if(settings_.calibrating)ramp_=ProbeRamp(stride_,budgets_);
     }
     ~Driver() { stop(); }
     // The hot set the drift is measured on: as many experts as the tail helper holds.
@@ -351,6 +361,8 @@ public:
     Driver& operator=(const Driver&)=delete;
     bool start() {
         if(!settings_.enabled)return true;
+        // A calibrating driver must be able to probe and to report what it measured.
+        if(settings_.calibrating && (!ramp_.usable() || !calibration_identity_ || !service_))return false;
         if(!source_ || !stride_ || budgets_.empty() || !controls_valid(settings_.controls) ||
            settings_.cadence_ns==0 || settings_.abort_cooldown_ns==0 ||
            settings_.learned_eligibility_ttl_ns==0 ||
@@ -374,6 +386,26 @@ public:
         if(worker_.joinable())worker_.join();
     }
     const Evidence& evidence() const {return evidence_;}
+    /* Replace the settings with `next` at the next epoch boundary: when no transaction is in flight and no evaluation is
+     * running or waiting. The helper's own worker thread keeps running; nothing restarts. False when `next` is not a
+     * complete, valid policy for this driver's helpers. */
+    bool adopt(Settings next,const std::string& digest=std::string()) {
+        if(!next.enabled || next.calibrating || !controls_valid(next.controls) || next.cadence_ns==0 || next.abort_cooldown_ns==0 ||
+           next.learned_eligibility_ttl_ns==0 || next.head_shares.size()!=budgets_.size() ||
+           (next.effect_gate && (!service_ || !next.effect_revert_ttl_ns ||
+                                 !EffectGate({next.effect_window_samples,next.effect_min_quiet_windows,
+                                              next.effect_noise_multiplier}).valid())))
+            return false;
+        std::lock_guard<std::mutex> guard(lock_);
+        pending_adopt_=std::move(next);
+        pending_digest_=digest;
+        return true;
+    }
+    bool adoption_pending() {
+        std::lock_guard<std::mutex> guard(lock_);
+        return pending_adopt_.has_value();
+    }
+    bool calibrating() const {return settings_.calibrating;}
     void heartbeat(uint64_t now_ns) {
         if (settings_.enabled && started_ns_ && calibration_identity_ && !calibration_printed_) {
             // Sample the SAME published tail slots used by EffectGate, at the
@@ -470,6 +502,7 @@ public:
                     std::fprintf(stderr,"RHP16_CALIBRATION_JSON %s\n",row.dump().c_str());
                     std::fflush(stderr);
                     calibration_printed_=true; // exactly once per helper run
+                    if(settings_.calibrating)request_adoption(row);
                 }
             }
         }
@@ -480,6 +513,50 @@ public:
                 (unsigned long long)feed_window_ns());
         next_heartbeat_ns_=add_saturating(now_ns,feed_window_ns());
     }
+    // The calibrated record, derived with the SAME function the owner uses (worker_policy_derive.h). A record that cannot
+    // derive (partial planner evidence) leaves the static placement in place and says why.
+    void request_adoption(const nlohmann::json& row) {
+        try {
+            const auto& measurements=row.at("measurements");
+            const auto absent=row.contains("absent")?row.at("absent"):nlohmann::json::object();
+            const auto values=derive::derive_policy_values(
+                measurements,absent,settings_.objective_effect_windows,
+                settings_.objective_false_revert_rate_ppm,stride_,budgets_);
+            Settings next;
+            std::string error;
+            if(!next.derived_from(values,settings_,&error))throw std::runtime_error(error);
+            if(!adopt(std::move(next),derive::policy_digest(values)))
+                throw std::runtime_error("derived settings are not valid for this helper set");
+        } catch(const std::exception& e) {
+            std::fprintf(stderr,"policy calibration: derived policy not adopted, static placement kept: %s\n",e.what());
+            std::fflush(stderr);
+        }
+    }
+    // Epoch thread only, with nothing in flight: swap in the pending settings while the evaluation worker is idle.
+    void apply_adoption() {
+        std::string digest;
+        {
+            std::lock_guard<std::mutex> guard(lock_);
+            if(!pending_adopt_ || queued_ || ready_ || evaluating_)return;
+            settings_=std::move(*pending_adopt_);
+            pending_adopt_.reset();
+            digest=std::move(pending_digest_);
+            heat_.half_life_observations=settings_.controls.half_life_observations;
+        }
+        effect_=EffectGate({settings_.effect_window_samples,settings_.effect_min_quiet_windows,
+                            settings_.effect_noise_multiplier});
+        effect_post_started_ns_=effect_post_deadline_ns_=0;
+        {
+            std::lock_guard<std::mutex> guard(measure_lock_);
+            measured_.effect_required_quiet_windows=settings_.effect_gate?settings_.effect_min_quiet_windows:0;
+            measured_.effect_cadence_ns=settings_.cadence_ns;
+        }
+        negatives_.clear();
+        ++terminal_generation_;
+        due_ns_=0;
+        std::fprintf(stderr,"RHP16_POLICY_ACTIVE %s\n",digest.c_str());
+        std::fflush(stderr);
+    }
     size_t negative_count(uint64_t now_ns) const {
         size_t n=0;
         for(const auto& [key,entry]:negatives_)if(now_ns<entry.until_ns)++n;
@@ -487,6 +564,7 @@ public:
     }
     bool submit(void* map,r3::epoch::Controller& controller,uint64_t now_ns) {
         if(!settings_.enabled || !controller.can_propose() || inflight_)return true;
+        apply_adoption();
         if(settings_.effect_gate && !revert_failed_) {
             ServiceSnapshot service{};
             const bool service_ok=service_ && service_->snapshot(&service);
@@ -606,16 +684,29 @@ public:
             std::lock_guard<std::mutex> guard(lock_);
             if(ready_) {result=std::move(result_);ready_=false;got=true;}
         }
+        bool probe_wanted=false;
+        if(got && settings_.calibrating) {
+            const auto missing=calibration_missing_planner(measured());
+            probe_wanted=!calibration_printed_ && probe_ready(missing) && probe_needed(missing);
+            // A probe size that yields no plan is too small to move a group: ramp up, never past the byte budget.
+            if(probe_wanted && result.evaluated && result.plan.valid &&
+               (result.reason=="no_improvement_or_margin" ||
+                (!result.plan.no_change && !probe_acceptable(result.plan,active.helpers))))
+                ramp_.grow();
+        }
         if(got) {
             if(result.unwatermarked)evidence_.unwatermarked_heat=true;
             if(result.evaluated)++evidence_.evaluated;
-            if(!result.reason.empty())record_no_change(result.reason);
+            if(settings_.calibrating && result.reason.empty() && !probe_wanted)record_no_change("probe_idle");
+            else if(!result.reason.empty())record_no_change(result.reason);
             else if(result.owners.epoch!=active.epoch ||
                     result.owners.digest!=active.digest ||
                     result.owners.owner!=active.owner)record_no_change("stale_owner_snapshot");
             else if(!result.plan.valid || result.plan.no_change ||
                     !heat::delta_matches(result.plan,active.owner) ||
                     result.plan.delta.empty())record_no_change("invalid_delta");
+            else if(settings_.calibrating && !probe_acceptable(result.plan,active.helpers))
+                record_no_change("probe_no_tail_gain");
             else if(const char* reject=proposal_rejection(
                         result.terminal_generation,terminal_generation_,
                         result.valid_until_ns,clock_.now_ns(),cooldown_until_ns_,
@@ -673,6 +764,7 @@ public:
             job_.last_move=history_.times();
             job_.excluded=negatives_;
             job_.terminal_generation=terminal_generation_;
+            job_.controls=settings_.calibrating?ramp_.controls(settings_.controls):settings_.controls;
             job_.now_ns=now_ns;
             job_.cooldown_until_ns=cooldown_until_ns_;
             queued_=true;
@@ -798,6 +890,9 @@ public:
             evidence_.transition_ns_total=add_saturating(evidence_.transition_ns_total,elapsed);
             evidence_.transition_ns_max=std::max(evidence_.transition_ns_max,elapsed);
         }
+        if(settings_.calibrating && !transaction_was_revert && obs==HistoryObservation::COMMITTED &&
+           probe_needed(calibration_missing_planner(measured())))
+            ramp_.grow(); // the probe committed but its size did not yield every measurement
         ++terminal_generation_; // invalidate results queued before any closed txn
         prune_expired(now_ns);
         inflight_=false;

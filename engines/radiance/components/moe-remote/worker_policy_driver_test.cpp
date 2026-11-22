@@ -137,6 +137,14 @@ struct DriverTestAccess {
     static uint64_t post_wait(Driver& d) {return d.effect_post_wait_ns();}
     static uint64_t post_deadline(Driver& d) {return d.effect_post_deadline_ns_;}
     static bool post_pending(Driver& d) {return d.effect_.waiting();}
+    static uint32_t ramp_moves(Driver& d) {return d.ramp_.moves();}
+    static void mark_printed(Driver& d) {d.calibration_printed_=true;}
+    static void request_adoption(Driver& d,const nlohmann::json& row) {d.request_adoption(row);}
+    static Settings current(Driver& d) {return d.settings_;}
+    static uint64_t reason(Driver& d,const char* name) {
+        const auto it=d.evidence_.reasons.find(name);
+        return it==d.evidence_.reasons.end()?0:it->second;
+    }
 };
 }
 struct PausedHeat : HeatFake {
@@ -339,8 +347,101 @@ static void test_calibration_ack_roundtrip() {
           "CLEANED carries actual lane unavailable duration and valid flag");
 }
 
+
+// RHP16 calibrating mode: structural settings, probe-only proposals, then adoption of derived settings between epochs.
+static nlohmann::json calibrated_row() {
+    nlohmann::json m=nlohmann::json::object();
+    m["txn_p50_ns"]=1593403198ull;m["txn_p95_ns"]=3794447513ull;m["copy_bytes_per_s"]=319377397ull;
+    m["heat_gap_max_ns"]=6955375341ull;m["heat_watermarked"]=0;m["hot_set_k"]=2;m["marginal_error_ppm"]=31905;
+    m["marginal_observations"]=105169020ull;m["drift_half_life_observations"]=15849692ull;
+    m["observation_rate_per_s"]=1282858;m["tail_share_gain_ppm"]=98958;
+    m["tail_lane_service_ns_per_s"]=468160374ull;m["tail_lane_row_ns"]=62964;m["lane_lost_ns"]=14766582;
+    nlohmann::json absent=nlohmann::json::object();
+    for(const char* n:{"effect_rows_per_s","effect_noise_max_ns","effect_row_noise_ns","effect_window_noise_ladder"})
+        absent[n]="not observed in this test";
+    return {{"measurements",m},{"absent",absent}};
+}
+static Settings calibrating_settings() {
+    Settings s;std::string error;
+    check(s.calibrating_from(1000,{1,1},2,10000,&error),"calibrating settings from declared facts");
+    return s;
+}
+static void test_calibrating_mode() {
+    {   // The structural settings use only declared facts, and refuse an undeclared objective.
+        const Settings s=calibrating_settings();
+        check(s.calibrating && s.enabled && !s.effect_gate && s.accept_unwatermarked_heat &&
+              s.cadence_ns==1000 && s.controls.max_heat_age_ns==2000 && s.controls.margin>0 &&
+              s.objective_effect_windows==2 && s.objective_false_revert_rate_ppm==10000,
+              "calibrating settings are structural");
+        Settings bad;std::string error;
+        check(!bad.calibrating_from(0,{1,1},2,10000,&error) && !bad.calibrating_from(1000,{1},2,10000,&error) &&
+              !bad.calibrating_from(1000,{1,1},0,10000,&error) && !bad.calibrating_from(1000,{1,1},2,0,&error),
+              "calibrating needs a heat period, two helpers and the declared objectives");
+    }
+    {   // A calibrating driver needs a probe size, an identity to report under and a service source.
+        Fixture f;FakeService service;
+        Driver no_identity(calibrating_settings(),std::make_unique<HeatFake>(),{20,20},10,{0,0,0,0},f.clock,&service);
+        check(!no_identity.start(),"no calibration identity: no calibrating driver");
+        Driver no_budget(calibrating_settings(),std::make_unique<HeatFake>(),{5,5},10,{0,0,0,0},f.clock,&service,
+                         CalibrationIdentity{std::string(64,'b'),"flashnext-4gpu","balanced"});
+        check(!no_budget.start(),"a budget that cannot hold one expert stride gives no probe");
+    }
+    {   // Probe-only proposals, ramped from one stride; adoption waits for the transaction to close.
+        Fixture f;FakeService service;
+        Driver d(calibrating_settings(),std::make_unique<HeatFake>(),{20,20},10,{0,0,0,0},f.clock,&service,
+                 CalibrationIdentity{std::string(64,'b'),"flashnext-4gpu","balanced"});
+        check(d.start() && d.calibrating() && DriverTestAccess::ramp_moves(d)==1,"calibrating driver starts at one stride");
+        const bool quiet=pump(f,d,false,4);
+        check(quiet && d.evidence().proposed==0 &&
+              !probe_ready(calibration_missing_planner(d.measured())),
+              "no probe before the passive evidence is in");
+        const auto before=f.owners();
+        check(pump(f,d,true,3000),"a probe is proposed once the passive evidence is in");
+        check(DriverTestAccess::ramp_moves(d)==2,
+              "one stride cannot move a group on this layout: the ramp doubled once, to the budget cap");
+        check(d.evidence().proposed==1,"exactly one probe in flight");
+        // A derived policy adopted now waits: the transaction is in flight.
+        check(d.adopt(DriverTestAccess::current(d))==false,"calibrating settings are not a derived policy to adopt");
+        DriverTestAccess::request_adoption(d,calibrated_row());
+        check(d.adoption_pending(),"the derived policy is pending");
+        check(d.submit(f.map,*f.controller,f.clock.now_ns()) && DriverTestAccess::current(d).calibrating,
+              "not applied while the probe is in flight");
+        f.commit();f.clock.advance(1001);
+        d.observe(*f.controller,f.map,f.clock.now_ns());
+        const auto after=f.owners();
+        check(after.epoch==before.epoch+1 && d.evidence().committed==1,"the probe committed");
+        const Measured m=d.measured();
+        check(m.transaction_ns.total()==1 && m.tail.gain_ppm.total()==1 && m.tail_committed_transactions==1,
+              "the probe supplied the transaction measurements");
+        for(int i=0;i<200 && d.adoption_pending();++i) {
+            f.clock.advance(1001);
+            check(d.submit(f.map,*f.controller,f.clock.now_ns()),"submit");
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+        const Settings now=DriverTestAccess::current(d);
+        check(!d.adoption_pending() && !now.calibrating && now.enabled && !now.effect_gate &&
+              now.controls.max_moves==2 && now.cadence_ns>1000,
+              "the derived settings replaced the calibrating ones between epochs");
+        check(d.running(),"the evaluation worker kept running through the swap");
+    }
+    {   // After the record printed, no further probes; and a partial record leaves the static placement in place.
+        Fixture f;FakeService service;
+        Driver d(calibrating_settings(),std::make_unique<HeatFake>(),{20,20},10,{0,0,0,0},f.clock,&service,
+                 CalibrationIdentity{std::string(64,'b'),"flashnext-4gpu","balanced"});
+        check(d.start(),"start");
+        DriverTestAccess::mark_printed(d);
+        check(pump(f,d,false,60) && d.evidence().proposed==0,"no probe after the record settled");
+        auto partial=calibrated_row();
+        partial["measurements"].erase("copy_bytes_per_s");
+        DriverTestAccess::request_adoption(d,partial);
+        check(!d.adoption_pending() && DriverTestAccess::current(d).calibrating,
+              "a partial record is never adopted: static placement stays");
+    }
+}
+
 int main() {
     test_calibration_ack_roundtrip();
+    test_calibrating_mode();
     // Calib14 replay: many heartbeats, including after the old derived
     // deadline, arrive before the first accepted delta. None can print an
     // incomplete calibration JSON line. An initial histogram BASELINE has
