@@ -1,6 +1,5 @@
 #pragma once
-// RSC02: BDF-scoped post-measurement VRAM accounting, based on Python\'s\n//
-// radiance_plan._wait_for_helper_vram_release. Unlike Python\'s one baseline\n// sample, this records pre-start
+// RSC02: BDF-scoped post-measurement VRAM accounting. It records the pre-start
 // counter noise and allows only that variance. C++17 only: shared headers must also remain consumable by the
 // remote-MoE worker.
 #include "callback_boundary.h"

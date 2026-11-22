@@ -477,7 +477,6 @@ class CiBundleTests(unittest.TestCase):
             "tools/bigcherry/engine_adapters/radiance.py",
             "tools/bigcherry/engine_adapters/radiance_inventory.py",
             "tools/bigcherry/engine_adapters/radiance_resources.py",
-            "tools/bigcherry/engine_adapters/radiance_manifest.py",
             "tools/bigcherry/source/identity.py", "tools/bigcherry/source/sources.py",
             "tools/bigcherry/source/upstream.py", "tools/bigcherry/source/workspace.py",
             "tools/bigcherry/patch/apply.py", "tools/bigcherry/patch/overlay.py",

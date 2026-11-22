@@ -462,7 +462,11 @@ int main(int argc, char** argv) {
      * layers back to back, so a layer whose map has not come within 10 s is one this engine never
      * declares (the MTP layer in a run without speculation, e.g. KL mode): drop its ownership. */
     bool any_map = false;
+    /* Startup-only stage timing of this bootstrap (worker_bootstrap_timing.h), logged once below. */
+    r3::bootstrap_timing::Timer boot_timer(model.layers);
+    if (gpu) gpu->set_bootstrap_timer(&boot_timer);
     for (uint32_t layer = 0; layer < model.layers; ++layer) {
+        const uint64_t map_wait_start = r3::bootstrap_timing::now_ns();
         /* One-second sleeps: a stop signal may land on another thread (HIP's), so EINTR alone cannot be relied on. */
         for (uint32_t waited = 0; !load(&h->layer_map_ready[layer]);) {
             if (stopping()) return 1;
@@ -470,6 +474,8 @@ int main(int argc, char** argv) {
             struct timespec ts{1, 0};
             (void)::syscall(SYS_futex, &h->layer_map_ready[layer], FUTEX_WAIT, 0, &ts, nullptr, 0);
         }
+        boot_timer.record_at(layer, r3::bootstrap_timing::Stage::MapWait, 0,
+                             r3::bootstrap_timing::now_ns() - map_wait_start);
         if (!load(&h->layer_map_ready[layer]))
             std::fprintf(stderr, "r3_moe_worker: layer %u has no runtime map (not declared by the engine); not owned\n",
                          layer);
@@ -486,6 +492,7 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    if (gpu) gpu->set_bootstrap_timer(nullptr);
     Owned runtime_owned;
     for (auto [l, e] : owned.expert) {
         if (!load(&h->layer_map_ready[l]) || layer_slot(map, l, e) < 0) continue;
@@ -497,6 +504,7 @@ int main(int argc, char** argv) {
     /* The final owner removal is above. Each helper release-publishes that
      * it can no longer mutate generation 0. Helper 0 is the sole control
      * writer until EpochCycle starts; seal once under the same seqlock. */
+    const uint64_t seal_start = r3::bootstrap_timing::now_ns();
     if (!r3::epoch::mark_bootstrap_filtered(map, helper_index)) {
         raise_fault(h);
         return 1;
@@ -523,6 +531,8 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    boot_timer.record_seal(r3::bootstrap_timing::now_ns() - seal_start);
+    std::fprintf(stderr, "%s\n", boot_timer.line(helper_index).c_str());
     const auto lanes_served = served_lanes(helper_count, helper_index, engine_ranks, lane_classes.count);
     std::fprintf(stderr, "r3_moe_worker: R3_MOE_WORKER_POWER_SAVE %s\n", cfg.power_save ? "on" : "off");
     if (gpu) (void)posix_fadvise(model.fd, 0, 0, POSIX_FADV_DONTNEED);

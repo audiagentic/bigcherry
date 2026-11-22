@@ -56,7 +56,7 @@ class ServerCaptureTests(unittest.TestCase):
                     return_value={"tg512_tps": 30.0},
                 ) as bench:
                     result = run_server_arm_capture(engine="llamacpp", settings={}, health_timeout_s=180,
-                        binary=Path("llama-server"), model=Path("model.gguf"), extra_args=(), manifest=None,
+                        binary=Path("llama-server"), model=Path("model.gguf"), extra_args=(),
                         output=Path(tmp), pair=0, side="native", position=1, env={},
                         bench_configs="tg512", runner_root=Path("runner"),
                         required_metrics=("tg512_tps",),
@@ -73,7 +73,7 @@ class ServerCaptureTests(unittest.TestCase):
         with patch("bigcherry.tuning.server_runner.ServerRunner") as server:
             with self.assertRaisesRegex(ValueError, "expected metrics"):
                 run_server_arm_capture(engine="llamacpp", settings={}, health_timeout_s=180,
-                    binary=Path("server"), model=Path("model"), extra_args=(), manifest=None,
+                    binary=Path("server"), model=Path("model"), extra_args=(),
                     output=Path("unused"), pair=0, side="native", position=0,
                     env={}, bench_configs="full", runner_root=Path("runner"), required_metrics=(),
                 )
@@ -281,8 +281,8 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         test = self
 
         class LayoutAdapter(RadianceAdapter):
-            def serving_layout(self, layout):
-                return test.fake_layout(layout)
+            def serving_layout(self, config, native_config, binary):
+                return test.fake_layout(config)
 
             def sidecars(self, arm, env, run_dir, binary):
                 return []
@@ -694,7 +694,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             return_value={"tg128_tps": 30.0},
         ) as bench:
             result = run_server_arm_capture(engine="llamacpp", settings={}, health_timeout_s=180,
-                binary=Path("server"), model=Path("model"), extra_args=(), manifest=None,
+                binary=Path("server"), model=Path("model"), extra_args=(),
                 output=self.root, pair=0, side="native", position=0, env={},
                 bench_configs="mtp-dual", runner_root=Path("runner"),
                 required_metrics=("tg128_tps",), expected_execution=self.expected,
