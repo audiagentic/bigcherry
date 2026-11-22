@@ -790,11 +790,12 @@
                   ],
                   "properties": {
                     "requested": {
-                      "description": "Policy requested on, off or not applicable.",
+                      "description": "Policy requested on, off, not applicable, or calibrating: no calibration record exists for this layout, so the helper measures the live heat and derives the policy in session.",
                       "enum": [
                         "on",
                         "off",
-                        "not_applicable"
+                        "not_applicable",
+                        "calibrating"
                       ]
                     },
                     "configured": {
@@ -938,6 +939,32 @@
                       "minItems": 0,
                       "maxItems": 512,
                       "uniqueItems": true
+                    }
+                  }
+                },
+                "live_calibration": {
+                  "description": "Present only when live_policy_state.requested is calibrating (and then live_policy is absent): the declared, non-measured inputs the helper needs to calibrate the live policy from the live heat. Every member is an objective the owner declares in calibration.toml; none is measured.",
+                  "type": "object",
+                  "additionalProperties": false,
+                  "required": [
+                    "effect_windows",
+                    "false_revert_rate_ppm",
+                    "max_heat_age_ns"
+                  ],
+                  "properties": {
+                    "effect_windows": {
+                      "description": "Declared objective: effect windows one transaction is judged over (calibration.live_policy.transaction_effect_windows).",
+                      "$ref": "#/$defs/positive"
+                    },
+                    "false_revert_rate_ppm": {
+                      "description": "Declared objective: tolerated false-revert rate, ppm (calibration.live_policy.false_revert_rate_ppm).",
+                      "type": "integer",
+                      "minimum": 1,
+                      "exclusiveMaximum": 1000000
+                    },
+                    "max_heat_age_ns": {
+                      "description": "Oldest heat observation a calibration probe accepts, ns: the heat period times one plus the declared number of missed heat writes tolerated (calibration.live_policy.calibration_missed_heat_writes).",
+                      "$ref": "#/$defs/positive"
                     }
                   }
                 }

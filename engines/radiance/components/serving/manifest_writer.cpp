@@ -484,7 +484,8 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
         (in.profile == "production" ||
          (in.profile == "lab" && lab_lane_trace_only(in.experiment)))) {
         std::string skipped_reason;
-        if (const auto derived = derive_manifest_live_policy(in, container, spec, &skipped_reason)) {
+        const auto derived = derive_manifest_live_policy(in, container, spec, &skipped_reason);
+        if (derived) {
             live_policy = derived->policy;
             spec["handoff"]["placement"]["live_policy"] = live_policy;
             derived_provenance = derived->provenance;
@@ -496,6 +497,17 @@ BuiltManifest build_manifest(const ManifestInputs& in) {
             derived_provenance["/spec/handoff/placement"] =
                 record("derived", ("live policy disabled: " + skipped_reason).c_str(),
                        "derived", "measured", Json::array({"/spec/calibration"}));
+        }
+        if (!derived && in.auto_calibrate) {
+            std::string why;
+            if (const auto block = derive_manifest_live_calibration(in, spec, &why)) {
+                spec["handoff"]["placement"]["live_calibration"] = *block;
+                derived_provenance["/spec/handoff/placement/live_calibration"] =
+                    record("derived", "declared calibration objectives (calibration.toml) and the heat period; nothing measured",
+                           "derived", "exact", Json::array({"/spec/calibration", "/spec/handoff/telemetry/period_s"}));
+            } else if (!why.empty()) {
+                std::fprintf(stderr, "live policy auto-calibration not started: %s\n", why.c_str());
+            }
         }
     }
 

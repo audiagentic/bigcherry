@@ -53,6 +53,8 @@ struct HelperSettings {
     bool sweep_fast = false;
     /* Live placement (spec.handoff.placement.live_policy): present when the manifest runs the policy. */
     std::optional<v2::LivePolicy> live_policy;
+    /* Live calibration (spec.handoff.placement.live_calibration): present when no policy exists yet and the helper derives it. */
+    std::optional<v2::LiveCalibration> live_calibration;
     /* The lab's forced schedule and no-op epoch cycle (spec.experiment.placement); 0 epoch_cycle_s = off. */
     std::optional<v2::ForcedChurn> forced;
     uint32_t epoch_cycle_s = 0;

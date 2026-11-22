@@ -37,6 +37,17 @@ struct WorkerConfig {
                 return false;
             std::vector<uint32_t> shares(s.shares.begin(), s.shares.end());
             if (!policy.from_manifest(*s.live_policy, shares, err)) return false;
+        } else if (s.live_calibration) {
+            // No record yet: the helper measures the live heat and derives the policy. The heat period, the declared
+            // objectives and the declared heat-age limit all come from the manifest.
+            if (!r3::policy::live_policy_arrangement_supported(
+                    s.helper.engine_ranks, s.handoff.placement, s.shares, err))
+                return false;
+            std::vector<uint32_t> shares(s.shares.begin(), s.shares.end());
+            const bc::serving::v2::LiveCalibration& c = *s.live_calibration;
+            if (!policy.calibrating_from(uint64_t(s.handoff.histogram_period_s) * 1000000000ull, shares,
+                                         c.effect_windows, c.false_revert_rate_ppm, c.max_heat_age_ns, err))
+                return false;
         }
         if (s.forced) {
             force_schedule.repeat = uint32_t(s.forced->repeat);

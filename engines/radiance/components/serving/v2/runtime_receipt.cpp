@@ -73,7 +73,8 @@ Result<Json> publish_runtime_receipt(
                   "configured=true required when startup is configured");
   }
   if ((startup.requested == LivePolicyRequested::kOff ||
-       startup.requested == LivePolicyRequested::kNotApplicable) &&
+       startup.requested == LivePolicyRequested::kNotApplicable ||
+       startup.requested == LivePolicyRequested::kCalibrating) &&
       startup.configured)
     return fail("startup_decision.configured",
                 "configured must be false when policy is off or not applicable");
@@ -160,7 +161,8 @@ Result<Json> publish_runtime_receipt(
   out["manifest"]["content_digest"] = manifest_content_digest;
   out["startup_decision"] = Json::object();
   out["startup_decision"]["requested"] = startup.requested == LivePolicyRequested::kOn ? "on" :
-      startup.requested == LivePolicyRequested::kOff ? "off" : "not_applicable";
+      startup.requested == LivePolicyRequested::kOff ? "off" :
+      startup.requested == LivePolicyRequested::kCalibrating ? "calibrating" : "not_applicable";
   out["startup_decision"]["configured"] = startup.configured;
   out["startup_decision"]["reason_code"] = startup.reason_code;
   out["startup_decision"]["reason_detail"] = startup.reason_detail;

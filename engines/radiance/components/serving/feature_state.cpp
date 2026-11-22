@@ -52,9 +52,10 @@ Snapshot from_manifest(const nlohmann::json& manifest, const std::string& observ
         const Json& policy = placement.at("live_policy_state");
         const bool configured = policy.at("configured").get<bool>();
         const std::string requested = policy.at("requested").get<std::string>();
-        if (configured != placement.contains("live_policy"))
+        if (configured != placement.contains("live_policy") ||
+            (requested == "calibrating") != placement.contains("live_calibration"))
             throw std::runtime_error("feature states: inconsistent live_policy_state and live_policy presence");
-        if (requested != "on" && requested != "off" && requested != "not_applicable")
+        if (requested != "on" && requested != "off" && requested != "not_applicable" && requested != "calibrating")
             throw std::runtime_error("feature states: unknown live_policy_state.requested");
         const std::string state = configured ? "active" : "inactive";
         const std::string reason = policy.at("reason_code").get<std::string>();
@@ -75,7 +76,8 @@ Snapshot from_manifest(const nlohmann::json& manifest, const std::string& observ
         append(out, "live_policy", state, reason, detail, observed_at);
         // Live placement is the required production feature for helper-backed
         // layouts. Default-off optional knobs are reported but never spam the log.
-        if (profile == "production" && requested != "not_applicable" && state != "active") {
+        if (profile == "production" && requested != "not_applicable" &&
+            requested != "calibrating" && state != "active") {
             std::string message = "WARNING production feature live_policy " + state + ": " + reason + ": " + detail;
             // Owner logs have one warning per feature; never let a source
             // detail inject extra lines into a machine-readable incident log.
