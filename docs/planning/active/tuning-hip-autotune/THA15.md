@@ -67,6 +67,8 @@ Every admitted comparison is provenance-bound, candidate-only divergent, activat
 
 Neither custom gfx1100 candidate reaches runtime/catalog or production replay without complete architecture/build/shape/signature identity, independent correctness, activation/final launch, resource and benchmark evidence. THA25 additionally proves graph/workspace lifetime, Q8_1 launch identity/grouping, independent tile/resource experiments and causal E2E contribution. Preserve native as default; candidate comparisons are provenance-bound, candidate-only divergent and runner-up auditable. No qualification or promotion is claimed here.
 
+**Transferred THA08 acceptance (independent gate):** Preserve the HI141 w4:nw8:rpb1:sk0 candidate failure investigation. Under THA15's immutable winner-vs-runner-up/forced-native replay, map Qwen3.8-27B target ctx_tgt versus separate draft ctx_dft, the NextN target-hidden-state handoff, and physical dispatch of ne1=[5120,4,1,1] (which context and route emitted the same signature). Compare full-logit/target-greedy and fixed-draft MTP acceptance against native reference, distinguishing global signature-keyed cache reuse from actual shared compute. Produce an evidence-backed shared-versus-independent fault classification and update the HI141/HI143 behavioral corpus/gate before any winner promotion. Equality of signatures alone is not proof of a shared trunk or of the observed acceptance collapse.
+
 ## Notes
 
 Supersedes: HI171
@@ -78,6 +80,8 @@ Inherited semantic scope: preserve immutable top-2 ordering, selection digest, s
 Migration: capability-rebaseline-v3-2026-09
 
 Conditional custom candidate qualification gates consolidated from THA24/THA25 on 2026-11-20 after RV4250. Both sources are preserved as superseded records; the candidates remain opt-in/unqualified pending all offline and real-device evidence. This update does not authorize implementation or production use.
+
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: receiving THA08. Existing scope and acceptance are retained. The original historical source plans and evidence are archived as superseded, not completed. No new kernel, orchestrator, scheduler, patch, GPU result, runtime activation or performance qualification is implied. Changes use the existing owning implementation only.
 
 ## Change Log
 
@@ -99,3 +103,5 @@ Conditional custom candidate qualification gates consolidated from THA24/THA25 o
 
 - RV4250
 - 2026-11-20T03:15:04.278887+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- RV4500
+- 2026-11-22T10:18:16.927470+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

@@ -2,7 +2,7 @@
 id: THA12
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:49:27.306659+00:00'
 breadth: ''
 skill: advanced
@@ -69,13 +69,14 @@ Supersedes: HI161
 Inherited semantic scope: preserve ids completeness, stride normalization proof, architecture injectivity, static-size assertion, and maintained proof-table requirements.
 Migration: capability-rebaseline-v3-2026-09
 
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: Signature completeness, architecture/stride injectivity and C++ canonical digest verification must share one invariant and maintained proof table. Unique acceptance and stop/fallback conditions were transferred to active THA04 through the Planning API. THA04's digest is not correct unless THA12's identity fields and normalization invariants are complete; the two tickets validate the same canonical signature authority. Original code, evidence, source/negative findings and reviewed history remain unchanged in this superseded record. Supersession is about removing duplicate planning ownership, not proof of implementation, quality, hardware safety or a performance win.
+
 ## Change Log
 
 - 2026-09-09T10:49:27.306659+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:05:35.700371+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.882720+00:00 (updated-by): Updated: section:ledger-events
@@ -84,3 +85,9 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:24:03.203654+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_022438_the-next-five-high-risk-tuning_6580
 - 2026-09-10T02:24:38.712243+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4490
+- 2026-11-22T10:19:22.088701+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:24:29.888132+00:00 (state-transition): State: pending → superseded

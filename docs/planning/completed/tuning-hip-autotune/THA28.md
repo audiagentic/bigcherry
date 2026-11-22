@@ -2,7 +2,7 @@
 id: THA28
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:50:53.238663+00:00'
 breadth: ''
 skill: advanced
@@ -55,13 +55,14 @@ Supersedes: HI75
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-autotune-hi75
 
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: Transformed winner execution and generalized replay lookup share one authoritative runtime binding/fallback implementation. Unique acceptance and stop/fallback conditions were transferred to active THA26 through the Planning API. THA26 already owns resolved runtime binding, transform execution, can_execute and native fallback; a second generalized dispatch owner would modify the same cache and executor seam. Original code, evidence, source/negative findings and reviewed history remain unchanged in this superseded record. Supersession is about removing duplicate planning ownership, not proof of implementation, quality, hardware safety or a performance win.
+
 ## Change Log
 
 - 2026-09-09T10:50:53.238663+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:07:13.269137+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.984179+00:00 (updated-by): Updated: section:ledger-events
@@ -71,3 +72,9 @@ Successor key: tuning-hip-autotune-hi75
 - 2026-09-10T03:34:52.915790+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_033527_repaired-five-more-tuning-succ_3062
 - 2026-09-10T03:35:27.061717+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4495
+- 2026-11-22T10:20:30.402197+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:25:56.345840+00:00 (state-transition): State: pending → superseded

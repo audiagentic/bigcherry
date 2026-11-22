@@ -49,11 +49,17 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 Close only when all audited classes match real C++ digests, production workflow is wired and proven by a live campaign with winner_verification rows, and unsupported operations remain fail-closed under an explicit HI136 disposition.
 
+**Transferred THA01 acceptance (independent gate):** Add and verify intrinsic nested transform provenance emission at the C++ hip-autotune-tuner.cu runtime flush: schema/version, exact source revision, hardware architecture, build-descriptor hash, immutable manifest hash and evidence references. Prove runtime writer hashes equal the offline manifest algorithms; add nested fixtures through ingestion/analyse_gap provenance_complete and fail closed on mismatched or missing identity. Compile and capture a real tuning artifact on eligible hardware, ingest it with correct source/build associations, and keep legacy flat adaptation *until* real nested records are accepted. Retire the transitional flat adapter only in an independently evidenced follow-up with old-header rejection; don't silently drop/interpret prior artifacts, alter runtime tuning timing, or introduce another identity registry. THA04's original C++ canonical JSON/digest verification across MUL_MAT, MUL_MAT_ID, routed GLU and workflow winner attestations remains mandatory.
+
+**Transferred THA12 acceptance (independent gate):** Preserve THA12's exact semantics: prove/fix ggml_hip_fill_strides nb[0] byte-count contract and comment, pin sizeof(ggml_hip_dispatch_signature_v1) with static_assert, verify architecture-code/cc injectivity, include or prove all ids type/layout/stride and dispatch/can_execute/executor input fields, test legal GGML quantized-stride normalization injectively or stop normalization, and maintain a source-reader->signature/hardware field->invariant proof table. Include exceptional experimental fusion modes, and require proof table and C++/Python canonical verifier test updates whenever selector, can_execute, executor, metadata or ABI shape changes. Fail closed on omitted/ambiguous input; no semantic widening merely to make old measurements replay.
+
 ## Notes
 
 Supersedes: HI125
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-autotune-hi125
+
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: receiving THA01,THA12. Existing scope and acceptance are retained. The original historical source plans and evidence are archived as superseded, not completed. No new kernel, orchestrator, scheduler, patch, GPU result, runtime activation or performance qualification is implied. Changes use the existing owning implementation only.
 
 ## Change Log
 
@@ -62,7 +68,6 @@ Successor key: tuning-hip-autotune-hi125
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.804519+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -70,3 +75,8 @@ Successor key: tuning-hip-autotune-hi125
 - 2026-09-10T03:25:50.330741+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032600_repaired-two-more-tuning-succe_5113
 - 2026-09-10T03:26:00.715946+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4498
+- 2026-11-22T10:17:37.071815+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

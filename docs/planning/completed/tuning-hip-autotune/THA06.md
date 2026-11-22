@@ -2,7 +2,7 @@
 id: THA06
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:48:29.428808+00:00'
 breadth: ''
 skill: advanced
@@ -55,13 +55,14 @@ Supersedes: HI131
 Migration: capability-rebaseline-v3-2026-09
 Successor key: tuning-hip-autotune-hi131
 
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: Revision-bump retention is a guarded phase of the one tune-campaign command, not a separate lifecycle tool. Unique acceptance and stop/fallback conditions were transferred to active THA05 through the Planning API. THA05 is the production single-command record-to-promote-to-replay orchestrator; THA06 explicitly forbids a duplicate orchestrator and only adds a revision-bump mode. Original code, evidence, source/negative findings and reviewed history remain unchanged in this superseded record. Supersession is about removing duplicate planning ownership, not proof of implementation, quality, hardware safety or a performance win.
+
 ## Change Log
 
 - 2026-09-09T10:48:29.428808+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:04:32.923217+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.814804+00:00 (updated-by): Updated: section:ledger-events
@@ -70,3 +71,9 @@ Successor key: tuning-hip-autotune-hi131
 - 2026-09-10T03:27:06.082906+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032737_repaired-four-major-tuning-suc_7897
 - 2026-09-10T03:27:37.903243+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4491
+- 2026-11-22T10:19:33.383408+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:24:46.083239+00:00 (state-transition): State: pending → superseded
