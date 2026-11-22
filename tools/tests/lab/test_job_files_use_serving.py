@@ -35,8 +35,13 @@ class NativeJobFileTests(unittest.TestCase):
                 self.assertEqual(doc["execution_evidence"], "observe")
                 for key in ("model", "environment", "expected_execution"):
                     self.assertNotIn(key, doc, "the arm's YAML decides the model and the cards")
-                self.assertIn("reference_metadata", doc["quality"], "a stored reference, never a recording")
-                self.assertNotIn("record", doc["quality"])
+                # a reference is recorded by the job itself (native owner, its own YAML) or already stored with its provenance
+                quality = doc["quality"]
+                if "record" in quality:
+                    self.assertEqual(set(quality["record"]["serving"]), {"config", "native_config"})
+                    self.assertTrue((paths.REPO_ROOT / quality["record"]["serving"]["native_config"]).is_file())
+                    self.assertIn("corpus", quality)
+                    self.assertNotIn("reference_metadata", quality)
                 for arm in doc["arms"]:
                     serving = arm["serving"]
                     self.assertEqual(set(serving), {"config", "native_config"})

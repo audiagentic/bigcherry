@@ -1742,6 +1742,15 @@ class Owner {
     }
 
     static void validate_quality_paths(const QualityScore& score) {
+        if (score.record()) {
+            std::error_code error;
+            if (!score.reference.is_absolute() || !fs::is_directory(score.reference) ||
+                !fs::is_empty(score.reference, error) || error || !score.output.empty())
+                throw PlanFailed("quality: recording needs an absolute, existing, empty reference directory and no output");
+            if (!score.corpus.is_absolute() || !fs::is_regular_file(score.corpus))
+                throw PlanFailed("quality: recording needs an absolute corpus file");
+            return;
+        }
         if (!score.reference.is_absolute() || !fs::is_regular_file(score.reference / "kld.json"))
             throw PlanFailed("quality: the reference needs an absolute, recorded KL directory");
         if (!score.output.is_absolute() || !fs::is_directory(score.output.parent_path()) ||
@@ -1752,7 +1761,8 @@ class Owner {
 
     void score_quality(const QualityScore& score) {
         validate_quality_paths(score);
-        event("scoring", {{"reference", score.reference.string()}, {"output", score.output.string()}});
+        event(score.record() ? "recording" : "scoring",
+              {{"reference", score.reference.string()}, {"output", score.output.string()}});
         const pid_t engine = start_engine(&score);
         const auto check_helpers = [&] {
             for (const auto& child : children_) {
@@ -1768,7 +1778,14 @@ class Owner {
         }
         check_helpers();
         if (!WIFEXITED(*status) || WEXITSTATUS(*status) != 0)
-            throw PlanFailed("quality: KL scoring engine failed; see " + engine_log_.string());
+            throw PlanFailed(std::string("quality: KL ") + (score.record() ? "recording" : "scoring") +
+                             " engine failed; see " + engine_log_.string());
+        if (score.record()) {
+            if (!fs::is_regular_file(score.reference / "kld.json"))
+                throw PlanFailed("quality: KL recording did not produce the reference");
+            event("quality_recorded", {{"reference", score.reference.string()}});
+            return;
+        }
         const fs::path rows = score.output.string() + ".rows";
         if (!fs::is_regular_file(score.output) || fs::file_size(score.output) > v2::kMaxDocumentBytes ||
             !fs::is_regular_file(rows))
@@ -1801,7 +1818,10 @@ class Owner {
             throw PlanFailed("native serving: launch does not match the admitted engine manifest");
         native_launch->root.require_matches(native->identity.resolution_root);
         if (quality) {
-            argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
+            if (quality->record())
+                argv.insert(argv.end(), {"--kld-record", quality->reference.string(), "--kld-corpus", quality->corpus.string()});
+            else
+                argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
         } else if (manifest && manifest.value().spec.handoff &&
                    manifest.value().spec.handoff->telemetry.histogram_file) {
             plan_.heat_session_nonce = heat_launch_nonce();

@@ -48,8 +48,8 @@ def held_by_this_process(resource: str = "gpu", *, lease_dir: str | Path | None 
         return False
     if expires <= (now or datetime.now(timezone.utc)):
         return False
-    me = instance if instance is not None else (os.environ.get("AGENT_INSTANCE") or os.environ.get("CLAUDE_RC_NAME"))
-    if me and lease.get("instance") != me:
+    me = instance if instance is not None else os.environ.get("AGENT_INSTANCE")
+    if not me or lease.get("instance") != me:
         return False
     live = {p for p in pids if _alive(p, proc)}
     return bool(live & set(_ancestors(pid if pid is not None else os.getpid(), proc)))

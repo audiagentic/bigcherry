@@ -1,0 +1,16 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_105646_no-user-visible-change-unrefe_6463",
+  "files": [
+    "tools/bigcherry/serving/measured_plan.py",
+    "tools/bigcherry/serving/qualified_calibration.py",
+    "tools/tests/serving/test_measured_plan.py",
+    "tools/tests/serving/test_qualified_calibration.py",
+    "tools/tests/serving/test_calibration_rebind.py",
+    "docs/design/serving-manifest-v2/spec.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove the inactive Python S11 measured planner and the test-only S13 qualified-calibration wrapper, with their tests and the three design notes that described them. The native owner plans in session.cpp; calibration_store and calibration_rebind stay.",
+  "timestamp-utc": "2026-11-22T10:56:46.344310Z",
+  "user-summary-candidate": "No user-visible change: unreferenced Python planning code is removed."
+}
