@@ -18,7 +18,11 @@
 #include <chrono>
 #include <cstdio>
 #include <ctime>
+#include <atomic>
 #include <fstream>
+#include <map>
+#include <mutex>
+#include <sys/stat.h>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -210,6 +214,35 @@ std::string container_identity(const fs::path& model) {
     return sha256_hex(text);
 }
 
+namespace {
+// What a file's bytes cannot change without changing: size, inode, modification and change time. The change time is
+// set by the kernel on every write and cannot be restored by a caller, so an unchanged stamp means unchanged content.
+struct FileStamp {
+    uint64_t size = 0, inode = 0;
+    int64_t mtime_ns = 0, ctime_ns = 0;
+    bool operator==(const FileStamp& o) const {
+        return size == o.size && inode == o.inode && mtime_ns == o.mtime_ns && ctime_ns == o.ctime_ns;
+    }
+};
+
+FileStamp stamp_file(const fs::path& path) {
+    struct stat st{};
+    if (::stat(path.c_str(), &st) != 0) throw std::runtime_error("cannot stat " + path.string());
+    const auto ns = [](const timespec& t) { return int64_t{t.tv_sec} * 1000000000 + t.tv_nsec; };
+    return {uint64_t(st.st_size), uint64_t(st.st_ino), ns(st.st_mtim), ns(st.st_ctim)};
+}
+
+struct IdentityMemo {
+    std::vector<std::pair<fs::path, FileStamp>> stamps;
+    std::string identity;
+};
+std::mutex identity_mutex;
+std::map<std::string, IdentityMemo> identity_memo;
+std::atomic<uint64_t> identity_hash_runs{0};
+}  // namespace
+
+uint64_t engine_identity_hash_runs() { return identity_hash_runs.load(); }
+
 std::string engine_identity(const fs::path& binary, const fs::path& radiance_home) {
     if (!fs::is_regular_file(binary)) throw std::runtime_error("engine binary " + binary.string() + " is not a file");
     if (!fs::is_directory(radiance_home))
@@ -218,9 +251,24 @@ std::string engine_identity(const fs::path& binary, const fs::path& radiance_hom
     for (const auto& e : fs::recursive_directory_iterator(radiance_home))
         if (e.is_regular_file()) files.push_back(fs::relative(e.path(), radiance_home));
     std::sort(files.begin(), files.end());
+    // The stamps are taken before the bytes are read: a file that changes while it is hashed no longer matches its
+    // stamp, so the next call hashes again rather than trusting a digest of a moving file.
+    std::vector<std::pair<fs::path, FileStamp>> stamps;
+    stamps.emplace_back(binary, stamp_file(binary));
+    for (const auto& f : files) stamps.emplace_back(radiance_home / f, stamp_file(radiance_home / f));
+    const std::string memo_key = binary.string() + "\n" + radiance_home.string();
+    {
+        const std::lock_guard<std::mutex> lock(identity_mutex);
+        const auto found = identity_memo.find(memo_key);
+        if (found != identity_memo.end() && found->second.stamps == stamps) return found->second.identity;
+    }
+    ++identity_hash_runs;
     std::string text = "binary\n" + file_sha256_checked(binary) + "\n";
     for (const auto& f : files) text += f.generic_string() + "\n" + file_sha256_checked(radiance_home / f) + "\n";
-    return sha256_hex(text);
+    std::string identity = sha256_hex(text);
+    const std::lock_guard<std::mutex> lock(identity_mutex);
+    identity_memo[memo_key] = IdentityMemo{std::move(stamps), identity};
+    return identity;
 }
 
 Json plan_key_inputs(const Json& values, const Json& facts, const std::string& model_id, const std::string& engine_id,

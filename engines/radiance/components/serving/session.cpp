@@ -2882,6 +2882,12 @@ int64_t requested_host_pool(const ManifestRun& writer) {
     return result;
 }
 
+// A protocol-level count, not a resource budget. The writer's derived host pool depends on the host memory the
+// measured helpers and engine hold, which itself depends on the pool: measuring with the configured pool yields the
+// pool that measurement needs (change 1), measuring with that pool confirms it or moves it once more for the memory
+// the first change itself released or took (change 2). A third change means the pool does not settle. Repeat
+// detection (the native path's set of pools already measured) stops a loop but not a pool that keeps moving to new
+// values, and every further change is a full measuring run, so this bound stays and the refusal names the last pool.
 constexpr int kMaxHostPoolChanges = 2;
 
 // Names every leaf where two plan-key inputs differ, so a refusal says which input moved (a host fact, a derived

@@ -1,0 +1,16 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_063834_starts-that-reuse-a-prior-meas_7981",
+  "files": [
+    "engines/radiance/components/serving/plan_cache.cpp",
+    "engines/radiance/components/serving/plan_cache.h",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/engine_identity_test.cpp",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "docs/evidence/2026-11-22-runtime-identity-cost/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "engine_identity now memoises its digest per process against a stamp of every runtime file (size, inode, mtime, ctime) taken before hashing, so a reused start hashes the roughly 428 MB runtime once (about 1.2 s) instead of 3 to 5 times; changed, added or removed files are hashed again and every comparison and refusal is unchanged. kMaxHostPoolChanges documented as a protocol-level bound. Evidence and tests added.",
+  "timestamp-utc": "2026-11-22T06:38:34.317469Z",
+  "user-summary-candidate": "Starts that reuse a prior measured run no longer re-hash the installed runtime several times."
+}
