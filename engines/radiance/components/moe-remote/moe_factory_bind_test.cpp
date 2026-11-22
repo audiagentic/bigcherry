@@ -44,17 +44,17 @@ int main(int argc, char** argv) {
 
     // The direct entry points take the generation's hook; nothing is live here, so a null, foreign or stale handle is
     // refused before any side effect, and no kernel init can find a hook.
-    using HookFor = void* (*)(long long);
+    using HookFor = uint64_t (*)(long long);
     auto hook_for = reinterpret_cast<HookFor>(dlsym(plugin, "r3_moe_hook_for_group"));
     assert(hook_for && !hook_for(0) && !hook_for(4) && !hook_for(-1));
-    void* fake = reinterpret_cast<void*>(0x1000);
-    for (void* h : std::initializer_list<void*>{nullptr, fake}) {
-        auto close_adm = reinterpret_cast<int (*)(void*, void*)>(dlsym(plugin, "r3_moe_close_admission"));
-        auto consumed = reinterpret_cast<int (*)(void*, const void*)>(dlsym(plugin, "r3_moe_all_ranks_consumed"));
-        auto reopen = reinterpret_cast<int (*)(void*, uint32_t, uint32_t)>(dlsym(plugin, "r3_moe_reopen_admission"));
-        auto device = reinterpret_cast<int (*)(void*, int, int, void**)>(dlsym(plugin, "r3_moe_mailbox_device"));
-        auto upload = reinterpret_cast<int (*)(void*, int, uint32_t, uint64_t, uint64_t)>(dlsym(plugin, "r3_moe_owner_generation_upload"));
-        auto ready = reinterpret_cast<int (*)(void*, int, uint32_t, uint64_t, uint64_t)>(dlsym(plugin, "r3_moe_owner_generation_ready"));
+    // 0, a serial that never existed, and an address-looking value are all refused.
+    for (uint64_t h : std::initializer_list<uint64_t>{0, 1, 2, 0x1000}) {
+        auto close_adm = reinterpret_cast<int (*)(uint64_t, void*)>(dlsym(plugin, "r3_moe_close_admission"));
+        auto consumed = reinterpret_cast<int (*)(uint64_t, const void*)>(dlsym(plugin, "r3_moe_all_ranks_consumed"));
+        auto reopen = reinterpret_cast<int (*)(uint64_t, uint32_t, uint32_t)>(dlsym(plugin, "r3_moe_reopen_admission"));
+        auto device = reinterpret_cast<int (*)(uint64_t, int, int, void**)>(dlsym(plugin, "r3_moe_mailbox_device"));
+        auto upload = reinterpret_cast<int (*)(uint64_t, int, uint32_t, uint64_t, uint64_t)>(dlsym(plugin, "r3_moe_owner_generation_upload"));
+        auto ready = reinterpret_cast<int (*)(uint64_t, int, uint32_t, uint64_t, uint64_t)>(dlsym(plugin, "r3_moe_owner_generation_ready"));
         assert(close_adm && consumed && reopen && device && upload && ready);
         alignas(8) char snap[64] = {};
         void* dev = nullptr;

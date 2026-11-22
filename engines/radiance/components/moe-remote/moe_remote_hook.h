@@ -155,23 +155,24 @@ struct R3MoeDrainSnapshot {
     uint32_t high_water;
     uint32_t capacity;
 };
-/* One engine generation's hook state, opaque: the `self` of the EnginePlugin the factory returned, and the first
- * argument of every direct entry point below. A handle that is null, stale (its generation closed) or another
- * engine's is refused with RAD_E_STATE before any side effect. Kernels find theirs with r3_moe_hook_for_group. */
-struct R3MoeHook;
-extern "C" R3MoeHook* r3_moe_hook_for_group(long long tp_group);
-extern "C" int r3_moe_close_admission(R3MoeHook* hook, R3MoeDrainSnapshot* snapshot);
-extern "C" int r3_moe_wait_drained(R3MoeHook* hook, const R3MoeDrainSnapshot* snapshot, uint64_t deadline_monotonic_ns);
+/* One engine generation's hook identity: a nonzero serial that is never reused (the hook state itself is the `self` of
+ * the EnginePlugin the factory returned and is opaque). It is the first argument of every direct entry point below.
+ * A handle that is 0, from a generation that has closed (even when a later hook sits at the same address) or from
+ * another engine is refused with RAD_E_STATE before any side effect. Kernels find theirs with r3_moe_hook_for_group
+ * (0: none). */
+extern "C" uint64_t r3_moe_hook_for_group(long long tp_group);
+extern "C" int r3_moe_close_admission(uint64_t hook, R3MoeDrainSnapshot* snapshot);
+extern "C" int r3_moe_wait_drained(uint64_t hook, const R3MoeDrainSnapshot* snapshot, uint64_t deadline_monotonic_ns);
 /* Nonblocking, 1 only when every ticket admitted under this exact closed
  * snapshot has retired after every rank's seal/event. 0 = pending,
  * negative = invalid snapshot or fault; no helper drain or GPU sync. */
-extern "C" int r3_moe_all_ranks_consumed(R3MoeHook* hook, const R3MoeDrainSnapshot* snapshot);
-extern "C" int r3_moe_reopen_admission(R3MoeHook* hook, uint32_t epoch, uint32_t generation_slot);
+extern "C" int r3_moe_all_ranks_consumed(uint64_t hook, const R3MoeDrainSnapshot* snapshot);
+extern "C" int r3_moe_reopen_admission(uint64_t hook, uint32_t epoch, uint32_t generation_slot);
 
-extern "C" int r3_moe_mailbox_device(R3MoeHook* hook, int rank, int world_size, R3MoeMailboxDevice** out);
+extern "C" int r3_moe_mailbox_device(uint64_t hook, int rank, int world_size, R3MoeMailboxDevice** out);
 extern "C" int r3_moe_mailbox_schema_count(void);
 
 /* Transition-only API: asynchronous upload on a rank-private stream; event
  * query does not synchronize serving. Live coordinator wiring is later work. */
-extern "C" int r3_moe_owner_generation_upload(R3MoeHook* hook, int rank, uint32_t slot, uint64_t epoch, uint64_t digest);
-extern "C" int r3_moe_owner_generation_ready(R3MoeHook* hook, int rank, uint32_t slot, uint64_t epoch, uint64_t digest);
+extern "C" int r3_moe_owner_generation_upload(uint64_t hook, int rank, uint32_t slot, uint64_t epoch, uint64_t digest);
+extern "C" int r3_moe_owner_generation_ready(uint64_t hook, int rank, uint32_t slot, uint64_t epoch, uint64_t digest);

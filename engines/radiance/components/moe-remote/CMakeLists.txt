@@ -96,6 +96,12 @@ if(BUILD_TESTING)
     R3MOE_TARGETS="${r3moe_targets_csv}")
   set_target_properties(r3_moe_mailbox_lifetime_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   add_test(NAME r3_moe_mailbox_lifetime_test COMMAND r3_moe_mailbox_lifetime_test)
+  # The identity of the one live hook (serial handles; stale / foreign / address-reuse refused). Pure host code.
+  add_executable(r3_hook_identity_test EXCLUDE_FROM_ALL hook_identity_test.cpp)
+  target_include_directories(r3_hook_identity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_hook_identity_test PRIVATE Threads::Threads)
+  set_target_properties(r3_hook_identity_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_hook_identity_test COMMAND r3_hook_identity_test)
   # The explicit factory bind against the real libr3moe, through the engine's own generation code (rad0002). Host-only.
   if(EXISTS "${RADIANCE_SRC}/core/place/bc_moe_remote.cpp")
     add_executable(r3_moe_factory_bind_test EXCLUDE_FROM_ALL
