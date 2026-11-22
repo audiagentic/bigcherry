@@ -105,7 +105,7 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "71ffb05"),
+        "abi/bc_moe_remote.h": (None, "ea0173f"),
         "arch/common/bc_moe_remote_block.h": (None, "ee98a63"),
         "arch/common/rad_arch.h": ("f847a16", "12a4cf7"),
         "arch/common/rad_block_hc.h": ("2ab3568", "da4f843"),
@@ -113,7 +113,7 @@ PIN_BLOBS = {
         "core/engine.cpp": ("e649224", "19a09b3"),
         "core/engine.h": ("ca6c09f", "430b4bd"),
         "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
-        "core/place/bc_moe_remote.cpp": (None, "ccf2b28"),
+        "core/place/bc_moe_remote.cpp": (None, "4305663"),
         "core/place/bc_moe_remote_engine.h": (None, "9bb71a6"),
         "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
         "core/place/planner.cpp": ("dc03b5a", "3edb433"),
@@ -725,7 +725,7 @@ int main() {
         self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
         self.assertIn('extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugin* out)', hook)
-        self.assertIn("*out = EnginePlugin{sizeof(EnginePlugin), h, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,", hook)
+        self.assertIn("*out = EnginePlugin{sizeof(EnginePlugin), h, cb_close, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,", hook)
         self.assertNotIn("bc_moe_remote_register", hook)
         self.assertNotIn("HookLifetime", hook)
         self.assertIn("void cb_fault(void* self)", hook)

@@ -77,8 +77,9 @@ struct EngineOpenArgs {
     int32_t ranks;
 };
 struct EnginePlugin {
-    uint32_t struct_size;
+    uint32_t struct_size;   /* the head (struct_size, self, close) leads every table; the engine presets struct_size */
     void* self;
+    void (*close)(void* self);
     void (*layer_map)(void* self, int layer, int n_expert, const int32_t* slot_of_expert);
     int (*owns_expert)(void* self, int layer, int expert);
     void (*burst)(void* self, int active);
@@ -91,7 +92,6 @@ struct EnginePlugin {
     void (*fault)(void* self);   /* a fault stop: wake every waiter; never called on a clean stop */
     void (*finish_admission)(void* self);
     int (*wait_finished)(void* self, int64_t timeout_ms);
-    void (*close)(void* self);
 };
 
 /* Each admission owns its events; never reuse one global step-end event
@@ -991,8 +991,10 @@ void cb_close(void* self) {
  * segment at a time, because the segment is one named process-wide resource: a second engine asking while one holds
  * it is refused with BUSY before anything is mapped. */
 extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugin* out) {
-    if (!args || !out || args->struct_size != sizeof(EngineOpenArgs) || args->capacity_limit == 0 || args->ranks < 1 ||
-        args->slot_base < 0)
+    /* Failure-atomic: every check precedes the first allocation, and every later failure releases what it took; the
+     * engine never calls close for a failed open. */
+    if (!args || !out || args->struct_size != sizeof(EngineOpenArgs) || out->struct_size != sizeof(EnginePlugin) ||
+        args->capacity_limit == 0 || args->ranks < 1 || args->slot_base < 0)
         return kOpenRefused;
     static std::mutex open_mu;
     std::lock_guard<std::mutex> lock(open_mu);
@@ -1004,9 +1006,9 @@ extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugi
     if (!g_live.publish(h)) { delete h; return kOpenBusy; }
     if (!open_mailbox(*h, args->capacity_limit)) { g_live.unpublish(h); delete h; return kOpenRefused; }
     h->opened = true;
-    *out = EnginePlugin{sizeof(EnginePlugin), h, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,
+    *out = EnginePlugin{sizeof(EnginePlugin), h, cb_close, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,
                         cb_bind, cb_cancel, cb_host_done, cb_rank_done, cb_fault, cb_finish_admission,
-                        cb_wait_finished, cb_close};
+                        cb_wait_finished};
     return 0;
 }
 

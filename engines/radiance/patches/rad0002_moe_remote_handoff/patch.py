@@ -63,8 +63,12 @@ typedef struct BcMoeRemoteOpenArgs {
 /* Filled by the factory. struct_size must equal sizeof(BcMoeRemotePlugin) of the engine's header. `self` is the
  * plugin's state for this generation and the first argument of every callback. */
 typedef struct BcMoeRemotePlugin {
+    /* The head every table starts with, whatever its size: struct_size, self, close. The engine presets struct_size to
+     * its own size before calling the factory; a factory refuses (and allocates nothing) when it differs. */
     uint32_t struct_size;
     void* self;
+    /* The generation ends: release everything `self` holds. Called once, after the engine stopped every consumer. */
+    void (*close)(void* self);
     /* A layer's runtime slot map (slot_of_expert[e] < 0: expert e is a protected, locally served expert). */
     void (*layer_map)(void* self, int layer, int n_expert, const int32_t* slot_of_expert);
     /* Whether a helper owns routed expert (layer, expert). */
@@ -86,8 +90,6 @@ typedef struct BcMoeRemotePlugin {
     void (*fault)(void* self);
     void (*finish_admission)(void* self);
     int (*wait_finished)(void* self, int64_t timeout_ms);
-    /* The generation ends: release everything `self` holds. Called once, after the engine stopped every consumer. */
-    void (*close)(void* self);
 } BcMoeRemotePlugin;
 typedef int (*BcMoeRemoteOpenFn)(const BcMoeRemoteOpenArgs* args, BcMoeRemotePlugin* out);
 #define BC_MOE_REMOTE_OPEN_SYMBOL "bc_moe_remote_plugin_open"
@@ -223,8 +225,15 @@ extern "C" int bc_moe_remote_open_with(BcMoeRemoteOpenFn factory, int slot_base,
     g->slot_base = slot_base;
     g->ranks = ranks;
     const BcMoeRemoteOpenArgs args{sizeof(BcMoeRemoteOpenArgs), capacity_limit, slot_base, ranks};
+    /* Failure-atomic negotiation. The engine presets the table size it expects. A factory that fails has released
+     * everything it allocated itself (its close is never called). A factory that succeeds has handed over its state; if
+     * the table it returned is the wrong size the engine closes that state, once, through the head every table starts
+     * with. A success that does not even fill the head leaves nothing the engine can close and is refused. */
+    g->vt.struct_size = sizeof(BcMoeRemotePlugin);
     const int rc = factory(&args, &g->vt);
     if (rc != 0 || g->vt.struct_size != sizeof(BcMoeRemotePlugin)) {
+        if (rc == 0 && g->vt.struct_size >= offsetof(BcMoeRemotePlugin, close) + sizeof(g->vt.close) && g->vt.close)
+            g->vt.close(g->vt.self);
         delete g;
         return rc < 0 ? rc : BC_MOE_REMOTE_REFUSED;
     }

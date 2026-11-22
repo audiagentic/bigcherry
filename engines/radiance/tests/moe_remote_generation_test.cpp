@@ -20,7 +20,7 @@ struct Fake {
     uint64_t next_ticket = 0;
     std::vector<int> maps;
 };
-static std::atomic<int> opened{0}, closed{0}, ids{0};
+static std::atomic<int> opened{0}, closed{0}, ids{0}, self_cleaned{0};
 static bool factory_fails = false;
 static std::atomic<int> factory_calls{0};
 
@@ -51,19 +51,42 @@ static void f_close(void* self) {
 }
 static int factory(const BcMoeRemoteOpenArgs* a, BcMoeRemotePlugin* out) {
     ++factory_calls;
-    if (!a || a->struct_size != sizeof(BcMoeRemoteOpenArgs) || a->capacity_limit == 0) return BC_MOE_REMOTE_REFUSED;
+    if (!a || a->struct_size != sizeof(BcMoeRemoteOpenArgs) || a->capacity_limit == 0 ||
+        out->struct_size != sizeof(BcMoeRemotePlugin))   // the engine presets its table size: refuse before allocating
+        return BC_MOE_REMOTE_REFUSED;
     if (factory_fails) return BC_MOE_REMOTE_REFUSED;
     auto* f = new Fake;
     f->id = ++ids;
     ++opened;
-    *out = BcMoeRemotePlugin{sizeof(BcMoeRemotePlugin), f, f_layer_map, f_owns, f_burst, f_before, f_admit, f_bind,
-                             f_ok_ticket, f_ok_ticket, f_rank_done, f_noop, f_noop, f_wait, f_close};
+    *out = BcMoeRemotePlugin{sizeof(BcMoeRemotePlugin), f, f_close, f_layer_map, f_owns, f_burst, f_before, f_admit,
+                             f_bind, f_ok_ticket, f_ok_ticket, f_rank_done, f_noop, f_noop, f_wait};
     return 0;
 }
-static int factory_bad_size(const BcMoeRemoteOpenArgs*, BcMoeRemotePlugin* out) {
+/* Failure-atomic factory protocol: a factory that fails has cleaned up after itself and the engine must not call its
+ * close; a factory that succeeds transfers the state, and if the table it returned is the wrong size the engine
+ * closes it exactly once through the head every table starts with (struct_size, self, close). */
+static int factory_alloc_then_fail(const BcMoeRemoteOpenArgs*, BcMoeRemotePlugin* out) {
     ++factory_calls;
+    auto* f = new Fake;
+    ++opened;
+    delete f;               // the factory unwinds its own allocation before returning the failure
+    ++self_cleaned;
+    (void)out;
+    return BC_MOE_REMOTE_REFUSED;
+}
+static int factory_wrong_size_alloc(const BcMoeRemoteOpenArgs*, BcMoeRemotePlugin* out) {
+    ++factory_calls;
+    auto* f = new Fake;     // really allocates, then hands back a table of the wrong size
+    ++opened;
     *out = BcMoeRemotePlugin{};
-    out->struct_size = 8;
+    out->struct_size = sizeof(BcMoeRemotePlugin) - 8;
+    out->self = f;
+    out->close = f_close;
+    return 0;
+}
+static int factory_tiny_size(const BcMoeRemoteOpenArgs*, BcMoeRemotePlugin* out) {
+    ++factory_calls;        // returns success without even the head: nothing the engine can close; refused, nothing bound
+    out->struct_size = 4;
     return 0;
 }
 static BcMoeRemoteGeneration* open_at(int base, int ranks) {
@@ -159,8 +182,25 @@ int main() {
     factory_fails = true;
     assert(bc_moe_remote_open_with(factory, 14, 1, 5, &none) == BC_MOE_REMOTE_REFUSED && !none && !bc_moe_remote_lookup(14));
     factory_fails = false;
-    assert(bc_moe_remote_open_with(factory_bad_size, 14, 1, 5, &none) == BC_MOE_REMOTE_REFUSED && !none &&
-           !bc_moe_remote_lookup(14));
+    {
+        // Every failure path of the negotiation releases whatever the factory allocated, exactly once, and leaves
+        // nothing bound: a failing factory cleans itself (the engine never calls its close); a wrong-size success is
+        // closed by the engine through the table head.
+        const int open0 = opened, closed0 = closed, cleaned0 = self_cleaned;
+        assert(bc_moe_remote_open_with(factory_alloc_then_fail, 14, 1, 5, &none) == BC_MOE_REMOTE_REFUSED && !none &&
+               !bc_moe_remote_lookup(14));
+        assert(opened == open0 + 1 && self_cleaned == cleaned0 + 1 && closed == closed0);
+        assert(bc_moe_remote_open_with(factory_wrong_size_alloc, 14, 1, 5, &none) == BC_MOE_REMOTE_REFUSED && !none &&
+               !bc_moe_remote_lookup(14));
+        assert(opened == open0 + 2 && closed == closed0 + 1);                // closed once, by the engine
+        assert(bc_moe_remote_open_with(factory_tiny_size, 14, 1, 5, &none) == BC_MOE_REMOTE_REFUSED && !none &&
+               !bc_moe_remote_lookup(14) && closed == closed0 + 1);
+        // and the span is open for a good factory right after: no stuck BUSY
+        BcMoeRemoteGeneration* again = open_at(14, 1);
+        assert(bc_moe_remote_lookup(14) == again);
+        bc_moe_remote_destroy(again);
+        assert(!bc_moe_remote_lookup(14));
+    }
     policy_shadow = 1;   // a production build cannot honour a diagnostic mode: off, said once, no generation
     factory_calls = 0;
     assert(bc_moe_remote_open_with(factory, 14, 1, 5, &none) == BC_MOE_REMOTE_OK && !none && factory_calls == 0);
@@ -217,6 +257,6 @@ int main() {
     bc_moe_remote_destroy(b);
     bc_moe_remote_destroy(c);
     for (int s = 0; s < 32; ++s) assert(!bc_moe_remote_lookup(s));
-    assert(opened == closed);   // every opened plugin state was closed exactly once (no leak, no double close)
+    assert(opened == closed + self_cleaned);   // every opened plugin state was closed exactly once (no leak, no double close)
     return 0;
 }
