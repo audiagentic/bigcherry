@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_095501_starting-an-already-measured-c_7114",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.h",
+    "engines/radiance/components/serving/stored_manifest_cache_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "A named start of a release installed at another location than the one that wrote the stored manifest is now decided up front as a carry from the engine identity: no replay is attempted (it embedded the old home and crashed with a filesystem error once that prefix was removed), one reuse line says the plan was carried, and the stored measurement is sealed again under this build. New plan-reuse outcome carried. Host test: second prefix, first removed.",
+  "timestamp-utc": "2026-11-22T09:55:01.748942Z",
+  "user-summary-candidate": "Starting an already-measured config from a second install of the same release no longer logs a refusal and still reuses the stored measurement, even after the first install is removed."
+}

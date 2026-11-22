@@ -414,6 +414,7 @@ const char* plan_reuse_outcome_name(PlanReuseOutcome outcome) {
     case PlanReuseOutcome::integrity_mismatch: return "integrity_mismatch";
     case PlanReuseOutcome::carried_plan_unusable: return "carried_plan_unusable";
     case PlanReuseOutcome::live_admission_refused: return "live_admission_refused";
+    case PlanReuseOutcome::carried: return "carried";
     }
     return "unknown";
 }
@@ -421,6 +422,8 @@ const char* plan_reuse_outcome_name(PlanReuseOutcome outcome) {
 std::string plan_reuse_line(const PlanReuse& reuse) {
     if (reuse.outcome == PlanReuseOutcome::hit)
         return "bc-serve: stored plan reused (static inputs unchanged; manifest " + reuse.manifest.filename().string() + ")";
+    if (reuse.outcome == PlanReuseOutcome::carried)
+        return "bc-serve: stored plan carried (same release at another location; measurement reused, sealed again here)";
     std::string why;
     switch (reuse.outcome) {
     case PlanReuseOutcome::absent: why = "no stored entry"; break;
@@ -444,7 +447,8 @@ std::string plan_reuse_line(const PlanReuse& reuse) {
     case PlanReuseOutcome::integrity_mismatch: why = "stored manifest bytes changed"; break;
     case PlanReuseOutcome::carried_plan_unusable: why = "stored plan unusable: " + reuse.detail; break;
     case PlanReuseOutcome::live_admission_refused: why = "live admission refused: " + reuse.detail; break;
-    case PlanReuseOutcome::hit: break;
+    case PlanReuseOutcome::hit:
+    case PlanReuseOutcome::carried: break;
     }
     return "bc-serve: no stored plan reused (" + why + "); measuring";
 }
