@@ -8,10 +8,16 @@
 #include "format/radfile.h"
 #include "format/share.h"
 #include "device/device.h"
+#include "runtime/ctx.h"
 #include "ltx_native_aql_roster.h"
 #include "ltx2.cpp"
 
+#include <algorithm>
 #include <array>
+#include <cmath>
+#include <cstdint>
+#include <filesystem>
+#include <fstream>
 #include <memory>
 #include <thread>
 #include <cstdio>
@@ -306,14 +312,87 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
 }
 
 
+// A *test-only* issued C06 lane. The production Act/Lin/attn_core and
+// Radiance's selected native relayout, Ctx and exact collective do all work.
+struct C06Issued {
+    ltx2::Attn attn{};
+    ltx2::Act x{}, ao{};
+    rad_buf qkv=0, gate=0, output=0;
+    std::array<int32_t,2> cu{0,1};
+    std::array<float,4> pos{};
+    std::vector<std::vector<uint8_t>> weights;
+    std::vector<void*> owned_device;
+    void* device_cu=nullptr;
+    void* device_pos=nullptr;
+    std::unique_ptr<rad::Ctx> ctx;
+    int rank=0;
+    bool audio=false, gpu=false;
+    int64_t width=0;
+    ~C06Issued() {
+        ctx.reset();
+        if (!gpu) return;
+        (void)rad_dev_set(rank);
+        for(void* p:owned_device) rad_dev_free(p,RAD_MEM_DEVICE);
+    }
+};
+
+thread_local C06Issued* c06_active=nullptr;
+static uint16_t c06_sample(int64_t col) {
+    // An exactly representable BF16 input, *not* a TP1 activation capture.
+    const float x=float((col*7+11)%61-30)/32.f;
+    uint32_t u;
+    std::memcpy(&u,&x,sizeof u);
+    u+=0x7fffU+((u>>16)&1U);
+    return uint16_t(u>>16);
+}
+static void c06_issued_step(RadCtx* c,const RadBatch*) {
+    if (!c06_active) { rad_step_fail(c,"C06 rank execution owner missing"); return; }
+    const C06Issued& r=*c06_active;
+    uint16_t* input=(uint16_t*)r.ctx->buf_ptr(r.x.a.x);
+    if (!input) { rad_step_fail(c,"C06 source activation missing"); return; }
+    if (!r.gpu)
+        for (int64_t j=0;j<r.width;++j) input[j]=c06_sample(j);
+    r.x.step(c,1);
+    r.attn.qkv.step(c,r.x,r.qkv,1);
+    r.attn.gate.step(c,r.x,r.gate,1);
+    const float* positions=(r.gpu ? (const float*)r.device_pos : r.pos.data())+
+                            (r.audio?3:0);
+    const RadOperand pos=ltx2::praw2(positions,RAD_F32,r.audio?1:3,1);
+    ltx2::attn_core(c,r.attn,true,r.qkv,0,r.gate,r.ao,1,1,
+                    ltx2::praw(r.gpu ? (const int32_t*)r.device_cu : r.cu.data(),
+                               RAD_I32,2),RAD_NONE,pos,pos);
+    r.ao.step(c,1);
+    r.attn.out.step(c,r.ao,r.output,1);
+}
+
+static std::vector<uint8_t> c06_gather(const RadFile& model,
+                                        const RadFileEntry& e,int selection,
+                                        const rad::PlaneShare& share) {
+    const auto& plane=model.plane(e,selection);
+    const uint8_t* src=model.data(plane);
+    need(src!=nullptr,"C06 real source plane is not mapped");
+    std::vector<uint8_t> data((size_t)share.dense_bytes());
+    size_t at=0;
+    for (const auto& rect:share.rects)
+        for (int64_t row=0;row<rect.rows;++row) {
+            const uint8_t* from=src+(rect.row0+row)*share.row_bytes+rect.byte0;
+            std::memcpy(data.data()+at,from,(size_t)rect.bytes);
+            at+=(size_t)rect.bytes;
+        }
+    need(at==data.size(),"C06 native weight share gather incomplete");
+    return data;
+}
+
 // Audit the frozen runtime loader's *own* share geometry for each
-// checkpoint plane. This is not a replacement loader or a model issue.
-static void verify_c06_load_contract(const RadFile& model, const rad::Program& program,
-                                      int rank) {
+// checkpoint plane. The optional issued lane keeps the *same* selected
+// planes and kernel relayout output resident for the native Ctx.
+static void verify_c06_load_contract(const RadFile& model, rad::Program& program,
+                                      int rank,C06Issued* issued=nullptr) {
+    if (issued) issued->weights.resize(program.weights.size());
     int64_t selected_bytes = 0, stored_bytes = 0;
     int weights = 0, relayouts = 0;
     for (size_t i=1; i<program.weights.size(); ++i) {
-        const rad::WeightInfo& w = program.weights[i];
+        rad::WeightInfo& w = program.weights[i];
         const auto* e = model.find(w.source);
         need(e != nullptr && w.enc_known && w.n_sel > 0,
              "C06 declared weight lacks real checkpoint source/plane");
@@ -350,6 +429,8 @@ static void verify_c06_load_contract(const RadFile& model, const rad::Program& p
         if (w.identity) {
             need(w.n_sel == 1 && share_bytes == w.stored_bytes,
                  "C06 identity layout is not a direct native file share");
+            if (issued)
+                issued->weights[i]=c06_gather(model,*e,w.sel[0],shares[0]);
         } else {
             // The production RelayoutPool dispatches through exactly these
             // frozen Builder-selected hook coordinates. A plain memcpy
@@ -373,20 +454,7 @@ static void verify_c06_load_contract(const RadFile& model, const rad::Program& p
             rad::weight_planes(w,source_planes.data());
             std::vector<std::vector<uint8_t>> data((size_t)w.n_sel);
             for (int k=0;k<w.n_sel;++k) {
-                const auto& sh=shares[k];
-                const auto& ep=model.plane(*e,w.sel[k]);
-                const uint8_t* src=model.data(ep);
-                need(src != nullptr, "C06 native source plane is not mapped");
-                data[(size_t)k].resize((size_t)sh.dense_bytes());
-                size_t at=0;
-                for (const auto& rect:sh.rects)
-                    for (int64_t row=0;row<rect.rows;++row) {
-                        const uint8_t* from=src+(rect.row0+row)*sh.row_bytes+rect.byte0;
-                        std::memcpy(data[(size_t)k].data()+at,from,(size_t)rect.bytes);
-                        at+=(size_t)rect.bytes;
-                    }
-                need(at==data[(size_t)k].size(),
-                     "C06 layout fixture did not consume native share");
+                data[(size_t)k]=c06_gather(model,*e,w.sel[k],shares[k]);
                 source_planes[(size_t)k].data=data[(size_t)k].data();
             }
             const auto* ki=resolved.row->info;
@@ -407,6 +475,10 @@ static void verify_c06_load_contract(const RadFile& model, const rad::Program& p
             need(wrote_payload,"C06 native relayout returned success without writing payload");
             for(size_t j=(size_t)w.stored_bytes;j<stored.size();++j)
                 need(stored[j]==0xa5,"C06 native relayout overwrote output guard");
+            if (issued) {
+                stored.resize((size_t)w.stored_bytes);
+                issued->weights[i]=std::move(stored);
+            }
             ++relayouts; // Cannot be directly memcpy'ed: use engine loader.
             // Record the exact kernel layout that blocks naive checkpoint
             // pointer binding in a future issue test.
@@ -414,6 +486,21 @@ static void verify_c06_load_contract(const RadFile& model, const rad::Program& p
                 std::printf("C06 engine relayout required: %s -> %s (%s, source=%lld stored=%lld)\n",
                             w.source.c_str(),w.name.c_str(),w.layout_tag.c_str(),
                             (long long)share_bytes,(long long)w.stored_bytes);
+        }
+        if (issued) {
+            need(issued->weights[i].size()==(size_t)w.stored_bytes,
+                 "C06 resident model weight size mismatch");
+            if (issued->gpu) {
+                need(rad_dev_set(rank)==RAD_OK,"C06 native rank weight device unavailable");
+                void* gpu_ptr=rad_dev_alloc(w.stored_bytes,RAD_MEM_DEVICE);
+                need(gpu_ptr!=nullptr,"C06 native GPU checkpoint weight allocation failed");
+                issued->owned_device.push_back(gpu_ptr);
+                w.ptr=gpu_ptr;
+                w.site=rad::Site::Device;
+            } else {
+                w.ptr=issued->weights[i].data();
+                w.site=rad::Site::Host;
+            }
         }
         selected_bytes += share_bytes;
         stored_bytes += w.stored_bytes;
@@ -431,7 +518,8 @@ static void run_self_attn(const RadFile& model, Registry& reg,
                           int64_t block, bool audio, int rank, int first,
                           int owned, int total_heads,
                           std::unique_ptr<Builder>* instance = nullptr,
-                          bool inspect_weights = false, bool aql = false) {
+                          bool inspect_weights = false, bool aql = false,
+                          C06Issued* capture = nullptr) {
     const std::string kind = audio ? "audio_attn1" : "attn1";
     const std::string prefix = "dit.blk." + std::to_string(block) + "." + kind;
     const auto* fused = model.find(prefix + ".qkv.weight");
@@ -580,6 +668,25 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     }
     need(b.errors().empty(), "C06 Builder diagnostics");
     if (instance) {
+        if (capture) {
+            capture->attn=a;
+            capture->x=x;
+            capture->ao=ao;
+            capture->qkv=qkv;
+            capture->gate=logits;
+            capture->output=out;
+            capture->width=full;
+            capture->audio=audio;
+            capture->rank=rank;
+            RadVideoGeom geom{};
+            geom.n_text=1;
+            geom.lat_frames=1;
+            geom.lat_h=1;
+            geom.lat_w=1;
+            geom.n_audio=1;
+            need(ltx2::positions(&geom,capture->pos.data(),3)==3,
+                 "C06 native one-row coordinates invalid");
+        }
         // Retain exactly the Builder just verified; native all-reduce
         // instance initialization must rendezvous across all three ranks.
         *instance = std::move(owned_builder);
@@ -597,7 +704,9 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
-        const bool aql = argc == 4 && std::string(argv[3]) == "--c06-instances-aql";
+        const bool aql = argc == 4 &&
+            (std::string(argv[3]) == "--c06-instances-aql" ||
+             std::string(argv[3]) == "--c06-issued-aql");
         if (aql) ltx_test::require_aql_backend();
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
@@ -637,28 +746,39 @@ int main(int argc, char** argv) {
                 need(tested==12,"C06 weight contract matrix drift");
                 return 0;
             }
-            if (std::string(argv[3]) == "--c06-instances" || aql) {
-                // This is native INSTANCING only, not issued C06,
-                // checkpoint weight residency, or video parity. Reuse the
-                // same model-backed self-attention declarations as --c06.
+            const bool issue = std::string(argv[3])=="--c06-issued-host" ||
+                               std::string(argv[3])=="--c06-issued-aql";
+            if (std::string(argv[3]) == "--c06-instances" || aql || issue) {
+                // Both issued modes reuse the same declared native C06 graph
+                // and exact collective instances as the existing proofs.
+                std::array<std::vector<uint16_t>,2> split_reference;
                 int groups = 0;
                 size_t initialized = 0;
                 for (bool audio : {false, true})
                     for (const std::array<int,3>& split :
                          {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
                         std::array<std::unique_ptr<Builder>,3> builders;
+                        std::array<C06Issued,3> issued;
                         // Keep every Program's frozen geometry alive until
                         // native kernel fini, including when an assertion
                         // throws during rank validation.
                         struct Retire {
                             Registry& registry;
-                            ~Retire() { registry.fini_instances(); }
-                        } retire{reg};
+                            std::array<C06Issued,3>& ranks;
+                            ~Retire() {
+                                // Contexts own streams and can hold native instance
+                                // pointers until shutdown; retire them first even on
+                                // an exception or failed rank issue.
+                                for (auto& rank:ranks) rank.ctx.reset();
+                                registry.fini_instances();
+                            }
+                        } retire{reg,issued};
                         int first = 0;
                         for (int rank=0; rank<3; ++rank) {
                             run_self_attn(model,reg,0,audio,rank,
                                           first,split[rank],nheads,&builders[rank],
-                                          false,aql);
+                                          false,aql,issue?&issued[rank]:nullptr);
+                            if(issue) issued[rank].gpu=aql;
                             first += split[rank];
                         }
                         need(first == nheads, "C06 instance head ownership gap");
@@ -696,6 +816,167 @@ int main(int argc, char** argv) {
                         need(reg.n_instances() >= instances_before + 3 * builders.size(),
                              "C06 did not initialize three collectives on every rank");
                         initialized += reg.n_instances() - instances_before;
+                        if (issue) {
+                            for (int rank=0;rank<3;++rank) {
+                                C06Issued& r=issued[rank];
+                                if(aql) need(rad_dev_set(rank)==RAD_OK,
+                                             "C06 AQL rank allocation device missing");
+                                rad::Program& prog=builders[rank]->program();
+                                verify_c06_load_contract(model,prog,rank,&r);
+                                r.ctx=std::make_unique<rad::Ctx>();
+                                rad::CtxDesc d{};
+                                d.program=&prog;
+                                d.rank=rank;
+                                d.world_size=3;
+                                d.device=aql?rank:0;
+                                d.arch_step=c06_issued_step;
+                                d.record_passes=false;
+                                d.registry=&reg;
+                                need(r.ctx->init(d)==RAD_OK,"C06 real model RadCtx init failed");
+                                if (aql) {
+                                    for(size_t i=1;i<prog.weights.size();++i) {
+                                        const auto& w=prog.weights[i];
+                                        need(rad_memcpy_async(w.ptr,r.weights[i].data(),
+                                                               w.stored_bytes,r.ctx->stream())==RAD_OK,
+                                             "C06 native checkpoint weight upload failed");
+                                    }
+                                    r.device_cu=rad_dev_alloc(sizeof(r.cu),RAD_MEM_DEVICE);
+                                    r.device_pos=rad_dev_alloc(sizeof(r.pos),RAD_MEM_DEVICE);
+                                    need(r.device_cu && r.device_pos,
+                                         "C06 native AQL coordinate allocation refused");
+                                    r.owned_device.push_back(r.device_cu);
+                                    r.owned_device.push_back(r.device_pos);
+                                    need(rad_memcpy_async(r.device_cu,r.cu.data(),
+                                                          sizeof(r.cu),r.ctx->stream())==RAD_OK &&
+                                         rad_memcpy_async(r.device_pos,r.pos.data(),
+                                                          sizeof(r.pos),r.ctx->stream())==RAD_OK,
+                                         "C06 native AQL coordinate transfer failed");
+                                    std::vector<uint16_t> sample((size_t)r.width);
+                                    for(int64_t j=0;j<r.width;++j)
+                                        sample[(size_t)j]=c06_sample(j);
+                                    void* input=r.ctx->buf_ptr(r.x.a.x);
+                                    need(input && rad_memcpy_async(input,sample.data(),
+                                                r.width*2,r.ctx->stream())==RAD_OK &&
+                                         rad_stream_sync(r.ctx->stream())==RAD_OK,
+                                         "C06 native AQL activation transfer failed");
+                                }
+                            }
+                            std::array<int,3> status{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
+                            std::array<std::thread,3> runners;
+                            for(int rank=0;rank<3;++rank)
+                                runners[rank]=std::thread([&,rank] {
+                                    C06Issued& r=issued[rank];
+                                    c06_active=&r;
+                                    const int rc=r.ctx->bind_thread();
+                                    RadBatch batch{};
+                                    batch.phase=RAD_PHASE_PREFILL;
+                                    batch.n_tok=1;
+                                    batch.n_seq=1;
+                                    status[rank]=rc==RAD_OK?r.ctx->run_step(&batch):rc;
+                                    if(status[rank]==RAD_OK && aql)
+                                        status[rank]=rad_stream_sync(r.ctx->stream());
+                                    c06_active=nullptr;
+                                });
+                            for(auto& runner:runners) runner.join();
+                            for(int rank=0;rank<3;++rank) {
+                                C06Issued& r=issued[rank];
+                                if(status[rank]!=RAD_OK)
+                                    std::fprintf(stderr,"C06 issued rank %d error %d: %s\n",
+                                                 rank,status[rank],r.ctx->step_error());
+                                need(status[rank]==RAD_OK,
+                                     "C06 checkpoint-backed self-attention issue refused");
+                                need(r.ctx->ar_calls()==3,
+                                     "C06 must issue exactly three native reductions per rank");
+                            }
+                            const int64_t full=issued[0].width;
+                            std::array<std::vector<uint16_t>,3> results;
+                            for(int rank=0;rank<3;++rank) {
+                                C06Issued& r=issued[rank];
+                                need(rad_dev_set(aql?rank:0)==RAD_OK,
+                                     "C06 output rank device bind refused");
+                                void* ptr=r.ctx->buf_ptr(r.output);
+                                need(ptr!=nullptr,"C06 output arena buffer missing");
+                                results[rank].resize((size_t)full);
+                                if(aql) {
+                                    need(rad_memcpy_async(results[rank].data(),ptr,
+                                                         full*2,r.ctx->stream())==RAD_OK &&
+                                         rad_stream_sync(r.ctx->stream())==RAD_OK,
+                                         "C06 native AQL attention output download failed");
+                                } else {
+                                    std::memcpy(results[rank].data(),ptr,(size_t)full*2);
+                                }
+                            }
+                            const auto& control=results[0];
+                            size_t nonzero=0;
+                            for(int64_t j=0;j<full;++j) {
+                                const uint32_t b=(uint32_t)control[(size_t)j]<<16;
+                                float x;
+                                std::memcpy(&x,&b,sizeof x);
+                                need(std::isfinite(x),"C06 checkpoint attention output is not finite");
+                                nonzero+=control[(size_t)j]!=0;
+                            }
+                            need(nonzero>0,"C06 checkpoint attention output unexpectedly all zero");
+                            for(int rank=1;rank<3;++rank)
+                                need(control==results[rank],
+                                     "C06 exact three-rank BF16 output replicas disagree");
+                            auto& prior=split_reference[audio?1:0];
+                            if(prior.empty()) prior=control;
+                            else if(!aql) {
+                                need(prior.size()==control.size(),
+                                     "C06 TP3 splits changed checkpoint output width");
+                                int64_t unequal=0;
+                                double max_abs=0, sum_sq=0, max_rel=0;
+                                for(size_t j=0;j<control.size();++j) {
+                                    const auto f32=[](uint16_t v) {
+                                        const uint32_t u=(uint32_t)v<<16;
+                                        float x; std::memcpy(&x,&u,sizeof x);
+                                        return x;
+                                    };
+                                    const double v=f32(control[j]), base=f32(prior[j]);
+                                    const double err=std::abs(v-base);
+                                    unequal+=control[j]!=prior[j];
+                                    max_abs=std::max(max_abs,err);
+                                    sum_sq+=err*err;
+                                    max_rel=std::max(max_rel,err/std::max(1e-3,std::abs(base)));
+                                }
+                                std::printf("C06 split comparison %s: unequal=%lld/%zu max_abs=%g rms=%g max_rel=%g\n",
+                                    audio?"audio":"video",(long long)unequal,control.size(),
+                                    max_abs,std::sqrt(sum_sq/control.size()),max_rel);
+                                std::fflush(stdout);
+                                // Different BF16 partial sums can round differently
+                                // when head ownership changes. This is measured, not
+                                // accepted as TP1 parity or silenced by a guessed cap.
+                            }
+                            std::printf("C06 issued %s: %s heads=%d,%d,%d exact BF16 output replicas %lld values; no TP1 capture\n",
+                                        aql?"AQL":"host",audio?"audio":"video",
+                                        split[0],split[1],split[2],(long long)full);
+                            // Optional diagnostic capture of the *validated* rank-0
+                            // BF16 output, for an external TP1/backend comparison.
+                            // The caller explicitly owns the destination directory.
+                            if(const char* root=std::getenv("BC_LTX_C06_CAPTURE_DIR");
+                               root && *root) {
+                                const char* supplied=std::getenv("BC_LTX_C06_CAPTURE_TAG");
+                                const std::string tag=supplied && *supplied ? supplied :
+                                                          (aql?"aql":"host");
+                                need(!tag.empty() && std::all_of(tag.begin(),tag.end(),
+                                     [](unsigned char c) {
+                                         return (c>='a' && c<='z') ||
+                                                (c>='A' && c<='Z') ||
+                                                (c>='0' && c<='9') || c=='_' || c=='-';
+                                     }),"C06 capture tag must be a simple label");
+                                const auto path=std::filesystem::path(root)/
+                                    (tag+"-"+(audio?"audio":"video")+"-"+
+                                     std::to_string(split[0])+"-"+
+                                     std::to_string(split[1])+"-"+
+                                     std::to_string(split[2])+".bf16");
+                                std::ofstream f(path,std::ios::binary|std::ios::trunc);
+                                need(f.is_open(),"C06 output capture directory inaccessible");
+                                f.write((const char*)control.data(),
+                                        (std::streamsize)(control.size()*sizeof(uint16_t)));
+                                need(f.good(),"C06 output capture write failed");
+                            }
+                            for(auto& r:issued) r.ctx.reset();
+                        }
                         // No kernel instance may keep pointers into a
                         // destroyed Builder. Release all domains while the
                         // three rank Programs still own their geometry.
@@ -705,8 +986,12 @@ int main(int argc, char** argv) {
                         ++groups;
                     }
                 need(groups == 4, "C06 instance coverage drift");
-                std::printf("LTX C06: %d three-rank %s graphs; %zu initialized native instances; no model execution claimed\n",
-                            groups,aql?"AQL":"host",initialized);
+                if (issue)
+                    std::printf("LTX C06: %d three-rank issued %s checkpoint attention graphs; %zu retired native instances\n",
+                                groups,aql?"AQL":"host",initialized);
+                else
+                    std::printf("LTX C06: %d three-rank %s graphs; %zu initialized native instances; no model execution claimed\n",
+                                groups,aql?"AQL":"host",initialized);
                 return 0;
             }
             if (std::string(argv[3]) == "--c06") {
