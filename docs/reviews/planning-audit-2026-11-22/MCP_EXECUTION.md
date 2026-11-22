@@ -13,7 +13,7 @@ This handoff is **not** an instruction to patch `docs/planning/` files directly.
 
 ### B. Make ownership unique before retirement
 
-0. Resolve the one verified active/completed collision: RHA07 exists as pending in active and completed in history. Compare the completed test record, actual four evaluator/caller implementations and RV159; retire the stale active RHA07 via Planning MCP while keeping the completed document. Confirm there are zero ID collisions afterward. The complete historical inventory is in `COMPLETED_INDEX.csv`.
+0. **Done 2026-11-22 using the AUDiaGentic Planning MCP duplicate-rekey repair:** active RHA07 was moved to unique pending RHA16 in the existing run-hip-autotune group. Completed RHA07 and RV159 are preserved unchanged; initial source implementation and tests indicate old advisory work is delivered. Before any implementation under RHA16, revalidate residual gaps and close or narrow redundant scope without duplicating completed work. Verify zero global duplicate plan IDs. The complete historical inventory is in `COMPLETED_INDEX.csv`.
 
 1. Adopt **one** owner per subject: llama.cpp, Radiance or platform. When shared interfaces are involved, platform maintains the contract, the engine owns only its adapter and acceptance tests.
 2. For BCOP target-active cases (98 proposed), use Planning MCP to create a review of the BCOP/primary overlap; compare unique acceptance/quality gates, fold only unique scope into its existing primary item; close review with rationale; then supersede the secondary BCOP item.

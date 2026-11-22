@@ -29,6 +29,8 @@ The completed-area history is indexed in `COMPLETED_INDEX.csv` to detect current
 
 **Post-registration state (2026-11-22):** after merging updated `origin/main` and registering LTX01–LTX08 and RUM13 through Planning MCP, there are **506** direct active item documents (**nine new pending**). The 497-item CSV remains the preserved pre-registration comparison set. No pre-existing item was closed or modified through this registration slice.
 
+**Post-cleanup status (2026-11-22):** 499 active direct canonical plan items after five BCOP supersessions, nine new registrations, one RHA07→RHA16 rekey, and relocation of two noncanonical evidence notes out of the active planning tree. The 497-item CSV is deliberately a baseline snapshot, not the new current state. No code, GPU runs or acceptance claims result from these plan lifecycle operations.
+
 ## Ownership decisions
 
 | Owner | Owns | Must not own |
@@ -43,7 +45,7 @@ Engine-neutral infrastructure belongs to platform, with **engine-specific adapte
 
 ### 0. Resolve a verified duplicate current/completed item: RHA07
 
-`RHA07` appears in **both** `docs/planning/active/run-hip-autotune/RHA07.md` (`pending`) and `docs/planning/completed/run-hip-autotune/RHA07.md` (`completed`). The latter records 118 passing focused tests and a 78-pass regression suite; the actual `run_advisories.py` has all four evaluators, and `benchmark.py`, `cli/build.py`, `tuning/workflow.py` and `tuning/tune_promotion.py` call them. Retire the duplicate active item via Planning MCP after checking linked RV159/review state; preserve the completed record and its evidence. This is a concrete bug, not a speculative age-based closure.
+`RHA07` appears in **both** `docs/planning/active/run-hip-autotune/RHA07.md` (`pending`) and `docs/planning/completed/run-hip-autotune/RHA07.md` (`completed`). The latter records 118 passing focused tests and a 78-pass regression suite; the actual `run_advisories.py` has all four evaluators, and `benchmark.py`, `cli/build.py`, `tuning/workflow.py` and `tuning/tune_promotion.py` call them. **Resolved through AUDiaGentic Planning MCP duplicate-rekey (AUDiaGentic PR #493):** the original active copy is now `docs/planning/active/run-hip-autotune/RHA16.md` with state `pending`, preserved original history, and a bounded current-main advisory-gap revalidation (closed review RV4324), not a second implementation assignment. The completed `RHA07` remains byte-for-byte unchanged (5,745 bytes). RHA16 must first inventory already-delivered advisories and close or narrow any residual work; it must not reimplement RHA07's completed acceptance. The historical closed RV159 remains under RHA03. No ID collision remains.
 
 ### 1. Collapse secondary BCOP decision tickets after preserving their unique gates
 
@@ -89,6 +91,6 @@ The BCOP count is title-based evidence of likely double ownership, **not** 117 a
 
 ## Publication and lifecycle gate
 
-The repository requires **ag-planning Planning MCP** for all plan/review mutations. AUDiaGentic PR #491 adds an external, project-scoped stdio accessor that invokes the **same** Planning and Ledger MCP servers, not hand-written file updates. Using that canonical boundary, this branch registered nine new `pending` item records (LTX01–08 and RUM13). The baseline inventory and proposed BCOP dispositions remain review-only; **no old item was closed, superseded or deleted**.
+The repository requires **ag-planning Planning MCP** for all plan/review mutations. AUDiaGentic PR #491 adds an external, project-scoped stdio accessor that invokes the **same** Planning and Ledger MCP servers, not hand-written file updates. Using that canonical boundary, this branch registered nine new `pending` item records (LTX01–08 and RUM13). The baseline inventory and proposed BCOP dispositions remain historical triage snapshots. A subsequent reviewed slice superseded **BCOP114→PHC03, BCOP125→PRBE111, BCOP160→PEC02, BCOP203→QFP47 and BCOP221→RNX11** through Planning MCP, retaining the original evidence and linked closed reviews. The unique cell-bound trigger/correctness gap from BCOP160 was transferred into PEC02's acceptance. RSC11's broken evidence link was corrected via Planning MCP. No engineering task was marked completed without its acceptance.
 
-This review branch remains a **draft PR, not merge-ready broad cleanup**. The LTX/RUM registration slice is done; the remaining BCOP, RHA07, PRQ, RHP and platform reviews still require explicit Planning MCP transitions and verified acceptance.  No claims of 117 closures, 2.2 quality acceptance or LTX TP3 performance are made here.
+This review branch remains a **draft PR, not merge-ready broad cleanup**. The LTX/RUM registration and five-owner BCOP consolidation slices are done; RHA07's identity collision has been resolved by a canonical active-record rekey to RHA16. The remaining BCOP, PRQ, RHP and platform reviews still require explicit Planning MCP transitions and verified acceptance.  No claims of 117 closures, 2.2 quality acceptance or LTX TP3 performance are made here.

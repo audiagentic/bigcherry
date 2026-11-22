@@ -1,0 +1,43 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_034501_resolved-duplicate-rha07-as-pe_4991",
+  "files": [
+    "docs/planning/active/run-hip-autotune/RHA16.md",
+    "docs/planning/active/patching-ec-contracts/PEC02.md",
+    "docs/planning/active/run-serving-configuration/RSC11.md",
+    "docs/evidence/2026-11-10-rad50-cpu-bar-push/RAD50_SLICE_OPTIMISATION.md",
+    "docs/evidence/radiance-rdna3/RR10-AR.md",
+    "docs/evidence/2026-11-10-rad50-cpu-bar-push/README.md",
+    "docs/evidence/2026-11-10-rad50-cpu-bar-push/PROGRESS.md",
+    "docs/evidence/2026-11-10-rad50-cpu-bar-push/GATE4_LIVE_RESULTS.md",
+    "docs/reviews/planning-audit-2026-11-22/AUDIT.md",
+    "docs/reviews/planning-audit-2026-11-22/MCP_EXECUTION.md",
+    "docs/planning/completed/run-hip-autotune/reviews/RHA16/RV4324.md",
+    "docs/planning/completed/patching-ec-contracts/reviews/PEC02/RV4322.md",
+    "docs/planning/completed/run-serving-configuration/reviews/RSC11/RV4321.md",
+    "docs/planning/completed/patching-bc-optimizations/BCOP114.md",
+    "docs/planning/completed/patching-bc-optimizations/reviews/BCOP114/RV4318.md",
+    "docs/planning/completed/patching-bc-optimizations/BCOP125.md",
+    "docs/planning/completed/patching-bc-optimizations/reviews/BCOP125/RV4319.md",
+    "docs/planning/completed/patching-bc-optimizations/BCOP160.md",
+    "docs/planning/completed/patching-bc-optimizations/reviews/BCOP160/RV4323.md",
+    "docs/planning/completed/patching-bc-optimizations/BCOP203.md",
+    "docs/planning/completed/patching-bc-optimizations/reviews/BCOP203/RV4320.md",
+    "docs/planning/completed/patching-bc-optimizations/BCOP221.md",
+    "docs/planning/completed/patching-bc-optimizations/reviews/BCOP221/RV4317.md"
+  ],
+  "plan-item-ids": [
+    "RHA16",
+    "BCOP114",
+    "BCOP125",
+    "BCOP160",
+    "BCOP203",
+    "BCOP221",
+    "PEC02",
+    "RSC11"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Repaired a genuine duplicate global Planning ID by rekeying only active run-hip-autotune RHA07 to pending RHA16 via AUDiaGentic's strict MCP duplicate-rekey operation. Preserved completed RHA07 byte-for-byte. RHA16 now owns only the current-main residual advisory gap inventory and source/test evidence, not a second implementation; its review RV4324 was closed. Superseded five secondary BCOP optimization decision items into pre-existing llama.cpp and platform owners: BCOP114->PHC03, BCOP125->PRBE111, BCOP160->PEC02, BCOP203->QFP47, BCOP221->RNX11. Each linked review is closed. Added unique per-cell trigger/provenance and absent-required-correctness acceptance to PEC02 without claiming a runtime fix; corrected RSC11 evidence link. Moved two noncanonical Radiance evidence notes out of active Planning and corrected downstream evidence references. No production, GPU or model performance work is claimed.",
+  "timestamp-utc": "2026-11-22T03:45:01.140146Z",
+  "user-summary-candidate": "Resolved duplicate RHA07 as pending RHA16, consolidated five duplicate decision plans under their existing owners, and relocated two notes."
+}

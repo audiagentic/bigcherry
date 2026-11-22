@@ -2,7 +2,7 @@
 id: BCOP125
 order: 125
 plan: patching-bc-optimizations
-state: pending
+state: superseded
 created-at: '2026-10-10T22:11:49+00:00'
 created-by: agent
 priority: P2
@@ -10,6 +10,46 @@ work: S
 ---
 
 # PRBE111: reject unproven IQ MMVQ hoist; preserve 1273 ownership
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 consolidation: Secondary decision note superseded by active primary PRBE111 in patching-rdna-boost-experiments. PRBE111 already records the IQ4_XS/IQ3_XXS loop proof, 1273 VDR ownership, upstream SWAR/tail conditional gate and profile-first no-new-kernel decision. No separate BCOP implementation. Review RV4319 records the evidence. No completed runtime work is claimed; PRBE111's pending acceptance remains unchanged.
 
 ## Discovery / disposition
 
@@ -26,3 +66,12 @@ Consume existing traces/queues first. If a real IQ4_XS gfx1100/gfx1201 lane is a
 ## Evidence
 
 Pinned `mmvq.cu`, `vecdotq.cuh`, `vendors/hip.h`; 1273 patch.py/SUMMARY; [llama.cpp #27962](https://github.com/ggml-org/llama.cpp/pull/27962), [#29025](https://github.com/ggml-org/llama.cpp/pull/29025), [SGLang GGUF dispatch](https://github.com/sgl-project/sglang/blob/main/python/sglang/srt/layers/quantization/gguf.py), [vLLM GGUF plugin MMVQ](https://github.com/vllm-project/vllm-gguf-plugin/blob/main/vllm_gguf_plugin/csrc/gguf/mmvq.cuh). 9/9 source checks, 20,000 SWAR host pairs, 51 row-tail host fixtures. No HIP build, pytest, GPU benchmark or new measured gain.
+
+## Reviews
+
+- RV4319
+
+## Change Log
+
+- 2026-11-22T03:31:35.835958+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T03:31:51.951563+00:00 (state-transition): State: pending → superseded
