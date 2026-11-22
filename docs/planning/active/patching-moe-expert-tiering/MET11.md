@@ -19,11 +19,17 @@ MET08's usage-placed layout currently needs a second copy of the model in which 
 
 ## Steps
 
-1. Factor the placement rule out of expert-place.py into something both the tool and the C++ side follow exactly (document the rule; add a --dump-permutation option to the tool so the C++ result can be compared against it). 2. Patch: profile reader (reuse 1338's STRP reader code shape), permutation builder, permuted block copy at load for the three expert tensors, B2 id translation in the qwen4exp MoE graph (after top-k, before the three range MUL_MAT_ID nodes and any 1336 copy), log line with the per-card hot / cold counts, BIGCHERRY_PATCH_HIT marker. 3. Offline mechanics test (apply on 1281 + 1283, idempotent, fail closed, flag-off path unchanged). 4. Hardware, equivalence first: with the SAME profile and capacities, the load-time placement on the ORIGINAL file must give the same per-card expert sets as the reordered file (compare the logged permutation with expert-placement.json) and, with B1 semantics emulated or with B2, probes inside the envelope against the reordered-file run; with B2 the row split on the original file is untouched by construction. 5. Hardware, layout: the MET08 comparisons on the original file (prefill / decode at 8K, 98K, 202K; ctx 245760; acceptance; fidelity). 6. Load time with and without the placement (reads are no longer sequential). 7. If adopted: delete gguf/placed-128-128-256 and retire expert-place.py's write mode (keep it as a simulator).
+1. Reuse tools/lab/flash-next/expert-place.py --plan-only to emit the one model/profile/capacity-reference placement; do NOT add a duplicate --dump-permutation command, offline compiler or GGUFReader inventory. Require exact model/shards/profile identity, finite nonnegative budgets/traffic, per-card byte fit and old/new expert-ID bijection before loader work. The MET08 artifact oracle and MET09 route/tie-weight parity must pass first; a measurable >=3% E2E opportunity precedes new source code.
+2. Only if Gate 0 accepts implementation, extend the existing loader path: profile reader (reuse 1338's STRP reader code shape), permutation builder, permuted block copy at load for the three expert tensors, B2 id translation in the qwen4exp MoE graph (after top-k, before the three range MUL_MAT_ID nodes and any 1336 copy), log line with the per-card hot / cold counts, BIGCHERRY_PATCH_HIT marker.
+3. Offline mechanics test (apply on 1281 + 1283, idempotent, fail closed, flag-off path unchanged).
+4. Hardware, equivalence first: with the SAME profile and capacities, the load-time placement on the ORIGINAL file must give the same per-card expert sets as the reordered file (compare the logged permutation with expert-placement.json) and, with B1 semantics emulated or with B2, probes inside the envelope against the reordered-file run; with B2 the row split on the original file is untouched by construction.
+5. Hardware, layout: the MET08 comparisons on the original file (prefill / decode at 8K, 98K, 202K; ctx 245760; acceptance; fidelity).
+6. Load time with and without the placement (reads are no longer sequential).
+7. If adopted: delete gguf/placed-128-128-256 and retire expert-place.py's write mode (keep it as a simulator).
 
 ## Detailed Solution & Technical Design
 
-New patch package (proposed 1343_moe_expert_placement), requires 1283 (expert split) and 1281. Entirely opt-in: BIGCHERRY_MOE_EP_PLACEMENT=<profile file> switches it on; unset = today's behaviour, byte-identical (the loader takes the existing path). It only has an effect together with BIGCHERRY_MOE_EP=1. Inputs: (1) the profile in the Strata STRP format that 1338 already reads and writes (ranked (layer, expert) pairs); (2) the per-card expert counts from BIGCHERRY_MOE_EP_TS (e.g. 128,128,256); (3) BIGCHERRY_MOE_EP_TRAFFIC (default equal) = share of the hot experts per card. From these the same rule as expert-place.py builds, per layer, a permutation new_index -> old_expert (hot experts dealt across the cards by weighted round robin until a card is full, cold remainder on the cards with room). MECHANISM, two parts. (A) Weights: when a layer's ffn_gate_exps / ffn_up_exps / ffn_down_exps are loaded, the expert blocks are written to the device buffers in permuted order. Expert blocks are whole byte ranges of a quantised tensor (n_bytes / n_expert each), so this is a block copy with no requantisation; these tensors are copied to VRAM anyway, so it changes the read order, not the amount of I/O. Needs the loader's tensor-data path for split tensors (llama_model_loader::load_all_data -> ggml_backend_tensor_set on the meta buffer, which splits along the expert axis) to read through the permutation. (B) Router consistency, choose one: (B1) permute the rows of ffn_gate_inp.weight the same way at load - the selected ids are then already in the new order, no run-time cost, identical to what the reordered file does; or (B2) leave the router untouched and translate the selected ids after top-k through a per-layer old->new table (one small gather per layer per graph) - selection, routing weights and tie-breaking stay exactly those of the original model. Recommended: B2, because the GPU top-k has no expert-id tie-break (MET09), so B1 can change which of two equal-scored experts is selected, while B2 cannot; the cost of B2 is one I32 gather of n_tokens * top_k elements per layer. The table is a small MIRRORED tensor per layer.
+Only after Gate 0 passes, one existing-engine patch package with an unused ID (never 1343, reserved for MTP), requires 1283 (expert split) and 1281. Entirely opt-in: BIGCHERRY_MOE_EP_PLACEMENT=<profile file> switches it on; unset = today's behaviour, byte-identical (the loader takes the existing path). It only has an effect together with BIGCHERRY_MOE_EP=1. Inputs: (1) the profile in the Strata STRP format that 1338 already reads and writes (ranked (layer, expert) pairs); (2) the per-card expert counts from BIGCHERRY_MOE_EP_TS (e.g. 128,128,256); (3) BIGCHERRY_MOE_EP_TRAFFIC (default equal) = share of the hot experts per card. From these the same rule as expert-place.py builds, per layer, a permutation new_index -> old_expert (hot experts dealt across the cards by weighted round robin until a card is full, cold remainder on the cards with room). MECHANISM, two parts. (A) Weights: when a layer's ffn_gate_exps / ffn_up_exps / ffn_down_exps are loaded, the expert blocks are written to the device buffers in permuted order. Expert blocks are whole byte ranges of a quantised tensor (n_bytes / n_expert each), so this is a block copy with no requantisation; these tensors are copied to VRAM anyway, so it changes the read order, not the amount of I/O. Needs the loader's tensor-data path for split tensors (llama_model_loader::load_all_data -> ggml_backend_tensor_set on the meta buffer, which splits along the expert axis) to read through the permutation. (B) Router consistency, choose one: (B1) permute the rows of ffn_gate_inp.weight the same way at load - the selected ids are then already in the new order, no run-time cost, identical to what the reordered file does; or (B2) leave the router untouched and translate the selected ids after top-k through a per-layer old->new table (one small gather per layer per graph) - selection, routing weights and tie-breaking stay exactly those of the original model. Recommended: B2, because the GPU top-k has no expert-id tie-break (MET09), so B1 can change which of two equal-scored experts is selected, while B2 cannot; the cost of B2 is one I32 gather of n_tokens * top_k elements per layer. The table is a small MIRRORED tensor per layer.
 
 ## Code Samples & Guidance
 
@@ -31,7 +37,7 @@ New patch package (proposed 1343_moe_expert_placement), requires 1283 (expert sp
 
 ## Files
 
-new patches/1343_moe_expert_placement/ (patch.py, patch.toml, SUMMARY.md), tools/tests/patch/test_1343_moe_expert_placement.py; vendor files touched by the patch: src/llama-model-loader.cpp (permuted load), src/models/qwen4exp.cpp or src/llama-graph.cpp (id translation), src/llama-model.cpp (flag, profile, per-layer tables); tools/lab/flash-next/expert-place.py (--dump-permutation)
+conditional engines/llamacpp/patches/<unreserved-id>/ (patch.py, patch.toml, SUMMARY.md), its focused existing patch-suite tests (only after eligibility proof); vendor files touched by the patch: src/llama-model-loader.cpp (permuted load), src/models/qwen4exp.cpp or src/llama-graph.cpp (id translation), src/llama-model.cpp (flag, profile, per-layer tables); tools/lab/flash-next/expert-place.py (existing --plan-only reference map)
 
 ## Validation
 
@@ -47,11 +53,17 @@ Package-only patch, fail-closed anchors, offline test. Off switch = the variable
 
 ## Acceptance Criteria
 
-
+- Existing expert-place.py --plan-only and MET08 oracle produce one source-identified correct reference, no PNRO16 copy or second tool.
+- The same exact model/shards/STRP profile and per-device caps yield a bijective block-accurate old/new expert mapping with capacity and nonfinite-input failures.
+- A target-specific plausible >=3% exposed E2E gain is demonstrated before any loader patch.
+- If implemented, B2 unchanged-router/weight selection, mapping lifetime, repeated-request/logit/greedy parity, opt-in fallback, current pin/build tests and MET08 quality/performance controls all pass.
+- No change to 1343_mtp_nextn_rereserve or another reserved patch id.
 
 ## Notes
 
 Also the base for MET10 (host tail): the same per-layer table decides which experts are resident and which stay on the host. Profiles come from 1338's recorder (BIGCHERRY_MOE_CACHE_PROFILE_OUT, with BIGCHERRY_MOE_CACHE_LARGE=1 to include prefill routing); a recorder that works inside the tensor split, not only on a single card, would remove that detour and belongs here or in MET08.
+
+2026-11-22 canonical ownership review: PNRO16 and BCOP101 are redundant tooling/decision surfaces; existing expert-place.py --plan-only (not new dump mode) plus MET08/MET09 first. Source evidence: docs/evidence/2026-11-22-bcop-final-disposition/README.md
 
 ## 2026-10-12 MET09 routing and patch-identity gate (supersedes B1/B2 rationale above)
 
@@ -64,3 +76,5 @@ MET08's existing `expert-place.py` copies/writes derived shards before its per-l
 ## Change Log
 
 - 2026-10-06T16:42:10.474116+00:00 (created-by): Created by agent
+- 2026-11-22T06:45:41.498981+00:00 (updated-by): Updated: section:steps, section:files, section:acceptance_criteria, section:notes
+- 2026-11-22T06:52:25.342892+00:00 (updated-by): Updated: section:steps, section:detailed_solution, section:files

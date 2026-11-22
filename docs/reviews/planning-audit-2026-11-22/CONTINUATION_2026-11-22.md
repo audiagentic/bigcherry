@@ -1,5 +1,11 @@
 # Planning closeout — ownership consolidation against 2026-11-22 main
 
+**Subsequent same-day reconciliation:** The active 377-item snapshot below
+is historical. The [final BCOP reconciliation](FINAL_BCOP_RECONCILIATION_2026-11-22.md)
+records the next canonical ownership pass, including the last 18 BCOP
+decisions and redundant PNRO16. Use its dated current-active CSV and the
+canonical Planning MCP for current status; do **not** re-run these reviews.
+
 This is the live follow-on to the baseline audit merged as
 [BigCherry #1295](https://github.com/audiagentic/bigcherry/pull/1295).
 The original `ITEM_INVENTORY.csv`, `COMPLETED_INDEX.csv` and
