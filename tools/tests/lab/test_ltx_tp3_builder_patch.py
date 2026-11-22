@@ -122,7 +122,7 @@ def test_c01_patch_fixture_applies_twice(tmp_path: Path) -> None:
     assert result == {"applied": 10, "created_headers": 1, "idempotent": 1}
     src = (tmp_path / CPP).read_text()
     assert "RAD_SHARD_ROW" in src and "RAD_SHARD_COL" in src
-    assert "explicit deferred bias ownership" in src
+    assert "explicit reduction ownership" in src
     assert "RAD_SHARD_NONE" in src  # default TP1 branch retained
 
 

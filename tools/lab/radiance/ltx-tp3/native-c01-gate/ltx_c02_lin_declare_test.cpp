@@ -82,7 +82,7 @@ constexpr const char* kBiasedOutputs[] = {
 };
 enum class ProbeCase {
     Normal, WrongGroup, PrematureBias, InvalidColumn,
-    DeferredBias, InvalidDeferred, MissingDeferredBias, Reduced, GlobalRms
+    DeferredBias, InvalidDeferred, DuplicateDeferredBias, Reduced, GlobalRms
 };
 static void run(const RadFile& model, Registry& reg, const std::string& base,
                 int banks, int nheads, int rank, int start_heads, int owned_heads,
@@ -97,8 +97,8 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     const int64_t hd = (rows ? e->shape[0]/banks : e->shape[1])/nheads;
     const int64_t full = hd * nheads, offset = hd*start_heads, width = hd*owned_heads;
     need(!rows || e->shape[0] == banks*full, "source banks are not equally sized");
-    const bool deferred = variant == ProbeCase::DeferredBias || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias || variant == ProbeCase::Reduced;
-    const bool denied = variant == ProbeCase::WrongGroup || variant == ProbeCase::PrematureBias || variant == ProbeCase::InvalidColumn || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias;
+    const bool deferred = variant == ProbeCase::DeferredBias || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::DuplicateDeferredBias || variant == ProbeCase::Reduced;
+    const bool denied = variant == ProbeCase::WrongGroup || variant == ProbeCase::PrematureBias || variant == ProbeCase::InvalidColumn || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::DuplicateDeferredBias;
     const auto slice = rows
         ? ltx2::C01Slice::rows(full,offset,width,hd,banks)
         : deferred ? ltx2::C01Slice::columns_deferred(e->shape[1],offset,width)
@@ -142,9 +142,10 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
              {"checkpoint.to_k.weight","checkpoint.to_v.weight"},
              {"checkpoint.to_k.bias","checkpoint.to_v.bias"},
              {full,full},out_dim,e->shape[1],RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
-    } else if (variant == ProbeCase::MissingDeferredBias) {
+    } else if (variant == ProbeCase::DuplicateDeferredBias) {
         rc = linear.declare(&b,nm,g,base.c_str(),
-             {"checkpoint.ff_down.weight"},{},{},
+             {"checkpoint.ff_down.weight"},
+             {"checkpoint.to_out.bias","checkpoint.to_out.bias"},{},
              out_dim,width,RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
     } else if(variant == ProbeCase::PrematureBias || deferred) {
         const std::string bias_name = base + ".bias";
@@ -782,6 +783,152 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     if (inspect_weights) verify_c06_load_contract(model,b.program(),rank);
 }
 
+
+// LTX03: checkpoint-derived FFN and replicated residual/modulation declarations.
+// The DiT production loop is unchanged; this does not issue a TP3 graph.
+static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
+                        bool audio, int rank, int first, int owned, int heads) {
+    const std::string prefix = "dit.blk." + std::to_string(block) +
+                               (audio ? ".audio_ff" : ".ff");
+    const auto* wu = model.find(prefix + "_up.weight");
+    const auto* wd = model.find(prefix + "_down.weight");
+    need(wu && wd && wu->rank == 2 && wd->rank == 2 &&
+         wu->shape[0] == wd->shape[1] && wu->shape[1] == wd->shape[0],
+         "LTX03 FFN upstream/downstream source dimensions disagree");
+    const int64_t dim = wu->shape[1], width = wu->shape[0];
+    need(dim > 0 && width > 0 && width % heads == 0 &&
+         first >= 0 && owned > 0 && first + owned <= heads,
+         "LTX03 FFN rank ownership not derivable from checkpoint");
+    const int64_t unit = width / heads, offset = first * unit, local = owned * unit;
+    const auto& eu = model.encoding(*wu);
+    const auto& ed = model.encoding(*wd);
+    need(rad::arch::linear_is_iq8r(eu) && rad::arch::linear_is_iq8r(ed),
+         "LTX03 FFN model encoding is not IQ8R");
+    const int64_t group = rad::arch::linear_w8h_group(eu);
+    need(group == rad::arch::linear_w8h_group(ed),
+         "LTX03 FFN source group disagreement");
+    const auto us = ltx2::C01Slice::rows(width, offset, local, unit, 1);
+    const auto ds = ltx2::C01Slice::columns_deferred(width, offset, local);
+    need(us.valid(local, dim, group) && ds.valid(dim, local, group),
+         "LTX03 FFN ownership violates model K-scale group");
+
+    const auto* ub = model.find(prefix + "_up.bias");
+    const auto* db = model.find(prefix + "_down.bias");
+    need((ub != nullptr) == audio && (db != nullptr) == audio &&
+         (!audio || (ub->rank == 1 && ub->shape[0] == width &&
+                     db->rank == 1 && db->shape[0] == dim)),
+         "LTX03 FFN bias geometry is not model-consistent");
+    Builder b(reg, metadata(), context(rank));
+    b.set_sources(rad::rad_container_sources(model));
+    ltx2::Names nm;
+    ltx2::Geom g{};
+    g.w_i8h = true;
+    g.w_i8_group = group;
+    g.world = 3;
+    g.wire_exact = 1;
+    g.max_tok = 4;
+    g.dtype = "bf16";
+    ltx2::Act x{}, ff{};
+    need(x.declare(&b,nm,g,"ltx03.ffn.input",4,dim) == RAD_OK &&
+         ff.declare(&b,nm,g,"ltx03.ffn.mid",4,local) == RAD_OK,
+         "LTX03 FFN Act declaration failed");
+    const rad_buf res = ltx2::decl_b(&b,nm.f("ltx03.residual"),RAD_BF16,{4,dim});
+    const rad_buf delta = ltx2::decl_b(&b,nm.f("ltx03.delta"),RAD_BF16,{4,dim});
+    const rad_buf tables = ltx2::decl_b(&b,nm.f("ltx03.mod"),RAD_BF16,{4,2*dim});
+    const rad_buf gates = ltx2::decl_b(&b,nm.f("ltx03.gates"),RAD_BF16,{4,dim});
+    const rad_buf upbuf = ltx2::decl_b(&b,nm.f("ltx03.ff.up"),RAD_BF16,{4,local});
+    need(res && delta && tables && gates && upbuf,
+         "LTX03 FFN replicated BF16 buffers missing");
+    const rad_op mod = ltx2::mod_op(&b,4,dim,1e-6,false,"rms",
+                                    tables,tables,res,0,x.a.x);
+    const rad_op mod_gated = ltx2::mod_op(&b,4,dim,1e-6,true,"rms",
+                                          tables,tables,res,delta,x.a.x);
+    const rad_op residual = ltx2::gate_op(&b,4,dim,gates,delta,res);
+    need(mod && mod_gated && residual, "LTX03 native modulation/residual unavailable");
+    ltx2::Lin up{}, down{};
+    int rc = audio
+        ? up.declare(&b,nm,g,(prefix + "_up").c_str(),
+                     {"checkpoint.audio_ff.net.0.proj.weight"},
+                     {"checkpoint.audio_ff.net.0.proj.bias"}, {},
+                     local,dim,RAD_ACCESS_PER_TOKEN,0,x,upbuf,4,false,&us)
+        : up.declare(&b,nm,g,(prefix + "_up").c_str(),
+                     {"checkpoint.ff.net.0.proj.weight"}, {}, {},
+                     local,dim,RAD_ACCESS_PER_TOKEN,0,x,upbuf,4,false,&us);
+    need(rc==RAD_OK && up.op, "LTX03 FFN up row shard refused");
+    const rad_op act = ltx2::unary(&b,"gelu_tanh",4,local,"bf16",upbuf,ff.a.x);
+    need(act, "LTX03 native FFN activation missing");
+    // Reject fractional IQ8R scale-group ownership before allocating weights.
+    const auto bad_slice = ltx2::C01Slice::columns_deferred(
+        width, offset + group / 2, local);
+    const auto before_bad = b.program().weights.size();
+    ltx2::Lin invalid{};
+    int bad_rc = audio
+        ? invalid.declare(&b,nm,g,(prefix + "_down").c_str(),
+                          {"checkpoint.audio_ff.net.2.weight"},
+                          {"checkpoint.audio_ff.net.2.bias"}, {},
+                          dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&bad_slice)
+        : invalid.declare(&b,nm,g,(prefix + "_down").c_str(),
+                          {"checkpoint.ff.net.2.weight"}, {}, {},
+                          dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&bad_slice);
+    need(bad_rc == RAD_E_UNSUPPORTED &&
+         b.program().weights.size() == before_bad,
+         "LTX03 FFN illegal scale-group cut reached native weight declaration");
+    rc = audio
+        ? down.declare(&b,nm,g,(prefix + "_down").c_str(),
+                       {"checkpoint.audio_ff.net.2.weight"},
+                       {"checkpoint.audio_ff.net.2.bias"}, {},
+                       dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&ds)
+        : down.declare(&b,nm,g,(prefix + "_down").c_str(),
+                       {"checkpoint.ff.net.2.weight"}, {}, {},
+                       dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&ds);
+    need(rc==RAD_OK && down.op && !down.op_b && !down.bias,
+         "LTX03 FFN down was not a bias-free partial GEMM");
+    ltx2::Geom wrong = g;
+    wrong.world = 2;
+    need(down.finalize_deferred_output(&b,nm,wrong,(prefix + "_down").c_str(),
+                                       RAD_ACCESS_PER_TOKEN,0,delta,4) == RAD_E_UNSUPPORTED,
+         "LTX03 FFN down accepted an incompatible reduction world");
+    need(down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
+                                       RAD_ACCESS_PER_TOKEN,0,delta,4) == RAD_OK,
+         "LTX03 FFN down exact reduction/final bias refused");
+    need(down.post_reduce && down.deferred_bias &&
+         (audio ? (down.bias && down.op_b) : (!down.bias && !down.op_b)),
+         "LTX03 FFN biasless/biased output finalization mismatch");
+    need(b.program().weight(up.l.w) && b.program().weight(up.l.ws) &&
+         b.program().weight(down.l.w) && b.program().weight(down.l.ws),
+         "LTX03 FFN source-backed native weight handles missing");
+    check_parts(*b.program().weight(up.l.w),us);
+    check_parts(*b.program().weight(up.l.ws),us);
+    check_col(*b.program().weight(down.l.w),ds);
+    check_col(*b.program().weight(down.l.ws),ds);
+    if (audio) {
+        check_parts(*b.program().weight(up.bias),us);
+        need(b.program().weight(down.bias)->decl.shard == RAD_SHARD_NONE,
+             "LTX03 FFN audio output bias must be replicated after reduce");
+    }
+    const rad_op ops[] = {mod,mod_gated,residual,up.op,act,ff.q.op,
+                          down.op,down.post_reduce,down.op_b};
+    for (rad_op h : ops) {
+        if (!h) continue;
+        const auto* op=b.program().op(h);
+        need(op!=nullptr, "LTX03 FFN native graph lost operation");
+        for (const auto& band : op->bands)
+            need(bool(band.dom[RAD_DOMAIN_HOST]),
+                 "LTX03 FFN operation not available on reference host");
+    }
+    long long world=0, exact=0;
+    const auto* red=b.program().op(down.post_reduce);
+    need(red->base.get_i("world_size",&world) && world == 3 &&
+         red->base.get_i("exact",&exact) && exact == 1,
+         "LTX03 FFN row-parallel reduce not exact TP3");
+    need(down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
+                                       RAD_ACCESS_PER_TOKEN,0,delta,4) == RAD_E_UNSUPPORTED,
+         "LTX03 FFN double reduction/bias was accepted");
+    b.set_instances(false);
+    need(b.finish()==RAD_OK && b.errors().empty(),
+         "LTX03 FFN/modulation native Builder finish failed");
+}
+
 int main(int argc, char** argv) {
     if(argc!=3 && argc!=4) {
         std::fprintf(stderr,"usage: ltx_c02_lin_declare_test MODEL.rad PLUGIN_KERNEL_DIR\n");
@@ -810,6 +957,27 @@ int main(int argc, char** argv) {
         const int nheads = std::stoi(head_text);
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
+        if (argc == 4 && std::string(argv[3]) == "--ltx03-ffn-modulation") {
+            int64_t tested = 0;
+            for (int64_t block = 0; block < nblocks; ++block)
+                for (bool audio : {false,true})
+                    for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                        int first = 0;
+                        for (int rank=0;rank<3;++rank) {
+                            run_dit_ffn(model,reg,block,audio,rank,first,
+                                        split[rank],nheads);
+                            first += split[rank];
+                            ++tested;
+                        }
+                        need(first == nheads, "LTX03 FFN head map lost owners");
+                    }
+            need(tested == nblocks * 2 * 2 * 3,
+                 "LTX03 FFN source-backed declaration count mismatch");
+            std::printf("LTX03 %lld FFN/modulation/residual declarations across %lld blocks\n",
+                        (long long)tested,(long long)nblocks);
+            return 0;
+        }
         if (argc == 4) {
             if (std::string(argv[3]) == "--ltx03-text-cross" ||
                 std::string(argv[3]) == "--ltx03-modal-cross") {
@@ -1300,7 +1468,7 @@ int main(int argc, char** argv) {
         run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,ProbeCase::Normal);
         run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,ProbeCase::DeferredBias);
         run(model,reg,"dit.blk.0.audio_attn1.out",0,nheads,0,0,10,ProbeCase::InvalidColumn);
-        run(model,reg,"dit.blk.0.ff_down",0,nheads,0,0,8,ProbeCase::MissingDeferredBias);
+        run(model,reg,"dit.blk.0.ff_down",0,nheads,0,0,8,ProbeCase::DuplicateDeferredBias);
         std::printf("LTX2 native Lin declarations: fused/biasless=%d, deferred-bias=%d, rejected-K=%d, negative=4\n",
                     count, deferred_count, blocked_count);
         return 0;

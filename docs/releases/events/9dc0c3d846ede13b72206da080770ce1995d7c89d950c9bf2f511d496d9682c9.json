@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_145508_extended-the-ltx-three-card-te_6756",
+  "files": [
+    "engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/patch.py",
+    "engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/src/post_reduce.inc",
+    "engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/src/preflight.inc",
+    "tools/lab/radiance/ltx-tp3/native-c01-gate/ltx_c02_lin_declare_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "LTX03: model-backed three-rank declarations for the video and audio FFN (up row-sharded, down column-sharded), modulation and gated-residual operations across all 48 DiT blocks and both legal head maps, with the exact three-rank reduction for biasless video outputs and the once-only bf16 bias for audio outputs. Host-only native CTest 14/14 and the managed patch replays idempotently; no GPU run.",
+  "timestamp-utc": "2026-11-22T14:55:08.696934Z",
+  "user-summary-candidate": "Extended the LTX three-card tensor-parallel declarations to the feed-forward and modulation layers."
+}
