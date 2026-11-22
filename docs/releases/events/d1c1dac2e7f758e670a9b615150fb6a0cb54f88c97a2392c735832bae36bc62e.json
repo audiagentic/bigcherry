@@ -1,0 +1,19 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_101014_a-runnable-precision-preservin_3960",
+  "files": [
+    "engines/radiance/patches/rad0061_iq8r_f32_scale/patch.py",
+    "engines/radiance/patches/rad0061_iq8r_f32_scale/patch.toml",
+    "engines/radiance/patches/rad0061_iq8r_f32_scale/README.md",
+    "tools/tests/lab/test_rum15_iq8r_scale_precision.py",
+    "docs/evidence/2026-11-22-rum15-f32-native-candidate/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM15.md"
+  ],
+  "plan-item-ids": [
+    "RUM15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Diagnostic rad0061 retains IQ8R U8*BF16 group-256 scale products in F32 for native libr3/gfx1100 and libr4d/gfx1201, reuses existing GEMM decode and prefill kernels and their layout hooks; CPU libref unchanged. Original 14 anchored edits apply source-exact/idempotently, 23 focused Python checks and R9700 35-case IQ8R native test passed. Real LTX2.5 IQ8R C06 3-GPU AQL passed both heterogeneous device orders, 4 graphs/order, 108 native instances/order; 36,864/36,864 QKV BF16 positions and 12,287/12,288 output BF16 positions match unchanged CPU reference, and GPU orders exactly match. Unselected diagnostic only; FP32 scale memory cost/admission, performance, refills and TP1 model quality are not yet accepted.",
+  "timestamp-utc": "2026-11-22T10:10:14.046003Z",
+  "user-summary-candidate": "A runnable precision-preserving IQ8R GPU candidate now executes checkpoint-backed LTX attention across two XTX GPUs and an R9700: all QKV values match the unchanged CPU reference and only one final BF16 element differs, without downgrading precision. Production is unchanged pending admission and performance tests."
+}
