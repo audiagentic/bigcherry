@@ -290,7 +290,7 @@ void test_two_installs_and_rollback() {
     check(fs::is_regular_file(a.root / "releases" / a.tag / "radiance_home/bin/bc-release"),
           "installed asset missing native release tool");
     bc::release::install(b);
-    auto second = bc::release::status(a.root, a.sdk);
+    auto second = bc::release::verify(a.root, a.sdk);
     check(second["current"] == b.tag && second["previous"] == a.tag,
           "two-version current/previous index incorrect");
     check(bc::release::rollback(a.root, a.sdk)["current"] == a.tag,

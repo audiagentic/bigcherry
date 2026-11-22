@@ -293,9 +293,6 @@ if(BUILD_TESTING)
   add_executable(bc_v2_runtime_receipt_test EXCLUDE_FROM_ALL v2/runtime_receipt_test.cpp)
   target_link_libraries(bc_v2_runtime_receipt_test PRIVATE bc_serving_v2_runtime_receipt)
   add_test(NAME bc_v2_runtime_receipt_test COMMAND bc_v2_runtime_receipt_test)
-  add_custom_target(bc_v2_runtime_receipt_check
-    COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_test>
-    DEPENDS bc_v2_runtime_receipt_test)
   add_executable(bc_v2_runtime_receipt_live_test EXCLUDE_FROM_ALL
     v2/runtime_receipt_live_test.cpp)
   target_link_libraries(bc_v2_runtime_receipt_live_test PRIVATE bc_serving_v2_runtime_receipt bc_jcs)
@@ -304,9 +301,6 @@ if(BUILD_TESTING)
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_v2_runtime_receipt_live_test
     COMMAND bc_v2_runtime_receipt_live_test $<TARGET_FILE:bc_v2_runtime_receipt_live>)
-  add_custom_target(bc_v2_runtime_receipt_live_check
-    COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_live_test> $<TARGET_FILE:bc_v2_runtime_receipt_live>
-    DEPENDS bc_v2_runtime_receipt_live_test bc_v2_runtime_receipt_live)
 
 
   add_executable(bc_s5_refusal_test EXCLUDE_FROM_ALL v2/s5_refusal_test.cpp)

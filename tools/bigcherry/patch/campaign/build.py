@@ -8,11 +8,11 @@ import hashlib
 import json
 import os
 import sys
-import tempfile
 from collections.abc import Mapping
 from pathlib import Path
 
 from bigcherry.core.paths import REPO_ROOT
+from bigcherry.hardware.power_receipt import write_json_atomic
 from bigcherry.experiment.attestation import ExecutionIdentity
 
 
@@ -230,27 +230,6 @@ def _full_requested_cmake_args(
 _CONFIGURE_REQUEST_SCHEMA_VERSION = 1
 
 
-def _atomic_write_json(path: Path, payload: dict[str, object]) -> None:
-    path.parent.mkdir(parents=True, exist_ok=True)
-    fd, temporary_name = tempfile.mkstemp(
-        prefix=f".{path.name}.",
-        suffix=".tmp",
-        dir=path.parent,
-        text=True,
-    )
-    temporary_path = Path(temporary_name)
-    try:
-        with os.fdopen(fd, "w", encoding="utf-8", newline="\n") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True, ensure_ascii=False)
-            handle.write("\n")
-            handle.flush()
-            os.fsync(handle.fileno())
-        os.replace(temporary_path, path)
-    except BaseException:
-        temporary_path.unlink(missing_ok=True)
-        raise
-
-
 def _configure_request_document(
     *, source: Path, cmake_args: list[str]
 ) -> dict[str, object]:
@@ -419,7 +398,10 @@ def build_tree(
             )
         if result.returncode != 0:
             raise PatchCampaignError(f"{name} configure failed (see {log_path})")
-        _atomic_write_json(configure_request_path, configure_request)
+        write_json_atomic(
+            configure_request_path, configure_request,
+            ensure_ascii=False, sync_directory=False, newline="\n",
+        )
 
     if generated_proof_callback is not None:
         generated_proof_callback("postconfigure-precompile", build_dir)
@@ -496,7 +478,10 @@ def ensure_stock_baseline(
             )
         if result.returncode != 0:
             raise PatchCampaignError(f"stock configure failed (see {log_path})")
-        _atomic_write_json(configure_request_path, configure_request)
+        write_json_atomic(
+            configure_request_path, configure_request,
+            ensure_ascii=False, sync_directory=False, newline="\n",
+        )
     for target in ("llama-bench",):
         log_path = log_dir / f"stock-build-{target}.log"
         with log_path.open("w", encoding="utf-8") as log_file:
