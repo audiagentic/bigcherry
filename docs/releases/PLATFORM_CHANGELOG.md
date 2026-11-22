@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.63.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.0...bc-platform-1.63.1) (2026-11-22)
+
+
+### Fixes
+
+* **serving:** decide a second prefix of the same release as a carry up front ([#1344](https://github.com/audiagentic/bigcherry/issues/1344)) ([223158b](https://github.com/audiagentic/bigcherry/commit/223158b53e7bd1e7477d6e9ab96f74c587c75bc1))
+* **serving:** replay a stored plan for the same config and the same run ([#1341](https://github.com/audiagentic/bigcherry/issues/1341)) ([4a8ce39](https://github.com/audiagentic/bigcherry/commit/4a8ce3907d2827f26d0793b05bd6cec9045307b0))
+* **serving:** the session control socket refuses unsafe permissions and other users ([#1339](https://github.com/audiagentic/bigcherry/issues/1339)) ([8f38f51](https://github.com/audiagentic/bigcherry/commit/8f38f51bcd66ac53040c63672001f610036e053b))
+
 ## [1.63.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.62.1...bc-platform-1.63.0) (2026-11-22)
 
 
