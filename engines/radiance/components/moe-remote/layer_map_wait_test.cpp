@@ -56,6 +56,13 @@ int main() {
     check(await_layer_consumed(h, 0, milliseconds(100000)) == MapWait::Faulted, "fault wins over a consumed map");
     check(std::chrono::steady_clock::now() - t1 < milliseconds(1000), "no wait after the fault");
 
+    // The helper-registration wait uses the same derived bound, expressed as an absolute monotonic deadline.
+    timespec now{}; clock_gettime(CLOCK_MONOTONIC, &now);
+    const timespec d = deadline_after(milliseconds(1500));
+    const int64_t delta_ms = (int64_t(d.tv_sec) - now.tv_sec) * 1000 + (d.tv_nsec - now.tv_nsec) / 1000000;
+    check(delta_ms >= 1490 && delta_ms <= 1600 && d.tv_nsec >= 0 && d.tv_nsec < 1000000000, "absolute deadline after a bound");
+    check(layer_map_bound() == std::chrono::nanoseconds(r3::epoch::Deadlines{}.ready_ns), "bound is the protocol readiness deadline");
+
     munmap(data, size_t(layout.bytes));
     std::puts("r3_layer_map_wait_test: OK");
 }

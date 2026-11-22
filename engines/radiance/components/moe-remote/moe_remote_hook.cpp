@@ -676,10 +676,8 @@ bool open_mailbox(HookState& g, uint32_t capacity_limit) {
      * (sticky helper_fault): the generation still opens, its map waits return at once and its first remote step
      * fails, rather than serving with experts it was told the helpers hold. */
     {
-        constexpr int kRegisterTimeoutS = 120;   /* helpers attach before the engine starts; this only bounds a failure */
-        timespec deadline{};
-        clock_gettime(CLOCK_MONOTONIC, &deadline);
-        deadline.tv_sec += kRegisterTimeoutS;
+        /* Helpers attach before the engine starts; the bound is the protocol's readiness deadline, not a literal. */
+        timespec deadline = deadline_after(layer_map_bound());
         const WaitResult r = wait_for(g.hdr, &deadline, [&] {
             g.watch.notice();
             const uint32_t n = load(&g.hdr->helper_count);
@@ -688,8 +686,8 @@ bool open_mailbox(HookState& g, uint32_t capacity_limit) {
             return n > 0;
         });
         if (r != WaitResult::Ready) {
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER helpers not all registered and watched within %d s (%s); "
-                         "failing the helper path\n", kRegisterTimeoutS,
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER helpers not all registered and watched within the readiness deadline (%s); "
+                         "failing the helper path\n",
                          r == WaitResult::Timeout ? "timeout" : r == WaitResult::Fault ? "helper fault" : "wait error");
             raise_fault(g.hdr);
         }
