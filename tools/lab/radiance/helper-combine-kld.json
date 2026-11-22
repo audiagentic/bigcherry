@@ -1,5 +1,5 @@
 {
- "_comment": "RAD18 combine quality gate: output quality with the helper-row combine on (x-bigcherry.helper.combine, helper 0 adds both helpers' bf16 rows on the CPU and writes the sum as fp16) against the same helper layout with the combine off, each arm a native YAML (native-arms/helper-combine-kld/*.yaml, recipes in native-arms.json) scored by bc-serve quality. Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; handoff.max-rows 64 with max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: the two-XTX tp 2 exact-wire run recorded once beforehand into KLD_REF_DIR with its reference.json. KL mode runs 64-row steps and the combine fires only at helper.combine-min-rows (default 256), so combine1 sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in the helper log after the run (a first run that never fired and gave an identical result was void). History: a bf16 sum failed this gate (p99 +0.275 against 0.2), and an engine-side rounding-only control (since removed) matched it exactly, so the loss was the bf16 rounding; the sum is now fp16. Set RAD_BIN, BC_MODEL_ROOT and KLD_REF_DIR.",
+ "_comment": "RAD18 combine quality gate: output quality with the helper-row combine on (x-bigcherry.helper.combine, helper 0 adds both helpers' bf16 rows on the CPU and writes the sum as fp16) against the same helper layout with the combine off, each arm a native YAML (native-arms/helper-combine-kld/*.yaml, recipes in native-arms.json) scored by bc-serve quality. Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; handoff.max-rows 64 with max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: the one helper-kld.json records (two-XTX tp 2 exact wire); KLD_REF_DIR must already hold it. KL mode runs 64-row steps and the combine fires only at helper.combine-min-rows (default 256), so combine1 sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in the helper log after the run (a first run that never fired and gave an identical result was void). History: a bf16 sum failed this gate (p99 +0.275 against 0.2), and an engine-side rounding-only control (since removed) matched it exactly, so the loss was the bf16 rounding; the sum is now fp16. Set RAD_BIN, BC_MODEL_ROOT and KLD_REF_DIR.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
@@ -18,8 +18,7 @@
    "max_kld_p999_increase": 0.5,
    "max_top1_drop_points": 1.0,
    "max_ppl_ratio_increase": 0.05
-  },
-  "reference_metadata": "${KLD_REF_DIR}/reference.json"
+  }
  },
  "arms": [
   {
