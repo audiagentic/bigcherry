@@ -54,6 +54,8 @@ A build that starts and answers /health on dev; a component table with architect
 
 Radiance builds from source on dev at a recorded commit, and the inventory states what runs on each of the four cards and which kernel family explains the prefill lead.
 
+**Transferred MEN02 acceptance (independent gate):** Under MEN01, preserve MEN02's R9700 native Radiance 27B first-working-lane gate: source-pinned build and MXFP4 Qwen3.8-27B checkpoint, record model/quant/KV/context and exact R9700 physical identity, compare native /completion versus existing llama-server-compatible API using identical prompts, tokenizer/sampling and repeatable reference client; report TTFT/prefill/decode, run variation, output hash/full logits or honest noncomparability, and limits by model/card/context/API. The 2026-10-09 1.3-era R9700 measurement is historical only; require fresh current-pin DFlash2 and matched reference baseline before claiming present performance. MEN01 must also publish validated per-card engine/kernel inventory, which cards can run the checkpoint and a 24K kernel census/critical-path attribution proving the original prefill lead (not assumed from one run). MEN03's cross-engine adapter migration and MEN05 quality producer remain distinct owners. No new launcher, per-model policy or performance-profiling framework.
+
 ## Notes
 
 Read-only on the container: start, measure, stop. No configuration change. Production llama-swap docker stays off.
@@ -75,6 +77,8 @@ BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdi
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN01.md:26,43 requires a 24K rocprof kernel census and per-card validated inventory, and MEN01.md:68 explicitly lists the build, per-card checks and census as unfinished. docs/reference/engines/radiance/LAYOUTS.md:24-30 describes current roles, but no paired 27B kernel-census evidence proves which family caused the original prefill lead.
 
+CONSOLIDATION 2026-11-22 PHASE-5: receive MEN02. MEN01 is the engine introduction and hardware inventory owner; MEN02's first R9700 27B working lane is the model-level baseline slice of that same engine-introduction task, not another serve/build subsystem. Original acceptance still applies; the transferred gate is unfinished. Source is superseded for duplicate planning ownership, not completed on implementation, benchmark or live-hardware criteria. Where Vulkan is involved, implementation remains paused by owner directive.
+
 ## Change Log
 
 - 2026-10-08T20:36:00.311928+00:00 (created-by): Created by agent
@@ -89,3 +93,8 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 - 2026-11-04T03:45:38.299887+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:42:47.557384+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:42:56.766439+00:00 (state-transition): State: superseded → pending
+
+## Reviews
+
+- RV4529
+- 2026-11-22T11:08:40.451923+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

@@ -1,0 +1,12 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_084459_starting-a-helper-configuratio_5364",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The stored-plan static key hashed handoff.histogram, which a session derives as <run-dir>/heat.live whenever the config states none, so every start of a helper config under a new run directory produced a new key and never reused its measured plan. The key now keeps only whether live heat recording is on or off. Test added: two run-directory heat paths give one key, off differs.",
+  "timestamp-utc": "2026-11-22T08:44:59.272264Z",
+  "user-summary-candidate": "Starting a helper configuration again now reuses its last measured plan instead of measuring every time."
+}

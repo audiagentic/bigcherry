@@ -21,17 +21,6 @@ catalogue of layouts and no `--set` on a managed start.
 | `radiance --manifest M --role engine` | The engine reads its whole configuration from `M`, which the owner hands it as a sealed memfd (`/proc/self/fd/N`). |
 | `r3_moe_worker --manifest M --role helperN` | A helper reads its role from the same `M`. |
 
-For lab `bc-serve serve CONFIG --calibration-run`, the owner needs two distinct prompt files,
-an explicit live policy and an existing ordinary --calibration-store file (an empty file is
-valid for a new calibration). A file-based handoff.histogram source cannot satisfy
-accept_unwatermarked_heat=false: .bcproof authenticates the engine histogram publication
-but does not certify per-step coherence. The owner rejects this strict-policy mismatch before
-writing the lab manifest; to use this file source, the policy JSON must explicitly opt in with
-accept_unwatermarked_heat=true. The native owner injects --bc-heat-launch-nonce into the
-serving engine only when spec.handoff.telemetry.histogram_file exists, never as a manifest
-field or a helper argument. A bounded no-feed watchdog names missing helper deltas if
-the source remains silent; it does not stand in for full calibration convergence.
-
 ## How a manifest is made
 
 The owner makes it; an operator does not write one by hand.
@@ -57,9 +46,7 @@ bc-serve explain CONFIG --native-config NAME.yaml --model-root DIR              
   plan (`--plan-memory FILE --plan-memory-ranks FILE` on an unmeasured manifest) and exits, and the owner writes the measured manifest from
   that plan and stores it. An engine that does not come up on a stored plan drops the entry, so the next start measures. `start --manifest FILE
   --run-dir DIR` replays one named file. Run a measuring start under the `gpu` lease. An unmeasured manifest is accepted only by a measuring start.
-- Lab-only: `--lab-experiment FILE` (a JSON object for `spec.experiment`: `profile_ops`, `kv_resident`, `debug_selection`, `deterministic`,
-  placement experiments) writes the manifest with profile `lab`; `--live-policy FILE` sets the helper's live placement policy. A production
-  manifest carries neither.
+- A serving start is production-only: it takes no lab experiment, live-policy override or calibration option.
 - A lab arm that changes a setting authors its own YAML (`tools/lab/radiance/arm_yaml.py` writes a copy of a config with targeted changes);
   see [Campaign arms](#campaign-arms).
 
@@ -112,7 +99,7 @@ Radiance has no option for in the closed `x-bigcherry` section (`service`, `memo
 config or the host (`tp` from the rank count, `kernels` from the architectures, the runtime home, the host pool when the plan decides it) is
 not authored.
 
-The lab-only experiment flags are fields of `spec.experiment` and come in through `--lab-experiment`:
+The engine-side experiment fields of `spec.experiment` (lab profile only, written by the strict writer, never by a serving start):
 
 | `spec.experiment.engine` field | Engine flag |
 |---|---|

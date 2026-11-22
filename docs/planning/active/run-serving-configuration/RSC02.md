@@ -55,9 +55,19 @@ step of `start`/`stop`, never a launcher option that rewrites settings.
 
 ### Step 6 inventory and hard gates (2026-11-18, origin/main 9549aa603)
 
-The exhaustive caller/mode table is in [RSC04](RSC04.md#verified-inventory-2026-11-18-originmain-9549aa603). The older estimate of 16 lab scripts is **not** a verified executable count: this revision has 13 direct lab `.sh`/`.py` launch callers plus indirect wrappers, lab docs, launcher-sourced `lib/plan-check.sh`/`sdk-check.sh`, Python supervisor, campaign adapter, 40 `engines/radiance/reference/serving-settings-inventory.toml` launcher owners, and launcher-text test oracles.
+The exhaustive caller/mode table is in [RSC04](../../completed/run-serving-configuration/RSC04.md#verified-inventory-2026-11-18-originmain-9549aa603). The older estimate of 16 lab scripts is **not** a verified executable count: this revision has 13 direct lab `.sh`/`.py` launch callers plus indirect wrappers, lab docs, launcher-sourced `lib/plan-check.sh`/`sdk-check.sh`, Python supervisor, campaign adapter, 40 `engines/radiance/reference/serving-settings-inventory.toml` launcher owners, and launcher-text test oracles.
 
-The live native entry points are `bc-serve serve CONFIG --run-dir DIR --configs DIR [--site FILE --model-root DIR --engine-binary FILE --power-profile NAME --allow-power-apply]`, `start CONFIG|--manifest FILE --run-dir DIR`, `stop/status --run-dir DIR`, and lab `serve --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B --calibration-store FILE`. `--explain` exists but `explain CONFIG` is not yet a CLI subcommand. Unsupported launcher-only forms are **not** to be introduced as backwards-compatible aliases; config fields or a typed lab interface must replace them and be tested with the real owner/writer/manifest call graph.
+The native session entry points are `bc-serve serve CONFIG --run-dir DIR
+[--configs DIR --model-root DIR --work-root DIR --site FILE --engine-binary FILE
+--power-profile NAME --allow-power-apply]`, `start CONFIG|--manifest FILE
+--run-dir DIR`, `stop/status --run-dir DIR`, and `explain CONFIG` for
+offline selection and diagnostics. The former lab
+`serve --calibration-run --live-policy ...` route was removed from the
+session owner; there is no supported calibration-producing start on main.
+The standalone manifest-writer parser still recognizes a historical
+`--calibration-run` flag, which is not a serving mode. Native replacement
+work is in progress under PRs #1375 and #1384 and does not change this
+current command inventory. Unsupported launcher-only forms are **not** to be introduced as backwards-compatible aliases; config fields or a typed lab interface must replace them and be tested with the real owner/writer/manifest call graph.
 
 **Retirement order:** inventory first (this PR); card-free native gaps and tests next; an automated leased S15 same-build A/B on dense and helper layouts with equal RSC12 semantic execution projection, at least four clean ABBA pairs per RHP12 and all safety/release gates; only then S16 caller migration and deletion. Hardware parity is not shown by passing fake-engine CI. The release asset, installer and release workflow are owned by the concurrent RSP01 phase-2 lane and must not be modified by this change. Keep step 6 and RSC04 open until those proofs exist.
 
@@ -179,8 +189,6 @@ newer than its engine was refused by the engine (BC_CFG_PLAN_MISMATCH): the reas
 req_rsc02-session-owner_f98e1286bafc (2 P0, 5 P1, 1 P2, all fixed). Next: step 2 (helpers); the remaining layouts become
 configs first (owner order 2026-11-14).
 
-
-
 ## Status 2026-11-19 (after S15 and S16)
 
 - Done: `bc-serve serve|start|stop|status|explain` is the only start path. S13 switched serving to manifest v2 and deleted v1 (#891); S15 hardware acceptance passed (`docs/evidence/2026-11-19-rsc02-s15-acceptance/`: dense `qwen27b-tp3-int8` equal projection and greedy hash, helper cohort equal hash, `flashnext-4gpu` 538 requests with 0 errors); S16 deleted the bash launcher, `lib/plan-check.sh`, `lib/sdk-check.sh`, the Python serving supervisor and the installer (#1131). Steps 1-6 above are met.
@@ -278,3 +286,10 @@ No resource fallback is permitted. Python stays in tests only until RSC11 S16.
 transactional completion, MTP/heat/lab guard completion or release/caller
 retirement. Those remain steps 3, 4, S15 and S16 respectively.
 - 2026-11-19T07:36:59.107423+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4515
+- RV4516
+- RV4518
+- 2026-11-22T10:47:45.069205+00:00 (updated-by): Updated: section:steps

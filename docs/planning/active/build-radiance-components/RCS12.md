@@ -55,15 +55,21 @@ No hand-picked constants (derive from the container, layout and runtime); no com
 
 1. model_constant_execution_guard exists, is required in CI, and has an allowlist with owner and expiry on every entry. 2. No unexpired C-class entry remains for MC-001..014 and MC-016..019; their fixes are merged with mutation-checked tests. 3. bc-serve resolves qwen27b-2xtx and an invented third layout from data. 4. A synthetic model geometry different from Flash-Next passes the dynamic layout and capacity checks. 5. Flash-Next and 27B production numbers unchanged.
 
+**Transferred RCS09 acceptance (independent gate):** RCS12 model-shape/generalisation gate inherited from RCS09: enumerate every hidden 2560/top-k10/experts512/layers128/ranks2/activation-group/weight-format/table-size/quant-layout assumption in libr3, moe-remote, bc-gfx12, rad0002/rad0004, serving profile and manifest; classify true container shape, checked representation bound or tunable policy. Shape/quant/layout must come from typed current container/runtime manifest and be validated identically at engine/helper attach; use checked derived buffer capacities and explicit fail-closed variant/limit selection, not fixed Flash-Next success values, model-named forks or unguarded literals. Keep tuning lane/row/GEMV crossover/ownership budget separate in the current native serving profile/calibration authority (do not restore old src/profile/*.ini if retired), with unknown-key/type/range tests. Mutation-check static and dynamic guard over Flash-Next plus two independent synthetic geometry models; different hidden/expert/top-k shape must pass host-replay CPU oracle or refuse with precise reason, and documentation must identify the real onboarding steps. The historical RCS09 v14 header design is evidence, not permission to add a second v14 runtime header or duplicate patch. RCS12's MC-001..019 checks and existing partial/failure gates remain pending until proved.
+
+**Transferred RCS13 acceptance (independent gate):** RCS12 C02 GEMV bound gate inherited from RCS13: replace fixed kGemvMaxK/2560 LDS arrays and silent early-return in moe-remote and bc-gfx12 with checked variant-specific required_lds_bytes and pre-launch choose_gemv(K/group/actual arch capability) that returns eligible GEMV with allocated LDS, grouped-GEMM fallback or a typed refusal before output is reported. Guard must reject stale output and oversized unsupported K; test pure-host 2560 and >2560, topology/group/overflow and selected variants, and register CMake/component tests; retire RCS12 guard allowances only after code tests prove all C02 cases. On gfx1201, gfx1100 and gfx1030 qualify K=2560 byte-identical output and independently measured decode/no-regression (not transferred between architectures); run a real >2560 intermediate shape showing valid grouped GEMM or a clear startup refusal, with no no-op success. Preserve RCS13's cross-file/ABI dependency ordering with RCS14 topology work, and keep RCS14's separate v26 protocol and helper topology owner. No extra GEMV dispatch/selector or model-specific literal allowed.
+
 ## Notes
 
 Source: model-constants audit 2026-11-04 (55 findings; report and findings.json kept in the work root, not in git). Plan ownership per the audit: RCS09 shape negotiation and per-kernel limits, RCS10 generic-model coverage, RSC05 layout and device resolution, RSC06 typed helper loader, RSC07 engine loader, RSC08 unified manifest and launch cutover, RSC03 calibrated resource plan, RAD19 performance experiments. These are assignments, not completed items.
 
 2026-11-04: step 1 STATIC half done. tools/bigcherry/model_constants.py scans engines/radiance/components, patch payloads and tools/lab/radiance for model-shaped literals (2560, 640, 384, 160, 49, .rad paths) and the symbols the audit found them behind (kActivationBf16Bytes, kActivationQBytes, kLegacyIntermediate, kExpertWidth, kRankWidth, kHidden, kMaxRoutes); engines/radiance/model_constant_guard.toml classifies the 99 current hits (94 entries, A/B/C/D/E). C and D entries name an OPEN plan item as owner and become invalid when it completes, so fixing a finding means deleting its entry in the same change. tools/tests/core/test_model_constants.py runs it on the real tree and mutation-checks the checker on a synthetic tree. NOT done: the DYNAMIC half (Container/fake geometry and layout_for at Flash-Next plus two synthetic shapes, a C++ card-free test), the getenv(R3_*) and numeric 512/10 scans (declared settings are audited by the component gate; the bare numbers are too ambiguous to scan without dataflow), and steps 2-7 (the fixes).
 
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: receiving RCS09,RCS13 These are uncompleted acceptance requirements, not new release/quality passes. Historical source plans remain available as superseded records. Keep legacy and blocked/no-route behavior fail closed; do not add parallel native control planes or tools.
+
 ## Execution staging (2026-11-13)
 
-Split out as separate items: GEMV K bound (step 3) -> [RCS13](RCS13.md); remote-MoE topology bounds (audit C05) -> [RCS14](RCS14.md). RHP01/RHP02 carry the heat-feed work; the shm protocol is shared, so order matters:
+Split out as separate items: GEMV K bound (step 3) -> [RCS13](../../completed/build-radiance-components/RCS13.md); remote-MoE topology bounds (audit C05) -> [RCS14](RCS14.md). RHP01/RHP02 carry the heat-feed work; the shm protocol is shared, so order matters:
 
 1. Stage 1, parallel and ABI-free: RCS13 (kernel/dispatch, card-free then a short hardware identity) and RHP01 stage 1-2 (rad0010 current-pin tests, missing hardware cells); RHP02 slice A (inactive observer ABI and engine seam).
 2. Stage 2: RCS14 gates A-E card-free in order, then gate F hardware parity on Flash-Next helper layouts, then TP3 remote helpers.
@@ -83,3 +89,11 @@ Each stage ends with the standard decode and prefill A/B and KLD; nothing in a l
 - chg_20261104_223702_a-new-test-blocks-model-specif_4673
 - 2026-11-04T22:37:06.168768+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-13T03:54:41.818055+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4511
+- 2026-11-22T10:35:34.331357+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- RV4514
+- 2026-11-22T10:47:24.514458+00:00 (updated-by): Updated: section:execution_staging_2026_11_13
+- RV4519

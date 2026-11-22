@@ -205,6 +205,23 @@ int main() {
         s.effective_values["memory"] = {{"host_pool_mib", 1}, {"host_kv_mib", 2}};
         expect(ss::static_resolution_key(s) == with_transport,
                "the per-start transport name and derived host pool/KV never enter the key");
+        // The live heat file defaults to a path under the start's run directory: where it is written never
+        // decides the plan, whether it is recorded at all does.
+        s = base_with_model();
+        s.effective_values["handoff"] = {{"histogram", "/runs/first/heat.live"}};
+        const std::string with_histogram = ss::static_resolution_key(s);
+        s.effective_values["handoff"] = {{"histogram", "/runs/second/heat.live"}};
+        expect(ss::static_resolution_key(s) == with_histogram, "the run-directory heat path never enters the key");
+        s = base_with_model();
+        s.effective_values["handoff"] = {{"heat", "/prefix-a/heat/mixed.hot-first"}};
+        const std::string with_heat = ss::static_resolution_key(s);
+        s.effective_values["handoff"] = {{"heat", "/prefix-b/heat/mixed.hot-first"}};
+        expect(ss::static_resolution_key(s) == with_heat, "the installed location of the heat file never enters the key");
+        s.file_digests["heat.csv"][0] = 'b';
+        expect(ss::static_resolution_key(s) != with_heat, "changed heat bytes change the key");
+        s.effective_values["handoff"] = {{"histogram", "/runs/second/heat.live"}};
+        s.effective_values["handoff"] = {{"histogram", "off"}};
+        expect(ss::static_resolution_key(s) != with_histogram, "turning the heat recording off changes the key");
         s = base_with_model();
         s.ordered_devices[0]["vram_available_mib"] = 42;
         bool unexpected_live = false;
@@ -224,26 +241,90 @@ int main() {
         // The store is reached from any later run directory: it names the run that wrote the manifest.
         ss::StoredManifestIndex entry{original, saved.filename().string(), digest, model_id};
         entry.directory = saved.parent_path().string();
+        entry.input_digests = ss::static_input_digests(s);
         ss::write_stored_index(index, entry);
-        expect(ss::stored_manifest_for(index, original) == saved,
-               "a later start in another run dir finds the manifest the earlier start stored");
-        expect(!ss::stored_manifest_for(index, std::string(64, 'a')),
-               "different static key is a miss: the caller measures and stores a new manifest");
+        using Outcome = ss::PlanReuseOutcome;
+        const auto now_inputs = ss::static_input_digests(s);
+        auto outcome = [&]() {
+            return ss::lookup_stored_manifest(index, original, now_inputs);
+        };
+        expect(ss::read_stored_index(index).input_digests == now_inputs, "per-input digests round-trip");
+        {
+            const auto hit = outcome();
+            expect(hit.outcome == Outcome::hit && hit.manifest == saved,
+                   "a later start in another run dir finds the manifest the earlier start stored");
+            const std::string line = ss::plan_reuse_line(hit);
+            expect(line.find("stored plan reused") != std::string::npos && line.find('\n') == std::string::npos &&
+                       line.find("no stored plan") == std::string::npos,
+                   "a hit prints one reuse line");
+        }
+        {
+            // A different key: the line names the inputs that moved, from this start's digests.
+            auto other = s;
+            other.power_profile = "other-profile";
+            const auto changed = ss::lookup_stored_manifest(index, ss::static_resolution_key(other),
+                                                            ss::static_input_digests(other));
+            expect(changed.outcome == Outcome::static_key_changed && changed.inputs_recorded &&
+                       changed.changed_inputs == std::vector<std::string>{"power_profile"},
+                   "a changed key names exactly the input that moved");
+            const std::string line = ss::plan_reuse_line(changed);
+            expect(line == "bc-serve: no stored plan reused (static key changed: power_profile); measuring",
+                   "a miss prints one line naming the reason: " + line);
+            auto other_file = s;
+            other_file.file_digests["site"] = std::string(64, 'e');
+            const auto added = ss::lookup_stored_manifest(index, ss::static_resolution_key(other_file),
+                                                          ss::static_input_digests(other_file));
+            expect(added.changed_inputs.size() == 1 && added.changed_inputs[0] == "file:site (new)",
+                   "a new file input is named by its role");
+            const auto unrecorded = ss::lookup_stored_manifest(index, std::string(64, 'a'));
+            expect(unrecorded.outcome == Outcome::static_key_changed && !unrecorded.inputs_recorded &&
+                       ss::plan_reuse_line(unrecorded).find("predates") != std::string::npos,
+                   "a key change without current digests says so and does not invent leaves");
+        }
         expect(ss::read_stored_index(index).digest == digest && ss::read_stored_index(index).directory == entry.directory,
                "index must preserve exact original-byte digest and run directory");
-        expect(!ss::stored_manifest_for(work_root / "cache" / "named-configs" / "never-written.json", original),
-               "no index is a miss");
+        {
+            const auto absent = ss::lookup_stored_manifest(
+                work_root / "cache" / "named-configs" / "never-written.json", original, now_inputs);
+            expect(absent.outcome == Outcome::absent &&
+                       ss::plan_reuse_line(absent) == "bc-serve: no stored plan reused (no stored entry); measuring",
+                   "no index is absent");
+        }
+        {
+            ss::PlanReuse carried;
+            carried.outcome = Outcome::carried;
+            const std::string line = ss::plan_reuse_line(carried);
+            expect(line.find("bc-serve: stored plan carried") == 0 && line.find('\n') == std::string::npos &&
+                       line.find("no stored plan reused") == std::string::npos && line.find("measuring") == std::string::npos,
+                   "a carried plan prints one plain line that does not claim a miss: " + line);
+            expect(std::string(ss::plan_reuse_outcome_name(Outcome::carried)) == "carried" &&
+                       ss::plan_reuse_json(carried).at("outcome") == "carried",
+                   "the carry is recorded under its own outcome");
+        }
+        {
+            ss::PlanReuse refused;
+            refused.outcome = Outcome::live_admission_refused;
+            refused.detail = "not enough room";
+            expect(ss::plan_reuse_line(refused) ==
+                       "bc-serve: no stored plan reused (live admission refused: not enough room); measuring",
+                   "live admission refusal line");
+            refused.outcome = Outcome::carried_plan_unusable;
+            refused.detail = "plan does not fit";
+            expect(ss::plan_reuse_line(refused).find("stored plan unusable: plan does not fit") != std::string::npos,
+                   "carried plan line");
+            expect(ss::plan_reuse_json(refused).at("outcome") == "carried_plan_unusable", "outcome is recorded by name");
+        }
 
         // A damaged store is a miss, never a refusal to start: the next measured manifest replaces it.
         write(saved, "tampered manifest\n");
-        expect(!ss::stored_manifest_for(index, original), "changed original bytes are a miss, not a refusal");
+        expect(outcome().outcome == Outcome::integrity_mismatch, "changed original bytes are an integrity miss, not a refusal");
         write(saved, "unchanged strict-v2 manifest bytes\n");
         fs::remove(saved);
-        expect(!ss::stored_manifest_for(index, original), "a removed run dir is a miss");
+        expect(outcome().outcome == Outcome::manifest_missing, "a removed run dir is a missing-manifest miss");
         write(saved, "unchanged strict-v2 manifest bytes\n");
-        expect(ss::stored_manifest_for(index, original) == saved, "restoring the bytes restores the hit");
+        expect(outcome().outcome == Outcome::hit && outcome().manifest == saved, "restoring the bytes restores the hit");
         write(index, "{bad json");
-        expect(!ss::stored_manifest_for(index, original), "a corrupt index is a miss");
+        expect(outcome().outcome == Outcome::index_unreadable, "a corrupt index is an unreadable-entry miss");
         ss::write_stored_index(index, entry);
         ss::StoredManifestIndex relative = entry;
         relative.directory = "relative/run";
@@ -255,7 +336,7 @@ int main() {
         }
         expect(relative_refused, "the stored run directory must be absolute");
         ss::write_stored_index(index, {std::string(64, 'a'), saved.filename().string(), digest});
-        expect(!ss::stored_manifest_for(index, original),
+        expect(outcome().outcome == Outcome::static_key_changed,
                "a newer index replaces the selection without touching the old manifest");
         expect(fs::file_size(saved) == std::string("unchanged strict-v2 manifest bytes\n").size(),
                "index replacement must not modify stored bytes");

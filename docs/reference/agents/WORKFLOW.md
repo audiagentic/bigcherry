@@ -29,8 +29,10 @@ First list existing groups and use the owning group. New group names start with
 sequence number. Include concrete scope, files, validation and acceptance.
 For findings-driven corrections, create the review before revising the item;
 close incorporated reviews. Complete items only after implementation, validation,
-nonempty acceptance criteria and closure of linked reviews. Keep unfinished work
-pending; use superseded/deprecated when appropriate rather than deleting history.
+nonempty acceptance criteria and closure of linked reviews. Keep actionable unfinished
+work pending; move explicitly paused but resumable work to `deferred` only after
+recording a reason and re-entry gate, then reopen to pending before execution.
+Use superseded/deprecated only for displaced or rejected scope; do not delete history.
 
 After substantive implementation, record a Ledger MCP change event with
 `change-class`, `files`, `technical-summary`, `user-summary-candidate` and
@@ -49,9 +51,12 @@ Explicit profile selection precedes an agent definition's profile and its defaul
 If the profile conflicts with role requirements, refuse the conflict. Do not invent
 an `agent-role-id` tool argument; use the exposed tool schema.
 
-A configured MCP connection and a verified tool call are separate facts. When a
-required connection is unavailable, report that limitation and continue unaffected
-work. Do not bypass the authoritative services by hand-editing plan or ledger state.
+A configured MCP connection and a verified tool call are separate facts. When the Planning or Ledger MCP tools are not exposed in an agent session,
+check the underlying AUDiaGentic Python API facade before declaring the lifecycle
+blocked. Follow [Planning API access](PLANNING_ACCESS.md): it calls the same
+authoritative implementation against the task worktree, not handwritten plan or
+ledger files. If neither interface works, report the limitation and continue
+unaffected work. Do not bypass the authority by editing plan or ledger state.
 
 ## Code and migration policy
 

@@ -150,6 +150,8 @@ struct R3MoeHook {
     bool burst_draining = false;
     std::atomic<bool> placement_stop{false};
     std::mutex mu;
+    MapWaitStats map_wait;            /* startup-only: engine wait per layer for helper map consumption (under mu) */
+    bool map_wait_logged = false;     /* the summary is logged once, when the first rank attaches after the bootstrap seal (under mu) */
     std::thread snapshotter;          /* R3_MOE_WORKER_HISTOGRAM_PERIOD_S: writes the live route histogram */
     std::atomic<bool> snapshot_stop{false};
     std::deque<RankState> rank;
@@ -396,7 +398,7 @@ void publish_layer_map(HookState& g, int layer, int n_expert, const int32_t* slo
     /* The plugin ABI gives this callback no error return. The wait is bounded by the helper protocol's readiness
      * deadline (layer_map_wait.h); a helper that is alive but never consumes raises the sticky helper fault, so the
      * engine's first remote MoE wait fails and teardown is not blocked. */
-    const MapWait r = await_layer_consumed(g.hdr, layer, layer_map_bound());
+    const MapWait r = await_layer_consumed_timed(g.hdr, layer, layer_map_bound(), &g.map_wait);   /* under g.mu */
     if (r == MapWait::Timeout)
         std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper did not consume its map within the readiness "
                      "deadline; failing the helper path\n", layer);
@@ -1360,6 +1362,10 @@ extern "C" int r3_moe_mailbox_device(uint64_t h, int rank, int world_size, R3Moe
             std::fprintf(stderr, "libr3moe: R3_MOE_WORKER_COMBINE on - helper 0 combines the helpers' rows on the large lane\n");
     }
     s.ready = true;
+    if (!g.map_wait_logged) {   /* g.mu is held: the declare-time waits are all recorded, the bootstrap is sealed */
+        g.map_wait_logged = true;
+        std::fprintf(stderr, "%s\n", g.map_wait.line().c_str());
+    }
     attaching.release();
     g.bootstrap_ready_ranks.fetch_or(1u << rank, std::memory_order_release);
     *out = &s.dev;

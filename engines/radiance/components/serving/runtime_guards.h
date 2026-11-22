@@ -58,11 +58,7 @@ ReplayVerdict replay_verdict(int64_t manifest_depth, bool profiled, std::string_
 
 class RuntimeGuards final {
   public:
-    explicit RuntimeGuards(bool lab = false) : lab_pending_(lab) {}
     using Retry = Callback<v2::Status()>;
-    // Until the bounded lab produces a settled marker, telemetry is pending:
-    // never report it active. A final explicit gate is mandatory for lab mode.
-    v2::Status prove_lab();
     v2::Status startup(const EngineStart& plan, const std::filesystem::path& engine_log, const Retry& retry);
     v2::Status poll();
     bool policy_enabled() const noexcept {
@@ -88,7 +84,6 @@ class RuntimeGuards final {
     // Start-up only: how long a pending (authentic, still all-zero) histogram is waited for before it is refused.
     std::chrono::nanoseconds heat_startup_wait_{0};
     bool policy_enabled_ = false;
-    bool lab_pending_ = false;
 };
 
 } // namespace bc::serving::session

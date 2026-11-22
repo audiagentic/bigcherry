@@ -1,0 +1,18 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_102927_lab-kld-jobs-now-run-as-native_1749",
+  "files": [
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/engine_adapters/base.py",
+    "tools/bigcherry/engine_adapters/radiance_manifest.py",
+    "tools/bigcherry/campaign/benchmark.py",
+    "tools/lab/radiance/helper-kld.json",
+    "tools/lab/radiance/helper-combine-kld.json",
+    "tools/lab/radiance/native_arms.py",
+    "tools/tests/lab/test_job_files_use_serving.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Removed the manifest start path from the campaign harness (radiance_manifest.py, manifest_port, manifest sidecars, QualityLaunch/prepare, serve.manifest-args); native arms resolve model and cards from bc-serve explain of their own YAML. Rewrote helper-kld and helper-combine-kld as native YAML arms generated from native-arms.json; retired the timed A/B jobs, the 35B isolation job and the RHP20 KLD template (no native equivalent); job-file test asserts the native shape.",
+  "timestamp-utc": "2026-11-22T10:29:27.803026Z",
+  "user-summary-candidate": "Lab KLD jobs now run as native arms; the old manifest-start harness code was removed."
+}

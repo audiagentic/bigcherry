@@ -283,28 +283,3 @@ class ServingLayoutTests(unittest.TestCase):
                                   return_value=SimpleNamespace(devices=(), model_root=model_root, work_root="/w")))
         stack.enter_context(patch("bigcherry.engine_adapters.radiance_inventory._run", side_effect=fake_resolve))
         return stack
-
-    def test_a_tp_layout_and_a_one_card_layout(self):
-        import os
-        from unittest.mock import patch
-        from bigcherry.engine_adapters.radiance import RadianceAdapter
-        with self.adapter_host("/models"), patch.dict(os.environ, {}, clear=False):
-            os.environ.pop("BC_MODEL_ROOT", None)
-            tp = RadianceAdapter().serving_layout("flashnext-tp2xtx-r9700")
-            one = RadianceAdapter().serving_layout("flashnext-r9700")
-        want = Path("/models") / rl.load_layouts()["flashnext-tp2xtx-r9700"]["model"]
-        self.assertEqual(tp.model, want.resolve())
-        self.assertEqual(tp.environment, {"ROCR_VISIBLE_DEVICES": "0,1", "HIP_VISIBLE_DEVICES": "0,1"})
-        self.assertEqual(tp.expected_execution, {"backend": "ROCm", "architectures": ["gfx1100", "gfx1100"],
-                                                 "locators": ["0000:03:00.0", "0000:06:00.0"]})
-        self.assertEqual(one.environment, {"ROCR_VISIBLE_DEVICES": "2", "HIP_VISIBLE_DEVICES": "0"})
-        self.assertEqual(one.expected_execution["locators"], ["0000:09:00.0"])
-
-    def test_bc_model_root_wins_and_an_unknown_layout_is_refused(self):
-        import os
-        from unittest.mock import patch
-        from bigcherry.engine_adapters.radiance import RadianceAdapter
-        with self.adapter_host("/models"), patch.dict(os.environ, {"BC_MODEL_ROOT": "/elsewhere"}):
-            self.assertTrue(str(RadianceAdapter().serving_layout("flashnext-r9700").model).startswith("/elsewhere/"))
-            with self.assertRaisesRegex(ValueError, "unknown layout"):
-                RadianceAdapter().serving_layout("no-such-layout")

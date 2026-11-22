@@ -321,6 +321,13 @@ struct C06Issued {
     std::array<int32_t,2> cu{0,1};
     std::array<float,4> pos{};
     std::vector<std::vector<uint8_t>> weights;
+    // Optional diagnostic snapshots. Captured at the actual issue point,
+    // before the arena planner may reuse the intermediate's storage.
+    struct Capture {
+        std::string stage, extension;
+        std::vector<uint8_t> data;
+    };
+    std::vector<Capture> stages;
     std::vector<void*> owned_device;
     void* device_cu=nullptr;
     void* device_pos=nullptr;
@@ -345,22 +352,55 @@ static uint16_t c06_sample(int64_t col) {
     u+=0x7fffU+((u>>16)&1U);
     return uint16_t(u>>16);
 }
+static bool c06_snapshot(RadCtx* c, C06Issued& r, const char* stage,
+                         rad_buf buf, size_t bytes, const char* extension) {
+    if (const char* enabled=std::getenv("BC_LTX_C06_CAPTURE_STAGES");
+        !enabled || std::strcmp(enabled,"1")!=0) return true;
+    if (!bytes) { rad_step_fail(c,"C06 invalid stage capture size"); return false; }
+    const void* from=r.ctx->buf_ptr(buf);
+    if (!from) { rad_step_fail(c,"C06 stage capture buffer missing"); return false; }
+    std::vector<uint8_t> data(bytes);
+    if (r.gpu) {
+        if (rad_memcpy_async(data.data(),from,bytes,r.ctx->stream())!=RAD_OK ||
+            rad_stream_sync(r.ctx->stream())!=RAD_OK) {
+            rad_step_fail(c,"C06 native stage capture failed");
+            return false;
+        }
+    } else std::memcpy(data.data(),from,bytes);
+    r.stages.push_back({stage,extension,std::move(data)});
+    return true;
+}
 static void c06_issued_step(RadCtx* c,const RadBatch*) {
     if (!c06_active) { rad_step_fail(c,"C06 rank execution owner missing"); return; }
-    const C06Issued& r=*c06_active;
+    C06Issued& r=*c06_active;
     uint16_t* input=(uint16_t*)r.ctx->buf_ptr(r.x.a.x);
     if (!input) { rad_step_fail(c,"C06 source activation missing"); return; }
     if (!r.gpu)
         for (int64_t j=0;j<r.width;++j) input[j]=c06_sample(j);
     r.x.step(c,1);
+    if (r.width<=0 || r.x.a.cg()<=0 || r.width%r.x.a.cg()!=0) {
+        rad_step_fail(c,"C06 quantized input shape invalid"); return;
+    }
+    if (!c06_snapshot(c,r,"input-quant-codes",r.x.a.cq(),
+                      (size_t)r.width,"i8") ||
+        !c06_snapshot(c,r,"input-quant-scales",r.x.a.cs(),
+                      (size_t)(r.width/r.x.a.cg())*sizeof(float),"f32")) return;
     r.attn.qkv.step(c,r.x,r.qkv,1);
+    if (!c06_snapshot(c,r,"qkv-projection",r.qkv,
+                      (size_t)(3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
     r.attn.gate.step(c,r.x,r.gate,1);
+    if (!c06_snapshot(c,r,"gate-projection",r.gate,
+                      (size_t)(r.width/r.attn.hd)*sizeof(uint16_t),"bf16")) return;
     const float* positions=(r.gpu ? (const float*)r.device_pos : r.pos.data())+
                             (r.audio?3:0);
     const RadOperand pos=ltx2::praw2(positions,RAD_F32,r.audio?1:3,1);
     ltx2::attn_core(c,r.attn,true,r.qkv,0,r.gate,r.ao,1,1,
                     ltx2::praw(r.gpu ? (const int32_t*)r.device_cu : r.cu.data(),
                                RAD_I32,2),RAD_NONE,pos,pos);
+    if (!c06_snapshot(c,r,"qkv-after-norm-rope",r.qkv,
+                      (size_t)(3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
+    if (!c06_snapshot(c,r,"attention-after-gate",r.ao.a.x,
+                      (size_t)r.attn.inner*sizeof(uint16_t),"bf16")) return;
     r.ao.step(c,1);
     r.attn.out.step(c,r.ao,r.output,1);
 }
@@ -732,6 +772,29 @@ int main(int argc, char** argv) {
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
         if (argc == 4) {
+            if (std::string(argv[3]) == "--ltx03-all-blocks") {
+                // LTX03: source-derived full-depth geometry, with the same
+                // native three-rank declaration and no second model path.
+                int64_t declared = 0;
+                for (int64_t block = 0; block < nblocks; ++block)
+                    for (bool audio : {false, true})
+                        for (const std::array<int,3>& split :
+                             {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                            int first = 0;
+                            for (int rank = 0; rank < 3; ++rank) {
+                                run_self_attn(model, reg, block, audio, rank, first,
+                                              split[rank], nheads);
+                                first += split[rank];
+                                ++declared;
+                            }
+                            need(first == nheads, "LTX03 all-block head coverage gap");
+                        }
+                need(declared == nblocks * 2 * 2 * 3,
+                     "LTX03 all-block native declaration count drift");
+                std::printf("LTX03 %lld native self-attention declarations across %lld blocks\n",
+                            (long long)declared, (long long)nblocks);
+                return 0;
+            }
             if (std::string(argv[3]) == "--c06-weights") {
                 // Same builder and exact native loader geometry as C06;
                 // no new model reader, memory mover or implementation.
@@ -981,6 +1044,23 @@ int main(int argc, char** argv) {
                                 f.write((const char*)control.data(),
                                         (std::streamsize)(control.size()*sizeof(uint16_t)));
                                 need(f.good(),"C06 output capture write failed");
+                                for (int rank=0;rank<3;++rank)
+                                    for (const auto& captured:issued[rank].stages) {
+                                        const auto path=std::filesystem::path(root)/
+                                            (tag+"-"+(audio?"audio":"video")+"-"+
+                                             std::to_string(split[0])+"-"+
+                                             std::to_string(split[1])+"-"+
+                                             std::to_string(split[2])+"-r"+
+                                             std::to_string(rank)+"-"+
+                                             captured.stage+"."+captured.extension);
+                                        std::ofstream stream(path,
+                                                             std::ios::binary|std::ios::trunc);
+                                        need(stream.is_open(),
+                                             "C06 stage capture directory inaccessible");
+                                        stream.write((const char*)captured.data.data(),
+                                            (std::streamsize)captured.data.size());
+                                        need(stream.good(),"C06 stage capture write failed");
+                                    }
                             }
                             for(auto& r:issued) r.ctx.reset();
                         }

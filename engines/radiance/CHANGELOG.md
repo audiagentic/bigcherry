@@ -1,5 +1,52 @@
 # Changelog
 
+## [2020.2.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.2.1...bc-radiance-2020.2.2) (2026-11-22)
+
+
+### Fixes
+
+* **serving:** a stored plan replays under the config that stored it ([#1388](https://github.com/audiagentic/bigcherry/issues/1388)) ([8bfd3eb](https://github.com/audiagentic/bigcherry/commit/8bfd3eb0f1c730bc30d72860816683429ccf8ee5))
+
+
+### Performance
+
+* a start hashes neither the runtime nor the installed prefix when nothing changed ([#1330](https://github.com/audiagentic/bigcherry/issues/1330)) ([336942d](https://github.com/audiagentic/bigcherry/commit/336942dff18b41dfed652a291218e2000769aae3))
+* run the session tests as four balanced CTest groups and ctest in parallel ([#1343](https://github.com/audiagentic/bigcherry/issues/1343)) ([ca3d68d](https://github.com/audiagentic/bigcherry/commit/ca3d68df282c15c1638321b0b5cb3bb471cdddec))
+
+## [2020.2.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.2.0...bc-radiance-2020.2.1) (2026-11-22)
+
+
+### Fixes
+
+* **radiance:** use registered tag for diagnostic IQ8R patch ([222f600](https://github.com/audiagentic/bigcherry/commit/222f6000b7e8dc601a8f5952dd906ba4c13fd069))
+
+
+### Performance
+
+* **moe-remote:** time the helper expert bootstrap stages at startup ([#1347](https://github.com/audiagentic/bigcherry/issues/1347)) ([ac4e07e](https://github.com/audiagentic/bigcherry/commit/ac4e07e7e04e2ec2fe82f576a8fd3b4cdc3e3d5e))
+
+## [2020.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.1.2...bc-radiance-2020.2.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** name why a stored plan was or was not reused ([#1332](https://github.com/audiagentic/bigcherry/issues/1332)) ([437a735](https://github.com/audiagentic/bigcherry/commit/437a73571c843c8ea35eefead595e33a62add3a3))
+
+
+### Fixes
+
+* **lab:** profile helpers through the native owner without broad process kills ([#1331](https://github.com/audiagentic/bigcherry/issues/1331)) ([e146b9b](https://github.com/audiagentic/bigcherry/commit/e146b9bd23516e148050d456c8d0f7752397049b))
+* **serving:** decide a second prefix of the same release as a carry up front ([#1344](https://github.com/audiagentic/bigcherry/issues/1344)) ([223158b](https://github.com/audiagentic/bigcherry/commit/223158b53e7bd1e7477d6e9ab96f74c587c75bc1))
+* **serving:** replay a stored plan for the same config and the same run ([#1341](https://github.com/audiagentic/bigcherry/issues/1341)) ([4a8ce39](https://github.com/audiagentic/bigcherry/commit/4a8ce3907d2827f26d0793b05bd6cec9045307b0))
+* **serving:** the session control socket refuses unsafe permissions and other users ([#1339](https://github.com/audiagentic/bigcherry/issues/1339)) ([8f38f51](https://github.com/audiagentic/bigcherry/commit/8f38f51bcd66ac53040c63672001f610036e053b))
+
+## [2020.1.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.1.1...bc-radiance-2020.1.2) (2026-11-22)
+
+
+### Fixes
+
+* **serving:** the stored-plan key excludes per-start values of helper configs ([#1319](https://github.com/audiagentic/bigcherry/issues/1319)) ([7e6ef9e](https://github.com/audiagentic/bigcherry/commit/7e6ef9ec4ec2c5bfcee8fba8dae6adbbad78992e))
+
 ## [2020.1.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.1.0...bc-radiance-2020.1.1) (2026-11-22)
 
 

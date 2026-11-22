@@ -13,8 +13,12 @@
 
 #include <array>
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <csignal>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -31,6 +35,7 @@
 #include <sys/mman.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <sys/un.h>
 #include <sys/wait.h>
 #include <unistd.h>
 
@@ -39,7 +44,6 @@
 #endif
 
 static_assert(!std::is_invocable_v<bc::serving::session::Wait, std::chrono::milliseconds>);
-static_assert(!std::is_invocable_v<bc::serving::session::ManifestRunner, const std::vector<std::string>&>);
 namespace fs = std::filesystem;
 namespace ss = bc::serving::session;
 using Json = nlohmann::json;
@@ -317,6 +321,10 @@ void serve_status_stop() {
     const std::vector<std::string> want = {"created", "planning",      "planned", "started",
                                            "healthy", "canary_passed", "running"};
     assert(kinds == want);
+    // the start-phase costs are in the record, written with the events (engine_start_to_ready is saved at "healthy")
+    assert(running_record.contains("plan_reuse") && running_record.at("phases_ms").is_object() &&
+           running_record.at("phases_ms").contains("helper_start") &&
+           running_record.at("phases_ms").at("engine_start_to_ready").is_number_integer());
     const auto status = ss::control(c.run, "status", 2s);
     assert(status && status->value("ok", false) && status->at("state") == "running" &&
            status->at("port") == c.port);
@@ -379,6 +387,29 @@ void long_run_dir() {
     assert(stopped && stopped->value("ok", false) && stopped->at("state") == "stopped");
     assert(exit_code(owner) == 0);
     assert(!fs::exists(c.run / "session.sock"));
+}
+
+// A run directory with any mode serves, and a leftover socket file of a crashed owner is simply replaced.
+void shared_run_dir_and_stale_socket() {
+    Case c("shared-dir");
+    c.prepare();
+    ::chmod(c.run.c_str(), 0755);
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    assert(fd >= 0);
+    sockaddr_un a{};
+    a.sun_family = AF_UNIX;
+    const int dir = ::open(c.run.c_str(), O_PATH | O_DIRECTORY | O_CLOEXEC); // test paths exceed sun_path
+    assert(dir >= 0);
+    const std::string via = "/proc/self/fd/" + std::to_string(dir) + "/session.sock";
+    std::strncpy(a.sun_path, via.c_str(), sizeof a.sun_path - 1);
+    assert(::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0);
+    ::close(dir);
+    ::close(fd); // the file stays, nobody listens
+    const pid_t owner = c.owner();
+    c.wait_state({"running"});
+    assert(ss::control(c.run, "status", 2s));
+    assert(ss::control(c.run, "stop", 10s)->value("ok", false));
+    assert(exit_code(owner) == 0);
 }
 
 void canary_fails() {
@@ -646,14 +677,6 @@ void spawn_and_environment() {
     assert(echoed.exit == 3 && echoed.out == "out\n" && echoed.err == "err\n");
     assert(registered.size() == 1 && registered == verified); // registered with the owner, its exit verified
     for (bool foreign : {false, true}) {
-        ss::ManifestRunner runner = [foreign](const std::vector<std::string>&) -> ss::ManifestRun {
-            if (foreign)
-                throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
-            throw std::runtime_error("runner exception");
-        };
-        auto result = runner.invoke("session.manifest.runner", std::vector<std::string>{});
-        assert(!result && result.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
-
         ss::Hooks bad = hooks;
         bad.wait = [foreign](std::chrono::milliseconds) -> bool {
             if (foreign)
@@ -1069,7 +1092,6 @@ static_assert(!std::is_assignable_v<ss::Callback<void()>&, ReturnedStatus>);
 static_assert(!std::is_constructible_v<ss::Callback<void()>, decltype([]() -> int { return 3; })>);
 static_assert(std::is_constructible_v<ss::Callback<bc::serving::v2::Status()>, ReturnedStatus>);
 static_assert(!std::is_invocable_v<ss::Callback<void()>&>);
-static_assert(!std::is_invocable_v<ss::ManifestRunner&, const std::vector<std::string>&>);
 static_assert(!std::is_invocable_v<ss::Wait&, std::chrono::milliseconds>);
 
 struct UnusualCallbackException {};
@@ -1103,11 +1125,6 @@ void callback_exception_matrix() {
                                     fs::path("fake")));
         assert(hooks.ended.invoke("session.test.ended", 1));
         assert(hooks.selected_segment.invoke("session.test.selected_segment", "/r3-serve-injected"));
-        ss::ManifestRunner runner = [kind](const std::vector<std::string>&) -> ss::ManifestRun {
-            injected_throw(kind);
-        };
-        const auto manifest = runner.invoke("session.test.runner", {});
-        assert(!manifest && manifest.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
 
         // All owner-stage exit paths must reach the final journal and restore
         // once, including an apply that changed a control before throwing.
@@ -1568,6 +1585,49 @@ void native_config_inspector_invalid_report_refused() {
     }
 }
 
+// Fresh planning is native-only: a plan step with no admitted native YAML, or an engine from another build, is
+// refused before any measurement starts.
+std::string plan_refusal(const bc::test::NativeSessionPlan& native, const fs::path& run) {
+    fs::create_directories(run);
+    int children = 0;
+    ss::Hooks hooks = bc::test::standalone_plan_hooks();
+    hooks.started = [&](ss::ChildKind kind, const std::string&, pid_t, const fs::path&) {
+        if (kind == ss::ChildKind::measuring_engine) ++children;   // an inspector may run; no measurement may
+    };
+    try {
+        (void)ss::plan_engine_only(native.inputs, run, hooks);
+    } catch (const ss::PlanFailed& error) {
+        assert(children == 0);
+        return error.what();
+    }
+    return {};
+}
+
+void native_only_planning_refusals() {
+    const fs::path scratch = g_root / "native-only-planning";
+    {
+        auto native = bc::test::native_session_inputs(g_host, scratch / "no-yaml", bc::test::free_port());
+        native.inputs.native_admission.reset();
+        native.inputs.named_config.clear();
+        native.inputs.options.configs = {fs::path(BC_CONFIGS_DIR)};
+        const std::string why = plan_refusal(native, scratch / "no-yaml-run");
+        assert(why.find("native config YAML") != std::string::npos);
+        native.inputs.named_config = "qwen27b-tp3";
+        assert(plan_refusal(native, scratch / "named-no-yaml-run").find("native config YAML") != std::string::npos);
+    }
+    {
+        // bc-serve of one build refuses the engine of another: the manifest is read by the build that wrote it.
+        auto native = bc::test::native_session_inputs(g_host, scratch / "build", bc::test::free_port());
+        const fs::path other = scratch / "other-build";
+        fs::create_directories(other / "radiance_home/bin");
+        bc::test::write_file(other / "bin/radiance", "");
+        fs::create_symlink(BC_SERVE_EXE, other / "radiance_home/bin/bc-serve");
+        native.inputs.self = other / "radiance_home/bin/bc-serve";
+        assert(plan_refusal(native, scratch / "build-run").find("is not this bc-serve's build") !=
+               std::string::npos);
+    }
+}
+
 void premeasurement_manifest_hook_integration() {
     // One owner, one run, and one manifest admission *before* measuring.
     // Explicit fake hooks record their sequencing without ever touching sysfs.
@@ -1696,7 +1756,9 @@ int test_main(int argc, char** argv) {
         return ss::serve(s);
     }
     std::signal(SIGABRT, stop_owners);
-    g_root = fs::current_path() / "bc-session-fixture";
+    std::string group;
+    if (argc == 3 && std::string(argv[1]) == "--group") group = argv[2];
+    g_root = fs::current_path() / ("bc-session-fixture" + (group.empty() ? std::string() : "-" + group));
     fs::remove_all(g_root);
     fs::create_directories(g_root);
     g_host = g_root / "host";
@@ -1707,41 +1769,26 @@ int test_main(int argc, char** argv) {
         std::cout << "PASS: native owner host-facts start receipt before child\n";
         return 0;
     }
-    injected_owner_plan_exception();
-    real_session_power_returned_errors();
-    manifest_writer_before_durable_admission();
-    native_config_inspector_before_admission();
-    native_config_inspector_invalid_report_refused();
-    premeasurement_manifest_hook_integration();
-    callback_nonstandard_regression();
-    callback_exception_matrix();
-    spawn_and_environment();
-    serve_status_stop();
-    feature_state_start_status_and_warning();
-    feature_state_invalid_manifest_prevents_child();
-    helpers_order_and_killed();
-    helper_failure_unwinds();
-    helper_power_hook_boundary();
-    power_hook_returned_status_errors();
-    helper_shared_segment_gate();
-    long_run_dir();
-    canary_fails();
-    engine_fails_to_start();
-    engine_refuses_the_stored_plan();
-    engine_never_healthy();
-    engine_dies_while_serving();
-    engine_ignores_sigint();
-    plan_refused();
-    stop_while_waiting_for_health();
-    stop_during_plan();
-    signal_stops();
-    unknown_command_and_no_owner();
-    start_detached_runs_and_stops();
-    descendant_outliving_the_engine();
-    inherited_descriptor_not_passed();
-    owner_killed_fails_closed();
-    unwritable_record_still_stops();
-    no_record_no_session();
+    // The tests, in four groups of about equal run time (measured), so that CTest can run them side by side: each
+    // group is its own ctest test (`--group N`) with its own fixture directory, and running with no argument runs them
+    // all. Every test is in exactly one group.
+    static const std::vector<std::vector<void (*)()>> groups = {
+        {real_session_power_returned_errors, manifest_writer_before_durable_admission, native_config_inspector_before_admission, callback_exception_matrix, power_hook_returned_status_errors, stop_while_waiting_for_health, stop_during_plan, unwritable_record_still_stops},
+        {native_only_planning_refusals, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
+        {injected_owner_plan_exception, feature_state_start_status_and_warning, feature_state_invalid_manifest_prevents_child, helper_failure_unwinds, helper_shared_segment_gate, long_run_dir, shared_run_dir_and_stale_socket, engine_refuses_the_stored_plan, engine_never_healthy, plan_refused},
+        {native_config_inspector_invalid_report_refused, callback_nonstandard_regression, spawn_and_environment, engine_fails_to_start, engine_dies_while_serving, signal_stops, start_detached_runs_and_stops, descendant_outliving_the_engine, inherited_descriptor_not_passed, owner_killed_fails_closed},
+    };
+    size_t first = 0, last = groups.size();
+    if (!group.empty()) {
+        first = std::stoul(group) - 1;   // "1" .. the number of groups
+        if (first >= groups.size()) {
+            std::cerr << "session test: no group " << group << '\n';
+            return 2;
+        }
+        last = first + 1;
+    }
+    for (size_t i = first; i < last; ++i)
+        for (const auto test : groups[i]) test();
     std::cout
         << "PASS: session owner lifecycle (start order, canary, failures at every stage, stop via socket and "
            "signal, SIGKILL fallback, one owner per run directory, child environment, detached start)\n";

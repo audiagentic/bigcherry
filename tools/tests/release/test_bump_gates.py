@@ -56,7 +56,7 @@ class AdapterDispatchTests(unittest.TestCase):
     def test_moe_remote_declares_its_offline_tests(self):
         moe_remote = components.load_all(paths.REPO_ROOT, engines.RADIANCE)["moe-remote"]
         self.assertEqual(moe_remote.test_targets, (
-            "r3_moe_mailbox_lifetime_test", "r3_moe_factory_bind_test", "r3_hook_identity_test", "r3_layer_map_wait_test", "r3_helper_registration_test", "r3_hook_retire_test", "r3_generation_close_test", "r3_mailbox_trace_test", "r3_topology_v26_test", "r3_worker_topology_v26_test", "r3_v26_gpu_contract_test", "r3_gemv_geometry_test", "r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test", "r3_policy_live_test", "r3_policy_config_test", "r3_policy_driver_test", "r3_policy_effect_test", "r3_policy_measure_test", "r3_policy_replay_test",
+            "r3_moe_mailbox_lifetime_test", "r3_moe_factory_bind_test", "r3_hook_identity_test", "r3_layer_map_wait_test", "r3_bootstrap_timing_test", "r3_helper_registration_test", "r3_hook_retire_test", "r3_generation_close_test", "r3_mailbox_trace_test", "r3_topology_v26_test", "r3_worker_topology_v26_test", "r3_v26_gpu_contract_test", "r3_gemv_geometry_test", "r3_moe_shm_test", "r3_moe_backend_test", "r3_worker_share_test", "r3_worker_heat_test", "r3_heat_source_test", "r3_policy_input_test", "r3_policy_live_test", "r3_policy_config_test", "r3_policy_driver_test", "r3_policy_effect_test", "r3_policy_measure_test", "r3_policy_replay_test",
             "r3_moe_epoch_test", "r3_moe_fp8_ref_test", "r3_combine_f16_test", "r3_combine_pool_test",
             "r3_admission_ledger_test", "r3_mailbox_completion_test", "r3_owner_generation_test",
             "r3_worker_slot_pool_test", "r3_replay_bootstrap_test", "r3_rad46_rows_policy_test", "r3_combine_epoch_test",
@@ -344,6 +344,15 @@ class ComponentGateTests(unittest.TestCase):
             self.assertEqual(checks["component-tests"].run(), [])
         call = next(c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and Path(c[2]).name == "serving")
         self.assertEqual(call[call.index("-R") + 1], r"^(bc\.serving\+x_test)$")
+
+    def test_ctest_runs_in_parallel_sized_from_the_cpus_this_process_may_use(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.assertEqual(checks["component-tests"].run(), [])
+        calls = [c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and "-R" in c]
+        self.assertTrue(calls)
+        for call in calls:
+            self.assertEqual(call[call.index("--parallel") + 1], str(len(os.sched_getaffinity(0))))
 
     def test_a_test_target_build_failure_is_told_apart_from_a_test_failure(self):
         checks = self.checks()

@@ -2,6 +2,8 @@
 
 **Current status (later 2026-11-22):** The [final BCOP reconciliation](FINAL_BCOP_RECONCILIATION_2026-11-22.md) follows the earlier [114-item cleanup](CONTINUATION_2026-11-22.md). The two earlier inventory datasets are preserved as historical snapshots.
 
+**Later source-backed technical pass (2026-11-22):** [357 active items and the 21-item MEN ownership/acceptance recheck](TECHNICAL_RECHECK_2026-11-22.md). This is an evidence-based **planning review**, not authoritative lifecycle updates. Earlier snapshot CSVs remain historical.
+
 **Base:** `origin/main` at `7e4e7eae816889849362e6369335786882490beb`. **Branch:** `agent/planning-holistic-20261122`. The inventory and BCOP dispositions are **pre-registration review snapshots**; nine Radiance/LTX plan items were subsequently created through the canonical Planning MCP.
 
 **Publication and current-status note (2026-11-22):** This historical

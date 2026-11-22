@@ -1,0 +1,14 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_092724_the-platform-release-pr-no-lon_4861",
+  "files": [
+    ".github/workflows/release-please.yml",
+    "tools/bigcherry/release/manifest_reconcile.py",
+    "tools/bigcherry/release/pin_release.py",
+    "tools/tests/release/test_manifest_reconcile.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "New release automation: after an engine release the release-please workflow merges main into the exact same-repository platform release PR branch. Every merge, clean or conflicting, takes its manifest from the pure rule (platform version from the PR head, other packages from main; refuses other conflicts, key-set mismatch, downgrades); the branch is updated by a compare-and-swap push on the expected head; UNKNOWN mergeability is retried and a timeout is a named deferred state; credentials stay out of argv and checkout. The rule moved to manifest_reconcile and pin-release uses it. The PR is never merged.",
+  "timestamp-utc": "2026-11-22T09:27:24.893724Z",
+  "user-summary-candidate": "The platform release PR no longer needs a hand-merged manifest after an engine release."
+}

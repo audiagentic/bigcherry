@@ -1,5 +1,7 @@
 #include "release_archive.h"
 
+#include "file_stamp.h"
+
 #include "sha256.h"
 #include "v2/document_bytes.h"
 
@@ -7,6 +9,10 @@
 
 #include <algorithm>
 #include <array>
+#include <atomic>
+#include <chrono>
+#include <fcntl.h>
+#include <unistd.h>
 #include <cctype>
 #include <cstdint>
 #include <fstream>
@@ -22,6 +28,7 @@
 
 namespace bc::release {
 namespace {
+std::atomic<uint64_t> hashed_file_count{0};
 constexpr size_t kIoChunk = size_t{1024} * 1024;
 constexpr uint64_t kMaxBytes = 16ULL * kIoChunk * 1024ULL;
 constexpr size_t kMaxFiles = 10000;
@@ -398,6 +405,47 @@ void verify_file_set(const fs::path& prefix_path, const Json& manifest, const Js
 
 } // namespace
 
+void fsync_dir(const fs::path& dir) {
+    const int fd = ::open(dir.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    require(fd >= 0, ErrorCode::io, "cannot sync release directory: " + dir.string());
+    const int outcome = ::fsync(fd);
+    ::close(fd);
+    require(outcome == 0, ErrorCode::io, "release directory flush failed");
+}
+
+std::string nonce() {
+    const auto nanos = std::chrono::steady_clock::now().time_since_epoch().count();
+    return std::to_string(::getpid()) + "-" + std::to_string(nanos);
+}
+
+void write_atomic(const fs::path& dest, const std::string& bytes) {
+    const auto pending = fs::path(dest.string() + ".pending-" + nonce());
+    const int fd = ::open(pending.c_str(), O_WRONLY | O_CREAT | O_EXCL | O_CLOEXEC | O_NOFOLLOW, 0644);
+    require(fd >= 0, ErrorCode::io, "cannot stage release state: " + dest.string());
+    try {
+        size_t offset = 0;
+        while (offset < bytes.size()) {
+            const ssize_t written = ::write(fd, bytes.data() + offset, bytes.size() - offset);
+            require(written > 0, ErrorCode::io, "cannot write staged release state");
+            offset += static_cast<size_t>(written);
+        }
+        require(::fsync(fd) == 0, ErrorCode::io, "cannot sync staged release state");
+    } catch (...) {
+        ::close(fd);
+        fs::remove(pending);
+        throw;
+    }
+    ::close(fd);
+    try {
+        fs::rename(pending, dest);
+    } catch (...) {
+        fs::remove(pending);
+        throw;
+    }
+    fsync_dir(dest.parent_path());
+}
+
+
 std::string required_text(const Json& doc, const char* key, ErrorCode code) {
     require(doc.is_object() && doc.contains(key) && doc[key].is_string(), code,
             std::string("missing text field: ") + key);
@@ -417,6 +465,7 @@ std::string sha256_file(const fs::path& path) {
     require(is_regular_plain(path), ErrorCode::invalid_input, "not a regular file: " + path.string());
     std::ifstream input(path, std::ios::binary);
     require(input.is_open(), ErrorCode::io, "cannot read file: " + path.string());
+    ++hashed_file_count;
     serving::Sha256 digest;
     std::array<char, kIoChunk> bytes{};
     while (input.read(bytes.data(), bytes.size()) || input.gcount() > 0)
@@ -574,13 +623,76 @@ CheckedAsset extract_verified(const Json& record, const std::string& tag, const 
     return {record, manifest};
 }
 
+namespace {
+using Stamps = std::vector<std::pair<std::string, serving::FileStamp>>;
+
+// The stamp of every member of the prefix, by relative path; empty when the prefix has a
+// member that is not a plain file (the full check judges that).
+std::optional<Stamps> capture_stamps(const fs::path& prefix_path) {
+    Stamps stamps;
+    for (auto iter = fs::recursive_directory_iterator(prefix_path); iter != fs::recursive_directory_iterator();
+         ++iter) {
+        if (iter->is_symlink())
+            return std::nullopt;
+        if (iter->is_directory())
+            continue;
+        if (!iter->is_regular_file())
+            return std::nullopt;
+        stamps.emplace_back(fs::relative(iter->path(), prefix_path).generic_string(), serving::stamp_file(iter->path()));
+    }
+    std::sort(stamps.begin(), stamps.end(), [](const auto& l, const auto& r) { return l.first < r.first; });
+    return stamps;
+}
+
+Json stamps_json(const Stamps& stamps) {
+    Json files = Json::array();
+    for (const auto& [name, s] : stamps)
+        files.push_back({name, s.size, s.inode, s.mtime_ns, s.ctime_ns});
+    return {{"files", files}};
+}
+
+// Was every member of this prefix, as it is now, verified in full and recorded? False on any difference, on a record
+// that cannot be read or parsed: the full check then runs.
+bool stamps_trusted(const fs::path& prefix_path, const fs::path& file) {
+    try {
+        if (!is_regular_plain(file))
+            return false;
+        const auto recorded = Json::parse(read_bounded(file, kMaxManifest));
+        const auto now = capture_stamps(prefix_path);
+        if (!now || recorded != stamps_json(*now))
+            return false;
+        return true;
+    } catch (const std::exception&) {
+        return false;
+    }
+}
+} // namespace
+
+std::uint64_t hashed_files() {
+    return hashed_file_count.load();
+}
+
 void verify_installed_files(const fs::path& prefix_path, const Json& record, const Json& manifest,
-                            const std::string& tag) {
+                            const std::string& tag, const fs::path& stamps_file, bool trust_stamps) {
     const auto bytes = read_bounded(prefix_path / "bundle.json", kMaxManifest);
     require(serving::sha256_hex(bytes) == required_text(record, "manifest_sha256", ErrorCode::wrong_identity),
             ErrorCode::digest_mismatch, "installed bundle manifest SHA-256 mismatch");
     require(Json::parse(bytes) == manifest, ErrorCode::invalid_install, "installed manifest content mismatch");
+    if (trust_stamps && stamps_trusted(prefix_path, stamps_file)) {
+        validate_manifest(manifest, record, tag);
+        return;
+    }
+    // Stamped before any byte is read: a member that changes while it is hashed no longer matches its stamp.
+    const auto stamps = capture_stamps(prefix_path);
     verify_file_set(prefix_path, manifest, record, tag, true);
+    if (stamps) {
+        // Stamps that cannot be written (read-only media) costs the next start a full check; it never fails this one.
+        try {
+            fs::create_directories(stamps_file.parent_path());
+            write_atomic(stamps_file, stamps_json(*stamps).dump() + "\n");
+        } catch (const std::exception&) {
+        }
+    }
 }
 
 } // namespace bc::release

@@ -2,6 +2,7 @@
 // never consumes ends the wait at its bound with a sticky helper fault (every later wait returns at once), a consumed
 // map and a faulted helper end it at once, and teardown after the fault is not blocked.
 #include "layer_map_wait.h"
+#include <algorithm>
 #include <chrono>
 #include <cstdio>
 #include <cstdlib>
@@ -62,6 +63,44 @@ int main() {
     const int64_t delta_ms = (int64_t(d.tv_sec) - now.tv_sec) * 1000 + (d.tv_nsec - now.tv_nsec) / 1000000;
     check(delta_ms >= 1490 && delta_ms <= 1600 && d.tv_nsec >= 0 && d.tv_nsec < 1000000000, "absolute deadline after a bound");
     check(layer_map_bound() == std::chrono::nanoseconds(r3::epoch::Deadlines{}.ready_ns), "bound is the protocol readiness deadline");
+
+    // The engine's wait total and max per layer (MapWaitStats), with a fake helper that consumes each layer late.
+    // A fresh segment: the fault above is sticky.
+    void* data2 = mmap(nullptr, size_t(layout.bytes), PROT_READ | PROT_WRITE, MAP_PRIVATE | MAP_ANONYMOUS, -1, 0);
+    check(data2 != MAP_FAILED && wire::init(data2, size_t(layout.bytes), kShape, 2, topo, kManifest) == Refusal::None, "init 2");
+    Header* h2 = static_cast<Header*>(data2);
+    MapWaitStats stats;
+    check(stats.total().calls == 0 && stats.line() == "libr3: layer_map_wait {\"calls\":0,\"total_ns\":0,\"max_ns\":0,\"per_layer\":[]}",
+          "empty stats line");
+    const int delays_ms[2] = {30, 60};
+    std::thread fake([&] {
+        for (int l = 0; l < 2; ++l) {
+            std::this_thread::sleep_for(milliseconds(delays_ms[l]));
+            __atomic_store_n(&h2->layer_map_consumed[l], 1u, __ATOMIC_RELEASE);
+            notify(h2);
+        }
+    });
+    for (int l = 0; l < 2; ++l)
+        check(await_layer_consumed_timed(h2, l, milliseconds(5000), &stats) == MapWait::Consumed, "timed wait consumed");
+    fake.join();
+    // A wait that is already satisfied still counts as a call, with a tiny wall.
+    check(await_layer_consumed_timed(h2, 0, milliseconds(5000), &stats) == MapWait::Consumed, "timed wait, already consumed");
+    check(stats.layer[0].calls == 2 && stats.layer[1].calls == 1, "calls per layer");
+    check(stats.layer[0].max_ns >= 30000000ull && stats.layer[1].max_ns >= 30000000ull, "waits cover the helper's delay");
+    const auto tot = stats.total();
+    check(tot.calls == 3 && tot.total_ns >= 60000000ull && tot.max_ns == std::max(stats.layer[0].max_ns, stats.layer[1].max_ns) &&
+          tot.total_ns == stats.layer[0].total_ns + stats.layer[1].total_ns, "totals and max");
+    const std::string line = stats.line();
+    check(line.rfind("libr3: layer_map_wait {\"calls\":3,\"total_ns\":", 0) == 0 &&
+          line.find("\"per_layer\":[[0,2,") != std::string::npos && line.find(",[1,1,") != std::string::npos &&
+          line.find('\n') == std::string::npos, "stats line format");
+    // A bounded timeout is recorded too (the wait wall is the bound), and a null sink is allowed.
+    MapWaitStats late;
+    __atomic_store_n(&h2->layer_map_consumed[1], 0u, __ATOMIC_RELEASE);
+    check(await_layer_consumed_timed(h2, 1, milliseconds(40), &late) == MapWait::Timeout, "timeout through timed wait");
+    check(late.layer[1].calls == 1 && late.layer[1].total_ns >= 40000000ull, "timeout wall recorded");
+    check(await_layer_consumed_timed(h2, 1, milliseconds(40), nullptr) == MapWait::Faulted, "null sink allowed");
+    munmap(data2, size_t(layout.bytes));
 
     munmap(data, size_t(layout.bytes));
     std::puts("r3_layer_map_wait_test: OK");
