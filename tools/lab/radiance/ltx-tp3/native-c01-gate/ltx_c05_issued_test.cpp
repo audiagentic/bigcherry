@@ -10,6 +10,7 @@
 #include "runtime/ctx.h"
 #include "ltx2.cpp"
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstdint>
@@ -19,6 +20,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <utility>
 #include <vector>
 
 namespace {
@@ -48,9 +50,17 @@ struct Rank {
     std::unique_ptr<rad::Ctx> ctx;
     ltx2::Tp3GlobalRms q, k;
     rad_buf bq = 0, bk = 0;
+    rad_weight wq = 0, wk = 0;
     int64_t first = 0, owned = 0, full = 0, rows = 0;
+    int device = 0;
     int status = RAD_E_STATE;
     std::string error;
+    std::vector<void*> owned_device_weights;
+    ~Rank() {
+        (void)rad_dev_set(device);
+        ctx.reset();  // no weight may be freed while RadCtx owns a stream
+        for (void* p : owned_device_weights) rad_dev_free(p,RAD_MEM_DEVICE);
+    }
 };
 thread_local Rank* active_rank = nullptr;
 void step(RadCtx* c, const RadBatch*) {
@@ -78,7 +88,7 @@ RadBuildCtx context(int rank, int64_t max_rows) {
     return c;
 }
 void verify_weight(rad::Program& p, rad_weight h, const rad::RadFile& model,
-                   const std::string& name, int64_t full) {
+                   const std::string& name, int64_t full, Rank& rank, bool gpu) {
     const auto* e = model.find(name);
     require(e && e->rank == 1 && e->shape[0] == full,
             "LTX02 checkpoint Q/K gain source is missing or changed");
@@ -90,14 +100,26 @@ void verify_weight(rad::Program& p, rad_weight h, const rad::RadFile& model,
     const auto& plane = model.plane(*e, 0);
     require((int64_t)plane.bytes == w->stored_bytes,
             "LTX02 gain plane bytes mismatch");
-    // Native mapped RAD2 plane is the *same source* Builder declared.
-    // This narrow test avoids adding a second model parser or loader.
-    p.weight(h)->ptr = const_cast<uint8_t*>(model.data(plane));
-    p.weight(h)->site = rad::Site::Host;
+    // Both backends consume the very same checkpoint BF16 plane; no
+    // model parser, weight format transform, or alternate graph is added.
+    if (gpu) {
+        void* dev=rad_dev_alloc(w->stored_bytes,RAD_MEM_DEVICE);
+        require(dev,"LTX02 device gain allocation failed");
+        rank.owned_device_weights.push_back(dev);
+        p.weight(h)->ptr=dev;
+        p.weight(h)->site=rad::Site::Device;
+    } else {
+        p.weight(h)->ptr=const_cast<uint8_t*>(model.data(plane));
+        p.weight(h)->site=rad::Site::Host;
+    }
 }
 void run_case(const rad::RadFile& model, rad::Registry& reg,
               bool audio, int64_t rows, const std::array<int,3>& split,
-              int64_t nheads) {
+              int64_t nheads, bool gpu) {
+    std::fprintf(stderr,"LTX02 stage: build %s rows=%lld (%s)\n",
+                 audio?"audio":"video",(long long)rows,
+                 gpu?"AQL":"host");
+    std::fflush(stderr);
     const std::string prefix = audio ? "dit.blk.0.audio_attn1" :
                                        "dit.blk.0.attn1";
     const auto* fused = model.find(prefix + ".qkv.weight");
@@ -135,6 +157,8 @@ void run_case(const rad::RadFile& model, rad::Registry& reg,
         r->owned = split[rank]*dim;
         r->full = full;
         r->rows = rows;
+        r->device = gpu ? rank : 0;
+        require(rad_dev_set(r->device)==RAD_OK,"LTX02 cannot bind native rank device");
         auto b = std::make_unique<rad::Builder>(
             reg, metadata(), context(rank,rows));
         b->set_sources(rad::rad_container_sources(model));
@@ -168,25 +192,76 @@ void run_case(const rad::RadFile& model, rad::Registry& reg,
         require(r->k.declare(b.get(),geom,r->bk,scratch,wk,full,
                             r->first,r->owned,0,dim,rows,eps)==RAD_OK,
                 "LTX02 existing K all-head graph refused");
-        require(b->finish()==RAD_OK && b->errors().empty(),
-                "LTX02 native executable graph failed to finish");
-        require(b->program().device_holes(true).empty(),
-                "LTX02 native host registry has unresolved operations");
-        verify_weight(b->program(),wq,model,qname,full);
-        verify_weight(b->program(),wk,model,kname,full);
-        r->ctx = std::make_unique<rad::Ctx>();
-        rad::CtxDesc d{};
-        d.program=&b->program();
-        d.rank=rank;
-        d.world_size=3;
-        d.device=0;  // native host backend: three rank threads, one address space
-        d.arch_step=step;
-        d.record_passes=false;
-        d.registry=&reg;
-        require(r->ctx->init(d)==RAD_OK,"LTX02 native RadCtx init failed");
+        // Keep declaration source/native handles; **finish** must be run
+        // concurrently on the three ranks. The actual Radiance AR
+        // init() rendezvouses with its peers during graph finish.
+        r->wq=wq;
+        r->wk=wk;
         r->builder=std::move(b);
         ranks[rank]=std::move(r);
         first+=split[rank];
+    }
+    std::array<std::thread,3> builders;
+    for(int rank=0;rank<3;++rank)
+        builders[rank]=std::thread([&,rank] {
+            Rank& r=*ranks[rank];
+            try {
+                r.status=rad_dev_set(r.device);
+                if (r.status==RAD_OK)
+                    r.status=r.builder->finish();
+                if (r.status==RAD_OK && !r.builder->errors().empty())
+                    r.status=RAD_E_STATE;
+            } catch (const std::exception& e) {
+                r.status=RAD_E_STATE;
+                r.error=e.what();
+            }
+            if (gpu) {
+                std::fprintf(stderr,"LTX02 stage: rank%d builder finish rc=%d\n",
+                             rank,r.status);
+                std::fflush(stderr);
+            }
+        });
+    for(auto& thread:builders)thread.join();
+    for(int rank=0;rank<3;++rank) {
+        Rank& r=*ranks[rank];
+        if (r.status!=RAD_OK) {
+            std::fprintf(stderr,"LTX02 rank%d finish refused rc=%d %s\n",
+                         rank,r.status,r.error.c_str());
+            for(const auto& line:r.builder->errors())
+                std::fprintf(stderr,"  %s\n",line.c_str());
+        }
+        require(r.status==RAD_OK,"LTX02 native builder rank refused");
+        require(r.builder->program().device_holes(!gpu).empty(),
+                gpu ? "LTX02 native AQL GPU kernel coverage incomplete" :
+                      "LTX02 native host registry has unresolved operations");
+        require(rad_dev_set(r.device)==RAD_OK,"LTX02 native device rebind refused");
+        verify_weight(r.builder->program(),r.wq,model,qname,full,r,gpu);
+        verify_weight(r.builder->program(),r.wk,model,kname,full,r,gpu);
+        r.ctx = std::make_unique<rad::Ctx>();
+        rad::CtxDesc d{};
+        d.program=&r.builder->program();
+        d.rank=rank;
+        d.world_size=3;
+        d.device=r.device;
+        d.arch_step=step;
+        d.record_passes=false;
+        d.registry=&reg;
+        require(r.ctx->init(d)==RAD_OK,"LTX02 native RadCtx init failed");
+        if(gpu) {
+            // Stage the two real model planes through the Ctx-owned AQL
+            // compute stream. No new loader, quantization or transport.
+            for (const auto [h,name] :
+                 {std::pair{r.wq,qname},std::pair{r.wk,kname}}) {
+                const auto* e=model.find(name);
+                const auto& plane=model.plane(*e,0);
+                const auto* w=r.builder->program().weight(h);
+                require(rad_memcpy_async(w->ptr,model.data(plane),
+                                         w->stored_bytes,r.ctx->stream())==RAD_OK,
+                        "LTX02 native checkpoint gain transfer failed");
+            }
+            require(rad_stream_sync(r.ctx->stream())==RAD_OK,
+                    "LTX02 native checkpoint gain transfer did not complete");
+        }
     }
     std::array<std::vector<uint16_t>,3> outq,outk;
     for (int rank=0;rank<3;++rank) {
@@ -198,12 +273,19 @@ void run_case(const rad::RadFile& model, rad::Registry& reg,
         auto* k=static_cast<uint16_t*>(r.ctx->buf_ptr(r.bk));
         require(q && k && q!=k,
                 "LTX02 Q/K fixture inputs unexpectedly share native arena storage");
+        std::vector<uint16_t> hostq(static_cast<size_t>(n));
+        std::vector<uint16_t> hostk(static_cast<size_t>(n));
         for (int64_t row=0;row<rows;++row)
             for (int64_t col=0;col<r.owned;++col) {
                 const int64_t g=r.first+col;
-                q[row*r.owned+col]=sample(false,int(row),g);
-                k[row*r.owned+col]=sample(true,int(row),g);
+                hostq[size_t(row*r.owned+col)]=sample(false,int(row),g);
+                hostk[size_t(row*r.owned+col)]=sample(true,int(row),g);
             }
+        require(rad_dev_set(r.device)==RAD_OK,"LTX02 bind input device refused");
+        require(rad_memcpy_async(q,hostq.data(),n*2,r.ctx->stream())==RAD_OK &&
+                rad_memcpy_async(k,hostk.data(),n*2,r.ctx->stream())==RAD_OK &&
+                rad_stream_sync(r.ctx->stream())==RAD_OK,
+                "LTX02 native Q/K input transfer failed");
     }
     std::array<std::thread,3> threads;
     for (int rank=0;rank<3;++rank)
@@ -216,6 +298,8 @@ void run_case(const rad::RadFile& model, rad::Registry& reg,
             batch.n_tok=rows;
             batch.n_seq=1;
             r.status=bound==RAD_OK ? r.ctx->run_step(&batch) : bound;
+            if (r.status==RAD_OK && gpu)
+                r.status=rad_stream_sync(r.ctx->stream());
             active_rank=nullptr;
         });
     for(auto& t:threads)t.join();
@@ -226,10 +310,14 @@ void run_case(const rad::RadFile& model, rad::Registry& reg,
                          rank,r.status,r.ctx->step_error());
         require(r.status==RAD_OK,"LTX02 native Q/K RadCtx issue failed");
         require(r.ctx->ar_calls()==2,"LTX02 must issue two real collectives per rank");
-        std::memcpy(outq[rank].data(),r.ctx->buf_ptr(r.bq),
-                    size_t(rows*r.owned)*sizeof(uint16_t));
-        std::memcpy(outk[rank].data(),r.ctx->buf_ptr(r.bk),
-                    size_t(rows*r.owned)*sizeof(uint16_t));
+        require(rad_dev_set(r.device)==RAD_OK,"LTX02 output device bind refused");
+        const int64_t nb=rows*r.owned*int64_t(sizeof(uint16_t));
+        require(rad_memcpy_async(outq[rank].data(),r.ctx->buf_ptr(r.bq),
+                                 nb,r.ctx->stream())==RAD_OK &&
+                rad_memcpy_async(outk[rank].data(),r.ctx->buf_ptr(r.bk),
+                                 nb,r.ctx->stream())==RAD_OK &&
+                rad_stream_sync(r.ctx->stream())==RAD_OK,
+                "LTX02 native Q/K result transfer failed");
     }
     int64_t compared=0, mismatch=0;
     for(int64_t row=0;row<rows;++row) {
@@ -269,12 +357,23 @@ void run_case(const rad::RadFile& model, rad::Registry& reg,
 }
 }
 int main(int argc,char** argv) {
-    if(argc!=3) {
-        std::fprintf(stderr,"usage: ltx_c05_issued_host_test MODEL.rad LIBREF_DIRECTORY\n");
+    if(argc!=3 && argc!=4) {
+        std::fprintf(stderr,
+            "usage: ltx_c05_issued_host_test MODEL.rad KERNEL_DIR [--aql]\n");
         return 2;
     }
     try {
-        require(rad::device_is_host(),"LTX02 host oracle must use native Radiance host backend");
+        const bool gpu=argc==4;
+        require(!gpu || std::strcmp(argv[3],"--aql")==0,
+                "LTX02 only accepts --aql in native GPU mode");
+        require(gpu != rad::device_is_host(),
+                "LTX02 backend mismatches explicit native host/AQL mode");
+        if (gpu) {
+            require(std::strcmp(rad::device_backend_name(),"aql")==0,
+                    "LTX02 GPU mode needs native Radiance AQL");
+            require(rad_dev_count()==3,
+                    "LTX02 AQL requires exactly three visible independent GPUs");
+        }
         rad::RadFile model;
         require(model.open(argv[1])==RAD_OK,"LTX02 checkpoint cannot open");
         const char* heads=model.get_s("transformer.num_attention_heads","");
@@ -282,13 +381,38 @@ int main(int argc,char** argv) {
         const int64_t nheads=std::stoll(heads);
         require(nheads>0,"LTX02 missing positive model head count");
         rad::Registry reg;
-        require(reg.load_dir(argv[2],{"libref"})==RAD_OK,
-                "LTX02 native reference registry failed");
+        if (gpu) {
+            require(reg.set_code_devices({0,1,2})==RAD_OK,
+                    "LTX02 native rank-code device roster refused");
+            int64_t p2p=1;
+            for(int a=0;a<3;++a) {
+                RadDeviceProps props{};
+                require(rad_dev_props(a,&props)==RAD_OK &&
+                        (!std::strcmp(props.arch,"gfx1100") ||
+                         !std::strcmp(props.arch,"gfx1201")),
+                        "LTX02 GPU architecture unsupported for exact AQL rows");
+                for(int b=0;b<3;++b) if(a!=b) {
+                    const int cap=rad_dev_peer_access(a,b);
+                    require(cap>=0,"LTX02 peer-access device query failed");
+                    if(!cap)p2p=0;
+                }
+            }
+            reg.set_device_fact(RAD_FACT_P2P,p2p);
+        }
+        std::fprintf(stderr,"LTX02 stage: native registry load begin (%s)\n",
+                     gpu?"AQL":"host");
+        std::fflush(stderr);
+        require(reg.load_dir(argv[2],gpu ?
+                std::vector<std::string>{"libr3","libr4d","libref"} :
+                std::vector<std::string>{"libref"})==RAD_OK,
+                "LTX02 native model kernel registry failed");
+        std::fprintf(stderr,"LTX02 stage: native registry loaded\n");
+        std::fflush(stderr);
         for(bool audio:{false,true})
-            for(int64_t rows:{1,4})
+            for(int64_t rows:{1,4,16,64})
                 for(const std::array<int,3> split:
                     {std::array<int,3>{8,8,16},std::array<int,3>{12,12,8}})
-                    run_case(model,reg,audio,rows,split,nheads);
+                    run_case(model,reg,audio,rows,split,nheads,gpu);
         return 0;
     } catch (const std::exception& e) {
         std::fprintf(stderr,"LTX02 native issued C05: %s\n",e.what());

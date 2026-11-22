@@ -114,7 +114,7 @@ if(LTX_NATIVE_CORE_LIB)
 
     # LTX02's first actually-issued native RadCtx gate: reuse the real
     # patched arch source, host backend, model and reference registry.
-    add_executable(ltx_c05_issued_host_test ltx_c05_issued_host_test.cpp)
+    add_executable(ltx_c05_issued_host_test ltx_c05_issued_test.cpp)
     target_compile_features(ltx_c05_issued_host_test PRIVATE cxx_std_23)
     target_include_directories(ltx_c05_issued_host_test PRIVATE
       "${LTX_SOURCE_ROOT}/core" "${LTX_SOURCE_ROOT}/abi"
@@ -124,5 +124,86 @@ if(LTX_NATIVE_CORE_LIB)
     add_test(NAME ltx_c05_issued_host_global_qk
       COMMAND ltx_c05_issued_host_test "${LTX_IQ8R_MODEL}" "${_ref_dir}")
     set_tests_properties(ltx_c05_issued_host_global_qk PROPERTIES TIMEOUT 25)
+
+
+    # Same LTX02 model C05 graph + numerical oracle, now linked to the
+    # real GPU engine core. The GPU run is lease-gated and never an
+    # automatic CTest. No direct-HIP launcher and no second graph.
+    if(LTX_HIP_NATIVE_CORE_LIB)
+      if(NOT EXISTS "${LTX_HIP_NATIVE_CORE_LIB}")
+        message(FATAL_ERROR "LTX02 HIP-enabled Radiance core archive not found")
+      endif()
+      get_filename_component(_hip_core_dir "${LTX_HIP_NATIVE_CORE_LIB}" DIRECTORY)
+      get_filename_component(_hip_build_root "${_hip_core_dir}" DIRECTORY)
+      if(NOT EXISTS "${_hip_build_root}/CMakeCache.txt")
+        message(FATAL_ERROR "LTX02 AQL core has no native build provenance")
+      endif()
+      file(STRINGS "${_hip_build_root}/CMakeCache.txt" _hip_version
+        REGEX "^CMAKE_PROJECT_VERSION:STATIC=")
+      file(STRINGS "${_hip_build_root}/CMakeCache.txt" _hip_source
+        REGEX "^CMAKE_HOME_DIRECTORY:INTERNAL=")
+      file(STRINGS "${_hip_build_root}/CMakeCache.txt" _hip_enabled
+        REGEX "^RAD_WITH_HIP:STRING=")
+      if(NOT _hip_version STREQUAL "CMAKE_PROJECT_VERSION:STATIC=2.2.0" OR
+         NOT _hip_source STREQUAL "CMAKE_HOME_DIRECTORY:INTERNAL=${LTX_SOURCE_ROOT}" OR
+         NOT _hip_enabled STREQUAL "RAD_WITH_HIP:STRING=ON")
+        message(FATAL_ERROR "LTX02 AQL requires exact HIP-enabled Radiance 2.2 source/archive")
+      endif()
+      find_package(hip CONFIG REQUIRED)
+      get_filename_component(_hip_lib_dir "${hip_DIR}/../.." REALPATH)
+      find_library(LTX02_HSA_RUNTIME NAMES hsa-runtime64
+        PATHS "${_hip_lib_dir}" NO_DEFAULT_PATH REQUIRED)
+      find_package(PkgConfig REQUIRED)
+      pkg_check_modules(LTX02_FFMPEG REQUIRED IMPORTED_TARGET
+        libavformat libavcodec libavutil libswscale libswresample)
+      # Registry scans *all* .so files before applying a kernel hierarchy.
+      # Isolate the existing exact SDK rows just as C02 already isolates ref.
+      get_filename_component(_ltx02_kernel_dir "${LTX_REFERENCE_LIB}" DIRECTORY)
+      set(_ltx02_aql_dir "${CMAKE_CURRENT_BINARY_DIR}/ltx02_aql_kernels")
+      file(MAKE_DIRECTORY "${_ltx02_aql_dir}")
+      foreach(_ltx02_kernel IN ITEMS libr3 libr4d libref)
+        set(_ltx02_source "${_ltx02_kernel_dir}/${_ltx02_kernel}.so")
+        set(_ltx02_link "${_ltx02_aql_dir}/${_ltx02_kernel}.so")
+        if(NOT EXISTS "${_ltx02_source}")
+          message(FATAL_ERROR "LTX02 AQL needs original native SDK kernel ${_ltx02_source}")
+        endif()
+        if(EXISTS "${_ltx02_link}")
+          file(REAL_PATH "${_ltx02_link}" _ltx02_existing)
+          file(REAL_PATH "${_ltx02_source}" _ltx02_expected)
+          if(NOT _ltx02_existing STREQUAL _ltx02_expected)
+            message(FATAL_ERROR "LTX02 AQL staged native kernel changed")
+          endif()
+        else()
+          file(CREATE_LINK "${_ltx02_source}" "${_ltx02_link}" SYMBOLIC
+            RESULT _ltx02_link_result)
+          if(NOT _ltx02_link_result STREQUAL "0")
+            message(FATAL_ERROR "LTX02 AQL native kernel staging refused: ${_ltx02_link_result}")
+          endif()
+        endif()
+      endforeach()
+      add_executable(ltx_c05_issued_aql_test ltx_c05_issued_test.cpp)
+      target_compile_features(ltx_c05_issued_aql_test PRIVATE cxx_std_23)
+      target_compile_definitions(ltx_c05_issued_aql_test PRIVATE __HIP_PLATFORM_AMD__=1)
+      target_include_directories(ltx_c05_issued_aql_test PRIVATE
+        "${LTX_SOURCE_ROOT}/core" "${LTX_SOURCE_ROOT}/abi"
+        "${LTX_SOURCE_ROOT}/vendor" "${LTX_STAGE_ROOT}/arch/ltx2"
+        "${CMAKE_BINARY_DIR}/rad_include")
+      set_property(TARGET ltx_c05_issued_aql_test APPEND PROPERTY
+        BUILD_RPATH "${_hip_lib_dir}")
+      target_link_options(ltx_c05_issued_aql_test PRIVATE -Wl,--export-dynamic)
+      target_link_libraries(ltx_c05_issued_aql_test PRIVATE
+        "$<LINK_LIBRARY:WHOLE_ARCHIVE,${LTX_HIP_NATIVE_CORE_LIB}>"
+        hip::host ${LTX02_HSA_RUNTIME}
+        "${_hip_core_dir}/libbc_serving_v2.a"
+        "${_hip_core_dir}/libbc_jcs.a"
+        "${_hip_build_root}/vendor/librad_vendor_llama.a"
+        "${_hip_core_dir}/librad_json.a"
+        "${_hip_core_dir}/librad_simd.a"
+        "${_hip_build_root}/vendor/librad_vendor_yyjson.a"
+        "${_hip_build_root}/vendor/librad_vendor_httplib.a"
+        "${_hip_build_root}/vendor/librad_vendor_ryml.a"
+        PkgConfig::LTX02_FFMPEG
+        dl pthread)
+    endif()
   endif()
 endif()
