@@ -1538,8 +1538,8 @@ void session_engine_plan(Fixture& t) {
         }
         const fs::path gated_run = run / "native-admission";
         fs::create_directories(gated_run);
-        const fs::path cache_tripwire = gated_run /
-            ("stored-" + bc::serving::sha256_hex(gated.named_config) + ".index.json");
+        // The measured manifest is stored for the next start of this config, from any run dir, in the work root.
+        const fs::path cache_tripwire = ss::named_store_index(t.work_root(), gated.named_config);
         int writer_calls = 0;
         bool power_admitted = false;
         int power_admit_calls = 0;
@@ -1729,10 +1729,40 @@ void session_engine_plan(Fixture& t) {
         assert(replay_inspections == 2 && replay_admissions == 1);   // the device-free config parse and the admission inspect
         fs::remove(native_yaml);
 
+        // A later start of the same config in ANOTHER run directory reuses the stored measurement: no writer,
+        // no measuring engine, the admission inspect only.
+        replay_inspections = 0;
+        replay_admissions = 0;
+        const fs::path later_run = run / "native-later-start";
+        fs::create_directories(later_run);
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        const auto later = ss::plan_engine_only(gated, later_run, stored_hooks);
+        assert(later.manifest == original_manifest && later.summary.at("replay") == true &&
+               later.summary.at("plan_measurement_attempt") == original_index.native_measurement->attempt_id);
+        assert(replay_inspections == 2 && replay_admissions == 1 && !fs::exists(later_run / "measurement-attempts"));
+        fs::remove(native_yaml);
+
+        // A stored plan a start cannot reuse (here a different engine build) is not a refusal to start: it
+        // measures once, and the new manifest replaces the stored one.
+        const fs::path rebuilt_run = run / "native-rebuilt-start";
+        fs::create_directories(rebuilt_run);
+        std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+        auto rebuilt = gated;
+        rebuilt.engine_binary = t.root / "rebuilt-native-engine";
+        fs::copy_file(BC_FAKE_ENGINE, rebuilt.engine_binary);
+        std::ofstream(rebuilt.engine_binary, std::ios::binary | std::ios::app) << '\n';
+        const auto remeasured = ss::plan_engine_only(rebuilt, rebuilt_run, admission_hooks);
+        assert(!remeasured.summary.contains("replay") && remeasured.manifest.parent_path() == rebuilt_run &&
+               fs::is_directory(rebuilt_run / "measurement-attempts"));
+        assert(ss::stored_manifest_for(cache_tripwire, ss::read_stored_index(cache_tripwire).key) ==
+               remeasured.manifest);
+        fs::remove(native_yaml);
+
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path owner_run = run / "native-serving-owner";
         fs::create_directories(owner_run);
         ss::EnginePlanInputs fresh = gated;
+        fresh.work_root = t.root / "work-owner-measures";   // no stored measurement here: this owner measures
         fresh.native_admission->runtime_overrides["TEST_NATIVE_EXPECT_FROZEN"] = "before";
         assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
         ss::Session owner;
@@ -1851,7 +1881,9 @@ void session_engine_plan(Fixture& t) {
         };
         std::string low_room_error;
         try {
-            (void)ss::plan_engine_only(gated, low_room_run, low_room);
+            auto measuring = gated;
+            measuring.work_root = t.root / "work-low-room";   // nothing stored: measure, so the room check can fire
+            (void)ss::plan_engine_only(measuring, low_room_run, low_room);
         } catch (const ss::PlanFailed& error) {
             low_room_error = error.what();
         }

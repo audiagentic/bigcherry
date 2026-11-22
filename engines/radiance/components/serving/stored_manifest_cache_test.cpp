@@ -58,15 +58,13 @@ void write(const fs::path& path, const std::string& data) {
 }
 ss::StaticResolutionInputs base() {
     ss::StaticResolutionInputs s;
-    s.effective_values = {{"service", {{"max_context", 8192}}}, {"layout", {{"name", "fixture"}}}};
+    s.effective_values = {{"service", {{"max_context", 8192}}}, {"layout", {{"name", "fixture"}}},
+                        {"engine", {{"model", "/models/fixture.rad"}, {"radiance_home", "/installed/build-a/radiance_home"}}}};
     s.ordered_devices = Json::array({{{"role_group", "engine_cards"},
                                       {"bdf", "0000:0d:00.0"},
                                       {"arch", "gfx1201"},
                                       {"hip_ordinal", 1},
                                       {"vram_total_mib", 24576}}});
-    s.producer_digest = std::string(64, 'a');
-    s.engine_digest = std::string(64, 'b');
-    s.helper_digest = std::string(64, 'c');
     s.model_digest = std::string(64, 'd');
     s.power_profile = "stock";
     s.file_digests = {{"config.toml", std::string(64, 'e')},
@@ -96,22 +94,19 @@ int main() {
                    bc::serving::sha256_hex(std::string(63, 'a') + "b" + std::string(65, 'c')),
                "incremental SHA-256 must match flat hash across block boundaries");
         const fs::path model = t.root / "model.bin";
-        const fs::path saved = t.root / "manifest-record.json";
-        const fs::path index = ss::stored_index_path(t.root, "fixture");
+        const fs::path saved = t.root / "run-1" / "manifest-record.json";
+        fs::create_directories(saved.parent_path());
         const fs::path work_root = t.root / "work";
         fs::create_directory(work_root);
-        const fs::path another_run = work_root / "runs" / "new-start";
-        fs::create_directories(another_run);
-        const fs::path new_index = ss::stored_index_path(another_run, "different-config");
-        // More than one block: changing weights past any header/table must
-        // invalidate a complete artifact identity, without loading it all.
+        const fs::path index = ss::named_store_index(work_root, "fixture");
+        expect(index.parent_path().parent_path() == work_root / "cache" &&
+                   index != ss::named_store_index(work_root, "other-config"),
+               "the named store lives under the work root, one index per config");
         std::string contents((2U * 1024U * 1024U) + 5U, 'm');
         write(model, contents);
         const std::string first = ss::complete_file_identity(model);
         expect(first == ss::complete_file_identity_bytes(contents),
                "identity from authenticated multi-megabyte bytes must match the streamed path identity");
-        // Compare with the original chunk-accumulator wire digest, not a new
-        // similarly named hash; persisted static keys must remain compatible.
         std::string old_accumulator = "bigcherry/rsc12/chunked-file-v1\n";
         constexpr size_t chunk_bytes = size_t{1024} * size_t{1024};
         for (size_t off = 0; off < contents.size(); off += chunk_bytes) {
@@ -121,35 +116,71 @@ int main() {
         }
         expect(first ==
                    bc::serving::sha256_hex("bytes=" + std::to_string(contents.size()) + "\n" + old_accumulator),
-               "streamed full fingerprint must preserve historic domain-separated chunk digest");
+               "streamed full fingerprint must preserve the chunk digest used for small files");
+
+        // A model is identified by path, size and mtime: no byte of it is read.
+        const std::string model_first = ss::model_stat_identity(model);
+        expect(model_first == ss::model_stat_identity(model), "an untouched model keeps its identity");
+        const auto prior_mtime = fs::last_write_time(model);
         contents.back() = 'x';
         write(model, contents);
-        const std::string second = ss::complete_file_identity(model);
-        expect(first != second, "late model payload byte must change full artifact identity");
+        fs::last_write_time(model, prior_mtime);
+        expect(ss::model_stat_identity(model) == model_first,
+               "same path, size and mtime: the identity is stat-based and does not read the bytes");
+        fs::last_write_time(model, prior_mtime + std::chrono::seconds(5));
+        const std::string model_touched = ss::model_stat_identity(model);
+        expect(model_touched != model_first, "a changed mtime changes the model identity");
+        write(model, contents + "more");
+        expect(ss::model_stat_identity(model) != model_touched, "a changed size changes the model identity");
+        const fs::path huge = t.root / "huge.bin";
+        {
+            std::ofstream sparse(huge, std::ios::binary);
+            sparse << 'x';
+        }
+        fs::resize_file(huge, 64ULL * 1024ULL * 1024ULL * 1024ULL);
+        expect(ss::model_stat_identity(huge).size() == 64U, "a 64 GiB model is identified without reading it");
+        const fs::path alias = t.root / "model-alias.bin";
+        fs::create_symlink(model, alias);
+        expect(ss::model_stat_identity(alias) == ss::model_stat_identity(model),
+               "an alias of the model resolves to the same identity");
+        bool missing_refused = false;
+        try {
+            (void)ss::model_stat_identity(t.root / "absent.bin");
+        } catch (const std::exception&) {
+            missing_refused = true;
+        }
+        expect(missing_refused, "a missing model has no identity");
+        const std::string model_id = ss::model_stat_identity(model);
 
         auto s = base();
+        s.model_digest = model_id;
+        const auto base_with_model = [&] {
+            auto b = base();
+            b.model_digest = model_id;
+            return b;
+        };
         const std::string original = ss::static_resolution_key(s);
-        expect(original == ss::static_resolution_key(base()), "equal static inputs mean equal key");
+        expect(original == ss::static_resolution_key(base_with_model()), "equal static inputs mean equal key");
         const auto changed = [&](const std::string& what) {
             expect(ss::static_resolution_key(s) != original, what + " must invalidate stored key");
-            s = base();
+            s = base_with_model();
+        };
+        const auto unchanged = [&](const std::string& what) {
+            expect(ss::static_resolution_key(s) == original, what + " must NOT invalidate the stored key");
+            s = base_with_model();
         };
         s.effective_values["service"]["max_context"] = 16384;
         changed("effective settings/variant");
+        s.effective_values["engine"]["model"] = "/models/other.rad";
+        changed("model path in the config");
         s.ordered_devices[0]["bdf"] = "0000:0e:00.0";
         changed("ordered BDF");
         s.ordered_devices[0]["arch"] = "gfx1100";
         changed("GPU architecture");
         s.ordered_devices[0]["vram_total_mib"] = 32768;
         changed("VRAM total");
-        s.producer_digest[0] = 'f';
-        changed("bc-serve binary");
-        s.engine_digest[0] = 'f';
-        changed("engine/kernel/runtime binary");
-        s.helper_digest[0] = 'f';
-        changed("helper binary");
-        s.model_digest = second;
-        changed("model artifact, including tensor bytes");
+        s.model_digest = model_touched;
+        changed("model size or mtime");
         s.power_profile = "energy";
         changed("power profile");
         s.file_digests["config.toml"][0] = 'a';
@@ -160,6 +191,21 @@ int main() {
         changed("calibration/refit evidence");
         s.file_digests["experiment.json"][0] = 'a';
         changed("lab experiment bytes");
+        // What a different installed build changes, and the run's own transport, is provenance, not identity.
+        s.effective_values["engine"]["radiance_home"] = "/installed/other-build/radiance_home";
+        unchanged("the installed runtime path");
+        s = [&] {
+            auto projected = base_with_model();
+            projected.effective_values["handoff"] = {{"shm", "/r3-serve-first"}};
+            projected.effective_values["memory"] = {{"host_pool_mib", 9}, {"host_kv_mib", 8}};
+            return projected;
+        }();
+        const std::string with_transport = ss::static_resolution_key(s);
+        s.effective_values["handoff"] = {{"shm", "/r3-serve-second"}};
+        s.effective_values["memory"] = {{"host_pool_mib", 1}, {"host_kv_mib", 2}};
+        expect(ss::static_resolution_key(s) == with_transport,
+               "the per-start transport name and derived host pool/KV never enter the key");
+        s = base_with_model();
         s.ordered_devices[0]["vram_available_mib"] = 42;
         bool unexpected_live = false;
         try {
@@ -168,131 +214,53 @@ int main() {
             unexpected_live = true;
         }
         expect(unexpected_live, "live VRAM must not enter a static fingerprint");
-        s = base();
+        s = base_with_model();
 
         write(saved, "unchanged strict-v2 manifest bytes\n");
         const std::string digest = ss::complete_file_identity_bytes("unchanged strict-v2 manifest bytes\n");
         expect(digest == ss::complete_file_identity(saved),
                "fingerprint over authenticated bytes must preserve the persisted chunked identity");
-        // Fresh run/config must reuse the shared fingerprint. An index
-        // only binds a saved manifest to its original model digest.
-        unsigned full_model_reads = 0;
-        const auto counting_model_reader = [&](const fs::path& source) {
-            ++full_model_reads;
-            return ss::complete_file_identity(source);
-        };
-        const auto cache_file = ss::model_identity_cache_path(model, work_root);
-        const ss::ModelIdentity model_first = ss::cached_model_identity(model, work_root, counting_model_reader);
-        expect(full_model_reads == 1 && model_first.digest == second && fs::is_regular_file(cache_file),
-               "first start fingerprints all bytes and writes the shared cache file");
-        ss::write_stored_index(index, {original, saved.filename().string(), digest, model_first.digest});
-        expect(ss::stored_manifest_for(t.root, "fixture", original) == saved,
-               "named index must resolve using the existing manifest fingerprint");
-        ss::write_stored_index(new_index, {original, saved.filename().string(), digest, model_first.digest});
-        const auto model_hit = ss::cached_model_identity(model, work_root, counting_model_reader);
-        expect(full_model_reads == 1 && model_hit.digest == model_first.digest,
-               "fresh run dir and config must make zero model reader calls");
-        const auto same_attempt = ss::cached_model_identity(model, work_root, counting_model_reader, &model_first);
-        expect(full_model_reads == 1 && same_attempt.digest == model_first.digest,
-               "verified unchanged model remains a zero-read identity");
-        // Same-size rewrite with restored mtime must still invalidate ctime.
-        const auto prior_mtime = fs::last_write_time(model);
-        write(model, contents);
-        fs::last_write_time(model, prior_mtime);
-        const auto model_changed = ss::cached_model_identity(model, work_root, counting_model_reader, &model_first);
-        expect(full_model_reads == 2 && model_changed.digest == second,
-               "same-size ctime change must recompute despite restored mtime");
-        write(model, contents + "changed");
-        const auto model_changed_size = ss::cached_model_identity(model, work_root, counting_model_reader);
-        expect(full_model_reads == 3 && model_changed_size.digest != second,
-               "changed size must recompute and replace the shared cache");
-        write(cache_file, "{bad json");
-        bool cache_refused = false;
-        try {
-            (void)ss::cached_model_identity(model, work_root, counting_model_reader);
-        } catch (const std::exception&) {
-            cache_refused = true;
-        }
-        expect(cache_refused && full_model_reads == 3,
-               "malformed shared cache must be refused, not trusted or recomputed");
-        fs::remove(cache_file);
-        fs::create_symlink(model, cache_file);
-        cache_refused = false;
-        try {
-            (void)ss::cached_model_identity(model, work_root, counting_model_reader);
-        } catch (const std::exception&) {
-            cache_refused = true;
-        }
-        expect(cache_refused && full_model_reads == 3, "symlink cache must be rejected");
-        fs::remove(cache_file);
 
-        // Forked readers race through a cold cache key; independent atomic
-        // writers may all win, but every published record must be complete.
-        std::array<pid_t, 6> writers{};
-        for (auto& pid : writers) {
-            pid = ::fork();
-            expect(pid >= 0, "fork shared cache writer");
-            if (pid == 0) {
-                try {
-                    (void)ss::cached_model_identity(model, work_root, [&](const fs::path& source) {
-                        ::usleep(50000);
-                        return ss::complete_file_identity(source);
-                    });
-                    ::_exit(0);
-                } catch (...) {
-                    ::_exit(40);
-                }
-            }
-        }
-        for (const pid_t pid : writers) {
-            int status = 0;
-            expect(::waitpid(pid, &status, 0) == pid && WIFEXITED(status) && WEXITSTATUS(status) == 0,
-                   "parallel cache writers must each succeed");
-        }
-        const auto after_race = ss::cached_model_identity(model, work_root, counting_model_reader);
-        expect(full_model_reads == 3 && after_race.digest == model_changed_size.digest,
-               "concurrent writes must yield parseable JSON with a correct cache hit");
-        // Retargeting a model symlink mid-read must refuse, not cache old bytes.
-        const fs::path alias = t.root / "model-alias.bin";
-        const fs::path alternate = t.root / "alternate.bin";
-        write(alternate, "different model bytes");
-        fs::remove(cache_file);
-        fs::create_symlink(model, alias);
-        bool swapped_refused = false;
-        try {
-            (void)ss::cached_model_identity(alias, work_root, [&](const fs::path& source) {
-                fs::remove(alias);
-                fs::create_symlink(alternate, alias);
-                return ss::complete_file_identity(source);
-            });
-        } catch (const std::exception&) {
-            swapped_refused = true;
-        }
-        expect(swapped_refused && !fs::exists(cache_file),
-               "retargeted model alias must refuse without caching a stale digest");
-        ss::write_stored_index(index, {original, saved.filename().string(), digest});
-        const auto found = ss::stored_manifest_for(t.root, "fixture", original);
-        expect(found && *found == saved, "equal static key must reuse unchanged manifest");
-        expect(!ss::stored_manifest_for(t.root, "fixture", std::string(64, 'a')),
-               "different static key must re-resolve and write a new manifest");
-        expect(ss::read_stored_index(index).digest == digest, "index must preserve exact original-byte digest");
+        // The store is reached from any later run directory: it names the run that wrote the manifest.
+        ss::StoredManifestIndex entry{original, saved.filename().string(), digest, model_id};
+        entry.directory = saved.parent_path().string();
+        ss::write_stored_index(index, entry);
+        expect(ss::stored_manifest_for(index, original) == saved,
+               "a later start in another run dir finds the manifest the earlier start stored");
+        expect(!ss::stored_manifest_for(index, std::string(64, 'a')),
+               "different static key is a miss: the caller measures and stores a new manifest");
+        expect(ss::read_stored_index(index).digest == digest && ss::read_stored_index(index).directory == entry.directory,
+               "index must preserve exact original-byte digest and run directory");
+        expect(!ss::stored_manifest_for(work_root / "cache" / "named-configs" / "never-written.json", original),
+               "no index is a miss");
 
+        // A damaged store is a miss, never a refusal to start: the next measured manifest replaces it.
         write(saved, "tampered manifest\n");
-        bool refused = false;
-        try {
-            (void)ss::stored_manifest_for(t.root, "fixture", original);
-        } catch (const std::exception&) {
-            refused = true;
-        }
-        expect(refused, "equal key but changed original bytes must fail closed, not rewrite");
+        expect(!ss::stored_manifest_for(index, original), "changed original bytes are a miss, not a refusal");
         write(saved, "unchanged strict-v2 manifest bytes\n");
+        fs::remove(saved);
+        expect(!ss::stored_manifest_for(index, original), "a removed run dir is a miss");
+        write(saved, "unchanged strict-v2 manifest bytes\n");
+        expect(ss::stored_manifest_for(index, original) == saved, "restoring the bytes restores the hit");
+        write(index, "{bad json");
+        expect(!ss::stored_manifest_for(index, original), "a corrupt index is a miss");
+        ss::write_stored_index(index, entry);
+        ss::StoredManifestIndex relative = entry;
+        relative.directory = "relative/run";
+        bool relative_refused = false;
+        try {
+            ss::write_stored_index(index, relative);
+        } catch (const std::exception&) {
+            relative_refused = true;
+        }
+        expect(relative_refused, "the stored run directory must be absolute");
         ss::write_stored_index(index, {std::string(64, 'a'), saved.filename().string(), digest});
-        expect(!ss::stored_manifest_for(t.root, "fixture", original),
-               "new different index must replace cache selection without touching old manifest");
+        expect(!ss::stored_manifest_for(index, original),
+               "a newer index replaces the selection without touching the old manifest");
         expect(fs::file_size(saved) == std::string("unchanged strict-v2 manifest bytes\n").size(),
                "index replacement must not modify stored bytes");
         write(index, "{\"version\":1,\"manifest\":\"../escape.json\",\"digest\":\"x\",\"key\":\"x\"}");
-        refused = false;
+        bool refused = false;
         try {
             (void)ss::read_stored_index(index);
         } catch (const std::exception&) {

@@ -108,16 +108,17 @@ offline, with the matching candidate engine and `bc-serve explain NAME
 --native-config engines/radiance/configs/NAME.yaml --model-root ${BC_MODEL_ROOT}
 --engine-binary <candidate-binary> --json`, then validate variant/roster
 consistency. No catalogue, layout file, `--layouts` or managed-start
-`--set` projection is involved. The sealed original YAML bytes, canonical
-root and parser/build identity must bind the measured plan and stored replay;
-fresh resource admission is required on every start, including cache hits.
+`--set` projection is involved. Fresh resource admission and the live room check run on every start, including
+a start that reuses a stored plan.
 
-Pass the platform's absolute work root as `--work-root ${BC_WORK_ROOT}`
-to enable the shared model-identity cache at
-`${BC_WORK_ROOT}/cache/model-identities/<sha256-of-canonical-model-path>.json`.
-It stores a full-file digest, validated against file identity; missing
-`--work-root` fingerprints the model on each run. Never substitute a header
-hash or reuse historical free-VRAM estimates as static identity.
+Pass the platform's absolute work root as `--work-root ${BC_WORK_ROOT}` to
+enable the named-config store at
+`${BC_WORK_ROOT}/cache/named-configs/`: a named start reuses the last measured
+manifest of its config, keyed on the resolved settings, the ordered cards and
+VRAM, the power profile, the config inputs and the model's path, size and
+mtime. The model is never read, and the engine, helper and bc-serve builds are
+provenance, not part of the key. Without `--work-root` every start measures.
+Never reuse historical free-VRAM estimates as static identity.
 
 ## 4. Qualify on leased hardware before publishing
 
