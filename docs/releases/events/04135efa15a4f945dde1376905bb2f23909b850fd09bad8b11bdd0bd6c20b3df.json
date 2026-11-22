@@ -1,0 +1,16 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_013524_bump-documentation-now-matches_6318",
+  "files": [
+    "docs/reference/build/PIN_BUMP.md",
+    ".claude/skills/bump-radiance/SKILL.md",
+    "docs/planning/active/patching-radiance-upstream/RUM12.md"
+  ],
+  "plan-item-ids": [
+    "RUM12"
+  ],
+  "status": "unreleased",
+  "technical-summary": "PIN_BUMP.md and the bump-radiance skill describe the work-root named-config store and the reuse path after RUM12 (no full model fingerprint, admission as the safety net, one fresh measurement per new build in a separate work root, parity arms share a work root). RUM12 is in progress with its design, files, effort and risk (each relaxed check and what still protects it), standards and acceptance criteria filled.",
+  "timestamp-utc": "2026-11-22T01:35:24.536375Z",
+  "user-summary-candidate": "Bump documentation now matches how named starts reuse measured plans."
+}

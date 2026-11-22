@@ -2,7 +2,7 @@
 id: RUM12
 order: 0
 plan: patching-radiance-upstream
-state: pending
+state: in_progress
 created-at: '2026-11-21T23:41:27.558357+00:00'
 breadth: ''
 skill: advanced
@@ -26,7 +26,8 @@ Starts must be quick and reuse what is already measured: a named serve/start reu
 
 ## Detailed Solution & Technical Design
 
-
+Store: the named-config index moves from the run dir to <work-root>/cache/named-configs/<sha256(config)>.json (named_store_index). Key (static_resolution_key v4): resolved effective values minus engine.radiance_home, handoff.shm and the derived memory.host_pool_mib/host_kv_mib; operator --set values except layout.name, handoff.shm and engine.radiance_home; ordered cards with arch/ordinal/VRAM; power profile; config input file digests; model identity. The producer, engine, helper and bc-serve builds, native YAML hash and installed runtime path are provenance, not key. Model identity (model_stat_identity): canonical path, size and mtime; the model is never read.
+Lookup (session.cpp native path): stored_manifest_for(index, key) returns a miss on any damage. A hit is replayed (replay_stored_manifest; power admission is its last step). When replay refuses (a different engine or helper build, tampered bytes), load_carried_measurement reads the old attempt's single plan-cache entry (plan, rank demand, resident helper/engine MiB; its owner digest must equal the index receipt), pre-validates it with check_plan_for_configuration and decode_engine_rank_demand, and seals it again under this build through the draft and measured writers (no helper or measuring engine); provenance is plan_carried_from plus carried-from.json. Anything that cannot be carried measures once afresh and replaces the entry. An engine that fails to come up on a reused plan removes the index (EngineStart.reused_store). Slice 3 (2026-11-22): engine.radiance_home, which bc-serve adds as a --set on every installed start, was part of the key and defeated cross-build reuse; excluded.
 
 ## Code Samples & Guidance
 
@@ -34,7 +35,7 @@ Starts must be quick and reuse what is already measured: a named serve/start reu
 
 ## Files
 
-
+engines/radiance/components/serving/stored_manifest_cache.{h,cpp} (key v4, model_stat_identity, named_store_index, StoredManifestIndex.directory, stored_manifest_for); session.cpp (named_cache, native lookup, load_carried_measurement, carried sealing, owner invalidation); session.h (reused_store, work_root); main.cpp (usage, work-root help); tests stored_manifest_cache_test.cpp, serving_test.cpp, session_test.cpp; docs serving README, SERVING_MANIFEST.md, BUMP_COUPLING.md, PIN_BUMP.md, bump-radiance skill.
 
 ## Validation
 
@@ -42,15 +43,15 @@ Hardware-free: stored_manifest_cache_test (key, stat identity, store), serving_t
 
 ## Effort & Risk
 
-
+M. Risk: a reused plan was measured under other conditions; contained by admission, which runs on every start. Relaxed checks and what still protects each: (1) full model fingerprint -> path/size/mtime: an in-place replacement keeping size and mtime is not detected by the key, but the engine checks the container it loads and admission refuses a plan that does not fit. (2) engine/helper/bc-serve build digests in the key -> provenance: a build the old plan does not suit is refused by the replay checks, then carried and re-sealed (the writers verify the new build) or measured; the engine refuses a plan that does not fit. (3) native YAML hash and installed runtime path in the key -> the YAML bytes are still sealed and inspected on every start, and config input digests stay in the key. (4) per-run-dir store -> work-root store: an entry is bound by key and owner receipt digest, and damage is a miss. (5) replaying a plan from another build -> carry re-seals under the current build, pre-validated against the current configuration and rank demand. (6) power admission and the live room check are unchanged on every start, reuse included. (7) an engine failure on a reused plan drops the entry, so the next start measures.
 
 ## Standards
 
-
+Shared agent workflow; tooling ownership and evidence boundaries (docs/standards/ARCHITECTURE_STANDARDS.md): config over code, fail closed on damaged stored state (a miss, never a guess), no per-model constants.
 
 ## Acceptance Criteria
 
-
+A second named start with unchanged inputs reuses the stored manifest from any run dir and any build, runs no measuring child and reads no model bytes; a stored plan that cannot be reused measures once and replaces it; each relaxed check and what still protects it is listed (Effort & Risk). Cards (bigcherry-1, 2026-11-22): same-build second start ran no measuring attempts (flashnext-r9700 69 s to 54 s, qwen27b-tp3 35 s to 26 s); the cross-build carry re-run is pending after the radiance_home key fix.
 
 ## Notes
 
@@ -60,8 +61,7 @@ Hardware-free: stored_manifest_cache_test (key, stat identity, store), serving_t
 
 - 2026-11-21T23:41:27.558357+00:00 (created-by): Created by claude
 
-## Acceptance
-
-A second named start with unchanged inputs reuses the stored manifest from any run dir and any build, runs no measuring child and reads no model bytes; a stored plan that cannot be reused measures once and replaces it; each relaxed check and what still protects it is listed in the PR.
 - 2026-11-21T23:41:35.527696+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance
 - 2026-11-21T23:57:41.696211+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T01:35:02.089724+00:00 (state-transition): State: pending → in_progress
+- 2026-11-22T01:35:14.769977+00:00 (updated-by): Updated: section:detailed_solution, section:files, section:effort_risk, section:standards, section:acceptance_criteria

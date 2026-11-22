@@ -123,13 +123,20 @@ manifest of its config, keyed on the resolved settings, the ordered cards and
 VRAM, the power profile, the config inputs and the model's path, size and
 mtime. The model is never read, and the engine, helper and bc-serve builds are
 provenance, not part of the key. Without `--work-root` every start measures.
-Never reuse historical free-VRAM estimates as static identity.
+Never reuse historical free-VRAM estimates as static identity. A reused plan
+is protected by admission: it runs on every start, and the engine refuses a plan
+that does not fit.
+
+Record ONE fresh measurement per new build, in a separate work root, and report
+how its plan differs from the previous build's (it does not gate the A/B).
+Parity arms of one comparison share a work root, so both run the same measured
+plan.
 
 ## 4. Qualify on leased hardware before publishing
 
 Run the **entire deployed YAML roster** from the installed, relocatable
 runtime: offline explain, measured start, health, short completion, stop/drain,
-named replay and explicit stored replay. Exercise engine-only, helper-on and
+and a second named start with `--work-root` (the reuse path). Exercise engine-only, helper-on and
 mixed-rank topologies where the roster advertises them. Check ordinal order,
 code objects, exact collective rendezvous and host/VRAM admission. Fix a
 shared planner defect in the measured owner, not by adding per-config
