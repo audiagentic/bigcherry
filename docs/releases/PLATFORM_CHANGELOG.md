@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.62.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.61.2...bc-platform-1.62.0) (2026-11-22)
+
+
+### New and changed
+
+* **radiance:** engine-owned remote-MoE generation replaces the process-global registry (RUM06) ([#1272](https://github.com/audiagentic/bigcherry/issues/1272)) ([e8fea77](https://github.com/audiagentic/bigcherry/commit/e8fea775d7c948a0c17147b5861e629a21e2ab2c))
+
+
+### Performance
+
+* **serving:** compute the runtime identity once per start ([#1305](https://github.com/audiagentic/bigcherry/issues/1305)) ([bbd998b](https://github.com/audiagentic/bigcherry/commit/bbd998b7f30b24746060c7eba2aa35bcd38539d8))
+
 ## [1.61.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.61.1...bc-platform-1.61.2) (2026-11-22)
 
 
