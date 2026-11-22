@@ -1,4 +1,5 @@
 #include "native_fleet_config.h"
+#include "bc_engine_settings.h"
 #include "bc_serving_manifest.h"
 #include "bc_plan_check.h"
 #include "bc_plan_memory.h"
@@ -21,6 +22,8 @@
 #include <unistd.h>
 
 #include "rad_abi.h"
+
+extern "C" const char* bc_serving_step_phase_dir();   // the owner-only trace directory (bc_serving_manifest.cpp)
 
 namespace {
 namespace wire = bc::serving::v2;
@@ -243,6 +246,50 @@ void check_native_serving_main(const std::string& path, const wire::Manifest& ma
               bc_serving_take_native_config(&invalid) < 0 && !bc_serving_expected_plan(&expected, &floor_ppm),
           "an invalid KL request could fall through to serving");
 
+    // The step-phase trace is an owner-selected serving diagnostic: off it leaves the engine settings alone, on it needs
+    // an existing absolute directory and a plain serving start, and it never enters the manifest or the Config.
+    {
+        const auto engine_entry = [&](const std::vector<std::string>& extra) {
+            std::vector<std::string> storage = {"radiance", "--manifest", sealed_path, "--role", "engine"};
+            storage.insert(storage.end(), extra.begin(), extra.end());
+            std::vector<char*> argv;
+            for (std::string& arg : storage) argv.push_back(arg.data());
+            int argc = static_cast<int>(argv.size());
+            argv.push_back(nullptr);
+            char** raw_argv = argv.data();
+            return bc_serving_engine_argv(&argc, &raw_argv) && argc == 1;
+        };
+        const auto trace_every = [&] {
+            BcEngineSettings settings{};
+            settings.struct_size = sizeof(settings);
+            check(bc_serving_engine_settings(&settings) == 1, "serving start published no engine settings");
+            return settings.mailbox_trace_every;
+        };
+        check(engine_entry({}) && bc_serving_step_phase_dir() == nullptr,
+              "a start without the trace switch named a trace directory");
+        const uint32_t untraced = trace_every();
+        const std::filesystem::path trace_dir = std::filesystem::path(native->identity.resolution_root) / "phases";
+        std::filesystem::create_directory(trace_dir);
+        check(engine_entry({"--bc-step-phase-dir", trace_dir.string()}) &&
+                  bc_serving_step_phase_dir() == trace_dir.string() && trace_every() == 1,
+              "the trace switch did not reach the engine settings");
+        check(engine_entry({}) && bc_serving_step_phase_dir() == nullptr && trace_every() == untraced,
+              "the trace switch outlived the start that gave it");
+        check(!engine_entry({"--bc-step-phase-dir", "relative"}), "a relative trace directory was accepted");
+        check(!engine_entry({"--bc-step-phase-dir", (trace_dir / "missing").string()}),
+              "a missing trace directory was accepted");
+        check(!engine_entry({"--bc-step-phase-dir", trace_dir.string(), "--bc-step-phase-dir", trace_dir.string()}),
+              "a doubled trace switch was accepted");
+        check(!engine_entry({"--bc-step-phase-dir", trace_dir.string(), "--kld-ref", "/ref", "--kld-out", "/out.json"}),
+              "the trace was accepted for an offline quality run");
+        const std::filesystem::path link = std::filesystem::path(native->identity.resolution_root) / "phases-link";
+        std::filesystem::create_directory_symlink(trace_dir, link);
+        check(!engine_entry({"--bc-step-phase-dir", link.string()}), "a symlinked trace directory was accepted");
+        std::filesystem::remove(link);
+        std::filesystem::remove(trace_dir);
+        check(engine_entry({}) && bc_serving_step_phase_dir() == nullptr, "the engine did not return to its plain start");
+    }
+
     const Descriptor without_pool;
     without_pool.write_bytes(with_yaml_host_pool(manifest, std::nullopt));
     without_pool.seal();
@@ -313,14 +360,14 @@ std::optional<rad::Config> measuring_config(const std::string& bytes) {
 }
 
 void check_rank_devices(const wire::Manifest& measuring) {
-    const std::vector<std::string> admitted = {"0000:09:00.0"};
+    const std::vector<std::string> admitted = {"0000:09:00.0", "0000:0a:00.0"};   // the contract admits two or more
     const auto omitted = measuring_config(with_rank_devices(measuring, admitted, std::nullopt));
     check(omitted && omitted->rank_devices == admitted &&
               omitted->given.at("--rank-devices") == "manifest spec.processes.engine.device.rank_devices",
           "a YAML without rank-devices must take the admitted ordered BDF selection");
-    const auto same = measuring_config(with_rank_devices(measuring, admitted, "0000:09:00.0"));
+    const auto same = measuring_config(with_rank_devices(measuring, admitted, "0000:09:00.0,0000:0a:00.0"));
     check(same && same->rank_devices == admitted, "a YAML stating the admitted rank-devices must pass");
-    check(!measuring_config(with_rank_devices(measuring, admitted, "0000:03:00.0")),
+    check(!measuring_config(with_rank_devices(measuring, admitted, "0000:0a:00.0,0000:09:00.0")),
           "a YAML stating other rank-devices than the admitted selection must be refused");
 }
 
