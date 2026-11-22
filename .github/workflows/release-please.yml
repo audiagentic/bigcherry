@@ -45,6 +45,11 @@ permissions:
   contents: write
   pull-requests: write
 
+# One run at a time: the manifest reconcile step below pushes to a release branch and must not race a second run.
+concurrency:
+  group: release-please
+  cancel-in-progress: false
+
 jobs:
   release-please:
     runs-on: ubuntu-latest
@@ -137,6 +142,7 @@ jobs:
         with:
           ref: main
           path: rewrite-src
+          fetch-depth: 0
       - name: rewrite known-bad lines in the open release PRs
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
@@ -166,3 +172,20 @@ jobs:
           git push -q --force "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git" "HEAD:refs/heads/${branch}"
           url=$(gh pr create --base main --head "${branch}" --title "chore: clear release-as for released lines" --body "Opened by the release-please workflow: the manifest has reached the pinned release-as, so the release exists. Merges itself when checks pass.")
           gh pr merge "${url}" --auto --squash
+
+      # All release lines share .release-please-manifest.json, so after one line releases the open platform release PR
+      # (based on the older main) conflicts in that file alone. This merges main into the PR branch with the manifest
+      # resolved by tools/bigcherry/release/manifest_reconcile.py (platform version from the PR, every other package from
+      # main); it refuses any other conflict or a version going down, pushes a plain merge commit only while the PR head is
+      # unchanged, and never merges the PR. No loop: it pushes a release branch, never main, and a PR that already contains
+      # main is left alone, so a re-run changes nothing.
+      - name: reconcile the platform release PR manifest with main
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          cd rewrite-src
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          PYTHONPATH=tools python3 -m bigcherry.release.manifest_reconcile . "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"

@@ -1,0 +1,14 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261122_090944_the-platform-release-pr-no-lon_6745",
+  "files": [
+    ".github/workflows/release-please.yml",
+    "tools/bigcherry/release/manifest_reconcile.py",
+    "tools/bigcherry/release/pin_release.py",
+    "tools/tests/release/test_manifest_reconcile.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The release-please workflow reconciles the open platform release PR with main after an engine release: a new step merges main into the PR branch resolving only the shared manifest (platform version from the PR, other packages from main; refuses other conflicts, missing keys, downgrades), pushes a plain merge commit only while the PR head is unchanged, and never merges. The manifest rule moved to manifest_reconcile and pin-release uses it.",
+  "timestamp-utc": "2026-11-22T09:09:44.411665Z",
+  "user-summary-candidate": "The platform release PR no longer needs a hand-merged manifest after an engine release."
+}
