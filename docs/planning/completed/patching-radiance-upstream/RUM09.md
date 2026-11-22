@@ -82,7 +82,7 @@ Shared agent workflow; tooling ownership and evidence boundaries. No deep testin
 
 ## Acceptance Criteria
 
-The bump carries every BigCherry fix and every serving config main supports; nothing is withheld on the old release. All 18 named configs in engines/radiance/configs (flashnext-* 10, qwen27b-* 8) start from the installed 2.2 bundle with no --set, pass the canary and stop cleanly, on the same-SDK build with uniform plugin ABI and both gfx1201 and gfx1100 kernels. The measured production configs (flashnext-4gpu, flashnext-4gpu-bf16i8, qwen27b-tp3-int8-556, qwen27b-tp3-int8-556-long, qwen27b-tp3-int8-556-long-bf16i8) pass the matched paired comparison against the current release with no gated regression (prefill, TTFT, step time), plus helper-on activation and short quality (KLD/top-1) where numerics can move. Mixed-rank TP3 (RUM06) passes its code-object, ordinal, rendezvous and span tests. Recipe, component declarations, native config and runtime roster refer to one exact candidate. No production pin change occurs before all gates pass.
+The bump carries every BigCherry fix and every serving config main supports; nothing is withheld on the old release. All 16 named configs in engines/radiance/configs (flashnext-* 10, qwen27b-* 6 after the IQ8R consolidation of the former -int8 and -int8-556 variants into qwen27b-tp3) start from the installed 2.2 bundle with no --set, pass the canary and stop cleanly, on the same-SDK build with uniform plugin ABI and both gfx1201 and gfx1100 kernels (docs/evidence/radiance-latest-bump/RUM09-GATE-E.md, tag bc-radiance-1170.37.0; the 2020.0.0 line is the same 2.2 source plus the rad0055 phase trace). The measured production configs (flashnext-4gpu, flashnext-4gpu-bf16i8, qwen27b-tp3, qwen27b-tp3-long, qwen27b-tp3-long-bf16i8) pass the matched paired comparison against the current release with no gated regression (prefill, TTFT, step time), plus helper-on activation and short quality (KLD/top-1) where numerics can move. Mixed-rank TP3 starts and qualifies on the shipped configs; the engine-generation lifetime cutover is tracked separately in RUM06. Recipe, component declarations, native config and runtime roster refer to one exact candidate. No production pin change occurs before all gates pass.
 
 ## Notes
 
@@ -182,3 +182,4 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 - 2026-11-20T13:48:08.014210+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T21:42:28.697997+00:00 (state-transition): State: in_progress → completed
 - 2026-11-21T21:44:27.596047+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T01:52:16.508656+00:00 (updated-by): Updated: section:acceptance_criteria
