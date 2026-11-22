@@ -72,6 +72,6 @@ No quality regression beyond owner-approved thresholds, no unbounded VRAM or dea
 
 ## Notes
 
-Do not use C08 33/33 collective numeric receipts as a substitute for an end-to-end LTX timing or video quality result.
+Do not use C08 33/33 collective numeric receipts as a substitute for an end-to-end LTX timing or video quality result. Any replacement for C05's full-width pack/reduce/RMS path requires a measured bottleneck, TP1 parity and **deletion of the replaced graph code** within the existing Radiance runtime. No separate collective/benchmark service.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.

@@ -73,6 +73,6 @@ Only certified named LTX config(s) ship; default TP1 intact, physical three-card
 
 ## Notes
 
-PR #1262 contains foundation and diagnostics, not a qualified production LTX feature; merge decision for that diagnostic PR is distinct from future production promotion.
+PR #1262 contains foundation and diagnostics, not a qualified production LTX feature; merge decision for that diagnostic PR is distinct from future production promotion. Only the existing Radiance engine/core and tested LTX-specific hooks may ship: **do not install historical C07 direct-HIP or LTX01 AQL lab executables** in the released runtime.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.

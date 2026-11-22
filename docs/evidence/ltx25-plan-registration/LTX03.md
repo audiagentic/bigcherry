@@ -72,6 +72,6 @@ All six attention variants, FFN and residual updates use a single existing DiT l
 
 ## Notes
 
-C06 currently tests only video/audio self-attention declaration; no cross-modal production path is activated.
+C06 currently tests only video/audio self-attention declaration; no cross-modal production path is activated. Reuse the **same** native DiT/attention call sites; once LTX02 has executable parity, delete redundant provisional geometry/state in the same reviewed slice, with lines/concepts deleted and runtime cost measured. Do not create an alternate LTX scheduler.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.

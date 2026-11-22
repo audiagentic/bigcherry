@@ -23,15 +23,15 @@ owner: Planning MCP registration required
 
 Turn C05/C06's host-declared graph into one actually issued three-card model-weight self-attention operation, including complete Q/K global normalization, RoPE, attention, output reduction and BF16 bias exactly once.
 
-**Existing engineering gap coverage:** LT3-05 and self-attention part of LT3-06. **Dependencies:** LTX01; native C08 exact AQL collective proof.
+**Existing engineering gap coverage:** LT3-05 and self-attention part of LT3-06. **Dependencies:** LTX01, including its S1 one-AQL-lab deletion gate; native C08 exact AQL collective proof. No new collective implementation or additional benchmark runner.
 
 ## Steps
 
-- 1. Write a failing single-block issue test using the existing patched `ltx2::attn_core`, `Attn::declare`, `Act::step` and `Lin::step`. Specify row count, model weights, rank order, owner group, actual per-rank device/kernel and TP1 reference.
+- 1. Write a failing **actually issued** single-block RadCtx test using existing patched `ltx2::attn_core`, `Attn::declare`, `Act::step` and `Lin::step`, and reuse LTX01's AQL-only GPU seam, not direct-HIP. Specify row count, actual model weights, rank order, owner group, per-rank device/kernel, source fingerprint, and TP1 reference.
 - 2. Use existing `RadBuilder`, `RadCtx`, device AQL streams and exact native `all_reduce`. Issue the C05 fill/cast/reduce/rmsnorm/cast chain on all ranks with same-token rows; require full-video-4096 and audio-2048 gain and denominator before local `rope_split`.
 - 3. Issue fused QKV/gate, local RoPE and `attn_dense` with native head offsets, aligned IQ8R quantizer, exact C04 output reduce and only one post-reduction BF16 bias per replica; compare all ranks with the same TP1 activation output. Preserve ordered collective issue across ranks.
 - 4. Exercise 1/16/64 row sizes and 8/8/16 or 12/12/8 splits; replay reversed visible card ordinal, missing kernel or abandoned rank; fail closed with native timeout and owner-tagged errors.
-- 5. Measure Q/K full-width packing and 512KiB-scale AQL transfers at representative rows; consider compact per-row-statistic reduction only after a measured bottleneck and only as a replacement inside `attn_core`, never a parallel communication path.
+- 5. Measure native fill, insert/cast, exact all-reduce, RMSNorm, extraction, GEMM, local attention, output reduction and AQL transfer waits separately at model-derived rows against LTX01's bare-collective receipt and TP1. Only consider compact per-row-statistic reduction after **measured** hot-path cost and proof of equal numerical semantics; replace C05 in place, never add a parallel communication path.
 
 ## Detailed Solution & Technical Design
 
@@ -72,6 +72,6 @@ At least one complete video and one audio self-attention layer genuinely execute
 
 ## Notes
 
-The latest C08 has 33/33 exact BF16 checks per collective variant; it does not issue the C05 model graph. This is the immediate production-enabling next slice.
+The latest C08 has 33/33 exact BF16 checks per collective variant; it does not issue the C05 model graph. LTX02 must reuse that working native Radiance backend and produce checkpoint-backed TP1 parity, not reinterpret C07's direct-HIP failure as a new transport feature. This is the immediate production-enabling next slice.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.

@@ -72,6 +72,6 @@ Four-card config is exact and guarded, no shared physical GPU ownership, transfe
 
 ## Notes
 
-undefined
+This four-card optional producer must not delay LTX01–LTX05, create a fourth DiT rank or duplicate the Radiance 2.2 AQL, native config or shared-memory transport. Preserve independent three-card operation if the optional worker is not admitted.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.

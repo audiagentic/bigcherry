@@ -72,6 +72,6 @@ Production TP1 unchanged; named opt-in TP3 only, correct leader output, each gui
 
 ## Notes
 
-Do not enable multi-rank LTX as an intermediate diagnostic toggle while graph/serving safety gates are open.
+Do not enable multi-rank LTX as an intermediate diagnostic toggle while graph/serving safety gates are open. C08 only proves native AQL collectives, not safe Engine lifecycle. Reuse Radiance 2.2 session/owner/AQL/config services and preserve exactly one execution path; delete superseded glue rather than adding a second configuration or transport layer.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.
