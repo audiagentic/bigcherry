@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_035518_confirmed-that-radiance-22-de_9087",
+  "files": [
+    "docs/evidence/radiance-latest-bump/RUM09-WARM-STEP.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM09.md"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Record the live 1.17 versus 2.2 paired measurement of the 8-session warm decode step: both builds show the same cold to warm doubling from batch composition, so the earlier unexplained gap is closed; note the parity harness run-record publication defect.",
+  "timestamp-utc": "2026-11-22T03:55:18.460622Z",
+  "user-summary-candidate": "Confirmed that Radiance 2.2 decodes as fast as 1.17 on the warm multi-session round."
+}
