@@ -9,6 +9,7 @@
 #include <cerrno>
 #include <fcntl.h>
 #include <fstream>
+#include <optional>
 #include <regex>
 #include <set>
 #include <sstream>
@@ -107,34 +108,66 @@ struct Lock {
     }
     ~Lock() { if (fd >= 0) { ::flock(fd, LOCK_UN); ::close(fd); } }
 };
+// The store is written by this file, one [[live_policy_record]] block each: the text before the first block and the blocks.
+struct StoreBlocks {
+    std::string header;
+    std::vector<std::string> blocks;
+};
+StoreBlocks split_store(const std::string& text) {
+    static const std::string kBlock = "[[live_policy_record]]";
+    std::vector<size_t> starts;
+    for (size_t at = text.find(kBlock); at != std::string::npos; at = text.find(kBlock, at + 1))
+        if (at == 0 || text[at - 1] == '\n') starts.push_back(at);
+    StoreBlocks out;
+    out.header = text.substr(0, starts.empty() ? text.size() : starts.front());
+    for (size_t i = 0; i < starts.size(); ++i) {
+        const size_t end = i + 1 < starts.size() ? starts[i + 1] : text.size();
+        out.blocks.push_back(text.substr(starts[i], end - starts[i]));
+    }
+    return out;
+}
+const toml::table* block_row(const toml::table& parsed) {
+    const auto* rows = parsed["live_policy_record"].as_array();
+    return rows && rows->size() == 1 ? (*rows)[0].as_table() : nullptr;
+}
+toml::table parse_block(const std::string& block) {
+    try { return toml::parse(block); }
+    catch (const toml::parse_error& e) { invalid(std::string("unparseable live_policy_record block: ") + e.what()); }
+}
+// `text` without the block stored under `store_key` (the partial row a complete one replaces).
+std::string without_record(const std::string& text, const std::string& store_key) {
+    const auto split = split_store(text);
+    std::string kept = split.header;
+    for (const auto& block : split.blocks) {
+        const toml::table parsed = parse_block(block);
+        const auto* row = block_row(parsed);
+        if (!row) invalid("unparseable live_policy_record block");
+        if ((*row)["plan_cache_key"].value_or(std::string_view()) != store_key) kept += block;
+    }
+    return kept;
+}
+bool all_planner_measured(const Json& measurements) {
+    LivePolicyRecord probe;
+    probe.measurements = measurements;
+    return live_policy_record_complete(probe);
+}
 } // namespace
 
-void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
-                            const fs::path& manifest,
-                             const std::string& target_store_key) {
-    if (log.empty() || cache.empty() || manifest.empty())
-        invalid("--from-log, --calibration and --manifest are all required");
+LivePolicyTarget live_policy_target_from_manifest(const fs::path& manifest) {
     const auto loaded = v2::load_manifest(manifest, v2::PlanUse::serving);
     if (!loaded)
         invalid("strict v1 serving manifest rejected: " + v2::render_human("calibration-ingest", loaded.error()));
     const auto& m = loaded.value();
-    // A calibration run (bc-serve --calibration-run) measures the production plan: lab profile, an explicit live
-    // policy, and no lab experiment, so nothing but the policy separates it from the production start.
-    // Amendment 12: an engine-only manifest has no handoff, so it has no live policy to calibrate.
-    if (m.spec.intent.service.profile != v2::Profile::kLab || m.spec.experiment ||
-        !m.spec.handoff || !m.spec.handoff->placement.live_policy)
-        invalid("a calibration-run manifest (lab profile, explicit live policy, no experiment) is required");
-    const std::string key = v2::plan_cache_key(m);
-    const std::string layout = m.spec.intent.layout;
-    const std::string objective(v2::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
-    if (key.size() != 64) invalid("manifest has no measured plan-cache key");
-    if (target_store_key.size() != 64 || target_store_key.find_first_not_of("0123456789abcdef") != std::string::npos)
-        invalid("missing or invalid validated plan-store key");
+    // An engine-only manifest has no handoff, so it has no live policy to calibrate.
+    if (!m.spec.handoff) invalid("manifest has no helper hand-off to calibrate");
+    LivePolicyTarget target;
+    target.plan_key = v2::plan_cache_key(m);
+    target.layout = m.spec.intent.layout;
+    target.objective = std::string(v2::kObjectiveNames[static_cast<size_t>(m.spec.intent.service.objective)]);
+    if (target.plan_key.size() != 64) invalid("manifest has no measured plan-cache key");
     const Json raw = Json::parse(read_text(manifest));
     const Json policy_inputs = policy_calibration_inputs(raw.at("spec"));
-    const std::string expected = policy_calibration_key(policy_inputs);
-    if (target_store_key != expected)
-        invalid("target policy key differs from the verified measured manifest scope");
+    target.store_key = policy_calibration_key(policy_inputs);
     if (!m.spec.plan.engine_memory)
         invalid("manifest has no measured engine plan provenance");
     // Prefer the build's immutable source-slice identity when available.
@@ -163,12 +196,38 @@ void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
         revision = "unavailable";
     }
     require_declared_policy_calibration_inputs(policy_inputs);
-    ingest_live_policy_record(log, cache, key, layout, objective, target_store_key,
-                              LivePolicyProvenance{policy_inputs, v2::plan_cache_key(m),
-                                                   m.spec.plan.engine_memory->engine_identity,
-                                                   revision,
-                                                   raw.at("metadata").at("instance_id").get<std::string>(),
-                                                   sha256_hex(raw.at("spec").at("facts").dump())});
+    target.provenance = LivePolicyProvenance{policy_inputs, target.plan_key,
+                                             m.spec.plan.engine_memory->engine_identity,
+                                             revision,
+                                             raw.at("metadata").at("instance_id").get<std::string>(),
+                                             sha256_hex(raw.at("spec").at("facts").dump())};
+    return target;
+}
+
+void ingest_live_policy_log(const fs::path& log, const fs::path& cache,
+                            const fs::path& manifest,
+                             const std::string& target_store_key) {
+    if (log.empty() || cache.empty() || manifest.empty())
+        invalid("--from-log, --calibration and --manifest are all required");
+    // The lab calibration run: lab profile, an explicit live policy, and no lab experiment, so nothing but the policy
+    // separates it from the production start. These checks belong to this lab entry only; the owner's own running
+    // manifest is ingested through live_policy_target_from_manifest without them.
+    {
+        const auto loaded = v2::load_manifest(manifest, v2::PlanUse::serving);
+        if (!loaded)
+            invalid("strict v1 serving manifest rejected: " + v2::render_human("calibration-ingest", loaded.error()));
+        const auto& m = loaded.value();
+        if (m.spec.intent.service.profile != v2::Profile::kLab || m.spec.experiment ||
+            !m.spec.handoff || !m.spec.handoff->placement.live_policy)
+            invalid("a calibration-run manifest (lab profile, explicit live policy, no experiment) is required");
+    }
+    const LivePolicyTarget target = live_policy_target_from_manifest(manifest);
+    if (target_store_key.size() != 64 || target_store_key.find_first_not_of("0123456789abcdef") != std::string::npos)
+        invalid("missing or invalid validated plan-store key");
+    if (target_store_key != target.store_key)
+        invalid("target policy key differs from the verified measured manifest scope");
+    ingest_live_policy_record(log, cache, target.plan_key, target.layout, target.objective, target_store_key,
+                              target.provenance);
 }
 
 void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
@@ -179,16 +238,24 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
     if (log.empty() || cache.empty()) invalid("log and calibration cache are required");
     std::istringstream lines(read_text(log));
     std::string line;
-    Json record;
-    bool found = false;
+    std::optional<std::string> payload;
     while (std::getline(lines, line)) {
         if (line.rfind(kMarker, 0) != 0) continue;
-        if (found) invalid("more than one calibration record in helper log");
-        found = true;
-        record = Json::parse(line.substr(std::char_traits<char>::length(kMarker)), nullptr, false);
-        if (record.is_discarded()) invalid("malformed JSON record");
+        if (payload) invalid("more than one calibration record in helper log");
+        payload = line.substr(std::char_traits<char>::length(kMarker));
     }
-    if (!found) invalid("no settled calibration record in helper log");
+    if (!payload) invalid("no settled calibration record in helper log");
+    ingest_live_policy_marker(*payload, cache, key, layout, objective, target_store_key, provenance);
+}
+
+void ingest_live_policy_marker(const std::string& payload, const fs::path& cache,
+                               const std::string& key, const std::string& layout,
+                               const std::string& objective,
+                               const std::string& target_store_key,
+                               const LivePolicyProvenance& provenance) {
+    if (cache.empty()) invalid("calibration cache is required");
+    Json record = Json::parse(payload, nullptr, false);
+    if (record.is_discarded()) invalid("malformed JSON record");
     check_record(record, key, layout, objective);
     // Store by the independently scoped policy key, never the helper's legacy plan key.
     const std::string& store_key = target_store_key;
@@ -223,9 +290,15 @@ void ingest_live_policy_record(const fs::path& log, const fs::path& cache,
     std::string current;
     if (fs::exists(cache)) {
         current = read_text(cache);
-        // Fail closed on any malformed or duplicate existing record.
-        if (read_live_policy_record(cache, store_key))
-            invalid("plan key already calibrated (refuse duplicate)");
+        // Fail closed on any malformed or duplicate existing record. Only a partial row is ever replaced, and only by
+        // a complete one: a complete row is never replaced, and a partial row never displaces anything.
+        if (const auto existing = read_live_policy_record(cache, store_key)) {
+            if (live_policy_record_complete(*existing))
+                invalid("plan key already calibrated (refuse duplicate)");
+            if (!all_planner_measured(record.at("measurements")))
+                invalid("plan key already holds a partial record (refuse duplicate)");
+            current = without_record(current, store_key);
+        }
     }
     fs::path temp = cache.string() + ".tmp." + std::to_string(::getpid());
     try {
@@ -290,21 +363,12 @@ std::vector<std::string> prune_live_policy_store(const fs::path& cache, bool app
         invalid("missing or unsafe calibration store " + cache.string());
     Lock lock(cache.string() + ".lock");
     const std::string text = read_text(cache);
-    // Split into the header and one block per [[live_policy_record]] (the store is written by this file, one block each).
-    static const std::string kBlock = "[[live_policy_record]]";
-    std::vector<size_t> starts;
-    for (size_t at = text.find(kBlock); at != std::string::npos; at = text.find(kBlock, at + 1))
-        if (at == 0 || text[at - 1] == '\n') starts.push_back(at);
-    std::string kept = text.substr(0, starts.empty() ? text.size() : starts.front());
+    const auto split = split_store(text);
+    std::string kept = split.header;
     std::vector<std::string> removed;
-    for (size_t i = 0; i < starts.size(); ++i) {
-        const size_t end = i + 1 < starts.size() ? starts[i + 1] : text.size();
-        const std::string block = text.substr(starts[i], end - starts[i]);
-        toml::table parsed;
-        try { parsed = toml::parse(block); }
-        catch (const toml::parse_error& e) { invalid(std::string("unparseable live_policy_record block: ") + e.what()); }
-        const auto* rows = parsed["live_policy_record"].as_array();
-        const auto* row = rows && rows->size() == 1 ? (*rows)[0].as_table() : nullptr;
+    for (const auto& block : split.blocks) {
+        const toml::table parsed = parse_block(block);
+        const auto* row = block_row(parsed);
         if (!row) invalid("unparseable live_policy_record block");
         if (row->contains("calibration_inputs") && row->contains("record_schema_version")) kept += block;
         else removed.push_back(std::string((*row)["plan_cache_key"].value_or(std::string_view("?"))));

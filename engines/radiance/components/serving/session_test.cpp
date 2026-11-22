@@ -1058,6 +1058,36 @@ void unwritable_record_still_stops() {
 }
 
 // Port of Python supervisor order, helper readiness and failure cases (all card-free).
+// The calibration ingest is off by default, and enabled it can never fail serving: the fake manifest here is not a strict
+// serving manifest, so the owner cannot name an identity to store under; it warns and keeps serving.
+void calibration_ingest_never_fails_serving() {
+    for (const bool enabled : {false, true}) {
+        Case c(enabled ? "calibration-ingest-on" : "calibration-ingest-off");
+        c.helpers = 1;
+        c.capture_owner_log = true;
+        const fs::path store = c.run / "calibration.toml";
+        if (enabled) c.session.calibration_ingest_store = store;
+        c.owner();
+        c.wait_state({"running"});
+        // The helper's marker arrives while serving: nothing is stored and nothing fails.
+        const Json r = c.record();
+        for (const auto& p : r.at("processes"))
+            if (p.at("role") == "helper0")
+                std::ofstream(p.at("log").get<std::string>(), std::ios::app) << "RHP16_CALIBRATION_JSON {}\n";
+        std::this_thread::sleep_for(600ms);
+        const auto reply = ss::control(c.run, "status", 2s);
+        assert(reply && reply->at("state") == "running");
+        for (const auto& e : c.record().at("events"))
+            assert(e.at("kind") != "calibration_ingest" && e.at("kind") != "calibration_watch");
+        assert(!fs::exists(store));
+        if (enabled)
+            assert(text(c.run / "owner.log").find("calibration ingest not watching") != std::string::npos);
+        else
+            assert(text(c.run / "owner.log").find("calibration ingest") == std::string::npos);
+        assert(ss::control(c.run, "stop", 10s)->value("ok", false));
+    }
+}
+
 void helpers_order_and_killed() {
     Case c("helper-order");
     c.helpers = 2;
@@ -1899,6 +1929,7 @@ int test_main(int argc, char** argv) {
     feature_state_start_status_and_warning();
     feature_state_invalid_manifest_prevents_child();
     helpers_order_and_killed();
+    calibration_ingest_never_fails_serving();
     helper_failure_unwinds();
     helper_power_hook_boundary();
     power_hook_returned_status_errors();
