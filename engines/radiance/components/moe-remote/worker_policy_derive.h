@@ -5,6 +5,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <optional>
 #include <stdexcept>
 #include <string>
@@ -248,6 +249,23 @@ inline PolicyValues derive_policy_values(const Json& m, const Json& absent, int6
     out.half_life_observations_milli = div_ceil(Wide(n("drift_half_life_observations")) * 1000, 1,
                                                 "half_life_observations_milli");
     out.effect_noise_multiplier_milli = noise_multiplier;
+    return out;
+}
+
+// A stable digest of every derived setting (FNV-1a 64 over fixed-order decimal fields): the helper logs it when it adopts,
+// and the owner derives the same values from the stored record and compares.
+inline std::string policy_digest(const PolicyValues& v) {
+    std::string text;
+    for (uint64_t x : {uint64_t(v.effect_gate), uint64_t(v.accept_unwatermarked_heat), v.cadence_ns, v.max_moved_bytes,
+                       v.max_moves, v.min_residency_ns, v.max_heat_age_ns, v.min_samples, v.abort_cooldown_ns,
+                       v.learned_eligibility_ttl_ns, v.effect_window_samples, v.effect_min_quiet_windows,
+                       v.effect_revert_ttl_ns, v.margin_ppm, v.half_life_observations_milli,
+                       v.effect_noise_multiplier_milli})
+        text += std::to_string(x) + ';';
+    uint64_t h = 1469598103934665603ull;
+    for (unsigned char c : text) { h ^= c; h *= 1099511628211ull; }
+    char out[17];
+    std::snprintf(out, sizeof(out), "%016llx", (unsigned long long)h);
     return out;
 }
 

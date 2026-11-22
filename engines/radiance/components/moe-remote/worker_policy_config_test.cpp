@@ -150,5 +150,50 @@ int main() {
     check(tp.configure_placement(manifest,&err) && !tp.policy.enabled,
           "unsupported topology still supports static/off policy");
 
+    {   // RHP16: calibrating settings are structural, derived settings equal what the manifest conversion would give.
+        r3::policy::Settings c;
+        std::string e;
+        check(!c.calibrating_from(0,shares,2,10000,&e) && !c.calibrating_from(1000,{1},2,10000,&e) &&
+              !c.calibrating_from(1000,shares,2,1000000,&e),"calibrating needs its declared facts");
+        check(c.calibrating_from(1000,shares,2,10000,&e) && c.calibrating && c.enabled && !c.effect_gate &&
+              c.accept_unwatermarked_heat && c.cadence_ns==1000 && c.controls.max_heat_age_ns==2000 &&
+              r3::policy::controls_valid(c.controls),"calibrating settings");
+        std::vector<uint64_t> budgets{22ull<<30,22ull<<30};
+        nlohmann::json m=nlohmann::json::object();
+        m["txn_p50_ns"]=1593403198ull;m["txn_p95_ns"]=3794447513ull;m["copy_bytes_per_s"]=319377397ull;
+        m["heat_gap_max_ns"]=6955375341ull;m["heat_watermarked"]=0;m["hot_set_k"]=5931;m["marginal_error_ppm"]=31905;
+        m["marginal_observations"]=105169020ull;m["drift_half_life_observations"]=15849692ull;
+        m["observation_rate_per_s"]=1282858;m["tail_share_gain_ppm"]=98958;
+        m["tail_lane_service_ns_per_s"]=468160374ull;m["tail_lane_row_ns"]=62964;m["lane_lost_ns"]=14766582;
+        const auto v=r3::policy::derive::derive_policy_values(m,nlohmann::json::object(),2,10000,2534544,budgets);
+        r3::policy::Settings d;
+        check(d.derived_from(v,c,&e) && d.enabled && !d.calibrating && d.head_shares==shares &&
+              d.cadence_ns==v.cadence_ns && d.controls.max_moves==v.max_moves &&
+              d.controls.margin==double(v.margin_ppm)/1e6 && d.effect_gate==v.effect_gate,
+              "derived settings carry the derived values and the launch's shares");
+        // The same values through the manifest conversion are the same settings (one mapping, two entrances).
+        LivePolicy p{};
+        p.effect_gate=v.effect_gate;p.accept_unwatermarked_heat=v.accept_unwatermarked_heat;
+        p.cadence_ns=int64_t(v.cadence_ns);p.max_moves=int64_t(v.max_moves);p.max_moved_bytes=int64_t(v.max_moved_bytes);
+        p.min_residency_ns=int64_t(v.min_residency_ns);p.max_heat_age_ns=int64_t(v.max_heat_age_ns);
+        p.min_samples=int64_t(v.min_samples);p.abort_cooldown_ns=int64_t(v.abort_cooldown_ns);
+        p.learned_eligibility_ttl_ns=int64_t(v.learned_eligibility_ttl_ns);
+        p.effect_window_samples=int64_t(v.effect_window_samples);p.effect_min_quiet_windows=int64_t(v.effect_min_quiet_windows);
+        p.effect_revert_ttl_ns=int64_t(v.effect_revert_ttl_ns);p.margin_ppm=int64_t(v.margin_ppm);
+        p.half_life_observations_milli=int64_t(v.half_life_observations_milli);
+        p.effect_noise_multiplier_milli=int64_t(v.effect_noise_multiplier_milli);
+        r3::policy::Settings via_manifest;
+        check(via_manifest.from_manifest(p,shares,&e) && via_manifest.cadence_ns==d.cadence_ns &&
+              via_manifest.controls.margin==d.controls.margin &&
+              via_manifest.controls.half_life_observations==d.controls.half_life_observations &&
+              via_manifest.effect_noise_multiplier==d.effect_noise_multiplier &&
+              via_manifest.controls.max_moved_bytes==d.controls.max_moved_bytes &&
+              via_manifest.effect_gate==d.effect_gate,"derived_from and from_manifest map identically");
+        check(r3::policy::derive::policy_digest(v).size()==16 &&
+              r3::policy::derive::policy_digest(v)==r3::policy::derive::policy_digest(v),"stable digest");
+        auto changed=v;++changed.max_moves;
+        check(r3::policy::derive::policy_digest(changed)!=r3::policy::derive::policy_digest(v),"digest sees every value");
+    }
+
     puts("policy config: typed controls and invariants passed");
 }
