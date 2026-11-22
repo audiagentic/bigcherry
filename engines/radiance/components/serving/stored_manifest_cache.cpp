@@ -197,6 +197,8 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
     if (static_values.contains("handoff") && static_values["handoff"].is_object()) {
         auto& handoff = static_values["handoff"];
         handoff.erase("shm");
+        // The heat file enters through file_digests by content; its path is the installed prefix's location.
+        handoff.erase("heat");
         // Where live heat is written (by default under the start's run directory) is per-start; only whether it
         // is recorded ("off" or not) can decide the plan.
         if (handoff.contains("histogram") && handoff["histogram"].is_string() &&

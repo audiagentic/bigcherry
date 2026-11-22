@@ -212,6 +212,14 @@ int main() {
         const std::string with_histogram = ss::static_resolution_key(s);
         s.effective_values["handoff"] = {{"histogram", "/runs/second/heat.live"}};
         expect(ss::static_resolution_key(s) == with_histogram, "the run-directory heat path never enters the key");
+        s = base_with_model();
+        s.effective_values["handoff"] = {{"heat", "/prefix-a/heat/mixed.hot-first"}};
+        const std::string with_heat = ss::static_resolution_key(s);
+        s.effective_values["handoff"] = {{"heat", "/prefix-b/heat/mixed.hot-first"}};
+        expect(ss::static_resolution_key(s) == with_heat, "the installed location of the heat file never enters the key");
+        s.file_digests["heat.csv"][0] = 'b';
+        expect(ss::static_resolution_key(s) != with_heat, "changed heat bytes change the key");
+        s.effective_values["handoff"] = {{"histogram", "/runs/second/heat.live"}};
         s.effective_values["handoff"] = {{"histogram", "off"}};
         expect(ss::static_resolution_key(s) != with_histogram, "turning the heat recording off changes the key");
         s = base_with_model();
