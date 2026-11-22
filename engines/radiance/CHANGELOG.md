@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.0.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.0.0...bc-radiance-2020.0.1) (2026-11-22)
+
+
+### Fixes
+
+* **radiance:** a different installed build reuses the stored plan (runtime home is not part of the key) ([#1286](https://github.com/audiagentic/bigcherry/issues/1286)) ([a21694e](https://github.com/audiagentic/bigcherry/commit/a21694e7fc996335ddef13467b5a60ba76fe5d07))
+
 ## [2020.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.38.0...bc-radiance-2020.0.0) (2026-11-22)
 
 
