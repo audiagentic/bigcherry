@@ -1366,7 +1366,8 @@ int main(int argc, char** argv) {
              std::string(argv[3]) == "--ltx03-ffn-issued-aql" ||
              std::string(argv[3]) == "--ltx03-block-time-aql" ||
              std::string(argv[3]) == "--ltx03-wire-error-aql");
-        if (aql) ltx_test::require_aql_backend();
+        if (aql) ltx_test::require_aql_backend(argc == 5 && std::string(argv[3]) == "--ltx03-block-time-aql" &&
+                                                  std::getenv("LTX03_TIME_TP1") ? 1 : 3);
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
         const auto* row=model.find("dit.blk.0.attn1.qkv.weight");
@@ -1425,7 +1426,8 @@ int main(int argc, char** argv) {
             // LTX03_TIME_QUICK: the video lanes at one split only, for A/Bs of a pinned axis
             // (RADIANCE_TUNE) where every arm must hold the GPU lease briefly.
             const bool quick = std::getenv("LTX03_TIME_QUICK") != nullptr;
-            const bool two_cards_only = std::getenv("LTX03_TIME_TP2") != nullptr;   // skip the three-card arms
+            const bool one_card_only = std::getenv("LTX03_TIME_TP1") != nullptr;    // the lone card, whichever it is
+            const bool two_cards_only = one_card_only || std::getenv("LTX03_TIME_TP2") != nullptr;   // skip the three-card arms
             for (int variant : {0,2})
                 for (bool audio : {false,true}) {
                     if (quick && audio) continue;
@@ -1448,7 +1450,7 @@ int main(int argc, char** argv) {
                                     (long long)tokens,split[0],split[1],split[2],ms3,ms1/ms3);
                         std::fflush(stdout);
                     }
-                    if (quick && !two_cards_only) continue;
+                    if ((quick && !two_cards_only) || one_card_only) continue;
                     // the two gfx1100 cards alone: world 2, the R9700 not used
                     double ms2 = 0;
                     (void)issue_ffn(model,reg,0,audio,{16,16,0},nheads,2,tokens,true,nullptr,true,

@@ -29,6 +29,9 @@ unless a file says otherwise. No machine names appear here: card names are archi
 * WHT6 is level with one card for the block but its error against the TP1 issue is 5-7 times the exact wire's
   (relative RMS 1.4-2.5% against 0.27-0.73% per block), so the adapter stays exact-only
   (`timing-two-card-and-wire.txt`).
+* One card alone differs by architecture (`timing-one-card-per-architecture.txt`, `LTX03_TIME_TP1=1` with one visible
+  device): the gfx1201 card runs the video block in 6.7 ms and the FFN in 3.7 ms, 1.95 times faster than a gfx1100
+  card (13.0 and 6.7 ms) on the int8 GEMMs. That one card beats every multi-card tensor-parallel arm above.
 * Conclusion: with exact reductions over this host's links, tensor parallelism makes an LTX block no faster than
   one card. The Q/K statistics reduction (per-token sums of squares instead of the full-width tensor) is the one
   change expected to remove two of the large reductions; independent guidance passes on separate cards need no
