@@ -291,6 +291,7 @@ PLAN_VERIFIED = "verified"
 PLAN_SUBSTITUTED = "plan_substituted"
 PLAN_UNVERIFIED = "unverified"
 PLAN_EXPLICIT_DECLINE = "explicit_declined"
+PLAN_REQUEST_NOT_APPLIED = "request_not_applied"
 
 
 def _classify(
@@ -298,6 +299,7 @@ def _classify(
     combined_output: str, rccl_json: list | None,
     requested_algorithm: str | None = None, requested_protocol: str | None = None,
     observed_algorithm: str | None = None, observed_protocol: str | None = None,
+    requested_channels: int | None = None, observed_channels: int | None = None,
 ) -> tuple[str, bool | None, str, str | None]:
     """Return (classification, correct, detail, plan_verification). Order
     matters: check the most specific/actionable signal before falling back
@@ -356,10 +358,17 @@ def _classify(
     for record in rccl_json:
         if not isinstance(record, dict) or "wrong" not in record:
             return HARNESS_FAILURE, None, f"malformed RCCL JSON record: {record!r}", None
-        try:
-            total_wrong += int(record["wrong"])
-        except (TypeError, ValueError):
-            return HARNESS_FAILURE, None, f"non-integer 'wrong' field: {record['wrong']!r}", None
+        # RCCL Tests emits decimal count strings. int() would also accept
+        # booleans/floats or signed values, allowing false zeros or
+        # cancellation across multiple pass records.
+        wrong = record["wrong"]
+        valid = (
+            type(wrong) is int and wrong >= 0
+            or isinstance(wrong, str) and re.fullmatch(r"[0-9]+", wrong) is not None
+        )
+        if not valid:
+            return HARNESS_FAILURE, None, f"invalid nonnegative 'wrong' count: {wrong!r}", None
+        total_wrong += int(wrong)
 
     if total_wrong != 0:
         return (
@@ -399,6 +408,20 @@ def _classify(
                 f"selected {observed_algorithm}/{observed_protocol}",
                 PLAN_SUBSTITUTED,
             )
+        # RCCL Tests -M 1 only OBSERVES the channel count: build_command
+        # forwards algorithm/protocol but has no proven channel-control
+        # mechanism. An exact observed count can match by coincidence.
+        # Keep historical algorithm/protocol-only rows unchanged, but never
+        # label an explicit channel candidate as executed/verified.
+        if requested_channels is not None:
+            return (
+                HARNESS_FAILURE, None,
+                (f"requested {requested_channels} channel(s), but the channel "
+                "request was not applied by the harness; observed count "
+                f"{observed_channels if observed_channels is not None else 'unknown'} "
+                "is not candidate execution proof"),
+                PLAN_REQUEST_NOT_APPLIED,
+            )
         return PASS, True, "clean exit, correctness check passed, plan verified", PLAN_VERIFIED
 
     return PASS, True, "clean exit, correctness check passed", None
@@ -417,10 +440,13 @@ _OBSERVED_PLAN_RE = re.compile(
 
 
 def _parse_observed_plan(combined_output: str) -> tuple[str | None, str | None, int | None]:
-    match = _OBSERVED_PLAN_RE.search(combined_output)
-    if match is None:
+    # -M 1 may produce multiple in-place/out-of-place rows. A first-row
+    # match alone does not attest the plan used by later passes. Return
+    # unverified if any observed algo/protocol/channel differs.
+    plans = {match.groups() for match in _OBSERVED_PLAN_RE.finditer(combined_output)}
+    if len(plans) != 1:
         return None, None, None
-    algo, proto, channels = match.groups()
+    algo, proto, channels = plans.pop()
     return algo, proto, int(channels)
 
 
@@ -601,6 +627,7 @@ def run_case(
         combined_output=combined_output, rccl_json=rccl_json,
         requested_algorithm=case.algorithm, requested_protocol=case.protocol,
         observed_algorithm=observed_algorithm, observed_protocol=observed_protocol,
+        requested_channels=case.channels, observed_channels=observed_channels,
     )
 
     # compatibility.revision_id raises InsufficientCompatibilityIdentity if

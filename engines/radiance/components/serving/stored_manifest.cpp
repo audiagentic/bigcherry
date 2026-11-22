@@ -61,6 +61,26 @@ std::vector<std::string> selected(const v2::Manifest& m) {
         names.push_back(helper.gpu);
     return names;
 }
+// The JSON pointer of the first member where two documents differ, with both values (arrays compare by index).
+std::string first_difference(const Json& a, const Json& b, const std::string& at = "") {
+    if (a.is_object() && b.is_object()) {
+        for (const auto& [key, value] : a.items()) {
+            if (!b.contains(key))
+                return at + "/" + key + " (absent now; stored " + value.dump() + ")";
+            if (value != b.at(key))
+                return first_difference(value, b.at(key), at + "/" + key);
+        }
+        for (const auto& [key, value] : b.items())
+            if (!a.contains(key))
+                return at + "/" + key + " (absent when stored; now " + value.dump() + ")";
+    }
+    if (a.is_array() && b.is_array() && a.size() == b.size()) {
+        for (size_t i = 0; i < a.size(); ++i)
+            if (a[i] != b[i])
+                return first_difference(a[i], b[i], at + "/" + std::to_string(i));
+    }
+    return (at.empty() ? std::string("/") : at) + " (stored " + a.dump() + ", now " + b.dump() + ")";
+}
 } // namespace
 
 Json execution_projection(const Json& spec) {
@@ -140,9 +160,21 @@ ReplayResult authenticate_replay(std::string_view bytes, std::string_view source
             saved_spec.at("calibration") != evidence.effective_spec.at("calibration"))
             return refuse(ReplayRefusal::calibration, Code::calibration_invalid, "spec.calibration",
                           "stored calibration no longer matches current seeded/refit records");
-        if (execution_projection(saved_spec) != execution_projection(evidence.effective_spec))
+        Json stored_projection = execution_projection(saved_spec);
+        const Json current_projection = execution_projection(evidence.effective_spec);
+        // A configuration that leaves the n-gram tier to the engine ("auto") has it resolved by the measuring run
+        // (the rank receipt of --plan-memory), and the stored manifest records that tier. The replay's draft is
+        // unmeasured, so it still says "auto": that is the same configuration, not a different one. An explicit tier
+        // in the current configuration is compared as written.
+        if (const Json* now = current_projection.contains("processes")
+                                  ? &current_projection.at("processes").at("engine").at("execution").at("ngram_placement")
+                                  : nullptr;
+            now && *now == "auto")
+            stored_projection["processes"]["engine"]["execution"]["ngram_placement"] = "auto";
+        if (stored_projection != current_projection)
             return refuse(ReplayRefusal::execution_projection, Code::plan_mismatch, "spec",
-                          "stored semantic execution projection differs from the current config/variants");
+                          "stored semantic execution projection differs from the current config/variants at " +
+                              first_difference(stored_projection, current_projection));
     } catch (const std::exception& error) {
         return refuse(ReplayRefusal::missing_gate, Code::invalid_state, "replay.evidence",
                       std::string("cannot validate current projection or inventory: ") + error.what());

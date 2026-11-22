@@ -418,7 +418,10 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < cards.size(); ++i)
             plan_doc["vram"]["cards"].push_back(
                 {{"capacity", 10}, {"free", 10}, {"engine_expert_plane", 0}, {"expert_unit_max", 1}});
-        if (m.value("ngram_placement", std::string()) == "ram")
+        // As the engine does for an "auto" tier: it resolves one (RAM here) and its rank receipt names the choice.
+        const std::string requested_ngram = m.value("ngram_placement", std::string());
+        const std::string ngram = requested_ngram == "auto" ? "ram" : requested_ngram;
+        if (ngram == "ram")
             plan_doc["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
                                         {"residence", "pinned"}, {"from", "engine plan (fake measurement)"},
                                         {"remedy", ""}});
@@ -430,6 +433,8 @@ int main(int argc, char** argv) {
         json ranks = {{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
                       {"gpu", json::array()},
                       {"resident_other_bytes", resident_other_bytes}};
+        if (requested_ngram == "auto")
+            ranks["ngram_placement"] = ngram;
         for (const auto& bdf : cards)
             ranks["gpu"].push_back({{"bdf", bdf}, {"required_bytes", 10}, {"fixed_bytes", 1},
                                     {"claimable_bytes", 10}, {"evidence", "rad0011 fake measurement"}});

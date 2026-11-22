@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.63.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.3...bc-platform-1.63.4) (2026-11-22)
+
+
+### Fixes
+
+* **campaign:** require verified RCCL qualification before benchmark ([#1394](https://github.com/audiagentic/bigcherry/issues/1394)) ([1448943](https://github.com/audiagentic/bigcherry/commit/1448943beedcb45949861a5d5058710a81666db3))
+
+## [1.63.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.2...bc-platform-1.63.3) (2026-11-22)
+
+
+### Fixes
+
+* **profiling:** refuse unattested RCCL channel candidates ([#1390](https://github.com/audiagentic/bigcherry/issues/1390)) ([e832084](https://github.com/audiagentic/bigcherry/commit/e8320843c3d0ebe4d39a059c17d9beb3c5fdf89a))
+* **profiling:** reject conflicting RCCL plan observations ([#1391](https://github.com/audiagentic/bigcherry/issues/1391)) ([750e52e](https://github.com/audiagentic/bigcherry/commit/750e52eedede57076abaf589f12cefe88167936e))
+* **profiling:** require nonnegative RCCL error counts ([#1393](https://github.com/audiagentic/bigcherry/issues/1393)) ([17e3ed1](https://github.com/audiagentic/bigcherry/commit/17e3ed16f677d55aa6a4f4255196e46defa62e62))
+
 ## [1.63.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.1...bc-platform-1.63.2) (2026-11-22)
 
 
