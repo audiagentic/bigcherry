@@ -1,0 +1,14 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_105851_no-user-visible-change-on-a-ma_5899",
+  "files": [
+    "engines/radiance/components/serving/manifest_power.cpp",
+    "engines/radiance/components/serving/manifest_power_test.cpp",
+    "tools/bigcherry/hardware/lease.py",
+    "tools/tests/hardware/test_lease.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "GPU lease authorization for power apply names the holder by AGENT_INSTANCE only: the CLAUDE_RC_NAME fallback is removed in the native owner and the Python lease check, and a missing key now denies in both.",
+  "timestamp-utc": "2026-11-22T10:58:51.385363Z",
+  "user-summary-candidate": "No user-visible change on a managed host: power apply already required AGENT_INSTANCE."
+}

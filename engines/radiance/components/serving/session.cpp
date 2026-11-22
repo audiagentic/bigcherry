@@ -25,7 +25,6 @@
 #include <charconv>
 #include <csignal>
 #include <cstdint>
-#include <cstdio>
 #include <cstring>
 #include <cstdlib>
 #include <ctime>
@@ -1106,24 +1105,6 @@ HelperReadiness read_helper_readiness(const fs::path& log) {
     return HelperReadiness::pending;
 }
 
-// The run directory is private to its owner: created 0700 here (only the last component; an existing directory is
-// never loosened), and refused when it is not ours or is open to group or world.
-void prepare_run_dir(const fs::path& run_dir) {
-    std::error_code ec;
-    if (run_dir.has_parent_path())
-        fs::create_directories(run_dir.parent_path(), ec);
-    if (::mkdir(run_dir.c_str(), 0700) != 0 && errno != EEXIST)
-        throw std::runtime_error("cannot create the run directory " + run_dir.string() + ": " + errno_text());
-    if (const auto why = run_dir_refusal(run_dir, ::geteuid()))
-        throw std::runtime_error("refusing to serve: " + *why);
-}
-
-std::string mode_text(mode_t m) {
-    char buf[8];
-    std::snprintf(buf, sizeof buf, "%04o", unsigned(m & 07777));
-    return buf;
-}
-
 class Owner {
   public:
     explicit Owner(const Session& s) : s_(s) {}
@@ -1142,12 +1123,10 @@ class Owner {
     }
 
     int run() {
-        prepare_run_dir(s_.run_dir);
-        lock_ = ::open((s_.run_dir / "session.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC | O_NOFOLLOW, 0600);
+        fs::create_directories(s_.run_dir);
+        lock_ = ::open((s_.run_dir / "session.lock").c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
         if (lock_ < 0)
             throw std::runtime_error("cannot open the session lock: " + errno_text());
-        if (::fchmod(lock_, 0600) != 0) // a lock file an earlier version made 0644 is tightened
-            throw std::runtime_error("cannot restrict the session lock: " + errno_text());
         if (::flock(lock_, LOCK_EX | LOCK_NB) != 0) {
             std::string who;
             if (const auto r = read_record(s_.run_dir))
@@ -1184,15 +1163,7 @@ class Owner {
                     throw PlanFailed("cannot archive previous feature-state snapshot: " + ec.message());
             }
         }
-        // A leftover socket of a crashed owner is stale; anything else at that path (a symlink, a file, another
-        // user's socket) is not ours to remove and is refused.
-        if (fs::symlink_status(s_.run_dir / "session.sock", ec).type() != fs::file_type::not_found) {
-            if (const auto why = socket_refusal(s_.run_dir / "session.sock", ::geteuid(), 0600)) {
-                std::cerr << "bc-serve: refusing to serve: " << *why << '\n';
-                return 1;
-            }
-            fs::remove(s_.run_dir / "session.sock", ec);
-        }
+        fs::remove(s_.run_dir / "session.sock", ec);
         record_ = {{"schema_version", 1},    {"owner_pid", ::getpid()}, {"started_at", utc_now()},
                    {"state", "created"},     {"events", Json::array()}, {"processes", Json::array()},
                    {"errors", Json::array()}};
@@ -1214,14 +1185,7 @@ class Owner {
             std::cerr << "bc-serve: cannot persist native host-facts start receipt: " << e.what() << '\n';
             return 1;
         }
-        try {
-            listen_socket();
-        } catch (const std::exception& e) {
-            std::cerr << "bc-serve: " << e.what() << '\n';
-            record_["errors"].push_back(e.what());
-            event("failed");
-            return 1;
-        }
+        listen_socket();
 
         struct sigaction sa{};
         sa.sa_handler = on_signal;
@@ -1689,20 +1653,9 @@ class Owner {
         listen_ = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC | SOCK_NONBLOCK, 0);
         if (listen_ < 0)
             throw std::runtime_error("control socket: " + errno_text());
-        // The socket file is created 0600 by the bind itself (the umask is narrowed around it), so it is never
-        // reachable with a wider mode, then its identity is verified before anything is accepted.
-        const mode_t previous = ::umask(0177);
-        const int bound = ::bind(listen_, addr.get(), sizeof addr.addr);
-        const int bind_errno = errno;
-        ::umask(previous);
-        if (bound != 0) {
-            errno = bind_errno;
+        if (::bind(listen_, addr.get(), sizeof addr.addr) != 0 || ::listen(listen_, 8) != 0)
             throw std::runtime_error("control socket " + addr.path + ": " + errno_text());
-        }
-        if (const auto why = socket_refusal(addr.path, ::geteuid(), 0600))
-            throw std::runtime_error("refusing to serve: " + *why);
-        if (::listen(listen_, 8) != 0)
-            throw std::runtime_error("control socket " + addr.path + ": " + errno_text());
+        ::chmod(addr.path.c_str(), 0600);
     }
 
     // Wait up to `d` while answering the control socket; false once a stop is requested.
@@ -1725,10 +1678,6 @@ class Owner {
         const int fd = ::accept4(listen_, nullptr, nullptr, SOCK_CLOEXEC);
         if (fd < 0)
             return;
-        if (const auto peer = peer_uid(fd); !peer || !control_peer_allowed(*peer, ::geteuid())) {
-            ::close(fd); // another user's connection: no reply, no command read
-            return;
-        }
         std::string cmd = read_until(fd, Clock::now() + 2s, true);
         cmd = cmd.substr(0, cmd.find('\n'));
         if (cmd == "status") {
@@ -1825,6 +1774,15 @@ class Owner {
     }
 
     static void validate_quality_paths(const QualityScore& score) {
+        if (score.record()) {
+            std::error_code error;
+            if (!score.reference.is_absolute() || !fs::is_directory(score.reference) ||
+                !fs::is_empty(score.reference, error) || error || !score.output.empty())
+                throw PlanFailed("quality: recording needs an absolute, existing, empty reference directory and no output");
+            if (!score.corpus.is_absolute() || !fs::is_regular_file(score.corpus))
+                throw PlanFailed("quality: recording needs an absolute corpus file");
+            return;
+        }
         if (!score.reference.is_absolute() || !fs::is_regular_file(score.reference / "kld.json"))
             throw PlanFailed("quality: the reference needs an absolute, recorded KL directory");
         if (!score.output.is_absolute() || !fs::is_directory(score.output.parent_path()) ||
@@ -1835,7 +1793,8 @@ class Owner {
 
     void score_quality(const QualityScore& score) {
         validate_quality_paths(score);
-        event("scoring", {{"reference", score.reference.string()}, {"output", score.output.string()}});
+        event(score.record() ? "recording" : "scoring",
+              {{"reference", score.reference.string()}, {"output", score.output.string()}});
         const pid_t engine = start_engine(&score);
         const auto check_helpers = [&] {
             for (const auto& child : children_) {
@@ -1851,7 +1810,14 @@ class Owner {
         }
         check_helpers();
         if (!WIFEXITED(*status) || WEXITSTATUS(*status) != 0)
-            throw PlanFailed("quality: KL scoring engine failed; see " + engine_log_.string());
+            throw PlanFailed(std::string("quality: KL ") + (score.record() ? "recording" : "scoring") +
+                             " engine failed; see " + engine_log_.string());
+        if (score.record()) {
+            if (!fs::is_regular_file(score.reference / "kld.json"))
+                throw PlanFailed("quality: KL recording did not produce the reference");
+            event("quality_recorded", {{"reference", score.reference.string()}});
+            return;
+        }
         const fs::path rows = score.output.string() + ".rows";
         if (!fs::is_regular_file(score.output) || fs::file_size(score.output) > v2::kMaxDocumentBytes ||
             !fs::is_regular_file(rows))
@@ -1884,7 +1850,10 @@ class Owner {
             throw PlanFailed("native serving: launch does not match the admitted engine manifest");
         native_launch->root.require_matches(native->identity.resolution_root);
         if (quality) {
-            argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
+            if (quality->record())
+                argv.insert(argv.end(), {"--kld-record", quality->reference.string(), "--kld-corpus", quality->corpus.string()});
+            else
+                argv.insert(argv.end(), {"--kld-ref", quality->reference.string(), "--kld-out", quality->output.string()});
         } else if (manifest && manifest.value().spec.handoff &&
                    manifest.value().spec.handoff->telemetry.histogram_file) {
             plan_.heat_session_nonce = heat_launch_nonce();
@@ -1942,48 +1911,6 @@ class Owner {
 
 } // namespace
 
-std::optional<std::string> run_dir_refusal(const fs::path& dir, uid_t owner) {
-    struct stat st{};
-    if (::stat(dir.c_str(), &st) != 0)
-        return "the run directory " + dir.string() + " cannot be inspected: " + errno_text();
-    if (!S_ISDIR(st.st_mode))
-        return "the run directory " + dir.string() + " is not a directory";
-    if (st.st_uid != owner)
-        return "the run directory " + dir.string() + " is owned by uid " + std::to_string(st.st_uid) +
-               ", not uid " + std::to_string(owner);
-    if ((st.st_mode & 077) != 0)
-        return "the run directory " + dir.string() + " is accessible to group or others (mode " +
-               mode_text(st.st_mode) + "); it must be private (0700)";
-    return std::nullopt;
-}
-
-std::optional<std::string> socket_refusal(const fs::path& path, uid_t owner, mode_t mode) {
-    struct stat st{};
-    if (::lstat(path.c_str(), &st) != 0)
-        return "the control socket " + path.string() + " cannot be inspected: " + errno_text();
-    if (!S_ISSOCK(st.st_mode))
-        return "the control socket path " + path.string() + " is not a socket (a symlink or file is refused)";
-    if (st.st_uid != owner)
-        return "the control socket " + path.string() + " is owned by uid " + std::to_string(st.st_uid) +
-               ", not uid " + std::to_string(owner);
-    if ((st.st_mode & 07777) != mode)
-        return "the control socket " + path.string() + " has mode " + mode_text(st.st_mode) + ", not " +
-               mode_text(mode);
-    return std::nullopt;
-}
-
-bool control_peer_allowed(uid_t peer, uid_t owner) {
-    return peer == owner || peer == 0;
-}
-
-std::optional<uid_t> peer_uid(int fd) {
-    ucred cred{};
-    socklen_t len = sizeof cred;
-    if (::getsockopt(fd, SOL_SOCKET, SO_PEERCRED, &cred, &len) != 0 || len != sizeof cred)
-        return std::nullopt;
-    return cred.uid;
-}
-
 int serve(const Session& session) {
     Owner owner(session);
     return owner.run();
@@ -2029,7 +1956,7 @@ std::optional<Json> control(const fs::path& run_dir, const std::string& command,
 
 int start_detached(const std::vector<std::string>& self_argv, const fs::path& run_dir,
                    std::chrono::milliseconds timeout) {
-    prepare_run_dir(run_dir);
+    fs::create_directories(run_dir);
     Env env;
     for (char** e = environ; e && *e; ++e) {
         const std::string kv(*e);

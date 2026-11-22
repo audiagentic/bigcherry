@@ -359,6 +359,17 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    const std::string record_dir = arg_after(argc, argv, "--kld-record");
+    if (!record_dir.empty()) {
+        const std::string corpus = arg_after(argc, argv, "--kld-corpus");
+        if (corpus.empty() || !std::filesystem::path(record_dir).is_absolute() ||
+            !std::filesystem::path(corpus).is_absolute() || !std::filesystem::is_regular_file(corpus) ||
+            !arg_after(argc, argv, "--kld-ref").empty() || !arg_after(argc, argv, "--kld-out").empty() ||
+            !arg_after(argc, argv, "--bc-heat-launch-nonce").empty())
+            return 9;
+        std::ofstream(std::filesystem::path(record_dir) / "kld.json") << json{{"positions", 1}}.dump() << '\n';
+        return 0;
+    }
     const std::string reference = arg_after(argc, argv, "--kld-ref");
     if (!reference.empty()) {
         const std::string output = arg_after(argc, argv, "--kld-out");

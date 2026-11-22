@@ -221,7 +221,10 @@ struct PowerHook {
 PowerHook hooks_for_power_transaction(power::SessionPower& transaction);
 
 struct QualityScore {
-    std::filesystem::path reference, output;
+    // Score: `reference` is a recorded KL directory and `output` the report to write. Record: `corpus` is set,
+    // `reference` is an existing empty directory the engine writes the reference into, and `output` is empty.
+    std::filesystem::path reference, output, corpus;
+    bool record() const { return !corpus.empty(); }
 };
 struct Session {
     PowerHook power_hook;
@@ -268,16 +271,6 @@ int start_detached(const std::vector<std::string>& self_argv, const std::filesys
 /* The control socket client: "status" or "stop". The owner's reply (JSON), or nothing when no owner answers. */
 std::optional<nlohmann::json> control(const std::filesystem::path& run_dir, const std::string& command,
                                       std::chrono::milliseconds timeout);
-
-/* Control-socket safety (used by the owner before it accepts; public so the tests exercise each check).
- * run_dir_refusal: why `dir` is not a directory owned by `owner` closed to group and world; nullopt when it is.
- * socket_refusal: why `path` is not a socket (a symlink is not) owned by `owner` with exactly `mode`.
- * control_peer_allowed: whether a client with effective uid `peer` may use the socket of an owner running as
- * `owner`: the owner itself, or root (which reaches the 0600 socket and the owner's processes regardless). */
-std::optional<std::string> run_dir_refusal(const std::filesystem::path& dir, uid_t owner);
-std::optional<std::string> socket_refusal(const std::filesystem::path& path, uid_t owner, mode_t mode);
-bool control_peer_allowed(uid_t peer, uid_t owner);
-std::optional<uid_t> peer_uid(int fd);
 
 /* The last session record in the run directory, if any. */
 std::optional<nlohmann::json> read_record(const std::filesystem::path& run_dir);

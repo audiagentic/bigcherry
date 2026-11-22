@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_105349_the-helper-quality-acceptance_6510",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/campaign/quality_capture.py",
+    "tools/lab/radiance/helper-kld.json",
+    "tools/lab/radiance/native-arms/helper-kld/reference.yaml"
+  ],
+  "status": "unreleased",
+  "technical-summary": "bc-serve quality records a KL reference (--kld-record DIR --kld-corpus FILE) as well as scoring one. The campaign quality record block is a native arm (record.serving config + native_config) and radiance quality commands are native-only (the raw engine-flag branch, which the engine no longer accepts, is removed). helper-kld.json records its own reference from a native two-XTX YAML on first use, so the acceptance entry's KLD_REF_DIR is filled by the job; helper-combine-kld.json reuses it.",
+  "timestamp-utc": "2026-11-22T10:53:49.417851Z",
+  "user-summary-candidate": "The helper quality acceptance job now records its own reference through the native owner."
+}

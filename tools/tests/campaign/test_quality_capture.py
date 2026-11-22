@@ -57,8 +57,11 @@ class QualityBlockTests(unittest.TestCase):
             ref.mkdir()
             (ref / "logits.bin").write_bytes(b"x")
             qc.check_reference_state(reuse)
+            yaml = Path(tmp) / "r.yaml"
+            yaml.write_text("cards: [0]\n", encoding="utf-8")
             record = qc.validate_quality_block(self.block(
-                reference_dir=str(ref), corpus="c", record={"args": [], "environment": {}}), ["a", "b"])
+                reference_dir=str(ref), corpus="c",
+                record={"serving": {"config": "x", "native_config": str(yaml)}}), ["a", "b"])
             with self.assertRaisesRegex(ValueError, "already holds"):
                 qc.check_reference_state(record)
 
@@ -79,24 +82,49 @@ class RadianceQualityCommandTests(unittest.TestCase):
                 "/b/radiance_home/bin/bc-serve", "quality", "qwen27b-2xtx", "--native-config", "/arms/attn-native.yaml",
                 "--model-root", "/models", "--engine-binary", "/b/bin/radiance", "--run-dir", "/run/attn-native.owner",
                 "--kld-ref", "/ref", "--kld-out", "/run/attn-native.kld.json"))
-            with self.assertRaisesRegex(ValueError, "must already be recorded"):
-                rad.quality_command("record", arm, {}, Path("/run"), Path("/b/bin/radiance"), Path("/m.rad"), quality)
             with self.assertRaisesRegex(ValueError, "quality.args must be empty"):
                 rad.quality_command("score", arm, {}, Path("/run"), Path("/b/bin/radiance"), Path("/m.rad"),
                                     {**quality, "args": ["--tp", "2"]})
 
-    def test_record_and_score_invocations(self):
+    def test_record_and_score_invocations_are_the_owners(self):
+        from types import SimpleNamespace
         rad = adapter("radiance")
-        arm = {"name": "on", "model": Path("/m.rad"), "settings": {}}
-        record = rad.quality_command("record", arm, {"A": "1"}, Path("run"), Path("/b/bin/radiance"), Path("/m.rad"), self.quality)
-        self.assertEqual(record.argv, (str(Path("/b/bin/radiance")), "--model", str(Path("/m.rad")), "--tp", "1",
-                                       "--kld-record", "/ref", "--kld-corpus", "/c.jsonl"))
-        self.assertIsNone(record.result_path)
-        score = rad.quality_command("score", arm, {"A": "1"}, Path("run"), Path("/b/bin/radiance"), Path("/m.rad"), self.quality)
-        self.assertEqual(score.argv[-4:], ("--kld-ref", "/ref", "--kld-out", str(Path("run/on.kld.json"))))
-        self.assertEqual(score.env, {"A": "1"})
-        with self.assertRaises(ValueError):
-            rad.quality_command("other", arm, {}, Path("run"), Path("/b"), Path("/m"), self.quality)
+        arm = {"name": "reference", "model": Path("/m.rad"), "settings": {},
+               "serving": {"config": "flashnext-tp2xtx", "native_config": "/arms/reference.yaml"}}
+        with patch("bigcherry.engine_adapters.radiance._host", return_value=SimpleNamespace(model_root="/models")), \
+                patch.dict(os.environ, {"BC_MODEL_ROOT": ""}):
+            record = rad.quality_command("record", arm, {"A": "1"}, Path("/run"), Path("/b/bin/radiance"), Path("/m.rad"),
+                                         {**self.quality, "args": []})
+            self.assertEqual(record.argv, (
+                "/b/radiance_home/bin/bc-serve", "quality", "flashnext-tp2xtx", "--native-config", "/arms/reference.yaml",
+                "--model-root", "/models", "--engine-binary", "/b/bin/radiance", "--run-dir", "/run/reference.owner",
+                "--kld-record", "/ref", "--kld-corpus", "/c.jsonl"))
+            self.assertIsNone(record.result_path)
+            self.assertEqual(record.env, {"A": "1"})
+            with self.assertRaisesRegex(ValueError, "needs quality.corpus"):
+                rad.quality_command("record", arm, {}, Path("/run"), Path("/b/bin/radiance"), Path("/m.rad"),
+                                    {"reference_dir": "/ref", "args": []})
+            with self.assertRaises(ValueError):
+                rad.quality_command("other", arm, {}, Path("/run"), Path("/b"), Path("/m"), {**self.quality, "args": []})
+
+    def test_a_radiance_arm_without_a_native_yaml_has_no_quality_run(self):
+        with self.assertRaisesRegex(ValueError, "native arm"):
+            adapter("radiance").quality_command("score", {"name": "raw", "model": Path("/m.rad"), "settings": {}}, {},
+                                                Path("run"), Path("/b/bin/radiance"), Path("/m.rad"), {**self.quality, "args": []})
+
+    def test_the_record_block_is_a_native_arm(self):
+        base = {"reference_dir": "ref", "args": [], "thresholds": THRESHOLDS, "corpus": "c.jsonl"}
+        with tempfile.TemporaryDirectory() as tmp:
+            yaml = Path(tmp) / "reference.yaml"
+            yaml.write_text("cards: [0]\n", encoding="utf-8")
+            good = {**base, "record": {"serving": {"config": "flashnext-tp2xtx", "native_config": str(yaml)}}}
+            self.assertEqual(qc.validate_quality_block(good, ["a", "b"])["record"]["serving"]["native_config"], str(yaml))
+            for bad in ({**base, "record": {"args": [], "environment": {}}},
+                        {**base, "record": {"serving": {"config": "x"}}},
+                        {**base, "record": {"serving": {"config": "x", "native_config": str(Path(tmp) / "none.yaml")}}},
+                        {**base, "record": {"serving": {"config": "x", "native_config": str(yaml), "set": {}}}}):
+                with self.subTest(bad=bad), self.assertRaises(ValueError):
+                    qc.validate_quality_block(bad, ["a", "b"])
 
     def test_llamacpp_has_no_quality_mode(self):
         self.assertIsNone(adapter("llamacpp").quality_command("score", {}, {}, Path("."), Path("b"), Path("m"), {}))
@@ -117,8 +145,9 @@ class RunQualityTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             ref = Path(tmp) / "new" / "ref"
             names = ["control", "good"]
+            (Path(tmp) / "r.yaml").write_text("cards: [0]\n", encoding="utf-8")
             quality = qc.validate_quality_block({"reference_dir": str(ref), "args": [], "thresholds": THRESHOLDS,
-                                                 "corpus": "c.jsonl", "record": {"args": [], "environment": {}}}, names)
+                                                 "corpus": "c.jsonl", "record": {"serving": {"config": "x", "native_config": str(Path(tmp) / "r.yaml")}}}, names)
             prepared = {n: {"binary": Path("b/bin/radiance"), "model": Path("m"), "env": {}, "settings": {}, "manifest": None} for n in names}
             qc.run_quality_capture(adapter=FakeAdapter(), quality=quality, prepared=prepared, names=names,
                                    output=Path(tmp) / "out", reference_env={})

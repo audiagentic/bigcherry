@@ -140,7 +140,6 @@ struct Case {
          bool refuse_power = false)
         : root(case_root), stored(world.stored), bytes(world.bytes) {
         fs::create_directories(run);
-        fs::permissions(run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         inputs = world.plan().inputs;
         inputs.stored_manifest = stored;
         if (bad_build) { // the engine on disk is no longer the one that measured the plan

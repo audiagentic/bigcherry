@@ -39,15 +39,10 @@ The model intentionally simplifies the pinned Radiance source: `core/runtime/ctx
 
 The feature must remain experimental until the per-plan GPU/parity/quality acceptance gates pass. See `docs/planning/active/patching-radiance-heat-placement/README.md` and `docs/evidence/RHP01/mock-results.json`.
 
-## RHP07-01: trace-driven placement simulator
+## Native placement-policy replay
 
-`placement_trace.py` (v1 JSONL route-trace format, reader, seeded synthetic traces) and `placement_sim.py` (static hot-first
-against cost-aware, hysteretic dynamic placement on modelled critical-path latency). Host only: it never touches
-`r3_moe_worker`, the mailbox, radiance's mover or live ownership. The latency model constants are placeholders until RHP07-02
-calibrates them against measured traces, so its results show a policy's behaviour (moves, stability, adapting to a shift),
-not a real speedup.
-
-```bash
-python3 tools/lab/radiance/heat-placement/placement_sim.py --synth shift       # stationary | shift | flipflop | concurrent | prefill_burst
-python3 -m unittest tools.tests.radiance.test_placement_sim
-```
+The component-native `r3_policy_replay` runs the worker's real heat accounting
+and planner over cumulative snapshots captured by `record_heat_series.py`.
+The host-only policy invariant tests are in `worker_policy_replay_test.cpp`
+under `engines/radiance/components/moe-remote`; the retired synthetic cost
+model was not a production latency oracle.
