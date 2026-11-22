@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.1.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.1.0...bc-radiance-2020.1.1) (2026-11-22)
+
+
+### Performance
+
+* **serving:** compute the runtime identity once per start ([#1305](https://github.com/audiagentic/bigcherry/issues/1305)) ([bbd998b](https://github.com/audiagentic/bigcherry/commit/bbd998b7f30b24746060c7eba2aa35bcd38539d8))
+
 ## [2020.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.0.1...bc-radiance-2020.1.0) (2026-11-22)
 
 

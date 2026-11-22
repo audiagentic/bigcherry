@@ -7,11 +7,11 @@ Scope: one generic, swappable Radiance prefill policy behind a single option; re
 
 ## Summary
 
-`--prefill-governor SPEC` (serving v2 `prefill_governor`) chooses which waiting prompts may start prefilling and in
-what order prefill work is walked. `kind=arrival` (the empty spec) is the engine's own order; `kind=cap` is rad0034's
-concurrent long-prefill limit with rad0035's threshold; `kind=budget` holds the prompt left in flight within a factor
-of the largest request, with a reservation for a prompt waiting past `age_ms`. `order=remaining` and `age_ms` are
-rad0035's ordering, common to every kind.
+`--prefill-governor SPEC` (`prefill_governor` in the manifest, edition 3) chooses which waiting prompts may start
+prefilling and in what order prefill work is walked. `kind=arrival` (the empty spec) is the engine's own order;
+`kind=cap` limits concurrent long prefills above a length threshold; `kind=budget` holds the prompt left in flight
+within a factor of the largest request, with a reservation for a prompt waiting past `age_ms`. `order=remaining`
+and `age_ms` give the ordering, common to every kind.
 
 ## Outcome
 

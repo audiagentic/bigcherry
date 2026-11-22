@@ -1,0 +1,22 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_055820_corrected-the-radiance-runbook_8332",
+  "files": [
+    "docs/reference/engines/radiance/RUNBOOK.md",
+    "docs/reference/engines/radiance/ENHANCEMENTS.md",
+    "engines/radiance/components/serving/contract/serving.toml",
+    "docs/design/serving-manifest-v2/serving-fields.md",
+    "docs/design/serving-manifest-v2/serving-manifest.v3.schema.json",
+    "engines/radiance/components/moe-remote/component.toml",
+    "docs/planning/completed/patching-radiance-upstream/RUM12.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM02.md"
+  ],
+  "plan-item-ids": [
+    "RUM12",
+    "RUM02"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Runbook examples use a shipped config and verified bc-serve verbs, with the config count no longer hard-coded; current contract and component text names the native YAML x-bigcherry authority (edition 3) instead of the retired layouts file and serving v2; RUM12 acceptance states the model identity precisely and the scope of the cross-prefix carry proof; RUM02 records how the rad0016 card canary is covered. Contract fingerprints are unchanged (documentation only).",
+  "timestamp-utc": "2026-11-22T05:58:20.717140Z",
+  "user-summary-candidate": "Corrected the Radiance runbook, serving contract text and two plan notes."
+}

@@ -32,9 +32,9 @@ The native installer verifies tag, manifest, SDK, every runtime file digest and 
 Use `bc-serve` **from the current verified installation prefix**. The binary automatically chooses that prefix's `configs/`, `bin/radiance` and runtime home unless overridden; it refuses a mismatch or unverified/non-current prefix before spawning. Examples (replace inputs with actual installed paths and reviewed site/model settings):
 
 ```sh
-/path/to/install-root/releases/bc-radiance-X.Y.Z/radiance_home/bin/bc-serve explain flashnext
-/path/to/install-root/releases/bc-radiance-X.Y.Z/radiance_home/bin/bc-serve start flashnext \
-  --site /path/to/site.toml --model-root /path/to/models --run-dir /path/to/run
+/path/to/install-root/releases/bc-radiance-X.Y.Z/radiance_home/bin/bc-serve explain flashnext-r9700 --model-root /path/to/models
+/path/to/install-root/releases/bc-radiance-X.Y.Z/radiance_home/bin/bc-serve start flashnext-r9700 \
+  --site /path/to/site.toml --model-root /path/to/models --work-root /path/to/work-root --run-dir /path/to/run
 /path/to/install-root/releases/bc-radiance-X.Y.Z/radiance_home/bin/bc-serve status --run-dir /path/to/run --json
 /path/to/install-root/releases/bc-radiance-X.Y.Z/radiance_home/bin/bc-serve stop --run-dir /path/to/run
 ```
@@ -45,6 +45,6 @@ Obtain the exclusive `gpu` lease **before** a hardware start, measure, calibrati
 
 ## Configs and quality
 
-The packaged serving configs are one native YAML per config (`configs/NAME.yaml`, 18 of them). Use native `bc-serve explain CONFIG --native-config NAME.yaml` to inspect effective intent (it runs the same admission as a start, offline) and `bc-serve status` to inspect the owned run. See [SERVING_MANIFEST.md](SERVING_MANIFEST.md) for manifest semantics, [LIVE_PLACEMENT.md](LIVE_PLACEMENT.md) for heat policy, and [enhancements](ENHANCEMENTS.md) for patch validation state.
+The packaged serving configs are one native YAML per config (`configs/NAME.yaml`; the roster is the YAML files in `engines/radiance/configs`). Use `bc-serve explain CONFIG --model-root DIR` to inspect effective intent (it reads `NAME.yaml` from the verified bundle, else from `--configs DIR`, or from `--native-config YAML`, and runs the same admission as a start, offline) and `bc-serve status` to inspect the owned run. See [SERVING_MANIFEST.md](SERVING_MANIFEST.md) for manifest semantics, [LIVE_PLACEMENT.md](LIVE_PLACEMENT.md) for heat policy, and [enhancements](ENHANCEMENTS.md) for patch validation state.
 
 For paired hardware experiments prefer `bigcherry ab-benchmark`; preserve the exact build/model/SDK hashes, immutable manifest, observed helper roles, quality digests, temperatures and power receipts. The RDNA2 helper tail has a documented worst-case quality penalty (RAD46); performance alone is not an acceptance result.
