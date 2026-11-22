@@ -373,8 +373,11 @@ extern "C" int bc_moe_remote_rank_done(BcMoeRemoteGeneration* g, int rank, BcMoe
 extern "C" void bc_moe_remote_layer_map(BcMoeRemoteGeneration* g, int layer, int n_expert, const int32_t* slot_of_expert) {
     g = live(g);
     if (!g || n_expert <= 0 || !slot_of_expert) return;
-    std::lock_guard<std::mutex> lock(g->maps_mu);
-    g->layer_maps[layer].assign(slot_of_expert, slot_of_expert + n_expert);
+    {
+        std::lock_guard<std::mutex> lock(g->maps_mu);
+        g->layer_maps[layer].assign(slot_of_expert, slot_of_expert + n_expert);
+    }
+    /* Never under maps_mu: the plugin may wait on a helper, and the placement rule (skip_unit) reads these maps. */
     if (g->vt.layer_map) g->vt.layer_map(g->vt.self, layer, n_expert, slot_of_expert);
 }
 

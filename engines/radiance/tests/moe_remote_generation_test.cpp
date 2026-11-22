@@ -3,6 +3,7 @@
 #include "bc_moe_remote.h"
 #include <atomic>
 #include <cassert>
+#include <chrono>
 #include <cstdint>
 #include <thread>
 #include <vector>
@@ -35,8 +36,19 @@ static int f_bind(void*, BcMoeRemoteTicket, int64_t) { return 0; }
 static int f_rank_done(void*, int, BcMoeRemoteTicket, void*) { return 0; }
 static int f_before(void*, int, BcMoeRemoteTicket, void*) { return 0; }
 static int f_wait(void*, int64_t) { return 0; }
+static std::atomic<bool> map_callback_running{false}, reader_done{false}, callback_saw_reader{false};
+static BcMoeRemoteGeneration* reader_gen = nullptr;
 static void f_layer_map(void* self, int layer, int n, const int32_t*) {
     static_cast<Fake*>(self)->maps.push_back(layer * 1000 + n);
+    if (reader_gen) {
+        // The engine's map lock must not be held across this callback: a reader of the maps (the placement rule) on
+        // another thread has to get through while the callback is still running. Bounded poll so a held lock fails
+        // the test instead of hanging it.
+        map_callback_running = true;
+        std::thread([] { (void)bc_moe_remote_skip_unit(reader_gen, 0, 0, 1); reader_done = true; }).detach();
+        for (int i = 0; i < 2000 && !reader_done; ++i) std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        callback_saw_reader = reader_done.load();
+    }
 }
 static int f_owns(void*, int, int expert) { return expert % 2 == 0; }
 static void f_burst(void* self, int on) {
@@ -136,6 +148,16 @@ int main() {
     assert(bc_moe_remote_admit(b, &t, 0, 2) == 0 && t.ticket_id == 1);   // b's own counter, not a's
     bc_moe_remote_destroy(a);
     assert(bc_moe_remote_lookup(4) == b);
+
+    // The callback runs outside the engine's map lock (a reader of the maps is not blocked behind a plugin wait).
+    {
+        const int32_t slots[4] = {0, 1, 2, 3};
+        reader_gen = b;
+        reader_done = false;
+        bc_moe_remote_layer_map(b, 0, 4, slots);
+        assert(map_callback_running && callback_saw_reader);
+        reader_gen = nullptr;
+    }
 
     // No generation (policy off or unclaimed slot): every query answers "no remote", nothing faults.
     assert(!bc_moe_remote_wanted(nullptr, 1) && !bc_moe_remote_wanted_upto(nullptr, 1));

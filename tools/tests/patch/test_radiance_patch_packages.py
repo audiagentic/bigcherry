@@ -113,7 +113,7 @@ PIN_BLOBS = {
         "core/engine.cpp": ("e649224", "19a09b3"),
         "core/engine.h": ("ca6c09f", "430b4bd"),
         "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
-        "core/place/bc_moe_remote.cpp": (None, "4305663"),
+        "core/place/bc_moe_remote.cpp": (None, "100a5ae"),
         "core/place/bc_moe_remote_engine.h": (None, "9bb71a6"),
         "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
         "core/place/planner.cpp": ("dc03b5a", "3edb433"),
@@ -734,7 +734,7 @@ int main() {
         self.assertNotIn("\nHookState g;", hook)
         self.assertNotIn("r3_moe_mailbox_enabled", hook)
         self.assertNotIn('rad_moe_remote', hook)
-        self.assertIn('layer_map_consumed', hook)
+        self.assertIn('await_layer_consumed(g.hdr, layer, layer_map_bound())', hook)
         self.assertIn('slot_map[(uint32_t)le] < 0', ops)
         self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)
         self.assertIn('{"as", RAD_OPD_IN, 0}', ops)

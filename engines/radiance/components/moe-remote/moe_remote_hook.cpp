@@ -1,5 +1,6 @@
 #include "moe_remote_hook.h"
 #include "hook_identity.h"
+#include "layer_map_wait.h"
 #include "../serving/bc_engine_settings.h"
 #include "admission_completion.h"
 #include "admission_ledger.h"
@@ -385,12 +386,14 @@ void publish_layer_map(HookState& g, int layer, int n_expert, const int32_t* slo
         (void)futex_wake(&g.hdr->layer_map_ready[layer]);
     }
     g.watch.notice();
-    /* The plugin ABI gives this callback no error return. A failed helper leaves helper_fault raised (sticky), so the
-     * engine's first remote MoE wait traps; the map wait just must not hang. */
-    uint32_t* consumed = &g.hdr->layer_map_consumed[layer];
-    const WaitResult r = wait_for(g.hdr, nullptr, [&] { return load(consumed) == 1; });
-    if (r == WaitResult::Error) raise_fault(g.hdr);   /* a wait that cannot complete is terminal too */
-    if (r != WaitResult::Ready)
+    /* The plugin ABI gives this callback no error return. The wait is bounded by the helper protocol's readiness
+     * deadline (layer_map_wait.h); a helper that is alive but never consumes raises the sticky helper fault, so the
+     * engine's first remote MoE wait fails and teardown is not blocked. */
+    const MapWait r = await_layer_consumed(g.hdr, layer, layer_map_bound());
+    if (r == MapWait::Timeout)
+        std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper did not consume its map within the readiness "
+                     "deadline; failing the helper path\n", layer);
+    else if (r != MapWait::Consumed)
         std::fprintf(stderr, "libr3: R3_MOE_WORKER layer %d: helper failed before consuming its map\n", layer);
 }
 

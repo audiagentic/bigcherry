@@ -96,6 +96,12 @@ if(BUILD_TESTING)
     R3MOE_TARGETS="${r3moe_targets_csv}")
   set_target_properties(r3_moe_mailbox_lifetime_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   add_test(NAME r3_moe_mailbox_lifetime_test COMMAND r3_moe_mailbox_lifetime_test)
+  # The bounded layer-map consumption wait (alive-but-never-consuming helper; sticky fault; teardown not blocked).
+  add_executable(r3_layer_map_wait_test EXCLUDE_FROM_ALL layer_map_wait_test.cpp)
+  target_include_directories(r3_layer_map_wait_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_layer_map_wait_test PRIVATE Threads::Threads)
+  set_target_properties(r3_layer_map_wait_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_layer_map_wait_test COMMAND r3_layer_map_wait_test)
   # The identity of the one live hook (serial handles; stale / foreign / address-reuse refused). Pure host code.
   add_executable(r3_hook_identity_test EXCLUDE_FROM_ALL hook_identity_test.cpp)
   target_include_directories(r3_hook_identity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
