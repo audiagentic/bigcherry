@@ -3389,7 +3389,27 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         // Same inspection and reconcile as a start (above); nothing past it runs: no cache reuse, writer, power
         // admission, engine or helper child, so no GPU is touched.
         out.native_preflight_receipt = native_inspection.receipt;
-        out.native_preflight_values = resolve(in.options, facts, &native_inspection.settings).values;
+        const Resolved preflight_resolved = resolve(in.options, facts, &native_inspection.settings);
+        out.native_preflight_values = preflight_resolved.values;
+        if (in.preflight_owner_map) {
+            // The same document the measuring start's draft writer builds, in process: its owner map is the planner's
+            // answer, and nothing is written.
+            ManifestInputs manifest_in;
+            manifest_in.resolved = preflight_resolved;
+            manifest_in.native_config = snapshot;
+            manifest_in.engine_binary = engine;
+            manifest_in.profile = "production";
+            manifest_in.instance_id = new_instance_id();
+            manifest_in.producer_sha256 = file_sha256("/proc/self/exe");
+            manifest_in.s10.power_profile = in.power_profile;
+            manifest_in.s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
+            manifest_in.s10.calibration_records = Json::array();
+            try {
+                out.native_preflight_owner_map = build_manifest(manifest_in).document.at("spec").at("plan").at("owner_map");
+            } catch (const std::exception& error) {
+                throw PlanFailed(std::string("owner map: ") + error.what());
+            }
+        }
         out.port = native_inspection.settings.port;
         return out;
     }
