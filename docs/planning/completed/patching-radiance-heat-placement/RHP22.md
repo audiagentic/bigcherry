@@ -2,7 +2,7 @@
 id: RHP22
 order: 0
 plan: patching-radiance-heat-placement
-state: pending
+state: completed
 created-at: '2026-11-10T13:12:09.846895+00:00'
 breadth: ''
 skill: intermediate
@@ -57,6 +57,8 @@ Source: gateway prior-work audit 2026-11-10 (missing item 4); runs/policy-kld.
 
 2026-11-11 cross-ISA evidence: flashnext-2xtx-rdna2-tail forced-churn KL (runs/rhp20-tail-kld, 1 pair, 8,240 rows, 132 swaps committed during scoring) passes every threshold: p99 +0.112 (limit +0.2), p99.9 +0.295, mean +0.0069, top-1 +0.07 pt. The flashnext-4gpu breach (+0.234) is therefore layout-specific, consistent with the RHP16 mechanism (hot layer-0 experts on the 6900 XT tail of the 4-GPU layout). Decision still open: waive on mechanism vs score a frozen warmed placement.
 
+2026-11-22 RHP22 disposition: the observed four-GPU forced-churn numerical KL gate is **FAIL**, no waiver. Recorded in the LIVE_PLACEMENT operator guide and docs/evidence/2026-11-22-rhp22-quality-disposition/README.md. This item is *only* a verdict/disposition record and is complete when reviewed; the ordinary warmed-policy frozen final placement, genuine mid-scoring movement, same-source reference/AB controls, performance and rollout stay unaccepted under active RHP16, RHP06 and RHP20. No fresh GPU evidence in this docs-only decision.
+
 ## Update 2026-11-11: the breach is deterministic, not run-to-run noise
 
 Three-arm quality-only run on the current build (flashnext-4gpu, 8,240 rows, rad116 BF16 reference): `policy-off`, an identical `policy-off-repeat`, and `forced-churn`. The repeat arm is bit-identical to the control (mean 0.0660, median 0.0154, p99 0.7036, p99.9 3.0029, top-1 88.54, ppl 8.9944), so the measurement noise band on this harness is zero and the same-reference repeat asked for in Step 1 is answered. Forced churn: mean 0.0738 (+0.008), median 0.0171 (+0.0017), **p99 0.9377 (+0.234 against the +0.2 limit, fails)**, p99.9 3.4331 (+0.43, passes the +0.5 limit), top-1 87.94 (-0.6 points, passes), ppl 8.837. Only p99 breaches, reproducibly, so "waive as noise" is not available. What remains open is Step 1's choice between waiving on the stated mechanism (hot layer-0 experts moving between the 6900 XT tail and the heads in a 1,000,000-swap stress that the live policy never produces) and scoring the placement a warmed policy settles on (Step 2: freeze the warmed placement, then score it). Raw run: run folder policy-kld, out-aa.
@@ -67,3 +69,9 @@ Tooling note: since S1/S2 the benchmark's server-config path needs `RADIANCE_HOM
 
 - 2026-11-10T13:12:09.846895+00:00 (created-by): Created by agent
 - 2026-11-11T10:22:01.303225+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T07:15:02.028131+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4466
+- 2026-11-22T07:15:19.609698+00:00 (state-transition): State: pending → completed

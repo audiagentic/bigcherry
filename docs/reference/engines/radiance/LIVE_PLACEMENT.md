@@ -21,6 +21,28 @@ running system and the checks to make before you trust a measurement.
   steady state by the 3rd-4th prompt (~30-40 s). Quality (forced-churn KL): mean +0.008, p99 +0.23 (over the 0.2 limit: the known tail
   accuracy effect), top-1 -0.6 points.
 
+## RHP22 numerical quality disposition (2026-11-22)
+
+**FAIL: four-GPU forced-churn KL p99 is +0.2341 against the +0.2000
+limit.** The static/identical-repeat control is bit-identical; this is
+not measurement noise and has **not been waived**. The historical forced
+test committed swaps *before* its 15–17 s scoring pass, so its result
+characterizes one changed fixed placement. It does **not** numerically
+qualify the warmed ordinary live-policy placement or mid-scoring
+ownership changes. The different two-XTX+RDNA2-tail arm (+0.112 p99)
+passes its own observed numerical gate but is not a substitute.
+
+A calibrated ON manifest means only that a layout-specific policy was
+selected, **not** that its numerical quality passed. Under the existing
+single ownership plan, RHP16 must freeze a **measured** warmed-policy
+final map, compare it with a same-build static KL control using the
+existing scorer, and receive explicit mid-scoring move proofs from
+RHP06/RHP20 before declaring this layout's quality gate passed.
+Do not treat the historical production enabled state as a fresh
+approval; this documentation decision does not change running
+configuration. The exact data and gate are recorded in
+[the RHP22 disposition](../../../evidence/2026-11-22-rhp22-quality-disposition/README.md).
+
 Not built yet: the device-speed and phase-aware solver (RHP17, RHP04 stage 3), the single allocator (RHP13), request/time reevaluation (RHP07).
 
 ## How it is switched on
@@ -93,7 +115,7 @@ can permit a transaction. gfx1201 and gfx1100 support w4nl64 and fp8_e4m3_block,
 
 | Layout | Helper roles | Live policy | Calibrated key / run | Hardware migration and quality |
 | --- | --- | --- | --- | --- |
-| flashnext-4gpu | gfx1100 head/head, gfx1030 tail; gfx1201 engine | Topology eligible, ON only with current-key calibration | Historical RHP16 key; current key recheck needed | 131 paced forced swaps, zero aborts (RHP06); current 1,000-epoch/format/KLD and per-card receipts pending |
+| flashnext-4gpu | gfx1100 head/head, gfx1030 tail; gfx1201 engine | Topology eligible, ON only with current-key calibration | Historical RHP16 key; current key recheck needed | **Forced-churn quality FAIL** (KL p99 +0.2341 vs +0.2); warmed-policy frozen-map and mid-scoring receipts **not yet accepted**; 131 paced swaps/zero aborts do not supersede the failed KL gate |
 | flashnext-2xtx-rdna2-tail | gfx1100 head/head, gfx1030 tail; gfx1201 engine | Topology eligible, not yet calibrated | None verified under current key | Cross-arch w4nl64 / 2 GiB tail KLD pending |
 | flashnext-2xtx-rdna2-tail-combine | Same, combine enabled | Topology eligible, not yet calibrated | None verified | Combine/migration/KLD pending |
 | flashnext-2xtx-rdna2-head | gfx1100 head/head, gfx1030 head | OFF; no tail, #805 | Not applicable | Static placement and forced-only safety pending |

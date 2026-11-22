@@ -4,7 +4,7 @@
 
 These are the **active Planning MCP owners**, not a reissue of historical items:
 
-1. [RHP20](RHP20.md) verifies remaining card/layout eligibility and live migration; [RHP22](RHP22.md) owns the forced-churn KLD p99 breach before any default-on claim.
+1. [RHP20](RHP20.md) verifies remaining card/layout eligibility and live migration; [RHP22](../../completed/patching-radiance-heat-placement/RHP22.md) recorded the four-GPU forced-churn KL p99 **FAIL** (not waived). [RHP16](RHP16.md) still owns warmed-policy and mid-scoring numerical acceptance before a quality-qualified default-on claim.
 2. [RHP01](RHP01.md) and [RHP08](RHP08.md) own remaining histogram/coverage and tail-heat correctness; do **not** reopen the [deprecated RHP02 observer](../../completed/patching-radiance-heat-placement/RHP02.md) or create a second GPU collector.
 3. [RHP21](RHP21.md) covers first-cold adaptation; [RHP04](RHP04.md) and [RHP09](RHP09.md) own measured-cost placement, with [RHP12](RHP12.md) the no-regression baseline.
 4. [RHP13](RHP13.md) owns the remaining unified allocation/budget work. [RHP07](RHP07.md) owns controls, [RHP11](RHP11.md) active epoch integration, and [RHP16](RHP16.md) live policy/calibration validation.

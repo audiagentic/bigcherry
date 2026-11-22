@@ -1,0 +1,22 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_071756_record-the-four-gpu-forced-chu_1207",
+  "files": [
+    "docs/evidence/2026-11-22-rhp22-quality-disposition/README.md",
+    "docs/reference/engines/radiance/LIVE_PLACEMENT.md",
+    "docs/planning/active/patching-radiance-heat-placement/README.md",
+    "docs/planning/active/patching-radiance-heat-placement/RHP16.md",
+    "docs/planning/completed/patching-radiance-heat-placement/RHP22.md",
+    "docs/planning/completed/patching-radiance-heat-placement/reviews/RHP22/RV4466.md"
+  ],
+  "plan-item-ids": [
+    "RHP22",
+    "RHP16",
+    "RHP06",
+    "RHP20"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Decide RHP22 numerical gate explicitly FAIL (not noise or mechanism waiver): historical flashnext-4gpu forced-churn 8240-position p99 KL 0.7036 static vs 0.9377 after swaps (+0.2341 > +0.2000 bound), while control repeat bit-identical. Forced transactions completed before scoring and cannot prove actual live mid-scoring transitions nor the regular warmed-policy final map. Other reported mean, p99.9 and top-1 remained within existing thresholds; distinct two-XTX+RDNA2-tail +0.112 result is not a four-GPU waiver. Record only decision completion via canonical Planning MCP and review RV4466; keep active RHP16/RHP06/RHP20 numerical and transition gating, no second scorer and no new GPU use, runtime change or quality acceptance. Operator guide and group navigation reflect explicit fail and open owner gate. Historic raw receipt unavailable in review worktree.",
+  "timestamp-utc": "2026-11-22T07:17:56.725808Z",
+  "user-summary-candidate": "Record the four-GPU forced-churn KL quality gate as failed, without waiving p99 or silently qualifying live placement. Preserve active warmed-policy and mid-scoring transition gates under existing owners."
+}
