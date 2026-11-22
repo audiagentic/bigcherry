@@ -333,9 +333,16 @@ if(BUILD_TESTING)
       endif()
     endif()
   endforeach()
-  # bc_session_test is no ctest test of its own name any more (its groups are bc_session_test_part1..4 and the
-  # host-start check), so the loop above does not reach the executable: keep its assertions here.
-  target_compile_options(bc_session_test PRIVATE -UNDEBUG)
+  # The loop above reaches only executables that are also a ctest test of the same name. A test executable run under
+  # other names (bc_session_test: the part1..4 groups and the host-start check) would keep NDEBUG and silently lose every
+  # assertion, so every executable named *_test keeps them, whatever its ctests are called.
+  get_property(_bc_targets DIRECTORY PROPERTY BUILDSYSTEM_TARGETS)
+  foreach(_bc_target IN LISTS _bc_targets)
+    get_target_property(_bc_target_type ${_bc_target} TYPE)
+    if(_bc_target_type STREQUAL "EXECUTABLE" AND _bc_target MATCHES "_test$")
+      target_compile_options(${_bc_target} PRIVATE -UNDEBUG)
+    endif()
+  endforeach()
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
