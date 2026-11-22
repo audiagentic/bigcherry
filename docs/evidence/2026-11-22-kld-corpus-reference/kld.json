@@ -1,0 +1,36 @@
+{
+ "format": "radiance-kld-1",
+ "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
+ "corpus": "${BC_WORK_ROOT}/corpus/rad-kld-corpus-4.jsonl",
+ "corpus_fnv1a64": "66bc5f8a27eda3e6",
+ "created": "2026-11-20T02:37:50Z",
+ "n_vocab": 248320,
+ "top": 16,
+ "rows": 8240,
+ "docs": [
+  {
+   "source": "kld-docs-00",
+   "tokens": 1951,
+   "score_from": 0,
+   "row0": 0
+  },
+  {
+   "source": "kld-docs-01",
+   "tokens": 2212,
+   "score_from": 0,
+   "row0": 1950
+  },
+  {
+   "source": "kld-docs-02",
+   "tokens": 2133,
+   "score_from": 0,
+   "row0": 4161
+  },
+  {
+   "source": "kld-docs-03",
+   "tokens": 1948,
+   "score_from": 0,
+   "row0": 6293
+  }
+ ]
+}

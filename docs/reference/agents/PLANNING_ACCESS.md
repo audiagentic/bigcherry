@@ -81,8 +81,10 @@ change from a BigCherry task.
    acceptance criteria before consolidating or superseding a plan.
 4. After resolution, use `planning_api.set_review_state(worktree, review_id,
    "closed")`. Use `planning_api.set_state(worktree, item_id, new_state)` with a valid
-   terminal state (`completed`, `superseded`, or `deprecated`) only after the
-   correct evidence and lifecycle gates; do not claim a quality pass for a failed or waived gate.
+   non-active state (`deferred`, `completed`, `superseded`, or `deprecated`) only
+   after the correct evidence and lifecycle gates. `deferred` parks paused, resumable
+   work in the historical tree; it is **not completed** and must be reopened to
+   pending before execution. Do not claim a quality pass for failed/waived gates.
 5. For substantive implementation, use the authoritative Ledger API/MCP to
    record the change event with `plan-item-ids`; do not write ledger event
    files manually. Inspect generated plan/review/event diffs, run checks,

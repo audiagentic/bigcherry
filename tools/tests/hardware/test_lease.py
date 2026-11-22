@@ -47,6 +47,19 @@ class LeaseTest(unittest.TestCase):
         (self.d / "gpu.json").unlink()
         self.assertFalse(self.held())
 
+    def test_only_the_agent_instance_key_names_the_holder(self):
+        import os
+        from unittest import mock
+
+        self.write()
+        for env in ({}, {"CLAUDE_RC_NAME": "bigcherry-1"}):
+            with mock.patch.dict(os.environ, env, clear=True):
+                self.assertFalse(lease.held_by_this_process(
+                    "gpu", lease_dir=self.d, proc=self.proc, pid=300, now=self.now))
+        with mock.patch.dict(os.environ, {"AGENT_INSTANCE": "bigcherry-1"}, clear=True):
+            self.assertTrue(lease.held_by_this_process(
+                "gpu", lease_dir=self.d, proc=self.proc, pid=300, now=self.now))
+
     def test_garbage_lease_file_refuses(self):
         (self.d / "gpu.json").write_text("{not json")
         self.assertFalse(self.held())

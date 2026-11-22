@@ -177,23 +177,15 @@ jobs:
       # All release lines share .release-please-manifest.json, so after one line releases the open platform release PR
       # (based on the older main) conflicts in that file alone. This merges main into the PR branch with the manifest
       # resolved by tools/bigcherry/release/manifest_reconcile.py (platform version from the PR, every other package from
-      # main); it refuses any other conflict or a version going down, updates the PR branch only while its head is unchanged (a
-      # compare-and-swap push of a fast-forward), acts only on the exact same-repository platform release PR, and never merges it. No loop: it pushes a release branch, never main, and a PR that already contains
-      # main is left alone, so a re-run changes nothing.
+      # main); it refuses any other conflict or a version going down, updates the PR branch only while its head is unchanged,
+      # and never merges the PR. A PR that already contains main is left alone, so a re-run changes nothing.
       - name: reconcile the platform release PR manifest with main
         env:
           GH_TOKEN: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
-          REPO_OWNER: ${{ github.repository_owner }}
         run: |
           set -euo pipefail
           cd rewrite-src
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          # git authenticates through its environment, so the token is in no command line and in no file
-          credential=$(printf 'x-access-token:%s' "${GH_TOKEN}" | base64 -w0)
-          echo "::add-mask::${credential}"
-          export GIT_CONFIG_COUNT=1
-          export GIT_CONFIG_KEY_0="http.https://github.com/.extraheader"
-          export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${credential}"
-          PYTHONPATH=tools python3 -m bigcherry.release.manifest_reconcile . "https://github.com/${GITHUB_REPOSITORY}.git" "${REPO_OWNER}"
+          PYTHONPATH=tools python3 -m bigcherry.release.manifest_reconcile . "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"

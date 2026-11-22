@@ -345,6 +345,15 @@ class ComponentGateTests(unittest.TestCase):
         call = next(c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and Path(c[2]).name == "serving")
         self.assertEqual(call[call.index("-R") + 1], r"^(bc\.serving\+x_test)$")
 
+    def test_ctest_runs_in_parallel_sized_from_the_cpus_this_process_may_use(self):
+        checks = self.checks()
+        self.assertEqual(checks["components-build"].run(), [])
+        self.assertEqual(checks["component-tests"].run(), [])
+        calls = [c for c in self.calls if c[:2] == ["ctest", "--test-dir"] and "-R" in c]
+        self.assertTrue(calls)
+        for call in calls:
+            self.assertEqual(call[call.index("--parallel") + 1], str(len(os.sched_getaffinity(0))))
+
     def test_a_test_target_build_failure_is_told_apart_from_a_test_failure(self):
         checks = self.checks()
         self.assertEqual(checks["components-build"].run(), [])

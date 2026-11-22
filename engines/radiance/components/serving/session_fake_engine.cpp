@@ -359,6 +359,17 @@ int main(int argc, char** argv) {
         }
         return 0;
     }
+    const std::string record_dir = arg_after(argc, argv, "--kld-record");
+    if (!record_dir.empty()) {
+        const std::string corpus = arg_after(argc, argv, "--kld-corpus");
+        if (corpus.empty() || !std::filesystem::path(record_dir).is_absolute() ||
+            !std::filesystem::path(corpus).is_absolute() || !std::filesystem::is_regular_file(corpus) ||
+            !arg_after(argc, argv, "--kld-ref").empty() || !arg_after(argc, argv, "--kld-out").empty() ||
+            !arg_after(argc, argv, "--bc-heat-launch-nonce").empty())
+            return 9;
+        std::ofstream(std::filesystem::path(record_dir) / "kld.json") << json{{"positions", 1}}.dump() << '\n';
+        return 0;
+    }
     const std::string reference = arg_after(argc, argv, "--kld-ref");
     if (!reference.empty()) {
         const std::string output = arg_after(argc, argv, "--kld-out");
@@ -396,7 +407,10 @@ int main(int argc, char** argv) {
         for (size_t i = 0; i < cards.size(); ++i)
             plan_doc["vram"]["cards"].push_back(
                 {{"capacity", 10}, {"free", 10}, {"engine_expert_plane", 0}, {"expert_unit_max", 1}});
-        if (m.value("ngram_placement", std::string()) == "ram")
+        // As the engine does for an "auto" tier: it resolves one (RAM here) and its rank receipt names the choice.
+        const std::string requested_ngram = m.value("ngram_placement", std::string());
+        const std::string ngram = requested_ngram == "auto" ? "ram" : requested_ngram;
+        if (ngram == "ram")
             plan_doc["host"].push_back({{"name", "ngram_table"}, {"bytes", 1048576},
                                         {"residence", "pinned"}, {"from", "engine plan (fake measurement)"},
                                         {"remedy", ""}});
@@ -408,6 +422,8 @@ int main(int argc, char** argv) {
         json ranks = {{"schema_version", 1}, {"kind", "radiance_p1_rank_demand"},
                       {"gpu", json::array()},
                       {"resident_other_bytes", resident_other_bytes}};
+        if (requested_ngram == "auto")
+            ranks["ngram_placement"] = ngram;
         for (const auto& bdf : cards)
             ranks["gpu"].push_back({{"bdf", bdf}, {"required_bytes", 10}, {"fixed_bytes", 1},
                                     {"claimable_bytes", 10}, {"evidence", "rad0011 fake measurement"}});

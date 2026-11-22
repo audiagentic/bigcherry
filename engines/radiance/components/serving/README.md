@@ -95,7 +95,7 @@ identity and placement journals through the typed runtime receipt reader.
 A live degradation or stale transport fails the owner; polling is bounded.
 
 Card-free tests: `bc_manifest_power_test`, `bc_session_guards_test` and
-`bc_session_test` (as well as existing `bc_power_transaction_test`).
+`bc_session_test_part1` to `_part4` (the session tests, in four groups; as well as existing `bc_power_transaction_test`).
 Every executable is a CMake target and declared in `component.toml`.
 
 ## MRC03 native feature states
@@ -130,7 +130,7 @@ archived on a subsequent owner start so an old run cannot masquerade as a
 new startup decision. Other optional features are reported without
 implicitly being declared production-required. The native mapping and
 file/status/warning paths have the card-free `bc_feature_state_test`
-and `bc_session_test` CTest targets.
+and `bc_session_test_part1` to `_part4` CTest targets.
 
 ## Callback boundary and source scanner
 
@@ -179,12 +179,9 @@ Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
 `--explain [--json]`, `--write-manifest OUT` (the serving manifest; with `--plan-cache` and `--engine-binary`,
 or with `--unmeasured` and neither: the measuring start's manifest, `plan.state` unmeasured, which only a measuring start
 (`radiance --plan-memory`, `r3_moe_worker --measuring`) accepts; `--live-policy FILE` adds the live placement policy and
-`--experiment FILE` a lab experiment, each a JSON object the reader checks member by member; `--measured-plan FILE
---helpers-resident-mib N --engine-resident-mib M` takes the plan a measuring start produced and the host memory the helpers and
-the engine held in it, checks the plan against the configuration, stores both in the plan cache under this configuration's key
-and writes the measured manifest from it; the host ledger counts the host pool and those two figures against MemAvailable as
-read when the manifest is written, so the checkpoint slots follow what is really free at start, not at measurement; a cache
-entry without the figures is a miss). The engine admits the plan the manifest carries; no other
+`--experiment FILE` a lab experiment, each a JSON object the reader checks member by member; measured manifests read the session-owned plan cache with
+`--expected-plan-key` and `--expected-owner-attempt`. Both writer modes require the
+sealed native configuration supplied by the session owner). The engine admits the plan the manifest carries; no other
 command or flag hands it one (RSC08 S3 removed `--plan-key`, `--plan-check-args` and `--plan-store`).
 Use `--site FILE`, `--profile FILE`, and repeated
 `--set section.key=value` with the latter three.

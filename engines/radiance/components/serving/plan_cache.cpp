@@ -1,6 +1,7 @@
 #include "admission.h"
 #include "calibration.h"
 #include "plan_cache.h"
+#include "file_stamp.h"
 #include "rank_demand.h"
 #include "serving_codec.h"
 #include "sha256.h"
@@ -152,25 +153,18 @@ std::string owner_measurement_digest(const Json& owner, const std::string& key) 
     return sha256_hex(receipt.dump());
 }
 
-void write_cache_entry(const fs::path& dir, const Json& key_inputs, const CachedPlan& cached, int version,
-                       const Json* owner = nullptr) {
-    Json entry = {{"cache_version", version}, {"key", cached.key}, {"key_inputs", key_inputs},
-                  {"measured_at", cached.measured_at}, {"plan", cached.plan_json},
-                  {"rank_demand", cached.rank_demand},
-                  {"resident", {{"helpers_mib", cached.resident.helpers_mib},
-                                 {"engine_mib", cached.resident.engine_mib}}}};
-    if (owner) entry["owner"] = *owner;
-    fs::create_directories(dir);
-    const fs::path file = dir / (cached.key + ".json");
-    std::string pattern = (dir / (cached.key + ".json.tmp.XXXXXX")).string();
+// Publish `bytes` as `file` all at once: a temporary beside it, written and synced, then renamed over it, so a reader sees
+// the old file or the whole new one, never part of either.
+void publish_file_atomic(const fs::path& file, const std::string& bytes) {
+    fs::create_directories(file.parent_path());
+    std::string pattern = file.string() + ".tmp.XXXXXX";
     std::vector<char> tmp_name(pattern.begin(), pattern.end());
     tmp_name.push_back('\0');
     const int fd = ::mkstemp(tmp_name.data());
-    if (fd < 0) throw std::runtime_error("cannot create temporary plan cache entry " + file.string());
+    if (fd < 0) throw std::runtime_error("cannot create temporary file for " + file.string());
     const fs::path tmp(tmp_name.data());
     bool open = true;
     try {
-        const std::string bytes = entry.dump(2) + "\n";
         size_t offset = 0;
         while (offset < bytes.size()) {
             const ssize_t n = ::write(fd, bytes.data() + offset, bytes.size() - offset);
@@ -189,6 +183,17 @@ void write_cache_entry(const fs::path& dir, const Json& key_inputs, const Cached
         fs::remove(tmp, ignored);
         throw;
     }
+}
+
+void write_cache_entry(const fs::path& dir, const Json& key_inputs, const CachedPlan& cached, int version,
+                       const Json* owner = nullptr) {
+    Json entry = {{"cache_version", version}, {"key", cached.key}, {"key_inputs", key_inputs},
+                  {"measured_at", cached.measured_at}, {"plan", cached.plan_json},
+                  {"rank_demand", cached.rank_demand},
+                  {"resident", {{"helpers_mib", cached.resident.helpers_mib},
+                                 {"engine_mib", cached.resident.engine_mib}}}};
+    if (owner) entry["owner"] = *owner;
+    publish_file_atomic(dir / (cached.key + ".json"), entry.dump(2) + "\n");
 }
 }  // namespace
 
@@ -215,33 +220,57 @@ std::string container_identity(const fs::path& model) {
 }
 
 namespace {
-// What a file's bytes cannot change without changing: size, inode, modification and change time. The change time is
-// set by the kernel on every write and cannot be restored by a caller, so an unchanged stamp means unchanged content.
-struct FileStamp {
-    uint64_t size = 0, inode = 0;
-    int64_t mtime_ns = 0, ctime_ns = 0;
-    bool operator==(const FileStamp& o) const {
-        return size == o.size && inode == o.inode && mtime_ns == o.mtime_ns && ctime_ns == o.ctime_ns;
-    }
-};
-
-FileStamp stamp_file(const fs::path& path) {
-    struct stat st{};
-    if (::stat(path.c_str(), &st) != 0) throw std::runtime_error("cannot stat " + path.string());
-    const auto ns = [](const timespec& t) { return int64_t{t.tv_sec} * 1000000000 + t.tv_nsec; };
-    return {uint64_t(st.st_size), uint64_t(st.st_ino), ns(st.st_mtim), ns(st.st_ctim)};
-}
-
 struct IdentityMemo {
     std::vector<std::pair<fs::path, FileStamp>> stamps;
     std::string identity;
 };
 std::mutex identity_mutex;
 std::map<std::string, IdentityMemo> identity_memo;
+fs::path identity_store;  // the work root whose cache/engine-identity folder persists the digests; empty: none
+
+// One small file per runtime home identity (binary + home), in the work root's cache beside the named-config store.
+fs::path identity_file(const fs::path& work_root, const std::string& memo_key) {
+    return work_root / "cache" / "engine-identity" / (sha256_hex(memo_key) + ".json");
+}
+
+Json stamps_json(const std::vector<std::pair<fs::path, FileStamp>>& stamps, const fs::path& home) {
+    Json files = Json::array();
+    for (size_t i = 0; i < stamps.size(); ++i) {
+        const auto& [path, s] = stamps[i];
+        // The binary (first) by its path as given, every runtime file by its path relative to the runtime home.
+        files.push_back({i == 0 ? path.generic_string() : fs::relative(path, home).generic_string(), s.size, s.inode,
+                         s.mtime_ns, s.ctime_ns});
+    }
+    return files;
+}
+
+// The persisted digest when the file is well formed, names this runtime home, and every stamp in it equals the stamp just
+// taken; otherwise empty. Anything unreadable or unexpected is ignored, never an error: the runtime is hashed instead.
+std::string persisted_identity(const fs::path& file, const std::string& memo_key,
+                               const std::vector<std::pair<fs::path, FileStamp>>& stamps, const fs::path& home) {
+    try {
+        std::ifstream in(file, std::ios::binary);
+        if (!in) return {};
+        std::ostringstream bytes;
+        bytes << in.rdbuf();
+        const Json stored = Json::parse(bytes.str());
+        if (stored.at("key").get<std::string>() != memo_key || stored.at("files") != stamps_json(stamps, home)) return {};
+        const std::string identity = stored.at("identity").get<std::string>();
+        return identity.size() == 64 && identity.find_first_not_of("0123456789abcdef") == std::string::npos ? identity
+                                                                                                           : std::string();
+    } catch (const std::exception&) {
+        return {};
+    }
+}
 std::atomic<uint64_t> identity_hash_runs{0};
 }  // namespace
 
 uint64_t engine_identity_hash_runs() { return identity_hash_runs.load(); }
+
+void set_engine_identity_store(const fs::path& work_root) {
+    const std::lock_guard<std::mutex> lock(identity_mutex);
+    identity_store = work_root;
+}
 
 std::string engine_identity(const fs::path& binary, const fs::path& radiance_home) {
     if (!fs::is_regular_file(binary)) throw std::runtime_error("engine binary " + binary.string() + " is not a file");
@@ -257,15 +286,33 @@ std::string engine_identity(const fs::path& binary, const fs::path& radiance_hom
     stamps.emplace_back(binary, stamp_file(binary));
     for (const auto& f : files) stamps.emplace_back(radiance_home / f, stamp_file(radiance_home / f));
     const std::string memo_key = binary.string() + "\n" + radiance_home.string();
+    fs::path store;
     {
         const std::lock_guard<std::mutex> lock(identity_mutex);
         const auto found = identity_memo.find(memo_key);
         if (found != identity_memo.end() && found->second.stamps == stamps) return found->second.identity;
+        store = identity_store;
+    }
+    const fs::path file = store.empty() ? fs::path{} : identity_file(store, memo_key);
+    if (!file.empty()) {
+        std::string stored = persisted_identity(file, memo_key, stamps, radiance_home);
+        if (!stored.empty()) {
+            const std::lock_guard<std::mutex> lock(identity_mutex);
+            identity_memo[memo_key] = IdentityMemo{std::move(stamps), stored};
+            return stored;
+        }
     }
     ++identity_hash_runs;
     std::string text = "binary\n" + file_sha256_checked(binary) + "\n";
     for (const auto& f : files) text += f.generic_string() + "\n" + file_sha256_checked(radiance_home / f) + "\n";
     std::string identity = sha256_hex(text);
+    if (!file.empty()) {
+        // A digest that cannot be stored costs the next start one more hash; it never fails this one.
+        try {
+            publish_file_atomic(file, Json{{"key", memo_key}, {"identity", identity}, {"files", stamps_json(stamps, radiance_home)}}.dump() + "\n");
+        } catch (const std::exception&) {
+        }
+    }
     const std::lock_guard<std::mutex> lock(identity_mutex);
     identity_memo[memo_key] = IdentityMemo{std::move(stamps), identity};
     return identity;

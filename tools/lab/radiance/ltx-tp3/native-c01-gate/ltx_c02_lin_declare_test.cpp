@@ -54,6 +54,12 @@ static RadModelMeta metadata() {
 
 static void check_parts(const rad::WeightInfo& w, const ltx2::C01Slice& slice) {
     need(w.decl.shard == RAD_SHARD_ROW, "expected row shard");
+    if (slice.banks == 1) {
+        need(w.n_part_spans == 0 && w.shard_lo == slice.offset &&
+             w.shard_hi == slice.offset + slice.width,
+             "one-bank Q weight lost native row span");
+        return;
+    }
     need(w.n_part_spans == slice.banks, "actual Lin lost bank count");
     need(w.decl.n_row_parts == slice.banks, "actual Lin lost row parts");
     for(int k=0; k<slice.banks; ++k) {
@@ -76,7 +82,7 @@ constexpr const char* kBiasedOutputs[] = {
 };
 enum class ProbeCase {
     Normal, WrongGroup, PrematureBias, InvalidColumn,
-    DeferredBias, InvalidDeferred, MissingDeferredBias, Reduced, GlobalRms
+    DeferredBias, InvalidDeferred, DuplicateDeferredBias, Reduced, GlobalRms
 };
 static void run(const RadFile& model, Registry& reg, const std::string& base,
                 int banks, int nheads, int rank, int start_heads, int owned_heads,
@@ -91,8 +97,8 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
     const int64_t hd = (rows ? e->shape[0]/banks : e->shape[1])/nheads;
     const int64_t full = hd * nheads, offset = hd*start_heads, width = hd*owned_heads;
     need(!rows || e->shape[0] == banks*full, "source banks are not equally sized");
-    const bool deferred = variant == ProbeCase::DeferredBias || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias || variant == ProbeCase::Reduced;
-    const bool denied = variant == ProbeCase::WrongGroup || variant == ProbeCase::PrematureBias || variant == ProbeCase::InvalidColumn || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::MissingDeferredBias;
+    const bool deferred = variant == ProbeCase::DeferredBias || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::DuplicateDeferredBias || variant == ProbeCase::Reduced;
+    const bool denied = variant == ProbeCase::WrongGroup || variant == ProbeCase::PrematureBias || variant == ProbeCase::InvalidColumn || variant == ProbeCase::InvalidDeferred || variant == ProbeCase::DuplicateDeferredBias;
     const auto slice = rows
         ? ltx2::C01Slice::rows(full,offset,width,hd,banks)
         : deferred ? ltx2::C01Slice::columns_deferred(e->shape[1],offset,width)
@@ -136,9 +142,10 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
              {"checkpoint.to_k.weight","checkpoint.to_v.weight"},
              {"checkpoint.to_k.bias","checkpoint.to_v.bias"},
              {full,full},out_dim,e->shape[1],RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
-    } else if (variant == ProbeCase::MissingDeferredBias) {
+    } else if (variant == ProbeCase::DuplicateDeferredBias) {
         rc = linear.declare(&b,nm,g,base.c_str(),
-             {"checkpoint.ff_down.weight"},{},{},
+             {"checkpoint.ff_down.weight"},
+             {"checkpoint.to_out.bias","checkpoint.to_out.bias"},{},
              out_dim,width,RAD_ACCESS_PER_TOKEN,0,input,y,4,false,&slice);
     } else if(variant == ProbeCase::PrematureBias || deferred) {
         const std::string bias_name = base + ".bias";
@@ -316,10 +323,10 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
 // Radiance's selected native relayout, Ctx and exact collective do all work.
 struct C06Issued {
     ltx2::Attn attn{};
-    ltx2::Act x{}, ao{};
+    ltx2::Act x{}, ao{}, kv_in{};
     rad_buf qkv=0, gate=0, output=0;
     std::array<int32_t,2> cu{0,1};
-    std::array<float,4> pos{};
+    std::vector<float> pos;
     std::vector<std::vector<uint8_t>> weights;
     // Optional diagnostic snapshots. Captured at the actual issue point,
     // before the arena planner may reuse the intermediate's storage.
@@ -334,7 +341,7 @@ struct C06Issued {
     std::unique_ptr<rad::Ctx> ctx;
     int rank=0;
     bool audio=false, gpu=false;
-    int64_t width=0;
+    int64_t width=0, tokens=1, video_rows=1;
     ~C06Issued() {
         ctx.reset();
         if (!gpu) return;
@@ -376,33 +383,33 @@ static void c06_issued_step(RadCtx* c,const RadBatch*) {
     uint16_t* input=(uint16_t*)r.ctx->buf_ptr(r.x.a.x);
     if (!input) { rad_step_fail(c,"C06 source activation missing"); return; }
     if (!r.gpu)
-        for (int64_t j=0;j<r.width;++j) input[j]=c06_sample(j);
-    r.x.step(c,1);
+        for (int64_t j=0;j<r.width*r.tokens;++j) input[j]=c06_sample(j);
+    r.x.step(c,r.tokens);
     if (r.width<=0 || r.x.a.cg()<=0 || r.width%r.x.a.cg()!=0) {
         rad_step_fail(c,"C06 quantized input shape invalid"); return;
     }
     if (!c06_snapshot(c,r,"input-quant-codes",r.x.a.cq(),
-                      (size_t)r.width,"i8") ||
+                      (size_t)(r.width*r.tokens),"i8") ||
         !c06_snapshot(c,r,"input-quant-scales",r.x.a.cs(),
-                      (size_t)(r.width/r.x.a.cg())*sizeof(float),"f32")) return;
-    r.attn.qkv.step(c,r.x,r.qkv,1);
+                      (size_t)(r.tokens*r.width/r.x.a.cg())*sizeof(float),"f32")) return;
+    r.attn.qkv.step(c,r.x,r.qkv,r.tokens);
     if (!c06_snapshot(c,r,"qkv-projection",r.qkv,
-                      (size_t)(3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
-    r.attn.gate.step(c,r.x,r.gate,1);
+                      (size_t)(r.tokens*3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
+    r.attn.gate.step(c,r.x,r.gate,r.tokens);
     if (!c06_snapshot(c,r,"gate-projection",r.gate,
-                      (size_t)(r.width/r.attn.hd)*sizeof(uint16_t),"bf16")) return;
+                      (size_t)(r.tokens*r.width/r.attn.hd)*sizeof(uint16_t),"bf16")) return;
     const float* positions=(r.gpu ? (const float*)r.device_pos : r.pos.data())+
-                            (r.audio?3:0);
-    const RadOperand pos=ltx2::praw2(positions,RAD_F32,r.audio?1:3,1);
-    ltx2::attn_core(c,r.attn,true,r.qkv,0,r.gate,r.ao,1,1,
+                            (r.audio?3*r.video_rows:0);
+    const RadOperand pos=ltx2::praw2(positions,RAD_F32,r.audio?1:3,r.tokens);
+    ltx2::attn_core(c,r.attn,true,r.qkv,0,r.gate,r.ao,r.tokens,r.tokens,
                     ltx2::praw(r.gpu ? (const int32_t*)r.device_cu : r.cu.data(),
                                RAD_I32,2),RAD_NONE,pos,pos);
     if (!c06_snapshot(c,r,"qkv-after-norm-rope",r.qkv,
-                      (size_t)(3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
+                      (size_t)(r.tokens*3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
     if (!c06_snapshot(c,r,"attention-after-gate",r.ao.a.x,
-                      (size_t)r.attn.inner*sizeof(uint16_t),"bf16")) return;
-    r.ao.step(c,1);
-    r.attn.out.step(c,r.ao,r.output,1);
+                      (size_t)(r.tokens*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
+    r.ao.step(c,r.tokens);
+    r.attn.out.step(c,r.ao,r.output,r.tokens);
 }
 
 static std::vector<uint8_t> c06_gather(const RadFile& model,
@@ -564,23 +571,30 @@ static void run_self_attn(const RadFile& model, Registry& reg,
                           int owned, int total_heads,
                           std::unique_ptr<Builder>* instance = nullptr,
                           bool inspect_weights = false, bool aql = false,
-                          C06Issued* capture = nullptr) {
-    const std::string kind = audio ? "audio_attn1" : "attn1";
+                          C06Issued* capture = nullptr, int64_t tokens = 4,
+                          bool text_cross = false, bool modal_cross = false) {
+    const std::string kind = modal_cross ? (audio ? "v2a" : "a2v") :
+                             text_cross ? (audio ? "audio_attn2" : "attn2") :
+                             (audio ? "audio_attn1" : "attn1");
     const std::string prefix = "dit.blk." + std::to_string(block) + "." + kind;
-    const auto* fused = model.find(prefix + ".qkv.weight");
+    const auto* fused = model.find(prefix + (text_cross ? ".q.weight" : ".qkv.weight"));
+    const auto* kv_source = text_cross ? model.find(prefix + ".kv.weight") : nullptr;
     const auto* output = model.find(prefix + ".out.weight");
     const auto* gate = model.find(prefix + ".gate.weight");
     const auto* gnq = model.find(prefix + ".q_norm.weight");
     const auto* gnk = model.find(prefix + ".k_norm.weight");
-    need(fused && output && gate && gnq && gnk,
+    need(fused && (!text_cross || kv_source) && output && gate && gnq && gnk,
          "C06 model missing a self-attention source");
-    const int64_t full = fused->shape[1];
-    need(fused->rank == 2 && fused->shape[0] == 3 * full &&
+    const int64_t full = text_cross ? fused->shape[0] : fused->shape[1];
+    const int64_t qdim = fused->shape[1];
+    const int64_t kvdim = text_cross ? kv_source->shape[1] : full;
+    const int64_t odim = output->shape[0];
+    need(fused->rank == 2 && fused->shape[0] == (text_cross ? full : 3 * full) &&
+         (!text_cross || (kv_source->rank == 2 && kv_source->shape[0] == 2 * full)) &&
          full % total_heads == 0 &&
-         output->rank == 2 && output->shape[0] == full &&
-         output->shape[1] == full &&
+         output->rank == 2 && output->shape[1] == full &&
          gate->rank == 2 && gate->shape[0] == total_heads &&
-         gate->shape[1] == full &&
+         gate->shape[1] == qdim &&
          gnq->rank == 1 && gnq->shape[0] == full &&
          gnk->rank == 1 && gnk->shape[0] == full,
          "C06 source self-attention geometry mismatch");
@@ -589,8 +603,9 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     need(rad::arch::linear_is_iq8r(enc) &&
          rad::arch::linear_w8h_group(enc) == rad::arch::RAD_I8_GROUP_WIDE,
          "C06 IQ8R group encoding changed");
-    const ltx2::C01Slice slice = ltx2::C01Slice::rows(full, lo, local, hd, 3);
-    need(slice.valid(3 * local, full, rad::arch::RAD_I8_GROUP_WIDE),
+    const ltx2::C01Slice slice = ltx2::C01Slice::rows(full, lo, local, hd, text_cross ? 1 : 3);
+    const ltx2::C01Slice kv_slice = ltx2::C01Slice::rows(full, lo, local, hd, 2);
+    need(slice.valid((text_cross ? 1 : 3) * local, full, rad::arch::RAD_I8_GROUP_WIDE),
          "C06 invalid fused QKV slice");
     if (aql) need(rad_dev_set(rank) == RAD_OK, "C06 cannot select rank's AQL device");
     auto owned_builder = std::make_unique<Builder>(reg, metadata(), context(rank));
@@ -602,25 +617,32 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     g.w_i8_group = rad::arch::RAD_I8_GROUP_WIDE;
     g.world = 3;
     g.wire_exact = 1;
-    g.max_tok = 4;
+    g.max_tok = tokens;
     g.dtype = "bf16";
-    ltx2::Act x{}, ao{};
-    need(x.declare(&b, m.nm, g, "c06.input", 4, full) == RAD_OK &&
-         ao.declare(&b, m.nm, g, "c06.attention", 4, local) == RAD_OK,
+    ltx2::Act x{}, ao{}, kv_in{};
+    need(x.declare(&b, m.nm, g, "c06.input", tokens, qdim) == RAD_OK &&
+         ao.declare(&b, m.nm, g, "c06.attention", tokens, local) == RAD_OK &&
+         (!text_cross || kv_in.declare(&b, m.nm, g, "c06.keys", tokens, kvdim) == RAD_OK),
          "C06 real activation/quantization declaration failed");
     need(x.q.op && ao.q.op && x.a.q8_fed && ao.a.q8_fed,
          "C06 failed to declare the exact native IQ8R activation quantizers");
-    const rad_buf qkv = ltx2::decl_b(&b, m.nm.f("c06.qkv"), RAD_BF16, {4, 3 * local});
-    const rad_buf logits = ltx2::decl_b(&b, m.nm.f("c06.gate"), RAD_BF16, {4, total_heads});
-    const rad_buf out = ltx2::decl_b(&b, m.nm.f("c06.out"), RAD_BF16, {4, full});
+    const rad_buf qkv = ltx2::decl_b(&b, m.nm.f("c06.qkv"), RAD_BF16, {tokens, (text_cross ? 1 : 3) * local});
+    const rad_buf bkv = text_cross ? ltx2::decl_b(&b, m.nm.f("c06.kv"), RAD_BF16, {tokens, 2 * local}) : 0;
+    const rad_buf logits = ltx2::decl_b(&b, m.nm.f("c06.gate"), RAD_BF16, {tokens, total_heads});
+    const rad_buf out = ltx2::decl_b(&b, m.nm.f("c06.out"), RAD_BF16, {tokens, odim});
     const rad_buf scratch = ltx2::decl_b(&b, m.nm.f("c06.norm_scratch"), RAD_BF16,
-                                         {4, full});
+                                         {tokens, full});
     need(x.a.x && x.a.q8 && x.a.s8 && ao.a.x && ao.a.q8 && ao.a.s8 &&
-         qkv && logits && out && scratch, "C06 activation buffers missing");
-    const ltx2::Rope rope = audio ? ltx2::Rope{1, full, "20"} :
+         qkv && logits && out && scratch && (!text_cross || (bkv && kv_in.q.op)),
+         "C06 activation buffers missing");
+    const ltx2::Rope rope = modal_cross ? ltx2::Rope{1, full, "20"} :
+                            text_cross ? ltx2::Rope{} :
+                            audio ? ltx2::Rope{1, full, "20"} :
                                    ltx2::Rope{3, full, "20 2048 2048"};
     const std::string original = "transformer.transformer_blocks." +
-                                 std::to_string(block) + "." + kind;
+                                 std::to_string(block) + "." +
+                                 (modal_cross ? (audio ? "video_to_audio_attn" :
+                                                "audio_to_video_attn") : kind);
     ltx2::Attn a{};
     const auto before = b.program().weights.size();
     for(int bad=0; bad<2; ++bad) {
@@ -628,33 +650,43 @@ static void run_self_attn(const RadFile& model, Registry& reg,
         if(bad==0) wrong.world=2;
         else wrong.wire_exact=0;
         need(ltx2::attn_declare(&b, m, wrong, a, prefix.c_str(), original.c_str(),
-                               total_heads, hd, full, full, full, true, x, nullptr,
-                               qkv, 0, logits, ao, out, 4, 4, RAD_ACCESS_PER_TOKEN,
+                               total_heads, hd, qdim, kvdim, odim, !text_cross, x, text_cross ? &kv_in : nullptr,
+                               qkv, bkv, logits, ao, out, tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN,
                                0, rope, 1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
              "C06 invalid native geometry admitted");
     }
     ltx2::Act unquantized = x;
     unquantized.q.op = 0;
     need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
-                           total_heads, hd, full, full, full, true,
-                           unquantized, nullptr, qkv, 0, logits, ao, out,
-                           4, 4, RAD_ACCESS_PER_TOKEN, 0, rope,
+                           total_heads, hd, qdim, kvdim, odim, !text_cross,
+                           unquantized, text_cross ? &kv_in : nullptr, qkv, bkv, logits, ao, out,
+                           tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN, 0, rope,
                            1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
          "C06 accepted missing input IQ8R quantizer");
     unquantized = ao;
     unquantized.q.op = 0;
     need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
-                           total_heads, hd, full, full, full, true,
-                           x, nullptr, qkv, 0, logits, unquantized, out,
-                           4, 4, RAD_ACCESS_PER_TOKEN, 0, rope,
+                           total_heads, hd, qdim, kvdim, odim, !text_cross,
+                           x, text_cross ? &kv_in : nullptr, qkv, bkv, logits, unquantized, out,
+                           tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN, 0, rope,
                            1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
          "C06 accepted missing output IQ8R quantizer");
+    if (text_cross) {
+        ltx2::Act no_kv = kv_in;
+        no_kv.q.op = 0;
+        need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
+                               total_heads, hd, qdim, kvdim, odim, false, x, &no_kv,
+                               qkv, bkv, logits, ao, out, tokens, 2,
+                               RAD_ACCESS_PER_TOKEN, 0, rope, 1e-6, &slice, scratch)
+                 == RAD_E_UNSUPPORTED,
+             "LTX03 accepted unquantized independent KV");
+    }
     need(b.program().weights.size() == before && !a.tp3,
          "C06 rejected geometry allocated weights");
     const int rc=ltx2::attn_declare(
         &b, m, g, a, prefix.c_str(), original.c_str(),
-        total_heads, hd, full, full, full, true, x, nullptr,
-        qkv, 0, logits, ao, out, 4, 4, RAD_ACCESS_PER_TOKEN,
+        total_heads, hd, qdim, kvdim, odim, !text_cross, x, text_cross ? &kv_in : nullptr,
+        qkv, bkv, logits, ao, out, tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN,
         0, rope, 1e-6, &slice, scratch);
     if(rc != RAD_OK) {
         std::fprintf(stderr,"C06 failed: block=%lld audio=%d rank=%d owned=%d rc=%d\n",
@@ -666,13 +698,18 @@ static void run_self_attn(const RadFile& model, Registry& reg,
          a.inner == local && a.hd == hd &&
          a.tp_q.scratch == scratch && a.tp_k.scratch == scratch,
          "C06 lost local head or scratch ownership");
-    need(a.gate.N == total_heads && a.gate.K == full && a.gate.bias,
+    need(a.gate.N == total_heads && a.gate.K == qdim && a.gate.bias,
          "C06 replicated head gate missing");
-    need(a.op_rq && a.op_rk && a.op_attn && a.op_hg && a.op_v &&
+    need((text_cross || (a.op_rq && a.op_rk && a.op_v)) &&
+         (!modal_cross || (a.op_rq && a.op_rk)) &&
+         a.op_attn && a.op_hg && (text_cross ? a.kv.op : !a.kv.op) &&
          a.qkv.op && a.out.op && a.out.post_reduce && a.out.op_b &&
          a.tp_q.reduce && a.tp_k.reduce && !a.op_qn && !a.op_kn,
          "C06 native self-attention graph incomplete");
     for(const rad_op h:{a.op_rq,a.op_rk}) {
+        if (text_cross && !modal_cross) {
+            need(!h, "text cross-attention unexpectedly rotates Q/K"); continue;
+        }
         const auto* op=b.program().op(h);
         long long head0=-1, heads=0, dim=0;
         need(op && op->base.get_i("head0",&head0) && head0==first &&
@@ -688,8 +725,11 @@ static void run_self_attn(const RadFile& model, Registry& reg,
              "C06 rank requires BigCherry's existing exact TP3 collective");
     }
     check_parts(*b.program().weight(a.qkv.l.w), slice);
+    if (text_cross) check_parts(*b.program().weight(a.kv.l.w), kv_slice);
     check_parts(*b.program().weight(a.qkv.l.ws), slice);
+    if (text_cross) check_parts(*b.program().weight(a.kv.l.ws), kv_slice);
     check_parts(*b.program().weight(a.qkv.bias), slice);
+    if (text_cross) check_parts(*b.program().weight(a.kv.bias), kv_slice);
     const auto col=ltx2::C01Slice::columns_deferred(full,lo,local);
     check_col(*b.program().weight(a.out.l.w),col);
     check_col(*b.program().weight(a.out.l.ws),col);
@@ -703,8 +743,9 @@ static void run_self_attn(const RadFile& model, Registry& reg,
                               a.tp_q.norm, a.tp_q.extract,
                               a.tp_k.clear, a.tp_k.insert, a.tp_k.reduce,
                               a.tp_k.norm, a.tp_k.extract,
-                              a.op_rq, a.op_rk, a.op_attn, a.op_hg, a.op_v}) {
+                              a.op_rq, a.op_rk, a.op_attn, a.op_hg, a.op_v, a.kv.op, a.kv.op_b}) {
         const auto* info = b.program().op(handle);
+        if (!handle) continue;
         need(info != nullptr, "C06 native operation missing");
         for(const auto& band : info->bands)
             need(bool(band.dom[aql ? RAD_DOMAIN_DEVICE : RAD_DOMAIN_HOST]),
@@ -723,14 +764,20 @@ static void run_self_attn(const RadFile& model, Registry& reg,
             capture->width=full;
             capture->audio=audio;
             capture->rank=rank;
+            capture->tokens=tokens<=4?1:tokens;
+            capture->cu[1]=(int32_t)capture->tokens;
             RadVideoGeom geom{};
             geom.n_text=1;
             geom.lat_frames=1;
             geom.lat_h=1;
-            geom.lat_w=1;
-            geom.n_audio=1;
-            need(ltx2::positions(&geom,capture->pos.data(),3)==3,
-                 "C06 native one-row coordinates invalid");
+            geom.lat_w=audio?1:capture->tokens;
+            geom.n_audio=audio?capture->tokens:1;
+            capture->video_rows=geom.lat_w;
+            capture->pos.resize((size_t)(3*geom.lat_w+geom.n_audio));
+            need(ltx2::positions(&geom,capture->pos.data(),
+                                 geom.n_text+geom.lat_w+geom.n_audio)==
+                     geom.n_text+geom.lat_w+geom.n_audio,
+                 "C06 native multirow rotary coordinates invalid");
         }
         // Retain exactly the Builder just verified; native all-reduce
         // instance initialization must rendezvous across all three ranks.
@@ -743,6 +790,152 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     if (inspect_weights) verify_c06_load_contract(model,b.program(),rank);
 }
 
+
+// LTX03: checkpoint-derived FFN and replicated residual/modulation declarations.
+// The DiT production loop is unchanged; this does not issue a TP3 graph.
+static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
+                        bool audio, int rank, int first, int owned, int heads) {
+    const std::string prefix = "dit.blk." + std::to_string(block) +
+                               (audio ? ".audio_ff" : ".ff");
+    const auto* wu = model.find(prefix + "_up.weight");
+    const auto* wd = model.find(prefix + "_down.weight");
+    need(wu && wd && wu->rank == 2 && wd->rank == 2 &&
+         wu->shape[0] == wd->shape[1] && wu->shape[1] == wd->shape[0],
+         "LTX03 FFN upstream/downstream source dimensions disagree");
+    const int64_t dim = wu->shape[1], width = wu->shape[0];
+    need(dim > 0 && width > 0 && width % heads == 0 &&
+         first >= 0 && owned > 0 && first + owned <= heads,
+         "LTX03 FFN rank ownership not derivable from checkpoint");
+    const int64_t unit = width / heads, offset = first * unit, local = owned * unit;
+    const auto& eu = model.encoding(*wu);
+    const auto& ed = model.encoding(*wd);
+    need(rad::arch::linear_is_iq8r(eu) && rad::arch::linear_is_iq8r(ed),
+         "LTX03 FFN model encoding is not IQ8R");
+    const int64_t group = rad::arch::linear_w8h_group(eu);
+    need(group == rad::arch::linear_w8h_group(ed),
+         "LTX03 FFN source group disagreement");
+    const auto us = ltx2::C01Slice::rows(width, offset, local, unit, 1);
+    const auto ds = ltx2::C01Slice::columns_deferred(width, offset, local);
+    need(us.valid(local, dim, group) && ds.valid(dim, local, group),
+         "LTX03 FFN ownership violates model K-scale group");
+
+    const auto* ub = model.find(prefix + "_up.bias");
+    const auto* db = model.find(prefix + "_down.bias");
+    need((ub != nullptr) == audio && (db != nullptr) == audio &&
+         (!audio || (ub->rank == 1 && ub->shape[0] == width &&
+                     db->rank == 1 && db->shape[0] == dim)),
+         "LTX03 FFN bias geometry is not model-consistent");
+    Builder b(reg, metadata(), context(rank));
+    b.set_sources(rad::rad_container_sources(model));
+    ltx2::Names nm;
+    ltx2::Geom g{};
+    g.w_i8h = true;
+    g.w_i8_group = group;
+    g.world = 3;
+    g.wire_exact = 1;
+    g.max_tok = 4;
+    g.dtype = "bf16";
+    ltx2::Act x{}, ff{};
+    need(x.declare(&b,nm,g,"ltx03.ffn.input",4,dim) == RAD_OK &&
+         ff.declare(&b,nm,g,"ltx03.ffn.mid",4,local) == RAD_OK,
+         "LTX03 FFN Act declaration failed");
+    const rad_buf res = ltx2::decl_b(&b,nm.f("ltx03.residual"),RAD_BF16,{4,dim});
+    const rad_buf delta = ltx2::decl_b(&b,nm.f("ltx03.delta"),RAD_BF16,{4,dim});
+    const rad_buf tables = ltx2::decl_b(&b,nm.f("ltx03.mod"),RAD_BF16,{4,2*dim});
+    const rad_buf gates = ltx2::decl_b(&b,nm.f("ltx03.gates"),RAD_BF16,{4,dim});
+    const rad_buf upbuf = ltx2::decl_b(&b,nm.f("ltx03.ff.up"),RAD_BF16,{4,local});
+    need(res && delta && tables && gates && upbuf,
+         "LTX03 FFN replicated BF16 buffers missing");
+    const rad_op mod = ltx2::mod_op(&b,4,dim,1e-6,false,"rms",
+                                    tables,tables,res,0,x.a.x);
+    const rad_op mod_gated = ltx2::mod_op(&b,4,dim,1e-6,true,"rms",
+                                          tables,tables,res,delta,x.a.x);
+    const rad_op residual = ltx2::gate_op(&b,4,dim,gates,delta,res);
+    need(mod && mod_gated && residual, "LTX03 native modulation/residual unavailable");
+    ltx2::Lin up{}, down{};
+    int rc = audio
+        ? up.declare(&b,nm,g,(prefix + "_up").c_str(),
+                     {"checkpoint.audio_ff.net.0.proj.weight"},
+                     {"checkpoint.audio_ff.net.0.proj.bias"}, {},
+                     local,dim,RAD_ACCESS_PER_TOKEN,0,x,upbuf,4,false,&us)
+        : up.declare(&b,nm,g,(prefix + "_up").c_str(),
+                     {"checkpoint.ff.net.0.proj.weight"}, {}, {},
+                     local,dim,RAD_ACCESS_PER_TOKEN,0,x,upbuf,4,false,&us);
+    need(rc==RAD_OK && up.op, "LTX03 FFN up row shard refused");
+    const rad_op act = ltx2::unary(&b,"gelu_tanh",4,local,"bf16",upbuf,ff.a.x);
+    need(act, "LTX03 native FFN activation missing");
+    // Reject fractional IQ8R scale-group ownership before allocating weights.
+    const auto bad_slice = ltx2::C01Slice::columns_deferred(
+        width, offset + group / 2, local);
+    const auto before_bad = b.program().weights.size();
+    ltx2::Lin invalid{};
+    int bad_rc = audio
+        ? invalid.declare(&b,nm,g,(prefix + "_down").c_str(),
+                          {"checkpoint.audio_ff.net.2.weight"},
+                          {"checkpoint.audio_ff.net.2.bias"}, {},
+                          dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&bad_slice)
+        : invalid.declare(&b,nm,g,(prefix + "_down").c_str(),
+                          {"checkpoint.ff.net.2.weight"}, {}, {},
+                          dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&bad_slice);
+    need(bad_rc == RAD_E_UNSUPPORTED &&
+         b.program().weights.size() == before_bad,
+         "LTX03 FFN illegal scale-group cut reached native weight declaration");
+    rc = audio
+        ? down.declare(&b,nm,g,(prefix + "_down").c_str(),
+                       {"checkpoint.audio_ff.net.2.weight"},
+                       {"checkpoint.audio_ff.net.2.bias"}, {},
+                       dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&ds)
+        : down.declare(&b,nm,g,(prefix + "_down").c_str(),
+                       {"checkpoint.ff.net.2.weight"}, {}, {},
+                       dim,local,RAD_ACCESS_PER_TOKEN,0,ff,delta,4,false,&ds);
+    need(rc==RAD_OK && down.op && !down.op_b && !down.bias,
+         "LTX03 FFN down was not a bias-free partial GEMM");
+    ltx2::Geom wrong = g;
+    wrong.world = 2;
+    need(down.finalize_deferred_output(&b,nm,wrong,(prefix + "_down").c_str(),
+                                       RAD_ACCESS_PER_TOKEN,0,delta,4) == RAD_E_UNSUPPORTED,
+         "LTX03 FFN down accepted an incompatible reduction world");
+    need(down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
+                                       RAD_ACCESS_PER_TOKEN,0,delta,4) == RAD_OK,
+         "LTX03 FFN down exact reduction/final bias refused");
+    need(down.post_reduce && down.deferred_bias &&
+         (audio ? (down.bias && down.op_b) : (!down.bias && !down.op_b)),
+         "LTX03 FFN biasless/biased output finalization mismatch");
+    need(b.program().weight(up.l.w) && b.program().weight(up.l.ws) &&
+         b.program().weight(down.l.w) && b.program().weight(down.l.ws),
+         "LTX03 FFN source-backed native weight handles missing");
+    check_parts(*b.program().weight(up.l.w),us);
+    check_parts(*b.program().weight(up.l.ws),us);
+    check_col(*b.program().weight(down.l.w),ds);
+    check_col(*b.program().weight(down.l.ws),ds);
+    if (audio) {
+        check_parts(*b.program().weight(up.bias),us);
+        need(b.program().weight(down.bias)->decl.shard == RAD_SHARD_NONE,
+             "LTX03 FFN audio output bias must be replicated after reduce");
+    }
+    const rad_op ops[] = {mod,mod_gated,residual,up.op,act,ff.q.op,
+                          down.op,down.post_reduce,down.op_b};
+    for (rad_op h : ops) {
+        if (!h) continue;
+        const auto* op=b.program().op(h);
+        need(op!=nullptr, "LTX03 FFN native graph lost operation");
+        for (const auto& band : op->bands)
+            need(bool(band.dom[RAD_DOMAIN_HOST]),
+                 "LTX03 FFN operation not available on reference host");
+    }
+    long long world=0, exact=0;
+    const auto* red=b.program().op(down.post_reduce);
+    need(red->base.get_i("world_size",&world) && world == 3 &&
+         red->base.get_i("exact",&exact) && exact == 1,
+         "LTX03 FFN row-parallel reduce not exact TP3");
+    need(down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
+                                       RAD_ACCESS_PER_TOKEN,0,delta,4) == RAD_E_UNSUPPORTED,
+         "LTX03 FFN double reduction/bias was accepted");
+    b.set_instances(false);
+    need(b.finish()==RAD_OK && b.errors().empty(),
+         "LTX03 FFN/modulation native Builder finish failed");
+}
+
 int main(int argc, char** argv) {
     if(argc!=3 && argc!=4) {
         std::fprintf(stderr,"usage: ltx_c02_lin_declare_test MODEL.rad PLUGIN_KERNEL_DIR\n");
@@ -751,7 +944,9 @@ int main(int argc, char** argv) {
     try {
         const bool aql = argc == 4 &&
             (std::string(argv[3]) == "--c06-instances-aql" ||
-             std::string(argv[3]) == "--c06-issued-aql");
+             std::string(argv[3]) == "--c06-issued-aql" ||
+             std::string(argv[3]) == "--c06-issued-aql-16" ||
+             std::string(argv[3]) == "--c06-issued-aql-64");
         if (aql) ltx_test::require_aql_backend();
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
@@ -771,7 +966,72 @@ int main(int argc, char** argv) {
         const int nheads = std::stoi(head_text);
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
+        if (argc == 4 && std::string(argv[3]) == "--ltx03-ffn-modulation") {
+            int64_t tested = 0;
+            for (int64_t block = 0; block < nblocks; ++block)
+                for (bool audio : {false,true})
+                    for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                        int first = 0;
+                        for (int rank=0;rank<3;++rank) {
+                            run_dit_ffn(model,reg,block,audio,rank,first,
+                                        split[rank],nheads);
+                            first += split[rank];
+                            ++tested;
+                        }
+                        need(first == nheads, "LTX03 FFN head map lost owners");
+                    }
+            need(tested == nblocks * 2 * 2 * 3,
+                 "LTX03 FFN source-backed declaration count mismatch");
+            std::printf("LTX03 %lld FFN/modulation/residual declarations across %lld blocks\n",
+                        (long long)tested,(long long)nblocks);
+            return 0;
+        }
         if (argc == 4) {
+            if (std::string(argv[3]) == "--ltx03-text-cross" ||
+                std::string(argv[3]) == "--ltx03-modal-cross") {
+                const bool modal = std::string(argv[3]) == "--ltx03-modal-cross";
+                int64_t count = 0;
+                for (int64_t block = 0; block < nblocks; ++block)
+                    for (bool audio : {false, true})
+                        for (const std::array<int,3> split :
+                             {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                            int first = 0;
+                            for (int rank = 0; rank < 3; ++rank) {
+                                run_self_attn(model, reg, block, audio, rank,
+                                              first, split[rank], nheads,
+                                              nullptr, false, false, nullptr, 4, true, modal);
+                                first += split[rank];
+                                ++count;
+                            }
+                            need(first == nheads, "LTX03 text-cross head ownership gap");
+                        }
+                need(count == nblocks * 12, "LTX03 text-cross coverage count");
+                return 0;
+            }
+            if (std::string(argv[3]) == "--ltx03-all-blocks") {
+                // LTX03: source-derived full-depth geometry, with the same
+                // native three-rank declaration and no second model path.
+                int64_t declared = 0;
+                for (int64_t block = 0; block < nblocks; ++block)
+                    for (bool audio : {false, true})
+                        for (const std::array<int,3>& split :
+                             {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                            int first = 0;
+                            for (int rank = 0; rank < 3; ++rank) {
+                                run_self_attn(model, reg, block, audio, rank, first,
+                                              split[rank], nheads);
+                                first += split[rank];
+                                ++declared;
+                            }
+                            need(first == nheads, "LTX03 all-block head coverage gap");
+                        }
+                need(declared == nblocks * 2 * 2 * 3,
+                     "LTX03 all-block native declaration count drift");
+                std::printf("LTX03 %lld native self-attention declarations across %lld blocks\n",
+                            (long long)declared, (long long)nblocks);
+                return 0;
+            }
             if (std::string(argv[3]) == "--c06-weights") {
                 // Same builder and exact native loader geometry as C06;
                 // no new model reader, memory mover or implementation.
@@ -791,8 +1051,17 @@ int main(int argc, char** argv) {
                 need(tested==12,"C06 weight contract matrix drift");
                 return 0;
             }
+            const int64_t issue_rows =
+                (std::string(argv[3])=="--c06-issued-host-16" ||
+                 std::string(argv[3])=="--c06-issued-aql-16") ? 16 :
+                (std::string(argv[3])=="--c06-issued-host-64" ||
+                 std::string(argv[3])=="--c06-issued-aql-64") ? 64 : 1;
             const bool issue = std::string(argv[3])=="--c06-issued-host" ||
-                               std::string(argv[3])=="--c06-issued-aql";
+                               std::string(argv[3])=="--c06-issued-aql" ||
+                               std::string(argv[3])=="--c06-issued-host-16" ||
+                               std::string(argv[3])=="--c06-issued-host-64" ||
+                               std::string(argv[3])=="--c06-issued-aql-16" ||
+                               std::string(argv[3])=="--c06-issued-aql-64";
             if (std::string(argv[3]) == "--c06-instances" || aql || issue) {
                 // Both issued modes reuse the same declared native C06 graph
                 // and exact collective instances as the existing proofs.
@@ -822,7 +1091,8 @@ int main(int argc, char** argv) {
                         for (int rank=0; rank<3; ++rank) {
                             run_self_attn(model,reg,0,audio,rank,
                                           first,split[rank],nheads,&builders[rank],
-                                          false,aql,issue?&issued[rank]:nullptr);
+                                          false,aql,issue?&issued[rank]:nullptr,
+                                          issue?std::max<int64_t>(4,issue_rows):4);
                             if(issue) issued[rank].gpu=aql;
                             first += split[rank];
                         }
@@ -889,21 +1159,21 @@ int main(int argc, char** argv) {
                                     need(r.device_cu,
                                          "C06 native AQL cu-seqlens allocation refused");
                                     r.owned_device.push_back(r.device_cu);
-                                    r.device_pos=rad_dev_alloc(sizeof(r.pos),RAD_MEM_DEVICE);
+                                    r.device_pos=rad_dev_alloc(r.pos.size()*sizeof(float),RAD_MEM_DEVICE);
                                     need(r.device_pos,
                                          "C06 native AQL position allocation refused");
                                     r.owned_device.push_back(r.device_pos);
                                     need(rad_memcpy_async(r.device_cu,r.cu.data(),
                                                           sizeof(r.cu),r.ctx->stream())==RAD_OK &&
                                          rad_memcpy_async(r.device_pos,r.pos.data(),
-                                                          sizeof(r.pos),r.ctx->stream())==RAD_OK,
+                                                          r.pos.size()*sizeof(float),r.ctx->stream())==RAD_OK,
                                          "C06 native AQL coordinate transfer failed");
-                                    std::vector<uint16_t> sample((size_t)r.width);
-                                    for(int64_t j=0;j<r.width;++j)
+                                    std::vector<uint16_t> sample((size_t)(r.width*r.tokens));
+                                    for(int64_t j=0;j<r.width*r.tokens;++j)
                                         sample[(size_t)j]=c06_sample(j);
                                     void* input=r.ctx->buf_ptr(r.x.a.x);
                                     need(input && rad_memcpy_async(input,sample.data(),
-                                                r.width*2,r.ctx->stream())==RAD_OK &&
+                                                r.width*r.tokens*2,r.ctx->stream())==RAD_OK &&
                                          rad_stream_sync(r.ctx->stream())==RAD_OK,
                                          "C06 native AQL activation transfer failed");
                                 }
@@ -917,7 +1187,7 @@ int main(int argc, char** argv) {
                                     const int rc=r.ctx->bind_thread();
                                     RadBatch batch{};
                                     batch.phase=RAD_PHASE_PREFILL;
-                                    batch.n_tok=1;
+                                    batch.n_tok=r.tokens;
                                     batch.n_seq=1;
                                     status[rank]=rc==RAD_OK?r.ctx->run_step(&batch):rc;
                                     if(status[rank]==RAD_OK && aql)
@@ -943,19 +1213,19 @@ int main(int argc, char** argv) {
                                      "C06 output rank device bind refused");
                                 void* ptr=r.ctx->buf_ptr(r.output);
                                 need(ptr!=nullptr,"C06 output arena buffer missing");
-                                results[rank].resize((size_t)full);
+                                results[rank].resize((size_t)(full*r.tokens));
                                 if(aql) {
                                     need(rad_memcpy_async(results[rank].data(),ptr,
-                                                         full*2,r.ctx->stream())==RAD_OK &&
+                                                         full*r.tokens*2,r.ctx->stream())==RAD_OK &&
                                          rad_stream_sync(r.ctx->stream())==RAD_OK,
                                          "C06 native AQL attention output download failed");
                                 } else {
-                                    std::memcpy(results[rank].data(),ptr,(size_t)full*2);
+                                    std::memcpy(results[rank].data(),ptr,(size_t)(full*r.tokens)*2);
                                 }
                             }
                             const auto& control=results[0];
                             size_t nonzero=0;
-                            for(int64_t j=0;j<full;++j) {
+                            for(size_t j=0;j<control.size();++j) {
                                 const uint32_t b=(uint32_t)control[(size_t)j]<<16;
                                 float x;
                                 std::memcpy(&x,&b,sizeof x);
@@ -996,7 +1266,7 @@ int main(int argc, char** argv) {
                             }
                             std::printf("C06 issued %s: %s heads=%d,%d,%d exact BF16 output replicas %lld values; no TP1 capture\n",
                                         aql?"AQL":"host",audio?"audio":"video",
-                                        split[0],split[1],split[2],(long long)full);
+                                        split[0],split[1],split[2],(long long)control.size());
                             // Optional diagnostic capture of the *validated* rank-0
                             // BF16 output, for an external TP1/backend comparison.
                             // The caller explicitly owns the destination directory.
@@ -1217,7 +1487,7 @@ int main(int argc, char** argv) {
         run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,ProbeCase::Normal);
         run(model,reg,"dit.blk.0.audio_ff_down",0,nheads,0,0,8,ProbeCase::DeferredBias);
         run(model,reg,"dit.blk.0.audio_attn1.out",0,nheads,0,0,10,ProbeCase::InvalidColumn);
-        run(model,reg,"dit.blk.0.ff_down",0,nheads,0,0,8,ProbeCase::MissingDeferredBias);
+        run(model,reg,"dit.blk.0.ff_down",0,nheads,0,0,8,ProbeCase::DuplicateDeferredBias);
         std::printf("LTX2 native Lin declarations: fused/biasless=%d, deferred-bias=%d, rejected-K=%d, negative=4\n",
                     count, deferred_count, blocked_count);
         return 0;

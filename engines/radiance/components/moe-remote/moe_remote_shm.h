@@ -239,8 +239,6 @@ constexpr CombineChunkWait combine_chunk_wait(bool combined, uint32_t token, boo
 struct LayoutShape {
     uint32_t hidden, top_k, experts, max_rows, act_group, intermediate;
 };
-constexpr uint32_t kLegacyIntermediate = 640;   /* Flash-Next's expert width, the only one the execution paths take until RCS09-07 */
-constexpr LayoutShape legacy_shape() { return LayoutShape{kHidden, kTopK, kExperts, kMaxRows, kActGroup, kLegacyIntermediate}; }
 constexpr bool operator==(const LayoutShape& a, const LayoutShape& b) {
     return a.hidden == b.hidden && a.top_k == b.top_k && a.experts == b.experts && a.max_rows == b.max_rows &&
            a.act_group == b.act_group && a.intermediate == b.intermediate;

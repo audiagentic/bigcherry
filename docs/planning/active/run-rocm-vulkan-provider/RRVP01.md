@@ -52,6 +52,8 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 All evidence-producing workflows carry explicit resolved stack identity internally. Missing, ambiguous, unknown, and backend-mismatched stack requests fail before work. Same source/build/platform with different stacks cannot collide. Caller/CLI/lane migration is complete in one pass with no legacy three-part --lane compatibility shim or second stack-selection path.
 
+**Transferred RRVP03 acceptance (independent gate):** RRVP01 must carry separate expected requested software stack, build SDK/ICD identity, actual process-loaded provider stack, and physical hardware; use existing ExecutionIdentity/ExecutionAttestation/AttestedServerSession comparators, not a new attestation subsystem or PATH/ROCM_PATH/LD_LIBRARY_PATH guesses. Actual Vulkan loader/ICD/driver/module fingerprints must be sampled after initialization and after provider-exercising untimed warmup to catch lazy-loaded libraries, but before first accepted performance/correctness sample. Demand versioned atomic attestation report and strict mismatch/missing/substituted-provider refusal, including wrong ICD, missing loader, injected driver, stale build and backend mismatch, with fail-closed negative fixture tests; host hardware key must not silently absorb SDK identity. TRVP01 remains the one manifest/DB persistence owner, RRVP02 is expected provider/capability discovery, BRVP01 is build identity; RRVP01 uses their output without duplicating record producers. Vulkan implementation remains PAUSED; neither live Vulkan qualification nor new provider patch should be initiated by this consolidation.
+
 ## Notes
 
 Supersedes: RO02
@@ -65,6 +67,8 @@ STRONGLY CONFIRMED via deeper repo-validated dev-gpt review (2026-09-10): checke
 PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, but implementation is paused. This item's design remains as reviewed above (GO once absence semantics explicit); a partial implementation was started (CampaignLane.stack_name, CampaignRequest.stack, _resolve_stack() fail-closed validation, lane_id() including stack) and then REVERTED uncommitted rather than landed, specifically because making stack mandatory on every plan() call has a real blast radius across cli/build.py, profiling/workflow.py, tuning/workflow.py, and two test files that needs its own deliberate pass -- not something to rush through under a paused-scope directive. Do not resume implementation until Vulkan work is unpaused; the design/order above stays valid for when it is.
 
 Supersedes RO02. Preserve RO01 as authoritative stack selection and the later no-shim review doctrine; external syntax may be parsed only to require explicit stack resolution, never to preserve old stackless identity. Current Vulkan implementation is paused, but this plan remains the migration authority when resumed.
+
+CONSOLIDATION 2026-11-22 PHASE-5: receive RRVP03. RRVP03 is the loaded-runtime attestation phase of RRVP01's canonical HIP/Vulkan stack identity/receipt propagation. Keeping two identity owners risks an incomplete measurement path and duplicate admission code. Original acceptance still applies; the transferred gate is unfinished. Source is superseded for duplicate planning ownership, not completed on implementation, benchmark or live-hardware criteria. Where Vulkan is involved, implementation remains paused by owner directive.
 
 ## Change Log
 
@@ -93,3 +97,8 @@ Supersedes RO02. Preserve RO01 as authoritative stack selection and the later no
 - chg_20260910_040226_fixed-the-four-remaining-seman_2499
 - 2026-09-10T04:02:26.607718+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-02T12:34:41.199739+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:effort_risk
+
+## Reviews
+
+- RV4532
+- 2026-11-22T11:09:30.395174+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

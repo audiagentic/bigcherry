@@ -1,0 +1,11 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_112705_no-user-visible-change_2830",
+  "files": [
+    "tools/bigcherry/__main__.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove the legacy re-exports (cmd_* handlers, build_parser, private overlay helpers) from the package entrypoint, leaving only main(). Tests now import from the canonical bigcherry.cli modules; a guard test asserts the entrypoint exports only main.",
+  "timestamp-utc": "2026-11-22T11:27:05.981661Z",
+  "user-summary-candidate": "No user-visible change."
+}

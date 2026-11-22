@@ -66,6 +66,8 @@ BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdi
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: tools/bigcherry/engine_adapters/base.py:180-308 and engine_adapters/radiance.py:38 provide substantial process/sidecar adapters, and campaign/benchmark.py:529-659 uses them. MEN03.md:39-53 additionally requires a reference-vllm lane and one Flash-Next A/B script both migrated, with identical cross-engine outputs; that specific dev fire-test and script migration were not evidenced.
 
+CONSOLIDATION 2026-11-22 OWNER-REFERENCES: MEN02's first Radiance 27B R9700 working-lane/API comparison is now an acceptance gate in active MEN01. MEN02 is superseded as duplicate introductory ownership, not completed. MEN03 still owns the independent cross-engine lab adapter/script migration and any explicitly retained vLLM reference decision.
+
 ## Change Log
 
 - 2026-10-08T20:36:14.144983+00:00 (created-by): Created by agent
@@ -79,3 +81,8 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 - 2026-11-04T03:45:55.047676+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:43:28.133968+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:43:37.184501+00:00 (state-transition): State: superseded → pending
+
+## Reviews
+
+- RV4533
+- 2026-11-22T11:19:16.730593+00:00 (updated-by): Updated: section:notes

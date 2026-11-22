@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -186,7 +187,7 @@ def run_component_tests(engine: str, *, source_root: Path, build_dir: Path, runn
         pattern = "^(" + "|".join(re.escape(t) for t in declared) + ")$"
         try:
             runner(["ctest", "--test-dir", str(tree), "--output-on-failure", "--no-tests=error", "-R", pattern,
-                    "--output-log", str(log)], source_root)
+                    "--parallel", str(len(os.sched_getaffinity(0))), "--output-log", str(log)], source_root)
         except subprocess.CalledProcessError as exc:
             failures.append(f"{name}: the tests failed (ctest exited {exc.returncode}); log: {log}")
     return failures

@@ -34,6 +34,12 @@ std::string engine_identity(const std::filesystem::path& binary, const std::file
  * Counts the content hashes run, so a test can prove a start reads the runtime once. */
 uint64_t engine_identity_hash_runs();
 
+/* Persist the digest across processes: one small file per runtime home under `work_root` (the platform's work root,
+ * --work-root), holding the digest and the stamp of every file it covers. A later process whose stamps all still match
+ * reads it and hashes nothing; any difference hashes once and stores again. A file that cannot be read, parsed, or
+ * that names another runtime home is ignored. Not called: the per-process memo above only. */
+void set_engine_identity_store(const std::filesystem::path& work_root);
+
 /* What the key covers: the cache version, the model and engine identities, the engine card's architecture and VRAM, and
  * the engine arguments the launcher passes through verbatim (they can change the plan, e.g. --kv-resident), and the
  * planning inputs: every engine.* value except the memory outputs the plan itself feeds (host pool, host KV tier,

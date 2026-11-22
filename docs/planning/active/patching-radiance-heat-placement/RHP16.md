@@ -84,14 +84,14 @@ RESULTS 2026-11-10 (fresh calibration through the supported path after #801/#802
 
 ## Status 2026-11-19 (live policy works natively on flashnext-4gpu)
 
-- Calibration is native (`bc-serve serve --calibration-run`), not the bash/Python recipe. The record key is the narrow policy-calibration key v2 (#1169): model, layout, objective, engine and helper GPU identities, helper roles/formats/kernels, histogram period, power profile, helper execution settings and remote service geometry; it excludes engine build, host pool, helper VRAM budgets, memory-plan identity and engine flags, so a rebuild or pin bump no longer orphans a record. New records keep `calibration_inputs`, `source_plan_key` and `source_engine_build` as provenance; legacy hash-only records are refused (recalibrate once). A calibration run now files its record under the key production looks up (a store-key bug that made native calibration unusable was fixed in the same PR).
+- **Historical result only (2026-11-19):** the now-removed native `serve --calibration-run` entrypoint then produced calibration records. The record key is the narrow policy-calibration key v2 (#1169): model, layout, objective, engine and helper GPU identities, helper roles/formats/kernels, histogram period, power profile, helper execution settings and remote service geometry; it excludes engine build, host pool, helper VRAM budgets, memory-plan identity and engine flags, so a rebuild or pin bump no longer orphans a record. New records keep `calibration_inputs`, `source_plan_key` and `source_engine_build` as provenance; legacy hash-only records are refused (recalibrate once). That historical calibration start filed its record under the key production looked up (a store-key bug that made native calibration unusable was fixed in the same PR).
 - Calibration inputs that matter: two distinct prompt files, filler (short, low-demand) versus document (long) prompts, so the lane-service and drift readings are measured under both loads, and `accept_unwatermarked_heat=true` in the calibration policy (file heat is never watermarked; with false every heat delta was rejected and the no-feed bound was about 67 h). #1162 refuses a calibration policy that cannot converge and bounds the no-feed wait.
 - Production start with the policy on works end to end: the heat guard waits for the first counted snapshot and names the failing check (#1174), the runtime receipt accepts the boot placement (transaction 0, empty journal) (#1176), a stored policy-on manifest replays for an unchanged config (#1177). Hardware 2026-11-19, flashnext-4gpu: 14 committed placement transactions in one run with the guards polling throughout; two consecutive starts, the second replaying the first's manifest; the 2-launch parity run with the policy on and a 451 s warmup measured 256K prefill 3085/3183 tok/s (+6%/+10% against the v1.17.0 baseline), document prefill +4%, cold TTFT +4%, 8-session TTFT +2% (evidence: PR #1179).
 - Still open for this item: hand-picked numbers not yet derived (see the derivation table in this file), and the other layouts (RHP20).
 
 ## Offline replay of the policy, 2026-11-05 (slim harness for steps 3-4)
 
-r3_policy_replay (engines/radiance/components/moe-remote/worker_policy_replay.h, worker_policy_replay_main.cpp, test worker_policy_replay_test.cpp) feeds a recorded SERIES of the engine's cumulative route-count snapshots through the driver's own heat accounting and planner (heat::Heat, heat::propose, DriftTracker, marginal_relative_error), applying each proposed transaction at once. It runs in seconds with no GPU and no server, and prints per snapshot the tail's heat share before and after, the experts moved, and at the end transactions, bytes moved, the hot-set drift half-life and the marginal sampling error. Every setting is an explicit argument (no defaults). It does NOT model transaction time and its disturbance of service, aborts, the effect gate or eligibility learned from refused destinations, so it answers what the plan does to the placement, not what it costs; the cost side still needs a serve run. tools/lab/radiance/heat-placement/record_heat_series.py copies the live route-count file (PREFIX.rank0, rewritten atomically by --record-heat) to numbered snapshots whenever it changes, so a run leaves the whole trajectory; it is the input of the replay. placement_sim.py in the same folder is an older simulator with its own cost-aware policy; the replay is the one that runs the real planner. Card-free tests: convergence off the tail, fixed point, determinism, a hot set that shifts twice (followed, drift measured), residency holding just-moved experts, refusal of bad input, a counter that goes back. Next: record the series in the next hardware runs and use the replay to try the step 3 derivations (cadence, move budget, residency, half-life, margin) against real drift, then confirm on hardware.
+r3_policy_replay (engines/radiance/components/moe-remote/worker_policy_replay.h, worker_policy_replay_main.cpp, test worker_policy_replay_test.cpp) feeds a recorded SERIES of the engine's cumulative route-count snapshots through the driver's own heat accounting and planner (heat::Heat, heat::propose, DriftTracker, marginal_relative_error), applying each proposed transaction at once. It runs in seconds with no GPU and no server, and prints per snapshot the tail's heat share before and after, the experts moved, and at the end transactions, bytes moved, the hot-set drift half-life and the marginal sampling error. Every setting is an explicit argument (no defaults). It does NOT model transaction time and its disturbance of service, aborts, the effect gate or eligibility learned from refused destinations, so it answers what the plan does to the placement, not what it costs; the cost side still needs a serve run. tools/lab/radiance/heat-placement/record_heat_series.py copies the live route-count file (PREFIX.rank0, rewritten atomically by --record-heat) to numbered snapshots whenever it changes, so a run leaves the whole trajectory; it is the input of the replay. The former standalone synthetic cost simulator was retired; the component replay runs the real planner. Card-free tests: convergence off the tail, fixed point, determinism, a hot set that shifts twice (followed, drift measured), residency holding just-moved experts, refusal of bad input, a counter that goes back. Next: record the series in the next hardware runs and use the replay to try the step 3 derivations (cadence, move budget, residency, half-life, margin) against real drift, then confirm on hardware.
 
 ## First measured values and a measurement flaw they exposed, 2026-11-05 (policy-live-9)
 
@@ -187,26 +187,34 @@ The helper process no longer reads `R3_MOE_POLICY_*`: contract amendment 10 make
 
 **Retired (calibration start removed):** `bc-serve serve --calibration-run`, the Python watchdog and `bigcherry results ingest-calibration` no longer exist; `calibration-ingest` and the record store remain. See LIVE_PLACEMENT.md, Producer status.
 
-The production start does **not** auto-enable the live policy for an uncalibrated layout: in locked v1 the policy is absent, so there is no policy thread to measure anything. Calibrate with the launcher's `--calibrate` lab run: `--live-policy POLICY.json` (a non-empty v1 live-policy object; no `enabled` member, presence is activation) and `--calibration-prompts-a FILE` plus `--calibration-prompts-b FILE` (distinct, representative workload sets, one prompt per line), and no `--experiment`. The launcher passes `bc-serve --calibration-run`, which writes a lab-profile manifest with the explicit policy and no `spec.experiment` (v1 refuses an empty experiment), so the measured plan, and therefore the plan-cache key, is the production one. `calibration-ingest` accepts only that shape: lab profile, explicit live policy, no experiment.
+The current native `bc-serve serve CONFIG` start selects a complete
+calibration record for that layout or leaves the live policy absent.
+There is **no supported calibration-producing start on main**: the former
+launcher and `serve --calibration-run` were removed from the session
+entrypoint. Do not use the retired `--calibrate` launch recipe. The
+standalone manifest writer still recognizes `--calibration-run`, but that
+does not start a calibration session or create fresh records.
 
-```sh
-bash tools/lab/radiance/launch-flashnext-best.sh start \
-  --layout flashnext-4gpu --live-policy /path/to/explicit-lab-policy.json \
-  --calibrate --calibration-prompts-a /path/to/filler-prompts.txt \
-  --calibration-prompts-b /path/to/documentation-prompts.txt
-```
+The historical v1 procedure used distinct prompt workloads in both
+orders, an explicit lab live policy, and a helper
+`RHP16_CALIBRATION_JSON` record that `calibration-ingest` validated
+against the corresponding lab manifest. The ingest command still exists,
+but without a supported producer it cannot generate new evidence.
+Native calibration changes are in progress under PRs #1375 and #1384;
+their behavior must be verified after integration, not assumed here.
+For the production selection and the currently supported commands, see
+`docs/reference/engines/radiance/LIVE_PLACEMENT.md`.
 
-This is a *hardware lab procedure*, not part of the card-free verification suite. The launcher's mandatory measured plan check still applies. The helper uses the measurement hooks to wait for the retained hot-set drift horizon and accepted heat-delta observations. It then emits exactly one `RHP16_CALIBRATION_JSON {...}` line in helper0's log. Choose prompts whose observed routed-expert heat differs (e.g. filler versus documentation); distinct files alone cannot prove that model routing shifts. The launcher plays both workload orders (A then B, B then A), repeating complete cycles until the helper emits the marker. The launcher never accepts a marker before both orders complete. It runs `bc-serve calibration-ingest --from-log HELPER_LOG --calibration STORE --manifest LAB_MANIFEST`, stops its processes, and reports the store location at `$BC_WORK_ROOT/live-policy-calibration.toml`. Ingestion validates the exact v1 manifest key, layout, objective and lab profile, re-resolves the exact launch and checks its measured cached plan, then maps the verified v1 helper key to the distinct RSC03 plan-store key used by production. It locks the cache and writes with a temporary file and atomic rename. It refuses malformed, mismatched and duplicate records; to remeasure a plan, archive and deliberately remove its previous record rather than silently replacing evidence.
-
+**Historical v1 record format (not a current run instruction).**
 The log route is required because v1 has **no manifest field for the calibration store path**. No v1 contract field or fingerprint is modified. Every known measured input appears in the TOML record. Unmeasurable inputs are recorded under `absent = { field = "reason" }` rather than filled with made-up values. The existing reader accepts and preserves partial records, but **production derives no live policy from one**; a genuinely complete set of empirical inputs is required. Step 5 now measures per-helper READY ACK copy rates, sampled large-lane service at RESERVED, quiesce-to-reopen downtime at CLEANED, quiet-window nanosecond noise, and committed tail-share gains. The follow-up removes `noise_false_revert_rate_ppm`, `effect_window_samples` and `effect_quiet_windows` from measured records: one was an objective, and two merely reflected configured gate values. `effect_row_noise_ns` was added as a diagnostic; follow-up 7 derives the gate window from the measured tail-window ladder instead. The renamed `effect_noise_max_ns` states the observed maximum rather than claiming an objective-specific quantile. A record with all required observations can now derive policy; new hardware evidence is still pending. The existing policy-live-9 golden series tests the complete round-trip with its explicitly synthetic supplemental inputs; that test fixture is not production evidence.
 
-For manual ingestion after a lab run, use:
-
-```sh
-bc-serve calibration-ingest --from-log /path/to/helper0.log --calibration /path/to/live-policy-calibration.toml --manifest /path/to/verified-lab-manifest.json --plan-cache /path/to/plan-cache --engine-binary /path/to/radiance --site /path/to/plan-site.toml --plan-extra EXAMPLE_PLAN_EXTRA --set KEY=VALUE  # all original --set arguments required
-```
-
-For manual ingestion, pass the **same** site, plan-extra, and all --set arguments used by the lab launch; the launcher supplies these automatically. The helper record bears the typed v1 key, and the stored TOML record bears the validated RSC03 plan-store key.
+For historical calibration records, the standalone
+`bc-serve calibration-ingest --from-log FILE --calibration FILE
+--manifest LAB_MANIFEST` validates the existing helper log against
+the exact associated lab manifest. It is **not** a new-record producer;
+the now-removed launcher formerly supplied those inputs automatically.
+Do not attempt to substitute a production manifest for the missing
+lab-profile calibration run.
 
 ## First hardware calibration, 2026-11-06 (rhp16-calib attempt 6): ingest works, the record is incomplete
 

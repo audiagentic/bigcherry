@@ -5,7 +5,7 @@
 roots = ["engines/radiance/components", "engines/radiance/patches", "tools/lab/radiance"]
 extensions = [".h", ".hip", ".cpp", ".cc", ".py", ".sh", ".rw", ".txt", ".toml"]
 literals = [2560, 640, 384, 160, 49]
-symbols = ["kActivationBf16Bytes", "kActivationQBytes", "kLegacyIntermediate", "kExpertWidth", "kRankWidth", "kHidden", "kMaxRoutes"]
+symbols = ["kActivationBf16Bytes", "kActivationQBytes", "kExpertWidth", "kRankWidth", "kHidden", "kMaxRoutes"]
 test_patterns = ["session_fake_engine\\.cpp$", "_test\\.cpp$", "/test_[^/]*$", "/tests/", "_fixture\\.h$", "replay"]
 
 [[allow]]
@@ -126,20 +126,6 @@ anchor = "constexpr uint32_t result_slot_bytes() { return kMaxRows * kHidden * s
 category = "C"
 reason = "v26 model fixture dimensions; topology counts are validated from the segment (audit MC-001..011)"
 owner = "RCS12"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
-anchor = "constexpr uint32_t kLegacyIntermediate = 640;   /* Flash-Next's expert width, the only one the execu"
-category = "C"
-reason = "Flash-Next's expert width 640 is the only one the execution paths take until the shape is read end to end"
-owner = "RCS09"
-
-[[allow]]
-path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
-anchor = "constexpr LayoutShape legacy_shape() { return LayoutShape{kHidden, kTopK, kExperts, kMaxRows, kActGr"
-category = "C"
-reason = "Flash-Next's expert width 640 is the only one the execution paths take until the shape is read end to end"
-owner = "RCS09"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/r3_moe_worker.cpp"

@@ -1,0 +1,11 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261122_105736_internal-test-fix_5896",
+  "files": [
+    "tools/tests/patch/test_radiance_patch_packages.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The remote-helper hook test follows the real layer-map wait contract: the hook calls await_layer_consumed_timed with the layer-map bound and its own wait stats, and the timed wrapper delegates to the bounded wait and records every wait. Red on main since #1347.",
+  "timestamp-utc": "2026-11-22T10:57:36.818346Z",
+  "user-summary-candidate": "Internal test fix."
+}

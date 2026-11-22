@@ -26,7 +26,7 @@ fs::path verify_installed_prefix(const fs::path& exe, const fs::path& sdk) {
         throw std::runtime_error("installed release refusal: executable is not in a release prefix");
     const fs::path root = prefix->parent_path().parent_path();
     try {
-        const auto verified = bc::release::verify(root, sdk);
+        const auto verified = bc::release::verify_current(root, sdk);
         if (verified.at("current").get<std::string>() != prefix->filename().string())
             throw std::runtime_error("installed release refusal: executable is not the verified current tag");
     } catch (const bc::release::Error& error) {
