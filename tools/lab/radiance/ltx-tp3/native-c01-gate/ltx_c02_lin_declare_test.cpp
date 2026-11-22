@@ -9,6 +9,8 @@
 #include "ltx2.cpp"
 
 #include <array>
+#include <memory>
+#include <thread>
 #include <cstdio>
 #include <cstdlib>
 #include <stdexcept>
@@ -301,7 +303,8 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
 
 static void run_self_attn(const RadFile& model, Registry& reg,
                           int64_t block, bool audio, int rank, int first,
-                          int owned, int total_heads) {
+                          int owned, int total_heads,
+                          std::unique_ptr<Builder>* instance = nullptr) {
     const std::string kind = audio ? "audio_attn1" : "attn1";
     const std::string prefix = "dit.blk." + std::to_string(block) + "." + kind;
     const auto* fused = model.find(prefix + ".qkv.weight");
@@ -329,7 +332,8 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     const ltx2::C01Slice slice = ltx2::C01Slice::rows(full, lo, local, hd, 3);
     need(slice.valid(3 * local, full, rad::arch::RAD_I8_GROUP_WIDE),
          "C06 invalid fused QKV slice");
-    Builder b(reg, metadata(), context(rank));
+    auto owned_builder = std::make_unique<Builder>(reg, metadata(), context(rank));
+    Builder& b = *owned_builder;
     b.set_sources(rad::rad_container_sources(model));
     ltx2::Model m{};
     ltx2::Geom g{};
@@ -446,6 +450,12 @@ static void run_self_attn(const RadFile& model, Registry& reg,
                  "C06 op unresolved on host reference kernel");
     }
     need(b.errors().empty(), "C06 Builder diagnostics");
+    if (instance) {
+        // Retain exactly the Builder just verified; native all-reduce
+        // instance initialization must rendezvous across all three ranks.
+        *instance = std::move(owned_builder);
+        return;
+    }
     b.set_instances(false);
     need(b.finish() == RAD_OK && b.errors().empty(),
          "C06 native full attention graph finish failed");
@@ -473,6 +483,66 @@ int main(int argc, char** argv) {
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
         if (argc == 4) {
+            if (std::string(argv[3]) == "--c06-instances") {
+                // This is a native host INSTANCING gate, not issued C06,
+                // checkpoint weight residency, or video parity. Reuse the
+                // same model-backed self-attention declarations as --c06.
+                int groups = 0;
+                size_t initialized = 0;
+                for (bool audio : {false, true})
+                    for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                        std::array<std::unique_ptr<Builder>,3> builders;
+                        int first = 0;
+                        for (int rank=0; rank<3; ++rank) {
+                            run_self_attn(model,reg,0,audio,rank,
+                                          first,split[rank],nheads,&builders[rank]);
+                            first += split[rank];
+                        }
+                        need(first == nheads, "C06 instance head ownership gap");
+                        const size_t instances_before = reg.n_instances();
+                        std::array<int,3> results{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
+                        std::array<std::string,3> failures;
+                        std::array<std::thread,3> workers;
+                        for (int rank=0; rank<3; ++rank)
+                            workers[rank] = std::thread([&,rank] {
+                                try {
+                                    results[rank] = builders[rank]->finish();
+                                } catch (const std::exception& e) {
+                                    failures[rank] = e.what();
+                                }
+                            });
+                        for (auto& worker : workers) worker.join();
+                        for (int rank=0; rank<3; ++rank) {
+                            if (!failures[rank].empty())
+                                std::fprintf(stderr, "C06 rank%d: %s\n",
+                                             rank,failures[rank].c_str());
+                            if (results[rank] != RAD_OK)
+                                for (const auto& message : builders[rank]->errors())
+                                    std::fprintf(stderr, "C06 rank%d: %s\n",rank,message.c_str());
+                            need(results[rank] == RAD_OK &&
+                                 builders[rank]->errors().empty(),
+                                 "C06 native rank instance rendezvous refused");
+                            need(builders[rank]->program().device_holes(true).empty(),
+                                 "C06 instantiated host kernel coverage incomplete");
+                        }
+                        // The declared Q, K and output reductions each require
+                        // an instance on each rank. No second collective is made.
+                        need(reg.n_instances() >= instances_before + 3 * builders.size(),
+                             "C06 did not initialize three collectives on every rank");
+                        initialized += reg.n_instances() - instances_before;
+                        // Close the native collective instances while the
+                        // builders still own their frozen instance geometry.
+                        reg.fini_instances();
+                        need(reg.n_instances() == 0,
+                             "C06 native collective instances were not retired");
+                        ++groups;
+                    }
+                need(groups == 4, "C06 instance coverage drift");
+                std::printf("LTX C06: %d three-rank host graphs; %zu initialized/retired native instances; no model execution claimed\n",
+                            groups, initialized);
+                return 0;
+            }
             if (std::string(argv[3]) == "--c06") {
                 int tested=0;
                 for(int64_t block=0; block<nblocks; ++block)
