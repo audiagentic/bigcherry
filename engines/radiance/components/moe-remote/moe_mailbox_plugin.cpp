@@ -5,18 +5,18 @@
 #include "rad_abi_layout.h"
 
 extern "C" {
-int r3_moe_mailbox_enabled(void);
 int r3_moe_mailbox_schema_count(void);
 const RadOpSchema* r3_moe_mailbox_schema_at(int i);
 const RadKernelInfo* r3_moe_mailbox_row(int i);
 }
 
 namespace {
-int live_count() {
+int kernel_row_count() {
+    // Kernel rows are fixed by the plugin. Whether a particular engine
+    // generation owns an open mailbox is not fixed by the plugin loader.
     static const int n = [] {
         int k = 0;
-        if (r3_moe_mailbox_enabled())
-            while (r3_moe_mailbox_row(k)) ++k;
+        while (r3_moe_mailbox_row(k)) ++k;
         return k;
     }();
     return n;
@@ -34,8 +34,8 @@ extern "C" const RadPluginInfo* rad_plugin_info(void) {
 }
 extern "C" int rad_kernel_schema_count(void) { return r3_moe_mailbox_schema_count(); }
 extern "C" const RadOpSchema* rad_kernel_schema_at(int i) { return r3_moe_mailbox_schema_at(i); }
-extern "C" int rad_kernel_count(void) { return live_count(); }
+extern "C" int rad_kernel_count(void) { return kernel_row_count(); }
 extern "C" const RadKernelInfo* rad_kernel_at(int i) {
-    return i >= 0 && i < live_count() ? r3_moe_mailbox_row(i) : nullptr;
+    return i >= 0 && i < kernel_row_count() ? r3_moe_mailbox_row(i) : nullptr;
 }
 extern "C" int rad_kernel_concurrent(int) { return 0; }

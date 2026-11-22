@@ -64,6 +64,10 @@ def manifest_library_sources() -> list[Path]:
 
 PACKAGES = REPO / "engines" / "radiance" / "patches"
 FIXTURE = REPO / "engines" / "radiance" / "tests" / "fixtures" / "4a61d72"
+#: the files rad0002/rad0004 edit, exactly as the current pin (Radiance 2.2.0, b6b8751) has them: the remote-MoE
+#: extension binds the engine's instance slots, which the 1.14.0 fixture predates.
+FIXTURE_PIN = REPO / "engines" / "radiance" / "tests" / "fixtures" / "b6b8751"
+PIN_PACKAGES = ("rad0002_moe_remote_handoff", "rad0004_moe_remote_diagnostics")
 
 # rad0001 is superseded by radiance 1.7.0 (Engine::~Engine drains the mover stream itself) and is not applied.
 RAD0002 = "rad0002_moe_remote_handoff"
@@ -80,8 +84,8 @@ CASES = {
     ),
     RAD0004: (
         "arch/common/rad_block_moe_fp8.h",
-        "if (shared) sh_down.step(c_, w.sff, w.sout, T, r0, rows);",
-        "if (shared) sh_down.step(c_, w.sff, w.sout, T, r0, rows + 0);",
+        "if (shared && !sh_dn_first) sh_down.step(c_, w.sff, w.sout, T, r0, rows);",
+        "if (shared && !sh_dn_first) sh_down.step(c_, w.sff, w.sout, T, r0, rows + 0);",
     ),
     RAD0009: (
         "core/main.cpp",
@@ -94,30 +98,33 @@ CASES = {
 PREREQUISITES = {RAD0004: (RAD0002,)}
 
 
-# Git blob prefixes of the exact package outputs against Radiance 1.14.0 (the release commit 4a61d72);
+# Git blob prefixes of the exact package outputs against Radiance 1.14.0 (the release commit 4a61d72); rad0002/rad0004
+# against 2.2.0 (b6b8751, FIXTURE_PIN);
 # mismatches detect a port that merely matches guards while silently changes output.
 # (before, after): `before` is the file as the package finds it (None: the package creates it; for a package with
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "6e3fbc7"),
-        "arch/common/bc_moe_remote_block.h": (None, "89c76c3"),
-        "arch/common/rad_block_hc.h": ("3a602e5", "2d573ec"),
-        "arch/common/rad_block_moe_fp8.h": ("614db0e", "f3ab4f3"),
-        "core/engine.cpp": ("7544310", "010989d"),
-        "core/engine.h": ("b10743c", "11473eb"),
-        "core/engine_bringup.cpp": ("3ecdba8", "fe411f0"),
-        "core/place/bc_moe_remote.cpp": (None, "3edd659"),
-        "core/place/bc_moe_remote_engine.h": (None, "8065009"),
-        "core/place/bc_moe_remote_place.h": (None, "da896b6"),
-        "core/place/planner.cpp": ("2ea4220", "7944888"),
-        "core/runtime/ctx.cpp": ("ff0f746", "2ff379e"),
+        "abi/bc_moe_remote.h": (None, "74d5cd6"),
+        "arch/common/bc_moe_remote_block.h": (None, "0a78605"),
+        "arch/common/rad_arch.h": ("f847a16", "12a4cf7"),
+        "arch/common/rad_block_hc.h": ("2ab3568", "da4f843"),
+        "arch/common/rad_block_moe_fp8.h": ("aff7d2c", "ddd6734"),
+        "core/engine.cpp": ("e649224", "9176ef0"),
+        "core/engine.h": ("ca6c09f", "430b4bd"),
+        "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
+        "core/place/bc_moe_remote.cpp": (None, "76e8c10"),
+        "core/place/bc_moe_remote_engine.h": (None, "20e811a"),
+        "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
+        "core/place/planner.cpp": ("dc03b5a", "3edb433"),
+        "core/runtime/ctx.cpp": ("f0dbf74", "9677854"),
+        "core/runtime/ctx.h": ("55bc2a3", "82b91f5"),
         # Only the upstream include block is needed for this test-only edit.
-        "tests/arch_fakes.h": ("2fd7c92", "128aaea"),
+        "tests/arch_fakes.h": ("dbeb37f", "4933f3a"),
     },
     RAD0004: {
-        "arch/common/bc_moe_remote_diag.h": (None, "3998d25"),
-        "arch/common/rad_block_moe_fp8.h": ("f3ab4f3", "9e6d964"),
+        "arch/common/bc_moe_remote_diag.h": (None, "a041c77"),
+        "arch/common/rad_block_moe_fp8.h": ("ddd6734", "8c182dd"),
     },
     RAD0009: {
         "core/CMakeLists.txt": ("921debd", "5d01f54"),
@@ -128,6 +135,7 @@ PIN_BLOBS = {
 
 #: the core files rad0002 edits (everything else it ships is a file of its own)
 RAD0002_CORE_FILES = (
+    "arch/common/rad_arch.h",
     "arch/common/rad_block_hc.h",
     "arch/common/rad_block_moe_fp8.h",
     "core/engine.cpp",
@@ -135,6 +143,7 @@ RAD0002_CORE_FILES = (
     "core/engine_bringup.cpp",
     "core/place/planner.cpp",
     "core/runtime/ctx.cpp",
+    "core/runtime/ctx.h",
 )
 
 
@@ -168,15 +177,15 @@ def _snapshot(root: Path) -> dict[str, bytes]:
 
 
 class TestRadiancePatchPackages(unittest.TestCase):
-    def _tree(self):
+    def _tree(self, fixture=None):
         temp = tempfile.TemporaryDirectory()
         root = Path(temp.name)
-        shutil.copytree(FIXTURE, root, dirs_exist_ok=True)
+        shutil.copytree(fixture or FIXTURE, root, dirs_exist_ok=True)
         return temp, root
 
     def _prepared(self, package_id):
         """A fresh fixture tree with the package's prerequisites applied."""
-        temp, root = self._tree()
+        temp, root = self._tree(FIXTURE_PIN if package_id in PIN_PACKAGES else None)
         for required in PREREQUISITES.get(package_id, ()):
             results = apply_all(list(_load(required)), root)
             self.assertTrue(all(result.ok for result in results), results)
@@ -248,7 +257,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
 
     def test_rad0004_does_not_apply_without_rad0002(self):
         """The diagnostics hang off rad0002's extension point; on the bare pin they fail closed and write nothing."""
-        temp, root = self._tree()
+        temp, root = self._tree(FIXTURE_PIN)
         try:
             before = _snapshot(root)
             results = apply_all(list(_load(RAD0004)), root)
@@ -270,7 +279,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
     def test_rad0002_core_edits_are_thin_calls_into_the_extension_point(self):
         """Policy lives in rad0002's own files and the plugin: every added code line in an upstream file calls the
         extension point, including the preplaced filter."""
-        temp, root = self._tree()
+        temp, root = self._tree(FIXTURE_PIN)
         try:
             patches = _load(RAD0002)
             core_edits = {
@@ -279,18 +288,25 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 if not p.create and not p.path.startswith("tests/")
             }
             self.assertEqual(set(core_edits), set(RAD0002_CORE_FILES))
-            self.assertEqual(sum(core_edits.values()), 34)
+            self.assertEqual(sum(core_edits.values()), 40)
             self.assertEqual(sum(1 for p in patches if p.create), 5)
             self.assertTrue(all(result.ok for result in apply_all(list(patches), root)))
             for relative in RAD0002_CORE_FILES:
                 added = self._added_lines(
-                    (FIXTURE / relative).read_text(encoding="utf-8"),
+                    (FIXTURE_PIN / relative).read_text(encoding="utf-8"),
                     (root / relative).read_text(encoding="utf-8"),
                 )
                 code = [line.strip() for line in added if line.strip() and not line.strip().startswith(("/*", "*"))]
+                # the lines of the package's multi-line edits (a call spread over lines, a guarded block)
+                block_lines = {l.strip() for patch in patches if patch.path == relative for edit in patch.edits
+                               if edit.text.count("\n") > 3 for l in edit.text.splitlines()}
                 for line in code:
+                    if line.startswith(("(c.expert_rot ? gin_q", ": gin_q != w.h.q")):   # the continuation of rad0002's own call
+                        continue
                     if line == "scatter_inv ? brows(w.inv, rows * k) : RAD_NONE);":
                         self.assertIn("bc_remote.after_route(c_, *this, T, r0, rows, ecnt,\n", (root / relative).read_text())
+                        continue
+                    if line in block_lines:
                         continue
                     self.assertRegex(
                         line, r"bc_moe_remote|bc_remote|BcMoeRemote", f"{relative}: {line}"
@@ -305,7 +321,7 @@ class TestRadiancePatchPackages(unittest.TestCase):
             temp.cleanup()
 
     def test_rad0002_handoff_output_on_the_pin(self):
-        temp, root = self._tree()
+        temp, root = self._tree(FIXTURE_PIN)
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             moe = (root / "arch/common/rad_block_moe_fp8.h").read_text(encoding="utf-8")
@@ -342,11 +358,11 @@ class TestRadiancePatchPackages(unittest.TestCase):
                 hc,
             )
             planner = (root / "core/place/planner.cpp").read_text(encoding="utf-8")
-            self.assertIn("if (bc_moe_remote_pin_unit(mu, in_.config->max_tok)) continue;", planner)
-            self.assertIn("bc_moe_remote_mark_footprint(units);", planner)
+            self.assertIn("if (bc_moe_remote_pin_unit(bc_moe_remote_lookup(rad_build_slot(&prog.ctx)), mu, in_.config->max_tok)) continue;", planner)
+            self.assertIn("bc_moe_remote_mark_footprint(bc_moe_remote_lookup(rad_build_slot(&prog.ctx)), units);", planner)
             self.assertIn("bc_moe_remote_rank_units(p, order);", planner)
             bringup = (root / "core/engine_bringup.cpp").read_text(encoding="utf-8")
-            placeholder = "if (bc_moe_remote_publish_placeholder(cfg_.max_tok, w, e, *file_, r->mover, (rad_weight)i)) continue;"
+            placeholder = "if (bc_moe_remote_publish_placeholder(bc_moe_remote_lookup(rad_build_slot(&r->program.ctx)), cfg_.max_tok, w, e, *file_, r->mover, (rad_weight)i)) continue;"
             self.assertIn(placeholder, bringup)
             self.assertLess(
                 bringup.index(placeholder),
@@ -355,18 +371,24 @@ class TestRadiancePatchPackages(unittest.TestCase):
 
             abi = (root / "abi/bc_moe_remote.h").read_text(encoding="utf-8")
             core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
-            for symbol in ("bc_moe_remote_register", "bc_moe_remote_wanted", "bc_moe_remote_wanted_upto",
+            for symbol in ("bc_moe_remote_open", "bc_moe_remote_close", "bc_moe_remote_lookup", "bc_moe_remote_wanted", "bc_moe_remote_wanted_upto",
                            "bc_moe_remote_layer_map", "bc_moe_remote_skip_unit", "bc_moe_remote_shadow",
                            "bc_moe_remote_mask_only", "bc_moe_remote_diag_build"):
                 self.assertRegex(abi, rf"\b{symbol}\(")
-                self.assertRegex(core, rf'extern "C" \w+ {symbol}\(')
+                self.assertRegex(core, rf'extern "C" [\w* ]+?\b{symbol}\(')
             # Diagnostics are compiled out of a production build and refused loudly, never silently ignored.
             self.assertIn("#ifdef BC_MOE_REMOTE_DIAG", core)
             self.assertIn("static constexpr bool kDiagBuild = false;", core)
             self.assertIn("need the diagnostic build", core)
-            self.assertIn("plugin->struct_size != sizeof(BcMoeRemotePlugin)", core)
-            self.assertIn("remote_policy().skip_owned != 0", core)
+            self.assertIn("g->vt.struct_size != sizeof(BcMoeRemotePlugin)", core)
+            self.assertIn("g->skip_owned == 0", core)
             self.assertIn("bc_serving_remote_settings", core)
+            # Every mailbox op the engine declares carries its generation's owner serial; init binds to it.
+            self.assertEqual((PACKAGES / RAD0002 / "patch.py").read_text().count('RAD_INT("owner", bc_moe_remote_owner('), 3)
+            # A hard dependency, not an optional reader: no weak symbol, and the package declares rad0009.
+            self.assertNotIn("__attribute__((weak))", core)
+            self.assertNotIn("if (bc_serving_remote_settings)", core)
+            self.assertIn("rad0009_serving_manifest", (PACKAGES / RAD0002 / "patch.toml").read_text())
             self.assertNotIn("std::getenv(", core)
             block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
             self.assertIn("moe_mailbox_publish", block)
@@ -399,47 +421,49 @@ class TestRadiancePatchPackages(unittest.TestCase):
             temp.cleanup()
 
     def test_rad0002_actual_declare_policy_to_engine_admission_gate(self):
-        # Compile the ACTUAL managed-patch policy functions with a typed
-        # manifest policy source, not a duplicated Python parser. Feed their output to the exact
-        # header called by moe_remote_hook.cpp::admit_ticket. No GPU required.
-        temp, root = self._tree()
+        # Compile the ACTUAL managed-patch generation code (core/place/bc_moe_remote.cpp) with a typed manifest
+        # policy source, not a duplicated Python parser: a generation exists exactly when the manifest asks for a
+        # hand-off, and its policy feeds the exact header called by moe_remote_hook.cpp::admit_ticket. No GPU required.
+        temp, root = self._tree(FIXTURE_PIN)
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
-            core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
-            policy_helpers = core[core.index("#ifdef BC_MOE_REMOTE_DIAG"):
-                                  core.index("std::mutex g_mu;")] + "\n}\n"
-            policy_entry = core[core.index('extern "C" int bc_moe_remote_wanted('):
-                                core.index('extern "C" int bc_moe_remote_shadow(')]
             gate_header = REPO / "engines/radiance/components/moe-remote"
             hook = (gate_header / "moe_remote_hook.cpp").read_text(encoding="utf-8")
-            self.assertIn('dlsym(RTLD_DEFAULT,"bc_moe_remote_wanted_upto")', hook)
+            # The plugin no longer resolves engine policy from the global symbol table: its generation exists only
+            # when the engine's manifest asks for a hand-off.
+            self.assertNotIn("dlsym", hook)
+            self.assertNotIn("RTLD_DEFAULT", hook)
             self.assertIn('admission_bootstrap(\n        g.remote_possible,g.bootstrap_ready_ranks,mask)', hook)
             program = """
 #include <atomic>
 #include <climits>
 #include <cstdint>
-#include <cstdio>
 #include <cstdlib>
-#include <map>
-#include <mutex>
-#include <vector>
+#include <cstdlib>
+#include "bc_moe_remote.h"
 #include "engine_admission_gate.h"
 static int64_t g_remote_rows = 0;
 extern "C" int bc_serving_remote_settings(int64_t* rows, uint32_t* skip, uint32_t* shadow, uint32_t* mask) {
     *rows = g_remote_rows; *skip = 0; *shadow = 0; *mask = 0;
     return 1;
 }
-""" + policy_helpers + policy_entry + """
+static int factory(const BcMoeRemoteOpenArgs*, BcMoeRemotePlugin* out) {
+    *out = BcMoeRemotePlugin{};
+    out->struct_size = sizeof(BcMoeRemotePlugin);
+    return 0;
+}
 int main(int argc, char** argv) {
     if (argc != 4) return 7;
     g_remote_rows = std::atoll(argv[2]);
     // Inherited variables cannot change the typed manifest policy.
     setenv("R3_MOE_REMOTE_MIN_ROWS", "999", 1);
     setenv("R3_MOE_REMOTE_MAX_ROWS", "0", 1);
-    const bool declared = bc_moe_remote_wanted_upto(128) != 0;
-    const bool any_remote = bc_moe_remote_wanted_upto(LLONG_MAX) != 0;
+    BcMoeRemoteGeneration* gen = nullptr;
+    if (bc_moe_remote_open_with(factory, 0, 1, 4, &gen) != 0) return 12;
+    const bool declared = bc_moe_remote_wanted_upto(gen, 128) != 0;
+    const bool any_remote = bc_moe_remote_wanted_upto(gen, LLONG_MAX) != 0;
     const bool expect = argv[3][0] == '1';
-    if (declared != expect || any_remote != expect) return 8;
+    if (declared != expect || any_remote != expect || (gen != nullptr) != expect) return 8;
     std::atomic<uint32_t> ready{0};
     using r3::epoch::AdmissionBootstrap;
     const auto before = r3::epoch::admission_bootstrap(any_remote, ready, 3);
@@ -453,13 +477,15 @@ int main(int argc, char** argv) {
     if (r3::epoch::admission_bootstrap(any_remote, ready, 3) !=
         (expect ? AdmissionBootstrap::Ready :
                   AdmissionBootstrap::LocalOnly)) return 11;
+    bc_moe_remote_destroy(gen);
     return 0;
 }
 """
             with tempfile.TemporaryDirectory() as build:
                 exe = Path(build) / "policy_gate"
                 compiled = subprocess.run(["c++", "-std=c++17", "-x", "c++",
-                    "-", "-o", str(exe), "-I", str(gate_header)],
+                    "-", str(root / "core/place/bc_moe_remote.cpp"), "-o", str(exe), "-I", str(gate_header),
+                    "-I", str(root / "abi"), "-ldl", "-pthread"],
                     input=program, text=True, capture_output=True, check=False)
                 self.assertEqual(compiled.returncode, 0, compiled.stderr)
                 for lo, hi, allowed in (("1", "0", "0"), ("1", "64", "1")):
@@ -474,7 +500,7 @@ int main(int argc, char** argv) {
         """RAD49: the actual predicates, compiled. A handed-off step fuses (inject + the fused gather + reducing write)
         exactly when HyperConn keeps its reducing write; otherwise the block runs its own all-reduce behind a plain
         write. The switch is one sequence's decode or verify step (1 + max_spec rows), never a literal."""
-        temp, root = self._tree()
+        temp, root = self._tree(FIXTURE_PIN)
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             block = (root / "arch/common/bc_moe_remote_block.h").read_text(encoding="utf-8")
@@ -486,7 +512,8 @@ int main(int argc, char** argv) {
             program = """
 #include <cstdint>
 #include <cstdio>
-struct Geom { int64_t max_spec; int64_t max_seqs; };
+struct BcMoeRemoteGeneration;
+struct Geom { int64_t max_spec; int64_t max_seqs; BcMoeRemoteGeneration* bc_remote; };
 enum { kArOutNorm = 0, kArOutExact = 1, kArOutBoth = 2 };
 static int64_t g_lo, g_hi; static int g_shadow, g_mask;
 /* both wires: the exact bound on even T, the rotated one on odd T (the real choice is ar_exact_write_takes) */
@@ -494,13 +521,14 @@ inline bool gather_taken(const Geom&, int64_t T, int64_t rows, int64_t rows6) {
     const int64_t r = T % 2 == 0 ? rows : rows6;
     return r > 0 && T <= r;
 }
-extern "C" int bc_moe_remote_wanted(int64_t T) { return T >= g_lo && T <= g_hi; }
-extern "C" int bc_moe_remote_shadow() { return g_shadow; }
-extern "C" int bc_moe_remote_mask_only() { return g_mask; }
+extern "C" int bc_moe_remote_wanted(const BcMoeRemoteGeneration*, int64_t T) { return T >= g_lo && T <= g_hi; }
+extern "C" int bc_moe_remote_shadow(const BcMoeRemoteGeneration*) { return g_shadow; }
+extern "C" int bc_moe_remote_mask_only(const BcMoeRemoteGeneration*) { return g_mask; }
 """ + free + """
 struct Moe { Geom g; bool op_combine; int64_t gather_out_rows, gather_out_rows6; int ar_out_take; };
 struct R {
-    bool active(int64_t T) const { return bc_moe_remote_wanted(T) && !bc_moe_remote_shadow(); }
+    BcMoeRemoteGeneration* gen = nullptr;
+    bool active(int64_t T) const { return bc_moe_remote_wanted(gen, T) && !bc_moe_remote_shadow(gen); }
 """ + fused + """
 };
 int main() {
@@ -514,7 +542,7 @@ int main() {
     for (int mask = 0; mask <= 1; ++mask)
     for (int64_t T = 1; T <= 48; ++T) {
         g_lo = 1; g_hi = 40; g_shadow = shadow; g_mask = mask;
-        const Moe m{{spec, 6}, combine != 0, grows, grows6, kArOutBoth};
+        const Moe m{{spec, 6, nullptr}, combine != 0, grows, grows6, kArOutBoth};
         const bool f = r.fused(m, T), forced = r.forces_ar(m, T);
         const bool open = bc_moe_remote_hc_open(10, m.g, T, grows, grows6);
         if (f && T > 1 + spec) return 2;                       /* fuses only up to one sequence's step */
@@ -569,8 +597,8 @@ int main() {
             )
             diag = (root / "arch/common/bc_moe_remote_diag.h").read_text(encoding="utf-8")
             self.assertIn("#error", diag)
-            for name in ("moe_mailbox_shadow", "moe_mailbox_mask_ref", "bc_moe_remote_mask_only()",
-                         "bc_moe_remote_shadow()", "bc_moe_remote_diag_build()"):
+            for name in ("moe_mailbox_shadow", "moe_mailbox_mask_ref", "bc_moe_remote_mask_only(base.gen)",
+                         "bc_moe_remote_shadow(g.bc_remote)", "bc_moe_remote_diag_build()"):
                 self.assertIn(name, diag)
             self.assertIn("base.publish", diag)
         finally:
@@ -583,7 +611,7 @@ int main() {
         compiler = shutil.which("c++")
         if not compiler:
             self.skipTest("C++ compiler unavailable")
-        temp, root = self._tree()
+        temp, root = self._tree(FIXTURE_PIN)
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             stub = root / "card-free" / "device"
@@ -598,7 +626,7 @@ int main() {
             compiled = subprocess.run(
                 [compiler, "-std=c++17", "-I", str(root / "card-free"),
                  "-I", str(root / "abi"), "-I", str(root / "core/place"),
-                 str(source), "-o", str(binary)],
+                 str(source), str(root / "core/place/bc_moe_remote.cpp"), "-ldl", "-pthread", "-o", str(binary)],
                 capture_output=True, text=True,
             check=False)
             self.assertEqual(compiled.returncode, 0, compiled.stderr)
@@ -607,9 +635,42 @@ int main() {
         finally:
             temp.cleanup()
 
+    def test_rum06_generation_lifetime_on_the_generated_engine_code(self):
+        """RUM06 S1: the engine-owned generation (open/close/destroy, slot-keyed lookup, stale and foreign refusals,
+        per-generation state, concurrent lifetimes), compiled from the generated core/place/bc_moe_remote.cpp and run
+        under address/undefined-behaviour checking where the compiler has them."""
+        compiler = shutil.which("c++")
+        if not compiler:
+            self.skipTest("C++ compiler unavailable")
+        temp, root = self._tree(FIXTURE_PIN)
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            binary = root / "generation-test"
+            compiled = subprocess.run(
+                [compiler, "-std=c++17", "-O1", "-pthread", "-I", str(root / "abi"),
+                 str(REPO / "engines/radiance/tests/moe_remote_generation_test.cpp"),
+                 str(root / "core/place/bc_moe_remote.cpp"), "-ldl", "-o", str(binary)],
+                capture_output=True, text=True, check=False)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # none of the process-global registry state the generation replaced
+            core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
+            for gone in ("g_plugin", "g_mu", "g_layer_maps", "g_burst_active", "thread_local", "bc_moe_remote_register"):
+                self.assertNotIn(gone, core)
+            # clean stop never interrupts; only the fault paths call the generation's fault wake
+            engine = (root / "core/engine.cpp").read_text(encoding="utf-8")
+            self.assertIn("if (!bc_remote_admission_.clean()) bc_remote_admission_.fault();", engine)
+            self.assertEqual(engine.count("bc_remote_admission_.fault();"), 3)
+            self.assertNotIn("bc_remote_admission_.shutdown()", engine)
+            for text in ("core/runtime/ctx.cpp", "core/engine.cpp"):
+                self.assertNotIn("bc_moe_remote_current_ticket", (root / text).read_text(encoding="utf-8"))
+        finally:
+            temp.cleanup()
+
     def test_plugin_registration_struct_matches_the_engine_abi(self):
         """libr3moe mirrors BcMoeRemotePlugin (it builds against an unpatched tree); the two must not drift."""
-        temp, root = self._tree()
+        temp, root = self._tree(FIXTURE_PIN)
         try:
             self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
             abi = (root / "abi/bc_moe_remote.h").read_text(encoding="utf-8")
@@ -625,6 +686,16 @@ int main() {
                 fields(abi, "typedef struct BcMoeRemotePlugin {"),
                 fields(hook, "struct EnginePlugin {"),
             )
+            self.assertEqual(
+                fields(abi, "typedef struct BcMoeRemoteOpenArgs {"),
+                fields(hook, "struct EngineOpenArgs {"),
+            )
+            # The factory the engine finds on the plugin's own handle, and the typed refusals the plugin returns.
+            symbol = re.search(r'#define BC_MOE_REMOTE_OPEN_SYMBOL "([a-z_0-9]+)"', abi).group(1)
+            self.assertIn(f'extern "C" int {symbol}(const EngineOpenArgs* args, EnginePlugin* out)', hook)
+            for name, mirrored in (("BC_MOE_REMOTE_REFUSED", "kOpenRefused"), ("BC_MOE_REMOTE_BUSY", "kOpenBusy")):
+                value = re.search(rf"{name} = (-\d+)", abi).group(1)
+                self.assertIn(f"constexpr int {mirrored} = {value};", hook)
         finally:
             temp.cleanup()
 
@@ -659,13 +730,35 @@ int main() {
         self.assertIn('r.weight_bf16 != ew[flat]', ops)
         self.assertIn('if (mask_only && m && local_index[slot] >= 0) __builtin_trap();', ops)
         self.assertIn('hipMemsetAsync(d->mask_ref, 0', ops)
-        self.assertIn('dlsym(RTLD_DEFAULT, "bc_moe_remote_register")', hook)
-        self.assertIn("static const EnginePlugin plugin{sizeof(EnginePlugin), publish_layer_map, owner_query, burst_transition,", hook)
-        self.assertIn("before_pass, admit_ticket, bind_ticket, cancel_ticket,", hook)
-        self.assertIn("host_done_ticket, rank_done_ticket, poll_tickets,", hook)
-        self.assertIn('g.engine_register(&plugin)', hook)
+        self.assertIn('extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugin* out)', hook)
+        self.assertIn("*out = EnginePlugin{sizeof(EnginePlugin), h, cb_close, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,", hook)
+        self.assertNotIn("bc_moe_remote_register", hook)
+        self.assertNotIn("HookLifetime", hook)
+        self.assertIn("void cb_fault(void* self)", hook)
+        self.assertNotIn("cb_shutdown", hook)
+        self.assertIn("close_generation(g_live, g,", hook)
+        self.assertNotIn("\nHookState g;", hook)
+        self.assertNotIn("r3_moe_mailbox_enabled", hook)
         self.assertNotIn('rad_moe_remote', hook)
-        self.assertIn('layer_map_consumed', hook)
+        self.assertIn('await_layer_consumed(g.hdr, layer, layer_map_bound())', hook)
+        self.assertIn('await_helpers_registered(g.hdr, g.watch, registration_bound())', hook)
+        self.assertNotIn('kRegisterTimeoutS', hook)
+        # Close order: workers stopped first, then LiveHook::retire (refuse intake, cancel waits, drain borrowers, free).
+        self.assertIn("close_generation(g_live, g, [&](bool clean) { stop_workers(g, clean); },", hook)
+        self.assertIn("[&] { release_resources(g); }", hook)
+        self.assertIn("&g.closing);", hook)
+        self.assertIn("await_drain(", hook)
+        self.assertNotIn("helper_faulted(g) || g.closing", hook)
+        # A previously drained ledger returns Ok even after close: the production
+        # request and final success paths must BOTH refuse a closing generation.
+        drain_body = hook.split('extern "C" int r3_moe_wait_drained(', 1)[1].split(
+            'extern "C" int r3_moe_reopen_admission(', 1)[0]
+        request_body = drain_body.split('request_helper_drain(g, snap->closure_id);', 1)[0]
+        final_body = drain_body.split('if (waited != DrainWait::Drained)', 1)[1].split(
+            'g.drain_verified = true;', 1)[0]
+        self.assertIn('g.closing.load(std::memory_order_acquire)', request_body)
+        self.assertIn('g.closing.load(std::memory_order_acquire)', final_body)
+        self.assertNotIn("close_mailbox(", hook)
         self.assertIn('slot_map[(uint32_t)le] < 0', ops)
         self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)
         self.assertIn('{"as", RAD_OPD_IN, 0}', ops)

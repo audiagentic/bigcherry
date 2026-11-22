@@ -1,6 +1,6 @@
 #pragma once
-// Host scheduler boundary. Its policy input comes ONLY from the engine's
-// bc_moe_remote_wanted_upto, which is also used to declare mailbox kernels.
+// Host scheduler boundary. Its policy input comes ONLY from the engine's generation (a generation exists only when the
+// manifest asks for a hand-off: bc_moe_remote_wanted_upto), the same policy that declares the mailbox kernels.
 #include <atomic>
 #include <cstdint>
 
