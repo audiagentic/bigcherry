@@ -2994,7 +2994,9 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     // RSC12's named layout selection already appears in effective_values.
     for (const std::string& set : in.options.sets) {
         const std::string key = set.substr(0, set.find('='));
-        if (key != "layout.name" && key != "handoff.shm")
+        // engine.radiance_home is the installed build's own path (main.cpp adds it as a --set on every start); which
+        // build runs the plan is provenance, never part of the key.
+        if (key != "layout.name" && key != "handoff.shm" && key != "engine.radiance_home")
             static_inputs.operator_sets.push_back(set);
     }
     // What was measured is reused by the next start of this config from any run directory, whichever build

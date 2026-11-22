@@ -1431,6 +1431,11 @@ void session_engine_plan(Fixture& t) {
             {"TEST_NATIVE_INSPECT_KERNELS", expected_kernels.dump()}};
         gated.native_admission = ss::NativeAdmissionRequest{native_yaml, native_root, std::move(native_overrides)};
         gated.named_config = "qwen27b-tp3";
+        // An installed start names its runtime home with `--set engine.radiance_home=...` (main.cpp adds it), so it is
+        // an operator set. Which build runs a start is not part of what the stored plan is keyed by.
+        const std::string runtime_home_set =
+            "engine.radiance_home=" + session_resolved.values.at("engine").at("radiance_home").dump();
+        gated.options.sets.push_back(runtime_home_set);
         // Offline preflight (`bc-serve explain CONFIG --native-config YAML`): the planner's inspection and reconcile,
         // stopped before any writer, power admission, engine or helper child. One pass and one refusal per rule.
         if (bc::serving::v2::kContractVersion == 3) {
@@ -1749,6 +1754,11 @@ void session_engine_plan(Fixture& t) {
         fs::create_directories(rebuilt_run);
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         auto rebuilt = gated;
+        // The installed layout of a newer release: <root>/releases/<tag>/radiance_home.
+        const fs::path rebuilt_home = t.root / "installed-root/releases/bc-radiance-2020.0.0/radiance_home";
+        fs::create_directories(rebuilt_home);
+        for (auto& set : rebuilt.options.sets)
+            if (set == runtime_home_set) set = "engine.radiance_home=" + Json(rebuilt_home.string()).dump();
         rebuilt.engine_binary = t.root / "rebuilt-native-engine";
         fs::copy_file(BC_FAKE_ENGINE, rebuilt.engine_binary);
         std::ofstream(rebuilt.engine_binary, std::ios::binary | std::ios::app) << '\n';
@@ -1938,6 +1948,10 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(drift_yaml, std::ios::binary) << native_yaml_bytes;
         ss::EnginePlanInputs home_drift = gated;
         home_drift.options.site = drift_site;
+        // The runtime home comes from the site file here, not the --set; a work root of its own makes this start measure.
+        std::erase(home_drift.options.sets, runtime_home_set);
+        home_drift.work_root = t.root / "native-runtime-drift-work";
+        fs::create_directories(home_drift.work_root);
         home_drift.native_admission = ss::NativeAdmissionRequest{
             drift_yaml, native_root, gated.native_admission->runtime_overrides};
         const fs::path drift_run = t.root / "native-runtime-drift-run";
