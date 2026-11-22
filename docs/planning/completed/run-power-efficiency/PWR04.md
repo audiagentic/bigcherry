@@ -2,7 +2,7 @@
 id: PWR04
 order: 0
 plan: run-power-efficiency
-state: pending
+state: superseded
 created-at: '2026-10-27T10:13:52.881547+00:00'
 breadth: ''
 skill: advanced
@@ -58,12 +58,19 @@ Owner rules: settings configurable, not hard coded; hosts by role; derive over c
 
 POWER REVIEW 2026-11-10 (gateway, verified against the code): DELIVERED: bigcherry gpu-power status|apply|restore|grant|revoke, per-card configuration ([host.*.devices.power]), launcher --gpu-power apply/restore, host-check. NOT delivered: named power profiles, lease-fenced ownership, durable crash recovery (the saved state is a per-user JSON file with no lease/manifest identity), strict failure (an apply error restores and then continues serving with the cards as they are), apply to the layout's cards only (the CLI selects every configured card), evidence validation (a non-empty string), the systemd boot-unit installer the ledger mentions (tools/admin/install_bigcherry_gpu_power.py is absent). Design: PWR07 (portable capability probe + receipt + safe-failure policy first), then named profiles resolved against per-card calibration (config/power-profiles.toml: default preserves, efficiency, quiet, max-throughput), launcher-level selection with a receipt keyed by the manifest digest in stage 1 and a versioned manifest extension in stage 2 (the v1 contract is closed), a host controller with lease fencing for ownership (hardest question: lease-fenced, crash-recoverable GPU power transactions; Fable brief in runs/rad49-gpt-review/followups, power review section 9). Depends on the lease item for detached servers.
 
+CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: The PWR04 2026-11-10 owner decision explicitly delegated portability and read-only receipts to PWR07, v2 profile intent/schema to PWR08, and strict, privileged, lease-safe PowerTransaction to PWR09. Their active plans now include all previously omitted acceptance, including CPU EPP observe-only, RAPL warning, one-card preflight, lease expiry and forced-exit recovery, and phase-aware policy conditional on evidence. PWR04 is being superseded only to remove duplicate implementation ownership; no power setting is promoted, no live power or GPU test passed, and original history remains available.
+
 ## Change Log
 
 - 2026-10-27T10:13:52.881547+00:00 (created-by): Created by agent
 - 2026-11-10T13:12:52.379299+00:00 (updated-by): Updated: section:notes
 
-
 ## Update 2026-11-10 (GPT power manifest review, req_main_eb983900e21b)
 
 Remaining work split: PWR08 (named profiles in the manifest, v2) and PWR09 (Python transactional controller, launcher adapter, strict failure). The environment-to-hardware path in gpu_power/power_cmds applies every inventory card one at a time with no whole-layout preflight and the launcher continues after a failed apply: both are replaced by PWR09, not extended.
+
+## Reviews
+
+- RV4544
+- 2026-11-22T11:43:15.125994+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:45:15.844693+00:00 (state-transition): State: pending → superseded

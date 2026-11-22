@@ -47,21 +47,21 @@ No legacy / no backward compatibility.
 
 ## Acceptance Criteria
 
-
+**Transferred PWR04 acceptance (independent gate):** Carry PWR04's remaining privileged application and full lifecycle guards under the one Python PowerTransaction/controller, not a parallel shell/daemon: explicitly selected layout BDFs only, fresh per-control capability and selected-device preflight, persisted snapshot+atomic journal before any write, apply/readback with precise failure, rollback on partial failure, verified process-exit restore and lease expiry/crash recovery through an explicitly owned minimal root service/socket/installer where needed. A lease-fenced independent privilege boundary must prevent an unprivileged start from changing other users' GPU policy, fail closed for stale journals and unverified ownership, leave observe-only starts nonfatal and zero-write. Preserve PWR04's stop/kill/lease-expiry restore acceptance but do not promise recovery after SIGKILL without a verified watchdog/process-exit lease contract and host test. Hardware tests: configured one-card offset readback and BDF containment, kill/stop/expiry recovery, source/stability/quality/phase energy comparison against PWR01; later phase-aware idle/decode/prefill switching needs an explicit quiescent-boundary design, dwell/rollback and per-phase >1-2% regression rejection before activation. Until then no runtime phase switching and no systemd installer success claim. Only PWR09 owns controller behaviour; PWR08 supplies selected intent and PWR07 supplies probe/receipt.
 
 ## Notes
 
 Steps 1-7 do not need v2 and proceed first. Fake sysfs proves portability behaviour, not that a real driver accepts a command. Parent of the remaining PWR04 work.
 
+CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement is now owned here. PWR04's 2026-11-10 design explicitly replaces the old whole-inventory gpu_power/shell path with PWR09's one lease-aware transactional controller; the pending privileged-service and live restoration gates belong with that same execution owner. Neither this transfer nor previous observational power results satisfy live device, rollback or v2 migration acceptance.
+
 ## Change Log
 
 - 2026-11-10T13:32:42.998106+00:00 (created-by): Created by agent
 
-
 ## Update 2026-11-10 (PWR06 R9700 GFXOFF finding)
 
 Any R9700 idle optimisation proven by PWR06 is applied only through this controller (capability check, lease, rollback, performance validation); nothing in the shell launcher or a global environment flag.
-
 
 ## Implementation status: 2026-11-10
 
@@ -72,7 +72,6 @@ Merged: #815 PowerTransaction, rollback, stale-journal and durable receipt core;
 Use the existing `runs/xtx-undervolt-ab/txn.py` transaction **pattern** for the lead's short single-arm leases; its present `apply` hardcodes -125 mV for both XTXs and cannot be reused unchanged for a clock or cap test. Implement/run-local fake-verified explicit `gpu_power.Setting(sclk_max_mhz=N, vddgfx_offset_mv=V, power_cap_w=P)` parameter selection; resolve only layout XTX BDFs; lease verification, fresh OD/cap min/max probe, durable journal, apply+readback before start, stop engine/helpers, then `PowerTransaction.recover(..., processes_exited=True)` and restore readback within the **same lease**. In amdgpu OverDrive, stage `s 1 N` then `vo V` then `c` once (committing SCLK can reset the offset); caps write `power1_cap` in microwatts and must restore the exact prior value. A recorded pre-arm cap of zero in `D1.json` is an ambiguity to investigate before any cap experiment, not a validated writable cap.
 
 Do **not** write `power_dpm_force_performance_level`, `pp_dpm_sclk` or `pp_power_profile_mode` with this helper: they have no snapshot/rollback support in `PowerTransaction`. Observe first; add capability/restore/failure fakes before authorizing an arm. No live phase switching of OD values while kernels execute; phase-specific controls need an explicit quiescent-boundary supervisor design. Each candidate arm 8–12 min lease (15–20 min if isolated prefill/idle), fixed-build ABBA across four **separate** leases with separate decode/prefill regression gates and integrated phase J/token; failure/refusal always leaves or recovers durable evidence. Rank, knobs, measurements and no-regression thresholds: `docs/reference/power-tuning-evidence-2026-11.md`. No new setting is validated by this step; PWR09 production v2 S9/S10/S13 dependencies remain.
-
 
 ## Harness follow-up: corrected short-lease sequence (2026-11-11)
 
@@ -89,3 +88,8 @@ PWR06's new sysfs-only detector is an observation, **not** a PowerTransaction se
 The new `runs/pwr-sclk` evidence includes per-arm **two-XTX OD readback** and immutable workload run IDs. At equal 2700 MHz SCLK, -125 mV appears promising, but **no apply-mode profile is qualified**, and `-125 mV` at *uncapped* SCLK remains withdrawn. Proposed `xtx-cap2700-uv125` must wait for completed 40-minute soak, independent output-identity check, host amdgpu error/reset inspection (container `dmesg` unavailable), replicated same-build stock/SCLK-only/combination controls, and readback + **verified process exit and restore** under PowerTransaction. The `soak27uv125` folder contained no completed status/result at inspection. No R9700 or 6900 XT control was changed by these arms.
 
 The MCLK follow-up (reported XTX OD_MCLK 97–1250 MHz range) and pp_power_profile_mode tests (current BOOTUP_DEFAULT vs COMPUTE/POWER_SAVING) are **not writable via the present reversible Setting contract**: extend snapshot, capability/preflight, exact readback, fault-injection rollback and receipt support **before** any owner hardware experiment. R9700 minimum 210 W board-cap trial must separately verify real power-cap supported range and safe restoration. Record **phase-isolated decode and prefill** W/speed and true energy if sampled; the current pwr-phases `sysfs:power1_average` medians / same-workload tps are *GPU-only J/token proxies*, with no CPU energy or integration. See `docs/reference/power-tuning-evidence-2026-11.md`.
+
+## Reviews
+
+- RV4547
+- 2026-11-22T11:42:37.945551+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
