@@ -1,0 +1,15 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_135609_removed-an-obsolete-placement_2940",
+  "files": [
+    "tools/lab/radiance/heat-placement/placement_sim.py",
+    "tools/lab/radiance/heat-placement/placement_trace.py",
+    "tools/tests/radiance/test_placement_sim.py",
+    "engines/radiance/components/moe-remote/worker_policy_replay_test.cpp",
+    "docs/reference/engines/radiance/LIVE_PLACEMENT.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Retired the synthetic heat-placement simulator and its generator and test (the real planner replay covers the policy), added the replay cases worth keeping to the native policy replay test, and corrected the stale native-serving calibration guidance in the live-placement reference and the RHP16 and RSC02 plan pages. Net -589 lines.",
+  "timestamp-utc": "2026-11-22T13:56:09.180955Z",
+  "user-summary-candidate": "Removed an obsolete placement simulator and fixed outdated calibration instructions."
+}
