@@ -1,12 +1,10 @@
 #include "session.h"
 #include "power_transaction.h"
 
-#include "calibration_lab.h"
 #include "config_loader.h"
 #include "feature_state.h"
 #include "helper_vram.h"
 #include "live_policy_ingest.h"
-#include "lab_trace_experiment.h"
 #include "manifest_writer.h"
 #include "plan_cache.h"
 #include "rank_demand.h"
@@ -1235,8 +1233,6 @@ class Owner {
         int code = 0;
         std::vector<std::string> failures;
         try {
-            if (s_.quality && s_.laboratory)
-                throw PlanFailed("quality requires a production native owner");
             if (s_.quality)
                 validate_quality_paths(*s_.quality);
             if (s_.power_hook.apply && s_.power_hook.begin_manifest)
@@ -1436,28 +1432,20 @@ class Owner {
                 if (s_.runtime_guard) {
                     require_callback(s_.runtime_guard.invoke("session.runtime_guard", plan_, engine_log_),
                                      "runtime replay/heat/policy guard");
-                    event(s_.laboratory ? "runtime_guard_preflight" : "runtime_guard_ready");
+                    event("runtime_guard_ready");
                 }
-                if (s_.laboratory) {
-                    event("calibrating");
-                    calibrate();
-                    event("calibration_completed");
-                } else {
-                    event("running");
-                    while (service(s_.timing.poll)) {
-                        if (s_.runtime_watch)
-                            require_callback(s_.runtime_watch.invoke("session.runtime_watch"),
-                                             "live heat/policy guard");
-                        if (const auto gone = exited_child()) {
-                            failures.push_back(*gone + " exited while serving");
-                            code = 1;
-                            throw Failed{};
-                        }
+                event("running");
+                while (service(s_.timing.poll)) {
+                    if (s_.runtime_watch)
+                        require_callback(s_.runtime_watch.invoke("session.runtime_watch"),
+                                         "live heat/policy guard");
+                    if (const auto gone = exited_child()) {
+                        failures.push_back(*gone + " exited while serving");
+                        code = 1;
+                        throw Failed{};
                     }
-                    event("stop_requested", {{"by", stop_reason()}});
                 }
-                /* calibration terminates with the same verified stop/restore as a
-                 * serving owner; it does not remain in a detached running state. */
+                event("stop_requested", {{"by", stop_reason()}});
             }
         } catch (const Stop&) {
             if (s_.quality) code = 1;
@@ -1802,160 +1790,6 @@ class Owner {
         }
         if (!plan_.helpers.empty())
             require_segment(plan_.handoff_shm);
-    }
-
-    // Only a measured, authenticated lab manifest can run this workload.
-    // The observation-space envelope is finite even if the helper's retained
-    // drift ring coarsens repeatedly. Each request runs with an HTTP deadline.
-    void calibrate() {
-        if (!s_.laboratory)
-            throw PlanFailed("calibration requested without lab inputs");
-        const auto verified = v2::load_manifest(plan_.execution_manifest(), v2::PlanUse::serving);
-        if (!verified)
-            throw PlanFailed("calibration manifest: " + verified.error().message);
-        const auto& spec = verified.value().spec;
-        if (spec.intent.service.profile != v2::Profile::kLab || spec.experiment || !spec.handoff ||
-            !spec.handoff->placement.live_policy || helper_logs_.empty())
-            throw PlanFailed(
-                "calibration requires a lab-only live-policy manifest with helper0 and no experiment");
-        // These files influence the finite A/B/B/A measurements. Pin their
-        // bytes at the beginning rather than reconstruct them after the run.
-        for (const auto& source : {s_.laboratory->prompts_a, s_.laboratory->prompts_b}) {
-            if (!fs::is_regular_file(source))
-                throw PlanFailed("calibration: source prompts missing or not regular files");
-        }
-        const std::string prompt_a_bytes = read_file(s_.laboratory->prompts_a);
-        const std::string prompt_b_bytes = read_file(s_.laboratory->prompts_b);
-        const std::string admitted = read_file(plan_.manifest);
-        const Json admission = Json::parse(admitted);
-        const fs::path heat_file = admission.at("spec").at("handoff").at("placement")
-                                       .at("heat_file").get<std::string>();
-        if (heat_file.empty() || !fs::is_regular_file(heat_file))
-            throw PlanFailed("calibration: admitted manifest has no regular source heat file");
-        const std::string heat_bytes = read_file(heat_file);
-        const auto prompts = read_calibration_prompts(s_.laboratory->prompts_a, s_.laboratory->prompts_b);
-        if (!prompts)
-            throw PlanFailed("calibration prompts: " + prompts.error().message);
-        if (read_file(s_.laboratory->prompts_a) != prompt_a_bytes ||
-            read_file(s_.laboratory->prompts_b) != prompt_b_bytes ||
-            read_file(heat_file) != heat_bytes)
-            throw PlanFailed("calibration: source inputs changed during admission");
-        write_atomic(s_.run_dir / "calibration-prompts-a.v1", prompt_a_bytes);
-        write_atomic(s_.run_dir / "calibration-prompts-b.v1", prompt_b_bytes);
-        write_atomic(s_.run_dir / "calibration-heat.v1", heat_bytes);
-        const auto& workload = prompts.value();
-        const auto& policy = *spec.handoff->placement.live_policy;
-        if (!spec.handoff->telemetry.histogram_file || spec.handoff->telemetry.histogram_file->empty())
-            throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration: "
-                             "missing spec.handoff.telemetry.histogram_file for the helper heat source");
-        const auto feed_deadline =
-            calibration_heat_feed_deadline(policy, std::chrono::seconds(spec.handoff->telemetry.period_s));
-        if (!feed_deadline)
-            throw PlanFailed("calibration heat feed deadline: " + feed_deadline.error().message);
-        const fs::path helper_log = helper_logs_.front();
-        const auto begun = Clock::now();
-        constexpr auto request_timeout = std::chrono::seconds(120);
-        CalibrationEnvelope envelope;
-        bool have_feed = false;
-        const auto checked_limit = [&]() {
-            const auto drift = read_calibration_drift(helper_log);
-            if (!drift)
-                throw PlanFailed("calibration drift: " + drift.error().message);
-            const auto next = calibration_envelope(policy, workload.a.size(), workload.b.size(),
-                                                   request_timeout, drift.value());
-            if (!next)
-                throw PlanFailed("calibration envelope: " + next.error().message);
-            envelope = envelope.limit.count() == 0 ? next.value()
-                                                   : monotonic_calibration_envelope(envelope, next.value());
-            have_feed = have_feed || envelope.accepted_feed;
-            const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - begun);
-            if (!have_feed && (elapsed >= feed_deadline.value() || elapsed >= envelope.limit)) {
-                const uint64_t accepted = drift.value() ? drift.value()->accepted_heat_deltas : 0;
-                throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration: heat_watermarked "
-                                 "missing sufficient accepted heat deltas from helper0 (accepted_heat_deltas=" +
-                                 std::to_string(accepted) +
-                                 ", need at least 2); source is the engine histogram "
-                                 "without coherent observation watermarks; check accept_unwatermarked_heat "
-                                 "and histogram publication. Derived no-feed deadline " +
-                                 std::to_string(feed_deadline.value().count()) + "s");
-            }
-            if (elapsed >= envelope.limit)
-                throw PlanFailed("calibration: finite measured workload/drift deadline exhausted");
-            if (stop_requested())
-                throw Stop{};
-            if (const auto gone = exited_child())
-                throw PlanFailed("calibration: child exited before convergence: " + *gone);
-            if (s_.runtime_watch)
-                require_callback(s_.runtime_watch.invoke("session.calibration.runtime_watch"),
-                                 "calibration live policy guard");
-        };
-        for (;;) {
-            // Every complete iteration is exactly A -> B -> B -> A; a marker
-            // from a partial traversal is deliberately not accepted.
-            for (const auto* series : {&workload.a, &workload.b, &workload.b, &workload.a}) {
-                for (const auto& prompt : *series) {
-                    checked_limit();
-                    const Json request = {
-                        {"model", "default"}, {"prompt", prompt}, {"max_tokens", 24}, {"temperature", 0}};
-                    const auto reply =
-                        http(plan_.port, "POST", "/v1/completions", request.dump(), request_timeout);
-                    if (!reply || reply->status < 200 || reply->status > 299)
-                        throw PlanFailed("calibration: workload HTTP request failed");
-                    const Json output = Json::parse(reply->body, nullptr, false);
-                    if (!output.is_object() || !output.contains("choices") ||
-                        !output.at("choices").is_array() || output.at("choices").empty() ||
-                        !output.at("choices").at(0).is_object() ||
-                        !output.at("choices").at(0).value("text", Json()).is_string())
-                        throw PlanFailed("calibration: workload reply is not a completion");
-                    checked_limit();
-                    if (!service(0ms))
-                        throw Stop{};
-                }
-            }
-            const auto marker = complete_calibration_marker(helper_log);
-            if (!marker)
-                throw PlanFailed("calibration marker: " + marker.error().message);
-            if (marker.value())
-                break;
-            checked_limit();
-        }
-        if (!plan_.summary.contains("calibration_store_key") ||
-            !plan_.summary.at("calibration_store_key").is_string())
-            throw PlanFailed("calibration: measured plan store key is absent");
-        if (s_.lab_evidence_gate)
-            require_callback(s_.lab_evidence_gate.invoke("session.calibration.prove_live"),
-                             "calibration final live evidence gate");
-        if (read_file(s_.laboratory->prompts_a) != prompt_a_bytes ||
-            read_file(s_.laboratory->prompts_b) != prompt_b_bytes ||
-            read_file(heat_file) != heat_bytes)
-            throw PlanFailed("calibration: source prompts/heat changed during workload");
-        const std::string key = plan_.summary.at("calibration_store_key").get<std::string>();
-        bc::serving::ingest_live_policy_log(helper_log, s_.laboratory->calibration_store, plan_.execution_manifest(), key);
-
-        // The source TOML can be replaced by another calibration before an
-        // offline operator ingests this run. Snapshot exactly the bytes the
-        // native C++ parser just durably committed, and bind the helper log
-        // and the measured manifest by SHA-256. The MRC04 Python reader
-        // verifies this snapshot later; serving remains Python-free.
-        const std::string stored = read_file(s_.laboratory->calibration_store);
-        const std::string helper_evidence = read_file(helper_log);
-        const std::string admitted_manifest = read_file(plan_.execution_manifest());
-        const Json exact = Json::parse(admitted_manifest);
-        write_atomic(s_.run_dir / "calibration-store.v1.toml", stored);
-        const Json evidence = {
-            {"schema_version", 1},
-            {"session_id", exact.at("metadata").at("instance_id")},
-            {"calibration_store_key", key},
-            {"manifest_sha256", sha256_hex(admitted_manifest)},
-            {"calibration_store_sha256", sha256_hex(stored)},
-            {"helper_log_sha256", sha256_hex(helper_evidence)},
-            {"helper_log", helper_log.filename().string()},
-            {"prompts_a_sha256", sha256_hex(prompt_a_bytes)},
-            {"prompts_b_sha256", sha256_hex(prompt_b_bytes)},
-            {"heat_sha256", sha256_hex(heat_bytes)},
-            {"observed_at", utc_now()},
-        };
-        write_atomic(s_.run_dir / "calibration-evidence.v1.json", evidence.dump(2) + "\n");
     }
 
     static void validate_quality_paths(const QualityScore& score) {
@@ -3153,10 +2987,6 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
     file("site", in.options.site);
     file("profile", in.options.profile);
     file("calibration_cache", in.options.calibration_cache);
-    file("live_policy", in.live_policy_file);
-    file("calibration_prompts_a", in.calibration_prompts_a);
-    file("calibration_prompts_b", in.calibration_prompts_b);
-    file("calibration_store", in.calibration_store);
     file("calibration_records", in.calibration_records_file);
     if (values.contains("handoff") && values.at("handoff").contains("heat") &&
         values.at("handoff").at("heat").is_string() &&
@@ -3247,55 +3077,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         throw PlanFailed("serve: no config was read: name a CONFIG (NAME.yaml in the bundle or --configs)");
     in.options.configs.clear();   // the sealed YAML is the one source: no file is read again
 
-    if (in.calibration_run) {
-        // The native foreground owner validates the effective prompt batches at
-        // the planner boundary, ahead of its writer, measuring and GPU children.
-        if (in.live_policy_file.empty() || in.calibration_prompts_a.empty() ||
-            in.calibration_prompts_b.empty() || in.calibration_store.empty())
-            throw PlanFailed("calibration: live policy, two prompt files and store are required");
-        const auto prompts = read_calibration_prompts(in.calibration_prompts_a, in.calibration_prompts_b);
-        if (!prompts)
-            throw PlanFailed("calibration prompts: " + prompts.error().message);
-        // Validate the operator's JSON syntax before invoking the writer or
-        // admitting measuring children; strict v2 schema remains writer-owned.
-        const Json policy = Json::parse(read_file(in.live_policy_file), nullptr, false);
-        if (!policy.is_object())
-            throw PlanFailed("calibration live policy: expected a JSON object in " +
-                             in.live_policy_file.string());
-        // Only a true credited per-step source provides complete observations.
-        // The engine's .bcproof binds a published file to this launch; it
-        // cannot turn a periodically sampled file into a step watermark.
-        if (policy.contains("accept_unwatermarked_heat") &&
-            policy.at("accept_unwatermarked_heat").is_boolean() &&
-            !policy.at("accept_unwatermarked_heat").get<bool>())
-            throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration histogram source is "
-                             "unwatermarked; explicit accept_unwatermarked_heat=true is required in "
-                             "--live-policy for engine histogram calibration (or provide a coherent "
-                             "credited heat source); refusing to override strict policy");
-        std::error_code store_error;
-        if (!fs::is_regular_file(in.calibration_store, store_error))
-            throw PlanFailed("BC_CFG_CALIBRATION_INVALID (RAD_E_SCHEMA): calibration store " +
-                             in.calibration_store.string() +
-                             " does not exist as a regular file; create an empty calibration store "
-                             "file at this path before --calibration-run");
-    }
-    if (!in.experiment_file.empty()) {
-        // RSC04 minimum: observe-only lab experiment. Until RSC12 binds a
-        // full experiment input into both measured-plan and manifest keys,
-        // shaping/forcing/profile variants cannot safely reuse measurements.
-        if (in.calibration_run || !in.live_policy_file.empty())
-            throw PlanFailed("lab experiment: a calibration/live-policy run is a separate mode");
-        const Json experiment = Json::parse(read_file(in.experiment_file), nullptr, false);
-        const bool observe_only =
-            experiment.is_object() && experiment.size() == 1 && experiment.contains("placement") &&
-            experiment.at("placement").is_object() &&
-            experiment.at("placement").value("mode", std::string()) == "observe" &&
-            !experiment.at("placement").contains("forced");
-        if (!observe_only && !lab_lane_trace_only(experiment))
-            throw PlanFailed(
-                "lab experiment: only observe placement or a single diagnostics.lanes.trace_level "
-                "is supported until RSC12 binds experiment inputs");
-    }
     const Json facts = detect(in.options.sys_root);
     const Resolved r = resolve(in.options, facts);
     const Json& v = r.values;
@@ -3396,8 +3177,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     if (engine_identity(engine, frozen_runtime_home) != matched_engine_identity)
         throw PlanFailed("native v3 engine or runtime changed during YAML inspection");
     lap("runtime_identity");
-    if (in.calibration_run || !in.experiment_file.empty())
-        throw PlanFailed("native v3 admission requires the real writer and a production config");
     const auto& settings = native_inspection.settings;
     const Resolved native_resolved = resolve(in.options, facts, &settings);
     const auto cache = named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
@@ -3804,8 +3583,6 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     const auto native = v2::native_config_view(m);
     if (!native)
         throw PlanFailed("replay: the stored manifest has no admitted native YAML snapshot");
-    if (given.calibration_run || !given.experiment_file.empty())
-        throw PlanFailed("replay: native v3 requires current production inputs");
     const std::optional<NativeConfigSnapshot> native_snapshot = NativeConfigSnapshot::admitted(
         std::string(native->yaml_utf8), std::string(native->identity.sha256),
         std::string(native->identity.resolution_root));
@@ -3903,11 +3680,11 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
         throw PlanFailed(
             "replay: only a current RSC12 named config is eligible for stored-manifest replay");
 
-    const std::string expected_profile = in.calibration_run ? "lab" : "production";
+    const std::string expected_profile = "production";
     const std::string stored_profile =
         source.at("spec").at("intent").at("service").at("profile").get<std::string>();
     if (expected_profile != stored_profile)
-        throw PlanFailed("replay: a lab manifest requires the explicitly gated foreground calibration run");
+        throw PlanFailed("replay: only a production manifest can be replayed");
     ManifestInputs draft;
     draft.resolved = resolved;
     draft.native_config = native_snapshot;
@@ -3918,10 +3695,6 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
     draft.s10.power_profile = m.spec.intent.power.profile;
     draft.s10.now_unix_s = static_cast<int64_t>(std::time(nullptr));
     draft.s10.calibration_records = Json::array();
-    if (in.calibration_run && !in.live_policy_file.empty()) {
-        draft.live_policy = Json::parse(read_file(in.live_policy_file));
-        draft.live_policy_from = in.live_policy_file.string();
-    }
     if (source.at("spec").contains("experiment"))
         throw PlanFailed(
             "replay: lab experiment requires RSC12 static input-key verification, not available here");

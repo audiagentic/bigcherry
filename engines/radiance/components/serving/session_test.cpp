@@ -1705,8 +1705,8 @@ void native_config_inspector_invalid_report_refused() {
     }
 }
 
-// Fresh planning is native-only: a plan step with no admitted native YAML, a lab input (calibration or experiment,
-// which the native admission never carries), or an engine from another build is refused before any measurement starts.
+// Fresh planning is native-only: a plan step with no admitted native YAML, or an engine from another build, is
+// refused before any measurement starts.
 std::string plan_refusal(const bc::test::NativeSessionPlan& native, const fs::path& run) {
     fs::create_directories(run);
     fs::permissions(run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
@@ -1735,13 +1735,6 @@ void native_only_planning_refusals() {
         assert(why.find("native config YAML") != std::string::npos);
         native.inputs.named_config = "qwen27b-tp3";
         assert(plan_refusal(native, scratch / "named-no-yaml-run").find("native config YAML") != std::string::npos);
-    }
-    {
-        auto native = bc::test::native_session_inputs(g_host, scratch / "lab", bc::test::free_port());
-        native.inputs.experiment_file = scratch / "experiment.json";
-        bc::test::write_file(native.inputs.experiment_file,
-                             R"({"placement":{"mode":"observe"}})");
-        assert(plan_refusal(native, scratch / "lab-run").find("production config") != std::string::npos);
     }
     {
         // bc-serve of one build refuses the engine of another: the manifest is read by the build that wrote it.

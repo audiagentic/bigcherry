@@ -1,0 +1,27 @@
+cards: [0]
+server:
+  host: 127.0.0.1
+  port: 36080
+  kernels: libr4d,libr3moe,libref
+models:
+  flashnext:
+    model: radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad
+    tp: 1
+    max-model-len: 8192
+    max-num-seqs: 1
+    max-num-batched-tokens: 64
+    checkpoint-interval: 4096
+    placement: expert_tiered
+    kv-cache-dtype: fp8
+    num-speculative-tokens: 0
+    prefix-resume: nearest
+    rope-scaling: none
+x-bigcherry:
+  schema: 1
+  description: "Flash-Next on the R9700, both 7900 XTX cards holding the hottest experts"
+  ranks:
+    - {arch: "gfx1201", count: 1}
+  helpers:
+    - {arch: "gfx1100", count: "all", placement: "head"}
+  handoff: {heat: "@bundle/heat/flashnext-mixed.hot-first", histogram-period-s: 1, max-rows: 64, small-rows: 8, histogram: "off"}
+  memory: {host-pool-mib: 45056}

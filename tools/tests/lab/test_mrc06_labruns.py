@@ -107,147 +107,6 @@ def make_run(root: Path, *, state="running", events=None):
     return manifest, meta
 
 
-def make_calibration(root: Path):
-    from bigcherry.core import calibration_records as cr
-
-    fields = cr.key_declaration("radiance.live_policy")
-    scope = {
-        "policy_key_version": 2,
-        "model": "m1",
-        "layout": "flashnext-4gpu",
-        "objective": "balanced",
-        "power_profile": "stock",
-        "engine_cards": [
-            {"bdf": "0000:01:00.0", "arch": "gfx1201", "vram_total_mib": 32768}
-        ],
-        "helper_cards": [],
-        "histogram_period_s": 1,
-        "helper_runtime": {"combine": True},
-        "remote_service": {"max_rows": 1024},
-    }
-    key = cr.key_of("radiance.live_policy", scope)["sha256"]
-    absent = {k: "not observed" for k in fields["quantity_fields"] if k != "txn_p50_ns"}
-    lines = [
-        "schema_version = 1",
-        "[[live_policy_record]]",
-        f'plan_cache_key = "{key}"',
-        "record_schema_version = 1",
-        'calibration_kind = "radiance.live_policy"',
-        "calibration_key_fields = " + json.dumps(fields["key_fields"]),
-        "calibration_inputs = "
-        + json.dumps(json.dumps(scope, sort_keys=True, separators=(",", ":"))),
-        'source_plan_key = "' + "c" * 64 + '"',
-        'source_engine_build = "' + "b" * 64 + '"',
-        'source_revision = "source_slice:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"',
-        'run_id = "launch-v1"',
-        'host_facts_digest = "' + hashlib.sha256(b"{}").hexdigest() + '"',
-        'layout = "flashnext-4gpu"',
-        'objective = "balanced"',
-        'seeded = "2026-11-20"',
-        'evidence = "settled native observation"',
-        "txn_p50_ns = 100",
-        "absent = {" + ", ".join(f'{k} = "not observed"' for k in absent) + "}",
-    ]
-    raw = ("\n".join(lines) + "\n").encode()
-    snap = root / "calibration-store.v1.toml"
-    snap.write_bytes(raw)
-    assert cr.read_native_toml(snap)[0]["status"] == "current"
-    helper = root / "helper0-calibration.log"
-    helper.write_bytes(b"native verified settled helper calibration\n")
-    (root / "calibration-heat.v1").write_bytes(b"selected original heat bytes")
-    (root / "calibration-prompts-a.v1").write_bytes(b"prompt A\n")
-    (root / "calibration-prompts-b.v1").write_bytes(b"prompt B\n")
-    return key, snap, helper
-
-
-def test_calibration_native_evidence_ingests_only_proved_snapshot(tmp_path):
-    from bigcherry.bench import radiance_lab_records as lab
-
-    run = tmp_path / "run"
-    manifest, _ = make_run(run, state="stopped", events=["calibration_completed"])
-    key, snap, helper = make_calibration(run)
-    session_path = run / "session.json"
-    session = json.loads(session_path.read_text())
-    session["selection"]["calibration_store_key"] = key
-    session_path.write_text(json.dumps(session))
-    evidence = {
-        "schema_version": 1,
-        "session_id": "launch-v1",
-        "calibration_store_key": key,
-        "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
-        "calibration_store_sha256": hashlib.sha256(snap.read_bytes()).hexdigest(),
-        "helper_log_sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
-        "helper_log": helper.name,
-        "observed_at": "2026-11-20T02:00:00Z",
-        "heat_sha256": hashlib.sha256(
-            (run / "calibration-heat.v1").read_bytes()
-        ).hexdigest(),
-        "prompts_a_sha256": hashlib.sha256(
-            (run / "calibration-prompts-a.v1").read_bytes()
-        ).hexdigest(),
-        "prompts_b_sha256": hashlib.sha256(
-            (run / "calibration-prompts-b.v1").read_bytes()
-        ).hexdigest(),
-    }
-    (run / "calibration-evidence.v1.json").write_text(json.dumps(evidence))
-    sha = lab.publish_calibration_run(run, work_root=tmp_path, host_snapshot=FAKE_HOST)
-    store = run_records.RunRecordStore(tmp_path)
-    rec = store.get_record(sha)
-    assert rec["workload"]["name"] == "live-policy-calibration"
-    assert rec["metrics"]["decode"]["txn_p50_ns"] == 100
-    assert rec["identity"]["engine"] == "radiance"
-    inputs = {
-        entry["role"]: store.get_blob(entry["blob"])
-        for entry in rec["provenance"]["inputs"]
-    }
-    assert inputs["selected_calibration_record"]
-    assert inputs["native_calibration_store"] == snap.read_bytes()
-    assert inputs["calibration_helper_log"] == helper.read_bytes()
-    assert inputs["calibration_heat"] == b"selected original heat bytes"
-    assert inputs["calibration_prompts_a"] == b"prompt A\n"
-    assert inputs["calibration_prompts_b"] == b"prompt B\n"
-    assert rec["host_facts"] == FAKE_HOST
-    manifest.unlink()
-    snap.unlink()
-    assert store.get_record(sha) == rec
-
-
-def test_calibration_bad_snapshot_or_wrong_key_fails_closed(tmp_path):
-    from bigcherry.bench import radiance_lab_records as lab
-
-    run = tmp_path / "run"
-    manifest, _ = make_run(run, state="stopped", events=["calibration_completed"])
-    key, snap, helper = make_calibration(run)
-    session = json.loads((run / "session.json").read_text())
-    session["selection"]["calibration_store_key"] = key
-    (run / "session.json").write_text(json.dumps(session))
-    evidence = {
-        "schema_version": 1,
-        "session_id": "launch-v1",
-        "calibration_store_key": key,
-        "manifest_sha256": hashlib.sha256(manifest.read_bytes()).hexdigest(),
-        "calibration_store_sha256": hashlib.sha256(snap.read_bytes()).hexdigest(),
-        "helper_log_sha256": hashlib.sha256(helper.read_bytes()).hexdigest(),
-        "helper_log": helper.name,
-        "observed_at": "2026-11-20T02:00:00Z",
-        "heat_sha256": hashlib.sha256(
-            (run / "calibration-heat.v1").read_bytes()
-        ).hexdigest(),
-        "prompts_a_sha256": hashlib.sha256(
-            (run / "calibration-prompts-a.v1").read_bytes()
-        ).hexdigest(),
-        "prompts_b_sha256": hashlib.sha256(
-            (run / "calibration-prompts-b.v1").read_bytes()
-        ).hexdigest(),
-    }
-    path = run / "calibration-evidence.v1.json"
-    path.write_text(json.dumps(evidence))
-    snap.write_bytes(snap.read_bytes() + b"\n# post-run mutation")
-    with pytest.raises(ValueError, match="sha256|digest|mismatch"):
-        lab.publish_calibration_run(run, work_root=tmp_path, host_snapshot=FAKE_HOST)
-    assert run_records.RunRecordStore(tmp_path).query() == []
-
-
 def test_native_start_receipt_digest_and_timing_fail_closed(tmp_path):
     from bigcherry.bench import radiance_lab_records as lab
 
@@ -562,27 +421,6 @@ def test_image_cli_captures_exact_sent_pixels_and_refusal(tmp_path, monkeypatch)
     assert transmitted == [store.get_blob(blob)]
 
 
-def test_calibration_ingest_cli_refuses_no_native_success(tmp_path, capsys):
-    run = tmp_path / "run"
-    make_run(run, state="stopped", events=[])
-    assert (
-        main(
-            [
-                "results",
-                "ingest-calibration",
-                "--run-dir",
-                str(run),
-                "--work-root",
-                str(tmp_path),
-                "--json",
-            ]
-        )
-        == 2
-    )
-    assert "calibration" in capsys.readouterr().err.lower()
-    assert run_records.RunRecordStore(tmp_path).query() == []
-
-
 def test_probe_wrong_port_refuses_before_network(tmp_path, monkeypatch):
     import importlib.util
 
@@ -638,3 +476,10 @@ def test_noncalibration_lab_requires_measured_sidecar_and_sealed_native_session(
         lab.publish_native_lab(run, sidecar, work_root=tmp_path, host_snapshot=FAKE_HOST)
     manifest.unlink()
     assert store.get_record(sha) == row
+
+
+def test_calibration_ingest_action_is_retired(tmp_path):
+    # The native calibration start no longer exists, so there is no run directory to ingest.
+    with pytest.raises(SystemExit) as refused:
+        main(["results", "ingest-calibration", "--run-dir", str(tmp_path)])
+    assert refused.value.code == 2
