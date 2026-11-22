@@ -54,7 +54,7 @@ Hardware-free: stored_manifest_cache_test (key, stat identity, store), serving_t
 
 ## Notes
 
-
+2026-11-22 (bigcherry-2): slice 2, cross-build reuse. A stored manifest is bound to the build that wrote it (engine identity, runtime home), its measurement is not. When replay of the stored manifest is refused (a different engine or helper build), the start reads the stored measurement back from the old attempt's owner cache (plan, rank demand, resident host memory; the entry's owner digest must equal the index's receipt) and seals it again under the current build: the draft and measured writers run, no helper or measuring engine does, the new attempt gets its own owner receipt, S8 evidence and index, and the old attempt and engine identity are kept as plan_carried_from (selection and carried-from.json). A stored measurement that cannot be carried (damaged, or its plan no longer fits the configuration) is measured afresh. If anything fails after carrying, the stored entry is dropped. Tests: serving_test (different engine build: no measuring engine, one measured writer, provenance recorded, store replaced; unusable store: measures). Remaining on cards: the second named start of flashnext-r9700 and qwen27b-tp3 on the same build (replay) and on a newer installed build (carry).
 
 ## Change Log
 
@@ -64,3 +64,4 @@ Hardware-free: stored_manifest_cache_test (key, stat identity, store), serving_t
 
 A second named start with unchanged inputs reuses the stored manifest from any run dir and any build, runs no measuring child and reads no model bytes; a stored plan that cannot be reused measures once and replaces it; each relaxed check and what still protects it is listed in the PR.
 - 2026-11-21T23:41:35.527696+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance
+- 2026-11-21T23:57:41.696211+00:00 (updated-by): Updated: section:notes

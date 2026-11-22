@@ -1742,8 +1742,9 @@ void session_engine_plan(Fixture& t) {
         assert(replay_inspections == 2 && replay_admissions == 1 && !fs::exists(later_run / "measurement-attempts"));
         fs::remove(native_yaml);
 
-        // A stored plan a start cannot reuse (here a different engine build) is not a refusal to start: it
-        // measures once, and the new manifest replaces the stored one.
+        // A start under a DIFFERENT engine build still reuses the stored measurement: no measuring engine runs,
+        // the stored plan is sealed again under the current build (draft and measured writers), the old build's
+        // identity is kept as provenance, and the new manifest replaces the stored one.
         const fs::path rebuilt_run = run / "native-rebuilt-start";
         fs::create_directories(rebuilt_run);
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
@@ -1751,12 +1752,37 @@ void session_engine_plan(Fixture& t) {
         rebuilt.engine_binary = t.root / "rebuilt-native-engine";
         fs::copy_file(BC_FAKE_ENGINE, rebuilt.engine_binary);
         std::ofstream(rebuilt.engine_binary, std::ios::binary | std::ios::app) << '\n';
-        const auto remeasured = ss::plan_engine_only(rebuilt, rebuilt_run, admission_hooks);
-        assert(!remeasured.summary.contains("replay") && remeasured.manifest.parent_path() == rebuilt_run &&
-               fs::is_directory(rebuilt_run / "measurement-attempts"));
-        assert(ss::stored_manifest_for(cache_tripwire, ss::read_stored_index(cache_tripwire).key) ==
-               remeasured.manifest);
+        const size_t roles_before = inspector_roles.size();
+        const auto carried = ss::plan_engine_only(rebuilt, rebuilt_run, admission_hooks);
+        const std::vector<std::string> carried_roles(inspector_roles.begin() + static_cast<long>(roles_before),
+                                                     inspector_roles.end());
+        assert(!carried.summary.contains("replay") && carried.manifest.parent_path() == rebuilt_run);
+        assert(std::find(carried_roles.begin(), carried_roles.end(), "native v3 measuring engine") ==
+                   carried_roles.end() &&
+               std::count(carried_roles.begin(), carried_roles.end(), "native v3 measured writer") == 1);
+        assert(carried.summary.at("plan_carried_from").at("attempt") == original_index.native_measurement->attempt_id &&
+               carried.summary.at("plan_carried_from").at("engine_identity") !=
+                   bc::serving::engine_identity(rebuilt.engine_binary, home));
+        assert(ss::stored_manifest_for(cache_tripwire, ss::read_stored_index(cache_tripwire).key) == carried.manifest);
         fs::remove(native_yaml);
+
+        // A stored measurement the new inputs cannot use measures afresh: here the stored plan's rank record is
+        // removed, so nothing can be carried.
+        {
+            const auto entry = ss::read_stored_index(cache_tripwire);
+            const fs::path attempt_cache = fs::path(entry.directory) / "measurement-attempts" /
+                                           entry.native_measurement->attempt_id / "plan-cache";
+            for (const auto& file : fs::directory_iterator(attempt_cache)) fs::remove(file.path());
+            const fs::path unusable_run = run / "native-unusable-store";
+            fs::create_directories(unusable_run);
+            std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+            const size_t before = inspector_roles.size();
+            const auto measured_again = ss::plan_engine_only(rebuilt, unusable_run, admission_hooks);
+            assert(!measured_again.summary.contains("plan_carried_from") &&
+                   std::find(inspector_roles.begin() + static_cast<long>(before), inspector_roles.end(),
+                             "native v3 measuring engine") != inspector_roles.end());
+            fs::remove(native_yaml);
+        }
 
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path owner_run = run / "native-serving-owner";
