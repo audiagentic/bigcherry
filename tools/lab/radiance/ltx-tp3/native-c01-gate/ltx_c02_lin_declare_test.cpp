@@ -388,7 +388,12 @@ static std::vector<uint8_t> c06_gather(const RadFile& model,
 // planes and kernel relayout output resident for the native Ctx.
 static void verify_c06_load_contract(const RadFile& model, rad::Program& program,
                                       int rank,C06Issued* issued=nullptr) {
-    if (issued) issued->weights.resize(program.weights.size());
+    if (issued) {
+        issued->weights.resize(program.weights.size());
+        // Reserve before any device allocation: registering a successful
+        // native allocation must not itself allocate or throw.
+        if (issued->gpu) issued->owned_device.reserve(program.weights.size()+2);
+    }
     int64_t selected_bytes = 0, stored_bytes = 0;
     int weights = 0, relayouts = 0;
     for (size_t i=1; i<program.weights.size(); ++i) {
@@ -841,10 +846,12 @@ int main(int argc, char** argv) {
                                              "C06 native checkpoint weight upload failed");
                                     }
                                     r.device_cu=rad_dev_alloc(sizeof(r.cu),RAD_MEM_DEVICE);
-                                    r.device_pos=rad_dev_alloc(sizeof(r.pos),RAD_MEM_DEVICE);
-                                    need(r.device_cu && r.device_pos,
-                                         "C06 native AQL coordinate allocation refused");
+                                    need(r.device_cu,
+                                         "C06 native AQL cu-seqlens allocation refused");
                                     r.owned_device.push_back(r.device_cu);
+                                    r.device_pos=rad_dev_alloc(sizeof(r.pos),RAD_MEM_DEVICE);
+                                    need(r.device_pos,
+                                         "C06 native AQL position allocation refused");
                                     r.owned_device.push_back(r.device_pos);
                                     need(rad_memcpy_async(r.device_cu,r.cu.data(),
                                                           sizeof(r.cu),r.ctx->stream())==RAD_OK &&

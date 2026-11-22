@@ -60,6 +60,9 @@ There is a single, engine-owned native production weight-materialization path ca
 
 2026-11-22 source audit against main 06d5831a0 / bc-radiance 2020.1.1. Existing LTX C05 full three-card Q/K 2,088,960/2,088,960 BF16 exact is seeded activation with real gain, not TP1 captured; C06 host 24 IQ8R relayout hook calls and 4 graph groups / 108 initialized AQL instances per device order, no resident checkpoint C06 or generated video. Scope split: RUM14 generic source loader only; LTX02 (active) model-specific issue/parity; RUM13/RUM06 completed. Details in docs/evidence/2026-11-22-rum14-native-container-weight-seam/README.md.
 
+2026-11-22 after PR #1315 (c72ed6be3): the C06 native test now genuinely ISSUES one checkpoint-weight, single-row block-0 video/audio self-attention in four legal cases, all three ranks, with both mixed AQL card orders passing (108 native instances/order; bitwise equal output across orders). The diagnostic uses bounded test-only c06_gather and direct host/GPU weight pointer/upload staging, not production Engine::load_weights, RelayoutPool or sweep_container. This is a useful LTX02 execution proof, NOT completion of RUM14. RUM14's current generic deliverable is to delete and replace that temporary test-specific weight materialization by reusing one extracted production engine loader; preserve the working issue tests and require net reduction. Avoid implementing an alternate LTX loader or reopening RUM06/RUM13. PR #1316 repairs an actual allocation unwind bug in that diagnostic. No TP1 parity or production TP3 admission is accepted by these results.
+
 ## Change Log
 
 - 2026-11-22T08:21:43.996915+00:00 (created-by): Created by gpt-6
+- 2026-11-22T08:36:23.727103+00:00 (updated-by): Updated: section:notes
