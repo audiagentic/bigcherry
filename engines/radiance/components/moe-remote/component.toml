@@ -38,7 +38,7 @@ summary = "harness-only: space-separated HIP device indices, one r3_moe_worker p
 [setting.R3_MOE_WORKER_LAYOUT]
 default = ""
 status = "experimental"
-summary = "harness-only: a named layout from engines/radiance/layouts.toml (the engine card, the helper cards by architecture, their budgets and placement), resolved against the host's device inventory, instead of R3_MOE_WORKER_DEVICES. Settings the arm names itself win over what the layout and the card types imply (RAD23)"
+summary = "harness-only: a named layout from the config's native YAML (`x-bigcherry` ranks, helpers and placement), resolved against the host's device inventory, instead of R3_MOE_WORKER_DEVICES. Settings the arm names itself win over what the layout and the card types imply (RAD23)"
 
 [setting.R3_MOE_WORKER_CPU]
 default = "0"
