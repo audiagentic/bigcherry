@@ -2,7 +2,7 @@
 id: QFN02
 order: 0
 plan: run-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-01T12:36:26.056572+00:00'
 breadth: ''
 skill: advanced
@@ -59,3 +59,4 @@ Depends on QFN01 tensor split (1278) and the 6900 XT staying out of RCCL groups 
 ## Change Log
 
 - 2026-10-01T12:36:26.056572+00:00 (created-by): Created by agent
+- 2026-11-22T12:55:26.617844+00:00 (state-transition): State: pending → superseded

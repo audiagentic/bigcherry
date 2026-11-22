@@ -2,7 +2,7 @@
 id: QFN01
 order: 0
 plan: run-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-01T06:20:09.091717+00:00'
 breadth: ''
 skill: advanced
@@ -187,3 +187,4 @@ PRODUCTION PROFILE v3 (Flash-Next, 240K, f16 KV): profile v2 command line plus p
 
 2026-10-04 Qwen3.8-27B drafter placement (owner question; tools/lab/flash-next/draft27b-ab.sh, runs/draft27b-ab-1): 27B Q8_0 on the two XTX (-sm tensor, cpu-root), built-in MTP head (drafts on the TP XTX) vs the Q4_0 MTP sidecar on the 6900 (-devd, f16 draft KV), spec-draft-n-max 4, 256 greedy tokens. ~10K: built-in 70.2/72.8 t/s (46.2/44.5 ms/step) vs sidecar 68.0 (49.5); ~32K: built-in 71.9/71.7 (47.5/47.6) vs sidecar 61.2 (53.0). Acceptance similar. Verdict: keep the 27B's built-in MTP on the XTX - its single dense MTP layer is cheap there; on the slower 6900 its compute + attention (grows with depth) + hidden-state handoff exceed the AllReduces saved. Opposite of Flash-Next, whose large MTP model did not fit/benefit on the TP cards.
 - 2026-10-04T01:15:27.393851+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-22T12:55:22.201996+00:00 (state-transition): State: pending → superseded

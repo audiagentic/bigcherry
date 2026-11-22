@@ -2,7 +2,7 @@
 id: QFN04
 order: 0
 plan: run-qwen-flash-next
-state: pending
+state: completed
 created-at: '2026-10-03T15:21:12.489205+00:00'
 breadth: ''
 skill: advanced
@@ -47,7 +47,7 @@ Root cause identified; either a fix to reach 256K or a documented ceiling.
 
 ## Acceptance Criteria
 
-
+The item's validation allows a documented ceiling. Recorded: near-capacity paging on the largest card was identified as the cause, with a measured low-rate reproducer and stated context-layout ceilings. This closes the historical diagnostic only; it makes no native-serving claim.
 
 ## Notes
 
@@ -55,7 +55,11 @@ Runs: flashnext-attn-maxctx-110-hi, flashnext-attn-maxctx-110-f16 (c253952-t0). 
 
 2026-10-04 root cause (strong evidence): the collapse tracks R9700 memory, not context length. Rotated attention over all three GPUs (BIGCHERRY_ATTN_TS=1,1,1, flashnext-attn-maxctx-111r-f16) at -c 139264, -ts 0.29,0.28,0.43: loads, R9700 at 34.05 GB, prefill 86.9 t/s (decode 78.6) - the same signature as the 248K collapse on profile v2 (R9700 at 34.06 GB) at a completely different context length. Conclusion: with the R9700 within ~150 MB of its ~34.2 GB capacity the driver pages and prefill's large compute temporaries collapse; decode survives. Rule for fit searches/deployment: require >= ~0.3 GB free on the R9700 after load (maxctx-search should treat prefill < 50% of the low-context rate as a FAIL). Usable ceilings: profile v2 (KV on both XTX) 240K; rotated attention 128K.
 
+Closed on the run-plans triage; evidence in the item's diagnosis and ceiling notes and commit 65a82c061.
+
 ## Change Log
 
 - 2026-10-03T15:21:12.489205+00:00 (created-by): Created by agent
 - 2026-10-03T16:27:45.702070+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:55:45.482873+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-11-22T12:55:58.169045+00:00 (state-transition): State: pending → completed
