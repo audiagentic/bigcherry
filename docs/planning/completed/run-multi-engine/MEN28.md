@@ -2,7 +2,7 @@
 id: MEN28
 order: 0
 plan: run-multi-engine
-state: pending
+state: completed
 created-at: '2026-11-05T07:37:48.187895+00:00'
 breadth: ''
 skill: advanced
@@ -51,13 +51,15 @@ patch-gates --intent build passes for every patch in the production sets at the 
 
 ## Acceptance Criteria
 
-
+Radiance patch evidence is gated before materialization (config/release.toml enforcement `enforced`, campaign lane gate); the pin-bump re-audit and the release gate receipt are recorded (releases/v1.17.0.json). Llama.cpp requalification is separately owned and is not a Radiance MEN28 condition.
 
 ## Notes
 
 Owner direction 2026-11-05: 'ensure we are using the build system - campaigns - patches etc - this is not supposed to be some half arsed pipeline; with llamacpp we had a rigorous testing method - have we abandoned here'. Related: MEN26 (promotion of what Flash-Next serves; its step list overlaps steps 1 and 4), MEN27 (release bundle), MEN14 (lab scripts to commands). One build only: PR #637 removes source.radiance-lab. Do step 2 after step 1 or CI goes red.
 
 PROGRESS 2026-11-05: owner chose option (c), carry-forward, and no llama.cpp bump. Done: profile-evidence records carry forward across pin bumps when only the pin differs, rad0008 got its promotion record (PR #642); per-engine evidence gate before materialisation and pin-bump re-audit, config/release.toml evidence-gate required per engine: radiance enforced, llamacpp pending-requalification (PR #649); the v1.17.0 release record carries evidence_gate = passed with rad0002 (qualified at v1.14.0) and rad0008 (v1.9.0) carried forward (bc-radiance-1170.0.0). Remaining: llama.cpp re-qualification (54 of 61 validated patches do not qualify at b11552), its own item, then switch llamacpp to enforced; optional current-pin re-measurement of rad0002/rad0008 (revalidate on request).
+
+Closed on the run-plans triage: evidence in tools/bigcherry/campaign/lane.py, tools/bigcherry/release/pin_bump.py and PR 649.
 
 ## Change Log
 
@@ -67,3 +69,5 @@ SCOPE CORRECTION 2026-11-05 (GPT inventory, req_build-evidence-gate_542c49be5f89
 
 Decision needed from the owner: (a) re-qualify both engines' sets at their current pins before enforcing; (b) enforce for radiance first (2 patches, one pin) and bring llama.cpp up as its own item; or (c) make carry-forward across pin bumps the policy (the bump re-binds evidence by recorded identity checks) and fix why carry-forward does not accept these records. The offline wiring (build gate, pin-bump re-audit) is built after that choice on branch feat/build-evidence-gate, which is empty today.
 - 2026-11-05T22:17:58.752020+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:55:41.079139+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes
+- 2026-11-22T12:55:53.644348+00:00 (state-transition): State: pending → completed

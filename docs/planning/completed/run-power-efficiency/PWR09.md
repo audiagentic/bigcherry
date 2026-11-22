@@ -2,7 +2,7 @@
 id: PWR09
 order: 0
 plan: run-power-efficiency
-state: in_progress
+state: superseded
 created-at: '2026-11-10T13:32:42.998106+00:00'
 breadth: ''
 skill: advanced
@@ -93,3 +93,4 @@ The MCLK follow-up (reported XTX OD_MCLK 97–1250 MHz range) and pp_power_profi
 
 - RV4547
 - 2026-11-22T11:42:37.945551+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- 2026-11-22T12:55:17.789448+00:00 (state-transition): State: in_progress → superseded

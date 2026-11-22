@@ -2,7 +2,7 @@
 id: QFN03
 order: 0
 plan: run-qwen-flash-next
-state: pending
+state: deprecated
 created-at: '2026-10-03T05:45:51.897055+00:00'
 breadth: ''
 skill: advanced
@@ -72,3 +72,4 @@ Evidence: flashnext-long-ctx-fit-1, flashnext-ctx-fit-2, flashnext-ub-sweep-1 (u
 - 2026-10-03T14:13:41.688716+00:00 (updated-by): Updated: section:ledger-events
 - chg_20261003_151601_flash-next-now-runs-240k-conte_5065
 - 2026-10-03T15:16:04.804500+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-22T12:55:30.995996+00:00 (state-transition): State: pending → deprecated
