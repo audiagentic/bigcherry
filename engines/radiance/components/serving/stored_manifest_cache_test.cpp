@@ -291,6 +291,17 @@ int main() {
                    "no index is absent");
         }
         {
+            ss::PlanReuse carried;
+            carried.outcome = Outcome::carried;
+            const std::string line = ss::plan_reuse_line(carried);
+            expect(line.find("bc-serve: stored plan carried") == 0 && line.find('\n') == std::string::npos &&
+                       line.find("no stored plan reused") == std::string::npos && line.find("measuring") == std::string::npos,
+                   "a carried plan prints one plain line that does not claim a miss: " + line);
+            expect(std::string(ss::plan_reuse_outcome_name(Outcome::carried)) == "carried" &&
+                       ss::plan_reuse_json(carried).at("outcome") == "carried",
+                   "the carry is recorded under its own outcome");
+        }
+        {
             ss::PlanReuse refused;
             refused.outcome = Outcome::live_admission_refused;
             refused.detail = "not enough room";

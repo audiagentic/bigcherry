@@ -1817,6 +1817,46 @@ void session_engine_plan(Fixture& t) {
             fs::remove(native_yaml);
         }
 
+        // The same release installed in a SECOND prefix, the first prefix since removed: the engine and runtime home
+        // hold the same bytes, only where they live differs. That is decided up front from the engine identity: no
+        // replay is attempted (it would refuse for the paths the stored manifest embeds), the one reuse line names
+        // the carry, no measuring engine runs, and the stored measurement is sealed again under this prefix.
+        {
+            const auto entry_before = ss::read_stored_index(cache_tripwire);
+            const fs::path first_prefix = rebuilt_home.parent_path().parent_path().parent_path();
+            fs::remove_all(first_prefix);
+            const fs::path second_home = t.root / "installed-root-second/releases/bc-radiance-2020.0.0/radiance_home";
+            fs::create_directories(second_home);
+            auto second = rebuilt;
+            for (auto& set : second.options.sets)
+                if (set == "engine.radiance_home=" + Json(rebuilt_home.string()).dump())
+                    set = "engine.radiance_home=" + Json(second_home.string()).dump();
+            const fs::path second_run = run / "native-second-prefix";
+            fs::create_directories(second_run);
+            std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
+            const unsigned replays_before = replay_inspections;
+            const size_t before = inspector_roles.size();
+            std::ostringstream carry_err;
+            std::streambuf* const carry_before = std::cerr.rdbuf(carry_err.rdbuf());
+            const auto second_start = [&] {
+                struct Restore { std::streambuf* b; ~Restore() { std::cerr.rdbuf(b); } } restore{carry_before};
+                return ss::plan_engine_only(second, second_run, admission_hooks);
+            }();
+            const std::string carry_line = carry_err.str();
+            assert(carry_line.find("bc-serve: stored plan carried") == 0 && carry_line.find("not replayable") == std::string::npos &&
+                   carry_line.find("measuring") == std::string::npos &&
+                   std::count(carry_line.begin(), carry_line.end(), '\n') == 1);
+            assert(second_start.plan_reuse.at("outcome") == "carried" && replay_inspections == replays_before &&
+                   !second_start.summary.contains("replay") && second_start.manifest.parent_path() == second_run);
+            assert(std::find(inspector_roles.begin() + static_cast<long>(before), inspector_roles.end(),
+                             "native v3 measuring engine") == inspector_roles.end());
+            assert(second_start.summary.at("plan_carried_from").at("attempt") ==
+                   entry_before.native_measurement->attempt_id);
+            assert(ss::lookup_stored_manifest(cache_tripwire, ss::read_stored_index(cache_tripwire).key).manifest ==
+                   second_start.manifest);
+            fs::remove(native_yaml);
+        }
+
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path owner_run = run / "native-serving-owner";
         fs::create_directories(owner_run);

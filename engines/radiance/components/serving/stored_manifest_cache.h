@@ -73,7 +73,9 @@ enum class PlanReuseOutcome {
     manifest_missing,      // the entry's manifest is gone or not an ordinary file
     integrity_mismatch,    // the manifest's bytes differ from what the entry recorded
     carried_plan_unusable, // the stored plan is not replayable and its measurement cannot be carried either
-    live_admission_refused // the stored plan is intact but this start's live admission refused it
+    live_admission_refused, // the stored plan is intact but this start's live admission refused it
+    carried                // the same release runs from another location than the one that wrote the stored manifest:
+                           // not replayed (it embeds that location), its measurement is sealed again here
 };
 const char* plan_reuse_outcome_name(PlanReuseOutcome outcome);
 
@@ -87,7 +89,7 @@ struct PlanReuse {
 // Inputs named in one line; the rest are counted.
 inline constexpr size_t kReuseLineInputs = 8;
 // The single stderr line for this outcome, without a newline: "bc-serve: stored plan reused ..." for a hit,
-// "bc-serve: no stored plan reused (<reason>); measuring" otherwise.
+// "bc-serve: stored plan carried ..." for a carry, "bc-serve: no stored plan reused (<reason>); measuring" otherwise.
 std::string plan_reuse_line(const PlanReuse& reuse);
 nlohmann::json plan_reuse_json(const PlanReuse& reuse);
 
