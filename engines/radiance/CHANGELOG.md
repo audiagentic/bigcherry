@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.0.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.38.0...bc-radiance-2020.0.0) (2026-11-22)
+
+
+### New and changed
+
+* **radiance:** rad0055 opt-in per-rank step phase trace for native serving (RUM09) ([#1269](https://github.com/audiagentic/bigcherry/issues/1269)) ([9c218aa](https://github.com/audiagentic/bigcherry/commit/9c218aad0ec1002b531f36e9e70eea8583a2600b))
+
 ## [1170.38.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.37.0...bc-radiance-1170.38.0) (2026-11-22)
 
 
