@@ -14,16 +14,17 @@ from bigcherry.patcher import Edit, FilePatch
 
 _SRC = Path(__file__).resolve().parent / "src"
 _SHA256 = {
-    "bc_ltx_tp3_c01.h": "c13114e5726441235e0a4a92f8f61c57c1b3cb351dade5290bbfb15530c7484a",
+    "bc_ltx_tp3_c01.h": "5bf943238a78644f642c5d00c08d6d14721255a13e22ea9921a664a0de5f6b65",
     "preflight.inc": "67d20f9f6eae9f9b107560f771672ff8198d80fa63d39eb27d17a5038999b35f",
-    "bias.inc": "7b4b7f90810a8e6387e669a8c2db11e4c160ca77466ab86ae1b3da2fb5747e50",
-    "linear.inc": "5e6af267c582872681306a492769879fc90609cf2b21284f903555239a06eacb",
+    "bias.inc": "50f1020c9764408aa45884f7024243598cd41712f5e91b38e33d9262811c2392",
+    "linear.inc": "4c378fb782fb7bb58185273baa29a1c73f07f7eb86b86038b08236fd482c10f3",
     "attn_state.inc": "8139f6349178f6d5612fb3f4e9d61f7685d1fb4b5bfeaf4f24fd04d46673fdcb",
-    "attn_geometry.inc": "0affad412d46274f186ef7d6ce483b8830a34301983824e52bec1651a53a354b",
+    "attn_geometry.inc": "3e364becae0c3ae3d0757e1dbe2cbe14cddd761dc8534d49e4cd068325a038eb",
     "attn_output.inc": "8159c4dfd436138b16db74e1cc25a6f9ae86408e22a3df0588e9b80f7309b965",
     "attn_norm.inc": "2758c87db3c30112f955b3db7fc82ce0d35dd4510cdeec09f32a39a6523fba83",
     "attn_rope.inc": "d4a9fdacfee3c5752b26839bcc2eccd063d70baf5b2145b3be56553018cbc7ff",
     "attn_core.inc": "4a52ed788b8204bede7fd898cd9b17a815d42397aef2df89b4c45a5d45a88835",
+    "attn_cross.inc": "6f51439e1ba144957526a4e41942e8bd498f55dda83905dbbf518354ba54297f",
     "global_rms.inc": "18bc49f405708bd19151def2054ba626bdb808ff11924c4d049afbd6ac122bbc",
     "post_reduce.inc": "f47113a5c2f30d107a1f05f5e189447ea9b16ae35d5e64cb6aecfbaeff3cd64d",
 }
@@ -97,6 +98,12 @@ PATCHES = (
                 "                                   { bs(\"to_q\"), bs(\"to_k\"), bs(\"to_v\") }, { full, full, full }, 3 * in,\n"
                 "                                   qdim, acc, group, xin, bq, rows_q, false, tp)); /* BC_LTX3_C06_QKV */\n",
                 'BC_LTX3_C06_QKV',
+            ),
+            _edit(
+                'ltx03-cross-qkv-shard',
+                '    else {\n        RAD_ARCH_TRY(A.qkv.declare(b, nm, g, nm.f("%s.q", dn), { w("to_q") }, { bs("to_q") }, {}, in,\n                                   qdim, acc, group, xin, bq, rows_q));\n        RAD_ARCH_TRY(A.kv.declare(b, nm, g, nm.f("%s.kv", dn), { w("to_k"), w("to_v") },\n                                  { bs("to_k"), bs("to_v") }, { in, in }, 2 * in, kvdim, acc, group,\n                                  *kvin, bkv, rows_k));\n    }\n',
+                _source('attn_cross.inc'),
+                'BC_LTX3_LTX03_CROSS_KV',
             ),
             _edit(
                 'ltx-c06-out-reduce',
