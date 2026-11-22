@@ -121,6 +121,10 @@ the llama.cpp repin/transition procedure below is independent.
    trusted: resource admission and the live room check run on every start,
    and the engine refuses a plan that does not fit; that is the safety net,
    so a stored plan needs no revalidation of its own.
+   A start under a new build or a new work-root prefix carries the stored
+   measurement instead of measuring again: it logs that the stored manifest
+   is reused under this build, re-seals it, and records the source in
+   `plan_carried_from` (`carried-from.json`); no measuring engine runs.
 6. **Hardware acceptance before release.** Qualify each shipped
    config from the installed bundle (canary, stop/drain, and a second
    named start with `--work-root`, which is the reuse path), with

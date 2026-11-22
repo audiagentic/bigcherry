@@ -123,6 +123,9 @@ manifest of its config, keyed on the resolved settings, the ordered cards and
 VRAM, the power profile, the config inputs and the model's path, size and
 mtime. The model is never read, and the engine, helper and bc-serve builds are
 provenance, not part of the key. Without `--work-root` every start measures.
+A start under a new build or prefix carries the stored measurement and re-seals
+it (`plan_carried_from` records the source, `carried-from.json` is written, no
+measuring engine runs); only a start with no stored manifest to carry measures.
 Never reuse historical free-VRAM estimates as static identity. A reused plan
 is protected by admission: it runs on every start, and the engine refuses a plan
 that does not fit.
