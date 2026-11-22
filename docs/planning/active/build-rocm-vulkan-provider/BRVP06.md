@@ -55,11 +55,15 @@ Card-free tests in tools/tests (lane without stack, SDK mismatch, id and cache-k
 
 No build path resolves ROCm without naming a stack; every build records and hashes its SDK identity; CI image and runtime are bound to the same stack; two SDKs never share a build id or cache entry; no unversioned /opt/rocm in a build path outside an explicit allowlist.
 
+**Transferred BRVP04 acceptance (independent gate):** BRVP06's one SDK authority must retain BRVP04's stronger loader/build/runtime checks: typed ResolvedStack from declared platform/lane (no ambient PATH/ROCM_PATH/HIP_PATH/LD_LIBRARY_PATH inference) -> BuildPlan identity -> SDK-scoped compilers/header + generated engine CMake placeholder hooks -> build artifact dependency closure -> runtime RUNPATH/SDK manifest + pre-sample attestation. Replace selected_rocm_root() and old relative [build].rocm-paths only via one all-callers cutover; verify CMake compile_commands include dirs and all direct/dlopen'd libamdhip64/libhsa-runtime64 resolve to same named root, reject wrong headers/host environment even if selected hipcc matches. Record requested+detected version, compiler/hip-config/device library hashes, canonical realpath and SDK digest so in-place changes invalidate cache and CI layers. Share runtime resolver across ServerRunner, ab-benchmark sidecars, engine adapter and installed native bc-serve; preserve explicit validated/unvalidated/incompatible kernel/driver/firmware qualification records separately from build identity, with warning for unvalidated and refusal for incompatible. Cover 7.2.4 plus a second *actually installed* SDK such as 10.1 or 7.14 in mixed-root, side-by-side build/runtime tests, no false assumption that uninstalled 7.14 exists. BRVP06 7.14 download or A/B remains on hold until explicitly authorised, and BRVP01 still owns Vulkan compile-tool identity; no second SDK resolver/cache or implicit /opt/rocm fallback.
+
 ## Notes
 
 Evidence for the gaps: lab build ab39ffd2 CMake cache CMAKE_HIP_COMPILER=/opt/rocm-7.2.4/lib/llvm/bin/clang++, binary RUNPATH /opt/rocm-7.2.4/lib, metadata toolchain rocm_root=/opt/rocm-7.2.4 rocm_version=7.2.4; engines/radiance/recipes.toml platform.linux-radiance has no stack; .github/docker/radiance-build/Dockerfile ARG ROCM_VERSION=7.2.4; config/environment.local.toml rocm-sdks 7.14 = a path under the user home that does not exist here (absent), /opt/rocm-7.14 empty. Owner: bigcherry-2 (delegated 2026-11-04).
 
 2026-11-06 (bigcherry-2): the bc-serve part of item 5 is done (bc-serve inside a build refuses to run against another ROCm SDK than its metadata records: serving/sdk_check.{h,cpp}, same rule as lib/sdk-check.sh; card-free test in serving_test.cpp). Item 7 (7.14 acquisition and A/B) stays on hold until the owner confirms the download.
+
+CONSOLIDATION 2026-11-22 PHASE-5: receive BRVP04. BRVP04 is the HIP/ROCm SDK stack-selection and toolchain provenance precursor to BRVP06's existing explicit-SDK-for-every-build contract. Both require the same BuildPlan/SDK environment/launch enforcement surface. Original acceptance still applies; the transferred gate is unfinished. Source is superseded for duplicate planning ownership, not completed on implementation, benchmark or live-hardware criteria. Where Vulkan is involved, implementation remains paused by owner directive.
 
 ## Change Log
 
@@ -73,3 +77,8 @@ Evidence for the gaps: lab build ab39ffd2 CMake cache CMAKE_HIP_COMPILER=/opt/ro
 - 2026-11-04T23:08:04.294463+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04 (bigcherry-2): items 1-6 implemented in PR #611 except the bc-serve part of item 5. Open follow-up kept here: bc-serve refuses to start when the build's recorded rocm_root differs from the environment (the launcher check, lib/sdk-check.sh, is in #611). Item 7 (7.14 acquisition and A/B) is on hold until the owner confirms the download.
 - 2026-11-05T19:54:30.499545+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4530
+- 2026-11-22T11:09:05.685095+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

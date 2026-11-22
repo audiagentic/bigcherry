@@ -6,7 +6,7 @@ import unittest
 from pathlib import Path
 from typing import Any, cast
 
-from bigcherry import __main__ as cli
+from bigcherry.cli import main as cli
 
 
 class CliSurfaceTests(unittest.TestCase):
