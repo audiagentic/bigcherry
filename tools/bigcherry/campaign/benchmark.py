@@ -964,8 +964,7 @@ def run_server_comparison_capture(
     expected_execution = config.get("expected_execution")
     # An arm that serves a named layout runs on that layout's engine cards and serves its model; the shared environment's
     # device selectors and expected_execution are the topology of every other arm.
-    layout_arms = {arm.get("name") for arm in arms if isinstance(arm.get("serving"), dict)
-                   and ("layout" in arm["serving"] or "native_config" in arm["serving"])}
+    layout_arms = {arm.get("name") for arm in arms if isinstance(arm.get("serving"), dict)}
     shared_topology = len(layout_arms) < len(arms)
     execution_evidence = config.get("execution_evidence", "required")
     if execution_evidence not in ("required", "observe"):
@@ -1075,24 +1074,27 @@ def run_server_comparison_capture(
                 raise ValueError(f"{arm['name']}: a serving arm takes no server_args; they are settings under serving")
             if config.get("execution_evidence", "required") == "required":
                 raise ValueError(f"{arm['name']}: a manifest start has no attestation preflight; set execution_evidence to observe")
-            if "native_config" in serving:
-                # A native arm is its own YAML file (tools/lab/radiance/arm_yaml.py writes one): the owner reads and seals it.
-                if set(serving) != {"config", "native_config"}:
-                    raise ValueError(f"{arm['name']}: a native arm takes config (the serving config it copies) and native_config "
-                                     f"(its YAML file) only; a changed value is a change in that file, not a --set; got {sorted(serving)}")
-                if not quality_only:
-                    raise ValueError(f"{arm['name']}: a native arm is scored by bc-serve quality; the job must be quality_only")
-                yaml = Path(serving["native_config"]).expanduser()
-                yaml = yaml if yaml.is_absolute() else _paths.REPO_ROOT / yaml
-                if not yaml.is_file():
-                    raise ValueError(f"{arm['name']}: native_config {yaml} is not a file")
-                serving = {**serving, "native_config": str(yaml.resolve())}
+            if "native_config" not in serving:
+                raise ValueError(f"{arm['name']}: a serving arm is a native arm: give config (the serving config it copies) and "
+                                 "native_config (its YAML file); a serving block of layout, set, heat and histogram needed the "
+                                 "removed Python manifest planner and has no replacement")
+            # A native arm is its own YAML file (tools/lab/radiance/arm_yaml.py writes one): the owner reads and seals it.
+            if set(serving) != {"config", "native_config"}:
+                raise ValueError(f"{arm['name']}: a native arm takes config (the serving config it copies) and native_config "
+                                 f"(its YAML file) only; a changed value is a change in that file, not a --set; got {sorted(serving)}")
+            if not quality_only:
+                raise ValueError(f"{arm['name']}: a native arm is scored by bc-serve quality; the job must be quality_only")
+            yaml = Path(serving["native_config"]).expanduser()
+            yaml = yaml if yaml.is_absolute() else _paths.REPO_ROOT / yaml
+            if not yaml.is_file():
+                raise ValueError(f"{arm['name']}: native_config {yaml} is not a file")
+            serving = {**serving, "native_config": str(yaml.resolve())}
         arm_model = Path(os.path.expandvars(arm["model"])).expanduser().resolve() if "model" in arm else model
         arm_execution = expected_execution
         if arm["name"] in layout_arms:
             # The layout decides the model and the cards, as the launcher and bc-serve resolve it; an explicit model that
             # names another file is a contradiction, never silently replaced either way.
-            layout_name = serving.get("layout") or serving["config"]
+            layout_name = serving["config"]
             served = adapter_.serving_layout(layout_name)
             if arm_model is not None and arm_model != served.model:
                 raise ValueError(f"{arm['name']}: layout {layout_name} serves {served.model}, but the "
@@ -1126,14 +1128,6 @@ def run_server_comparison_capture(
         validate_build_parity(prepared["stock"]["binary"].parent.parent / "CMakeCache.txt",
                               prepared["native"]["binary"].parent.parent / "CMakeCache.txt")
     output.mkdir(parents=True, exist_ok=False)
-    for name in names:   # a serving arm's manifest: measured here (the GPUs, like a cell) when its plan is not cached
-        if prepared[name]["serving"] is not None and "native_config" not in prepared[name]["serving"]:
-            serving = prepared[name]["serving"]
-            if quality_only:   # a KL run scores the trunk's own rows and refuses speculative drafting: no drafts unless the arm says otherwise
-                serving = {**serving, "set": {"engine.num_speculative_tokens": 0, **serving.get("set", {})}}
-            prepared[name]["manifest"] = adapter_.write_serving_manifest(
-                name, serving, binary=prepared[name]["binary"], model=prepared[name]["model"],
-                env=prepared[name]["env"], run_dir=output / "manifests" / name)
     run_schedule = [] if quality_only else schedule_named_arms(rounds, names, seed)
     summary = {
         "schema_version": 1, "capture_kind": "server-bench-balanced-v1", "evidence_role": role,

@@ -62,7 +62,7 @@ Diagnosis S-M; fix M. Padding verify batches costs a little GPU work per round; 
 
 ## Acceptance Criteria
 
-
+**Transferred QFP27 acceptance (retain as separate gating outcome):** Qualify current-pin 1326 Meta tensor-split n_copies=1 with caps.events=false, not upstream #29963's layer-pipeline n_copies>1 semantics. Gate proposed pinned slot on measured >=1 ms and >=3% exposed input handling, compared with existing pageable <=4 MiB fallback. If qualified, use only the existing scheduler/copy/event owner and require all-child Meta completion before producer reuse, graph replay/rebind, cancel/reset, failed/delayed child, overwrite stress at copy depth2/3/4, same-process concurrent requests, 10K/24K/80K/200K, MTP/no-MTP, logits/KLD and VRAM. Fail closed to synchronous/pageable when completion cannot be proven; cap pinned <=64 MiB, promote only >=5% median prefill/TTFT, positive CI95-low, <=2% unaffected decode regression, zero lifetime violations. No second generation/ring, worker or host-weights policy.
 
 ## Notes
 
@@ -83,6 +83,8 @@ Source: FMTP01 Gate 0 notes 2026-10-04. Related: QFP06 (HIP graph working set), 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "CLOSE as Radiance task" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP16.md:14-41,93-131 records a real 1326 validated <=4 MiB decode-input improvement but still gates larger prefill input staging, multi-device slot lifetime and post-1326 host-submit profiling. engines/llamacpp/patches/1320_meta_compute_timing/SUMMARY.md:1-9 confirms a llama Meta diagnostic; docs/planning/active/patching-qwen-flash-next/QFP27.md:14-30 also depends on bounded 1326 retention, so closing merely because Radiance differs would discard live llama work. Active items that reference this one: BCOP182, BCOP205, BCOP206, BCOP209, BCOP223, BCOP236, BCOP252, BCOP348, BCOP40, QFP04. Keep the post-1326 prefill/pinned-slot and host-submit residual gate on llama.cpp, linked to QFP27 and QFP24.
 
 2026-11-22 owner handoff from decision-only BCOP40: Unresolved action. Source-bounded action/stop rule: First measure the residual large/prefill split-input cost on the current production stack at ubatch 512/2048/4096. If it is >=1 ms or >=3% of prefill wall time, extend 1326 with a bounded scheduler-owned pinned staging ring protected by completion events from every consuming Meta destination. Do not create another scheduler-copy owner or option. See docs/planning/completed/patching-bc-optimizations/BCOP40.md for the complete source/shape/negative case and evidence. QFP16 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: receiving QFP27. Prior acceptance remains mandatory; this is a planning ownership consolidation, not an executed implementation or evidence/quality pass. Independent hardware routes and production-safe fallbacks remain conditional. Full original design, source/negative receipts and historical review survive in each archived source plan.
 
 ## Change Log
 
@@ -136,3 +138,8 @@ The historical step-3(d) hypothesis is retired: `llama_context::process_ubatch` 
 QFP16/1326 is the **sole implementation owner** of the existing <=4 MiB pageable staging retention risk. Its function-local `thread_local` map retains a vector per distinct `input_cpy` pointer and is not cleared by scheduler free/reset; live RSS growth is **unmeasured**. QFP27 now specifies bounded scheduler-owned POD scratch, the `calloc/free` constructor constraint, Meta all-child host-consumption admission, lifecycle tests and fallback. This is not approval for pinned backing or a new scheduler. QFP24 remains conditional on >=1 ms AND >=3% measured exposed prefill input cost. Preserve validated 1326 decode behaviour and same-process MTP/logits correctness; do not claim a throughput improvement from reduced retained capacity.
 - 2026-11-04T04:26:28.474647+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T05:34:22.129847+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4485
+- 2026-11-22T09:45:11.660610+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

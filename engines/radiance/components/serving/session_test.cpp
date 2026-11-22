@@ -41,7 +41,6 @@
 #endif
 
 static_assert(!std::is_invocable_v<bc::serving::session::Wait, std::chrono::milliseconds>);
-static_assert(!std::is_invocable_v<bc::serving::session::ManifestRunner, const std::vector<std::string>&>);
 namespace fs = std::filesystem;
 namespace ss = bc::serving::session;
 using Json = nlohmann::json;
@@ -795,14 +794,6 @@ void spawn_and_environment() {
     assert(echoed.exit == 3 && echoed.out == "out\n" && echoed.err == "err\n");
     assert(registered.size() == 1 && registered == verified); // registered with the owner, its exit verified
     for (bool foreign : {false, true}) {
-        ss::ManifestRunner runner = [foreign](const std::vector<std::string>&) -> ss::ManifestRun {
-            if (foreign)
-                throw 17; // NOLINT(bugprone-std-exception-baseclass): deliberate nonstandard throw
-            throw std::runtime_error("runner exception");
-        };
-        auto result = runner.invoke("session.manifest.runner", std::vector<std::string>{});
-        assert(!result && result.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
-
         ss::Hooks bad = hooks;
         bad.wait = [foreign](std::chrono::milliseconds) -> bool {
             if (foreign)
@@ -1218,7 +1209,6 @@ static_assert(!std::is_assignable_v<ss::Callback<void()>&, ReturnedStatus>);
 static_assert(!std::is_constructible_v<ss::Callback<void()>, decltype([]() -> int { return 3; })>);
 static_assert(std::is_constructible_v<ss::Callback<bc::serving::v2::Status()>, ReturnedStatus>);
 static_assert(!std::is_invocable_v<ss::Callback<void()>&>);
-static_assert(!std::is_invocable_v<ss::ManifestRunner&, const std::vector<std::string>&>);
 static_assert(!std::is_invocable_v<ss::Wait&, std::chrono::milliseconds>);
 
 struct UnusualCallbackException {};
@@ -1252,11 +1242,6 @@ void callback_exception_matrix() {
                                     fs::path("fake")));
         assert(hooks.ended.invoke("session.test.ended", 1));
         assert(hooks.selected_segment.invoke("session.test.selected_segment", "/r3-serve-injected"));
-        ss::ManifestRunner runner = [kind](const std::vector<std::string>&) -> ss::ManifestRun {
-            injected_throw(kind);
-        };
-        const auto manifest = runner.invoke("session.test.runner", {});
-        assert(!manifest && manifest.error().code == bc::serving::v2::ConfigErrorCode::io_failure);
 
         // All owner-stage exit paths must reach the final journal and restore
         // once, including an apply that changed a control before throwing.
@@ -1717,6 +1702,57 @@ void native_config_inspector_invalid_report_refused() {
     }
 }
 
+// Fresh planning is native-only: a plan step with no admitted native YAML, a lab input (calibration or experiment,
+// which the native admission never carries), or an engine from another build is refused before any measurement starts.
+std::string plan_refusal(const bc::test::NativeSessionPlan& native, const fs::path& run) {
+    fs::create_directories(run);
+    fs::permissions(run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
+    int children = 0;
+    ss::Hooks hooks = bc::test::standalone_plan_hooks();
+    hooks.started = [&](ss::ChildKind kind, const std::string&, pid_t, const fs::path&) {
+        if (kind == ss::ChildKind::measuring_engine) ++children;   // an inspector may run; no measurement may
+    };
+    try {
+        (void)ss::plan_engine_only(native.inputs, run, hooks);
+    } catch (const ss::PlanFailed& error) {
+        assert(children == 0);
+        return error.what();
+    }
+    return {};
+}
+
+void native_only_planning_refusals() {
+    const fs::path scratch = g_root / "native-only-planning";
+    {
+        auto native = bc::test::native_session_inputs(g_host, scratch / "no-yaml", bc::test::free_port());
+        native.inputs.native_admission.reset();
+        native.inputs.named_config.clear();
+        native.inputs.options.configs = {fs::path(BC_CONFIGS_DIR)};
+        const std::string why = plan_refusal(native, scratch / "no-yaml-run");
+        assert(why.find("native config YAML") != std::string::npos);
+        native.inputs.named_config = "qwen27b-tp3";
+        assert(plan_refusal(native, scratch / "named-no-yaml-run").find("native config YAML") != std::string::npos);
+    }
+    {
+        auto native = bc::test::native_session_inputs(g_host, scratch / "lab", bc::test::free_port());
+        native.inputs.experiment_file = scratch / "experiment.json";
+        bc::test::write_file(native.inputs.experiment_file,
+                             R"({"placement":{"mode":"observe"}})");
+        assert(plan_refusal(native, scratch / "lab-run").find("production config") != std::string::npos);
+    }
+    {
+        // bc-serve of one build refuses the engine of another: the manifest is read by the build that wrote it.
+        auto native = bc::test::native_session_inputs(g_host, scratch / "build", bc::test::free_port());
+        const fs::path other = scratch / "other-build";
+        fs::create_directories(other / "radiance_home/bin");
+        bc::test::write_file(other / "bin/radiance", "");
+        fs::create_symlink(BC_SERVE_EXE, other / "radiance_home/bin/bc-serve");
+        native.inputs.self = other / "radiance_home/bin/bc-serve";
+        assert(plan_refusal(native, scratch / "build-run").find("is not this bc-serve's build") !=
+               std::string::npos);
+    }
+}
+
 void premeasurement_manifest_hook_integration() {
     // One owner, one run, and one manifest admission *before* measuring.
     // Explicit fake hooks record their sequencing without ever touching sysfs.
@@ -1863,7 +1899,7 @@ int test_main(int argc, char** argv) {
     // all. Every test is in exactly one group.
     static const std::vector<std::vector<void (*)()>> groups = {
         {real_session_power_returned_errors, manifest_writer_before_durable_admission, native_config_inspector_before_admission, callback_exception_matrix, power_hook_returned_status_errors, stop_while_waiting_for_health, stop_during_plan, unwritable_record_still_stops},
-        {premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
+        {native_only_planning_refusals, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
         {injected_owner_plan_exception, feature_state_start_status_and_warning, feature_state_invalid_manifest_prevents_child, helper_failure_unwinds, helper_shared_segment_gate, long_run_dir, control_socket_checks, run_dir_created_private, control_socket_private_under_permissive_umask, owner_refuses_unsafe_paths, engine_refuses_the_stored_plan, engine_never_healthy, plan_refused},
         {native_config_inspector_invalid_report_refused, callback_nonstandard_regression, spawn_and_environment, engine_fails_to_start, engine_dies_while_serving, signal_stops, start_detached_runs_and_stops, descendant_outliving_the_engine, inherited_descriptor_not_passed, owner_killed_fails_closed},
     };
