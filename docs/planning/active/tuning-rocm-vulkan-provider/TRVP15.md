@@ -49,6 +49,8 @@ Capability rebaseline v3 REVIEW_PROTOCOL.md; preserve historical provenance.
 
 Only exact-identity, correctness-passing, statistically supported winners are promoted; default enablement stays off absent evidence. Native fallback is visible and reliable for all misses/failures. RDNA3, RDNA3.5, and RDNA4 plus RADV/proprietary stacks are not conflated, negative controls are retained, and complete campaign lineage is reproducible.
 
+**Transferred TRVP14 acceptance (independent gate):** TRVP15's CM1 route qualification includes TRVP14 Gate 0 before any timing: use only pinned upstream native CM1 (do not transplant merged #27952/obsolete 1246) and define complete recipe identity for Q8_1 prep, CM1 main, optional split-K/reduce, op/quant/accumulator/shape/tile/subgroup/device/driver/ICD/shader digest/build/dispatch. Reuse TRBC03's Vulkan force interface and native can_execute/auto_eligible, never a parallel HIP ABI or shader pointer selector; strict supported force must prove actual pipeline bound with truthful post-bind activation, unsupported force must fail explicitly, auto/replay miss and device-lost/timestamp errors fall back visibly to stock. Global GGML_VK_DISABLE_COOPMAT is NOT an isolated CM1-off comparator. Test full-recipe parity before timing on S/M/L tails, quant, broadcast, grouped MUL_MAT_ID, Q8_1 prep and split/reduction. Preserve PRVP02's separate native CM1 A-prefetch end_k safety prerequisite; only with source/driver/physical-device/shader keyed correctness and ABBA+CI evidence may selected RDNA3/RDNA3.5/RDNA4 RADV/proprietary variants be promoted. Carry RDNA4 IQ4_XS and q4_1/q5_1/q4_k/q5_k/nvfp4 negative controls; Q2_K has no CM1 shader. Vulkan implementation remains PAUSED per RRVP02 until owner lifts the hold. No 1247 code/patch is authorised merely by merging plans.
+
 ## Notes
 
 2026-10-08T22:03Z BCOP77: native CM1 is the pinned baseline, not an opt-in BigCherry backport. Preserve RDNA4 negative quant controls and include IQ4_XS; Q2_K has no CM1 shader. PRVP02 owns shader A-prefetch safety; TRVP14 owns any future route override. No Vulkan hardware qualification during the RRVP02 pause. Upstream and external benchmarks are not BigCherry promotion evidence.
@@ -60,13 +62,14 @@ Successor key: tuning-rocm-vulkan-provider-ro22
 
 Supersedes RO22. Consumes TRVP13 and TRVP14; preserve RD08 dependency/reference and do not claim a global architecture winner.
 
+CONSOLIDATION 2026-11-22 PHASE-5: receive TRVP14. TRVP15's CM1 qualification cannot be meaningful without TRVP14's forceable, actual-bound CM1 recipe identity and telemetry; both refer to the same existing native Vulkan selector and one optional candidate family. Original acceptance still applies; the transferred gate is unfinished. Source is superseded for duplicate planning ownership, not completed on implementation, benchmark or live-hardware criteria. Where Vulkan is involved, implementation remains paused by owner directive.
+
 ## Change Log
 
 - 2026-09-09T11:01:20.673012+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:18:18.184715+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.605439+00:00 (updated-by): Updated: section:ledger-events
@@ -75,3 +78,8 @@ Supersedes RO22. Consumes TRVP13 and TRVP14; preserve RD08 dependency/reference 
 - 2026-09-10T03:47:03.253667+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_034835_repaired-the-final-six-live-su_3009
 - 2026-09-10T03:48:35.262866+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4531
+- 2026-11-22T11:09:17.455813+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

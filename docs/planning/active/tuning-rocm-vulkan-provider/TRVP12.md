@@ -61,13 +61,14 @@ Migration: capability-rebaseline-v3-2026-09
 
 Supersedes RO17. Preserve RV104/RV118: do not serialize behind TRVP11, do not duplicate Vulkan plans/stack architecture, and keep CM1-specific qualification in its successors. Preserve patch 1225 and governance.
 
+CONSOLIDATION 2026-11-22 OWNER-REFERENCES: TRVP12 remains sole native Vulkan MUL_MAT split-K and merge recipe owner. TRVP15 is now sole CM1-specific strict route/telemetry and performance-promotion gate after TRVP14 was superseded; PRVP02 still owns CM1 end_k/A-prefetch safety, and RRVP02 owns Vulkan implementation pause. Do not add a parallel selector or scheduler.
+
 ## Change Log
 
 - 2026-09-09T11:01:00.469466+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:17:54.644516+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.583617+00:00 (updated-by): Updated: section:ledger-events
@@ -112,5 +113,12 @@ Supersedes RO17. Preserve RV104/RV118: do not serialize behind TRVP11, do not du
 5. Promote only with paired ABBA CI95-low >=3% end-to-end prefill versus current native pin, <=1% unaffected TG/MTP regression, no missing work, and resource/traffic plausibility; otherwise NUMERIC_FAIL, RESOURCE_REGRESSION, NO_E2E_GAIN or REJECT.
 
 **Completed:** Pinned source/dispatch and upstream PR/diff/review inspection; host-only Python oracle 3,360 geometry/resource/tail cases passed (168 modeled split decisions changed), Python compilation passed. No Vulkan/SPIR-V build, BigCherry repository test, GPU profiling or hardware benchmark.
+
 ## 2026-10-18 Vulkan Q4 KV shader ownership note
+
 PRVP04 (BCOP295) owns only the prospective upstream #30738 Q4_0 KV dequant+transpose shader and its prefill route/physical-work gate. TRVP12 remains the shared Vulkan provider/capability adapter, **not** the attention shader owner. RRVP02's implementation pause is unchanged; no candidate, queue, provider, cache or allocator is added here. The n>=64 Vulkan FA scratch admission must not be misreported as a single-query decode speedup.
+
+## Reviews
+
+- RV4538
+- 2026-11-22T11:20:18.062010+00:00 (updated-by): Updated: section:notes
