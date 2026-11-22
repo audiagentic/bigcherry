@@ -740,7 +740,13 @@ int main() {
         self.assertNotIn("\nHookState g;", hook)
         self.assertNotIn("r3_moe_mailbox_enabled", hook)
         self.assertNotIn('rad_moe_remote', hook)
-        self.assertIn('await_layer_consumed(g.hdr, layer, layer_map_bound())', hook)
+        # The layer-map wait keeps its bound and now also records the wall of every wait (whatever its outcome) in the
+        # generation's own stats; the timed wrapper delegates to the bounded wait.
+        self.assertIn('await_layer_consumed_timed(g.hdr, layer, layer_map_bound(), &g.map_wait)', hook)
+        wait = (helper / "layer_map_wait.h").read_text(encoding="utf-8")
+        timed = wait[wait.index("inline MapWait await_layer_consumed_timed"):]
+        self.assertIn("await_layer_consumed(h, layer, bound)", timed)
+        self.assertIn("stats->record(", timed)
         self.assertIn('await_helpers_registered(g.hdr, g.watch, registration_bound())', hook)
         self.assertNotIn('kRegisterTimeoutS', hook)
         # Close order: workers stopped first, then LiveHook::retire (refuse intake, cancel waits, drain borrowers, free).
