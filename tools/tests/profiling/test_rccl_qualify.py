@@ -594,6 +594,46 @@ def test_channel_request_without_plan_observation_is_not_verified(tmp_path: Path
         rq.PLAN_UNVERIFIED, rq.PLAN_REQUEST_NOT_APPLIED,
     }
 
+
+@pytest.mark.parametrize("second_row", [
+    "    TREE    SIMPLE           2",
+    "    RING    LL128           2",
+    "    RING    SIMPLE           4",
+])
+def test_conflicting_observed_plan_rows_are_not_verified(
+    tmp_path: Path, second_row: str,
+):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, f"""
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{{"wrong": "0"}}, {{"wrong": "0"}}], f)
+        print("    RING    SIMPLE           2")
+        print({second_row!r})
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification == rq.PLAN_UNVERIFIED
+    assert result.correct is None
+
+
+def test_repeated_identical_observed_plan_rows_are_verified(tmp_path: Path):
+    case = _fake_case(algorithm="Ring", protocol="Simple")
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}, {"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.PASS
+    assert result.plan_verification == rq.PLAN_VERIFIED
+    assert result.observed_channels == 2
+
+
 def test_explicit_decline_marked_explicit_declined(tmp_path: Path):
     result = _run_fake(tmp_path, """
         import sys

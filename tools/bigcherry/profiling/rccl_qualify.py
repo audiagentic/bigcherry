@@ -433,10 +433,13 @@ _OBSERVED_PLAN_RE = re.compile(
 
 
 def _parse_observed_plan(combined_output: str) -> tuple[str | None, str | None, int | None]:
-    match = _OBSERVED_PLAN_RE.search(combined_output)
-    if match is None:
+    # -M 1 may produce multiple in-place/out-of-place rows. A first-row
+    # match alone does not attest the plan used by later passes. Return
+    # unverified if any observed algo/protocol/channel differs.
+    plans = {match.groups() for match in _OBSERVED_PLAN_RE.finditer(combined_output)}
+    if len(plans) != 1:
         return None, None, None
-    algo, proto, channels = match.groups()
+    algo, proto, channels = plans.pop()
     return algo, proto, int(channels)
 
 
