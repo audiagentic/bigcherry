@@ -16,6 +16,7 @@
 #include "s8_replay.h"
 #include "sdk_check.h"
 #include "serving.h"
+#include "lab_experiment.h"
 #include "session.h"
 #include "sha256.h"
 #include "serving_codec.h"
@@ -96,6 +97,10 @@ int select_free_port() {
     return int(ntohs(addr.sin_port));
 }
 
+std::string read_text(const fs::path& path) {
+    std::ifstream in(path, std::ios::binary);
+    return std::string(std::istreambuf_iterator<char>(in), std::istreambuf_iterator<char>());
+}
 void write(const fs::path& path, const std::string& content) {
     fs::create_directories(path.parent_path());
     std::ofstream out(path);
@@ -1290,6 +1295,88 @@ void serve_has_no_lab_options() {
     }
 }
 
+// `quality --lab-experiment FILE` takes a forced placement schedule and nothing else; every malformed file is refused
+// before any plan, and serve (above) still has no such option.
+void quality_lab_experiment_file(Fixture& t) {
+    const auto read = [&](const std::string& name, const std::string& text) {
+        return bc::serving::read_lab_placement_experiment(t.file(name.c_str(), text));
+    };
+    const auto refused = [&](const std::string& name, const std::string& text, const std::string& why) {
+        try {
+            read(name, text);
+        } catch (const std::runtime_error& e) {
+            if (std::string(e.what()).find(why) != std::string::npos) return;
+            throw std::runtime_error("lab experiment " + name + " refused for another reason: " + e.what());
+        }
+        throw std::runtime_error("lab experiment " + name + " was accepted");
+    };
+    const auto swaps = read("lab-swaps.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":2,"steps":[
+        {"kind":"swap","a_layer":0,"a_expert":3,"b_layer":0,"b_expert":9},
+        {"kind":"move","a_layer":1,"a_expert":4,"destination":1}]}}})");
+    if (swaps.transactions != 4 || swaps.helper_limit != 2)
+        throw std::runtime_error("lab experiment: the explicit swap list was not counted");
+    const auto automatic = read("lab-auto.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":3,"steps":[
+        {"kind":"auto_swap","a_layer":0,"a_expert":2}]}}})");
+    if (automatic.transactions != 3 || automatic.helper_limit != 3)
+        throw std::runtime_error("lab experiment: the auto_swap schedule was not counted");
+    bc::serving::require_experiment_helpers(automatic, 3);
+    for (const size_t too_few : {size_t{0}, size_t{1}, size_t{2}}) {
+        try {
+            bc::serving::require_experiment_helpers(automatic, too_few);
+        } catch (const std::runtime_error&) {
+            continue;
+        }
+        throw std::runtime_error("lab experiment: a schedule naming helper 2 was accepted for " +
+                                 std::to_string(too_few) + " helpers");
+    }
+    refused("lab-not-json.json", "{", "is not a JSON object");
+    refused("lab-array.json", "[]", "is not a JSON object");
+    refused("lab-shape.json", R"({"shape":{"helper_common":{"gemv":{"h2":4}}}})", "must hold exactly `placement`");
+    refused("lab-two.json", R"({"placement":{"mode":"observe"},"diagnostics":{}})", "must hold exactly `placement`");
+    refused("lab-observe.json", R"({"placement":{"mode":"observe"}})", "forced_churn");
+    refused("lab-cycle.json", R"({"placement":{"mode":"forced_churn","epoch_cycle_s":5,"forced":{"repeat":1,"steps":[
+        {"kind":"auto_swap","a_layer":0,"a_expert":1}]}}})", "forced_churn");
+    refused("lab-no-steps.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[]}}})", "steps");
+    refused("lab-swap-b.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"swap","a_layer":0,"a_expert":3}]}}})", "swap names both experts");
+    refused("lab-move.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"move","a_layer":0,"a_expert":3}]}}})", "a move needs a destination");
+    refused("lab-same.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"auto_swap","a_layer":1,"a_expert":1}]}}})", "two different helpers");
+    refused("lab-unknown.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":1,"steps":[
+        {"kind":"auto_swap","a_layer":0,"a_expert":1,"colour":1}]}}})", "colour");
+    try {
+        bc::serving::read_lab_placement_experiment(t.root / "no-such-experiment.json");
+        throw std::runtime_error("a missing lab experiment file was accepted");
+    } catch (const std::runtime_error& e) {
+        if (std::string(e.what()).find("cannot read") == std::string::npos) throw;
+    }
+
+    // Through the command line: quality names the file, a bad one is refused before the plan; serve and start never
+    // read it.
+    const std::string bad = t.file("lab-cli-bad.json", R"({"placement":{"mode":"observe"}})").string();
+    const std::string good = t.file("lab-cli-good.json", R"({"placement":{"mode":"forced_churn","forced":{
+        "repeat":1,"steps":[{"kind":"auto_swap","a_layer":0,"a_expert":1}]}}})").string();
+    const auto quality = [&](const std::string& file) {
+        return run_bc_serve({"quality", "qwen27b-tp3", "--run-dir", (t.root / "lab-cli-run").string(),
+                             "--lab-experiment", file});
+    };
+    const auto refusal = quality(bad);
+    if (refusal.exit_code == 0 || refusal.output.find("--lab-experiment") == std::string::npos ||
+        refusal.output.find("forced_churn") == std::string::npos)
+        throw std::runtime_error("quality did not refuse a non-forced experiment: " + refusal.output);
+    const auto accepted = quality(good);
+    if (accepted.output.find("--lab-experiment") != std::string::npos)
+        throw std::runtime_error("quality refused a valid forced placement file: " + accepted.output);
+    for (const char* cmd : {"serve", "start"}) {
+        const auto served = run_bc_serve({cmd, "qwen27b-tp3", "--run-dir", (t.root / "lab-cli-run").string(),
+                                          "--lab-experiment", good});
+        if (served.exit_code == 0 || served.output.find(std::string(cmd) + ": unknown option --lab-experiment") ==
+                                         std::string::npos)
+            throw std::runtime_error(std::string(cmd) + " accepted --lab-experiment: " + served.output);
+    }
+}
+
 void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
     const auto no_snapshot = run_bc_serve({"--write-manifest", "unused.json"});
     if (no_snapshot.exit_code != 2 ||
@@ -2356,6 +2443,59 @@ void helper_vram_owner_graph(Fixture& t) {
         timeout_record.at("errors").dump().find("KL scoring timed out") == std::string::npos ||
         timeout_record.at("events").dump().find("power_restored") == std::string::npos)
         throw std::runtime_error("native helper finite score timeout did not clean up: " + timeout_record.dump());
+
+    // A forced placement schedule: measured afresh into a lab-profile manifest that carries it, the named store left
+    // as it was, helper0's report read when the score ends, and the owner map written for the next schedule.
+    const fs::path stored_before = stored;
+    const auto stored_bytes_before = read_text(stored_before);
+    const fs::path swaps = t.file("lab-swaps-run.json", R"({"placement":{"mode":"forced_churn","forced":{"repeat":2,
+        "steps":[{"kind":"swap","a_layer":0,"a_expert":3,"b_layer":0,"b_expert":9},
+                 {"kind":"auto_swap","a_layer":0,"a_expert":1}]}}})");
+    in.stored_manifest.clear();   // an explicit replay input is production-only; the schedule needs a fresh plan
+    in.lab_experiment = bc::serving::read_lab_placement_experiment(swaps);
+    owner.timing.quality_timeout = std::chrono::minutes(1);
+    owner.timing.stop_grace = std::chrono::seconds(1);
+    owner.quality->output = t.root / "helper-quality-forced.json";
+    write(reference / "kld.json", "{}");
+    write(authored, yaml);   // the measuring admission consumes the authored file
+    const int forced = ss::serve(owner);
+    const auto forced_record = ss::read_record(owner.run_dir).value_or(Json::object());
+    const auto forced_events = forced_record.at("events").dump();
+    if (forced != 0 || forced_record.value("state", "") != "stopped" || !ss::alive_recorded(forced_record).empty() ||
+        forced_events.find("\"forced_placement\"") == std::string::npos ||
+        forced_events.find("\"committed\":4") == std::string::npos ||
+        forced_events.find("\"swaps\"") == std::string::npos ||
+        forced_events.find("owner_map_written") == std::string::npos)
+        throw std::runtime_error("forced placement score did not complete and report: " + forced_record.dump());
+    const auto lab_manifest = bc::serving::v2::load_manifest(fs::path(forced_record.at("manifest").get<std::string>()),
+                                                             bc::serving::v2::PlanUse::serving);
+    if (!lab_manifest || lab_manifest.value().spec.intent.service.profile != bc::serving::v2::Profile::kLab ||
+        !lab_manifest.value().spec.experiment || !lab_manifest.value().spec.experiment->placement ||
+        !lab_manifest.value().spec.experiment->placement->forced ||
+        lab_manifest.value().spec.experiment->placement->forced->steps.size() != 2 ||
+        lab_manifest.value().spec.experiment->placement->forced->steps[0].kind != bc::serving::v2::ForcedKind::kSwap ||
+        lab_manifest.value().spec.experiment->placement->forced->steps[1].kind != bc::serving::v2::ForcedKind::kAutoSwap ||
+        lab_manifest.value().spec.experiment->placement->forced->repeat != 2)
+        throw std::runtime_error("the forced schedule did not reach the manifest the engine ran");
+    if (read_text(stored_before) != stored_bytes_before ||
+        read_text(owner.run_dir / "lab-experiment.json").find("auto_swap") == std::string::npos)
+        throw std::runtime_error("a lab experiment changed the stored plan, or its file was not kept");
+    const Json owner_map = Json::parse(read_text(owner.run_dir / "owner-map.json"));
+    if (owner_map.at("helpers").size() != 2 || owner_map.at("helpers").at(0).at("role") != "helper0" ||
+        owner_map.at("helpers").at(0).at("experts").size() != owner_map.at("helpers").at(0).at("count") ||
+        !owner_map.at("helpers").at(0).contains("arch") || !owner_map.at("helpers").at(1).contains("tier"))
+        throw std::runtime_error("the owner map dump is incomplete: " + owner_map.dump());
+
+    // Swaps that did not all commit fail the score, and the report names them.
+    owner.quality->output = t.root / "helper-quality-forced-short.json";
+    write(authored, yaml);
+    ::setenv("TEST_FAKE_FORCED_COMMITTED", "3", 1);
+    const int short_forced = ss::serve(owner);
+    ::unsetenv("TEST_FAKE_FORCED_COMMITTED");
+    const auto short_record = ss::read_record(owner.run_dir).value_or(Json::object());
+    if (short_forced == 0 || short_record.value("state", "") != "failed" || !ss::alive_recorded(short_record).empty() ||
+        short_record.at("errors").dump().find("forced placement incomplete: committed 3 of 4") == std::string::npos)
+        throw std::runtime_error("an incomplete forced schedule did not fail the score: " + short_record.dump());
 }
 
 int main(int argc, char** argv) {
@@ -2381,6 +2521,7 @@ int main(int argc, char** argv) {
         host_ledger_plan();
         measured_plan_cache(t);
         serve_has_no_lab_options();
+        quality_lab_experiment_file(t);
         v3_writer_cli_rejects_unowned_imports(t);
         build_tree_runtime_home(t);
         session_engine_plan(t);

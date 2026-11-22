@@ -1759,8 +1759,100 @@ class Owner {
             throw PlanFailed("quality: output and row sidecar need unused absolute paths in an existing directory");
     }
 
+    // The initial owner map of the manifest this score runs on, resolved to helpers: what to read to choose a legal
+    // swap (both experts on different helpers, each helper able to hold the other's expert format).
+    void write_owner_map() {
+        const fs::path manifest_path = plan_.execution_manifest();
+        const Json doc = Json::parse(read_file(manifest_path), nullptr, false);
+        if (!doc.is_object() || !doc.contains("spec"))
+            throw PlanFailed("quality: cannot read the manifest for its owner map");
+        const Json& spec = doc.at("spec");
+        const Json& owners = spec.at("plan").at("owner_map");
+        const Json& helpers = spec.at("processes").at("helpers");
+        if (!owners.at("helpers").is_array() || owners.at("helpers").size() != helpers.size())
+            throw PlanFailed("quality: the owner map and the helpers of the manifest differ");
+        Json out = {{"manifest", plan_.manifest.string()},
+                    {"owner_map_sha256", owners.at("owner_map_sha256")},
+                    {"helpers", Json::array()}};
+        for (size_t i = 0; i < helpers.size(); ++i) {
+            const Json& h = helpers.at(i);
+            const Json& set = owners.at("helpers").at(i);
+            std::string arch;
+            for (const Json& gpu : spec.at("facts").at("gpus"))
+                if (gpu.at("bdf") == h.at("gpu"))
+                    arch = gpu.at("arch").get<std::string>();
+            out["helpers"].push_back({{"index", i}, {"role", h.at("role")}, {"gpu", h.at("gpu")}, {"arch", arch},
+                                      {"tier", h.at("tier")}, {"formats", h.at("formats")},
+                                      {"count", set.at("count")}, {"bytes", set.at("bytes")},
+                                      {"experts", set.at("experts")}});
+        }
+        write_atomic(s_.run_dir / "owner-map.json", out.dump() + "\n");
+        event("owner_map_written", {{"file", (s_.run_dir / "owner-map.json").string()},
+                                    {"owner_map_sha256", owners.at("owner_map_sha256")}});
+    }
+
+    // The forced placement schedule runs inside helper 0 once the engine is serving, so it lands during the pass.
+    // When the score is over, helper 0 is asked for its report (SIGUSR1) and every transaction must have committed:
+    // a score whose swaps were aborted or are still in flight measured a placement nobody asked for.
+    void verify_forced_placement() {
+        const auto helper = std::find_if(children_.begin(), children_.end(),
+                                         [](const Child& c) { return c.role == "helper0"; });
+        if (helper == children_.end())
+            throw PlanFailed("quality: a forced placement schedule has no helper0 to run it");
+        static const std::regex report_line(
+            R"(forced placement helper=0 attempted=([0-9]+) committed=([0-9]+) aborted=([0-9]+) inflight=([0-9]+))");
+        static const std::regex swap_line(
+            R"(forced resolved transaction=([0-9]+) epoch=([0-9]+) swap=([0-9]+):([0-9]+):([0-9]+):([0-9]+) helpers=([0-9]+):([0-9]+))");
+        const uint64_t expected = plan_.forced_transactions;
+        const auto deadline = Clock::now() + s_.timing.stop_grace;
+        size_t seen = 0;
+        {
+            const std::string text = read_file(helper->log);
+            seen = std::distance(std::sregex_iterator(text.begin(), text.end(), report_line), std::sregex_iterator());
+        }
+        std::array<uint64_t, 4> last{};
+        for (;;) {
+            ::kill(helper->pid, SIGUSR1);
+            const std::string text = read_file(helper->log);
+            const size_t reports =
+                std::distance(std::sregex_iterator(text.begin(), text.end(), report_line), std::sregex_iterator());
+            if (reports > seen) {
+                std::smatch m;
+                auto it = std::sregex_iterator(text.begin(), text.end(), report_line);
+                for (size_t i = 0; i + 1 < reports; ++i) ++it;
+                m = *it;
+                for (size_t i = 0; i < 4; ++i) last[i] = std::stoull(m[i + 1].str());
+                seen = reports;
+                const bool done = last[0] == expected && last[1] == expected && last[2] == 0 && last[3] == 0;
+                Json swaps = Json::array();
+                for (auto w = std::sregex_iterator(text.begin(), text.end(), swap_line); w != std::sregex_iterator(); ++w)
+                    swaps.push_back({{"transaction", std::stoull((*w)[1].str())},
+                                     {"a", {std::stoull((*w)[3].str()), std::stoull((*w)[4].str())}},
+                                     {"b", {std::stoull((*w)[5].str()), std::stoull((*w)[6].str())}},
+                                     {"a_to_helper", std::stoull((*w)[7].str())},
+                                     {"b_to_helper", std::stoull((*w)[8].str())}});
+                if (done || Clock::now() >= deadline) {
+                    event("forced_placement", {{"expected", expected}, {"attempted", last[0]}, {"committed", last[1]},
+                                               {"aborted", last[2]}, {"inflight", last[3]}, {"swaps", swaps},
+                                               {"log", helper->log.string()}});
+                    if (!done)
+                        throw PlanFailed("quality: forced placement incomplete: committed " + std::to_string(last[1]) +
+                                         " of " + std::to_string(expected) + " (attempted " + std::to_string(last[0]) +
+                                         ", aborted " + std::to_string(last[2]) + ", in flight " +
+                                         std::to_string(last[3]) + "); see " + helper->log.string());
+                    return;
+                }
+            } else if (Clock::now() >= deadline) {
+                throw PlanFailed("quality: helper0 did not report its forced placement; see " + helper->log.string());
+            }
+            if (!service(s_.timing.poll))
+                throw Stop{};
+        }
+    }
+
     void score_quality(const QualityScore& score) {
         validate_quality_paths(score);
+        write_owner_map();
         event(score.record() ? "recording" : "scoring",
               {{"reference", score.reference.string()}, {"output", score.output.string()}});
         const pid_t engine = start_engine(&score);
@@ -1796,6 +1888,8 @@ class Owner {
         if (positions <= 0 || uint64_t(positions) > UINT64_MAX / 16 ||
             fs::file_size(rows) != uint64_t(positions) * 16)
             throw PlanFailed("quality: KL scoring row sidecar differs from reported positions");
+        if (plan_.forced_transactions != 0)
+            verify_forced_placement();
         event("quality_completed", {{"positions", positions}, {"output", score.output.string()}});
     }
 
@@ -3014,6 +3108,14 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             "serve: " + name + " is a layout (" + layouts.at("source").value(name, "") +
             "); bc-serve serves configs (engines/radiance/configs, --configs): convert it first (RSC12)");
     const Json& processes = r.manifest.at("process_helpers");
+    if (in.lab_experiment) {
+        // Only `quality` reads a schedule (main.cpp): serve and start have no such option.
+        try {
+            require_experiment_helpers(*in.lab_experiment, processes.size());
+        } catch (const std::runtime_error& refusal) {
+            throw PlanFailed(refusal.what());
+        }
+    }
     const fs::path home = v.at("engine").at("radiance_home").get<std::string>();
     const fs::path engine =
         in.engine_binary.empty() ? home.parent_path() / "bin" / "radiance" : in.engine_binary;
@@ -3106,7 +3208,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
     lap("runtime_identity");
     const auto& settings = native_inspection.settings;
     const Resolved native_resolved = resolve(in.options, facts, &settings);
-    const auto cache = named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
+    // A lab experiment measures afresh and leaves the named store alone: its manifest is a lab one, which neither
+    // replays nor stands in for the production plan.
+    const auto cache = in.lab_experiment
+        ? std::nullopt
+        : named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
     std::optional<CarriedMeasurement> carried;
     PlanReuse reuse;
     reuse.outcome = PlanReuseOutcome::absent;
@@ -3365,6 +3471,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             throw PlanFailed("native v3 owner cache publication did not return the exact attempt receipt");
 
         const fs::path measured_manifest = fs::absolute(run_dir) / ("manifest-native-" + attempt_id + ".json");
+        const fs::path experiment_file = fs::absolute(run_dir) / "lab-experiment.json";
         const fs::path s8_source = measured_manifest.string() + ".s8-evidence.json";
         std::vector<std::string> measured_argv = {
             in.self.string(), "--write-manifest", measured_manifest.string(), "--power-profile", in.power_profile,
@@ -3373,6 +3480,12 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             "--bc-native-config-fd", std::to_string(writer_input.descriptor())};
         if (cache)
             measured_argv.insert(measured_argv.end(), {"--s8-replay-evidence", s8_source.string()});
+        if (in.lab_experiment) {
+            // The measured manifest, and only it, carries the schedule: the measuring start ran the production
+            // plan. The file is kept in the run directory as the record of what was applied.
+            write_atomic(experiment_file, in.lab_experiment->document.dump(2) + "\n");
+            measured_argv.insert(measured_argv.end(), {"--experiment", experiment_file.string()});
+        }
         measured_argv.insert(measured_argv.end(), resolver.begin(), resolver.end());
         const ManifestRun final_writer = run_planning_child(
             measured_argv, child_environment(environ, {}), hooks, ChildKind::manifest_writer,
@@ -3402,6 +3515,13 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         auto final_snapshot = pin_manifest_file(measured_manifest, v2::PlanUse::serving);
         const auto final_native = v2::native_config_view(final_snapshot.parsed);
         const auto& final_spec = final_snapshot.parsed.spec;
+        if (in.lab_experiment) {
+            const auto& experiment = final_spec.experiment;
+            const auto forced = experiment && experiment->placement ? experiment->placement->forced : std::nullopt;
+            if (final_spec.intent.service.profile != v2::Profile::kLab || !forced ||
+                uint64_t(forced->steps.size()) * uint64_t(forced->repeat) != in.lab_experiment->transactions)
+                throw PlanFailed("native v3 measured manifest does not carry the requested forced placement schedule");
+        }
         if (!final_native || final_native->yaml_utf8 != snapshot.yaml_utf8() ||
             final_native->identity.sha256 != snapshot.sha256() ||
             final_native->identity.resolution_root != snapshot.resolution_root())
@@ -3477,6 +3597,11 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         if (carried)
             out.summary["plan_carried_from"] = carried->provenance();
         out.summary["manifest_digest"] = final_snapshot.parsed.metadata.content_digest;
+        if (in.lab_experiment) {
+            out.forced_transactions = in.lab_experiment->transactions;
+            out.summary["lab_experiment"] = {{"file", experiment_file.string()},
+                                             {"transactions", in.lab_experiment->transactions}};
+        }
         lap("measure");
         out.plan_reuse = plan_reuse_json(reuse);
         out.phase_ms = phases;
@@ -3498,6 +3623,8 @@ static EngineStart replay_stored_manifest(const EnginePlanInputs& given, const f
         throw PlanFailed("replay: missing required durable power admission or owner stop gate");
     if (given.stored_manifest.empty())
         throw PlanFailed("replay: no stored manifest file");
+    if (given.lab_experiment)
+        throw PlanFailed("replay: a lab experiment needs a fresh plan; a stored manifest is production-only");
     const fs::path stored = fs::absolute(given.stored_manifest);
     if (!fs::is_regular_file(stored) || fs::file_size(stored) > 16ULL * 1024ULL * 1024ULL)
         throw PlanFailed("replay: manifest must be an existing bounded regular file");
