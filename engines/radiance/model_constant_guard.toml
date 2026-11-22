@@ -132,14 +132,14 @@ path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr uint32_t kLegacyIntermediate = 640;   /* Flash-Next's expert width, the only one the execu"
 category = "C"
 reason = "Flash-Next's expert width 640 is the only one the execution paths take until the shape is read end to end"
-owner = "RCS09"
+owner = "RCS10"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/moe_remote_shm.h"
 anchor = "constexpr LayoutShape legacy_shape() { return LayoutShape{kHidden, kTopK, kExperts, kMaxRows, kActGr"
 category = "C"
 reason = "Flash-Next's expert width 640 is the only one the execution paths take until the shape is read end to end"
-owner = "RCS09"
+owner = "RCS10"
 
 [[allow]]
 path = "engines/radiance/components/moe-remote/r3_moe_worker.cpp"
