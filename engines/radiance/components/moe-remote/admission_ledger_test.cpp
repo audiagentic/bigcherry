@@ -305,11 +305,21 @@ int main() {
           "a rejected cancel (bound admission) faults the ledger");
     StepTicket forged=after; ++forged.placement_epoch;
     check(!gate.valid(forged,0) && !gate.valid(after,1), "forged ticket and invalid rank rejected");
-    gate.close_admission();
-    std::thread shutdown_wait([&] { outcome=gate.admit(1,&after); });
-    gate.interrupt();
+    // A shutdown interrupts an admission that is waiting at the closed gate. The gate above is already faulted by the
+    // rejected cancel, and a faulted ledger answers Fault: the thread would report Fault or Interrupted depending on
+    // whether it reached admit before the interrupt. Use a healthy ledger and interrupt only once the admit is waiting.
+    Ledger closing(2);
+    check(closing.initialize(22,0), "initialize shutdown fixture");
+    closing.close_admission();
+    std::atomic<bool> shutdown_waiting{false};
+    StepTicket unused_ticket{};
+    std::thread shutdown_wait([&] {
+        outcome = closing.admit(1, &unused_ticket, {}, [&] { shutdown_waiting = true; });
+    });
+    while (!shutdown_waiting.load()) std::this_thread::yield();
+    closing.interrupt();
     shutdown_wait.join();
-    check(outcome==R::Interrupted && !gate.reopen(22,0), "shutdown interrupts blocked admission");
+    check(outcome==R::Interrupted && !closing.reopen(23,0), "shutdown interrupts blocked admission");
     Ledger external(2);
     check(external.initialize(30,0), "initialize external fault fixture");
     external.close_admission();
