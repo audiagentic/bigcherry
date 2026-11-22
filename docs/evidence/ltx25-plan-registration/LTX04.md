@@ -50,7 +50,7 @@ Reuse the exact current source-managed extension and existing tests; no side-pat
 ## Files
 
 - `engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/patch.py`
-- `docs/planning/active/patching-radiance-upstream/RUM05.md` (read-only shared device/admission implementation)
+- `docs/planning/completed/patching-radiance-upstream/RUM05.md` (read-only shared device/admission implementation)
 - `docs/planning/active/patching-radiance-upstream/RUM06.md` (read-only shared group/lifecycle implementation)
 - `engines/radiance/configs/ltx2-* (new opt-in only after accepted startup)`
 - `tools/lab/radiance/ltx-tp3/{ltx_tp3_guidance_test.cpp,ltx_tp3_protocol_test.cpp}`
