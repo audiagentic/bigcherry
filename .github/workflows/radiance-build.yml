@@ -105,7 +105,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 150
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: ${{ inputs.source_ref }}
           fetch-depth: 0
@@ -121,7 +121,7 @@ jobs:
       # prior cache (restore-keys) since a slightly stale clone still makes the fetch below cheap; main re-saves it
       # (even on build failure) so the cache stays current.
       - name: Restore the upstream radiance clone
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: work/upstream
           key: radiance-upstream-${{ github.run_id }}
@@ -132,7 +132,7 @@ jobs:
       # small the diff is -- recipes.toml wires every compiler CMake invokes here (host C/C++ and the HIP
       # device-code compiler) through ccache, so this is what makes that actually pay off across CI runs.
       - name: Restore ccache
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: work/.ccache
           key: radiance-ccache-${{ github.run_id }}
@@ -203,14 +203,14 @@ jobs:
       # run restores them and never adds its own copy, which is what filled the repository's cache budget.
       - name: Save ccache (main only)
         if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: work/.ccache
           key: radiance-ccache-${{ github.run_id }}
 
       - name: Save the upstream radiance clone (main only)
         if: always() && github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@0057852bfaa89a56745cba8c7296529d2fc39830 # v4.3.0
         with:
           path: work/upstream
           key: radiance-upstream-${{ github.run_id }}
@@ -222,7 +222,7 @@ jobs:
       # the tag's source trees from /src and the lane build under /src/work. Checked out after the build so the build never sees it.
       - name: Fetch the packaging tooling
         if: inputs.bundle_tag != ''
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
           fetch-depth: 0  # final gate reads refs/tags/<selected engine tag>
@@ -256,7 +256,7 @@ jobs:
 
       - name: Hand on the runtime bundle
         if: inputs.bundle_tag != ''
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: radiance-release-bundle
           path: |
@@ -282,7 +282,7 @@ jobs:
 
       - name: Publish verified main ccache
         if: github.ref == 'refs/heads/main' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch')
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: radiance-ccache-main
           path: work/ci-ccache-artifact/*
@@ -292,7 +292,7 @@ jobs:
 
       - name: Component test logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: component-test-logs
           path: |

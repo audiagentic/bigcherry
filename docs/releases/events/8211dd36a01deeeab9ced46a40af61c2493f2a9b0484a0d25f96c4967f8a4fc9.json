@@ -1,0 +1,15 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261122_105606_ci-actions-are-pinned-to-exact_7858",
+  "files": [
+    ".github/workflows/pr-ci.yml",
+    ".github/workflows/radiance-build.yml",
+    ".github/workflows/radiance-release-bundle.yml",
+    ".github/workflows/release-please.yml",
+    "tools/tests/ci/test_workflow_pins.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Every third-party GitHub Action in .github/workflows is pinned to the full commit SHA of the release its major tag pointed to, with the version in a comment; a static test fails on any unpinned uses: and on a workflow without a top-level permissions block.",
+  "timestamp-utc": "2026-11-22T10:56:06.806594Z",
+  "user-summary-candidate": "CI actions are pinned to exact commits."
+}

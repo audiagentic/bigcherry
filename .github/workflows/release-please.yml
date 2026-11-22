@@ -55,14 +55,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - id: release
-        uses: googleapis/release-please-action@v4
+        uses: googleapis/release-please-action@5c625bfb5d1ff62eadeeb3772007f7f66fdcf071 # v4.4.1
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: release-please-config.json
           manifest-file: .release-please-manifest.json
 
       - if: ${{ steps.release.outputs.releases_created == 'true' }}
-        uses: actions/checkout@v4
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           fetch-depth: 0
           # The readable-tag steps below `git push` a tag that points at an older release commit, and that history
@@ -138,7 +138,7 @@ jobs:
 
       # The generated notes quote old commit subjects that the forbidden-terms scan rejects; rewrite those lines in the open
       # release PRs (rules: .github/release-line-rewrites.toml) so their checks can pass. Runs after release-please on every push.
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
         with:
           ref: main
           path: rewrite-src

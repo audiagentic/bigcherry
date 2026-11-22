@@ -38,8 +38,8 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 15
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
         with:
           python-version: '3.12'
       - name: Compile RCD validation tools
@@ -74,7 +74,7 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Install and exercise Slurm/MUNGE + BigCherry integration
         run: bash tools/lab/run-campaign-durability/slurm_noble_v3_smoke.sh
       - name: Collect privileged Slurm diagnostics
@@ -97,7 +97,7 @@ jobs:
           sudo chown -R "$(id -u):$(id -g)" "$out"
       - name: Preserve Slurm diagnostics
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:
           name: rcd-slurm-diagnostics-${{ github.run_id }}
           if-no-files-found: ignore

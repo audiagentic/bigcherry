@@ -12,7 +12,7 @@ jobs:
   conventional-title:
     runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
 
       # A squash merge puts the title and description on main as the commit message; runs on every edit.
       # The head branch name stays on GitHub with the pull request, so it is scanned like the text.
