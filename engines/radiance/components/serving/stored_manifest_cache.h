@@ -20,7 +20,7 @@ struct StaticResolutionInputs {
     nlohmann::json ordered_devices;         // BDF, architecture, ordinal, total VRAM; no free/claimable room
     std::string model_digest; // model_stat_identity(): path, size and mtime
     std::string power_profile;
-    std::map<std::string, std::string> file_digests; // config, site, calibration, heat, lab evidence
+    std::map<std::string, std::string> file_digests; // role -> content identity (never a path): config, site, calibration, heat, lab evidence
 };
 
 // A model is identified by its canonical path, size and mtime. The bytes are never read, so starting
