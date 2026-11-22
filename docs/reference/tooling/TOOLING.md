@@ -292,8 +292,7 @@ phase-qualified decode/prefill/TTFT metrics. Exact source evidence is pinned to
 one immutable MRC01 record; absent VA25 proof is marked unverified. No metrics
 are inferred from logs, no independent historical results reader is exposed.
 
-**MRC06 slice 3 — Radiance native lab results.** Native `bc-serve serve
---calibration-run` saves admitted manifest, exact process argv, A/B prompt
+**MRC06 slice 3 — Radiance native lab results.** A native calibration run directory holds the admitted manifest, exact process argv, A/B prompt
 and heat bytes, selected native calibration TOML and helper-log hashes
 without loading Python. After a **successfully completed and cleanly
 stopped** native calibration session, invoke the platform ingest:

@@ -1275,6 +1275,21 @@ void build_tree_runtime_home(Fixture& t) {
     refused(owner, t.root / "bare/bin/radiance", "has no radiance_home");
 }
 
+// A serving start is native and production-only: the lab calibration and experiment options of the foreground
+// owner no longer exist, so they are unknown options, not a refusal that a later start could lift.
+void serve_has_no_lab_options() {
+    for (const std::vector<std::string>& option :
+         std::vector<std::vector<std::string>>{{"--calibration-run"}, {"--lab-experiment", "x.json"},
+                                               {"--live-policy", "x.json"}, {"--calibration-prompts-a", "a"},
+                                               {"--calibration-prompts-b", "b"}, {"--calibration-store", "s"}}) {
+        std::vector<std::string> args = {"serve", "qwen27b-tp3", "--run-dir", "lab-option-run"};
+        args.insert(args.end(), option.begin(), option.end());
+        const auto result = run_bc_serve(args);
+        if (result.exit_code == 0 || result.output.find("serve: unknown option " + option.front()) == std::string::npos)
+            throw std::runtime_error("serve accepted the removed lab option " + option.front() + ": " + result.output);
+    }
+}
+
 void v3_writer_cli_rejects_unowned_imports(Fixture& t) {
     const auto no_snapshot = run_bc_serve(
         {"--write-manifest", "unused.json", "--measured-plan", "missing-plan.json", "--rank-demand",
@@ -2351,6 +2366,7 @@ int main(int argc, char** argv) {
         host_reserve(t);
         host_ledger_plan();
         measured_plan_cache(t);
+        serve_has_no_lab_options();
         v3_writer_cli_rejects_unowned_imports(t);
         build_tree_runtime_home(t);
         session_engine_plan(t);
