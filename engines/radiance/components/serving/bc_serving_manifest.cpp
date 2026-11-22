@@ -64,6 +64,7 @@ BcEngineSettings g_engine_settings{};
 std::string g_shm;
 std::string g_histogram;
 std::string g_heat_launch_nonce;
+std::string g_step_phase_dir; // owner-only serving diagnostic; never part of the immutable plan
 struct NativeEngineInputs {
     std::string yaml_utf8;
     std::string sha256;
@@ -162,12 +163,13 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
     g_shm.clear();
     g_histogram.clear();
     g_heat_launch_nonce.clear();
+    g_step_phase_dir.clear();
     bool manifest_mode = false;
     for (int i = 1; i < *argc; ++i)
         if (!std::strcmp((*argv)[i], "--manifest")) manifest_mode = true;
     if (!manifest_mode) return true;
 
-    std::string path, role, plan_memory, rank_out, heat_nonce;
+    std::string path, role, plan_memory, rank_out, heat_nonce, step_phase_dir;
     std::vector<std::string> verbosity;
     /* Offline quality runs (the KL mode): which run to do and where its files are, not configuration. They name no manifest
      * field, so they pass through to config_parse unchanged beside the manifest's own flags. */
@@ -195,6 +197,15 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
                     return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
                 }))
                 return fail("--bc-heat-launch-nonce must be exactly 128 bits of lowercase hex");
+        } else if (a == "--bc-step-phase-dir") {
+            if (!step_phase_dir.empty()) return fail("--bc-step-phase-dir given twice");
+            if (i + 1 >= *argc || !*(*argv)[i + 1])
+                return fail("--bc-step-phase-dir needs an absolute output directory");
+            step_phase_dir = (*argv)[++i];
+            if (!std::filesystem::path(step_phase_dir).is_absolute() ||
+                !std::filesystem::is_directory(step_phase_dir) ||
+                std::filesystem::is_symlink(std::filesystem::symlink_status(step_phase_dir)))
+                return fail("--bc-step-phase-dir must name an existing safe absolute directory");
         } else if (a == "--plan-memory") {
             /* The measuring start: radiance writes its memory plan to FILE and stops (rad0011). It is the one flag that
              * lets the engine take an unmeasured manifest; every other start takes only a measured one. */
@@ -215,6 +226,8 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         }
     }
 
+    if (!step_phase_dir.empty() && (!plan_memory.empty() || !run_flags.empty() || role != "engine"))
+        return fail("--bc-step-phase-dir is valid only for a managed serving engine");
     if (!rank_out.empty() && plan_memory.empty()) return fail("--plan-memory-ranks requires --plan-memory");
     if (!heat_nonce.empty() && (!plan_memory.empty() || !rank_out.empty() || !run_flags.empty()))
         return fail("--bc-heat-launch-nonce is valid only for serving, not measurement or quality runs");
@@ -246,6 +259,7 @@ bool bc_serving_engine_argv(int* argc, char*** argv) {
         (!manifest.value().spec.handoff || !manifest.value().spec.handoff->telemetry.histogram_file ||
          manifest.value().spec.handoff->telemetry.histogram_file->empty()))
         return fail("--bc-heat-launch-nonce requires an authenticated histogram publisher");
+    g_step_phase_dir = step_phase_dir; // the strict v3 manifest was authenticated
     const nlohmann::json doc = nlohmann::json::parse(text, nullptr, false);
     if (doc.is_discarded()) return fail("'" + path + "' is not JSON");   /* unreachable after the strict reader */
     if (!plan_memory.empty() && rank_out.empty())
@@ -588,9 +602,16 @@ int bc_serving_take_native_config(rad::Config* out) {
     return result;
 }
 
+extern "C" const char* bc_serving_step_phase_dir() {
+    return g_step_phase_dir.empty() ? nullptr : g_step_phase_dir.c_str();
+}
+
 extern "C" int bc_serving_engine_settings(BcEngineSettings* out) {
     if (!out || out->struct_size != sizeof(BcEngineSettings) || !g_engine_settings.manifest) return 0;
     *out = g_engine_settings;
+    // The normal native owner turns on existing per-helper request stamps only
+    // when the ephemeral phase trace has been explicitly selected.
+    if (!g_step_phase_dir.empty()) out->mailbox_trace_every = 1;
     return 1;
 }
 

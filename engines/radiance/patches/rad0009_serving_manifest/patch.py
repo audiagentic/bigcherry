@@ -16,7 +16,7 @@ from pathlib import Path
 
 from bigcherry.patcher import Edit, FilePatch
 
-_COMPONENT_SOURCE_SHA256 = {'bc_serving_manifest.h': '3304880bbc401dbbb2549478016d822effabd40079410e05ec462d4072f6f73c', 'bc_serving_manifest.cpp': '142965729cf9708118c920432380eddab660a846f77e1d2e63f307ce10e4bc44'}
+_COMPONENT_SOURCE_SHA256 = {'bc_serving_manifest.h': '3304880bbc401dbbb2549478016d822effabd40079410e05ec462d4072f6f73c', 'bc_serving_manifest.cpp': '144b10e5083af629a035df2ab3ba25b0f80eab64fd8c75287c9987a210c7f518'}
 
 
 def _verify_owned_component_sources() -> None:
