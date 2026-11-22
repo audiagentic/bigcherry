@@ -129,6 +129,9 @@ if(BUILD_TESTING)
   add_test(NAME bc_callback_boundary_abi_test COMMAND bc_callback_boundary_abi_test)
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
+  target_compile_definitions(bc_live_policy_test PRIVATE
+    BC_LIVE_POLICY_DERIVE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/live_policy_derive.golden"
+    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml")
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
   set(bc_calibration_fixture BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml")
   add_executable(bc_live_policy_ingest_test EXCLUDE_FROM_ALL live_policy_ingest_test.cpp)
