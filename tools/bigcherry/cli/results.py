@@ -174,15 +174,6 @@ def cmd_results(args: argparse.Namespace) -> int:
             else:
                 print(f"native lab run-record v1: {sha}")
             return 0
-        if args.results_action == "ingest-calibration":
-            from ..bench.radiance_lab_records import publish_calibration_run
-
-            sha = publish_calibration_run(args.run_dir, work_root=args.work_root)
-            if args.json:
-                print(json.dumps({"sha256": sha}, sort_keys=True))
-            else:
-                print(f"calibration run-record v1: {sha}")
-            return 0
         if args.results_action == "list":
             if args.today:
                 if args.since or args.until:
@@ -291,13 +282,6 @@ def register(sub) -> None:
     show.add_argument("--work-root", type=Path, default=None)
     show.add_argument("--json", action="store_true")
     show.set_defaults(func=cmd_results)
-
-    ingest = actions.add_parser("ingest-calibration",
-                                help="ingest completed native C++ calibration-run evidence as MRC01")
-    ingest.add_argument("--run-dir", type=Path, required=True)
-    ingest.add_argument("--work-root", type=Path, default=None)
-    ingest.add_argument("--json", action="store_true")
-    ingest.set_defaults(func=cmd_results)
 
     native_lab = actions.add_parser("ingest-native-lab",
                                     help="ingest typed measurements from a stopped native Radiance owner")
