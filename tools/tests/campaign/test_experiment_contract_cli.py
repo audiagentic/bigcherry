@@ -10,7 +10,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry.__main__ import build_parser  # noqa: E402
+from bigcherry.cli.main import build_parser  # noqa: E402
 
 _TOML = """
 [contract.SMOKE-TEST-001]

@@ -49,9 +49,11 @@ sources check re-run with no unexplained findings; external-sources.toml snapsho
 
 ## Acceptance Criteria
 
-
+**Transferred PEF04 acceptance (independent gate):** Preserve PEF04's 2026-09-29 b11126->b11233 evidence cohort of 61 findings alongside PEF05's later b11233->c061df198 63-finding cohort. Re-run the one maintained bigcherry sources check per currently tracked fork with a bounded, explicitly larger per-source mainline git-cherry timeout and record the exact current source/bump refs and independent result receipts. For each not-found-by-title / moved / rebased / mainline-check-incomplete case, match tracked commits using immutable SHAs/patch ids and manual squash/rename/drop/revert review, prioritising ported production owners RD04/RD08/RD12/RD13/RD17/RD19/RD20/RD21/RD30/RD49/RD54/PRBE16/PRBE20 and distinguishing genuine content drift from harmless rebase or upstream inclusion. Refresh external-sources.toml tracked entries, versioned snapshots (including stew675 v4 historical gap), reviewer disposition and per-fork current state; no blanket success or taking a larger timeout as proof. If a currently ported patch's effective source content changed, file/refer it to the real owning patch plan and stop no-op acceptance; do not fix patch code or invent a second source snapshot workflow here. Acceptance requires no unexplained findings on the current pin, with historical 61/63 inventories and their residual unknown statuses preserved and linked, rather than falsely treating b11233 or c061df198 as the latest source.
 
 ## Notes
+
+CONSOLIDATION 2026-11-22 LAB-AND-SOURCES: PEF04 has one canonical owner: PEF05. Both tickets own the same bigcherry sources check manual fork-snapshot refresh and changed/upstream-status triage for consecutive llama.cpp bump checkpoints; neither introduces a separate source-check subsystem. This is planning consolidation only, not a completed acceptance or release. Historical evidence and current-pin/real-run stop rules remain binding.
 
 ## Change Log
 
@@ -61,3 +63,8 @@ sources check re-run with no unexplained findings; external-sources.toml snapsho
 
 - chg_20261002_011157_llamacpp-updated-to-include-q_5054
 - 2026-10-02T01:12:03.118991+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4541
+- 2026-11-22T11:26:32.000953+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria

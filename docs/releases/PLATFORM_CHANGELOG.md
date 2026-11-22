@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.63.2](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.1...bc-platform-1.63.2) (2026-11-22)
+
+
+### Fixes
+
+* **tests:** the declared moe-remote test list includes r3_bootstrap_timing_test (red on main since [#1347](https://github.com/audiagentic/bigcherry/issues/1347)) ([#1364](https://github.com/audiagentic/bigcherry/issues/1364)) ([87fa31c](https://github.com/audiagentic/bigcherry/commit/87fa31ce6c070a5fb40b81bdc71ceaf7db8102f4))
+
+
+### Performance
+
+* a start hashes neither the runtime nor the installed prefix when nothing changed ([#1330](https://github.com/audiagentic/bigcherry/issues/1330)) ([336942d](https://github.com/audiagentic/bigcherry/commit/336942dff18b41dfed652a291218e2000769aae3))
+* **moe-remote:** time the helper expert bootstrap stages at startup ([#1347](https://github.com/audiagentic/bigcherry/issues/1347)) ([ac4e07e](https://github.com/audiagentic/bigcherry/commit/ac4e07e7e04e2ec2fe82f576a8fd3b4cdc3e3d5e))
+* run the session tests as four balanced CTest groups and ctest in parallel ([#1343](https://github.com/audiagentic/bigcherry/issues/1343)) ([ca3d68d](https://github.com/audiagentic/bigcherry/commit/ca3d68df282c15c1638321b0b5cb3bb471cdddec))
+
 ## [1.63.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.0...bc-platform-1.63.1) (2026-11-22)
 
 

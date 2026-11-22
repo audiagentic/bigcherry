@@ -31,7 +31,7 @@ from unittest.mock import patch
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry import __main__ as cli  # noqa: E402
+from bigcherry.cli import main as cli  # noqa: E402
 from bigcherry.core import config as campaign_config # noqa: E402
 from bigcherry.core import context as context_module # noqa: E402
 from bigcherry.core import paths # noqa: E402
@@ -160,15 +160,15 @@ class NoLegacyTreeStateMechanicsTests(unittest.TestCase):
 
     def test_legacy_mechanics_are_actually_gone_from_main(self):
         # RE23 acceptance itself, not just "the new path never referenced
-        # them": the symbols must not exist anywhere in __main__.py at all.
-        import bigcherry.__main__ as main_module
+        # them": the symbols must not exist anywhere in the CLI module at all.
+        import bigcherry.cli.main as main_module
         for symbol in ("cmd_build", "_ensure_tree_state", "_reset_tree",
                        "_build_dir", "GENERATED_IN_TREE", "_verify_tree",
                        "_generate_for", "_cmake_configure_args",
                        "_build_one_recipe"):
             self.assertFalse(
                 hasattr(main_module, symbol),
-                f"RE23 deleted {symbol}; it must not exist on __main__ anymore")
+                f"RE23 deleted {symbol}; it must not exist on the CLI anymore")
         parser = cli.build_parser()
         subparsers_action = next(
             a for a in parser._actions

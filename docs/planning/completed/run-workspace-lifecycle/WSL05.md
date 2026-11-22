@@ -2,7 +2,7 @@
 id: WSL05
 order: 5
 plan: run-workspace-lifecycle
-state: pending
+state: superseded
 created-at: '2026-10-19T00:00:00+00:00'
 breadth: ''
 skill: basic
@@ -24,3 +24,44 @@ MEN20 and MEN21. Configs live beside the setting they test and are named for it;
 1. Template set under tools/lab/_template (extend the existing lab template) for ab, accept, stream, replay and capture experiments.
 2. `bigcherry run new` copies the right template and fills the manifest.
 3. Retire the hand launchers as each is covered.
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+CONSOLIDATION 2026-11-22 LAB-AND-SOURCES: WSL05 has one canonical owner: WSL01. WSL05's generic experiment starter copies templates and fills run manifests through bigcherry run new, exactly WSL01's single workspace run creation API; two template owners would duplicate command, path and metadata logic. This is planning consolidation only, not a completed acceptance or release. Historical evidence and current-pin/real-run stop rules remain binding.
+
+## Reviews
+
+- RV4542
+
+## Change Log
+
+- 2026-11-22T11:27:06.954017+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:28:43.996150+00:00 (state-transition): State: pending → superseded

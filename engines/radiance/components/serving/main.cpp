@@ -249,6 +249,8 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (!stored_manifest.empty() && !fs::is_regular_file(stored_manifest))
         throw std::runtime_error("--manifest must name an existing regular file");
     run_dir = fs::absolute(run_dir);
+    // The engine identity is stored under the work root: a start of an unchanged runtime does not hash it again.
+    if (!work_root.empty()) bc::serving::set_engine_identity_store(fs::absolute(work_root));
     if (cmd == "stop") {
         const auto reply = ss::control(run_dir, "stop", std::chrono::minutes(10));
         if (!reply) {
@@ -534,6 +536,7 @@ int explain_command(int argc, char** argv) {
     opts.sets.push_back("layout.name=" + Json(name).dump());
     namespace ss = bc::serving::session;
     const fs::path self = fs::read_symlink("/proc/self/exe");
+    if (!work_root.empty()) bc::serving::set_engine_identity_store(fs::absolute(work_root));
     if (const auto prefix = bc::serving::installed_prefix(self)) {
         // An installed bundle binds its own runtime home and engine, as a start does.
         if (!engine_binary.empty() && fs::canonical(engine_binary) != fs::canonical(*prefix / "bin/radiance"))

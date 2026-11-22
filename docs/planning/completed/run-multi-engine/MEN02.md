@@ -2,7 +2,7 @@
 id: MEN02
 order: 2
 plan: run-multi-engine
-state: pending
+state: superseded
 created-at: '2026-10-08T20:36:07.241630+00:00'
 breadth: ''
 skill: intermediate
@@ -67,6 +67,8 @@ BACKLOG TRIAGE 2026-11-04 (SUPERSEDED; revalidated against main 6eb31a708, verdi
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN02.md:60 documents the real Radiance 1.3 R9700 27B measurement, but expressly leaves its native /completion API comparison, model/card/context limits and quality handoff undone. docs/reference/engines/radiance/models/qwen3.8-27b.md:25-37 says current-pin fresh prefill, DFlash2 and matched reference measurements are not recorded.
 
+CONSOLIDATION 2026-11-22 PHASE-5: MEN02 is a duplicate planning owner of MEN01. MEN01 is the engine introduction and hardware inventory owner; MEN02's first R9700 27B working lane is the model-level baseline slice of that same engine-introduction task, not another serve/build subsystem. The exact independently testable acceptance and negative controls now live in active MEN01. Retire this planning owner without changing any existing implementation, hardware validation claim or original source evidence. All original design and measured failure records remain in this archived source document.
+
 ## Change Log
 
 - 2026-10-08T20:36:07.241630+00:00 (created-by): Created by agent
@@ -76,3 +78,9 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 - 2026-11-04T03:45:46.556463+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:43:06.965527+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:43:17.279731+00:00 (state-transition): State: superseded → pending
+
+## Reviews
+
+- RV4523
+- 2026-11-22T11:10:15.384210+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:14:20.070903+00:00 (state-transition): State: pending → superseded

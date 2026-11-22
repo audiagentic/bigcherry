@@ -424,7 +424,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
     def test_repin_writes_marker_with_pin(self):
         from argparse import Namespace
 
-        from bigcherry import __main__ as bigcherry_main
+        from bigcherry.cli import main as bigcherry_main
         rc = bigcherry_main.cmd_repin(Namespace(engine="llamacpp", ref="b2"))
         self.assertEqual(rc, 0, "cmd_repin failed")
         pin = _PIN_LINE.search(
@@ -457,7 +457,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         from unittest import mock
 
         import bigcherry.source.sources as bigcherry_sources
-        from bigcherry import __main__ as bigcherry_main
+        from bigcherry.cli import main as bigcherry_main
 
         with mock.patch.object(
             bigcherry_sources, "baseline_candidates_at_pin",
@@ -483,7 +483,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         from unittest import mock
 
         import bigcherry.source.sources as bigcherry_sources
-        from bigcherry import __main__ as bigcherry_main
+        from bigcherry.cli import main as bigcherry_main
 
         with mock.patch.object(
             bigcherry_sources, "baseline_candidates_at_pin",
@@ -506,7 +506,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         from contextlib import redirect_stderr
         import io
 
-        from bigcherry import __main__ as bigcherry_main
+        from bigcherry.cli import source as bigcherry_main
 
         _write_marker(self.root, "b1", "b2", commit=False)
         buffer = io.StringIO()
@@ -521,7 +521,7 @@ class RepinAndPullGuardTests(unittest.TestCase):
         from contextlib import redirect_stderr
         import io
 
-        from bigcherry import __main__ as bigcherry_main
+        from bigcherry.cli import source as bigcherry_main
 
         # committed marker: no refusal at the guard (later pull steps fail
         # on the fake tree, but NOT with the uncommitted-marker message)
