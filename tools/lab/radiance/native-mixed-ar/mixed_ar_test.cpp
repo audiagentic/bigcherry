@@ -1,14 +1,12 @@
-/* Native Radiance ABI44 mixed-card collective probe, not a TP3 serving path.
- * Exercise the existing exact three-rank kernel rows and BigCherry's actual
- * process-wide shared-slot rendezvous with two gfx1100 and one gfx1201 cards.
- * Inputs use C06's video/audio whole-row Q/K pack and a full output reduce.
+/* RUM13 model-independent Radiance ABI44 native AQL collective gate.
+ * Exercise existing three-rank exact BF16 kernel rows with gfx1100/gfx1201
+ * plugins and native cross-DSO rendezvous. Never launch kernels via direct HIP
+ * or co-locate spinning three-rank barriers on one physical device.
  */
 #include "rad_abi.h"
 #include "bc_shared_slot.h"
-#if defined(LTX_C08_AQL_ENGINE)
 #include "rad_device.h"
 #include "device/device.h"
-#endif
 #include <hip/hip_runtime.h>
 #include <dlfcn.h>
 #include <algorithm>
@@ -78,17 +76,17 @@ struct Trial {
     const char* label;
 };
 constexpr std::array<Trial,11> trials {{
-    {4096, 4, 128, {8,8,16}, true, false, "video q/k 8,8,16"},
-    {2048, 4, 64,  {8,8,16}, true, false, "audio q/k 8,8,16"},
-    {4096, 4, 128, {12,12,8}, true, false, "video q/k 12,12,8"},
-    {2048, 4, 64,  {12,12,8}, true, false, "audio q/k 12,12,8"},
-    {4096, 4, 128, {8,8,16}, false, false, "video output sum in-place"},
-    {2048, 4, 64,  {12,12,8}, false, true, "audio output sum out-of-place"},
-    {4096, 1, 128, {12,12,8}, true, true, "video q/k 1-row out-of-place"},
-    {4096,16, 128, {8,8,16}, true, false, "video q/k 16 rows"},
-    {2048,16, 64, {12,12,8}, true, false, "audio q/k 16 rows"},
-    {4096,64, 128, {12,12,8}, true, false, "video q/k 64 rows"},
-    {4096,64, 128, {8,8,16}, false, false, "video output sum 64 rows"},
+    {4096, 4, 128, {8,8,16}, true, false, "wide q/k 8,8,16"},
+    {2048, 4, 64,  {8,8,16}, true, false, "narrow q/k 8,8,16"},
+    {4096, 4, 128, {12,12,8}, true, false, "wide q/k 12,12,8"},
+    {2048, 4, 64,  {12,12,8}, true, false, "narrow q/k 12,12,8"},
+    {4096, 4, 128, {8,8,16}, false, false, "wide output sum in-place"},
+    {2048, 4, 64,  {12,12,8}, false, true, "narrow output sum out-of-place"},
+    {4096, 1, 128, {12,12,8}, true, true, "wide q/k 1-row out-of-place"},
+    {4096,16, 128, {8,8,16}, true, false, "wide q/k 16 rows"},
+    {2048,16, 64, {12,12,8}, true, false, "narrow q/k 16 rows"},
+    {4096,64, 128, {12,12,8}, true, false, "wide q/k 64 rows"},
+    {4096,64, 128, {8,8,16}, false, false, "wide output sum 64 rows"},
 }};
 int64_t owner_start(const Trial& t, int rank) {
     int64_t x=0;
@@ -113,16 +111,11 @@ void run_rank(int rank,int device,const RadKernelInfo* k,Result* result) {
     void* din=nullptr;void* dout=nullptr;
     hipStream_t stream=nullptr;
     try {
-#if defined(LTX_C08_AQL_ENGINE)
         check(rad_dev_set(device)==RAD_OK,"Radiance device bind failed");
         RadStream rs=nullptr;
         check(rad_stream_create(&rs,0)==RAD_OK && rs,
               "Radiance AQL stream create failed");
         stream=(hipStream_t)rs;
-#else
-        hipok(hipSetDevice(device),"hipSetDevice");
-        hipok(hipStreamCreateWithFlags(&stream,hipStreamNonBlocking),"hipStreamCreate");
-#endif
         int64_t max=0;
         for(const Trial& trial:trials)
             max=std::max(max,trial.width*trial.rows);
@@ -152,20 +145,12 @@ void run_rank(int rank,int device,const RadKernelInfo* k,Result* result) {
             a.instance=instance;a.rank=rank;a.world_size=3;
             std::fprintf(stderr,"rank%d: native launch %s numel=%lld x=%p y=%p\n",
                          rank,trial.label,(long long)numel,din,trial.oop?dout:din);
-#if defined(LTX_C08_AQL_ENGINE)
             rad_dev_peer_launch(1);
-#endif
             const int rc=k->launch(&a,stream);
-#if defined(LTX_C08_AQL_ENGINE)
             rad_dev_peer_launch(0);
-#endif
             if(rc!=RAD_OK && result->rc_launch==RAD_OK) result->rc_launch=rc;
-#if defined(LTX_C08_AQL_ENGINE)
             check(rad_stream_sync((RadStream)stream)==RAD_OK,
                   std::string("Radiance AQL collective sync: ")+rad_dev_last_error());
-#else
-            hipok(hipStreamSynchronize(stream),"collective sync");
-#endif
             hipok(hipMemcpy(receive.data(),trial.oop?dout:din,send.size()*2,hipMemcpyDeviceToHost),
                   "hipMemcpy output");
             int64_t bad=0;
@@ -179,11 +164,7 @@ void run_rank(int rank,int device,const RadKernelInfo* k,Result* result) {
     } catch(const std::exception& e) { result->error=e.what(); }
     if(din)(void)hipFree(din);
     if(dout)(void)hipFree(dout);
-#if defined(LTX_C08_AQL_ENGINE)
     if(stream)rad_stream_destroy((RadStream)stream);
-#else
-    if(stream)(void)hipStreamDestroy(stream);
-#endif
     if(instance && k->fini)k->fini(instance);
 }
 } // namespace
@@ -194,25 +175,27 @@ int main(int argc,char** argv) {
         return 2;
     }
     try {
-#if defined(LTX_C08_AQL_ENGINE)
-        const char* backend=rad::device_backend_name();
-        std::printf("Radiance device backend: %s\n",backend);
-        check(std::strcmp(backend,"aql")==0,
-              "native GPU engine dispatch must use the real AQL backend");
-#endif
         const std::string row=argv[3];
         check(row=="ar_oneshot_3rank_exact" || row=="ar_twoshot_3rank_exact" ||
               row=="ar_oneshot_3rank_exact_host" || row=="ar_twoshot_3rank_exact_host",
               "native exact 3-rank row required");
-        Plugin r4(argv[2]),r3(argv[1]);
-        auto* k3=r3.find(row),*k4=r4.find(row);
-        check(k3 && k4 && k3->init && k4->init && k3->launch && k4->launch,
-              "same native exact row must exist on both gfx11/gfx12");
         std::array<int,3> dev={0,1,2};
         if(argc==5) {
             check(std::sscanf(argv[4],"%d,%d,%d",&dev[0],&dev[1],&dev[2])==3,
                   "devices must be n,n,n");
         }
+        check(dev[0] >= 0 && dev[1] >= 0 && dev[2] >= 0,
+              "negative device ordinal is not a physical GPU");
+        check(dev[0] != dev[1] && dev[0] != dev[2] && dev[1] != dev[2],
+              "duplicate physical GPU ordinal: independent-card TP3 requires three distinct devices");
+        const char* backend=rad::device_backend_name();
+        std::printf("Radiance device backend: %s\n",backend);
+        check(std::strcmp(backend,"aql")==0,
+              "native GPU engine dispatch must use the real AQL backend");
+        Plugin r4(argv[2]),r3(argv[1]);
+        auto* k3=r3.find(row),*k4=r4.find(row);
+        check(k3 && k4 && k3->init && k4->init && k3->launch && k4->launch,
+              "same native exact row must exist on both gfx11/gfx12");
         int count=0;hipok(hipGetDeviceCount(&count),"hipGetDeviceCount");
         check(count>std::max({dev[0],dev[1],dev[2]}),"not enough HIP GPUs");
         std::array<bool,3> uses_r4{};

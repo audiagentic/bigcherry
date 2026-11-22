@@ -122,7 +122,7 @@ See docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.
 
 ## C07 real native exact three-rank GPU collective boundary (2026-11-22)
 
-The opt-in mixed-ar-gate lab uses the actual Radiance 2.2 ABI44 exact BF16
+The RUM13-owned `tools/lab/radiance/native-mixed-ar/` lab uses the actual Radiance 2.2 ABI44 exact BF16
 host-mailbox all-reduce from libr3/libr4d and the real BigCherry shared-slot
 service. Seven video/audio Q/K/output patterns at C06 geometry are checked per
 rank. GREEN: three ranks on the R9700 (21/21 exact comparisons) and across two
@@ -144,3 +144,24 @@ one-shot and two-shot both passed 33/33 exact output checks, including
 reproduce on the actual AQL device backend. Native full self-attention,
 TP1 model parity, and production admission remain open. Evidence:
 docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md
+
+## LTX02 C05 native executed graph, host and AQL
+
+The sole `native-c01-gate/ltx_c05_issued_test.cpp` test source
+reuses the patched native LTX2 C05 Q/K global-RMS graph,
+native `RadBuilder`/`RadCtx`, and the real checkpoint BF16
+Q/K gains. The host CTest `ltx_c05_issued_host_global_qk`
+is card-free. The optional native
+`ltx_c05_issued_aql_test` target is available only when
+`LTX_HIP_NATIVE_CORE_LIB` identifies the matching
+HIP-enabled Radiance 2.2 archive. It must **never** be
+run automatically in CTest or without a GPU lease.
+
+Under AQL the builder finishes all three ranks concurrently,
+as native exact collective initialization itself
+rendezvouses. The same source has passed **2,088,960 exact
+BF16 comparisons** over both modalities, 1/4/16/64 rows,
+two legal head partitions and both normal/reversed gfx11/gfx12
+ordinal layouts. See
+[the numerical evidence](../../../../docs/evidence/2026-11-22-ltx25-ltx02-issued-aql-rms/README.md).
+This does not qualify a full C06 block or serving admission.
