@@ -49,9 +49,12 @@ Explicit profile selection precedes an agent definition's profile and its defaul
 If the profile conflicts with role requirements, refuse the conflict. Do not invent
 an `agent-role-id` tool argument; use the exposed tool schema.
 
-A configured MCP connection and a verified tool call are separate facts. When a
-required connection is unavailable, report that limitation and continue unaffected
-work. Do not bypass the authoritative services by hand-editing plan or ledger state.
+A configured MCP connection and a verified tool call are separate facts. When the Planning or Ledger MCP tools are not exposed in an agent session,
+check the underlying AUDiaGentic Python API facade before declaring the lifecycle
+blocked. Follow [Planning API access](PLANNING_ACCESS.md): it calls the same
+authoritative implementation against the task worktree, not handwritten plan or
+ledger files. If neither interface works, report the limitation and continue
+unaffected work. Do not bypass the authority by editing plan or ledger state.
 
 ## Code and migration policy
 
