@@ -71,6 +71,18 @@ public:
         interrupted_ = true;
         cv_.notify_all();
     }
+    /* Wake every waiter without changing any state: each re-checks its own predicate and goes back to waiting when it
+     * still holds. The clean stop uses this to hurry a joining thread; only a fault interrupts. */
+    void wake() {
+        std::lock_guard<std::mutex> lock(mu_);
+        cv_.notify_all();
+    }
+    /* True when the ledger may be closed without interrupting it: neither interrupted nor faulted, and every ticket
+     * has retired. Anything else is a fault stop. */
+    bool clean_stop() const {
+        std::lock_guard<std::mutex> lock(mu_);
+        return !interrupted_ && !fault_ && count_ == 0;
+    }
     // Terminal closure is independent of the placement gate. A placement
     // already in progress may settle, but neither it nor a waiter can
     // admit another parent. Bound tickets still need their terminal proof.

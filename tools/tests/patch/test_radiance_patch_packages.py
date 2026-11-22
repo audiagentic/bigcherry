@@ -105,16 +105,16 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "d1c1e96"),
+        "abi/bc_moe_remote.h": (None, "71ffb05"),
         "arch/common/bc_moe_remote_block.h": (None, "ee98a63"),
         "arch/common/rad_arch.h": ("f847a16", "12a4cf7"),
         "arch/common/rad_block_hc.h": ("2ab3568", "da4f843"),
         "arch/common/rad_block_moe_fp8.h": ("aff7d2c", "ddd6734"),
-        "core/engine.cpp": ("e649224", "38b5e64"),
+        "core/engine.cpp": ("e649224", "19a09b3"),
         "core/engine.h": ("ca6c09f", "430b4bd"),
         "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
-        "core/place/bc_moe_remote.cpp": (None, "3c2772d"),
-        "core/place/bc_moe_remote_engine.h": (None, "dd901d2"),
+        "core/place/bc_moe_remote.cpp": (None, "ccf2b28"),
+        "core/place/bc_moe_remote_engine.h": (None, "9bb71a6"),
         "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
         "core/place/planner.cpp": ("dc03b5a", "3edb433"),
         "core/runtime/ctx.cpp": ("f0dbf74", "9677854"),
@@ -652,6 +652,11 @@ int main() {
             core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
             for gone in ("g_plugin", "g_mu", "g_layer_maps", "g_burst_active", "thread_local", "bc_moe_remote_register"):
                 self.assertNotIn(gone, core)
+            # clean stop never interrupts; only the fault paths call the generation's fault wake
+            engine = (root / "core/engine.cpp").read_text(encoding="utf-8")
+            self.assertIn("if (!bc_remote_admission_.clean()) bc_remote_admission_.fault();", engine)
+            self.assertEqual(engine.count("bc_remote_admission_.fault();"), 3)
+            self.assertNotIn("bc_remote_admission_.shutdown()", engine)
             for text in ("core/runtime/ctx.cpp", "core/engine.cpp"):
                 self.assertNotIn("bc_moe_remote_current_ticket", (root / text).read_text(encoding="utf-8"))
         finally:
@@ -723,6 +728,9 @@ int main() {
         self.assertIn("*out = EnginePlugin{sizeof(EnginePlugin), h, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,", hook)
         self.assertNotIn("bc_moe_remote_register", hook)
         self.assertNotIn("HookLifetime", hook)
+        self.assertIn("void cb_fault(void* self)", hook)
+        self.assertNotIn("cb_shutdown", hook)
+        self.assertIn("close_mailbox(g, g.ledger.clean_stop())", hook)
         self.assertNotIn("\nHookState g;", hook)
         self.assertNotIn("r3_moe_mailbox_enabled", hook)
         self.assertNotIn('rad_moe_remote', hook)

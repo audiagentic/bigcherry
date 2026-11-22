@@ -342,6 +342,45 @@ int main() {
           finishing.reopen(placement.old_epoch+1,1) &&
           finishing.try_admit(2,&rejected)==R::Closed,
           "all terminal seals drain; placement may settle without restarting admission");
+    {   /* Clean stop never interrupts a healthy ledger; a fault stop does (RUM06 S4). */
+        Ledger clean(2);
+        StepTicket t1{}, tail{}, blocked{};
+        check(clean.initialize(61,0) && clean.try_admit(2,&t1)==R::Ok && clean.bind(t1.ticket_id,1) &&
+              clean.try_admit(2,&tail)==R::Ok, "a bound parent and an unbound tail");
+        check(!clean.clean_stop(), "tickets still outstanding: not a clean stop");
+        const auto gate = clean.close_admission();
+        auto waiter = std::async(std::launch::async,[&] { return clean.admit(2,&blocked); });
+        clean.wake();   /* wakes the waiter; it re-checks and keeps waiting while the gate holds */
+        check(waiter.wait_for(std::chrono::milliseconds(30))==std::future_status::timeout && !clean.stopped(),
+              "wake changes no state: the waiter still waits and the ledger is not stopped");
+        const auto cutoff = clean.finish_admission();
+        check(waiter.wait_for(std::chrono::seconds(1))==std::future_status::ready && waiter.get()==R::Closed,
+              "finish, not interrupt, releases the waiter");
+        check(clean.cancel(tail.ticket_id) && clean.host_complete(t1.ticket_id) &&
+              clean.poll([](const StepTicket&,uint32_t){return P::Proven;}) &&
+              clean.drained(cutoff.old_epoch,cutoff.latest_ticket) && clean.outstanding()==0,
+              "the bound parent proves, the unused tail returns");
+        (void)gate;
+        check(clean.clean_stop() && !clean.stopped(), "drained and never interrupted: a clean stop");
+        clean.wake();
+        check(clean.clean_stop() && !clean.stopped(), "closing wakes but never interrupts a healthy ledger");
+
+        Ledger fault(2);
+        StepTicket f1{}, fwait{};
+        check(fault.initialize(62,0) && fault.try_admit(2,&f1)==R::Ok && fault.bind(f1.ticket_id,1),
+              "a parent in flight");
+        check(!fault.clean_stop(), "unproven parent: not clean");
+        (void)fault.close_admission();
+        auto stuck = std::async(std::launch::async,[&] { return fault.admit(2,&fwait); });
+        check(stuck.wait_for(std::chrono::milliseconds(20))==std::future_status::timeout, "waiter blocked");
+        fault.interrupt();
+        check(stuck.wait_for(std::chrono::seconds(1))==std::future_status::ready && stuck.get()==R::Interrupted &&
+              fault.stopped() && !fault.clean_stop(), "a fault stop interrupts every waiter and is never clean");
+        Ledger faulted(2);
+        check(faulted.initialize(63,0), "idle ledger");
+        faulted.fault();
+        check(!faulted.clean_stop() && faulted.stopped(), "a faulted ledger is never a clean stop");
+    }
     r3::moe_shm::LaneSignal lane{};
     unsigned drains=0;
     lane.drain_request=10;

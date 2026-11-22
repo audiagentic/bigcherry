@@ -88,7 +88,7 @@ struct EnginePlugin {
     int (*cancel)(void* self, StepTicket ticket);
     int (*host_done)(void* self, StepTicket ticket);
     int (*rank_done)(void* self, int rank, StepTicket ticket, void* stream);
-    void (*shutdown)(void* self);
+    void (*fault)(void* self);   /* a fault stop: wake every waiter; never called on a clean stop */
     void (*finish_admission)(void* self);
     int (*wait_finished)(void* self, int64_t timeout_ms);
     void (*close)(void* self);
@@ -141,6 +141,7 @@ struct R3MoeHook {
     bool burst_want = false;
     bool burst_draining = false;
     std::atomic<bool> placement_stop{false};
+    std::atomic<bool> placement_done{false}; /* set by the placement thread as it exits: lets a clean close wait for it */
     std::mutex mu;
     std::thread snapshotter;          /* R3_MOE_WORKER_HISTOGRAM_PERIOD_S: writes the live route histogram */
     std::atomic<bool> snapshot_stop{false};
@@ -622,6 +623,7 @@ void abandon_mailbox(HookState& g) {
     g.map = MAP_FAILED;
     g.fd = -1;
     g.pinned = false;
+    g.placement_done.store(true, std::memory_order_release);
 }
 
 /* Open the helper hand-off for one engine generation: map and pin the shared segment, watch the helpers, wait for them
@@ -912,9 +914,25 @@ void snapshot_loop(HookState& g, double period_s) {
     }
 }
 
-void close_mailbox(HookState& g) {
+/* `clean`: the engine drained every ticket and nothing faulted (Ledger::clean_stop), so the ledger is healthy and is
+ * never interrupted: the placement thread is woken and given a bounded time to leave on its own. Not clean (a fault, or
+ * tickets that never retired), or a placement thread that does not leave: the ledger is interrupted, which wakes
+ * quiescence and blocked scheduler admission. */
+void close_mailbox(HookState& g, bool clean) {
     g.placement_stop.store(true, std::memory_order_release);
-    g.ledger.interrupt(); /* wakes quiescence and blocked scheduler admission */
+    if (clean) {
+        g.ledger.wake();
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(10);
+        while (g.placement_thread.joinable() && !g.placement_done.load(std::memory_order_acquire) &&
+               std::chrono::steady_clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        if (g.placement_thread.joinable() && !g.placement_done.load(std::memory_order_acquire)) {
+            std::fprintf(stderr, "libr3moe: placement thread did not leave a clean close within 10 s; interrupting\n");
+            g.ledger.interrupt();
+        }
+    } else {
+        g.ledger.interrupt();
+    }
     if (g.placement_thread.joinable()) g.placement_thread.join();
     g.snapshot_stop = true;
     if (g.snapshotter.joinable()) g.snapshotter.join();
@@ -964,12 +982,13 @@ int cb_bind(void* self, StepTicket t, int64_t step) { return bind_ticket(hook(se
 int cb_cancel(void* self, StepTicket t) { return cancel_ticket(hook(self), t); }
 int cb_host_done(void* self, StepTicket t) { return host_done_ticket(hook(self), t); }
 int cb_rank_done(void* self, int rank, StepTicket t, void* stream) { return rank_done_ticket(hook(self), rank, t, stream); }
-void cb_shutdown(void* self) { hook(self).ledger.interrupt(); }
+/* The fault stop: interrupt so every blocked admission and completion wait fails now. A clean stop never calls this. */
+void cb_fault(void* self) { hook(self).ledger.interrupt(); }
 void cb_finish_admission(void* self) { (void)hook(self).ledger.finish_admission(); }
 int cb_wait_finished(void* self, int64_t ms) { return wait_finished_tickets(hook(self), ms); }
 void cb_close(void* self) {
     HookState& g = hook(self);
-    close_mailbox(g);
+    close_mailbox(g, g.ledger.clean_stop());
     /* Unpublish before the state is freed: the kernels' init and the direct entry points then refuse. */
     g_live.unpublish(&g);
     g.opened = false;
@@ -997,7 +1016,7 @@ extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugi
     if (!open_mailbox(*h, args->capacity_limit)) { g_live.unpublish(h); delete h; return kOpenRefused; }
     h->opened = true;
     *out = EnginePlugin{sizeof(EnginePlugin), h, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,
-                        cb_bind, cb_cancel, cb_host_done, cb_rank_done, cb_shutdown, cb_finish_admission,
+                        cb_bind, cb_cancel, cb_host_done, cb_rank_done, cb_fault, cb_finish_admission,
                         cb_wait_finished, cb_close};
     return 0;
 }

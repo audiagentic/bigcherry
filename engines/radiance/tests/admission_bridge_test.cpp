@@ -38,6 +38,9 @@ static int plugin_rank_done(void*, int rank, BcMoeRemoteTicket t, void* stream) 
     terminal.push_back(t.ticket_id);
     return 0;
 }
+static int plugin_faults = 0, wait_result = 0;
+static void plugin_fault(void*) { ++plugin_faults; }
+static int plugin_wait_finished(void*, int64_t) { return wait_result; }
 static int plugin_closed = 0;
 static void plugin_close(void*) { ++plugin_closed; }
 static int plugin_open(const BcMoeRemoteOpenArgs* a, BcMoeRemotePlugin* out) {
@@ -47,6 +50,7 @@ static int plugin_open(const BcMoeRemoteOpenArgs* a, BcMoeRemotePlugin* out) {
     p.self = &sequence;
     p.admit = plugin_admit; p.bind = plugin_bind; p.cancel = plugin_cancel; p.host_done = plugin_host_done;
     p.rank_done = plugin_rank_done; p.finish_admission = plugin_finish_admission; p.close = plugin_close;
+    p.fault = plugin_fault; p.wait_finished = plugin_wait_finished;
     *out = p;
     return 0;
 }
@@ -122,11 +126,23 @@ int main() {
     assert(bridge.seal(ranks) == 0 && bridge.host_done() == 0 && host == issued);
     assert(bridge.step(false, b, scheduler, 2) > 0 && scheduler.steps == steps_before_stop);
 
+    // Stop kinds: a drain that does not prove is not clean, and the engine's fault stop reaches the plugin; a drain that
+    // proves is clean and never calls the plugin's fault wake.
+    assert(!bridge.clean());
+    wait_result = -1;
+    assert(bridge.wait_finished(1) < 0 && !bridge.clean() && plugin_faults == 0);
+    bridge.fault();
+    assert(plugin_faults == 1);
+    wait_result = 0;
+    assert(bridge.wait_finished(1) == 0 && bridge.clean() && plugin_faults == 1);
+
     // Closing the bridge closes the plugin once, unbinds the engine's slots, and is safe to repeat.
     bridge.close();
     assert(plugin_closed == 1 && !bridge.generation() && !bc_moe_remote_lookup(6) && !bc_moe_remote_lookup(7));
     bridge.close();
-    assert(plugin_closed == 1);
+    assert(plugin_closed == 1 && !bridge.clean());
+    bridge.fault();   // a closed bridge has no generation: nothing to wake
+    assert(plugin_faults == 1);
     // A bridge without a generation (no hand-off): admission hands out zero tickets and every step runs locally.
     BcMoeRemoteAdmission local;
     const Batch* lb = nullptr;

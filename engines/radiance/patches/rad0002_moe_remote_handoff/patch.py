@@ -81,7 +81,9 @@ typedef struct BcMoeRemotePlugin {
     int (*cancel)(void* self, struct BcMoeRemoteTicket ticket);
     int (*host_done)(void* self, struct BcMoeRemoteTicket ticket);
     int (*rank_done)(void* self, int rank, struct BcMoeRemoteTicket ticket, void* stream);
-    void (*shutdown)(void* self);
+    /* A fault stop only: interrupt every blocked wait so each fails now. A clean stop never calls it, and the plugin
+     * decides at `close` whether the ledger drained cleanly. */
+    void (*fault)(void* self);
     void (*finish_admission)(void* self);
     int (*wait_finished)(void* self, int64_t timeout_ms);
     /* The generation ends: release everything `self` holds. Called once, after the engine stopped every consumer. */
@@ -124,7 +126,7 @@ int bc_moe_remote_bind(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket, int64
 /* Returns an unused tail reservation; negative when the plugin rejects it (the ledger has faulted). */
 int bc_moe_remote_cancel(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket);
 int bc_moe_remote_host_done(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket);
-void bc_moe_remote_shutdown(BcMoeRemoteGeneration* g);
+void bc_moe_remote_fault(BcMoeRemoteGeneration* g);
 int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g);
 int bc_moe_remote_wait_finished(BcMoeRemoteGeneration* g, int64_t timeout_ms);
 int bc_moe_remote_before_pass(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream);
@@ -333,8 +335,8 @@ extern "C" int bc_moe_remote_host_done(BcMoeRemoteGeneration* g, BcMoeRemoteTick
     if (!g->open()) return BC_MOE_REMOTE_STALE;
     return g->vt.host_done ? g->vt.host_done(g->vt.self, ticket) : BC_MOE_REMOTE_REFUSED;
 }
-extern "C" void bc_moe_remote_shutdown(BcMoeRemoteGeneration* g) {
-    if (g = live(g); g && g->vt.shutdown) g->vt.shutdown(g->vt.self);
+extern "C" void bc_moe_remote_fault(BcMoeRemoteGeneration* g) {
+    if (g = live(g); g && g->vt.fault) g->vt.fault(g->vt.self);
 }
 extern "C" int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g) {
     g = live(g);
@@ -398,6 +400,7 @@ _BC_MOE_REMOTE_ENGINE_H = r"""/* Scheduler/rank admission bridge and the owner o
 
 class BcMoeRemoteAdmission {
     BcMoeRemoteGeneration* gen_ = nullptr;   /* owned: null when the manifest asks for no hand-off */
+    bool clean_ = false;                     /* every bound ticket proved terminal: the stop was clean */
     BcMoeRemoteTicket current_{}, ahead_{}, issued_{};
     int ahead_status_ = 0;
     std::atomic<bool> finishing_{false}, stepper_finished_{false};
@@ -416,10 +419,17 @@ public:
         return bc_moe_remote_open_with(factory, slot_base, ranks, capacity_limit, &gen_) < 0 ? RAD_E_STATE : RAD_OK;
     }
     /* Idempotent. Every consumer has stopped by now; a holder of the pointer after this is refused, not served. */
-    void close() { bc_moe_remote_destroy(gen_); gen_ = nullptr; }
+    void close() { bc_moe_remote_destroy(gen_); gen_ = nullptr; clean_ = false; }
     BcMoeRemoteGeneration* generation() const { return gen_; }
-    void shutdown() { bc_moe_remote_shutdown(gen_); }
-    int wait_finished(int64_t timeout_ms) { return bc_moe_remote_wait_finished(gen_, timeout_ms); }
+    /* The fault stop (an error, or a drain that missed its deadline): interrupts every blocked wait. */
+    void fault() { bc_moe_remote_fault(gen_); }
+    /* True once every bound ticket proved terminal (wait_finished succeeded): a clean stop, which never interrupts. */
+    bool clean() const { return clean_; }
+    int wait_finished(int64_t timeout_ms) {
+        const int r = bc_moe_remote_wait_finished(gen_, timeout_ms);
+        if (r >= 0) clean_ = true;
+        return r;
+    }
     void engine_step() { bc_moe_remote_engine_step(gen_); }
     void engine_idle() { bc_moe_remote_engine_idle(gen_); }
     // Engine::step_loop holds one scalar ahead batch, not a queue.
@@ -1213,10 +1223,10 @@ PATCHES = (
             Edit(
                 id="bc-remote-fault-interrupt",
                 anchor=r"^int Engine::fail_loop\(int st\) \{$",
-                text="\n    bc_remote_admission_.shutdown();",
-                guard=r"^int Engine::fail_loop\(int st\) \{\n    bc_remote_admission_\.shutdown\(\);$",
+                text="\n    bc_remote_admission_.fault();",
+                guard=r"^int Engine::fail_loop\(int st\) \{\n    bc_remote_admission_\.fault\(\);$",
                 expect_matches=1,
-                rationale="Fault shutdown interrupts the admission and completion waiters immediately.",
+                rationale="The fault stop interrupts the admission and completion waiters immediately.",
             ),
             Edit(
                 id="bc-remote-finish-issued-ahead",
@@ -1246,7 +1256,7 @@ PATCHES = (
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
         while (!bc_remote_admission_.stepper_finished()) {
             if (std::chrono::steady_clock::now() >= deadline) {
-                bc_remote_admission_.shutdown();
+                bc_remote_admission_.fault();
                 fatal("model %s: remote MoE stepper did not finish within its shutdown deadline",
                       cfg_.served_model_name.c_str());
             }
@@ -1270,10 +1280,10 @@ PATCHES = (
                 id="bc-remote-after-server-interrupt",
                 anchor=r"^    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);$",
                 mode="insert_before",
-                text="    bc_remote_admission_.shutdown();\n",
-                guard=r"bc_remote_admission_\.shutdown\(\);\n    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);",
+                text="    if (!bc_remote_admission_.clean()) bc_remote_admission_.fault();\n",
+                guard=r"if \(!bc_remote_admission_\.clean\(\)\) bc_remote_admission_\.fault\(\);\n    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);",
                 expect_matches=1,
-                rationale="Wake remaining waits only after the clean server drain or error stop path.",
+                rationale="A clean stop (every bound ticket proven by wait_finished) never interrupts the ledger; anything else is a fault stop and wakes every remaining wait.",
             ),
             Edit(
                 id="bc-remote-close-generation",
