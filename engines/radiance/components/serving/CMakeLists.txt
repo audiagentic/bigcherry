@@ -54,7 +54,7 @@ target_link_libraries(bc_feature_state PUBLIC bc_json_dependency)
 set(bc_manifest_writer_sources
   manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp rank_demand.cpp
   live_policy.cpp live_policy_manifest.cpp plan_cache.cpp xbigcherry.cpp v2/s10_inputs.cpp)
-add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
+add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp lab_experiment.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt bc_feature_state)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -129,6 +129,9 @@ if(BUILD_TESTING)
   add_test(NAME bc_callback_boundary_abi_test COMMAND bc_callback_boundary_abi_test)
   add_executable(bc_live_policy_test EXCLUDE_FROM_ALL live_policy_test.cpp)
   target_link_libraries(bc_live_policy_test PRIVATE bc_serving)
+  target_compile_definitions(bc_live_policy_test PRIVATE
+    BC_LIVE_POLICY_DERIVE_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/live_policy_derive.golden"
+    BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml")
   add_test(NAME bc_live_policy_test COMMAND bc_live_policy_test)
   set(bc_calibration_fixture BC_CALIBRATION_PRODUCTION_FIXTURE="${CMAKE_CURRENT_SOURCE_DIR}/../../../../tools/tests/fixtures/calibration/production-2026-11-20.toml")
   add_executable(bc_live_policy_ingest_test EXCLUDE_FROM_ALL live_policy_ingest_test.cpp)
@@ -293,9 +296,6 @@ if(BUILD_TESTING)
   add_executable(bc_v2_runtime_receipt_test EXCLUDE_FROM_ALL v2/runtime_receipt_test.cpp)
   target_link_libraries(bc_v2_runtime_receipt_test PRIVATE bc_serving_v2_runtime_receipt)
   add_test(NAME bc_v2_runtime_receipt_test COMMAND bc_v2_runtime_receipt_test)
-  add_custom_target(bc_v2_runtime_receipt_check
-    COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_test>
-    DEPENDS bc_v2_runtime_receipt_test)
   add_executable(bc_v2_runtime_receipt_live_test EXCLUDE_FROM_ALL
     v2/runtime_receipt_live_test.cpp)
   target_link_libraries(bc_v2_runtime_receipt_live_test PRIVATE bc_serving_v2_runtime_receipt bc_jcs)
@@ -304,9 +304,6 @@ if(BUILD_TESTING)
     BC_CONTRACT_V2_DOCS_DIR="${CMAKE_CURRENT_SOURCE_DIR}/../../../../docs/design/serving-manifest-v2")
   add_test(NAME bc_v2_runtime_receipt_live_test
     COMMAND bc_v2_runtime_receipt_live_test $<TARGET_FILE:bc_v2_runtime_receipt_live>)
-  add_custom_target(bc_v2_runtime_receipt_live_check
-    COMMAND $<TARGET_FILE:bc_v2_runtime_receipt_live_test> $<TARGET_FILE:bc_v2_runtime_receipt_live>
-    DEPENDS bc_v2_runtime_receipt_live_test bc_v2_runtime_receipt_live)
 
 
   add_executable(bc_s5_refusal_test EXCLUDE_FROM_ALL v2/s5_refusal_test.cpp)

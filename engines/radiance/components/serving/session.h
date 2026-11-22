@@ -31,6 +31,7 @@
 
 #include "callback_boundary.h"
 #include "helper_vram.h"
+#include "lab_experiment.h"
 #include "serving.h"
 #include "stored_manifest.h"
 #include "v2/manifest.h"
@@ -141,6 +142,9 @@ struct EngineStart {
     nlohmann::json plan_reuse = nlohmann::json::object();
     nlohmann::json phase_ms = nlohmann::json::object();
     std::uint64_t native_helper_resident_mib = 0; // measured by the owner, outside the engine's P1 record
+    // A quality score with a forced placement schedule: the placement transactions the helper must have committed
+    // when scoring ends (steps x repeat); 0 for every other start.
+    std::uint64_t forced_transactions = 0;
     // Set only by a native preflight: the inspector's strict receipt for the admitted YAML (no child was started).
     nlohmann::json native_preflight_receipt = nlohmann::json::object();
     // The resolver's values after the admitted YAML is applied: what the serve path plans from.
@@ -380,6 +384,9 @@ struct EnginePlanInputs {
     // engine or helper child. It needs native_admission and takes no GPU.
     bool native_preflight = false;
     bool quality_score = false; // this owner must be the admitted runtime home's executable
+    // Quality score only: the forced placement schedule (`quality --lab-experiment FILE`). The manifest is then a
+    // lab-profile one carrying it, measured afresh and never stored under the named config.
+    std::optional<LabPlacementExperiment> lab_experiment;
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default
 };

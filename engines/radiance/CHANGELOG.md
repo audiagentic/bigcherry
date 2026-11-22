@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.3.0...bc-radiance-2020.4.0) (2026-11-22)
+
+
+### New and changed
+
+* **ltx:** declare the TP3 FFN, modulation and gated residual across all DiT blocks ([#1407](https://github.com/audiagentic/bigcherry/issues/1407)) ([d98914b](https://github.com/audiagentic/bigcherry/commit/d98914ba92bff208849c3a5c7af94057760117c2))
+
 ## [2020.3.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.2.2...bc-radiance-2020.3.0) (2026-11-22)
 
 

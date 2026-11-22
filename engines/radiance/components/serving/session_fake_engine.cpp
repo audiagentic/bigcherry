@@ -45,6 +45,7 @@ extern char** environ;
 
 namespace {
 volatile std::sig_atomic_t g_stop = 0;
+volatile std::sig_atomic_t g_report = 0;
 void on_stop(int) { g_stop = 1; }
 // Test-only POSIX mailbox creator: graceful exits retire their own name;
  // SIGKILL intentionally bypasses this destructor to exercise owner cleanup.
@@ -287,6 +288,12 @@ int main(int argc, char** argv) {
             m["ngram_placement"] = spec.at("processes").at("engine").at("execution").at("ngram_placement");
             if (spec.contains("handoff"))
                 m["shm"] = spec.at("handoff").at("transport").at("shm");
+            // A forced placement schedule in the manifest: helper0 reports it, as the real worker does on SIGUSR1.
+            if (spec.contains("experiment") && spec.at("experiment").contains("placement") &&
+                spec.at("experiment").at("placement").contains("forced")) {
+                const auto& forced = spec.at("experiment").at("placement").at("forced");
+                m["forced_transactions"] = forced.at("steps").size() * forced.at("repeat").get<size_t>();
+            }
             if (const char* behaviour = apply_behaviour ? std::getenv("TEST_FAKE_BEHAVIOUR") : nullptr) {
                 const json given = json::parse(behaviour, nullptr, false);
                 if (!given.is_object()) {
@@ -342,6 +349,7 @@ int main(int argc, char** argv) {
             return 8;
         std::signal(SIGINT, h.value("ignore_sigint", false) ? SIG_IGN : on_stop);
         std::signal(SIGTERM, on_stop);
+        std::signal(SIGUSR1, [](int) { g_report = 1; });
         const auto up = Clock::now();
         const auto ready_at = up + std::chrono::milliseconds(h.value("ready_delay_ms", 0));
         const auto die_after = std::chrono::milliseconds(h.value("die_after_ms", -1));
@@ -354,6 +362,20 @@ int main(int argc, char** argv) {
                             h.value("waiting_for_maps", false) ? "waiting for engine runtime expert maps" : "ready");
                 std::fflush(stdout);
                 ready = true;
+            }
+            if (g_report) {
+                g_report = 0;
+                if (role == "helper0" && m.contains("forced_transactions")) {
+                    const unsigned long long attempted = m.at("forced_transactions").get<unsigned long long>();
+                    const char* committed_override = std::getenv("TEST_FAKE_FORCED_COMMITTED");
+                    const unsigned long long committed =
+                        committed_override ? std::strtoull(committed_override, nullptr, 10) : attempted;
+                    std::printf("forced resolved transaction=1 epoch=2 swap=0:3:0:9 helpers=1:0\n");
+                    std::printf("forced placement helper=0 attempted=%llu committed=%llu aborted=%llu inflight=0 "
+                                "bytes_planned=0\n",
+                                attempted, committed, attempted - committed);
+                    std::fflush(stdout);
+                }
             }
             ::usleep(10000);
         }

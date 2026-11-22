@@ -385,10 +385,7 @@ std::string plan_cache_key(const Manifest& m) {
 }
 
 /* Lab placement experiments (spec §6): the forced schedule follows its mode and each step carries exactly its kind's members. */
-static Status placement_experiment_semantics(const Manifest& m) {
-    const Spec& s = m.spec;
-    if (!s.experiment || !s.experiment->placement) return std::nullopt;
-    const ExperimentPlacement& p = *s.experiment->placement;
+Status check_placement_experiment(const ExperimentPlacement& p, size_t helper_count) {
     const std::string at = "spec.experiment.placement";
     if (p.mode == PlacementMode::kForcedChurn && !p.forced)
         return err(C::missing_field, at + ".forced", "mode forced_churn requires forced");
@@ -406,12 +403,18 @@ static Status placement_experiment_semantics(const Manifest& m) {
             return err(C::missing_field, sat + (st.b_layer ? ".b_expert" : ".b_layer"), "a swap names both experts");
         if (!swap && (st.b_layer || st.b_expert))
             return err(C::invalid_value, sat + (st.b_layer ? ".b_layer" : ".b_expert"), "only a swap takes a second expert");
-        if (move && *st.destination >= static_cast<int64_t>(s.processes.helpers.size()))
+        if (move && *st.destination >= static_cast<int64_t>(helper_count))
             return err(C::unresolved_reference, sat + ".destination",
                        "destination " + std::to_string(*st.destination) + " is not one of the " +
-                           std::to_string(s.processes.helpers.size()) + " helper(s)");
+                           std::to_string(helper_count) + " helper(s)");
     }
     return std::nullopt;
+}
+
+static Status placement_experiment_semantics(const Manifest& m) {
+    const Spec& s = m.spec;
+    if (!s.experiment || !s.experiment->placement) return std::nullopt;
+    return check_placement_experiment(*s.experiment->placement, s.processes.helpers.size());
 }
 
 /* The live placement policy (spec §2.7): what the helper used to check at start-up, so every consumer refuses the same
@@ -608,7 +611,7 @@ Status validate_semantics(const Manifest& m) {
         return err(C::plan_mismatch, "spec.plan.engine_memory.cache_key",
                    "the measured plan's cache_key " + s.plan.engine_memory->cache_key +
                        " is not this configuration's " + key + " (spec §5.1)",
-                   "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up) and write a new manifest from it (bc-serve --write-manifest --measured-plan)");
+                   "measure the plan again (the launcher's measuring start: the engine's --plan-memory with its helpers up) and write a new manifest from it (bc-serve start CONFIG --run-dir DIR)");
     return std::nullopt;
 }
 
@@ -642,7 +645,7 @@ Result<Manifest> read_manifest(std::string_view bytes, const std::string& source
     if (use == PlanUse::serving && m.spec.plan.state == PlanState::kUnmeasured)
         return sourced(err(C::plan_mismatch, "spec.plan.state",
                            "this manifest has no measured plan (plan.state unmeasured): it is for the measuring start only",
-                           "measure the plan (the launcher's measuring start) and write the measured manifest from it (bc-serve --write-manifest --measured-plan)"));
+                           "measure the plan (the launcher's measuring start) and write the measured manifest from it (bc-serve start CONFIG --run-dir DIR)"));
     if (use == PlanUse::measuring && m.spec.plan.state == PlanState::kMeasured)
         return sourced(err(C::plan_mismatch, "spec.plan.state",
                            "a measuring start takes an unmeasured manifest (plan.state unmeasured), this one is measured",
