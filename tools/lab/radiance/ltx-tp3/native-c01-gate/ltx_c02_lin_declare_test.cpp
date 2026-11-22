@@ -349,6 +349,10 @@ struct C06Issued {
         rad_op act=0;
         rad_buf upbuf=0;
         bool reduce=true;   // false: deliberately omit the exact reduction (negative test)
+        // chain: modulate the replicated hidden state, run the FFN, gate the delta back into it
+        bool chain=false;
+        rad_op mod=0, gate=0;
+        rad_buf res=0, tabs=0, result=0;   // hidden state, [shift|scale|gate] table, compared output
     } ffn;
     ~C06Issued() {
         ctx.reset();
@@ -813,6 +817,21 @@ static void ltx03_ffn_issued_step(RadCtx* c, const RadBatch*) {
     if (!input) { rad_step_fail(c,"LTX03 FFN source activation missing"); return; }
     if (!r.gpu)   // on a device the sample was uploaded before the step
         for (int64_t j=0;j<r.width*r.tokens;++j) input[j]=c06_sample(j);
+    const int64_t D=r.width, n=r.tokens;
+    const RadOperand cu = ltx2::praw(r.gpu ? (const int32_t*)r.device_cu : r.cu.data(),RAD_I32,2);
+    if (r.ffn.chain) {
+        uint16_t* hidden=(uint16_t*)r.ctx->buf_ptr(r.ffn.res);
+        uint16_t* table=(uint16_t*)r.ctx->buf_ptr(r.ffn.tabs);
+        if (!hidden || !table) { rad_step_fail(c,"LTX03 FFN chain buffers missing"); return; }
+        if (!r.gpu) {
+            for (int64_t j=0;j<D*n;++j) hidden[j]=c06_sample(j+17);
+            for (int64_t j=0;j<3*D;++j) table[j]=c06_sample(j+101);
+        }
+        // norm(hidden) (1 + scale) + shift into the FFN input plane
+        RAD_ISSUE_N(c,r.ffn.mod,n,RAD_NONE,RAD_NONE,
+                    ltx2::tab(r.ffn.tabs,0,1,3*D,0,2*D),RAD_NONE,cu,
+                    ltx2::brows(r.ffn.res,n),ltx2::brows(r.x.a.x,n));
+    }
     r.x.step(c,r.tokens);
     r.ffn.up.step(c,r.x,r.ffn.upbuf,r.tokens);
     RAD_ISSUE_N(c,r.ffn.act,r.tokens,ltx2::brows(r.ffn.upbuf,r.tokens),
@@ -822,6 +841,9 @@ static void ltx03_ffn_issued_step(RadCtx* c, const RadBatch*) {
         r.ffn.down.step(c,r.ffn.ff,r.output,r.tokens);
     else   // omitted exact reduction: the bias-free partial GEMM only
         r.ffn.down.l.step(c,r.ffn.ff.a,r.output,r.tokens,0,r.tokens,0);
+    if (r.ffn.chain)   // hidden += gate * delta
+        RAD_ISSUE_N(c,r.ffn.gate,n,ltx2::brows(r.output,n),
+                    ltx2::tab(r.ffn.tabs,0,1,3*D,2*D,D),cu,ltx2::brows(r.ffn.res,n));
 }
 
 // world==3: this rank's `owned` of `heads` FFN units, deferred bias-free down;
@@ -829,7 +851,7 @@ static void ltx03_ffn_issued_step(RadCtx* c, const RadBatch*) {
 static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, bool audio,
                            int rank, int first, int owned, int heads, int world,
                            int64_t tokens, std::unique_ptr<Builder>* out, C06Issued& r,
-                           bool aql = false) {
+                           bool aql = false, bool chain = false) {
     const std::string prefix = "dit.blk." + std::to_string(block) +
                                (audio ? ".audio_ff" : ".ff");
     const auto* wu = model.find(prefix + "_up.weight");
@@ -863,6 +885,18 @@ static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, b
     r.ffn.upbuf = ltx2::decl_b(&b,nm.f("ltx03.ff.up"),RAD_BF16,{tokens,local});
     r.output = ltx2::decl_b(&b,nm.f("ltx03.delta"),RAD_BF16,{tokens,dim});
     need(r.ffn.upbuf && r.output, "LTX03 issued FFN buffers missing");
+    r.ffn.chain = chain;
+    r.ffn.result = r.output;
+    if (chain) {
+        r.ffn.res = ltx2::decl_b(&b,nm.f("ltx03.hidden"),RAD_BF16,{tokens,dim});
+        r.ffn.tabs = ltx2::decl_b(&b,nm.f("ltx03.mod_table"),RAD_BF16,{1,3*dim});
+        need(r.ffn.res && r.ffn.tabs, "LTX03 chain buffers missing");
+        r.ffn.mod = ltx2::mod_op(&b,tokens,dim,1e-6,false,"rms",r.ffn.tabs,r.ffn.tabs,
+                                 r.ffn.res,0,r.x.a.x);
+        need(r.ffn.mod, "LTX03 native modulation unavailable");
+        r.ffn.result = r.ffn.res;
+        r.cu[1] = (int32_t)tokens;
+    }
     const ltx2::C01Slice* up_slice = tp ? &us : nullptr;
     const ltx2::C01Slice* down_slice = tp ? &ds : nullptr;
     int rc = audio
@@ -889,6 +923,12 @@ static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, b
         need(r.ffn.down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
                                                  RAD_ACCESS_PER_TOKEN,0,r.output,tokens) == RAD_OK,
              "LTX03 issued FFN exact reduction/final bias refused");
+    if (chain) {
+        // Declared after the down projection and its reduction, in issue order: the arena
+        // planner derives each buffer's lifetime from the declared operation order.
+        r.ffn.gate = ltx2::gate_op(&b,tokens,dim,r.ffn.tabs,r.output,r.ffn.res);
+        need(r.ffn.gate, "LTX03 native residual unavailable");
+    }
     need(b.errors().empty(), "LTX03 issued FFN Builder diagnostics");
     r.width = dim; r.tokens = tokens; r.rank = rank; r.audio = audio;
     *out = std::move(owned_builder);
@@ -899,7 +939,8 @@ static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, b
 static std::vector<std::vector<uint16_t>> issue_ffn(
         const RadFile& model, Registry& reg, int64_t block, bool audio,
         const std::array<int,3>& split, int heads, int world, int64_t tokens,
-        bool reduce, std::array<int,3>* ar_calls = nullptr, bool aql = false) {
+        bool reduce, std::array<int,3>* ar_calls = nullptr, bool aql = false,
+        bool chain = false) {
     std::array<std::unique_ptr<Builder>,3> builders;
     std::array<C06Issued,3> lanes;
     struct Retire {
@@ -910,7 +951,7 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
     for (int rank=0; rank<world; ++rank) {
         lanes[rank].ffn.reduce = reduce;
         build_ffn_lane(model,reg,block,audio,rank,first,world==3?split[rank]:heads,
-                       heads,world,tokens,&builders[rank],lanes[rank],aql);
+                       heads,world,tokens,&builders[rank],lanes[rank],aql,chain);
         first += world==3 ? split[rank] : 0;
     }
     std::array<int,3> results{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
@@ -959,6 +1000,21 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
                                            r.ctx->stream())==RAD_OK &&
                  rad_stream_sync(r.ctx->stream())==RAD_OK,
                  "LTX03 native activation upload failed");
+            r.device_cu = rad_dev_alloc(sizeof(r.cu),RAD_MEM_DEVICE);
+            need(r.device_cu,"LTX03 native cu-seqlens allocation refused");
+            r.owned_device.push_back(r.device_cu);
+            need(rad_memcpy_async(r.device_cu,r.cu.data(),sizeof(r.cu),r.ctx->stream())==RAD_OK,
+                 "LTX03 native cu-seqlens upload failed");
+            if (chain) {
+                std::vector<uint16_t> hid((size_t)(r.width*r.tokens)), tab((size_t)(3*r.width));
+                for (size_t j=0;j<hid.size();++j) hid[j]=c06_sample((int64_t)j+17);
+                for (size_t j=0;j<tab.size();++j) tab[j]=c06_sample((int64_t)j+101);
+                void* hp=r.ctx->buf_ptr(r.ffn.res); void* tp=r.ctx->buf_ptr(r.ffn.tabs);
+                need(hp && tp && rad_memcpy_async(hp,hid.data(),hid.size()*2,r.ctx->stream())==RAD_OK &&
+                     rad_memcpy_async(tp,tab.data(),tab.size()*2,r.ctx->stream())==RAD_OK &&
+                     rad_stream_sync(r.ctx->stream())==RAD_OK,
+                     "LTX03 native chain upload failed");
+            }
         }
     }
     std::array<int,3> status{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
@@ -981,7 +1037,7 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
             std::fprintf(stderr,"LTX03 FFN rank %d error %d: %s\n",rank,status[rank],r.ctx->step_error());
         need(status[rank]==RAD_OK,"LTX03 FFN issue refused");
         if (ar_calls) (*ar_calls)[rank] = (int)r.ctx->ar_calls();
-        const void* ptr = r.ctx->buf_ptr(r.output);
+        const void* ptr = r.ctx->buf_ptr(r.ffn.result);
         need(ptr!=nullptr,"LTX03 FFN output arena buffer missing");
         outputs[(size_t)rank].resize((size_t)(r.width*r.tokens));
         if (aql) {
@@ -1183,9 +1239,10 @@ int main(int argc, char** argv) {
             // The issued TP3 FFN against a TP1 issue of the same checkpoint and kernels.
             const int64_t tokens = 4;
             int checked = 0;
+            for (bool chain : {false,true})
             for (int64_t block : {int64_t(0), nblocks - 1})
                 for (bool audio : {false,true}) {
-                    const auto ref = issue_ffn(model,reg,block,audio,{0,0,0},nheads,1,tokens,true,nullptr,aql);
+                    const auto ref = issue_ffn(model,reg,block,audio,{0,0,0},nheads,1,tokens,true,nullptr,aql,chain);
                     need(ref.size()==1 && !ref[0].empty(),"LTX03 TP1 FFN reference missing");
                     double ref_sq = 0;
                     for (uint16_t v : ref[0]) {
@@ -1196,12 +1253,20 @@ int main(int argc, char** argv) {
                     for (const std::array<int,3>& split :
                          {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
                         std::array<int,3> calls{};
-                        const auto out = issue_ffn(model,reg,block,audio,split,nheads,3,tokens,true,&calls,aql);
+                        const auto out = issue_ffn(model,reg,block,audio,split,nheads,3,tokens,true,&calls,aql,chain);
                         for (int rank=0; rank<3; ++rank)
                             need(calls[rank]==1,"LTX03 FFN must issue exactly one native reduction per rank");
-                        for (int rank=1; rank<3; ++rank)
+                        for (int rank=1; rank<3; ++rank) {
+                            if (out[0]!=out[(size_t)rank]) {
+                                size_t bad=0, first_bad=out[0].size();
+                                for (size_t j=0;j<out[0].size();++j)
+                                    if (out[0][j]!=out[(size_t)rank][j]) { ++bad; first_bad=std::min(first_bad,j); }
+                                std::fprintf(stderr,"LTX03 rank %d differs from rank 0 in %zu/%zu values, first at %zu\n",
+                                             rank,bad,out[0].size(),first_bad);
+                            }
                             need(out[0]==out[(size_t)rank],
                                  "LTX03 exact three-rank FFN output replicas disagree");
+                        }
                         need(out[0].size()==ref[0].size(),"LTX03 TP3/TP1 FFN output width differs");
                         double err_sq = 0, max_abs = 0;
                         for (size_t j=0;j<ref[0].size();++j) {
@@ -1209,8 +1274,8 @@ int main(int argc, char** argv) {
                             err_sq += e*e; max_abs = std::max(max_abs,std::abs(e));
                         }
                         const double rel = std::sqrt(err_sq/ref_sq);
-                        std::printf("LTX03 FFN issued %s block=%lld %s split=%d,%d,%d: rel_rms_vs_tp1=%g max_abs=%g\n",
-                                    aql?"AQL":"host",(long long)block,audio?"audio":"video",split[0],split[1],split[2],rel,max_abs);
+                        std::printf("LTX03 %s issued %s block=%lld %s split=%d,%d,%d: rel_rms_vs_tp1=%g max_abs=%g\n",
+                                    chain?"mod+FFN+residual":"FFN",aql?"AQL":"host",(long long)block,audio?"audio":"video",split[0],split[1],split[2],rel,max_abs);
                         std::fflush(stdout);
                         // BF16 has 8 significant bits: its unit roundoff 2^-8 is the
                         // largest relative error one rounding of a partial sum can cause.
