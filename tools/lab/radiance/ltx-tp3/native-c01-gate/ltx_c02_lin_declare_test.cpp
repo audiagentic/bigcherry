@@ -401,6 +401,10 @@ static void verify_c06_load_contract(const RadFile& model, const rad::Program& p
                              rank,ki->name,layout_rc);
             need(layout_rc==RAD_OK,
                  "C06 native kernel relayout refused real checkpoint plane");
+            bool wrote_payload = false;
+            for(size_t j=0;j<(size_t)w.stored_bytes;++j)
+                wrote_payload |= stored[j] != 0xa5;
+            need(wrote_payload,"C06 native relayout returned success without writing payload");
             for(size_t j=(size_t)w.stored_bytes;j<stored.size();++j)
                 need(stored[j]==0xa5,"C06 native relayout overwrote output guard");
             ++relayouts; // Cannot be directly memcpy'ed: use engine loader.
