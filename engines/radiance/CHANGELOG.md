@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.1.2](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.1.1...bc-radiance-2020.1.2) (2026-11-22)
+
+
+### Fixes
+
+* **serving:** the stored-plan key excludes per-start values of helper configs ([#1319](https://github.com/audiagentic/bigcherry/issues/1319)) ([7e6ef9e](https://github.com/audiagentic/bigcherry/commit/7e6ef9ec4ec2c5bfcee8fba8dae6adbbad78992e))
+
 ## [2020.1.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.1.0...bc-radiance-2020.1.1) (2026-11-22)
 
 
