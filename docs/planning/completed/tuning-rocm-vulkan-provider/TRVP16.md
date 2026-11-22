@@ -2,7 +2,7 @@
 id: TRVP16
 order: 0
 plan: tuning-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-10-02T12:35:11.094367+00:00'
 breadth: ''
 skill: ''
@@ -64,6 +64,8 @@ A pinned source-composed decision is recorded under PRVP03. Inactive-rank and er
 
 CONSOLIDATION 2026-11-22 OWNER-REFERENCES: TRVP16 still owns only mixed-RDNA collective qualification, PRVP03 owns transport SPI, and RRVP02 retains the Vulkan implementation pause. The previously separate CM1 force/qualification references TRVP14/TRVP15 now resolve solely to active TRVP15; no cross-family ownership is transferred to TRVP16.
 
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Mixed-architecture Vulkan collective qualification is Vulkan-only and currently lacks an eligible unpaused provider lane. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume after RRVP02 unpause and PRVP03 existing communication SPI available on exact Vulkan devices; prove ownership, no-P2P assumptions, correctness on mixed-RDNA topology, fallback and measured E2E gain separately from HIP/RCCL. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
+
 ## 2026-10-11 implementation audit: inactive-shard safety before heterogeneous TP
 
 **Disposition: no new transport or hardware campaign yet.** TRVP16 owns qualification of the existing PRVP03 communication SPI across all-Vulkan multi-RDNA configurations, not another AllReduce implementation. PRVP03/1290 is an evaluated, default-off, synchronous F32 host reference. An upstream Vulkan provider, [llama.cpp #25051](https://github.com/ggml-org/llama.cpp/pull/25051), merged to upstream master on 2026-11-02 as `dcbb091`. Treat that code as an external candidate only; inspect the exact merged source and reconcile through PRVP03 before any adoption. No BigCherry mixed-RDNA correctness or throughput has been measured.
@@ -122,3 +124,6 @@ Pinned-source structural checks **10/10 passed** (1290 unconditional rank read, 
 - 2026-11-22T05:16:29.336275+00:00 (updated-by): Updated: section:notes
 - RV4539
 - 2026-11-22T11:20:29.088604+00:00 (updated-by): Updated: section:notes
+- RV4570
+- 2026-11-22T13:06:21.260764+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:11:40.587509+00:00 (state-transition): State: pending → deferred
