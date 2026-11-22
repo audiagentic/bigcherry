@@ -120,7 +120,7 @@ struct R3MoeHook {
     Header* hdr = nullptr;
     bool pinned = false;
     uint64_t serial = 0;   /* this generation's identity; never reused, so a stale handle cannot alias a new hook */
-    int slot_base = -1;    /* the engine's claimed slot span (its tp_group); the kernels' init finds this hook by it */
+    int slot_base = -1, ranks = 0;    /* the engine's claimed slot span (its tp_group); the kernels' init finds this hook by it */
     bool opened = false;   /* a generation holds this hook: set by the factory, cleared by the generation's close */
     r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
     std::deque<RankCompletion> completion;
@@ -961,7 +961,6 @@ void close_mailbox(HookState& g, bool clean) {
  * later hook is allocated at the same address. The engine closes a generation only after its threads have stopped. */
 LiveHook<R3MoeHook> g_live;
 HookState& hook(void* self) { return *static_cast<HookState*>(self); }
-HookState* live_hook(uint64_t id) { return g_live.resolve(id); }
 
 /* Callbacks of the engine's generation: thin adapters from the engine's `self`-carrying table to this hook. The
  * hook is the generation's own R3MoeHook, which `self` names. */
@@ -1005,8 +1004,9 @@ extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugi
     auto* h = new (std::nothrow) HookState;
     if (!h) return kOpenRefused;
     h->slot_base = args->slot_base;
+    h->ranks = args->ranks;
     /* Publish first: the hook's own placement thread starts inside open_mailbox and calls the entry points by serial. */
-    if (!g_live.publish(h)) { delete h; return kOpenBusy; }
+    if (!g_live.publish(h)) { delete h; return g_live.exhausted() ? kOpenRefused : kOpenBusy; }
     if (!open_mailbox(*h, args->capacity_limit)) { g_live.unpublish(h); delete h; return kOpenRefused; }
     h->opened = true;
     *out = EnginePlugin{sizeof(EnginePlugin), h, cb_close, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,
@@ -1016,14 +1016,16 @@ extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugi
 }
 
 /* The hook a kernel's init belongs to: the engine's claimed tp_group is the slot span's base the generation opened. */
-extern "C" uint64_t r3_moe_hook_for_group(long long tp_group) {
-    return g_live.serial_if([&](const R3MoeHook& h) { return h.opened && h.slot_base == tp_group; });
+extern "C" uint64_t r3_moe_hook_for_group(long long tp_group, int rank, int world_size) {
+    return g_live.serial_if([&](const R3MoeHook& h) {
+        return h.opened && h.slot_base == tp_group && world_size == h.ranks && rank >= 0 && rank < h.ranks;
+    });
 }
 
 extern "C" int r3_moe_close_admission(uint64_t h, R3MoeDrainSnapshot* out) {
-    HookState* hp = live_hook(h);
-    if (!hp) return RAD_E_STATE;
-    HookState& g = *hp;
+    auto borrow = g_live.borrow(h);   /* held to the end of the call: the generation's close waits for it */
+    if (!borrow) return RAD_E_STATE;
+    HookState& g = *borrow;
     if (!out || !g.hdr || !g.pinned || helper_faulted(g)) return RAD_E_STATE;
     {
         std::lock_guard<std::mutex> lock(g.mu);
@@ -1047,9 +1049,9 @@ extern "C" int r3_moe_close_admission(uint64_t h, R3MoeDrainSnapshot* out) {
  * participating rank's existing seal+terminal event, and retires in order.
  * No GPU synchronization, new host stamp or helper hot-path traffic. */
 extern "C" int r3_moe_all_ranks_consumed(uint64_t h, const R3MoeDrainSnapshot* snap) {
-    HookState* hp = live_hook(h);
-    if (!hp) return RAD_E_STATE;
-    HookState& g = *hp;
+    auto borrow = g_live.borrow(h);   /* held to the end of the call: the generation's close waits for it */
+    if (!borrow) return RAD_E_STATE;
+    HookState& g = *borrow;
     if (!snap) return RAD_E_INVAL;
     std::lock_guard<std::mutex> lock(g.mu);
     const R3MoeDrainSnapshot& closed = g.closed_snapshot;
@@ -1069,9 +1071,9 @@ extern "C" int r3_moe_all_ranks_consumed(uint64_t h, const R3MoeDrainSnapshot* s
 
 extern "C" int r3_moe_wait_drained(uint64_t h, const R3MoeDrainSnapshot* snap,
                                     uint64_t deadline_monotonic_ns) {
-    HookState* hp = live_hook(h);
-    if (!hp) return RAD_E_STATE;
-    HookState& g = *hp;
+    auto borrow = g_live.borrow(h);   /* held to the end of the call: the generation's close waits for it */
+    if (!borrow) return RAD_E_STATE;
+    HookState& g = *borrow;
     if (!snap || !g.hdr || !g.pinned || !deadline_monotonic_ns) return RAD_E_INVAL;
     {
         std::lock_guard<std::mutex> lock(g.mu);
@@ -1123,9 +1125,9 @@ extern "C" int r3_moe_wait_drained(uint64_t h, const R3MoeDrainSnapshot* snap,
 }
 
 extern "C" int r3_moe_reopen_admission(uint64_t h, uint32_t epoch, uint32_t slot) {
-    HookState* hp = live_hook(h);
-    if (!hp) return RAD_E_STATE;
-    HookState& g = *hp;
+    auto borrow = g_live.borrow(h);   /* held to the end of the call: the generation's close waits for it */
+    if (!borrow) return RAD_E_STATE;
+    HookState& g = *borrow;
     uint32_t committed_epoch = 0;
     uint8_t committed_slot = 0;
     std::lock_guard<std::mutex> lock(g.mu);
@@ -1165,9 +1167,9 @@ extern "C" int r3_moe_reopen_admission(uint64_t h, uint32_t epoch, uint32_t slot
 }
 
 extern "C" int r3_moe_mailbox_device(uint64_t h, int rank, int world_size, R3MoeMailboxDevice** out) {
-    HookState* hp = live_hook(h);
-    if (!hp) return RAD_E_STATE;
-    HookState& g = *hp;
+    auto borrow = g_live.borrow(h);   /* held to the end of the call: the generation's close waits for it */
+    if (!borrow) return RAD_E_STATE;
+    HookState& g = *borrow;
     if (!out) return RAD_E_INVAL;
     *out = nullptr;
     if (!g.hdr || !g.pinned || world_size < 1 || world_size != (int)g.hdr->rank_count ||
@@ -1380,9 +1382,9 @@ extern "C" int r3_moe_mailbox_device(uint64_t h, int rank, int world_size, R3Moe
  * admission/completion ledger has retired EVERY ticket for this slot. */
 extern "C" int r3_moe_owner_generation_upload(uint64_t h, int rank, uint32_t slot,
                                                uint64_t epoch, uint64_t digest) {
-    HookState* hp = live_hook(h);
-    if (!hp) return RAD_E_STATE;
-    HookState& g = *hp;
+    auto borrow = g_live.borrow(h);   /* held to the end of the call: the generation's close waits for it */
+    if (!borrow) return RAD_E_STATE;
+    HookState& g = *borrow;
     if (rank < 0 || rank >= (int)g.rank.size()) return RAD_E_INVAL;
     std::lock_guard<std::mutex> lock(g.mu);
     if (!g.hdr || !g.pinned || !g.rank[rank].ready || load(&g.hdr->helper_fault) ||
@@ -1398,9 +1400,9 @@ extern "C" int r3_moe_owner_generation_upload(uint64_t h, int rank, uint32_t slo
 
 extern "C" int r3_moe_owner_generation_ready(uint64_t h, int rank, uint32_t slot,
                                               uint64_t epoch, uint64_t digest) {
-    HookState* hp = live_hook(h);
-    if (!hp) return RAD_E_STATE;
-    HookState& g = *hp;
+    auto borrow = g_live.borrow(h);   /* held to the end of the call: the generation's close waits for it */
+    if (!borrow) return RAD_E_STATE;
+    HookState& g = *borrow;
     if (rank < 0 || rank >= (int)g.rank.size() || slot > 1 ||
         !epoch || !digest) return RAD_E_INVAL;
     std::lock_guard<std::mutex> lock(g.mu);

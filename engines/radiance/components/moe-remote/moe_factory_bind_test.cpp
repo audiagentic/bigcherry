@@ -44,9 +44,9 @@ int main(int argc, char** argv) {
 
     // The direct entry points take the generation's hook; nothing is live here, so a null, foreign or stale handle is
     // refused before any side effect, and no kernel init can find a hook.
-    using HookFor = uint64_t (*)(long long);
+    using HookFor = uint64_t (*)(long long, int, int);
     auto hook_for = reinterpret_cast<HookFor>(dlsym(plugin, "r3_moe_hook_for_group"));
-    assert(hook_for && !hook_for(0) && !hook_for(4) && !hook_for(-1));
+    assert(hook_for && !hook_for(0, 0, 1) && !hook_for(4, 0, 2) && !hook_for(-1, 0, 1));
     // 0, a serial that never existed, and an address-looking value are all refused.
     for (uint64_t h : std::initializer_list<uint64_t>{0, 1, 2, 0x1000}) {
         auto close_adm = reinterpret_cast<int (*)(uint64_t, void*)>(dlsym(plugin, "r3_moe_close_admission"));

@@ -929,7 +929,7 @@ int mailbox_init(const RadParam* params, int n_params, int rank, int world_size,
     long long group = -1;
     for (int i = 0; params && i < n_params; ++i)
         if (params[i].key && std::strcmp(params[i].key, "tp_group") == 0) group = params[i].ival;
-    const uint64_t hook = r3_moe_hook_for_group(group);
+    const uint64_t hook = r3_moe_hook_for_group(group, rank, world_size);
     if (!hook) return RAD_E_STATE;
     R3MoeMailboxDevice* d = nullptr;
     const int rc = r3_moe_mailbox_device(hook, rank, world_size, &d);
