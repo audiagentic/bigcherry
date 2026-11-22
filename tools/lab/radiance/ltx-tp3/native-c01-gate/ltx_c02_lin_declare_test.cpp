@@ -1320,7 +1320,7 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
-        const bool aql = argc == 4 &&
+        const bool aql = argc >= 4 &&
             (std::string(argv[3]) == "--c06-instances-aql" ||
              std::string(argv[3]) == "--c06-issued-aql" ||
              std::string(argv[3]) == "--c06-issued-aql-16" ||
