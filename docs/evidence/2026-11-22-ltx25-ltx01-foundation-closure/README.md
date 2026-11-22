@@ -1,6 +1,6 @@
 # LTX01 — source-backed IQ8R TP3 foundation qualification
 
-**2026-11-22. Verdict:** engineering acceptance evidenced. Formal Planning MCP registration/close remains unavailable.
+**2026-11-22 engineering verdict:** source-backed IQ8R TP3 foundation accepted. **Later Planning MCP status:** LTX01 registered and completed under closed review `RV4429`; this historical receipt predates the Planning MCP transition. Downstream LTX02–LTX08 remain active and TP3 serving is not admitted.
 
 **Baseline:** merged main at `b522ac88b` (LTX02 C05 graph proof merged). This closure changes no production code, no recipe and no enabled LTX TP3 serving.
 
@@ -56,4 +56,4 @@ RUM13's generic native mixed-card AQL regression proof and LTX02's model-specifi
 
 **Still open:** LTX02 full IQ8R C06 self-attention issued with checkpoint TP1 intermediate parity; LTX03 full 48-block six-kind multimodal attention and FFN; LTX04 serving/conditioning; LTX05 quality/performance; optional LTX06–07 worker/handoff; LTX08 qualified release. Production TP3 remains refused.
 
-**Planning authority:** `LTX01` is only a registration candidate, not a Planning MCP item. This establishes technical completion and supplies the evidence for future registration and closure; it does **not** claim a generated `docs/planning/` edit or Ledger MCP event.
+**Planning authority update, 2026-11-22:** This source receipt originally preceded formal registration. After separate Planning MCP reconciliation, the canonical [completed LTX01](../../planning/completed/build-radiance-ltx25-tp3/LTX01.md) now records its formal completion (review `RV4429`). Read current Planning state from that item, not the earlier 'candidate' statements. No extra GPU or build test was run by this clerical transition.

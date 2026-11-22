@@ -17,6 +17,44 @@ priority: P1
 
 The old "integrate PR #27952 as an available-but-unselected 1246 candidate" premise is superseded: #27952 merged on 2026-09-24 and is an ancestor of the b11474 pin. Native CM1 is already auto-eligible on AMD RDNA3/RDNA4 with cooperative int8 support. Do not backport 1246 or introduce a second selector/registry. The remaining narrow safety question is a source-visible A-operand prefetch past end_k for partial K; upstream issue #29342 remains open. The pinned shader has an end_k guard on B loads but not A loads. An observable GPU fault/corruption is NOT established by this audit.
 
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+Pinned ggml/src/ggml-vulkan/ggml-vulkan.cpp; ggml/src/ggml-vulkan/vulkan-shaders/{mul_mmq_cm1.comp,mul_mmq_cm1_funcs.glsl,vulkan-shaders-gen.cpp}; existing Vulkan backend-ops/route tests and RRVP/TRVP evidence. No 1246 or 1247 package was created.
+
+## Validation
+
+Completed in this audit: seven source assertions, 13-format generator check, nine deterministic host boundary fixtures, pinned/master shader equality check, merged-commit ancestry and branch eligibility/novelty inspection. Not run: BigCherry repository pytest, Vulkan compilation, SPIR-V validation, GPU execution or hardware benchmarking.
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+Native source provenance and route are truthful; a real OOB risk is either guarded with source+GPU correctness evidence or explicitly closed by a newer upstream fix; no false CM1-only control, duplicate patch family or fabricated speedup. Keep all implementation/hardware activity deferred while the existing Vulkan pause remains in force.
+
+## Notes
+
+Original PRVP02 2026-09-10 source-capture design is superseded only as to integration; its capability, fallback, and negative-control intent is retained under native Vulkan and TRVP14/15. BCOP77 records the thin disposition.
+
+2026-11-22 owner handoff from decision-only BCOP77: Bounded action / terminal gate. Source-bounded action/stop rule: When Vulkan hardware work is permitted, source-instrument dense/ID partial-K final tiles (K=160/960/5184/2880 and aligned controls) on gfx1100 RADV, then gfx1201 separately. Prove actual bound CM1, descriptor ranges, work counts and CPU/greedy/logits/KLD parity across multi-request/ubatch/MTP. If needed, use the smallest A-index clamp matching the B guard; prefer an upstream fix and reject any separate kernel clone. A safety correction needs complete correctness and <=1% E2E regression, not an invented speedup. Close on upstream absorption or disproved OOB with reproducible evidence. A distinct performance proposal remains TRVP15 and needs isolated route controls plus CI95-low >=3% E2E. No action during the Vulkan pause. See docs/planning/completed/patching-bc-optimizations/BCOP77.md for the complete source/shape/negative case and evidence. PRVP02 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Exact implementation / data flow
 
 - Pin: llama.cpp b11474 = b9acf138a1e28ce1fc23b5a4fc4b12444b50f7ea. ggml/src/ggml-vulkan/ggml-vulkan.cpp:1887-1949 gates int8 CM1 on coopmat_int_support + AMD_RDNA3/AMD_RDNA4 and ggml_vk_matmul_cm1_int_shmem_support() on physical LDS size. Lines 2400-2568 construct CM1 pipelines with arch/quant negative gates. ggml_vk_get_mul_mat_mat_pipeline_map() (near 5976) resolves the bound pipeline; quantize_y (near 6330) selects Q8_1 activation preparation only when a matching pipeline exists, else falls back to F16. These are native controls, not new BigCherry features.
@@ -38,29 +76,12 @@ PRVP01: retired source transplant. PRVP02: native CM1 safety and capability reco
 
 Upstream #27952 merged 2026-09-24; #28440 already supplied IQ4_XS in pinned code. #29342 documents a gfx1100/RADV OOB-trigger experiment but no reproduced wrong result under that driver. Its external 27B A/B reports +6.2% long-context prompt and +1.7% decode; upstream #27952 reports ~1.29x q4_0 operator timing on Strix Halo. Neither is BigCherry evidence. vLLM/AITER and MLC LLM use different quant/kernel/driver paths: capability-gating and correctness methodology transfer, not speed ratios or shader code. BigCherry has no measured CM1-vs-isolated-control result in this audit.
 
-## Files
-
-Pinned ggml/src/ggml-vulkan/ggml-vulkan.cpp; ggml/src/ggml-vulkan/vulkan-shaders/{mul_mmq_cm1.comp,mul_mmq_cm1_funcs.glsl,vulkan-shaders-gen.cpp}; existing Vulkan backend-ops/route tests and RRVP/TRVP evidence. No 1246 or 1247 package was created.
-
-## Validation
-
-Completed in this audit: seven source assertions, 13-format generator check, nine deterministic host boundary fixtures, pinned/master shader equality check, merged-commit ancestry and branch eligibility/novelty inspection. Not run: BigCherry repository pytest, Vulkan compilation, SPIR-V validation, GPU execution or hardware benchmarking.
-
-## Acceptance Criteria
-
-Native source provenance and route are truthful; a real OOB risk is either guarded with source+GPU correctness evidence or explicitly closed by a newer upstream fix; no false CM1-only control, duplicate patch family or fabricated speedup. Keep all implementation/hardware activity deferred while the existing Vulkan pause remains in force.
-
-## Notes
-
-Original PRVP02 2026-09-10 source-capture design is superseded only as to integration; its capability, fallback, and negative-control intent is retained under native Vulkan and TRVP14/15. BCOP77 records the thin disposition.
-
 ## Change Log
 
 - 2026-09-09T11:01:11.838320+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:18:09.468597+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.596999+00:00 (updated-by): Updated: section:ledger-events
@@ -69,3 +90,4 @@ Original PRVP02 2026-09-10 source-capture design is superseded only as to integr
 - 2026-09-10T03:23:25.498614+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria
 - chg_20260910_032340_repaired-the-cm1-source-and-in_5642
 - 2026-09-10T03:23:40.374809+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-22T05:28:17.347980+00:00 (updated-by): Updated: section:notes

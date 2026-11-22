@@ -1,4 +1,7 @@
 ---
+
+**Planning MCP reconciliation, 2026-11-22:** shared native AQL qualification is [completed RUM13](../../planning/completed/patching-radiance-upstream/RUM13.md), review `RV4430` closed. The merged hardware receipts below are historical engineering evidence; no GPU rerun or production TP3 claim was added by this update.
+
 proposed-id: RUM13
 group: patching-radiance-upstream
 proposed-state: pending

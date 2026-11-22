@@ -1,11 +1,11 @@
 # LTX-2.5 IQ8R TP3 — Planning MCP registration handoff
 
-**Registration completed 2026-11-22 through Planning MCP:** authoritative `LTX01–LTX08` are in [the active Radiance LTX plan group](../../planning/active/build-radiance-ltx25-tp3/). These original proposal documents remain **historical evidence, not authoritative Planning state**.
+**Registration completed 2026-11-22 through Planning MCP:** authoritative `LTX01–LTX08` are canonical IDs. [LTX01 is now completed](../../planning/completed/build-radiance-ltx25-tp3/LTX01.md) with closed review `RV4429`; [LTX02–LTX08 remain active](../../planning/active/build-radiance-ltx25-tp3/). These original proposal documents remain **historical evidence, not authoritative Planning state**.
 Registered owner group: `build-radiance-ltx25-tp3`. The reserved identifiers `LTX01`–`LTX08` were validated and registered; no parallel LT3/C plan identifiers were created. Source scope `docs/design/ltx25-iq8r-tp3.md` LT3-01–LT3-15 is comprehensively mapped without duplicating the full 15 items.
 
 | Proposed item | Gap mapping | Priority | Depends on | Registration status |
 | --- | --- | --- | --- | --- |
-| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and merged RUM13 AQL proof; PR #1262 | Registered; engineering evidenced, Planning close pending |
+| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and merged RUM13 AQL proof; PR #1262 | Registered; Planning completed (RV4429) |
 | [LTX02](LTX02.md): Execute actual LTX Q/K RMS and self-attention with checkpoint activations | LT3-05 and self-attention part of LT3-06 | P0 | LTX01 model source; RUM13 native AQL proof; RUM06 TP-group contract | Registered |
 | [LTX03](LTX03.md): Complete the 48-block dual video/audio TP3 DiT graph without new dispatch infrastructure | Remaining LT3-06 plus cross-modal and FFN work from LT3-03/04/05 | P0 | LTX02 accepted on both modalities | Registered |
 | [LTX04](LTX04.md): Bind LTX conditioning/guidance/media to existing native TP3 serving | LT3-02, LT3-08, LT3-09 | P0 | LTX03/TP1 parity; specific RUM05 admission and RUM06 lifecycle contracts | Registered |
@@ -18,8 +18,8 @@ Registered owner group: `build-radiance-ltx25-tp3`. The reserved identifiers `LT
 **2026-11-22 source-backed LTX01 engineering closure:** Current main now contains
 [the checkpoint-backed LTX01 geometry and declaration acceptance receipt](../2026-11-22-ltx25-ltx01-foundation-closure/README.md).
 This is **engineering acceptance**, not a Planning MCP lifecycle transition:
-the registered `LTX01` still requires its authoritative state/receipt
-reconciliation through Planning MCP. The other seven registered plan items
+the original registration initially awaited state reconciliation;
+this was completed by Planning MCP review `RV4429` later on 2026-11-22. The other seven registered plan items
 retain their unaccepted technical gates. In particular, LTX02 has a real
 issued C05 Q/K RMS subset but lacks full issued C06 attention and TP1
 intermediate parity. RUM13's shared AQL test has merged independently.
@@ -27,7 +27,7 @@ No new C0x plan ID was created.
 
 ## One numbering system for execution
 
-**The ONLY registered LTX Planning MCP work items are LTX01–LTX08 above.** All eight now exist under `docs/planning/active/build-radiance-ltx25-tp3/`. Existing LT3-01–LT3-15
+**The ONLY registered LTX Planning MCP work items are LTX01–LTX08 above.** LTX01 is in `docs/planning/completed/build-radiance-ltx25-tp3/` after review `RV4429`; the other seven remain in `docs/planning/active/build-radiance-ltx25-tp3/`. Existing LT3-01–LT3-15
 numbers are **design requirements**; do not register them again. The native
 C01–C08 engineering milestone names are **historical implementation/evidence
 labels**, not plans or sequential user-facing roadmap items. Their names do
@@ -62,7 +62,7 @@ collective and group-lifetime owner.
 | Physical device/BDF order, measured VRAM/host budget, native-v3 YAML/worker admission | **RUM05** (completed); LTX04/LTX07 supply **LTX model requirements**, not an owner/allocator/parser |
 | Cross-DSO shared-slot group, rank rendezvous, collective lifetime, clean/cancel/fault drain | **RUM06** (active); LTX02/LTX03/LTX04/LTX07 only test the consumed contract |
 | Selected production migration canaries and release infrastructure | **RUM09** (completed); LTX05/LTX08 own only new-model acceptance/recipes |
-| Model-independent native AQL regression executable and direct-HIP lab cleanup | **RUM13** (registered; native lab merged); LTX01/LTX02 consume evidence only |
+| Model-independent native AQL regression executable and direct-HIP lab cleanup | **RUM13** (Planning completed; native lab merged); LTX01/LTX02 consume evidence only |
 | Genuine missing shared gfx1030 kernel or role implementation | **RUM-only follow-on** after LTX06/07 supplies a failing concrete requirement; check existing RUM/kernel owners before proposing |
 
 **RUM13 is separate from RUM06:** it removes a **lab-only**

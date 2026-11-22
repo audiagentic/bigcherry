@@ -1,35 +1,27 @@
-# Dense 27B — native Radiance three-GPU TP and alternatives
+# Dense 27B — current Radiance-native physical TP work
 
-> Archived 2026-11-12 from branch `exp/xtx27-prefill-opt` (git tag `archive/exp-xtx27-prefill-opt`), which never merged.
+**Current Planning state (2026-11-22):** The earlier VTP01–VTP14 logical-rank, model-geometry, IQ6R, W8A8 and initial TP3 investigation series is **completed historical evidence**, not fourteen active implementation tasks. VTP31/33/35/39/41/43/44 also completed. The earlier `exp/xtx27-prefill-opt` worktree and archive tag are historical; **do not use them as the current execution branch**. Check the current canonical plan owner and the pinned engine before changing code.
 
-Status: real 2-XTX Q8 engine and per-physical-GPU Q6/Q8 microkernel measurements exist (VTP05/VTP07/VTP09/VTP10); no virtual-rank TP4 runtime, three-card full-model benchmark, production layout or three-card memory admission exists.
+## Active owners and acceptance
 
-**Owner requirement:** dense 27B served at Q6 or Q8 (not Q4), maximise *resident* KV and sustain 4+ simultaneous streams. Physical hardware: gfx1100 RX 7900 XTX 24 GiB ×2 and gfx1201 R9700 32 GiB ×1. PCIe upstream: XTX Gen4 x8 each, R9700 Gen4 x4. No proven GPU-to-GPU P2P.
+| Active plan | Single responsible scope |
+| --- | --- |
+| [VTP32](VTP32.md) | Per-op-kind physical-card split costs and measured `tp_ownership` decisions |
+| [VTP34](VTP34.md) | Single manifest authority and generic configuration audit C01–C24 |
+| [VTP36](VTP36.md) | Physical TP3 prefill/decode performance and mixed-device kernel, collective and split evidence |
+| [VTP37](VTP37.md) | INT8 W8A8 TP3 decode/prefill route and exact fused collective/normalisation admission |
+| [VTP38](VTP38.md) | Production physical TP3 host transport and optional ordered reduction |
+| [VTP40](VTP40.md) | Measured speculative-window decisions under load |
+| [VTP42](VTP42.md) | Prefill governor, bounded reservation and backfill; source and A/B proof |
+| [VTP45](VTP45.md) | Outstanding VTP44 follow-ups: routing determinism, selftest geometry, R9700-only and KLD |
 
-Bounded work items (native Radiance integration is the primary path; alternatives are comparative only):
+## Completed source/evidence, not pending dependencies
 
-- [VTP01](VTP01.md): logical-rank/physical-executor contract, supported-geometry analysis and safe three-device collective design.
-- [VTP02](VTP02.md): Q6/Q8 + resident-KV feasibility, card-free ratio/capacity experiment and geometry gates.
-- [VTP04](VTP04.md): fast local R9700 and three-physical-GPU microbench harnesses (compile-only and leased runs).
-- [VTP05](VTP05.md): actual Radiance IQ6R/W8A8 model-shaped GEMM screening on each physical GPU. Includes an offline preflight and resumable single-case benchmark campaign.
-- [VTP06](VTP06.md): separate Q6/Q8 model quality and resident-KV validation gate.
-- [VTP07](VTP07.md): actual Q6/Q8 M4 GPU results and the gfx11 IQ6R layout compatibility blocker.
-- [VTP08](VTP08.md): native W8A8 RAD2 FFN plus FP8 attention-KV strict physical-VRAM lower bounds and no-go cases.
-- [VTP09](VTP09.md): gfx1100 IQ6R M64 tiled dispatch override, numeric qualification and crossover measurements.
-- [VTP10](VTP10.md): real native W8A8 TP2 prefill/concurrency control, source BF16 calibration debugging and IQ6R prerequisites.
-- [VTP11](VTP11.md): experimental GDN host/device activation guard and passing BF16 layer-0 Hessian smoke on R9700 TP1 and dual-XTX TP2; independent GDN numerical oracle remains open.
-- [VTP12](VTP12.md): native RDNA3 INT8 vs RDNA4 FP8 operator speed/quality, unequal 1/1/2-head ownership and concurrent three-GPU mixed-format collective feasibility.
-- [VTP13](VTP13.md): asymmetric *physical* TP3 requirements, original-BF16 operator evidence, native Radiance shard-ownership experiment, and matched whole-27B serving/KV A/B.
-- [VTP14](VTP14.md): **current Radiance-native implementation order** (N0–N7): single engine, heterogeneous per-rank kernel eligibility, native source/graph, existing no-P2P host-twin collectives, model correctness, admission, quantisation and matched end-to-end acceptance. **Start here for integration.**
+- [VTP14](../../completed/run-dense-27b-virtual-tp/VTP14.md) holds the native Radiance integration and physical TP3 foundation. Avoid a second virtual-rank scheduler.
+- [VTP01](../../completed/run-dense-27b-virtual-tp/VTP01.md)–[VTP13](../../completed/run-dense-27b-virtual-tp/VTP13.md) preserve the original Q6/Q8 geometry, capacity, per-GPU kernels, host collective and model-quality decisions.
+- [VTP31](../../completed/run-dense-27b-virtual-tp/VTP31.md), [VTP33](../../completed/run-dense-27b-virtual-tp/VTP33.md), [VTP35](../../completed/run-dense-27b-virtual-tp/VTP35.md), [VTP39](../../completed/run-dense-27b-virtual-tp/VTP39.md) and [VTP41](../../completed/run-dense-27b-virtual-tp/VTP41.md) record collective, capacity, prefill-order and concurrency acceptance already delivered.
+- [VTP43](../../completed/run-dense-27b-virtual-tp/VTP43.md) and [VTP44](../../completed/run-dense-27b-virtual-tp/VTP44.md) record the packed-KV and generic layout acceptance; follow-ups belong only to VTP45, not a reopened VTP44.
 
-- [VTP03](VTP03.md): gated Q6/Q8 full-model prototype, 4+/long-context A/B benchmark and go/no-go.
+The target remains native dense 27B **Q6/Q8**, 4+ concurrent streams and resident KV on two gfx1100 RX 7900 XTX cards plus a gfx1201 R9700 with no assumed P2P. Benchmark results must be tied to actual model quantisation, physical device ownership, full numerical acceptance, pinned source and the current native release. A microkernel result or archived experimental data is **not** a new production TP3 performance or capacity claim.
 
-Dependencies only, not duplicated:
-- XDP01/XDP03: Radiance dual-XTX current-pin and BF16-derived Q8/Q6 kernel/quality work.
-- XDP10: BF16-derived INT8/FP8/IQ6R multi-variant disk bundle, GPU-aware static selection and selected-only loader with fail-closed admission.
-- XDP02: TP2 plus R9700 **whole-layer** staging and capacity alternative.
-- HD2701 (separate dirty worktree): generic three-GPU layer pipeline/llama.cpp controls.
-- PGC09/PGC11/PGC15, RAD04: small-message host collectives, wire quality, prefill overlap.
-- KAB01: repeatable kernel A/B. RAD50 is MoE BAR push, not a dense TP service.
-
-Work in the existing `exp/xtx27-prefill-opt` worktree. Do not touch the separate hetero worktree, XDP09's untracked content, vendor sources, current engines, GPU without an exclusive lease, or production defaults. Commit separately; no push/PR without request. Memory/perf predictions below are **not** verified admission/performance claims.
+Engine-native serving/collective lifetime and ABI fixes belong to their existing Radiance RUM/serving owners; VTP plans implement and measure **dense-model-specific** requirements only. No alternate launcher, shared dispatcher, source pin or physical-rank resource allocator should be added here.

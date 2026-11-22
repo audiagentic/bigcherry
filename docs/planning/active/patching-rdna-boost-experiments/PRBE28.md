@@ -13,6 +13,45 @@ priority: P2
 
 # AMD-GEMM-001: float-only GEMM weight row-stride alias qualification
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP83: Gate. Source-bounded action/stop rule: First measure eligible float-weight GEMM critical-path share and L2 aliasing on gfx1100/gfx1201. If none or theoretical E2E ceiling <=3%, close. Else adapt upstream #26621 default-off; validate packed-to-padded 2D upload, strides, mmap/async, graph, memory <=256 MiB/device, quant negative controls. Four sessions, ten ABBA pairs each; CI95-low >=3% E2E prefill, <=1% decode regression. Eight host layout fixtures passed; no GPU benchmark or build. See docs/planning/completed/patching-bc-optimizations/BCOP83.md for the complete source/shape/negative case and evidence. PRBE28 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 ## 2026-10-18 kernel-dispatch composition gate — 1347 thin-F32 versus row padding (BCOP294)
 
@@ -155,7 +194,6 @@ Successor key: patching-rdna-boost-experiments-rd35
 
 Composed-source anchor text must be reverified after applying production patches at b11474 before writing any `Edit()`; the historic b11126 offsets in earlier sections are not authoritative.
 
-
 ## Change Log
 
 - 2026-10-08 (triage): Experiment kept pending, priority P2; ranked and scoped b11474 mechanism, VRAM, env switch and queue-env-ab.sh evidence gates; no patch implemented.
@@ -174,3 +212,4 @@ Composed-source anchor text must be reverified after applying production patches
 - 2026-09-10T02:55:42.907095+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:33:31.976968+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:45:45.909867+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-11-22T05:29:42.546806+00:00 (updated-by): Updated: section:notes

@@ -106,6 +106,8 @@ Use existing patch-lint/build/test conventions, current pinned llama.cpp, and th
 
 2026-10-05 deep audit: #29910 remains open and reports Q2_K spill elimination including gfx1100 1387 -> 0 and gfx1200 2041 -> 0, but RDNA3.5 MMA throughput demonstrates a shape crossover; qualification therefore gates on actual whole-lane performance, not spill count. #29927 remains draft/open and reports large gfx906 gains; its exact diff covers both MMQ and MMVQ ownership points. Current BigCherry pin has native AMD permute usage elsewhere, reducing toolchain risk but not eliminating semantic/performance qualification.
 
+2026-11-22 owner handoff from decision-only BCOP24: Actions. Source-bounded action/stop rule: 1. Qualify llama.cpp #29910 Q2_K spill/unroll changes independently on gfx1100/gfx1201 with correctness, resource/ISA and representative ubatch/PP/TG evidence. 2. Qualify #29927 Q1_0 native-permute semantics with the exhaustive host selector check, then MMQ/MMVQ correctness and gfx1100/gfx1201 performance. 3. Classify each candidate independently as `adopt-upstream`, `wait-upstream`, `reject`, or `already-upstream`. 4. If an architecture crossover is proven, route it to existing HIP architecture/autotune ownership; do not create BCOP dispatch policy. 5. Close when both candidates have terminal dispositions or arrive through a validated normal llama.cpp pin. See docs/planning/completed/patching-bc-optimizations/BCOP24.md for the complete source/shape/negative case and evidence. BCOP14 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Related
 
 BCOP24; llama.cpp #29910, #29927; existing HIP architecture/autotune ownership.
@@ -114,3 +116,4 @@ BCOP24; llama.cpp #29910, #29927; existing HIP architecture/autotune ownership.
 
 - 2026-10-05T04:56:45.106215+00:00: Confirmed both candidates absent from then-current pin.
 - 2026-10-05T06:14:00+00:00: Deep implementation audit; added exact source ownership, upstream measurements, mock/reference test, architecture gates, promotion/stop criteria and consolidation boundary.
+- 2026-11-22T05:32:56.576893+00:00 (updated-by): Updated: section:notes

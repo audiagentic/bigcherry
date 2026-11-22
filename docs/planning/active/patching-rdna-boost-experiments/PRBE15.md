@@ -13,6 +13,46 @@ priority: P3
 
 # IMRoPE / BF16 ROPE→VIEW→SET_ROWS fusion: prove route before extension
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP81: Unresolved action and terminal gate. Source-bounded action/stop rule: First prove a real Qwen3-VL ROPE→VIEW→SET_ROWS IMRoPE graph, including dtype, 4-axis positions, slots, actual launches and GPU critical-path share. If absent or theoretical E2E ceiling <3%, close without a patch. If present, extend existing `rope_multi` indexed writes for same-type F32/F16 first; gate BF16 separately on native F32→BF16 control and typed output dispatch. Require sentinel/K-cache and full-vocab parity, graph replay, multi-ubatch/repeated requests, and only then four-session/ten-pair CI95-low ≥3% E2E, ≤1% control regression. On failure retain native unfused execution. No GPU experiment queued. See docs/planning/completed/patching-bc-optimizations/BCOP81.md for the complete source/shape/negative case and evidence. PRBE15 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## 2026-10-20: M-RoPE Q/K RMSNorm–RoPE–FWHT kernel admission (BCOP344)
 
 **HOLD_ROUTE_AND_CEILING; no port or GPU queue.** New [RDNA fork #175](https://github.com/stew675/llama-cpp-rdna-boosts/pull/175) (2026-10-18) extends [#172](https://github.com/stew675/llama-cpp-rdna-boosts/pull/172)'s in-kernel Hadamard transform to MROPE/IMROPE. This is distinct from the older IMRoPE `ROPE→VIEW→SET_ROWS` scatter/BF16 axis below. External gfx1201 Qwen3.6-35B-A3B: decode 123.8→125.3 t/s (+1.2%), 31.5K two-GPU tensor prefill 5,641/5,635→6,277/6,324 (+11.7%), **but single-GPU/layer prefill flat**. Fork trace removes 32,120 `rope_multi` and 32,120 `fwht_cuda` launches; chain GPU time ~162→101 ms. No BigCherry gain or per-rank attribution was measured. Do not credit #172's Q8_1 fusion to #175.
@@ -26,8 +66,6 @@ priority: P3
 **Correctness and promotion:** Host selector/section/partial-rotation/offset/alias tests; GPU complete output and untouched-cache sentinels, repeated same-process multi-ubatch, graph on/off/reallocation, logits/KLD/greedy/MTP acceptance, full expected-versus-observed FWHT work. Existing native chain is fallback. At least four independent sessions and ten balanced paired rounds/session; CI95-low >=3% E2E and <=1% control regression with full numeric/physical-work parity, else `NUMERIC_FAIL`/`ALIAS_OR_GRAPH_UNSAFE`/`NO_GAIN`. Host-only 77,568 plane, 600 bitwise butterfly, 300 exact-alias comparisons, 10 pinned-source assertions and Python compilation passed; **no HIP build or GPU run**.
 
 **Ownership:** PRBE15 sole multi-axis RoPE fusion owner. PRBE115/1307 Q8_1 cache, RNX08 other norm/RoPE, QFP17 prefill, PNRO04/05 GDN and PRBE41 SSM remain separate. Do not edit active shape-harness attribution, RAD14 FP8/MTP or RCS05 worker work. vLLM ROCm/AITER and SGLang Q/K RoPE fusions are semantic comparators, not drop-in GGUF FWHT kernels.
-
-
 
 ## Decision and scope (2026-10-09, llama.cpp b11474)
 
@@ -69,7 +107,6 @@ Existing source anchors: `ggml/src/ggml-cuda/{ggml-cuda.cu,rope.cu,set-rows.cu}`
 
 The September b11126 design treated this as a two-guard change and incorrectly described BF16 standalone SET_ROWS as needing a write-path implementation. Both assumptions are superseded by the b11474 source trace above. The original 1004 fusion was already upstream-absorbed. PRBE15 remains pending rather than creating a speculative patch. No measured BigCherry speedup exists for this slice.
 
-
 ## Change Log
 
 - 2026-10-08 (triage): Kept pending at P3. No new validated patch. 1004 is rejected as upstream-absorbed (its SUMMARY); b11474 needs an activating IMRoPE/BF16 SET_ROWS graph before widening ggml_cuda_should_fuse_rope_set_rows. No branch or measured benefit. Keep pending, not in_progress.
@@ -88,3 +125,4 @@ The September b11126 design treated this as a two-guard change and incorrectly d
 - 2026-09-10T02:49:25.519390+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T02:28:47.844482+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:39:34.219151+00:00 (updated-by): Updated: section:steps, section:notes
+- 2026-11-22T05:29:21.127602+00:00 (updated-by): Updated: section:notes

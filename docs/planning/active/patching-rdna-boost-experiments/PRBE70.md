@@ -13,6 +13,46 @@ priority: P1
 
 # CK-001 / PRBE70: bounded offline Composable Kernel GEMM oracle
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP85: Bounded next action / terminal gate. Source-bounded action/stop rule: Check an installed gfx1100/gfx1201 CK binary/instance and exact CLI; otherwise record `CK_UNAVAILABLE`. Reuse existing rocprof traces to select **one** actual float BLAS GEMM, bind typed tensor/device/stride/route metadata from a pinned fixture, then run CK's own verify and an identical native kernel-only control. Reject missing identity, quantized source, unmatched MoE routing and unproven critical-path attribution. Close if the theoretical E2E throughput ceiling is <3%, CK loses, or winning tiles cannot be reproduced without new runtime infrastructure. Any positive result hands a narrow default-off candidate to its existing owner; only subsequent four-session >=10 ABBA-pair E2E/correctness evidence can promote. Disposable 13/13 host admission/argv checks passed; no CK, build, GPU or hardware A/B ran. See docs/planning/completed/patching-bc-optimizations/BCOP85.md for the complete source/shape/negative case and evidence. PRBE70 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## 2026-10-15 b11552 CK oracle: correct the physical output layout and dtype contract (BCOP227)
 
 **Disposition:** PRBE70 remains an *offline*, default-off typed GEMM oracle; no runtime patch, CK dependency or new benchmark queue. This is a new source-level correction to the 2026-10-09 oracle plan, not a measured GPU regression. The old example `A[M,K]=src0; B[N,K]=src1; C[M,N]` is mathematically equivalent to ggml MUL_MAT but **not byte-layout equivalent**: CK `gemm` always emits row-major `C[M,N]`, whereas ggml's `dst[ne01,ne11]` has `ne01` contiguous. Comparing flat outputs or declaring native parity with the old CK operand order is invalid for nonsquare, multi-token shapes.
@@ -110,3 +150,4 @@ Supersedes RD88 (capability-rebaseline-v3). The pre-2026-10-09 duplicate Steps a
 - 2026-09-24T02:34:41.598269+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:notes
 - 2026-09-24T04:48:37.038568+00:00 (updated-by): Updated: section:steps
 - 2026-09-24T04:48:42.852623+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:30:26.050256+00:00 (updated-by): Updated: section:notes
