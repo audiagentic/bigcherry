@@ -2,7 +2,7 @@
 id: MEN23
 order: 23
 plan: run-multi-engine
-state: pending
+state: superseded
 created-at: '2026-10-18T14:40:58.891273+00:00'
 breadth: ''
 skill: intermediate
@@ -56,6 +56,14 @@ A fresh checkout runs `accept` end to end with no manually set RAD_BIN/RAD_HOME;
 
 Found by the 1.8.0 acceptance run; worked around by building the hand-off experiment lane and exporting RAD_BIN/RAD_HOME by hand.
 
+CONSOLIDATION 2026-11-22 PHASE-5: MEN23 is a duplicate planning owner of MEN17. MEN23 describes an acceptance entry's build-lane selection defect in MEN17's only engine-aware accept/pin-bump--accept command; independent plan ownership would duplicate the acceptance executor. The exact independently testable acceptance and negative controls now live in active MEN17. Retire this planning owner without changing any existing implementation, hardware validation claim or original source evidence. All original design and measured failure records remain in this archived source document.
+
 ## Change Log
 
 - 2026-10-18T14:40:58.891273+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4522
+- 2026-11-22T11:10:03.550669+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:14:04.704321+00:00 (state-transition): State: pending → superseded

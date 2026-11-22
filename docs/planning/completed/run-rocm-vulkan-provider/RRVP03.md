@@ -2,7 +2,7 @@
 id: RRVP03
 order: 8
 plan: run-rocm-vulkan-provider
-state: pending
+state: superseded
 created-at: '2026-09-09T10:59:58.197113+00:00'
 breadth: ''
 skill: advanced
@@ -63,6 +63,8 @@ IMPORTANT CORRECTION from deeper repo-validated dev-gpt review (2026-09-10): do 
 
 PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may continue to be updated/reviewed, implementation is paused. Design above (extend existing ExecutionAttestation seam, hand off to TRVP01 for persistence) stands for when resumed.
 
+CONSOLIDATION 2026-11-22 PHASE-5: RRVP03 is a duplicate planning owner of RRVP01. RRVP03 is the loaded-runtime attestation phase of RRVP01's canonical HIP/Vulkan stack identity/receipt propagation. Keeping two identity owners risks an incomplete measurement path and duplicate admission code. The exact independently testable acceptance and negative controls now live in active RRVP01. Retire this planning owner without changing any existing implementation, hardware validation claim or original source evidence. All original design and measured failure records remain in this archived source document.
+
 ## Change Log
 
 - 2026-09-09T10:59:58.197113+00:00 (created-by): Created by capability-rebaseline-v3
@@ -87,3 +89,9 @@ PAUSED 2026-09-10 (user directive): Vulkan is out of scope for now -- plans may 
 - chg_20260910_032911_repaired-three-providerrun-su_5934
 - 2026-09-10T03:29:12.009995+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-02T12:34:47.413574+00:00 (updated-by): Updated: section:title, section:description, section:steps, section:validation, section:effort_risk
+
+## Reviews
+
+- RV4526
+- 2026-11-22T11:10:57.759514+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:15:11.004770+00:00 (state-transition): State: pending → superseded

@@ -2,7 +2,7 @@
 id: TRVP14
 order: 0
 plan: tuning-rocm-vulkan-provider
-state: pending
+state: superseded
 created-at: '2026-09-09T11:01:16.012263+00:00'
 breadth: ''
 skill: advanced
@@ -60,13 +60,14 @@ Successor key: tuning-rocm-vulkan-provider-ro21
 
 Supersedes RO21. Depends on RE30/RE32/RE36 and TRBC01/TRBC03; preserve CM1 non-promotable status until TRVP15. Do not copy HIP ABI or bypass governance.
 
+CONSOLIDATION 2026-11-22 PHASE-5: TRVP14 is a duplicate planning owner of TRVP15. TRVP15's CM1 qualification cannot be meaningful without TRVP14's forceable, actual-bound CM1 recipe identity and telemetry; both refer to the same existing native Vulkan selector and one optional candidate family. The exact independently testable acceptance and negative controls now live in active TRVP15. Retire this planning owner without changing any existing implementation, hardware validation claim or original source evidence. All original design and measured failure records remain in this archived source document.
+
 ## Change Log
 
 - 2026-09-09T11:01:16.012263+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:18:13.795384+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.601183+00:00 (updated-by): Updated: section:ledger-events
@@ -75,3 +76,9 @@ Supersedes RO21. Depends on RE30/RE32/RE36 and TRBC01/TRBC03; preserve CM1 non-p
 - 2026-09-10T03:46:56.478251+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_034835_repaired-the-final-six-live-su_3009
 - 2026-09-10T03:48:35.249744+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4525
+- 2026-11-22T11:10:46.470531+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:14:55.594042+00:00 (state-transition): State: pending → superseded

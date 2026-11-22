@@ -2,7 +2,7 @@
 id: MEN22
 order: 22
 plan: run-multi-engine
-state: pending
+state: superseded
 created-at: '2026-10-18T13:53:54.146144+00:00'
 breadth: ''
 skill: intermediate
@@ -61,6 +61,8 @@ Worked around on the bump branch by committing the record by hand. Found by the 
 
 CONSOLIDATION 2026-11-22: source code `tools/bigcherry/release/pin_bump.py` commits record paths before lane build; 5/5 focused exact-path tests pass. A later v1.17.0 record shows lane build and CPU smoke succeeded, but provenance of no manual intervention is not independently established here; the real bump criterion remains open.
 
+CONSOLIDATION 2026-11-22 PHASE-5: MEN22 is a duplicate planning owner of MEN16. MEN22 is a failure mode in MEN16's sole pin-bump lane-build phase; the shipped pre-lane _commit_release_records belongs to the same orchestrator and should have one acceptance owner. The exact independently testable acceptance and negative controls now live in active MEN16. Retire this planning owner without changing any existing implementation, hardware validation claim or original source evidence. All original design and measured failure records remain in this archived source document.
+
 ## Change Log
 
 - 2026-10-18T13:53:54.146144+00:00 (created-by): Created by agent
@@ -74,3 +76,6 @@ CONSOLIDATION 2026-11-22: source code `tools/bigcherry/release/pin_bump.py` comm
 
 - RV4473
 - 2026-11-22T09:20:16.188520+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
+- RV4521
+- 2026-11-22T11:09:49.800809+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:13:49.269664+00:00 (state-transition): State: pending → superseded
