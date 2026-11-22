@@ -1,5 +1,18 @@
 # Changelog
 
+## [1.63.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.62.1...bc-platform-1.63.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** name why a stored plan was or was not reused ([#1332](https://github.com/audiagentic/bigcherry/issues/1332)) ([437a735](https://github.com/audiagentic/bigcherry/commit/437a73571c843c8ea35eefead595e33a62add3a3))
+
+
+### Fixes
+
+* **lab:** profile helpers through the native owner without broad process kills ([#1331](https://github.com/audiagentic/bigcherry/issues/1331)) ([e146b9b](https://github.com/audiagentic/bigcherry/commit/e146b9bd23516e148050d456c8d0f7752397049b))
+* **serving:** the stored-plan key excludes per-start values of helper configs ([#1319](https://github.com/audiagentic/bigcherry/issues/1319)) ([7e6ef9e](https://github.com/audiagentic/bigcherry/commit/7e6ef9ec4ec2c5bfcee8fba8dae6adbbad78992e))
+
 ## [1.62.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.62.0...bc-platform-1.62.1) (2026-11-22)
 
 
