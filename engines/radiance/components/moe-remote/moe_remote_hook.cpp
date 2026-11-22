@@ -93,6 +93,7 @@ struct EnginePlugin {
     void (*fault)(void* self);   /* a fault stop: wake every waiter; never called on a clean stop */
     void (*finish_admission)(void* self);
     int (*wait_finished)(void* self, int64_t timeout_ms);
+    int64_t stop_budget_ms;   /* the protocol's quiesce bound: how long the engine waits to drain at stop */
 };
 
 /* Each admission owns its events; never reuse one global step-end event
@@ -1011,7 +1012,8 @@ extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugi
     h->opened = true;
     *out = EnginePlugin{sizeof(EnginePlugin), h, cb_close, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,
                         cb_bind, cb_cancel, cb_host_done, cb_rank_done, cb_fault, cb_finish_admission,
-                        cb_wait_finished};
+                        cb_wait_finished,
+                        (int64_t)(r3::epoch::Deadlines{}.quiesce_ns / 1000000ull)};
     return 0;
 }
 

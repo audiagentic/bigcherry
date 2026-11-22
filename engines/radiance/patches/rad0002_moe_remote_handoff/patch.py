@@ -90,6 +90,9 @@ typedef struct BcMoeRemotePlugin {
     void (*fault)(void* self);
     void (*finish_admission)(void* self);
     int (*wait_finished)(void* self, int64_t timeout_ms);
+    /* The longest the engine waits for its stepper and the bound parents to finish at stop: the plugin's protocol
+     * bound for draining to quiet (its quiesce deadline), so the engine holds no budget of its own. */
+    int64_t stop_budget_ms;
 } BcMoeRemotePlugin;
 typedef int (*BcMoeRemoteOpenFn)(const BcMoeRemoteOpenArgs* args, BcMoeRemotePlugin* out);
 #define BC_MOE_REMOTE_OPEN_SYMBOL "bc_moe_remote_plugin_open"
@@ -131,6 +134,8 @@ int bc_moe_remote_host_done(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket);
 void bc_moe_remote_fault(BcMoeRemoteGeneration* g);
 int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g);
 int bc_moe_remote_wait_finished(BcMoeRemoteGeneration* g, int64_t timeout_ms);
+/* The stop budget the plugin declared (BcMoeRemotePlugin::stop_budget_ms); 0 for no generation. */
+int64_t bc_moe_remote_stop_budget_ms(const BcMoeRemoteGeneration* g);
 int bc_moe_remote_before_pass(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream);
 int bc_moe_remote_rank_done(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream);
 /* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for the placement rule. */
@@ -155,6 +160,7 @@ _BC_MOE_REMOTE_CPP = r"""/* bc_moe_remote.cpp -- policy behind abi/bc_moe_remote
 #include <cstdlib>
 #include <dlfcn.h>
 #include <map>
+#include <condition_variable>
 #include <mutex>
 #include <vector>
 
@@ -353,6 +359,9 @@ extern "C" int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g) {
     g->vt.finish_admission(g->vt.self);
     return 1;
 }
+extern "C" int64_t bc_moe_remote_stop_budget_ms(const BcMoeRemoteGeneration* g) {
+    return g && g->open() ? g->vt.stop_budget_ms : 0;
+}
 extern "C" int bc_moe_remote_wait_finished(BcMoeRemoteGeneration* g, int64_t timeout_ms) {
     if (!g) return BC_MOE_REMOTE_REFUSED;
     if (!g->open()) return BC_MOE_REMOTE_STALE;
@@ -409,6 +418,9 @@ _BC_MOE_REMOTE_ENGINE_H = r"""/* Scheduler/rank admission bridge and the owner o
 #include "bc_moe_remote.h"
 #include "device/device.h"
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 class BcMoeRemoteAdmission {
     BcMoeRemoteGeneration* gen_ = nullptr;   /* owned: null when the manifest asks for no hand-off */
@@ -416,6 +428,8 @@ class BcMoeRemoteAdmission {
     BcMoeRemoteTicket current_{}, ahead_{}, issued_{};
     int ahead_status_ = 0;
     std::atomic<bool> finishing_{false}, stepper_finished_{false};
+    std::mutex stepper_mu_;
+    std::condition_variable stepper_cv_;
 public:
     BcMoeRemoteAdmission() = default;
     BcMoeRemoteAdmission(const BcMoeRemoteAdmission&) = delete;
@@ -505,7 +519,17 @@ public:
     }
     bool finishing() const { return finishing_.load(std::memory_order_acquire); }
     bool stepper_finished() const { return stepper_finished_.load(std::memory_order_acquire); }
-    void note_stepper_finished() { stepper_finished_.store(true, std::memory_order_release); }
+    void note_stepper_finished() {
+        { std::lock_guard<std::mutex> lock(stepper_mu_); stepper_finished_.store(true, std::memory_order_release); }
+        stepper_cv_.notify_all();
+    }
+    /* The plugin's stop bound (0 with no generation). */
+    int64_t stop_budget_ms() const { return bc_moe_remote_stop_budget_ms(gen_); }
+    /* Wait for the stepper to finish, until `deadline`: a condition wait, not a poll. */
+    bool wait_stepper_finished(std::chrono::steady_clock::time_point deadline) {
+        std::unique_lock<std::mutex> lock(stepper_mu_);
+        return stepper_cv_.wait_until(lock, deadline, [&] { return stepper_finished_.load(std::memory_order_acquire); });
+    }
 };
 """
 
@@ -1265,14 +1289,12 @@ PATCHES = (
                 mode="insert_before",
                 text="""    if (!gen_ && loop_status_.load(std::memory_order_acquire) >= 0 &&
         bc_remote_admission_.finish()) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-        while (!bc_remote_admission_.stepper_finished()) {
-            if (std::chrono::steady_clock::now() >= deadline) {
-                bc_remote_admission_.fault();
-                fatal("model %s: remote MoE stepper did not finish within its shutdown deadline",
-                      cfg_.served_model_name.c_str());
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(bc_remote_admission_.stop_budget_ms());
+        if (!bc_remote_admission_.wait_stepper_finished(deadline)) {
+            bc_remote_admission_.fault();
+            fatal("model %s: remote MoE stepper did not finish within its shutdown deadline",
+                  cfg_.served_model_name.c_str());
         }
         const int stepper_status = loop_status_.load(std::memory_order_acquire);
         if (stepper_status < 0) return stepper_status;

@@ -1,6 +1,8 @@
 // Card-free exercise of the generated scheduler/rank bridge.
 #include "bc_moe_remote_engine.h"
 #include <cassert>
+#include <chrono>
+#include <thread>
 #include <cstdint>
 #include <vector>
 
@@ -51,6 +53,7 @@ static int plugin_open(const BcMoeRemoteOpenArgs* a, BcMoeRemotePlugin* out) {
     p.admit = plugin_admit; p.bind = plugin_bind; p.cancel = plugin_cancel; p.host_done = plugin_host_done;
     p.rank_done = plugin_rank_done; p.finish_admission = plugin_finish_admission; p.close = plugin_close;
     p.fault = plugin_fault; p.wait_finished = plugin_wait_finished;
+    p.stop_budget_ms = 4321;   // the plugin's protocol stop bound: the engine takes it from the generation, not a literal
     *out = p;
     return 0;
 }
@@ -126,6 +129,16 @@ int main() {
     assert(bridge.seal(ranks) == 0 && bridge.host_done() == 0 && host == issued);
     assert(bridge.step(false, b, scheduler, 2) > 0 && scheduler.steps == steps_before_stop);
 
+    // The engine's stop budget is the plugin's, and the wait for the stepper is a condition wait (no polling literal):
+    // it times out at the deadline when the stepper never finishes and returns as soon as the stepper notes it done.
+    assert(bridge.stop_budget_ms() == 4321);
+    assert(!bridge.stepper_finished());
+    assert(!bridge.wait_stepper_finished(std::chrono::steady_clock::now() + std::chrono::milliseconds(30)));
+    std::thread stepper([&] { std::this_thread::sleep_for(std::chrono::milliseconds(20)); bridge.note_stepper_finished(); });
+    assert(bridge.wait_stepper_finished(std::chrono::steady_clock::now() + std::chrono::seconds(10)));
+    stepper.join();
+    assert(bridge.stepper_finished());
+
     // Stop kinds: a drain that does not prove is not clean, and the engine's fault stop reaches the plugin; a drain that
     // proves is clean and never calls the plugin's fault wake.
     assert(!bridge.clean());
@@ -148,5 +161,5 @@ int main() {
     const Batch* lb = nullptr;
     Scheduler ls;
     assert(local.step(false, lb, ls, 2) == 0 && lb && local.issued_ticket().ticket_id == 0);
-    assert(local.seal(ranks) == 0 && local.host_done() == 0 && !local.finish());
+    assert(local.seal(ranks) == 0 && local.host_done() == 0 && !local.finish() && local.stop_budget_ms() == 0);
 }

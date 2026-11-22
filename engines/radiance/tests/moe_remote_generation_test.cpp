@@ -71,7 +71,7 @@ static int factory(const BcMoeRemoteOpenArgs* a, BcMoeRemotePlugin* out) {
     f->id = ++ids;
     ++opened;
     *out = BcMoeRemotePlugin{sizeof(BcMoeRemotePlugin), f, f_close, f_layer_map, f_owns, f_burst, f_before, f_admit,
-                             f_bind, f_ok_ticket, f_ok_ticket, f_rank_done, f_noop, f_noop, f_wait};
+                             f_bind, f_ok_ticket, f_ok_ticket, f_rank_done, f_noop, f_noop, f_wait, 1234};
     return 0;
 }
 /* Failure-atomic factory protocol: a factory that fails has cleaned up after itself and the engine must not call its
@@ -116,6 +116,7 @@ int main() {
     // A generation binds exactly its engine's slot span, and every consumer finds it there.
     BcMoeRemoteGeneration* a = open_at(4, 2);
     assert(bc_moe_remote_lookup(4) == a && bc_moe_remote_lookup(5) == a);
+    assert(bc_moe_remote_stop_budget_ms(a) == 1234 && bc_moe_remote_stop_budget_ms(nullptr) == 0);
     assert(!bc_moe_remote_lookup(3) && !bc_moe_remote_lookup(6));
     assert(bc_moe_remote_wanted(a, 4) && !bc_moe_remote_wanted(a, 5) && bc_moe_remote_wanted_upto(a, 100));
     assert(bc_moe_remote_admit(a, &t, 0, 2) == 0 && t.ticket_id == 1);
