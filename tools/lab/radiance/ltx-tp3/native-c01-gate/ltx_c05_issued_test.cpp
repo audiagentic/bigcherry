@@ -8,6 +8,7 @@
 #include "device/device.h"
 #include "format/radfile.h"
 #include "runtime/ctx.h"
+#include "ltx_native_aql_roster.h"
 #include "ltx2.cpp"
 
 #include <algorithm>
@@ -368,12 +369,7 @@ int main(int argc,char** argv) {
                 "LTX02 only accepts --aql in native GPU mode");
         require(gpu != rad::device_is_host(),
                 "LTX02 backend mismatches explicit native host/AQL mode");
-        if (gpu) {
-            require(std::strcmp(rad::device_backend_name(),"aql")==0,
-                    "LTX02 GPU mode needs native Radiance AQL");
-            require(rad_dev_count()==3,
-                    "LTX02 AQL requires exactly three visible independent GPUs");
-        }
+        if (gpu) ltx_test::require_aql_backend();
         rad::RadFile model;
         require(model.open(argv[1])==RAD_OK,"LTX02 checkpoint cannot open");
         const char* heads=model.get_s("transformer.num_attention_heads","");
@@ -381,24 +377,7 @@ int main(int argc,char** argv) {
         const int64_t nheads=std::stoll(heads);
         require(nheads>0,"LTX02 missing positive model head count");
         rad::Registry reg;
-        if (gpu) {
-            require(reg.set_code_devices({0,1,2})==RAD_OK,
-                    "LTX02 native rank-code device roster refused");
-            int64_t p2p=1;
-            for(int a=0;a<3;++a) {
-                RadDeviceProps props{};
-                require(rad_dev_props(a,&props)==RAD_OK &&
-                        (!std::strcmp(props.arch,"gfx1100") ||
-                         !std::strcmp(props.arch,"gfx1201")),
-                        "LTX02 GPU architecture unsupported for exact AQL rows");
-                for(int b=0;b<3;++b) if(a!=b) {
-                    const int cap=rad_dev_peer_access(a,b);
-                    require(cap>=0,"LTX02 peer-access device query failed");
-                    if(!cap)p2p=0;
-                }
-            }
-            reg.set_device_fact(RAD_FACT_P2P,p2p);
-        }
+        if (gpu) ltx_test::configure_aql_registry(reg);
         std::fprintf(stderr,"LTX02 stage: native registry load begin (%s)\n",
                      gpu?"AQL":"host");
         std::fflush(stderr);

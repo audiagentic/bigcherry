@@ -6,12 +6,16 @@
 #include "build/rad_build.h"
 #include "build/startup.h"
 #include "format/radfile.h"
+#include "format/share.h"
+#include "device/device.h"
+#include "ltx_native_aql_roster.h"
 #include "ltx2.cpp"
 
 #include <array>
 #include <memory>
 #include <thread>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <stdexcept>
 #include <string>
@@ -301,10 +305,76 @@ static void run(const RadFile& model, Registry& reg, const std::string& base,
 }
 
 
+// Audit the frozen runtime loader's *own* share geometry for each
+// checkpoint plane. This is not a replacement loader or a model issue.
+static void verify_c06_load_contract(const RadFile& model, const rad::Program& program,
+                                      int rank) {
+    int64_t selected_bytes = 0, stored_bytes = 0;
+    int weights = 0, relayouts = 0;
+    for (size_t i=1; i<program.weights.size(); ++i) {
+        const rad::WeightInfo& w = program.weights[i];
+        const auto* e = model.find(w.source);
+        need(e != nullptr && w.enc_known && w.n_sel > 0,
+             "C06 declared weight lacks real checkpoint source/plane");
+        rad::PlaneShare shares[RAD_ENC_MAX_PLANES];
+        std::string why;
+        const int rc = rad::weight_share(w,model.encoding(*e),e->rank,e->shape,
+                                          3,rank,shares,&why);
+        if (rc != RAD_OK)
+            std::fprintf(stderr,"C06 weight %s rank %d: %s\n",
+                         w.name.c_str(),rank,why.c_str());
+        need(rc == RAD_OK, "C06 native source plane split refused");
+        int64_t share_bytes = 0;
+        for (int k=0; k<w.n_sel; ++k) {
+            const rad::PlaneShare& sh=shares[k];
+            const auto& plane=model.plane(*e,w.sel[k]);
+            need(sh.row_bytes > 0 && sh.dense_bytes() > 0 &&
+                 plane.bytes >= (uint64_t)sh.row_bytes &&
+                 plane.bytes % (uint64_t)sh.row_bytes == 0,
+                 "C06 source plane has inconsistent native file extent");
+            int64_t covered = 0;
+            for (const auto& r:sh.rects) {
+                need(r.row0 >= 0 && r.rows > 0 &&
+                     r.rows <= int64_t(plane.bytes/sh.row_bytes)-r.row0 &&
+                     r.row0 < int64_t(plane.bytes/sh.row_bytes) &&
+                     r.byte0 >= 0 && r.bytes > 0 &&
+                     r.byte0 <= sh.row_bytes-r.bytes,
+                     "C06 native source plane rectangle extends past checkpoint");
+                covered += r.rows * r.bytes;
+            }
+            need(covered == sh.dense_bytes(),
+                 "C06 native weight share contains gaps or duplicates");
+            share_bytes += covered;
+        }
+        if (w.identity) {
+            need(w.n_sel == 1 && share_bytes == w.stored_bytes,
+                 "C06 identity layout is not a direct native file share");
+        } else {
+            ++relayouts; // Cannot be directly memcpy'ed: use engine loader.
+            // Record the exact kernel layout that blocks naive checkpoint
+            // pointer binding in a future issue test.
+            if (rank == 0)
+                std::printf("C06 engine relayout required: %s -> %s (%s, source=%lld stored=%lld)\n",
+                            w.source.c_str(),w.name.c_str(),w.layout_tag.c_str(),
+                            (long long)share_bytes,(long long)w.stored_bytes);
+        }
+        selected_bytes += share_bytes;
+        stored_bytes += w.stored_bytes;
+        ++weights;
+    }
+    need(weights > 0 && selected_bytes > 0 && stored_bytes > 0,
+         "C06 source-backed weight inventory empty");
+    std::printf("C06 load contract: rank=%d weights=%d native relayouts=%d "
+                "selected=%lld stored=%lld bytes\n",
+                rank,weights,relayouts,
+                (long long)selected_bytes,(long long)stored_bytes);
+}
+
 static void run_self_attn(const RadFile& model, Registry& reg,
                           int64_t block, bool audio, int rank, int first,
                           int owned, int total_heads,
-                          std::unique_ptr<Builder>* instance = nullptr) {
+                          std::unique_ptr<Builder>* instance = nullptr,
+                          bool inspect_weights = false, bool aql = false) {
     const std::string kind = audio ? "audio_attn1" : "attn1";
     const std::string prefix = "dit.blk." + std::to_string(block) + "." + kind;
     const auto* fused = model.find(prefix + ".qkv.weight");
@@ -332,6 +402,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     const ltx2::C01Slice slice = ltx2::C01Slice::rows(full, lo, local, hd, 3);
     need(slice.valid(3 * local, full, rad::arch::RAD_I8_GROUP_WIDE),
          "C06 invalid fused QKV slice");
+    if (aql) need(rad_dev_set(rank) == RAD_OK, "C06 cannot select rank's AQL device");
     auto owned_builder = std::make_unique<Builder>(reg, metadata(), context(rank));
     Builder& b = *owned_builder;
     b.set_sources(rad::rad_container_sources(model));
@@ -446,8 +517,9 @@ static void run_self_attn(const RadFile& model, Registry& reg,
         const auto* info = b.program().op(handle);
         need(info != nullptr, "C06 native operation missing");
         for(const auto& band : info->bands)
-            need(bool(band.dom[RAD_DOMAIN_HOST]),
-                 "C06 op unresolved on host reference kernel");
+            need(bool(band.dom[aql ? RAD_DOMAIN_DEVICE : RAD_DOMAIN_HOST]),
+                 aql ? "C06 native AQL operation has no device kernel" :
+                       "C06 op unresolved on host reference kernel");
     }
     need(b.errors().empty(), "C06 Builder diagnostics");
     if (instance) {
@@ -459,6 +531,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     b.set_instances(false);
     need(b.finish() == RAD_OK && b.errors().empty(),
          "C06 native full attention graph finish failed");
+    if (inspect_weights) verify_c06_load_contract(model,b.program(),rank);
 }
 
 int main(int argc, char** argv) {
@@ -467,13 +540,18 @@ int main(int argc, char** argv) {
         return 2;
     }
     try {
+        const bool aql = argc == 4 && std::string(argv[3]) == "--c06-instances-aql";
+        if (aql) ltx_test::require_aql_backend();
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
         const auto* row=model.find("dit.blk.0.attn1.qkv.weight");
         need(row && row->shape[0]/3==row->shape[1],
              "source fused video QKV is no longer square by bank");
         Registry reg;
-        const int registry_status=reg.load_dir(argv[2],{"libref"});
+        if (aql) ltx_test::configure_aql_registry(reg);
+        const int registry_status=reg.load_dir(
+            argv[2],aql ? std::vector<std::string>{"libr3","libr4d","libref"} :
+                          std::vector<std::string>{"libref"});
         need(registry_status==RAD_OK,"2.2 reference kernel registry cannot load");
         const char* block_text = model.get_s("transformer.num_layers", "");
         const char* head_text = model.get_s("transformer.num_attention_heads", "");
@@ -483,8 +561,27 @@ int main(int argc, char** argv) {
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
         if (argc == 4) {
-            if (std::string(argv[3]) == "--c06-instances") {
-                // This is a native host INSTANCING gate, not issued C06,
+            if (std::string(argv[3]) == "--c06-weights") {
+                // Same builder and exact native loader geometry as C06;
+                // no new model reader, memory mover or implementation.
+                int tested=0;
+                for (bool audio : {false,true})
+                    for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16},std::array<int,3>{12,12,8}}) {
+                        int first=0;
+                        for (int rank=0;rank<3;++rank) {
+                            run_self_attn(model,reg,0,audio,rank,first,
+                                          split[rank],nheads,nullptr,true);
+                            first+=split[rank];
+                            ++tested;
+                        }
+                        need(first==nheads,"C06 weight inventory ownership gap");
+                    }
+                need(tested==12,"C06 weight contract matrix drift");
+                return 0;
+            }
+            if (std::string(argv[3]) == "--c06-instances" || aql) {
+                // This is native INSTANCING only, not issued C06,
                 // checkpoint weight residency, or video parity. Reuse the
                 // same model-backed self-attention declarations as --c06.
                 int groups = 0;
@@ -493,10 +590,18 @@ int main(int argc, char** argv) {
                     for (const std::array<int,3>& split :
                          {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
                         std::array<std::unique_ptr<Builder>,3> builders;
+                        // Keep every Program's frozen geometry alive until
+                        // native kernel fini, including when an assertion
+                        // throws during rank validation.
+                        struct Retire {
+                            Registry& registry;
+                            ~Retire() { registry.fini_instances(); }
+                        } retire{reg};
                         int first = 0;
                         for (int rank=0; rank<3; ++rank) {
                             run_self_attn(model,reg,0,audio,rank,
-                                          first,split[rank],nheads,&builders[rank]);
+                                          first,split[rank],nheads,&builders[rank],
+                                          false,aql);
                             first += split[rank];
                         }
                         need(first == nheads, "C06 instance head ownership gap");
@@ -507,6 +612,8 @@ int main(int argc, char** argv) {
                         for (int rank=0; rank<3; ++rank)
                             workers[rank] = std::thread([&,rank] {
                                 try {
+                                    if (aql && rad_dev_set(rank) != RAD_OK)
+                                        throw std::runtime_error("C06 AQL rank device bind failed");
                                     results[rank] = builders[rank]->finish();
                                 } catch (const std::exception& e) {
                                     failures[rank] = e.what();
@@ -523,24 +630,26 @@ int main(int argc, char** argv) {
                             need(results[rank] == RAD_OK &&
                                  builders[rank]->errors().empty(),
                                  "C06 native rank instance rendezvous refused");
-                            need(builders[rank]->program().device_holes(true).empty(),
-                                 "C06 instantiated host kernel coverage incomplete");
+                            need(builders[rank]->program().device_holes(!aql).empty(),
+                                 aql ? "C06 native AQL graph contains device kernel holes" :
+                                       "C06 instantiated host kernel coverage incomplete");
                         }
                         // The declared Q, K and output reductions each require
                         // an instance on each rank. No second collective is made.
                         need(reg.n_instances() >= instances_before + 3 * builders.size(),
                              "C06 did not initialize three collectives on every rank");
                         initialized += reg.n_instances() - instances_before;
-                        // Close the native collective instances while the
-                        // builders still own their frozen instance geometry.
+                        // No kernel instance may keep pointers into a
+                        // destroyed Builder. Release all domains while the
+                        // three rank Programs still own their geometry.
                         reg.fini_instances();
                         need(reg.n_instances() == 0,
                              "C06 native collective instances were not retired");
                         ++groups;
                     }
                 need(groups == 4, "C06 instance coverage drift");
-                std::printf("LTX C06: %d three-rank host graphs; %zu initialized/retired native instances; no model execution claimed\n",
-                            groups, initialized);
+                std::printf("LTX C06: %d three-rank %s graphs; %zu initialized native instances; no model execution claimed\n",
+                            groups,aql?"AQL":"host",initialized);
                 return 0;
             }
             if (std::string(argv[3]) == "--c06") {
