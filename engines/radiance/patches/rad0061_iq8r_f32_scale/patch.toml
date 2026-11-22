@@ -8,4 +8,4 @@ backend = "hip"
 plan-ids = ["RUM15"]
 requires = []
 conflicts = []
-tags = ["quantization", "numerical-precision"]
+tags = ["quantization"]
