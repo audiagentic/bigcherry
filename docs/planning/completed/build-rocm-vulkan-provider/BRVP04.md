@@ -2,7 +2,7 @@
 id: BRVP04
 order: 0
 plan: build-rocm-vulkan-provider
-state: pending
+state: superseded
 created-at: '2026-10-26T00:27:55.399283+00:00'
 breadth: ''
 skill: advanced
@@ -63,8 +63,16 @@ GPT design review 2026-10-26 (req_bigcherry_66654d823011): APPROVE WITH CHANGES.
 
 Hand-off from RCS11 (PR #524, 2026-11-02; lead decision): radiance builds now pin hipcc, the HIP compiler and the ROCm runtime from one selected SDK. engine.toml [build] rocm-paths lists them as plain paths relative to the SDK root (RAD_HIPCC, CMAKE_HIP_COMPILER, RAD_HIP_RUNTIME, RAD_HSA_RUNTIME). campaign/build.py selected_rocm_root() resolves that root from the host rocm-root (BC_ROCM_ROOT overriding, realpath), fails closed, and is the single point of selection. rocm_root and the root's .info/version are in toolchain_request, so in build_plan_id. Required of slice 1 (per-lane stack selection): replace selected_rocm_root() with the lane's resolved stack, and in the same change migrate engine.toml rocm-paths to the typed {sdk.*} placeholders. No dual path: the plain relative form and the host-default root go away together.
 
+CONSOLIDATION 2026-11-22 PHASE-5: BRVP04 is a duplicate planning owner of BRVP06. BRVP04 is the HIP/ROCm SDK stack-selection and toolchain provenance precursor to BRVP06's existing explicit-SDK-for-every-build contract. Both require the same BuildPlan/SDK environment/launch enforcement surface. The exact independently testable acceptance and negative controls now live in active BRVP06. Retire this planning owner without changing any existing implementation, hardware validation claim or original source evidence. All original design and measured failure records remain in this archived source document.
+
 ## Change Log
 
 - 2026-10-26T00:27:55.399283+00:00 (created-by): Created by agent
 - 2026-10-26T00:50:19.211059+00:00 (updated-by): Updated: section:notes
 - 2026-11-02T07:28:07.019282+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4524
+- 2026-11-22T11:10:34.621343+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:14:39.675830+00:00 (state-transition): State: pending → superseded
