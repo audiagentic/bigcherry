@@ -95,18 +95,24 @@ At least one complete video and one audio self-attention layer genuinely execute
 
 ## Notes
 
-**First native issued host step, 2026-11-22:** the new C05
-`ltx_c05_issued_host_test.cpp` builds and issues real
-`Tp3GlobalRms::step` through three `RadCtx` contexts against
-Radiance's native host backend and the checkpoint's BF16
-Q/K gains, with **122880/122880 exact BF16** across video/audio,
-1/4 rows and both legal head partitions. The first failing
-test exposed transient Q/K fixture storage aliasing, corrected
-by declaring the externally pre-seeded input buffers persistent;
-production C05 was unchanged. [Evidence](../../evidence/2026-11-22-ltx25-ltx02-issued-host-rms/README.md).
-It remains a synthetic-activation host-run proof, **not**
-GPU AQL graph issue, checkpoint intermediate TP1 parity or
-a completed LTX02 acceptance.
+**C05 native execution update (2026-11-22):**
+the single `ltx_c05_issued_test.cpp` model-specific test
+runs the existing `Tp3GlobalRms::step` through three
+native `RadCtx` ranks on host and **actual AQL GPUs**,
+with the checkpoint's BF16 Q/K gains. It passes
+**2,088,960 / 2,088,960 exact BF16** for each native backend
+across video/audio, 1/4/16/64 rows and the legal 8/8/16
+and 12/12/8 splits, plus a complete **reversed GPU ordinal**
+run at the same exact count. The first host failure was
+fixture buffer-aliasing; the first GPU graph hang was the
+test's sequential builder finish at the native init-time
+three-rank collective barrier. Both were fixed **only in the
+test**, reusing the upstream rank lifecycle and source.
+[Host evidence](../../evidence/2026-11-22-ltx25-ltx02-issued-host-rms/README.md)
+and [GPU evidence](../../evidence/2026-11-22-ltx25-ltx02-issued-aql-rms/README.md).
+This is **seeded-activation C05 correctness**, not captured
+TP1 intermediate model parity or issued full C06 attention.
+LTX02 remains open.
 
 The latest C08 has 33/33 exact BF16 checks per collective variant; it does not issue the C05 model graph. LTX02 must reuse that working native Radiance backend and produce checkpoint-backed TP1 parity, not reinterpret C07's direct-HIP failure as a new transport feature. This is the immediate production-enabling next slice.
 
