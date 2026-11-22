@@ -49,11 +49,15 @@ No legacy / no backward compatibility: v2 replaces v1, no aliases.
 
 **Transferred PWR04 acceptance (independent gate):** Carry original PWR04 config and validation semantics into the one v2 named-profile/power-plan authority, not a second environment-only or v1 power schema. Named profile and optional role/device overrides cover XTX VDDGFX offset, SCLK max, R9700 cap/offset and future CPU EPP as *observational intent only* until a tested CPU policy controller/lease ownership exists. Per-BDF qualification record must bind exact device, driver/kernel, model/build and workload, stability soak, unchanged output and measured joules/token, separately for decode and prefill; missing evidence cannot activate a setting. stock remains the absent-settings default. Unknown or duplicate BDF/role, unqualified calibration and stale profile file refuse application before writes, with explicit provenance in spec.plan.power. No hardcoded -125 mV or model defaults; the old observed negative XTX -125 mV result is not approval. Preserve PWR08 S9/S10/S13 v2 migration gates and keep measurements/receipts outside the manifest.
 
+**Transferred PWR05 acceptance (independent gate):** PWR05 default-selection acceptance: any proposed flashnext-4gpu default power profile must be a named PWR08 v2 intent and qualified PWR07/PWR09 receipt-bound controller action; a generic launcher --gpu-power flag is not a substitute. The old PWR05 claim that -125 mV saved ~24 W per XTX is superseded by the later same-current-build negative comparison (190-191 W stock vs 192-196 W UV at ~325-326 decode tok/s), so do not activate -125 mV or claim efficiency. Requalify each XTX card and R9700 separately, hold model/compiled binaries/MTP/KV/layout/concurrency/driver/firmware constant, require phased 42K+8-session power and performance ABBA, identical output/quality, readback of real effective clocks/voltage and capability/restore success with integrated GPU+CPU joules/token, no regressions beyond measured CI. Only a newly demonstrated speed-safe/quality-safe energy win and an explicit per-role/BDF selection permit default-on; otherwise keep observe-only stock and record the negative no-promotion verdict. PWR02 owns power-cap sweeps; PWR06 owns gfx1201 kernel idle; PWR07/PWR09 own probe and transaction. No code defaults or second profile registry.
+
 ## Notes
 
 Depends on PWR07 (probe) and feeds PWR09. Challenged against GPT's proposal: keep spec.facts.power out of the first v2 unless the resolver needs a typed capability fact to refuse a profile (decide in step 1; stable driver/range metadata only, never an authority to write: the controller re-probes immediately before applying). CPU EPP/governor and non-AMDGPU intent can be designed in the schema but stay observe-only until a CPU-policy controller and ownership model exist. The v2 cost is high (producer, readers, plugins, bindings, fixtures, docs together): do it once, with every other pending v1 gap.
 
 CONSOLIDATION 2026-11-22 POWER-LIFECYCLE: PWR04's original residual requirement is now owned here. PWR04's 2026-11-10 design explicitly delegates named profiles and configuration to PWR08; retaining an independent earlier host-profile schema would duplicate the v2 manifest authority. Neither this transfer nor previous observational power results satisfy live device, rollback or v2 migration acceptance.
+
+CONSOLIDATION 2026-11-22 POWER-BASELINE: PWR05's unique acceptance is retained under this established owner; no hardware changes or runtime activation are implied.
 
 ## Change Log
 
@@ -87,3 +91,5 @@ Power-profile rule for S9/S10/S13: each per-BDF profile setting must be **source
 
 - RV4546
 - 2026-11-22T11:42:25.163641+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
+- RV4550
+- 2026-11-22T11:49:05.252354+00:00 (updated-by): Updated: section:notes, section:acceptance_criteria
