@@ -49,3 +49,25 @@ Previous hardware qualification (`engines/radiance/patches/rad0036_prefill_gover
 - Planning and release ledger updates were **not** made: the authoritative `ag-planning` and `ag-ledger` MCPs are unavailable to this session. Per `docs/reference/agents/WORKFLOW.md`, do not hand-edit those managed files or invent a ledger event. RUM08 needs that recorded closure via the respective services.
 
 Use this evidence and the archive index for the eventual RUM08 planning/ledger transition; no upstream source, production recipe, or runtime code was modified in this worktree.
+
+## RUM08 production policy after the 2020.0.0 release
+
+The released fixed-depth `flashnext-4gpu` production composition uses
+**upstream scheduler authority only**: `num-speculative-tokens: 3`,
+`prefill-interleave: 0`, `mixed-step-target-ms: 0`, and no optional
+`prefill-governor` admission override (arrival order). The `rad0036`
+patch remains present but its special budget, priority and age controls
+are dormant for that profile. `rad0013` and `rad0047` remain archived
+and absent from the recipe. For long-Qwen profiles, the explicitly chosen
+`rad0036` governor owns admission while upstream interleave=2 owns
+step spacing; those are distinct controls and not part of this fixed-depth
+Flash-Next qualification. No adaptive/suffix/traversal mode is selected.
+
+On the 2020.0.0 prefix, `--step-phase-trace` is available. Its JSONL
+contains scheduler step, pass kind, token count, context and HIP intervals,
+**not** the key or per-kernel effective `RadArgs`. Hardware playback
+evidence therefore requires recording/play counters or logs paired with
+the host-compiled real callback/split and upstream issue-bound tests;
+trace shape equality alone cannot establish launch-argument equality.
+The follow-up evidence and remaining gaps are recorded in
+[2026-11-22 RUM08 completion](../2026-11-22-rum08-completion/README.md).

@@ -1,0 +1,554 @@
+{
+  "build_id": "d10ea67bb26b906ec1dff7f56722bae7",
+  "configurations": {
+    "flashnext-4gpu": {
+      "all_ranks_pass_shape_identical": null,
+      "case": "flashnext-4gpu",
+      "config": "flashnext-4gpu",
+      "deterministic_output_equal": true,
+      "gpu_trace_enabled": true,
+      "helper_mailbox_active": true,
+      "long_ok": true,
+      "no_replay_fault": true,
+      "ok": true,
+      "output_sha256": [
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309",
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309"
+      ],
+      "ranks": {
+        "0": {
+          "all_draft_passes": {
+            "-1": 49,
+            "0": 50,
+            "2": 48,
+            "3": 48
+          },
+          "all_passes": 195,
+          "all_phases": {
+            "0": 5,
+            "1": 190
+          },
+          "rounds": {
+            "cold": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 18,
+              "draft_passes": {
+                "-1": 19,
+                "0": 19,
+                "2": 19,
+                "3": 19
+              },
+              "pass_rows": 76,
+              "phases": {
+                "0": 1,
+                "1": 75
+              }
+            },
+            "warm": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 18,
+              "draft_passes": {
+                "-1": 19,
+                "0": 19,
+                "2": 19,
+                "3": 19
+              },
+              "pass_rows": 76,
+              "phases": {
+                "0": 1,
+                "1": 75
+              }
+            }
+          }
+        }
+      },
+      "ready": true,
+      "recorded_tapes": [
+        {
+          "draft_pass": -1,
+          "tokens": 5
+        },
+        {
+          "draft_pass": 2,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 3,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 0,
+          "tokens": 4
+        }
+      ],
+      "rounds": [
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 0,
+          "request_ok": true,
+          "wall_elapsed_ms": 624.15
+        },
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 1,
+          "request_ok": true,
+          "wall_elapsed_ms": 620.47
+        }
+      ],
+      "run_duration_s": 269.24,
+      "serve_exit": 0,
+      "trace_files": [
+        "hardware/flashnext-4gpu/run/step-phases/engine-rank-0.jsonl"
+      ]
+    },
+    "flashnext-4gpu-replay": {
+      "all_ranks_pass_shape_identical": null,
+      "case": "flashnext-4gpu-replay",
+      "concurrent": {
+        "long_ok": true,
+        "overlap_ms": 3048.659,
+        "short_ok": true
+      },
+      "config": "flashnext-4gpu",
+      "deterministic_output_equal": true,
+      "gpu_trace_enabled": true,
+      "helper_mailbox_active": true,
+      "long_ok": true,
+      "no_replay_fault": true,
+      "ok": true,
+      "output_sha256": [
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309",
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309"
+      ],
+      "ranks": {
+        "0": {
+          "all_draft_passes": {
+            "-1": 113,
+            "0": 114,
+            "2": 112,
+            "3": 112
+          },
+          "all_passes": 451,
+          "all_phases": {
+            "0": 6,
+            "1": 439,
+            "2": 6
+          },
+          "rounds": {
+            "cold": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 18,
+              "draft_passes": {
+                "-1": 19,
+                "0": 19,
+                "2": 19,
+                "3": 19
+              },
+              "pass_rows": 76,
+              "phases": {
+                "0": 1,
+                "1": 75
+              }
+            },
+            "warm": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 18,
+              "draft_passes": {
+                "-1": 19,
+                "0": 19,
+                "2": 19,
+                "3": 19
+              },
+              "pass_rows": 76,
+              "phases": {
+                "0": 1,
+                "1": 75
+              }
+            }
+          }
+        }
+      },
+      "ready": true,
+      "recorded_tapes": [
+        {
+          "draft_pass": -1,
+          "tokens": 5
+        },
+        {
+          "draft_pass": 2,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 3,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 0,
+          "tokens": 4
+        }
+      ],
+      "rounds": [
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 0,
+          "request_ok": true,
+          "wall_elapsed_ms": 621.858
+        },
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 1,
+          "request_ok": true,
+          "wall_elapsed_ms": 610.14
+        }
+      ],
+      "run_duration_s": 226.84,
+      "serve_exit": 0,
+      "stats_after_concurrent": [
+        {
+          "passes": {
+            "audited": 8,
+            "dispatched": 159461,
+            "issued_first": 3,
+            "issued_refused": 0,
+            "issued_unkeyed": 7,
+            "played": 411,
+            "recorded": 22,
+            "unordered": 33219
+          },
+          "where": "root"
+        }
+      ],
+      "stats_after_repeats": [
+        {
+          "passes": {
+            "audited": 5,
+            "dispatched": 68286,
+            "issued_first": 2,
+            "issued_refused": 0,
+            "issued_unkeyed": 0,
+            "played": 175,
+            "recorded": 6,
+            "unordered": 14225
+          },
+          "where": "root"
+        }
+      ],
+      "trace_files": [
+        "hardware/flashnext-4gpu-replay/run/step-phases/engine-rank-0.jsonl"
+      ]
+    },
+    "flashnext-r9700": {
+      "all_ranks_pass_shape_identical": null,
+      "case": "flashnext-r9700",
+      "concurrent": {
+        "long_ok": true,
+        "overlap_ms": 111020.689,
+        "short_ok": true
+      },
+      "config": "flashnext-r9700",
+      "deterministic_output_equal": true,
+      "gpu_trace_enabled": true,
+      "helper_mailbox_active": false,
+      "long_ok": true,
+      "no_replay_fault": true,
+      "ok": true,
+      "output_sha256": [
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309",
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309"
+      ],
+      "ranks": {
+        "0": {
+          "all_draft_passes": {
+            "-1": 223,
+            "0": 224,
+            "2": 68,
+            "3": 68
+          },
+          "all_passes": 583,
+          "all_phases": {
+            "0": 161,
+            "1": 422
+          },
+          "rounds": {
+            "cold": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 18,
+              "draft_passes": {
+                "-1": 19,
+                "0": 19,
+                "2": 19,
+                "3": 19
+              },
+              "pass_rows": 76,
+              "phases": {
+                "0": 1,
+                "1": 75
+              }
+            },
+            "warm": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 18,
+              "draft_passes": {
+                "-1": 19,
+                "0": 19,
+                "2": 19,
+                "3": 19
+              },
+              "pass_rows": 76,
+              "phases": {
+                "0": 1,
+                "1": 75
+              }
+            }
+          }
+        }
+      },
+      "ready": true,
+      "recorded_tapes": [
+        {
+          "draft_pass": -1,
+          "tokens": 5
+        },
+        {
+          "draft_pass": 2,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 3,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 0,
+          "tokens": 4
+        }
+      ],
+      "rounds": [
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 0,
+          "request_ok": true,
+          "wall_elapsed_ms": 4820.326
+        },
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 1,
+          "request_ok": true,
+          "wall_elapsed_ms": 3470.911
+        }
+      ],
+      "run_duration_s": 238.46,
+      "serve_exit": 0,
+      "stats_after_concurrent": [
+        {
+          "passes": {
+            "audited": 32,
+            "dispatched": 199552,
+            "issued_first": 25,
+            "issued_refused": 0,
+            "issued_unkeyed": 0,
+            "played": 486,
+            "recorded": 40,
+            "unordered": 42947
+          },
+          "where": "root"
+        }
+      ],
+      "stats_after_repeats": [
+        {
+          "passes": {
+            "audited": 6,
+            "dispatched": 45517,
+            "issued_first": 1,
+            "issued_refused": 0,
+            "issued_unkeyed": 0,
+            "played": 171,
+            "recorded": 6,
+            "unordered": 11660
+          },
+          "where": "root"
+        }
+      ],
+      "trace_files": [
+        "hardware/flashnext-r9700/run/step-phases/engine-rank-0.jsonl"
+      ]
+    },
+    "flashnext-tp2xtx-r9700": {
+      "all_ranks_pass_shape_identical": true,
+      "case": "flashnext-tp2xtx-r9700",
+      "config": "flashnext-tp2xtx-r9700",
+      "deterministic_output_equal": true,
+      "gpu_trace_enabled": true,
+      "helper_mailbox_active": true,
+      "long_ok": true,
+      "no_replay_fault": true,
+      "ok": true,
+      "output_sha256": [
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309",
+        "abc5dd36893c32a79328c66cd2b5a8ce9f929546c3f6480a7a6dc8df6b0ed309"
+      ],
+      "ranks": {
+        "0": {
+          "all_draft_passes": {
+            "-1": 52,
+            "0": 53,
+            "2": 51,
+            "3": 51
+          },
+          "all_passes": 207,
+          "all_phases": {
+            "0": 5,
+            "1": 202
+          },
+          "rounds": {
+            "cold": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 19,
+              "draft_passes": {
+                "-1": 20,
+                "0": 20,
+                "2": 20,
+                "3": 20
+              },
+              "pass_rows": 80,
+              "phases": {
+                "0": 1,
+                "1": 79
+              }
+            },
+            "warm": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 19,
+              "draft_passes": {
+                "-1": 20,
+                "0": 20,
+                "2": 20,
+                "3": 20
+              },
+              "pass_rows": 80,
+              "phases": {
+                "0": 1,
+                "1": 79
+              }
+            }
+          }
+        },
+        "1": {
+          "all_draft_passes": {
+            "-1": 52,
+            "0": 53,
+            "2": 51,
+            "3": 51
+          },
+          "all_passes": 207,
+          "all_phases": {
+            "0": 5,
+            "1": 202
+          },
+          "rounds": {
+            "cold": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 19,
+              "draft_passes": {
+                "-1": 20,
+                "0": 20,
+                "2": 20,
+                "3": 20
+              },
+              "pass_rows": 80,
+              "phases": {
+                "0": 1,
+                "1": 79
+              }
+            },
+            "warm": {
+              "decode_context_bounds": [
+                1024
+              ],
+              "decode_steps": 19,
+              "draft_passes": {
+                "-1": 20,
+                "0": 20,
+                "2": 20,
+                "3": 20
+              },
+              "pass_rows": 80,
+              "phases": {
+                "0": 1,
+                "1": 79
+              }
+            }
+          }
+        }
+      },
+      "ready": true,
+      "recorded_tapes": [
+        {
+          "draft_pass": -1,
+          "tokens": 5
+        },
+        {
+          "draft_pass": 2,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 3,
+          "tokens": 1
+        },
+        {
+          "draft_pass": 0,
+          "tokens": 4
+        }
+      ],
+      "rounds": [
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 0,
+          "request_ok": true,
+          "wall_elapsed_ms": 693.933
+        },
+        {
+          "completion_tokens": 56,
+          "prompt_tokens": 5,
+          "rep": 1,
+          "request_ok": true,
+          "wall_elapsed_ms": 674.387
+        }
+      ],
+      "run_duration_s": 243.74,
+      "serve_exit": 0,
+      "trace_files": [
+        "hardware/flashnext-tp2xtx-r9700/run/step-phases/engine-rank-0.jsonl",
+        "hardware/flashnext-tp2xtx-r9700/run/step-phases/engine-rank-1.jsonl"
+      ]
+    }
+  },
+  "release": "bc-radiance-2020.0.0",
+  "schema_version": 1,
+  "source_slice_id": "91232f0034ccfb52f198984885ea40fb",
+  "upstream": "Radiance 2.2.0"
+}
