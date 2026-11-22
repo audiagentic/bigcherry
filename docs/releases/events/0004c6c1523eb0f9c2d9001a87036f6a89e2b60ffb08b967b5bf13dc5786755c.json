@@ -1,0 +1,15 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_092346_the-serving-sessions-stopsta_7809",
+  "files": [
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session_test.cpp",
+    "engines/radiance/components/serving/session_stored_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Session owner control socket fails closed: the run directory is created 0700 and refused when not owned by the current uid or open to group/world; the socket is bound under a 0177 umask and verified by lstat (socket, owned, mode 0600, never a symlink) before listen; a leftover non-socket, symlink or wrong-mode path at session.sock is refused instead of removed; every accepted connection is checked with SO_PEERCRED (owner uid or root); session.lock is 0600 with O_NOFOLLOW. Unchecked chmod removed.",
+  "timestamp-utc": "2026-11-22T09:23:46.656466Z",
+  "user-summary-candidate": "The serving session's stop/status control socket now refuses unsafe permissions and connections from other users."
+}

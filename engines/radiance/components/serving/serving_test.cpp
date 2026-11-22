@@ -1446,6 +1446,7 @@ void session_engine_plan(Fixture& t) {
                 tweak(pre.native_admission->runtime_overrides);
                 const fs::path pre_run = run / ("native-preflight-" + std::to_string(++preflight_runs));
                 fs::create_directories(pre_run);
+                fs::permissions(pre_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
                 std::vector<ss::ChildKind> kinds;
                 ss::Hooks hooks;
                 hooks.wait = [](std::chrono::milliseconds) { return true; };
@@ -1481,6 +1482,7 @@ void session_engine_plan(Fixture& t) {
                         .dump();
                 const fs::path tuned_run = run / "native-preflight-tuning";
                 fs::create_directories(tuned_run);
+                fs::permissions(tuned_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
                 const ss::EngineStart tuned = ss::plan_engine_only(pre, tuned_run, ss::Hooks{});
                 const Json& tuning = tuned.native_preflight_values.at("tuning");
                 assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
@@ -1543,6 +1545,7 @@ void session_engine_plan(Fixture& t) {
         }
         const fs::path gated_run = run / "native-admission";
         fs::create_directories(gated_run);
+        fs::permissions(gated_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         // The measured manifest is stored for the next start of this config, from any run dir, in the work root.
         const fs::path cache_tripwire = ss::named_store_index(t.work_root(), gated.named_config);
         int writer_calls = 0;
@@ -1740,6 +1743,7 @@ void session_engine_plan(Fixture& t) {
         replay_admissions = 0;
         const fs::path later_run = run / "native-later-start";
         fs::create_directories(later_run);
+        fs::permissions(later_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const auto later = ss::plan_engine_only(gated, later_run, stored_hooks);
         assert(later.manifest == original_manifest && later.summary.at("replay") == true &&
@@ -1752,6 +1756,7 @@ void session_engine_plan(Fixture& t) {
         // identity is kept as provenance, and the new manifest replaces the stored one.
         const fs::path rebuilt_run = run / "native-rebuilt-start";
         fs::create_directories(rebuilt_run);
+        fs::permissions(rebuilt_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         auto rebuilt = gated;
         // The installed layout of a newer release: <root>/releases/<tag>/radiance_home.
@@ -1785,6 +1790,7 @@ void session_engine_plan(Fixture& t) {
             for (const auto& file : fs::directory_iterator(attempt_cache)) fs::remove(file.path());
             const fs::path unusable_run = run / "native-unusable-store";
             fs::create_directories(unusable_run);
+            fs::permissions(unusable_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
             std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
             const size_t before = inspector_roles.size();
             const auto measured_again = ss::plan_engine_only(rebuilt, unusable_run, admission_hooks);
@@ -1797,6 +1803,7 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path owner_run = run / "native-serving-owner";
         fs::create_directories(owner_run);
+        fs::permissions(owner_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         ss::EnginePlanInputs fresh = gated;
         fresh.work_root = t.root / "work-owner-measures";   // no stored measurement here: this owner measures
         fresh.native_admission->runtime_overrides["TEST_NATIVE_EXPECT_FROZEN"] = "before";
@@ -1875,6 +1882,7 @@ void session_engine_plan(Fixture& t) {
         assert(!fs::exists(native_yaml));
         owner.run_dir = run / "native-stored-owner";
         fs::create_directories(owner.run_dir);
+        fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         fresh.stored_manifest = original_manifest;
         assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
         serving_power_verified = cleared_children = serving_handoff_seen = false;
@@ -1890,6 +1898,7 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path low_room_run = run / "native-low-room";
         fs::create_directories(low_room_run);
+        fs::permissions(low_room_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         const fs::path meminfo = t.root / "proc/meminfo";
         std::ifstream prior_room_file(meminfo);
         const std::string prior_room((std::istreambuf_iterator<char>(prior_room_file)), std::istreambuf_iterator<char>());
@@ -1956,6 +1965,7 @@ void session_engine_plan(Fixture& t) {
             drift_yaml, native_root, gated.native_admission->runtime_overrides};
         const fs::path drift_run = t.root / "native-runtime-drift-run";
         fs::create_directories(drift_run);
+        fs::permissions(drift_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         ss::Hooks drift_hooks;
         std::map<pid_t, std::string> drift_roles;
         std::vector<std::string> drift_role_order;
@@ -2133,6 +2143,7 @@ void session_engine_plan(Fixture& t) {
         drifting.options.profile = profile;
         const fs::path drift_run = run / "transient-drift";
         fs::create_directories(drift_run);
+        fs::permissions(drift_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         int writer_calls = 0;
         drifting.runner = [&](const std::vector<std::string>& argv) {
             if (++writer_calls == 1)
@@ -2566,6 +2577,7 @@ void session_engine_plan(Fixture& t) {
         lab.engine_binary = BC_FAKE_ENGINE;
         const fs::path lab_run = t.root / "lab-session-run";
         fs::create_directories(lab_run);
+        fs::permissions(lab_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         bool writer_checked = false;
         fs::path produced;
         std::string expected_experiment = lab.experiment_file.string();
@@ -2729,6 +2741,7 @@ void helper_vram_owner_graph(Fixture& t) {
     ss::Session owner;
     owner.run_dir = t.root / "native-helper-owner";
     fs::create_directories(owner.run_dir);
+    fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
     owner.timing.health_timeout = owner.timing.helper_timeout = std::chrono::seconds(6);
     owner.timing.health_interval = owner.timing.helper_interval = std::chrono::milliseconds(30);
     owner.timing.stop_grace = std::chrono::seconds(1);

@@ -15,6 +15,7 @@
 #include <cassert>
 #include <csignal>
 #include <cstdio>
+#include <cstring>
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
@@ -30,6 +31,7 @@
 #include <netinet/in.h>
 #include <sys/mman.h>
 #include <sys/socket.h>
+#include <sys/un.h>
 #include <sys/stat.h>
 #include <sys/wait.h>
 #include <unistd.h>
@@ -74,6 +76,7 @@ struct Case {
 
     explicit Case(const std::string& name) : run(g_root / (std::to_string(++g_case) + "-" + name)) {
         fs::create_directories(run);
+        fs::permissions(run, fs::perms::owner_all, fs::perm_options::replace); // 0700: a run directory is private
         session.run_dir = run;
         session.timing.health_timeout = 5s;
         session.timing.health_interval = 50ms;
@@ -379,6 +382,148 @@ void long_run_dir() {
     assert(stopped && stopped->value("ok", false) && stopped->at("state") == "stopped");
     assert(exit_code(owner) == 0);
     assert(!fs::exists(c.run / "session.sock"));
+}
+
+mode_t mode_of(const fs::path& p) {
+    struct stat st{};
+    assert(::lstat(p.c_str(), &st) == 0);
+    return st.st_mode & 07777;
+}
+
+// A bound UNIX-domain socket file at `path` with the given mode.
+void bind_socket_file(const fs::path& path, mode_t mode) {
+    const int fd = ::socket(AF_UNIX, SOCK_STREAM | SOCK_CLOEXEC, 0);
+    assert(fd >= 0);
+    sockaddr_un a{};
+    a.sun_family = AF_UNIX;
+    // through a descriptor on the directory: the test paths are longer than sun_path
+    const int dir = ::open(path.parent_path().c_str(), O_PATH | O_DIRECTORY | O_CLOEXEC);
+    assert(dir >= 0);
+    const std::string via = "/proc/self/fd/" + std::to_string(dir) + "/" + path.filename().string();
+    assert(via.size() < sizeof a.sun_path);
+    std::strncpy(a.sun_path, via.c_str(), sizeof a.sun_path - 1);
+    assert(::bind(fd, reinterpret_cast<sockaddr*>(&a), sizeof a) == 0);
+    ::close(dir);
+    assert(::chmod(path.c_str(), mode) == 0);
+    ::close(fd); // the file stays
+}
+
+// The checks the owner makes before it accepts, one by one: directory, socket identity and mode, peer user.
+void control_socket_checks() {
+    const fs::path dir = g_root / "checks";
+    fs::create_directories(dir);
+    const uid_t me = ::geteuid();
+    fs::permissions(dir, fs::perms::owner_all, fs::perm_options::replace);
+    assert(!ss::run_dir_refusal(dir, me));
+    assert(ss::run_dir_refusal(dir, me + 1)); // not ours
+    for (const mode_t m : {0750, 0705, 0755, 0770, 0777}) {
+        ::chmod(dir.c_str(), m);
+        assert(ss::run_dir_refusal(dir, me)); // open to group or others
+    }
+    ::chmod(dir.c_str(), 0700);
+    assert(ss::run_dir_refusal(dir / "absent", me));
+    std::ofstream(dir / "file") << "x";
+    assert(ss::run_dir_refusal(dir / "file", me)); // not a directory
+
+    bind_socket_file(dir / "ok.sock", 0600);
+    assert(!ss::socket_refusal(dir / "ok.sock", me, 0600));
+    assert(ss::socket_refusal(dir / "ok.sock", me + 1, 0600)); // another user's socket
+    bind_socket_file(dir / "wide.sock", 0666);
+    assert(ss::socket_refusal(dir / "wide.sock", me, 0600));
+    bind_socket_file(dir / "group.sock", 0660);
+    assert(ss::socket_refusal(dir / "group.sock", me, 0600));
+    fs::create_symlink(dir / "ok.sock", dir / "link.sock");
+    assert(ss::socket_refusal(dir / "link.sock", me, 0600)); // a symlink to our own socket is still refused
+    assert(ss::socket_refusal(dir / "file", me, 0600));      // a regular file
+    assert(ss::socket_refusal(dir / "absent.sock", me, 0600));
+
+    // peers: the owner itself and root; any other uid is refused
+    assert(ss::control_peer_allowed(me, me) && ss::control_peer_allowed(0, me));
+    assert(!ss::control_peer_allowed(me + 1, me) && !ss::control_peer_allowed(me + 1000, 0 + me + 1));
+    int pair[2];
+    assert(::socketpair(AF_UNIX, SOCK_STREAM, 0, pair) == 0);
+    const auto peer = ss::peer_uid(pair[0]);
+    assert(peer && *peer == me);
+    ::close(pair[0]);
+    ::close(pair[1]);
+    assert(!ss::peer_uid(-1));
+}
+
+// start_detached creates the run directory 0700 whatever the umask, and refuses one open to others without
+// changing it.
+void run_dir_created_private() {
+    const mode_t previous = ::umask(0);
+    const fs::path fresh = g_root / "private-fresh" / "run";
+    // the child exits at once: only the directory it was handed matters
+    assert(ss::start_detached({"/bin/false"}, fresh, 5s) == 1);
+    assert(mode_of(fresh) == 0700);
+    assert(mode_of(fresh.parent_path()) == 0777); // only the run directory itself is restricted
+
+    const fs::path open_dir = g_root / "private-open";
+    fs::create_directories(open_dir);
+    ::chmod(open_dir.c_str(), 0755);
+    bool refused = false;
+    try {
+        ss::start_detached({"/bin/false"}, open_dir, 5s);
+    } catch (const std::runtime_error& e) {
+        refused = std::string(e.what()).find("accessible to group or others") != std::string::npos;
+    }
+    assert(refused && mode_of(open_dir) == 0755); // refused, never loosened or silently tightened
+    ::umask(previous);
+}
+
+// A permissive umask still yields a 0600 socket and lock; stop and status work for the owner; a client of
+// another user gets no answer.
+void control_socket_private_under_permissive_umask() {
+    Case c("umask");
+    c.prepare();
+    const mode_t previous = ::umask(0);
+    const pid_t owner = c.owner();
+    ::umask(previous);
+    c.wait_state({"running"});
+    assert(mode_of(c.run / "session.sock") == 0600);
+    assert(mode_of(c.run / "session.lock") == 0600);
+    assert(mode_of(c.run) == 0700);
+    assert(!ss::socket_refusal(c.run / "session.sock", ::geteuid(), 0600));
+    const auto status = ss::control(c.run, "status", 2s);
+    assert(status && status->at("state") == "running" && status->at("owner_pid") == owner);
+    const auto stopped = ss::control(c.run, "stop", 10s);
+    assert(stopped && stopped->value("ok", false));
+    assert(exit_code(owner) == 0);
+    assert(!fs::exists(c.run / "session.sock"));
+}
+
+// The owner serves no one in a run directory open to others, nor over a symlinked or foreign socket path.
+void owner_refuses_unsafe_paths() {
+    Case open("open-dir");
+    open.prepare();
+    ::chmod(open.run.c_str(), 0755);
+    assert(exit_code(open.owner()) == 1);
+    assert(mode_of(open.run) == 0755 && !fs::exists(open.run / "session.sock"));
+
+    Case linked("symlink");
+    linked.prepare();
+    const fs::path target = linked.run / "elsewhere";
+    std::ofstream(target) << "keep";
+    fs::create_symlink(target, linked.run / "session.sock");
+    assert(exit_code(linked.owner()) == 1);
+    assert(fs::is_symlink(linked.run / "session.sock") && text(target) == "keep");
+    assert(!ss::control(linked.run, "status", 1s));
+
+    Case wide("wide-socket"); // a leftover socket that is not exactly 0600 is not ours to clean up
+    wide.prepare();
+    bind_socket_file(wide.run / "session.sock", 0666);
+    assert(exit_code(wide.owner()) == 1);
+    assert(mode_of(wide.run / "session.sock") == 0666);
+
+    Case stale("stale-socket"); // a leftover 0600 socket of a crashed owner is replaced
+    stale.prepare();
+    bind_socket_file(stale.run / "session.sock", 0600);
+    const pid_t owner = stale.owner();
+    stale.wait_state({"running"});
+    assert(ss::control(stale.run, "status", 2s));
+    assert(ss::control(stale.run, "stop", 10s));
+    assert(exit_code(owner) == 0);
 }
 
 void canary_fails() {
@@ -1725,6 +1870,10 @@ int test_main(int argc, char** argv) {
     power_hook_returned_status_errors();
     helper_shared_segment_gate();
     long_run_dir();
+    control_socket_checks();
+    run_dir_created_private();
+    control_socket_private_under_permissive_umask();
+    owner_refuses_unsafe_paths();
     canary_fails();
     engine_fails_to_start();
     engine_refuses_the_stored_plan();
