@@ -1438,7 +1438,6 @@ void session_engine_plan(Fixture& t) {
                 tweak(pre.native_admission->runtime_overrides);
                 const fs::path pre_run = run / ("native-preflight-" + std::to_string(++preflight_runs));
                 fs::create_directories(pre_run);
-                fs::permissions(pre_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
                 std::vector<ss::ChildKind> kinds;
                 ss::Hooks hooks;
                 hooks.wait = [](std::chrono::milliseconds) { return true; };
@@ -1474,7 +1473,6 @@ void session_engine_plan(Fixture& t) {
                         .dump();
                 const fs::path tuned_run = run / "native-preflight-tuning";
                 fs::create_directories(tuned_run);
-                fs::permissions(tuned_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
                 const ss::EngineStart tuned = ss::plan_engine_only(pre, tuned_run, ss::Hooks{});
                 const Json& tuning = tuned.native_preflight_values.at("tuning");
                 assert(tuning.at("tp_ownership") == "kv=1,1,2;ffn=5632,5632,6144;lk=5,5,6;lv=15,15,18");
@@ -1537,7 +1535,6 @@ void session_engine_plan(Fixture& t) {
         }
         const fs::path gated_run = run / "native-admission";
         fs::create_directories(gated_run);
-        fs::permissions(gated_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         // The measured manifest is stored for the next start of this config, from any run dir, in the work root.
         const fs::path cache_tripwire = ss::named_store_index(t.work_root(), gated.named_config);
         int writer_calls = 0;
@@ -1747,7 +1744,6 @@ void session_engine_plan(Fixture& t) {
         replay_admissions = 0;
         const fs::path later_run = run / "native-later-start";
         fs::create_directories(later_run);
-        fs::permissions(later_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const auto later = ss::plan_engine_only(gated, later_run, stored_hooks);
         assert(later.manifest == original_manifest && later.summary.at("replay") == true &&
@@ -1760,7 +1756,6 @@ void session_engine_plan(Fixture& t) {
         // identity is kept as provenance, and the new manifest replaces the stored one.
         const fs::path rebuilt_run = run / "native-rebuilt-start";
         fs::create_directories(rebuilt_run);
-        fs::permissions(rebuilt_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         auto rebuilt = gated;
         // The installed layout of a newer release: <root>/releases/<tag>/radiance_home.
@@ -1795,7 +1790,6 @@ void session_engine_plan(Fixture& t) {
             for (const auto& file : fs::directory_iterator(attempt_cache)) fs::remove(file.path());
             const fs::path unusable_run = run / "native-unusable-store";
             fs::create_directories(unusable_run);
-            fs::permissions(unusable_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
             std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
             const size_t before = inspector_roles.size();
             std::ostringstream miss_err;
@@ -1858,7 +1852,6 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path owner_run = run / "native-serving-owner";
         fs::create_directories(owner_run);
-        fs::permissions(owner_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         ss::EnginePlanInputs fresh = gated;
         fresh.work_root = t.root / "work-owner-measures";   // no stored measurement here: this owner measures
         fresh.native_admission->runtime_overrides["TEST_NATIVE_EXPECT_FROZEN"] = "before";
@@ -1937,7 +1930,6 @@ void session_engine_plan(Fixture& t) {
         assert(!fs::exists(native_yaml));
         owner.run_dir = run / "native-stored-owner";
         fs::create_directories(owner.run_dir);
-        fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         fresh.stored_manifest = original_manifest;
         assert(::setenv("TEST_NATIVE_FROZEN", "before", 1) == 0);
         serving_power_verified = cleared_children = serving_handoff_seen = false;
@@ -1953,7 +1945,6 @@ void session_engine_plan(Fixture& t) {
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
         const fs::path low_room_run = run / "native-low-room";
         fs::create_directories(low_room_run);
-        fs::permissions(low_room_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         const fs::path meminfo = t.root / "proc/meminfo";
         std::ifstream prior_room_file(meminfo);
         const std::string prior_room((std::istreambuf_iterator<char>(prior_room_file)), std::istreambuf_iterator<char>());
@@ -2020,7 +2011,6 @@ void session_engine_plan(Fixture& t) {
             drift_yaml, native_root, gated.native_admission->runtime_overrides};
         const fs::path drift_run = t.root / "native-runtime-drift-run";
         fs::create_directories(drift_run);
-        fs::permissions(drift_run, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
         ss::Hooks drift_hooks;
         std::map<pid_t, std::string> drift_roles;
         std::vector<std::string> drift_role_order;
@@ -2173,7 +2163,6 @@ void helper_vram_owner_graph(Fixture& t) {
     ss::Session owner;
     owner.run_dir = t.root / "native-helper-owner";
     fs::create_directories(owner.run_dir);
-    fs::permissions(owner.run_dir, fs::perms::owner_all, fs::perm_options::replace); // a run directory is private
     owner.timing.health_timeout = owner.timing.helper_timeout = std::chrono::seconds(6);
     owner.timing.health_interval = owner.timing.helper_interval = std::chrono::milliseconds(30);
     owner.timing.stop_grace = std::chrono::seconds(1);
@@ -2330,6 +2319,36 @@ void helper_vram_owner_graph(Fixture& t) {
         events.find("canary_passed") != std::string::npos || events.find("healthy") != std::string::npos)
         throw std::runtime_error("native helper finite score did not complete and clean up: " + quality.dump());
     assert(admissions.size() == 5 && fs::file_size(owner.quality->output.string() + ".rows") == 16);
+
+    // Recording a reference is the same finite run with --kld-record DIR --kld-corpus FILE: no --kld-ref or --kld-out,
+    // and it only succeeds when the engine wrote the reference's kld.json.
+    {
+        const fs::path recorded = t.root / "recorded-reference";
+        fs::create_directory(recorded);
+        const fs::path corpus = t.root / "record-corpus.jsonl";
+        write(corpus, "{\"prompt\":\"a\"}\n");
+        owner.quality = ss::QualityScore{recorded, {}, corpus};
+        const int recorded_exit = ss::serve(owner);
+        const auto record_run = ss::read_record(owner.run_dir).value_or(Json::object());
+        const auto& record_args = record_run.at("processes").back().at("argv");
+        const auto record_events = record_run.at("events").dump();
+        if (recorded_exit != 0 || record_run.value("state", "") != "stopped" || !ss::alive_recorded(record_run).empty() ||
+            record_args.size() != 9 || record_args[5] != "--kld-record" || record_args[6] != recorded.string() ||
+            record_args[7] != "--kld-corpus" || record_args[8] != corpus.string() ||
+            !fs::is_regular_file(recorded / "kld.json") ||
+            record_events.find("quality_recorded") == std::string::npos ||
+            record_events.find("power_restored") == std::string::npos)
+            throw std::runtime_error("native finite reference recording did not complete and clean up: " + record_run.dump());
+        // A reference directory that already holds one, or a missing corpus, is refused before any child starts.
+        const int again = ss::serve(owner);
+        assert(again != 0);
+        owner.quality = ss::QualityScore{t.root / "no-such-reference", {}, corpus};
+        assert(ss::serve(owner) != 0);
+        fs::create_directory(t.root / "empty-reference");
+        owner.quality = ss::QualityScore{t.root / "empty-reference", {}, t.root / "no-corpus.jsonl"};
+        assert(ss::serve(owner) != 0);
+        owner.quality = ss::QualityScore{reference, t.root / "helper-quality.json"};
+    }
 
     // A finite run that times out still stops every helper and restores power.
     owner.quality->output = t.root / "helper-quality-timeout.json";

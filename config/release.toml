@@ -31,7 +31,7 @@ paths = []
 [engine.radiance]
 evidence-gate = "enforced"
 tag-prefix = "bc-radiance-"
-build-patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "vtp14-mixed-tp"]   # source.radiance patch sets
+build-patch-sets = ["serving-core", "helper-config", "vtp14-mixed-tp"]   # source.radiance patch sets
 previous-tag-fallback-prefixes = []
 paths = ["docs/reference/engines/radiance", "tools/lab/radiance"]
 

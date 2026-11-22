@@ -325,7 +325,7 @@ struct C06Issued {
     ltx2::Act x{}, ao{}, kv_in{};
     rad_buf qkv=0, gate=0, output=0;
     std::array<int32_t,2> cu{0,1};
-    std::array<float,4> pos{};
+    std::vector<float> pos;
     std::vector<std::vector<uint8_t>> weights;
     // Optional diagnostic snapshots. Captured at the actual issue point,
     // before the arena planner may reuse the intermediate's storage.
@@ -340,7 +340,7 @@ struct C06Issued {
     std::unique_ptr<rad::Ctx> ctx;
     int rank=0;
     bool audio=false, gpu=false;
-    int64_t width=0;
+    int64_t width=0, tokens=1, video_rows=1;
     ~C06Issued() {
         ctx.reset();
         if (!gpu) return;
@@ -382,33 +382,33 @@ static void c06_issued_step(RadCtx* c,const RadBatch*) {
     uint16_t* input=(uint16_t*)r.ctx->buf_ptr(r.x.a.x);
     if (!input) { rad_step_fail(c,"C06 source activation missing"); return; }
     if (!r.gpu)
-        for (int64_t j=0;j<r.width;++j) input[j]=c06_sample(j);
-    r.x.step(c,1);
+        for (int64_t j=0;j<r.width*r.tokens;++j) input[j]=c06_sample(j);
+    r.x.step(c,r.tokens);
     if (r.width<=0 || r.x.a.cg()<=0 || r.width%r.x.a.cg()!=0) {
         rad_step_fail(c,"C06 quantized input shape invalid"); return;
     }
     if (!c06_snapshot(c,r,"input-quant-codes",r.x.a.cq(),
-                      (size_t)r.width,"i8") ||
+                      (size_t)(r.width*r.tokens),"i8") ||
         !c06_snapshot(c,r,"input-quant-scales",r.x.a.cs(),
-                      (size_t)(r.width/r.x.a.cg())*sizeof(float),"f32")) return;
-    r.attn.qkv.step(c,r.x,r.qkv,1);
+                      (size_t)(r.tokens*r.width/r.x.a.cg())*sizeof(float),"f32")) return;
+    r.attn.qkv.step(c,r.x,r.qkv,r.tokens);
     if (!c06_snapshot(c,r,"qkv-projection",r.qkv,
-                      (size_t)(3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
-    r.attn.gate.step(c,r.x,r.gate,1);
+                      (size_t)(r.tokens*3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
+    r.attn.gate.step(c,r.x,r.gate,r.tokens);
     if (!c06_snapshot(c,r,"gate-projection",r.gate,
-                      (size_t)(r.width/r.attn.hd)*sizeof(uint16_t),"bf16")) return;
+                      (size_t)(r.tokens*r.width/r.attn.hd)*sizeof(uint16_t),"bf16")) return;
     const float* positions=(r.gpu ? (const float*)r.device_pos : r.pos.data())+
-                            (r.audio?3:0);
-    const RadOperand pos=ltx2::praw2(positions,RAD_F32,r.audio?1:3,1);
-    ltx2::attn_core(c,r.attn,true,r.qkv,0,r.gate,r.ao,1,1,
+                            (r.audio?3*r.video_rows:0);
+    const RadOperand pos=ltx2::praw2(positions,RAD_F32,r.audio?1:3,r.tokens);
+    ltx2::attn_core(c,r.attn,true,r.qkv,0,r.gate,r.ao,r.tokens,r.tokens,
                     ltx2::praw(r.gpu ? (const int32_t*)r.device_cu : r.cu.data(),
                                RAD_I32,2),RAD_NONE,pos,pos);
     if (!c06_snapshot(c,r,"qkv-after-norm-rope",r.qkv,
-                      (size_t)(3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
+                      (size_t)(r.tokens*3*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
     if (!c06_snapshot(c,r,"attention-after-gate",r.ao.a.x,
-                      (size_t)r.attn.inner*sizeof(uint16_t),"bf16")) return;
-    r.ao.step(c,1);
-    r.attn.out.step(c,r.ao,r.output,1);
+                      (size_t)(r.tokens*r.attn.inner)*sizeof(uint16_t),"bf16")) return;
+    r.ao.step(c,r.tokens);
+    r.attn.out.step(c,r.ao,r.output,r.tokens);
 }
 
 static std::vector<uint8_t> c06_gather(const RadFile& model,
@@ -570,7 +570,8 @@ static void run_self_attn(const RadFile& model, Registry& reg,
                           int owned, int total_heads,
                           std::unique_ptr<Builder>* instance = nullptr,
                           bool inspect_weights = false, bool aql = false,
-                          C06Issued* capture = nullptr, bool text_cross = false, bool modal_cross = false) {
+                          C06Issued* capture = nullptr, int64_t tokens = 4,
+                          bool text_cross = false, bool modal_cross = false) {
     const std::string kind = modal_cross ? (audio ? "v2a" : "a2v") :
                              text_cross ? (audio ? "audio_attn2" : "attn2") :
                              (audio ? "audio_attn1" : "attn1");
@@ -615,21 +616,21 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     g.w_i8_group = rad::arch::RAD_I8_GROUP_WIDE;
     g.world = 3;
     g.wire_exact = 1;
-    g.max_tok = 4;
+    g.max_tok = tokens;
     g.dtype = "bf16";
     ltx2::Act x{}, ao{}, kv_in{};
-    need(x.declare(&b, m.nm, g, "c06.input", 4, qdim) == RAD_OK &&
-         ao.declare(&b, m.nm, g, "c06.attention", 4, local) == RAD_OK &&
-         (!text_cross || kv_in.declare(&b, m.nm, g, "c06.keys", 4, kvdim) == RAD_OK),
+    need(x.declare(&b, m.nm, g, "c06.input", tokens, qdim) == RAD_OK &&
+         ao.declare(&b, m.nm, g, "c06.attention", tokens, local) == RAD_OK &&
+         (!text_cross || kv_in.declare(&b, m.nm, g, "c06.keys", tokens, kvdim) == RAD_OK),
          "C06 real activation/quantization declaration failed");
     need(x.q.op && ao.q.op && x.a.q8_fed && ao.a.q8_fed,
          "C06 failed to declare the exact native IQ8R activation quantizers");
-    const rad_buf qkv = ltx2::decl_b(&b, m.nm.f("c06.qkv"), RAD_BF16, {4, (text_cross ? 1 : 3) * local});
-    const rad_buf bkv = text_cross ? ltx2::decl_b(&b, m.nm.f("c06.kv"), RAD_BF16, {4, 2 * local}) : 0;
-    const rad_buf logits = ltx2::decl_b(&b, m.nm.f("c06.gate"), RAD_BF16, {4, total_heads});
-    const rad_buf out = ltx2::decl_b(&b, m.nm.f("c06.out"), RAD_BF16, {4, odim});
+    const rad_buf qkv = ltx2::decl_b(&b, m.nm.f("c06.qkv"), RAD_BF16, {tokens, (text_cross ? 1 : 3) * local});
+    const rad_buf bkv = text_cross ? ltx2::decl_b(&b, m.nm.f("c06.kv"), RAD_BF16, {tokens, 2 * local}) : 0;
+    const rad_buf logits = ltx2::decl_b(&b, m.nm.f("c06.gate"), RAD_BF16, {tokens, total_heads});
+    const rad_buf out = ltx2::decl_b(&b, m.nm.f("c06.out"), RAD_BF16, {tokens, odim});
     const rad_buf scratch = ltx2::decl_b(&b, m.nm.f("c06.norm_scratch"), RAD_BF16,
-                                         {4, full});
+                                         {tokens, full});
     need(x.a.x && x.a.q8 && x.a.s8 && ao.a.x && ao.a.q8 && ao.a.s8 &&
          qkv && logits && out && scratch && (!text_cross || (bkv && kv_in.q.op)),
          "C06 activation buffers missing");
@@ -649,7 +650,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
         else wrong.wire_exact=0;
         need(ltx2::attn_declare(&b, m, wrong, a, prefix.c_str(), original.c_str(),
                                total_heads, hd, qdim, kvdim, odim, !text_cross, x, text_cross ? &kv_in : nullptr,
-                               qkv, bkv, logits, ao, out, 4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN,
+                               qkv, bkv, logits, ao, out, tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN,
                                0, rope, 1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
              "C06 invalid native geometry admitted");
     }
@@ -658,7 +659,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
                            total_heads, hd, qdim, kvdim, odim, !text_cross,
                            unquantized, text_cross ? &kv_in : nullptr, qkv, bkv, logits, ao, out,
-                           4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN, 0, rope,
+                           tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN, 0, rope,
                            1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
          "C06 accepted missing input IQ8R quantizer");
     unquantized = ao;
@@ -666,7 +667,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
                            total_heads, hd, qdim, kvdim, odim, !text_cross,
                            x, text_cross ? &kv_in : nullptr, qkv, bkv, logits, unquantized, out,
-                           4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN, 0, rope,
+                           tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN, 0, rope,
                            1e-6, &slice, scratch) == RAD_E_UNSUPPORTED,
          "C06 accepted missing output IQ8R quantizer");
     if (text_cross) {
@@ -674,7 +675,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
         no_kv.q.op = 0;
         need(ltx2::attn_declare(&b, m, g, a, prefix.c_str(), original.c_str(),
                                total_heads, hd, qdim, kvdim, odim, false, x, &no_kv,
-                               qkv, bkv, logits, ao, out, 4, 2,
+                               qkv, bkv, logits, ao, out, tokens, 2,
                                RAD_ACCESS_PER_TOKEN, 0, rope, 1e-6, &slice, scratch)
                  == RAD_E_UNSUPPORTED,
              "LTX03 accepted unquantized independent KV");
@@ -684,7 +685,7 @@ static void run_self_attn(const RadFile& model, Registry& reg,
     const int rc=ltx2::attn_declare(
         &b, m, g, a, prefix.c_str(), original.c_str(),
         total_heads, hd, qdim, kvdim, odim, !text_cross, x, text_cross ? &kv_in : nullptr,
-        qkv, bkv, logits, ao, out, 4, text_cross ? 2 : 4, RAD_ACCESS_PER_TOKEN,
+        qkv, bkv, logits, ao, out, tokens, text_cross ? 2 : tokens, RAD_ACCESS_PER_TOKEN,
         0, rope, 1e-6, &slice, scratch);
     if(rc != RAD_OK) {
         std::fprintf(stderr,"C06 failed: block=%lld audio=%d rank=%d owned=%d rc=%d\n",
@@ -762,14 +763,20 @@ static void run_self_attn(const RadFile& model, Registry& reg,
             capture->width=full;
             capture->audio=audio;
             capture->rank=rank;
+            capture->tokens=tokens<=4?1:tokens;
+            capture->cu[1]=(int32_t)capture->tokens;
             RadVideoGeom geom{};
             geom.n_text=1;
             geom.lat_frames=1;
             geom.lat_h=1;
-            geom.lat_w=1;
-            geom.n_audio=1;
-            need(ltx2::positions(&geom,capture->pos.data(),3)==3,
-                 "C06 native one-row coordinates invalid");
+            geom.lat_w=audio?1:capture->tokens;
+            geom.n_audio=audio?capture->tokens:1;
+            capture->video_rows=geom.lat_w;
+            capture->pos.resize((size_t)(3*geom.lat_w+geom.n_audio));
+            need(ltx2::positions(&geom,capture->pos.data(),
+                                 geom.n_text+geom.lat_w+geom.n_audio)==
+                     geom.n_text+geom.lat_w+geom.n_audio,
+                 "C06 native multirow rotary coordinates invalid");
         }
         // Retain exactly the Builder just verified; native all-reduce
         // instance initialization must rendezvous across all three ranks.
@@ -790,7 +797,9 @@ int main(int argc, char** argv) {
     try {
         const bool aql = argc == 4 &&
             (std::string(argv[3]) == "--c06-instances-aql" ||
-             std::string(argv[3]) == "--c06-issued-aql");
+             std::string(argv[3]) == "--c06-issued-aql" ||
+             std::string(argv[3]) == "--c06-issued-aql-16" ||
+             std::string(argv[3]) == "--c06-issued-aql-64");
         if (aql) ltx_test::require_aql_backend();
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
@@ -823,7 +832,7 @@ int main(int argc, char** argv) {
                             for (int rank = 0; rank < 3; ++rank) {
                                 run_self_attn(model, reg, block, audio, rank,
                                               first, split[rank], nheads,
-                                              nullptr, false, false, nullptr, true, modal);
+                                              nullptr, false, false, nullptr, 4, true, modal);
                                 first += split[rank];
                                 ++count;
                             }
@@ -874,8 +883,17 @@ int main(int argc, char** argv) {
                 need(tested==12,"C06 weight contract matrix drift");
                 return 0;
             }
+            const int64_t issue_rows =
+                (std::string(argv[3])=="--c06-issued-host-16" ||
+                 std::string(argv[3])=="--c06-issued-aql-16") ? 16 :
+                (std::string(argv[3])=="--c06-issued-host-64" ||
+                 std::string(argv[3])=="--c06-issued-aql-64") ? 64 : 1;
             const bool issue = std::string(argv[3])=="--c06-issued-host" ||
-                               std::string(argv[3])=="--c06-issued-aql";
+                               std::string(argv[3])=="--c06-issued-aql" ||
+                               std::string(argv[3])=="--c06-issued-host-16" ||
+                               std::string(argv[3])=="--c06-issued-host-64" ||
+                               std::string(argv[3])=="--c06-issued-aql-16" ||
+                               std::string(argv[3])=="--c06-issued-aql-64";
             if (std::string(argv[3]) == "--c06-instances" || aql || issue) {
                 // Both issued modes reuse the same declared native C06 graph
                 // and exact collective instances as the existing proofs.
@@ -905,7 +923,8 @@ int main(int argc, char** argv) {
                         for (int rank=0; rank<3; ++rank) {
                             run_self_attn(model,reg,0,audio,rank,
                                           first,split[rank],nheads,&builders[rank],
-                                          false,aql,issue?&issued[rank]:nullptr);
+                                          false,aql,issue?&issued[rank]:nullptr,
+                                          issue?std::max<int64_t>(4,issue_rows):4);
                             if(issue) issued[rank].gpu=aql;
                             first += split[rank];
                         }
@@ -972,21 +991,21 @@ int main(int argc, char** argv) {
                                     need(r.device_cu,
                                          "C06 native AQL cu-seqlens allocation refused");
                                     r.owned_device.push_back(r.device_cu);
-                                    r.device_pos=rad_dev_alloc(sizeof(r.pos),RAD_MEM_DEVICE);
+                                    r.device_pos=rad_dev_alloc(r.pos.size()*sizeof(float),RAD_MEM_DEVICE);
                                     need(r.device_pos,
                                          "C06 native AQL position allocation refused");
                                     r.owned_device.push_back(r.device_pos);
                                     need(rad_memcpy_async(r.device_cu,r.cu.data(),
                                                           sizeof(r.cu),r.ctx->stream())==RAD_OK &&
                                          rad_memcpy_async(r.device_pos,r.pos.data(),
-                                                          sizeof(r.pos),r.ctx->stream())==RAD_OK,
+                                                          r.pos.size()*sizeof(float),r.ctx->stream())==RAD_OK,
                                          "C06 native AQL coordinate transfer failed");
-                                    std::vector<uint16_t> sample((size_t)r.width);
-                                    for(int64_t j=0;j<r.width;++j)
+                                    std::vector<uint16_t> sample((size_t)(r.width*r.tokens));
+                                    for(int64_t j=0;j<r.width*r.tokens;++j)
                                         sample[(size_t)j]=c06_sample(j);
                                     void* input=r.ctx->buf_ptr(r.x.a.x);
                                     need(input && rad_memcpy_async(input,sample.data(),
-                                                r.width*2,r.ctx->stream())==RAD_OK &&
+                                                r.width*r.tokens*2,r.ctx->stream())==RAD_OK &&
                                          rad_stream_sync(r.ctx->stream())==RAD_OK,
                                          "C06 native AQL activation transfer failed");
                                 }
@@ -1000,7 +1019,7 @@ int main(int argc, char** argv) {
                                     const int rc=r.ctx->bind_thread();
                                     RadBatch batch{};
                                     batch.phase=RAD_PHASE_PREFILL;
-                                    batch.n_tok=1;
+                                    batch.n_tok=r.tokens;
                                     batch.n_seq=1;
                                     status[rank]=rc==RAD_OK?r.ctx->run_step(&batch):rc;
                                     if(status[rank]==RAD_OK && aql)
@@ -1026,19 +1045,19 @@ int main(int argc, char** argv) {
                                      "C06 output rank device bind refused");
                                 void* ptr=r.ctx->buf_ptr(r.output);
                                 need(ptr!=nullptr,"C06 output arena buffer missing");
-                                results[rank].resize((size_t)full);
+                                results[rank].resize((size_t)(full*r.tokens));
                                 if(aql) {
                                     need(rad_memcpy_async(results[rank].data(),ptr,
-                                                         full*2,r.ctx->stream())==RAD_OK &&
+                                                         full*r.tokens*2,r.ctx->stream())==RAD_OK &&
                                          rad_stream_sync(r.ctx->stream())==RAD_OK,
                                          "C06 native AQL attention output download failed");
                                 } else {
-                                    std::memcpy(results[rank].data(),ptr,(size_t)full*2);
+                                    std::memcpy(results[rank].data(),ptr,(size_t)(full*r.tokens)*2);
                                 }
                             }
                             const auto& control=results[0];
                             size_t nonzero=0;
-                            for(int64_t j=0;j<full;++j) {
+                            for(size_t j=0;j<control.size();++j) {
                                 const uint32_t b=(uint32_t)control[(size_t)j]<<16;
                                 float x;
                                 std::memcpy(&x,&b,sizeof x);
@@ -1079,7 +1098,7 @@ int main(int argc, char** argv) {
                             }
                             std::printf("C06 issued %s: %s heads=%d,%d,%d exact BF16 output replicas %lld values; no TP1 capture\n",
                                         aql?"AQL":"host",audio?"audio":"video",
-                                        split[0],split[1],split[2],(long long)full);
+                                        split[0],split[1],split[2],(long long)control.size());
                             // Optional diagnostic capture of the *validated* rank-0
                             // BF16 output, for an external TP1/backend comparison.
                             // The caller explicitly owns the destination directory.

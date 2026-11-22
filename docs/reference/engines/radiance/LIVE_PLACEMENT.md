@@ -79,7 +79,23 @@ the scope hashes to the record key; production matches the current model/cards/l
 service inputs before enabling. Changing model, physical cards/architectures, layout, histogram
 period, power profile or helper execution behavior still requires compatible evidence.
 
-**Producer status.** The record store is read by every production start (`derive_manifest_live_policy`) and written only by `bc-serve calibration-ingest`, which validates a settled `RHP16_CALIBRATION_JSON` line from a lab helper log against a lab-profile calibration manifest. The foreground `serve --calibration-run` start that produced that manifest and log was removed, and no replacement start produces them: the worker emits the line only for a calibration identity that only that start supplied. Until a native calibration start exists again, no command in this repository creates a new record; existing records stay valid and readable.
+**Calibration producer status (2026-11-23).** A normal
+`bc-serve serve CONFIG` start reads a complete matching record from the
+calibration store through `derive_manifest_live_policy`, or leaves the
+policy off. `bc-serve explain CONFIG` reports selection without a start.
+The standalone `bc-serve calibration-ingest` command can validate a
+historically captured `RHP16_CALIBRATION_JSON` helper log against its
+original lab-profile calibration manifest and append a record. It does
+not drive workloads or obtain a fresh record.
+
+The old foreground `serve --calibration-run` start and lab launcher were
+removed. The standalone manifest writer still parses `--calibration-run`,
+but that flag is **not** a supported session start: no current main-branch
+workflow produces the required lab manifest and settled helper log.
+Existing complete records remain usable; do not describe an uncalibrated
+layout as self-calibrating. PRs #1375 and #1384 are implementing native
+calibration slices, but are not yet an integrated operator procedure.
+Recheck the actual CLI and host/GPU gates before documenting any replacement.
 
 **Startup guards (a production start with the policy on).** Right after the start canary `bc-serve` checks the engine's
 histogram stream and the worker's placement control. Two states of a fresh start are healthy and accepted, nothing else is

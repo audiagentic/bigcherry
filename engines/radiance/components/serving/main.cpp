@@ -133,6 +133,8 @@ void usage() {
            "attestation or gates; never rewrites FILE\n"
            "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
            "                 --kld-ref DIR --kld-out FILE   run a finite native KL score\n"
+           "  quality CONFIG --native-config YAML --model-root DIR --run-dir DIR\n"
+           "                 --kld-record DIR --kld-corpus FILE   record a KL reference (DIR existing and empty)\n"
            "  stop   --run-dir DIR       ask the owner to stop; 0 once every child has exited\n"
            "  status --run-dir DIR [--json]   the owner's record: state, config, port, manifest, processes\n";
 }
@@ -145,6 +147,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     std::string config_name;
     std::optional<ss::QualityScore> quality;
     if (cmd == "quality") quality.emplace();
+    bool record_requested = false;
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
     fs::path calibration_records;
@@ -201,6 +204,11 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             quality->reference = need();
         } else if (arg == "--kld-out" && quality && quality->output.empty()) {
             quality->output = need();
+        } else if (arg == "--kld-record" && quality && quality->reference.empty()) {
+            quality->reference = need();
+            record_requested = true;
+        } else if (arg == "--kld-corpus" && quality && quality->corpus.empty()) {
+            quality->corpus = need();
         } else if (!arg.empty() && arg.front() != '-' && config_name.empty()) {
             config_name = arg;
             passed.push_back(arg);
@@ -367,10 +375,14 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (quality && step_phase_trace)
         throw std::runtime_error("--step-phase-trace is a serving-only diagnostic");
     if (quality) {
-        if (native_config.empty() || quality->reference.empty() || quality->output.empty())
-            throw std::runtime_error("quality requires named native YAML, --kld-ref DIR and --kld-out FILE");
+        const bool scoring = !quality->output.empty();
+        if (native_config.empty() || quality->reference.empty() || scoring == record_requested ||
+            (record_requested && quality->corpus.empty()) || (!record_requested && !quality->corpus.empty()))
+            throw std::runtime_error("quality requires named native YAML and either --kld-ref DIR --kld-out FILE "
+                                     "(score) or --kld-record DIR --kld-corpus FILE (record)");
         quality->reference = fs::canonical(quality->reference);
-        quality->output = fs::absolute(quality->output);
+        if (scoring) quality->output = fs::absolute(quality->output);
+        if (record_requested) quality->corpus = fs::canonical(quality->corpus);
     }
     const bool installed_native_replay = prefix && !stored_manifest.empty();
     if ((!config_name.empty() || installed_native_replay) && opts.configs.empty()) {
