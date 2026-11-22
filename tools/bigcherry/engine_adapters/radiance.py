@@ -44,47 +44,34 @@ class RadianceAdapter(EngineAdapter):
         return None
 
     def quality_command(self, kind, arm, env, run_dir, binary, model, quality) -> QualityCommand | None:
-        """radiance's KL mode is offline and prefill-only: ``radiance --model M <args> --kld-record DIR --kld-corpus
-        JSONL`` writes the reference, ``... --kld-ref DIR --kld-out JSON`` scores against it. ``quality["args"]`` are
-        the engine arguments of the KL run (layout, placement, ``--max-num-batched-tokens`` no larger than the helper
-        lane cap); a native arm (``serving`` with ``native_config``) is scored by ``bc-serve quality`` instead."""
+        """radiance's KL mode is offline and prefill-only and runs through the native owner: ``bc-serve quality`` reads and
+        seals the arm's own YAML (``serving`` = ``config`` + ``native_config``), plans it and either records a reference
+        (``--kld-record DIR --kld-corpus JSONL``) or scores against one (``--kld-ref DIR --kld-out JSON``). The engine is
+        never started from flags: an arm without a native YAML has no quality run."""
         if kind not in ("record", "score"):
             raise ValueError(f"quality kind must be record or score, not {kind!r}")
         serving = arm.get("serving") or {}
-        if "native_config" in serving:
-            return self._native_quality_command(kind, arm, env, run_dir, binary, quality)
-        argv = [str(binary), "--model", str(model), *quality["args"]]
-        result = None
-        if kind == "record":
-            argv += ["--kld-record", quality["reference_dir"], "--kld-corpus", quality["corpus"]]
-        else:
-            result = run_dir / f"{arm['name']}.kld.json"
-            argv += ["--kld-ref", quality["reference_dir"], "--kld-out", str(result)]
-        return QualityCommand(
-            argv=tuple(argv), env=dict(env), log_path=run_dir / f"{arm['name']}.{kind}.log",
-            result_path=result, timeout_s=float(quality.get("timeout_s", KLD_TIMEOUT_S)),
-        )
-
-    def _native_quality_command(self, kind, arm, env, run_dir, binary, quality) -> QualityCommand:
-        """A native arm: the owner reads and seals the arm's YAML, plans it and scores it (``bc-serve quality``). The owner
-        only scores; a reference is recorded beforehand and named by the job (reference_dir with its reference_metadata)."""
-        if kind != "score":
-            raise ValueError(f"{arm['name']}: bc-serve quality scores only; the native arm's reference must already be recorded "
-                             "(quality.reference_dir and quality.reference_metadata)")
+        if "native_config" not in serving:
+            raise ValueError(f"{arm['name']}: radiance quality runs a native arm (serving with config and native_config)")
         if quality["args"]:
             raise ValueError(f"{arm['name']}: a native arm takes its engine configuration from its YAML, so quality.args must be empty")
-        serving = arm["serving"]
+        if kind == "record" and not quality.get("corpus"):
+            raise ValueError(f"{arm['name']}: recording a reference needs quality.corpus")
         host = _host()
         root = os.environ.get("BC_MODEL_ROOT") or host.model_root
         if not root:
             raise ValueError(f"{arm['name']}: no model root (BC_MODEL_ROOT or host model-root)")
         bc_serve = binary.parent.parent / "radiance_home" / "bin" / "bc-serve"
-        result = run_dir / f"{arm['name']}.kld.json"
-        argv = (str(bc_serve), "quality", serving["config"], "--native-config", serving["native_config"],
-                "--model-root", str(root), "--engine-binary", str(binary), "--run-dir", str(run_dir / f"{arm['name']}.owner"),
-                "--kld-ref", str(quality["reference_dir"]), "--kld-out", str(result))
+        argv = [str(bc_serve), "quality", serving["config"], "--native-config", serving["native_config"],
+                "--model-root", str(root), "--engine-binary", str(binary), "--run-dir", str(run_dir / f"{arm['name']}.owner")]
+        result = None
+        if kind == "record":
+            argv += ["--kld-record", str(quality["reference_dir"]), "--kld-corpus", str(quality["corpus"])]
+        else:
+            result = run_dir / f"{arm['name']}.kld.json"
+            argv += ["--kld-ref", str(quality["reference_dir"]), "--kld-out", str(result)]
         return QualityCommand(
-            argv=argv, env=dict(env), log_path=run_dir / f"{arm['name']}.{kind}.log", result_path=result,
+            argv=tuple(argv), env=dict(env), log_path=run_dir / f"{arm['name']}.{kind}.log", result_path=result,
             timeout_s=float(quality.get("timeout_s", KLD_TIMEOUT_S)))
 
     def cpu_smoke(self, context: ProjectContext, build_dir: Path, model_root: Path) -> CpuSmokeSpec | None:

@@ -142,6 +142,15 @@ if(LTX_NATIVE_CORE_LIB)
     add_test(NAME ltx_c06_issued_host_checkpoint_attention
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06-issued-host)
     set_tests_properties(ltx_c06_issued_host_checkpoint_attention PROPERTIES TIMEOUT 120)
+    # LTX02: issue the same checkpoint-backed three-rank RadCtx graph
+    # with genuinely multirow activations and ordered native collectives.
+    foreach(_ltx_rows IN ITEMS 16 64)
+      add_test(NAME ltx_c06_issued_host_${_ltx_rows}_rows
+        COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}"
+                "--c06-issued-host-${_ltx_rows}")
+      set_tests_properties(ltx_c06_issued_host_${_ltx_rows}_rows
+        PROPERTIES TIMEOUT 120)
+    endforeach()
     # Host-linked binary must reject the opt-in native AQL flag, before
     # creating any rank or device instance.
     add_test(NAME ltx_c06_aql_refuses_host_backend
