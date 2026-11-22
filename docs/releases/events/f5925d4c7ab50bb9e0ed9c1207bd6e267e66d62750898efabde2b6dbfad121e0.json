@@ -1,0 +1,15 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_110027_no-user-visible-change_1190",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_policy_derive.h",
+    "engines/radiance/components/moe-remote/worker_policy_derive_test.cpp",
+    "engines/radiance/components/serving/live_policy.cpp",
+    "engines/radiance/components/serving/live_policy_test.cpp",
+    "engines/radiance/components/serving/golden/live_policy_derive.golden"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Moved the live-policy derivation arithmetic from serving/live_policy.cpp into the header-only moe-remote/worker_policy_derive.h so the owner and the helper call one function; serving keeps record reading, declared objectives and manifest provenance. Parity golden captured from the pre-extraction code proves byte-identical policy and provenance for every recorded fixture. No behaviour change.",
+  "timestamp-utc": "2026-11-22T11:00:27.213871Z",
+  "user-summary-candidate": "No user-visible change."
+}
