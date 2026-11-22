@@ -1,0 +1,17 @@
+{
+  "schema": 1,
+  "tier": "profile-evidence",
+  "patch-id": "rad0055_step_phase_trace",
+  "pinned": "x",
+  "subject-digest": "x",
+  "default-on": false,
+  "models": [
+    "placeholder"
+  ],
+  "checks": {
+    "mechanics": "pending",
+    "activation": "pending",
+    "identity": "pending",
+    "ab": "pending"
+  }
+}
