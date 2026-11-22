@@ -19,10 +19,10 @@ First real radiance bump (v1.7.0 -> v1.8.0, 2026-10-19): after drift, compile an
 
 ## Steps
 
-1. Decide where the record is committed (before lane-build) and that complete/reaudit still update it.
-2. Fix in pin_bump.py; offline test with a fake lane that asserts a clean tree at lane-build.
-3. Check the llama.cpp path for the same ordering.
-4. Document in docs/reference/build/PIN_BUMP.md.
+1. Verify `pin_bump.py` calls `_commit_release_records` before `run_phase_lane_build`, and that exact release paths only are committed, not other staged changes or the pin-transition marker; check both engine selections.
+2. Run `tools/tests/release/test_pin_bump.py` release-record and lane-order tests, including fake dirty tree, idempotent rerun, selective commit, resume and both-engine path.
+3. Identify or capture one later real `pin-bump` first-run/resume receipt showing that lane-build saw a clean controller checkout without a manual release-record commit; include run ID, engine, ref, release record and Git evidence.
+4. Verify `docs/reference/build/PIN_BUMP.md` documents the pre-lane record commit and subsequent complete/reaudit behavior before closure.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +38,7 @@ First real radiance bump (v1.7.0 -> v1.8.0, 2026-10-19): after drift, compile an
 
 ## Validation
 
-Offline test; the next real bump (any engine) passes lane-build without a manual commit.
+Five `CommitReleaseRecordsTests` passed on 2026-11-22. A subsequent real bump receipt with no manual release record commit is still required; `releases/v1.17.0.json` records a passed lane build but alone is not conclusive for that negative assertion.
 
 ## Effort & Risk
 
@@ -50,11 +50,16 @@ Offline test; the next real bump (any engine) passes lane-build without a manual
 
 ## Acceptance Criteria
 
-
+1. The orchestrator commits exactly its own release records before lane-build, preserves unrelated dirty paths/staged content, is idempotent on resume and continues updating records on complete/reaudit.
+2. Offline tests cover exact-path commit and both Radiance/llama.cpp phase ordering, plus clean-tree lane admission under injected prior record writes; no blanket allow-dirty.
+3. One real bumped-engine lane build succeeds on the first or resumed orchestrator path, with a verifiable record that no manual release-record commit was needed.
+4. The workflow is documented under `docs/reference/build/PIN_BUMP.md`. Do not mark complete solely on passing unit tests or a release record without the provenance in criterion 3.
 
 ## Notes
 
 Worked around on the bump branch by committing the record by hand. Found by the radiance 1.8.0 bump.
+
+CONSOLIDATION 2026-11-22: source code `tools/bigcherry/release/pin_bump.py` commits record paths before lane build; 5/5 focused exact-path tests pass. A later v1.17.0 record shows lane build and CPU smoke succeeded, but provenance of no manual intervention is not independently established here; the real bump criterion remains open.
 
 ## Change Log
 
@@ -64,3 +69,8 @@ Worked around on the bump branch by committing the record by hand. Found by the 
 
 - chg_20261018_140640_radiance-is-now-on-upstream-1_2179
 - 2026-10-18T14:06:48.708564+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4473
+- 2026-11-22T09:20:16.188520+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes

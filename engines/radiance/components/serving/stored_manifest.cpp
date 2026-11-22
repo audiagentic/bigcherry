@@ -75,6 +75,12 @@ Json execution_projection(const Json& spec) {
         // The shared segment is an execution-record identity, not a
         // configuration setting. The current owner still checks its namespace.
         handoff.at("transport").erase("shm");
+        // The live heat histogram defaults to a file in the start's own run directory. Where it is written is a
+        // per-start value (the stored-plan key already reduces it to recorded or not); only recording it is compared.
+        auto& telemetry = handoff.at("telemetry");
+        if (telemetry.contains("histogram_file") && telemetry.at("histogram_file").is_string() &&
+            !telemetry.at("histogram_file").get<std::string>().empty())
+            telemetry["histogram_file"] = "on";
         // This is an S10 startup decision, checked by live calibration and
         // runtime policy gates; it is not a static config setting.
         handoff.at("placement").erase("live_policy_state");

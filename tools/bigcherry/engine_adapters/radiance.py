@@ -3,12 +3,11 @@
 from __future__ import annotations
 
 import os
-from functools import partial
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from ..core import environment
-from . import radiance_inventory, radiance_manifest, radiance_plan
+from . import radiance_inventory
 from .base import (
     SMOKE_SEED,
     BumpCheck,
@@ -27,12 +26,6 @@ from .base import (
 if TYPE_CHECKING:
     from ..core.context import ProjectContext
 
-#: what the retired fn-r9700-engine.sh waited for: the helper is up (helper 0 has created the segment) or waits for the engine
-#: runtime expert maps. ("runtime map owns" is logged only after the engine has connected, so it cannot gate the
-#: start; it is the activation marker, read from the helper logs afterwards.)
-READY_PATTERN = r"^r3_moe_worker: (ready |waiting for engine runtime expert maps)"
-READY_TIMEOUT_S = 900.0
-STOP_TIMEOUT_S = 60.0
 KLD_TIMEOUT_S = 5400.0
 
 
@@ -54,24 +47,13 @@ class RadianceAdapter(EngineAdapter):
         """radiance's KL mode is offline and prefill-only: ``radiance --model M <args> --kld-record DIR --kld-corpus
         JSONL`` writes the reference, ``... --kld-ref DIR --kld-out JSON`` scores against it. ``quality["args"]`` are
         the engine arguments of the KL run (layout, placement, ``--max-num-batched-tokens`` no larger than the helper
-        lane cap); an arm with a ``serving`` manifest starts ``--manifest M --role engine`` instead and takes none. The
-        arm's settings and sidecars apply as in serving."""
+        lane cap); a native arm (``serving`` with ``native_config``) is scored by ``bc-serve quality`` instead."""
         if kind not in ("record", "score"):
             raise ValueError(f"quality kind must be record or score, not {kind!r}")
-        manifest = arm.get("manifest")
         serving = arm.get("serving") or {}
         if "native_config" in serving:
             return self._native_quality_command(kind, arm, env, run_dir, binary, quality)
-        if manifest is None:
-            argv = [str(binary), "--model", str(model), *quality["args"]]
-        else:
-            # A serving arm: the manifest is the engine's whole configuration; only the KL run flags accompany it.
-            if quality["args"]:
-                raise ValueError(f"{arm['name']}: a serving arm takes its engine configuration from its manifest, so quality.args must be empty")
-            from ..core import engines, paths
-
-            serve = engines.load(paths.REPO_ROOT, "radiance").serve
-            argv = [str(binary), *(a.replace("{manifest}", str(manifest)) for a in serve.manifest_args)]
+        argv = [str(binary), "--model", str(model), *quality["args"]]
         result = None
         if kind == "record":
             argv += ["--kld-record", quality["reference_dir"], "--kld-corpus", quality["corpus"]]
@@ -81,7 +63,6 @@ class RadianceAdapter(EngineAdapter):
         return QualityCommand(
             argv=tuple(argv), env=dict(env), log_path=run_dir / f"{arm['name']}.{kind}.log",
             result_path=result, timeout_s=float(quality.get("timeout_s", KLD_TIMEOUT_S)),
-            prepare=partial(radiance_manifest.quality_launch, tuple(argv)) if manifest is not None else None,
         )
 
     def _native_quality_command(self, kind, arm, env, run_dir, binary, quality) -> QualityCommand:
@@ -153,82 +134,37 @@ class RadianceAdapter(EngineAdapter):
     def check_arm_environment(self, controls: dict[str, str]) -> None:
         return None
 
-    def serving_layout(self, layout: str) -> ServingLayout:
-        """Use the C++ resolver's detected role/BDF assignments for serving ranks."""
+    def serving_layout(self, config: str, native_config: Path, binary: Path) -> ServingLayout:
+        """The model and engine cards of a native arm, as the native owner's offline admission (``bc-serve explain``) reads
+        them from the arm's own YAML; card ordinals come from the live detector, never from host settings."""
         host = _host()
-        try:
-            selection = radiance_inventory.resolve(layout, host=host)
-        except radiance_inventory.InventoryError as exc:
-            raise ValueError(str(exc)) from exc
-        resolved = selection.resolved
         root = os.environ.get("BC_MODEL_ROOT") or host.model_root
         if not root:
-            raise ValueError(f"layout {layout}: no model root (BC_MODEL_ROOT or host model-root)")
-        engine = [selection.inventory.by_bdf(bdf) for bdf in selection.engine_bdfs]
+            raise ValueError(f"{config}: no model root (BC_MODEL_ROOT or host model-root)")
+        bc_serve = binary.parent.parent / "radiance_home" / "bin" / "bc-serve"
+        try:
+            explained = radiance_inventory._run(bc_serve, [
+                "explain", config, "--native-config", str(native_config), "--model-root", str(root),
+                "--engine-binary", str(binary), "--json"])
+            values = explained["values"]
+            model = Path(values["engine"]["model"])
+            engine_bdfs = tuple(values["layout"]["engine_cards"])
+            inventory = radiance_inventory.detect(binary=bc_serve)
+            engine = [inventory.by_bdf(bdf) for bdf in engine_bdfs]
+        except (KeyError, TypeError) as exc:
+            raise ValueError(f"{config}: bc-serve explain lacks the structured field {exc}") from exc
+        except radiance_inventory.InventoryError as exc:
+            raise ValueError(str(exc)) from exc
+        if not engine:
+            raise ValueError(f"{config}: bc-serve explain names no engine card")
         return ServingLayout(
-            model=(Path(root) / resolved.model).expanduser().resolve(),
+            model=model.expanduser().resolve(),
             environment={"ROCR_VISIBLE_DEVICES": ",".join(str(g.ordinal) for g in engine),
                          "HIP_VISIBLE_DEVICES": ",".join(str(i) for i in range(len(engine)))},
             expected_execution={"backend": "ROCm", "architectures": [g.arch for g in engine],
-                                "locators": list(selection.engine_bdfs)},
+                                "locators": list(engine_bdfs)},
         )
 
-    def write_serving_manifest(
-        self, name: str, serving: dict[str, Any], *, binary: Path, model: Path, env: dict[str, str], run_dir: Path,
-    ) -> Path:
-        from ..core import engines, paths
-
-        host = _host()
-        try:
-            return radiance_plan.write_manifest(
-                name=name, serving=serving, binary=binary, model=model, env=env,
-                serve=engines.load(paths.REPO_ROOT, "radiance").serve, run_dir=run_dir,
-                plan_cache=Path(host.work_root) / "plan-cache", host="127.0.0.1",
-                helper_specs=lambda manifest: self.sidecars(
-                    {"name": name, "model": model, "settings": {}, "manifest": manifest}, env, run_dir, binary))
-        except radiance_plan.PlanError as exc:
-            raise ValueError(str(exc)) from exc
-
-    def manifest_port(self, manifest: Path) -> int:
-        try:
-            return radiance_manifest.read(manifest).port
-        except radiance_manifest.ManifestError as exc:
-            raise ValueError(str(exc)) from exc
-
     def sidecars(self, arm: dict[str, Any], env: dict[str, str], run_dir: Path, binary: Path) -> list[SidecarSpec]:
-        manifest_path = arm.get("manifest")
-        if manifest_path is None:
-            return []
-        try:
-            manifest = radiance_manifest.read(Path(manifest_path))
-        except radiance_manifest.ManifestError as exc:
-            raise ValueError(f"{arm['name']}: {exc}") from exc
-        if not manifest.helper_gpus:
-            return []
-        detector = binary.parent.parent / "radiance_home" / "bin" / "bc-serve"
-        try:
-            inventory = radiance_inventory.detect(binary=detector)
-            inventory.check_power_overrides(_host())
-            if len(set(manifest.helper_gpus)) != len(manifest.helper_gpus):
-                raise radiance_inventory.InventoryError("duplicate helper PCI BDF in serving manifest")
-            devices = [str(inventory.by_bdf(bdf).ordinal) for bdf in manifest.helper_gpus]
-        except radiance_inventory.InventoryError as exc:
-            raise ValueError(f"{arm['name']}: {exc}") from exc
-        helper = binary.parent.parent / "radiance_home" / "helpers" / "r3_moe_worker"
-        # The POSIX segment /name lives at /dev/shm/name. Helper 0 creates it; SidecarSet starts in list order and
-        # waits for each helper to be ready, so helper 1 attaches to an existing segment.
-        cleanup = (Path("/dev/shm") / manifest.shm.lstrip("/"),)
-        # A helper's whole configuration is the manifest; the environment only says which card it sees.
-        base = {k: v for k, v in env.items() if not k.startswith("R3_") and k != "RADIANCE_HOME"}
-        specs = []
-        for index, device in enumerate(devices):
-            helper_env = {**base, "ROCR_VISIBLE_DEVICES": device, "HIP_VISIBLE_DEVICES": "0"}
-            specs.append(SidecarSpec(
-                name=f"helper{index}",
-                argv=(str(helper), "--manifest", str(manifest_path), "--role", f"helper{index}"),
-                env=helper_env, ready_pattern=READY_PATTERN,
-                ready_timeout_s=READY_TIMEOUT_S,
-                log_path=run_dir / f"helper{index}.log", stop_timeout_s=STOP_TIMEOUT_S,
-                pre_start_cleanup=cleanup,
-            ))
-        return specs
+        """The native owner starts and stops its own helpers; the harness runs none."""
+        return []

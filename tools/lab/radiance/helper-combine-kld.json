@@ -1,25 +1,11 @@
 {
- "_comment": "RAD18 combine quality gate: output quality with R3_MOE_WORKER_COMBINE=1 (helper 0 adds both helpers' bf16 rows on the CPU and writes the sum as fp16) against the same helper layout with the combine off, scored by radiance KL mode through ab-benchmark --server-config (quality_only). Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; MAX_ROWS=64 with --max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: the two-XTX tp 2 exact-wire run recorded once (2026-10-23) into KLD_REF_DIR=${BC_WORK_ROOT}/runs/rad18-kld/reference with helper-kld.json's record block; restore that block to re-record into a new directory. Set RAD_BIN, RAD_HOME, R9700_BDF, KLD_REF_DIR. KL mode runs 64-row steps and the combine fires only at R3_MOE_WORKER_COMBINE_MIN_ROWS (default 256), so the combine1 arm sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in helper0.log after the run (the first run, 2026-10-23, never fired and its identical result was void). History: a bf16 sum failed this gate (p99 +0.275 against 0.2), and an engine-side rounding-only control (since removed) matched it exactly, so the loss was the bf16 rounding; the sum is now fp16.",
+ "_comment": "RAD18 combine quality gate: output quality with the helper-row combine on (x-bigcherry.helper.combine, helper 0 adds both helpers' bf16 rows on the CPU and writes the sum as fp16) against the same helper layout with the combine off, each arm a native YAML (native-arms/helper-combine-kld/*.yaml, recipes in native-arms.json) scored by bc-serve quality. Both arms run the helper layout, so the control is combine0 and the gate is the combine's own change. Arm settings mirror helper-kld.json's helper-on arm; handoff.max-rows 64 with max-num-batched-tokens 64 sends every step through the helpers' large lane, where the combine runs. Reference: the two-XTX tp 2 exact-wire run recorded once beforehand into KLD_REF_DIR with its reference.json. KL mode runs 64-row steps and the combine fires only at helper.combine-min-rows (default 256), so combine1 sets it to 1: every step goes through the combine. Check 'combine steps N' > 0 in the helper log after the run (a first run that never fired and gave an identical result was void). History: a bf16 sum failed this gate (p99 +0.275 against 0.2), and an engine-side rounding-only control (since removed) matched it exactly, so the loss was the bf16 rounding; the sum is now fp16. Set RAD_BIN, BC_MODEL_ROOT and KLD_REF_DIR.",
  "schema_version": 1,
  "engine": "radiance",
  "evidence_role": "diagnostic",
  "execution_evidence": "observe",
  "quality_only": true,
- "model": "${BC_MODEL_ROOT}/radiance/StillDeadcode/qwen3.8-next-flash-fp8-iq4r-moe/qwen3.8-next-flash-fp8-iq4r-moe.rad",
  "server_args": [],
- "environment": {
-  "HIP_VISIBLE_DEVICES": "0",
-  "ROCR_VISIBLE_DEVICES": "2"
- },
- "expected_execution": {
-  "backend": "ROCm",
-  "architectures": [
-   "gfx1201"
-  ],
-  "locators": [
-   "${R9700_BDF}"
-  ]
- },
  "quality": {
   "reference_dir": "${KLD_REF_DIR}",
   "control": "combine0",
@@ -32,7 +18,8 @@
    "max_kld_p999_increase": 0.5,
    "max_top1_drop_points": 1.0,
    "max_ppl_ratio_increase": 0.05
-  }
+  },
+  "reference_metadata": "${KLD_REF_DIR}/reference.json"
  },
  "arms": [
   {
@@ -40,21 +27,9 @@
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
-   "environment": {},
-   "settings": {},
    "serving": {
-    "layout": "flashnext-2xtx",
-    "set": {
-     "service.max_context": 8192,
-     "service.max_sessions": 1,
-     "engine.max_num_batched_tokens": 64,
-     "engine.kv_cache_dtype": "fp8",
-     "memory.host_pool_mib": 22528,
-     "handoff.max_rows": 64,
-     "handoff.small_rows": 8
-    },
-    "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
-    "histogram": "/dev/null"
+    "config": "flashnext-2xtx",
+    "native_config": "tools/lab/radiance/native-arms/helper-combine-kld/combine0.yaml"
    }
   },
   {
@@ -62,22 +37,9 @@
    "mode": "stock",
    "shutdown_method": "sigint",
    "binary": "${RAD_BIN}",
-   "environment": {},
-   "settings": {},
    "serving": {
-    "layout": "flashnext-2xtx-combine",
-    "set": {
-     "service.max_context": 8192,
-     "service.max_sessions": 1,
-     "engine.max_num_batched_tokens": 64,
-     "engine.kv_cache_dtype": "fp8",
-     "memory.host_pool_mib": 22528,
-     "handoff.max_rows": 64,
-     "handoff.small_rows": 8,
-     "helper.combine_min_rows": 1
-    },
-    "heat": "${BC_WORK_ROOT}/heat/flashnext-mixed.hot-first",
-    "histogram": "/dev/null"
+    "config": "flashnext-2xtx-combine",
+    "native_config": "tools/lab/radiance/native-arms/helper-combine-kld/combine1.yaml"
    }
   }
  ]

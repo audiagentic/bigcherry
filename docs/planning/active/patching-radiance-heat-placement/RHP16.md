@@ -185,6 +185,8 @@ The helper process no longer reads `R3_MOE_POLICY_*`: contract amendment 10 make
 
 ## How a layout gets calibrated (RHP16 step 4)
 
+**Retired (calibration start removed):** `bc-serve serve --calibration-run`, the Python watchdog and `bigcherry results ingest-calibration` no longer exist; `calibration-ingest` and the record store remain. See LIVE_PLACEMENT.md, Producer status.
+
 The production start does **not** auto-enable the live policy for an uncalibrated layout: in locked v1 the policy is absent, so there is no policy thread to measure anything. Calibrate with the launcher's `--calibrate` lab run: `--live-policy POLICY.json` (a non-empty v1 live-policy object; no `enabled` member, presence is activation) and `--calibration-prompts-a FILE` plus `--calibration-prompts-b FILE` (distinct, representative workload sets, one prompt per line), and no `--experiment`. The launcher passes `bc-serve --calibration-run`, which writes a lab-profile manifest with the explicit policy and no `spec.experiment` (v1 refuses an empty experiment), so the measured plan, and therefore the plan-cache key, is the production one. `calibration-ingest` accepts only that shape: lab profile, explicit live policy, no experiment.
 
 ```sh

@@ -31,6 +31,7 @@ from pathlib import Path
 from ..core import engines
 from ..campaign.build import lane_sdk_root
 from .. import pin_transition
+from . import manifest_reconcile as _manifest_reconcile
 from . import notes as _notes
 from . import runtime_assets as _runtime_assets
 
@@ -456,44 +457,11 @@ def _pr_state(plan: Plan, pr: dict, phase: str) -> dict:
 
 
 def _merge_manifest_text(release_text: str, main_text: str, package: str, phase: str = "release") -> str:
-    """Resolve the shared manifest without reformatting it: ``package`` (the one being released) from the release side, all others from main."""
+    """The shared manifest rule (``manifest_reconcile``) reported as a phase failure."""
     try:
-        release = json.loads(release_text)
-        main = json.loads(main_text)
-    except json.JSONDecodeError as exc:
-        raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: invalid JSON side") from exc
-    if not isinstance(release, dict) or not isinstance(main, dict):
-        raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: both sides must be objects")
-    if package not in release:
-        raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: release side has no {package!r} key")
-    if set(release) != set(main):
-        raise PinReleaseError(
-            phase, f"cannot resolve {_MANIFEST}: package keys differ between release and main; refusing to invent formatting",
-        )
-
-    desired = dict(main)
-    desired[package] = release[package]
-    updated = release_text
-    for key, value in desired.items():
-        if not isinstance(value, str):
-            raise PinReleaseError(phase, f"cannot resolve {_MANIFEST}: {key!r} has non-string version {value!r}")
-        pattern = re.compile(
-            rf'(?m)^([ \t]*){re.escape(json.dumps(key))}([ \t]*:[ \t]*)'
-            r'(?P<value>"(?:\\.|[^"\\])*")(?P<tail>[ \t]*,?[ \t]*(?:\r?\n|$))'
-        )
-        match = pattern.search(updated)
-        if match is None:
-            raise PinReleaseError(phase, f"cannot preserve formatting while resolving {_MANIFEST} key {key!r}")
-        encoded = json.dumps(value)
-        updated = updated[:match.start("value")] + encoded + updated[match.end("value"):]
-
-    try:
-        resolved = json.loads(updated)
-    except json.JSONDecodeError as exc:
-        raise PinReleaseError(phase, f"resolved {_MANIFEST} is invalid JSON") from exc
-    if resolved != desired:
-        raise PinReleaseError(phase, f"resolved {_MANIFEST} does not match the release/main ownership rule")
-    return updated
+        return _manifest_reconcile.merge_manifest_text(release_text, main_text, package)
+    except _manifest_reconcile.ManifestReconcileError as exc:
+        raise PinReleaseError(phase, str(exc)) from exc
 
 
 def _merge_pr_branch_locally(plan: Plan, pr: dict, phase: str) -> None:

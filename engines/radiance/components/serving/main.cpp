@@ -61,7 +61,7 @@ void usage() {
 
            "  --write-manifest OUT --plan-cache DIR --engine-binary PATH [--plan-extra TEXT] "
            "[site/profile/set]\n"
-           "      writes the v1 serving manifest for this configuration to OUT (an existing OUT is refused) "
+           "      writes the serving manifest for this configuration to OUT (an existing OUT is refused) "
            "from its\n"
            "      measured plan and the planner's owner map, and reads it back through the shared strict "
            "reader before it\n"
@@ -91,12 +91,11 @@ void usage() {
            "                     the helper runs the live placement policy. Nothing is defaulted.\n"
            "      --calibration-run    the lab calibration start: lab profile with the explicit --live-policy "
            "and no\n"
-           "                     experiment, so the measured plan is the production plan (launcher "
-           "--calibrate).\n"
+           "                     experiment, so the measured plan is the production plan.\n"
            "      --experiment FILE    a JSON object for spec.experiment (lab profile: the manifest is then "
            "written with\n"
            "                     profile lab; a production manifest never carries one).\n"
-           "  --plan-extra TEXT   (with --write-manifest) engine arguments the launcher passes through "
+           "  --plan-extra TEXT   (with --write-manifest) engine arguments passed through "
            "verbatim; part of the key\n"
            "  --power-profile NAME   (with --write-manifest) the named power profile; stock observes the "
            "cards\n"
@@ -113,11 +112,6 @@ void usage() {
            "         [--engine-binary PATH] [--power-profile NAME] [--allow-power-apply]\n"
            "         [--native-config YAML --model-root DIR]  select native YAML for a v3 named start\n"
            "         [--step-phase-trace]  opt-in per-rank HIP event trace in run-dir; changes timing\n"
-           "         --calibration-run --live-policy FILE --calibration-prompts-a A --calibration-prompts-b B\n"
-           "             --calibration-store FILE   foreground finite ABBA workload, strict measured-drift "
-           "gate\n"
-           "         --lab-experiment FILE   foreground lab-profile run with a strict-v2 experiment object;\n"
-           "             no stored-manifest replay until RSC12 keys its bytes, no calibration mode\n"
            "         pre-measure strict-v2 power admission, optional hardware write only with explicit opt-in "
            "and verified\n"
            "         owner GPU lease; own one session in the foreground: measured manifest (a named start "
@@ -153,8 +147,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (cmd == "quality") quality.emplace();
     std::string power_profile = "stock";
     bool explicit_power_profile = false;
-    fs::path live_policy_file, prompts_a, prompts_b, calibration_store, calibration_records, lab_experiment;
-    bool calibration_run = false;
+    fs::path calibration_records;
     bool allow_power_apply = false;
     bool strict_production_features = false;
     bool step_phase_trace = false;
@@ -218,19 +211,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         } else if (arg == "--power-profile") {
             power_profile = need();
             explicit_power_profile = true;
-        } else if (arg == "--lab-experiment") {
-            lab_experiment = need();
-        } else if (arg == "--calibration-run") {
-            calibration_run = true;
-            passed.push_back(arg);
-        } else if (arg == "--live-policy") {
-            live_policy_file = need();
-        } else if (arg == "--calibration-prompts-a") {
-            prompts_a = need();
-        } else if (arg == "--calibration-prompts-b") {
-            prompts_b = need();
-        } else if (arg == "--calibration-store") {
-            calibration_store = need();
         } else if (arg == "--allow-power-apply") {
             allow_power_apply = true;
             passed.push_back(arg);
@@ -260,23 +240,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     run_dir = fs::absolute(run_dir);
     // The engine identity is stored under the work root: a start of an unchanged runtime does not hash it again.
     if (!work_root.empty()) bc::serving::set_engine_identity_store(fs::absolute(work_root));
-    if (!lab_experiment.empty() &&
-        (cmd != "serve" || calibration_run || config_name.empty() || !stored_manifest.empty() ||
-         !live_policy_file.empty() || !prompts_a.empty() || !prompts_b.empty() || !calibration_store.empty()))
-        throw std::runtime_error("--lab-experiment requires foreground serve CONFIG and excludes calibration, "
-                                 "live policy and replay");
-    if (!lab_experiment.empty() && !fs::is_regular_file(lab_experiment))
-        throw std::runtime_error("--lab-experiment needs an existing JSON file");
-    if (calibration_run) {
-        if (cmd != "serve" || live_policy_file.empty() || prompts_a.empty() || prompts_b.empty() ||
-            calibration_store.empty())
-            throw std::runtime_error(
-                "lab calibration needs foreground serve --calibration-run "
-                "--live-policy, --calibration-prompts-a, --calibration-prompts-b and --calibration-store");
-    } else if (!live_policy_file.empty() || !prompts_a.empty() || !prompts_b.empty() ||
-               !calibration_store.empty()) {
-        throw std::runtime_error("lab policy/workload options require --calibration-run");
-    }
     if (cmd == "stop") {
         const auto reply = ss::control(run_dir, "stop", std::chrono::minutes(10));
         if (!reply) {
@@ -398,16 +361,13 @@ int session_command(const std::string& cmd, int argc, char** argv) {
             throw std::runtime_error("--native-config requires a named CONFIG and --model-root DIR");
         if (!fs::is_regular_file(native_config) || !fs::is_directory(opts.model_root))
             throw std::runtime_error("--native-config and --model-root must name an existing file and directory");
-        if (calibration_run || !lab_experiment.empty())
-            throw std::runtime_error("--native-config requires a normal serving start");
     } else if ((cmd == "serve" || cmd == "start") && stored_manifest.empty()) {
         throw std::runtime_error("serving needs " + config_name + ".yaml in the bundle or --configs DIR (or --native-config YAML) for a fresh start");
     }
     if (quality && step_phase_trace)
         throw std::runtime_error("--step-phase-trace is a serving-only diagnostic");
     if (quality) {
-        if (native_config.empty() || quality->reference.empty() || quality->output.empty() ||
-            calibration_run || !lab_experiment.empty())
+        if (native_config.empty() || quality->reference.empty() || quality->output.empty())
             throw std::runtime_error("quality requires named native YAML, --kld-ref DIR and --kld-out FILE");
         quality->reference = fs::canonical(quality->reference);
         quality->output = fs::absolute(quality->output);
@@ -438,9 +398,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     inputs.work_root = work_root;
     inputs.quality_score = quality.has_value();
     inputs.explicit_power_profile = explicit_power_profile;
-    inputs.calibration_prompts_a = prompts_a;
-    inputs.calibration_prompts_b = prompts_b;
-    inputs.calibration_store = calibration_store;
     inputs.calibration_records_file = std::move(calibration_records);
 
     inputs.self = self;
@@ -448,9 +405,6 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     if (!native_config.empty())
         inputs.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
     inputs.power_profile = power_profile;
-    inputs.live_policy_file = std::move(live_policy_file);
-    inputs.calibration_run = calibration_run;
-    inputs.experiment_file = std::move(lab_experiment);
     // Hardware and durable records live through the entire foreground owner.
     // A real write needs BOTH an explicit opt-in and a live ancestor-bound lease.
     bc::serving::power::LinuxHardware hardware(opts.sys_root);
@@ -469,7 +423,7 @@ int session_command(const std::string& cmd, int argc, char** argv) {
     };
     session.power_hook.verified_exit = [power] { power->children_verified(); };
     session.power_hook.restore = [power] { return power->finish(); };
-    auto guards = std::make_shared<ss::RuntimeGuards>(calibration_run);
+    auto guards = std::make_shared<ss::RuntimeGuards>();
     const ss::Canary canary = session.canary;
     const auto timeout = session.timing.canary_timeout;
     session.runtime_guard = [guards, canary, timeout](const ss::EngineStart& plan,
@@ -483,15 +437,11 @@ int session_command(const std::string& cmd, int argc, char** argv) {
         return guards->startup(plan, engine_log, retry);
     };
     session.runtime_watch = [guards] { return guards->poll(); };
-    if (calibration_run)
-        session.lab_evidence_gate = [guards] { return guards->prove_lab(); };
     session.run_dir = run_dir;
     session.quality = std::move(quality);
     session.publish_feature_states = true;
     session.strict_production_features = strict_production_features;
     session.step_phase_trace = step_phase_trace;
-    if (calibration_run)
-        session.laboratory = ss::Laboratory{prompts_a, prompts_b, calibration_store};
     session.plan = [inputs](const fs::path& rd, const ss::Hooks& hooks) {
         return inputs.stored_manifest.empty() ? ss::plan_engine_only(inputs, rd, hooks)
                                               : ss::replay_stored_manifest(inputs, rd, hooks);
@@ -1140,7 +1090,7 @@ int main(int argc, char** argv) {
             if (!expected_plan_key.empty() && bc::serving::plan_key(key_inputs) != expected_plan_key)
                 throw std::runtime_error(
                     "the effective measured-manifest inputs differ from the session's frozen plan key");
-            // The v1 manifest for this configuration from its measured plan: given by a measuring start
+            // The manifest for this configuration from its measured plan: given by a measuring start
             // (--measured-plan, checked against the configuration and stored in the cache under this key) or
             // found in the cache. A miss is exit 10: a manifest without a measured plan is not written.
             std::optional<bc::serving::CachedPlan> plan;
@@ -1166,7 +1116,7 @@ int main(int argc, char** argv) {
             if (!plan) {
                 std::cerr << "bc-serve: no measured plan for this configuration (key "
                           << bc::serving::plan_key(key_inputs).substr(0, 16)
-                          << "); the launcher measures it on a start with the helpers up\n";
+                          << "); a start measures it with the helpers up\n";
                 return 10;
             }
             if (native && native->settings.ngram_placement == "auto") {

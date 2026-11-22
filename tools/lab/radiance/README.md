@@ -53,7 +53,7 @@ BUILD=/absolute/completed/build
 
 The native owner performs fail-closed plan measurement on a cache miss, helper/engine admission, health, canary and power cleanup. Use `bc-serve status --run-dir RUN --json` or `bc-serve stop --run-dir RUN` for an owned detached session. `lab-env.sh` and `lab-build.sh` remain for unrelated lab build scripts, not as serving launchers.
 
-For KL quality, use `helper-kld.json` with `PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config tools/lab/radiance/helper-kld.json`. Record a reference once and compare deterministic captures. The RDNA2 tail has a known worst-case quality cost (RAD46); do not substitute throughput evidence for quality gates.
+For KL quality, use a native-arm job such as `27b-native-kld.json` with `PYTHONPATH=tools python3 -m bigcherry.campaign.benchmark --server-config tools/lab/radiance/27b-native-kld.json`. A campaign arm is a native arm (`serving` = `config` plus `native_config`, scored by `bc-serve quality` against a stored reference). The KLD jobs `helper-kld.json` and `helper-combine-kld.json` use the YAMLs under `native-arms/` (recipes in `native-arms.json`; `python3 tools/lab/radiance/native_arms.py --check` verifies them). The Python manifest planner and the layout serving blocks are removed; timed A/B jobs and the RHP20 KLD template were retired because native arms are quality-only.
 
 ## Comparative benchmark harness
 

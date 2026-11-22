@@ -160,3 +160,5 @@ and owner-state refusal tests are CPU-only. The earlier slice notes and
 acceptance audit describe historical state; llama.cpp work is MRC07.
 - 2026-11-20T01:49:57.796375+00:00 (updated-by): Updated: section:validation, section:acceptance_criteria
 - 2026-11-20T01:50:05.332411+00:00 (state-transition): State: pending → completed
+
+**Retired (calibration start removed):** `bc-serve serve --calibration-run`, the Python watchdog and `bigcherry results ingest-calibration` no longer exist; `calibration-ingest` and the record store remain. See LIVE_PLACEMENT.md, Producer status. The slice 3 calibration evidence and its ingest above are historical.
