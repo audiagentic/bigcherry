@@ -2,7 +2,7 @@
 id: THA32
 order: 32
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-11T22:57:08.866764+00:00'
 breadth: ''
 skill: advanced
@@ -53,6 +53,8 @@ A current-pin evidence package establishes whether #28699 is applicable and bene
 
 Provenance: shared ChatGPT conversation, 12 Sep 2026, '#28699 — Qwen3.8 Flash-Next long-context decode optimization'; source https://github.com/ggml-org/llama.cpp/pull/28699. Existing PNRO12/NRO13 concern Qwen4exp gather-based QSA and is not this change; this is a distinct incremental pooled-cache experiment.
 
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: The upstream incremental pooled-QSA cache qualification is the same selected-QSA pool/decode experiment boundary already assigned to QFP04 after QFP02 and QFP03 consolidation, not HIP generic tuning. Unique acceptance and stop/fallback conditions were transferred to active QFP04 through the Planning API. THA32 evaluates an upstream QSA pool feature for the same Flash-Next decode path and test matrices QFP04 now owns; it is misplaced as a general HIP-autotune execution owner. Original code, evidence, source/negative findings and reviewed history remain unchanged in this superseded record. Supersession is about removing duplicate planning ownership, not proof of implementation, quality, hardware safety or a performance win.
+
 ## Change Log
 
 - 2026-09-11T22:57:08.866764+00:00 (created-by): Created by agent
@@ -61,3 +63,9 @@ Provenance: shared ChatGPT conversation, 12 Sep 2026, '#28699 — Qwen3.8 Flash-
 
 - chg_20260911_225756_added-six-provenance-rich-buil_2622
 - 2026-09-11T22:57:56.710779+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4497
+- 2026-11-22T10:20:52.513153+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:26:27.446855+00:00 (state-transition): State: pending → superseded

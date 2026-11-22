@@ -2,7 +2,7 @@
 id: THA11
 order: 0
 plan: tuning-hip-autotune
-state: pending
+state: superseded
 created-at: '2026-09-09T10:49:22.968400+00:00'
 breadth: ''
 skill: intermediate
@@ -68,13 +68,14 @@ Supersedes: HI160
 Inherited semantic scope: preserve launch-point proof, per-winner/fallback invariant, graceful teardown, and predicted-E2E arithmetic from HI160.
 Migration: capability-rebaseline-v3-2026-09
 
+CONSOLIDATION 2026-11-22 HIP-AUTOTUNE: Replay launch-point evidence and fallback/corrupt-cache tests form one fail-closed replay acceptance suite. Unique acceptance and stop/fallback conditions were transferred to active THA30 through the Planning API. THA30 owns the replay correctness/fallback and captured-launch regression matrix; THA11's launch-point receipts are required to make those tests interpretable. Original code, evidence, source/negative findings and reviewed history remain unchanged in this superseded record. Supersession is about removing duplicate planning ownership, not proof of implementation, quality, hardware safety or a performance win.
+
 ## Change Log
 
 - 2026-09-09T10:49:22.968400+00:00 (created-by): Created by capability-rebaseline-v3
 - 2026-09-09T11:05:31.135884+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:standards, section:acceptance_criteria, section:notes
 
 ## Ledger-events
-
 
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.876973+00:00 (updated-by): Updated: section:ledger-events
@@ -83,3 +84,9 @@ Migration: capability-rebaseline-v3-2026-09
 - 2026-09-10T02:23:56.968639+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_022438_the-next-five-high-risk-tuning_6580
 - 2026-09-10T02:24:38.688942+00:00 (updated-by): Updated: section:ledger-events
+
+## Reviews
+
+- RV4496
+- 2026-11-22T10:20:41.686626+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T10:26:11.973539+00:00 (state-transition): State: pending → superseded
