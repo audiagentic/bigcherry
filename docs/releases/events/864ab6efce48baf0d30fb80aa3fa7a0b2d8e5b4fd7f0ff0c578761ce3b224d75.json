@@ -1,0 +1,11 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261122_182618_declared-the-new-quality-run-o_6742",
+  "files": [
+    "engines/radiance/components/serving/component.toml"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Declare --lab-experiment among the serving component's owned flags so the component-coupling check accepts the forced-placement option of bc-serve quality.",
+  "timestamp-utc": "2026-11-22T18:26:18.089302Z",
+  "user-summary-candidate": "Declared the new quality-run option in the serving component."
+}

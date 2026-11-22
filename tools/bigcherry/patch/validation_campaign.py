@@ -45,13 +45,13 @@ from bigcherry.build.builds import capture_completed_build_evidence
 from bigcherry.core import engines as bc_engines, paths as bc_paths
 from bigcherry.core.context import ProjectContext
 from bigcherry.core.paths import REPO_ROOT
+from bigcherry.hardware.power_receipt import write_json_atomic
 from bigcherry.patch.activation import (
     verdict,
     write_activation_json,
 )
 from bigcherry.patch.campaign.benchmark import _run_performance_benchmark
 from bigcherry.patch.campaign.build import (
-    _atomic_write_json,
     _full_requested_cmake_args,
     _hip_env,
     _print,
@@ -784,7 +784,10 @@ def _collect_build_and_correctness_evidence(args: argparse.Namespace, st: Simple
             gpu_architectures=(args.amdgpu_targets,),
         )
         correctness_path = campaign_run_dir / "correctness.json"
-        _atomic_write_json(correctness_path, correctness_summary)
+        write_json_atomic(
+            correctness_path, correctness_summary,
+            ensure_ascii=False, sync_directory=False, newline="\n",
+        )
         correctness_evidence = {
             "artifact": {
                 "path": correctness_path.relative_to(campaign_run_dir).as_posix(),

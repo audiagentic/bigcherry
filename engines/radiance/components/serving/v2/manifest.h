@@ -29,6 +29,11 @@ Result<Manifest> load_manifest(const std::filesystem::path& path, PlanUse use);
 /* The cross-field rules a decoded manifest must satisfy (spec §2-§6). read_manifest runs it; exposed for producers. */
 Status validate_semantics(const Manifest& m);
 
+/* The lab placement experiment rules of validate_semantics, for a producer that has the block but no manifest yet:
+ * the forced schedule follows its mode, each step carries exactly its kind's members, and a move's destination is one
+ * of `helper_count` helpers. */
+Status check_placement_experiment(const ExperimentPlacement& placement, size_t helper_count);
+
 /* Verify the native snapshot bytes and recorded identity before serving or writing them. */
 Status validate_native_config(const Manifest& m);
 

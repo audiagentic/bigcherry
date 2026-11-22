@@ -1,0 +1,11 @@
+{
+  "change-class": "tests",
+  "event-id": "chg_20261122_182531_fixed-a-test-helper-that-read_9536",
+  "files": [
+    "engines/radiance/components/serving/live_policy_test.cpp"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The derive-parity test regenerated its golden through an undeclared environment variable, which the serving component's declared-environment check rejects; it is now a --write-derive-golden command-line flag of the test.",
+  "timestamp-utc": "2026-11-22T18:25:31.824490Z",
+  "user-summary-candidate": "Fixed a test helper that read an undeclared environment variable."
+}

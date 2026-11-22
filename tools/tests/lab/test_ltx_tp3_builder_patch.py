@@ -75,7 +75,7 @@ def patches(*, full: bool):
         definitions[1] = replace(
             definitions[1],
             edits=tuple(e for e in definitions[1].edits
-                        if not e.id.startswith("ltx-c06-")),
+                        if not e.id.startswith(("ltx-c06-", "ltx03-"))),
         )
     return definitions
 
@@ -103,7 +103,7 @@ def patch_copy(root: Path, *, full: bool = True) -> dict[str, int]:
             "BC_LTX3_C06_QKV", "BC_LTX3_C06_ATTN_OUTPUT",
             "BC_LTX3_C06_ATTN_NORM", "BC_LTX3_C06_ATTN_ROPE",
             "BC_LTX3_C06_GATE", "BC_LTX3_C06_RETURN",
-            "BC_LTX3_C06_ATTN_CORE", "BC_LTX3_C06_GATE_ISSUE",
+            "BC_LTX3_C06_ATTN_CORE", "BC_LTX3_LTX03_CROSS_KV", "BC_LTX3_C06_GATE_ISSUE",
             "BC_LTX3_C06_STG_GATE",
         ):
             assert len(re.findall(r"\b" + re.escape(marker) + r"\b", src)) == 1, marker
@@ -122,7 +122,7 @@ def test_c01_patch_fixture_applies_twice(tmp_path: Path) -> None:
     assert result == {"applied": 10, "created_headers": 1, "idempotent": 1}
     src = (tmp_path / CPP).read_text()
     assert "RAD_SHARD_ROW" in src and "RAD_SHARD_COL" in src
-    assert "explicit deferred bias ownership" in src
+    assert "explicit reduction ownership" in src
     assert "RAD_SHARD_NONE" in src  # default TP1 branch retained
 
 
@@ -143,7 +143,7 @@ def test_c01_real_source_opt_in(tmp_path: Path) -> None:
     src = Path(source) / CPP
     assert src.is_file()
     make_stage(tmp_path, src.read_text())
-    assert patch_copy(tmp_path)["applied"] == 22
+    assert patch_copy(tmp_path)["applied"] == 23
 
 
 if __name__ == "__main__":

@@ -3,7 +3,7 @@
 `--plan-check FILE --plan-check-floor-ppm N` (rad0011) and bc-serve's `--plan-check-args`, `--plan-store`, `--plan-key` existed only
 until the engine read its expected plan and floor from a v1 manifest. The engine now takes both from the measured manifest it is
 started from (rad0009's bc_serving_expected_plan, from engine_view), bc-serve writes the measured manifest from a measuring
-start's plan (`--write-manifest ... --measured-plan FILE`), and no flag can hand the engine a plan. This test fails if any of the
+start's session-owned plan cache, and no flag can hand the engine a plan. This test fails if any of the
 retired names reappears in the code that produced or consumed them: no shim, no parallel path.
 """
 from __future__ import annotations
@@ -45,7 +45,7 @@ class PlanCheckFlagsAreGoneTests(unittest.TestCase):
 
     def test_the_guard_can_fail(self) -> None:
         self.assertTrue(any(name in "bc-serve --plan-store --plan-file F" for name in RETIRED))
-        self.assertFalse(any(name in "bc-serve --write-manifest OUT --measured-plan F" for name in RETIRED))
+        self.assertFalse(any(name in "bc-serve --write-manifest OUT --plan-cache DIR" for name in RETIRED))
 
 
 if __name__ == "__main__":

@@ -3,7 +3,9 @@
 #include "experts.h"
 
 #include <cassert>
+#include <algorithm>
 #include <cmath>
+#include <cstdlib>
 #include "../moe-remote/worker_policy_effect.h"
 #include "../moe-remote/worker_policy_config.h"
 #include "../moe-remote/worker_policy_input.h"
@@ -18,6 +20,38 @@
 namespace fs = std::filesystem;
 namespace sv = bc::serving;
 using Json = nlohmann::json;
+
+// PARITY: every derivation this test makes, policy and provenance, byte for byte, against the output the
+// pre-extraction serving implementation produced for the same recorded inputs (golden/live_policy_derive.golden).
+static std::string g_derive_trace;
+static sv::DerivedLivePolicy derive_logged(const sv::LivePolicyRecord& record, const sv::Calibration& cal,
+                                           const sv::CalibrationMatch& match, uint64_t stride,
+                                           const std::vector<uint64_t>& budgets) {
+    auto out = sv::derive_live_policy(record, cal, match, stride, budgets);
+    g_derive_trace += "case " + std::to_string(std::count(g_derive_trace.begin(), g_derive_trace.end(), '#')) + "#\n" +
+                      out.policy.dump() + "\n" + out.provenance.dump() + "\n";
+    return out;
+}
+static bool g_write_derive_golden = false; // --write-derive-golden regenerates the golden instead of comparing
+
+static void check_derive_parity() {
+    {   // The verbatim native production record (2026-11-20 store) through the same derivation.
+        const char* prod_key = "c2a1aa0eabcb2968a42876e364e0ac18a072f8fe0e229c8aaea838de27c5de6b";
+        const auto prod = sv::read_live_policy_record(BC_CALIBRATION_PRODUCTION_FIXTURE, prod_key);
+        assert(prod);
+        derive_logged(*prod, sv::Calibration::standard(BC_CALIBRATION_PRODUCTION_FIXTURE),
+                      {"", "flashnext-4gpu", "balanced"}, 2500000, {1000000000, 1000000000});
+    }
+    std::ifstream in(BC_LIVE_POLICY_DERIVE_GOLDEN);
+    if (g_write_derive_golden) {
+        std::ofstream(BC_LIVE_POLICY_DERIVE_GOLDEN, std::ios::binary) << g_derive_trace;
+        return;
+    }
+    assert(in);
+    const std::string golden((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+    assert(golden == g_derive_trace);
+}
+
 
 // Fixture writer for the future helper's step-4 calibration store. The transaction,
 // copy, heat gap, marginal error and hot-set readings are from policy-live-9;
@@ -130,7 +164,7 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
         Json::array({uint64_t(67586),uint64_t(35000)}),
         Json::array({uint64_t(135172),uint64_t(20000)})});
     constexpr uint64_t stride=2534544; // calib5: 14 GiB / 5,931 tail experts
-    const auto derived = sv::derive_live_policy(
+    const auto derived = derive_logged(
         rec,cal,at,stride,{22ull<<30,22ull<<30,14ull<<30});
     const Json& p=derived.policy;
     assert(p.size()==17);
@@ -236,7 +270,7 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
         unjudgeable.absent[name]="tail large lane has no peer reference on this layout";
     }
     assert(sv::live_policy_record_complete(unjudgeable));
-    const auto no_effect=sv::derive_live_policy(
+    const auto no_effect=derive_logged(
         unjudgeable,cal,at,stride,{22ull<<30,22ull<<30,14ull<<30});
     const auto& q=no_effect.policy;
     assert(q.at("effect_gate")==false && q.at("cadence_ns")==6955375341ull);
@@ -313,6 +347,7 @@ static void calib5_regression(const sv::LivePolicyRecord& base,
 // A start that carries no live policy must say why: an unmeasured manifest is silent (it is never what a start uses), a missing
 // calibration store and a missing record for this configuration's key each give a reason. (A plan-key change once orphaned the
 // flashnext-4gpu record and every start ran without a policy, silently.)
+
 static void derive_says_why() {
     bc::experts::Container container;
     sv::ManifestInputs in;
@@ -361,7 +396,8 @@ static void derive_says_why() {
     fs::remove(store);
 }
 
-int main() {
+int main(int argc, char** argv) {
+    g_write_derive_golden = argc > 1 && std::string(argv[1]) == "--write-derive-golden";
     derive_says_why();
     const std::string key = key_for('a');
     const fs::path file = write_fixture("schema_version = 1\n");
@@ -375,7 +411,7 @@ int main() {
 
     const auto cal = sv::Calibration::standard(file);
     const sv::CalibrationMatch at{"", "flashnext-4gpu", "balanced"};
-    const auto d = sv::derive_live_policy(*rec, cal, at, 2500000, {1000000000, 1000000000});
+    const auto d = derive_logged(*rec, cal, at, 2500000, {1000000000, 1000000000});
     const Json& p = d.policy;
     calib5_regression(*rec,cal,at);
     assert(p.size() == 17);
@@ -393,7 +429,7 @@ int main() {
         auto real = *rec;
         real.measurements["marginal_observations"] = 105925840;
         real.measurements["observation_rate_per_s"] = 1300138;
-        const Json& q = sv::derive_live_policy(real, cal, at, 2500000, {1000000000, 1000000000}).policy;
+        const Json& q = derive_logged(real, cal, at, 2500000, {1000000000, 1000000000}).policy;
         const uint64_t per_window = (uint64_t(1300138) * q.at("cadence_ns").get<uint64_t>() + 999999999) / 1000000000;
         // drift half-life 59M of the 105.9M measured: the gate holds one drift half-life of heat, not the whole run.
         assert(q.at("min_samples").get<uint64_t>() <= (uint64_t(59000000) + per_window - 1) / per_window);
@@ -407,7 +443,7 @@ int main() {
         prod.measurements["marginal_observations"] = 3980008190ull;
         prod.measurements["drift_half_life_observations"] = 673678249ull;
         prod.measurements["observation_rate_per_s"] = 1524407;
-        const Json& q = sv::derive_live_policy(prod, cal, at, 2500000, {1000000000, 1000000000}).policy;
+        const Json& q = derive_logged(prod, cal, at, 2500000, {1000000000, 1000000000}).policy;
         const uint64_t per_window = (uint64_t(1524407) * q.at("cadence_ns").get<uint64_t>() + 999999999) / 1000000000;
         const uint64_t drift_windows = (uint64_t(673678249) + per_window - 1) / per_window;
         assert(q.at("min_samples").get<uint64_t>() <= drift_windows);
@@ -420,7 +456,7 @@ int main() {
         auto shortrun = *rec;
         shortrun.measurements["marginal_observations"] = 1000000;
         shortrun.measurements["drift_half_life_observations"] = 59000000;
-        const Json& q = sv::derive_live_policy(shortrun, cal, at, 2500000, {1000000000, 1000000000}).policy;
+        const Json& q = derive_logged(shortrun, cal, at, 2500000, {1000000000, 1000000000}).policy;
         assert(q.at("margin_ppm") == shortrun.measurements.at("marginal_error_ppm"));
     }
     assert(p.at("abort_cooldown_ns") == p.at("max_heat_age_ns"));
@@ -445,8 +481,8 @@ int main() {
     wide_window.measurements["effect_row_noise_ns"]=uint64_t(std::ceil(wide_series.row_noise_ns()));
     small_window.measurements["effect_noise_max_ns"]=uint64_t(small_series.quiet_delta_ns.max());
     wide_window.measurements["effect_noise_max_ns"]=uint64_t(wide_series.quiet_delta_ns.max());
-    const auto derived_small=sv::derive_live_policy(small_window,cal,at,2500000,{1000000000,1000000000});
-    const auto derived_wide=sv::derive_live_policy(wide_window,cal,at,2500000,{1000000000,1000000000});
+    const auto derived_small=derive_logged(small_window,cal,at,2500000,{1000000000,1000000000});
+    const auto derived_wide=derive_logged(wide_window,cal,at,2500000,{1000000000,1000000000});
     assert(derived_small.policy.at("effect_window_samples")==derived_wide.policy.at("effect_window_samples") &&
            derived_small.policy.at("effect_window_samples")==32);
     assert(derived_small.policy.at("effect_min_quiet_windows")==derived_wide.policy.at("effect_min_quiet_windows") &&
@@ -460,7 +496,7 @@ int main() {
         Json::array({uint64_t(8),uint64_t(500000)}),
         Json::array({uint64_t(16),uint64_t(400000)}),
         Json::array({uint64_t(32),uint64_t(300000)})});
-    const auto unresolved_policy=sv::derive_live_policy(
+    const auto unresolved_policy=derive_logged(
         unresolved,cal,at,2500000,{1000000000,1000000000});
     assert(unresolved_policy.policy.at("effect_gate")==false);
     assert(unresolved_policy.policy.at("max_moves")==174);
@@ -474,7 +510,7 @@ int main() {
         Json::array({uint64_t(32),uint64_t(80000)}),
         Json::array({uint64_t(64),uint64_t(40000)}),
         Json::array({uint64_t(128),uint64_t(10000)})});
-    const auto expanded=sv::derive_live_policy(slower,cal,at,2500000,{1000000000,1000000000});
+    const auto expanded=derive_logged(slower,cal,at,2500000,{1000000000,1000000000});
     const auto& ep=expanded.policy;
     assert(ep.at("effect_window_samples")==128);
     assert(ep.at("cadence_ns").get<uint64_t>()>=2720000000ull+
@@ -489,7 +525,7 @@ int main() {
         Json::array({uint64_t(8),uint64_t(15000)}),
         Json::array({uint64_t(16),uint64_t(10000)}),
         Json::array({uint64_t(32),uint64_t(8000)})});
-    const auto q = sv::derive_live_policy(quieter, cal, at, 2500000, {1000000000, 1000000000});
+    const auto q = derive_logged(quieter, cal, at, 2500000, {1000000000, 1000000000});
     assert(q.policy.at("effect_window_samples") == 8);
     assert(q.policy.at("effect_min_quiet_windows") >= 1);
     auto noisier = *rec;
@@ -497,7 +533,7 @@ int main() {
         Json::array({uint64_t(32),uint64_t(80000)}),
         Json::array({uint64_t(64),uint64_t(40000)}),
         Json::array({uint64_t(128),uint64_t(10000)})});
-    const auto h = sv::derive_live_policy(noisier, cal, at, 2500000, {1000000000, 1000000000});
+    const auto h = derive_logged(noisier, cal, at, 2500000, {1000000000, 1000000000});
     assert(h.policy.at("effect_window_samples") == 128);
     assert(q.provenance.at("/spec/handoff/placement/live_policy/effect_window_samples").at("origin") == "derived");
     assert(q.provenance.at("/spec/handoff/placement/live_policy/effect_min_quiet_windows").at("origin") == "derived");
@@ -508,7 +544,7 @@ int main() {
                .at("source").get<std::string>().find("no step watermark; RHP02 replaces it") != std::string::npos);
     auto watermarked = *rec;
     watermarked.measurements["heat_watermarked"] = 1;
-    const auto with_watermark = sv::derive_live_policy(watermarked,cal,at,2500000,{1000000000,1000000000});
+    const auto with_watermark = derive_logged(watermarked,cal,at,2500000,{1000000000,1000000000});
     assert(with_watermark.policy.at("accept_unwatermarked_heat") == false);
     assert(with_watermark.provenance.at("/spec/handoff/placement/live_policy/accept_unwatermarked_heat")
                .at("source").get<std::string>().find("watermarked feed") != std::string::npos);
@@ -519,9 +555,9 @@ int main() {
         assert(it.value().at("origin") == "derived" && it.value().at("class") == "policy" &&
                it.value().at("source").get<std::string>().find("policy-live-9") != std::string::npos);
     // The budgets and stride are inputs, never fixed policy constants.
-    const auto budget = sv::derive_live_policy(*rec, cal, at, 2500000, {100000000, 1000000000});
+    const auto budget = derive_logged(*rec, cal, at, 2500000, {100000000, 1000000000});
     assert(budget.policy.at("max_moved_bytes") == 100000000 && budget.policy.at("max_moves") == 40);
-    const auto stride = sv::derive_live_policy(*rec, cal, at, 4000000, {1000000000, 1000000000});
+    const auto stride = derive_logged(*rec, cal, at, 4000000, {1000000000, 1000000000});
     assert(stride.policy.at("max_moved_bytes") == 435200000 && stride.policy.at("max_moves") == 108);
     assert(stride.policy.at("min_residency_ns") == p.at("min_residency_ns"));
     // Partial evidence is accepted only with a named absence and cannot
@@ -573,4 +609,5 @@ int main() {
     write_fixture(fixture('a') + fixture('a'));
     assert(throws_with(file, key, "unknown key"));
     fs::remove(file);
+    check_derive_parity();
 }

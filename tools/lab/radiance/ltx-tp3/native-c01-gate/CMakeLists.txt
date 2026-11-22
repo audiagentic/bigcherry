@@ -118,6 +118,15 @@ if(LTX_NATIVE_CORE_LIB)
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --ltx03-all-blocks)
     set_tests_properties(ltx03_all_block_self_attention_declarations
       PROPERTIES TIMEOUT 180)
+    add_test(NAME ltx03_text_cross_attention_declarations
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --ltx03-text-cross)
+    set_tests_properties(ltx03_text_cross_attention_declarations PROPERTIES TIMEOUT 180)
+    add_test(NAME ltx03_modal_cross_attention_declarations
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --ltx03-modal-cross)
+    set_tests_properties(ltx03_modal_cross_attention_declarations PROPERTIES TIMEOUT 180)
+    add_test(NAME ltx03_ffn_modulation_residual_declarations
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --ltx03-ffn-modulation)
+    set_tests_properties(ltx03_ffn_modulation_residual_declarations PROPERTIES TIMEOUT 180)
     # Frozen Radiance loader geometry on the real C06 self-attention weights.
     # Identifies relayouts that the next issued-GPU test must not bypass.
     add_test(NAME ltx_c06_native_weight_share_contract
@@ -133,6 +142,15 @@ if(LTX_NATIVE_CORE_LIB)
     add_test(NAME ltx_c06_issued_host_checkpoint_attention
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06-issued-host)
     set_tests_properties(ltx_c06_issued_host_checkpoint_attention PROPERTIES TIMEOUT 120)
+    # LTX02: issue the same checkpoint-backed three-rank RadCtx graph
+    # with genuinely multirow activations and ordered native collectives.
+    foreach(_ltx_rows IN ITEMS 16 64)
+      add_test(NAME ltx_c06_issued_host_${_ltx_rows}_rows
+        COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}"
+                "--c06-issued-host-${_ltx_rows}")
+      set_tests_properties(ltx_c06_issued_host_${_ltx_rows}_rows
+        PROPERTIES TIMEOUT 120)
+    endforeach()
     # Host-linked binary must reject the opt-in native AQL flag, before
     # creating any rank or device instance.
     add_test(NAME ltx_c06_aql_refuses_host_backend
