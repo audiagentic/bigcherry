@@ -52,3 +52,21 @@ The model-aware `RadCtx` test must bind weights via Radiance's **production** co
 Once that path is available, issue the **actual** native `Act::step`, `Lin::step` and `attn_core` sequence with checkpoint-backed weights in `RadCtx`, compare captured TP1 intermediates for both modalities and both legal splits, then rerun on leased gfx1100/gfx1100/gfx1201 cards, including rank failure and timeout. Treat RUM06's generic group lifecycle and RUM13's AQL qualification as dependencies, not duplicated LTX implementations.
 
 The next diagnostic GPU gate is the opt-in C06 AQL **instance** target; it must be run under a short exclusive GPU lease and an outer subprocess timeout. Successful instancing would **still not** close LTX02.
+
+
+## Follow-up: leased native C06 AQL instance qualification (2026-11-22)
+
+**PASS, two real mixed-GPU orders.** The unmodified `ltx_c06_instancing_aql_test` binary from the frozen Radiance 2.2/ABI44 HIP-enabled build (SHA-256 `bc34dffd3d7f346995268246d445a4d5d62f44b315112795e2c636136ba87cf4`) was run under an exclusive `agent-lease acquire gpu` command with a bounded subprocess. The lease was released after the test.
+
+| ROCr visible device order | Native AQL rank devices | Native C06 Builder result | Process exit | Wall time |
+| --- | --- | --- | ---: | ---: |
+| `0,1,2` | gfx1100 / gfx1100 / gfx1201 | **4/4 three-rank graphs; 108 instances initialized and retired** | 0 | 0.338 s |
+| `2,0,1` | gfx1201 / gfx1100 / gfx1100 | **4/4 three-rank graphs; 108 instances initialized and retired** | 0 | 0.224 s |
+
+In each order the same native Builder/Attn graph uses real source-backed video and audio block-0 geometry, both legal 8/8/16 and 12/12/8 head splits, and concurrent rank `Builder::finish`. The original `libr3` gfx1100 and `libr4d` gfx1201 fat binaries are selected on matching devices; their messages excluding mismatched architecture code objects are expected. The native `libr4d` exact collective performs its group/transport parameter setup. No new transport or runtime kernel code was used.
+
+An initial lease-protected run with all **four** detected cards (including gfx1030) was **correctly refused** before graph setup: the diagnostic requires three visible rank devices and did not weaken that check. The replay passed `ROCR_VISIBLE_DEVICES=0,1,2` and `2,0,1` explicitly; no runtime bypass was added.
+
+Raw bounded-process JSON receipts are retained outside Git in the task work root as `ltx02-c06-native-aql-instancing-receipt.json` and `ltx02-c06-native-aql-instancing-4visible-refusal.json`.
+
+**Boundary:** This qualifies native GPU kernel selection, rank mapping, collective initialization and teardown **only**. The sub-second numbers are process wall-clock times, **not** GEMM/attention latencies. No checkpoint weights were resident in `RadCtx`, no attention ops were issued and there is **no TP1 numerical or generated-video parity claim**. The next LTX02 gate remains a model-backed `RadCtx` self-attention execution using the same verified weight-share and real native relayout hooks, followed by TP1 intermediate comparison and cancellation/fault checks.
