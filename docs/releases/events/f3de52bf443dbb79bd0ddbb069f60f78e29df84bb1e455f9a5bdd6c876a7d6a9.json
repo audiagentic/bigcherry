@@ -1,0 +1,16 @@
+{
+  "change-class": "code-fix",
+  "event-id": "chg_20261122_091121_kernel-profiling-of-the-radian_5489",
+  "files": [
+    "tools/lab/radiance/fn-profile.sh",
+    "tools/lab/radiance/fn-helper.sh",
+    "tools/tests/lab/test_fn_profile_native.py",
+    "docs/reference/tooling/TOOL_DISPOSITION.md",
+    "engines/radiance/model_constant_guard.toml",
+    "docs/planning/active/run-multi-engine/MEN14.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The Radiance lab profiler no longer launches helpers and the engine itself or kills r3_moe_worker by name. fn-helper.sh (global pgrep/pkill and shared-memory unlink, manifest argument mismatch with fn-profile.sh, grep || true masking failure) is deleted. fn-profile.sh now starts the native owner (bc-serve serve NAME with a native YAML), attaches rocprofv3 by PID to the engine and helper processes named in the session record, sends one request, and ends the session only through bc-serve stop; profiler, request and stop failures exit nonzero. fn-profile-compare.py is unchanged. Tests: tools/tests/lab/test_fn_profile_native.py.",
+  "timestamp-utc": "2026-11-22T09:11:21.835137Z",
+  "user-summary-candidate": "Kernel profiling of the Radiance helper now runs through the native serving owner and can no longer kill another session's helper processes."
+}
