@@ -204,3 +204,13 @@ timed out after 40 s, without an observed numerical verdict.
 This is **not** a mixed-card regression or a passing same-card
 control. RUM13 must refuse the duplicate-device lab placement
 before launch. See [post-main receipt](POST-MAIN-2026-11-22.md).
+
+## RUM13 reduction-first implementation evidence
+
+The model-independent GPU lab has been moved to
+`tools/lab/radiance/native-mixed-ar/` and consolidated onto
+one Radiance HIP-enabled AQL executable. The historical
+C07/C08 source directory was deleted as part of the same edit.
+Actual build/symbol/numeric and before-after source receipts
+must be recorded before closing this candidate. See
+`docs/evidence/rum13-native-qualification/IMPLEMENTATION.md`.

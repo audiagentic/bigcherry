@@ -122,7 +122,7 @@ See docs/evidence/2026-11-22-ltx25-c06-native-self-attn/README.md.
 
 ## C07 real native exact three-rank GPU collective boundary (2026-11-22)
 
-The opt-in mixed-ar-gate lab uses the actual Radiance 2.2 ABI44 exact BF16
+The RUM13-owned `tools/lab/radiance/native-mixed-ar/` lab uses the actual Radiance 2.2 ABI44 exact BF16
 host-mailbox all-reduce from libr3/libr4d and the real BigCherry shared-slot
 service. Seven video/audio Q/K/output patterns at C06 geometry are checked per
 rank. GREEN: three ranks on the R9700 (21/21 exact comparisons) and across two
