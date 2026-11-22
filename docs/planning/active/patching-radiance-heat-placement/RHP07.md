@@ -23,7 +23,7 @@ One set of placement controls shared by the stage 1 policy and later the unified
 2. Tier cost model: measured cost per expert-row per tier from the replay harness (compute speed, transfer path, queue effect), not a fixed rank; capacity per tier (R9700 after trunk and KV, ~22 GiB a XTX, 16 GB 6900 XT, RAM).
 3. Assignment: heat-per-cost fill from the top tier down, with a headroom slab per tier for background copies.
 4. Stability: dual thresholds (promote above X, demote below Y<X), minimum residency, a move budget per interval, and move only when predicted saving exceeds the move cost (weight bytes over the link). Apply at interval boundaries through the RHP06 epoch flip.
-5. Offline first: record real route traces over time (1/2/4/8 sessions, shifting topics), simulate policies with heat_mock/balance_score-style scorers; score critical-path latency and moves per hour, compare against static hot-first (today's baseline) and the RHP04 shadow ranking.
+5. Offline first: capture cumulative heat snapshots with record_heat_series.py and use the component-native r3_policy_replay to test the shipping planner against workload shifts and static placement. Its replay does not predict critical-path latency or transaction cost: measure those separately against real serving traces before making performance claims; keep heat_mock/balance_score for their distinct narrow tests.
 6. Only then a live trial behind a default-off flag with identity and stress evidence.
 
 ## Detailed Solution & Technical Design
@@ -66,6 +66,13 @@ Added 2026-10-19 (owner): the topology must be configuration, not code. dev (R97
 5. Runtime configuration: a [topology] and [expert-cache] section (interval, hysteresis thresholds, move budget, swap-reserve per device) in the engine runtime profile, with measured defaults.
 
 Miss policy (owner question 2026-10-19: CPU, or copy into the VRAM swap cache and keep it until ejected?): both, chosen by cost, with admission control. On a miss with R ready rows: run on CPU now when cpu_time(R) < copy_time + gpu_time(R) (typical for one decode row: an expert pair is about 2.4 MiB from our numbers, 22 GiB over 9,320 pairs, so a copy over a 3.5 GB/s hop is about 0.7 ms against tens of microseconds of CPU compute from RAM); stage into the swap cache and execute there when R is large (prefill) or the expert is hot enough to be reused. Never stall a step on the copy: execute the current request on CPU (or a direct stream) while an async admit runs, so the expert is resident for its next use. Admission is not automatic: a prefill touches many cold experts once, so admit only when the expert's decayed heat beats the would-be victim's (TinyLFU-style doorkeeper), otherwise the slab fills with one-shot experts. Admitted experts stay until ejected by lowest heat-per-cost; in-use experts are pinned for the duration of the request. The simulator compares CPU-only, admit-on-miss, and hybrid-with-admission on the same traces.
+
+**Current implementation boundary (2026-11-23):** The historical topology
+and swap-cache simulator described above was proposed, not delivered.
+The old standalone Python cost model and its synthetic tests were retired because they used a separate planner
+and placeholder latency constants. Do not revive that second policy
+path for stage 5: the worker's native replay owns placement invariants;
+measured service traces are required for cost and speedup comparisons.
 
 ## Change Log
 
