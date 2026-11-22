@@ -14,6 +14,7 @@
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cstdint>
 #include <filesystem>
@@ -1022,7 +1023,7 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
         const RadFile& model, Registry& reg, int64_t block, bool audio,
         const std::array<int,3>& split, int heads, int world, int64_t tokens,
         bool reduce, std::array<int,3>* ar_calls = nullptr, bool aql = false,
-        bool chain = false, bool with_attn = false) {
+        bool chain = false, bool with_attn = false, int reps = 0, double* step_ms = nullptr) {
     std::array<std::unique_ptr<Builder>,3> builders;
     std::array<C06Issued,3> lanes;
     struct Retire {
@@ -1108,6 +1109,7 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
         }
     }
     std::array<int,3> status{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
+    std::array<std::vector<double>,3> times;
     std::vector<std::thread> runners;
     for (int rank=0; rank<world; ++rank)
         runners.emplace_back([&,rank] {
@@ -1118,6 +1120,15 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
             batch.phase = RAD_PHASE_PREFILL; batch.n_tok = r.tokens; batch.n_seq = 1;
             status[rank] = rc==RAD_OK ? r.ctx->run_step(&batch) : rc;
             if (status[rank]==RAD_OK && aql) status[rank] = rad_stream_sync(r.ctx->stream());
+            // Timing: further warm steps of the same graph; each iteration is bounded by the
+            // slowest rank (the collectives make all ranks leave together).
+            for (int i=0; i<reps && status[rank]==RAD_OK; ++i) {
+                const auto t0 = std::chrono::steady_clock::now();
+                status[rank] = r.ctx->run_step(&batch);
+                if (status[rank]==RAD_OK && aql) status[rank] = rad_stream_sync(r.ctx->stream());
+                times[rank].push_back(std::chrono::duration<double,std::milli>(
+                    std::chrono::steady_clock::now()-t0).count());
+            }
             c06_active = nullptr;
         });
     for (auto& t : runners) t.join();
@@ -1138,6 +1149,16 @@ static std::vector<std::vector<uint16_t>> issue_ffn(
                  "LTX03 native output download failed");
         } else
             std::memcpy(outputs[(size_t)rank].data(),ptr,outputs[(size_t)rank].size()*2);
+    }
+    if (step_ms && reps > 0) {
+        std::vector<double> per_iter((size_t)reps);
+        for (int i=0;i<reps;++i) {
+            double slowest = 0;
+            for (int rank=0; rank<world; ++rank) slowest = std::max(slowest,times[rank][(size_t)i]);
+            per_iter[(size_t)i] = slowest;
+        }
+        std::sort(per_iter.begin(),per_iter.end());
+        *step_ms = per_iter[per_iter.size()/2];
     }
     for (auto& r : lanes) r.ctx.reset();
     reg.fini_instances();
@@ -1294,7 +1315,7 @@ static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
 }
 
 int main(int argc, char** argv) {
-    if(argc!=3 && argc!=4) {
+    if(argc!=3 && argc!=4 && argc!=5) {
         std::fprintf(stderr,"usage: ltx_c02_lin_declare_test MODEL.rad PLUGIN_KERNEL_DIR\n");
         return 2;
     }
@@ -1304,7 +1325,8 @@ int main(int argc, char** argv) {
              std::string(argv[3]) == "--c06-issued-aql" ||
              std::string(argv[3]) == "--c06-issued-aql-16" ||
              std::string(argv[3]) == "--c06-issued-aql-64" ||
-             std::string(argv[3]) == "--ltx03-ffn-issued-aql");
+             std::string(argv[3]) == "--ltx03-ffn-issued-aql" ||
+             std::string(argv[3]) == "--ltx03-block-time-aql");
         if (aql) ltx_test::require_aql_backend();
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
@@ -1324,6 +1346,33 @@ int main(int argc, char** argv) {
         const int nheads = std::stoi(head_text);
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
+        if (argc == 5 && aql && std::string(argv[3]) == "--ltx03-block-time-aql") {
+            // Warm step time of one issued block on the cards: TP1 (one card) against the
+            // three-card splits, at the requested number of tokens. argv[4] = tokens.
+            const int64_t tokens = std::stoll(argv[4]);
+            need(tokens > 0, "LTX03 timing needs a positive token count");
+            const int reps = 20;
+            for (int variant : {0,2})
+                for (bool audio : {false,true}) {
+                    double ms1 = 0;
+                    (void)issue_ffn(model,reg,0,audio,{0,0,0},nheads,1,tokens,true,nullptr,true,
+                                    variant>=1,variant==2,reps,&ms1);
+                    std::printf("LTX03 time %s %s tokens=%lld TP1(one card): %.3f ms/step\n",
+                                variant==2?"attention+FFN block":"FFN",audio?"audio":"video",
+                                (long long)tokens,ms1);
+                    for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                        double ms3 = 0;
+                        (void)issue_ffn(model,reg,0,audio,split,nheads,3,tokens,true,nullptr,true,
+                                        variant>=1,variant==2,reps,&ms3);
+                        std::printf("LTX03 time %s %s tokens=%lld TP3 %d,%d,%d: %.3f ms/step (%.2fx vs TP1)\n",
+                                    variant==2?"attention+FFN block":"FFN",audio?"audio":"video",
+                                    (long long)tokens,split[0],split[1],split[2],ms3,ms1/ms3);
+                        std::fflush(stdout);
+                    }
+                }
+            return 0;
+        }
         if (argc == 4 && (std::string(argv[3]) == "--ltx03-ffn-issued-host" || aql &&
                           std::string(argv[3]) == "--ltx03-ffn-issued-aql")) {
             // The issued TP3 FFN against a TP1 issue of the same checkpoint and kernels.
