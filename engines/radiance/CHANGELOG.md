@@ -1,5 +1,17 @@
 # Changelog
 
+## [2020.2.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.2.0...bc-radiance-2020.2.1) (2026-11-22)
+
+
+### Fixes
+
+* **radiance:** use registered tag for diagnostic IQ8R patch ([222f600](https://github.com/audiagentic/bigcherry/commit/222f6000b7e8dc601a8f5952dd906ba4c13fd069))
+
+
+### Performance
+
+* **moe-remote:** time the helper expert bootstrap stages at startup ([#1347](https://github.com/audiagentic/bigcherry/issues/1347)) ([ac4e07e](https://github.com/audiagentic/bigcherry/commit/ac4e07e7e04e2ec2fe82f576a8fd3b4cdc3e3d5e))
+
 ## [2020.2.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.1.2...bc-radiance-2020.2.0) (2026-11-22)
 
 

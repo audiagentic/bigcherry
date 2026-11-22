@@ -9,7 +9,7 @@ different statuses. See [the engine overview](README.md) first.
 
 _Generated from package documentation and metadata by `tools/docs/generate_engine_enhancement_summaries.py`. Do not edit this section by hand._
 
-## Engine patches (40)
+## Engine patches (41)
 
 | Package | State | Summary |
 | --- | --- | --- |
@@ -53,6 +53,7 @@ _Generated from package documentation and metadata by `tools/docs/generate_engin
 | [rad0054_attn_prefill_fp8](../../../../engines/radiance/patches/rad0054_attn_prefill_fp8/SUMMARY.md) | `validated` | The patch restores off, QK, PV and combined prefill modes on the supported Qwen35 H256/GQA6/page16 E4M3, V4 and K6V4 rows; decode and unsupported geometries do not accept the prefill selector. |
 | [rad0055_step_phase_trace](../../../../engines/radiance/patches/rad0055_step_phase_trace/SUMMARY.md) | `validated` | Off by default. The serving owner hands the engine a run-directory path only for a start given `--step-phase-trace`; the engine writes per-pass HIP-event timing per rank. Timing is perturbed when on, so throughput comes from an untraced run. |
 | [rad0060_ltx2_tp3_linear_declare](../../../../engines/radiance/patches/rad0060_ltx2_tp3_linear_declare/SUMMARY.md) | `diagnostic` | Optional `C01Slice` in the real 2.2 / ABI44 LTX `Lin::declare`. Fused QKV/KV row shards record per-bank code, two-level IQ8R scales and BF16 bias spans. Output columns use native aligned `RAD_SHARD_COL` views. Biasless columns declare no bias; biased columns require `C01Slice::columns_deferred`, record `Lin::deferred_bias`, and declare **no partial-rank bias weight or table-add**. C04 reuses Radiance 2.2 exact all_reduce, then adds BF16 bias once per reduced output replica. The C05 Q/K RMS subset now runs under native GPU AQL; complete C06 self-attention and architecture integration remain gates. |
+| [rad0061_iq8r_f32_scale](../../../../engines/radiance/patches/rad0061_iq8r_f32_scale/SUMMARY.md) | `diagnostic` | Preserve the exact FP32 product of the U8 per-group and BF16 per-row IQ8R scales in the existing native `libr4d` group-256 relayout and GEMM readers; use BigCherry's existing native rewrite of that source for the XTX `libr3` plugin. The CPU `libref` reference is unchanged. |
 
 ## Components (6)
 

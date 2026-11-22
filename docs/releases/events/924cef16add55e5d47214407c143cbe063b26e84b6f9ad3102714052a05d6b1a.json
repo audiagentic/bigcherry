@@ -1,0 +1,17 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_104724_bigcherry-results-ingest-calib_3794",
+  "files": [
+    "tools/bigcherry/bench/radiance_lab_records.py",
+    "tools/bigcherry/cli/results.py",
+    "tools/tests/lab/test_mrc06_labruns.py",
+    "tools/lab/radiance/calibration_watchdog.py",
+    "docs/reference/engines/radiance/LIVE_PLACEMENT.md",
+    "docs/reference/tooling/TOOLING.md",
+    "docs/reference/tooling/TOOL_DISPOSITION.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Retire the Python consumers of the removed serve --calibration-run start: results ingest-calibration, publish_calibration_run, the launcher-side calibration_watchdog.py and their tests; state in LIVE_PLACEMENT.md that nothing currently produces new live-policy calibration records. calibration-ingest and the record store reader stay.",
+  "timestamp-utc": "2026-11-22T10:47:24.462998Z",
+  "user-summary-candidate": "bigcherry results ingest-calibration is removed along with the calibration start it read."
+}

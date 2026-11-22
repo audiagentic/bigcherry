@@ -5,7 +5,7 @@ rad_plugin_defaults()
 
 set(RADIANCE_SRC "" CACHE PATH "Radiance source tree for contract source checks")
 
-# RFC 8785 JCS, SHA-256 and the shared strict v1 reader (RSC08 slice 2): one source list, bc_serving_v2.cmake, which
+# RFC 8785 JCS, SHA-256 and the shared strict manifest reader (RSC08 slice 2): one source list, bc_serving_v2.cmake, which
 # radiance's core also builds (managed patch rad0011).
 include("${CMAKE_CURRENT_SOURCE_DIR}/bc_serving_v2.cmake")
 
@@ -32,7 +32,7 @@ foreach(bc_data archs)
   set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/../../${bc_data}.toml")
 endforeach()
 
-# helper_profile.toml is compiled in: the helper_common values bc-serve writes into a v1 manifest.
+# helper_profile.toml is compiled in: the helper_common values bc-serve writes into the serving manifest.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/helper_profile.toml" bc_helper_profile_seed)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/helper_profile_seed.inc"
      "R\"bchp(${bc_helper_profile_seed})bchp\"\n")
@@ -54,7 +54,7 @@ target_link_libraries(bc_feature_state PUBLIC bc_json_dependency)
 set(bc_manifest_writer_sources
   manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp rank_demand.cpp
   live_policy.cpp live_policy_manifest.cpp plan_cache.cpp xbigcherry.cpp v2/s10_inputs.cpp)
-add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
+add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt bc_feature_state)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -164,8 +164,6 @@ if(BUILD_TESTING)
   # Step 3: independently built card-free guards and real v2 power bridge.
   add_executable(bc_session_guards_test EXCLUDE_FROM_ALL session_guards_test.cpp)
   target_link_libraries(bc_session_guards_test PRIVATE bc_serving)
-  target_compile_definitions(bc_session_guards_test PRIVATE
-    BC_RSC02_CALIBRATION_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_calibration_deadlines.json")
   # The declared build target runs all four heat producer contract cases by
   # default; do not register extra CTest aliases without real build targets.
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
@@ -260,9 +258,7 @@ if(BUILD_TESTING)
   target_link_libraries(bc_v2_s8_test PRIVATE bc_serving_v2)
   add_test(NAME bc_v2_s8_test COMMAND bc_v2_s8_test)
 
-  # S10: all-v2 inactive resolver and writer; never linked by production.
-
-  # P1: inactive native measurement publication (no v1 activation).
+  # P1: native measurement publication tests.
   add_executable(bc_v2_p1_test EXCLUDE_FROM_ALL v2/p1_measurement_test.cpp)
   target_link_libraries(bc_v2_p1_test PRIVATE bc_serving_v2_p1)
   add_test(NAME bc_v2_p1_test COMMAND bc_v2_p1_test)
@@ -285,7 +281,7 @@ if(BUILD_TESTING)
   add_test(NAME bc_v2_native_measurement_test COMMAND bc_v2_native_measurement_test)
   # S13b: the same typed read-only publisher is tested independently.
   # Explicit v2-only collector reads the actual worker shared-memory transport.
-  # Not installed, not built by default and never linked into v1 production.
+  # Not installed, not built by default and never linked into production.
   add_executable(bc_v2_runtime_receipt_live EXCLUDE_FROM_ALL v2/runtime_receipt_live.cpp)
   target_link_libraries(bc_v2_runtime_receipt_live PRIVATE
     bc_serving_v2_runtime_receipt bc_jcs)

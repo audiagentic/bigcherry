@@ -9,14 +9,14 @@ serving manifest with provenance.
 ## Outcome
 
 The strict TOML loader, `bc-serve` inspection and manifest generation,
-the shared v1 reader, and the engine-side memory-plan measurement and
+the shared strict manifest reader, and the engine-side memory-plan measurement and
 admission check are implemented. The serving component now includes an
 owner-map verifier that checks the planner's owned expert sets and exact
-device byte totals. Card-free tests cover the verifier. The helpers read their
-whole configuration from the manifest (`r3_moe_worker --manifest FILE --role
-helperN`, through `v1/helper_settings.h`; RSC06) and the launcher writes the
-manifests they start from. The engine still starts from flags until the S4
-cutover, so this is not yet a fully qualified v1 launch.
+device byte totals. Card-free tests cover the verifier. The engine and the
+helpers read their whole configuration from the serving manifest the owner
+writes from the config's native YAML (`r3_moe_worker --manifest FILE --role
+helperN`, through `v2/helper_settings.h`; RSC06). Planning is native-only: a fresh start
+needs an admitted native config YAML, and there is no other planning path.
 
 
 ## Native YAML candidate
@@ -94,19 +94,6 @@ symlinks, rejects empty/stale/future files, and checks live worker transport
 identity and placement journals through the typed runtime receipt reader.
 A live degradation or stale transport fails the owner; polling is bounded.
 
-Foreground lab calibration is opt-in:
-`bc-serve serve --calibration-run --live-policy FILE
---calibration-prompts-a FILE --calibration-prompts-b FILE
---calibration-store PATH`. It needs an authenticated measured lab manifest
-with helpers and no experiment, a finite nonempty A/B/B/A workload, measured
-drift evidence before the prefeed deadline, and a single complete calibration
-marker. A capped observation-space envelope prevents an unbounded run; the
-existing C++ ingest validator rejects malformed or incomplete records.
-No successful live-policy state is reported merely because calibration was
-requested; a final runtime telemetry proof is required. Detached calibration,
-automatic activation of a partial calibration and arbitrary lab shell scripts
-are not offered.
-
 Card-free tests: `bc_manifest_power_test`, `bc_session_guards_test` and
 `bc_session_test` (as well as existing `bc_power_transaction_test`).
 Every executable is a CMake target and declared in `component.toml`.
@@ -115,7 +102,7 @@ Every executable is a CMake target and declared in `component.toml`.
 
 At startup, after the exact measured or sealed strict manifest has been
 selected and before serving children launch, the `bc-serve` owner serializes
-`run_dir/feature-states.v1.json` (platform v1 JSON array). Its seven
+`run_dir/feature-states.v1.json` (platform JSON array). Its seven
 manifest-derived entries cover the live placement policy and its startup
 decision/provenance skip reason, MTP depth, prefix cache, host KV tier, helper
 combine, vision tower placement and maximum image patches. Each entry names
@@ -178,18 +165,18 @@ plans a clang AST inventory and CI gate with negative counterexamples.
 
 CPU-only static library `bc_serving` and `bc-serve`, packaged at
 `radiance_home/bin/bc-serve`. One C++ schema and strict TOML loader;
-no Python schema or shell launcher parser; session and helper/engine process ownership
+no Python schema or shell parser; session and helper/engine process ownership
 are native C++.
 
 Build with `-DCMAKE_PREFIX_PATH=<installed radiance>` and
 `-DRADIANCE_SRC=<radiance source>`; build `bc-serve bc_serving_test`
 then run `ctest --output-on-failure`. Tests are CPU-only, including a
-synthetic KFD/PCI/proc/sysfs tree and launcher-value parity. The resolver tests are engine-free: they select a
+synthetic KFD/PCI/proc/sysfs tree. The resolver tests are engine-free: they select a
 config through a C++ preset (`test_config_fixture.h`), generated from the shipped `engines/radiance/configs/NAME.yaml` by
 `gen_fixture_presets.py` (a test fails when they drift); the production resolver reads a config only from its YAML.
 
 Commands: `--detect [--json]`, `--schema`, `--validate <site> [profile]`,
-`--explain [--json]`, `--write-manifest OUT` (the serving manifest v1; with `--plan-cache` and `--engine-binary`,
+`--explain [--json]`, `--write-manifest OUT` (the serving manifest; with `--plan-cache` and `--engine-binary`,
 or with `--unmeasured` and neither: the measuring start's manifest, `plan.state` unmeasured, which only a measuring start
 (`radiance --plan-memory`, `r3_moe_worker --measuring`) accepts; `--live-policy FILE` adds the live placement policy and
 `--experiment FILE` a lab experiment, each a JSON object the reader checks member by member; `--measured-plan FILE
@@ -249,9 +236,7 @@ RSC05 work.
 The one document processes load is the serving manifest (edition 3, written by the owner from the config's sealed native YAML; spec in
 `docs/design/serving-manifest-v2/`), read by the shared strict reader. `explain`'s record is not a file any process reads. The engine and
 helpers start from that manifest (rad0009, shared `bc_serving_v2` library).
-The owner now launches and verifies measuring/serving process groups;
-legacy shell and Python paths remain reference oracles until the later
-hardware A/B and retirement gate.
+The owner launches and verifies the measuring and serving process groups.
 
 Vendor: toml++ v3.4.0 root single header and MIT license (`third_party/`; the repository ignores every `vendor/` directory);
 reuse radiance's existing nlohmann/json v3.12.0.
@@ -271,9 +256,9 @@ another layout.
 **Design source:** RSC12's one named configuration plus provenance and RSC02's
 single native resolver. **Difference from the retired interfaces:** this is
 not a Python `bigcherry serve explain` wrapper and does not derive defaults
-from the bash launcher's option parser. The existing `bc-serve --explain`
+from a shell option parser. The existing `bc-serve --explain`
 remains a lower-level, site/profile-oriented resolver inspection; no
-launcher-compatibility flags are introduced. `bc_serving_test` execs the
+compatibility flags are introduced. `bc_serving_test` execs the
 actual `bc-serve` binary with a synthetic KFD/PCI/proc filesystem and a real
 config file, checks base/variant provenance, JSON/text behaviour and refusal
 cases without requiring any GPU, permission failure or fake planner.
@@ -321,29 +306,11 @@ cache index. The original bytes are checked again immediately before
 launching a serving child.
 
 An explicit `--power-profile` conflicting with the recorded profile is
-refused. A stored lab experiment is not enabled by default: replay lacks
-the RSC12 lab-experiment static input-key oracle until that part lands,
-and refuses rather than inventing a config format. RSC12's dedicated
+refused. A stored lab manifest is refused: replay is production-only. RSC12's dedicated
 `[config.NAME.power]` and site-defined profile tables also remain a
 loader dependency: this step binds the existing explicit owner
 `--power-profile` mechanism but does not introduce an unofficial power
-table schema. RSC02 step 6 adds a separate, explicit **foreground lab observation** mode:
-`bc-serve serve CONFIG --configs DIR --run-dir DIR --lab-experiment FILE`.
-FILE is parsed as a lab experiment object (`spec.experiment`); only a placement object with
-`mode: observe` (and no forced schedule) is accepted in the actual
-`plan_engine_only` path, before the writer or any GPU child. The C++ owner
-reuses the production named resolver, measuring owner, strict writer/reader,
-durable power admission, runtime guards and verified stop. The experiment
-does not enter the stored-manifest index or replay. RSC12 has not yet bound
-shape-changing experiments into both the measured plan and static manifest
-key, so shape, forced churn, profiling and mixes with calibration/live policy
-fail closed. This is deliberately **not** the Bash `--experiment` forwarding
-surface: no shell environment transport, old alias or Python launcher is
-included. A fake-device CTest exercises the real resolver-to-writer bytes
-and refuses unsupported variants; hardware S15 is still pending.
-
-The bash launcher/Python supervisor are unchanged pending
-RSC02 step 6.
+table schema.
 
 CPU-only acceptance: `bc_stored_manifest_test` (strict bytes and typed
 identity refusals), `bc_stored_manifest_cache_test` (static reuse and
@@ -365,7 +332,7 @@ recorded `--set key=value` values are resolved with source provenance;
 `--ngram-device` has no typed contract field and remains refused.
 
 **Design source:** RSC04's mode table, RSC12 named-config precedence,
-and the native serving manifest process contract. **Difference from the bash
+and the native serving manifest process contract. **Difference from a shell
 launcher:** no second syntax translates `--port`, `--heat`, `--budget`,
 or other legacy flags into environment variables; the one resolver writes
 the typed manifest (edition 3, sealed with the native YAML). `bc_typed_settings_test` executes the compiled `bc-serve

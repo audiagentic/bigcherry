@@ -56,7 +56,7 @@ class ServerCaptureTests(unittest.TestCase):
                     return_value={"tg512_tps": 30.0},
                 ) as bench:
                     result = run_server_arm_capture(engine="llamacpp", settings={}, health_timeout_s=180,
-                        binary=Path("llama-server"), model=Path("model.gguf"), extra_args=(), manifest=None,
+                        binary=Path("llama-server"), model=Path("model.gguf"), extra_args=(),
                         output=Path(tmp), pair=0, side="native", position=1, env={},
                         bench_configs="tg512", runner_root=Path("runner"),
                         required_metrics=("tg512_tps",),
@@ -73,7 +73,7 @@ class ServerCaptureTests(unittest.TestCase):
         with patch("bigcherry.tuning.server_runner.ServerRunner") as server:
             with self.assertRaisesRegex(ValueError, "expected metrics"):
                 run_server_arm_capture(engine="llamacpp", settings={}, health_timeout_s=180,
-                    binary=Path("server"), model=Path("model"), extra_args=(), manifest=None,
+                    binary=Path("server"), model=Path("model"), extra_args=(),
                     output=Path("unused"), pair=0, side="native", position=0,
                     env={}, bench_configs="full", runner_root=Path("runner"), required_metrics=(),
                 )
@@ -274,27 +274,21 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         self.config.write_text(json.dumps(config), encoding="utf-8")
 
     def layout_adapter(self, served):
-        """A radiance adapter whose layouts are fake_layout's; records each arm's manifest inputs and scores every arm."""
+        """A radiance adapter whose layouts are fake_layout's; records each arm's model and cards and scores every arm."""
         import sys
         from bigcherry.engine_adapters.base import QualityCommand
         from bigcherry.engine_adapters.radiance import RadianceAdapter
         test = self
 
         class LayoutAdapter(RadianceAdapter):
-            def serving_layout(self, layout):
-                return test.fake_layout(layout)
-
-            def write_serving_manifest(self, name, serving, *, binary, model, env, run_dir):
-                served[name] = {"model": model, "rocr": env.get("ROCR_VISIBLE_DEVICES"), "hip": env.get("HIP_VISIBLE_DEVICES")}
-                path = run_dir / "manifest.json"
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("{}")
-                return path
+            def serving_layout(self, config, native_config, binary):
+                return test.fake_layout(config)
 
             def sidecars(self, arm, env, run_dir, binary):
                 return []
 
             def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
+                served[arm["name"]] = {"model": model, "rocr": env.get("ROCR_VISIBLE_DEVICES"), "hip": env.get("HIP_VISIBLE_DEVICES")}
                 result = run_dir / f"{arm['name']}.kld.json"
                 program = ("import json,sys;json.dump({'all':{'kld':{'mean':0.003,'median':0.001,'p99':0.02,'p99_9':0.1},"
                            "'top1_agreement':0.968,'ppl':{'candidate':8.55,'reference':8.56,'ratio':0.9988}}},open(sys.argv[1],'w'))")
@@ -302,10 +296,16 @@ class ServerComparisonCaptureTests(unittest.TestCase):
                                       run_dir / f"{arm['name']}.score.log", result, 60.0)
         return LayoutAdapter()
 
+    def native_serving(self, layout):
+        """The serving block of a native arm: the config it copies and its own YAML file."""
+        yaml = self.root / f"{layout}.yaml"
+        yaml.write_text("apiVersion: bigcherry/v3\n", encoding="utf-8")
+        return {"config": layout, "native_config": str(yaml)}
+
     def layout_arms(self, *layouts):
         arms = []
         for i, layout in enumerate(layouts):
-            arm = dict(self.arms[i % 2], mode="stock", serving={"layout": layout, "set": {}})
+            arm = dict(self.arms[i % 2], mode="stock", serving=self.native_serving(layout))
             arm["name"] = f"arm{i}"
             arms.append(arm)
         return arms
@@ -325,6 +325,21 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         gated = {name for name, entry in summary["quality"]["arms"].items() if "gate" in entry}
         self.assertEqual(gated, {"arm1", "arm2", "arm3"}, "every non-control arm is judged against the control")
         self.assertTrue(summary["quality"]["passed"])
+
+    def test_a_layout_arm_is_refused_because_its_planner_is_gone(self):
+        arms = self.layout_arms("l", "xtx")
+        arms[0]["serving"] = {"layout": "l", "set": {}}
+        self.write_layout_config(arms)
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, r"arm0: a serving arm is a native arm.*native_config"):
+            self.run_layouts({})
+        self.assertFalse(self.output.exists(), "refused before anything is written")
+
+    def test_a_serving_arm_without_its_yaml_is_refused(self):
+        arms = self.layout_arms("l", "xtx")
+        arms[1]["serving"] = {"config": "xtx"}
+        self.write_layout_config(arms)
+        with self.patches_for_preflight(), self.assertRaisesRegex(ValueError, r"arm1: a serving arm is a native arm"):
+            self.run_layouts({})
 
     def test_a_performance_comparison_stays_at_two_or_three_arms(self):
         arms = [dict(self.arms[i % 2], name=f"arm{i}") for i in range(4)]
@@ -359,7 +374,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             benchmark.run_server_comparison_capture(self.config, self.root / "out2", rounds=2, seed=0, settle_seconds=0)
 
     def test_a_non_layout_arm_needs_a_model(self):
-        arms = [dict(self.arms[0], mode="stock"), dict(self.arms[1], mode="stock", serving={"layout": "l", "set": {}})]
+        arms = [dict(self.arms[0], mode="stock"), dict(self.arms[1], mode="stock", serving=self.native_serving("l"))]
         config = {key: value for key, value in self.base_config.items() if key != "model"}
         config.update(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(),
                       server_args=[], arms=arms)
@@ -399,7 +414,7 @@ class ServerComparisonCaptureTests(unittest.TestCase):
             scored[arm["name"]] = (env.get("ROCR_VISIBLE_DEVICES"), model)
             return original(kind, arm, env, run_dir, binary, model, quality)
         adapter.quality_command = recording
-        arms = [dict(self.arms[0], mode="stock"), dict(self.arms[1], mode="stock", serving={"layout": "r9700", "set": {}})]
+        arms = [dict(self.arms[0], mode="stock"), dict(self.arms[1], mode="stock", serving=self.native_serving("r9700"))]
         self.write_config(engine="radiance", execution_evidence="observe", quality_only=True, quality=self.quality_block(),
                           server_args=[], arms=arms)
         from bigcherry.engine_adapters import _ADAPTERS
@@ -439,44 +454,6 @@ class ServerComparisonCaptureTests(unittest.TestCase):
         self.assertEqual(summary["runs"], [])
         self.assertTrue(summary["quality"]["passed"])
         self.assertEqual(sorted(summary["quality"]["arms"]), sorted(item["name"] for item in self.arms))
-
-    def test_quality_only_serving_arms_draft_nothing_unless_the_arm_says_otherwise(self):
-        from bigcherry.engine_adapters import _ADAPTERS
-        import sys
-        from bigcherry.engine_adapters.base import QualityCommand
-        from bigcherry.engine_adapters.radiance import RadianceAdapter
-        written = {}
-
-        test = self
-
-        class FakeAdapter(RadianceAdapter):
-            def serving_layout(self, layout):
-                return test.fake_layout(layout)
-
-            def write_serving_manifest(self, name, serving, *, binary, model, env, run_dir):
-                written[name] = serving
-                path = run_dir / "manifest.json"
-                path.parent.mkdir(parents=True, exist_ok=True)
-                path.write_text("{}")
-                return path
-
-            def sidecars(self, arm, env, run_dir, binary):
-                return []
-
-            def quality_command(self, kind, arm, env, run_dir, binary, model, quality):
-                result = run_dir / f"{arm['name']}.kld.json"
-                program = ("import json,sys;json.dump({'all':{'kld':{'mean':0.003,'median':0.001,'p99':0.02,'p99_9':0.1},"
-                           "'top1_agreement':0.968,'ppl':{'candidate':8.55,'reference':8.56,'ratio':0.9988}}},open(sys.argv[1],'w'))")
-                return QualityCommand((sys.executable, "-c", program, str(result)), dict(env),
-                                      run_dir / f"{arm['name']}.score.log", result, 60.0)
-        arms = [dict(self.arms[0], mode="stock", serving={"layout": "l", "set": {}}),
-                dict(self.arms[1], mode="stock", serving={"layout": "l", "set": {"engine.num_speculative_tokens": 2}})]
-        self.write_layout_config(arms)
-        with self.patches_for_preflight(), patch.dict(_ADAPTERS, {"radiance": FakeAdapter()}), patch(
-            "bigcherry.campaign.benchmark.run_server_arm_capture"):
-            benchmark.run_server_comparison_capture(self.config, self.output, rounds=2, seed=0, settle_seconds=0)
-        self.assertEqual(written[arms[0]["name"]]["set"]["engine.num_speculative_tokens"], 0)
-        self.assertEqual(written[arms[1]["name"]]["set"]["engine.num_speculative_tokens"], 2)
 
     def test_ambient_patch_and_allreduce_controls_do_not_leak_into_arms(self):
         captured = []
@@ -717,7 +694,7 @@ class ServerExecutionAttestationTests(unittest.TestCase):
             return_value={"tg128_tps": 30.0},
         ) as bench:
             result = run_server_arm_capture(engine="llamacpp", settings={}, health_timeout_s=180,
-                binary=Path("server"), model=Path("model"), extra_args=(), manifest=None,
+                binary=Path("server"), model=Path("model"), extra_args=(),
                 output=self.root, pair=0, side="native", position=0, env={},
                 bench_configs="mtp-dual", runner_root=Path("runner"),
                 required_metrics=("tg128_tps",), expected_execution=self.expected,

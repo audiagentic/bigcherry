@@ -59,7 +59,14 @@ No hand-picked constants; no compatibility layer (version gate rejects old segme
 
 Stage 2 of the radiance protocol programme (RCS12 staging). RHP02 slice B also bumps `moe_remote_shm.h`: land RCS14 first so the heat transport is added to v26, not a second bump. Depends on RCS13 only in that both touch `moe_remote_gpu.h`/`moe_mailbox_ops.hip`: land RCS13 first to avoid conflicts.
 
+CONSOLIDATION 2026-11-22 NATIVE-OWNERS: RCS13 C02 GEMV bound and dispatch correctness now lives under active RCS12 after documented transfer. RCS14 v26 helper-topology implementation still waits for the original C02 prelaunch dispatch and cross-architecture acceptance before touching overlapping moe_remote_gpu.h/moe_mailbox_ops.hip files. Superseded RCS13 does not mean C02 complete. No second GEMV or protocol path.
+
 ## Change Log
 
 - 2026-11-13T03:53:18.506339+00:00 (created-by): Created by bigcherry-1
 - 2026-11-13T03:54:03.474191+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:files, section:validation, section:effort_risk, section:standards, section:acceptance_criteria, section:notes
+
+## Reviews
+
+- RV4513
+- 2026-11-22T10:37:38.100788+00:00 (updated-by): Updated: section:notes

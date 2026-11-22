@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_100723_helper-startup-now-logs-where_8575",
+  "files": [
+    "engines/radiance/components/moe-remote/worker_bootstrap_timing.h",
+    "engines/radiance/components/moe-remote/worker_bootstrap_timing_test.cpp",
+    "engines/radiance/components/moe-remote/layer_map_wait.h",
+    "engines/radiance/components/moe-remote/layer_map_wait_test.cpp",
+    "engines/radiance/components/moe-remote/moe_remote_gpu.h",
+    "engines/radiance/components/moe-remote/moe_remote_hook.cpp",
+    "engines/radiance/components/moe-remote/r3_moe_worker.cpp",
+    "engines/radiance/components/moe-remote/CMakeLists.txt",
+    "engines/radiance/components/moe-remote/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Startup-only stage timing of the remote-MoE helper expert bootstrap: per layer and stage (map wait, buffered read, W4 relayout, synchronous H2D, table build, layer load, seal) bytes, calls, total and max ns, logged as one line before the helper ready line; the engine logs its per-layer layer-map consumption wait total and max once after the bootstrap seal. Nothing on the decode path; no behaviour change.",
+  "timestamp-utc": "2026-11-22T10:07:23.318404Z",
+  "user-summary-candidate": "Helper startup now logs where the expert bootstrap spends its time, so slow engine loads can be attributed."
+}
