@@ -55,6 +55,8 @@ priority: null
 
 2026-11-22 PHA04 Gate 0 channel evidence: fake-child tests reproduced clean Ring/Simple/2-channel output marked verified for an explicit request of either 1 or 2 channels, although build_command only sets RCCL_OVERRIDE_ALGO/PROTO, not an actual channel control. Bounded fix makes explicit channels return harness_failure with plan_verification=request_not_applied on otherwise correct algorithm/protocol runs; unrequested-channel algorithm/protocol verification remains unchanged. Host qualification and campaign tests passed 55/55; docs/reference/testing/RCCL_HETEROGENEOUS_RUNBOOK.md records the limitation. This is evidence-integrity only: exact installed RCCL ABI/control, per-call executed-plan correlation and real-device topology/production qualifying rows remain PENDING; no candidate promotion, default change or GPU test.
 
+2026-11-22 PHA04 additional evidence-integrity guard: RCCL Tests -M 1 can show multiple executed-plan rows, but the prior _parse_observed_plan used only the first. Three fake-child cases confirmed a false verified result when a later row disagreed in algorithm, protocol or channel. The reader now requires all rows to agree exactly before calling algo/proto verified; conflicting or missing rows remain unverified/harness_failure, and identical repeated rows keep the original result. 59/59 RCCL qualification+campaign tests pass (four new cases); no GPU, runtime dispatch, installed-RCCL qualification or candidate promotion. Exact collective-level executed binding remains an open PHA04 requirement.
+
 ## Authoritative implementation audit — 2026-10-14, BigCherry b11552
 
 **Disposition: PENDING / OBSERVATION_BLOCKED. No positive level-2 RCCL candidate allowlist, runtime selector, or default promotion.** This is a documentation-only audit; no RCCL binary, GPU, BigCherry patch composition or repository pytest was run. PHA03's topology/AtomicOps safety admission is prerequisite, and PHA05 owns promotion. The existing 1225 fail-closed AtomicOps guard and 0840 provider paths must not be replaced.
@@ -123,3 +125,5 @@ The original assessment correctly identified that 0830 does not expose RCCL algo
 
 - RV4553
 - 2026-11-22T12:05:22.285861+00:00 (updated-by): Updated: section:notes
+- RV4554
+- 2026-11-22T12:09:00.176825+00:00 (updated-by): Updated: section:notes
