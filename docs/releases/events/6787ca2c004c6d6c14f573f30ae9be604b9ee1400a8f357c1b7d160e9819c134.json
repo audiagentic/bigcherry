@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_105003_measured-the-memory-and-perfor_9737",
+  "files": [
+    "docs/evidence/2026-11-22-rum15-iq8r-scale-capacity-kbench/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM15.md"
+  ],
+  "plan-item-ids": [
+    "RUM15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Added measured checkpoint IQ8R scale-residency upper bound and same-card Radiance GEMM A/B/A timing receipt to active RUM15 ownership. Source 39.58GB LTX2.5 IQ8R checkpoint: 1306 2D IQ8R matrices, 127309824 groups, full-resident F32 scale expansion +242.8242MiB, 48-block C06 projections per-rank +7.5..15MiB, subject to actual placement. R9700/XTX native A/B/A GEMM benchmark on shipped Qwen27B IQ8R fixture: 54 timed IQ8R rows per card, median -0.59/-0.61% FP32 versus stock; repeatable R9700 M33 N1024 K5120 +25% slowdown means production admission remains blocked. No kernels, model loader, serving flags or production recipes were modified.",
+  "timestamp-utc": "2026-11-22T10:50:03.033106Z",
+  "user-summary-candidate": "Measured the memory and performance cost of the more accurate IQ8R scale format: projected full-model scale overhead is 242.8 MiB, distributed self-attention projection overhead is 7.5 to 15 MiB per card, and median warm kernel timings are close to stock on both XTX and R9700. A repeatable 25% slowdown in one narrow GEMM shape remains a production blocker."
+}
