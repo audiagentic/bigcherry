@@ -49,6 +49,15 @@
     "x-bigcherry.memory.host-pool-mib=22528",
     "x-bigcherry.helper.combine-min-rows=1"
    ]
+  },
+  "27b-native-kld/reference": {
+   "base": "qwen27b-tp3",
+   "set": [
+    "models.qwen27b.max-num-seqs=1",
+    "models.qwen27b.num-speculative-tokens=0",
+    "x-bigcherry.kernels.attn-native=false",
+    "x-bigcherry.kernels.moe-native=false"
+   ]
   }
  }
 }

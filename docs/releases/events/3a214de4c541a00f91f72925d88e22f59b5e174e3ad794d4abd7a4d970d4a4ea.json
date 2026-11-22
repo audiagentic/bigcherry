@@ -1,0 +1,14 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261122_105953_the-27b-native-attention-quali_9703",
+  "files": [
+    "tools/lab/radiance/27b-native-kld.json",
+    "tools/lab/radiance/native-arms.json",
+    "tools/lab/radiance/native-arms/27b-native-kld/reference.yaml",
+    "tools/tests/lab/test_native_kld_job.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "27b-native-kld.json records its own KL reference through the native owner from native-arms/27b-native-kld/reference.yaml (qwen27b-tp3, a different layout than the control) instead of expecting an externally stored one.",
+  "timestamp-utc": "2026-11-22T10:59:53.259576Z",
+  "user-summary-candidate": "The 27B native-attention quality job records its own reference."
+}
