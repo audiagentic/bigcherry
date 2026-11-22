@@ -133,6 +133,8 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE relevant insight into RAD21/RAD43, keep llama portfolio apart" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP17.md:12-78,96-115,175-201 retains llama.cpp prefill indexer/ubatch/QSA mask, sparse attention and MoE-MMQ attribution and correctness gates across the physical ranks. docs/planning/active/patching-radiance-rdna3/RAD21.md:12-37 is specifically intra-layer moe-remote helper-pipeline prefill; RAD43.md:12-30 is helper/tail kernel work, neither covers QFP17's Meta QSA graph and 240K ubatch fit. Active items that reference this one: BCOP118, BCOP120, BCOP124, BCOP125, BCOP126, BCOP127, BCOP129, BCOP136, BCOP145, BCOP162. Keep the distinct llama.cpp prefill programme in QFP17; Radiance RAD21/RAD43 cannot absorb its acceptance or memory gates.
 
+2026-11-22 final BCOP authority reconciliation (BCOP35): Distributed/context-parallel attention is NOT an authorised implementation path at current no-P2P topology. Only reconsider a newly named versioned mechanism after exact model heads/KV context, real measured physical communication lower bound, remaining exposed attention time after current sparse QSA/FA and a credible >=5% E2E opportunity; use existing QFP17 attention/host-transport/quality owners. No separate BCOP35 runtime or speculative scheduler. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
 ## 2026-10-18 BCOP293 — native HIP four-head lightning-indexer LDS/head-pass discriminator
 
 **Disposition: PROFILE_FIRST, no implementation or GPU queue.** At pinned llama.cpp b11552 (23b0202a), ggml/src/ggml-cuda/lightning-indexer.cu blob 429d2e200c84 already contains merged #29901; BigCherry 1335 is superseded since b11474. Upstream [#30080](https://github.com/ggml-org/llama.cpp/pull/30080) (2026-10-07) subsequently added a **two-head-per-pass** query-staging mechanism, enabled only for MUSA<220; HIP still uses four. This is a **new native resource-geometry** question, not a repeat of validated 1335 tile-vs-vector, QFP03 TOP_K, QFP25 sparse FA or QFP17/1332 mask tiling. No new dispatcher, kernel owner, allocator, scheduler or runtime flag.
@@ -272,3 +274,4 @@ Long-context per-unit-effort execution order after the provider diagnostic: **13
 - 2026-10-06T02:50:38.473961+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T04:12:00.528748+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:26:32.352743+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T06:46:25.612985+00:00 (updated-by): Updated: section:notes

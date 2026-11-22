@@ -155,6 +155,8 @@ BACKLOG TRIAGE 2026-11-04 (MERGE into FMTP03; revalidated against main 6eb31a708
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: FMTP05.md:121-135 requires bounded off-state probes, recovery, and a hit/overhang EV controller; FMTP03.md:100-110 offers only a timing/slack-based adaptive tail-depth policy. FMTP03.md:182 says 1268 still fails to apply and FMTP05 is blocked; that is not a merge of its probe/recovery scope.
 
+2026-11-22 final BCOP authority reconciliation (BCOP36 BCOP41): One MTP front-ahead controller consumes measured acceptance, probe overhead, bridge/replay cost and effective tokens/s; do not add WHIRL/entropy or another runtime confidence mechanism. The past custom adaptive-depth 1255/1268 screen lost to fixed depth 3. Native spec-draft-p-min is only a pre-existing optional screen against fixed depth 3, and requires >=5% effective E2E at both depths with <=2% held-out regression before any implementation/activation claim. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
 ## 2026-10-06 ownership note: WHIRL adaptive speculation
 
 WHIRL v0.1.3 independently validates the value of measured cost/acceptance economics, but its front-draft controller belongs to PRBE52/1255/1268, not FMTP05. FMTP05 must continue to consume `common_speculative_effective_n_max()` as an input and adapt only **future/ahead overlap work**. It must not add another front-depth controller or n-gram proposer selector.
@@ -178,3 +180,4 @@ WHIRL front-depth calibration data is not automatically valid FMTP05 training da
 - 2026-11-04T03:45:14.142905+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:42:31.420798+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:42:35.379938+00:00 (state-transition): State: superseded → pending
+- 2026-11-22T06:46:34.185323+00:00 (updated-by): Updated: section:notes

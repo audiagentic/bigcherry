@@ -54,6 +54,8 @@ Cards, links and kernel costs are measured automatically on any supported layout
 
 Supersedes RPL01 (patching-runtime-placement). Budgets: cache hit <0.5 s, changed link 3-8 s, new GPU/kernel 5-15 s, cold first start 10-30 s cap. Plan source: GPT staged plan 2026-11-01.
 
+2026-11-22 final BCOP authority reconciliation (BCOP118 BCOP30 BCOP32 BCOP33): RPL01's Phase-B additive placement score is invalid under overlapping compute/copy/wait. RHP09 remains the one Radiance topology and calibration authority: physical link identity, current ABI, measured engine/helper critical-path completion and real available VRAM, held-out predictions, cross-clock and no-P2P refusal. Consume existing QFP46/producer traces where applicable, never synthesize missing counters or build another generic runtime placement scorer; RHP04 owns actuation. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
 ## Change Log
 
 - 2026-11-01T22:51:30.189099+00:00 (updated-by): Updated: section:title, order=20, section:description, section:validation, section:acceptance_criteria, section:notes
@@ -67,3 +69,4 @@ Supersedes RPL01 (patching-runtime-placement). Budgets: cache hit <0.5 s, change
 
 - RV4242
 - 2026-11-20T02:32:00.345179+00:00 (updated-by): Updated: section:steps
+- 2026-11-22T06:45:58.779822+00:00 (updated-by): Updated: section:notes

@@ -115,6 +115,8 @@ References:
 
 2026-11-22 owner handoff from decision-only BCOP42: Unsectioned source gate. Source-bounded action/stop rule: # Gate MET04 placement on permutation attribution ## Disposition Authoritative owner: MET04 / patch 1283. Subsequent BigCherry work has already implemented static usage-based expert reordering and measured the owner's XTX-dense / three-GPU expert layout. The same-file EP result is +3.5..4% decode at n=2, but the reordered row-split control is itself ~2 t/s slower than the original file, produces different output, and changes MTP acceptance. The remaining question is therefore attribution, not another placement mechanism. Before 2:2:1 weighting or 245K qualification, require identity-rewrite and permutation/inverse byte controls, then original-vs-reordered row-split greedy/MTP-off inference, followed by same-reordered-file row-split-vs-EP MTP-off ABBA. Promote further placement work only with >=3% repeated MTP-off decode gain and non-overlapping 95% CI; otherwise retain production row split and terminate MET04 tuning for this model. Do not create another scheduler, placement registry or cache. MET01 owns route/residency evidence; MET02/1281 range execution; MET04/1283 static placement. Treat single-trace routing-balance scores as in-sample until workload-separated traces exist. See docs/planning/completed/patching-bc-optimizations/BCOP42.md for the complete source/shape/negative case and evidence. MET04 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
+2026-11-22 final BCOP authority reconciliation (BCOP34): The no-P2P MoE EP feasibility discriminator is part of MET04 cache-before-EP admission: bound routed activation plus result bytes/sync and compare only removable critical-path compute at equal model/VRAM. A >=5% credible *exposed* E2E opportunity and correctness control must precede new inter-card expert transport; otherwise prefer residency/host cache and no new router or placement registry. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
 ## External provenance and traceability
 
 This cache-before-EP direction has two distinct source lineages and they must remain distinguishable in reports:
@@ -158,3 +160,4 @@ MET01 now owns the remaining cache/residency question. Its next discriminator is
 - chg_20261006_144832_diagnostics-and-experimental-p_1077
 - 2026-10-06T14:48:42.860743+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-22T05:25:48.064399+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T06:46:21.353350+00:00 (updated-by): Updated: section:notes

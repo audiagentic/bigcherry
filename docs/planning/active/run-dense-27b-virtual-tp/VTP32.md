@@ -71,6 +71,8 @@ Hand-sweep data: VTP14.md (N2 rebalance, split sweep, N6). Profile tooling: ${BC
 
 **2026-11-14.** At 5,5,6 the R9700 still waits 69 us of a 370 us decode cycle (VTP36). Scaling compute by share balances near 4.5 / 4.5 / 7 sixteenths (+9% at 8 streams, derived) at ~-9% cache tokens, because the R9700's KV pool binds with the XTX's: the solver's objective needs a cache-capacity term or constraint. In prefill at depth the XTX ranks are critical through attention (KV heads, not movable) and the delta-net scan (~10x the R9700 per head); calibrate prefill at 50k-100k as well as 2048 / 8192. Solve after VTP37 step 3a (it moves the XTX's decode cost per share).
 
+2026-11-22 final BCOP authority reconciliation (BCOP32): The dense-model-specific hetero split recommendation is already owned by VTP32 and native tuning.tp_ownership, constrained by exact per-kind measured compute/collective wait, KV capacity and physical topology; do not adopt the superseded RPL01 generic scheduler or cross-engine autotuning module. Matched A/B evidence remains required before changing the physical split. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
 ## Results so far
 
 - MXFP4, `--profile-ops`, one stream depth 7: XTX compute 3468 ms against R9700 2263 ms at 6/6/12. Bandwidth weighting (more on the XTX) made the XTX +10% slower.
@@ -84,3 +86,4 @@ Hand-sweep data: VTP14.md (N2 rebalance, split sweep, N6). Profile tooling: ${BC
 - 2026-11-12T07:38:53.993312+00:00 (created-by): Created by agent
 - 2026-11-12T07:40:13.909697+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria, section:notes
 - 2026-11-14T06:59:34.819823+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T06:46:16.990165+00:00 (updated-by): Updated: section:notes

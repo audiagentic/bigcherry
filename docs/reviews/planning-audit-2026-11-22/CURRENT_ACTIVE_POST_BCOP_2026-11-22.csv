@@ -1,0 +1,359 @@
+id,state,group,title,priority,acceptance_defined,path
+BHA02,pending,build-hip-autotune,Selective HIP Flash-Attention quant build configuration (#28079),P2,True,docs/planning/active/build-hip-autotune/BHA02.md
+BHK01,in_progress,build-host-kernel,Recover and validate the protected Linux 7.0.13-gfxoff host-kernel patch,P1,False,docs/planning/active/build-host-kernel/BHK01.md
+BHK02,pending,build-host-kernel,Read active memory timings through an ABI-matched host diagnostic,P2,True,docs/planning/active/build-host-kernel/BHK02.md
+BHK03,pending,build-host-kernel,Establish a verified Linux runtime timing-write path before any tuning,P2,True,docs/planning/active/build-host-kernel/BHK03.md
+BHK04,pending,build-host-kernel,Audit and repeat the RAM baseline after the four-DIMM upgrade,P2,True,docs/planning/active/build-host-kernel/BHK04.md
+BPB01,pending,build-pin-bump,b11474: reconcile the non-production patches that no longer apply,P2,False,docs/planning/active/build-pin-bump/BPB01.md
+BRBC01,pending,build-reusable-build-campaign,Restore an independent build-comparison oracle for future toolchain/RDNA-target changes,null,True,docs/planning/active/build-reusable-build-campaign/BRBC01.md
+BRBC03,pending,build-reusable-build-campaign,Toolchest publication integration (approach TBD),P3,True,docs/planning/active/build-reusable-build-campaign/BRBC03.md
+BRBC04,pending,build-reusable-build-campaign,"Build system writes its own persistent, consistent per-invocation and per-lane logs",P1,True,docs/planning/active/build-reusable-build-campaign/BRBC04.md
+BRBC05,pending,build-reusable-build-campaign,Bind Radiance benchmark evidence to installed runtime members,P1,True,docs/planning/active/build-reusable-build-campaign/BRBC05.md
+BRC01,in_progress,build-run-cleanup,Remove legacy build/run shims and consolidate bridging layers,P1,True,docs/planning/active/build-run-cleanup/BRC01.md
+BRC02,pending,build-run-cleanup,Migrate slice worktree management onto audiagentic worktree commands,P2,False,docs/planning/active/build-run-cleanup/BRC02.md
+BRL01,pending,build-release-ledger,"Cut bigcherry over to the per-event ledger (AUDiaGentic LE03): loader in the release notes, CI dependency, shared venv, stale-branch conversion",P1,True,docs/planning/active/build-release-ledger/BRL01.md
+BRVP01,pending,build-rocm-vulkan-provider,BuildPlan identity for HIP and Vulkan toolchains,P2,True,docs/planning/active/build-rocm-vulkan-provider/BRVP01.md
+BRVP02,pending,build-rocm-vulkan-provider,"ROCm toolchain images pinned by digest (builds first, measurement only after A/A qualification)",P3,False,docs/planning/active/build-rocm-vulkan-provider/BRVP02.md
+BRVP03,pending,build-rocm-vulkan-provider,Queueable dev Vulkan stock build lane,P1,False,docs/planning/active/build-rocm-vulkan-provider/BRVP03.md
+BRVP04,pending,build-rocm-vulkan-provider,"ROCm SDK stack as a real build dimension: one resolved SDK drives build, identity, runtime and verification",P1,False,docs/planning/active/build-rocm-vulkan-provider/BRVP04.md
+BRVP05,pending,build-rocm-vulkan-provider,"Host roles in env settings: no machine names, paths or device ids in scripts or code",P1,False,docs/planning/active/build-rocm-vulkan-provider/BRVP05.md
+BRVP06,pending,build-rocm-vulkan-provider,"Explicit ROCm SDK selection for every build: named stack per lane, recorded and hashed, CI image and runtime bound to it",P1,True,docs/planning/active/build-rocm-vulkan-provider/BRVP06.md
+BU01,pending,build-ci-speed,"Cut radiance build time: docs-only PRs skip the engine build, CI-seeded compiler cache for the lab, prebuilt release bundle, smaller kernel recompiles",P1,True,docs/planning/active/build-ci-speed/BU01.md
+BU02,pending,build-ci-speed,Bound HIP compilation parallelism in CI,P1,True,docs/planning/active/build-ci-speed/BU02.md
+ENG01,pending,tuning-radiance-engine,"R9700 engine per-op attribution with the live policy on: prefill (document, cold) and decode, with an unprofiled reference",P1,True,docs/planning/active/tuning-radiance-engine/ENG01.md
+ENG02,pending,tuning-radiance-engine,"Current-build MTP depth 0–5 policy-ON sweep, excluding ENG08's depth-4 A/B",P1,True,docs/planning/active/tuning-radiance-engine/ENG02.md
+ENG03,pending,tuning-radiance-engine,Multi-stream decode scaling decomposition: matched 1/2/4/6/8-stream runs with work per step,P2,True,docs/planning/active/tuning-radiance-engine/ENG03.md
+ENG04,pending,tuning-radiance-engine,"KV format and context-capacity matrix on the current build: fp8 / fp8_v4 / k6_v4, 262K concurrency, single-session 1M",P3,True,docs/planning/active/tuning-radiance-engine/ENG04.md
+ENG07,pending,tuning-radiance-engine,"Quantise the QSA block-key group of the bf16_i8 KV layout (design first, retrieval and KLD gates)",P3,True,docs/planning/active/tuning-radiance-engine/ENG07.md
+ENG08,pending,tuning-radiance-engine,"Flash-Next MTP depth 4: calibrate the policy record, A/B policy on, then set the depth",P2,True,docs/planning/active/tuning-radiance-engine/ENG08.md
+FKE01,pending,patching-fused-kernel-equivalence,"Validate every fused GPU kernel against its unfused path (bit-exactness, fidelity, speed)",P1,False,docs/planning/active/patching-fused-kernel-equivalence/FKE01.md
+FMTP02,pending,patching-flash-next-mtp-pipeline,Add live-continuation and forced-front MTP primitives,P0,True,docs/planning/active/patching-flash-next-mtp-pipeline/FMTP02.md
+FMTP03,pending,patching-flash-next-mtp-pipeline,Overlap target verification and MTP work on one host thread,P0,True,docs/planning/active/patching-flash-next-mtp-pipeline/FMTP03.md
+FMTP04,pending,patching-flash-next-mtp-pipeline,Promote tails only across a verified bridge and replay them under overlap,P0,True,docs/planning/active/patching-flash-next-mtp-pipeline/FMTP04.md
+FMTP05,pending,patching-flash-next-mtp-pipeline,Control ahead depth from hit probability and overlap economics,P1,True,docs/planning/active/patching-flash-next-mtp-pipeline/FMTP05.md
+FMTP07,pending,patching-flash-next-mtp-pipeline,Qualify Flash-Next MTP verification overlap on the AMD deployment topology,P0,True,docs/planning/active/patching-flash-next-mtp-pipeline/FMTP07.md
+HL02,pending,run-radiance-host-link,"Cross-GPU contention and transfer-method laboratory gates (TP3, TP2 and MoE)",P1,True,docs/planning/active/run-radiance-host-link/HL02.md
+HL03,pending,run-radiance-host-link,CPU-push the helpers' activation copies instead of each helper pulling them (prefill activation round),P2,False,docs/planning/active/run-radiance-host-link/HL03.md
+HL05,pending,run-radiance-host-link,Host-memory all-reduce via CPU relay push for tensor-parallel layouts (27B on two XTX),P3,False,docs/planning/active/run-radiance-host-link/HL05.md
+KAB01,pending,run-kernel-ab,"Kernel A/B harness: replay, time and compare kernel libraries and builds in minutes (rad-kbench wrapper)",P1,True,docs/planning/active/run-kernel-ab/KAB01.md
+LCM01,pending,run-llamacpp-measurement,"llama.cpp producers on run-record v1: one owned write path, no run_bench redirect shim",P3,True,docs/planning/active/run-llamacpp-measurement/LCM01.md
+LCM02,pending,run-llamacpp-measurement,llama.cpp engine feature states and host-facts start receipts in run records,P3,True,docs/planning/active/run-llamacpp-measurement/LCM02.md
+LTX02,pending,build-radiance-ltx25-tp3,Execute exact three-rank Q/K RMS and self-attention with checkpoint activations,P0,True,docs/planning/active/build-radiance-ltx25-tp3/LTX02.md
+LTX03,pending,build-radiance-ltx25-tp3,Complete the 48-block dual video/audio TP3 DiT graph without new dispatch infrastructure,P0,True,docs/planning/active/build-radiance-ltx25-tp3/LTX03.md
+LTX04,pending,build-radiance-ltx25-tp3,"Integrate safe opt-in TP3 native serving, conditioning and guidance",P0,True,docs/planning/active/build-radiance-ltx25-tp3/LTX04.md
+LTX05,pending,build-radiance-ltx25-tp3,Qualify three-card LTX video/audio numerical parity and end-to-end performance,P0,True,docs/planning/active/build-radiance-ltx25-tp3/LTX05.md
+LTX06,pending,build-radiance-ltx25-tp3,Qualify optional gfx1030 Gemma text worker and actual memory residency,P1,True,docs/planning/active/build-radiance-ltx25-tp3/LTX06.md
+LTX07,pending,build-radiance-ltx25-tp3,Add optional native text-stack handoff and measured four-card admission,P1,True,docs/planning/active/build-radiance-ltx25-tp3/LTX07.md
+LTX08,pending,build-radiance-ltx25-tp3,Release qualified LTX TP3 configurations with reproducible rollback,P0,True,docs/planning/active/build-radiance-ltx25-tp3/LTX08.md
+MEN01,pending,run-multi-engine,"Radiance inventory: build it on dev, what runs on which card, where the speed comes from",P1,True,docs/planning/active/run-multi-engine/MEN01.md
+MEN02,pending,run-multi-engine,Radiance basics working: serve Qwen3.8-27B on the R9700 and measure it our way,P1,True,docs/planning/active/run-multi-engine/MEN02.md
+MEN03,pending,run-multi-engine,"Engine adapter for the lab: start, health, stop, metrics behind one interface",P2,True,docs/planning/active/run-multi-engine/MEN03.md
+MEN04,pending,run-multi-engine,"Engine as a declared axis: upstream, pin, vendor tree and build lane per engine",P2,True,docs/planning/active/run-multi-engine/MEN04.md
+MEN05,pending,run-multi-engine,"Cross-engine quality check: same prompts, comparable distributions",P1,True,docs/planning/active/run-multi-engine/MEN05.md
+MEN06,pending,run-multi-engine,Engine-neutral A/B and activation evidence,P2,True,docs/planning/active/run-multi-engine/MEN06.md
+MEN08,pending,run-multi-engine,"Engine pillars: one root per engine so engines are evaluated, patched and released in parallel",P0,True,docs/planning/active/run-multi-engine/MEN08.md
+MEN10,pending,run-multi-engine,"Engine-aware pin, bump and patch rebase: radiance bumps like llama.cpp",P1,False,docs/planning/active/run-multi-engine/MEN10.md
+MEN11,pending,run-multi-engine,Radiance measurements and patch status on the campaign and evidence tooling,P1,False,docs/planning/active/run-multi-engine/MEN11.md
+MEN14,pending,run-multi-engine,"Radiance consolidation: one engine workflow from build to promote, lab scripts retired",P0,False,docs/planning/active/run-multi-engine/MEN14.md
+MEN15,pending,run-multi-engine,"RAM-only engine smoke tests: tiny models on CPU for llama.cpp and radiance, in the bump and change gates",P1,False,docs/planning/active/run-multi-engine/MEN15.md
+MEN16,pending,run-multi-engine,pin-bump builds its own lane and runs the CPU smoke on it,P1,False,docs/planning/active/run-multi-engine/MEN16.md
+MEN17,pending,run-multi-engine,Post-bump hardware acceptance against stored baselines,P1,False,docs/planning/active/run-multi-engine/MEN17.md
+MEN18,pending,run-multi-engine,One 'run on dev' helper for remote lab runs,P1,False,docs/planning/active/run-multi-engine/MEN18.md
+MEN20,pending,run-multi-engine,bigcherry command for component-setting evidence (replaces helper-evidence.sh),P1,False,docs/planning/active/run-multi-engine/MEN20.md
+MEN21,pending,run-multi-engine,"moe-harness bigcherry commands: capture, replay sweep, trace report, balance score",P1,False,docs/planning/active/run-multi-engine/MEN21.md
+MEN22,pending,run-multi-engine,pin-bump lane-build refuses the dirty checkout its own release record leaves,P1,False,docs/planning/active/run-multi-engine/MEN22.md
+MEN23,pending,run-multi-engine,accept runs the helper-ab entry on a build without the hand-off it needs,P1,False,docs/planning/active/run-multi-engine/MEN23.md
+MEN24,pending,run-multi-engine,"Faster, less fragile engine bumps",P1,False,docs/planning/active/run-multi-engine/MEN24.md
+MEN26,pending,run-multi-engine,"Radiance production release: promote what Flash-Next actually serves, and serve from release builds",P1,True,docs/planning/active/run-multi-engine/MEN26.md
+MEN28,pending,run-multi-engine,Production radiance builds fail closed on stale patch evidence; re-qualify the shipped patches at the shipped pin,P0,False,docs/planning/active/run-multi-engine/MEN28.md
+MET02,pending,patching-moe-expert-tiering,1281 moe_mul_mat_id_range: range-aware MUL_MAT_ID primitive (CPU + HIP),P1,True,docs/planning/active/patching-moe-expert-tiering/MET02.md
+MET03,pending,patching-moe-expert-tiering,1282 qwen4exp_moe_tier_graph: 2-tier POC (primary TP group + CPU) on offline-repacked GGUF,P1,True,docs/planning/active/patching-moe-expert-tiering/MET03.md
+MET04,pending,patching-moe-expert-tiering,1283 qwen4exp_expert_parallel: whole-expert EP across ROCm0/1/2 + CPU tail,P2,True,docs/planning/active/patching-moe-expert-tiering/MET04.md
+MET05,pending,patching-moe-expert-tiering,1328 aux_rocm_expert_backend: 6900 XT (ROCm3) as auxiliary expert device outside Meta/RCCL,P2,True,docs/planning/active/patching-moe-expert-tiering/MET05.md
+MET06,pending,patching-moe-expert-tiering,Runtime expert slicing only after host-weight pipeline qualification,P3,True,docs/planning/active/patching-moe-expert-tiering/MET06.md
+MET07,pending,patching-moe-expert-tiering,Profile-pinned expert cache (1337 + 1338): qualify for single-card and over-VRAM use,P2,False,docs/planning/active/patching-moe-expert-tiering/MET07.md
+MET08,pending,patching-moe-expert-tiering,"Usage-placed expert layout: dense + attention on the XTXs, hot experts across all three cards, cold on the R9700",P1,False,docs/planning/active/patching-moe-expert-tiering/MET08.md
+MET09,pending,patching-moe-expert-tiering,Explain MoE expert-order and split numerical differences (source-first attribution),P2,False,docs/planning/active/patching-moe-expert-tiering/MET09.md
+MET10,pending,patching-moe-expert-tiering,"Host tail for the expert split: GPUs hold experts [0,K) of every layer, [K,N) stay in host RAM and are uploaded selectively",P2,False,docs/planning/active/patching-moe-expert-tiering/MET10.md
+MET11,pending,patching-moe-expert-tiering,Load-time expert placement from a usage profile (no reordered model file),P1,True,docs/planning/active/patching-moe-expert-tiering/MET11.md
+MET12,pending,patching-moe-expert-tiering,Conditional expert-weight prefetch: overlap measured host-resident transfers with independent GPU work,P2,True,docs/planning/active/patching-moe-expert-tiering/MET12.md
+MSM01,pending,patching-meta-split-memory,Per-device memory report for the tensor-split backend (1339),P1,False,docs/planning/active/patching-meta-split-memory/MSM01.md
+MSM02,pending,patching-meta-split-memory,Per-device compute arena in the tensor-split backend,P1,False,docs/planning/active/patching-meta-split-memory/MSM02.md
+MSM03,pending,patching-meta-split-memory,Attention-side state only on the cards that run attention (subset-mirrored indexer cache and masks),P2,False,docs/planning/active/patching-meta-split-memory/MSM03.md
+PA49,pending,patching-patch-system,"Pin bump automation, round 2: close the manual steps found during the b11552 bump",P1,False,docs/planning/active/patching-patch-system/PA49.md
+PA50,pending,patching-patch-system,"Triage the b11552 sources-check findings (63: three forks moved, one rebased, three cherry checks timed out)",P2,True,docs/planning/active/patching-patch-system/PA50.md
+PEC02,pending,patching-ec-contracts,Mandatory trigger-proof requirement for performance contracts,null,True,docs/planning/active/patching-ec-contracts/PEC02.md
+PEF01,pending,patching-external-fixes,"MMQ q6_K/J=112 illegal-memory-access incident on gfx1100 -- quarantined, root cause open",null,True,docs/planning/active/patching-external-fixes/PEF01.md
+PEF02,pending,patching-external-fixes,Generated q1_0 MMVQ timing failure poisons HIP context during tuning,null,True,docs/planning/active/patching-external-fixes/PEF02.md
+PEF04,pending,patching-external-fixes,Re-snapshot tracked forks before/after llama.cpp bump to b11233 (61 sources-check findings),P2,False,docs/planning/active/patching-external-fixes/PEF04.md
+PEF05,pending,patching-external-fixes,"Triage sources check findings at pin c061df198 (63 findings: fork drift, mainline-check timeouts)",,False,docs/planning/active/patching-external-fixes/PEF05.md
+PEF06,pending,patching-external-fixes,Consolidate new AMD inference mechanisms into existing BigCherry owners,P0,True,docs/planning/active/patching-external-fixes/PEF06.md
+PEF07,pending,patching-external-fixes,Retained decode submission + overfit-engine mechanism qualification,P0,True,docs/planning/active/patching-external-fixes/PEF07.md
+PGC01,pending,patching-gpu-collectives,Device-3 / PCI-atomics-incapable topology: safe AND performant fallback investigation (go/no-go against META),null,True,docs/planning/active/patching-gpu-collectives/PGC01.md
+PGC09,pending,patching-gpu-collectives,"AllReduce: adaptive provider as production default for dual XTX, gated by wire accuracy",P1,False,docs/planning/active/patching-gpu-collectives/PGC09.md
+PGC10,pending,patching-gpu-collectives,3-GPU (2x XTX + R9700) AllReduce: adaptive root3/RCCL hybrid for models that need three cards,P1,False,docs/planning/active/patching-gpu-collectives/PGC10.md
+PGC11,pending,patching-gpu-collectives,"AllReduce wire precision: f32 vs bf16 vs safe f16, and best-of-all combinations",P1,False,docs/planning/active/patching-gpu-collectives/PGC11.md
+PGC13,pending,patching-gpu-collectives,"Per-topology AllReduce calibration: offline discriminator, no runtime policy cache",P2,False,docs/planning/active/patching-gpu-collectives/PGC13.md
+PGC14,pending,patching-gpu-collectives,RCCL source patches: hostcall-free gfx1030 kernels and SHM transport throughput,,True,docs/planning/active/patching-gpu-collectives/PGC14.md
+PGC15,pending,patching-gpu-collectives,Prefill token-tiled compute/AllReduce overlap for tensor-split Meta execution,P0,True,docs/planning/active/patching-gpu-collectives/PGC15.md
+PGC17,pending,patching-gpu-collectives,"Cross-card transport on dev: peer-to-peer, PCIe atomics and RCCL version - what two community reports say and what to test",P1,False,docs/planning/active/patching-gpu-collectives/PGC17.md
+PHA03,in_progress,patching-hip-autotune,RCCL admission gate: implement level-1 comm-init topology admission,null,True,docs/planning/active/patching-hip-autotune/PHA03.md
+PHA04,pending,patching-hip-autotune,"RCCL admission gate: per-call candidate identity, not requested-plan identity",null,False,docs/planning/active/patching-hip-autotune/PHA04.md
+PHA05,pending,patching-hip-autotune,RCCL admission gate: promote to validated and wire into default build,null,True,docs/planning/active/patching-hip-autotune/PHA05.md
+PHA08,pending,patching-hip-autotune,HIP Flash-Attention D=72 VLM aperture violation: root-cause before fallback (#28608/#28664),P2,False,docs/planning/active/patching-hip-autotune/PHA08.md
+PHC01,pending,patching-hip-collectives,Qwen3.8-Flash 3-GPU/4-GPU tensor-split benchmark matrix,null,True,docs/planning/active/patching-hip-collectives/PHC01.md
+PHC03,pending,patching-hip-collectives,Fix META segfault for D=3+ heterogeneous no-P2P groups (ggml_backend_cuda_cpy_tensor_async),P1,True,docs/planning/active/patching-hip-collectives/PHC03.md
+PKC02,pending,patching-kernel-coverage,Reusable graph/DAG recipe lifecycle and composition control plane,P1,True,docs/planning/active/patching-kernel-coverage/PKC02.md
+PKC03,pending,patching-kernel-coverage,Decide whether collective identity needs a cross-backend extension,P3,True,docs/planning/active/patching-kernel-coverage/PKC03.md
+PKC05,pending,patching-kernel-coverage,"Quantized MMVQ/MMQ headroom: Q8_0 geometry, Q2_K register pressure, Q1_0 AMD unpack",,True,docs/planning/active/patching-kernel-coverage/PKC05.md
+PNRO02,pending,patching-nasone-rdna-optimizations,Fuse residual ADD into internal AllReduce completion,P0,True,docs/planning/active/patching-nasone-rdna-optimizations/PNRO02.md
+PNRO04,in_progress,patching-nasone-rdna-optimizations,gfx1100 BF16/WMMA fused chunked GatedDeltaNet,P0,True,docs/planning/active/patching-nasone-rdna-optimizations/PNRO04.md
+PNRO05,in_progress,patching-nasone-rdna-optimizations,Chunk GDN MTP prefill prefix while preserving snapshot tail,P0,True,docs/planning/active/patching-nasone-rdna-optimizations/PNRO05.md
+PNRO10,pending,patching-nasone-rdna-optimizations,Add ctx_other model devices to speculative scheduler backends,P1,True,docs/planning/active/patching-nasone-rdna-optimizations/PNRO10.md
+PRBC01,pending,patching-reusable-build-campaign,Introduce CatalogSnapshot: one immutable patch-catalog read per command/campaign,null,True,docs/planning/active/patching-reusable-build-campaign/PRBC01.md
+PRBC02,pending,patching-reusable-build-campaign,"Extend patch_catalog.py metadata: PLAN_IDS, BACKENDS, SUBSYSTEMS, REQUIRES, CONFLICTS, HARDWARE",null,True,docs/planning/active/patching-reusable-build-campaign/PRBC02.md
+PRBC03,pending,patching-reusable-build-campaign,Prove snapshot-aware composition expansion and exact/manual equivalence,null,True,docs/planning/active/patching-reusable-build-campaign/PRBC03.md
+PRBE01,pending,patching-rdna-boost-experiments,Implement final native-BF16 flash-attention logical experiment,P2,True,docs/planning/active/patching-rdna-boost-experiments/PRBE01.md
+PRBE02,pending,patching-rdna-boost-experiments,RD05 WMMA FlashAttention: upstream k00 barrier; residual tile boundary gate,P3,False,docs/planning/active/patching-rdna-boost-experiments/PRBE02.md
+PRBE04,pending,patching-rdna-boost-experiments,RD07 Q6_K MMQ — downstream safety and promotion gate,P1,False,docs/planning/active/patching-rdna-boost-experiments/PRBE04.md
+PRBE110,pending,patching-rdna-boost-experiments,RD07 Q6_K MMQ scale fold — b11552 source and admission gate,P1,False,docs/planning/active/patching-rdna-boost-experiments/PRBE110.md
+PRBE111,pending,patching-rdna-boost-experiments,IQ MMVQ decode: collapse duplicate type dispatch and specialize RDNA3/4 inner loops,P1,True,docs/planning/active/patching-rdna-boost-experiments/PRBE111.md
+PRBE112,pending,patching-rdna-boost-experiments,Disposition of rejected RD39-42/1215: isolate MoE overlap from generic QKV scratch,P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE112.md
+PRBE113,pending,patching-rdna-boost-experiments,Dual-XTX Q8_0 decode: retire repeated width-6 profile; qualify residual width census,P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE113.md
+PRBE115,pending,patching-rdna-boost-experiments,"Q8_0 MTP verify widths 2–5: exact Q8_1 admission, not raw-F32 widening",P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE115.md
+PRBE116,pending,patching-rdna-boost-experiments,HIP Q3_K MMVQ VDR2 packed-scale integer dot — source/route admission,P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE116.md
+PRBE117,pending,patching-rdna-boost-experiments,Q6_K HIP MMVQ: gate upstream grouped-integer-dot VDR2 after rejected RD08,P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE117.md
+PRBE12,pending,patching-rdna-boost-experiments,Evaluate MUL_MAT plus RESHAPE plus ADD fusion,P2,True,docs/planning/active/patching-rdna-boost-experiments/PRBE12.md
+PRBE15,pending,patching-rdna-boost-experiments,IMRoPE / BF16 ROPE→VIEW→SET_ROWS fusion: prove route before extension,P3,False,docs/planning/active/patching-rdna-boost-experiments/PRBE15.md
+PRBE18,pending,patching-rdna-boost-experiments,"PRBE18 — Qwen3.5 GDN pre-scan fusion: reject stale 16-node port, qualify only residual work",P3,False,docs/planning/active/patching-rdna-boost-experiments/PRBE18.md
+PRBE20,pending,patching-rdna-boost-experiments,Make decode and speculative-verify batches bit-identical (attention + mmvq + CPU cluster),P2,True,docs/planning/active/patching-rdna-boost-experiments/PRBE20.md
+PRBE21,pending,patching-rdna-boost-experiments,SSM conv_input concat fusion — conditional real-graph and state-CPY proof; no MoE rpb2 rewrite,P3,True,docs/planning/active/patching-rdna-boost-experiments/PRBE21.md
+PRBE28,pending,patching-rdna-boost-experiments,AMD-GEMM-001: float-only GEMM weight row-stride alias qualification,P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE28.md
+PRBE29,pending,patching-rdna-boost-experiments,AMD-GEMM-002: Persistent F16 shadow of quantized dense weights,P3,True,docs/planning/active/patching-rdna-boost-experiments/PRBE29.md
+PRBE30,pending,patching-rdna-boost-experiments,AMD-GEMM-003: K-pad F16 shadow to avoid aliasing,P3,True,docs/planning/active/patching-rdna-boost-experiments/PRBE30.md
+PRBE31,pending,patching-rdna-boost-experiments,AMD-GEMM-004: Large-M F16 shadow to tuned hipBLASLt crossover,P3,True,docs/planning/active/patching-rdna-boost-experiments/PRBE31.md
+PRBE35,pending,patching-rdna-boost-experiments,AMD-STREAM-005: Protect concurrent-region join node from fusion,P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE35.md
+PRBE41,pending,patching-rdna-boost-experiments,AMD-SSM-001: Channels-major SSM_CONV input mode,P3,True,docs/planning/active/patching-rdna-boost-experiments/PRBE41.md
+PRBE47,pending,patching-rdna-boost-experiments,UP-HIP-002: AMD DPP/native shuffle path,P3,False,docs/planning/active/patching-rdna-boost-experiments/PRBE47.md
+PRBE54,pending,patching-rdna-boost-experiments,UP-KV-001: Dedicated F16 dequant path for Q5 KV,P3,True,docs/planning/active/patching-rdna-boost-experiments/PRBE54.md
+PRBE62,pending,patching-rdna-boost-experiments,VK-DRV-002 / RD79: Qualify AMD Vulkan graphics queue without adding a second scheduler,P3,False,docs/planning/active/patching-rdna-boost-experiments/PRBE62.md
+PRBE67,pending,patching-rdna-boost-experiments,HIP graph UID reuse: qualify changed bindings before recapture work,P2,False,docs/planning/active/patching-rdna-boost-experiments/PRBE67.md
+PRBE70,pending,patching-rdna-boost-experiments,CK-001 / PRBE70: bounded offline Composable Kernel GEMM oracle,P1,False,docs/planning/active/patching-rdna-boost-experiments/PRBE70.md
+PRVP02,pending,patching-rocm-vulkan-provider,Qualify native Vulkan CM1 A-prefetch bounds and exact route,P1,True,docs/planning/active/patching-rocm-vulkan-provider/PRVP02.md
+PRVP03,pending,patching-rocm-vulkan-provider,Vulkan meta-backend AllReduce provider,P2,True,docs/planning/active/patching-rocm-vulkan-provider/PRVP03.md
+PRVP04,pending,patching-rocm-vulkan-provider,Vulkan Q4_0 KV fused dequant-transpose: prefill-only admission (upstream #30738),P2,False,docs/planning/active/patching-rocm-vulkan-provider/PRVP04.md
+PRVP05,pending,patching-rocm-vulkan-provider,Vulkan F32 RMSNorm wave-local reduction on RDNA3/RDNA4 — upstream-first admission,P2,False,docs/planning/active/patching-rocm-vulkan-provider/PRVP05.md
+PRVP06,pending,patching-rocm-vulkan-provider,Vulkan wide FWHT (1024–8192) — RDNA3/4 shader and real-route gate,P2,False,docs/planning/active/patching-rocm-vulkan-provider/PRVP06.md
+PVPS01,pending,patching-validation-package-standard,"PQM-v1: standard Patch Qualification Matrix (4 arms x N architectures, isolated + in-situ)",P1,True,docs/planning/active/patching-validation-package-standard/PVPS01.md
+PVPS04,pending,patching-validation-package-standard,Skip tune/replay builds on producer campaigns (they are built but never executed),P2,True,docs/planning/active/patching-validation-package-standard/PVPS04.md
+PVPS14,pending,patching-validation-package-standard,1005 prompt-cache-checkpoint-selection: unresolved correctness failure + producer activation-evidence gap,P1,False,docs/planning/active/patching-validation-package-standard/PVPS14.md
+PVPS15,pending,patching-validation-package-standard,Producers must prove the patch fires BEFORE timed sessions,P1,True,docs/planning/active/patching-validation-package-standard/PVPS15.md
+PWR01,pending,run-power-efficiency,"Whole-system power baseline: every GPU and CPU package at idle, decode and prefill (incl. R9700 engine idle)",P1,False,docs/planning/active/run-power-efficiency/PWR01.md
+PWR02,pending,run-power-efficiency,GPU board power cap sweep: tokens per joule against throughput for decode and prefill,P2,False,docs/planning/active/run-power-efficiency/PWR02.md
+PWR03,pending,run-power-efficiency,CPU power: intel_pstate EPP and C-state residency on the serving host,P3,False,docs/planning/active/run-power-efficiency/PWR03.md
+PWR04,pending,run-power-efficiency,"Per-device power settings in environment config, a privileged apply/restore helper and a guarded controller",P1,False,docs/planning/active/run-power-efficiency/PWR04.md
+PWR05,pending,run-power-efficiency,"Idle and load power of the flashnext-4gpu default: tail, engine, CPU threads; power defaults",P2,False,docs/planning/active/run-power-efficiency/PWR05.md
+PWR06,in_progress,run-power-efficiency,"R9700 loaded-idle +4 W: GFXOFF fix for GFX12 compute queues (kernel driver) first, MES firmware second, one variable at a time",P1,True,docs/planning/active/run-power-efficiency/PWR06.md
+PWR07,in_progress,run-power-efficiency,"Portable power capability probe, power receipt and safe-failure policy (slice 1 of power management)",P1,True,docs/planning/active/run-power-efficiency/PWR07.md
+PWR08,in_progress,run-power-efficiency,PWR08: named power profiles in the serving manifest (bigcherry/v2),P1,False,docs/planning/active/run-power-efficiency/PWR08.md
+PWR09,in_progress,run-power-efficiency,PWR09: transactional Python power controller and supervisor integration,P1,False,docs/planning/active/run-power-efficiency/PWR09.md
+QFN01,pending,run-qwen-flash-next,"Qwen3.8-Flash-Next: memory layout across 2x XTX + R9700 + 6900 XT + RAM, MTP and ngram speculation",,False,docs/planning/active/run-qwen-flash-next/QFN01.md
+QFN02,pending,run-qwen-flash-next,"Frequency-aware MoE expert placement: hot experts on the tensor-split cards, cold experts on the 6900 XT / RAM",,False,docs/planning/active/run-qwen-flash-next/QFN02.md
+QFN03,pending,run-qwen-flash-next,"VRAM overhead reduction for long context: in-place QSA mask, token_embd on CPU, batch and runtime reserves",P2,False,docs/planning/active/run-qwen-flash-next/QFN03.md
+QFN04,pending,run-qwen-flash-next,"248K prefill collapse on profile v2 (prefill ~1100 -> 85 t/s, decode unchanged)",P2,False,docs/planning/active/run-qwen-flash-next/QFN04.md
+QFP01,pending,patching-qwen-flash-next,"1291 CPU-root one-shot AllReduce for small decode messages (3-GPU, no P2P)",P1,False,docs/planning/active/patching-qwen-flash-next/QFP01.md
+QFP02,pending,patching-qwen-flash-next,1292 QSA k-pool tail truncation — source-level admission and closure gate,P1,False,docs/planning/active/patching-qwen-flash-next/QFP02.md
+QFP03,pending,patching-qwen-flash-next,1294 deterministic TOP_K ties (lowest-index tie-break in HIP radix top-k),P1,False,docs/planning/active/patching-qwen-flash-next/QFP03.md
+QFP04,pending,patching-qwen-flash-next,"1295/1296 QSA gather-based sparse decode attention (gather in stored KV type, dequant in FA)",P1,True,docs/planning/active/patching-qwen-flash-next/QFP04.md
+QFP05,pending,patching-qwen-flash-next,1297 MTP draft vocabulary trim and context-adaptive draft LM-head follow-ups,P2,True,docs/planning/active/patching-qwen-flash-next/QFP05.md
+QFP07,pending,patching-qwen-flash-next,1303 separate attention/KV tensor split (BIGCHERRY_ATTN_TS / _ROTATE),P0,True,docs/planning/active/patching-qwen-flash-next/QFP07.md
+QFP09,pending,patching-qwen-flash-next,Per-rank critical-path census by op class (R9700 slow rank) -> selective per-class skew,P0,True,docs/planning/active/patching-qwen-flash-next/QFP09.md
+QFP10,pending,patching-qwen-flash-next,Flash-Next IQ expert decode/MTP path: remove activation tax before VDR micro-tuning,P2,True,docs/planning/active/patching-qwen-flash-next/QFP10.md
+QFP13,pending,patching-qwen-flash-next,Decode kernel-count reduction for Flash-Next (launch-gap bound: ~3.5 us gap per ~1.7 us kernel),P0,False,docs/planning/active/patching-qwen-flash-next/QFP13.md
+QFP15,pending,patching-qwen-flash-next,Run-to-run nondeterminism in Flash-Next decode (draft acceptance varies with identical greedy output),P1,True,docs/planning/active/patching-qwen-flash-next/QFP15.md
+QFP16,pending,patching-qwen-flash-next,Target verify submit host time 5-7 ms per round (15-17% of an MTP step),P0,False,docs/planning/active/patching-qwen-flash-next/QFP16.md
+QFP17,pending,patching-qwen-flash-next,"Flash-Next prefill program (attribution, ubatch via upstream #29825, QSA sparse prefill, MoE MMQ, GDN, rank balance)",P1,True,docs/planning/active/patching-qwen-flash-next/QFP17.md
+QFP21,pending,patching-qwen-flash-next,Re-evaluate neutral/parked Flash-Next patches (1293 1295 1301 1305 1306 1314) per GPT review,P1,False,docs/planning/active/patching-qwen-flash-next/QFP21.md
+QFP22,pending,patching-qwen-flash-next,Cleanup + promotion validation: 1321/1322 MTP-ahead and 1332 QSA token chunks,P1,True,docs/planning/active/patching-qwen-flash-next/QFP22.md
+QFP23,pending,patching-qwen-flash-next,QFP23: deterministic runtime auto-profile admission,P1,False,docs/planning/active/patching-qwen-flash-next/QFP23.md
+QFP25,pending,patching-qwen-flash-next,Native HIP selected-index QSA prefill attention (eliminate dense mask and full-KV scan),P0,True,docs/planning/active/patching-qwen-flash-next/QFP25.md
+QFP26,pending,patching-qwen-flash-next,Persistent grouped MoE prefill MMQ and routed gate/up fusion,P1,True,docs/planning/active/patching-qwen-flash-next/QFP26.md
+QFP27,pending,patching-qwen-flash-next,Consolidate 1326/QFP24 async-input lifetime with upstream scheduler copy/event pipeline,P1,False,docs/planning/active/patching-qwen-flash-next/QFP27.md
+QFP28,pending,patching-qwen-flash-next,Qualify external Flash-Next mechanisms with corruption-resistant performance gates,P1,True,docs/planning/active/patching-qwen-flash-next/QFP28.md
+QFP29,pending,patching-qwen-flash-next,Qualify RDNA4 ROCmI4 W4A4 target verification before any BigCherry port,P1,True,docs/planning/active/patching-qwen-flash-next/QFP29.md
+QFP43,pending,patching-qwen-flash-next,"DFlash/DSpark drafter path: selector, prompt catch-up, adaptive budget and Flash-Next conversion",P0,True,docs/planning/active/patching-qwen-flash-next/QFP43.md
+QFP45,pending,patching-qwen-flash-next,Reference lane and portable ideas from the vLLM + radiance + libr4d stack (Qwen3.8-27B on one R9700),P1,False,docs/planning/active/patching-qwen-flash-next/QFP45.md
+QFP46,pending,patching-qwen-flash-next,"Prefill concurrency contracts: critical-path DAG, stream/event ownership, and deterministic model tests",P0,True,docs/planning/active/patching-qwen-flash-next/QFP46.md
+QFP47,pending,patching-qwen-flash-next,Prefill-only scratch lease: reclaim eligible transient VRAM to qualify larger physical microbatches,P2,True,docs/planning/active/patching-qwen-flash-next/QFP47.md
+QFP48,pending,patching-qwen-flash-next,Fusion round 2: choose kernel fusions from the 2026-10-10 prefill trace and a decode trace,P2,True,docs/planning/active/patching-qwen-flash-next/QFP48.md
+QFP52,pending,patching-qwen-flash-next,"Where the MTP hidden-state (NextN) output lives: owner device, copies and a placement ablation",P3,True,docs/planning/active/patching-qwen-flash-next/QFP52.md
+QFP54,pending,patching-qwen-flash-next,QFP54 — Recurrent-state checkpoint D2H batching on HIP/Meta,P2,False,docs/planning/active/patching-qwen-flash-next/QFP54.md
+RAD07,pending,patching-radiance-rdna3,"Per-model radiance docs: what we run, best results, what is on, what was shelved",P1,False,docs/planning/active/patching-radiance-rdna3/RAD07.md
+RAD08,pending,patching-radiance-rdna3,"KLD tool reports the reference metric set: median, P99, P99.9, top-1, text-only split",P2,False,docs/planning/active/patching-radiance-rdna3/RAD08.md
+RAD10,pending,patching-radiance-rdna3,Multi-stream serving: measure and make the helper path correct and optimal under concurrent sessions,P0,False,docs/planning/active/patching-radiance-rdna3/RAD10.md
+RAD11,pending,patching-radiance-rdna3,"IQ3-class Radiance expert weights — numerical, residency and critical-path feasibility before implementation",P1,True,docs/planning/active/patching-radiance-rdna3/RAD11.md
+RAD13,pending,patching-radiance-rdna3,FP8 block-scaled expert path on gfx1100 for the moe worker (Qwen3.6-35B-A3B),P1,False,docs/planning/active/patching-radiance-rdna3/RAD13.md
+RAD19,pending,patching-radiance-rdna3,"moe-remote helper: derive expert slice split and dtype from the model, not Flash-Next constants",,True,docs/planning/active/patching-radiance-rdna3/RAD19.md
+RAD21,pending,patching-radiance-rdna3,moe-remote: pipeline the helper round trip within a layer by splitting the prefill batch,P2,True,docs/planning/active/patching-radiance-rdna3/RAD21.md
+RAD22,pending,patching-radiance-rdna3,moe-remote: replicate high-variance hot experts on both XTX helpers and route each to the less-loaded replica,P3,True,docs/planning/active/patching-radiance-rdna3/RAD22.md
+RAD23,pending,patching-radiance-rdna3,"moe-remote: helper count and topology as runtime values (no fixed 2), selectable combine methods",P1,True,docs/planning/active/patching-radiance-rdna3/RAD23.md
+RAD25,pending,patching-radiance-rdna3,moe-remote: small-lane blocking completion events instead of the in-burst yield loop,P1,False,docs/planning/active/patching-radiance-rdna3/RAD25.md
+RAD26,pending,patching-radiance-rdna3,moe-remote: large-lane GPU-to-CPU request wake (host callback / graph host node / HSA interrupt) harness,P2,False,docs/planning/active/patching-radiance-rdna3/RAD26.md
+RAD27,pending,patching-radiance-rdna3,Engine reports a dead helper as the request error (not out of memory / device error),P2,False,docs/planning/active/patching-radiance-rdna3/RAD27.md
+RAD28,pending,patching-radiance-rdna3,moe-remote helper result output: mapped direct writes vs VRAM reduce + staged DMA (selectable),P1,False,docs/planning/active/patching-radiance-rdna3/RAD28.md
+RAD29,pending,patching-radiance-rdna3,Engine route compaction: warp-aggregated slot reservation in mailbox_publish_kernel,P1,False,docs/planning/active/patching-radiance-rdna3/RAD29.md
+RAD30,pending,patching-radiance-rdna3,Engine remote slot mask from publication instead of re-reading Route records (mailbox_route_mark_kernel),P2,False,docs/planning/active/patching-radiance-rdna3/RAD30.md
+RAD36,pending,patching-radiance-rdna3,libr3 MXFP4 GEMV at 2-8 rows: close the drafter verify gap on gfx11 (27B dflash2 decode),P1,False,docs/planning/active/patching-radiance-rdna3/RAD36.md
+RAD38,pending,patching-radiance-rdna3,"Mixed-precision KV cache for Flash-Next: K at 16 bits, V at 8 (`--kv-cache-dtype k16_v8`)",P1,False,docs/planning/active/patching-radiance-rdna3/RAD38.md
+RAD39,pending,patching-radiance-rdna3,"Helper-layout KLD gate judges against the measured noise band, not one control arm",P1,False,docs/planning/active/patching-radiance-rdna3/RAD39.md
+RAD41,pending,patching-radiance-rdna3,"Result row formats and sparse result transfer: bytes against error, measured on captures",P1,False,docs/planning/active/patching-radiance-rdna3/RAD41.md
+RAD43,pending,patching-radiance-rdna3,"Kernel work: helper reduce/write stages, the tail's remaining latency, XTX gate/up/down, engine add",P2,False,docs/planning/active/patching-radiance-rdna3/RAD43.md
+RAD44,pending,patching-radiance-rdna3,Parked: multi-row packed-f16 W4 decode GEMV (lane_moe_gemv_w4mr) - deep analysis before revisiting,P2,False,docs/planning/active/patching-radiance-rdna3/RAD44.md
+RAD45,pending,patching-radiance-rdna3,RX 6900 XT tail: small-batch prefill kernel (tail straggles on short-prompt batches),P2,True,docs/planning/active/patching-radiance-rdna3/RAD45.md
+RAD46,pending,patching-radiance-rdna3,RDNA2 tail helper degrades Flash-Next tail quality: KLD p99.9 +1.17 over the two-XTX helpers on 2.3% of routes,P1,True,docs/planning/active/patching-radiance-rdna3/RAD46.md
+RAD47,pending,patching-radiance-rdna3,gfx1100 MXFP4 GEMM row selection: the tiled kernel beats the skinny rows from M=9 up on the 7900 XTX (27B TP2 prefill and multi-stream decode),P1,True,docs/planning/active/patching-radiance-rdna3/RAD47.md
+RAD49,pending,patching-radiance-rdna3,XTX TP2 + R9700 expert-helper Flash-Next topology — measured no-go and owned follow-ons,P1,True,docs/planning/active/patching-radiance-rdna3/RAD49.md
+RAD50,pending,patching-radiance-rdna3,"Prove CPU BAR-push MoE result transport in isolated, gated harnesses",P2,True,docs/planning/active/patching-radiance-rdna3/RAD50.md
+RAD51,pending,patching-radiance-rdna3,"Optional CPU BAR-pushed remote-MoE results, without CPU-driven engine scheduling",P2,True,docs/planning/active/patching-radiance-rdna3/RAD51.md
+RAD54,pending,patching-radiance-rdna3,Retire fused MoE handoff without inject work on nonconsumer ranks,P1,True,docs/planning/active/patching-radiance-rdna3/RAD54.md
+RCD02,pending,run-campaign-durability,Freeze the job-service architecture and implementation boundaries,P1,True,docs/planning/active/run-campaign-durability/RCD02.md
+RCD03,pending,run-campaign-durability,Install and qualify the dev Slurm execution substrate,P1,False,docs/planning/active/run-campaign-durability/RCD03.md
+RCD07,pending,run-campaign-durability,"Durable campaign operations, stage split and scheduler-isolation qualification",P2,False,docs/planning/active/run-campaign-durability/RCD07.md
+RCD10,pending,run-campaign-durability,"Accept v1, migrate active qualification work and retire the lab queue",P1,True,docs/planning/active/run-campaign-durability/RCD10.md
+RCD11,pending,run-campaign-durability,Local/remote execution and dynamic production coexistence,P1,False,docs/planning/active/run-campaign-durability/RCD11.md
+RCD12,pending,run-campaign-durability,"Dynamic GPU discovery, generated GRES and hardware-cohort identity",P1,False,docs/planning/active/run-campaign-durability/RCD12.md
+RCS01,pending,build-radiance-components,Capability map and interfaces for splitting libr3 (design gate),P1,False,docs/planning/active/build-radiance-components/RCS01.md
+RCS05,pending,build-radiance-components,moe_backend.h and the gfx1100 backend plugin,P1,False,docs/planning/active/build-radiance-components/RCS05.md
+RCS08,pending,build-radiance-components,"Component lint: size budget, ownership, and evidence tied to status",P2,False,docs/planning/active/build-radiance-components/RCS08.md
+RCS09,pending,build-radiance-components,"No model constants in the helper: model shape from the container, model settings from an external profile",P0,False,docs/planning/active/build-radiance-components/RCS09.md
+RCS10,pending,build-radiance-components,"Tune with the release build: derive defaults from the shape and flags, calibrate at first start, cache the result",P0,False,docs/planning/active/build-radiance-components/RCS10.md
+RCS12,pending,build-radiance-components,"Model-constant execution guard test and the audit's execution-path fixes (staging planes, GEMV K bound, top-k, histogram, layout resolver)",P0,True,docs/planning/active/build-radiance-components/RCS12.md
+RCS13,in_progress,build-radiance-components,C02: GEMV K bound removed - launch-sized LDS and pre-launch dispatch to grouped GEMM,P0,True,docs/planning/active/build-radiance-components/RCS13.md
+RCS14,pending,build-radiance-components,C05: remote-MoE topology from validated runtime counts (shared-memory protocol v26),P0,True,docs/planning/active/build-radiance-components/RCS14.md
+RCS15,pending,build-radiance-components,Baseline upstream libr3d against the BigCherry RDNA3 library,P1,True,docs/planning/active/build-radiance-components/RCS15.md
+RCS16,pending,build-radiance-components,Move required RDNA3 compute deltas into upstream libr3d,P1,True,docs/planning/active/build-radiance-components/RCS16.md
+RCS17,pending,build-radiance-components,Qualify RDNA3 transport and mixed-device integration with libr3d,P1,True,docs/planning/active/build-radiance-components/RCS17.md
+RCS18,pending,build-radiance-components,Switch supported Radiance releases to libr3d and retire the rewrite tree,P1,True,docs/planning/active/build-radiance-components/RCS18.md
+RHA01,pending,run-hip-autotune,"profile-campaign CPU call-graph capability via perf (enhancement, deferred -- perf currently non-functional on dev)",P2,True,docs/planning/active/run-hip-autotune/RHA01.md
+RHA13,pending,run-hip-autotune,Windows mixed gfx1100+gfx1201 HIP multi-GPU correctness gate (#28676),P0,True,docs/planning/active/run-hip-autotune/RHA13.md
+RHA14,pending,run-hip-autotune,HIP staggered multi-sequence correctness regression gate (#28537),P1,True,docs/planning/active/run-hip-autotune/RHA14.md
+RHP01,pending,patching-radiance-heat-placement,Prove complete asynchronous Radiance routing evidence under long prefill,P0,True,docs/planning/active/patching-radiance-heat-placement/RHP01.md
+RHP03,pending,patching-radiance-heat-placement,"Extend Radiance telemetry and persist one placement snapshot, not a heat database",P1,True,docs/planning/active/patching-radiance-heat-placement/RHP03.md
+RHP04,in_progress,patching-radiance-heat-placement,"Placement policy: stage 1 heat/bottleneck balancing, stage 3 calibrated critical-path solver",P0,True,docs/planning/active/patching-radiance-heat-placement/RHP04.md
+RHP06,pending,patching-radiance-heat-placement,"Stage 1: live helper expert migration - slot manager, async host->VRAM upload, retirement",P0,True,docs/planning/active/patching-radiance-heat-placement/RHP06.md
+RHP07,pending,patching-radiance-heat-placement,"Placement controls: decay, hysteresis and change budgets (stage 1), then adaptive refinement (stage 5)",P1,True,docs/planning/active/patching-radiance-heat-placement/RHP07.md
+RHP08,pending,patching-radiance-heat-placement,Runtime tail-heat collector,P1,False,docs/planning/active/patching-radiance-heat-placement/RHP08.md
+RHP09,pending,patching-radiance-heat-placement,"Stage 2-3: topology discovery, default-on calibration and the critical-path cost model",P1,True,docs/planning/active/patching-radiance-heat-placement/RHP09.md
+RHP11,in_progress,patching-radiance-heat-placement,Stage 1: placement-epoch mailbox protocol v23 (live helper ownership changes),P0,True,docs/planning/active/patching-radiance-heat-placement/RHP11.md
+RHP12,pending,patching-radiance-heat-placement,Every stage: per-layout baselines and the no-regression gate (return to a known layout without degradation),P0,True,docs/planning/active/patching-radiance-heat-placement/RHP12.md
+RHP13,pending,patching-radiance-heat-placement,"Stage 4: one allocator for engine, host and helper residency (managed radiance core/place patch)",P1,True,docs/planning/active/patching-radiance-heat-placement/RHP13.md
+RHP14,pending,patching-radiance-heat-placement,Parked: overlap helper round trips across MoE layers (cut fixed per-layer latency on short steps),P3,False,docs/planning/active/patching-radiance-heat-placement/RHP14.md
+RHP15,pending,patching-radiance-heat-placement,Admission covers media encoder passes (encoder-only passes need no remote MoE ticket),P2,False,docs/planning/active/patching-radiance-heat-placement/RHP15.md
+RHP16,in_progress,patching-radiance-heat-placement,Calibrate live-placement observability and move triggers from measured quantities (no hand-picked policy constants),P1,True,docs/planning/active/patching-radiance-heat-placement/RHP16.md
+RHP20,in_progress,patching-radiance-heat-placement,"Live expert swapping and its observability verified on every card type and layout (gfx1201, gfx1100, gfx1030; head, tail, TP and engine-resident placement)",P1,True,docs/planning/active/patching-radiance-heat-placement/RHP20.md
+RHP21,pending,patching-radiance-heat-placement,First cold prompt after a documents-only period: shorten the live policy's adaptation lag,P2,True,docs/planning/active/patching-radiance-heat-placement/RHP21.md
+RHP22,pending,patching-radiance-heat-placement,Live placement quality disposition: the forced-churn KL p99 breach (+0.234 against +0.2),P2,True,docs/planning/active/patching-radiance-heat-placement/RHP22.md
+RNX01,pending,patching-r9700-cross-rdna,"R9X01 — Source intake, exact mapping, baselines, and architecture capability matrix",P0,True,docs/planning/active/patching-r9700-cross-rdna/RNX01.md
+RNX02,pending,patching-r9700-cross-rdna,R9X02 — Decode attention and QSA/indexer extraction,P1,True,docs/planning/active/patching-r9700-cross-rdna/RNX02.md
+RNX03,pending,patching-r9700-cross-rdna,R9X03 — GDN MTP-decode and short-prefill fusion,P0,True,docs/planning/active/patching-r9700-cross-rdna/RNX03.md
+RNX04,pending,patching-r9700-cross-rdna,R9X04 — Router gate; HC POST already owned by QFP35,P0,False,docs/planning/active/patching-r9700-cross-rdna/RNX04.md
+RNX05,pending,patching-r9700-cross-rdna,R9X05 — MXFP4/FP8 grouped MoE and skinny GEMM extraction,P3,True,docs/planning/active/patching-r9700-cross-rdna/RNX05.md
+RNX06,pending,patching-r9700-cross-rdna,R9X06 — Routed-expert residency cache and pinned-host backing,P1,True,docs/planning/active/patching-r9700-cross-rdna/RNX06.md
+RNX08,pending,patching-r9700-cross-rdna,"R9X08 — PLE, norm+RoPE, and transpose microfusion portfolio",P2,True,docs/planning/active/patching-r9700-cross-rdna/RNX08.md
+RNX09,pending,patching-r9700-cross-rdna,"R9X09 — Cross-RDNA integration, ablation, and promotion",P1,True,docs/planning/active/patching-r9700-cross-rdna/RNX09.md
+RNX10,pending,patching-r9700-cross-rdna,R9X10 — Qwen4Exp shared-expert decode fusion,P2,True,docs/planning/active/patching-r9700-cross-rdna/RNX10.md
+RNX11,pending,patching-r9700-cross-rdna,"R9X11 — Custom AllReduce fixed-grid, sequence-counter, and graph-replay hardening",P1,True,docs/planning/active/patching-r9700-cross-rdna/RNX11.md
+RRBC02,pending,run-reusable-build-campaign,Replace platform.vulkan-linux's targets placeholder with real device/ICD identity,P3,True,docs/planning/active/run-reusable-build-campaign/RRBC02.md
+RRVP01,pending,run-rocm-vulkan-provider,Campaign/CLI HIP and Vulkan stack propagation,P2,True,docs/planning/active/run-rocm-vulkan-provider/RRVP01.md
+RRVP02,pending,run-rocm-vulkan-provider,HIP/Vulkan provider and capability probing,P2,True,docs/planning/active/run-rocm-vulkan-provider/RRVP02.md
+RRVP03,pending,run-rocm-vulkan-provider,Runtime HIP/Vulkan stack attestation,P2,True,docs/planning/active/run-rocm-vulkan-provider/RRVP03.md
+RRVP05,pending,run-rocm-vulkan-provider,Matched HIP versus Vulkan dev campaign,P1,False,docs/planning/active/run-rocm-vulkan-provider/RRVP05.md
+RSC01,pending,run-serving-configuration,"C++ serving component: schema, strict loader, resolved manifest, explain (one implementation in the release package)",P0,True,docs/planning/active/run-serving-configuration/RSC01.md
+RSC02,in_progress,run-serving-configuration,"bc-serve start/stop/status: the only start-up path, in C++, from a named config or a stored manifest",P0,True,docs/planning/active/run-serving-configuration/RSC02.md
+RSC03,in_progress,run-serving-configuration,"One derived start-up resource plan: host RAM, pinned memory and VRAM budgeted together",P0,True,docs/planning/active/run-serving-configuration/RSC03.md
+RSC04,in_progress,run-serving-configuration,Retire legacy launch surfaces once their callers migrate,P2,True,docs/planning/active/run-serving-configuration/RSC04.md
+RSC05,pending,run-serving-configuration,"Serving config and layout resolver consume discovered hardware, not a hand-declared device list",P1,True,docs/planning/active/run-serving-configuration/RSC05.md
+RSC06,in_progress,run-serving-configuration,Helpers load their manifest section with a strict C++ loader; R3_* getenv removed,P0,True,docs/planning/active/run-serving-configuration/RSC06.md
+RSC09,pending,run-serving-configuration,Derive or calibrate the hand-picked launcher literals in the v1 manifest handoff section,P2,True,docs/planning/active/run-serving-configuration/RSC09.md
+RSC10,pending,run-serving-configuration,Host ledger margin refit: a start that fails the engine's host-room check stores its shortfall and retries once,P1,True,docs/planning/active/run-serving-configuration/RSC10.md
+RSC11,in_progress,run-serving-configuration,"RSC11: serving completion programme (RSC01-RSC10 + PWR06-PWR09, one v2 cutover)",P0,True,docs/planning/active/run-serving-configuration/RSC11.md
+RSC12,in_progress,run-serving-configuration,"Readable serving configs: one file per model, named variants, a cached manifest per config",P1,True,docs/planning/active/run-serving-configuration/RSC12.md
+RSC13,pending,run-serving-configuration,Clang AST inventory of serving injected callables,P2,False,docs/planning/active/run-serving-configuration/RSC13.md
+RSC14,pending,run-serving-configuration,Flash-Next production start fails out of memory when builds run beside it: make host-RAM admission robust,P2,True,docs/planning/active/run-serving-configuration/RSC14.md
+RSP01,in_progress,build-release-split,The radiance release is one Python-free engine runtime,P1,True,docs/planning/active/build-release-split/RSP01.md
+RUM06,in_progress,patching-radiance-upstream,Port engine-scoped remote MoE and mixed-TP collective lifetimes,P0,True,docs/planning/active/patching-radiance-upstream/RUM06.md
+RWQ01,pending,patching-radiance-wire-quality,Freeze Flash-Next wire baseline and attribute model divergence to the actual fused operations,P0,True,docs/planning/active/patching-radiance-wire-quality/RWQ01.md
+RWQ02,pending,patching-radiance-wire-quality,Implement and validate WHT8 over the existing no-P2P libr3 transport,P0,True,docs/planning/active/patching-radiance-wire-quality/RWQ02.md
+RWQ03,pending,patching-radiance-wire-quality,"Select wire precision by operation family, layer and phase without rank divergence",P0,True,docs/planning/active/patching-radiance-wire-quality/RWQ03.md
+RWQ05,pending,patching-radiance-wire-quality,"Hardware A/B: quality, MTP, PCIe bytes and latency for wire candidates",P0,True,docs/planning/active/patching-radiance-wire-quality/RWQ05.md
+RWQ06,pending,patching-radiance-wire-quality,"Promotion, regression fixtures, runtime defaults and pin migration",P1,True,docs/planning/active/patching-radiance-wire-quality/RWQ06.md
+THA01,pending,tuning-hip-autotune,Emit intrinsically-complete nested provenance from the C++ runtime transform writer (retire the flat adapter),null,True,docs/planning/active/tuning-hip-autotune/THA01.md
+THA02,pending,tuning-hip-autotune,"Fused MUL_MAT(_ID)+GLU correctness-evidence harness (real two-op graph, not the single-op --test-file mapper)",null,True,docs/planning/active/tuning-hip-autotune/THA02.md
+THA03,pending,tuning-hip-autotune,Harden signature coverage for RD12 dst_gate and RD17 x_scale_channel_dst fusion modes,null,True,docs/planning/active/tuning-hip-autotune/THA03.md
+THA04,pending,tuning-hip-autotune,HI121 close-out step 4: C++-authoritative canonical signature digest verification (RV84 P0-4),null,True,docs/planning/active/tuning-hip-autotune/THA04.md
+THA05,pending,tuning-hip-autotune,bigcherry tune-campaign: single-command record->tune->correctness->promote->replay orchestrator,null,True,docs/planning/active/tuning-hip-autotune/THA05.md
+THA06,pending,tuning-hip-autotune,"Winner/tuning persistence across llama.cpp revision bumps -- retain-by-default, retune-as-overlay",null,True,docs/planning/active/tuning-hip-autotune/THA06.md
+THA07,pending,tuning-hip-autotune,RCCL Phase 2: topology-aware qualification/tuning for the device-3-excluded subset,null,True,docs/planning/active/tuning-hip-autotune/THA07.md
+THA08,pending,tuning-hip-autotune,Investigate whether the HI141 w4:nw8:rpb1:sk0 defect corrupts shared MTP trunk state (draft AND target),null,True,docs/planning/active/tuning-hip-autotune/THA08.md
+THA11,pending,tuning-hip-autotune,"Replay benchmarks must prove tuned kernels actually launched, not merely that a cache loaded",P0,True,docs/planning/active/tuning-hip-autotune/THA11.md
+THA12,pending,tuning-hip-autotune,"Signature identity completeness: ids fields, quantized stride normalisation, and a maintained proof table",P1,True,docs/planning/active/tuning-hip-autotune/THA12.md
+THA15,pending,tuning-hip-autotune,HI171 — Provenance-safe promoted-winner execution and winner-vs-runner-up counterfactual replay audit,P0,True,docs/planning/active/tuning-hip-autotune/THA15.md
+THA16,pending,tuning-hip-autotune,Critical-path/slack vs contention hypothesis for isolated-vs-e2e tuning divergence,P0,True,docs/planning/active/tuning-hip-autotune/THA16.md
+THA17,pending,tuning-hip-autotune,BLAS-family kernel tuning: authorize and build candidate search for the rocBLAS/Tensile path HI17 made observable,P2,True,docs/planning/active/tuning-hip-autotune/THA17.md
+THA18,pending,tuning-hip-autotune,Extend the HIP autotune dispatch/candidate system beyond matmul: non-matmul op-class scope and foundational infra,P2,True,docs/planning/active/tuning-hip-autotune/THA18.md
+THA26,pending,tuning-hip-autotune,Dispatch integration — use transformed winner at runtime with zero overhead when no transform applies,null,True,docs/planning/active/tuning-hip-autotune/THA26.md
+THA27,pending,tuning-hip-autotune,"Make tuning falsifiable — predicted matmul saving, and the decode fraction it applies to",null,True,docs/planning/active/tuning-hip-autotune/THA27.md
+THA28,pending,tuning-hip-autotune,HI36b — generalised dispatch runtime: two-level lookup and generalised cache entries on replay v5,null,True,docs/planning/active/tuning-hip-autotune/THA28.md
+THA29,pending,tuning-hip-autotune,"Topology-aware execution planner (candidate architecture, above per-op dispatch)",null,True,docs/planning/active/tuning-hip-autotune/THA29.md
+THA30,pending,tuning-hip-autotune,"Replay fallback paths under graph capture (hardware separation, cache corruption, process-cache hit)",null,True,docs/planning/active/tuning-hip-autotune/THA30.md
+THA31,pending,tuning-hip-autotune,Adaptive retention band derived from the screen-stage canary (HI24 step 7),null,True,docs/planning/active/tuning-hip-autotune/THA31.md
+THA32,pending,tuning-hip-autotune,Qwen3.8 Flash-Next incremental QSA cache A/B (#28699),P1,True,docs/planning/active/tuning-hip-autotune/THA32.md
+THA33,pending,tuning-hip-autotune,Intermittent build-sensitive SIGSEGV in production mul_mat_vec_f_cuda on gfx1201,null,True,docs/planning/active/tuning-hip-autotune/THA33.md
+THA34,pending,tuning-hip-autotune,HI17 metadata-state migration test fails on main: blas-metadata-state edit finds no bigcherry_effective_call_api shape,P2,True,docs/planning/active/tuning-hip-autotune/THA34.md
+THTR05,pending,tuning-hip-tune-recovery,Adaptive recovery: bisect with the shortest vector that actually reproduces the failure,P0,True,docs/planning/active/tuning-hip-tune-recovery/THTR05.md
+TK05,pending,tuning-radiance-tail-kernel,"Experimental branch: INT8 dot4 tail kernel (W4NL codebook as int8, activations re-quantised) under its own quality gate",P3,False,docs/planning/active/tuning-radiance-tail-kernel/TK05.md
+TRBC01,pending,tuning-reusable-build-campaign,"Evaluate adding Vulkan as a tunable build line (patchable, campaign/tune/replay-capable like HIP)",,True,docs/planning/active/tuning-reusable-build-campaign/TRBC01.md
+TRBC02,pending,tuning-reusable-build-campaign,Vulkan candidate eligibility ABI: can_execute() cannot evaluate real Vulkan capability yet,null,True,docs/planning/active/tuning-reusable-build-campaign/TRBC02.md
+TRBC03,pending,tuning-reusable-build-campaign,Vulkan experiment execution adapter: forceable selector interface + route telemetry,null,True,docs/planning/active/tuning-reusable-build-campaign/TRBC03.md
+TRVP01,pending,tuning-rocm-vulkan-provider,Manifest measurement database binding,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP01.md
+TRVP02,pending,tuning-rocm-vulkan-provider,Provider discovery and completeness layer,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP02.md
+TRVP03,pending,tuning-rocm-vulkan-provider,Workload BLAS-domain inventory,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP03.md
+TRVP04,pending,tuning-rocm-vulkan-provider,hipBLASLt vendor_auto candidate,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP04.md
+TRVP05,pending,tuning-rocm-vulkan-provider,hipBLASLt explicit algorithms,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP05.md
+TRVP06,pending,tuning-rocm-vulkan-provider,hipBLASLt independent validation oracle,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP06.md
+TRVP07,pending,tuning-rocm-vulkan-provider,Raw HIP kernel audit,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP07.md
+TRVP08,pending,tuning-rocm-vulkan-provider,CK dense GEMM provider,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP08.md
+TRVP09,pending,tuning-rocm-vulkan-provider,"CK split-K, preshuffle, pipeline variants",null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP09.md
+TRVP10,pending,tuning-rocm-vulkan-provider,CK grouped GEMM and MoE family,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP10.md
+TRVP11,pending,tuning-rocm-vulkan-provider,ROCm qualification matrix,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP11.md
+TRVP12,pending,tuning-rocm-vulkan-provider,Vulkan stack and runtime integration,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP12.md
+TRVP13,pending,tuning-rocm-vulkan-provider,Stack/build inspection and release completeness,null,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP13.md
+TRVP14,pending,tuning-rocm-vulkan-provider,Expose CM1 as a forceable Vulkan recipe candidate,P1,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP14.md
+TRVP15,pending,tuning-rocm-vulkan-provider,Qualify and selectively promote RDNA CM1 winners,P1,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP15.md
+TRVP16,pending,tuning-rocm-vulkan-provider,Vulkan collective and mixed-architecture qualification,P3,True,docs/planning/active/tuning-rocm-vulkan-provider/TRVP16.md
+VTP32,pending,run-dense-27b-virtual-tp,Per-op-kind split tuning: measure each card's cost per layer kind and solve the tp_ownership split,P1,True,docs/planning/active/run-dense-27b-virtual-tp/VTP32.md
+VTP34,pending,run-dense-27b-virtual-tp,Finish the move to the manifest: generic-configuration audit C01-C24 (bigcherry-1 / bigcherry-2 split),P1,True,docs/planning/active/run-dense-27b-virtual-tp/VTP34.md
+VTP36,pending,run-dense-27b-virtual-tp,"TP3 performance programme: prefill and decode on XTX + XTX + R9700 (kernels, all-reduce, split, layer formats)",P1,True,docs/planning/active/run-dense-27b-virtual-tp/VTP36.md
+VTP37,pending,run-dense-27b-virtual-tp,"int8 (w8a8) TP3 decode and prefill: pipelined prefill on rotated-int8 trunks, gfx1100 int8 row selection, three-rank fused AR + norm + int8 quant",P0,True,docs/planning/active/run-dense-27b-virtual-tp/VTP37.md
+VTP38,pending,run-dense-27b-virtual-tp,Production TP3 per-rank host transport: CPU push and optional ordered host reduction,P1,True,docs/planning/active/run-dense-27b-virtual-tp/VTP38.md
+VTP40,pending,run-dense-27b-virtual-tp,Speculation window by load on TP3 int8,P2,True,docs/planning/active/run-dense-27b-virtual-tp/VTP40.md
+VTP42,in_progress,run-dense-27b-virtual-tp,"Swappable prefill governor: token budget with reservation, backfill within a delay bound, card-free simulator",P1,True,docs/planning/active/run-dense-27b-virtual-tp/VTP42.md
+VTP45,pending,run-dense-27b-virtual-tp,"Follow-ups from the VTP44 closing: routing determinism, libr3 selftest depth, geometry table, R9700-only test",P2,True,docs/planning/active/run-dense-27b-virtual-tp/VTP45.md
+WSL01,pending,run-workspace-lifecycle,Standard work-root layout and one run-directory template,P0,False,docs/planning/active/run-workspace-lifecycle/WSL01.md
+WSL02,pending,run-workspace-lifecycle,"Harvest: extract what we keep, then mark the raw output expendable",P0,False,docs/planning/active/run-workspace-lifecycle/WSL02.md
+WSL03,pending,run-workspace-lifecycle,"Retention and managed cleanup (`bigcherry clean`, dry run first)",P0,False,docs/planning/active/run-workspace-lifecycle/WSL03.md
+WSL04,pending,run-workspace-lifecycle,Build and source cache GC keyed by plan id,P1,False,docs/planning/active/run-workspace-lifecycle/WSL04.md
+WSL05,pending,run-workspace-lifecycle,"Experiment templates: config, launcher, analysis and evidence in one pattern",P1,False,docs/planning/active/run-workspace-lifecycle/WSL05.md
+WSL07,pending,run-workspace-lifecycle,Lab worktree hygiene: lint ad-hoc worktrees in lab scripts; slice status/prune see lab-host worktrees,P1,False,docs/planning/active/run-workspace-lifecycle/WSL07.md
+WSL08,pending,run-workspace-lifecycle,The gpu lease covers the lifetime of the serving processes a launcher detaches,P1,True,docs/planning/active/run-workspace-lifecycle/WSL08.md
+WSL09,pending,run-workspace-lifecycle,Build cache GC: candidates and clean --builds --apply (follow-up to WSL04),P2,False,docs/planning/active/run-workspace-lifecycle/WSL09.md
+XDP01,in_progress,run-xtx27-prefill,Radiance dense 27B dual-XTX prefill performance,P1,True,docs/planning/active/run-xtx27-prefill/XDP01.md
+XDP02,in_progress,run-xtx27-prefill,Maximum resident KV: dual-XTX plus R9700 dense-stage feasibility,P1,True,docs/planning/active/run-xtx27-prefill/XDP02.md
+XDP03,in_progress,run-xtx27-prefill,Dense 27B heterogeneous quantization and GPU-aware layer placement,P1,True,docs/planning/active/run-xtx27-prefill/XDP03.md
+XDP04,in_progress,run-xtx27-prefill,gfx1100 native INT4×INT4 W4A4 proof and quantization quality gate,P1,True,docs/planning/active/run-xtx27-prefill/XDP04.md
+XDP05,in_progress,run-xtx27-prefill,gfx1100 native W4A4 tiled prefill: LDS reuse and actual-shape A/B,P1,False,docs/planning/active/run-xtx27-prefill/XDP05.md
+XDP06,in_progress,run-xtx27-prefill,RDNA3 engine survey and native W4A4 prefill redesign decision,P1,False,docs/planning/active/run-xtx27-prefill/XDP06.md
+XDP07,in_progress,run-xtx27-prefill,gfx1100 INT4 prefill: staged-header root cause and matched GPU experiments,P1,False,docs/planning/active/run-xtx27-prefill/XDP07.md
+XDP08,in_progress,run-xtx27-prefill,"Apply gfx11 metadata-reuse findings to existing INT8, MXFP4 and MoE kernels",P1,False,docs/planning/active/run-xtx27-prefill/XDP08.md
+XDP09,in_progress,run-xtx27-prefill,Integrate verified XDP optimization slices without production regressions,P1,False,docs/planning/active/run-xtx27-prefill/XDP09.md
+XDP10,pending,run-xtx27-prefill,Hardware-selected multi-variant quantized model bundle and loader,P1,False,docs/planning/active/run-xtx27-prefill/XDP10.md
