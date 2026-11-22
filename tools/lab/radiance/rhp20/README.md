@@ -59,19 +59,10 @@ The one-off RHP20 forced-move harness and its Bash start path were retired under
 
 ## Layout-specific KLD, separate from 1,000-move stress
 
-The campaign uses the RHP06/RHP22 quality thresholds, a static control
-versus forced arm, fixed reference at
-`${BC_WORK_ROOT}/runs/rad116-kld/reference`. Build `RAD_BIN`/
-`RAD_HOME` must point to the same tested build; use the established
-campaign environment and hold the GPU lease externally.
-
-```bash
-PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py kld-config --layout flashnext-2xtx-rdna2-tail --out ${BC_WORK_ROOT}/runs/rhp20-tail-kld/config.json
-PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-kld/kld --pairs 2
-
-PYTHONPATH=tools python3 tools/lab/radiance/rhp20-forced-move.py kld-config --layout flashnext-2xtx-rdna2-tail-combine --out ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/config.json
-PYTHONPATH=tools python3 -m bigcherry ab-benchmark --server-config ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/config.json --output ${BC_WORK_ROOT}/runs/rhp20-tail-combine-kld/kld --pairs 2
-```
+The cross-ISA KLD arms are **retired as a job file**: the old arm needed the Python manifest planner and a lab
+experiment key (`experiment`) that the native YAML schema does not have, and the generator that wrote the config
+(`rhp20-forced-move.py kld-config`) no longer exists. A native version needs the forced-churn experiment expressed in
+`x-bigcherry` first (an owned, typed setting), then two native arms like `native-arms/helper-kld/`.
 
 KLD is a **separate numerical arm** that requires its own observed result,
 including top-1, KL tails, and RHP12 step-time checks. It is not evidence

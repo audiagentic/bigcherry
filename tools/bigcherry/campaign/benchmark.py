@@ -510,7 +510,7 @@ def _run_arm(
 
 
 def run_server_arm_capture(
-    *, engine: str, binary: Path, model: Path, extra_args: tuple[str, ...], manifest: Path | None,
+    *, engine: str, binary: Path, model: Path, extra_args: tuple[str, ...],
     output: Path, pair: int, side: str, position: int,
     env: dict[str, str], settings: dict[str, str], bench_configs: str, runner_root: Path,
     required_metrics: tuple[str, ...], repetitions: int = 1, stream_bench: dict | None = None,
@@ -548,8 +548,6 @@ def run_server_arm_capture(
     # Required server captures use a separate, untimed diagnostic preflight.
     # The timed process below intentionally receives the original arguments
     # unchanged: diagnostics are evidence, never performance samples.
-    if manifest is not None and execution_evidence == "required":
-        raise ValueError("a manifest start has no attestation preflight; use execution_evidence \"observe\"")
     if expected_execution is not None and execution_evidence == "required":
         try:
             attestation, binding = _run_server_attestation_preflight(
@@ -579,12 +577,11 @@ def run_server_arm_capture(
     server = ServerRunner(
         serve=_engines.load(_paths.REPO_ROOT, engine).serve,
         binary=binary, model=model, extra_args=extra_args,
-        manifest=manifest, port=None if manifest is None else adapter_.manifest_port(manifest),
         env_overrides=env, env_unset=tuple(os.environ),
         log_path=cell / "server.log", shutdown_method=shutdown_method, health_timeout_s=health_timeout_s,
     )
     sidecars = SidecarSet(adapter_.sidecars(
-        {"name": side, "model": model, "settings": dict(settings), "manifest": manifest}, env, cell, binary))
+        {"name": side, "model": model, "settings": dict(settings)}, env, cell, binary))
     try:
         # Sidecars start (sequentially, each ready) before the server and stop after it.
         sidecars.start()
@@ -1073,7 +1070,7 @@ def run_server_comparison_capture(
             if extra_args or arm_args:
                 raise ValueError(f"{arm['name']}: a serving arm takes no server_args; they are settings under serving")
             if config.get("execution_evidence", "required") == "required":
-                raise ValueError(f"{arm['name']}: a manifest start has no attestation preflight; set execution_evidence to observe")
+                raise ValueError(f"{arm['name']}: a native arm has no attestation preflight; set execution_evidence to observe")
             if "native_config" not in serving:
                 raise ValueError(f"{arm['name']}: a serving arm is a native arm: give config (the serving config it copies) and "
                                  "native_config (its YAML file); a serving block of layout, set, heat and histogram needed the "
@@ -1095,7 +1092,7 @@ def run_server_comparison_capture(
             # The layout decides the model and the cards, as the launcher and bc-serve resolve it; an explicit model that
             # names another file is a contradiction, never silently replaced either way.
             layout_name = serving["config"]
-            served = adapter_.serving_layout(layout_name)
+            served = adapter_.serving_layout(layout_name, Path(serving["native_config"]), binary)
             if arm_model is not None and arm_model != served.model:
                 raise ValueError(f"{arm['name']}: layout {layout_name} serves {served.model}, but the "
                                  f"{'arm' if 'model' in arm else 'shared'} model is {arm_model}")
@@ -1106,7 +1103,7 @@ def run_server_comparison_capture(
         if arm_model is None:
             raise ValueError(f"{arm['name']}: no model (the config's model, the arm's, or its layout's)")
         prepared[arm["name"]] = {
-            "binary": binary, "env": env, "settings": settings, "controls": controls, "extra_args": (*extra_args, *arm_args), "serving": serving, "manifest": None,
+            "binary": binary, "env": env, "settings": settings, "controls": controls, "extra_args": (*extra_args, *arm_args), "serving": serving,
             "model": arm_model, "expected_execution": arm_execution,
             "shutdown_method": arm.get("shutdown_method", "sigint" if mode == "stock" else "http"),
             "source_root": source_root, "source_attestation": source_attestation,
@@ -1169,7 +1166,7 @@ def run_server_comparison_capture(
                     return 1
             print(f"[server-capture] round {pair + 1}/{rounds} position {position + 1}: {name}", flush=True)
             result = run_server_arm_capture(engine=engine, 
-                binary=arm["binary"], model=arm["model"], extra_args=arm["extra_args"], manifest=arm["manifest"], output=output,
+                binary=arm["binary"], model=arm["model"], extra_args=arm["extra_args"], output=output,
                 pair=pair, side=name, position=position, env=arm["env"], settings=arm["settings"],
                 bench_configs=config["bench_configs"], runner_root=runner_root,
                 required_metrics=metrics, repetitions=repetitions, stream_bench=config.get("stream_bench"),
