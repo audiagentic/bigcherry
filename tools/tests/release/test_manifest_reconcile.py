@@ -58,23 +58,23 @@ class MergeRuleTests(unittest.TestCase):
 class FakeGit:
     """Scripted git: records calls, answers by subcommand."""
 
-    def __init__(self, head_sha: str, ancestor: bool = False, push_ok: bool = True, later_sha: str | None = None):
+    def __init__(self, head_sha: str, ancestor: bool = False, push_ok: bool = True):
         self.calls: list[tuple[str, ...]] = []
         self.head_sha, self.ancestor, self.push_ok = head_sha, ancestor, push_ok
-        self.later_sha = later_sha
-        self.rev_parses = 0
+        self.head_manifest = _manifest("1.63.0", "11.0.0", "10.0.0")
+        self.main_manifest = _manifest("1.62.1", "11.0.0", "10.1.0")
 
     def __call__(self, cwd, args):
         args = tuple(args)
         self.calls.append(args)
+        if args[:2] == ("worktree", "add"):
+            Path(args[-2]).mkdir()
         if args[0] == "rev-parse":
-            self.rev_parses += 1
-            sha = self.head_sha if self.rev_parses == 1 or self.later_sha is None else self.later_sha
-            return 0, sha + "\n", ""
+            return 0, self.head_sha + "\n", ""
         if args[0] == "merge-base":
-            return (0 if self.ancestor else 1), "", ""
-        if args[0] == "merge":
-            return 0, "", ""
+            return (0 if self.ancestor else 1) if args[3] == "refs/reconcile/head" else 0, "", ""
+        if args[0] == "show":
+            return 0, (self.head_manifest if "head" in args[1] else self.main_manifest), ""
         if args[0] == "push":
             return (0 if self.push_ok else 1), "", ""
         return 0, "", ""
@@ -90,22 +90,25 @@ class GuardTests(unittest.TestCase):
             repo.mkdir()
             return mr.reconcile_head(repo, "origin", "main", "rp-branch", expected, ".", git)
 
-    def test_pushes_plain_when_head_unchanged(self):
+    def test_pushes_as_compare_and_swap_on_the_expected_head(self):
         git = FakeGit("aaa")
         self.assertEqual(self.run_it(git), "pushed")
-        push = git.pushed()[0]
-        self.assertEqual(push, ("push", "-q", "origin", "HEAD:refs/heads/rp-branch"))
-        self.assertFalse(any("--force" in a or a.startswith("+") for c in git.calls if c[0] == "push" for a in c))
+        self.assertEqual(git.pushed()[0], ("push", "-q", "--force-with-lease=refs/heads/rp-branch:aaa", "origin",
+                                           "HEAD:refs/heads/rp-branch"))
+        self.assertFalse(any(a in ("--force", "-f") or a.startswith("+") for c in git.pushed() for a in c))
+
+    def test_merge_is_built_uncommitted_so_the_rule_always_runs(self):
+        git = FakeGit("aaa")
+        self.run_it(git)
+        merge = next(c for c in git.calls if c[0] == "merge")
+        self.assertIn("--no-commit", merge)
+        self.assertIn("--no-ff", merge)
 
     def test_head_moved_before_start_is_a_clean_exit(self):
         git = FakeGit("bbb")
         self.assertEqual(self.run_it(git), "head-moved")
         self.assertEqual(git.pushed(), [])
-
-    def test_head_moved_during_merge_is_not_pushed(self):
-        git = FakeGit("aaa", later_sha="ccc")
-        self.assertEqual(self.run_it(git), "head-moved")
-        self.assertEqual(git.pushed(), [])
+        self.assertFalse(any(c[0] == "worktree" for c in git.calls))
 
     def test_rejected_push_is_head_moved(self):
         self.assertEqual(self.run_it(FakeGit("aaa", push_ok=False)), "head-moved")
@@ -115,6 +118,14 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(self.run_it(git), "up-to-date")
         self.assertEqual(git.pushed(), [])
         self.assertFalse(any(c[0] == "merge" for c in git.calls))
+
+    def test_rule_refusal_aborts_before_any_push(self):
+        git = FakeGit("aaa")
+        git.head_manifest = _manifest("1.63.0", "11.0.0", "10.2.0")  # head engine newer than main: downgrade
+        with self.assertRaises(mr.ManifestReconcileError):
+            self.run_it(git)
+        self.assertEqual(git.pushed(), [])
+        self.assertTrue(any(c[:2] == ("merge", "--abort") for c in git.calls))
 
     def test_never_updates_main(self):
         with self.assertRaises(mr.ManifestReconcileError):
@@ -184,10 +195,160 @@ class RealGitTests(unittest.TestCase):
             mr.reconcile_head(self.repo, str(self.origin), "main", "rp", sha, ".")
         self.assertEqual(_git(self.origin, "rev-parse", "rp"), sha)
 
+    def test_clean_merge_with_contradictory_versions_is_refused(self):
+        # PR head carries a newer engine than main and main changes an unrelated file: git merges cleanly, the rule refuses
+        _git(self.repo, "checkout", "-q", "rp")
+        (self.repo / mr.MANIFEST).write_text(_manifest("1.63.0", "11.0.0", "10.2.0"))
+        _git(self.repo, "commit", "-qam", "engine ahead")
+        _git(self.repo, "push", "-q", "origin", "rp")
+        sha = _git(self.repo, "rev-parse", "HEAD")
+        _git(self.repo, "checkout", "-q", "main")
+        (self.repo / "other.txt").write_text("main\n")
+        _git(self.repo, "commit", "-qam", "unrelated")
+        _git(self.repo, "push", "-q", "origin", "main")
+        with self.assertRaises(mr.ManifestReconcileError):
+            mr.reconcile_head(self.repo, str(self.origin), "main", "rp", sha, ".")
+        self.assertEqual(_git(self.origin, "rev-parse", "rp"), sha)
+
+    def test_clean_merge_applies_the_rule_result(self):
+        self._advance_main(_manifest("1.62.1", "11.0.0", "10.1.0"), "main\n")
+        # make the manifest merge clean: the PR head has not touched the manifest lines main changed
+        _git(self.repo, "checkout", "-q", "rp")
+        (self.repo / "other.txt").write_text("a\n")
+        sha = _git(self.repo, "rev-parse", "HEAD")
+        _git(self.repo, "checkout", "-q", "main")
+        self.assertEqual(mr.reconcile_head(self.repo, str(self.origin), "main", "rp", sha, "."), "pushed")
+        merged = json.loads(_git(self.origin, "show", f"rp:{mr.MANIFEST}"))
+        self.assertEqual(merged["engines/radiance"], "10.1.0")
+        self.assertEqual(merged["."], "1.63.0")
+
+    def test_clean_merge_with_key_set_mismatch_is_refused(self):
+        _git(self.repo, "checkout", "-q", "rp")
+        (self.repo / mr.MANIFEST).write_text('{\n  "engines/llamacpp": "11.0.0",\n  ".": "1.63.0"\n}\n')
+        _git(self.repo, "commit", "-qam", "drop a key")
+        _git(self.repo, "push", "-q", "origin", "rp")
+        sha = _git(self.repo, "rev-parse", "HEAD")
+        _git(self.repo, "checkout", "-q", "main")
+        (self.repo / "other.txt").write_text("main\n")
+        _git(self.repo, "commit", "-qam", "unrelated")
+        _git(self.repo, "push", "-q", "origin", "main")
+        with self.assertRaises(mr.ManifestReconcileError):
+            mr.reconcile_head(self.repo, str(self.origin), "main", "rp", sha, ".")
+
+    def test_head_moving_to_an_ancestor_after_the_last_read_is_not_overwritten(self):
+        self._advance_main(_manifest("1.62.1", "11.0.0", "10.1.0"))
+        main_sha = _git(self.repo, "rev-parse", "main")
+
+        def racing(cwd, args):
+            if args[0] == "push":  # the branch moves to an ancestor of the candidate after the final read
+                _git(self.origin, "update-ref", "refs/heads/rp", main_sha)
+            return mr.system_git(cwd, args)
+
+        result = mr.reconcile_head(self.repo, str(self.origin), "main", "rp", self.rp_sha, ".", racing)
+        self.assertEqual(result, "head-moved")
+        self.assertEqual(_git(self.origin, "rev-parse", "rp"), main_sha)
+
+    def test_other_file_conflict_is_named_before_any_commit(self):
+        _git(self.repo, "checkout", "-q", "rp")
+        (self.repo / "other.txt").write_text("pr\n")
+        _git(self.repo, "commit", "-qam", "pr edit")
+        _git(self.repo, "push", "-q", "origin", "rp")
+        sha = _git(self.repo, "rev-parse", "HEAD")
+        _git(self.repo, "checkout", "-q", "main")
+        self._advance_main(_manifest("1.62.1", "11.0.0", "10.1.0"), "main\n")
+        with self.assertRaisesRegex(mr.ManifestReconcileError, "other.txt"):
+            mr.reconcile_head(self.repo, str(self.origin), "main", "rp", sha, ".")
+
     def test_stale_expected_sha_pushes_nothing(self):
         self._advance_main(_manifest("1.62.1", "11.0.0", "10.1.0"))
         self.assertEqual(mr.reconcile_head(self.repo, str(self.origin), "main", "rp", "0" * 40, "."), "head-moved")
         self.assertEqual(_git(self.origin, "rev-parse", "rp"), self.rp_sha)
+
+
+_CONFIG = {"packages": {".": {"component": "bc-platform"}, "engines/radiance": {"component": "bc-radiance"}}}
+_BRANCH = "release-please--branches--main--components--bc-platform"
+
+
+def _pr(**over):
+    pr = {"number": 7, "state": "OPEN", "baseRefName": "main", "labels": [{"name": mr.LABEL}], "headRefName": _BRANCH,
+          "headRefOid": "aaa", "isCrossRepository": False, "headRepositoryOwner": {"login": "owner"},
+          "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}
+    pr.update(over)
+    return pr
+
+
+class SelectionTests(unittest.TestCase):
+    def run_it(self, listed, views, results=("pushed",)):
+        views, results = list(views), list(results)
+        writes, sleeps = [], []
+
+        def gh(*args):
+            return listed if args[1] == "list" else views.pop(0) if len(views) > 1 else views[0]
+
+        def git(cwd, args):  # only reconcile_head's own git use is replaced by the patch below
+            raise AssertionError(args)
+
+        def fake_reconcile(repo, remote, base, head, sha, package, git_):
+            writes.append((head, sha, package))
+            return results.pop(0)
+
+        real = mr.reconcile_head
+        mr.reconcile_head = fake_reconcile
+        try:
+            report = mr.reconcile_platform(Path("."), "url", "owner", _CONFIG, gh, git, sleeps.append, attempts=3, seconds=1)
+        finally:
+            mr.reconcile_head = real
+        return report, writes, sleeps
+
+    def test_exact_same_repo_platform_pr_is_written_with_its_read_sha(self):
+        report, writes, _ = self.run_it([_pr()], [_pr(headRefOid="bbb")])
+        self.assertEqual(report, ["PR #7: pushed"])
+        self.assertEqual(writes, [(_BRANCH, "bbb", ".")])
+
+    def test_unknown_then_conflicting_retries_then_writes(self):
+        report, writes, sleeps = self.run_it([_pr()], [_pr(mergeable="UNKNOWN", mergeStateStatus="UNKNOWN"), _pr()])
+        self.assertEqual(report, ["PR #7: pushed"])
+        self.assertEqual(sleeps, [1])
+
+    def test_unknown_then_mergeable_does_nothing(self):
+        clean = _pr(mergeable="MERGEABLE", mergeStateStatus="CLEAN")
+        report, writes, _ = self.run_it([_pr()], [_pr(mergeable="UNKNOWN"), clean])
+        self.assertEqual(report, ["PR #7: no conflict, nothing to do"])
+        self.assertEqual(writes, [])
+
+    def test_perpetual_unknown_is_a_named_deferred_state(self):
+        report, writes, sleeps = self.run_it([_pr()], [_pr(mergeable="UNKNOWN", mergeStateStatus="UNKNOWN")])
+        self.assertEqual(report, ["PR #7: deferred-mergeability-unknown"])
+        self.assertEqual((writes, len(sleeps)), ([], 3))
+
+    def test_head_moving_during_reconcile_is_retried_then_deferred(self):
+        report, writes, _ = self.run_it([_pr()], [_pr(), _pr(headRefOid="bbb"), _pr(headRefOid="ccc")],
+                                        results=("head-moved", "head-moved", "head-moved"))
+        self.assertEqual(report, ["PR #7: deferred-head-moved"])
+        self.assertEqual([w[1] for w in writes], ["aaa", "bbb", "ccc"])
+
+    def test_head_moved_then_success(self):
+        report, writes, _ = self.run_it([_pr()], [_pr(), _pr(headRefOid="bbb")], results=("head-moved", "pushed"))
+        self.assertEqual(report, ["PR #7: pushed"])
+
+    def test_fork_and_lookalikes_are_never_written(self):
+        cases = [
+            _pr(isCrossRepository=True, headRepositoryOwner={"login": "someone"}),          # fork, same suffix
+            _pr(isCrossRepository=True),                                                     # fork with the same owner name
+            _pr(headRefName="x-" + _BRANCH),                                                 # lookalike branch
+            _pr(headRefName=_BRANCH + "-2"),
+            _pr(headRepositoryOwner={"login": "other"}),
+            _pr(baseRefName="release"), _pr(state="CLOSED"), _pr(labels=[]),
+        ]
+        for case in cases:
+            with self.subTest(case=case):
+                report, writes, _ = self.run_it([case], [case])
+                self.assertEqual((report, writes), ([], []))
+
+    def test_pr_that_changed_between_list_and_view_is_refused(self):
+        report, writes, _ = self.run_it([_pr()], [_pr(isCrossRepository=True)])
+        self.assertEqual(writes, [])
+        self.assertTrue(report[0].startswith("PR #7: refused"))
 
 
 class WorkflowTests(unittest.TestCase):
@@ -201,6 +362,13 @@ class WorkflowTests(unittest.TestCase):
         self.assertGreater(self.steps.index(self.step), 0)
         self.assertEqual(self.step["env"]["GH_TOKEN"], "${{ secrets.RELEASE_PLEASE_TOKEN }}")
         self.assertNotIn("secrets.", json.dumps(self.step).replace("secrets.RELEASE_PLEASE_TOKEN", ""))
+
+    def test_no_credential_in_argv_and_checkout_keeps_none(self):
+        self.assertNotIn("x-access-token", self.step["run"].split("manifest_reconcile", 1)[1])
+        self.assertIn("http.https://github.com/.extraheader", self.step["run"])
+        checkout = next(s for s in self.steps if s.get("with", {}).get("path") == "rewrite-src")
+        self.assertIs(checkout["with"]["persist-credentials"], False)
+        self.assertEqual(self.step["env"]["REPO_OWNER"], "${{ github.repository_owner }}")
 
     def test_permissions_and_trigger_cannot_loop(self):
         on = self.wf.get("on", self.wf.get(True))
