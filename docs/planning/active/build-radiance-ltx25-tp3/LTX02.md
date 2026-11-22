@@ -95,7 +95,10 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 **Original plan design and scope evidence:** `docs/evidence/ltx25-plan-registration/LTX02.md`. Registered by the canonical Planning MCP via AUDiaGentic. Historical C milestones are not separate plan IDs.
 
+2026-11-22: generic native resident-weight materialization is now assigned to RUM14 (patching-radiance-upstream). LTX02 must consume ONE Engine-owned source-loading pipeline instead of copying plan_container_weight, RelayoutPool or sweep_container. C06 declaration/24 source-backed native relayout hook calls and 108 initialized AQL instances per GPU order are not full checkpoint-resident issue or TP1 parity. After RUM14 acceptance, LTX02 alone owns actual video/audio C06 Act/Lin/attn_core issue and TP1 numerical comparison, reversed-device/fault tests and unchanged production TP3 refusal.
+
 ## Change Log
 
 - 2026-11-22T03:06:26.779657+00:00 (created-by): Created by planning-audit
 - 2026-11-22T03:14:01.870524+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T08:21:48.151528+00:00 (updated-by): Updated: section:notes
