@@ -95,6 +95,19 @@ At least one complete video and one audio self-attention layer genuinely execute
 
 ## Notes
 
+**First native issued host step, 2026-11-22:** the new C05
+`ltx_c05_issued_host_test.cpp` builds and issues real
+`Tp3GlobalRms::step` through three `RadCtx` contexts against
+Radiance's native host backend and the checkpoint's BF16
+Q/K gains, with **122880/122880 exact BF16** across video/audio,
+1/4 rows and both legal head partitions. The first failing
+test exposed transient Q/K fixture storage aliasing, corrected
+by declaring the externally pre-seeded input buffers persistent;
+production C05 was unchanged. [Evidence](../../evidence/2026-11-22-ltx25-ltx02-issued-host-rms/README.md).
+It remains a synthetic-activation host-run proof, **not**
+GPU AQL graph issue, checkpoint intermediate TP1 parity or
+a completed LTX02 acceptance.
+
 The latest C08 has 33/33 exact BF16 checks per collective variant; it does not issue the C05 model graph. LTX02 must reuse that working native Radiance backend and produce checkpoint-backed TP1 parity, not reinterpret C07's direct-HIP failure as a new transport feature. This is the immediate production-enabling next slice.
 
 References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-test-ladder.md`, `docs/evidence/2026-11-22-ltx25-c08-aql-mixed-collective/README.md`, PR #1262. This item is a **registration candidate** until Planning MCP creates it.
