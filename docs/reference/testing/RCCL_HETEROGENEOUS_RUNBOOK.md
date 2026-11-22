@@ -725,6 +725,8 @@ Compatibility/admissibility is separate from performance cost.
 
 Unsafe candidates are ineligible regardless of speed.
 
+RCCL Tests `-Z json` `wrong` counters must be non-negative decimal integers (the pinned version emits decimal strings). Reject fractional, boolean or signed counts as malformed evidence; blindly applying `int()` can truncate to zero or cancel errors across in-place/out-of-place passes. Such records are harness failures, never correctness `pass`.
+
 ## P2.5 Search order
 
 Use staged search:
