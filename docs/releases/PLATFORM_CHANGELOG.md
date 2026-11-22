@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.61.1](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.61.0...bc-platform-1.61.1) (2026-11-22)
+
+
+### Fixes
+
+* **radiance:** a different installed build reuses the stored plan (runtime home is not part of the key) ([#1286](https://github.com/audiagentic/bigcherry/issues/1286)) ([a21694e](https://github.com/audiagentic/bigcherry/commit/a21694e7fc996335ddef13467b5a60ba76fe5d07))
+
 ## [1.61.0](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.60.0...bc-platform-1.61.0) (2026-11-22)
 
 
