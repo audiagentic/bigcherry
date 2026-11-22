@@ -122,6 +122,18 @@ combine, vision tower placement and maximum image patches. Each entry names
 the engine, observation time, state and reason; this is a configuration/start
 snapshot, **not** evidence that the engine's runtime activation was verified.
 
+A start of a named config says whether it reused the stored plan, in one stderr
+line: `bc-serve: stored plan reused (...)`, or `bc-serve: no stored plan reused
+(<reason>); measuring`. The reason is one of `no stored entry`, `stored entry
+unreadable`, `static key changed: <inputs>` (the inputs that moved, by name: the
+store records one digest per static input, never their contents; an entry from
+before that record only says the key changed), `stored manifest missing`,
+`stored manifest bytes changed`, `stored plan unusable: <why>` or `live
+admission refused: <why>`. `session.json` records the same outcome under
+`plan_reuse` and the monotonic milliseconds of each start phase under
+`phases_ms` (`yaml_inspect`, `runtime_identity`, `store_lookup`, `replay` or
+`measure`, `helper_start`, `engine_start_to_ready`), written once per start.
+
 The same entries are saved in `session.json` and returned by
 `bc-serve status --run-dir DIR --json`. For helper-backed production starts,
 inactive/degraded live placement emits a single-line `WARNING production

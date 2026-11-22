@@ -317,6 +317,10 @@ void serve_status_stop() {
     const std::vector<std::string> want = {"created", "planning",      "planned", "started",
                                            "healthy", "canary_passed", "running"};
     assert(kinds == want);
+    // the start-phase costs are in the record, written with the events (engine_start_to_ready is saved at "healthy")
+    assert(running_record.contains("plan_reuse") && running_record.at("phases_ms").is_object() &&
+           running_record.at("phases_ms").contains("helper_start") &&
+           running_record.at("phases_ms").at("engine_start_to_ready").is_number_integer());
     const auto status = ss::control(c.run, "status", 2s);
     assert(status && status->value("ok", false) && status->at("state") == "running" &&
            status->at("port") == c.port);

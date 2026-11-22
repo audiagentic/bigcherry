@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_090858_a-start-that-measures-instead_5452",
+  "files": [
+    "engines/radiance/components/serving/stored_manifest_cache.cpp",
+    "engines/radiance/components/serving/stored_manifest_cache.h",
+    "engines/radiance/components/serving/stored_manifest_cache_test.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/session_test.cpp",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/README.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "stored_manifest_for is replaced by lookup_stored_manifest, which returns a classified outcome (hit, absent, index_unreadable, static_key_changed naming the moved inputs, manifest_missing, integrity_mismatch) and the session adds carried_plan_unusable and live_admission_refused. bc-serve prints one stderr line for a reuse or a miss. The named-config index optionally records one digest per static input (no contents) so a key change names which input moved. session.json records plan_reuse and monotonic per-phase milliseconds (yaml_inspect, runtime_identity, store_lookup, replay or measure, helper_start, engine_start_to_ready). Nothing is logged on a decode path. Tests: bc_stored_manifest_cache_test, bc_serving_test, bc_session_stored_test, bc_session_test pass in a standalone serving build, no GPU.",
+  "timestamp-utc": "2026-11-22T09:08:58.493999Z",
+  "user-summary-candidate": "A start that measures instead of reusing its stored plan now says why in one line, naming the changed input, and the session record keeps what each start phase cost."
+}

@@ -1728,7 +1728,19 @@ void session_engine_plan(Fixture& t) {
         replay_inspections = 0;
 
         std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
-        const auto hit = ss::plan_engine_only(gated, gated_run, stored_hooks);
+        std::ostringstream hit_err;
+        std::streambuf* const err_before = std::cerr.rdbuf(hit_err.rdbuf());
+        const auto hit = [&] {
+            struct Restore { std::streambuf* b; ~Restore() { std::cerr.rdbuf(b); } } restore{err_before};
+            return ss::plan_engine_only(gated, gated_run, stored_hooks);
+        }();
+        // The reuse is named once on stderr and recorded with the planning phase durations.
+        const std::string hit_line = hit_err.str();
+        assert(hit_line.find("bc-serve: stored plan reused") == 0 &&
+               std::count(hit_line.begin(), hit_line.end(), '\n') == 1);
+        assert(hit.plan_reuse.at("outcome") == "hit" && hit.phase_ms.contains("yaml_inspect") &&
+               hit.phase_ms.contains("runtime_identity") && hit.phase_ms.contains("store_lookup") &&
+               hit.phase_ms.contains("replay"));
         assert(hit.manifest == original_manifest && hit.summary.at("replay") == true &&
                hit.stored_sha256 == bc::serving::file_sha256(original_manifest));
         assert(replay_inspections == 2 && replay_admissions == 1);   // the device-free config parse and the admission inspect
@@ -1767,13 +1779,14 @@ void session_engine_plan(Fixture& t) {
         const std::vector<std::string> carried_roles(inspector_roles.begin() + static_cast<long>(roles_before),
                                                      inspector_roles.end());
         assert(!carried.summary.contains("replay") && carried.manifest.parent_path() == rebuilt_run);
+        assert(carried.plan_reuse.at("outcome") == "live_admission_refused" && carried.phase_ms.contains("measure"));
         assert(std::find(carried_roles.begin(), carried_roles.end(), "native v3 measuring engine") ==
                    carried_roles.end() &&
                std::count(carried_roles.begin(), carried_roles.end(), "native v3 measured writer") == 1);
         assert(carried.summary.at("plan_carried_from").at("attempt") == original_index.native_measurement->attempt_id &&
                carried.summary.at("plan_carried_from").at("engine_identity") !=
                    bc::serving::engine_identity(rebuilt.engine_binary, home));
-        assert(ss::stored_manifest_for(cache_tripwire, ss::read_stored_index(cache_tripwire).key) == carried.manifest);
+        assert(ss::lookup_stored_manifest(cache_tripwire, ss::read_stored_index(cache_tripwire).key).manifest == carried.manifest);
         fs::remove(native_yaml);
 
         // A stored measurement the new inputs cannot use measures afresh: here the stored plan's rank record is
@@ -1787,7 +1800,17 @@ void session_engine_plan(Fixture& t) {
             fs::create_directories(unusable_run);
             std::ofstream(native_yaml, std::ios::binary) << native_yaml_bytes;
             const size_t before = inspector_roles.size();
-            const auto measured_again = ss::plan_engine_only(rebuilt, unusable_run, admission_hooks);
+            std::ostringstream miss_err;
+            std::streambuf* const miss_before = std::cerr.rdbuf(miss_err.rdbuf());
+            const auto measured_again = [&] {
+                struct Restore { std::streambuf* b; ~Restore() { std::cerr.rdbuf(b); } } restore{miss_before};
+                return ss::plan_engine_only(rebuilt, unusable_run, admission_hooks);
+            }();
+            // A miss that measures again says why, in one line.
+            const std::string miss_line = miss_err.str();
+            assert(measured_again.plan_reuse.at("outcome") == "carried_plan_unusable" &&
+                   miss_line.find("bc-serve: no stored plan reused (stored plan unusable: ") == 0 &&
+                   std::count(miss_line.begin(), miss_line.end(), '\n') == 1);
             assert(!measured_again.summary.contains("plan_carried_from") &&
                    std::find(inspector_roles.begin() + static_cast<long>(before), inspector_roles.end(),
                              "native v3 measuring engine") != inspector_roles.end());
