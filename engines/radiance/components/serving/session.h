@@ -265,16 +265,6 @@ int start_detached(const std::vector<std::string>& self_argv, const std::filesys
 std::optional<nlohmann::json> control(const std::filesystem::path& run_dir, const std::string& command,
                                       std::chrono::milliseconds timeout);
 
-/* Control-socket safety (used by the owner before it accepts; public so the tests exercise each check).
- * run_dir_refusal: why `dir` is not a directory owned by `owner` closed to group and world; nullopt when it is.
- * socket_refusal: why `path` is not a socket (a symlink is not) owned by `owner` with exactly `mode`.
- * control_peer_allowed: whether a client with effective uid `peer` may use the socket of an owner running as
- * `owner`: the owner itself, or root (which reaches the 0600 socket and the owner's processes regardless). */
-std::optional<std::string> run_dir_refusal(const std::filesystem::path& dir, uid_t owner);
-std::optional<std::string> socket_refusal(const std::filesystem::path& path, uid_t owner, mode_t mode);
-bool control_peer_allowed(uid_t peer, uid_t owner);
-std::optional<uid_t> peer_uid(int fd);
-
 /* The last session record in the run directory, if any. */
 std::optional<nlohmann::json> read_record(const std::filesystem::path& run_dir);
 
