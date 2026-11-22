@@ -16,9 +16,10 @@ distributed across cards. **llama.cpp** remains an active secondary engine.
 for different AMD generations. Remote-MoE workers exchange routed expert
 results with the engine over pinned host memory. The main validated engine
 patches provide the remote hand-off and a HyperConn up-mix kernel selector.
-The v2.2.0 candidate starts from native Radiance YAML. The BigCherry
-owner records the admitted YAML and measured device and helper plan for replay.
-Final quality, performance and installation checks remain in progress.
+The released bc-radiance 2020.1.1 line uses upstream Radiance v2.2.0 and
+native Radiance YAML. The admitted configuration and device/helper plan are
+recorded for replay; matched multi-card quality and performance qualification
+remains outstanding.
 [Components and patches](docs/reference/engines/radiance/ENHANCEMENTS.md).
 
 **llama.cpp.** BigCherry records real HIP matrix operations, measures kernel
@@ -34,9 +35,10 @@ llama.cpp has 70.
 
 ## Current-pin throughput
 
-Fresh aggregate output and prefill throughput on the **v2.2.0** candidate
-is still being qualified for these layouts. The Flash-Next model page records a dated cross-pin
-check, not a matched unmodified-stock throughput A/B. Earlier results remain archived.
+Fresh aggregate output and prefill throughput on the released upstream
+**v2.2.0** pin are still being qualified for these layouts. The Flash-Next
+model page records a dated cross-pin check, not a matched unmodified-stock
+throughput A/B. Earlier results remain archived.
 
 | Model and layout | Prefill tokens/s | Aggregate output tokens/s |
 | --- | ---: | ---: |

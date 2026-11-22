@@ -1,6 +1,6 @@
 # Radiance
 
-The released **bc-radiance 2020.0.0** line incorporates upstream Radiance
+The released **bc-radiance 2020.1.1** line incorporates upstream Radiance
 **v2.2.0**. Older v1.17.0 measurements remain historical comparison evidence. The custom build uses RDNA2 and RDNA3 helpers alongside an RDNA4 engine GPU, with
 expert placement adapted to differing GPU memory and bandwidth.
 
@@ -79,7 +79,7 @@ claim argument equality from trace rows alone.
 
 ## Current-pin throughput
 
-The released **2020.0.0** line still needs matched quality and performance
+The released **2020.1.1** line still needs matched quality and performance
 checks for these multi-card layouts. Fresh aggregate throughput and prefill
 measurements remain pending. The Flash-Next model page
 records a dated cross-pin check, not a matched unmodified-stock throughput comparison.
@@ -88,17 +88,4 @@ The model workloads differ and must not be ranked against one another.
 | Model and layout | Prefill tokens/s | Aggregate output tokens/s |
 | --- | ---: | ---: |
 | [Flash-Next](models/qwen3.8-flash-next.md), R9700 + two RX 7900 XTX + RX 6900 XT | Not qualified | Not qualified |
-| [Qwen3.8-27B MXFP4](models/qwen3.8-27b.md), R9700; two-XTX alternative unqualified | Not qualified | Not qualified |
-| [Qwen3.6-35B-A3B FP8](models/qwen3.6-35b-a3b.md), R9700 | Not qualified | Not qualified |
-
-Earlier v1.14.0 results, including long-context and concurrent serving
-measurements, are retained in the [archive](../../../archive/radiance/v1.14-model-results/).
-The Flash-Next four-card layout has a documented quality trade-off.
-
-## Further detail
-
-The [build and serving runbook](RUNBOOK.md) covers composition and
-measurement; [GPU layouts](LAYOUTS.md) covers helper card budgets;
-[serving manifest](SERVING_MANIFEST.md) covers how the owner makes a manifest from a native config and how the engine starts from it.
-Manifest startup is qualified against the
-[serving manifest specification](../../../design/serving-manifest-v2/spec.md).
+| [Qwen3.8-27B MXFP4](models/qwen3.8-27b.md), R9700; two-XTX alternative unqualified
