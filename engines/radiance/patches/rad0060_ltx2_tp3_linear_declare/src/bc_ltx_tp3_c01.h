@@ -14,7 +14,7 @@ struct C01Slice {
     int64_t offset;       // rank's start inside each bank or input K
     int64_t width;        // local rows per fused bank, or local input K
     int64_t head_dim;     // Rows: whole-head test; Columns: 0
-    int banks;            // Rows: 2 or 3; Columns: 0
+    int banks;            // Rows: 1, 2 or 3; Columns: 0
     bool defer_bias = false; // output columns: requires one later post-reduction bias owner
 
     static constexpr C01Slice rows(int64_t full_bank, int64_t start, int64_t local,
@@ -34,7 +34,7 @@ struct C01Slice {
             width > source_width - offset)
             return false;
         if (mode == Mode::Rows)
-            return !defer_bias && (banks == 2 || banks == 3) && head_dim > 0 &&
+            return !defer_bias && (banks >= 1 && banks <= 3) && head_dim > 0 &&
                    width <= std::numeric_limits<int64_t>::max() / banks &&
                    source_width % head_dim == 0 && offset % head_dim == 0 &&
                    width % head_dim == 0 && n_out == banks * width &&

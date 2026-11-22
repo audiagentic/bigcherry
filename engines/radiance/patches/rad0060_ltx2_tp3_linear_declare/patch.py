@@ -14,18 +14,19 @@ from bigcherry.patcher import Edit, FilePatch
 
 _SRC = Path(__file__).resolve().parent / "src"
 _SHA256 = {
-    "bc_ltx_tp3_c01.h": "c13114e5726441235e0a4a92f8f61c57c1b3cb351dade5290bbfb15530c7484a",
-    "preflight.inc": "67d20f9f6eae9f9b107560f771672ff8198d80fa63d39eb27d17a5038999b35f",
-    "bias.inc": "7b4b7f90810a8e6387e669a8c2db11e4c160ca77466ab86ae1b3da2fb5747e50",
-    "linear.inc": "5e6af267c582872681306a492769879fc90609cf2b21284f903555239a06eacb",
+    "bc_ltx_tp3_c01.h": "5bf943238a78644f642c5d00c08d6d14721255a13e22ea9921a664a0de5f6b65",
+    "preflight.inc": "4d8d82fea9ddef9fc07d158d05104cc47005a6b5ea7dbcd22d05d1148f730596",
+    "bias.inc": "50f1020c9764408aa45884f7024243598cd41712f5e91b38e33d9262811c2392",
+    "linear.inc": "4c378fb782fb7bb58185273baa29a1c73f07f7eb86b86038b08236fd482c10f3",
     "attn_state.inc": "8139f6349178f6d5612fb3f4e9d61f7685d1fb4b5bfeaf4f24fd04d46673fdcb",
-    "attn_geometry.inc": "0affad412d46274f186ef7d6ce483b8830a34301983824e52bec1651a53a354b",
+    "attn_geometry.inc": "a1df6c4946a64da8b3d1e8a459de338685db4d86d1c4847194d200ca209ec7e5",
     "attn_output.inc": "8159c4dfd436138b16db74e1cc25a6f9ae86408e22a3df0588e9b80f7309b965",
     "attn_norm.inc": "2758c87db3c30112f955b3db7fc82ce0d35dd4510cdeec09f32a39a6523fba83",
     "attn_rope.inc": "d4a9fdacfee3c5752b26839bcc2eccd063d70baf5b2145b3be56553018cbc7ff",
     "attn_core.inc": "4a52ed788b8204bede7fd898cd9b17a815d42397aef2df89b4c45a5d45a88835",
+    "attn_cross.inc": "6f51439e1ba144957526a4e41942e8bd498f55dda83905dbbf518354ba54297f",
     "global_rms.inc": "18bc49f405708bd19151def2054ba626bdb808ff11924c4d049afbd6ac122bbc",
-    "post_reduce.inc": "f47113a5c2f30d107a1f05f5e189447ea9b16ae35d5e64cb6aecfbaeff3cd64d",
+    "post_reduce.inc": "c5e4ddc2c42bdefbb5c72225ea85270712f3b8625817d61116e40231c5ee6808",
 }
 
 
@@ -99,6 +100,12 @@ PATCHES = (
                 'BC_LTX3_C06_QKV',
             ),
             _edit(
+                'ltx03-cross-qkv-shard',
+                '    else {\n        RAD_ARCH_TRY(A.qkv.declare(b, nm, g, nm.f("%s.q", dn), { w("to_q") }, { bs("to_q") }, {}, in,\n                                   qdim, acc, group, xin, bq, rows_q));\n        RAD_ARCH_TRY(A.kv.declare(b, nm, g, nm.f("%s.kv", dn), { w("to_k"), w("to_v") },\n                                  { bs("to_k"), bs("to_v") }, { in, in }, 2 * in, kvdim, acc, group,\n                                  *kvin, bkv, rows_k));\n    }\n',
+                _source('attn_cross.inc'),
+                'BC_LTX3_LTX03_CROSS_KV',
+            ),
+            _edit(
                 'ltx-c06-out-reduce',
                 '    RAD_ARCH_TRY(A.out.declare(b, nm, g, nm.f("%s.out", dn), { w("to_out.0") }, { bs("to_out.0") }, {},\n                               odim, in, acc, group, ao, y, rows_q));\n',
                 _source("attn_output.inc"),
@@ -161,6 +168,7 @@ PATCHES = (
                 "    int64_t    N = 0, K = 0;\n",
                 "    int64_t    N = 0, K = 0;\n"
                 "    bool deferred_bias = false; /* BC_LTX3_C01_DEFERRED_STATE */\n"
+                "    bool deferred_has_bias = false;\n"
                 "    rad_op post_reduce = 0; /* BC_LTX3_C04_REDUCE_STATE */\n",
                 "BC_LTX3_C01_DEFERRED_STATE",
             ),
@@ -216,8 +224,8 @@ PATCHES = (
             _edit(
                 "ltx-c04-step-reduce",
                 "        if (op_b) RAD_ISSUE_N(c, op_b, rows, out, RAD_W(bias), out);\n",
-                "        if (deferred_bias && (!post_reduce || !op_b || !bias)) {\n"
-                '            rad_step_fail(c, "LTX TP3 deferred projection was not reduced and biased");\n'
+                "        if (deferred_bias && (!post_reduce || (deferred_has_bias && (!op_b || !bias)))) {\n"
+                '            rad_step_fail(c, "LTX TP3 deferred projection was not finalized");\n'
                 "            return;\n"
                 "        }\n"
                 "        if (deferred_bias)\n"
