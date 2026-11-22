@@ -346,8 +346,9 @@ if(BUILD_TESTING)
   # All declared component tests fail fast on a hung process in CI.
   get_property(bc_component_ctests DIRECTORY PROPERTY TESTS)
   set_tests_properties(${bc_component_ctests} PROPERTIES TIMEOUT 120)
-  # The owner tests plan every case through plan_engine_only (minutes, not seconds).
-  set_tests_properties(bc_session_test_part1 bc_session_test_part2 bc_session_test_part3 bc_session_test_part4 PROPERTIES TIMEOUT 600)
+  # The owner tests plan every case through plan_engine_only (minutes, not seconds); bc_serving_test runs the owner
+  # through a full quality session per case and takes a minute and a half on a CI runner.
+  set_tests_properties(bc_serving_test bc_session_test_part1 bc_session_test_part2 bc_session_test_part3 bc_session_test_part4 PROPERTIES TIMEOUT 600)
   set_tests_properties(bc_release_install_test PROPERTIES TIMEOUT 300)
   set_tests_properties(bc_session_stored_test bc_session_host_start_test bc_release_install_test PROPERTIES RESOURCE_LOCK rsc02_fake_owner)
 endif()
