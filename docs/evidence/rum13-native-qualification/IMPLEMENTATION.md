@@ -16,12 +16,12 @@ dispositions and the LTX lab reference.
 
 | Metric | Before (C07 + C08) | After RUM13 | Reduction |
 | --- | ---: | ---: | ---: |
-| CMake | 104 lines | 73 | 31 |
+| CMake | 104 lines | 72 | 32 |
 | Native C++ | 271 lines | 254 | 17 |
 | Python bounded runner | 68 lines | 68 | 0 |
-| Lab README | 89 lines | 72 | 17 |
-| **Implementation source total** (CMake/C++/Python) | **443** | **395** | **48 lines** |
-| **Lab package total** | **532** | **467** | **65 lines** |
+| Lab README | 89 lines | 78 | 11 |
+| **Implementation source total** (CMake/C++/Python) | **443** | **394** | **49 lines** |
+| **Lab package total** | **532** | **472** | **60 lines** |
 | Executable build targets | 2 | 1 | 1 removed |
 | HIP/AQL preprocessor alternative blocks | 7 | 0 | 7 removed |
 | HIP-off standalone core dependency | 1 | 0 | 1 removed |
@@ -34,7 +34,11 @@ the native `rad_bc_shared_slot`. It preserves native gfx1100
 `libr3.so` and gfx1201 `libr4d.so` kernel rows, their shared
 rendezvous, BF16 ascending-rank exact sum, and the original
 eleven × three rank numerical cases. No installed production
-file or patch was changed.
+file or patch was changed. The earlier hard-coded media paths
+were replaced with Radiance's existing `PkgConfig` discovery for
+`libavformat`, `libavcodec`, `libavutil`, `libswscale`
+and `libswresample`. A fresh native CMake configure with the
+Radiance-matched CMake prefixes, build and CTest all passed.
 
 ## Host verification
 
@@ -58,6 +62,9 @@ file or patch was changed.
 
 Leased exclusive three-card hardware (gfx1100 + gfx1100 + gfx1201)
 with native Radiance AQL and HIP-enabled 2.2 archive:
+The final pkg-config-linked build was also qualified on the same
+three physical GPUs: one-shot 33/33 exact in ~0.41 s and
+two-shot 33/33 exact in ~0.41 s; this is whole-process elapsed time.
 
 | Row | Native rank × case comparisons | Exit | Whole-run time |
 | --- | ---: | ---: | ---: |
@@ -81,8 +88,8 @@ preserved as diagnostic evidence in
 released; `agent-lease status` reported `gpu: free` and
 `rocm-smi --showpids` reported **no KFD PIDs**.
 
-**Raw results, outside Git:** task work root
-`rum13-native-aql-proof/`, with one JSON+log pair per selected
+**Raw results, outside Git:** task work roots
+`rum13-native-aql-proof/` and `rum13-native-aql-pkgcfg-proof/`, with one JSON+log pair per selected
 native collective row and physical device map.
 
 ## Boundaries

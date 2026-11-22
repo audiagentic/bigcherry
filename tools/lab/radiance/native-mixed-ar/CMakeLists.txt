@@ -44,9 +44,12 @@ find_library(RUM13_HSA_RUNTIME NAMES hsa-runtime64
     PATHS "${_radiance_sdk_lib_dir}" NO_DEFAULT_PATH REQUIRED)
 set_property(TARGET radiance_mixed_ar_gate APPEND PROPERTY
     BUILD_RPATH "${_radiance_sdk_lib_dir}")
-target_link_options(radiance_mixed_ar_gate PRIVATE
-    -Wl,--export-dynamic
-    -Wl,-rpath,/opt/ffmpeg6/lib)
+# Use the same upstream Radiance FFmpeg dependency resolution, rather than
+# a host-specific hard-coded shared-library path or alternate codec stack.
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(RUM13_FFMPEG REQUIRED IMPORTED_TARGET
+    libavformat libavcodec libavutil libswscale libswresample)
+target_link_options(radiance_mixed_ar_gate PRIVATE -Wl,--export-dynamic)
 target_link_libraries(radiance_mixed_ar_gate PRIVATE
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,${RUM13_NATIVE_CORE_LIB}>"
     hip::host ${RUM13_HSA_RUNTIME}
@@ -58,11 +61,7 @@ target_link_libraries(radiance_mixed_ar_gate PRIVATE
     "${_engine_root}/vendor/librad_vendor_yyjson.a"
     "${_engine_root}/vendor/librad_vendor_httplib.a"
     "${_engine_root}/vendor/librad_vendor_ryml.a"
-    "/opt/ffmpeg6/lib/libavformat.so"
-    "/opt/ffmpeg6/lib/libavcodec.so"
-    "/opt/ffmpeg6/lib/libavutil.so"
-    "/opt/ffmpeg6/lib/libswscale.so"
-    "/opt/ffmpeg6/lib/libswresample.so"
+    PkgConfig::RUM13_FFMPEG
     dl pthread)
 
 # The duplicate-ordinal negative must fail before loading plugins or devices.

@@ -26,10 +26,16 @@ These historical documents do not define supported new launch modes.
 Use one **matching** source/build/sdk, not mixed or fallback archives:
 
 ```sh
-cmake -S tools/lab/radiance/native-mixed-ar   -B "$BC_WORK_ROOT/rum13-native-aql-build"   -DRADIANCE_SOURCE_ROOT="$RADIANCE_22_SOURCE"   -DRUM13_NATIVE_CORE_LIB="$RADIANCE_22_HIP_CORE"   -DCMAKE_PREFIX_PATH=/opt/rocm
+cmake -S tools/lab/radiance/native-mixed-ar   -B "$BC_WORK_ROOT/rum13-native-aql-build"   -DRADIANCE_SOURCE_ROOT="$RADIANCE_22_SOURCE"   -DRUM13_NATIVE_CORE_LIB="$RADIANCE_22_HIP_CORE"   -DCMAKE_PREFIX_PATH="$RADIANCE_NATIVE_BUILD_PREFIXES"
 cmake --build "$BC_WORK_ROOT/rum13-native-aql-build" --parallel 2
 ctest --test-dir "$BC_WORK_ROOT/rum13-native-aql-build" --output-on-failure
 ```
+
+Set `RADIANCE_NATIVE_BUILD_PREFIXES` to the **same CMake
+dependencies/prefixes used for the pinned Radiance native build**,
+including its HIP/ROCm and FFmpeg installations. The lab uses
+Radiance's existing `PkgConfig`-resolved FFmpeg dependency instead
+of referencing a host-specific media library path.
 
 The build enforces the pinned **2.2.0** source and HIP-on receipt;
 one executable is produced: `radiance_mixed_ar_gate`. The negative
