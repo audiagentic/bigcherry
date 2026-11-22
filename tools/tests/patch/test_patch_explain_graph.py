@@ -11,7 +11,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
-from bigcherry import __main__ as cli  # noqa: E402
+from bigcherry.cli import main as cli  # noqa: E402
 from bigcherry.cli import engine_scope  # noqa: E402
 from bigcherry.patch import catalog as patch_catalog # noqa: E402
 
