@@ -205,6 +205,23 @@ int main() {
         s.effective_values["memory"] = {{"host_pool_mib", 1}, {"host_kv_mib", 2}};
         expect(ss::static_resolution_key(s) == with_transport,
                "the per-start transport name and derived host pool/KV never enter the key");
+        // The live heat file defaults to a path under the start's run directory: where it is written never
+        // decides the plan, whether it is recorded at all does.
+        s = base_with_model();
+        s.effective_values["handoff"] = {{"histogram", "/runs/first/heat.live"}};
+        const std::string with_histogram = ss::static_resolution_key(s);
+        s.effective_values["handoff"] = {{"histogram", "/runs/second/heat.live"}};
+        expect(ss::static_resolution_key(s) == with_histogram, "the run-directory heat path never enters the key");
+        s = base_with_model();
+        s.effective_values["handoff"] = {{"heat", "/prefix-a/heat/mixed.hot-first"}};
+        const std::string with_heat = ss::static_resolution_key(s);
+        s.effective_values["handoff"] = {{"heat", "/prefix-b/heat/mixed.hot-first"}};
+        expect(ss::static_resolution_key(s) == with_heat, "the installed location of the heat file never enters the key");
+        s.file_digests["heat.csv"][0] = 'b';
+        expect(ss::static_resolution_key(s) != with_heat, "changed heat bytes change the key");
+        s.effective_values["handoff"] = {{"histogram", "/runs/second/heat.live"}};
+        s.effective_values["handoff"] = {{"histogram", "off"}};
+        expect(ss::static_resolution_key(s) != with_histogram, "turning the heat recording off changes the key");
         s = base_with_model();
         s.ordered_devices[0]["vram_available_mib"] = 42;
         bool unexpected_live = false;
@@ -254,12 +271,11 @@ int main() {
             expect(line == "bc-serve: no stored plan reused (static key changed: power_profile); measuring",
                    "a miss prints one line naming the reason: " + line);
             auto other_file = s;
-            other_file.file_digests["/some/dir/site.toml"] = std::string(64, 'e');
+            other_file.file_digests["site"] = std::string(64, 'e');
             const auto added = ss::lookup_stored_manifest(index, ss::static_resolution_key(other_file),
                                                           ss::static_input_digests(other_file));
-            expect(added.changed_inputs.size() == 1 && added.changed_inputs[0].rfind("file:site.toml@", 0) == 0 &&
-                       ss::plan_reuse_line(added).find("/some/dir") == std::string::npos,
-                   "a new file input is named by base name, never by its path");
+            expect(added.changed_inputs.size() == 1 && added.changed_inputs[0] == "file:site (new)",
+                   "a new file input is named by its role");
             const auto unrecorded = ss::lookup_stored_manifest(index, std::string(64, 'a'));
             expect(unrecorded.outcome == Outcome::static_key_changed && !unrecorded.inputs_recorded &&
                        ss::plan_reuse_line(unrecorded).find("predates") != std::string::npos,

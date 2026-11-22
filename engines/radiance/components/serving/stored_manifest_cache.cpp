@@ -200,8 +200,17 @@ Json static_key_inputs(const StaticResolutionInputs& in) {
     // reuses the plan (the engine's admission still refuses one that does not fit).
     if (static_values.contains("engine") && static_values["engine"].is_object())
         static_values["engine"].erase("radiance_home");
-    if (static_values.contains("handoff") && static_values["handoff"].is_object())
-        static_values["handoff"].erase("shm");
+    if (static_values.contains("handoff") && static_values["handoff"].is_object()) {
+        auto& handoff = static_values["handoff"];
+        handoff.erase("shm");
+        // The heat file enters through file_digests by content; its path is the installed prefix's location.
+        handoff.erase("heat");
+        // Where live heat is written (by default under the start's run directory) is per-start; only whether it
+        // is recorded ("off" or not) can decide the plan.
+        if (handoff.contains("histogram") && handoff["histogram"].is_string() &&
+            handoff["histogram"].get<std::string>() != "off")
+            handoff["histogram"] = "on";
+    }
     if (static_values.contains("memory") && static_values["memory"].is_object()) {
         static_values["memory"].erase("host_pool_mib");
         static_values["memory"].erase("host_kv_mib");
@@ -242,10 +251,9 @@ std::map<std::string, std::string> static_input_digests(const StaticResolutionIn
         if (it.key() == "version")
             continue;
         if (it.key() == "inputs") {
-            // A file is named by its base name and a short hash of its path, never by the path itself.
+            // A file is named by its role in the config, never by its path.
             for (auto file = it.value().begin(); file != it.value().end(); ++file)
-                digests["file:" + std::filesystem::path(file.key()).filename().string() + "@" +
-                        sha256_hex(file.key()).substr(0, 8)] = file.value().get<std::string>();
+                digests["file:" + file.key()] = file.value().get<std::string>();
         } else {
             digests[it.key()] = digest_of(it.value());
         }

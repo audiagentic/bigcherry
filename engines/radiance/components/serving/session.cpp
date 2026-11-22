@@ -3047,26 +3047,28 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
                                                      {"vram_total_mib", detected->at("vram_total_mib")}});
         }
     }
-    auto file = [&](const fs::path& path) {
+    // Each input file is named by its role and keyed by its content identity, never by where it sits: the
+    // installed prefix and the run directory differ between starts and builds, the bytes are what decide the plan.
+    auto file = [&](const std::string& role, const fs::path& path) {
         if (path.empty())
             return;
         const auto absolute = fs::absolute(path).lexically_normal();
-        static_inputs.file_digests[absolute.string()] = complete_file_identity(absolute);
+        static_inputs.file_digests[role] = complete_file_identity(absolute);
     };
-    for (const auto& config : in.options.configs)
-        file(config);
-    file(in.options.site);
-    file(in.options.profile);
-    file(in.options.calibration_cache);
-    file(in.live_policy_file);
-    file(in.calibration_prompts_a);
-    file(in.calibration_prompts_b);
-    file(in.calibration_store);
-    file(in.calibration_records_file);
+    for (size_t i = 0; i < in.options.configs.size(); ++i)
+        file("config/" + std::to_string(i), in.options.configs[i]);
+    file("site", in.options.site);
+    file("profile", in.options.profile);
+    file("calibration_cache", in.options.calibration_cache);
+    file("live_policy", in.live_policy_file);
+    file("calibration_prompts_a", in.calibration_prompts_a);
+    file("calibration_prompts_b", in.calibration_prompts_b);
+    file("calibration_store", in.calibration_store);
+    file("calibration_records", in.calibration_records_file);
     if (values.contains("handoff") && values.at("handoff").contains("heat") &&
         values.at("handoff").at("heat").is_string() &&
         !values.at("handoff").at("heat").get<std::string>().empty())
-        file(values.at("handoff").at("heat").get<std::string>());
+        file("handoff.heat", values.at("handoff").at("heat").get<std::string>());
     NamedCache cache{static_resolution_key(static_inputs), index, static_inputs.model_digest};
     cache.inputs = static_input_digests(static_inputs);
     return cache;
