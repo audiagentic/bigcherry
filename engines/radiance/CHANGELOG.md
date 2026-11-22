@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.4.0...bc-radiance-2020.5.0) (2026-11-22)
+
+
+### New and changed
+
+* **serving:** bc-serve quality applies forced placement steps before scoring ([#1385](https://github.com/audiagentic/bigcherry/issues/1385)) ([110518d](https://github.com/audiagentic/bigcherry/commit/110518d9f970977935c55e3f83fd89d6870535ce))
+
 ## [2020.4.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.3.0...bc-radiance-2020.4.0) (2026-11-22)
 
 
