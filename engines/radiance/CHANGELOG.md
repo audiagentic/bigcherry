@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.5.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.5.0...bc-radiance-2020.5.1) (2026-11-22)
+
+
+### Fixes
+
+* **tests:** the admission ledger shutdown check no longer depends on which thread runs first ([#1417](https://github.com/audiagentic/bigcherry/issues/1417)) ([9f3a640](https://github.com/audiagentic/bigcherry/commit/9f3a64007f651d2570e6b7fec83bbca11597306e))
+
 ## [2020.5.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.4.0...bc-radiance-2020.5.0) (2026-11-22)
 
 
