@@ -1,5 +1,6 @@
 #include "moe_remote_hook.h"
 #include "hook_identity.h"
+#include "helper_registration_wait.h"
 #include "layer_map_wait.h"
 #include "../serving/bc_engine_settings.h"
 #include "admission_completion.h"
@@ -676,21 +677,12 @@ bool open_mailbox(HookState& g, uint32_t capacity_limit) {
      * (sticky helper_fault): the generation still opens, its map waits return at once and its first remote step
      * fails, rather than serving with experts it was told the helpers hold. */
     {
-        /* Helpers attach before the engine starts; the bound is the protocol's readiness deadline, not a literal. */
-        timespec deadline = deadline_after(layer_map_bound());
-        const WaitResult r = wait_for(g.hdr, &deadline, [&] {
-            g.watch.notice();
-            const uint32_t n = load(&g.hdr->helper_count);
-            for (uint32_t i = 0; i < n; ++i)
-                if (!g.watch.watching(i)) return false;
-            return n > 0;
-        });
-        if (r != WaitResult::Ready) {
-            std::fprintf(stderr, "libr3: R3_MOE_WORKER helpers not all registered and watched within the readiness deadline (%s); "
+        /* The bound is the helper startup protocol's deadline (registration_bound), not the placement readiness one. */
+        const WaitResult r = await_helpers_registered(g.hdr, g.watch, registration_bound());   /* raises the fault on a miss */
+        if (r != WaitResult::Ready)
+            std::fprintf(stderr, "libr3: R3_MOE_WORKER helpers not all registered and watched (%s); "
                          "failing the helper path\n",
-                         r == WaitResult::Timeout ? "timeout" : r == WaitResult::Fault ? "helper fault" : "wait error");
-            raise_fault(g.hdr);
-        }
+                         r == WaitResult::Timeout ? "startup deadline" : r == WaitResult::Fault ? "helper fault" : "wait error");
     }
     uint32_t epoch = 0;
     uint8_t slot = 0;

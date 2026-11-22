@@ -741,6 +741,8 @@ int main() {
         self.assertNotIn("r3_moe_mailbox_enabled", hook)
         self.assertNotIn('rad_moe_remote', hook)
         self.assertIn('await_layer_consumed(g.hdr, layer, layer_map_bound())', hook)
+        self.assertIn('await_helpers_registered(g.hdr, g.watch, registration_bound())', hook)
+        self.assertNotIn('kRegisterTimeoutS', hook)
         self.assertIn('slot_map[(uint32_t)le] < 0', ops)
         self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)
         self.assertIn('{"as", RAD_OPD_IN, 0}', ops)
