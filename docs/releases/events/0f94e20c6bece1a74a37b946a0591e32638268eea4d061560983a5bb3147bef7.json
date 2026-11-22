@@ -1,0 +1,18 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_101005_campaign-radiance-arms-now-run_9887",
+  "files": [
+    "tools/bigcherry/engine_adapters/radiance_plan.py",
+    "tools/bigcherry/engine_adapters/radiance.py",
+    "tools/bigcherry/engine_adapters/base.py",
+    "tools/bigcherry/campaign/benchmark.py",
+    "tools/bigcherry/release/ci_bundle.py",
+    "tools/lab/radiance/flashnext-parity.sh",
+    "tools/tests/campaign/test_native_only_arms.py",
+    "tools/tests/campaign/test_server_benchmark_capture.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Removed the Python campaign manifest planner (radiance_plan.py, its exit-10/exit-11 writer flow and write_serving_manifest hook) and the v2 control branch of flashnext-parity.sh. Campaign serving arms are native arms only (config + native_config, scored by bc-serve quality); layout/set/heat serving arms are refused with a message naming the native form. Tests first: planner module gone, static scan, parity script has no v2 branch, refusal messages.",
+  "timestamp-utc": "2026-11-22T10:10:05.808400Z",
+  "user-summary-candidate": "Campaign Radiance arms now run through the native serving owner only; the old Python planner was removed."
+}

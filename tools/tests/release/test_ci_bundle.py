@@ -475,7 +475,6 @@ class CiBundleTests(unittest.TestCase):
             "tools/bigcherry/core/engines.py", "tools/bigcherry/core/canonical.py",
             "tools/bigcherry/engine_adapters/base.py",
             "tools/bigcherry/engine_adapters/radiance.py",
-            "tools/bigcherry/engine_adapters/radiance_plan.py",
             "tools/bigcherry/engine_adapters/radiance_inventory.py",
             "tools/bigcherry/engine_adapters/radiance_resources.py",
             "tools/bigcherry/engine_adapters/radiance_manifest.py",

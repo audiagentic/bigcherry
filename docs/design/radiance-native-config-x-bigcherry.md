@@ -284,8 +284,7 @@ description`; `model` -> `models.<id>.model`; `ranks` -> `x-bigcherry.ranks`; `t
   selection (`<prefix>/configs/<name>.yaml`).
 - Generated serving contract: delete the v2 contract (`components/serving/contract/serving.toml`, generated
   codec/types/schema) with the bump; v3 is the only contract on main after it.
-- Python tooling: `tools/bigcherry/cli/layout_cmds.py`, `engines/radiance/layouts/*`, campaign plan tests
-  (`tools/tests/campaign/test_radiance_plan.py`), release packer and `runtime_assets.py` (ship the YAML files only).
+- Python tooling: `tools/bigcherry/cli/layout_cmds.py`, `engines/radiance/layouts/*`, release packer and `runtime_assets.py` (ship the YAML files only).
 - Lab harnesses: `tools/lab/radiance/flashnext-parity.sh` and arm runners (`FLASHNEXT_PARITY_SETS` becomes YAML-path
   `--set` for lab arms, or a variant file for anything kept).
 - Docs: `engines/radiance/configs/README.md` (format = this file), `docs/reference/engines/radiance/SERVING_MANIFEST.md`,
