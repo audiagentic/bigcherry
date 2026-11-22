@@ -97,8 +97,11 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 2026-11-22: generic native resident-weight materialization is now assigned to RUM14 (patching-radiance-upstream). LTX02 must consume ONE Engine-owned source-loading pipeline instead of copying plan_container_weight, RelayoutPool or sweep_container. C06 declaration/24 source-backed native relayout hook calls and 108 initialized AQL instances per GPU order are not full checkpoint-resident issue or TP1 parity. After RUM14 acceptance, LTX02 alone owns actual video/audio C06 Act/Lin/attn_core issue and TP1 numerical comparison, reversed-device/fault tests and unchanged production TP3 refusal.
 
+2026-11-22 new execution evidence from merged PR #1315 (c72ed6be3): the actual C06 RadCtx self-attention graph issues real checkpoint IQ8R weights for video/audio block 0, both legal 8/8/16 and 12/12/8 splits, host 4/4 and AQL 4/4 in BOTH gfx1100/gfx1100/gfx1201 orders. Three exact native collective calls/rank and 108 native instances/order; reversed AQL ordinals give 12,288/12,288 identical BF16 outputs. Same-split GPU-vs-host relative L2 is 0.330–0.422%, and changing head partition on host changes 1,605 video / 736 audio BF16 elements; neither comparison is an approved TP1 parity tolerance. Inputs are one-row deterministic seeded BF16, NOT captured TP1 activations. 16/64-row issue, reference activation parity, bounded fault/cancel, phase performance and production TP3 refusal still await validation. The test-only source-plane gather and memcpy/GPU pointer staging MUST be replaced/deleted under generic RUM14 before shared loader acceptance, without discarding this issued C06 coverage. PR #1316 fixes GPU coordinate allocation unwind; source and numeric evidence is docs/evidence/2026-11-22-ltx25-ltx02-c06-issued-attention/README.md.
+
 ## Change Log
 
 - 2026-11-22T03:06:26.779657+00:00 (created-by): Created by planning-audit
 - 2026-11-22T03:14:01.870524+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T08:21:48.151528+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T08:36:27.861283+00:00 (updated-by): Updated: section:notes
