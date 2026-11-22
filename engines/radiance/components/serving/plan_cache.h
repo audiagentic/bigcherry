@@ -3,6 +3,7 @@
 #include "serving_types.h"   // bc::serving::v2::EnginePlan, the generated v1 type
 #include "v2/native_config_snapshot.h"
 
+#include <cstdint>
 #include <filesystem>
 #include <optional>
 #include <string>
@@ -27,6 +28,11 @@ std::string gpu_inventory_digest(const nlohmann::json& gpus);
 /* The engine build's identity: sha256 over the engine binary and every regular file under its runtime home (plugins,
  * kernels, helpers), by relative path and content. */
 std::string engine_identity(const std::filesystem::path& binary, const std::filesystem::path& radiance_home);
+
+/* The bytes are hashed once per process for as long as no file's size, inode, modification or change time moves; every
+ * later call in a start returns the same digest after a stat of each file, and a file that changed is hashed again.
+ * Counts the content hashes run, so a test can prove a start reads the runtime once. */
+uint64_t engine_identity_hash_runs();
 
 /* What the key covers: the cache version, the model and engine identities, the engine card's architecture and VRAM, and
  * the engine arguments the launcher passes through verbatim (they can change the plan, e.g. --kv-resident), and the
