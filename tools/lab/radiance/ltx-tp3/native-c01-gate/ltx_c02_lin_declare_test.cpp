@@ -35,11 +35,11 @@ using rad::Registry;
 static void need(bool ok, const std::string& why) {
     if (!ok) throw std::runtime_error(why);
 }
-static RadBuildCtx context(int rank) {
+static RadBuildCtx context(int rank, int world = 3, int64_t max_tok = 4) {
     RadBuildCtx c{};
     c.rank = rank;
-    c.world_size = 3;
-    c.max_tok = 4;
+    c.world_size = world;
+    c.max_tok = max_tok;
     c.max_seqs = 1;
     c.max_ctx = 4096;
     c.scope = "";
@@ -342,6 +342,14 @@ struct C06Issued {
     int rank=0;
     bool audio=false, gpu=false;
     int64_t width=0, tokens=1, video_rows=1;
+    // LTX03 issued feed-forward lane (the production Lin/Act/unary do all the work).
+    struct Ffn {
+        ltx2::Lin up{}, down{};
+        ltx2::Act ff{};
+        rad_op act=0;
+        rad_buf upbuf=0;
+        bool reduce=true;   // false: deliberately omit the exact reduction (negative test)
+    } ffn;
     ~C06Issued() {
         ctx.reset();
         if (!gpu) return;
@@ -434,7 +442,7 @@ static std::vector<uint8_t> c06_gather(const RadFile& model,
 // checkpoint plane. The optional issued lane keeps the *same* selected
 // planes and kernel relayout output resident for the native Ctx.
 static void verify_c06_load_contract(const RadFile& model, rad::Program& program,
-                                      int rank,C06Issued* issued=nullptr) {
+                                      int rank,C06Issued* issued=nullptr,int world=3) {
     if (issued) {
         issued->weights.resize(program.weights.size());
         // Reserve before any device allocation: registering a successful
@@ -451,7 +459,7 @@ static void verify_c06_load_contract(const RadFile& model, rad::Program& program
         rad::PlaneShare shares[RAD_ENC_MAX_PLANES];
         std::string why;
         const int rc = rad::weight_share(w,model.encoding(*e),e->rank,e->shape,
-                                          3,rank,shares,&why);
+                                          world,rank,shares,&why);
         if (rc != RAD_OK)
             std::fprintf(stderr,"C06 weight %s rank %d: %s\n",
                          w.name.c_str(),rank,why.c_str());
@@ -791,6 +799,209 @@ static void run_self_attn(const RadFile& model, Registry& reg,
 }
 
 
+
+// ---------------------------------------------------------------------------
+// LTX03 issued FFN lane. One checkpoint FFN (video or audio) is built by the
+// production Lin::declare/Act/unary and *issued* on the host reference kernels:
+// TP3 (row-sharded up, column-sharded bias-free down partial, exact three-rank
+// reduction, the audio bias applied once after it) and a TP1 reference of the
+// very same checkpoint tensors and kernels (full width, no reduction).
+static void ltx03_ffn_issued_step(RadCtx* c, const RadBatch*) {
+    if (!c06_active) { rad_step_fail(c,"LTX03 FFN rank execution owner missing"); return; }
+    C06Issued& r=*c06_active;
+    uint16_t* input=(uint16_t*)r.ctx->buf_ptr(r.x.a.x);
+    if (!input) { rad_step_fail(c,"LTX03 FFN source activation missing"); return; }
+    if (!r.gpu)   // on a device the sample was uploaded before the step
+        for (int64_t j=0;j<r.width*r.tokens;++j) input[j]=c06_sample(j);
+    r.x.step(c,r.tokens);
+    r.ffn.up.step(c,r.x,r.ffn.upbuf,r.tokens);
+    RAD_ISSUE_N(c,r.ffn.act,r.tokens,ltx2::brows(r.ffn.upbuf,r.tokens),
+                ltx2::brows(r.ffn.ff.a.x,r.tokens));
+    r.ffn.ff.step(c,r.tokens);
+    if (r.ffn.reduce)
+        r.ffn.down.step(c,r.ffn.ff,r.output,r.tokens);
+    else   // omitted exact reduction: the bias-free partial GEMM only
+        r.ffn.down.l.step(c,r.ffn.ff.a,r.output,r.tokens,0,r.tokens,0);
+}
+
+// world==3: this rank's `owned` of `heads` FFN units, deferred bias-free down;
+// world==1: the whole FFN at full width (the TP1 reference).
+static void build_ffn_lane(const RadFile& model, Registry& reg, int64_t block, bool audio,
+                           int rank, int first, int owned, int heads, int world,
+                           int64_t tokens, std::unique_ptr<Builder>* out, C06Issued& r,
+                           bool aql = false) {
+    const std::string prefix = "dit.blk." + std::to_string(block) +
+                               (audio ? ".audio_ff" : ".ff");
+    const auto* wu = model.find(prefix + "_up.weight");
+    const auto* wd = model.find(prefix + "_down.weight");
+    need(wu && wd && wu->rank == 2 && wd->rank == 2 &&
+         wu->shape[0] == wd->shape[1] && wu->shape[1] == wd->shape[0],
+         "LTX03 issued FFN source dimensions disagree");
+    if (aql) need(rad_dev_set(rank) == RAD_OK, "LTX03 cannot select rank's AQL device");
+    r.gpu = aql;
+    const int64_t dim = wu->shape[1], width = wu->shape[0];
+    const bool tp = world == 3;
+    need(width % heads == 0 && (!tp || (first >= 0 && owned > 0 && first + owned <= heads)),
+         "LTX03 issued FFN ownership not derivable from checkpoint");
+    const int64_t unit = width / heads;
+    const int64_t offset = tp ? first * unit : 0, local = tp ? owned * unit : width;
+    const int64_t group = rad::arch::linear_w8h_group(model.encoding(*wu));
+    const auto us = ltx2::C01Slice::rows(width, offset, local, unit, 1);
+    const auto ds = ltx2::C01Slice::columns_deferred(width, offset, local);
+    need(!tp || (us.valid(local, dim, group) && ds.valid(dim, local, group)),
+         "LTX03 issued FFN ownership violates model K-scale group");
+    auto owned_builder = std::make_unique<Builder>(reg, metadata(), context(rank, world, tokens));
+    Builder& b = *owned_builder;
+    b.set_sources(rad::rad_container_sources(model));
+    ltx2::Names nm;
+    ltx2::Geom g{};
+    g.w_i8h = true; g.w_i8_group = group; g.world = world; g.wire_exact = 1;
+    g.max_tok = tokens; g.dtype = "bf16";
+    need(r.x.declare(&b,nm,g,"ltx03.ffn.input",tokens,dim) == RAD_OK &&
+         r.ffn.ff.declare(&b,nm,g,"ltx03.ffn.mid",tokens,local) == RAD_OK &&
+         r.x.q.op && r.ffn.ff.q.op, "LTX03 issued FFN Act declaration failed");
+    r.ffn.upbuf = ltx2::decl_b(&b,nm.f("ltx03.ff.up"),RAD_BF16,{tokens,local});
+    r.output = ltx2::decl_b(&b,nm.f("ltx03.delta"),RAD_BF16,{tokens,dim});
+    need(r.ffn.upbuf && r.output, "LTX03 issued FFN buffers missing");
+    const ltx2::C01Slice* up_slice = tp ? &us : nullptr;
+    const ltx2::C01Slice* down_slice = tp ? &ds : nullptr;
+    int rc = audio
+        ? r.ffn.up.declare(&b,nm,g,(prefix + "_up").c_str(),
+                           {"checkpoint.audio_ff.net.0.proj.weight"},
+                           {"checkpoint.audio_ff.net.0.proj.bias"}, {},
+                           local,dim,RAD_ACCESS_PER_TOKEN,0,r.x,r.ffn.upbuf,tokens,false,up_slice)
+        : r.ffn.up.declare(&b,nm,g,(prefix + "_up").c_str(),
+                           {"checkpoint.ff.net.0.proj.weight"}, {}, {},
+                           local,dim,RAD_ACCESS_PER_TOKEN,0,r.x,r.ffn.upbuf,tokens,false,up_slice);
+    need(rc == RAD_OK && r.ffn.up.op, "LTX03 issued FFN up declaration refused");
+    r.ffn.act = ltx2::unary(&b,"gelu_tanh",tokens,local,"bf16",r.ffn.upbuf,r.ffn.ff.a.x);
+    need(r.ffn.act, "LTX03 issued FFN activation missing");
+    rc = audio
+        ? r.ffn.down.declare(&b,nm,g,(prefix + "_down").c_str(),
+                             {"checkpoint.audio_ff.net.2.weight"},
+                             {"checkpoint.audio_ff.net.2.bias"}, {},
+                             dim,local,RAD_ACCESS_PER_TOKEN,0,r.ffn.ff,r.output,tokens,false,down_slice)
+        : r.ffn.down.declare(&b,nm,g,(prefix + "_down").c_str(),
+                             {"checkpoint.ff.net.2.weight"}, {}, {},
+                             dim,local,RAD_ACCESS_PER_TOKEN,0,r.ffn.ff,r.output,tokens,false,down_slice);
+    need(rc == RAD_OK && r.ffn.down.op, "LTX03 issued FFN down declaration refused");
+    if (tp)
+        need(r.ffn.down.finalize_deferred_output(&b,nm,g,(prefix + "_down").c_str(),
+                                                 RAD_ACCESS_PER_TOKEN,0,r.output,tokens) == RAD_OK,
+             "LTX03 issued FFN exact reduction/final bias refused");
+    need(b.errors().empty(), "LTX03 issued FFN Builder diagnostics");
+    r.width = dim; r.tokens = tokens; r.rank = rank; r.audio = audio;
+    *out = std::move(owned_builder);
+}
+
+// Issue one FFN on `world` ranks (1: reference, 3: tensor parallel) on the host
+// kernels; returns the per-rank BF16 [tokens, dim] output.
+static std::vector<std::vector<uint16_t>> issue_ffn(
+        const RadFile& model, Registry& reg, int64_t block, bool audio,
+        const std::array<int,3>& split, int heads, int world, int64_t tokens,
+        bool reduce, std::array<int,3>* ar_calls = nullptr, bool aql = false) {
+    std::array<std::unique_ptr<Builder>,3> builders;
+    std::array<C06Issued,3> lanes;
+    struct Retire {
+        Registry& registry; std::array<C06Issued,3>& ranks;
+        ~Retire() { for (auto& r:ranks) r.ctx.reset(); registry.fini_instances(); }
+    } retire{reg,lanes};
+    int first = 0;
+    for (int rank=0; rank<world; ++rank) {
+        lanes[rank].ffn.reduce = reduce;
+        build_ffn_lane(model,reg,block,audio,rank,first,world==3?split[rank]:heads,
+                       heads,world,tokens,&builders[rank],lanes[rank],aql);
+        first += world==3 ? split[rank] : 0;
+    }
+    std::array<int,3> results{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
+    std::array<std::string,3> failures;
+    std::vector<std::thread> workers;
+    for (int rank=0; rank<world; ++rank)
+        workers.emplace_back([&,rank] {
+            try {
+                if (aql && rad_dev_set(rank) != RAD_OK)
+                    throw std::runtime_error("LTX03 AQL rank device bind failed");
+                results[rank] = builders[rank]->finish();
+            }
+            catch (const std::exception& e) { failures[rank] = e.what(); }
+        });
+    for (auto& w : workers) w.join();
+    for (int rank=0; rank<world; ++rank) {
+        for (const auto& m : builders[rank]->errors())
+            std::fprintf(stderr,"LTX03 FFN rank%d: %s\n",rank,m.c_str());
+        need(failures[rank].empty() && results[rank]==RAD_OK &&
+             builders[rank]->errors().empty() &&
+             builders[rank]->program().device_holes(!aql).empty(),
+             "LTX03 issued FFN native rank instance refused");
+    }
+    std::vector<std::vector<uint16_t>> outputs((size_t)world);
+    for (int rank=0; rank<world; ++rank) {
+        C06Issued& r = lanes[rank];
+        rad::Program& prog = builders[rank]->program();
+        if (aql) need(rad_dev_set(rank)==RAD_OK,"LTX03 AQL rank allocation device missing");
+        verify_c06_load_contract(model,prog,rank,&r,world);
+        r.ctx = std::make_unique<rad::Ctx>();
+        rad::CtxDesc d{};
+        d.program=&prog; d.rank=rank; d.world_size=world; d.device=aql?rank:0;
+        d.arch_step=ltx03_ffn_issued_step; d.record_passes=false; d.registry=&reg;
+        need(r.ctx->init(d)==RAD_OK,"LTX03 issued FFN RadCtx init failed");
+        if (aql) {
+            for (size_t i=1;i<prog.weights.size();++i) {
+                const auto& w=prog.weights[i];
+                need(rad_memcpy_async(w.ptr,r.weights[i].data(),w.stored_bytes,
+                                      r.ctx->stream())==RAD_OK,
+                     "LTX03 native checkpoint weight upload failed");
+            }
+            std::vector<uint16_t> sample((size_t)(r.width*r.tokens));
+            for (int64_t j=0;j<r.width*r.tokens;++j) sample[(size_t)j]=c06_sample(j);
+            void* input=r.ctx->buf_ptr(r.x.a.x);
+            need(input && rad_memcpy_async(input,sample.data(),sample.size()*2,
+                                           r.ctx->stream())==RAD_OK &&
+                 rad_stream_sync(r.ctx->stream())==RAD_OK,
+                 "LTX03 native activation upload failed");
+        }
+    }
+    std::array<int,3> status{RAD_E_STATE,RAD_E_STATE,RAD_E_STATE};
+    std::vector<std::thread> runners;
+    for (int rank=0; rank<world; ++rank)
+        runners.emplace_back([&,rank] {
+            C06Issued& r = lanes[rank];
+            c06_active = &r;
+            const int rc = r.ctx->bind_thread();
+            RadBatch batch{};
+            batch.phase = RAD_PHASE_PREFILL; batch.n_tok = r.tokens; batch.n_seq = 1;
+            status[rank] = rc==RAD_OK ? r.ctx->run_step(&batch) : rc;
+            if (status[rank]==RAD_OK && aql) status[rank] = rad_stream_sync(r.ctx->stream());
+            c06_active = nullptr;
+        });
+    for (auto& t : runners) t.join();
+    for (int rank=0; rank<world; ++rank) {
+        C06Issued& r = lanes[rank];
+        if (status[rank]!=RAD_OK)
+            std::fprintf(stderr,"LTX03 FFN rank %d error %d: %s\n",rank,status[rank],r.ctx->step_error());
+        need(status[rank]==RAD_OK,"LTX03 FFN issue refused");
+        if (ar_calls) (*ar_calls)[rank] = (int)r.ctx->ar_calls();
+        const void* ptr = r.ctx->buf_ptr(r.output);
+        need(ptr!=nullptr,"LTX03 FFN output arena buffer missing");
+        outputs[(size_t)rank].resize((size_t)(r.width*r.tokens));
+        if (aql) {
+            need(rad_dev_set(rank)==RAD_OK &&
+                 rad_memcpy_async(outputs[(size_t)rank].data(),ptr,
+                                  outputs[(size_t)rank].size()*2,r.ctx->stream())==RAD_OK &&
+                 rad_stream_sync(r.ctx->stream())==RAD_OK,
+                 "LTX03 native output download failed");
+        } else
+            std::memcpy(outputs[(size_t)rank].data(),ptr,outputs[(size_t)rank].size()*2);
+    }
+    for (auto& r : lanes) r.ctx.reset();
+    reg.fini_instances();
+    return outputs;
+}
+
+static double bf16_to_f64(uint16_t v) {
+    const uint32_t u=(uint32_t)v<<16; float x; std::memcpy(&x,&u,sizeof x); return x;
+}
+
 // LTX03: checkpoint-derived FFN and replicated residual/modulation declarations.
 // The DiT production loop is unchanged; this does not issue a TP3 graph.
 static void run_dit_ffn(const RadFile& model, Registry& reg, int64_t block,
@@ -946,7 +1157,8 @@ int main(int argc, char** argv) {
             (std::string(argv[3]) == "--c06-instances-aql" ||
              std::string(argv[3]) == "--c06-issued-aql" ||
              std::string(argv[3]) == "--c06-issued-aql-16" ||
-             std::string(argv[3]) == "--c06-issued-aql-64");
+             std::string(argv[3]) == "--c06-issued-aql-64" ||
+             std::string(argv[3]) == "--ltx03-ffn-issued-aql");
         if (aql) ltx_test::require_aql_backend();
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
@@ -966,6 +1178,59 @@ int main(int argc, char** argv) {
         const int nheads = std::stoi(head_text);
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
+        if (argc == 4 && (std::string(argv[3]) == "--ltx03-ffn-issued-host" || aql &&
+                          std::string(argv[3]) == "--ltx03-ffn-issued-aql")) {
+            // The issued TP3 FFN against a TP1 issue of the same checkpoint and kernels.
+            const int64_t tokens = 4;
+            int checked = 0;
+            for (int64_t block : {int64_t(0), nblocks - 1})
+                for (bool audio : {false,true}) {
+                    const auto ref = issue_ffn(model,reg,block,audio,{0,0,0},nheads,1,tokens,true,nullptr,aql);
+                    need(ref.size()==1 && !ref[0].empty(),"LTX03 TP1 FFN reference missing");
+                    double ref_sq = 0;
+                    for (uint16_t v : ref[0]) {
+                        need(std::isfinite(bf16_to_f64(v)),"LTX03 TP1 FFN output not finite");
+                        ref_sq += bf16_to_f64(v)*bf16_to_f64(v);
+                    }
+                    need(ref_sq > 0,"LTX03 TP1 FFN output all zero");
+                    for (const std::array<int,3>& split :
+                         {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                        std::array<int,3> calls{};
+                        const auto out = issue_ffn(model,reg,block,audio,split,nheads,3,tokens,true,&calls,aql);
+                        for (int rank=0; rank<3; ++rank)
+                            need(calls[rank]==1,"LTX03 FFN must issue exactly one native reduction per rank");
+                        for (int rank=1; rank<3; ++rank)
+                            need(out[0]==out[(size_t)rank],
+                                 "LTX03 exact three-rank FFN output replicas disagree");
+                        need(out[0].size()==ref[0].size(),"LTX03 TP3/TP1 FFN output width differs");
+                        double err_sq = 0, max_abs = 0;
+                        for (size_t j=0;j<ref[0].size();++j) {
+                            const double e = bf16_to_f64(out[0][j]) - bf16_to_f64(ref[0][j]);
+                            err_sq += e*e; max_abs = std::max(max_abs,std::abs(e));
+                        }
+                        const double rel = std::sqrt(err_sq/ref_sq);
+                        std::printf("LTX03 FFN issued %s block=%lld %s split=%d,%d,%d: rel_rms_vs_tp1=%g max_abs=%g\n",
+                                    aql?"AQL":"host",(long long)block,audio?"audio":"video",split[0],split[1],split[2],rel,max_abs);
+                        std::fflush(stdout);
+                        // BF16 has 8 significant bits: its unit roundoff 2^-8 is the
+                        // largest relative error one rounding of a partial sum can cause.
+                        need(rel <= std::ldexp(1.0,-8),
+                             "LTX03 TP3 FFN disagrees with the TP1 issue beyond BF16 rounding");
+                        ++checked;
+                    }
+                }
+            // The test must notice an omitted reduction: without it the ranks hold
+            // different partial sums.
+            std::array<int,3> calls{};
+            const auto bad = issue_ffn(model,reg,0,false,{8,8,16},nheads,3,tokens,false,&calls,aql);
+            need(calls[0]==0 && calls[1]==0 && calls[2]==0,
+                 "LTX03 negative lane still issued a reduction");
+            need(bad[0]!=bad[1] || bad[1]!=bad[2],
+                 "LTX03 omitted-reduction replicas unexpectedly agree: the test cannot detect it");
+            std::printf("LTX03 issued %s FFN: %d TP3/TP1 comparisons over blocks 0 and %lld; omitted reduction detected\n",
+                        aql?"AQL":"host",checked,(long long)nblocks-1);
+            return 0;
+        }
         if (argc == 4 && std::string(argv[3]) == "--ltx03-ffn-modulation") {
             int64_t tested = 0;
             for (int64_t block = 0; block < nblocks; ++block)
