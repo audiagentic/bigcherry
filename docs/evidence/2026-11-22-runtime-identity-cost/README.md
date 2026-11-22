@@ -55,8 +55,11 @@ a missing binary still refuses.
   itself authenticated and checked against the files by stat. It would protect against a different build installed
   over the same path; it does not protect against edited files unless every file is stamped at install time. Needs the
   install step to record stamps; left as a follow-up.
-- The portable SHA-256 is about five times slower than hardware SHA; using the CPU's SHA instructions would cut the
-  one remaining hash to about 0.25 s. Separate change.
+- Hardware SHA-256: considered, rejected. Measured on the same 428,494,305 bytes: portable 1151 and 1122 ms, SHA-NI
+  182 and 178 ms, identical digests. CPU-specific hash code is not wanted, and the better answer is that a start should
+  not hash the runtime at all: `engine_identity` now persists its digest under the work root (`--work-root`,
+  `cache/engine-identity/`), keyed by the stamp of every runtime file and the binary, so a start of an unchanged
+  runtime reads one small file and a stat of each file.
 - The one `bc-serve` producer digest per start is a single file and was left alone.
 
 ## Host pool change bound
@@ -64,3 +67,20 @@ a missing binary still refuses.
 `kMaxHostPoolChanges` is a protocol-level count, not a resource budget, and was kept with its reason written at the
 definition. The native path's seen-pools set stops a cycle but not a pool that keeps moving to new values, and each
 change is a full measuring run; the legacy planning loop has no seen-pools set at all. So the cap is not redundant.
+
+## Installed start verification
+
+Every installed `bc-serve` start (and the child of a detached start) ran `bc::release::verify`: the current and the
+previous tag, each member of each prefix hashed again with the portable SHA-256. That is separate from
+`engine_identity`.
+
+Now a start runs `verify_current`: the current tag only, and its members are hashed only when their stamps differ from
+the record left by the last full verification. The full hash happens at install and at an explicit `bc-release
+verify` (still current and previous, always hashing); each full verification stores the stamps of every member
+(`<root>/stamps/<tag>.json`, beside the releases rather than inside a prefix, so an older tool still sees the prefix it
+knows). Any difference (content, an added or removed member, a touch) runs the existing full check and its refusals.
+The previous tag is no longer scanned on a start (explicit `verify` and rollback still check it). The digests and
+receipts are unchanged; the stamp type is the one `engine_identity` uses (`file_stamp.h`).
+
+Measured on an installed 2020.0.1 prefix, host-only: the full verification of one tag hashed 85 files in 1215 and
+1221 ms; `verify_current` on the unchanged install hashed 0 files in 3.3 ms (the stat of every member).

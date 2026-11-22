@@ -772,6 +772,29 @@ int main(int argc, char** argv) {
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
         if (argc == 4) {
+            if (std::string(argv[3]) == "--ltx03-all-blocks") {
+                // LTX03: source-derived full-depth geometry, with the same
+                // native three-rank declaration and no second model path.
+                int64_t declared = 0;
+                for (int64_t block = 0; block < nblocks; ++block)
+                    for (bool audio : {false, true})
+                        for (const std::array<int,3>& split :
+                             {std::array<int,3>{8,8,16}, std::array<int,3>{12,12,8}}) {
+                            int first = 0;
+                            for (int rank = 0; rank < 3; ++rank) {
+                                run_self_attn(model, reg, block, audio, rank, first,
+                                              split[rank], nheads);
+                                first += split[rank];
+                                ++declared;
+                            }
+                            need(first == nheads, "LTX03 all-block head coverage gap");
+                        }
+                need(declared == nblocks * 2 * 2 * 3,
+                     "LTX03 all-block native declaration count drift");
+                std::printf("LTX03 %lld native self-attention declarations across %lld blocks\n",
+                            (long long)declared, (long long)nblocks);
+                return 0;
+            }
             if (std::string(argv[3]) == "--c06-weights") {
                 // Same builder and exact native loader geometry as C06;
                 // no new model reader, memory mover or implementation.
