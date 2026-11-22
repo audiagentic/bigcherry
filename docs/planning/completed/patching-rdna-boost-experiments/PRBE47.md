@@ -2,7 +2,7 @@
 id: PRBE47
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:56:45.120291+00:00'
 breadth: ''
 skill: advanced
@@ -52,6 +52,8 @@ priority: P3
 ## Notes
 
 2026-11-22 owner handoff from decision-only BCOP84: Bounded next action / terminal gate. Source-bounded action/stop rule: First inspect stock gfx1100/gfx1201 ISA and profile reduction's attributable E2E decode fraction; **close without patch** if equivalent DPP already emitted or maximum possible gain <3%. Otherwise prototype only an additive, compile-time-gated Q6_K wave32 helper (native XOR16 + DPP row_xmask 8/4/2/1), test all 32 lanes and both standard/MoE + fused-gate call sites, require bitwise/full-vocab/MTP/graph parity, and qualify 4 sessions x >=10 ABBA pairs with CI95-low >=3% E2E decode and <=1% controls. Revert/retire if incorrect, no ISA benefit or no causal E2E win. No new scheduler/registry/allocator, and Q8_0 widening is a separate future decision. See docs/planning/completed/patching-bc-optimizations/BCOP84.md for the complete source/shape/negative case and evidence. PRBE47 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+INACTIVE PORTFOLIO DISPOSITION 2026-11-22: Deprecated as an execution-plan proposal; not delivered, accepted, tested on hardware, or deleted from history. Existing source/host discriminator completed; current plan explicitly says dormant P3, no patch or GPU lane, not a speedup. An old row-shift DPP sketch is superseded and PRBE117 separately owns the different Q6_K grouped-dot candidate. No selected BigCherry patch. Future re-evaluation requires a distinct source/pin/evidence review; the archived item is a reference and must not reintroduce the old implementation. Only reconsider through a new current-pin trace demonstrating a real Q6_K MMVQ reduction route, exact ISA applicability and exposed >=3% E2E headroom. Require one source-scoped host predicate and a full correctness/physical-work A/B against existing native path before allocating a patch or GPU run. PRBE117 remains owner of the separate #30517 grouped-integer-dot Q6_K work.
 
 ## 2026-10-18 ownership boundary — merged Q6_K integer-dot VDR2
 
@@ -131,3 +133,11 @@ Supersedes RD56.
 - 2026-09-24T04:46:57.296925+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - 2026-09-24T05:08:29.772808+00:00 (updated-by): Updated: section:description, section:steps, section:notes
 - 2026-11-22T05:30:03.935223+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- 2026-11-22T12:37:56.322004+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:39:15.527327+00:00 (state-transition): State: pending → deprecated
+- 2026-11-22T12:42:50.728286+00:00 (state-transition): State: deprecated → pending
+- RV4563
+- 2026-11-22T12:45:53.954072+00:00 (state-transition): State: pending → deprecated

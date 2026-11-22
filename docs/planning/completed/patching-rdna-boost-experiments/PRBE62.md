@@ -2,7 +2,7 @@
 id: PRBE62
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: deprecated
 created-at: '2026-09-09T10:57:49.294113+00:00'
 breadth: ''
 skill: advanced
@@ -54,6 +54,8 @@ priority: P3
 2026-11-22 owner handoff from decision-only BCOP140: Evidence, next action, terminal gate. Source-bounded action/stop rule: Nine source-static assertions passed after a corrected fetch range; 42,810 exhaustive + 10,000 seeded host row-tile-bound checks passed; presence semantics confirmed. No hardware/build/benchmark ran; no new BigCherry gain measured. **Gate 0:** one pinned binary, separate processes, env *unset* vs *present*, exact driver/device/queue-family/async receipt; no actual family switch => terminal no applicable lane. **Gate 1:** same-pin matched MoE/dense controls, expert-work, transfer/sync, logits/KLD, multi-request and MTP correctness; never compare b11552 to post-#29998. **Terminal:** <3% MoE CI95-low or correctness failure => no change; positive MoE with dense/prefill regression => process opt-in only. No second Vulkan scheduler. See PRBE62 for exact technical gates. See docs/planning/completed/patching-bc-optimizations/BCOP140.md for the complete source/shape/negative case and evidence. PRBE62 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 2026-11-22 owner handoff from decision-only BCOP53: Unresolved action and terminal gate. Source-bounded action/stop rule: 1. Gate 0: identify a real AMDVLK/proprietary driver, separate queue families and an actual flag-induced compute-family change; otherwise close `no applicable lane`. 2. Gate 1: same-pin, same-quant interleaved process-level flag A/B, MoE and dense/pp controls, route and async-transfer attribution, synchronization and multi-request correctness. 3. Close `no change` if CI95-low MoE E2E <3%, route unchanged or any correctness failure. Close `process opt-in` if >=3% MoE passes but dense/prefill suffers; use existing upstream launch flag, not a global default. Only propose a separate future dual-queue implementation if a mixed-model single process demonstrably needs it and >=5% measured mixed E2E opportunity remains after transfer-path isolation. See docs/planning/completed/patching-bc-optimizations/BCOP53.md for the complete source/shape/negative case and evidence. PRBE62 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+INACTIVE PORTFOLIO DISPOSITION 2026-11-22: Deprecated as an execution-plan proposal; not delivered, accepted, tested on hardware, or deleted from history. Upstream already provides the process-scoped GGML_VK_ALLOW_GRAPHICS_QUEUE flag, no local PRBE62/dual-queue patch or selected lane exists. Older per-MoE-graph two-queue design was explicitly rejected as disproportionate; the fork's AMDVLK MoE +4.7% comes with dense -8.1%, not BigCherry, and Vulkan implementation remains paused. Duplicate queue scheduler not warranted. Future re-evaluation requires a distinct source/pin/evidence review; the archived item is a reference and must not reintroduce the old implementation. Future Vulkan resumption goes through RRVP02 provider/driver/queue-family discovery first. Only if a real installed AMDVLK/proprietary-driver lane changes compute family on the pinned binary should the existing upstream process flag be benchmarked, with transfer/sync, multi-request, MoE+dense/pp and CI95-low >=3% guarded evidence. A dual-queue *new* plan is permitted only with independently demonstrated >=5% mixed-process E2E opportunity after process flag and transfers are accounted for. No Vulkan patch, hardware job or default-on switch is authorised by this archived research.
 
 ## 2026-10-08 audit decision
 
@@ -136,3 +138,11 @@ Created 2026-09-09 by capability-rebaseline-v3; re-reviewed 2026-09-24 against b
 - 2026-10-08 (triage): Preserved concurrent main audit of upstream GGML_VK_ALLOW_GRAPHICS_QUEUE, transfer confound and driver-scoped qualification; no new Vulkan queue patch or device-lane evidence.
 - 2026-11-22T05:18:55.769903+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T05:26:52.337293+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- 2026-11-22T12:38:20.538735+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:39:37.945888+00:00 (state-transition): State: pending → deprecated
+- 2026-11-22T12:46:15.593339+00:00 (state-transition): State: deprecated → pending
+- RV4565
+- 2026-11-22T12:47:58.385302+00:00 (state-transition): State: pending → deprecated
