@@ -291,6 +291,8 @@ bc_native_fleet_config_test (aborted in the card-free scratch build before and a
 
 Footprint: 679 anchors on the 2.2 baseline (2026-11-21) to 602 on main now (-77, -11.3%), 38 composed patches, 80 upstream files; 631 anchors and 39 patches once rad0055 (#1269, a new feature, not an extraction) lands. #1270 adds two arch_test pin edits (604). Open validation carried over, not a completion gate: the qwen27b-tp3 start/canary/stop of slice 5 on cards (bigcherry-1).
 
+2026-11-22 (post-completion note, rad0016 card canary): the post-extraction card canary (qwen27b-tp3 start/canary/stop on a build containing #1266) is to be linked when #1272 merges. The RUM06 card runs of 2026-11-22 (qwen27b-tp3 and flashnext-tp2xtx-r9700, clean start/canary/stop and byte-identical greedy output against the installed 2020.0.1) cover it, with evidence in docs/evidence/2026-11-22-rum06-lifetime-audit once #1272 lands. Until that evidence is on main, the OPEN VALIDATION note above is not closed by a linked proof. Session labels in the notes above (bigcherry-1 for the card-run session, bigcherry-2 for the implementation session) denote roles, and the card-free scratch environment named there is not a host identity.
+
 ## Change Log
 
 - 2026-11-18T01:28:00.655993+00:00 (created-by): Created by codex
@@ -309,3 +311,4 @@ Footprint: 679 anchors on the 2.2 baseline (2026-11-21) to 602 on main now (-77,
 - 2026-11-21T22:05:24.028152+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T22:16:20.624959+00:00 (updated-by): Updated: section:notes
 - 2026-11-21T22:16:36.875392+00:00 (state-transition): State: pending → completed
+- 2026-11-22T05:58:12.188889+00:00 (updated-by): Updated: section:notes

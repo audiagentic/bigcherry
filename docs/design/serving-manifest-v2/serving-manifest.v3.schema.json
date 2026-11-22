@@ -98,7 +98,7 @@
               "minLength": 1
             },
             "layout": {
-              "description": "Named GPU layout (engines/radiance/layouts.toml).",
+              "description": "Named GPU layout, taken from the config's native YAML (`x-bigcherry` ranks, helpers and placement).",
               "type": "string",
               "minLength": 1
             },

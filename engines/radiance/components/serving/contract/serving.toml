@@ -872,7 +872,7 @@ doc = "Model container path the engine loads (`--model`)."
 path = "/spec/intent/layout"
 kind = "string"
 min_length = 1
-doc = "Named GPU layout (engines/radiance/layouts.toml)."
+doc = "Named GPU layout, taken from the config's native YAML (`x-bigcherry` ranks, helpers and placement)."
 
 
 [[field]]

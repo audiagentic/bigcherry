@@ -19,7 +19,7 @@ Contract fingerprint `sha256:63e1e00b39ffa8bc2bf80aae6c84ff63c583bbf53722ae922e0
 | `/spec` | object `Spec` | yes |  |  | The resolved serving configuration. `experiment` is present only when the profile is `lab`. |
 | `/spec/intent` | object `Intent` | yes | policy |  | What the operator asked for: model, layout and service policy. |
 | `/spec/intent/model` | string, length ≥ 1 | yes | policy | `--model` / Config.model | Model container path the engine loads (`--model`). |
-| `/spec/intent/layout` | string, length ≥ 1 | yes | policy |  | Named GPU layout (engines/radiance/layouts.toml). |
+| `/spec/intent/layout` | string, length ≥ 1 | yes | policy |  | Named GPU layout, taken from the config's native YAML (`x-bigcherry` ranks, helpers and placement). |
 | `/spec/intent/power` | object `PowerIntent` | yes | policy |  | Operator-selected named power policy and role patches. |
 | `/spec/intent/power/profile` | `powerProfileName` | yes | policy |  | Power profile name. |
 | `/spec/intent/power/role_overrides` | map `powerRole` → `powerPatch` | yes | policy |  | Per-role nonempty power overrides; empty map is allowed. |
