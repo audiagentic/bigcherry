@@ -129,6 +129,18 @@ int main() {
         e.effective_spec["handoff"]["telemetry"]["histogram_file"] = nullptr;
         refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
                 v2::ConfigErrorCode::plan_mismatch);
+        // A config that leaves the n-gram tier to the engine ("auto") has it resolved by the measuring run: the stored
+        // manifest names the tier, the unmeasured draft of a later start still says "auto". An explicit tier is compared.
+        e = evidence;
+        const std::string stored_tier =
+            source.at("spec").at("processes").at("engine").at("execution").at("ngram_placement").get<std::string>();
+        require(stored_tier != "auto", "a stored manifest records the resolved n-gram tier");
+        e.effective_spec["processes"]["engine"]["execution"]["ngram_placement"] = "auto";
+        require(std::holds_alternative<v2::Manifest>(ss::authenticate_replay(bytes, path.string(), e)),
+                "a draft that leaves the n-gram tier to the engine must replay the stored resolved tier");
+        e.effective_spec["processes"]["engine"]["execution"]["ngram_placement"] = stored_tier == "ram" ? "disk" : "ram";
+        refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
+                v2::ConfigErrorCode::plan_mismatch);
         e = evidence;
         e.effective_spec["intent"]["layout"] = "another-layout";
         refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
