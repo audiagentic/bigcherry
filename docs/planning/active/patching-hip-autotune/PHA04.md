@@ -59,6 +59,8 @@ priority: null
 
 2026-11-22 PHA04 Gate 0 correctness-counter validation: RCCL Tests JSON wrong field was int()-coerced, allowing fractional 0.8 or bool False to become zero and signed -1/+1 to cancel over pass records, falsely PASSing. New strict nonnegative decimal string/native integer contract rejects invalid counts as harness_failure; five fake-child negative fixture cases added, and full RCCL qualification+campaign suites pass 64/64 with focused lint. Diagnostic-only source: no production dispatch or RCCL runtime modification, no actual GPU qualification and no candidate promotion. Still require installed-call/plan correlation and hardware evidence for PHA04.
 
+2026-11-22 PHA04/GP08 consumer gate: collective_benchmark.check_qualified previously accepted any pass-labelled row for topology and compatibility revision, even if plan_verification was missing/unverified/request_not_applied/substituted or correct missing/false. Six fake receipt classes reproduce unsafe admission; the one existing gate now requires classification=pass, correct is True and plan_verification=verified. GP08 consumer tests pass 22/22, focused lint passes; unused import removed. Remains pending: exact selected benchmark arm to operation signature/collective candidate identity binding, pinned installed-RCCL call-level evidence and GPU quality tests. This does not promote a candidate or alter production reduction dispatch.
+
 ## Authoritative implementation audit — 2026-10-14, BigCherry b11552
 
 **Disposition: PENDING / OBSERVATION_BLOCKED. No positive level-2 RCCL candidate allowlist, runtime selector, or default promotion.** This is a documentation-only audit; no RCCL binary, GPU, BigCherry patch composition or repository pytest was run. PHA03's topology/AtomicOps safety admission is prerequisite, and PHA05 owns promotion. The existing 1225 fail-closed AtomicOps guard and 0840 provider paths must not be replaced.
@@ -131,3 +133,5 @@ The original assessment correctly identified that 0830 does not expose RCCL algo
 - 2026-11-22T12:09:00.176825+00:00 (updated-by): Updated: section:notes
 - RV4555
 - 2026-11-22T12:12:43.594139+00:00 (updated-by): Updated: section:notes
+- RV4556
+- 2026-11-22T12:19:03.500283+00:00 (updated-by): Updated: section:notes

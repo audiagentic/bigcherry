@@ -45,7 +45,6 @@ from typing import Any
 
 from bigcherry.campaign.benchmark import (
     block_bootstrap_effect,
-    extract_metrics,
     parse_metric_specs,
     run_arm_capture,
 )
@@ -87,7 +86,7 @@ def load_arms_config(path: Path) -> list[dict[str, Any]]:
 
 def check_qualified(cases_jsonl: Path, *, topology_id: str, revision_id: str) -> bool:
     """Real check against a GP07 qualification artifact: is there at
-    least one PASS row for this exact (topology_id, compatibility
+    least one *verified and correct* PASS row for this exact (topology_id, compatibility
     revision)? No fuzzy matching, no "close enough" version string --
     the exact revision_id GP07's RcclCompatibilityRevision computed."""
     if not cases_jsonl.is_file():
@@ -101,9 +100,12 @@ def check_qualified(cases_jsonl: Path, *, topology_id: str, revision_id: str) ->
         except json.JSONDecodeError:
             continue
         if (
-            row.get("topology_id") == topology_id
+            isinstance(row, dict)
+            and row.get("topology_id") == topology_id
             and row.get("compatibility_revision_id") == revision_id
             and row.get("classification") == "pass"
+            and row.get("correct") is True
+            and row.get("plan_verification") == "verified"
         ):
             return True
     return False
