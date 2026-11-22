@@ -117,6 +117,18 @@ int main() {
         e.effective_spec["handoff"]["placement"]["live_policy"]["cadence_ns"] = 1;
         require(std::holds_alternative<v2::Manifest>(ss::authenticate_replay(bytes, path.string(), e)),
                 "a different derived policy value is a startup derivation, not configuration (production)");
+        // A second start of the same YAML gets its own run directory: where the live heat histogram is written never
+        // decides the plan (the stored-plan key already says so), whether it is recorded at all does.
+        e = evidence;
+        require(source.at("spec").at("handoff").at("telemetry").contains("histogram_file") &&
+                    source.at("spec").at("handoff").at("telemetry").at("histogram_file").is_string(),
+                "the fixture records a live heat histogram");
+        e.effective_spec["handoff"]["telemetry"]["histogram_file"] = "/another/run/heat.live";
+        require(std::holds_alternative<v2::Manifest>(ss::authenticate_replay(bytes, path.string(), e)),
+                "a second start's run-directory histogram path must not refuse the stored plan");
+        e.effective_spec["handoff"]["telemetry"]["histogram_file"] = nullptr;
+        refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
+                v2::ConfigErrorCode::plan_mismatch);
         e = evidence;
         e.effective_spec["intent"]["layout"] = "another-layout";
         refused(ss::authenticate_replay(bytes, path.string(), e), ss::ReplayRefusal::execution_projection,
