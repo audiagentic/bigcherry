@@ -32,6 +32,10 @@ unless a file says otherwise. No machine names appear here: card names are archi
 * One card alone differs by architecture (`timing-one-card-per-architecture.txt`, `LTX03_TIME_TP1=1` with one visible
   device): the gfx1201 card runs the video block in 6.7 ms and the FFN in 3.7 ms, 1.95 times faster than a gfx1100
   card (13.0 and 6.7 ms) on the int8 GEMMs. That one card beats every multi-card tensor-parallel arm above.
+* Why: a plain rocBLAS int8 GEMM at the FFN's shape is the other way round, 127 TOPS on the gfx1100 card against
+  81 on the gfx1201 one (`i8-gemm-reference/`). The engine's FFN reaches 132 TOPS on gfx1201, above that
+  reference, but only 72 TOPS on gfx1100, so the 2x is mostly the gfx1100 kernels running well below what the card
+  does in a generic GEMM (the engine figure also holds the activation quantisation, GELU and bias).
 * Conclusion: with exact reductions over this host's links, tensor parallelism makes an LTX block no faster than
   one card. The Q/K statistics reduction (per-token sums of squares instead of the full-width tensor) is the one
   change expected to remove two of the large reductions; independent guidance passes on separate cards need no
