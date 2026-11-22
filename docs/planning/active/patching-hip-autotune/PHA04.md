@@ -57,6 +57,8 @@ priority: null
 
 2026-11-22 PHA04 additional evidence-integrity guard: RCCL Tests -M 1 can show multiple executed-plan rows, but the prior _parse_observed_plan used only the first. Three fake-child cases confirmed a false verified result when a later row disagreed in algorithm, protocol or channel. The reader now requires all rows to agree exactly before calling algo/proto verified; conflicting or missing rows remain unverified/harness_failure, and identical repeated rows keep the original result. 59/59 RCCL qualification+campaign tests pass (four new cases); no GPU, runtime dispatch, installed-RCCL qualification or candidate promotion. Exact collective-level executed binding remains an open PHA04 requirement.
 
+2026-11-22 PHA04 Gate 0 correctness-counter validation: RCCL Tests JSON wrong field was int()-coerced, allowing fractional 0.8 or bool False to become zero and signed -1/+1 to cancel over pass records, falsely PASSing. New strict nonnegative decimal string/native integer contract rejects invalid counts as harness_failure; five fake-child negative fixture cases added, and full RCCL qualification+campaign suites pass 64/64 with focused lint. Diagnostic-only source: no production dispatch or RCCL runtime modification, no actual GPU qualification and no candidate promotion. Still require installed-call/plan correlation and hardware evidence for PHA04.
+
 ## Authoritative implementation audit — 2026-10-14, BigCherry b11552
 
 **Disposition: PENDING / OBSERVATION_BLOCKED. No positive level-2 RCCL candidate allowlist, runtime selector, or default promotion.** This is a documentation-only audit; no RCCL binary, GPU, BigCherry patch composition or repository pytest was run. PHA03's topology/AtomicOps safety admission is prerequisite, and PHA05 owns promotion. The existing 1225 fail-closed AtomicOps guard and 0840 provider paths must not be replaced.
@@ -127,3 +129,5 @@ The original assessment correctly identified that 0830 does not expose RCCL algo
 - 2026-11-22T12:05:22.285861+00:00 (updated-by): Updated: section:notes
 - RV4554
 - 2026-11-22T12:09:00.176825+00:00 (updated-by): Updated: section:notes
+- RV4555
+- 2026-11-22T12:12:43.594139+00:00 (updated-by): Updated: section:notes

@@ -358,10 +358,17 @@ def _classify(
     for record in rccl_json:
         if not isinstance(record, dict) or "wrong" not in record:
             return HARNESS_FAILURE, None, f"malformed RCCL JSON record: {record!r}", None
-        try:
-            total_wrong += int(record["wrong"])
-        except (TypeError, ValueError):
-            return HARNESS_FAILURE, None, f"non-integer 'wrong' field: {record['wrong']!r}", None
+        # RCCL Tests emits decimal count strings. int() would also accept
+        # booleans/floats or signed values, allowing false zeros or
+        # cancellation across multiple pass records.
+        wrong = record["wrong"]
+        valid = (
+            type(wrong) is int and wrong >= 0
+            or isinstance(wrong, str) and re.fullmatch(r"[0-9]+", wrong) is not None
+        )
+        if not valid:
+            return HARNESS_FAILURE, None, f"invalid nonnegative 'wrong' count: {wrong!r}", None
+        total_wrong += int(wrong)
 
     if total_wrong != 0:
         return (

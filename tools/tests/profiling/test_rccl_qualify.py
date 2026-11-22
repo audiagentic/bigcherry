@@ -185,6 +185,30 @@ def test_wrong_result_classified_from_rccl_wrong_field(tmp_path: Path):
     assert result.correct is False
 
 
+
+@pytest.mark.parametrize("counts", [
+    ["0.8"],
+    [0.8],
+    [False],
+    ["-1", "1"],
+    ["+0"],
+])
+def test_invalid_correctness_counters_never_verify(
+    tmp_path: Path, counts: list,
+):
+    result = _run_fake(tmp_path, f"""
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{{"wrong": count}} for count in {counts!r}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.correct is None
+    assert result.plan_verification is None
+
+
 def test_timeout_kills_process_group(tmp_path: Path):
     result = _run_fake(
         tmp_path,
