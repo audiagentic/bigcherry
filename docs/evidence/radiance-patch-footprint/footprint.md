@@ -2,7 +2,7 @@
 
 Upstream pin: `b6b8751cccb0e834a13ae9e5afca824ee9a487aa`.
 
-38 composed patches; **604 anchor edits** (569 upstream, 35 on patch-created files; 627 expected match sites); 636 total edits, 32 in created files; 80 upstream files.
+39 composed patches; **633 anchor edits** (598 upstream, 35 on patch-created files; 656 expected match sites); 665 total edits, 32 in created files; 81 upstream files.
 
 Counts are lexical, not a measure of independent semantics, net code savings, or successful application. Regex anchor bytes and full replacement text bytes are counted as authored, not as actual upstream match or net diff bytes.
 
@@ -16,6 +16,7 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `rad0045_expert_route_replay` | 15 | 0 | 36 | 36 | 36 | 3080 | 27756 |
 | `rad0002_moe_remote_handoff` | 8 | 5 | 35 | 35 | 40 | 2073 | 39741 |
 | `rad0036_prefill_governor` | 11 | 1 | 29 | 29 | 30 | 7396 | 37516 |
+| `rad0055_step_phase_trace` | 4 | 0 | 29 | 29 | 29 | 4694 | 15135 |
 | `rad0048_abi44_kv_contract` | 9 | 1 | 28 | 28 | 29 | 1669 | 8863 |
 | `rad0054_attn_prefill_fp8` | 11 | 0 | 25 | 24 | 25 | 1500 | 16621 |
 | `rad0052_b16_kv_geometries` | 8 | 0 | 22 | 19 | 22 | 1725 | 21014 |
@@ -58,10 +59,10 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `core/config.cpp` | 10 | 34 | 4011 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0050_b16_kv_runtime_contract`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `tests/config_test.cpp` | 9 | 12 | 1831 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `core/rad_core.h` | 8 | 9 | 545 | `rad0016_vtp14_rank_code_selection`, `rad0018_vtp14_n2_tp_ownership`, `rad0020_vtp14_tp3_pipelined_prefill`, `rad0022_tune_pin`, `rad0036_prefill_governor`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0054_attn_prefill_fp8` |
+| `core/runtime/ctx.cpp` | 7 | 44 | 5352 | `rad0002_moe_remote_handoff`, `rad0010_routing_evidence`, `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0055_step_phase_trace` |
 | `libr4d/r4d_rows.cpp` | 7 | 20 | 1377 | `rad0012_helper_kernel_config`, `rad0032_ts3_duplex`, `rad0033_ts3_once`, `rad0045_expert_route_replay`, `rad0046_retained_moe_rows`, `rad0049_qwen4exp_e4m3_kv`, `rad0054_attn_prefill_fp8` |
 | `tests/arch_test.cpp` | 7 | 12 | 1094 | `rad0027_mixed_one_pipelined_prefill`, `rad0028_rank_consistent_block_drafts`, `rad0049_qwen4exp_e4m3_kv`, `rad0051_b16_kv_kernels`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
 | `libr4d/r4d_plugin.h` | 7 | 8 | 459 | `rad0045_expert_route_replay`, `rad0046_retained_moe_rows`, `rad0049_qwen4exp_e4m3_kv`, `rad0051_b16_kv_kernels`, `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
-| `core/runtime/ctx.cpp` | 6 | 26 | 1731 | `rad0002_moe_remote_handoff`, `rad0010_routing_evidence`, `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0044_expert_route_record`, `rad0045_expert_route_replay` |
 | `core/engine.cpp` | 6 | 21 | 1290 | `rad0002_moe_remote_handoff`, `rad0010_routing_evidence`, `rad0017_vtp14_n3_shared_rendezvous`, `rad0043_expert_stats_protected`, `rad0044_expert_route_record`, `rad0045_expert_route_replay` |
 | `arch/common/rad_block_attn_gated_fp8.h` | 6 | 13 | 3725 | `rad0019_vtp14_n2_tp_ownership_fp8`, `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0027_mixed_one_pipelined_prefill`, `rad0051_b16_kv_kernels`, `rad0054_attn_prefill_fp8` |
 | `libr4d/r4d_ar_entry.hip` | 5 | 8 | 2637 | `rad0017_vtp14_n3_shared_rendezvous`, `rad0021_vtp14_weighted_twoshot_3rank`, `rad0024_ts3_decode`, `rad0032_ts3_duplex`, `rad0033_ts3_once` |
@@ -72,6 +73,7 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `tests/CMakeLists.txt` | 4 | 4 | 105 | `rad0009_serving_manifest`, `rad0042_kv_b16_selftest`, `rad0048_abi44_kv_contract`, `rad0050_b16_kv_runtime_contract` |
 | `libr4d/r4d_qk_norm_rope_gate.hip` | 3 | 22 | 1509 | `rad0049_qwen4exp_e4m3_kv`, `rad0051_b16_kv_kernels`, `rad0053_v4_kv_layouts` |
 | `arch/common/rad_block_moe_fp8.h` | 3 | 17 | 1347 | `rad0002_moe_remote_handoff`, `rad0004_moe_remote_diagnostics`, `rad0045_expert_route_replay` |
+| `core/runtime/ctx.h` | 3 | 13 | 915 | `rad0044_expert_route_record`, `rad0045_expert_route_replay`, `rad0055_step_phase_trace` |
 | `arch/common/rad_block_gdn_fp8.h` | 3 | 11 | 4245 | `rad0025_multiseq_pipelined_prefill`, `rad0026_mixed_pipelined_prefill`, `rad0027_mixed_one_pipelined_prefill` |
 | `core/build/rad_builder.cpp` | 3 | 9 | 1137 | `rad0016_vtp14_rank_code_selection`, `rad0050_b16_kv_runtime_contract`, `rad0053_v4_kv_layouts` |
 | `libr4d/r4d_attn_paged_h256_gqa6.hip` | 3 | 9 | 372 | `rad0052_b16_kv_geometries`, `rad0053_v4_kv_layouts`, `rad0054_attn_prefill_fp8` |
@@ -82,13 +84,13 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `libr4d/r4d_shapes.cpp` | 3 | 6 | 287 | `rad0045_expert_route_replay`, `rad0046_retained_moe_rows`, `rad0051_b16_kv_kernels` |
 | `libr4d/r4d_args.h` | 3 | 4 | 165 | `rad0012_helper_kernel_config`, `rad0032_ts3_duplex`, `rad0033_ts3_once` |
 | `libr4d/r4d_selftest.cpp` | 2 | 23 | 3037 | `rad0042_kv_b16_selftest`, `rad0049_qwen4exp_e4m3_kv` |
-| `core/runtime/ctx.h` | 2 | 7 | 542 | `rad0044_expert_route_record`, `rad0045_expert_route_replay` |
 | `libr4d/r4d_moe.hip` | 2 | 7 | 535 | `rad0045_expert_route_replay`, `rad0046_retained_moe_rows` |
 | `arch/common/rad_block_dflash2.h` | 2 | 6 | 682 | `rad0019_vtp14_n2_tp_ownership_fp8`, `rad0028_rank_consistent_block_drafts` |
 | `core/mem/kv.cpp` | 2 | 6 | 477 | `rad0050_b16_kv_runtime_contract`, `rad0053_v4_kv_layouts` |
 | `libr4d/r4d_model_bf16.hip` | 2 | 5 | 212 | `rad0051_b16_kv_kernels`, `rad0053_v4_kv_layouts` |
 | `arch/common/rad_block_mlp_fp8.h` | 2 | 4 | 614 | `rad0019_vtp14_n2_tp_ownership_fp8`, `rad0030_int8_pipelined_prefill` |
 | `abi/rad_runtime.h` | 2 | 2 | 129 | `rad0025_multiseq_pipelined_prefill`, `rad0045_expert_route_replay` |
+| `core/runtime/issue.cpp` | 2 | 2 | 167 | `rad0045_expert_route_replay`, `rad0055_step_phase_trace` |
 | `tests/arch_fakes.h` | 2 | 2 | 112 | `rad0002_moe_remote_handoff`, `rad0045_expert_route_replay` |
 | `tests/abi_layout_table.h` | 1 | 9 | 375 | `rad0048_abi44_kv_contract` |
 | `core/plugin/select.cpp` | 1 | 8 | 1516 | `rad0016_vtp14_rank_code_selection` |
@@ -97,6 +99,7 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `core/device/aql.cpp` | 1 | 5 | 775 | `rad0016_vtp14_rank_code_selection` |
 | `core/plugin/registry.h` | 1 | 5 | 1094 | `rad0016_vtp14_rank_code_selection` |
 | `tests/abi_layout_test.cpp` | 1 | 5 | 361 | `rad0048_abi44_kv_contract` |
+| `core/kvstream/stage.cpp` | 1 | 4 | 638 | `rad0055_step_phase_trace` |
 | `core/place/planner.cpp` | 1 | 4 | 267 | `rad0002_moe_remote_handoff` |
 | `core/server/metrics.cpp` | 1 | 4 | 1607 | `rad0036_prefill_governor` |
 | `arch/qwen35_bf16/qwen35_bf16.cpp` | 1 | 3 | 447 | `rad0018_vtp14_n2_tp_ownership` |
@@ -120,7 +123,6 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 | `core/kvstream/bringup.cpp` | 1 | 1 | 64 | `rad0050_b16_kv_runtime_contract` |
 | `core/plugin/testplugin/CMakeLists.txt` | 1 | 1 | 189 | `rad0048_abi44_kv_contract` |
 | `core/plugin/testplugin/testplugin.cc` | 1 | 1 | 45 | `rad0048_abi44_kv_contract` |
-| `core/runtime/issue.cpp` | 1 | 1 | 105 | `rad0045_expert_route_replay` |
 | `core/runtime/kvbind.cpp` | 1 | 1 | 85 | `rad0050_b16_kv_runtime_contract` |
 | `core/sched/batch.cpp` | 1 | 1 | 113 | `rad0025_multiseq_pipelined_prefill` |
 | `libr4d/r4d_ar_oneshot_2rank_exact.hip` | 1 | 1 | 303 | `rad0017_vtp14_n3_shared_rendezvous` |
@@ -138,8 +140,8 @@ Counts are lexical, not a measure of independent semantics, net code savings, or
 
 | Source | Patch count |
 | --- | ---: |
-| `radiance` | 32 |
-| `radiance-diag` | 33 |
+| `radiance` | 33 |
+| `radiance-diag` | 34 |
 | `radiance-native` | 0 |
-| `radiance-routing-evidence` | 33 |
-| `radiance-vtp44-evidence` | 36 |
+| `radiance-routing-evidence` | 34 |
+| `radiance-vtp44-evidence` | 37 |

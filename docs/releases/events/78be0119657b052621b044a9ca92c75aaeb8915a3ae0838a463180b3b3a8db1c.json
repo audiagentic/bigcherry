@@ -1,0 +1,18 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261121_214427_native-serving-start-gains-an_4719",
+  "files": [
+    "engines/radiance/patches/rad0055_step_phase_trace/patch.py",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/bc_serving_manifest.cpp",
+    "engines/radiance/components/serving/main.cpp",
+    "tools/lab/radiance/rum09_phase_timeline.py"
+  ],
+  "plan-item-ids": [
+    "RUM09"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Add rad0055: an opt-in per-rank, per-op decode timing trace for native serving, enabled by `--step-phase-trace` on serve/start (no lab experiment, environment or YAML input). Untraced runs take the upstream paths. Output is JSONL per rank under the run directory with an analyzer for the warm decode investigation.",
+  "timestamp-utc": "2026-11-21T21:44:27.637875Z",
+  "user-summary-candidate": "Native serving start gains an optional --step-phase-trace diagnostic that records per-rank decode timing; off by default."
+}
