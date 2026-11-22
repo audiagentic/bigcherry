@@ -1,6 +1,6 @@
 # BigCherry plan reconciliation audit — 2026-11-22
 
-**Base:** `origin/main` at `7e4e7eae816889849362e6369335786882490beb`. **Branch:** `agent/planning-holistic-20261122`. This is a proposed disposition review, **not** a change to authoritative plan state.
+**Base:** `origin/main` at `7e4e7eae816889849362e6369335786882490beb`. **Branch:** `agent/planning-holistic-20261122`. The inventory and BCOP dispositions are **pre-registration review snapshots**; nine Radiance/LTX plan items were subsequently created through the canonical Planning MCP.
 
 ## Scope and previous review baseline
 
@@ -25,7 +25,9 @@ The completed-area history is indexed in `COMPLETED_INDEX.csv` to detect current
 | Direct items without a Git documentation touch since 2026-11-01 | 285 |
 | Direct items missing a populated canonical acceptance section | 171 |
 
-**Caveats:** The owner column is a group/title heuristic, not proof of runtime/source ownership. Age and document touch are **not** evidence of nonimplementation. The missing-acceptance count includes BCOP decision notes and two noncanonical supporting documents; it is not equivalent to 171 incomplete engineering implementations. No GPU measurements, broad builds, or plan state transitions were performed.
+**Caveats:** The owner column is a group/title heuristic, not proof of runtime/source ownership. Age and document touch are **not** evidence of nonimplementation. The missing-acceptance count includes BCOP decision notes and two noncanonical supporting documents; it is not equivalent to 171 incomplete engineering implementations. No GPU measurements or broad builds were performed. Nine new pending items were created through Planning MCP; none of the pre-existing items was transitioned.
+
+**Post-registration state (2026-11-22):** after merging updated `origin/main` and registering LTX01–LTX08 and RUM13 through Planning MCP, there are **506** direct active item documents (**nine new pending**). The 497-item CSV remains the preserved pre-registration comparison set. No pre-existing item was closed or modified through this registration slice.
 
 ## Ownership decisions
 
@@ -55,9 +57,9 @@ The BCOP count is title-based evidence of likely double ownership, **not** 117 a
 
 ### 2. Radiance: preserve active ABI work; partition LTX; remove stale 1.17 qualification
 
-- **Retain `RUM06`** as the single active generic Radiance 2.2 remote-MoE generation/lifetime change (`patching-radiance-upstream/RUM06.md`, PR [#1272](https://github.com/audiagentic/bigcherry/pull/1272)). It explicitly reuses the existing admission ledger, rank coordinator and TP rendezvous; no new scheduler or parallel model registry.
+- **Retain `RUM06`** as the active generic Radiance 2.2 remote-MoE generation/lifetime change (`patching-radiance-upstream/RUM06.md`, PR [#1272](https://github.com/audiagentic/bigcherry/pull/1272)). It explicitly reuses the existing admission ledger, rank coordinator and TP rendezvous; no new scheduler or parallel model registry.
 - `RUM01–05` and `RUM07–12` are in `docs/planning/completed/patching-radiance-upstream/`, including recent #1291 (RUM08) and #1292 (RUM12). Do not recreate or re-open finished migration gates to carry unrelated LTX work.
-- **Introduce one dedicated Radiance LTX 2.5 planning owner** for native graph/TP3 integration and model-specific GPU quality/performance. PR [#1262](https://github.com/audiagentic/bigcherry/pull/1262) is open, but no LTX-specific item exists on `main`. AQL/native collective test extraction in PR [#1294](https://github.com/audiagentic/bigcherry/pull/1294) should be assigned **once** to the generic owner if reusable; it currently targets the LTX branch, not `main`, so publication order is material. Do not copy native AQL implementation into both plans.
+- **Registered LTX01–LTX08** under `build-radiance-ltx25-tp3` using the existing `docs/evidence/ltx25-plan-registration/` proposals and Planning MCP. **Registered RUM13** under `patching-radiance-upstream` for the single model-independent native AQL lab (PR #1294). Generic production lifetime still belongs only to RUM06 (#1272); LTX02 owns the model-backed execution, not an alternate collective. PR #1262 landed on main in the intervening sync. No GPU run or new production qualification was done by this planning change.
 - **Revalidate `PRQ01–05`** against current source and installed 2.2/Radiance release line before closing or rewriting: `PRQ01.md` still specifies a 26-patch v1.17 source-reconciliation gate and describes a prior false pin mismatch, whereas current `docs/reference/build/PIN_BUMP.md` describes Radiance 2.2 as 2020. `PRQ03.md` already records rad0005 as archived after upstream 2.2 FFmpeg 6 support. Rehome remaining *patch qualification* under one current-pin owner, with links to RUM02/07/08 evidence, not a 1.17 parallel system.
 - **Review `RHP` and `VTP` roadmaps** in situ. `patching-radiance-heat-placement/README.md` refers to RHP02/17/18/19 as future/active work even though their documents now live in `completed/`. `run-dense-27b-virtual-tp/README.md` links `VTP01–14` under its own active directory although many are completed. Distinguish a completed component from genuinely outstanding end-to-end acceptance, fix navigational links, and preserve the actual live placement and dense TP gates.
 - **Re-scope `RSC02/03/04/11/12`, `RSP01`, `RCS*`, `MEN*`** by concrete shipped 2.2 native configuration/runtime boundaries; one native serve owner and one release manifest, not old Python launcher follow-up paths. RSP01 owns release packaging policy; RSC owns the native engine start/session behavior; platform owns the generic release machinery. `MEN24` build/bump optimisations must be checked against `BU01/02`, `BPB01` and the actual pin-bump workflow before preserving duplicate tasks.
@@ -87,6 +89,6 @@ The BCOP count is title-based evidence of likely double ownership, **not** 117 a
 
 ## Publication and lifecycle gate
 
-The repository's `AGENTS.md`, `docs/reference/agents/WORKFLOW.md` and `docs/reference/tooling/TOOLING.md` require **ag-planning Planning MCP** for plan/review state transitions and prohibit hand-editing authoritative records if that service is unavailable. The current exposed tools do **not** contain ag-planning; the available Codex harness reports no MCP servers configured. Accordingly, this branch provides the complete inventory and **proposed**, per-item disposition review, **but has not modified a single `docs/planning/` record**.
+The repository requires **ag-planning Planning MCP** for all plan/review mutations. AUDiaGentic PR #491 adds an external, project-scoped stdio accessor that invokes the **same** Planning and Ledger MCP servers, not hand-written file updates. Using that canonical boundary, this branch registered nine new `pending` item records (LTX01–08 and RUM13). The baseline inventory and proposed BCOP dispositions remain review-only; **no old item was closed, superseded or deleted**.
 
-This review branch must remain a **draft PR, not merge-ready plan cleanup**, until Planning MCP can perform the handoff in `MCP_EXECUTION.md`, all resulting generated plan/review files are committed, validation passes, and current main is merged without conflicts. No claims of 117 closures, 2.2 quality acceptance or LTX TP3 performance are made here.
+This review branch remains a **draft PR, not merge-ready broad cleanup**. The LTX/RUM registration slice is done; the remaining BCOP, RHA07, PRQ, RHP and platform reviews still require explicit Planning MCP transitions and verified acceptance.  No claims of 117 closures, 2.2 quality acceptance or LTX TP3 performance are made here.

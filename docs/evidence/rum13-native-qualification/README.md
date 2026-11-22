@@ -10,13 +10,7 @@ owner: Planning MCP registration required
 
 # Reuse native Radiance AQL qualification across mixed GPU families
 
-**Planning status:** Candidate for registration with Planning MCP, **not**
-an authoritative item and **not** permission to create or edit
-`docs/planning/` by hand. Verify uniqueness and scope against RUM02,
-RUM03, RUM05, RUM06, RUM09 and the Radiance kernel coverage plans before
-registering. If a live RUM item already owns these exact unimplemented
-pieces, merge this candidate into that RUM item **and retire this candidate**,
-not a second implementation.
+**Registration completed 2026-11-22:** authoritative [RUM13](../../planning/active/patching-radiance-upstream/RUM13.md) is pending in the existing Radiance migration group. This document is the preserved candidate/evidence, not the authority. RUM13 owns only generic **lab qualification**; RUM06 retains the production collective/group lifecycle. No new kernel or runtime implementation is implied by registration.
 
 ## Description
 

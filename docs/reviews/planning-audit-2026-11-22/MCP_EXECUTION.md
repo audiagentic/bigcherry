@@ -1,6 +1,6 @@
 # Planning MCP execution handoff — BigCherry 2026-11-22
 
-This handoff is **not** an instruction to patch `docs/planning/` files directly. Use `ag-planning` MCP with the explicit worktree `the isolated audit task worktree` and current tool schemas. Do not replace an unavailable planning service with shell, GitHub contents API, generic file writes or YAML edits.
+This handoff is **not** an instruction to patch `docs/planning/` files directly. Use `ag-planning` MCP with the explicit isolated audit task worktree and current tool schemas. AUDiaGentic PR #491 supplies a project-scoped external MCP accessor; it is not BigCherry source code. Do not replace an unavailable planning service with shell, GitHub contents API, generic file writes or YAML edits.
 
 ## Ordered change batches
 
@@ -21,11 +21,11 @@ This handoff is **not** an instruction to patch `docs/planning/` files directly.
 4. For the 20 BCOP titles with no resolved primary, choose a real owner before a state change; avoid creating a generic BCOP backlog owner.
 5. Confirm each transition by re-reading the Planning MCP state, generated files and links. Do not count only the submitted tool call as a completed transition.
 
-### C. Separate model-specific LTX from generic Radiance migration
+### C. Separate model-specific LTX from generic Radiance migration (registered 2026-11-22)
 
 1. Read current PR #1262 and #1294 diffs and branch ancestry; #1294 currently targets the LTX branch and is not an independent main-target PR.
-2. Planning MCP: reuse an existing Radiance LTX group if one exists; otherwise create `patching-radiance-ltx25` and one initial `LTX01` item. Scope: LTX 2.5 native graph/TP3 plan selection, actual model paths/reproducible config, per-rank shard/collective correctness, minimal component harnesses, mixed-card canary, KLD, throughput, failure behavior, tests and acceptance. Work exclusively in `engines/radiance/`, extend native generic interfaces only if necessary, measure net deletion/reuse of components and no duplicate transport/registry.
-3. **RUM06** remains the generic engine-generation/remote MoE lifetime and group-ownership work. Generic AQL/collective harness maintenance belongs to a single generic Radiance owner (existing RUM06 only where truly same acceptance, otherwise dedicated RUM13 if Planning MCP confirms no conflicting owner). LTX01 should depend on that gate, not copy the tests or code.
+2. **Done through Planning MCP:** registered `LTX01–LTX08` in the existing evidence-proposed `build-radiance-ltx25-tp3` group. They map all LT3-01–15 requirements without creating fifteen extra plan items. Source and proof boundaries remain in `docs/evidence/ltx25-plan-registration/`. The production TP3 graph is **not** thereby accepted.
+3. **Done through Planning MCP:** registered `RUM13` for model-independent AQL harness consolidation and exact mixed-card regression. **RUM06** remains the generic production engine-generation and collective lifetime owner. LTX02 consumes the RUM13 proof without adding a second collective or scheduler.
 4. Keep PR #1272 and LTX PRs independently mergeable. Do not claim GPU/ABI acceptance from source or host-only evidence.
 
 ### D. Reconcile stale engine and platform programs
@@ -49,4 +49,4 @@ This handoff is **not** an instruction to patch `docs/planning/` files directly.
 
 The final PR must show: actual before/after active-item count and per-owner counts; every moved/superseded ID and surviving owner; evidence for every completed item; no source/plan code duplication; preserved lifecycle and reviews; unchanged runtime code unless independently justified; absence of broken plan links; checked generated plan/ledger files; and no unverified performance claim.
 
-The audit TSV is a **triage queue**, not a script to automatically retire items. Its “target” is extracted from a title, and its “owner_candidate” is a heuristic; both must be confirmed by the Planning MCP review.
+The audit CSV is a **triage queue**, not a script to automatically retire items. Its “target” is extracted from a title, and its “owner_candidate” is a heuristic; both must be confirmed by the Planning MCP review.

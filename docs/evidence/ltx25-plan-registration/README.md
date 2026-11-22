@@ -1,23 +1,22 @@
 # LTX-2.5 IQ8R TP3 — Planning MCP registration handoff
 
-**Status: registration candidates, NOT authoritative Planning MCP state.**
-Owning group proposal: `build-radiance-ltx25-tp3` (new group only after Planning MCP verifies no existing equivalent). IDs `LTX01`–`LTX08` are proposed only: verify availability and let the service allocate identifiers. Source scope `docs/design/ltx25-iq8r-tp3.md` LT3-01–LT3-15 is comprehensively mapped without duplicating the full 15 items.
+**Registration completed 2026-11-22 through Planning MCP:** authoritative `LTX01–LTX08` are in [the active Radiance LTX plan group](../../planning/active/build-radiance-ltx25-tp3/). These original proposal documents remain **historical evidence, not authoritative Planning state**.
+Owning group proposal: `build-radiance-ltx25-tp3` (new group only after Planning MCP verifies no existing equivalent). The reserved identifiers `LTX01`–`LTX08` were validated and registered; no parallel LT3/C plan identifiers were created. Source scope `docs/design/ltx25-iq8r-tp3.md` LT3-01–LT3-15 is comprehensively mapped without duplicating the full 15 items.
 
 | Proposed item | Gap mapping | Priority | Depends on | Registration status |
 | --- | --- | --- | --- | --- |
-| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and RUM13-owned AQL proof; PR #1262 | Candidate |
-| [LTX02](LTX02.md): Execute actual LTX Q/K RMS and self-attention with checkpoint activations | LT3-05 and self-attention part of LT3-06 | P0 | LTX01 model source; RUM13 native AQL proof; RUM06 TP-group contract | Candidate |
-| [LTX03](LTX03.md): Complete the 48-block dual video/audio TP3 DiT graph without new dispatch infrastructure | Remaining LT3-06 plus cross-modal and FFN work from LT3-03/04/05 | P0 | LTX02 accepted on both modalities | Candidate |
-| [LTX04](LTX04.md): Bind LTX conditioning/guidance/media to existing native TP3 serving | LT3-02, LT3-08, LT3-09 | P0 | LTX03/TP1 parity; specific RUM05 admission and RUM06 lifecycle contracts | Candidate |
-| [LTX05](LTX05.md): Qualify three-card LTX video/audio numerical parity and end-to-end performance | LT3-14 P0 (three-card part) | P0 | LTX04 opt-in serving acceptance | Candidate |
-| [LTX06](LTX06.md): Qualify optional gfx1030 Gemma text worker and actual memory residency | LT3-10 and LT3-11 | P1 | Independent accepted TP3 three-card serving LTX04; no dependency for LTX01–05 | Candidate |
-| [LTX07](LTX07.md): Add optional LTX/Gemma tensor handoff on an admitted worker | LT3-12 and LT3-13 | P1 | LTX04 + LTX06; RUM05 generic worker admission and RUM06 transport lifetime | Candidate |
-| [LTX08](LTX08.md): Release qualified LTX TP3 configurations with reproducible rollback | LT3-15 and final LT3-14 release decision | P0 | LTX05 accepted; LTX07 only for optional text-worker variant | Candidate |
+| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and RUM13-owned AQL proof; PR #1262 | Registered |
+| [LTX02](LTX02.md): Execute actual LTX Q/K RMS and self-attention with checkpoint activations | LT3-05 and self-attention part of LT3-06 | P0 | LTX01 model source; RUM13 native AQL proof; RUM06 TP-group contract | Registered |
+| [LTX03](LTX03.md): Complete the 48-block dual video/audio TP3 DiT graph without new dispatch infrastructure | Remaining LT3-06 plus cross-modal and FFN work from LT3-03/04/05 | P0 | LTX02 accepted on both modalities | Registered |
+| [LTX04](LTX04.md): Bind LTX conditioning/guidance/media to existing native TP3 serving | LT3-02, LT3-08, LT3-09 | P0 | LTX03/TP1 parity; specific RUM05 admission and RUM06 lifecycle contracts | Registered |
+| [LTX05](LTX05.md): Qualify three-card LTX video/audio numerical parity and end-to-end performance | LT3-14 P0 (three-card part) | P0 | LTX04 opt-in serving acceptance | Registered |
+| [LTX06](LTX06.md): Qualify optional gfx1030 Gemma text worker and actual memory residency | LT3-10 and LT3-11 | P1 | Independent accepted TP3 three-card serving LTX04; no dependency for LTX01–05 | Registered |
+| [LTX07](LTX07.md): Add optional LTX/Gemma tensor handoff on an admitted worker | LT3-12 and LT3-13 | P1 | LTX04 + LTX06; RUM05 generic worker admission and RUM06 transport lifetime | Registered |
+| [LTX08](LTX08.md): Release qualified LTX TP3 configurations with reproducible rollback | LT3-15 and final LT3-14 release decision | P0 | LTX05 accepted; LTX07 only for optional text-worker variant | Registered |
 
 ## One numbering system for execution
 
-**The ONLY proposed Planning MCP work items are LTX01–LTX08 above.** None has
-been created in the authoritative service yet. Existing LT3-01–LT3-15
+**The ONLY registered LTX Planning MCP work items are LTX01–LTX08 above.** All eight now exist under `docs/planning/active/build-radiance-ltx25-tp3/`. Existing LT3-01–LT3-15
 numbers are **design requirements**; do not register them again. The native
 C01–C08 engineering milestone names are **historical implementation/evidence
 labels**, not plans or sequential user-facing roadmap items. Their names do
