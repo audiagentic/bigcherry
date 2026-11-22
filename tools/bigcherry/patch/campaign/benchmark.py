@@ -13,8 +13,8 @@ from typing import TYPE_CHECKING
 
 from bigcherry.build.builds import capture_completed_build_evidence
 from bigcherry.core import engines as bc_engines, paths as bc_paths
+from bigcherry.hardware.power_receipt import write_json_atomic
 from bigcherry.patch.campaign.build import (
-    _atomic_write_json,
     _full_requested_cmake_args,
     _hip_env,
     _print,
@@ -826,7 +826,10 @@ def _run_performance_benchmark(args: argparse.Namespace, descriptor, cfg) -> int
         "cells": cells,
     }
     performance_path = args.workdir / "performance-matrix.json"
-    _atomic_write_json(performance_path, performance_doc)
+    write_json_atomic(
+        performance_path, performance_doc,
+        ensure_ascii=False, sync_directory=False, newline="\n",
+    )
     executed = [c for c in cells if c["status"] == "executed"]
     skipped = [c for c in cells if c["status"] == "skipped"]
     _print(

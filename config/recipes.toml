@@ -347,9 +347,6 @@ patches = ["1221_rd50_gdn_chunked_recurrence"]
 [experiment.rd58-only]
 patches = ["1234_rd58_pin_state_buffer_multigpu_restore"]
 
-[experiment.rd09-only]
-patches = []
-
 [experiment.nro05-only]
 patches = ["1254_nro05_gdn_mtp_prefix_tail"]
 
@@ -517,20 +514,6 @@ patches = ["1330_qsa_mask_inplace"]
 
 
 
-[experiment.fusion-bisect]
-# FKE01: production set (1339's overlap counters) + 1342 (BIGCHERRY_FUSION_SKIP_OPS, per-family fusion counters).
-patches = []
-
-
-[experiment.mmq-few-tile-streamk]
-# QFP37: 1350 is promoted into the production set; retain the selector as a stable composition check.
-patches = []
-
-[experiment.mtp-prompt]
-# QFP31: production set + 1346 (MTP prompt cost: timing split under BIGCHERRY_MTP_PROMPT_TIMING=1, then the overlap).
-patches = []
-
-
 [experiment.prefill-diag]
 # Where a prefill chunk's wall time goes on the host: production set + 1319 / 1320 / 1325 (BIGCHERRY_SUBMIT_TIMING=1:
 # process_ubatch phases, meta graph_compute, scheduler splits) + 1346 (BIGCHERRY_MTP_PROMPT_TIMING=1: MTP per prompt).
@@ -538,10 +521,6 @@ patches = []
 
 [experiment.hc-post-gate-fuse]
 # QFP35: production + 1355. A/default = fused HC gate consumer; BIGCHERRY_HC_POST_GATE_FUSE=0 is the composed 1313/1344 control.
-patches = []
-
-[experiment.prefill-pipeline]
-# QFP50: production + 1359; default off, enable with BIGCHERRY_PREFILL_PIPELINE=1.
 patches = []
 
 [experiment.meta-dispatch-workers]
