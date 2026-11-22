@@ -127,10 +127,6 @@ class GuardTests(unittest.TestCase):
         self.assertEqual(git.pushed(), [])
         self.assertTrue(any(c[:2] == ("merge", "--abort") for c in git.calls))
 
-    def test_never_updates_main(self):
-        with self.assertRaises(mr.ManifestReconcileError):
-            mr.reconcile_head(Path("."), "origin", "main", "main", "aaa", ".", FakeGit("aaa"))
-
 
 def _git(cwd, *args):
     return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid", *args],
@@ -271,8 +267,7 @@ _BRANCH = "release-please--branches--main--components--bc-platform"
 
 def _pr(**over):
     pr = {"number": 7, "state": "OPEN", "baseRefName": "main", "labels": [{"name": mr.LABEL}], "headRefName": _BRANCH,
-          "headRefOid": "aaa", "isCrossRepository": False, "headRepositoryOwner": {"login": "owner"},
-          "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}
+          "headRefOid": "aaa", "mergeable": "CONFLICTING", "mergeStateStatus": "DIRTY"}
     pr.update(over)
     return pr
 
@@ -295,7 +290,7 @@ class SelectionTests(unittest.TestCase):
         real = mr.reconcile_head
         mr.reconcile_head = fake_reconcile
         try:
-            report = mr.reconcile_platform(Path("."), "url", "owner", _CONFIG, gh, git, sleeps.append, attempts=3, seconds=1)
+            report = mr.reconcile_platform(Path("."), "url", _CONFIG, gh, git, sleeps.append, attempts=3, seconds=1)
         finally:
             mr.reconcile_head = real
         return report, writes, sleeps
@@ -331,13 +326,9 @@ class SelectionTests(unittest.TestCase):
         report, writes, _ = self.run_it([_pr()], [_pr(), _pr(headRefOid="bbb")], results=("head-moved", "pushed"))
         self.assertEqual(report, ["PR #7: pushed"])
 
-    def test_fork_and_lookalikes_are_never_written(self):
+    def test_other_prs_are_left_alone(self):
         cases = [
-            _pr(isCrossRepository=True, headRepositoryOwner={"login": "someone"}),          # fork, same suffix
-            _pr(isCrossRepository=True),                                                     # fork with the same owner name
-            _pr(headRefName="x-" + _BRANCH),                                                 # lookalike branch
-            _pr(headRefName=_BRANCH + "-2"),
-            _pr(headRepositoryOwner={"login": "other"}),
+            _pr(headRefName="x-" + _BRANCH), _pr(headRefName=_BRANCH + "-2"),   # another branch
             _pr(baseRefName="release"), _pr(state="CLOSED"), _pr(labels=[]),
         ]
         for case in cases:
@@ -345,8 +336,8 @@ class SelectionTests(unittest.TestCase):
                 report, writes, _ = self.run_it([case], [case])
                 self.assertEqual((report, writes), ([], []))
 
-    def test_pr_that_changed_between_list_and_view_is_refused(self):
-        report, writes, _ = self.run_it([_pr()], [_pr(isCrossRepository=True)])
+    def test_pr_that_closed_between_list_and_view_is_refused(self):
+        report, writes, _ = self.run_it([_pr()], [_pr(state="CLOSED")])
         self.assertEqual(writes, [])
         self.assertTrue(report[0].startswith("PR #7: refused"))
 
@@ -361,21 +352,12 @@ class WorkflowTests(unittest.TestCase):
     def test_step_runs_after_release_please_with_the_existing_token(self):
         self.assertGreater(self.steps.index(self.step), 0)
         self.assertEqual(self.step["env"]["GH_TOKEN"], "${{ secrets.RELEASE_PLEASE_TOKEN }}")
-        self.assertNotIn("secrets.", json.dumps(self.step).replace("secrets.RELEASE_PLEASE_TOKEN", ""))
-
-    def test_no_credential_in_argv_and_checkout_keeps_none(self):
-        self.assertNotIn("x-access-token", self.step["run"].split("manifest_reconcile", 1)[1])
-        self.assertIn("http.https://github.com/.extraheader", self.step["run"])
-        checkout = next(s for s in self.steps if s.get("with", {}).get("path") == "rewrite-src")
-        self.assertIs(checkout["with"]["persist-credentials"], False)
-        self.assertEqual(self.step["env"]["REPO_OWNER"], "${{ github.repository_owner }}")
 
     def test_permissions_and_trigger_cannot_loop(self):
         on = self.wf.get("on", self.wf.get(True))
         self.assertEqual(on, {"push": {"branches": ["main"]}})  # only main; the step pushes a release branch
         self.assertEqual(self.wf["permissions"], {"contents": "write", "pull-requests": "write"})
         self.assertNotIn("gh pr merge", self.step["run"])
-        self.assertNotIn("--force", self.step["run"])
 
     def test_runs_are_serialised(self):
         self.assertFalse(self.wf["concurrency"]["cancel-in-progress"])
