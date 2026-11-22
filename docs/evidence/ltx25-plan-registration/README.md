@@ -1,11 +1,11 @@
 # LTX-2.5 IQ8R TP3 — Planning MCP registration handoff
 
 **Registration completed 2026-11-22 through Planning MCP:** authoritative `LTX01–LTX08` are in [the active Radiance LTX plan group](../../planning/active/build-radiance-ltx25-tp3/). These original proposal documents remain **historical evidence, not authoritative Planning state**.
-Owning group proposal: `build-radiance-ltx25-tp3` (new group only after Planning MCP verifies no existing equivalent). The reserved identifiers `LTX01`–`LTX08` were validated and registered; no parallel LT3/C plan identifiers were created. Source scope `docs/design/ltx25-iq8r-tp3.md` LT3-01–LT3-15 is comprehensively mapped without duplicating the full 15 items.
+Registered owner group: `build-radiance-ltx25-tp3`. The reserved identifiers `LTX01`–`LTX08` were validated and registered; no parallel LT3/C plan identifiers were created. Source scope `docs/design/ltx25-iq8r-tp3.md` LT3-01–LT3-15 is comprehensively mapped without duplicating the full 15 items.
 
 | Proposed item | Gap mapping | Priority | Depends on | Registration status |
 | --- | --- | --- | --- | --- |
-| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and RUM13-owned AQL proof; PR #1262 | Registered |
+| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and merged RUM13 AQL proof; PR #1262 | Registered; engineering evidenced, Planning close pending |
 | [LTX02](LTX02.md): Execute actual LTX Q/K RMS and self-attention with checkpoint activations | LT3-05 and self-attention part of LT3-06 | P0 | LTX01 model source; RUM13 native AQL proof; RUM06 TP-group contract | Registered |
 | [LTX03](LTX03.md): Complete the 48-block dual video/audio TP3 DiT graph without new dispatch infrastructure | Remaining LT3-06 plus cross-modal and FFN work from LT3-03/04/05 | P0 | LTX02 accepted on both modalities | Registered |
 | [LTX04](LTX04.md): Bind LTX conditioning/guidance/media to existing native TP3 serving | LT3-02, LT3-08, LT3-09 | P0 | LTX03/TP1 parity; specific RUM05 admission and RUM06 lifecycle contracts | Registered |
@@ -13,6 +13,17 @@ Owning group proposal: `build-radiance-ltx25-tp3` (new group only after Planning
 | [LTX06](LTX06.md): Qualify optional gfx1030 Gemma text worker and actual memory residency | LT3-10 and LT3-11 | P1 | Independent accepted TP3 three-card serving LTX04; no dependency for LTX01–05 | Registered |
 | [LTX07](LTX07.md): Add optional LTX/Gemma tensor handoff on an admitted worker | LT3-12 and LT3-13 | P1 | LTX04 + LTX06; RUM05 generic worker admission and RUM06 transport lifetime | Registered |
 | [LTX08](LTX08.md): Release qualified LTX TP3 configurations with reproducible rollback | LT3-15 and final LT3-14 release decision | P0 | LTX05 accepted; LTX07 only for optional text-worker variant | Registered |
+
+
+**2026-11-22 source-backed LTX01 engineering closure:** Current main now contains
+[the checkpoint-backed LTX01 geometry and declaration acceptance receipt](../2026-11-22-ltx25-ltx01-foundation-closure/README.md).
+This is **engineering acceptance**, not a Planning MCP lifecycle transition:
+the registered `LTX01` still requires its authoritative state/receipt
+reconciliation through Planning MCP. The other seven registered plan items
+retain their unaccepted technical gates. In particular, LTX02 has a real
+issued C05 Q/K RMS subset but lacks full issued C06 attention and TP1
+intermediate parity. RUM13's shared AQL test has merged independently.
+No new C0x plan ID was created.
 
 ## One numbering system for execution
 
@@ -31,7 +42,7 @@ Existing evidence filenames keep their historical C labels.
 | C06 (per-device kernel checks) | 961/961 checkpoint IQ8R GEMM across three cards; local device kernel vocab | LTX01 evidence only |
 | C07 (direct-HIP collective attempt) | Standalone mixed-architecture SIGSEGV; not normal Radiance dispatch | Historical diagnostic, **not an open production fault** |
 | C08 (Radiance AQL collective) | Exact native 3-rank gfx1100/gfx1100/gfx1201 all-reduce one-/two-shot, 33/33 BF16 each | LTX01 prerequisite evidence, LTX02 input |
-| Next shared **RUM13/S1** (proposed) | Delete the duplicate direct-HIP **generic** GPU lab executable, HIP-off core and launch branch; retain one Radiance AQL regression gate | **RUM13**, not LTX01 |
+| Shared **RUM13/S1** (native lab merged) | Delete the duplicate direct-HIP **generic** GPU lab executable, HIP-off core and launch branch; retain one Radiance AQL regression gate | **RUM13**, not LTX01 |
 | Then **LTX01 source proof → LTX02 GPU graph** | Complete model-derived geometry, then issue checkpoint-backed C05 Q/K RMS and C06 self-attention with TP1 oracle | **LTX01 → LTX02** only |
 
 **Ownership invariant:** every **shared** execution implementation has
@@ -39,11 +50,10 @@ exactly one **RUM** owner; LTX implements only model-specific adapters,
 data geometry and output/quality checks. No new LTX/C0x plan, shared
 device dispatcher, shared allocation, generic kernel, group barrier,
 YAML parser, release framework or alternate collective is allowed.
-The [proposed RUM13 native qualification task](../rum13-native-qualification/README.md)
+The [registered RUM13 native qualification task](../rum13-native-qualification/README.md)
 owns **only** the generic AQL test/launch-path reduction; it does not
-take existing RUM05/RUM06 runtime code. If Planning MCP finds that RUM13
-duplicates a live RUM plan, absorb the candidate into that plan and
-retire the candidate. Its numbering is not authoritative.
+take existing RUM05/RUM06 runtime code. RUM13 owns only shared native qualification; RUM06 remains the sole production
+collective and group-lifetime owner.
 
 | Shared responsibility (exactly one implementation owner) | Owner; LTX use |
 | --- | --- |
@@ -52,7 +62,7 @@ retire the candidate. Its numbering is not authoritative.
 | Physical device/BDF order, measured VRAM/host budget, native-v3 YAML/worker admission | **RUM05** (completed); LTX04/LTX07 supply **LTX model requirements**, not an owner/allocator/parser |
 | Cross-DSO shared-slot group, rank rendezvous, collective lifetime, clean/cancel/fault drain | **RUM06** (active); LTX02/LTX03/LTX04/LTX07 only test the consumed contract |
 | Selected production migration canaries and release infrastructure | **RUM09** (completed); LTX05/LTX08 own only new-model acceptance/recipes |
-| Model-independent native AQL regression executable and direct-HIP lab cleanup | **RUM13** (candidate); LTX01/LTX02 consume evidence only |
+| Model-independent native AQL regression executable and direct-HIP lab cleanup | **RUM13** (registered; native lab merged); LTX01/LTX02 consume evidence only |
 | Genuine missing shared gfx1030 kernel or role implementation | **RUM-only follow-on** after LTX06/07 supplies a failing concrete requirement; check existing RUM/kernel owners before proposing |
 
 **RUM13 is separate from RUM06:** it removes a **lab-only**
@@ -84,7 +94,7 @@ LTX06–07 and LTX08 release, own those uncompleted gates.
 
 ## Why eight, not fifteen
 
-The existing fifteen LT3 entries are **engineering gaps**, not Planning MCP IDs. The eight LTX items are independent **model-specific** work units. The generic regression-lab deletion has moved exclusively to proposed RUM13; existing RUM05/RUM06 own shared admission/lifetime. LTX01 completes LTX geometry/source proofs and LTX02 owns the first model-backed GPU graph. LTX03–05 complete video/audio integration; LTX06–07 remain optional. No extra LTX/C plan is created.
+The existing fifteen LT3 entries are **engineering gaps**, not Planning MCP IDs. The eight LTX items are independent **model-specific** work units. The generic regression-lab deletion has moved exclusively to registered RUM13; existing RUM05/RUM06 own shared admission/lifetime. LTX01 completes LTX geometry/source proofs and LTX02 owns the first model-backed GPU graph. LTX03–05 complete video/audio integration; LTX06–07 remain optional. No extra LTX/C plan is created.
 
 ## Existing proof versus open gates (2026-11-22)
 

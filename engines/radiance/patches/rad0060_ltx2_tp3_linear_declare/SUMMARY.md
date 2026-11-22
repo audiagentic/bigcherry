@@ -14,14 +14,19 @@ views. Biasless columns declare no bias; biased columns require
 `C01Slice::columns_deferred`, record `Lin::deferred_bias`, and declare
 **no partial-rank bias weight or table-add**. C04 reuses Radiance 2.2
 exact all_reduce, then adds BF16 bias once per reduced output replica.
-Actual GPU execution and full architecture integration remain gates.
+The C05 Q/K RMS subset now runs under native GPU AQL; complete C06 self-attention and architecture integration remain gates.
 
 The existing TP1 calls and LTX `world_size > 1` rejection are
-unchanged. No activated GPU TP3 inference or numerical parity is claimed.
+unchanged. C05's native seeded-input BF16 proof is not TP1 checkpoint
+intermediate parity, full DiT execution or production GPU TP3 inference.
 
 ## Outcome
 
-**Host-only validation:** 22 idempotent source edits compile on Radiance 2.2 / ABI44; the actual LTX declaration tests pass with explicitly deferred output biases, not GPU execution.
+**Foundation validation:** 22 idempotent source edits compile on
+Radiance 2.2 / ABI44; the actual LTX declarations pass with explicitly
+deferred output biases. LTX02 separately proved issued C05 with actual
+three-card AQL and checkpoint BF16 Q/K gain planes; the source-based
+declarations are **not** complete GPU C06 execution.
 
 - 22 anchored edits to the pinned Radiance 2.2 LTX source;
   applicability and idempotence pass.
@@ -33,8 +38,8 @@ unchanged. No activated GPU TP3 inference or numerical parity is claimed.
 - C04 verifies 2,016 source-backed native collective + bias graphs.
 - C05 verifies 1,728 source-backed, 3,456 Q/K all-head native
   RMS graph declarations using existing fill/cast/all_reduce/rmsnorm.
-  Q and K reuse caller-owned scratch; this is a host-only, full-width
-  network diagnostic, not a qualified GPU performance path.
+  Q and K reuse caller-owned scratch; this is a correctness-first
+  full-width path, not a qualified GPU performance result.
 - C06 declares 576 source-backed video/audio self-attention graphs
   through the same native Attn/attn_core, with activation quantizers,
   exact Q/K and output reductions, RoPE head0 and gate.
@@ -43,9 +48,10 @@ unchanged. No activated GPU TP3 inference or numerical parity is claimed.
 
 ## Detail
 
-Actual model payload loading, end-to-end per-rank DiT architecture
-and activation buffers, real GPU global Q/K RMS reduction, attention/FFN
-actual three-rank collective execution, native multi-rank
-serving and resource admission, device numerical quality/liveness,
-and a recorded video-generation performance result. Planning/Ledger,
-CI and review remain independent project gates.
+Real checkpoint TP1 intermediate activation comparisons; a fully issued
+IQ8R C06 self-attention and 48-block DiT graph; cross-modal, FFN,
+conditioning, VAE and native multi-rank serving/admission; cancellation,
+full-quality video generation and latency remain open. **The native C05
+Q/K graph itself has passed mixed three-card GPU BF16 checks** (not
+full-model parity). See `docs/evidence/2026-11-22-ltx25-ltx02-issued-aql-rms/README.md`.
+Planning/Ledger, CI and review remain independent project gates.

@@ -2,6 +2,7 @@
 proposed-id: LTX01
 group: build-radiance-ltx25-tp3
 proposed-state: pending
+engineering-status: acceptance-evidenced-on-main
 priority: P0
 work: M
 skill: advanced
@@ -84,6 +85,36 @@ BigCherry `docs/reference/agents/WORKFLOW.md`, patch and tooling dispositions, s
 RUM13's single-AQL-harness cleanup and exact GPU evidence are external shared capabilities consumed by LTX01, not implementation work in this item. Measure deletion only of redundant **LTX-specific** metadata/geometry code. All supported slices have unique full head coverage and exact model source views. At least the previously demonstrated 3,024 row/biasless, 2,640 deferred, 2,016 reduction and 576 attention declarations are rerun at the candidate commit, with zero mismatches and no invalid audio K cuts admitted. No TP3 production activation, duplicate loader or unowned test script. No release claim from these tests.
 
 ## Notes
+
+**LTX01 engineering closure (2026-11-22):** the entire original
+source/geometry/declaration acceptance set has been rerun against the
+exact Radiance 2.2/ABI44 frozen source and the real IQ8R checkpoint at
+the merged LTX02 baseline. The 22 anchored source edits apply
+idempotently and TP1 remains unchanged/TP3 unselected. Native
+declaration receipts: **3024** fused/biasless, **2640**
+deferred-bias, **2016** exact output-reduction, **1728**
+global Q/K graph cases and **576** video/audio self-attention
+graph declarations. **384** misaligned audio K partition
+attempts fail closed. The real RAD2 inventory checks all
+**960 DiT IQ8R projection entries across 48 blocks**, all
+**1306** IQ8R tensor plane structures, and 1920 valid
+raw-plane rank roundtrips; no separate model parser/metadata
+authority is added. A single `C01Slice` header remains
+authoritative for LTX-specific shard geometry; no redundant
+LTX geometry implementation warranted deletion.
+
+New C01 fixture negatives explicitly test zero-width, duplicate
+head ownership, gap and reversed rank enumeration. LTX02's
+already-merged native AQL Q/K evidence is a **dependency**,
+not an LTX01 implementation change. **11/11 synthetic CTests**,
+**6/6 source-backed native CTests**, **12/12 real-source
+and real-model pytest tests**. [Full qualification and
+source fingerprint](../../evidence/2026-11-22-ltx25-ltx01-foundation-closure/README.md).
+This completes the **engineering acceptance** of LTX01;
+the Planning MCP item remains **unregistered**, not falsely
+marked closed in generated `docs/planning/`. Register and close
+it against the same evidence when the authoritative service
+is connected. LTX02–LTX08 are **not** completed by this.
 
 C01-C06 source-backed host proof exists, C06 real GPU kernels were separately tested, but fresh current-commit revalidation is required. RUM13 owns retiring the C07 direct-HIP path; its crash is not production Radiance failure. C08 native AQL mixed-device proof passed. Full device/weight issue is LTX02, not a LTX01 deliverable.
 

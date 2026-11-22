@@ -3,6 +3,7 @@
  * implementation, and does not enable multi-rank execution.
  */
 #include "bc_ltx_tp3_c01.h"
+#include <algorithm>
 #include <array>
 #include <cassert>
 #include <cstdint>
@@ -59,6 +60,35 @@ void negative() {
     const auto huge = std::numeric_limits<int64_t>::max();
     assert(!C01Slice::rows(huge, 0, huge, 128, 3).valid(42, 4096, group));
 }
+// A group view must cover each head exactly once, independent of the
+// physical device order. C01Slice remains the single production
+// geometry authority; RUM06 owns admission and group lifecycle.
+void ownership() {
+    constexpr int64_t hd=64, full=2048;
+    const std::array<C01Slice,3> owners{
+        C01Slice::rows(full,    0,  8*hd, hd, 3),
+        C01Slice::rows(full, 8*hd,  8*hd, hd, 3),
+        C01Slice::rows(full,16*hd, 16*hd, hd, 3),
+    };
+    const auto unique = [](const std::array<C01Slice,3>& ranks) {
+        std::array<int,32> heads{};
+        for (const auto& slice : ranks) {
+            if (!slice.valid(3*slice.width, 2048, group)) return false;
+            for (int64_t i=slice.offset/slice.head_dim;
+                 i<(slice.offset+slice.width)/slice.head_dim; ++i)
+                ++heads[static_cast<size_t>(i)];
+        }
+        return std::all_of(heads.begin(),heads.end(),
+                           [](int n) { return n==1; });
+    };
+    assert(unique(owners));
+    assert(unique({owners[2],owners[0],owners[1]})); // alternate rank order
+    assert(!unique({owners[0],owners[1],owners[1]})); // duplicated ownership
+    assert(!unique({owners[0],owners[1],
+                    C01Slice::rows(full,16*hd,0,hd,3)})); // zero width/gap
+    assert(!C01Slice::columns(2048,0,0).valid(1024,0,group));
+    assert(!C01Slice::rows(full,0,0,hd,3).valid(0,full,group));
+}
 } // namespace
 
 int main() {
@@ -75,5 +105,6 @@ int main() {
         columns(16384, shares);
     }
     negative();
+    ownership();
     std::cout << "LT3 C01 native LTX builder-shard geometry: passed\n";
 }
