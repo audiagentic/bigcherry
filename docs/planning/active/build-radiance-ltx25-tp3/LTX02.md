@@ -99,9 +99,16 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 2026-11-22 new execution evidence from merged PR #1315 (c72ed6be3): the actual C06 RadCtx self-attention graph issues real checkpoint IQ8R weights for video/audio block 0, both legal 8/8/16 and 12/12/8 splits, host 4/4 and AQL 4/4 in BOTH gfx1100/gfx1100/gfx1201 orders. Three exact native collective calls/rank and 108 native instances/order; reversed AQL ordinals give 12,288/12,288 identical BF16 outputs. Same-split GPU-vs-host relative L2 is 0.330–0.422%, and changing head partition on host changes 1,605 video / 736 audio BF16 elements; neither comparison is an approved TP1 parity tolerance. Inputs are one-row deterministic seeded BF16, NOT captured TP1 activations. 16/64-row issue, reference activation parity, bounded fault/cancel, phase performance and production TP3 refusal still await validation. The test-only source-plane gather and memcpy/GPU pointer staging MUST be replaced/deleted under generic RUM14 before shared loader acceptance, without discarding this issued C06 coverage. PR #1316 fixes GPU coordinate allocation unwind; source and numeric evidence is docs/evidence/2026-11-22-ltx25-ltx02-c06-issued-attention/README.md.
 
+2026-11-22 (RUM15 numerical source review): GPU XTX and R9700 are bitwise identical at 86,400 captured BF16 C06 intermediate values; CPU/GPU IQ8R QKV difference is fully accounted for in a 198-element checkpoint-backed sample by an extra BF16 rounding of U8*BF16 weight-scale product performed by both libhalo and libr4d layout hooks. CPU libref multiplies the same two levels in F32. Do NOT make libref round its product to BF16 merely to make comparisons match. Generic kernel/layout precision-preserving remediation belongs exclusively to RUM15, with a measured representation/performance and admission decision; LTX02 retains real TP1-activation parity/quality, 16/64 rows, faults, and production refusal until LTX04. See docs/evidence/2026-11-22-ltx25-ltx02-iq8r-scale-root-cause/README.md.
+
 ## Change Log
 
 - 2026-11-22T03:06:26.779657+00:00 (created-by): Created by planning-audit
 - 2026-11-22T03:14:01.870524+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T08:21:48.151528+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T08:36:27.861283+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4467
+- 2026-11-22T09:18:12.361715+00:00 (updated-by): Updated: section:notes
