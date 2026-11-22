@@ -102,6 +102,12 @@ if(BUILD_TESTING)
   target_link_libraries(r3_layer_map_wait_test PRIVATE Threads::Threads)
   set_target_properties(r3_layer_map_wait_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   add_test(NAME r3_layer_map_wait_test COMMAND r3_layer_map_wait_test)
+  # Startup stage timing of the helper expert bootstrap: aggregation, the one-line log format, scope measurement. Host-only.
+  add_executable(r3_bootstrap_timing_test EXCLUDE_FROM_ALL worker_bootstrap_timing_test.cpp)
+  target_include_directories(r3_bootstrap_timing_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_bootstrap_timing_test PRIVATE Threads::Threads)
+  set_target_properties(r3_bootstrap_timing_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_bootstrap_timing_test COMMAND r3_bootstrap_timing_test)
   # The helper registration barrier with fake helpers (late valid, never registers, dies) and its deadline source.
   add_executable(r3_helper_registration_test EXCLUDE_FROM_ALL helper_registration_test.cpp)
   target_include_directories(r3_helper_registration_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})

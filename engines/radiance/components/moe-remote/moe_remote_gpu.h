@@ -15,6 +15,7 @@
 #include "worker_slot_pool.h"
 #include "worker_move_slots.h"
 #include "worker_generation_tables.h"
+#include "worker_bootstrap_timing.h"
 #include "worker_footprint.h"
 #include <memory>
 #include <deque>
@@ -382,12 +383,18 @@ public:
                       "initialize generation layer tables");
     }
 
+    /* Startup-only stage timing (worker_bootstrap_timing.h): set by the helper for the duration of its bootstrap and
+     * cleared after; null, so untimed, for live moves. The timer outlives every call made while it is set. */
+    void set_bootstrap_timer(r3::bootstrap_timing::Timer* t) { boot_timer_ = t; }
+
     bool load_layer(uint32_t layer,
                     const std::vector<std::pair<uint32_t, uint32_t>>& owned,
                     const int32_t* slot_of_expert) {
         using namespace r3::moe_shm;
         if (layer >= model_.layers || !slot_of_expert || layer_loaded_.empty()) return false;
         if (layer_loaded_[layer]) return true;
+        if (boot_timer_) boot_timer_->set_layer(layer);
+        r3::bootstrap_timing::Scope layer_span(boot_timer_, r3::bootstrap_timing::Stage::LayerLoad);
 
         std::vector<uint8_t> seen(experts(), 0);
         uint32_t nreg = 0;
@@ -425,8 +432,11 @@ public:
             loading_size_ = loading_used_ = 0;
             x.live = true;
         }
-        for (uint32_t generation = 0; generation < r3::worker_tables::kGenerations; ++generation)
-            if (!build_layer_table(layer, slot_of_expert, generation)) return false;
+        {
+            r3::bootstrap_timing::Scope table_span(boot_timer_, r3::bootstrap_timing::Stage::Table);
+            for (uint32_t generation = 0; generation < r3::worker_tables::kGenerations; ++generation)
+                if (!build_layer_table(layer, slot_of_expert, generation)) return false;
+        }
         layer_loaded_[layer] = 1;
         return true;
     }
@@ -1355,6 +1365,7 @@ private:
     bool staging_upload_ = false, copy_pending_ = false;
     uint64_t move_bytes_staged_ = 0;
     uint32_t active_generation_ = 0;
+    r3::bootstrap_timing::Timer* boot_timer_ = nullptr;   /* startup-only; see set_bootstrap_timer */
     uint8_t* loading_base_ = nullptr;
     uint64_t loading_size_ = 0, loading_used_ = 0;
 
@@ -1645,6 +1656,7 @@ private:
         if (!e || !t || !out || sel < 0 || (uint32_t)sel >= e->n_planes) return false;
         const RadFilePlane* fp = model_.plane(e, sel);
         out->resize((size_t)fp->bytes);
+        r3::bootstrap_timing::Scope read_span(boot_timer_, r3::bootstrap_timing::Stage::Read, fp->bytes);
         size_t done = 0;
         while (done < out->size()) {
             const size_t n = std::min(load_bounce_.bytes, out->size() - done);
@@ -1657,7 +1669,10 @@ private:
     }
 
     bool transfer_plane(void* dst, const void* src, size_t bytes, const char* label) {
-        if (!staging_upload_) return hip_ok(hipMemcpy(dst, src, bytes, hipMemcpyHostToDevice),label);
+        if (!staging_upload_) {
+            r3::bootstrap_timing::Scope h2d_span(boot_timer_, r3::bootstrap_timing::Stage::H2D, bytes);
+            return hip_ok(hipMemcpy(dst, src, bytes, hipMemcpyHostToDevice),label);
+        }
         // Device pointers are opaque host addresses. Compare integer offsets,
         // not C++ pointers from unrelated virtual address spaces.
         const uintptr_t base=reinterpret_cast<uintptr_t>(loading_base_);
@@ -1730,12 +1745,18 @@ private:
         const RadEncoding* enc = model_.encoding(e);
         std::vector<uint8_t> full_code((size_t)p.code.bytes);
         std::vector<uint8_t> full_scale((size_t)p.scale.bytes);
-        if (moe_->relayout(p.params.data(), (int)p.params.size(), 2, enc,
-                           p.code_sel.data(), code_planes.data(), 2,
-                           full_code.data(), p.code.bytes) != RAD_OK ||
-            moe_->relayout(p.params.data(), (int)p.params.size(), 3, enc,
-                           p.scale_sel.data(), scale_planes.data(), 2,
-                           full_scale.data(), p.scale.bytes) != RAD_OK) {
+        bool relaid;
+        {
+            r3::bootstrap_timing::Scope relayout_span(boot_timer_, r3::bootstrap_timing::Stage::Relayout,
+                                                      uint64_t(p.code.bytes) + uint64_t(p.scale.bytes));
+            relaid = moe_->relayout(p.params.data(), (int)p.params.size(), 2, enc,
+                                    p.code_sel.data(), code_planes.data(), 2,
+                                    full_code.data(), p.code.bytes) == RAD_OK &&
+                     moe_->relayout(p.params.data(), (int)p.params.size(), 3, enc,
+                                    p.scale_sel.data(), scale_planes.data(), 2,
+                                    full_scale.data(), p.scale.bytes) == RAD_OK;
+        }
+        if (!relaid) {
             std::fprintf(stderr, "r3_moe_worker: libr4d refused expert relayout\n");
             return false;
         }
