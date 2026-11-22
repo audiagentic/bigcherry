@@ -96,6 +96,16 @@ if(BUILD_TESTING)
     R3MOE_TARGETS="${r3moe_targets_csv}")
   set_target_properties(r3_moe_mailbox_lifetime_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
   add_test(NAME r3_moe_mailbox_lifetime_test COMMAND r3_moe_mailbox_lifetime_test)
+  # The explicit factory bind against the real libr3moe, through the engine's own generation code (rad0002). Host-only.
+  if(EXISTS "${RADIANCE_SRC}/core/place/bc_moe_remote.cpp")
+    add_executable(r3_moe_factory_bind_test EXCLUDE_FROM_ALL
+      moe_factory_bind_test.cpp ${RADIANCE_SRC}/core/place/bc_moe_remote.cpp)
+    target_include_directories(r3_moe_factory_bind_test PRIVATE ${RADIANCE_SRC}/abi)
+    target_link_libraries(r3_moe_factory_bind_test PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+    set_target_properties(r3_moe_factory_bind_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    add_dependencies(r3_moe_factory_bind_test libr3moe)
+    add_test(NAME r3_moe_factory_bind_test COMMAND r3_moe_factory_bind_test $<TARGET_FILE:libr3moe>)
+  endif()
   # Keep the declared, card-free large-K geometry/admission target bounded.
   set_tests_properties(r3_gemv_geometry_test PROPERTIES TIMEOUT 60)
   # The typed policy and forced-schedule settings come from the manifest's generated types (bc_serving_v2's headers).

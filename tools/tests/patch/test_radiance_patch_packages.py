@@ -629,6 +629,34 @@ int main() {
         finally:
             temp.cleanup()
 
+    def test_rum06_generation_lifetime_on_the_generated_engine_code(self):
+        """RUM06 S1: the engine-owned generation (open/close/destroy, slot-keyed lookup, stale and foreign refusals,
+        per-generation state, concurrent lifetimes), compiled from the generated core/place/bc_moe_remote.cpp and run
+        under address/undefined-behaviour checking where the compiler has them."""
+        compiler = shutil.which("c++")
+        if not compiler:
+            self.skipTest("C++ compiler unavailable")
+        temp, root = self._tree(FIXTURE_PIN)
+        try:
+            self.assertTrue(all(result.ok for result in apply_all(list(_load(RAD0002)), root)))
+            binary = root / "generation-test"
+            compiled = subprocess.run(
+                [compiler, "-std=c++17", "-O1", "-pthread", "-I", str(root / "abi"),
+                 str(REPO / "engines/radiance/tests/moe_remote_generation_test.cpp"),
+                 str(root / "core/place/bc_moe_remote.cpp"), "-ldl", "-o", str(binary)],
+                capture_output=True, text=True, check=False)
+            self.assertEqual(compiled.returncode, 0, compiled.stderr)
+            result = subprocess.run([str(binary)], capture_output=True, text=True, timeout=60, check=False)
+            self.assertEqual(result.returncode, 0, result.stderr)
+            # none of the process-global registry state the generation replaced
+            core = (root / "core/place/bc_moe_remote.cpp").read_text(encoding="utf-8")
+            for gone in ("g_plugin", "g_mu", "g_layer_maps", "g_burst_active", "thread_local", "bc_moe_remote_register"):
+                self.assertNotIn(gone, core)
+            for text in ("core/runtime/ctx.cpp", "core/engine.cpp"):
+                self.assertNotIn("bc_moe_remote_current_ticket", (root / text).read_text(encoding="utf-8"))
+        finally:
+            temp.cleanup()
+
     def test_plugin_registration_struct_matches_the_engine_abi(self):
         """libr3moe mirrors BcMoeRemotePlugin (it builds against an unpatched tree); the two must not drift."""
         temp, root = self._tree(FIXTURE_PIN)
