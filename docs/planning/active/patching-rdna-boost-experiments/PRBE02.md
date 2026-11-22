@@ -13,6 +13,48 @@ priority: P3
 
 # RD05 WMMA FlashAttention: upstream k00 barrier; residual tile boundary gate
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP136: Bounded action / terminal gate. Source-bounded action/stop rule: Use b11552 source-static selector/shape checks first. Only if a post-#30103 stock gfx1201 failure is reproduced in actual WMMA-F16, multiple-kbc, graph-on/off and repeated-request cases should one isolated residual-only barrier be tested against identical full-vocab/logits/KLD, MTP and replay controls. If no reproduced race, close PRBE02 as upstream-absorbed; do not queue hardware or rebase 1266 speculatively. No performance claim without measured E2E improvement and no correctness regression. See docs/planning/completed/patching-bc-optimizations/BCOP136.md for the complete source/shape/negative case and evidence. PRBE02 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+2026-11-22 owner handoff from decision-only BCOP156: Bounded action / terminal disposition. Source-bounded action/stop rule: Use b11552 native #30103 as correctness baseline; first prove an eligible gfx1201 WMMA route and an actual repeated-`kbc` mismatch. No failure after bounded alternating-shape/graph/repeated-request tests => retire 1266 and complete PRBE02 without a patch. Reproduced failure => isolate only the uncovered inter-tile barrier, preserve #30103, require fail-before/pass-after, full logits/MTP/graph safety and <=1% unrelated control regression before any new patch identity. Do not queue a performance-only RD05 campaign. See docs/planning/completed/patching-bc-optimizations/BCOP156.md for the complete source/shape/negative case and evidence. PRBE02 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Authoritative disposition — 2026-10-11, b11552
 
 **Pending, correctness-only; no patch or hardware queue authorised.** Merged upstream llama.cpp [#30103](https://github.com/ggml-org/llama.cpp/pull/30103), commit `1bb2b9fcbe85c35c4e3b787e1c868ef05ca702f3` (2026-10-10), repairs the **first** of the two barriers extracted into BigCherry `1266_rd05_wmma_fa_tileq_sync`. The upstream issue [#29314](https://github.com/ggml-org/llama.cpp/issues/29314) was closed on that merge. The `1266` patch still anchors on the old `if (np > 1)` block and cannot be treated as an applicable b11552 patch without reconciliation. Its **second** inter-`process_tile` barrier is not present in b11552. There is no demonstrated residual stock race at that boundary. Do not port a redundant first barrier, create a new attention dispatcher, or reuse the rejected `1203` evidence.
@@ -53,3 +95,8 @@ Historical 1266 gfx1201: four sessions passed activation and full-vocabulary cor
 ## Provenance
 
 PRBE02 supersedes RD05. Prior b11126/b11474 plan proposed a 192/256/320/512/576 hardware campaign and claimed PRBE110 extraction was not yet delivered; 1266 was subsequently extracted and tested, and #30103 changed the baseline. Historical steps are retained in Git history, not active instructions. BCOP136 records this disposition.
+
+## Change Log
+
+- 2026-11-22T05:18:14.980987+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:20:37.780443+00:00 (updated-by): Updated: section:notes

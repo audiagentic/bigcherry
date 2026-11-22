@@ -63,6 +63,8 @@ Blocked on a deeper finding than scoped: campaign_build_identities and the evide
 
 Deliberately NOT implementing this now: it's a genuine schema fork touching the exact evidence-writing code path the live perf-lane hardware campaigns (t-1268b-*, t-1265c-*) are using this session, and every other schema-version fork in this codebase (PA28-31, VA07, VA18) shows a GPT design review attached before landing. Pick this up in a dedicated window with no live hardware campaign in flight, and get a design review on the v5 role-set split before implementing.
 
+2026-11-22 owner handoff from decision-only BCOP165: Unsectioned source gate. Source-bounded action/stop rule: **Discovery:** Shared scaffold always builds tune/replay; producer uses them only as v4 identity fields, while legacy `validation_campaign.py` actually executes them. PVPS03 can add a distinct base build: saving is 2/5–2/6 build variants (33.3–40% by count), not measured time or token/s. **Owner/consolidation:** PVPS04 owns existing scaffold's producer-only omission and schema-v5 provenance; PVPS03 retains ladder, PVPS01 multi-arm policy, PEC02 evidence completeness. No duplicate executor, fake build identity, or second schema registry. No independent PVPS04 implementation or experiment was found within 12 hours. **Bounded action:** Explicit internal producer/tune-replay mode, exact v5 role sets, producer digest-v2 labels, unchanged legacy tune/replay execution and v1-v4 historical readback. Unit/mock tests must prove build counts, role/mode rejection, input digest, contract/ported-benched gates, old-record verification and ladder parity before any uncontended real producer run. **Terminal gate:** ACCEPT only with zero false evidence PASS, preserved historical v4 verification, real producer stock/control/subject/optional-base builds and observed cold/warm build-time savings. Otherw See docs/planning/completed/patching-bc-optimizations/BCOP165.md for the complete source/shape/negative case and evidence. PVPS04 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Change Log
 
 - 2026-09-25T12:43:53.159999+00:00 (created-by): Created by agent
@@ -72,3 +74,4 @@ Deliberately NOT implementing this now: it's a genuine schema fork touching the 
 
 - RV4254
 - 2026-11-20T04:13:01.931953+00:00 (updated-by): Updated: section:description, section:steps, section:validation, section:acceptance_criteria
+- 2026-11-22T05:21:39.078738+00:00 (updated-by): Updated: section:notes

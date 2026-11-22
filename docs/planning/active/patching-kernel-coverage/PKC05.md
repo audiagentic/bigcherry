@@ -20,6 +20,80 @@ Do not create Q1_0, byte-permute, Q2_K, generic VGPR, or generic AMD-intrinsic p
 
 27B Q8_0 plain decode is ~36 t/s (38.4 with adaptive AllReduce) against a ~66 t/s DRAM roof. Q8 remains the representative production attribution lane; Q2_K and Q1_0 are targeted mechanism probes whose promotion requires local RDNA evidence.
 
+## Steps
+
+1. Q8 attribution: rocprofv3 per-device critical-path time per category/token using `tools/lab/profiling/profile-27b-q8.sh`.
+2. Q8 loader: qualify cooperative aligned Q8_0/F32 MMVQ loader only if attribution still supports it.
+3. Q8 geometry/MMQ: sweep gfx1100 MMVQ 4x1/8x1/4x2/8x2 and measured MMQ tile candidates; promote only winners.
+4. Q2 exact-upstream gate: qualify #29910 on gfx1100 + gfx1201 with `MUL_MAT`/`MUL_MAT_ID` correctness, VGPR/spills, rocprof kernel timing and pp2048 ub16-512.
+5. Q2 dispatch only if required: if local architectures show a crossover, compare unroll 1/2/4 through existing HIP autotune. No second dispatch registry.
+6. Q1 exact-upstream gate: reproduce #29927 unchanged. Build native gfx1100/gfx1201 variants and a control using the current compatibility path. Cover both MMVQ/decode and MMQ/prefill unpack sites.
+7. Q1 compiler/ISA gate: retain compiler outputs/disassembly. Confirm the intended AMD permute lowering without extra lane-shuffle, pack/unpack, VGPR, spill or occupancy regressions. ISA is explanatory evidence, not a promotion criterion by itself.
+8. Q1 performance gate: backend-op microbench n=1/2/4/8/32/128/512 plus pp512/2048/4096 and tg128/512; MMQ ub16/32/64/128/256/512; identical model/build/power settings and repeated samples.
+9. Cross-quant consolidation: store Q8/Q2/Q1 evidence in one schema and use compiler/ISA evidence to prune candidates before expensive campaigns.
+10. Broader intrinsic audit only after Q1 success; any follow-up stays in PKC05 unless it is a genuinely different subsystem.
+
+## Detailed Solution & Technical Design
+
+PKC05 treats three optimization classes as one kernel-coverage problem:
+
+- Q8_0: memory transaction/geometry efficiency;
+- Q2_K: register pressure and source-level unroll effects;
+- Q1_0: architecture-native packed-byte permutation/unpack efficiency.
+
+The common gate is `correctness -> compiler/ISA resources -> kernel timing -> repeated end-to-end`. Compiler counters explain results but never substitute for throughput.
+
+For Q1_0, preserve CUDA behavior and scope native AMD builtin use strictly to HIP. Do not create a generic wrapper unless multiple call sites/formats prove a measurable need. Verify selector semantics with backend-op vectors; matching signatures are not proof of identical byte selection.
+
+For Q2_K, reject spilling variants when a zero-spill equivalent exists, but still require end-to-end confirmation because lower VGPR pressure can trade against ILP.
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+- `vendor/llama.cpp/ggml/src/ggml-cuda/mmvq.cu`
+- MMQ implementation/config including `mmq-config-rdna3.cuh`
+- Q1_0 quant/dot helper containing its Q8_1 dot path
+- Q1_0 MMQ loader/unpack path
+- `tools/lab/profiling/profile-27b-q8.sh`
+- existing HIP-autotune/dispatch and evidence tooling
+- temporary BigCherry patch only while the upstream candidate is absent from the pin
+
+## Validation
+
+Q8: existing tierL-qwen27b-q8 experiment contract, repeated paired sessions, positive improvement CI and controls within noise.
+
+Q2: backend-op ROCm `MUL_MAT` + `MUL_MAT_ID` with q2_K; gfx1100/gfx1201 compiler resources; pp2048 ub16-512 repeated samples; no >1% regression in primary larger-ubatch lanes if specialization promotes.
+
+Q1 correctness: packed patterns around byte/word boundaries; MMVQ and MMQ both exercised; gfx1100/gfx1201 required, gfx1030 useful control; existing quantized tolerances only.
+
+Q1 performance: n=1/2/4/8/32/128/512 microbench, pp512/2048/4096, tg128/512, MMQ ub16-512; record kernel time, end-to-end t/s, VGPR/SGPR/spills, occupancy and instruction count where available. Require repeated median + dispersion.
+
+## Effort & Risk
+
+Q1 direct qualification is low implementation risk but high extrapolation risk. Q2 is low implementation/medium tuning risk. Avoid broad intrinsic rewrites until exact upstream candidates are measured on gfx1100/gfx1201.
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+- Q8 attribution still identifies actionable MMVQ/MMQ headroom before custom Q8 changes promote.
+- #29910 or merged equivalent is qualified on gfx1100/gfx1201 with correctness, compiler resources, kernel timing and end-to-end evidence.
+- #29927 is qualified on gfx1100/gfx1201 across both Q1_0 MMVQ and MMQ unpack sites.
+- Q1 generated ISA is captured and correlated with performance; no claim relies on older-architecture results alone.
+- No duplicate quant/intrinsic/dispatch plan is created.
+- Any promoted candidate has positive workload-relevant end-to-end evidence and no material control regression.
+
+## Notes
+
+This absorbs the strongest useful side-branch quant-kernel mechanisms into the existing kernel-coverage owner rather than creating Q1_0/Q2_K child plans.
+
+2026-11-22 owner handoff from decision-only BCOP43: Unsectioned source gate. Source-bounded action/stop rule: # Bound RDNA MMQ Stream-K follow-up ## Disposition Authoritative owner: PKC05; HIP architecture/shape dispatch remains owned by existing HIP-autotune machinery. This audit found upstream draft #30022 adding a GCN-specific Stream-K/tiled crossover and wave64 fixup sizing while retuning `mmq-config-gcn.cuh`. It contains no RDNA measurements and explicitly leaves other AMD architectures untested; BigCherry must not copy its GCN config table or thresholds to gfx1100/gfx1201. No subsequent BigCherry work has implemented this mechanism. The unresolved action is only the cheap PKC05 discriminator: record tile efficiency, selected Stream-K/fixup and fixup share on representative quantized RDNA shapes. Run a hardware A/B only if regular tiling is already >=90% efficient while Stream-K is selected, or fixup is >=3% of MMQ wall time. Promote through existing HIP-autotune ownership only at >=3% repeated kernel-time and >=1% end-to-end gain with no >1% primary-control regression; otherwise close this sub-slice without new dispatch/scheduler state. See docs/planning/completed/patching-bc-optimizations/BCOP43.md for the complete source/shape/negative case and evidence. PKC05 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Fresh upstream evidence
 
 ### Q2_K: PR #29910
@@ -54,33 +128,6 @@ Against current BigCherry pin `050439614`, #29910 and #29927 are still external 
 
 **External comparison:** [vLLM GGUF plugin](https://github.com/vllm-project/vllm-gguf-plugin) publishes Q4/Q6/IQ4/Q8 reference lanes but no Q1_0 RDNA qualification; [SGLang](https://github.com/sgl-project/sglang) provides no verified transferable Q1_0 native-permute mechanism here. #28398 reports a single-gfx1201 Q1_0 decode result using a *different* implementation; it is external evidence only, not a BigCherry measurement. Current dual-XTX/R9700 no-P2P transport and gfx1030 chipset placement do not affect this single-device byte-unpack hypothesis; cross-device claims require separate evidence.
 
-## Steps
-
-1. Q8 attribution: rocprofv3 per-device critical-path time per category/token using `tools/lab/profiling/profile-27b-q8.sh`.
-2. Q8 loader: qualify cooperative aligned Q8_0/F32 MMVQ loader only if attribution still supports it.
-3. Q8 geometry/MMQ: sweep gfx1100 MMVQ 4x1/8x1/4x2/8x2 and measured MMQ tile candidates; promote only winners.
-4. Q2 exact-upstream gate: qualify #29910 on gfx1100 + gfx1201 with `MUL_MAT`/`MUL_MAT_ID` correctness, VGPR/spills, rocprof kernel timing and pp2048 ub16-512.
-5. Q2 dispatch only if required: if local architectures show a crossover, compare unroll 1/2/4 through existing HIP autotune. No second dispatch registry.
-6. Q1 exact-upstream gate: reproduce #29927 unchanged. Build native gfx1100/gfx1201 variants and a control using the current compatibility path. Cover both MMVQ/decode and MMQ/prefill unpack sites.
-7. Q1 compiler/ISA gate: retain compiler outputs/disassembly. Confirm the intended AMD permute lowering without extra lane-shuffle, pack/unpack, VGPR, spill or occupancy regressions. ISA is explanatory evidence, not a promotion criterion by itself.
-8. Q1 performance gate: backend-op microbench n=1/2/4/8/32/128/512 plus pp512/2048/4096 and tg128/512; MMQ ub16/32/64/128/256/512; identical model/build/power settings and repeated samples.
-9. Cross-quant consolidation: store Q8/Q2/Q1 evidence in one schema and use compiler/ISA evidence to prune candidates before expensive campaigns.
-10. Broader intrinsic audit only after Q1 success; any follow-up stays in PKC05 unless it is a genuinely different subsystem.
-
-## Detailed Solution & Technical Design
-
-PKC05 treats three optimization classes as one kernel-coverage problem:
-
-- Q8_0: memory transaction/geometry efficiency;
-- Q2_K: register pressure and source-level unroll effects;
-- Q1_0: architecture-native packed-byte permutation/unpack efficiency.
-
-The common gate is `correctness -> compiler/ISA resources -> kernel timing -> repeated end-to-end`. Compiler counters explain results but never substitute for throughput.
-
-For Q1_0, preserve CUDA behavior and scope native AMD builtin use strictly to HIP. Do not create a generic wrapper unless multiple call sites/formats prove a measurable need. Verify selector semantics with backend-op vectors; matching signatures are not proof of identical byte selection.
-
-For Q2_K, reject spilling variants when a zero-spill equivalent exists, but still require end-to-end confirmation because lower VGPR pressure can trade against ILP.
-
 ## Stream-K follow-up: upstream PR #30022
 
 PR #30022 is a draft GCN tuning series, not RDNA evidence. Its useful mechanism is narrower than its title: `launch_mul_mat_q()` computes regular-tile efficiency, uses `nsm * config.occupancy` Stream-K blocks for GCN, bypasses Stream-K when tiled efficiency is >=90% or there is enough tiled work, and restores full wave64 fixup parallelism instead of the NVIDIA-oriented half-sized fixup. It also flips many entries in `mmq-config-gcn.cuh` to Stream-K and retunes selected tile widths.
@@ -99,42 +146,9 @@ Cheap discriminator before hardware: extend the existing evidence extraction to 
 
 Pin upstream base SHA and candidate PR SHA so evidence remains reproducible if a PR moves.
 
-## Files
-
-- `vendor/llama.cpp/ggml/src/ggml-cuda/mmvq.cu`
-- MMQ implementation/config including `mmq-config-rdna3.cuh`
-- Q1_0 quant/dot helper containing its Q8_1 dot path
-- Q1_0 MMQ loader/unpack path
-- `tools/lab/profiling/profile-27b-q8.sh`
-- existing HIP-autotune/dispatch and evidence tooling
-- temporary BigCherry patch only while the upstream candidate is absent from the pin
-
-## Validation
-
-Q8: existing tierL-qwen27b-q8 experiment contract, repeated paired sessions, positive improvement CI and controls within noise.
-
-Q2: backend-op ROCm `MUL_MAT` + `MUL_MAT_ID` with q2_K; gfx1100/gfx1201 compiler resources; pp2048 ub16-512 repeated samples; no >1% regression in primary larger-ubatch lanes if specialization promotes.
-
-Q1 correctness: packed patterns around byte/word boundaries; MMVQ and MMQ both exercised; gfx1100/gfx1201 required, gfx1030 useful control; existing quantized tolerances only.
-
-Q1 performance: n=1/2/4/8/32/128/512 microbench, pp512/2048/4096, tg128/512, MMQ ub16-512; record kernel time, end-to-end t/s, VGPR/SGPR/spills, occupancy and instruction count where available. Require repeated median + dispersion.
-
 ## Consolidation / duplication audit
 
 PKC05 owns quantized MMVQ/MMQ kernel headroom and architecture-native unpack experiments. `patching-hip-autotune` owns dispatch policy. MET02 owns range-aware MoE semantics and may consume improved kernels but must not duplicate them. If #29910/#29927 merge before qualification, compare pinned pre/post commits and retain only BigCherry evidence or architecture-specific dispatch work not supplied upstream.
-
-## Effort & Risk
-
-Q1 direct qualification is low implementation risk but high extrapolation risk. Q2 is low implementation/medium tuning risk. Avoid broad intrinsic rewrites until exact upstream candidates are measured on gfx1100/gfx1201.
-
-## Acceptance Criteria
-
-- Q8 attribution still identifies actionable MMVQ/MMQ headroom before custom Q8 changes promote.
-- #29910 or merged equivalent is qualified on gfx1100/gfx1201 with correctness, compiler resources, kernel timing and end-to-end evidence.
-- #29927 is qualified on gfx1100/gfx1201 across both Q1_0 MMVQ and MMQ unpack sites.
-- Q1 generated ISA is captured and correlated with performance; no claim relies on older-architecture results alone.
-- No duplicate quant/intrinsic/dispatch plan is created.
-- Any promoted candidate has positive workload-relevant end-to-end evidence and no material control regression.
 
 ## References
 
@@ -143,12 +157,9 @@ Q1 direct qualification is low implementation risk but high extrapolation risk. 
 - https://github.com/ggml-org/llama.cpp/pull/28398
 - https://github.com/ggml-org/llama.cpp/pull/30022
 
-## Notes
-
-This absorbs the strongest useful side-branch quant-kernel mechanisms into the existing kernel-coverage owner rather than creating Q1_0/Q2_K child plans.
-
 ## Change Log
 
 - 2026-10-01T05:39:29.192524+00:00 (created-by): Created by agent
 - 2026-10-05: Transplanted Q2_K register-pressure and Q1_0 AMD-native unpack qualification from `automation-qfp-indexer-20261004`; aligned upstream status to current pin `050439614` and preserved single-owner dispatch policy.
 - 2026-10-07: Classified draft upstream #30022 as GCN-only evidence; added bounded RDNA Stream-K/fixup discriminator under existing PKC05/HIP-autotune ownership.
+- 2026-11-22T05:34:43.645187+00:00 (updated-by): Updated: section:notes

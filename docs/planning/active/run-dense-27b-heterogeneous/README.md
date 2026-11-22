@@ -14,7 +14,7 @@ Model real memory ownership, layer/cross-stage costs and per-device KV/recurrent
 
 ## Plan index
 
-- [HD2701](HD2701.md) — Baselines, card-free placement estimator, live topologies, KV and quantization gates, hybrid design review.
+- [HD2701](../../completed/run-dense-27b-heterogeneous/HD2701.md) — **completed historical feasibility**, including baselines, placement estimator and quantization/physical-memory constraints; not another pending execution branch.
 
 ## Existing dependencies and boundaries
 

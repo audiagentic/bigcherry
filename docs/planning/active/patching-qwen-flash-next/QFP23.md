@@ -51,9 +51,9 @@ work: M
 
 ## Notes
 
-
-
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED for Radiance by RSC; llama-only clean-up" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP23.md:17-40 explicitly enumerates unresolved llama.cpp 0910 auto-profile collision, external-file validation, topology attestation and flag-timing gaps. engines/llamacpp/patches/0910_feature_sets/patch.py:239 and :462 still implement the separate llama profile loader and architecture-based auto selection; a Radiance RSC manifest does not satisfy its C parser/admission criteria. Active items that reference this one: QFP29, QFP25, QFP07, QFP26, RNX08, BCOP143, BCOP252, BCOP207, BCOP167. Retain llama.cpp 0910 deterministic auto-admission as a separate bounded correctness task; Radiance RSC only supersedes the Radiance-specific configuration analogy.
+
+2026-11-22 owner handoff from decision-only BCOP143: Evidence and terminal gate. Source-bounded action/stop rule: Eight source-static checks and reversed-order host fixture passed; no repository pytest, C/HIP build or GPU measurement. Extend existing Python/C tests to reject duplicate cross-file arch, invalid external flags and unmatched auto, preserving rollback/explicit overrides. Require model/device/read-phase attestation and external profile digest. If explicit/auto parity is unproven, keep auto unqualified and explicit profiles available. No new performance claim or hardware job. Technical plan: QFP23. See docs/planning/completed/patching-bc-optimizations/BCOP143.md for the complete source/shape/negative case and evidence. QFP23 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 ## b11552 audit (2026-10-11)
 
@@ -87,3 +87,4 @@ Selected `build/pin-b11552` by independent `9fa502648e4f00ea334d4f783750417edd8f
 ## Change Log
 
 - 2026-11-04T04:26:43.996614+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:19:36.539166+00:00 (updated-by): Updated: section:notes

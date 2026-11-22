@@ -13,6 +13,46 @@ priority: P2
 
 # HIP graph UID reuse: qualify changed bindings before recapture work
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP47: Unresolved action. Source-bounded action/stop rule: Instrument the existing UID early-return seam and reproduce the gfx1201 long-context failure. Record UID, node count and a compact FA K-tensor signature. Compare graphs-on and graphs-off. See docs/planning/completed/patching-bc-optimizations/BCOP47.md for the complete source/shape/negative case and evidence. PRBE67 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## 2026-10-13 authoritative audit (llama.cpp b11552; supersedes older fingerprint/recapture proposals)
 
 **Disposition: pending, correctness-only, no implementation or GPU job authorized without a correlated same-UID property mismatch.** The old proposed FlashAttention-only topology fingerprint is retired. A graph key based on the first node is not, by itself, evidence of stale replay: the existing slow path already compares full node structs and source pointers, shapes and strides. The unproven risk is the nonzero **UID equality fast return**, which skips that comparison. Do not infer that it caused the historical R9700 100K+ instability or the separate 1356 worker race.
@@ -64,3 +104,7 @@ Require the causal error to disappear under the opt-in guard in **>=12 repeated 
 - RDNA3 gfx1100, RDNA4 gfx1201 and gfx1030/no-P2P PCIe constraints affect scheduling and transport, **not** the UID equality rule itself. Never transfer NVIDIA/RPC results into AMD performance claims.
 
 Historical 2026-09 and 2026-10-07 drafts, including contradictory fingerprint steps, are preserved in Git history, not executable instructions in this plan.
+
+## Change Log
+
+- 2026-11-22T05:26:31.128681+00:00 (updated-by): Updated: section:notes

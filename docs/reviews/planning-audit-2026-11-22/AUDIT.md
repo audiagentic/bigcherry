@@ -2,6 +2,16 @@
 
 **Base:** `origin/main` at `7e4e7eae816889849362e6369335786882490beb`. **Branch:** `agent/planning-holistic-20261122`. The inventory and BCOP dispositions are **pre-registration review snapshots**; nine Radiance/LTX plan items were subsequently created through the canonical Planning MCP.
 
+**Publication and current-status note (2026-11-22):** This historical
+baseline and initial Planning MCP registration/rekey were merged as
+[BigCherry PR #1295](https://github.com/audiagentic/bigcherry/pull/1295).
+The tables and dated assertions below intentionally describe **the
+pre-cleanup snapshot**; they are not a current open-plan ledger.
+The reviewed continuation, live owner index and individual closed
+handoffs are in [CONTINUATION_2026-11-22.md](CONTINUATION_2026-11-22.md).
+Only canonical Planning MCP records under `docs/planning` determine
+current state.
+
 ## Scope and previous review baseline
 
 This audit starts with the 2026-11-20 stale-plan cleanup request, the subsequent measurement-owner and Strata/Radiance consolidation commits (#1243–#1248), and the 2026-11-22 instruction to keep generic Radiance migration (RUM) separate from LTX 2.5 TP3 and llama.cpp. Current code and plan state, rather than the conclusions of historical triage notes, determine decisions. In particular, MEN01 and many other items were previously marked superseded and later reopened on 2026-11-04; neither the earlier closure nor the reversal is proof of current delivery.
@@ -93,4 +103,4 @@ The BCOP count is title-based evidence of likely double ownership, **not** 117 a
 
 The repository requires **ag-planning Planning MCP** for all plan/review mutations. AUDiaGentic PR #491 adds an external, project-scoped stdio accessor that invokes the **same** Planning and Ledger MCP servers, not hand-written file updates. Using that canonical boundary, this branch registered nine new `pending` item records (LTX01–08 and RUM13). The baseline inventory and proposed BCOP dispositions remain historical triage snapshots. A subsequent reviewed slice superseded **BCOP114→PHC03, BCOP125→PRBE111, BCOP160→PEC02, BCOP203→QFP47 and BCOP221→RNX11** through Planning MCP, retaining the original evidence and linked closed reviews. The unique cell-bound trigger/correctness gap from BCOP160 was transferred into PEC02's acceptance. RSC11's broken evidence link was corrected via Planning MCP. No engineering task was marked completed without its acceptance.
 
-This review branch remains a **draft PR, not merge-ready broad cleanup**. The LTX/RUM registration and five-owner BCOP consolidation slices are done; RHA07's identity collision has been resolved by a canonical active-record rekey to RHA16. The remaining BCOP, PRQ, RHP and platform reviews still require explicit Planning MCP transitions and verified acceptance.  No claims of 117 closures, 2.2 quality acceptance or LTX TP3 performance are made here.
+**Historical publication update:** the initial scope merged as PR #1295, including canonical RHA07→RHA16 repair, LTX/RUM registration and five reviewed BCOP supersessions. The subsequent PRQ, RHA16, LTX01/RUM13, BCOP, RHP/VTP supporting-navigation reconciliation and remaining unresolved owner decisions are described **only** in [the dated continuation](CONTINUATION_2026-11-22.md), not reinterpreted from these baseline CSVs. No unproved model quality, native TP3 release or GPU performance is claimed by planning operations.

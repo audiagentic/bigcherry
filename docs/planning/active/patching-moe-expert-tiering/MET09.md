@@ -13,6 +13,46 @@ work: S
 
 # Explain MoE expert-order and split numerical differences (source-first attribution)
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP141: Bounded next action / terminal gate. Source-bounded action/stop rule: One MTP-off, matched original-versus-reordered first-divergence trace: executed fused/ARGSORT route; F32 router scores at cutoff; inverse-mapped original IDs, weights, MMVQ/MMQ/range-dedup path, per-rank partials and logits. Exact cutoff tie with changed old IDs => MET11 B2 mapping validation, not another tie kernel. Identical IDs/weights with numerical drift => arithmetic/dispatch attribution only. No reproduced mismatch => close tie hypothesis; Q8_1 range-dedup already admitted => retire duplicate dedup proposal. No GPU or new BigCherry throughput result in this audit; source-static checks 10/10 after correcting QSA file location, host permutation/F32/dedup fixture passed. See MET09 for technical gates. See docs/planning/completed/patching-bc-optimizations/BCOP141.md for the complete source/shape/negative case and evidence. MET09 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Authoritative b11552 audit — 2026-10-12 (supersedes the original Steps and cause ranking)
 
 **Disposition:** pending only for a bounded first-divergence attribution. No new tie-break, routing kernel, MMQ activation packer or benchmark queue. MET09 owns diagnosis; MET02/1281 owns range-MUL_MAT_ID arithmetic; MET04/1283 owns expert split; MET08 owns usage-placed performance; MET11 owns future load-time expert permutation. This item is not an implementation owner.
@@ -57,3 +97,7 @@ Require same original GGUF bytes/model revision, quant/KV, context, graph and ub
 ## Historical notes (superseded)
 
 The 2026-10-06 draft inferred that 1281 disabled broadcast dedup and proposed a new expert-ID tie-break. The current patch already restores range dedup in eligible Q8_1 cases, and the fused router already breaks ties by **physical** index. Historical experiments remain evidence; their unverified causal ranking and open-ended implementation steps are superseded above.
+
+## Change Log
+
+- 2026-11-22T05:19:16.175576+00:00 (updated-by): Updated: section:notes

@@ -51,9 +51,9 @@ Gate 1 <5% tail wall-share or unproven ownership -> terminal no-patch dispositio
 
 ## Notes
 
-
-
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into QFP13 if a remaining physical launch is proven" was NOT applied; this item stays open. Why: docs/planning/active/patching-r9700-cross-rdna/RNX10.md:16-37 isolates a still-unmeasured SIGMOID+broadcast-MUL+ADD scalar shared-expert tail and its shape/alias correctness gate. docs/planning/active/patching-qwen-flash-next/QFP13.md:60-78 explicitly does NOT own matcher/kernel implementations, only profiles and routes proven launch reductions; RNX09.md:58-65 still lists this as a dependent candidate. Active items that reference this one: BCOP144, BCOP315, BCOP60, QFN01, QFP09, QFP13, RNX08, RNX09. Preserve the RNX10 local pointwise fusion ownership and conditional proof; feed its profiling result to QFP13 without merging away implementation semantics.
+
+2026-11-22 owner handoff from decision-only BCOP60: Discovery and change. Source-bounded action/stop rule: Pinned llama.cpp b11474 already fuses shared up/gate/GLU and same-shape SIGMOID+MUL. Qwen4Exp's shared gate [1,M] versus shared output [H,M] prevents the latter matcher from applying; matmul-scale fusion is NVFP4-specific. RNX10's historical proposed patch 1310 collides with production `1310_act_q81`. No RNX10-specific kernel or E2E gain has been measured. See docs/planning/completed/patching-bc-optimizations/BCOP60.md for the complete source/shape/negative case and evidence. RNX10 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 ## Implementation audit — pinned b11474 (2026-10-08)
 
@@ -140,3 +140,4 @@ Do not fuse routed-expert top-k weighting owned by 1207 into this patch. Do not 
 - 2026-10-03T02:23:22.204124+00:00 (updated-by): Updated: section:detailed_solution, section:notes
 - 2026-10-03T15:21:48.339442+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:25:29.286095+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:27:13.500560+00:00 (updated-by): Updated: section:notes

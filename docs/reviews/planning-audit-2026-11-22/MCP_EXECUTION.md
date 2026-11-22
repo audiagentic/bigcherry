@@ -1,5 +1,14 @@
 # Planning MCP execution handoff — BigCherry 2026-11-22
 
+**Status update (2026-11-22):** BigCherry #1295 merged this initial
+execution and created the current canonical LTX and RUM plan IDs.
+Subsequent verified lifecycle transitions and the remaining technical
+owners are recorded in
+[CONTINUATION_2026-11-22.md](CONTINUATION_2026-11-22.md).
+The sequence below is preserved as **historical execution evidence**,
+not instructions to re-run closed MCP mutations.
+
+
 This handoff is **not** an instruction to patch `docs/planning/` files directly. Use `ag-planning` MCP with the explicit isolated audit task worktree and current tool schemas. AUDiaGentic PR #491 supplies a project-scoped external MCP accessor; it is not BigCherry source code. Do not replace an unavailable planning service with shell, GitHub contents API, generic file writes or YAML edits.
 
 ## Ordered change batches

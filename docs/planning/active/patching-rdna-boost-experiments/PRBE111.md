@@ -51,9 +51,9 @@ On 2026-10-10, **9/9 pinned-source assertions** passed (selectors, IQ loop invar
 
 If the IQ-specific profile proves exposed headroom and an actual redundant instruction sequence, use a default-off architecture-specialized helper at the existing `vecdotq.cuh` call site; retain existing `mmvq.cu` dispatch, quant block layouts, Q8_1 activations, scale placement, fusion/graph behavior, and 1273 controls. Compare identical `ncols_dst=1` baselines before expanding to MoE multi-token or MTP verification. If profiling is unavailable or shows insufficient headroom, mark **BLOCKED_ON_IQ_TRACE** (not a measured failure); if disproved, retire the hot-loop hypothesis. Descriptor-only source cleanup is not a performance optimization and must be independently justified by compile/ISA parity and patch composition.
 
-## Reduction ownership boundary (2026-10-09 / BCOP84)
+## Code Samples & Guidance
 
-PRBE111 owns IQ4_XS/IQ3_XXS vec-dot/VDR descriptor consolidation and metadata hoisting only. PRBE47 owns the separate Q6_K wave32 DPP reduction-lowering hypothesis. Both share generic mmvq.cu call sites, including the dedicated multi-token MoE kernel: preserve the stock warp_reduce_sum for IQ and every unqualified type; do not combine the candidates, add a new dispatch table, or claim DPP gains from IQ A/B results. No PRBE111 implementation or queued lane is changed by this documentation cross-link.
+
 
 ## Files
 
@@ -98,6 +98,14 @@ Medium. Descriptor consolidation is low source-level risk but must preserve dire
 
 Transplanted from `agent-1272-ar-host-wire` before stale-branch cleanup. Branch-specific vendoring/history details were intentionally removed; implementation must rebase against the current `patch-refactor` llama.cpp pin and existing 1273 ownership before coding.
 
+2026-11-22 owner handoff from decision-only BCOP111: Next gate / terminal outcome. Source-bounded action/stop rule: First valid packed-IQ3_XXS/Q8_1 host parity oracle (sign/scale/tails). If VDR1 differs from pristine, **reject VDR1** before GPU speed tests; only an integer-pre-round merge could restore equivalence. IQ4 VDR2 and nwarps-only are separate. Surviving arms require actual launch accounting, full-vocab/greedy/MTP/graph/multi-request parity, current-pin gfx1100/gfx1201 ISA/profile, and E2E contribution >=2.913%. Otherwise close. Promote only with >=4 sessions/arch, >=10 paired ABBA rounds/session, CI95-low >=3% E2E decode, <=1% controls. No duplicate queue, registry, cache or allocator. See docs/planning/completed/patching-bc-optimizations/BCOP111.md for the complete source/shape/negative case and evidence. PRBE111 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+2026-11-22 owner handoff from decision-only BCOP96: Bounded action / terminal. Source-bounded action/stop rule: First reuse 1273's existing package for a host fixture on real packed IQ3/IQ4+Q8_1 blocks, comparing stock and split integer intermediates and F32 output bits. If IQ3 VDR1 changes stock arithmetic, **reject exact-parity promotion** unless the algorithm is redesigned to aggregate integer sums before scaling; do not silently loosen greedy/MTP correctness. Next prove actual single-token IQ kernel activation and measured critical-path share on gfx1100/gfx1201 with rocprof; close PRBE111 if theoretical E2E ceiling <3% or compiler already hoists equivalent work. Only a surviving IQ4-only ISA-gated variant may run four-session, >=10 paired-round E2E tests with exact full-vocab/greedy/MTP controls, CI95-low >=3% and <=1% regressions. No new selector, allocator, dispatch table or experimental queue now. See docs/planning/completed/patching-bc-optimizations/BCOP96.md for the complete source/shape/negative case and evidence. PRBE111 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+## Reduction ownership boundary (2026-10-09 / BCOP84)
+
+PRBE111 owns IQ4_XS/IQ3_XXS vec-dot/VDR descriptor consolidation and metadata hoisting only. PRBE47 owns the separate Q6_K wave32 DPP reduction-lowering hypothesis. Both share generic mmvq.cu call sites, including the dedicated multi-token MoE kernel: preserve the stock warp_reduce_sum for IQ and every unqualified type; do not combine the candidates, add a new dispatch table, or claim DPP gains from IQ A/B results. No PRBE111 implementation or queued lane is changed by this documentation cross-link.
+
 ## Change Log
 
 - 2026-10-10 (BCOP125 audit): source/static and host checks reject assumed IQ4_XS scale/IQ3_XXS aux hoisting; preserve 1273 composition; require IQ-specific trace before implementation. No HIP build or GPU measurement.
@@ -106,3 +114,5 @@ Transplanted from `agent-1272-ar-host-wire` before stale-branch cleanup. Branch-
 
 - 2026-10-04T04:04:36+11:00 (agent): Original side-branch plan created.
 - 2026-10-05: Transplanted to `patch-refactor` as free sequence slot PRBE111; removed stale branch-history assumptions and aligned ownership with current IQ/HIP tuning plans.
+- 2026-11-22T05:15:27.411353+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:31:09.948277+00:00 (updated-by): Updated: section:notes

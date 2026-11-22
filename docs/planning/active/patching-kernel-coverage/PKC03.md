@@ -70,6 +70,8 @@ Supersedes: KC03
 Inherited constraints: RV107, RV112, RV123 — cross-backend identity sufficiency decision only.
 semantic-carryforward: concrete files and validation restored 2026-09-10.
 
+2026-11-22 owner handoff from decision-only BCOP124: Bounded next action / terminal gate. Source-bounded action/stop rule: Use existing PGC12 and EC05 test surfaces: distinguish internal success, rejected internal then RCCL success, rejected RCCL then Meta fallback, changed root/wire, missing/foreign/out-of-order receipts and true zero-call negatives under identical contract hashes. Bind completed route, effective config and physical device set to the measured process and request; missing or predicted-only evidence is INVALID. Consume existing PGC09/PGC10 evidence only when complete; no new queue. Close PKC03 if the existing sidecar plus attached PGC12 artifact proves every identity dimension; otherwise assign a specific gap to its existing owner. No throughput claim or new patch. See docs/planning/completed/patching-bc-optimizations/BCOP124.md for the complete source/shape/negative case and evidence. PKC03 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## 2026-10-10 implementation audit: distinguish contract intent from executed collective route
 
 **Decision:** No cross-backend collective registry, scheduler, or new contract identity namespace. Existing EC16 `target.kind="tp_topology"`, EC05 `ContractEvidenceRef`, build/execution attestation, and PGC12's existing collective trace can express the decision **provided the executed route is attached as provenance-bound evidence**. PKC03 remains pending until the bounded PGC12 receipt/admission test below passes. This is an evidence-identity correctness gate, not a proposed throughput patch. No active QFP49, QFP50, QFP41, Radiance or 1330 implementation/experiment is touched.
@@ -120,7 +122,6 @@ References: [llama.cpp allreduce.cu](https://github.com/ggml-org/llama.cpp/blob/
 
 ## Ledger-events
 
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:01.043490+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
@@ -131,3 +132,4 @@ References: [llama.cpp allreduce.cu](https://github.com/ggml-org/llama.cpp/blob/
 - 2026-09-10T02:39:37.092116+00:00 (updated-by): Updated: section:files, section:validation, section:acceptance_criteria, section:notes
 - chg_20260910_023948_hip-collective-and-kernel-cove_9788
 - 2026-09-10T02:39:48.417756+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-22T05:16:50.144460+00:00 (updated-by): Updated: section:notes

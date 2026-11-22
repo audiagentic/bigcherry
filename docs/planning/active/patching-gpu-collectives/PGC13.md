@@ -13,6 +13,45 @@ work: M
 
 # Per-topology AllReduce calibration: offline discriminator, no runtime policy cache
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP98: Bounded next action / terminal gate. Source-bounded action/stop rule: PGC12 first proves real provider completion, graph/ubatch/phase and first-switch cost on an RCCL-linked exact-F32 dual-XTX workload. No 96 KiB bottleneck or theoretical E2E ceiling <3% => close PGC13. Otherwise one 64/96/128 KiB existing-CLI A/B, four sessions x >=10 paired rounds, prefill/decode/MTP, graph replay, full-vocab and no missing work; require CI95-low >=3% E2E over 96 KiB, <=0.5% prefill regression and preserved correctness. Success changes only a static PGC09 launch profile; failure closes. No new dispatcher, cache, calibration CLI or hardware queue. See docs/planning/completed/patching-bc-optimizations/BCOP98.md for the complete source/shape/negative case and evidence. PGC13 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 ## 2026-10-15 BCOP238 ownership correction
 
@@ -67,3 +106,7 @@ Reject/close if missing actual provider/phase evidence, absent bottleneck, ceili
 
 2026-10-01: broad auto-calibration/cache proposal (superseded).
 2026-10-09: source-level audit narrowed to offline scalar-control gate; BCOP98.
+
+## Change Log
+
+- 2026-11-22T05:31:52.441068+00:00 (updated-by): Updated: section:notes

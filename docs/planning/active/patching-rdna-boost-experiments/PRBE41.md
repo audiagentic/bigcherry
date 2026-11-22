@@ -13,6 +13,62 @@ priority: P3
 
 # AMD-SSM-001: Channels-major SSM_CONV input mode
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+Authoritative: `docs/planning/active/patching-rdna-boost-experiments/PRBE41.md`. Implementation: `engines/llamacpp/patches/1263_prbe41_ssm_conv_channels_major/{patch.py,patch.toml,validation.toml,validation/producer.py,TESTING.md,SUMMARY.md,evidence/validation.json,evidence/withdrawn.json}`. Code anchors: `ggml/src/ggml.c`, `ggml/src/ggml-cpu/ops.cpp`, `ggml/src/ggml-cuda/{ssm-conv.cu,ggml-cuda.cu}`, `src/models/{delta-net-base.cpp,qwen35.cpp,qwen35moe.cpp,qwen3next.cpp}`, `ggml/src/ggml-backend-meta.cpp`, `tests/test-backend-ops.cpp`. Meta split investigation remains with PRBE114 (dependency only).
+
+## Validation
+
+**Preflight:** `PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --focal-overlay 1263_prbe41_ssm_conv_channels_major`; patch lint and existing backend-op unit tests. The command is a proposed gate, **not executed in this audit**. Require separate `single GPU HIP positive`, `tensor-split decline`, `unsupported backend negative`, `multi-request/MTP saved-state`, `pp512/1024/4096` and `tg128 control` evidence, with physical-device and model fingerprints. Run no overlapping QFP49 hardware campaign.
+
+**Measured decision:** Existing pp512 evidence is insufficient for promotion under >=3% CI95-low. For larger ubatches first prove materialized CONCAT/CONT exposed time and a plausible >=3% E2E ceiling; if absent, close PRBE41 without new implementation or benchmarking. Any future tensor-split work is PRBE114-owned and is not an excuse to bypass the 12-hour exclusion.
+
+## Effort & Risk
+
+Existing patch; incremental work is evidence reconciliation, source-pin composition and single-device correctness/performance qualification, not a new op/kernel family. High risk: recurrent-state layout/rollback, unsupported Metal scheduling, stale graph/capture and Meta split-state semantics.
+
+## Standards
+
+Fail closed on unsupported layouts/backends. Separate measured historical evidence, source facts and untested hypotheses. No source-level patch promotion without b11474 build, numeric/state tests and reproducible hardware A/B. Do not interfere with protected QFP49 Meta scheduler work.
+
+## Acceptance Criteria
+
+Single-device positive marker and no control marker; exact expected tensor/transfer work; full-vocabulary near-lossless logits and greedy/MTP acceptance parity; saved-state and rollback parity; no cross-layout state reuse; graph and same-process repeat safety; CI95-low >=3% pp E2E and <=1% tg/control regression on four independent sessions per architecture. Explicit negative `-sm tensor` decline and unsupported-backend checks. Otherwise record **REJECTED_AT_CURRENT_SHAPE** or **BLOCKED_ON_CURRENT_PIN_TRACE**, not an invented speedup.
+
+## Notes
+
+**Historical log only.** Earlier proposals below predate the 1263 implementation, the explicit tensor-split decline and the 2026-10-11 evidence rebaseline above; do not treat them as current implementation instructions.
+
+Supersedes: RD49
+Migration: capability-rebaseline-v3-2026-09
+Successor key: patching-rdna-boost-experiments-rd49
+
+Supersedes RD49. PRBE21 is a distinct SSM conv_input concat optimization; cross-reference but do not merge.
+
+2026-09-24 relevance at b11126: no existing patch (RD49 grep = no hits). Not upstream-absorbed (ggml_ssm_conv signature at ggml/include/ggml.h:2524 and CUDA kernel addressing at ggml/src/ggml-cuda/ssm-conv.cu:6-56 both read directly and confirmed time-major-only, no layout parameter exists). GPT design requests for this batch (req_6a45d0917b114112, req_3710dbae73fb49be) were unusable (failed/unresponsive) -- this plan was authored directly by the planning agent from verified source. PRBE21 (SSM conv_input concat) is a distinct, separate optimization per the item's own notes -- do not merge.
+
+2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: replaced the implicit-default layout-parameter approach (which violated this project's no-legacy-shim doctrine) with a separate ggml_ssm_conv_ext() function; defined exact channels-major shape/index algebra (d_inner=sx->ne[0], n_t=sx->ne[1]-d_conv+1) for CPU and CUDA/HIP; required either full backend coverage or capability-aware graph-selection before switching callers.
+
+2026-09-25 (4d7117f6): implemented as patch 1263_prbe41_ssm_conv_channels_major, a port of nasone/AMD 33611a98 generated with bigcherry.patch.port_diff (17 files: ggml.h/ggml.c op mode, CPU + CUDA/HIP ssm-conv kernels, other backends' supports_op rejection, qwen35/qwen35moe/qwen3next graph, delta-net-base build_conv_state hand-merged onto b11126, fork test-backend-ops cases). Metal rejection not ported; conv-state layout changes (saved states not interchangeable). Activation marker patch=1263_prbe41 path=ssm_conv_channels_major. Contract PRBE41-SSM-CONV-CHANNELS-MAJOR (owner policy, 4 sessions/arch): full-vocab backend reference on qwen4b, pp512 positive, gpt-oss tg128 control. Rebase check CLEAN on bigcherry and bigcherry-tuning. Hardware sessions queued after the current batch.
+
+2026-11-22 owner handoff from decision-only BCOP129: Bounded next action / terminal outcome. Source-bounded action/stop rule: Use existing 1263 producer/evidence. First prove current b11474 single-GPU exposed CONCAT/CONT cost and actual positive kernel marker; if <2.9126% E2E, retire further optimisation. If eligible, run current-pin direct op, state/MTP/graph and four-session paired pp512/1024/4096 controls; require >=3% CI95-low E2E and <=1% control regression. Tensor split is **negative-only** until PRBE114 separately resolves its Meta propagation, without racing QFP49. Reject unsupported Metal paths. Do not add a new scheduler, allocator, layout API or duplicate experiment queue. Full technical design belongs only to PRBE41. See docs/planning/completed/patching-bc-optimizations/BCOP129.md for the complete source/shape/negative case and evidence. PRBE41 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Description (historical; superseded by authoritative BCOP234 gate)
 
 **2026-10-11 authoritative disposition (b11474):** Patch `1263_prbe41_ssm_conv_channels_major` exists, remains `untested` in patch.toml, and is **single-device HIP only for positive activation**. It is not an unimplemented API proposal. Its model selector uses `model.split_mode() != LLAMA_SPLIT_MODE_TENSOR`; tensor split deliberately builds the pristine time-major graph and emits `ssm_conv_channels_major_declined_split`. Historical text in Notes describes superseded design states. Do not promote tensor split or assume a new channels-major path is active there. No implementation is authorised until the current-pin gate below passes.
@@ -57,44 +113,6 @@ else:
 
 **Cheapest discriminator completed in this audit:** source-static checks 10/10; deterministic host layout/reference convolution + state-tail equivalence 144 cases, zero mismatches. These test the addressing contract only, not the actual patched C++/HIP binary. No new hardware run, build, repo pytest or GPU benchmark was performed.
 
-## Files
-
-Authoritative: `docs/planning/active/patching-rdna-boost-experiments/PRBE41.md`. Implementation: `engines/llamacpp/patches/1263_prbe41_ssm_conv_channels_major/{patch.py,patch.toml,validation.toml,validation/producer.py,TESTING.md,SUMMARY.md,evidence/validation.json,evidence/withdrawn.json}`. Code anchors: `ggml/src/ggml.c`, `ggml/src/ggml-cpu/ops.cpp`, `ggml/src/ggml-cuda/{ssm-conv.cu,ggml-cuda.cu}`, `src/models/{delta-net-base.cpp,qwen35.cpp,qwen35moe.cpp,qwen3next.cpp}`, `ggml/src/ggml-backend-meta.cpp`, `tests/test-backend-ops.cpp`. Meta split investigation remains with PRBE114 (dependency only).
-
-## Validation
-
-**Preflight:** `PYTHONPATH=tools python -m bigcherry patch-rebase-check --source bigcherry --focal-overlay 1263_prbe41_ssm_conv_channels_major`; patch lint and existing backend-op unit tests. The command is a proposed gate, **not executed in this audit**. Require separate `single GPU HIP positive`, `tensor-split decline`, `unsupported backend negative`, `multi-request/MTP saved-state`, `pp512/1024/4096` and `tg128 control` evidence, with physical-device and model fingerprints. Run no overlapping QFP49 hardware campaign.
-
-**Measured decision:** Existing pp512 evidence is insufficient for promotion under >=3% CI95-low. For larger ubatches first prove materialized CONCAT/CONT exposed time and a plausible >=3% E2E ceiling; if absent, close PRBE41 without new implementation or benchmarking. Any future tensor-split work is PRBE114-owned and is not an excuse to bypass the 12-hour exclusion.
-
-## Effort & Risk
-
-Existing patch; incremental work is evidence reconciliation, source-pin composition and single-device correctness/performance qualification, not a new op/kernel family. High risk: recurrent-state layout/rollback, unsupported Metal scheduling, stale graph/capture and Meta split-state semantics.
-
-## Standards
-
-Fail closed on unsupported layouts/backends. Separate measured historical evidence, source facts and untested hypotheses. No source-level patch promotion without b11474 build, numeric/state tests and reproducible hardware A/B. Do not interfere with protected QFP49 Meta scheduler work.
-
-## Acceptance Criteria
-
-Single-device positive marker and no control marker; exact expected tensor/transfer work; full-vocabulary near-lossless logits and greedy/MTP acceptance parity; saved-state and rollback parity; no cross-layout state reuse; graph and same-process repeat safety; CI95-low >=3% pp E2E and <=1% tg/control regression on four independent sessions per architecture. Explicit negative `-sm tensor` decline and unsupported-backend checks. Otherwise record **REJECTED_AT_CURRENT_SHAPE** or **BLOCKED_ON_CURRENT_PIN_TRACE**, not an invented speedup.
-
-## Notes
-
-**Historical log only.** Earlier proposals below predate the 1263 implementation, the explicit tensor-split decline and the 2026-10-11 evidence rebaseline above; do not treat them as current implementation instructions.
-
-Supersedes: RD49
-Migration: capability-rebaseline-v3-2026-09
-Successor key: patching-rdna-boost-experiments-rd49
-
-Supersedes RD49. PRBE21 is a distinct SSM conv_input concat optimization; cross-reference but do not merge.
-
-2026-09-24 relevance at b11126: no existing patch (RD49 grep = no hits). Not upstream-absorbed (ggml_ssm_conv signature at ggml/include/ggml.h:2524 and CUDA kernel addressing at ggml/src/ggml-cuda/ssm-conv.cu:6-56 both read directly and confirmed time-major-only, no layout parameter exists). GPT design requests for this batch (req_6a45d0917b114112, req_3710dbae73fb49be) were unusable (failed/unresponsive) -- this plan was authored directly by the planning agent from verified source. PRBE21 (SSM conv_input concat) is a distinct, separate optimization per the item's own notes -- do not merge.
-
-2026-09-24 GPT review req_e17e0bf5a68c48d5 applied: replaced the implicit-default layout-parameter approach (which violated this project's no-legacy-shim doctrine) with a separate ggml_ssm_conv_ext() function; defined exact channels-major shape/index algebra (d_inner=sx->ne[0], n_t=sx->ne[1]-d_conv+1) for CPU and CUDA/HIP; required either full backend coverage or capability-aware graph-selection before switching callers.
-
-2026-09-25 (4d7117f6): implemented as patch 1263_prbe41_ssm_conv_channels_major, a port of nasone/AMD 33611a98 generated with bigcherry.patch.port_diff (17 files: ggml.h/ggml.c op mode, CPU + CUDA/HIP ssm-conv kernels, other backends' supports_op rejection, qwen35/qwen35moe/qwen3next graph, delta-net-base build_conv_state hand-merged onto b11126, fork test-backend-ops cases). Metal rejection not ported; conv-state layout changes (saved states not interchangeable). Activation marker patch=1263_prbe41 path=ssm_conv_channels_major. Contract PRBE41-SSM-CONV-CHANNELS-MAJOR (owner policy, 4 sessions/arch): full-vocab backend reference on qwen4b, pp512 positive, gpt-oss tg128 control. Rebase check CLEAN on bigcherry and bigcherry-tuning. Hardware sessions queued after the current batch.
-
 ## 2026-10-08 b11474 experiment scope
 
 **Rank 7, qualify existing 1263 rather than re-port.** `1263_prbe41_ssm_conv_channels_major` state=untested (patch.toml); b11474 composed targets `ggml/include/ggml.h::ggml_ssm_conv_ext`, `ggml/src/ggml-cuda/ssm-conv.cu`, `src/models/delta-net-base.cpp` and Meta axis0 split/reshape propagation. Input channels-major shape `[d_inner,n_t+d_conv-1,n_seq]`, output `[d_inner,n_t,n_seq]`. Current Meta/tensor-split test failed `GGML_ASSERT(src_ss[0].nr[0] == 1)` before activation (PRBE114 evidence), so qualify single-GPU GDN first and treat multi-GPU as blocked until split-state instrumentation fixes actual axis ratios. Env `BIGCHERRY_SSM_CHANNELS_MAJOR=0|1` proposed opt-in for qualification if existing 1263 has no reliable selector; no implicit legacy default args. Expected gain uncertain (memory coalescing), only on GDN/27B SSM_CONV, not Flash-Next attention path. `queue-env-ab.sh`: 27B GDN 8K/24K/98K and single-gpu/tensor-split arms, output+recurrent-state parity, PPL, capture/replay, marker, VRAM, separate source-split traces. Do not claim multi-GPU validated.
@@ -133,7 +151,6 @@ The existing `evidence/validation.json` includes contract-passing, single-device
 
 **Ownership:** PRBE41/1263 retains single-device channels-major kernel/layout and contract ownership. PRBE114/BCOP195 closes the unqualified generic Meta RESHAPE/VIEW tensor-split rewrite; no second scheduler or split-state cache. Preserve the mode-specific conv-state lifetime, explicit fallback, full-vocab/MTP correctness, and current-pin composition/activation checks before any future promotion.
 
-
 ## 2026-10-15 BCOP234: route-bound activation and prefill qualification (authoritative)
 
 **Disposition:** Patch 1263 remains `untested` on b11552. This section supersedes the historical `ggml_ssm_conv_ext` and default-argument sketches below: the actual implementation already uses `ggml_ssm_conv_channels_major`. Do not add another layout selector, scheduler, cache, allocator, or telemetry system. No new GPU campaign is authorized until activation evidence is repaired.
@@ -157,3 +174,4 @@ The positive marker is emitted in `ggml/src/ggml-cuda/ssm-conv.cu::ggml_cuda_op_
 Historical `tierA-qwen4b-q6k` pp512 receipts: +1.13%..+1.43% gfx1100 (b11233), +2.37%/+2.58% gfx1201 (b11126), zero reported full-vocab logprob difference; not b11552 results. Dual-XTX Qwen3.8-27B tensor-split pp4096 +0.14% is fallback, not channels-major acceleration. [AMD-Ecosystem #52](https://github.com/AMD-Ecosystem/llama.cpp/pull/52) merged 2026-07-16 with external gfx1151 ubatch-dependent gains. New upstream [llama.cpp #30591](https://github.com/ggml-org/llama.cpp/pull/30591), open 2026-10-15, instead fuses a **Vulkan** transposed-input CONCAT via a padded 32x33 shared-memory tile; external R9700 Vulkan results do not justify a HIP port. [vLLM ROCm GDN](https://github.com/vllm-project/vllm/blob/main/vllm/model_executor/layers/mamba/gdn/qwen_gdn_linear_attn.py) distinguishes dimension-first/sequence-first conv-state and uses AITER fused decode, a state-lifetime reference rather than GGML replacement.
 
 PRBE41/1263 owns single-device layout and validation. PRBE114's generic Meta tensor-split rewrite remains closed; PRBE18/PRBE21 own distinct qkv/CONCAT fusion. Do not touch active MEN10/RHP/Radiance.
+- 2026-11-22T05:17:31.870504+00:00 (updated-by): Updated: section:notes

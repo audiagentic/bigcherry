@@ -13,10 +13,49 @@ priority: P3
 
 # UP-HIP-002: AMD DPP/native shuffle path
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP84: Bounded next action / terminal gate. Source-bounded action/stop rule: First inspect stock gfx1100/gfx1201 ISA and profile reduction's attributable E2E decode fraction; **close without patch** if equivalent DPP already emitted or maximum possible gain <3%. Otherwise prototype only an additive, compile-time-gated Q6_K wave32 helper (native XOR16 + DPP row_xmask 8/4/2/1), test all 32 lanes and both standard/MoE + fused-gate call sites, require bitwise/full-vocab/MTP/graph parity, and qualify 4 sessions x >=10 ABBA pairs with CI95-low >=3% E2E decode and <=1% controls. Revert/retire if incorrect, no ISA benefit or no causal E2E win. No new scheduler/registry/allocator, and Q8_0 widening is a separate future decision. See docs/planning/completed/patching-bc-optimizations/BCOP84.md for the complete source/shape/negative case and evidence. PRBE47 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## 2026-10-18 ownership boundary — merged Q6_K integer-dot VDR2
 
 New PRBE117/BCOP298 owns only upstream #30517's **Q6_K Q8_1 MMVQ grouped-integer-dot VDR2** admission, a new source identity after rejected 1204/RD08. It is not this item's wave32 DPP **post-dot reduction** experiment. Preserve PRBE47's dormant, profile-first gate; neither candidate authorizes the other, and neither changes validated gfx1100 dense width-1 1274 raw-F32 dispatch. No new patch or GPU run was made in this audit.
-
 
 ## 2026-10-09 authoritative audit: wave32 DPP reduction, not a blanket shuffle replacement
 
@@ -91,3 +130,4 @@ Supersedes RD56.
 - 2026-09-10T03:09:30.744289+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-24T04:46:57.296925+00:00 (updated-by): Updated: section:description, section:steps, section:detailed_solution, section:code_samples, section:files, section:validation, section:effort_risk, section:standards, section:notes
 - 2026-09-24T05:08:29.772808+00:00 (updated-by): Updated: section:description, section:steps, section:notes
+- 2026-11-22T05:30:03.935223+00:00 (updated-by): Updated: section:notes
