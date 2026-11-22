@@ -2,7 +2,7 @@
 id: PEF04
 order: 0
 plan: patching-external-fixes
-state: pending
+state: superseded
 created-at: '2026-09-28T21:40:59.924359+00:00'
 breadth: ''
 skill: intermediate
@@ -54,9 +54,15 @@ work: M
 
 ## Notes
 
-
+CONSOLIDATION 2026-11-22 LAB-AND-SOURCES: PEF04 has one canonical owner: PEF05. Both tickets own the same bigcherry sources check manual fork-snapshot refresh and changed/upstream-status triage for consecutive llama.cpp bump checkpoints; neither introduces a separate source-check subsystem. This is planning consolidation only, not a completed acceptance or release. Historical evidence and current-pin/real-run stop rules remain binding.
 
 ## Change Log
 
 - 2026-09-28T21:40:59.924359+00:00 (created-by): Created by agent
 - 2026-09-28T21:41:10.539648+00:00 (updated-by): Updated: section:description, section:steps
+
+## Reviews
+
+- RV4540
+- 2026-11-22T11:26:55.518724+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T11:28:28.007914+00:00 (state-transition): State: pending → superseded
