@@ -173,6 +173,14 @@ the llama.cpp repin/transition procedure below is independent.
 - **Triage at the current pin must be clean.** Run `pin-triage` at the
   pinned commit; a non-clean verdict there is a defect in the check, not
   upstream drift (the patch-owned rule false positives were found this way).
+- **Start the new release line when the upstream major changes.** The release
+  version's major comes from the pin (2.2.0 is 20200), but release-please
+  keeps counting from the old manifest value unless the package carries
+  `release-as`. The 2.2 migration shipped as 1170.37.0 and 1170.38.0 because that
+  step was skipped. When a bump changes the upstream version, set
+  `release-as` (`pin-release notes` does it; it is a package-scoped key in
+  `release-please-config.json`, never a commit footer) in the bump PR, and
+  remove it in a dedicated PR once the first tag exists.
 - **`audiagentic worktree start` names the branch by account prefix**, and
   that prefix fails the forbidden-terms check: rename the branch before the
   first commit (`git branch -m`).
