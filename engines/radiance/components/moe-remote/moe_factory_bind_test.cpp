@@ -8,7 +8,9 @@
 #include <cassert>
 #include <cstdint>
 #include <cstdio>
+#include "rad_types.h"
 #include <dlfcn.h>
+#include <initializer_list>
 
 extern "C" int bc_serving_remote_settings(int64_t* rows, uint32_t* skip, uint32_t* shadow, uint32_t* mask) {
     *rows = 4; *skip = *shadow = *mask = 0;
@@ -39,6 +41,31 @@ int main(int argc, char** argv) {
     bad = BcMoeRemoteOpenArgs{1, 5, 4, 2};
     assert(factory(&bad, &out) == BC_MOE_REMOTE_REFUSED);
     assert(factory(nullptr, &out) == BC_MOE_REMOTE_REFUSED);
+
+    // The direct entry points take the generation's hook; nothing is live here, so a null, foreign or stale handle is
+    // refused before any side effect, and no kernel init can find a hook.
+    using HookFor = void* (*)(long long);
+    auto hook_for = reinterpret_cast<HookFor>(dlsym(plugin, "r3_moe_hook_for_group"));
+    assert(hook_for && !hook_for(0) && !hook_for(4) && !hook_for(-1));
+    void* fake = reinterpret_cast<void*>(0x1000);
+    for (void* h : std::initializer_list<void*>{nullptr, fake}) {
+        auto close_adm = reinterpret_cast<int (*)(void*, void*)>(dlsym(plugin, "r3_moe_close_admission"));
+        auto consumed = reinterpret_cast<int (*)(void*, const void*)>(dlsym(plugin, "r3_moe_all_ranks_consumed"));
+        auto reopen = reinterpret_cast<int (*)(void*, uint32_t, uint32_t)>(dlsym(plugin, "r3_moe_reopen_admission"));
+        auto device = reinterpret_cast<int (*)(void*, int, int, void**)>(dlsym(plugin, "r3_moe_mailbox_device"));
+        auto upload = reinterpret_cast<int (*)(void*, int, uint32_t, uint64_t, uint64_t)>(dlsym(plugin, "r3_moe_owner_generation_upload"));
+        auto ready = reinterpret_cast<int (*)(void*, int, uint32_t, uint64_t, uint64_t)>(dlsym(plugin, "r3_moe_owner_generation_ready"));
+        assert(close_adm && consumed && reopen && device && upload && ready);
+        alignas(8) char snap[64] = {};
+        void* dev = nullptr;
+        assert(close_adm(h, snap) == RAD_E_STATE);
+        assert(consumed(h, snap) == RAD_E_STATE);
+        assert(reopen(h, 1, 0) == RAD_E_STATE);
+        assert(device(h, 0, 1, &dev) == RAD_E_STATE && !dev);
+        assert(upload(h, 0, 0, 1, 1) == RAD_E_STATE);
+        assert(ready(h, 0, 0, 1, 1) == RAD_E_STATE);
+    }
+    assert(!dlsym(plugin, "r3_moe_mailbox_enabled"));
 
     // A plugin library without the factory is ABSENT while the manifest asks for a hand-off.
     void* other = dlopen("libm.so.6", RTLD_LAZY | RTLD_LOCAL);

@@ -149,13 +149,13 @@ from engine resources; no claim is made that every prefill workload fits.
 
 moe_remote_hook.h exports:
 
-* r3_moe_close_admission(snapshot): atomically close the ledger gate and
+* r3_moe_close_admission(hook, snapshot): atomically close the ledger gate and
   snapshot its cutoff, old epoch, outstanding count, high-water and capacity.
   A unique closure ID rejects stale drain proofs.
-* r3_moe_wait_drained(snapshot, deadline_monotonic_ns): poll per-parent GPU
+* r3_moe_wait_drained(hook, snapshot, deadline_monotonic_ns): poll per-parent GPU
   events and consumption proofs, then request helper drain for that closure.
   The deadline uses absolute CLOCK_MONOTONIC nanoseconds.
-* r3_moe_reopen_admission(epoch, generation_slot): require successful drain
+* r3_moe_reopen_admission(hook, epoch, generation_slot): require successful drain
   and an exact match with the committed placement, then resume helpers and
   admission. Same-epoch reopen retains the same slot.
 
@@ -356,7 +356,7 @@ after this seal, and the CPU ledger accepts the stamp only after that event
 completes on every actual rank. There is no second per-step host sync,
 event, or per-request system-scope publication.
 
-`r3_moe_all_ranks_consumed(snapshot)` is the nonblocking coordinator query
+`r3_moe_all_ranks_consumed(hook, snapshot)` is the nonblocking coordinator query
 now used by Part 3 at QUIESCING and RETIRING: it returns **1** only for the exact active closure ID,
 cutoff and epoch whose ledger is empty *after* polling the existing rank
 events and matching consumption stamps; **0** while any rank/parent remains,
@@ -451,7 +451,7 @@ The production engine-rank coordinator in `engine_rank_coordinator.h::EngineRank
    Mismatched/corrupt rank metadata reports a current-phase fault, never
    a serving fault before admission closes.
 2. **COPYING/PREPARED.** For each actual rank, issues
-   `r3_moe_owner_generation_upload(rank,pending_slot,pending_epoch,
+   `r3_moe_owner_generation_upload(hook, rank,pending_slot,pending_epoch,
    pending_digest)` once, on its rank-private asynchronous stream.
    It publishes a rank READY ACK **only after**
    `r3_moe_owner_generation_ready` confirms its real HIP event complete
@@ -467,7 +467,7 @@ The production engine-rank coordinator in `engine_rank_coordinator.h::EngineRank
    phase deadline (waits for all parent/rank terminal events and sealed
    consumption stamps, requests helper drain, verifies every
    `lane_quiesced` identity), and requires
-   `r3_moe_all_ranks_consumed(snapshot)==1` before publishing rank
+   `r3_moe_all_ranks_consumed(hook, snapshot)==1` before publishing rank
    QUIESCED ACKs. The helper actors also require the matching lane drain
    ACKs before acknowledging. No second gate.
 4. **COMMIT.** The existing helper-zero `Controller::commit`

@@ -923,10 +923,16 @@ long long geti(const RadArgs* a, const char* key, long long bad = -1) {
     return rad_args_geti(a, key, &v) ? v : bad;
 }
 
-int mailbox_init(const RadParam*, int, int rank, int world_size, void** out) {
+int mailbox_init(const RadParam* params, int n_params, int rank, int world_size, void** out) {
     if (!out) return RAD_E_INVAL;
+    /* The engine passes its claimed tp_group (the span base its remote-MoE generation opened) to every init. */
+    long long group = -1;
+    for (int i = 0; params && i < n_params; ++i)
+        if (params[i].key && std::strcmp(params[i].key, "tp_group") == 0) group = params[i].ival;
+    R3MoeHook* hook = r3_moe_hook_for_group(group);
+    if (!hook) return RAD_E_STATE;
     R3MoeMailboxDevice* d = nullptr;
-    const int rc = r3_moe_mailbox_device(rank, world_size, &d);
+    const int rc = r3_moe_mailbox_device(hook, rank, world_size, &d);
     if (rc != RAD_OK) return rc;
     *out = d;
     return RAD_OK;
