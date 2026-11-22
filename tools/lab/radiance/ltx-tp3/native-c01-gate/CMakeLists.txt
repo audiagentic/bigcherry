@@ -111,6 +111,12 @@ if(LTX_NATIVE_CORE_LIB)
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c05)
     add_test(NAME ltx_c06_real_self_attention_graph
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06)
+    # Actual native per-rank Builder instance construction. The host
+    # collective rendezvous requires concurrent finish on all ranks.
+    # No checkpoint weights are loaded or inference issued by this gate.
+    add_test(NAME ltx_c06_native_instance_rendezvous
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06-instances)
+    set_tests_properties(ltx_c06_native_instance_rendezvous PROPERTIES TIMEOUT 90)
 
     # LTX02's first actually-issued native RadCtx gate: reuse the real
     # patched arch source, host backend, model and reference registry.
