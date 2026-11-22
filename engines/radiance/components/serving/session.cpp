@@ -3174,6 +3174,7 @@ struct CarriedMeasurement {
     HostResident resident;
     int64_t host_pool_mib = 0;
     std::string attempt, engine_identity, manifest;
+    fs::path runtime_home; // the runtime home the stored manifest embeds (where the measuring build lived)
     Json provenance() const {
         return {{"attempt", attempt}, {"engine_identity", engine_identity}, {"manifest", manifest}};
     }
@@ -3211,7 +3212,8 @@ static CarriedLoad load_carried_measurement(const fs::path& stored) {
             return {std::nullopt, "the measuring attempt's plan cache entry is absent or not the bound owner's"};
         return {CarriedMeasurement{cached->plan_json, cached->rank_demand, cached->resident,
                                    m.spec.resources.host.pool_mib, bound.native_measurement->attempt_id,
-                                   m.spec.plan.engine_memory->engine_identity, stored.string()},
+                                   m.spec.plan.engine_memory->engine_identity, stored.string(),
+                                   m.spec.processes.engine.runtime.radiance_home},
                 {}};
     } catch (const std::exception&) {
         return {std::nullopt, "the stored measurement cannot be read back"};
@@ -3410,6 +3412,18 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             lap("store_lookup");
             if (reuse.outcome == PlanReuseOutcome::hit) {
                 const fs::path saved = reuse.manifest;
+                // A stored manifest embeds the paths of the runtime home that wrote it, and replay runs exactly those
+                // bytes. The same release (same engine identity, already computed above for this start) installed
+                // elsewhere cannot replay them, and the home they name may be gone: that is decided here, not found
+                // by a refusal. Its measurement is path-free and is sealed again under this build.
+                auto loaded = load_carried_measurement(saved);
+                const bool elsewhere = loaded.carried && loaded.carried->engine_identity == matched_engine_identity &&
+                                       fs::weakly_canonical(loaded.carried->runtime_home) != frozen_runtime_home;
+                if (elsewhere) {
+                    carried = std::move(loaded.carried);
+                    reuse.outcome = PlanReuseOutcome::carried;
+                    std::cerr << plan_reuse_line(reuse) << '\n';
+                } else {
                 EnginePlanInputs replay = in;
                 replay.stored_manifest = saved;
                 const NativeReplayAdmission admission{snapshot, native_inspection, out.native_launch};
@@ -3427,7 +3441,6 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     // this build, or measure when it cannot be carried.
                     reuse.outcome = PlanReuseOutcome::live_admission_refused;
                     reuse.detail = refused.what();
-                    auto loaded = load_carried_measurement(saved);
                     carried = std::move(loaded.carried);
                     if (carried) {
                         std::cerr << "bc-serve: stored plan not replayable (live admission refused: " << refused.what()
@@ -3437,6 +3450,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                         reuse.detail = loaded.reason + " (replay refused: " + refused.what() + ")";
                         std::cerr << plan_reuse_line(reuse) << '\n';
                     }
+                }
                 }
             } else {
                 std::cerr << plan_reuse_line(reuse) << '\n';
