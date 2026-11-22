@@ -55,8 +55,11 @@ a missing binary still refuses.
   itself authenticated and checked against the files by stat. It would protect against a different build installed
   over the same path; it does not protect against edited files unless every file is stamped at install time. Needs the
   install step to record stamps; left as a follow-up.
-- The portable SHA-256 is about five times slower than hardware SHA; using the CPU's SHA instructions would cut the
-  one remaining hash to about 0.25 s. Separate change.
+- Hardware SHA-256: considered, rejected. Measured on the same 428,494,305 bytes: portable 1151 and 1122 ms, SHA-NI
+  182 and 178 ms, identical digests. CPU-specific hash code is not wanted, and the better answer is that a start should
+  not hash the runtime at all: `engine_identity` now persists its digest under the work root (`--work-root`,
+  `cache/engine-identity/`), keyed by the stamp of every runtime file and the binary, so a start of an unchanged
+  runtime reads one small file and a stat of each file.
 - The one `bc-serve` producer digest per start is a single file and was left alone.
 
 ## Host pool change bound
