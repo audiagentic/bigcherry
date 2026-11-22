@@ -2,7 +2,7 @@
 id: PRVP03
 order: 0
 plan: patching-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-10-02T12:35:07.968893+00:00'
 breadth: ''
 skill: ''
@@ -33,6 +33,10 @@ PRBE09/RD104 is now terminally absorbed here. Do not create a second Vulkan AllR
 The provider boundary already exists in 1290: Vulkan exposes `ggml_backend_comm_init`, `ggml_backend_comm_allreduce_tensor`, and `ggml_backend_comm_free` through registry `get_proc_address`. The meta backend owns collective invocation and fallback. Phase 1 therefore changes the provider's transport only; it does not add a scheduler, placement solver, second collective API, or another dispatch registry.
 
 The proposed mapped-host path is a hypothesis until hardware-qualified. BigCherry's topology has no normal GPU P2P, so a Vulkan design must be evaluated as host-visible PCIe transport. Correctness gates precede throughput: fixed work count, exact/declared numerical reduction semantics, repeated same-process requests, multi-ubatch, long-context, and clean fallback after provider rejection.
+
+## Code Samples & Guidance
+
+
 
 ## Files
 
@@ -70,6 +74,8 @@ Phase 1 is retained only if the mapped-host discriminator is correct and a produ
 
 2026-10-08 audit: PRBE09/RD104 was found stale because PRVP03/1290 had already implemented and hardware-screened the capability it was still tracking as hypothetical. PRBE09 is closed/absorbed here. Current upstream has CUDA/HIP backend-local AllReduce but no Vulkan-local equivalent; external ROCm collective mechanisms are mechanism references only.
 
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Vulkan meta-backend AllReduce provider implementation is Vulkan-only and has no approved active device lane during the pause. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume only after RRVP02 unpause, Vulkan stock route and exact device topology/transport evidence. Reuse existing meta communication SPI and owned provider API; validate mapped-host discriminator, barriers/ownership, all-reduce correctness, native fallback and >=3% positive CI95-low physical E2E before promotion. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
+
 ## 2026-10-11 safety / upstream disposition (TRVP16, BCOP120)
 
 **Source-level correctness gate, not a reproduced GPU failure.** In pinned b11474, `ggml-backend-meta.cpp::allreduce_fallback` fills ranks lacking `GGML_TENSOR_FLAG_COMPUTE` with zero before reducing (upstream merged #29793). Phase-0 `1290_vulkan_allreduce_host_f32::ggml_backend_vk_comm_allreduce_tensor` reads every rank unconditionally. A disabled/empty split rank with stale or NaN tensor contents can therefore violate the generic fallback's semantics. **PRVP03 owns** the minimal 1290 fix: return false **before any reads/writes** if any rank lacks COMPUTE, letting meta perform its existing FILL fallback. Do not modify the provider in this documentation-only audit. Host model: six passing unittest methods, 10/10 source checks; no GPU failure proven.
@@ -83,3 +89,10 @@ The meta caller invokes generic fallback whenever a provider returns false; **ne
 - 2026-10-02T12:35:07.968893+00:00 (created-by): Created by agent
 - 2026-10-02T13:00:26.501279+00:00 (updated-by): Updated: section:notes
 - 2026-10-08: Absorbed PRBE09/RD104 ownership and bounded phase-1 mapped-host qualification.
+
+## Reviews
+
+- RV4572
+- 2026-11-22T13:06:51.013564+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:12:13.245167+00:00 (state-transition): State: pending → deferred
+- 2026-11-22T13:12:18.213723+00:00 (state-transition): State: deferred → deferred

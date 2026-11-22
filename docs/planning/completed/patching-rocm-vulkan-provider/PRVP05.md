@@ -2,7 +2,7 @@
 id: PRVP05
 order: 5
 plan: patching-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-10-19T08:13:00+00:00'
 created-by: agent
 priority: P2
@@ -10,6 +10,46 @@ work: M
 ---
 
 # Vulkan F32 RMSNorm wave-local reduction on RDNA3/RDNA4 — upstream-first admission
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Vulkan F32 RMSNorm wave-local variant is an unqualified Vulkan shader experiment and cannot be activated under the current pause. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume after RRVP02 unpause and exact current pin/status of #29882. Demonstrate an actual physical norm kernel route, exposed critical-path saving and complete row/stride/numerical/graph/fallback guards before any shader port, then qualify gfx1100/gfx1201 independently. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
 
 ## Decision and boundary (BCOP322; 2026-10-19)
 
@@ -46,3 +86,12 @@ A disposable Python integer-sum/coverage oracle modeled wave64 with block sizes 
 ## Dependencies and ownership
 
 RRVP02 Vulkan implementation pause is a hard dependency. RNX08 HIP RMSNorm and PRBE15 HIP IMRoPE scatter remain separate; PRVP02 CM1 and PRVP03 transport are untouched. Existing Vulkan pipeline selection and shader generation own any eventual adoption. BCOP322 is only the action ledger.
+
+## Reviews
+
+- RV4574
+
+## Change Log
+
+- 2026-11-22T13:07:16.681873+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:12:48.604718+00:00 (state-transition): State: pending → deferred

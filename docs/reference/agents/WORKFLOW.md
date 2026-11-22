@@ -29,8 +29,10 @@ First list existing groups and use the owning group. New group names start with
 sequence number. Include concrete scope, files, validation and acceptance.
 For findings-driven corrections, create the review before revising the item;
 close incorporated reviews. Complete items only after implementation, validation,
-nonempty acceptance criteria and closure of linked reviews. Keep unfinished work
-pending; use superseded/deprecated when appropriate rather than deleting history.
+nonempty acceptance criteria and closure of linked reviews. Keep actionable unfinished
+work pending; move explicitly paused but resumable work to `deferred` only after
+recording a reason and re-entry gate, then reopen to pending before execution.
+Use superseded/deprecated only for displaced or rejected scope; do not delete history.
 
 After substantive implementation, record a Ledger MCP change event with
 `change-class`, `files`, `technical-summary`, `user-summary-candidate` and

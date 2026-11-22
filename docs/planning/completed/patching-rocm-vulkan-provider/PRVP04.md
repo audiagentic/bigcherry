@@ -2,7 +2,7 @@
 id: PRVP04
 order: 0
 plan: patching-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-10-18T05:12:00+00:00'
 created-by: agent
 work: S
@@ -51,6 +51,8 @@ priority: P2
 
 2026-11-22 owner handoff from decision-only BCOP295: Unsectioned source gate. Source-bounded action/stop rule: **Discovery:** Open upstream llama.cpp [#30738](https://github.com/ggml-org/llama.cpp/pull/30738) (2026-10-17) adds a Q4_0 dequant+transpose SPIR-V variant and pipeline registration for the existing Vulkan FA scratch path. BigCherry b11552 only has Q8_0. The pinned path requires **Q rows >=64**, quantized dense K and V, both transpose pipelines, buffer-range capacity and !coopmat2. Thus the PR's GCN1 tg128 improvement is not proven to arise from this shader for ordinary n=1 decode. External pp512 gain is not BigCherry gfx1100/gfx1201 evidence. **Owner/consolidation:** PRVP04 owns this one Vulkan FA shader admission; PKC04's completed lifecycle ownership is unchanged, PRVP02 retains CM1 safety, TRVP12/13/14/15 provide shared identity/route/replay, RRVP02 preserves the user-directed Vulkan implementation pause. HIP RNX02, PRBE54 and QFP04 are separate kernels. No new selector, allocator, cache, dispatch table, local patch or hardware job. **Branch/exclusion:** Selected independently active `feat/rad06-profile2` at `a80aa61e45fcb7b87dc1e68306064169d18ead5e` (Audumla, 2026-10-18 04:10:39 UTC), later independent than main's `c06dd0a9` (04:08:34 UTC); main's later BCOP294 merge was sched See docs/planning/completed/patching-bc-optimizations/BCOP295.md for the complete source/shape/negative case and evidence. PRVP04 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Vulkan Q4_0 KV prefill-only fused dequant/transpose is paused, and its external GCN1 decode improvement cannot be attributed to an n>=64-query shader on BigCherry RDNA devices. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume after RRVP02 unpause and upstream/pin reconciliation of #30738. Require real Q rows>=64 with quantized K and V, both transpose pipelines, buffer-range/temporary F16 scratch and no-coopmat2 eligibility, then gfx1100/gfx1201 SPIR-V/full-logit/long-context correctness and measured prefill benefit. Do not invent a decode gain. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
+
 ## Decision and ownership (2026-10-18)
 
 **Plan only; no implementation or Vulkan hardware queue while RRVP02's 2026-09-10 pause applies.** PRVP04 owns only the Q4_0 K/V dequant+transpose shader and its activation/performance disposition. This is a newly identified native Vulkan attention implementation boundary, not a second Vulkan dispatcher, cache, scheduler, allocator, or tuning registry. PKC04 is a completed lifecycle *ownership* decision; PRVP02 owns unrelated CM1 MMQ A-prefetch bounds; TRVP12/13/14/15 and RRVP02 own shared provider identity, executed-route attestation, replay, and future qualification. HIP RNX02/1300, PRBE54/1271 and QFP04/1295 are separate dense Q8 vector, HIP Q5 staging, and sparse-QSA paths: do not borrow their measurements or edit them.
@@ -89,3 +91,9 @@ priority: P2
 ## Change Log
 
 - 2026-11-22T05:25:05.063173+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4573
+- 2026-11-22T13:07:03.946002+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:12:30.797521+00:00 (state-transition): State: pending → deferred

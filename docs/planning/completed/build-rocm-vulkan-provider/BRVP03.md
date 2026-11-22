@@ -2,7 +2,7 @@
 id: BRVP03
 order: 0
 plan: build-rocm-vulkan-provider
-state: pending
+state: deferred
 created-at: '2026-10-02T12:34:59.291476+00:00'
 breadth: ''
 skill: ''
@@ -55,6 +55,14 @@ S-M / low.
 
 ## Notes
 
+DEFERRED VULKAN PORTFOLIO 2026-11-22: Explicit user-directed Vulkan implementation pause from 2026-09-10 remains in force. Vulkan stock source/build lane is provider-specific and is not required for HIP/Radiance builds. This item is parked as deferred, NOT completed, superseded, deprecated, implemented or promoted; its original source/negative/hardware acceptance remains mandatory. Resume only via Planning API state->pending after a new owner review confirming: Resume only after RRVP02 documents the owner lifting the Vulkan implementation pause; require a pinned Vulkan stock source/build/ICD/driver/SDK receipt using the one existing BuildPlan/BRVP01 build identity, then compile-only and minimal capability tests before any device benchmark. Shared HIP/ROCm identity, SDK, provider capabilities and benchmark controls remain active under their separate owners; this deferral does not block them.
+
 ## Change Log
 
 - 2026-10-02T12:34:59.291476+00:00 (created-by): Created by agent
+
+## Reviews
+
+- RV4566
+- 2026-11-22T13:05:30.699021+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:10:30.966959+00:00 (state-transition): State: pending → deferred
