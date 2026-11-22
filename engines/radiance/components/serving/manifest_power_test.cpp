@@ -236,6 +236,14 @@ int main() {
         fake_lease["instance"] = "another-instance";
         write_lease(fake_lease);
         expect(!ss::owner_has_gpu_lease(lease_dir), "another lease holder cannot authorize power");
+        // One identity key only: a matching lease under the old alias alone, or with no key at all, is denied.
+        fake_lease["instance"] = "rsc02-step3-fixture";
+        write_lease(fake_lease);
+        expect(::unsetenv("AGENT_INSTANCE") == 0, "unset canonical instance");
+        expect(!ss::owner_has_gpu_lease(lease_dir), "no instance key cannot authorize power");
+        expect(::setenv("CLAUDE_RC_NAME", "rsc02-step3-fixture", 1) == 0, "set old alias");
+        expect(!ss::owner_has_gpu_lease(lease_dir), "the old CLAUDE_RC_NAME alias alone cannot authorize power");
+        expect(::unsetenv("CLAUDE_RC_NAME") == 0, "unset old alias");
         return 0;
     } catch (const std::exception& error) {
         std::cerr << "RSC02 step 3 test failed: " << error.what() << '\n';

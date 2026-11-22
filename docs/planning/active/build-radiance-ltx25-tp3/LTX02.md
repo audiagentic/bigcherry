@@ -101,6 +101,8 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 2026-11-22 (RUM15 numerical source review): GPU XTX and R9700 are bitwise identical at 86,400 captured BF16 C06 intermediate values; CPU/GPU IQ8R QKV difference is fully accounted for in a 198-element checkpoint-backed sample by an extra BF16 rounding of U8*BF16 weight-scale product performed by both libhalo and libr4d layout hooks. CPU libref multiplies the same two levels in F32. Do NOT make libref round its product to BF16 merely to make comparisons match. Generic kernel/layout precision-preserving remediation belongs exclusively to RUM15, with a measured representation/performance and admission decision; LTX02 retains real TP1-activation parity/quality, 16/64 rows, faults, and production refusal until LTX04. See docs/evidence/2026-11-22-ltx25-ltx02-iq8r-scale-root-cause/README.md.
 
+2026-11-22 new multirow C06 issue slice: the existing model-backed RadCtx/Attn graph now executes 16 and 64 rows for video and audio self-attention with real checkpoint weights, both 8/8/16 and 12/12/8 splits, host 13/13 CTests and opt-in mixed AQL in both gfx1100/gfx1100/gfx1201 device orders (all pass). Identical-order reruns and all three rank output replicas are bitwise stable. Cross-device-order 16-row BF16 outputs are identical; 64-row BF16 differences are repeatable: audio 351–360 / 131072 and video 796 / 262144; relative L2 0.01466%–0.01946%, first appearing after attention. No TP1 captured activation/reference, no approved quality tolerance or full production graph. Evidence: docs/evidence/2026-11-22-ltx02-multirow-issued/README.md. Continue pinned TP1 comparison and generic attention precision triage, fault/cancel and RUM14 resident loader integration. Do not remove TP3 serving refusal.
+
 ## Change Log
 
 - 2026-11-22T03:06:26.779657+00:00 (created-by): Created by planning-audit
@@ -112,3 +114,4 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 - RV4467
 - 2026-11-22T09:18:12.361715+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T12:50:39.750825+00:00 (updated-by): Updated: section:notes
