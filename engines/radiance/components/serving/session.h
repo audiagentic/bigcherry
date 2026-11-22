@@ -145,10 +145,6 @@ struct EngineStart {
     nlohmann::json native_preflight_receipt = nlohmann::json::object();
     // The resolver's values after the admitted YAML is applied: what the serve path plans from.
     nlohmann::json native_preflight_values = nlohmann::json::object();
-    // Set only by a native preflight that asked for it (EnginePlanInputs::preflight_owner_map): the planner's owner
-    // map for the placement this configuration declares (the unmeasured manifest's spec.plan.owner_map), built in
-    // process and never written; null otherwise.
-    nlohmann::json native_preflight_owner_map = nullptr;
 
     // The exact strict document that was admitted and will be consumed by this role.
     // Stored replay and fresh launches use a sealed descriptor; manifest remains the durable public path.
@@ -396,7 +392,6 @@ struct EnginePlanInputs {
     // admitted YAML exactly as a serve start does, then stop before the writer, the power admission and every
     // engine or helper child. It needs native_admission and takes no GPU.
     bool native_preflight = false;
-    bool preflight_owner_map = false;      // with native_preflight: also plan the owners (reads the model's expert directory and the heat file)
     bool quality_score = false; // this owner must be the admitted runtime home's executable
     vram::Hardware helper_vram;             // OS counter/readiness seam, never an admission override
     std::string power_profile = "stock";    // explicit v2 profile, observe by default

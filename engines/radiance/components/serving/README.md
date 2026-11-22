@@ -266,10 +266,6 @@ prints engine/helper counts and each provenance record; JSON includes
 `--set layout.name=...` override is refused rather than silently selecting
 another layout.
 
-With `--native-config YAML`, `--json --owner-map` adds `owner_map`: the planner's per-helper owned experts, counts and device
-bytes for the placement the config declares (the unmeasured manifest's `spec.plan.owner_map`, built in process and never
-written). It reads the model's expert directory and the heat file, so it is opt-in.
-
 **Design source:** RSC12's one named configuration plus provenance and RSC02's
 single native resolver. **Difference from the retired interfaces:** this is
 not a Python `bigcherry serve explain` wrapper and does not derive defaults

@@ -1449,29 +1449,6 @@ void session_engine_plan(Fixture& t) {
             };
             if (const std::string pass = preflight([](ss::Env&) {}); !pass.empty())
                 throw std::runtime_error("preflight: a matching YAML was refused: " + pass);
-            // The owner map is opt-in: absent unless asked for, then the planner's map for the declared placement, built in
-            // process with no writer, helper or engine child.
-            {
-                ss::EnginePlanInputs pre = gated;
-                pre.native_preflight = true;
-                const fs::path no_map_run = run / "native-preflight-no-owner-map";
-                fs::create_directories(no_map_run);
-                fs::permissions(no_map_run, fs::perms::owner_all, fs::perm_options::replace);
-                assert(ss::plan_engine_only(pre, no_map_run, ss::Hooks{}).native_preflight_owner_map.is_null());
-                pre.preflight_owner_map = true;
-                const fs::path map_run = run / "native-preflight-owner-map";
-                fs::create_directories(map_run);
-                fs::permissions(map_run, fs::perms::owner_all, fs::perm_options::replace);
-                std::vector<ss::ChildKind> kinds;
-                ss::Hooks hooks;
-                hooks.started = [&](ss::ChildKind kind, const std::string&, pid_t, const fs::path&) { kinds.push_back(kind); };
-                const ss::EngineStart mapped = ss::plan_engine_only(pre, map_run, hooks);
-                const Json& map = mapped.native_preflight_owner_map;
-                assert(map.is_object() && map.contains("owner_map_sha256") && map.at("helpers").is_array());
-                assert(map.at("helpers").size() == mapped.native_preflight_values.at("layout").at("helper_cards").size());
-                for (const ss::ChildKind kind : kinds) assert(kind == ss::ChildKind::native_config_inspector);
-                assert(mapped.argv.empty() && mapped.helpers.empty());
-            }
             // The tuning options the YAML states are the resolver's tuning values; ill-typed ones are refused.
             {
                 ss::EnginePlanInputs pre = gated;

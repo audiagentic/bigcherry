@@ -131,7 +131,7 @@ void usage() {
            "         v3 reads NAME.yaml from the verified bundle, else from --configs DIR; --native-config YAML names another file.\n"
            "  --work-root DIR     the platform's work root: holds the named-config store, so a start reuses the\n"
            "                     last measured plan of its config; without it every start measures\n"
-           "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH] [--json [--owner-map]]\n"
+           "  explain CONFIG --native-config YAML --model-root DIR [--engine-binary PATH]\n"
            "         v3: also inspect and reconcile that YAML as a start does, offline (no engine or helper child, no GPU)\n"
            "  start  CONFIG (serve's options)   serve detached; returns once running (0) or failed (1)\n"
            "  start  --manifest FILE --run-dir DIR [--configs FILE|DIR]   replay exact strict-v2 bytes "
@@ -522,7 +522,7 @@ void explain(const bc::serving::Resolved& result) {
 int explain_command(int argc, char** argv) {
     Options opts;
     std::string name;
-    bool json = false, owner_map = false;
+    bool json = false;
     fs::path native_config, engine_binary, work_root;
     for (int i = 2; i < argc; ++i) {
         const std::string arg = argv[i];
@@ -536,8 +536,6 @@ int explain_command(int argc, char** argv) {
             return 0;
         } else if (arg == "--json") {
             json = true;
-        } else if (arg == "--owner-map") {
-            owner_map = true;
         } else if (arg == "--configs") {
             opts.configs.emplace_back(need());
         } else if (arg == "--site") {
@@ -571,8 +569,6 @@ int explain_command(int argc, char** argv) {
     }
     if (name.empty())
         throw std::runtime_error("explain: a named CONFIG is required");
-    if (owner_map && (!json || native_config.empty()))
-        throw std::runtime_error("explain: --owner-map goes with --json and --native-config");
     opts.sets.push_back("layout.name=" + Json(name).dump());
     namespace ss = bc::serving::session;
     const fs::path self = fs::read_symlink("/proc/self/exe");
@@ -607,7 +603,6 @@ const std::string cache_note = work_root.empty()
         preflight.engine_binary = engine_binary;
         preflight.native_admission = ss::NativeAdmissionRequest{native_config, opts.model_root, {}};
         preflight.native_preflight = true;
-        preflight.preflight_owner_map = owner_map;
         // The planner's scratch directory: nothing persistent is written, no child outlives the inspector.
         char scratch[] = "/tmp/bc-explain-XXXXXX";
         if (!::mkdtemp(scratch))
@@ -620,10 +615,8 @@ const std::string cache_note = work_root.empty()
             const ss::EngineStart plan = ss::plan_engine_only(preflight, scratch, ss::Hooks{});
             const Json& report = plan.native_preflight_receipt;
             if (json) {
-                Json document = {{"result", "pass"}, {"config", name}, {"values", plan.native_preflight_values},
-                                 {"model_identity_cache", cache_note}};
-                if (owner_map) document["owner_map"] = plan.native_preflight_owner_map;
-                std::cout << document.dump(2) << '\n';
+                std::cout << Json{{"result", "pass"}, {"config", name}, {"values", plan.native_preflight_values},
+                                  {"model_identity_cache", cache_note}}.dump(2) << '\n';
                 return 0;
             }
             std::cout << "native admission preflight: PASS\n  " << cache_note << "\n  config " << name << "\n  yaml " << native_config.string()
