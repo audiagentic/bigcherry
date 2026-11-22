@@ -142,6 +142,8 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 
 2026-11-22 warm-step gap closed (bigcherry-1; docs/evidence/radiance-latest-bump/RUM09-WARM-STEP.md). Live A B A on the installed releases, flashnext-4gpu: the 8-session warm round is about twice the cold round on BOTH Radiance 1.17 (1170.36.0: 58.2 and 59.5 ms against 28.0 and 28.2 cold) and 2.2 (2020.0.1: 59.3 and 56.0 ms against 28.1 and 28.7 cold); every other round is within a few percent. Cause is batch composition (all eight sessions decode together in the warm round, five or fewer in the cold round), not a 2.2 regression, so the earlier unexplained +12% needs no further work. Follow-up found: flashnext-parity.sh measure finishes every round and then refuses to publish the run record ('active policy lacks selected calibration store/key') when the live placement policy is on, so compare cannot run; raw round files were read directly.
 
+Later installed-release checks (2026-11-22): bc-radiance 2020.1.0 and 2020.1.1 install, verify and status clean on an isolated root, and start, canary and stop cleanly on flashnext-4gpu and qwen27b-tp3 (see RUM06). A cross-build stored-plan reuse check showed qwen27b-tp3 reaching running in about 22 to 28 s on a later build, while flashnext-4gpu measured again (196 s on 2020.1.1); that helper-config reuse question is tracked separately and does not change the 16-config start roster result.
+
 ## Change Log
 
 - 2026-11-18T01:28:48.655352+00:00 (created-by): Created by codex
@@ -186,3 +188,4 @@ Checkpoint 2026-11-20: reproduced the helper-on failure before the 64-row first 
 - 2026-11-21T21:44:27.596047+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T01:52:16.508656+00:00 (updated-by): Updated: section:acceptance_criteria
 - 2026-11-22T03:55:17.659291+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T08:39:36.635460+00:00 (updated-by): Updated: section:notes
