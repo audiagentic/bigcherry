@@ -1,0 +1,24 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_103640_no-user-visible-change-bc-ser_4835",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/session.cpp",
+    "engines/radiance/components/serving/session.h",
+    "engines/radiance/components/serving/runtime_guards.cpp",
+    "engines/radiance/components/serving/runtime_guards.h",
+    "engines/radiance/components/serving/calibration_lab.cpp",
+    "engines/radiance/components/serving/calibration_lab.h",
+    "engines/radiance/components/serving/serving_test.cpp",
+    "engines/radiance/components/serving/session_guards_test.cpp",
+    "engines/radiance/components/serving/CMakeLists.txt",
+    "engines/radiance/components/serving/component.toml",
+    "engines/radiance/components/serving/README.md",
+    "docs/reference/engines/radiance/SERVING_MANIFEST.md",
+    "docs/reference/tooling/TOOLING.md"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Remove the foreground lab calibration and lab experiment serving start, unreachable since a fresh start requires a native YAML that refuses them: serve options, Session::laboratory and calibrate, lab_evidence_gate, RuntimeGuards lab mode, the calibration_lab module and its golden, and the EnginePlanInputs lab fields. Replay is production-only. The writer CLI, calibration-ingest and live-policy records are unchanged.",
+  "timestamp-utc": "2026-11-22T10:36:40.598117Z",
+  "user-summary-candidate": "No user-visible change: bc-serve serve no longer carries lab calibration options that could not run."
+}

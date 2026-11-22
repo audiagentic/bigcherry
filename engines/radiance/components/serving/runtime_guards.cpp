@@ -294,12 +294,11 @@ v2::Status RuntimeGuards::startup(const EngineStart& plan, const fs::path& engin
     if (manifest.spec.handoff) {
         const auto& handoff = *manifest.spec.handoff;
         const auto& state = handoff.placement.live_policy_state;
-        if (state.requested == v2::LivePolicyRequested::kOn && !state.configured &&
-            !(lab_pending_ && manifest.spec.intent.service.profile == v2::Profile::kLab))
+        if (state.requested == v2::LivePolicyRequested::kOn && !state.configured)
             return refuse("policy", "live placement was requested but the startup decision disabled it: " +
                                         state.reason_code);
         policy_enabled_ = handoff.placement.live_policy.has_value();
-        if (policy_enabled_ && !state.configured && !lab_pending_)
+        if (policy_enabled_ && !state.configured)
             return refuse("policy", "configured live-policy settings lack a qualified startup decision");
         if (handoff.telemetry.histogram_file) {
             if (handoff.telemetry.histogram_file->empty())
@@ -410,18 +409,10 @@ v2::Status RuntimeGuards::inspect_policy() {
     return std::nullopt;
 }
 
-v2::Status RuntimeGuards::prove_lab() {
-    if (!lab_pending_)
-        return refuse("lab", "lab evidence gate called without an active calibration");
-    lab_pending_ = false;
-    next_poll_ = std::chrono::steady_clock::now();
-    return poll();
-}
-
 v2::Status RuntimeGuards::poll() {
     if (!manifest_)
         return refuse("poll", "runtime guard has not passed the startup gate");
-    if (lab_pending_ || std::chrono::steady_clock::now() < next_poll_)
+    if (std::chrono::steady_clock::now() < next_poll_)
         return std::nullopt;
     if (auto error = inspect_heat())
         return error;

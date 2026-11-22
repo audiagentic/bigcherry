@@ -54,7 +54,7 @@ target_link_libraries(bc_feature_state PUBLIC bc_json_dependency)
 set(bc_manifest_writer_sources
   manifest_writer.cpp serving.cpp config_loader.cpp calibration.cpp ledger.cpp rank_demand.cpp
   live_policy.cpp live_policy_manifest.cpp plan_cache.cpp xbigcherry.cpp v2/s10_inputs.cpp)
-add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp calibration_lab.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
+add_library(bc_serving STATIC ${bc_manifest_writer_sources} session.cpp helper_vram.cpp stored_manifest.cpp stored_manifest_cache.cpp s8_replay.cpp runtime_guards.cpp resources.cpp manifest_power.cpp power_transaction.cpp power_linux.cpp power_records.cpp power_diagnostics.cpp live_policy_ingest.cpp sdk_check.cpp)
 
 target_link_libraries(bc_serving PUBLIC bc_jcs bc_serving_v2 bc_owner_map bc_serving_v2_runtime_receipt bc_feature_state)
 target_compile_features(bc_serving PUBLIC cxx_std_20)
@@ -164,8 +164,6 @@ if(BUILD_TESTING)
   # Step 3: independently built card-free guards and real v2 power bridge.
   add_executable(bc_session_guards_test EXCLUDE_FROM_ALL session_guards_test.cpp)
   target_link_libraries(bc_session_guards_test PRIVATE bc_serving)
-  target_compile_definitions(bc_session_guards_test PRIVATE
-    BC_RSC02_CALIBRATION_GOLDEN="${CMAKE_CURRENT_SOURCE_DIR}/golden/rsc02_calibration_deadlines.json")
   # The declared build target runs all four heat producer contract cases by
   # default; do not register extra CTest aliases without real build targets.
   add_test(NAME bc_session_guards_test COMMAND bc_session_guards_test)
