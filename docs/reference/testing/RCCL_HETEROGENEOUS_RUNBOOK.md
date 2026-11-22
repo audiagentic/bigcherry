@@ -675,6 +675,8 @@ may be used for qualification when supported by the pinned build.
 
 RCCL Tests `-M 1` must be used to verify what algorithm/protocol/channel configuration actually executed.
 
+**Channel qualification limitation (PHA04):** the existing harness forwards only `RCCL_OVERRIDE_ALGO` and `RCCL_OVERRIDE_PROTO`. It does not apply a requested `RcclCase.channels`. The `-M 1` channel value is an *observation*, not proof of channel control, even if it accidentally equals the request. An explicit channel request therefore returns `harness_failure` with `plan_verification=request_not_applied` after a clean/correct algorithm/protocol run. This is deliberately not `pass` or `verified`; unrequested-channel algorithm/protocol-only rows retain their original meaning. When -M 1 prints several executed-plan rows, *all* must agree on algorithm, protocol and observed channel count; a disagreement is `harness_failure`/`unverified` rather than confirmation based on the first row. Identical repeated rows remain admissible for algorithm/protocol-only verification. Do not promote channel-qualified candidates until a source- and installed-build-verified control plus per-call executed-plan correlation exists. No RCCL dispatch or admission behavior changes in this diagnostic gate.
+
 ## P2.3 Qualification key
 
 An RCCL candidate is qualified against an exact scope:
@@ -722,6 +724,10 @@ device_lost
 Compatibility/admissibility is separate from performance cost.
 
 Unsafe candidates are ineligible regardless of speed.
+
+RCCL Tests `-Z json` `wrong` counters must be non-negative decimal integers (the pinned version emits decimal strings). Reject fractional, boolean or signed counts as malformed evidence; blindly applying `int()` can truncate to zero or cancel errors across in-place/out-of-place passes. Such records are harness failures, never correctness `pass`.
+
+GP08 benchmark admission from a GP07 cases.jsonl row requires, in addition to the exact topology and compatibility revision, `classification=pass`, `correct=true` and `plan_verification=verified`. A historical pass-only row or unverified/declined/replaced candidate is insufficient even for a diagnostic benchmark. This validation does **not** yet prove binding of the selected benchmark arm to the precise reduction operation signature, collective implementation or candidate key; those must be qualified independently before production promotion.
 
 ## P2.5 Search order
 

@@ -47,7 +47,7 @@ radiance accept on the 1.7.0 pin passes against the 1.3.0 baselines (2,050 pp409
 
 ## Acceptance Criteria
 
-
+**Transferred MEN23 acceptance (independent gate):** MEN17 acceptance entries must declare validated lane + experiment/build identity and fail closed with declaration error on missing, incompatible or ambiguous metadata; fresh-checkout bigcherry --engine radiance accept builds or locates the exact declared lane and sets engine binary/home per entry itself, not from inherited RAD_BIN/RAD_HOME or a stale stock build. A user-specified override must be explicit, validated and recorded, never default. pin-bump --accept reuses precisely the same acceptance-resolver/executor, including helper-ab's rad0002/moe-remote handoff build and 27B/native/KLD reference identity. Add fake-lane offline tests for selected/incorrect/missing lane, environment independence, cache provenance and helper-ab failure before GPU, update Radiance accept docs. Only close when a named real helper-ab entry on the qualified handoff lane succeeds from a clean checkout without manually exported RAD_BIN/RAD_HOME and quality/baseline verdict is attributable; old v1.8.0 helper OOM from using stock build remains historical evidence, not a pass. MEN17's baseline/noise/ABBA post-bump quality gates remain independent and unmet until measured.
 
 ## Notes
 
@@ -57,8 +57,15 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 CORRECTION 2026-11-04: the earlier note that MEN11 were absorbed into this item is withdrawn. An independent revalidation found each either still has open scope of its own (reopened) or was delivered outright. This item's scope is unchanged.
 
+CONSOLIDATION 2026-11-22 PHASE-5: receive MEN23. MEN23 describes an acceptance entry's build-lane selection defect in MEN17's only engine-aware accept/pin-bump--accept command; independent plan ownership would duplicate the acceptance executor. Original acceptance still applies; the transferred gate is unfinished. Source is superseded for duplicate planning ownership, not completed on implementation, benchmark or live-hardware criteria. Where Vulkan is involved, implementation remains paused by owner directive.
+
 ## Change Log
 
 - 2026-10-17T09:09:32.756838+00:00 (created-by): Created by agent
 - 2026-11-04T03:47:51.848107+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:45:43.413487+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4528
+- 2026-11-22T11:08:28.715849+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

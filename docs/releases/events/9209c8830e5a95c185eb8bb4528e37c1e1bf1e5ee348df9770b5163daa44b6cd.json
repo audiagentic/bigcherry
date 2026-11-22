@@ -1,0 +1,15 @@
+{
+  "change-class": "docs",
+  "event-id": "chg_20261122_112710_confirmed-a-repeatable-narrow_7618",
+  "files": [
+    "docs/evidence/2026-11-22-rum15-narrow-iq8r-perf/README.md",
+    "docs/planning/active/patching-radiance-upstream/RUM15.md"
+  ],
+  "plan-item-ids": [
+    "RUM15"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Investigated the measured RUM15 FP32-scale narrow GEMM performance cost without changing production. Same-card A/B/A existing native MW4 pin confirmed workload +26.13% FP32 vs stock for M33 N1024 K5120; no dispatch optimization. Compiled AMDGPU metadata shows no spills or VGPR growth, but LDS grows by 256B and 16 extra b128 LDS loads. Isolated direct F32 global load native plugin passed 35/35 original exact-F32 IQ8R checks, but target M33 speed did not improve. Both R9700 and XTX rotating-weight A/B/A using the same original Qwen IQ8R fixture completed with 54 timed IQ8R rows each; R9700 M33 N1024 +17.48% and M1 +8.74%, XTX M32 N5120 +7.77%; medians +0.63%/+0.27%. Reject experimental code. Production FP32 scale patch stays diagnostic pending actual LTX shapes, loading/refill/cache and performance/admission.",
+  "timestamp-utc": "2026-11-22T11:27:10.683009Z",
+  "user-summary-candidate": "Confirmed a repeatable narrow-GEMM slowdown in the FP32 IQ8R candidate on both R9700 and XTX. Tested and rejected two minimal kernel tweaks that did not improve performance; accuracy stayed intact. Captured the compiler and rotating-weight evidence under RUM15 without changing production."
+}

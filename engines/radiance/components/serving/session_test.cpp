@@ -13,6 +13,9 @@
 
 #include <array>
 #include <cassert>
+#ifdef NDEBUG
+#error "assert-based test built with NDEBUG: its assertions would not run"
+#endif
 #include <csignal>
 #include <cstdio>
 #include <cstring>
@@ -1753,7 +1756,9 @@ int test_main(int argc, char** argv) {
         return ss::serve(s);
     }
     std::signal(SIGABRT, stop_owners);
-    g_root = fs::current_path() / "bc-session-fixture";
+    std::string group;
+    if (argc == 3 && std::string(argv[1]) == "--group") group = argv[2];
+    g_root = fs::current_path() / ("bc-session-fixture" + (group.empty() ? std::string() : "-" + group));
     fs::remove_all(g_root);
     fs::create_directories(g_root);
     g_host = g_root / "host";
@@ -1764,43 +1769,26 @@ int test_main(int argc, char** argv) {
         std::cout << "PASS: native owner host-facts start receipt before child\n";
         return 0;
     }
-    injected_owner_plan_exception();
-    real_session_power_returned_errors();
-    manifest_writer_before_durable_admission();
-    native_config_inspector_before_admission();
-    native_config_inspector_invalid_report_refused();
-    native_only_planning_refusals();
-    premeasurement_manifest_hook_integration();
-    callback_nonstandard_regression();
-    callback_exception_matrix();
-    spawn_and_environment();
-    serve_status_stop();
-    feature_state_start_status_and_warning();
-    feature_state_invalid_manifest_prevents_child();
-    helpers_order_and_killed();
-    helper_failure_unwinds();
-    helper_power_hook_boundary();
-    power_hook_returned_status_errors();
-    helper_shared_segment_gate();
-    long_run_dir();
-    shared_run_dir_and_stale_socket();
-    canary_fails();
-    engine_fails_to_start();
-    engine_refuses_the_stored_plan();
-    engine_never_healthy();
-    engine_dies_while_serving();
-    engine_ignores_sigint();
-    plan_refused();
-    stop_while_waiting_for_health();
-    stop_during_plan();
-    signal_stops();
-    unknown_command_and_no_owner();
-    start_detached_runs_and_stops();
-    descendant_outliving_the_engine();
-    inherited_descriptor_not_passed();
-    owner_killed_fails_closed();
-    unwritable_record_still_stops();
-    no_record_no_session();
+    // The tests, in four groups of about equal run time (measured), so that CTest can run them side by side: each
+    // group is its own ctest test (`--group N`) with its own fixture directory, and running with no argument runs them
+    // all. Every test is in exactly one group.
+    static const std::vector<std::vector<void (*)()>> groups = {
+        {real_session_power_returned_errors, manifest_writer_before_durable_admission, native_config_inspector_before_admission, callback_exception_matrix, power_hook_returned_status_errors, stop_while_waiting_for_health, stop_during_plan, unwritable_record_still_stops},
+        {native_only_planning_refusals, premeasurement_manifest_hook_integration, serve_status_stop, helpers_order_and_killed, helper_power_hook_boundary, canary_fails, engine_ignores_sigint, unknown_command_and_no_owner, no_record_no_session},
+        {injected_owner_plan_exception, feature_state_start_status_and_warning, feature_state_invalid_manifest_prevents_child, helper_failure_unwinds, helper_shared_segment_gate, long_run_dir, shared_run_dir_and_stale_socket, engine_refuses_the_stored_plan, engine_never_healthy, plan_refused},
+        {native_config_inspector_invalid_report_refused, callback_nonstandard_regression, spawn_and_environment, engine_fails_to_start, engine_dies_while_serving, signal_stops, start_detached_runs_and_stops, descendant_outliving_the_engine, inherited_descriptor_not_passed, owner_killed_fails_closed},
+    };
+    size_t first = 0, last = groups.size();
+    if (!group.empty()) {
+        first = std::stoul(group) - 1;   // "1" .. the number of groups
+        if (first >= groups.size()) {
+            std::cerr << "session test: no group " << group << '\n';
+            return 2;
+        }
+        last = first + 1;
+    }
+    for (size_t i = first; i < last; ++i)
+        for (const auto test : groups[i]) test();
     std::cout
         << "PASS: session owner lifecycle (start order, canary, failures at every stage, stop via socket and "
            "signal, SIGKILL fallback, one owner per run directory, child environment, detached start)\n";

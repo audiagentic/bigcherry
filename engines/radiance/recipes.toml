@@ -45,17 +45,6 @@ patches = [
   "rad0055_step_phase_trace",
 ]
 
-# Host build compatibility. Radiance 2.2 includes the FFmpeg 6 write callback support upstream.
-[patch-set.host-compat]
-patches = []
-required-state = "untested"
-
-# Start from a resolved serving manifest (rad0009, RSC07): `--manifest PATH` replaces command-line flags. Untested until a
-# manifest launch is shown to parse to the same config as the argv launch on hardware, then moved to serving-core.
-[patch-set.serving-manifest]
-patches = []
-required-state = "untested"
-
 # Remote-MoE diagnostics (shadow compare, mask-only); the hand-off is in serving-core.
 # State-based source admission restricts this patch to diagnostic-class sources.
 [patch-set.moe-remote-diag]
@@ -125,19 +114,19 @@ patch-sets = []
 class = "production"
 description = "Radiance snapshot b6b8751cccb0e834a13ae9e5afca824ee9a487aa with BigCherry's migrated production patch sets."
 overlay = false
-patch-sets = ["serving-manifest", "serving-core", "host-compat", "helper-config", "vtp14-mixed-tp"]
+patch-sets = ["serving-core", "helper-config", "vtp14-mixed-tp"]
 
 [source.radiance-diag]
 class = "diagnostic"
 description = "Frozen upstream snapshot b6b8751cccb0e834a13ae9e5afca824ee9a487aa with the migrated production patch sets plus remote-MoE diagnostics (rad0004); build it with build.moe-diag."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "moe-remote-diag", "helper-config", "vtp14-mixed-tp"]
+patch-sets = ["serving-core", "moe-remote-diag", "helper-config", "vtp14-mixed-tp"]
 
 [source.radiance-routing-evidence]
 class = "diagnostic"
 description = "Production Radiance plus RHP01 opt-in host histogram coverage diagnostics; not a production source."
 overlay = false
-patch-sets = ["serving-core", "host-compat", "serving-manifest", "routing-evidence", "helper-config", "vtp14-mixed-tp"]
+patch-sets = ["serving-core", "routing-evidence", "helper-config", "vtp14-mixed-tp"]
 
 [source.radiance-vtp44-evidence]
 class = "diagnostic"
@@ -145,8 +134,6 @@ description = "Production Radiance plus the VTP44 evidence tools (KV selftest ca
 overlay = false
 patch-sets = [
   "serving-core",
-  "host-compat",
-  "serving-manifest",
   "helper-config",
   "vtp14-mixed-tp",
   "vtp44-evidence",

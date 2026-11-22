@@ -1,0 +1,11 @@
+{
+  "change-class": "config",
+  "event-id": "chg_20261122_131633_faster-pull-request-ci-builds_5460",
+  "files": [
+    ".github/workflows/radiance-build.yml"
+  ],
+  "status": "unreleased",
+  "technical-summary": "The Radiance CI build restored a ccache whose size limit (twice the previous build's touched bytes) was already reached, so every new object evicted a not-yet-used entry; the heavy libr3 HIP units, built late, then missed (86% hits, 35 minutes against 97% and 7). The build now runs with the limit lifted and the existing post-build trim applies the limit.",
+  "timestamp-utc": "2026-11-22T13:16:33.355983Z",
+  "user-summary-candidate": "Faster pull-request CI builds: the compiler cache no longer evicts entries the build still needs."
+}
