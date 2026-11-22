@@ -2,7 +2,7 @@
 id: RUM12
 order: 0
 plan: patching-radiance-upstream
-state: in_progress
+state: completed
 created-at: '2026-11-21T23:41:27.558357+00:00'
 breadth: ''
 skill: advanced
@@ -57,6 +57,8 @@ A second named start with unchanged inputs reuses the stored manifest from any r
 
 2026-11-22 (bigcherry-2): slice 2, cross-build reuse. A stored manifest is bound to the build that wrote it (engine identity, runtime home), its measurement is not. When replay of the stored manifest is refused (a different engine or helper build), the start reads the stored measurement back from the old attempt's owner cache (plan, rank demand, resident host memory; the entry's owner digest must equal the index's receipt) and seals it again under the current build: the draft and measured writers run, no helper or measuring engine does, the new attempt gets its own owner receipt, S8 evidence and index, and the old attempt and engine identity are kept as plan_carried_from (selection and carried-from.json). A stored measurement that cannot be carried (damaged, or its plan no longer fits the configuration) is measured afresh. If anything fails after carrying, the stored entry is dropped. Tests: serving_test (different engine build: no measuring engine, one measured writer, provenance recorded, store replaced; unusable store: measures). Remaining on cards: the second named start of flashnext-r9700 and qwen27b-tp3 on the same build (replay) and on a newer installed build (carry).
 
+2026-11-22 completion (bigcherry-1, card evidence on the installed releases, own short gpu lease per run, work root shared by the arms of one config). Same-build reuse, bc-radiance 1170.38.0: second named start flashnext-r9700 69 s -> 54 s with 0 measuring attempts, qwen27b-tp3 35 s -> 26 s, 0 attempts, canaries correct. The first cross-build attempt (1170.38.0 store, 2020.0.0) did not engage: the store key still carried the owner-injected engine.radiance_home --set, so different installed prefixes missed (diagnosed by bigcherry-2, fixed in #1286). After #1286, bc-radiance 2020.0.1 installed under two prefixes: first start measures once (the key changed once: flashnext-r9700 73 s, 2 measuring attempts; qwen27b-tp3 39 s), the start under the second prefix logs 'the stored manifest is not replayable as it is (replay: the engine, helper and runtime home must belong to this bc-serve build); reusing its measurement under this build', writes carried-from.json and no measuring engine (flashnext-r9700 55 s, qwen27b-tp3 34 s) and the canary is correct. That is the same code path a different build takes (strict replay refused, measurement carried, plan re-sealed with the current writers), so the carry is shown on cards for a changed prefix; a genuinely different engine build will exercise it on the next release and is recorded by plan_carried_from. Numbers: reuse takes engine-start time only (about 25-35% less wall time than the first start on these configs; the first start itself is dominated by the measurement and a 62 GiB host-pool plan on flashnext-r9700). Residual limits, as listed in the acceptance: model replacement keeping path, size and mtime is outside stat identity; same-config-different-site-file changes miss by design.
+
 ## Change Log
 
 - 2026-11-21T23:41:27.558357+00:00 (created-by): Created by claude
@@ -65,3 +67,5 @@ A second named start with unchanged inputs reuses the stored manifest from any r
 - 2026-11-21T23:57:41.696211+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T01:35:02.089724+00:00 (state-transition): State: pending → in_progress
 - 2026-11-22T01:35:14.769977+00:00 (updated-by): Updated: section:detailed_solution, section:files, section:effort_risk, section:standards, section:acceptance_criteria
+- 2026-11-22T02:25:14.761613+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T02:25:20.319798+00:00 (state-transition): State: in_progress → completed
