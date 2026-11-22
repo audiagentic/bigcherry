@@ -5,7 +5,7 @@ Owning group proposal: `build-radiance-ltx25-tp3` (new group only after Planning
 
 | Proposed item | Gap mapping | Priority | Depends on | Registration status |
 | --- | --- | --- | --- | --- |
-| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and RUM13-owned AQL proof; PR #1262 | Candidate |
+| [LTX01](LTX01.md): Qualify only LTX IQ8R declarations and model-source geometry | LT3-01, LT3-03, LT3-04, LT3-07 | P0 | Radiance 2.2 ABI44 and merged RUM13 AQL proof | Engineering complete; MCP registration/closure pending |
 | [LTX02](LTX02.md): Execute actual LTX Q/K RMS and self-attention with checkpoint activations | LT3-05 and self-attention part of LT3-06 | P0 | LTX01 model source; RUM13 native AQL proof; RUM06 TP-group contract | Candidate |
 | [LTX03](LTX03.md): Complete the 48-block dual video/audio TP3 DiT graph without new dispatch infrastructure | Remaining LT3-06 plus cross-modal and FFN work from LT3-03/04/05 | P0 | LTX02 accepted on both modalities | Candidate |
 | [LTX04](LTX04.md): Bind LTX conditioning/guidance/media to existing native TP3 serving | LT3-02, LT3-08, LT3-09 | P0 | LTX03/TP1 parity; specific RUM05 admission and RUM06 lifecycle contracts | Candidate |
@@ -13,6 +13,16 @@ Owning group proposal: `build-radiance-ltx25-tp3` (new group only after Planning
 | [LTX06](LTX06.md): Qualify optional gfx1030 Gemma text worker and actual memory residency | LT3-10 and LT3-11 | P1 | Independent accepted TP3 three-card serving LTX04; no dependency for LTX01–05 | Candidate |
 | [LTX07](LTX07.md): Add optional LTX/Gemma tensor handoff on an admitted worker | LT3-12 and LT3-13 | P1 | LTX04 + LTX06; RUM05 generic worker admission and RUM06 transport lifetime | Candidate |
 | [LTX08](LTX08.md): Release qualified LTX TP3 configurations with reproducible rollback | LT3-15 and final LT3-14 release decision | P0 | LTX05 accepted; LTX07 only for optional text-worker variant | Candidate |
+
+
+**Engineering closure update, 2026-11-22:** LTX01's
+checkpoint-backed geometry/declared-weight foundation has
+[full acceptance evidence](../2026-11-22-ltx25-ltx01-foundation-closure/README.md).
+This is **not** an authoritative Planning MCP close event.
+The other seven LTX items remain open work; LTX02 has a
+successful **C05 subset** but no issued full C06 attention or
+checkpoint TP1 intermediate parity. RUM13's shared AQL test
+has already merged independently. No new C0x plan was created.
 
 ## One numbering system for execution
 
