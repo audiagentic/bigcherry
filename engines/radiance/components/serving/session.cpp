@@ -1341,6 +1341,10 @@ class Owner {
             }
             record_["port"] = plan_.port;
             record_["selection"] = plan_.summary;
+            // Why the stored plan was or was not reused, and what each start phase cost: written once here and
+            // as the later phases finish, never from a hot path.
+            record_["plan_reuse"] = plan_.plan_reuse;
+            record_["phases_ms"] = plan_.phase_ms.is_object() ? plan_.phase_ms : Json::object();
             if (s_.publish_feature_states) {
                 // The pinned descriptor is the exact authenticated replay; never
                 // reopen a replaceable stored-manifest pathname for this snapshot.
@@ -1391,14 +1395,20 @@ class Owner {
                 require_callback(s_.before_gpu_start.invoke("session.before_gpu_start", plan_),
                                  "pre-exec process boundary");
             recheck_native_host_room();
-            start_helpers();
+            {
+                const auto helpers_began = std::chrono::steady_clock::now();
+                start_helpers();
+                record_phase("helper_start", helpers_began);
+            }
             if (s_.quality) {
                 score_quality(*s_.quality);
             } else {
                 try {
+                    const auto engine_began = std::chrono::steady_clock::now();
                     start_engine();
                     if (!wait_health())
                         throw Stop{};
+                    record_phase("engine_start_to_ready", engine_began);
                 } catch (const Stop&) {
                     throw;
                 } catch (...) {
@@ -1628,6 +1638,12 @@ class Owner {
             if (p.value("pid", 0) == pid)
                 p["exited"] = true;
         save();
+    }
+
+    // Elapsed monotonic milliseconds of one owner phase, kept in the record's phases_ms (saved by the next event).
+    void record_phase(const char* phase, std::chrono::steady_clock::time_point began) {
+        record_["phases_ms"][phase] = std::chrono::duration_cast<std::chrono::milliseconds>(
+                                          std::chrono::steady_clock::now() - began).count();
     }
 
     bool event(const std::string& kind, const Json& detail = Json::object()) {
@@ -3017,6 +3033,7 @@ struct NamedCache {
     std::string key;
     fs::path index;          // the work root's named-config store entry; empty without a work root
     std::string model_digest; // model_stat_identity(): path, size, mtime
+    std::map<std::string, std::string> inputs; // static_input_digests(): lets a later miss name what moved
 };
 
 struct NativeReplayAdmission {
@@ -3145,7 +3162,9 @@ std::optional<NamedCache> named_cache(const EnginePlanInputs& in, const Resolved
         values.at("handoff").at("heat").is_string() &&
         !values.at("handoff").at("heat").get<std::string>().empty())
         file("handoff.heat", values.at("handoff").at("heat").get<std::string>());
-    return NamedCache{static_resolution_key(static_inputs), index, static_inputs.model_digest};
+    NamedCache cache{static_resolution_key(static_inputs), index, static_inputs.model_digest};
+    cache.inputs = static_input_digests(static_inputs);
+    return cache;
 }
 
 // The measurement an earlier start stored (its plan, per-rank demand and resident host memory), read back so a
@@ -3160,16 +3179,22 @@ struct CarriedMeasurement {
     }
 };
 
-static std::optional<CarriedMeasurement> load_carried_measurement(const fs::path& stored) {
+// The carried measurement, or why there is none (a fixed reason class; exception text is the caller's to name).
+struct CarriedLoad {
+    std::optional<CarriedMeasurement> carried;
+    std::string reason;
+};
+
+static CarriedLoad load_carried_measurement(const fs::path& stored) {
     try {
         const std::string bytes = read_manifest_file(stored);
         const auto verified = v2::read_manifest(bytes, stored.string(), v2::PlanUse::serving);
         if (!verified || !verified.value().spec.plan.engine_memory)
-            return std::nullopt;
+            return {std::nullopt, "the stored manifest carries no engine measurement"};
         const auto& m = verified.value();
         const StoredManifestIndex bound = read_stored_index(stored.string() + ".replay-index.json");
         if (!bound.native_measurement || bound.manifest_filename != stored.filename().string())
-            return std::nullopt;
+            return {std::nullopt, "the stored manifest has no bound native measurement"};
         const fs::path owner_dir =
             stored.parent_path() / "measurement-attempts" / bound.native_measurement->attempt_id / "plan-cache";
         // One entry per measuring attempt: its own recorded key inputs name it.
@@ -3178,22 +3203,32 @@ static std::optional<CarriedMeasurement> load_carried_measurement(const fs::path
             if (entry.is_regular_file() && entry.path().extension() == ".json")
                 entries.push_back(entry.path());
         if (entries.size() != 1)
-            return std::nullopt;
+            return {std::nullopt, "the measuring attempt's plan cache does not hold exactly one entry"};
         const Json recorded = parse_plan_json(read_file(entries.front()), entries.front().string());
         const auto cached = plan_cache_lookup(owner_dir, recorded.at("key_inputs"));
         if (!cached || !cached->owner || cached->owner->attempt_id != bound.native_measurement->attempt_id ||
             cached->owner_sha256 != bound.native_measurement->sha256)
-            return std::nullopt;
-        return CarriedMeasurement{cached->plan_json, cached->rank_demand, cached->resident,
-                                  m.spec.resources.host.pool_mib, bound.native_measurement->attempt_id,
-                                  m.spec.plan.engine_memory->engine_identity, stored.string()};
+            return {std::nullopt, "the measuring attempt's plan cache entry is absent or not the bound owner's"};
+        return {CarriedMeasurement{cached->plan_json, cached->rank_demand, cached->resident,
+                                   m.spec.resources.host.pool_mib, bound.native_measurement->attempt_id,
+                                   m.spec.plan.engine_memory->engine_identity, stored.string()},
+                {}};
     } catch (const std::exception&) {
-        return std::nullopt;
+        return {std::nullopt, "the stored measurement cannot be read back"};
     }
 }
 
 EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_dir, const Hooks& hooks) {
     const Wait& wait = hooks.wait;
+    // Monotonic phase durations, summed per phase: O(phases) work, none of it on a hot path.
+    Json phases = Json::object();
+    auto lap_start = std::chrono::steady_clock::now();
+    auto lap = [&](const char* phase) {
+        const auto now = std::chrono::steady_clock::now();
+        phases[phase] = phases.value(phase, int64_t{0}) +
+                        std::chrono::duration_cast<std::chrono::milliseconds>(now - lap_start).count();
+        lap_start = now;
+    };
     EnginePlanInputs in = given;
     in.options.run_dir = run_dir;
     std::optional<NativeConfigSnapshot> sealed_snapshot;   // the YAML's bytes, read once for every inspection
@@ -3344,10 +3379,13 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         const NativeConfigSnapshot snapshot = *sealed_snapshot;
         launch.root.require_matches(snapshot.resolution_root());
         const auto selected_bdfs = v.at("layout").at("engine_cards").get<std::vector<std::string>>();
+        lap("yaml_inspect");
         const std::string matched_engine_identity = engine_identity(engine, frozen_runtime_home);
+        lap("runtime_identity");
         const NativeConfigInspection native_inspection = inspect_and_reconcile_native_config(
             engine, snapshot, frozen_runtime_home, v.at("engine").at("model").get<std::string>(),
             launch.environment, selected_bdfs, v.at("engine").at("tp").get<int>(), hooks, launch.root.descriptor());
+        lap("yaml_inspect");
         if (in.native_preflight) {
             // Same inspection and reconcile as a start (above); nothing past it runs: no cache reuse, writer, power
             // admission, engine or helper child, so no GPU is touched.
@@ -3358,30 +3396,53 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
         }
         if (engine_identity(engine, frozen_runtime_home) != matched_engine_identity)
             throw PlanFailed("native v3 engine or runtime changed during YAML inspection");
+        lap("runtime_identity");
         if (in.runner || in.calibration_run || !in.experiment_file.empty())
             throw PlanFailed("native v3 admission requires the real writer and a production config");
         const auto& settings = native_inspection.settings;
         const Resolved native_resolved = resolve(in.options, facts, &settings);
         const auto cache = named_cache(in, native_resolved, facts, engine, helper_binary, run_dir, &snapshot);
         std::optional<CarriedMeasurement> carried;
+        PlanReuse reuse;
+        reuse.outcome = PlanReuseOutcome::absent;
         if (cache && !cache->index.empty()) {
-            if (const auto saved = stored_manifest_for(cache->index, cache->key)) {
+            reuse = lookup_stored_manifest(cache->index, cache->key, cache->inputs);
+            lap("store_lookup");
+            if (reuse.outcome == PlanReuseOutcome::hit) {
+                const fs::path saved = reuse.manifest;
                 EnginePlanInputs replay = in;
-                replay.stored_manifest = *saved;
+                replay.stored_manifest = saved;
                 const NativeReplayAdmission admission{snapshot, native_inspection, out.native_launch};
                 try {
                     EngineStart reused = replay_stored_manifest(replay, run_dir, hooks, &admission);
                     reused.reused_store = cache->index;
+                    lap("replay");
+                    std::cerr << plan_reuse_line(reuse) << '\n';
+                    reused.plan_reuse = plan_reuse_json(reuse);
+                    reused.phase_ms = phases;
                     return reused;
                 } catch (const PlanFailed& refused) {
                     // Nothing was admitted or started yet (power admission is replay's last step). The stored
                     // manifest is bound to the build that wrote it; its measurement is not: seal that again under
                     // this build, or measure when it cannot be carried.
-                    carried = load_carried_measurement(*saved);
-                    std::cerr << "bc-serve: the stored manifest is not replayable as it is (" << refused.what() << "); "
-                              << (carried ? "reusing its measurement under this build" : "measuring") << '\n';
+                    reuse.outcome = PlanReuseOutcome::live_admission_refused;
+                    reuse.detail = refused.what();
+                    auto loaded = load_carried_measurement(saved);
+                    carried = std::move(loaded.carried);
+                    if (carried) {
+                        std::cerr << "bc-serve: stored plan not replayable (live admission refused: " << refused.what()
+                                  << "); reusing its measurement under this build\n";
+                    } else {
+                        reuse.outcome = PlanReuseOutcome::carried_plan_unusable;
+                        reuse.detail = loaded.reason + " (replay refused: " + refused.what() + ")";
+                        std::cerr << plan_reuse_line(reuse) << '\n';
+                    }
                 }
+            } else {
+                std::cerr << plan_reuse_line(reuse) << '\n';
             }
+        } else {
+            lap("store_lookup");
         }
         out.port = settings.port;
 
@@ -3422,8 +3483,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                 (void)decode_engine_rank_demand(carried->rank_demand, selected_bdfs, "carried rank demand");
                 measured_pools.insert(carried->host_pool_mib);
             } catch (const std::exception& unusable) {
-                std::cerr << "bc-serve: the stored measurement cannot be carried (" << unusable.what()
-                          << "); measuring\n";
+                reuse.outcome = PlanReuseOutcome::carried_plan_unusable;
+                reuse.detail = unusable.what();
+                std::cerr << plan_reuse_line(reuse) << '\n';
                 carried.reset();
                 round_options = in.options;
             }
@@ -3679,6 +3741,7 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
                     cache->key, measured_manifest.filename().string(), final_snapshot.file_identity, cache->model_digest,
                     complete_file_identity(s8_source),
                     StoredManifestIndex::NativeMeasurement{attempt_id, owned.owner_sha256}};
+                entry.input_digests = cache->inputs;
                 write_stored_index(measured_manifest.string() + ".replay-index.json", entry);
                 if (!cache->index.empty()) {
                     entry.directory = fs::absolute(measured_manifest.parent_path()).string();
@@ -3697,6 +3760,9 @@ EngineStart plan_engine_only(const EnginePlanInputs& given, const fs::path& run_
             if (carried)
                 out.summary["plan_carried_from"] = carried->provenance();
             out.summary["manifest_digest"] = final_snapshot.parsed.metadata.content_digest;
+            lap("measure");
+            out.plan_reuse = plan_reuse_json(reuse);
+            out.phase_ms = phases;
             return out;
         }
         throw PlanFailed("native v3 host pool did not converge");

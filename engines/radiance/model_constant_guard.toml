@@ -269,13 +269,6 @@ category = "B"
 reason = "lab diagnostic tool, not an execution path of the product"
 
 [[allow]]
-path = "tools/lab/radiance/fn-helper.sh"
-anchor = "model=${MODEL:?set MODEL to the Flash-Next .rad container}"
-category = "D"
-reason = "hard-coded container path belongs in the layout's model entry"
-owner = "RSC12"
-
-[[allow]]
 path = "tools/lab/radiance/gfx1030/rowsk.hip"
 anchor = "const uint32_t K = gu ? 2560 : 640, N = gu ? 1280 : 2560, M = gu ? T : R;   // activation rows"
 category = "B"
