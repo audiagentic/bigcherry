@@ -558,6 +558,42 @@ def test_matched_plan_classified_pass_with_verified_marker(tmp_path: Path):
     assert result.plan_verification == rq.PLAN_VERIFIED
 
 
+
+@pytest.mark.parametrize("channels", [1, 2])
+def test_channel_request_is_not_attested_by_observed_plan(tmp_path: Path, channels: int):
+    # -M 1 reports the selected channel count but build_command does not
+    # request one. Matching by coincidence is not executed-candidate proof.
+    case = _fake_case(algorithm="Ring", protocol="Simple", channels=channels)
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        print("    RING    SIMPLE           2")
+        sys.exit(0)
+    """, case=case)
+    assert result.requested_channels == channels
+    assert result.observed_channels == 2
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification == rq.PLAN_REQUEST_NOT_APPLIED
+    assert result.correct is None
+    assert "not applied" in result.detail
+
+
+def test_channel_request_without_plan_observation_is_not_verified(tmp_path: Path):
+    case = _fake_case(channels=2)
+    result = _run_fake(tmp_path, """
+        import sys, json
+        out = sys.argv[sys.argv.index("-x") + 1]
+        with open(out, "w") as f:
+            json.dump([{"wrong": "0"}], f)
+        sys.exit(0)
+    """, case=case)
+    assert result.classification == rq.HARNESS_FAILURE
+    assert result.plan_verification in {
+        rq.PLAN_UNVERIFIED, rq.PLAN_REQUEST_NOT_APPLIED,
+    }
+
 def test_explicit_decline_marked_explicit_declined(tmp_path: Path):
     result = _run_fake(tmp_path, """
         import sys
