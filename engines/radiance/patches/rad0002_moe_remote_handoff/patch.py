@@ -292,19 +292,19 @@ extern "C" void bc_moe_remote_destroy(BcMoeRemoteGeneration* g) {
 }
 
 extern "C" int bc_moe_remote_wanted(const BcMoeRemoteGeneration* g, int64_t step_rows) {
-    return g && step_rows >= 0 && step_rows <= g->max_rows;
+    return g && g->open() && step_rows >= 0 && step_rows <= g->max_rows;
 }
 
 extern "C" int bc_moe_remote_wanted_upto(const BcMoeRemoteGeneration* g, int64_t max_step_rows) {
-    return g && max_step_rows >= 0;
+    return g && g->open() && max_step_rows >= 0;
 }
 
 extern "C" int bc_moe_remote_shadow(const BcMoeRemoteGeneration* g) {
-    return kDiagBuild && g && g->shadow;
+    return kDiagBuild && g && g->open() && g->shadow;
 }
 
 extern "C" int bc_moe_remote_mask_only(const BcMoeRemoteGeneration* g) {
-    return kDiagBuild && g && g->mask_only;
+    return kDiagBuild && g && g->open() && g->mask_only;
 }
 
 extern "C" int bc_moe_remote_diag_build(void) {

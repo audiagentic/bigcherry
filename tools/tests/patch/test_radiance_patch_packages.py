@@ -113,7 +113,7 @@ PIN_BLOBS = {
         "core/engine.cpp": ("e649224", "9176ef0"),
         "core/engine.h": ("ca6c09f", "430b4bd"),
         "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
-        "core/place/bc_moe_remote.cpp": (None, "a746eb5"),
+        "core/place/bc_moe_remote.cpp": (None, "43c578d"),
         "core/place/bc_moe_remote_engine.h": (None, "20e811a"),
         "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
         "core/place/planner.cpp": ("dc03b5a", "3edb433"),

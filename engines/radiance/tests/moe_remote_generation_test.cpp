@@ -132,7 +132,10 @@ int main() {
 
     // Stale holder: close, a second engine re-claims the same slots, the old holder is refused with a typed result and
     // never reaches the new plugin; the new generation is untouched by the old one's repeated close.
+    assert(bc_moe_remote_wanted(a, 1) && bc_moe_remote_wanted_upto(a, 1));
     bc_moe_remote_close(a);
+    // A closed generation answers no policy query: nothing is wanted, shadowed or mask-only.
+    assert(!bc_moe_remote_wanted(a, 1) && !bc_moe_remote_wanted_upto(a, 1) && !bc_moe_remote_shadow(a) && !bc_moe_remote_mask_only(a));
     assert(!bc_moe_remote_lookup(4) && !bc_moe_remote_lookup(5));
     BcMoeRemoteGeneration* b = open_at(4, 2);
     assert(b != a && bc_moe_remote_lookup(4) == b && bc_moe_remote_lookup(5) == b);
