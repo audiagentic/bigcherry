@@ -135,6 +135,11 @@ struct EngineStart {
     // Set when this start reused the work root's stored measurement: if the engine then fails to come up on that
     // plan, the owner drops the entry so the next start measures afresh.
     std::filesystem::path reused_store;
+    // Why this start did or did not reuse the stored plan (plan_reuse_json), and the monotonic milliseconds the
+    // planning phases took (yaml_inspect, runtime_identity, store_lookup, replay or measure). Both are recorded
+    // once in the session record; empty for a start that has no named store.
+    nlohmann::json plan_reuse = nlohmann::json::object();
+    nlohmann::json phase_ms = nlohmann::json::object();
     std::uint64_t native_helper_resident_mib = 0; // measured by the owner, outside the engine's P1 record
     // Set only by a native preflight: the inspector's strict receipt for the admitted YAML (no child was started).
     nlohmann::json native_preflight_receipt = nlohmann::json::object();

@@ -70,6 +70,10 @@ void check_native_measurement(const StoredManifestIndex& entry) {
     check_digest(measurement.sha256, "stored native measurement");
 }
 
+constexpr size_t kMaxInputDigests = 64; // a bound on what an index may carry, not a tuning value
+constexpr size_t kMaxInputName = 300;
+constexpr size_t kMaxIndexBytes = 8192; // the read bound below
+
 int64_t nanoseconds(const timespec& timestamp) {
     constexpr int64_t kBillion = 1000000000LL;
     if (timestamp.tv_nsec < 0 || timestamp.tv_nsec >= kBillion)
@@ -169,7 +173,9 @@ std::string model_stat_identity(const std::filesystem::path& model) {
                       std::to_string(nanoseconds(metadata.st_mtim)) + "\n");
 }
 
-std::string static_resolution_key(const StaticResolutionInputs& in) {
+namespace {
+Json static_key_inputs(const StaticResolutionInputs& in) {
+
     if (!in.effective_values.is_object() || !in.ordered_devices.is_array() || in.ordered_devices.empty() ||
         in.power_profile.empty())
         throw std::runtime_error(
@@ -221,10 +227,38 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
             throw std::runtime_error("static resolution key has an unnamed file");
         check_digest(digest, "static input file");
     }
+    return inputs;
+}
+} // namespace
+
+std::string static_resolution_key(const StaticResolutionInputs& in) {
     std::string canonical, error;
-    if (!jcs_canonicalize(inputs, &canonical, &error))
+    if (!jcs_canonicalize(static_key_inputs(in), &canonical, &error))
         throw std::runtime_error("static resolution key cannot canonicalize: " + error);
     return sha256_hex(canonical);
+}
+
+std::map<std::string, std::string> static_input_digests(const StaticResolutionInputs& in) {
+    const Json inputs = static_key_inputs(in);
+    std::map<std::string, std::string> digests;
+    auto digest_of = [](const Json& value) {
+        std::string canonical, error;
+        if (!jcs_canonicalize(value, &canonical, &error))
+            throw std::runtime_error("static input digest cannot canonicalize: " + error);
+        return sha256_hex(canonical);
+    };
+    for (auto it = inputs.begin(); it != inputs.end(); ++it) {
+        if (it.key() == "version")
+            continue;
+        if (it.key() == "inputs") {
+            // A file is named by its role in the config, never by its path.
+            for (auto file = it.value().begin(); file != it.value().end(); ++file)
+                digests["file:" + file.key()] = file.value().get<std::string>();
+        } else {
+            digests[it.key()] = digest_of(it.value());
+        }
+    }
+    return digests;
 }
 
 std::filesystem::path named_store_index(const std::filesystem::path& work_root, const std::string& config) {
@@ -241,12 +275,12 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
         throw std::runtime_error("cannot open stored manifest index " + index.string());
     // Read at most one byte beyond the protocol bound. An untrusted sparse
     // or corrupt index must never determine our allocation size.
-    std::string bytes(8193U, '\0');
+    std::string bytes(kMaxIndexBytes + 1U, '\0');
     in.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
     const auto consumed = in.gcount();
     if (in.bad())
         throw std::runtime_error("cannot read stored manifest index " + index.string());
-    if (consumed > 8192)
+    if (consumed > static_cast<std::streamsize>(kMaxIndexBytes))
         throw std::runtime_error("stored manifest index exceeds 8 KiB");
     bytes.resize(static_cast<size_t>(consumed));
     const auto parsed = v2::parse_strict_json(bytes, index.string());
@@ -258,7 +292,7 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
         !j.at("digest").is_string() ||
         j.size() != 4U + size_t(j.contains("model_digest")) +
                         size_t(j.contains("s8_digest")) + size_t(j.contains("native_measurement")) +
-                        size_t(j.contains("directory")) ||
+                        size_t(j.contains("directory")) + size_t(j.contains("input_digests")) ||
         (j.contains("model_digest") && !j.at("model_digest").is_string()) ||
         (j.contains("directory") && !j.at("directory").is_string()) ||
         (j.contains("s8_digest") && !j.at("s8_digest").is_string()))
@@ -272,6 +306,14 @@ StoredManifestIndex read_stored_index(const std::filesystem::path& index) {
             throw std::runtime_error("stored native measurement has an invalid shape");
         result.native_measurement = StoredManifestIndex::NativeMeasurement{
             native->at("attempt_id").get<std::string>(), native->at("sha256").get<std::string>()};
+    }
+    if (const auto inputs = j.find("input_digests"); inputs != j.end()) {
+        // Diagnostic only: a malformed record must not turn an otherwise valid entry into a miss.
+        if (inputs->is_object() && inputs->size() <= kMaxInputDigests)
+            for (auto it = inputs->begin(); it != inputs->end(); ++it)
+                if (it.value().is_string() && hex_digest(it.value().get<std::string>()) &&
+                    it.key().size() <= kMaxInputName)
+                    result.input_digests[it.key()] = it.value().get<std::string>();
     }
     result.s8_digest = j.value("s8_digest", std::string());
     result.directory = j.value("directory", std::string());
@@ -308,7 +350,16 @@ void write_stored_index(const std::filesystem::path& index, const StoredManifest
         check_digest(entry.s8_digest, "stored S8 writer evidence");
         record["s8_digest"] = entry.s8_digest;
     }
-    const std::string bytes = record.dump(2) + "\n";
+    std::string bytes = record.dump(2) + "\n";
+    // Per-input digests only explain a later miss: when they would push the index past its read bound, the entry
+    // is written without them rather than not at all.
+    if (!entry.input_digests.empty()) {
+        Json with = record;
+        with["input_digests"] = entry.input_digests;
+        const std::string longer = with.dump(2) + "\n";
+        if (longer.size() <= kMaxIndexBytes)
+            bytes = longer;
+    }
     std::filesystem::create_directories(index.parent_path());
     const std::filesystem::path temp = index.string() + ".tmp." + std::to_string(::getpid());
     const int fd = ::open(temp.c_str(), O_CREAT | O_EXCL | O_WRONLY | O_CLOEXEC, 0600);
@@ -353,25 +404,117 @@ void write_stored_index(const std::filesystem::path& index, const StoredManifest
     }
 }
 
-std::optional<std::filesystem::path> stored_manifest_for(const std::filesystem::path& index,
-                                                         const std::string& static_key) {
+const char* plan_reuse_outcome_name(PlanReuseOutcome outcome) {
+    switch (outcome) {
+    case PlanReuseOutcome::hit: return "hit";
+    case PlanReuseOutcome::absent: return "absent";
+    case PlanReuseOutcome::index_unreadable: return "index_unreadable";
+    case PlanReuseOutcome::static_key_changed: return "static_key_changed";
+    case PlanReuseOutcome::manifest_missing: return "manifest_missing";
+    case PlanReuseOutcome::integrity_mismatch: return "integrity_mismatch";
+    case PlanReuseOutcome::carried_plan_unusable: return "carried_plan_unusable";
+    case PlanReuseOutcome::live_admission_refused: return "live_admission_refused";
+    }
+    return "unknown";
+}
+
+std::string plan_reuse_line(const PlanReuse& reuse) {
+    if (reuse.outcome == PlanReuseOutcome::hit)
+        return "bc-serve: stored plan reused (static inputs unchanged; manifest " + reuse.manifest.filename().string() + ")";
+    std::string why;
+    switch (reuse.outcome) {
+    case PlanReuseOutcome::absent: why = "no stored entry"; break;
+    case PlanReuseOutcome::index_unreadable: why = "stored entry unreadable"; break;
+    case PlanReuseOutcome::static_key_changed: {
+        why = "static key changed";
+        if (!reuse.inputs_recorded) {
+            why += ": the entry predates per-input records";
+        } else if (reuse.changed_inputs.empty()) {
+            why += ": no recorded input differs";
+        } else {
+            why += ": ";
+            for (size_t i = 0; i < reuse.changed_inputs.size() && i < kReuseLineInputs; ++i)
+                why += (i ? ", " : "") + reuse.changed_inputs[i];
+            if (reuse.changed_inputs.size() > kReuseLineInputs)
+                why += " and " + std::to_string(reuse.changed_inputs.size() - kReuseLineInputs) + " more";
+        }
+        break;
+    }
+    case PlanReuseOutcome::manifest_missing: why = "stored manifest missing"; break;
+    case PlanReuseOutcome::integrity_mismatch: why = "stored manifest bytes changed"; break;
+    case PlanReuseOutcome::carried_plan_unusable: why = "stored plan unusable: " + reuse.detail; break;
+    case PlanReuseOutcome::live_admission_refused: why = "live admission refused: " + reuse.detail; break;
+    case PlanReuseOutcome::hit: break;
+    }
+    return "bc-serve: no stored plan reused (" + why + "); measuring";
+}
+
+nlohmann::json plan_reuse_json(const PlanReuse& reuse) {
+    Json j = {{"outcome", plan_reuse_outcome_name(reuse.outcome)}};
+    if (reuse.outcome == PlanReuseOutcome::hit)
+        j["manifest"] = reuse.manifest.filename().string();
+    if (reuse.outcome == PlanReuseOutcome::static_key_changed) {
+        j["changed_inputs"] = reuse.changed_inputs;
+        j["inputs_recorded"] = reuse.inputs_recorded;
+    }
+    if (!reuse.detail.empty())
+        j["detail"] = reuse.detail;
+    return j;
+}
+
+PlanReuse lookup_stored_manifest(const std::filesystem::path& index, const std::string& static_key,
+                                 const std::map<std::string, std::string>& current_inputs) {
     check_digest(static_key, "static key");
-    // Whatever is wrong with the store (absent, damaged, written for other inputs, its run directory gone,
-    // its manifest changed) means "no earlier manifest": the caller measures and stores a new one.
+    // Whatever is wrong with the store is a classified miss, never an error: the caller measures and stores a
+    // new one. Nothing read from the store is echoed beyond input names this start computed itself.
+    PlanReuse reuse;
     try {
         struct stat st{};
-        if (::lstat(index.c_str(), &st) != 0 || !S_ISREG(st.st_mode))
-            return std::nullopt;
+        if (::lstat(index.c_str(), &st) != 0) {
+            reuse.outcome = errno == ENOENT ? PlanReuseOutcome::absent : PlanReuseOutcome::index_unreadable;
+            return reuse;
+        }
+        if (!S_ISREG(st.st_mode)) {
+            reuse.outcome = PlanReuseOutcome::index_unreadable;
+            return reuse;
+        }
         const auto entry = read_stored_index(index);
-        if (entry.key != static_key || entry.directory.empty())
-            return std::nullopt;
+        if (entry.key != static_key) {
+            reuse.outcome = PlanReuseOutcome::static_key_changed;
+            reuse.inputs_recorded = !entry.input_digests.empty() && !current_inputs.empty();
+            if (reuse.inputs_recorded) {
+                // Names come from this start's own inputs, never from the stored record's text.
+                for (const auto& [name, digest] : current_inputs) {
+                    const auto was = entry.input_digests.find(name);
+                    if (was == entry.input_digests.end() || was->second != digest)
+                        reuse.changed_inputs.push_back(name + (was == entry.input_digests.end() ? " (new)" : ""));
+                }
+                for (const auto& [name, digest] : entry.input_digests)
+                    if (!current_inputs.count(name))
+                        reuse.changed_inputs.push_back("(removed input)");
+            }
+            return reuse;
+        }
+        if (entry.directory.empty()) {
+            reuse.outcome = PlanReuseOutcome::manifest_missing;
+            return reuse;
+        }
         const auto saved = std::filesystem::path(entry.directory) / entry.manifest_filename;
-        if (::lstat(saved.c_str(), &st) != 0 || !S_ISREG(st.st_mode) ||
-            complete_file_identity(saved) != entry.digest)
-            return std::nullopt;
-        return saved;
+        if (::lstat(saved.c_str(), &st) != 0 || !S_ISREG(st.st_mode)) {
+            reuse.outcome = PlanReuseOutcome::manifest_missing;
+            return reuse;
+        }
+        if (complete_file_identity(saved) != entry.digest) {
+            reuse.outcome = PlanReuseOutcome::integrity_mismatch;
+            return reuse;
+        }
+        reuse.outcome = PlanReuseOutcome::hit;
+        reuse.manifest = saved;
+        return reuse;
     } catch (const std::exception&) {
-        return std::nullopt;
+        reuse = PlanReuse{};
+        reuse.outcome = PlanReuseOutcome::index_unreadable;
+        return reuse;
     }
 }
 

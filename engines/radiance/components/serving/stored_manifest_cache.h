@@ -37,6 +37,10 @@ std::string complete_file_identity(const std::filesystem::path& path);
 std::string complete_file_identity_bytes(std::string_view bytes);
 
 std::string static_resolution_key(const StaticResolutionInputs& in);
+// One SHA-256 per named static input (effective values, operator sets, devices, model, power profile, each
+// file), under the same projection as the key. Stored beside the key so a later miss can name which input moved
+// without keeping any input's content.
+std::map<std::string, std::string> static_input_digests(const StaticResolutionInputs& in);
 
 struct StoredManifestIndex {
     std::string key;
@@ -50,6 +54,7 @@ struct StoredManifestIndex {
     };
     std::optional<NativeMeasurement> native_measurement;
     std::string directory; // the run directory holding the manifest; empty when it sits beside this index
+    std::map<std::string, std::string> input_digests; // static_input_digests() of the key; optional, diagnostic only
 };
 // One index per named config in the work root's named-config store: the most recent measured manifest, reached
 // from any later run directory. A different static key is a miss. Anything wrong with the store is a miss too:
@@ -57,7 +62,39 @@ struct StoredManifestIndex {
 std::filesystem::path named_store_index(const std::filesystem::path& work_root, const std::string& config);
 StoredManifestIndex read_stored_index(const std::filesystem::path& index);
 void write_stored_index(const std::filesystem::path& index, const StoredManifestIndex& entry);
-std::optional<std::filesystem::path> stored_manifest_for(const std::filesystem::path& index,
-                                                         const std::string& static_key);
+
+// Why a start did or did not reuse the stored plan. Decided at the one lookup boundary (and, for the last two,
+// where the session then tries the stored plan); never carries file contents.
+enum class PlanReuseOutcome {
+    hit,                   // the stored manifest is present, intact and was written for these static inputs
+    absent,                // no stored entry yet
+    index_unreadable,      // the stored entry is damaged or not an ordinary file
+    static_key_changed,    // written for other static inputs; changed_inputs names which, when recorded
+    manifest_missing,      // the entry's manifest is gone or not an ordinary file
+    integrity_mismatch,    // the manifest's bytes differ from what the entry recorded
+    carried_plan_unusable, // the stored plan is not replayable and its measurement cannot be carried either
+    live_admission_refused // the stored plan is intact but this start's live admission refused it
+};
+const char* plan_reuse_outcome_name(PlanReuseOutcome outcome);
+
+struct PlanReuse {
+    PlanReuseOutcome outcome = PlanReuseOutcome::absent;
+    std::filesystem::path manifest;          // set for a hit
+    std::vector<std::string> changed_inputs; // static_key_changed: bounded names of the inputs that differ
+    bool inputs_recorded = true;             // static_key_changed: false when the entry predates per-input digests
+    std::string detail;                      // the refusal or reason text for the last two outcomes
+};
+// Inputs named in one line; the rest are counted.
+inline constexpr size_t kReuseLineInputs = 8;
+// The single stderr line for this outcome, without a newline: "bc-serve: stored plan reused ..." for a hit,
+// "bc-serve: no stored plan reused (<reason>); measuring" otherwise.
+std::string plan_reuse_line(const PlanReuse& reuse);
+nlohmann::json plan_reuse_json(const PlanReuse& reuse);
+
+// Looks the named config's entry up against this start's static key. Whatever is wrong with the store is a
+// classified miss, never an error: the caller measures and replaces it. `current_inputs` (static_input_digests)
+// lets a key change name the inputs that moved.
+PlanReuse lookup_stored_manifest(const std::filesystem::path& index, const std::string& static_key,
+                                 const std::map<std::string, std::string>& current_inputs = {});
 
 } // namespace bc::serving::session
