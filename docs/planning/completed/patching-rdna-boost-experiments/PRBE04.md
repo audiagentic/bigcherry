@@ -2,7 +2,7 @@
 id: PRBE04
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: superseded
 created-at: '2026-09-09T10:53:43.516065+00:00'
 breadth: ''
 skill: advanced
@@ -10,7 +10,48 @@ created-by: capability-rebaseline-v3
 work: L
 priority: P1
 ---
+
 # RD07 Q6_K MMQ — downstream safety and promotion gate
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: PRBE04 is redundant as an independent planning owner. Its Keep the one Q6_K scale-fold patch's source, physical safety and production promotion gates together in PRBE110 rather than in two planning owners. Owner(s): PRBE110. PRBE04 already points to PRBE110/1267 as the sole implementation owner and contains only downstream safety/promotion evidence for the same patch. Acceptance and negative cases transferred into receiving plans using the same Planning API; original source gate, evidence and patch history remain here. This plan is superseded, not completed or proven as a performance gain. Do not reactivate or create a second queue without reviewing the receiving plan.
 
 ## Current disposition (2026-10-14, b11552)
 
@@ -33,3 +74,12 @@ priority: P1
 5. **Performance:** only after safety and activation pass, consume PRBE110's one four-session gfx1201 campaign (>=10 paired rounds/session) with pp512/pp2048 and tg128/other-quant controls. Promotion: pp512 CI95-low >=2%, controls <=1% regression, and representative E2E >=3% for production. No repeated gfx1100/gfx1030 gain campaigns.
 
 **Ownership:** PRBE110/1267 source and architecture gate; PRBE04 downstream PEF01/HI71 and acceptance; 0300 J selection; 1006 Q6_K codegen; existing validation producer/evidence. Retire all older PRBE04 "new patch TBD" and duplicate queue instructions. Terminal outcomes: `NO_RELEVANT_Q6K`, `NO_EXPOSED_GAIN`, `SOURCE_REBASE_BLOCKED`, `SAFETY_OR_NUMERIC_FAIL`, `NO_VALIDATED_GAIN`, `NOT_PRODUCTION_RELEVANT`, `PROMOTABLE`.
+
+## Reviews
+
+- RV4475
+
+## Change Log
+
+- 2026-11-22T09:46:14.311970+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:52:16.947946+00:00 (state-transition): State: pending → superseded

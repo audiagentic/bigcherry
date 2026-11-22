@@ -2,7 +2,7 @@
 id: QFP02
 order: 0
 plan: patching-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-03T15:20:21.946886+00:00'
 breadth: ''
 skill: advanced
@@ -54,6 +54,8 @@ work: S
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE into QFP25/QFP17 llama prefill" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP02.md:16,49-64 limits the residual to current-pin 1292 pool/representative correctness across seq_rm/add/cp/keep, sharing, replay and position-order modes. docs/planning/active/patching-bc-optimizations/BCOP162.md:16-20 explicitly assigns this mechanism and possible position-mode bound to QFP02, whereas docs/planning/active/patching-qwen-flash-next/QFP25.md:12-37 addresses HIP sparse prefill attention and QFP17 owns chunked QSA masks. Active items that reference this one: BCOP162, BCOP205. Keep the 1292 cross-operation/current-pin gate in QFP02; do not bury it under QSA GPU prefill work.
 
 2026-11-22 owner handoff from decision-only BCOP162: Unsectioned source gate. Source-bounded action/stop rule: **Discovery:** Validated 1292 already removes the O(context) rebuild for Qwen4Exp MTP tail edits (historical ~14% lower step latency at 80K). Its by-order path has no additional demonstrated optimisation. The shared position-aligned path may re-scan an unchanged sparse prefix when no complete pool survives, because the cut resets `sq.j_next` to zero. This is source-derived; not a reproduced serving regression. **Owners / consolidation:** QFP02 owns the existing 1292 technical mechanism and conditional position-mode bound; QFN01 owns the operational Flash-Next profile and QFP18 the historical promotion. No new patch, cache, scheduler, allocator, selector, telemetry system or GPU lane. Keep QFP03/QFP04/QFP17/QFP53 and active Radiance/QFP15/release work untouched. Existing 1292 `SUMMARY.md` now names technical and operational owners. **Work already done:** Patch 1292 was validated/promoted in QFP18 and re-anchored at b11474 on 2026-10-07; no independent 1292/QFP02 commits, PRs or queued tests in the preceding 12 hours. A standalone 70,000-case host model in this audit found zero pool-list mismatches; synthetic sparse 80K candidate scans fell from 79,985 to 10 with a conditional bound. See docs/planning/completed/patching-bc-optimizations/BCOP162.md for the complete source/shape/negative case and evidence. QFP02 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: QFP02 is redundant as an independent planning owner. Its Move the QSA k-pool/representative lifetime qualification into the existing 1295/1296 selected-index QSA decode owner; retain QFP25 as independent prefill sparse-attention owner. Owner(s): QFP04. 1292 prepares the selected QSA pool consumed by the same QSA decode/gather path 1295/1296 that QFP04 already owns; source patch remains independent but one plan owns the end-to-end contract. Acceptance and negative cases transferred into receiving plans using the same Planning API; original source gate, evidence and patch history remain here. This plan is superseded, not completed or proven as a performance gain. Do not reactivate or create a second queue without reviewing the receiving plan.
 
 ## Code and data flow
 
@@ -109,3 +111,9 @@ Close QFP02 once current-pin composition and cross-operation pool/representative
 - 2026-10-14T01:17:00Z (BCOP198): Source-level audit, owner split and bounded current-pin gate.
 - 2026-11-04T04:25:52.947456+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T05:20:58.185080+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4477
+- 2026-11-22T09:46:49.533722+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:52:31.812648+00:00 (state-transition): State: pending → superseded

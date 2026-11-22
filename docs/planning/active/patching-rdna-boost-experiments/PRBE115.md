@@ -13,6 +13,46 @@ work: L
 
 # Q8_0 MTP verify widths 2–5: exact Q8_1 admission, not raw-F32 widening
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+**Transferred PRBE113 acceptance (retain as separate gating outcome):** Retain PRBE113's measured rejected 1245 fused width6 result (dual gfx1100 Q8_0 decode ~-9.4% throughput; extra 598 ms summed busy despite launch removal; not an attribution of the cause). First reuse current-pin width2-5 n_max=4 matched physical decode/MTP trace with per-card quantize Q8_1, MMVQ, GLU, GDN, copy and host gaps, model/pin/numerical identity and completeness; capture once only if the existing trace cannot answer and an eligible lane exists. If removable critical-path Q8 producer+MMVQ+GLU ceiling <3%, record no-route and stop without kernel edit. If >=3% with exact route, apply PRBE115's byte-identical Q8_1 producer fusion using existing 1307/cache and stock MMVQ consumer, full logits/KLD/greedy/MTP, async/graph and VRAM controls, and qualifying same-pin ABBA; never repeat the rejected width6 1245 profile or resurrect 1301 raw-F32 widening.
+
+## Notes
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: receiving PRBE113. Prior acceptance remains mandatory; this is a planning ownership consolidation, not an executed implementation or evidence/quality pass. Independent hardware routes and production-safe fallbacks remain conditional. Full original design, source/negative receipts and historical review survive in each archived source plan.
+
 ## 2026-10-21: gfx1100 verify-band Q8_1 producer fusion (BCOP354)
 
 **HOLD_EXISTING_PRODUCER_RECEIPT; no patch or GPU queue.** [Fork #192](https://github.com/stew675/llama-cpp-rdna-boosts/pull/192) (last update 2026-10-20 13:22 UTC) opens its existing Q8_1 producer fusions to gfx1100 MTP verify width2-8. Pinned b11552 and current upstream master lack its verify_band predicate, GGML_CUDA_FUSE_Q8_1_VERIFY, ggml_cuda_glu_q8_1_mark and separate ggml-cuda-try-fuse.cu. Direct port of the fork's one-line architecture gate cannot compile. Do not revive rejected 1301 raw-F32 widening.
@@ -83,3 +123,11 @@ Require full-vocabulary logits/KLD and greedy identity, fixed-draft MTP acceptan
 ## Ledger-events
 
 - chg_20261003_141341_experimental-decode-kernel-pat_2923
+
+## Reviews
+
+- RV4483
+
+## Change Log
+
+- 2026-11-22T09:43:16.695034+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

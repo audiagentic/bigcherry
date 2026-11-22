@@ -47,13 +47,15 @@ work: M
 
 ## Acceptance Criteria
 
-
+**Transferred PRBE04 acceptance (retain as separate gating outcome):** After PRBE110's source/route admission on current b11552 (1267 is known_broken, historic b11126 +2.4675% gfx1201 is not current qualification), compose only existing 1267 with 0300 J selection and 1006 Q6_K codegen; no new dispatcher/J knob. Carry PRBE04's PEF01/HI71 downstream safety gate: J packing/padding, allocation and bounds, activation, exact Q6_K/other-quant numerical and graph-replay controls. Only if safely admitted on gfx1201 run four independent sessions with >=10 paired ABBA rounds/session pp512/pp2048/tg128 and other-quant controls; require pp512 CI95-low >=2%, representative E2E CI95-low >=3%, <=1% unrelated regression. Negative outcomes are explicit NO_RELEVANT_Q6K, SOURCE_REBASE_BLOCKED, SAFETY_OR_NUMERIC_FAIL, NO_EXPOSED_GAIN and NO_VALIDATED_GAIN; leave patch unpromoted unless all pass.
 
 ## Notes
 
 2026-11-22 owner handoff from decision-only BCOP211: Unsectioned source gate. Source-bounded action/stop rule: **Discovery/change:** 1267's Q6_K dispatch-marker and `mmq.cuh` J-max anchors no longer exist on pinned b11552; 0300 now chooses forced J before activation padding. Repository `engines/llamacpp/dispositions/1267_*.json` already marks `known_broken`. PRBE04 still claimed PRBE110 had not delivered the package despite b11126 hardware receipts. Archived gfx1201 pp512 +2.4675% CI95 [2.2776,2.6508], but validation record remains incomplete/ineligible despite a contract-pass field; no new GPU measurement. **Owner/consolidation:** PRBE110/1267 owns the one patch and architecture gate. PRBE04 owns PEF01/HI71 safety and final acceptance. 0300 owns J/eligibility; 1006 owns Q6_K codegen. No new MMQ dispatcher, J knob, allocator, scheduler, cache, telemetry or hardware queue. Existing Radiance RAD02/RAD03/RAD04 work untouched. **12-hour/novelty:** selected branch `feat/rad03-gpu-lanes`, independent HEAD `42388e880e089668db3c4fdbf1ff7aeb25ef62b3` (2026-10-14 13:43 UTC). Latest independent PRBE110/PRBE04 plan change 2026-10-08; 1267 relocation 2026-10-09; no independent related work/PR/queue in preceding 12 hours. BCOP190–210 do not own Q6_K scale-fold. **Unresolved action:** first prove executed See docs/planning/completed/patching-bc-optimizations/BCOP211.md for the complete source/shape/negative case and evidence. PRBE110 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 2026-11-22 final BCOP authority reconciliation (BCOP115): 1267 Q6_K MMQ subscale-fold is known_broken/untested on b11552; first prove a real current-pin Q6_K route and >=3% exposed opportunity, then compose existing 0300/1006 and validate J padding/allocation plus PEF01/HI71. Old b11126 +2.4675% gfx1201 cannot qualify a new source. If no relevant route/ceiling, close 1267 unpromoted, with no second Q6_K J/selector patch. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: receiving PRBE04. Prior acceptance remains mandatory; this is a planning ownership consolidation, not an executed implementation or evidence/quality pass. Independent hardware routes and production-safe fallbacks remain conditional. Full original design, source/negative receipts and historical review survive in each archived source plan.
 
 ## Authoritative decision (2026-10-14)
 
@@ -98,3 +100,8 @@ Keep `pending` until Gate 0. Outcomes: `NO_RELEVANT_Q6K`, `NO_EXPOSED_GAIN`, `SO
 
 - 2026-11-22T05:23:21.770716+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T06:45:50.153211+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4482
+- 2026-11-22T09:43:04.662940+00:00 (updated-by): Updated: section:acceptance_criteria, section:notes

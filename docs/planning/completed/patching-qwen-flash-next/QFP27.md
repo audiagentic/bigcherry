@@ -2,7 +2,7 @@
 id: QFP27
 order: 0
 plan: patching-qwen-flash-next
-state: pending
+state: superseded
 created-at: '2026-10-05T02:13:00+00:00'
 breadth: ''
 skill: advanced
@@ -134,6 +134,8 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 
 2026-11-22 owner handoff from decision-only BCOP182: Unresolved action / terminal gate. Source-bounded action/stop rule: Use existing 1325/1326 instrumentation to prove large-input prefill cost >=1 ms AND >=3% wall on the exact pin. Otherwise close. If positive, implement only within 1326: <=64 MiB scheduler-owned pinned slots, every Meta child completion joined before reuse, fail-closed pageable/synchronous fallback before partial submission, 10,000-generation host lifetime tests, multi-request/ubatch/MTP/logits/KLD and four paired hardware sessions. Promote >=5% median prefill/TTFT, CI95-low>0, <=2% decode regression, zero stale generations; otherwise reject/retire. Do not queue competing hardware work. See docs/planning/completed/patching-bc-optimizations/BCOP182.md for the complete source/shape/negative case and evidence. QFP27 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
+CONSOLIDATION 2026-11-22 PRBE-QFP: QFP27 is redundant as an independent planning owner. Its Consolidate the 1326 async-host-input pinned slot/lifetime experiment with QFP16's existing host-submit/1326 ownership; QFP22 keeps separate MTP-ahead/QSA chunk promotion. Owner(s): QFP16. QFP27 explicitly names QFP16/1326 as implementation owner and says no independent scheduler generation should be added. Acceptance and negative cases transferred into receiving plans using the same Planning API; original source gate, evidence and patch history remain here. This plan is superseded, not completed or proven as a performance gain. Do not reactivate or create a second queue without reviewing the receiving plan.
+
 ## Fresh upstream mechanism
 
 PR #29963 (`pp-host-weights`, head `d4823011e342332459aeb7a5413b9448a6d3256d`, opened 2026-10-04) adds to `ggml_backend_sched`:
@@ -221,3 +223,9 @@ QFP16, QFP24, MET06, QFP22. QFP27 should be closed once the lifetime protocol is
 **Evidence:** 10/10 actual 1326-source assertions, 7/7 host-model tests and Python compilation passed. No repository pytest, HIP build, GPU run, RSS measurement or new benchmark. Existing v5c measured +9.4% decode ~8K, +7.8% ~64K; unsafe-source prefill gains were withdrawn and staged v5c prefill was -2.3%/-2% before the 4 MiB cap. None measures this proposed scratch correction.
 - 2026-11-04T04:12:16.546848+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T05:22:20.153786+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4479
+- 2026-11-22T09:47:17.258694+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:52:49.815491+00:00 (state-transition): State: pending → superseded

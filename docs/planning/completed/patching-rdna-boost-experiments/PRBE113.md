@@ -2,7 +2,7 @@
 id: PRBE113
 order: 0
 plan: patching-rdna-boost-experiments
-state: pending
+state: superseded
 created-at: '2026-09-29T23:14:00.745535+00:00'
 breadth: ''
 skill: intermediate
@@ -12,6 +12,46 @@ work: S
 ---
 
 # Dual-XTX Q8_0 decode: retire repeated width-6 profile; qualify residual width census
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+CONSOLIDATION 2026-11-22 PRBE-QFP: PRBE113 is redundant as an independent planning owner. Its Treat the residual Q8_0 MMVQ width census as Gate 0 of the Q8_1 exact-byte verify-width implementation; do not maintain a second width6 profiling campaign. Owner(s): PRBE115. PRBE113 already hands any verified width2-5 opportunity to PRBE115; combining the measurement gate into PRBE115 does not create a new implementation. Acceptance and negative cases transferred into receiving plans using the same Planning API; original source gate, evidence and patch history remain here. This plan is superseded, not completed or proven as a performance gain. Do not reactivate or create a second queue without reviewing the receiving plan.
 
 ## Authoritative disposition (2026-10-13; BCOP180)
 
@@ -47,3 +87,12 @@ Inspected llama.cpp [PR #29948](https://github.com/ggml-org/llama.cpp/pull/29948
 Standalone synthetic CSV/historical arithmetic fixture: **10/10 passed** (rank/width grouping, malformed cohort rejection, historical +598.0 ms net summed-kernel penalty and -9.4% throughput). Not repository pytest, real rocprof, HIP build or GPU run. No new measured gain. Last independent PRBE113 plan change 2026-10-08; no independent PRBE113/1245 work within preceding 12 hours. Recent Radiance expert-helper/RAD01 work is excluded and untouched.
 
 2026-09-29 original P0 three-job plan; 2026-09-30 1245 rejected; 2026-10-04 1301 rejected; 2026-10-12 PRBE12/BCOP147 safety gate; 2026-10-13 BCOP180 replaces duplicate capture with receipt-first bounded decision.
+
+## Reviews
+
+- RV4476
+
+## Change Log
+
+- 2026-11-22T09:46:26.517314+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:52:24.662045+00:00 (state-transition): State: pending → superseded
