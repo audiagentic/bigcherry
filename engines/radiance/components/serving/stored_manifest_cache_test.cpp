@@ -205,6 +205,15 @@ int main() {
         s.effective_values["memory"] = {{"host_pool_mib", 1}, {"host_kv_mib", 2}};
         expect(ss::static_resolution_key(s) == with_transport,
                "the per-start transport name and derived host pool/KV never enter the key");
+        // The live heat file defaults to a path under the start's run directory: where it is written never
+        // decides the plan, whether it is recorded at all does.
+        s = base_with_model();
+        s.effective_values["handoff"] = {{"histogram", "/runs/first/heat.live"}};
+        const std::string with_histogram = ss::static_resolution_key(s);
+        s.effective_values["handoff"] = {{"histogram", "/runs/second/heat.live"}};
+        expect(ss::static_resolution_key(s) == with_histogram, "the run-directory heat path never enters the key");
+        s.effective_values["handoff"] = {{"histogram", "off"}};
+        expect(ss::static_resolution_key(s) != with_histogram, "turning the heat recording off changes the key");
         s = base_with_model();
         s.ordered_devices[0]["vram_available_mib"] = 42;
         bool unexpected_live = false;

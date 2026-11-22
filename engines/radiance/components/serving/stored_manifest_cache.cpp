@@ -194,8 +194,15 @@ std::string static_resolution_key(const StaticResolutionInputs& in) {
     // reuses the plan (the engine's admission still refuses one that does not fit).
     if (static_values.contains("engine") && static_values["engine"].is_object())
         static_values["engine"].erase("radiance_home");
-    if (static_values.contains("handoff") && static_values["handoff"].is_object())
-        static_values["handoff"].erase("shm");
+    if (static_values.contains("handoff") && static_values["handoff"].is_object()) {
+        auto& handoff = static_values["handoff"];
+        handoff.erase("shm");
+        // Where live heat is written (by default under the start's run directory) is per-start; only whether it
+        // is recorded ("off" or not) can decide the plan.
+        if (handoff.contains("histogram") && handoff["histogram"].is_string() &&
+            handoff["histogram"].get<std::string>() != "off")
+            handoff["histogram"] = "on";
+    }
     if (static_values.contains("memory") && static_values["memory"].is_object()) {
         static_values["memory"].erase("host_pool_mib");
         static_values["memory"].erase("host_kv_mib");
