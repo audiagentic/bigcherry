@@ -1364,7 +1364,8 @@ int main(int argc, char** argv) {
              std::string(argv[3]) == "--c06-issued-aql-16" ||
              std::string(argv[3]) == "--c06-issued-aql-64" ||
              std::string(argv[3]) == "--ltx03-ffn-issued-aql" ||
-             std::string(argv[3]) == "--ltx03-block-time-aql");
+             std::string(argv[3]) == "--ltx03-block-time-aql" ||
+             std::string(argv[3]) == "--ltx03-wire-error-aql");
         if (aql) ltx_test::require_aql_backend();
         RadFile model;
         need(model.open(argv[1])==RAD_OK,"cannot open LTX source model");
@@ -1384,6 +1385,37 @@ int main(int argc, char** argv) {
         const int nheads = std::stoi(head_text);
         need(nblocks > 0 && nheads > 0, "invalid DiT geometry");
 
+        if (argc == 5 && aql && std::string(argv[3]) == "--ltx03-wire-error-aql") {
+            // Reports (does not gate) the error of an issued block at world argv[4] against the
+            // TP1 issue (the exact wire; the lossy WHT6 wire measured 5-7 times this error for a block
+            // that is only level with one card, so the adapter stays exact-only).
+            const int w = std::stoi(argv[4]);
+            need(w == 2 || w == 3, "LTX03 wire error arm is for two or three cards");
+            const int64_t tokens = std::getenv("LTX03_TOKENS") ? std::stoll(std::getenv("LTX03_TOKENS")) : 512;
+            const std::array<int,3> split = w == 2 ? std::array<int,3>{16,16,0} : std::array<int,3>{12,12,8};
+            for (int variant : {0,1,2})
+                for (int64_t block : {int64_t(0), nblocks - 1})
+                    for (bool audio : {false,true}) {
+                        if (audio && variant == 2 && w == 2) continue;   // the audio attention at two cards is refused
+                        const bool chain = variant >= 1, with_attn = variant == 2;
+                        const auto ref = issue_ffn(model,reg,block,audio,{0,0,0},nheads,1,tokens,true,nullptr,true,chain,with_attn);
+                        const auto out = issue_ffn(model,reg,block,audio,split,nheads,w,tokens,true,nullptr,true,chain,with_attn);
+                        double ref_sq = 0, err_sq = 0, max_abs = 0;
+                        for (size_t j=0;j<ref[0].size();++j) {
+                            const double r = bf16_to_f64(ref[0][j]);
+                            const double e = bf16_to_f64(out[0][j]) - r;
+                            ref_sq += r*r; err_sq += e*e; max_abs = std::max(max_abs,std::abs(e));
+                        }
+                        bool replicas = true;
+                        for (int rank=1; rank<w; ++rank) replicas = replicas && out[0]==out[(size_t)rank];
+                        std::printf("LTX03 wire=%s world=%d %s block=%lld %s tokens=%lld: rel_rms_vs_tp1=%g max_abs=%g replicas_equal=%d\n",
+                                    "exact",w,
+                                    with_attn?"attention+FFN":chain?"mod+FFN+residual":"FFN",(long long)block,
+                                    audio?"audio":"video",(long long)tokens,std::sqrt(err_sq/ref_sq),max_abs,(int)replicas);
+                        std::fflush(stdout);
+                    }
+            return 0;
+        }
         if (argc == 5 && aql && std::string(argv[3]) == "--ltx03-block-time-aql") {
             // Warm step time of one issued block on the cards: TP1 (one card) against the
             // three-card splits, at the requested number of tokens. argv[4] = tokens.
@@ -1393,6 +1425,7 @@ int main(int argc, char** argv) {
             // LTX03_TIME_QUICK: the video lanes at one split only, for A/Bs of a pinned axis
             // (RADIANCE_TUNE) where every arm must hold the GPU lease briefly.
             const bool quick = std::getenv("LTX03_TIME_QUICK") != nullptr;
+            const bool two_cards_only = std::getenv("LTX03_TIME_TP2") != nullptr;   // skip the three-card arms
             for (int variant : {0,2})
                 for (bool audio : {false,true}) {
                     if (quick && audio) continue;
@@ -1402,7 +1435,8 @@ int main(int argc, char** argv) {
                     std::printf("LTX03 time %s %s tokens=%lld TP1(one card): %.3f ms/step\n",
                                 variant==2?"attention+FFN block":"FFN",audio?"audio":"video",
                                 (long long)tokens,ms1);
-                    const std::vector<std::array<int,3>> splits = quick ?
+                    const std::vector<std::array<int,3>> splits = two_cards_only ?
+                        std::vector<std::array<int,3>>{} : quick ?
                         std::vector<std::array<int,3>>{{12,12,8}} :
                         std::vector<std::array<int,3>>{{8,8,16},{10,10,12},{12,12,8},{14,14,4}};
                     for (const std::array<int,3>& split : splits) {
@@ -1414,7 +1448,7 @@ int main(int argc, char** argv) {
                                     (long long)tokens,split[0],split[1],split[2],ms3,ms1/ms3);
                         std::fflush(stdout);
                     }
-                    if (quick) continue;
+                    if (quick && !two_cards_only) continue;
                     // the two gfx1100 cards alone: world 2, the R9700 not used
                     double ms2 = 0;
                     (void)issue_ffn(model,reg,0,audio,{16,16,0},nheads,2,tokens,true,nullptr,true,
