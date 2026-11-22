@@ -55,8 +55,13 @@ a missing binary still refuses.
   itself authenticated and checked against the files by stat. It would protect against a different build installed
   over the same path; it does not protect against edited files unless every file is stamped at install time. Needs the
   install step to record stamps; left as a follow-up.
-- The portable SHA-256 is about five times slower than hardware SHA; using the CPU's SHA instructions would cut the
-  one remaining hash to about 0.25 s. Separate change.
+- The portable SHA-256 is about five times slower than hardware SHA. Done: `Sha256` now picks the CPU's SHA
+  instructions at run time (CPUID: SHA, SSSE3, SSE4.1) and keeps the portable code as the fallback, so one binary
+  still runs on a CPU without them. The same 428,494,305 bytes in 64 KiB updates: portable 1151 and 1122 ms
+  (372 to 382 MB/s), hardware 182 and 178 ms (about 2.4 GB/s), identical digests. `sha256_test.cpp` checks the FIPS
+  vectors on the portable path and that both paths agree for every length up to four blocks and a bit, for several
+  ways of cutting the input, and for 64 KiB-chunked inputs around a chunk. x86-64 only; there is no ARMv8 path
+  because no aarch64 lane exists.
 - The one `bc-serve` producer digest per start is a single file and was left alone.
 
 ## Host pool change bound
