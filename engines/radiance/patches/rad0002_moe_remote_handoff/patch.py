@@ -177,8 +177,8 @@ static constexpr bool kDiagBuild = true;
 static constexpr bool kDiagBuild = false;
 #endif
 
-// Weak only for builds using rad0002 without rad0009 (handoff remains off).
-extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*);   /* rad0009 (declared dependency) */
+// Provided by rad0009 (serving manifest), a declared dependency of this package.
+extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*);
 
 struct BcMoeRemoteGeneration {
     std::atomic<int> state{1}; /* 1 open, 2 closed */

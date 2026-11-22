@@ -4,8 +4,9 @@
 //  * Callers hold a serial, never an address. A serial is nonzero and never reused; the counter fails closed at its
 //    end (no serial is issued after the last one), and a publisher that loses to a live hook consumes none.
 //  * A resolved handle is a BORROW: borrow() takes the shared side of a lock for as long as the Borrow lives, and
-//    unpublish() (the close) takes the exclusive side, so the hook cannot be freed under a reader that already
-//    resolved it. Borrowers are the cold paths (kernel init, the placement thread's cycles, direct entry points), never
+//    retire() (the close: refuse new borrows, cancel the borrowers' waits, wait for them, free, unpublish) takes the
+//    exclusive side, so the hook cannot be freed under a reader that already resolved it. unpublish() is only the
+//    failed-open path, where no borrower exists. Borrowers are the cold paths (kernel init, the placement thread's cycles, direct entry points), never
 //    a decode or prefill step.
 // T must have a `uint64_t serial` member.
 #pragma once

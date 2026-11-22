@@ -27,7 +27,7 @@ namespace admission {
 
 class Ledger {
 public:
-    enum class Result { Ok, Closed, Full, Interrupted, Fault, Invalid, Timeout };
+    enum class Result { Ok, Closed, Full, Interrupted, Fault, Invalid, Timeout, Cancelled };
     /* One rank's completion proof for one host-complete parent. */
     enum class Proof { Pending, Proven, Fault };
     struct Entry {
@@ -231,7 +231,8 @@ public:
     Result wait_drained(uint32_t old_epoch, uint64_t cutoff_id,
                         std::chrono::steady_clock::time_point deadline,
                         const std::function<void()>& progress = {},
-                        const std::function<bool()>& external_fault = {}) {
+                        const std::function<bool()>& external_fault = {},
+                        const std::function<bool()>& cancel = {}) {
         for (;;) {
             {
                 std::unique_lock<std::mutex> lock(mu_);
@@ -241,6 +242,9 @@ public:
                     return Result::Fault;
                 }
                 if (!pending_locked(old_epoch, cutoff_id)) return Result::Ok;
+                /* A cancel (the owner is closing) is not a fault: it changes no ledger state, so a healthy ledger stays
+                 * clean_stop(). Checked after the fault states and after the drained test: a real fault is still a fault, and a drained epoch is Ok. */
+                if (cancel && cancel()) return Result::Cancelled;
                 if (std::chrono::steady_clock::now() >= deadline) {
                     fault_ = true;
                     cv_.notify_all();

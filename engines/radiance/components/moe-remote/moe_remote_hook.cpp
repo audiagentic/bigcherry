@@ -5,6 +5,7 @@
 #include "../serving/bc_engine_settings.h"
 #include "admission_completion.h"
 #include "admission_ledger.h"
+#include "generation_close.h"
 #include "engine_admission_gate.h"
 #include "engine_rank_coordinator.h"
 #include "heat_publication.h"
@@ -123,10 +124,10 @@ struct R3MoeHook {
     Header* hdr = nullptr;
     bool pinned = false;
     uint64_t serial = 0;   /* this generation's identity; never reused, so a stale handle cannot alias a new hook */
-    int slot_base = -1, ranks = 0;
-    /* Set when the engine closes the generation: new borrows are refused (LiveHook::retire) and every wait a borrower
-     * may be blocked in ends. Not a fault: a clean stop leaves the ledger healthy. */
-    std::atomic<bool> closing{false};    /* the engine's claimed slot span (its tp_group); the kernels' init finds this hook by it */
+    int slot_base = -1, ranks = 0;   /* the engine's claimed slot span (its tp_group) and width; a kernel's init matches both */
+    /* Set when the engine closes the generation: every wait a borrower may be blocked in is cancelled. Not a fault: a
+     * clean stop leaves the ledger healthy. */
+    std::atomic<bool> closing{false};
     bool opened = false;   /* a generation holds this hook: set by the factory, cleared by the generation's close */
     r3::admission::Ledger ledger{0}; /* configured by the engine before map replay */
     std::deque<RankCompletion> completion;
@@ -980,17 +981,8 @@ void cb_finish_admission(void* self) { (void)hook(self).ledger.finish_admission(
 int cb_wait_finished(void* self, int64_t ms) { return wait_finished_tickets(hook(self), ms); }
 void cb_close(void* self) {
     HookState& g = hook(self);
-    /* The kind of stop is decided first: cancelling waiters below must not change it. */
-    stop_workers(g, g.ledger.clean_stop());
-    /* Then, in this order: refuse new borrows, cancel and wake the waits a borrower may be blocked in (the bootstrap
-     * seal wait, the drain waits), wait for every borrower to leave, free, unpublish. */
-    g_live.retire(&g,
-                  [&] {
-                      g.closing.store(true, std::memory_order_release);
-                      if (g.hdr) notify(g.hdr);
-                      g.ledger.wake();
-                  },
-                  [&] { release_resources(g); });
+    close_generation(g_live, g, [&](bool clean) { stop_workers(g, clean); },
+                     [&] { if (g.hdr) notify(g.hdr); }, [&] { release_resources(g); });
     g.opened = false;
     delete &g;
 }
@@ -1103,26 +1095,20 @@ extern "C" int r3_moe_wait_drained(uint64_t h, const R3MoeDrainSnapshot* snap,
         return RAD_E_INVAL;
     }
     const auto limit = now_clock + std::chrono::nanoseconds(deadline_monotonic_ns - now_ns);
-    using Result = r3::admission::Ledger::Result;
-    const Result drained = g.ledger.wait_drained(snap->old_epoch, snap->cutoff_ticket_id,
-                                                 limit, [&] { poll_tickets(g); },
-                                                 [&] { return helper_faulted(g) || g.closing.load(std::memory_order_acquire); });
-    if (drained != Result::Ok) { g.ledger.fault(); return RAD_E_STATE; }
-    /* A successful event query guarantees helper wait and consumption before
-     * the event, but explicitly check every lane before controller COMMIT. */
-    {
-        std::lock_guard<std::mutex> lock(g.mu);
-        if (snap->closure_id != g.closed_snapshot.closure_id) return RAD_E_STATE;
-        request_helper_drain(g, snap->closure_id);
-    }
-    while (!helper_drained(g, snap->closure_id)) {
-        if (g.ledger.stopped() || helper_faulted(g) || g.closing.load(std::memory_order_acquire) ||
-            std::chrono::steady_clock::now() >= limit) {
-            g.ledger.fault();
-            return RAD_E_STATE;
-        }
-        std::this_thread::sleep_for(std::chrono::milliseconds(2));
-    }
+    const DrainWait waited = await_drain(
+        g, snap->old_epoch, snap->cutoff_ticket_id, limit, [&] { poll_tickets(g); },
+        [&] { return helper_faulted(g); },
+        [&] {
+            /* A successful event query guarantees helper wait and consumption before the event, but explicitly check
+             * every lane before controller COMMIT. */
+            std::lock_guard<std::mutex> lock(g.mu);
+            if (snap->closure_id != g.closed_snapshot.closure_id) return false;
+            request_helper_drain(g, snap->closure_id);
+            return true;
+        },
+        [&] { return helper_drained(g, snap->closure_id); });
+    /* Cancelled by the generation's close: a state error that leaves the ledger as it was. */
+    if (waited != DrainWait::Drained) return RAD_E_STATE;
     {
         std::lock_guard<std::mutex> lock(g.mu);
         if (g.ledger.stopped() || helper_faulted(g) ||

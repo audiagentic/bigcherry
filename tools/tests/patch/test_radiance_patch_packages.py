@@ -113,7 +113,7 @@ PIN_BLOBS = {
         "core/engine.cpp": ("e649224", "9176ef0"),
         "core/engine.h": ("ca6c09f", "430b4bd"),
         "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
-        "core/place/bc_moe_remote.cpp": (None, "d6e7366"),
+        "core/place/bc_moe_remote.cpp": (None, "76e8c10"),
         "core/place/bc_moe_remote_engine.h": (None, "20e811a"),
         "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
         "core/place/planner.cpp": ("dc03b5a", "3edb433"),
@@ -736,7 +736,7 @@ int main() {
         self.assertNotIn("HookLifetime", hook)
         self.assertIn("void cb_fault(void* self)", hook)
         self.assertNotIn("cb_shutdown", hook)
-        self.assertIn("stop_workers(g, g.ledger.clean_stop())", hook)
+        self.assertIn("close_generation(g_live, g,", hook)
         self.assertNotIn("\nHookState g;", hook)
         self.assertNotIn("r3_moe_mailbox_enabled", hook)
         self.assertNotIn('rad_moe_remote', hook)
@@ -744,9 +744,11 @@ int main() {
         self.assertIn('await_helpers_registered(g.hdr, g.watch, registration_bound())', hook)
         self.assertNotIn('kRegisterTimeoutS', hook)
         # Close order: workers stopped first, then LiveHook::retire (refuse intake, cancel waits, drain borrowers, free).
-        self.assertLess(hook.index("stop_workers(g, g.ledger.clean_stop());"), hook.index("g_live.retire(&g,"))
+        self.assertIn("close_generation(g_live, g, [&](bool clean) { stop_workers(g, clean); },", hook)
         self.assertIn("[&] { release_resources(g); }", hook)
         self.assertIn("&g.closing);", hook)
+        self.assertIn("await_drain(", hook)
+        self.assertNotIn("helper_faulted(g) || g.closing", hook)
         self.assertNotIn("close_mailbox(", hook)
         self.assertIn('slot_map[(uint32_t)le] < 0', ops)
         self.assertIn('{"aq", RAD_OPD_IN, 0}', ops)

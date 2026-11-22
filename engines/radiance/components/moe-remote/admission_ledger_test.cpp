@@ -252,6 +252,20 @@ int main() {
     q.interrupt();
     waiter.join();
     check(outcome==R::Interrupted,"shutdown interrupts wait");
+    {   // A cancel (the owner is closing) ends the wait without touching the ledger: not a fault, not an interrupt.
+        Ledger c(2);
+        check(c.initialize(20,0), "initialize cancel fixture");
+        StepTicket z{};
+        check(c.try_admit(1,&z)==R::Ok && c.bind(z.ticket_id,1), "cancel fixture ticket");
+        auto cs=c.close_admission();
+        check(c.wait_drained(20,cs.latest_ticket,std::chrono::steady_clock::now()+std::chrono::seconds(5),{},{},
+                             [] { return true; })==R::Cancelled, "cancel ends the drain wait");
+        check(!c.stopped(), "cancel leaves the ledger unfaulted and uninterrupted");
+        check(c.host_complete(z.ticket_id) && prove_rank(c,z.ticket_id,0), "the ledger still works after a cancel");
+        check(c.wait_drained(20,cs.latest_ticket,std::chrono::steady_clock::now()+std::chrono::seconds(5),{},{},
+                             [] { return true; })==R::Ok, "a drained epoch is Ok even when a cancel is raised");
+        check(c.clean_stop(), "clean_stop still holds after a cancel");
+    }
     Ledger f(2);
     check(f.initialize(8,0), "initialize fault fixture");
     StepTicket x{};
