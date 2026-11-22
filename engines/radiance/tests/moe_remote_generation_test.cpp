@@ -71,7 +71,7 @@ static int factory(const BcMoeRemoteOpenArgs* a, BcMoeRemotePlugin* out) {
     f->id = ++ids;
     ++opened;
     *out = BcMoeRemotePlugin{sizeof(BcMoeRemotePlugin), f, f_close, f_layer_map, f_owns, f_burst, f_before, f_admit,
-                             f_bind, f_ok_ticket, f_ok_ticket, f_rank_done, f_noop, f_noop, f_wait, 1234};
+                             f_bind, f_ok_ticket, f_ok_ticket, f_rank_done, f_noop, f_noop, f_wait, 1234, 77};
     return 0;
 }
 /* Failure-atomic factory protocol: a factory that fails has cleaned up after itself and the engine must not call its
@@ -117,6 +117,8 @@ int main() {
     BcMoeRemoteGeneration* a = open_at(4, 2);
     assert(bc_moe_remote_lookup(4) == a && bc_moe_remote_lookup(5) == a);
     assert(bc_moe_remote_stop_budget_ms(a) == 1234 && bc_moe_remote_stop_budget_ms(nullptr) == 0);
+    // The owner serial the engine puts in its mailbox ops is the generation's own, and 0 once it is closed or absent.
+    assert(bc_moe_remote_owner(a) == 77 && bc_moe_remote_owner(nullptr) == 0);
     assert(!bc_moe_remote_lookup(3) && !bc_moe_remote_lookup(6));
     assert(bc_moe_remote_wanted(a, 4) && !bc_moe_remote_wanted(a, 5) && bc_moe_remote_wanted_upto(a, 100));
     assert(bc_moe_remote_admit(a, &t, 0, 2) == 0 && t.ticket_id == 1);
@@ -134,6 +136,7 @@ int main() {
     // never reaches the new plugin; the new generation is untouched by the old one's repeated close.
     assert(bc_moe_remote_wanted(a, 1) && bc_moe_remote_wanted_upto(a, 1));
     bc_moe_remote_close(a);
+    assert(bc_moe_remote_owner(a) == 0);
     // A closed generation answers no policy query: nothing is wanted, shadowed or mask-only.
     assert(!bc_moe_remote_wanted(a, 1) && !bc_moe_remote_wanted_upto(a, 1) && !bc_moe_remote_shadow(a) && !bc_moe_remote_mask_only(a));
     assert(!bc_moe_remote_lookup(4) && !bc_moe_remote_lookup(5));

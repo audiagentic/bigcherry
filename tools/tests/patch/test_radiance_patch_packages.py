@@ -105,25 +105,25 @@ PREREQUISITES = {RAD0004: (RAD0002,)}
 # prerequisites, after they are applied), `after` the file with the package applied.
 PIN_BLOBS = {
     RAD0002: {
-        "abi/bc_moe_remote.h": (None, "d20b9d5"),
-        "arch/common/bc_moe_remote_block.h": (None, "ee98a63"),
+        "abi/bc_moe_remote.h": (None, "74d5cd6"),
+        "arch/common/bc_moe_remote_block.h": (None, "0a78605"),
         "arch/common/rad_arch.h": ("f847a16", "12a4cf7"),
         "arch/common/rad_block_hc.h": ("2ab3568", "da4f843"),
         "arch/common/rad_block_moe_fp8.h": ("aff7d2c", "ddd6734"),
         "core/engine.cpp": ("e649224", "9176ef0"),
         "core/engine.h": ("ca6c09f", "430b4bd"),
         "core/engine_bringup.cpp": ("53fa6e0", "236ab86"),
-        "core/place/bc_moe_remote.cpp": (None, "43c578d"),
+        "core/place/bc_moe_remote.cpp": (None, "d6e7366"),
         "core/place/bc_moe_remote_engine.h": (None, "20e811a"),
         "core/place/bc_moe_remote_place.h": (None, "a36fbb7"),
         "core/place/planner.cpp": ("dc03b5a", "3edb433"),
         "core/runtime/ctx.cpp": ("f0dbf74", "9677854"),
         "core/runtime/ctx.h": ("55bc2a3", "82b91f5"),
         # Only the upstream include block is needed for this test-only edit.
-        "tests/arch_fakes.h": ("dbeb37f", "2afc5bf"),
+        "tests/arch_fakes.h": ("dbeb37f", "4933f3a"),
     },
     RAD0004: {
-        "arch/common/bc_moe_remote_diag.h": (None, "b6743b0"),
+        "arch/common/bc_moe_remote_diag.h": (None, "a041c77"),
         "arch/common/rad_block_moe_fp8.h": ("ddd6734", "8c182dd"),
     },
     RAD0009: {
@@ -383,6 +383,8 @@ class TestRadiancePatchPackages(unittest.TestCase):
             self.assertIn("g->vt.struct_size != sizeof(BcMoeRemotePlugin)", core)
             self.assertIn("g->skip_owned == 0", core)
             self.assertIn("bc_serving_remote_settings", core)
+            # Every mailbox op the engine declares carries its generation's owner serial; init binds to it.
+            self.assertEqual((PACKAGES / RAD0002 / "patch.py").read_text().count('RAD_INT("owner", bc_moe_remote_owner('), 3)
             # A hard dependency, not an optional reader: no weak symbol, and the package declares rad0009.
             self.assertNotIn("__attribute__((weak))", core)
             self.assertNotIn("if (bc_serving_remote_settings)", core)

@@ -158,9 +158,9 @@ struct R3MoeDrainSnapshot {
 /* One engine generation's hook identity: a nonzero serial that is never reused (the hook state itself is the `self` of
  * the EnginePlugin the factory returned and is opaque). It is the first argument of every direct entry point below.
  * A handle that is 0, from a generation that has closed (even when a later hook sits at the same address) or from
- * another engine is refused with RAD_E_STATE before any side effect. Kernels find theirs with r3_moe_hook_for_group
+ * another engine is refused with RAD_E_STATE before any side effect. Kernels find theirs with r3_moe_hook_for_owner (the owner serial the engine put in the op, plus its span, width and rank)
  * (0: none; the span, the width and the rank must all match the live generation's). */
-extern "C" uint64_t r3_moe_hook_for_group(long long tp_group, int rank, int world_size);
+extern "C" uint64_t r3_moe_hook_for_owner(uint64_t owner, long long tp_group, int rank, int world_size);
 extern "C" int r3_moe_close_admission(uint64_t hook, R3MoeDrainSnapshot* snapshot);
 extern "C" int r3_moe_wait_drained(uint64_t hook, const R3MoeDrainSnapshot* snapshot, uint64_t deadline_monotonic_ns);
 /* Nonblocking, 1 only when every ticket admitted under this exact closed

@@ -93,6 +93,9 @@ typedef struct BcMoeRemotePlugin {
     /* The longest the engine waits for its stepper and the bound parents to finish at stop: the plugin's protocol
      * bound for draining to quiet (its quiesce deadline), so the engine holds no budget of its own. */
     int64_t stop_budget_ms;
+    /* The generation's never-reused serial: the engine puts it in every mailbox op it declares, and the op's init binds
+     * to exactly this generation (not merely to a numeric group). */
+    uint64_t owner;
 } BcMoeRemotePlugin;
 typedef int (*BcMoeRemoteOpenFn)(const BcMoeRemoteOpenArgs* args, BcMoeRemotePlugin* out);
 #define BC_MOE_REMOTE_OPEN_SYMBOL "bc_moe_remote_plugin_open"
@@ -136,6 +139,8 @@ int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g);
 int bc_moe_remote_wait_finished(BcMoeRemoteGeneration* g, int64_t timeout_ms);
 /* The stop budget the plugin declared (BcMoeRemotePlugin::stop_budget_ms); 0 for no generation. */
 int64_t bc_moe_remote_stop_budget_ms(const BcMoeRemoteGeneration* g);
+/* The owner serial for the generation's mailbox ops; 0 for no generation or a closed one. */
+uint64_t bc_moe_remote_owner(const BcMoeRemoteGeneration* g);
 int bc_moe_remote_before_pass(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream);
 int bc_moe_remote_rank_done(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream);
 /* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for the placement rule. */
@@ -358,6 +363,9 @@ extern "C" int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g) {
     if (!g || !g->vt.finish_admission) return 0;
     g->vt.finish_admission(g->vt.self);
     return 1;
+}
+extern "C" uint64_t bc_moe_remote_owner(const BcMoeRemoteGeneration* g) {
+    return g && g->open() ? g->vt.owner : 0;
 }
 extern "C" int64_t bc_moe_remote_stop_budget_ms(const BcMoeRemoteGeneration* g) {
     return g && g->open() ? g->vt.stop_budget_ms : 0;
@@ -713,7 +721,7 @@ struct BcMoeRemote {
         for (int f = 0; f < 2; ++f)
             (f ? publish_fused : publish) =
                 rw(b, RAD_OP(b, "moe_mailbox_publish",
-                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
+                             RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(gen)), RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
                                         RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
                                         RAD_INT("expert_base", c.expert_base),
                                         RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
@@ -739,7 +747,7 @@ struct BcMoeRemote {
         if (!bc_moe_remote_wanted_upto(gen, g.max_tok)) return RAD_OK;
         if (!publish && declare_publish(b, m, layer) < 0) return RAD_E_INVAL;
         add = RAD_OP(b, "moe_mailbox_add",
-                     RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
+                     RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(gen)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
                      RAD_NOWEIGHTS);
         if (add) {
             const rad_buf rd[5] = { w.sorted, w.edn, w.ew, w.sout, w.sgate };
@@ -748,7 +756,7 @@ struct BcMoeRemote {
             rad_op_writes(b, add, wr, 1);
         }
         inject = RAD_OP(b, "moe_mailbox_inject",
-                        RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                        RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(gen)), RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
                                    RAD_INT("top_k", c.top_k), RAD_INT("n_expert", c.n_expert)),
                         RAD_NOWEIGHTS);
         if (inject) {
@@ -1362,6 +1370,7 @@ PATCHES = (
 extern "C" BcMoeRemoteGeneration* bc_moe_remote_lookup(int) { return nullptr; }
 extern "C" int bc_moe_remote_wanted(const BcMoeRemoteGeneration*, int64_t) { return 0; }
 extern "C" int bc_moe_remote_wanted_upto(const BcMoeRemoteGeneration*, int64_t) { return 0; }
+extern "C" uint64_t bc_moe_remote_owner(const BcMoeRemoteGeneration*) { return 0; }
 extern "C" int bc_moe_remote_shadow(const BcMoeRemoteGeneration*) { return 0; }
 extern "C" int bc_moe_remote_mask_only(const BcMoeRemoteGeneration*) { return 0; }
 extern "C" void bc_moe_remote_layer_map(BcMoeRemoteGeneration*, int, int, const int32_t*) {}

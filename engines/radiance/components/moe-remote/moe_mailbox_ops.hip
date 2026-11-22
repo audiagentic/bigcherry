@@ -24,6 +24,7 @@ using namespace r3::moe_shm;
 #define NELEM(a) ((int)(sizeof(a) / sizeof((a)[0])))
 
 static const RadParamSpec kPublishParams[] = {
+    {"owner", RAD_P_INT, RAD_REQUIRED},   /* the owning generation's serial (mailbox_init binds to it) */
     {"layer", RAD_P_INT, RAD_REQUIRED},
     {"M", RAD_P_INT, RAD_REQUIRED},
     {"n", RAD_P_INT, RAD_REQUIRED},
@@ -43,6 +44,7 @@ static const RadOperandSpec kPublishOperands[] = {
     {"aq_base", RAD_OPD_IN, 0},
 };
 static const RadParamSpec kAddParams[] = {
+    {"owner", RAD_P_INT, RAD_REQUIRED},   /* the owning generation's serial (mailbox_init binds to it) */
     {"M", RAD_P_INT, RAD_REQUIRED},
     {"n", RAD_P_INT, RAD_REQUIRED},
     {"top_k", RAD_P_INT, RAD_REQUIRED},
@@ -57,6 +59,7 @@ static const RadOperandSpec kAddOperands[] = {
 };
 /* RAD49: the consumer's helper rows as extra sorted rows of the engine's fused gather + reducing write. */
 static const RadParamSpec kInjectParams[] = {
+    {"owner", RAD_P_INT, RAD_REQUIRED},   /* the owning generation's serial (mailbox_init binds to it) */
     {"layer", RAD_P_INT, RAD_REQUIRED},
     {"M", RAD_P_INT, RAD_REQUIRED},
     {"n", RAD_P_INT, RAD_REQUIRED},
@@ -70,6 +73,7 @@ static const RadOperandSpec kInjectOperands[] = {
     {"eoff", RAD_OPD_IN, 0},
 };
 static const RadParamSpec kMaskRefParams[] = {
+    {"owner", RAD_P_INT, RAD_REQUIRED},   /* the owning generation's serial (mailbox_init binds to it) */
     {"M", RAD_P_INT, RAD_REQUIRED},
     {"n", RAD_P_INT, RAD_REQUIRED},
     {"top_k", RAD_P_INT, RAD_REQUIRED},
@@ -80,6 +84,7 @@ static const RadOperandSpec kMaskRefOperands[] = {
     {"down", RAD_OPD_INOUT, 0},
 };
 static const RadParamSpec kShadowParams[] = {
+    {"owner", RAD_P_INT, RAD_REQUIRED},   /* the owning generation's serial (mailbox_init binds to it) */
     {"M", RAD_P_INT, RAD_REQUIRED},
     {"n", RAD_P_INT, RAD_REQUIRED},
     {"top_k", RAD_P_INT, RAD_REQUIRED},
@@ -925,11 +930,15 @@ long long geti(const RadArgs* a, const char* key, long long bad = -1) {
 
 int mailbox_init(const RadParam* params, int n_params, int rank, int world_size, void** out) {
     if (!out) return RAD_E_INVAL;
-    /* The engine passes its claimed tp_group (the span base its remote-MoE generation opened) to every init. */
-    long long group = -1;
-    for (int i = 0; params && i < n_params; ++i)
-        if (params[i].key && std::strcmp(params[i].key, "tp_group") == 0) group = params[i].ival;
-    const uint64_t hook = r3_moe_hook_for_group(group, rank, world_size);
+    /* The engine passes its claimed tp_group (the span base its remote-MoE generation opened) to every init, and puts the
+     * serial of the generation that owns the op in the op itself: init binds to exactly that generation. */
+    long long group = -1, owner = 0;
+    for (int i = 0; params && i < n_params; ++i) {
+        if (!params[i].key) continue;
+        if (std::strcmp(params[i].key, "tp_group") == 0) group = params[i].ival;
+        else if (std::strcmp(params[i].key, "owner") == 0) owner = params[i].ival;
+    }
+    const uint64_t hook = r3_moe_hook_for_owner((uint64_t)owner, group, rank, world_size);
     if (!hook) return RAD_E_STATE;
     R3MoeMailboxDevice* d = nullptr;
     const int rc = r3_moe_mailbox_device(hook, rank, world_size, &d);

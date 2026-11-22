@@ -74,6 +74,16 @@ public:
         return (now && match(*now)) ? now->serial : 0;
     }
 
+    // The serial a kernel init is entitled to: only the exact generation that owns it (`owner` is the serial the engine's
+    // generation was opened with and put in its ops), and only for that generation's own span, width and rank. A foreign
+    // generation on the same numeric group, or a closed owner whose span was reopened by a later generation, gets 0.
+    uint64_t serial_for_owner(uint64_t owner, long long group, int rank, int world) const {
+        return serial_if([&](const T& h) {
+            return owner != 0 && h.serial == owner && h.opened && h.slot_base == group && world == h.ranks &&
+                   rank >= 0 && rank < h.ranks;
+        });
+    }
+
 private:
     mutable std::shared_mutex mu_;
     std::atomic<T*> live_{nullptr};

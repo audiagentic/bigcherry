@@ -94,6 +94,7 @@ struct EnginePlugin {
     void (*finish_admission)(void* self);
     int (*wait_finished)(void* self, int64_t timeout_ms);
     int64_t stop_budget_ms;   /* the protocol's quiesce bound: how long the engine waits to drain at stop */
+    uint64_t owner;           /* the generation's never-reused serial: the engine puts it in every mailbox op */
 };
 
 /* Each admission owns its events; never reuse one global step-end event
@@ -1013,15 +1014,14 @@ extern "C" int bc_moe_remote_plugin_open(const EngineOpenArgs* args, EnginePlugi
     *out = EnginePlugin{sizeof(EnginePlugin), h, cb_close, cb_layer_map, cb_owns_expert, cb_burst, cb_before_pass, cb_admit,
                         cb_bind, cb_cancel, cb_host_done, cb_rank_done, cb_fault, cb_finish_admission,
                         cb_wait_finished,
-                        (int64_t)(r3::epoch::Deadlines{}.quiesce_ns / 1000000ull)};
+                        (int64_t)(r3::epoch::Deadlines{}.quiesce_ns / 1000000ull),
+                        h->serial};
     return 0;
 }
 
 /* The hook a kernel's init belongs to: the engine's claimed tp_group is the slot span's base the generation opened. */
-extern "C" uint64_t r3_moe_hook_for_group(long long tp_group, int rank, int world_size) {
-    return g_live.serial_if([&](const R3MoeHook& h) {
-        return h.opened && h.slot_base == tp_group && world_size == h.ranks && rank >= 0 && rank < h.ranks;
-    });
+extern "C" uint64_t r3_moe_hook_for_owner(uint64_t owner, long long tp_group, int rank, int world_size) {
+    return g_live.serial_for_owner(owner, tp_group, rank, world_size);
 }
 
 extern "C" int r3_moe_close_admission(uint64_t h, R3MoeDrainSnapshot* out) {

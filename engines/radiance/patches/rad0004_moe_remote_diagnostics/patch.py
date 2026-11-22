@@ -46,16 +46,17 @@ struct BcMoeRemoteDiag {
             return RAD_E_INVAL;
         }
         shadow = rw(b, RAD_OP(b, "moe_mailbox_shadow",
-                              RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
+                              RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(g.bc_remote)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                         RAD_INT("top_k", c.top_k)),
                               RAD_NOWEIGHTS),
                     {w.sorted, w.edn, w.ew}, {w.edn});
         mask_capture = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
-                                    RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                    RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(g.bc_remote)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
                                                RAD_INT("top_k", c.top_k), RAD_INT("restore", 0)),
                                     RAD_NOWEIGHTS),
                           {w.sorted, w.edn}, {w.edn});
         mask_restore = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
-                                    RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                    RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(g.bc_remote)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
                                                RAD_INT("top_k", c.top_k), RAD_INT("restore", 1)),
                                     RAD_NOWEIGHTS),
                           {w.sorted, w.edn}, {w.edn});

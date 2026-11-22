@@ -10,7 +10,7 @@
 #include <thread>
 #include <vector>
 
-struct Hook { uint64_t serial = 0; int slot_base = -1; int ranks = 0; int touched = 0; };
+struct Hook { uint64_t serial = 0; int slot_base = -1; int ranks = 0; int touched = 0; bool opened = true; };
 
 int main() {
     LiveHook<Hook> live;
@@ -119,6 +119,27 @@ int main() {
         assert(l4.serial_if(match(4, 3)) == 0 && l4.serial_if(match(4, 1)) == 0 && l4.serial_if(match(5, 2)) == 0);
         l4.unpublish(&hk);
         assert(l4.serial_if(match(4, 2)) == 0);
+    }
+
+    // Mailbox init binds to the exact owning generation, not to numbers: a foreign generation that holds the same span
+    // is refused, and so is a closed owner whose span a later generation reopened.
+    {
+        LiveHook<Hook> l5;
+        Hook a, b; a.slot_base = 4; a.ranks = 2; b.slot_base = 4; b.ranks = 2;
+        const uint64_t ida = l5.publish(&a);
+        assert(l5.serial_for_owner(ida, 4, 0, 2) == ida && l5.serial_for_owner(ida, 4, 1, 2) == ida);
+        assert(l5.serial_for_owner(ida + 1, 4, 0, 2) == 0);       // same group, someone else's owner
+        assert(l5.serial_for_owner(0, 4, 0, 2) == 0);             // no owner at all
+        assert(l5.serial_for_owner(ida, 5, 0, 2) == 0 && l5.serial_for_owner(ida, 4, 0, 3) == 0 &&
+               l5.serial_for_owner(ida, 4, 2, 2) == 0 && l5.serial_for_owner(ida, 4, -1, 2) == 0);
+        a.opened = false;
+        assert(l5.serial_for_owner(ida, 4, 0, 2) == 0);           // not yet / no longer open
+        a.opened = true;
+        assert(l5.unpublish(&a));
+        const uint64_t idb = l5.publish(&b);                      // the span is reused by a later generation
+        assert(idb != ida);
+        assert(l5.serial_for_owner(ida, 4, 0, 2) == 0);           // the old owner's graph is refused
+        assert(l5.serial_for_owner(idb, 4, 0, 2) == idb);
     }
     return 0;
 }
