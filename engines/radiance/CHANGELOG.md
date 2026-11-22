@@ -1,5 +1,13 @@
 # Changelog
 
+## [1170.38.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.37.0...bc-radiance-1170.38.0) (2026-11-22)
+
+
+### New and changed
+
+* **radiance:** a named start reuses the last measured plan; model identity is stat-based ([#1275](https://github.com/audiagentic/bigcherry/issues/1275)) ([0856a60](https://github.com/audiagentic/bigcherry/commit/0856a60e151b69194fc6773dff4555f21a4bb5e1))
+* **radiance:** a named start under another build seals the stored measurement again instead of measuring ([#1279](https://github.com/audiagentic/bigcherry/issues/1279)) ([b84303f](https://github.com/audiagentic/bigcherry/commit/b84303f674d78b64f2fa2e9be027bc729c9156f5))
+
 ## [1170.37.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-1170.36.0...bc-radiance-1170.37.0) (2026-11-21)
 
 
