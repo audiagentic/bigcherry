@@ -1,0 +1,15 @@
+{
+  "change-class": "refactor",
+  "event-id": "chg_20261122_122517_removed-dead-command-line-path_9980",
+  "files": [
+    "engines/radiance/components/serving/main.cpp",
+    "engines/radiance/components/serving/release_cli.cpp",
+    "engines/radiance/components/serving/release_install.cpp",
+    "config/recipes.toml",
+    "tools/bigcherry/hardware/power_receipt.py"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Removed the unreachable measured-plan and resident-MiB parsing and the standalone v2 publication modes from bc-serve, the duplicate bc-release status command, two redundant CMake check aliases, five empty llama.cpp experiment selectors, and duplicated atomic JSON writers and JSONL readers; net source -223 lines.",
+  "timestamp-utc": "2026-11-22T12:25:17.444208Z",
+  "user-summary-candidate": "Removed dead command-line paths and duplicated helpers from the serving tools."
+}
