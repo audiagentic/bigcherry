@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.63.4](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.3...bc-platform-1.63.4) (2026-11-22)
+
+
+### Fixes
+
+* **campaign:** require verified RCCL qualification before benchmark ([#1394](https://github.com/audiagentic/bigcherry/issues/1394)) ([1448943](https://github.com/audiagentic/bigcherry/commit/1448943beedcb45949861a5d5058710a81666db3))
+
 ## [1.63.3](https://github.com/audiagentic/bigcherry/compare/bc-platform-1.63.2...bc-platform-1.63.3) (2026-11-22)
 
 
