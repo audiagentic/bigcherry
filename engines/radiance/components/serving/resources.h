@@ -101,18 +101,6 @@ struct ResourceLedger {
 // Pure, deterministic admission; invalid measurements and budget mismatches are typed errors.
 v2::Result<ResourceLedger> calculate(const ResourceRequest& request);
 
-// The resolver and v2 manifest are JSON on disk. This adapter validates them, reads only
-// RAD directory metadata, and builds a ResourceRequest before invoking calculate().
-// The published owner map, not a recalculated one, determines GPU-owned expert weights.
-struct LaunchDocuments {
-    const nlohmann::json& resolved_values;
-    const nlohmann::json& resolved_helpers;
-    const nlohmann::json& detected_facts;
-    const nlohmann::json& unmeasured_manifest;
-};
-v2::Result<ResourceLedger> derive_launch(const LaunchDocuments& documents,
-                                         const std::filesystem::path& calibration_cache = {});
-
 // The measuring start has no measured engine footprint yet. Still admit the
 // effective allocation from the exact measuring manifest against fresh RAM, cgroup and pin room.
 v2::Status preflight_host_pool(const v2::Manifest& measuring_manifest,

@@ -11,7 +11,7 @@
 # measure: N launches (default 2) of native bc-serve serve flashnext-4gpu with production defaults (layout flashnext-4gpu, 262144
 #   context, 8 sessions; the live expert-placement policy is on when $BC_WORK_ROOT/live-policy-calibration.toml exists),
 #   handoff.histogram_period_s=1 from RSC12. Each launch warms up (only with the policy on:
-#   (min_samples + 1) heat windows plus a second, from the native strict-v2 manifest), then measures cold prefill, decode step time at 1 and 6 streams, 8 sessions and a 256K
+#   (min_samples + 1) heat windows plus a second, from the native manifest), then measures cold prefill, decode step time at 1 and 6 streams, 8 sessions and a 256K
 #   context, stops the native session (always, also on failure) and keeps the helper's `policy placement` line. Raw records go
 #   to OUT/launch-<i>/ and each launch is committed as a run record (the SHA is OUT/launch-<i>/record.sha256; there is no
 #   summary file). It uses all four cards: hold the
@@ -113,25 +113,15 @@ BUILD=$(cd "$BUILD" && pwd -P)
 BC_SERVE="$BUILD/radiance_home/bin/bc-serve"
 [ -x "$BC_SERVE" ] || { echo "flashnext-parity: $BUILD has no native radiance_home/bin/bc-serve" >&2; exit 2; }
 [ -n "${BC_MODEL_ROOT:-}" ] || { echo "flashnext-parity: BC_MODEL_ROOT not set" >&2; exit 2; }
-# A v3 bc-serve (it takes --native-config) reads a config from its native YAML and takes no --set: an arm authors its own
-# YAML (arm_yaml.py: a copy of the bundled or given config with the changed values) and passes it with --native-config.
-# The 1170.35 control (a v2 bc-serve with a TOML catalogue) is the one build that still takes --set; its arm keeps the
-# old arguments until that control is retired.
-EDITION=v2
-"$BC_SERVE" --help 2>&1 | grep -q -- '--native-config' && EDITION=v3
+# The native owner reads a config from its native YAML and takes no --set: an arm authors its own YAML (arm_yaml.py: a copy of
+# the bundled or given config with the changed values) and passes it with --native-config.
 NATIVE_ARGS=(--run-dir "$RUN" --model-root "$BC_MODEL_ROOT" --engine-binary "$BUILD/bin/radiance"
-             --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}" --allow-power-apply)
-[ "$EDITION" = v3 ] && NATIVE_ARGS+=(--work-root "$BC_WORK_ROOT")   # the host-wide model-identity cache lives there
+             --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}" --allow-power-apply
+             --work-root "$BC_WORK_ROOT")   # the host-wide model-identity cache lives there
 # The default is stock (observe only): bc-serve refuses a named non-stock profile without its rule file, and the stored
 # baseline was taken with the cards' own settings. The power profile is explicit so a held GPU lease can apply only qualified,
 # journalled settings; a missing lease or missing qualification fails closed.
-# Installed bc-serve binds its verified runtime home and rejects an override.
-# A build-tree owner needs the runtime home supplied explicitly.
-owner_path=$(realpath -- "$BC_SERVE")
-# (A v3 bc-serve derives it from --engine-binary; only the v2 control takes it as a setting.)
-if [ "$EDITION" = v2 ] && [[ "$owner_path" != "$BUILD/radiance_home/bin/bc-serve" || "$(basename -- "$(dirname -- "$BUILD")")" != releases ]]; then
-  NATIVE_ARGS+=(--set "engine.radiance_home=$BUILD/radiance_home")
-fi
+# The owner derives the runtime home from --engine-binary.
 # The helpers need the workload heat file (it has no portable path). The default is the Flash-Next mixed-workload heat,
 # the launcher's default when the v1.17.0 baseline was taken (that run's own copy was lost; this is the 2026-11-18
 # re-recording). perf51 (a different layout's recording) costs ~10% of 256K prefill on flashnext-4gpu
@@ -140,18 +130,10 @@ HEAT="${FLASHNEXT_PARITY_HEAT:-$REPO/tools/lab/radiance/heat/flashnext-mixed.hot
 [ -f "$HEAT" ] || { echo "flashnext-parity: heat file $HEAT not found" >&2; exit 2; }
 # FLASHNEXT_PARITY_SETS: extra space-separated PATH=VALUE changes for an experiment arm, as YAML paths of the config
 # (models.flashnext.kv-cache-dtype=bf16_i8, x-bigcherry.helper.combine=false); the arm's YAML in OUT records them.
-if [ "$EDITION" = v3 ]; then
-  if [ -n "$NATIVE_CONFIG" ]; then BASE_YAML=$NATIVE_CONFIG
-  elif [ -f "$BUILD/configs/flashnext-4gpu.yaml" ]; then BASE_YAML=$BUILD/configs/flashnext-4gpu.yaml
-  else BASE_YAML=$REPO/engines/radiance/configs/flashnext-4gpu.yaml; fi
-  [ -f "$BASE_YAML" ] || { echo "flashnext-parity: no flashnext-4gpu.yaml for this build" >&2; exit 2; }
-else
-  NATIVE_ARGS+=(--set "engine.port=$PORT")
-  # Installed bundles select verified PREFIX/configs; builds require an explicit RSC12 catalogue.
-  [ -f "$BUILD/configs/flashnext.toml" ] || NATIVE_ARGS+=(--configs "$REPO/engines/radiance/configs")
-  NATIVE_ARGS+=(--set "handoff.heat=$HEAT")
-  for s in ${FLASHNEXT_PARITY_SETS:-}; do NATIVE_ARGS+=(--set "$s"); done
-fi
+if [ -n "$NATIVE_CONFIG" ]; then BASE_YAML=$NATIVE_CONFIG
+elif [ -f "$BUILD/configs/flashnext-4gpu.yaml" ]; then BASE_YAML=$BUILD/configs/flashnext-4gpu.yaml
+else BASE_YAML=$REPO/engines/radiance/configs/flashnext-4gpu.yaml; fi
+[ -f "$BASE_YAML" ] || { echo "flashnext-parity: no flashnext-4gpu.yaml for this build" >&2; exit 2; }
 CALIBRATION_FILE=""
 if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
   CALIBRATION_FILE="$BC_WORK_ROOT/live-policy-calibration.toml"
@@ -159,8 +141,6 @@ if [ -s "$BC_WORK_ROOT/live-policy-calibration.toml" ]; then
 fi
 mkdir -p "$OUT"
 OUT=$(cd "$OUT" && pwd)
-# Route-heat recording at the period the live policy needs (RSC12), into the run's own folder.
-[ "$EDITION" = v3 ] || NATIVE_ARGS+=(--set "handoff.histogram=$OUT/heat.live" --set "handoff.histogram_period_s=1")
 
 LONG_COUNT=$(wc -w <<< "$LONG_SEEDS")
 PYTHONPATH=tools python3 "$PARITY" run-info "$OUT" --build "$BUILD" --launches "$LAUNCHES" --port "$PORT" \
@@ -246,17 +226,13 @@ for i in $(seq 1 "$LAUNCHES"); do
     cp "$CALIBRATION_FILE" "$L/calibration-input.toml" || fail "cannot snapshot calibration store"
   fi
   OWNER_ARGS=("${NATIVE_ARGS[@]}")
-  if [ "$EDITION" = v3 ]; then
-    ARM_SETS=(--set "server.port=$PORT" --set "x-bigcherry.handoff.heat=$HEAT"
-              --set "x-bigcherry.handoff.histogram=$OUT/heat.live" --set "x-bigcherry.handoff.histogram-period-s=1")
-    for s in ${FLASHNEXT_PARITY_SETS:-}; do ARM_SETS+=(--set "$s"); done
-    python3 tools/lab/radiance/arm_yaml.py --base "$BASE_YAML" --out "$L/native-input.yaml" "${ARM_SETS[@]}" ||
-      fail "cannot write this launch's arm YAML"
-    OWNER_ARGS+=(--native-config "$L/native-input.yaml")
-  elif [ -n "$NATIVE_CONFIG" ]; then
-    cp -- "$NATIVE_CONFIG" "$L/native-input.yaml" || fail "cannot snapshot native YAML"
-    OWNER_ARGS+=(--native-config "$L/native-input.yaml")
-  fi
+  # Route-heat recording at the period the live policy needs (RSC12), into the run's own folder.
+  ARM_SETS=(--set "server.port=$PORT" --set "x-bigcherry.handoff.heat=$HEAT"
+            --set "x-bigcherry.handoff.histogram=$OUT/heat.live" --set "x-bigcherry.handoff.histogram-period-s=1")
+  for s in ${FLASHNEXT_PARITY_SETS:-}; do ARM_SETS+=(--set "$s"); done
+  python3 tools/lab/radiance/arm_yaml.py --base "$BASE_YAML" --out "$L/native-input.yaml" "${ARM_SETS[@]}" ||
+    fail "cannot write this launch's arm YAML"
+  OWNER_ARGS+=(--native-config "$L/native-input.yaml")
   CAPTURE_ARGS=(--heat "$L/heat-input.hot-first" --power-profile "${FLASHNEXT_PARITY_POWER_PROFILE:-stock}")
   if [ -n "$CALIBRATION_FILE" ]; then CAPTURE_ARGS+=(--calibration "$L/calibration-input.toml"); fi
   python3 "$PARITY" capture-provenance "${CAPTURE_ARGS[@]}" "$L" -- "$BC_SERVE" serve flashnext-4gpu "${OWNER_ARGS[@]}" ||
