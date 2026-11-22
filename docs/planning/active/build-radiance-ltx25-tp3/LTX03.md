@@ -78,6 +78,8 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 
 2026-11-22: LTX03 text cross-attention declaration slice (branch agent/ltx03-cross-attention): all 48 real-model DiT blocks, video/audio attn2, both 8/8/16 and 12/12/8 head maps and 3 ranks = 576 native declarations with distinct one-bank Q and two-bank KV; 4 query rows versus 2 KV rows, exact Q/K reduction and deferred once-only output bias; negative unquantized KV rejected. Pinned Radiance 2.2 rad0060 replay: 23 source-anchored edits, byte-identical source and idempotent. Native host suite 12/12 passed; patch tests 3 passed, 1 optional skip. Evidence docs/evidence/2026-11-22-ltx03-text-cross-attention/README.md. This is declaration only, NOT actual three-rank text-cross GPU issue or TP1 parity. Remaining LTX03: a2v/v2a unequal channel widths, FFN/residual and full 48-block mixed GPU issue. RUM14 loader and LTX02 TP1 parity remain separate prerequisites; TP3 serving remains refused.
 
+2026-11-22: Follow-on LTX03 a2v/v2a cross-modal declaration slice: the same native real-checkpoint builder handles model-derived unequal qdim/kvdim/odim, full-shard source K group alignment, native one-bank Q and two-bank KV, global Q/K normalization and RoPE for all 48 blocks, two legal head splits and 3 ranks. 576 more declarations, bringing self/text/cross-modal across all 6 attention kinds to 1,728 declarations. Red source refusal of unequal dimensions, green native host 13/13 CTests. Pinned Radiance 2.2 source-managed patch replay 23 edits, idempotent and byte-identical. Evidence: docs/evidence/2026-11-22-ltx03-cross-modal-attention/README.md. NOT actual GPU operation issue, FFN, full 48-block mixed run or TP1 parity; RUM14 production weight loader and LTX02 TP1 parity still open; LTX04 serving refusal retained.
+
 ## Change Log
 
 - 2026-11-22T03:06:36.091610+00:00 (created-by): Created by planning-audit
@@ -85,3 +87,4 @@ References: `docs/design/ltx25-iq8r-tp3.md`, `docs/design/ltx25-tp3-component-te
 - 2026-11-22T12:39:29.662317+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T12:40:04.410369+00:00 (updated-by): Updated: section:notes
 - 2026-11-22T13:15:18.299216+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T13:25:20.151741+00:00 (updated-by): Updated: section:notes
