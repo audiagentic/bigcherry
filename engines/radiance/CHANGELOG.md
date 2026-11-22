@@ -1,5 +1,12 @@
 # Changelog
 
+## [2020.1.0](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.0.1...bc-radiance-2020.1.0) (2026-11-22)
+
+
+### New and changed
+
+* **radiance:** engine-owned remote-MoE generation replaces the process-global registry (RUM06) ([#1272](https://github.com/audiagentic/bigcherry/issues/1272)) ([e8fea77](https://github.com/audiagentic/bigcherry/commit/e8fea775d7c948a0c17147b5861e629a21e2ab2c))
+
 ## [2020.0.1](https://github.com/audiagentic/bigcherry/compare/bc-radiance-2020.0.0...bc-radiance-2020.0.1) (2026-11-22)
 
 
