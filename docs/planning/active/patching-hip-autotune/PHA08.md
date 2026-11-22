@@ -13,6 +13,46 @@ work: L
 
 # HIP Flash-Attention D=72 VLM aperture violation: root-cause before fallback (#28608/#28664)
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP66: Bounded acceptance / terminal disposition. Source-bounded action/stop rule: Reproduce b11474 on 1x/2x gfx1100 with D=64/72/80 and 1024-2560px; record exact tensor ne/nb, allocation and last-byte access. No reproduction after full stress matrix -> close without patch. Reproduced fault -> localize first bad access/lifetime, then only a minimal fix or compile-verified HIP+CLIP+D72 matmul fallback. Safety requires 20 high-resolution repetitions, parity, graph/multi-request tests; kernel performance promotion requires >=5% measured VLM encode gain over safe fallback and <=2% healthy-control regression. Otherwise document blocked or safe fallback. No tail-guard experiment absent contradictory runtime evidence. See docs/planning/completed/patching-bc-optimizations/BCOP66.md for the complete source/shape/negative case and evidence. PHA08 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Description and 2026-10-08 disposition
 
 **Current baseline: llama.cpp b11474, commit b9acf138.** The previous b11402 and 050439614 baselines are historical, not current. Issue #28608 remains open (updated 2026-09-10); PR #28664 closed unmerged. Current upstream master and pinned b11474 have byte-identical ggml/src/ggml-cuda/fattn-tile.cuh; neither pinned nor current tools/mtmd/clip.cpp has the proposed D=72 HIP fallback. There is no established BigCherry b11474 reproduction, fix, or measured improvement.
@@ -65,3 +105,4 @@ PHA08 is authoritative. BCOP25 is superseded; BCOP66 tracks only the remaining b
 - chg_20260911_225756_added-six-provenance-rich-buil_2622
 - 2026-09-11T22:57:56.719160+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-05T04:55:02.911053+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:27:34.714574+00:00 (updated-by): Updated: section:notes

@@ -70,6 +70,8 @@ References: https://github.com/ggml-org/llama.cpp/issues/21948 ; https://github.
 
 2026-10-06 - after the range-aware fusion edits and the guard-collision fix (65ffcaea), build b-moerange-b11402s: CPU 432/432; GPU bands 1 / 2-4 / 8-9 / 33 / 300 tokens: 720 / 1440 / 1152 (+288 declined) / 432 (+288) / 432 (+288) ok, 0 fail. The op test does not exercise the fused gate+up+GLU launches; those are covered end to end by MET04 (fidelity 21/24, TV 0.113 and 0.078, decode equal to the row split). b-moerange-b11402q failed on the guard collision and b-moerange-b11402r on a clang bus error (compiler crash, unrelated to the code).
 
+2026-11-22 owner handoff from decision-only BCOP29: Actions. Source-bounded action/stop rule: 1. Implement/mock MET02 Phase A on the current pin: CPU/reference `ggml_mul_mat_id_range` semantics plus boundary/full-range/inactive-lane tests. Do not add GPU compaction yet. 2. Confirm current native `MUL_MAT_ID` precision and MMQ J/tail ownership (#29911 and #27792/#29941/#29953 lineage) and reuse it rather than copying formulas into 1281. 3. Build the CPU reference/tests; then add the correctness-only HIP range path at the existing expert-ID grouping ownership boundary and build gfx1100/gfx1201. 4. Record expected versus observed active rows and transfer/work accounting before accepting any timing result. 5. Only if correctness-only range execution is clean, prototype compact grouped `(output_lane, local_expert)` execution using existing grouping/workspace. Remove the prototype if MET02's rejection gate fires. 6. Hand any proven architecture/density crossover to HIP-autotune; do not leave a second dispatch table in 1281. See docs/planning/completed/patching-bc-optimizations/BCOP29.md for the complete source/shape/negative case and evidence. MET02 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## 2026-10-05 implementation audit
 
 Repository fact: no `patches/1281_moe_mul_mat_id_range/` implementation exists on the current live branch; this is still a design item. Therefore the first deliverable must be a correctness-only CPU/reference implementation plus backend-op tests, not a speculative HIP compaction kernel.
@@ -195,3 +197,4 @@ MET01 supplies placement/range ownership. MET03 consumes this primitive for tier
 - chg_20261006_061542_experimental-expert-parallel-t_6967
 - 2026-10-06T06:15:46.589711+00:00 (updated-by): Updated: section:ledger-events
 - 2026-10-06T07:14:51.471850+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:34:00.609200+00:00 (updated-by): Updated: section:notes

@@ -13,8 +13,6 @@ work: L
 
 # 3-GPU (2x XTX + R9700) AllReduce: adaptive root3/RCCL hybrid for models that need three cards
 
-> Current disposition (2026-10-09): root3/1276 remains untested; QFP01/1291 already owns the validated 3-rank CPU-root production alternative. See authoritative audit below. Historical steps are retained for provenance, not as an active queue.
-
 ## Description
 
 Goal (owner): run larger models / larger variants that need three cards (2x 7900 XTX gfx1100 + R9700 gfx1201, 80 GB VRAM) as fast as possible, combining RCCL with BigCherry's host-pipeline optimisations. Baseline measured on Qwen3.8-27B Q8_0 across 3 GPUs (ab-3g-allreduce, 6 balanced rounds): RCCL tg512 91.8 / pp4096 1098; 1244 root3 decode +2.0% (tg512) / +3.4% (tg2048) vs RCCL but prefill -68% (root3 has no large-message path, same as `none`). So the target is the same hybrid as dual XTX: root3/host for small (decode) reductions, RCCL for large (prefill).
@@ -65,6 +63,8 @@ The 3-GPU Q8_0 27B runs slower than the dual-XTX host path (tg512 95.5), so Q8_0
 
 2026-10-04 status: realised for Flash-Next by patch 1291_ar_cpu_root (--allreduce cpu-root): CPU-root one-shot AR for <= 64 KiB f32 messages on 3 GPUs (2x XTX + R9700), RCCL above; +5-7% decode vs RCCL, prefill unchanged; the large-message host path lost to RCCL and is off. Detail and follow-ups in patching-qwen-flash-next QFP01. Remaining scope here: generalising the adaptive root/RCCL policy to other models.
 
+2026-11-22 owner handoff from decision-only BCOP97: Bounded action / terminal. Source-bounded action/stop rule: First use existing 1276 composition tests plus a host admission/alias fixture; then require actual three-card CPU-root bottleneck evidence before a **single isolated** RCCL/CPU-root/root3 A/B. Cover 10/20/64/80/120 KiB and >=1 MiB, rank roots 0/1/2, repeated graph replay, inactive shards, MTP and long context; verify actual provider completion, rank/byte work, correctness and no hang. Four sessions x >=10 ABBA pairs; CI95-low >=3% E2E decode over CPU-root, no prefill/control regression beyond PGC10 limits. If bottleneck absent or gates fail, close 1276/PGC10 and retain validated 1291+RCCL. No new provider registry, calibration cache or experiment queue. See docs/planning/completed/patching-bc-optimizations/BCOP97.md for the complete source/shape/negative case and evidence. PGC10 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## 2026-10-09 authoritative audit: N=3 root3 is experimental; CPU-root already owns the deployed fast path
 
 **Disposition:** Keep PGC10 as the N=3 *alternative-provider qualification* owner, not a second production AllReduce dispatcher. Patch 1276 remains `untested` and **not promoted**. QFP01/validated patch 1291 already supplies the measured three-rank exact-F32 CPU-root small-message path and RCCL fallback; do not reimplement its worker, epochs, graph lifetime, or provider selection. GP11/1244 owns the root3 kernel/protocol. PGC09 owns the validated dual-gfx1100 adaptive default; PGC12 owns phase-aware routing. The historical Steps above are superseded by this gate; no new experiment is queued by this audit.
@@ -105,3 +105,4 @@ The 3-GPU Q8_0 27B runs slower than the dual-XTX host path (tg512 95.5), so Q8_0
 - 2026-09-30T06:29:06.022444+00:00 (updated-by): Updated: section:notes
 - 2026-09-30T14:44:36.752908+00:00 (updated-by): Updated: section:notes
 - 2026-10-03T15:21:51.445491+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:31:31.179415+00:00 (updated-by): Updated: section:notes

@@ -11,6 +11,46 @@ work: M
 
 # HIP Q3_K MMVQ VDR2 packed-scale integer dot — source/route admission
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP296: Unsectioned source gate. Source-bounded action/stop rule: **Discovery:** Merged llama.cpp [#30517](https://github.com/ggml-org/llama.cpp/pull/30517) introduces Q3_K VDR=2 with two adjacent integer-dot chunks and shared packed-scale extraction. The pinned b11552 path is VDR=1. The upstream R9700 gfx1201 width1 Q3_K kernel 40.7 -> 28.2 us and Qwen3.5-4B Q3_K_S tg128 135.2 -> 142.1 t/s are **external measurements**, not BigCherry gains. The upstream generic two-row tile does **not** apply to RDNA. Host integer/scale mapping passed 16,384/16,384 comparisons; synthetic F32 grouping was non-bit-identical in 2,394/4,096 cases. No HIP/GPU build or BigCherry benchmark. **Owner/consolidation:** [PRBE116](../patching-rdna-boost-experiments/PRBE116.md) owns Q3_K VDR2 only. Reuse 0600/0650 geometry/forced dispatch, stock Q8_1 producer and existing validation contracts; keep PKC05 Q2_K, rejected 1204 Q6_K, QFP10 IQ MMVQ, 1241/1274 F32 activation and RAD06 helpers separate. No new global selector, allocator, scheduler, profiling system, patch or hardware queue. **12-hour gate:** selected `feat/rad06-profile2` from independent `a80aa61e` (2026-10-18 04:10 UTC). Visible commits/PRs since 2026-10-17 18:10 UTC advance RAD06 helper GEMV/WMMA/AHALF/VECIO/repl See docs/planning/completed/patching-bc-optimizations/BCOP296.md for the complete source/shape/negative case and evidence. PRBE116 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Decision (2026-10-20 UTC; BCOP340)
 
 **PENDING / NO PATCH OR GPU QUEUE.** A distinct, dormant Q3_K dense MMVQ kernel capability has new upstream implementation and measured external AMD-adjacent evidence, but **no first-party BigCherry executed Q3_K critical-path receipt**. First establish the exact route and exposed cost; do not port on the strength of NVIDIA/gfx1151 numbers. This item alone owns Q3_K VDR2/packed-scale *dot-body* qualification. Existing 0600/0650 owns MMVQ geometry and its only forced-instance bridge. QFP10 owns MoE Q4_K, PRBE111/1273 owns IQ, PRBE47 Q6_K reductions, QFP44/0300 owns MMQ; none is a second Q3_K owner.
@@ -49,3 +89,7 @@ work: M
 - `RAD14/RAD06/RCS05/06`, Radiance 1.9.0 bump: protected active independent work, no shared edits or hardware queues.
 
 Source references: [pinned vecdotq.cuh](https://github.com/ggml-org/llama.cpp/blob/23b0202a189c44a54625aadcb37a946dd1d6278/ggml/src/ggml-cuda/vecdotq.cuh), [pinned mmvq.cu](https://github.com/ggml-org/llama.cpp/blob/23b0202a189c44a54625aadcb37a946dd1d6278/ggml/src/ggml-cuda/mmvq.cu), [#30517 diff](https://github.com/ggml-org/llama.cpp/pull/30517/files), [gfx1200/1201 Q3 discussion](https://github.com/ggml-org/llama.cpp/discussions/22663).
+
+## Change Log
+
+- 2026-11-22T05:25:26.215313+00:00 (updated-by): Updated: section:notes

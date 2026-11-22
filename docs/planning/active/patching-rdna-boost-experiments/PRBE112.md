@@ -13,6 +13,46 @@ work: M
 
 # Disposition of rejected RD39-42/1215: isolate MoE overlap from generic QKV scratch
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP88: Bounded next action / terminal. Source-bounded action/stop rule: First use static patch composition and a host graph/lifetime fixture to test native QKV unchanged plus MoE-only auxiliary event, including scratch growth/recapture and missing/overlapping join cases. If native code already suffices or alias-free replay cannot be proven, close PRBE112 without new patch. Only a safe narrow variant may proceed to gfx1100 then gfx1201 A/B against native+1216, with exact activation, full-vocab parity, four sessions and >=10 paired rounds/session, CI95-low >0%, <=1% dense regression. Do not schedule over existing lab queue. Host/source assertions 12/12 passed; no build, GPU, rocprof or new benchmark ran. See docs/planning/completed/patching-bc-optimizations/BCOP88.md for the complete source/shape/negative case and evidence. PRBE112 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Decision (2026-10-09; authoritative)
 
 **Keep 1215 rejected. Do not restore the four-part port or schedule another broad 1215 A/B.** Current pinned-source evidence reduces its unresolved performance question to a narrow, falsifiable **RD41 generic QKV scratch versus RD42 MoE-only overlap** boundary. Upstream has already absorbed the per-stream handle/workspace mechanism; a new RD39/RD40 implementation would duplicate it. PRBE112 is the only owner of any bounded rework/disposition. PRBE33/34 are completed/deprecated historical owners, not additional implementation queues. PRBE35/1216 is independently eligible as a join-fusion correctness guard on native concurrent regions and must not be changed under this item.
@@ -71,3 +111,7 @@ Promotion: frozen `improvement_no_regression_v1` (four independent sessions per 
 - 2026-10-09: implementation-level reconciliation supersedes the former broad "profile everything then rework RD39/40/41/42" steps; only the narrow discriminator above remains.
 - chg_20260925_232219_first-patch-promoted-to-the-pr_2756
 - 2026-09-25T23:22:33.660056+00:00 (updated-by): Updated: section:ledger-events
+
+## Change Log
+
+- 2026-11-22T05:30:48.450383+00:00 (updated-by): Updated: section:notes

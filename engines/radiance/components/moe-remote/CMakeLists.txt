@@ -58,9 +58,9 @@ set_target_properties(r3_moe_worker PROPERTIES HIP_STANDARD 17 HIP_STANDARD_REQU
   RUNTIME_OUTPUT_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}/helpers)
 
 # Remote-MoE mailbox: its own plugin, for both card families, so the hand-off runs beside libr3 on the XTX ranks
-# and beside libr4d on an R9700 engine. Engine patch rad0002 declares the device ops and exports the extension point
-# bc_moe_remote_register; the hook resolves it dynamically so schema/selftest loaders keep no hard dependency on the
-# engine core.
+# and beside libr4d on an R9700 engine. Engine patch rad0002 declares the device ops and opens one generation per engine
+# through the factory this plugin exports (bc_moe_remote_plugin_open, found with dlsym on the plugin's own handle), so
+# schema/selftest loaders keep no dependency on the engine core and loading the library starts nothing.
 rad_add_plugin(libr3moe kernels
   SOURCES     ${CMAKE_CURRENT_SOURCE_DIR}/moe_mailbox_plugin.cpp ${CMAKE_CURRENT_SOURCE_DIR}/moe_remote_hook.cpp
   # BU01: inverse-map device kernel is isolated so edits do not rebuild the
@@ -87,6 +87,55 @@ if(BUILD_TESTING)
     set_target_properties(${name} PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
     add_test(NAME ${name} COMMAND ${name})
   endforeach()
+  # Registry enumerates kernel rows before Engine group/helper binding.
+  # Rows remain fixed while runtime eligibility is bound per generation.
+  add_executable(r3_moe_mailbox_lifetime_test EXCLUDE_FROM_ALL
+    moe_mailbox_lifetime_test.cpp moe_mailbox_plugin.cpp)
+  target_include_directories(r3_moe_mailbox_lifetime_test PRIVATE ${RADIANCE_SRC}/abi)
+  target_compile_definitions(r3_moe_mailbox_lifetime_test PRIVATE
+    R3MOE_TARGETS="${r3moe_targets_csv}")
+  set_target_properties(r3_moe_mailbox_lifetime_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_moe_mailbox_lifetime_test COMMAND r3_moe_mailbox_lifetime_test)
+  # The bounded layer-map consumption wait (alive-but-never-consuming helper; sticky fault; teardown not blocked).
+  add_executable(r3_layer_map_wait_test EXCLUDE_FROM_ALL layer_map_wait_test.cpp)
+  target_include_directories(r3_layer_map_wait_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_layer_map_wait_test PRIVATE Threads::Threads)
+  set_target_properties(r3_layer_map_wait_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_layer_map_wait_test COMMAND r3_layer_map_wait_test)
+  # The helper registration barrier with fake helpers (late valid, never registers, dies) and its deadline source.
+  add_executable(r3_helper_registration_test EXCLUDE_FROM_ALL helper_registration_test.cpp)
+  target_include_directories(r3_helper_registration_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_helper_registration_test PRIVATE Threads::Threads)
+  set_target_properties(r3_helper_registration_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_helper_registration_test COMMAND r3_helper_registration_test)
+  # Closing a generation: refuse new borrows, cancel the borrowers' waits, wait for them, then free (real seal wait).
+  add_executable(r3_hook_retire_test EXCLUDE_FROM_ALL hook_retire_test.cpp)
+  target_include_directories(r3_hook_retire_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_hook_retire_test PRIVATE Threads::Threads)
+  set_target_properties(r3_hook_retire_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_hook_retire_test COMMAND r3_hook_retire_test)
+  # The production close orchestration and the direct drain wait with two paused borrowers and a clean close.
+  add_executable(r3_generation_close_test EXCLUDE_FROM_ALL generation_close_test.cpp)
+  target_include_directories(r3_generation_close_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_generation_close_test PRIVATE Threads::Threads)
+  set_target_properties(r3_generation_close_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_generation_close_test COMMAND r3_generation_close_test)
+  # The identity of the one live hook (serial handles; stale / foreign / address-reuse refused). Pure host code.
+  add_executable(r3_hook_identity_test EXCLUDE_FROM_ALL hook_identity_test.cpp)
+  target_include_directories(r3_hook_identity_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR})
+  target_link_libraries(r3_hook_identity_test PRIVATE Threads::Threads)
+  set_target_properties(r3_hook_identity_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+  add_test(NAME r3_hook_identity_test COMMAND r3_hook_identity_test)
+  # The explicit factory bind against the real libr3moe, through the engine's own generation code (rad0002). Host-only.
+  if(EXISTS "${RADIANCE_SRC}/core/place/bc_moe_remote.cpp")
+    add_executable(r3_moe_factory_bind_test EXCLUDE_FROM_ALL
+      moe_factory_bind_test.cpp ${RADIANCE_SRC}/core/place/bc_moe_remote.cpp)
+    target_include_directories(r3_moe_factory_bind_test PRIVATE ${RADIANCE_SRC}/abi)
+    target_link_libraries(r3_moe_factory_bind_test PRIVATE ${CMAKE_DL_LIBS} Threads::Threads)
+    set_target_properties(r3_moe_factory_bind_test PROPERTIES CXX_STANDARD 17 CXX_STANDARD_REQUIRED ON)
+    add_dependencies(r3_moe_factory_bind_test libr3moe)
+    add_test(NAME r3_moe_factory_bind_test COMMAND r3_moe_factory_bind_test $<TARGET_FILE:libr3moe>)
+  endif()
   # Keep the declared, card-free large-K geometry/admission target bounded.
   set_tests_properties(r3_gemv_geometry_test PROPERTIES TIMEOUT 60)
   # The typed policy and forced-schedule settings come from the manifest's generated types (bc_serving_v2's headers).

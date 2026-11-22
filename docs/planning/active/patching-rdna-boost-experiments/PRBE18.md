@@ -13,6 +13,45 @@ priority: P3
 
 # PRBE18 — Qwen3.5 GDN pre-scan fusion: reject stale 16-node port, qualify only residual work
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP127: Bounded action / terminal gate. Source-bounded action/stop rule: Consume existing Qwen3.5-27B GDN graph/rocprof receipts. Verify actual post-scheduler Q/K/V alias edges and native fusion hit counts; reject if no residual or <2.9126% exposed E2E wall, otherwise qualify exactly one narrower default-off candidate with full recurrent/MTP/graph/no-P2P correctness and >=3% CI95-low E2E, <=1% controls. Missing trace = BLOCKED_ON_GRAPH_TRACE; no new hardware queue while active lanes run. Technical design and tests belong in PRBE18. See docs/planning/completed/patching-bc-optimizations/BCOP127.md for the complete source/shape/negative case and evidence. PRBE18 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 ## 2026-10-19 b11552 kernel audit — paired GDN Q/K L2 normalization (BCOP330)
 
@@ -77,3 +116,7 @@ priority: P3
 ### Provenance and historical correction
 
 Historical RD24/PRBE18 proposed a 16-op fused SSM pre-scan, a `1235` Q8_1-cache dependency and a hard-coded matcher around b11126. The 2026-10-08 triage already made this trace-gated and separate from Flash-Next. This audit replaces its still-incorrect linear-chain, alpha/beta norm, stale cache and launch-count assumptions with b11474 source semantics. No patch, test suite, build or GPU benchmark was run as part of the audit.
+
+## Change Log
+
+- 2026-11-22T05:17:10.989403+00:00 (updated-by): Updated: section:notes

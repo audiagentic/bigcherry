@@ -13,6 +13,46 @@ priority: null
 
 # RCCL admission gate: per-call candidate identity, not requested-plan identity
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP214: Unsectioned source gate. Source-bounded action/stop rule: **Discovery:** `rccl_qualify.py` includes channels in case identity/results but does not apply `case.channels` to the RCCL Tests command or compare observed channels in `_classify`; Ring/Simple with mismatched channels can still receive algorithm/protocol `PLAN_VERIFIED`. Patch 0830 observes the BigCherry provider, not the RCCL backend. This is an evidence-integrity risk, not a demonstrated GPU failure or measured speedup. **Authoritative owners:** PHA04 candidate-verification/admission; PHA03/1225 topology/AtomicOps guard; PHA05 promotion. RQ08/RQ10 retain campaign execution, 0830 telemetry and PGC09/PGC14 provider/performance. No new dispatcher, cache, communicator, registry or hardware queue. **New external mechanism:** ROCm/rocm-systems develop `05c6bb90` has buffer/op/graph-aware `rcclGetCollImplInfo`, but `RCCL_EXPOSE_STATIC` is required and a query is not dispatch proof. RCCL tuner plugins may silently fall back; do not treat requested values as executed candidates. **Unresolved action:** Host-only channel/plan-verification regression; inspect exact installed RCCL build/ABI in a crash-isolated probe; correlate one executed collective to an immutable candidate receipt. No can See docs/planning/completed/patching-bc-optimizations/BCOP214.md for the complete source/shape/negative case and evidence. PHA04 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Authoritative implementation audit — 2026-10-14, BigCherry b11552
 
 **Disposition: PENDING / OBSERVATION_BLOCKED. No positive level-2 RCCL candidate allowlist, runtime selector, or default promotion.** This is a documentation-only audit; no RCCL binary, GPU, BigCherry patch composition or repository pytest was run. PHA03's topology/AtomicOps safety admission is prerequisite, and PHA05 owns promotion. The existing 1225 fail-closed AtomicOps guard and 0840 provider paths must not be replaced.
@@ -68,8 +108,6 @@ The original assessment correctly identified that 0830 does not expose RCCL algo
 
 ## Ledger-events
 
-
-
 - chg_20260909_115759_created-and-populated-the-192_2958
 - 2026-09-09T11:58:00.848546+00:00 (updated-by): Updated: section:ledger-events
 - 2026-09-09T13:42:25.760165+00:00 (updated-by): Updated: section:description, section:steps, section:files, section:validation, section:acceptance_criteria
@@ -77,3 +115,4 @@ The original assessment correctly identified that 0830 does not expose RCCL algo
 - 2026-09-09T13:42:38.013204+00:00 (updated-by): Updated: section:ledger-events
 - chg_20260910_001436_completed-the-planning-rebasel_5794
 - 2026-09-10T00:14:42.356558+00:00 (updated-by): Updated: section:ledger-events
+- 2026-11-22T05:24:03.028301+00:00 (updated-by): Updated: section:notes

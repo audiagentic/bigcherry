@@ -88,9 +88,9 @@ Hardware: A/B at 8K/24K/98K + deep long-context, per-rank device timeline, expli
 
 ## Notes
 
-
-
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "MERGE proof obligations into RAD21/RHP12" was NOT applied; this item stays open. Why: docs/planning/active/patching-qwen-flash-next/QFP46.md:16-34 explicitly owns a llama.cpp Meta/target/draft critical-path DAG, trace join key and deterministic ordering tests, with independent lanes in :73-86. docs/planning/active/patching-radiance-rdna3/RAD21.md:16-34 owns intra-layer remote-helper chunk overlap, while docs/planning/active/patching-radiance-heat-placement/RHP12.md:16-28 owns placement baseline regression; neither covers llama.cpp Meta input/MTP/AllReduce event lifetimes. Active items that reference this one: QFP48, BCOP206, BCOP118, BCOP30. Keep QFP46's engine-specific prefill DAG, trace identity and event-lifetime oracle; Radiance can reuse proof patterns but cannot absorb the llama contracts.
+
+2026-11-22 final BCOP authority reconciliation (BCOP118 BCOP30 BCOP33): RPL01 and its additive placement scorer are superseded. For source-level trace evidence preserve monotonic epoch/device/stream identity, real overlapping kernel/copy/sync intervals, raw timestamps, unknown clock/counter values and host/device wait separation. No aggregate kernel-sum elapsed-time estimator, fabricated occupancy or second profiler. If qualified matched timeline unavailable, emit INSUFFICIENT_TIMELINE/UNKNOWN and do not promote a cross-engine cost model. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
 
 ## Parallel execution map (one slice/branch/PR per production mechanism)
 
@@ -107,3 +107,4 @@ BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed dis
 
 - 2026-10-08: Created after plan deduplication for Strata-style prefill concurrency and mock-contract coverage.
 - 2026-11-04T04:27:07.527821+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T06:45:54.429468+00:00 (updated-by): Updated: section:notes

@@ -12,6 +12,7 @@ thread_local int owner_id = 0;
 std::mutex gate_mu;
 std::condition_variable gate_cv;
 bool fail_peer = false;
+int fail_device = 1;   // the rank (device = rank + 1) whose peer enabling faults; the other holds until released
 bool held_peer = false;
 bool release_peer = false;
 
@@ -82,7 +83,7 @@ void r4d_ar_ipc_free(long address) { deallocate(address, false); }
 void r4d_ar_ipc_enable_peer(long) {
     if (!fail_peer) return;
     std::unique_lock<std::mutex> lock(gate_mu);
-    if (fake_hip_device == 1) {
+    if (fake_hip_device == fail_device) {
         gate_cv.wait(lock, [] { return held_peer; });
         throw std::runtime_error("peer enable fault");
     }
@@ -119,11 +120,17 @@ void test_unpublished() {
     }
 }
 
-void test_published() {
+// `bad` is the rank whose publication fails after both ranks published their peer addresses; `good` is the peer that
+// still holds them. Group, owners and device ordinals are per case so a failed slot cannot leak into the next case.
+void test_published(int group, int owner_a, int owner_b, int owner_c, int bad) {
+    const int good = 1 - bad;
+    held_peer = false;
+    release_peer = false;
+    fail_device = bad + 1;
     fail_at = 0;
     fail_peer = true;
     const RadParam params[] = { RAD_STR("dtype", "bf16"), RAD_INT("numel", 128),
-                               RAD_INT("tp_group", 55) };
+                               RAD_INT("tp_group", group) };
     int status[2]{};
     void* instance[2]{};
     auto start_rank = [&](int rank, int owner) {
@@ -133,22 +140,24 @@ void test_published() {
             status[rank] = r4d_rad_ar_init(params, 3, rank, 2, &instance[rank]);
         });
     };
-    auto first = start_rank(0, 91);
-    auto second = start_rank(1, 91);
-    first.join();
-    assert(status[0] == RAD_E_DEVICE && !instance[0]);
+    auto first = start_rank(0, owner_a);
+    auto second = start_rank(1, owner_a);
+    auto& failing = bad == 0 ? first : second;
+    auto& holding = bad == 0 ? second : first;
+    failing.join();
+    assert(status[bad] == RAD_E_DEVICE && !instance[bad]);
     assert(live_count() == 8);  // The other rank still holds the published peer address.
 
     int retired = 0;
     void* other_slot = nullptr;
-    owner_id = 92;
+    owner_id = owner_b;
     assert(rad_bc_shared_slot("test.other-owner", sizeof(int), alignof(int), nullptr,
                               &other_slot, nullptr, 0) == RAD_OK);
     assert(rad_bc_defer_rank_cleanup(other_slot, &retired, [](void* ptr) {
         ++*static_cast<int*>(ptr);
     }) == RAD_OK);
     owner_id = 0;
-    rad::bc_shared_slot_retire_owner(92);
+    rad::bc_shared_slot_retire_owner(owner_b);
     assert(retired == 1 && live_count() == 8);
 
     {
@@ -156,19 +165,29 @@ void test_published() {
         release_peer = true;
     }
     gate_cv.notify_all();
-    second.join();
-    assert(status[1] == RAD_E_STATE && !instance[1]);
+    holding.join();
+    assert(status[good] == RAD_E_STATE && !instance[good]);
     assert(live_count() == 8);
-    rad::bc_shared_slot_retire_owner(91);
+    // The failed slot is not reused: another init in the same group by the same engine is refused with no allocation
+    // and no change to what the peers still hold.
+    {
+        void* again = nullptr;
+        owner_id = owner_a;
+        fake_hip_device = 5;
+        assert(r4d_rad_ar_init(params, 3, 0, 2, &again) == RAD_E_STATE && !again && live_count() == 8);
+        owner_id = 0;
+        fake_hip_device = 0;
+    }
+    rad::bc_shared_slot_retire_owner(owner_a);
     assert(live_count() == 0 && fake_hip_device == 0);
-    rad::bc_shared_slot_retire_owner(91);
+    rad::bc_shared_slot_retire_owner(owner_a);
     assert(live_count() == 0);
 
     // A replacement engine can reuse the group and its ranks. Its successful instances
     // transfer to the ordinary fini path with no outstanding retirement callback.
     fail_peer = false;
-    auto replacement_first = start_rank(0, 93);
-    auto replacement_second = start_rank(1, 93);
+    auto replacement_first = start_rank(0, owner_c);
+    auto replacement_second = start_rank(1, owner_c);
     replacement_first.join();
     replacement_second.join();
     assert(status[0] == RAD_OK && status[1] == RAD_OK);
@@ -177,11 +196,12 @@ void test_published() {
         fake_hip_device = rank + 1;
         r4d_rad_ar_fini(instance[rank]);
     }
-    rad::bc_shared_slot_retire_owner(93);
+    rad::bc_shared_slot_retire_owner(owner_c);
     assert(live_count() == 0);
 }
 
 int main() {
     test_unpublished();
-    test_published();
+    test_published(55, 91, 92, 93, 0);   // the first rank fails, the second holds its published addresses
+    test_published(56, 94, 95, 96, 1);   // the second rank fails after the first published
 }

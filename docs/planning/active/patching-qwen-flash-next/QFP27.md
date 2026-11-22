@@ -130,9 +130,9 @@ Performance gate: adopt pinned backing only for >=5% median prefill or TTFT impr
 
 ## Notes
 
-
-
 BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): QFP24: Move the QFP24 pinned-memory cost gate, every-child completion, cap, overwrite/wrap tests and fallback obligations into QFP27/1326; leave the historical private ring rejected.
+
+2026-11-22 owner handoff from decision-only BCOP182: Unresolved action / terminal gate. Source-bounded action/stop rule: Use existing 1325/1326 instrumentation to prove large-input prefill cost >=1 ms AND >=3% wall on the exact pin. Otherwise close. If positive, implement only within 1326: <=64 MiB scheduler-owned pinned slots, every Meta child completion joined before reuse, fail-closed pageable/synchronous fallback before partial submission, 10,000-generation host lifetime tests, multi-request/ubatch/MTP/logits/KLD and four paired hardware sessions. Promote >=5% median prefill/TTFT, CI95-low>0, <=2% decode regression, zero stale generations; otherwise reject/retire. Do not queue competing hardware work. See docs/planning/completed/patching-bc-optimizations/BCOP182.md for the complete source/shape/negative case and evidence. QFP27 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
 
 ## Fresh upstream mechanism
 
@@ -220,3 +220,4 @@ QFP16, QFP24, MET06, QFP22. QFP27 should be closed once the lifetime protocol is
 
 **Evidence:** 10/10 actual 1326-source assertions, 7/7 host-model tests and Python compilation passed. No repository pytest, HIP build, GPU run, RSS measurement or new benchmark. Existing v5c measured +9.4% decode ~8K, +7.8% ~64K; unsafe-source prefill gains were withdrawn and staged v5c prefill was -2.3%/-2% before the 4 MiB cap. None measures this proposed scratch correction.
 - 2026-11-04T04:12:16.546848+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T05:22:20.153786+00:00 (updated-by): Updated: section:notes

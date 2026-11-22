@@ -39,23 +39,24 @@ struct BcMoeRemoteDiag {
         const auto& c = m.c;
         const auto& g = m.g;
         const auto& w = m.w;
-        if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
+        if (!bc_moe_remote_wanted_upto(g.bc_remote, g.max_tok)) return RAD_OK;
         if (!bc_moe_remote_diag_build()) {
             std::fprintf(stderr, "radiance: the MoE block was built with BC_MOE_REMOTE_DIAG but the engine core was "
                                  "not; build both with the diagnostic flag\n");
             return RAD_E_INVAL;
         }
         shadow = rw(b, RAD_OP(b, "moe_mailbox_shadow",
-                              RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
+                              RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(g.bc_remote)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                         RAD_INT("top_k", c.top_k)),
                               RAD_NOWEIGHTS),
                     {w.sorted, w.edn, w.ew}, {w.edn});
         mask_capture = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
-                                    RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                    RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(g.bc_remote)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
                                                RAD_INT("top_k", c.top_k), RAD_INT("restore", 0)),
                                     RAD_NOWEIGHTS),
                           {w.sorted, w.edn}, {w.edn});
         mask_restore = rw(b, RAD_OP(b, "moe_mailbox_mask_ref",
-                                    RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                                    RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(g.bc_remote)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
                                                RAD_INT("top_k", c.top_k), RAD_INT("restore", 1)),
                                     RAD_NOWEIGHTS),
                           {w.sorted, w.edn}, {w.edn});
@@ -64,7 +65,7 @@ struct BcMoeRemoteDiag {
                          layer, shadow != 0, mask_capture != 0, mask_restore != 0);
             return RAD_E_INVAL;
         }
-        if (bc_moe_remote_shadow() && reg.size() < (size_t)c.n_expert) {
+        if (bc_moe_remote_shadow(g.bc_remote) && reg.size() < (size_t)c.n_expert) {
             std::string pl;
             for (int64_t e = 0; e < c.n_expert; ++e)
                 if (std::find(reg.begin(), reg.end(), e) == reg.end())
@@ -79,8 +80,8 @@ struct BcMoeRemoteDiag {
     template <class Moe>
     void after_down(RadCtx* c_, const Moe& m, const BcMoeRemote& base, int64_t T, int64_t r0, int64_t rows,
                     const RadOperand& ecnt) const {
-        const bool mask_only = base.active(T) && bc_moe_remote_mask_only();
-        const bool compare = base.policy(T) && bc_moe_remote_shadow();
+        const bool mask_only = base.active(T) && bc_moe_remote_mask_only(base.gen);
+        const bool compare = base.policy(T) && bc_moe_remote_shadow(base.gen);
         const auto& c = m.c;
         const auto& g = m.g;
         const auto& w = m.w;

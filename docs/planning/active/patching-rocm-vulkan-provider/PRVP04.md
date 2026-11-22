@@ -11,6 +11,46 @@ priority: P2
 
 # Vulkan Q4_0 KV fused dequant-transpose: prefill-only admission (upstream #30738)
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP295: Unsectioned source gate. Source-bounded action/stop rule: **Discovery:** Open upstream llama.cpp [#30738](https://github.com/ggml-org/llama.cpp/pull/30738) (2026-10-17) adds a Q4_0 dequant+transpose SPIR-V variant and pipeline registration for the existing Vulkan FA scratch path. BigCherry b11552 only has Q8_0. The pinned path requires **Q rows >=64**, quantized dense K and V, both transpose pipelines, buffer-range capacity and !coopmat2. Thus the PR's GCN1 tg128 improvement is not proven to arise from this shader for ordinary n=1 decode. External pp512 gain is not BigCherry gfx1100/gfx1201 evidence. **Owner/consolidation:** PRVP04 owns this one Vulkan FA shader admission; PKC04's completed lifecycle ownership is unchanged, PRVP02 retains CM1 safety, TRVP12/13/14/15 provide shared identity/route/replay, RRVP02 preserves the user-directed Vulkan implementation pause. HIP RNX02, PRBE54 and QFP04 are separate kernels. No new selector, allocator, cache, dispatch table, local patch or hardware job. **Branch/exclusion:** Selected independently active `feat/rad06-profile2` at `a80aa61e45fcb7b87dc1e68306064169d18ead5e` (Audumla, 2026-10-18 04:10:39 UTC), later independent than main's `c06dd0a9` (04:08:34 UTC); main's later BCOP294 merge was sched See docs/planning/completed/patching-bc-optimizations/BCOP295.md for the complete source/shape/negative case and evidence. PRVP04 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Decision and ownership (2026-10-18)
 
 **Plan only; no implementation or Vulkan hardware queue while RRVP02's 2026-09-10 pause applies.** PRVP04 owns only the Q4_0 K/V dequant+transpose shader and its activation/performance disposition. This is a newly identified native Vulkan attention implementation boundary, not a second Vulkan dispatcher, cache, scheduler, allocator, or tuning registry. PKC04 is a completed lifecycle *ownership* decision; PRVP02 owns unrelated CM1 MMQ A-prefetch bounds; TRVP12/13/14/15 and RRVP02 own shared provider identity, executed-route attestation, replay, and future qualification. HIP RNX02/1300, PRBE54/1271 and QFP04/1295 are separate dense Q8 vector, HIP Q5 staging, and sparse-QSA paths: do not borrow their measurements or edit them.
@@ -45,3 +85,7 @@ priority: P2
 - https://github.com/ggml-org/llama.cpp/pull/25494 (earlier Q8_0 fused transpose mechanism)
 - https://github.com/vllm-project/vllm/blob/main/vllm/v1/attention/backends/rocm_attn.py (non-equivalent FP8/paged-KV comparison)
 - RRVP02 pause; TRVP12 runtime adapter; TRVP13/14/15 replay/route/candidate qualification; PKC04 closed ownership decision; PRVP02 separate CM1 safety. No neighbouring protected plan or patch was edited.
+
+## Change Log
+
+- 2026-11-22T05:25:05.063173+00:00 (updated-by): Updated: section:notes

@@ -1,0 +1,19 @@
+{
+  "change-class": "feature",
+  "event-id": "chg_20261122_073140_remote-moe-helper-state-is-now_8519",
+  "files": [
+    "engines/radiance/patches/rad0002_moe_remote_handoff/patch.py",
+    "engines/radiance/components/moe-remote/moe_remote_hook.cpp",
+    "engines/radiance/components/moe-remote/hook_identity.h",
+    "engines/radiance/components/moe-remote/generation_close.h",
+    "docs/evidence/2026-11-22-rum06-lifetime-audit/README.md",
+    "docs/planning/completed/patching-radiance-upstream/RUM06.md"
+  ],
+  "plan-item-ids": [
+    "RUM06"
+  ],
+  "status": "unreleased",
+  "technical-summary": "Closed RUM06. PR 1272 replaced the process-global remote-MoE registry, DSO constructor registration, TLS-selected owner and DSO-global hook state with one opaque engine-owned generation: explicit factory bind, serial handles with a lifetime borrow, owner-bound mailbox init, failure-atomic factory, derived startup/readiness/quiesce deadlines, and a clean-stop path that never interrupts a healthy ledger against a fault path that poisons and wakes peers. Three independent reviews drove fixes; host lifecycle suites pass under ASan/UBSan; card runs on the lane build (clean stop on flashnext-4gpu and qwen27b-tp3, helper kill takes the fault path and restarts cleanly, second engine refused, greedy output identical to the installed 2020.0.1) are recorded. Bound-ahead stop on hardware and an installed candidate are not yet proven.",
+  "timestamp-utc": "2026-11-22T07:31:40.242354Z",
+  "user-summary-candidate": "Remote MoE helper state is now owned by each engine generation instead of the process, so stopping and restarting engines, or a helper failure, no longer leaves shared global state behind."
+}

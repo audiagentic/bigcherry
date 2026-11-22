@@ -10,7 +10,50 @@ created-by: agent
 priority: P1
 work: M
 ---
+
 # RD07 Q6_K MMQ scale fold — b11552 source and admission gate
+
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP211: Unsectioned source gate. Source-bounded action/stop rule: **Discovery/change:** 1267's Q6_K dispatch-marker and `mmq.cuh` J-max anchors no longer exist on pinned b11552; 0300 now chooses forced J before activation padding. Repository `engines/llamacpp/dispositions/1267_*.json` already marks `known_broken`. PRBE04 still claimed PRBE110 had not delivered the package despite b11126 hardware receipts. Archived gfx1201 pp512 +2.4675% CI95 [2.2776,2.6508], but validation record remains incomplete/ineligible despite a contract-pass field; no new GPU measurement. **Owner/consolidation:** PRBE110/1267 owns the one patch and architecture gate. PRBE04 owns PEF01/HI71 safety and final acceptance. 0300 owns J/eligibility; 1006 owns Q6_K codegen. No new MMQ dispatcher, J knob, allocator, scheduler, cache, telemetry or hardware queue. Existing Radiance RAD02/RAD03/RAD04 work untouched. **12-hour/novelty:** selected branch `feat/rad03-gpu-lanes`, independent HEAD `42388e880e089668db3c4fdbf1ff7aeb25ef62b3` (2026-10-14 13:43 UTC). Latest independent PRBE110/PRBE04 plan change 2026-10-08; 1267 relocation 2026-10-09; no independent related work/PR/queue in preceding 12 hours. BCOP190–210 do not own Q6_K scale-fold. **Unresolved action:** first prove executed See docs/planning/completed/patching-bc-optimizations/BCOP211.md for the complete source/shape/negative case and evidence. PRBE110 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
+2026-11-22 final BCOP authority reconciliation (BCOP115): 1267 Q6_K MMQ subscale-fold is known_broken/untested on b11552; first prove a real current-pin Q6_K route and >=3% exposed opportunity, then compose existing 0300/1006 and validate J padding/allocation plus PEF01/HI71. Old b11126 +2.4675% gfx1201 cannot qualify a new source. If no relevant route/ceiling, close 1267 unpromoted, with no second Q6_K J/selector patch. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
 
 ## Authoritative decision (2026-10-14)
 
@@ -50,3 +93,8 @@ References: https://github.com/ggml-org/llama.cpp/blob/master/ggml/src/ggml-cuda
 ## Terminal disposition
 
 Keep `pending` until Gate 0. Outcomes: `NO_RELEVANT_Q6K`, `NO_EXPOSED_GAIN`, `SOURCE_REBASE_BLOCKED`, `SAFETY_OR_NUMERIC_FAIL`, `NO_VALIDATED_GAIN`, `NOT_PRODUCTION_RELEVANT`, or `PROMOTABLE`. No new patch, hardware experiment, scheduler, cache, allocator, dispatcher or telemetry system was created by this audit.
+
+## Change Log
+
+- 2026-11-22T05:23:21.770716+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T06:45:50.153211+00:00 (updated-by): Updated: section:notes

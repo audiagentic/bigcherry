@@ -111,6 +111,22 @@ if(LTX_NATIVE_CORE_LIB)
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c05)
     add_test(NAME ltx_c06_real_self_attention_graph
       COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06)
+    # Frozen Radiance loader geometry on the real C06 self-attention weights.
+    # Identifies relayouts that the next issued-GPU test must not bypass.
+    add_test(NAME ltx_c06_native_weight_share_contract
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06-weights)
+    # Actual native per-rank Builder instance construction. The host
+    # collective rendezvous requires concurrent finish on all ranks.
+    # No checkpoint weights are loaded or inference issued by this gate.
+    add_test(NAME ltx_c06_native_instance_rendezvous
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06-instances)
+    set_tests_properties(ltx_c06_native_instance_rendezvous PROPERTIES TIMEOUT 90)
+    # Host-linked binary must reject the opt-in native AQL flag, before
+    # creating any rank or device instance.
+    add_test(NAME ltx_c06_aql_refuses_host_backend
+      COMMAND ltx_c02_lin_declare_test "${LTX_IQ8R_MODEL}" "${_ref_dir}" --c06-instances-aql)
+    set_tests_properties(ltx_c06_aql_refuses_host_backend
+      PROPERTIES WILL_FAIL TRUE TIMEOUT 20)
 
     # LTX02's first actually-issued native RadCtx gate: reuse the real
     # patched arch source, host backend, model and reference registry.
@@ -204,6 +220,19 @@ if(LTX_NATIVE_CORE_LIB)
         "${_hip_build_root}/vendor/librad_vendor_ryml.a"
         PkgConfig::LTX02_FFMPEG
         dl pthread)
+      # C06 reuses the exact C05 native HIP/AQL core and kernel registry.
+      # There is no second AQL build recipe or launcher. Lease-gated:
+      # never auto-run this binary as a CTest.
+      add_executable(ltx_c06_instancing_aql_test ltx_c02_lin_declare_test.cpp)
+      target_compile_features(ltx_c06_instancing_aql_test PRIVATE cxx_std_23)
+      target_compile_definitions(ltx_c06_instancing_aql_test PRIVATE __HIP_PLATFORM_AMD__=1)
+      get_target_property(_ltx02_aql_includes ltx_c05_issued_aql_test INCLUDE_DIRECTORIES)
+      get_target_property(_ltx02_aql_links ltx_c05_issued_aql_test LINK_LIBRARIES)
+      target_include_directories(ltx_c06_instancing_aql_test PRIVATE ${_ltx02_aql_includes})
+      target_link_libraries(ltx_c06_instancing_aql_test PRIVATE ${_ltx02_aql_links})
+      set_property(TARGET ltx_c06_instancing_aql_test APPEND PROPERTY
+        BUILD_RPATH "${_hip_lib_dir}")
+      target_link_options(ltx_c06_instancing_aql_test PRIVATE -Wl,--export-dynamic)
     endif()
   endif()
 endif()

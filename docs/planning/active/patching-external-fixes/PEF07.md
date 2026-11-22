@@ -181,12 +181,12 @@ Verified references (2026-10-04):
 
 Current BigCherry owners checked before creation: QFP13 launch-ranking umbrella; QFP06 superseded graph-cap evidence; QFP11/RNX11 collective/split boundary; MET expert tiering; existing MTP/MMVQ/FA and memory owners. PEF07 exists because retained submission transport does not have an existing canonical owner.
 
+2026-11-22 owner handoff from decision-only BCOP68: Bounded gate / terminal outcome. Source-bounded action/stop rule: On an isolated 1x gfx1100 and 1x gfx1201 dense-27B Q4_K_M plain-decode control (no MTP/Meta/collectives), first count *actual* eager/graph host submissions, capture/instantiate/reset, per-key hit rate, CPU submit/sync time and GPU work/token at 8K/80K; existing once-only lifecycle markers cannot count hit rate. `graphs-ab.sh` is a multi-GPU/MTP default and must not be used unchanged for the initial one-device discriminator. If replay already >=95% and host submit/sync <5% E2E, close PM4. If resets dominate, isolate upstream #29768 before considering PM4. If incompatibility dominates, return to its existing owner. Only a >5% attributable host-submission bottleneck after a qualified public graph justifies a default-off retained prototype. Promotion: >=4 sessions x >=10 paired ABBA rounds, CI95-low >=3% E2E TG, <=1% fallback/control regression, exact work/logits/KV/recurrent parity and memory safety; transport-only effect separated from wait removal. No hardware test/build was run in this documentation audit. See docs/planning/completed/patching-bc-optimizations/BCOP68.md for the complete source/shape/negative case and evidence. PEF07 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Change Log
 
 - 2026-10-08 (BCOP68): Corrected retained-replay admission for b11474's existing HIP graph, pinned warmup/recapture control flow, #29768 comparison, and rejected 1233/1304 negative evidence; no runtime changes or hardware claim.
 
 - 2026-10-04T00:30:00+00:00 (agent): Created after cross-engine source scan; promoted Hipfire-style retained submission as a new owner and mapped NInfer/Gufo/Splash/DwarfStar/llamAmpere mechanisms to existing owners.
 - 2026-10-04 (agent): Resolved requested "rata" as likely Strata, added measured bottleneck-ceiling gating for streamed MoE, and routed the current llama.cpp #29910/#29887/#29924/#29825 digest to canonical owners.
-
-## Ledger-events
-
+- 2026-11-22T05:27:55.917395+00:00 (updated-by): Updated: section:notes

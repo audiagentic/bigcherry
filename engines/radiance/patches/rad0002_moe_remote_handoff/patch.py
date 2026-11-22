@@ -9,11 +9,22 @@ from bigcherry.patcher import Edit, FilePatch
 
 _BC_MOE_REMOTE_H = r"""/* bc_moe_remote.h -- BigCherry's extension point for GPU-lane remote whole-expert MoE compute.
  *
- * The engine asks four questions of it: is this step handed off (wanted), does the helper own this routed
- * expert so the planner may leave it unplaced (skip_unit), what is each layer's runtime expert-to-slot map
- * (layer_map), and is a diagnostic mode on (shadow, mask_only; diagnostic builds only). The libr3moe plugin
- * registers its two callbacks once through bc_moe_remote_register. Every function is exported by the engine
- * binary and bound by the arch plugins and libr3moe at dlopen. */
+ * One engine owns one BcMoeRemoteGeneration (opaque here). The engine opens it through an explicit factory the
+ * already-loaded libr3moe plugin exports (BC_MOE_REMOTE_OPEN_SYMBOL, found with dlsym on the plugin's own handle),
+ * hands it to every consumer it builds, and closes it before the plugin is unloaded. There is no global plugin
+ * registry, no registration by a loader constructor and no thread-local owner: a consumer holds the generation it was
+ * given, and a closed or foreign generation refuses every call with BC_MOE_REMOTE_STALE.
+ *
+ * The one process-wide structure is a slot-keyed table of NON-OWNING generation pointers, written when a generation
+ * opens and cleared when it closes. It exists only so code that is given nothing but a build context (an architecture
+ * plugin's declare, the planner) can find its engine's generation at init time: bc_moe_remote_lookup(rad_build_slot(ctx)).
+ * Nothing on a per-step path takes it.
+ *
+ * Publication order: open validates the slot span and finds every slot empty, then calls the plugin factory, then
+ * publishes the generation into each slot with a compare-and-swap from empty (release); lookup is an acquire load.
+ * Close clears the slots (compare-and-swap from this generation) before it calls the plugin's close, so a lookup never
+ * returns a generation whose plugin state is being torn down. Every function is exported by the engine binary and bound by
+ * the arch plugins at dlopen; a NULL generation means "no remote hand-off" and every query answers it. */
 #ifndef BC_MOE_REMOTE_H
 #define BC_MOE_REMOTE_H
 #include <stdint.h>
@@ -27,89 +38,134 @@ typedef struct BcMoeRemoteTicket {
     uint8_t reserved[3];
     uint64_t ticket_id;
 } BcMoeRemoteTicket;
-/* Filled by libr3moe. struct_size must equal sizeof(BcMoeRemotePlugin) of the engine's header. */
-typedef struct BcMoeRemotePlugin {
+
+/* Typed refusals (always negative; zero is success). */
+enum {
+    BC_MOE_REMOTE_OK = 0,
+    BC_MOE_REMOTE_REFUSED = -1, /* the plugin or the arguments refused */
+    BC_MOE_REMOTE_STALE = -2,   /* the generation is closed: its plugin state is gone */
+    BC_MOE_REMOTE_BUSY = -3,    /* a slot of the span is bound already, or the plugin's helper is live */
+    BC_MOE_REMOTE_ABSENT = -4   /* the manifest asks for a hand-off and the plugin offers no factory */
+};
+
+typedef struct BcMoeRemoteGeneration BcMoeRemoteGeneration;
+/* The lookup table covers the engine's instance slots (RAD_MAX_SLOTS); the engine bring-up static_asserts the two agree. */
+#define BC_MOE_REMOTE_MAX_SLOTS 32
+
+/* What the engine tells the plugin factory about the generation it is opening. */
+typedef struct BcMoeRemoteOpenArgs {
     uint32_t struct_size;
+    uint32_t capacity_limit; /* the admission ledger's ceiling: route-slot ring extent plus issue-ahead depth */
+    int32_t slot_base;       /* RadBuildCtx::slot_base of the opening engine */
+    int32_t ranks;           /* its tensor-parallel width */
+} BcMoeRemoteOpenArgs;
+
+/* Filled by the factory. struct_size must equal sizeof(BcMoeRemotePlugin) of the engine's header. `self` is the
+ * plugin's state for this generation and the first argument of every callback. */
+typedef struct BcMoeRemotePlugin {
+    /* The head every table starts with, whatever its size: struct_size, self, close. The engine presets struct_size to
+     * its own size before calling the factory; a factory refuses (and allocates nothing) when it differs. */
+    uint32_t struct_size;
+    void* self;
+    /* The generation ends: release everything `self` holds. Called once, after the engine stopped every consumer. */
+    void (*close)(void* self);
     /* A layer's runtime slot map (slot_of_expert[e] < 0: expert e is a protected, locally served expert). */
-    void (*layer_map)(int layer, int n_expert, const int32_t* slot_of_expert);
+    void (*layer_map)(void* self, int layer, int n_expert, const int32_t* slot_of_expert);
     /* Whether a helper owns routed expert (layer, expert). */
-    int (*owns_expert)(int layer, int expert);
+    int (*owns_expert)(void* self, int layer, int expert);
     /* An inference burst begins (1: the engine loop has a step after being idle) or ends (0: the loop found no
      * step). Called from the engine's host scheduler loop, so it fires whether a pass is recorded or replayed;
      * a helper arms its GPU waits only inside a burst, and its queues drain to empty between bursts. */
-    void (*burst)(int active);
-    /* Per-pass stream-ordered ticket setter; returns a negative RAD_E_* on
-     * failure. The engine calls this on lane 0 before capture/replay. */
-    /* Immutable scheduler-parent admission value, copied into each rank
-     * thread before its trunk/history/draft pass. */
-    int (*before_pass)(int rank, struct BcMoeRemoteTicket ticket, void* stream);
-    int (*admit)(struct BcMoeRemoteTicket* out, int try_only, int world_size);
-    int (*bind)(struct BcMoeRemoteTicket ticket, int64_t scheduler_step);
-    int (*cancel)(struct BcMoeRemoteTicket ticket);
-    int (*host_done)(struct BcMoeRemoteTicket ticket);
-    int (*rank_done)(int rank, struct BcMoeRemoteTicket ticket, void* stream);
-    void (*poll)(void);
-    void (*shutdown)(void);
-    int (*capacity)(uint32_t parent_limit);
-    void (*finish_admission)(void);
-    int (*wait_finished)(int64_t timeout_ms);
+    void (*burst)(void* self, int active);
+    /* Per-pass stream-ordered ticket setter; returns a negative RAD_E_* on failure. The engine calls this on lane 0
+     * before capture/replay with the immutable scheduler-parent admission value its rank thread handed to the Ctx. */
+    int (*before_pass)(void* self, int rank, struct BcMoeRemoteTicket ticket, void* stream);
+    int (*admit)(void* self, struct BcMoeRemoteTicket* out, int try_only, int world_size);
+    int (*bind)(void* self, struct BcMoeRemoteTicket ticket, int64_t scheduler_step);
+    int (*cancel)(void* self, struct BcMoeRemoteTicket ticket);
+    int (*host_done)(void* self, struct BcMoeRemoteTicket ticket);
+    int (*rank_done)(void* self, int rank, struct BcMoeRemoteTicket ticket, void* stream);
+    /* A fault stop only: interrupt every blocked wait so each fails now. A clean stop never calls it, and the plugin
+     * decides at `close` whether the ledger drained cleanly. */
+    void (*fault)(void* self);
+    void (*finish_admission)(void* self);
+    int (*wait_finished)(void* self, int64_t timeout_ms);
+    /* The longest the engine waits for its stepper and the bound parents to finish at stop: the plugin's protocol
+     * bound for draining to quiet (its quiesce deadline), so the engine holds no budget of its own. */
+    int64_t stop_budget_ms;
+    /* The generation's never-reused serial: the engine puts it in every mailbox op it declares, and the op's init binds
+     * to exactly this generation (not merely to a numeric group). */
+    uint64_t owner;
 } BcMoeRemotePlugin;
-/* Register the plugin (NULL unregisters). Layer maps published before registration are replayed to it.
- * Returns 0, or -1 when struct_size does not match. */
-int bc_moe_remote_register(const BcMoeRemotePlugin* plugin);
-/* Runtime step gate: remote transport's typed manifest max_rows (min is zero).
- * When there is no manifest handoff, remote MoE is off. */
-int bc_moe_remote_wanted(int64_t step_rows);
-int bc_moe_remote_wanted_upto(int64_t max_step_rows);
+typedef int (*BcMoeRemoteOpenFn)(const BcMoeRemoteOpenArgs* args, BcMoeRemotePlugin* out);
+#define BC_MOE_REMOTE_OPEN_SYMBOL "bc_moe_remote_plugin_open"
+
+/* Open the engine's generation. With the manifest asking for no hand-off (or a diagnostic mode a production build
+ * cannot honour) *out is NULL and the result is BC_MOE_REMOTE_OK: every query then answers "no remote". Otherwise the
+ * factory is required (open_with takes it directly, open finds it on the plugin handle; a NULL handle has none).
+ * A slot of [slot_base, slot_base+ranks) that is out of range or bound refuses before the factory runs. */
+int bc_moe_remote_open(void* plugin_handle, int slot_base, int ranks, uint32_t capacity_limit,
+                       BcMoeRemoteGeneration** out);
+int bc_moe_remote_open_with(BcMoeRemoteOpenFn factory, int slot_base, int ranks, uint32_t capacity_limit,
+                            BcMoeRemoteGeneration** out);
+/* Explicit lifecycle: close unbinds the slots and ends the plugin state (idempotent); destroy closes and frees. A closed
+ * generation stays allocated until destroy so a stale holder is refused, not dereferenced into freed memory. */
+void bc_moe_remote_close(BcMoeRemoteGeneration* g);
+void bc_moe_remote_destroy(BcMoeRemoteGeneration* g);
+/* The generation bound to an instance slot, or NULL (unclaimed, cleared, out of range). Init-time only. */
+BcMoeRemoteGeneration* bc_moe_remote_lookup(int slot);
+
+/* Runtime step gate: remote transport's typed manifest max_rows (min is zero), captured when the generation opened. */
+int bc_moe_remote_wanted(const BcMoeRemoteGeneration* g, int64_t step_rows);
+int bc_moe_remote_wanted_upto(const BcMoeRemoteGeneration* g, int64_t max_step_rows);
 /* Diagnostics: always 0 unless the engine is built with BC_MOE_REMOTE_DIAG (patch rad0004). A production build
- * that finds R3_MOE_WORKER_SHADOW or R3_MOE_WORKER_MASK_ONLY set answers "no remote rows" and says so once. */
-int bc_moe_remote_shadow(void);
-int bc_moe_remote_mask_only(void);
+ * that finds R3_MOE_WORKER_SHADOW or R3_MOE_WORKER_MASK_ONLY set opens no generation and says so. */
+int bc_moe_remote_shadow(const BcMoeRemoteGeneration* g);
+int bc_moe_remote_mask_only(const BcMoeRemoteGeneration* g);
 int bc_moe_remote_diag_build(void);
 /* The engine loop calls engine_step for every step it runs and engine_idle when it finds no step; the
  * transitions between the two are forwarded to the plugin's burst callback, once each. */
-void bc_moe_remote_engine_step(void);
-void bc_moe_remote_engine_idle(void);
-/* Admission is invoked before sched_.step() / prepare_release; try_only is
- * nonblocking for issue_ahead (1: admission closed/full; skip the run-ahead).
- * With no remote plugin the returned ticket is zero and calls are no-ops. */
-int bc_moe_remote_admit(BcMoeRemoteTicket* ticket, int try_only, int world_size);
-int bc_moe_remote_bind(BcMoeRemoteTicket ticket, int64_t scheduler_step);
+void bc_moe_remote_engine_step(BcMoeRemoteGeneration* g);
+void bc_moe_remote_engine_idle(BcMoeRemoteGeneration* g);
+/* Admission is invoked before sched_.step() / prepare_release; try_only is nonblocking for issue_ahead (1: admission
+ * closed/full; skip the run-ahead). With no generation the returned ticket is zero and calls are no-ops. */
+int bc_moe_remote_admit(BcMoeRemoteGeneration* g, BcMoeRemoteTicket* ticket, int try_only, int world_size);
+int bc_moe_remote_bind(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket, int64_t scheduler_step);
 /* Returns an unused tail reservation; negative when the plugin rejects it (the ledger has faulted). */
-int bc_moe_remote_cancel(BcMoeRemoteTicket ticket);
-int bc_moe_remote_host_done(BcMoeRemoteTicket ticket);
-void bc_moe_remote_poll(void);
-void bc_moe_remote_shutdown(void);
-int bc_moe_remote_finish_admission(void);
-int bc_moe_remote_wait_finished(int64_t timeout_ms);
-/* Per-release value handed explicitly from scheduler thread through the rank
- * barrier. The rank thread stores it in TLS for Ctx::run_pass to consume. */
-void bc_moe_remote_rank_ticket(BcMoeRemoteTicket ticket);
-BcMoeRemoteTicket bc_moe_remote_current_ticket(void);
-int bc_moe_remote_before_pass(int rank, BcMoeRemoteTicket ticket, int64_t rows, void* stream);
-int bc_moe_remote_rank_done(int rank, BcMoeRemoteTicket ticket, void* stream);
-/* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for replay. */
-void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert);
+int bc_moe_remote_cancel(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket);
+int bc_moe_remote_host_done(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket);
+void bc_moe_remote_fault(BcMoeRemoteGeneration* g);
+int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g);
+int bc_moe_remote_wait_finished(BcMoeRemoteGeneration* g, int64_t timeout_ms);
+/* The stop budget the plugin declared (BcMoeRemotePlugin::stop_budget_ms); 0 for no generation. */
+int64_t bc_moe_remote_stop_budget_ms(const BcMoeRemoteGeneration* g);
+/* The owner serial for the generation's mailbox ops; 0 for no generation or a closed one. */
+uint64_t bc_moe_remote_owner(const BcMoeRemoteGeneration* g);
+int bc_moe_remote_before_pass(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream);
+int bc_moe_remote_rank_done(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream);
+/* Block declare publishes a layer's map here; it is forwarded to the plugin and kept for the placement rule. */
+void bc_moe_remote_layer_map(BcMoeRemoteGeneration* g, int layer, int n_expert, const int32_t* slot_of_expert);
 /* Placement (manifest handoff.transport.skip_owned): whether the engine may leave a routed expert unplaced because the
  * helper computes it and nothing local ever reads it. */
-int bc_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows);
+int bc_moe_remote_skip_unit(const BcMoeRemoteGeneration* g, int layer, int expert, int64_t max_step_rows);
 #ifdef __cplusplus
 }
 #endif
 #endif /* BC_MOE_REMOTE_H */
 """
 
-_BC_MOE_REMOTE_CPP = r"""/* bc_moe_remote.cpp -- policy behind abi/bc_moe_remote.h: the decode-sized step gate, the plugin registry,
- * the layer-map store and the SKIP_OWNED placement rule. */
+_BC_MOE_REMOTE_CPP = r"""/* bc_moe_remote.cpp -- policy behind abi/bc_moe_remote.h: the engine-owned generation, its slot-keyed init-time lookup,
+ * the decode-sized step gate, the layer-map store and the SKIP_OWNED placement rule. No process-wide plugin, map or
+ * burst state: all of it lives in a generation, and the one table (slot -> non-owning pointer) is written on open and
+ * close only. */
 #include "bc_moe_remote.h"
-#include "bc_moe_remote_engine.h"
-#include "runtime/ctx.h"
-#include <type_traits>
 #include <atomic>
 #include <climits>
 #include <cstdio>
 #include <cstdlib>
+#include <dlfcn.h>
 #include <map>
+#include <condition_variable>
 #include <mutex>
 #include <vector>
 
@@ -121,221 +177,225 @@ static constexpr bool kDiagBuild = true;
 static constexpr bool kDiagBuild = false;
 #endif
 
-// Weak only for builds using rad0002 without rad0009 (handoff remains off).
-extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*) __attribute__((weak));
-namespace {
-// From rad0009's strict manifest reader. No environment fallback. Without
-// a manifest the helper path cannot be enabled by inherited R3_* variables.
-struct RemotePolicy {
+// Provided by rad0009 (serving manifest), a declared dependency of this package.
+extern "C" int bc_serving_remote_settings(int64_t*, uint32_t*, uint32_t*, uint32_t*);
+
+struct BcMoeRemoteGeneration {
+    std::atomic<int> state{1}; /* 1 open, 2 closed */
+    BcMoeRemotePlugin vt{};
+    /* From rad0009's strict manifest reader, read once when the generation opens: the generation's immutable policy.
+     * No environment fallback. */
     int64_t max_rows = 0;
     uint32_t skip_owned = 0, shadow = 0, mask_only = 0;
+    int slot_base = 0, ranks = 0;
+    std::atomic<bool> burst_active{false};
+    mutable std::mutex maps_mu; /* init time only: declare publishes, the planner reads */
+    std::map<int, std::vector<int32_t>> layer_maps;
+
+    bool open() const { return state.load(std::memory_order_acquire) == 1; }
 };
-RemotePolicy remote_policy() {
-    RemotePolicy c{};
-    if (bc_serving_remote_settings)
-        (void)bc_serving_remote_settings(&c.max_rows, &c.skip_owned, &c.shadow, &c.mask_only);
-    return c;
-}
-int64_t min_rows() {
-    return remote_policy().max_rows > 0 ? 0 : LLONG_MAX;
-}
-int64_t max_rows() {
-    const auto v = remote_policy().max_rows;
-    return v > 0 ? v : LLONG_MAX;
+
+namespace {
+std::atomic<BcMoeRemoteGeneration*> g_slot_table[BC_MOE_REMOTE_MAX_SLOTS];
+
+BcMoeRemoteGeneration* live(BcMoeRemoteGeneration* g) { return g && g->open() ? g : nullptr; }
+}  // namespace
+
+extern "C" BcMoeRemoteGeneration* bc_moe_remote_lookup(int slot) {
+    if (slot < 0 || slot >= BC_MOE_REMOTE_MAX_SLOTS) return nullptr;
+    return g_slot_table[slot].load(std::memory_order_acquire);
 }
 
-/* The diagnostic modes exist only in a diagnostic build. Asked for in a production build they must not be
- * silently ignored (that would measure the wrong thing): the extension point answers "no remote rows", so every
- * expert computes locally, and says so once. */
-bool diag_refused() {
-    if (kDiagBuild) return false;
-    const auto policy = remote_policy();
-    const bool requested = policy.shadow || policy.mask_only;
-    if (!requested) return false;
-    static std::atomic<bool> said{false};
-    if (!said.exchange(true))
+extern "C" int bc_moe_remote_open_with(BcMoeRemoteOpenFn factory, int slot_base, int ranks, uint32_t capacity_limit,
+                                       BcMoeRemoteGeneration** out) {
+    if (!out) return BC_MOE_REMOTE_REFUSED;
+    *out = nullptr;
+    if (ranks < 1 || slot_base < 0 || slot_base + ranks > BC_MOE_REMOTE_MAX_SLOTS) return BC_MOE_REMOTE_REFUSED;
+    int64_t max_rows = 0;
+    uint32_t skip_owned = 0, shadow = 0, mask_only = 0;
+    (void)bc_serving_remote_settings(&max_rows, &skip_owned, &shadow, &mask_only);
+    /* Asked for in a production build the diagnostic modes must not be silently ignored (that would measure the wrong
+     * thing): no generation opens, so every expert computes locally, and it is said. */
+    if (!kDiagBuild && (shadow || mask_only)) {
         std::fprintf(stderr, "radiance: R3_MOE_WORKER_SHADOW / R3_MOE_WORKER_MASK_ONLY need the diagnostic build "
                              "(BC_MOE_REMOTE_DIAG, patch rad0004); remote MoE hand-off is off and every expert "
                              "computes locally\n");
-    return true;
+        return BC_MOE_REMOTE_OK;
+    }
+    if (max_rows <= 0) return BC_MOE_REMOTE_OK;
+    if (!factory) return BC_MOE_REMOTE_ABSENT;
+    /* Refuse a bound slot before the factory has side effects. */
+    for (int i = 0; i < ranks; ++i)
+        if (g_slot_table[slot_base + i].load(std::memory_order_acquire)) return BC_MOE_REMOTE_BUSY;
+
+    auto* g = new BcMoeRemoteGeneration;
+    g->max_rows = max_rows;
+    g->skip_owned = skip_owned;
+    g->shadow = shadow;
+    g->mask_only = mask_only;
+    g->slot_base = slot_base;
+    g->ranks = ranks;
+    const BcMoeRemoteOpenArgs args{sizeof(BcMoeRemoteOpenArgs), capacity_limit, slot_base, ranks};
+    /* Failure-atomic negotiation. The engine presets the table size it expects. A factory that fails has released
+     * everything it allocated itself (its close is never called). A factory that succeeds has handed over its state; if
+     * the table it returned is the wrong size the engine closes that state, once, through the head every table starts
+     * with. A success that does not even fill the head leaves nothing the engine can close and is refused. */
+    g->vt.struct_size = sizeof(BcMoeRemotePlugin);
+    const int rc = factory(&args, &g->vt);
+    if (rc != 0 || g->vt.struct_size != sizeof(BcMoeRemotePlugin)) {
+        if (rc == 0 && g->vt.struct_size >= offsetof(BcMoeRemotePlugin, close) + sizeof(g->vt.close) && g->vt.close)
+            g->vt.close(g->vt.self);
+        delete g;
+        return rc < 0 ? rc : BC_MOE_REMOTE_REFUSED;
+    }
+    for (int i = 0; i < ranks; ++i) {
+        BcMoeRemoteGeneration* none = nullptr;
+        if (g_slot_table[slot_base + i].compare_exchange_strong(none, g, std::memory_order_release,
+                                                                std::memory_order_relaxed))
+            continue;
+        for (int j = 0; j < i; ++j) {
+            BcMoeRemoteGeneration* mine = g;
+            g_slot_table[slot_base + j].compare_exchange_strong(mine, nullptr, std::memory_order_release,
+                                                                std::memory_order_relaxed);
+        }
+        if (g->vt.close) g->vt.close(g->vt.self);
+        delete g;
+        return BC_MOE_REMOTE_BUSY;
+    }
+    *out = g;
+    return BC_MOE_REMOTE_OK;
 }
 
-std::mutex g_mu;
-BcMoeRemotePlugin g_plugin{};   /* struct_size 0: none registered */
-std::map<int, std::vector<int32_t>> g_layer_maps;
+extern "C" int bc_moe_remote_open(void* plugin_handle, int slot_base, int ranks, uint32_t capacity_limit,
+                                  BcMoeRemoteGeneration** out) {
+    BcMoeRemoteOpenFn factory = nullptr;
+    if (plugin_handle) {
+        (void)dlerror();
+        factory = reinterpret_cast<BcMoeRemoteOpenFn>(dlsym(plugin_handle, BC_MOE_REMOTE_OPEN_SYMBOL));
+        if (dlerror()) factory = nullptr;
+    }
+    return bc_moe_remote_open_with(factory, slot_base, ranks, capacity_limit, out);
 }
 
-extern "C" int bc_moe_remote_wanted(int64_t step_rows) {
-    if (diag_refused()) return 0;
-    const int64_t lo = min_rows(), hi = max_rows();
-    return lo != LLONG_MAX && step_rows >= lo && step_rows <= hi;
+extern "C" void bc_moe_remote_close(BcMoeRemoteGeneration* g) {
+    if (!g) return;
+    int expected = 1;
+    if (!g->state.compare_exchange_strong(expected, 2, std::memory_order_acq_rel)) return;
+    for (int i = 0; i < g->ranks; ++i) {
+        BcMoeRemoteGeneration* mine = g;
+        g_slot_table[g->slot_base + i].compare_exchange_strong(mine, nullptr, std::memory_order_release,
+                                                               std::memory_order_relaxed);
+    }
+    if (g->vt.close) g->vt.close(g->vt.self);
+    g->vt = BcMoeRemotePlugin{};
 }
 
-extern "C" int bc_moe_remote_wanted_upto(int64_t max_step_rows) {
-    if (diag_refused()) return 0;
-    const int64_t lo = min_rows(), hi = max_rows();
-    return lo != LLONG_MAX && lo <= hi && lo <= max_step_rows;
+extern "C" void bc_moe_remote_destroy(BcMoeRemoteGeneration* g) {
+    if (!g) return;
+    bc_moe_remote_close(g);
+    delete g;
 }
 
-extern "C" int bc_moe_remote_shadow(void) {
-    static const bool v = kDiagBuild && remote_policy().shadow;
-    return v;
+extern "C" int bc_moe_remote_wanted(const BcMoeRemoteGeneration* g, int64_t step_rows) {
+    return g && g->open() && step_rows >= 0 && step_rows <= g->max_rows;
 }
 
-extern "C" int bc_moe_remote_mask_only(void) {
-    static const bool v = kDiagBuild && remote_policy().mask_only;
-    return v;
+extern "C" int bc_moe_remote_wanted_upto(const BcMoeRemoteGeneration* g, int64_t max_step_rows) {
+    return g && g->open() && max_step_rows >= 0;
+}
+
+extern "C" int bc_moe_remote_shadow(const BcMoeRemoteGeneration* g) {
+    return kDiagBuild && g && g->open() && g->shadow;
+}
+
+extern "C" int bc_moe_remote_mask_only(const BcMoeRemoteGeneration* g) {
+    return kDiagBuild && g && g->open() && g->mask_only;
 }
 
 extern "C" int bc_moe_remote_diag_build(void) {
     return kDiagBuild ? 1 : 0;
 }
 
-/* Layer maps are published at declare, which can run before the plugin registers (libr3moe registers when it
- * loads). Keep every published map and replay them on registration, so no layer's map is lost to that ordering. */
-extern "C" int bc_moe_remote_register(const BcMoeRemotePlugin* plugin) {
-    std::lock_guard<std::mutex> lock(g_mu);
-    if (!plugin) {
-        g_plugin = BcMoeRemotePlugin{};
-        return 0;
-    }
-    if (plugin->struct_size != sizeof(BcMoeRemotePlugin)) return -1;
-    /* No scheduler backlog bound exists for no-output prefill. Use the
-     * engine's route ring as a resource ceiling plus its one ahead batch.
-     * Do this before map replay or graph lowering allocates rank buffers. */
-    constexpr uint32_t limit = std::extent_v<decltype(rad::RouteSlot::staging)> +
-                               BcMoeRemoteAdmission::kIssueAheadDepth;
-    if (!plugin->capacity || plugin->capacity(limit) < 0) return -1;
-    g_plugin = *plugin;
-    if (g_plugin.layer_map)
-        for (const auto& [layer, slots] : g_layer_maps)
-            g_plugin.layer_map(layer, (int)slots.size(), slots.data());
-    return 0;
-}
-
-namespace {
-std::atomic<bool> g_burst_active{false};
-void forward_burst(int active) {
-    void (*burst)(int) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        burst = g_plugin.burst;
-    }
-    if (burst) burst(active);
-}
-}
-
 /* Per-step cost is one atomic exchange; the plugin hears only the transitions. */
-extern "C" void bc_moe_remote_engine_step(void) {
-    if (!g_burst_active.exchange(true, std::memory_order_acq_rel)) forward_burst(1);
+extern "C" void bc_moe_remote_engine_step(BcMoeRemoteGeneration* g) {
+    if (!g || !g->open()) return;
+    if (!g->burst_active.exchange(true, std::memory_order_acq_rel) && g->vt.burst) g->vt.burst(g->vt.self, 1);
 }
 
-extern "C" void bc_moe_remote_engine_idle(void) {
-    if (g_burst_active.exchange(false, std::memory_order_acq_rel)) forward_burst(0);
+extern "C" void bc_moe_remote_engine_idle(BcMoeRemoteGeneration* g) {
+    if (!g || !g->open()) return;
+    if (g->burst_active.exchange(false, std::memory_order_acq_rel) && g->vt.burst) g->vt.burst(g->vt.self, 0);
 }
 
-/* Scheduler-thread and rank-thread calls into the size-checked plugin.
- * The ticket originates only from admission; b->step is debug identity and
- * is never used to derive the actual epoch/slot/ticket id. */
-extern "C" int bc_moe_remote_admit(BcMoeRemoteTicket* out, int try_only, int world_size) {
-    if (!out) return -1;
+/* Scheduler-thread and rank-thread calls into the generation's size-checked plugin table. The ticket originates only
+ * from admission; b->step is debug identity and is never used to derive the actual epoch/slot/ticket id. A NULL
+ * generation is "no remote" (zero ticket); a closed one is refused with BC_MOE_REMOTE_STALE before any dispatch. */
+extern "C" int bc_moe_remote_admit(BcMoeRemoteGeneration* g, BcMoeRemoteTicket* out, int try_only, int world_size) {
+    if (!out) return BC_MOE_REMOTE_REFUSED;
     *out = BcMoeRemoteTicket{};
-    int (*fn)(BcMoeRemoteTicket*, int, int) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.admit;
-    }
-    if (!fn) return bc_moe_remote_wanted_upto(LLONG_MAX) ? -1 : 0;
-    return fn(out, try_only, world_size);
+    if (!g) return 0;
+    if (!g->open()) return BC_MOE_REMOTE_STALE;
+    return g->vt.admit ? g->vt.admit(g->vt.self, out, try_only, world_size) : BC_MOE_REMOTE_REFUSED;
 }
-extern "C" int bc_moe_remote_bind(BcMoeRemoteTicket ticket, int64_t step) {
+extern "C" int bc_moe_remote_bind(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket, int64_t step) {
     if (!ticket.ticket_id) return 0;
-    int (*fn)(BcMoeRemoteTicket, int64_t) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.bind;
-    }
-    return fn ? fn(ticket, step) : -1;
+    if (!g) return BC_MOE_REMOTE_REFUSED;
+    if (!g->open()) return BC_MOE_REMOTE_STALE;
+    return g->vt.bind ? g->vt.bind(g->vt.self, ticket, step) : BC_MOE_REMOTE_REFUSED;
 }
-extern "C" int bc_moe_remote_cancel(BcMoeRemoteTicket ticket) {
+extern "C" int bc_moe_remote_cancel(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket) {
     if (!ticket.ticket_id) return 0;
-    int (*fn)(BcMoeRemoteTicket) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.cancel;
-    }
-    return fn ? fn(ticket) : -1;
+    if (!g) return BC_MOE_REMOTE_REFUSED;
+    if (!g->open()) return BC_MOE_REMOTE_STALE;
+    return g->vt.cancel ? g->vt.cancel(g->vt.self, ticket) : BC_MOE_REMOTE_REFUSED;
 }
-extern "C" int bc_moe_remote_host_done(BcMoeRemoteTicket ticket) {
+extern "C" int bc_moe_remote_host_done(BcMoeRemoteGeneration* g, BcMoeRemoteTicket ticket) {
     if (!ticket.ticket_id) return 0;
-    int (*fn)(BcMoeRemoteTicket) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.host_done;
-    }
-    return fn ? fn(ticket) : -1;
+    if (!g) return BC_MOE_REMOTE_REFUSED;
+    if (!g->open()) return BC_MOE_REMOTE_STALE;
+    return g->vt.host_done ? g->vt.host_done(g->vt.self, ticket) : BC_MOE_REMOTE_REFUSED;
 }
-extern "C" void bc_moe_remote_poll(void) {
-    void (*fn)() = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.poll;
-    }
-    if (fn) fn();
+extern "C" void bc_moe_remote_fault(BcMoeRemoteGeneration* g) {
+    if (g = live(g); g && g->vt.fault) g->vt.fault(g->vt.self);
 }
-extern "C" void bc_moe_remote_shutdown(void) {
-    void (*fn)() = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.shutdown;
-    }
-    if (fn) fn();
-}
-extern "C" int bc_moe_remote_finish_admission(void) {
-    void (*fn)() = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.finish_admission;
-    }
-    if (!fn) return 0;
-    fn();
+extern "C" int bc_moe_remote_finish_admission(BcMoeRemoteGeneration* g) {
+    g = live(g);
+    if (!g || !g->vt.finish_admission) return 0;
+    g->vt.finish_admission(g->vt.self);
     return 1;
 }
-extern "C" int bc_moe_remote_wait_finished(int64_t timeout_ms) {
-    int (*fn)(int64_t) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.wait_finished;
-    }
-    return fn ? fn(timeout_ms) : -1;
+extern "C" uint64_t bc_moe_remote_owner(const BcMoeRemoteGeneration* g) {
+    return g && g->open() ? g->vt.owner : 0;
 }
-static thread_local BcMoeRemoteTicket g_rank_ticket{};
-extern "C" void bc_moe_remote_rank_ticket(BcMoeRemoteTicket t) { g_rank_ticket = t; }
-extern "C" BcMoeRemoteTicket bc_moe_remote_current_ticket(void) { return g_rank_ticket; }
-extern "C" int bc_moe_remote_before_pass(int rank, BcMoeRemoteTicket ticket, int64_t rows, void* stream) {
-    int (*fn)(int, BcMoeRemoteTicket, void*) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.before_pass;
-    }
-    /* rows only decides the no-plugin case: a pass that wanted the remote path cannot run without it. */
-    return fn ? fn(rank, ticket, stream) : (bc_moe_remote_wanted(rows) ? -1 : 0);
+extern "C" int64_t bc_moe_remote_stop_budget_ms(const BcMoeRemoteGeneration* g) {
+    return g && g->open() ? g->vt.stop_budget_ms : 0;
 }
-extern "C" int bc_moe_remote_rank_done(int rank, BcMoeRemoteTicket ticket, void* stream) {
+extern "C" int bc_moe_remote_wait_finished(BcMoeRemoteGeneration* g, int64_t timeout_ms) {
+    if (!g) return BC_MOE_REMOTE_REFUSED;
+    if (!g->open()) return BC_MOE_REMOTE_STALE;
+    return g->vt.wait_finished ? g->vt.wait_finished(g->vt.self, timeout_ms) : BC_MOE_REMOTE_REFUSED;
+}
+extern "C" int bc_moe_remote_before_pass(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream) {
+    if (!g) return 0;   /* no hand-off for this engine: nothing to arm */
+    if (!g->open()) return BC_MOE_REMOTE_STALE;
+    return g->vt.before_pass ? g->vt.before_pass(g->vt.self, rank, ticket, stream) : BC_MOE_REMOTE_REFUSED;
+}
+extern "C" int bc_moe_remote_rank_done(BcMoeRemoteGeneration* g, int rank, BcMoeRemoteTicket ticket, void* stream) {
     if (!ticket.ticket_id) return 0;
-    int (*fn)(int, BcMoeRemoteTicket, void*) = nullptr;
-    {
-        std::lock_guard<std::mutex> lock(g_mu);
-        fn = g_plugin.rank_done;
-    }
-    return fn ? fn(rank, ticket, stream) : -1;
+    if (!g) return BC_MOE_REMOTE_REFUSED;
+    if (!g->open()) return BC_MOE_REMOTE_STALE;
+    return g->vt.rank_done ? g->vt.rank_done(g->vt.self, rank, ticket, stream) : BC_MOE_REMOTE_REFUSED;
 }
 
-extern "C" void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* slot_of_expert) {
-    if (n_expert <= 0 || !slot_of_expert) return;
-    std::lock_guard<std::mutex> lock(g_mu);
-    g_layer_maps[layer].assign(slot_of_expert, slot_of_expert + n_expert);
-    if (g_plugin.layer_map) g_plugin.layer_map(layer, n_expert, slot_of_expert);
+extern "C" void bc_moe_remote_layer_map(BcMoeRemoteGeneration* g, int layer, int n_expert, const int32_t* slot_of_expert) {
+    g = live(g);
+    if (!g || n_expert <= 0 || !slot_of_expert) return;
+    {
+        std::lock_guard<std::mutex> lock(g->maps_mu);
+        g->layer_maps[layer].assign(slot_of_expert, slot_of_expert + n_expert);
+    }
+    /* Never under maps_mu: the plugin may wait on a helper, and the placement rule (skip_unit) reads these maps. */
+    if (g->vt.layer_map) g->vt.layer_map(g->vt.self, layer, n_expert, slot_of_expert);
 }
 
 /* R3_MOE_WORKER_SKIP_OWNED=1: a helper-owned expert is not placed at all -- no VRAM, no host pool -- which is
@@ -344,36 +404,68 @@ extern "C" void bc_moe_remote_layer_map(int layer, int n_expert, const int32_t* 
  * diagnostic recomputes owned experts locally, and the layer's runtime map gives the expert a regular slot with
  * no protected expert in the layer (those layers stay local; the helper drops ownership on exactly the same
  * test). */
-extern "C" int bc_moe_remote_skip_unit(int layer, int expert, int64_t max_step_rows) {
-    static const bool on = remote_policy().skip_owned != 0;
-    if (!on || diag_refused() || bc_moe_remote_shadow() || bc_moe_remote_mask_only()) return 0;
-    if (min_rows() == (int64_t)LLONG_MAX || min_rows() > 1 || max_rows() < max_step_rows) return 0;
-    int (*owns)(int, int) = nullptr;
+extern "C" int bc_moe_remote_skip_unit(const BcMoeRemoteGeneration* g, int layer, int expert, int64_t max_step_rows) {
+    if (!g || !g->open() || g->skip_owned == 0 || bc_moe_remote_shadow(g) || bc_moe_remote_mask_only(g)) return 0;
+    if (g->max_rows < max_step_rows) return 0;
     {
-        std::lock_guard<std::mutex> lock(g_mu);
-        owns = g_plugin.owns_expert;
-        const auto it = g_layer_maps.find(layer);
-        if (it == g_layer_maps.end() || expert < 0 || expert >= (int)it->second.size()) return 0;
+        std::lock_guard<std::mutex> lock(g->maps_mu);
+        const auto it = g->layer_maps.find(layer);
+        if (it == g->layer_maps.end() || expert < 0 || expert >= (int)it->second.size()) return 0;
         for (int32_t slot : it->second)
             if (slot < 0) return 0;
     }
-    return owns && owns(layer, expert) ? 1 : 0;
+    return g->vt.owns_expert && g->vt.owns_expert(g->vt.self, layer, expert) ? 1 : 0;
 }
 """
 
-_BC_MOE_REMOTE_ENGINE_H = r"""/* Scheduler/rank admission bridge. Scheduler changes state while ranks
- * are parked; the existing barrier publishes issued_. current_ survives
- * issue-ahead until host completion. The coordinator owns admission. */
+_BC_MOE_REMOTE_ENGINE_H = r"""/* Scheduler/rank admission bridge and the owner of the engine's remote-MoE generation (abi/bc_moe_remote.h). Scheduler
+ * changes state while ranks are parked; the existing barrier publishes issued_. current_ survives issue-ahead until host
+ * completion. The coordinator owns admission. The generation is opened once by the engine after it claimed its instance
+ * slots, handed to every consumer the engine builds, and closed (then destroyed) before the plugin library unloads. */
 #pragma once
 #include "bc_moe_remote.h"
 #include "device/device.h"
 #include <atomic>
+#include <chrono>
+#include <condition_variable>
+#include <mutex>
 
 class BcMoeRemoteAdmission {
+    BcMoeRemoteGeneration* gen_ = nullptr;   /* owned: null when the manifest asks for no hand-off */
+    bool clean_ = false;                     /* every bound ticket proved terminal: the stop was clean */
     BcMoeRemoteTicket current_{}, ahead_{}, issued_{};
     int ahead_status_ = 0;
     std::atomic<bool> finishing_{false}, stepper_finished_{false};
+    std::mutex stepper_mu_;
+    std::condition_variable stepper_cv_;
 public:
+    BcMoeRemoteAdmission() = default;
+    BcMoeRemoteAdmission(const BcMoeRemoteAdmission&) = delete;
+    BcMoeRemoteAdmission& operator=(const BcMoeRemoteAdmission&) = delete;
+    ~BcMoeRemoteAdmission() { close(); }
+    /* Open the generation on the loaded plugin's handle (null: none loaded) for the slots this engine claimed. */
+    int open(void* plugin_handle, int slot_base, int ranks, uint32_t capacity_limit) {
+        close();
+        return bc_moe_remote_open(plugin_handle, slot_base, ranks, capacity_limit, &gen_) < 0 ? RAD_E_STATE : RAD_OK;
+    }
+    int open_with(BcMoeRemoteOpenFn factory, int slot_base, int ranks, uint32_t capacity_limit) {
+        close();
+        return bc_moe_remote_open_with(factory, slot_base, ranks, capacity_limit, &gen_) < 0 ? RAD_E_STATE : RAD_OK;
+    }
+    /* Idempotent. Every consumer has stopped by now; a holder of the pointer after this is refused, not served. */
+    void close() { bc_moe_remote_destroy(gen_); gen_ = nullptr; clean_ = false; }
+    BcMoeRemoteGeneration* generation() const { return gen_; }
+    /* The fault stop (an error, or a drain that missed its deadline): interrupts every blocked wait. */
+    void fault() { bc_moe_remote_fault(gen_); }
+    /* True once every bound ticket proved terminal (wait_finished succeeded): a clean stop, which never interrupts. */
+    bool clean() const { return clean_; }
+    int wait_finished(int64_t timeout_ms) {
+        const int r = bc_moe_remote_wait_finished(gen_, timeout_ms);
+        if (r >= 0) clean_ = true;
+        return r;
+    }
+    void engine_step() { bc_moe_remote_engine_step(gen_); }
+    void engine_idle() { bc_moe_remote_engine_idle(gen_); }
     // Engine::step_loop holds one scalar ahead batch, not a queue.
     static constexpr uint32_t kIssueAheadDepth = 1;
     template<class Scheduler, class Batch>
@@ -383,19 +475,19 @@ public:
             current_ = ahead_;
             ahead_ = {};
         } else {
-            const int admission = bc_moe_remote_admit(&current_, 0, ranks);
+            const int admission = bc_moe_remote_admit(gen_, &current_, 0, ranks);
             if (admission != 0) return admission < 0 ? RAD_E_STATE : admission;
             b = scheduler.step();
             if (!b) {
-                if (bc_moe_remote_cancel(current_) < 0) return RAD_E_STATE;
+                if (bc_moe_remote_cancel(gen_, current_) < 0) return RAD_E_STATE;
                 current_ = {};
-            } else if (bc_moe_remote_bind(current_, b->step) < 0) return RAD_E_STATE;
+            } else if (bc_moe_remote_bind(gen_, current_, b->step) < 0) return RAD_E_STATE;
         }
         issued_ = current_;
         return RAD_OK;
     }
     bool try_ahead(int ranks) {
-        const int rc = bc_moe_remote_admit(&ahead_, 1, ranks);
+        const int rc = bc_moe_remote_admit(gen_, &ahead_, 1, ranks);
         ahead_status_ = rc < 0 ? RAD_E_STATE : RAD_OK;
         return rc == 0;
     }
@@ -403,11 +495,11 @@ public:
     template<class Batch>
     int bind_ahead(const Batch* b) {
         if (!b) {
-            if (bc_moe_remote_cancel(ahead_) < 0) return RAD_E_STATE;
+            if (bc_moe_remote_cancel(gen_, ahead_) < 0) return RAD_E_STATE;
             ahead_ = {};
             return RAD_OK;
         }
-        if (bc_moe_remote_bind(ahead_, b->step) < 0) return RAD_E_STATE;
+        if (bc_moe_remote_bind(gen_, ahead_, b->step) < 0) return RAD_E_STATE;
         issued_ = ahead_;
         return RAD_OK;
     }
@@ -424,18 +516,28 @@ public:
     int seal(const Ranks& ranks) {
         if (!current_.ticket_id) return RAD_OK;
         for (const auto& r : ranks)
-            if (bc_moe_remote_rank_done(r->index, current_, r->ctx.stream()) < 0) return RAD_E_DEVICE;
+            if (bc_moe_remote_rank_done(gen_, r->index, current_, r->ctx.stream()) < 0) return RAD_E_DEVICE;
         return RAD_OK;
     }
-    int host_done() { return bc_moe_remote_host_done(current_); }
+    int host_done() { return bc_moe_remote_host_done(gen_, current_); }
     bool finish() {
-        if (!bc_moe_remote_finish_admission()) return false;
+        if (!bc_moe_remote_finish_admission(gen_)) return false;
         finishing_.store(true, std::memory_order_release);
         return true;
     }
     bool finishing() const { return finishing_.load(std::memory_order_acquire); }
     bool stepper_finished() const { return stepper_finished_.load(std::memory_order_acquire); }
-    void note_stepper_finished() { stepper_finished_.store(true, std::memory_order_release); }
+    void note_stepper_finished() {
+        { std::lock_guard<std::mutex> lock(stepper_mu_); stepper_finished_.store(true, std::memory_order_release); }
+        stepper_cv_.notify_all();
+    }
+    /* The plugin's stop bound (0 with no generation). */
+    int64_t stop_budget_ms() const { return bc_moe_remote_stop_budget_ms(gen_); }
+    /* Wait for the stepper to finish, until `deadline`: a condition wait, not a poll. */
+    bool wait_stepper_finished(std::chrono::steady_clock::time_point deadline) {
+        std::unique_lock<std::mutex> lock(stepper_mu_);
+        return stepper_cv_.wait_until(lock, deadline, [&] { return stepper_finished_.load(std::memory_order_acquire); });
+    }
 };
 """
 
@@ -460,13 +562,14 @@ inline void bc_moe_remote_rank_units(P* p, O* order) {
         if (!p->units[(size_t)i].preplaced()) order->push_back(i);
 }
 
-/* A routed expert the remote helper computes, when the engine never reads it (bc_moe_remote_skip_unit): no
+/* A routed expert the remote helper computes, when the engine never reads it (bc_moe_remote_skip_unit of the engine's
+ * generation, found by the callers from their program's build slot): no
  * slot, no pool and no copy. It stays on the mapped tier as a placeholder the loader publishes without
  * reading; the zero-copy site keeps it out of the host-site and mixed-operand logic. Returns whether the unit
  * was taken (the planner then leaves it alone). */
 template <class MU>
-inline bool bc_moe_remote_pin_unit(MU& mu, int64_t max_tok) {
-    if (mu.layer < 0 || mu.expert < 0 || !bc_moe_remote_skip_unit(mu.layer, mu.expert, max_tok)) return false;
+inline bool bc_moe_remote_pin_unit(const BcMoeRemoteGeneration* gen, MU& mu, int64_t max_tok) {
+    if (mu.layer < 0 || mu.expert < 0 || !bc_moe_remote_skip_unit(gen, mu.layer, mu.expert, max_tok)) return false;
     mu.tier = Tier::Mapped;
     mu.movable = false;
     mu.site = Site::DeviceZeroCopy;
@@ -478,18 +581,19 @@ inline bool bc_moe_remote_pin_unit(MU& mu, int64_t max_tok) {
  * step-cap condition is the planner's and bring-up's to enforce (0 skips it here); a cap below the largest
  * step only makes this budget generous, and the plan then reports what did not fit. */
 template <class U>
-inline void bc_moe_remote_mark_footprint(std::vector<U>& units) {
+inline void bc_moe_remote_mark_footprint(const BcMoeRemoteGeneration* gen, std::vector<U>& units) {
     for (U& mu : units)
-        if (mu.layer >= 0 && mu.expert >= 0 && bc_moe_remote_skip_unit(mu.layer, mu.expert, 0)) mu.mapped = true;
+        if (mu.layer >= 0 && mu.expert >= 0 && bc_moe_remote_skip_unit(gen, mu.layer, mu.expert, 0)) mu.mapped = true;
 }
 
 /* Bring-up: publish a unit the planner left on the mapped tier as a never-read placeholder (the container
  * address, never dereferenced) instead of loading it. Its stored form never matters because this rank never
  * reads it, so the byte-count and direct-read checks do not apply. Returns whether it was published. */
 template <class W, class E, class F, class M, class I>
-inline bool bc_moe_remote_publish_placeholder(int64_t max_tok, W& w, const E* e, const F& file, M& mover, I index) {
+inline bool bc_moe_remote_publish_placeholder(const BcMoeRemoteGeneration* gen, int64_t max_tok, W& w, const E* e,
+                                              const F& file, M& mover, I index) {
     if (!e || w.tier != Tier::Mapped || w.decl.group.layer < 0 || w.decl.group.expert < 0 ||
-        !bc_moe_remote_skip_unit(w.decl.group.layer, w.decl.group.expert, max_tok))
+        !bc_moe_remote_skip_unit(gen, w.decl.group.layer, w.decl.group.expert, max_tok))
         return false;
     w.ptr = (void*)file.data(file.plane(*e, w.sel[0]));
     w.host_ptr = w.ptr;
@@ -546,24 +650,27 @@ inline void moe_debug_weights(RadCtx* c_, int layer, int64_t top_k, rad_buf ids,
  * the local rows for the add. */
 inline int64_t bc_moe_remote_fuse_rows(const Geom& g) { return 1 + (g.max_spec > 0 ? g.max_spec : 0); }
 inline bool bc_moe_remote_fuses(const Geom& g, int64_t T, int64_t gather_rows, int64_t gather_rows6) {
-    return !bc_moe_remote_mask_only() && T <= bc_moe_remote_fuse_rows(g) && gather_taken(g, T, gather_rows, gather_rows6);
+    return !bc_moe_remote_mask_only(g.bc_remote) && T <= bc_moe_remote_fuse_rows(g) && gather_taken(g, T, gather_rows, gather_rows6);
 }
 /* HyperConn::takes_ar: the connection fed by a MoE gather source (top_k > 0) leaves the reduction to the block on a
  * handed-off step that does not fuse; attention and delta-net connections keep their fused writes. */
 inline bool bc_moe_remote_hc_open(int64_t moe_top_k, const Geom& g, int64_t T, int64_t gather_rows, int64_t gather_rows6) {
-    return moe_top_k > 0 && bc_moe_remote_wanted(T) && !bc_moe_remote_shadow() &&
+    return moe_top_k > 0 && bc_moe_remote_wanted(g.bc_remote, T) && !bc_moe_remote_shadow(g.bc_remote) &&
            !bc_moe_remote_fuses(g, T, gather_rows, gather_rows6);
 }
 
 struct BcMoeRemote {
+    /* The engine's generation (Geom::bc_remote, found by the build slot when geom_from ran); null: no hand-off. Non-owning:
+     * the engine closes the generation only after its ranks (and so this block) are gone. */
+    BcMoeRemoteGeneration* gen = nullptr;
     /* publish_fused: the same op for a step whose helper rows join the fused gather (param fused = 1: no combine) */
     rad_op publish = 0, publish_fused = 0, add = 0, inject = 0;
     rad_op quantize = 0;
     rad_buf aq = 0, as = 0;
 
     /* The step `T` is handed off (shadow keeps the local path and only publishes). */
-    bool policy(int64_t T) const { return publish && add && bc_moe_remote_wanted(T); }
-    bool active(int64_t T) const { return policy(T) && !bc_moe_remote_shadow(); }
+    bool policy(int64_t T) const { return publish && add && bc_moe_remote_wanted(gen, T); }
+    bool active(int64_t T) const { return policy(T) && !bc_moe_remote_shadow(gen); }
     /* A handed-off step whose helper rows join the fused MoE gather + reducing hc write: exactly the predicate
      * HyperConn asks (bc_moe_remote_fuses, through bc_moe_remote_hc_open), on the same T and bounds, so the block and
      * the write always agree. It depends on T and declared bounds only, so every rank and every pass of the step agree;
@@ -591,7 +698,8 @@ struct BcMoeRemote {
         const auto& c = m.c;
         const auto& g = m.g;
         const auto& w = m.w;
-        if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
+        gen = g.bc_remote;
+        if (!bc_moe_remote_wanted_upto(gen, g.max_tok)) return RAD_OK;
         aq = c.expert_rot ? w.hr.q : w.h.q;
         as = c.expert_rot ? w.hr.s : w.h.s;
         if (materialize) {
@@ -613,7 +721,7 @@ struct BcMoeRemote {
         for (int f = 0; f < 2; ++f)
             (f ? publish_fused : publish) =
                 rw(b, RAD_OP(b, "moe_mailbox_publish",
-                             RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
+                             RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(gen)), RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows),
                                         RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k),
                                         RAD_INT("expert_base", c.expert_base),
                                         RAD_INT("n_expert", c.n_expert), RAD_INT("fused", f)),
@@ -633,12 +741,13 @@ struct BcMoeRemote {
         std::vector<int32_t> slot((size_t)ne, -1);
         for (size_t s = 0; s < reg.size(); ++s)
             if (reg[s] >= 0 && reg[s] < ne) slot[(size_t)reg[s]] = (int32_t)s;
-        bc_moe_remote_layer_map(layer, (int)ne, slot.data());
+        gen = g.bc_remote;
+        bc_moe_remote_layer_map(gen, layer, (int)ne, slot.data());
 
-        if (!bc_moe_remote_wanted_upto(g.max_tok)) return RAD_OK;
+        if (!bc_moe_remote_wanted_upto(gen, g.max_tok)) return RAD_OK;
         if (!publish && declare_publish(b, m, layer) < 0) return RAD_E_INVAL;
         add = RAD_OP(b, "moe_mailbox_add",
-                     RAD_PARAMS(RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
+                     RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(gen)), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd), RAD_INT("top_k", c.top_k)),
                      RAD_NOWEIGHTS);
         if (add) {
             const rad_buf rd[5] = { w.sorted, w.edn, w.ew, w.sout, w.sgate };
@@ -647,7 +756,7 @@ struct BcMoeRemote {
             rad_op_writes(b, add, wr, 1);
         }
         inject = RAD_OP(b, "moe_mailbox_inject",
-                        RAD_PARAMS(RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
+                        RAD_PARAMS(RAD_INT("owner", bc_moe_remote_owner(gen)), RAD_INT("layer", layer), RAD_RANGE("M", 1, c.rows), RAD_INT("n", g.n_embd),
                                    RAD_INT("top_k", c.top_k), RAD_INT("n_expert", c.n_expert)),
                         RAD_NOWEIGHTS);
         if (inject) {
@@ -671,7 +780,7 @@ struct BcMoeRemote {
     template <class Moe>
     void after_route(RadCtx* c_, const Moe& m, int64_t T, int64_t r0, int64_t rows, const RadOperand& ecnt,
                      const RadOperand& inv = RAD_NONE) const {
-        if (!policy(T) || bc_moe_remote_mask_only()) return;
+        if (!policy(T) || bc_moe_remote_mask_only(gen)) return;
         const auto& c = m.c;
         const auto& g = m.g;
         const auto& w = m.w;
@@ -747,7 +856,7 @@ PATCHES = (
             id="create-bc-moe-remote-abi",
             anchor=r"\A",
             text=_BC_MOE_REMOTE_H,
-            guard=r"^int bc_moe_remote_wanted\(int64_t step_rows\);$",
+            guard=r"^int bc_moe_remote_wanted\(const BcMoeRemoteGeneration\* g, int64_t step_rows\);$",
             expect_matches=1,
             rationale="Created files are anchored at the empty upstream file; create=True rejects any upstream collision.",
         ),),
@@ -914,16 +1023,16 @@ PATCHES = (
                 id="bc-remote-pin-unit",
                 anchor=r"^[ \t]*bool host_only = false, stored = true;$",
                 mode="insert_before",
-                text="        if (bc_moe_remote_pin_unit(mu, in_.config->max_tok)) continue;\n",
-                guard=r"if \(bc_moe_remote_pin_unit\(mu, in_\.config->max_tok\)\) continue;",
+                text="        if (bc_moe_remote_pin_unit(bc_moe_remote_lookup(rad_build_slot(&prog.ctx)), mu, in_.config->max_tok)) continue;\n",
+                guard=r"if \(bc_moe_remote_pin_unit\(bc_moe_remote_lookup\(rad_build_slot\(&prog\.ctx\)\), mu, in_\.config->max_tok\)\) continue;",
                 expect_matches=1,
                 rationale="This declaration opens pin_mapped's per-unit loop body; a helper-owned unit is decided before any host or n-gram logic and leaves the loop.",
             ),
             Edit(
                 id="bc-remote-mark-footprint",
                 anchor=r"^    for \(U& mu : units\) mu\.mapped = mapped_unit\(mu\.mapped, container && mu\.direct, host_backend\);$",
-                text="\n    bc_moe_remote_mark_footprint(units);",
-                guard=r"bc_moe_remote_mark_footprint\(units\);",
+                text="\n    bc_moe_remote_mark_footprint(bc_moe_remote_lookup(rad_build_slot(&prog.ctx)), units);",
+                guard=r"bc_moe_remote_mark_footprint\(bc_moe_remote_lookup\(rad_build_slot\(&prog\.ctx\)\), units\);",
                 expect_matches=1,
                 rationale="weight_footprint's unit pass ends with this mapped resolution; the budgets read mu.mapped right after it.",
             ),
@@ -954,10 +1063,91 @@ PATCHES = (
                 id="bc-remote-publish-placeholder",
                 anchor=r"^[ \t]*if \(\(w\.tier == Tier::Mapped \|\| w\.tier == Tier::SSD\) && \(!direct \|\| !e\)\) \{$",
                 mode="insert_before",
-                text="            if (bc_moe_remote_publish_placeholder(cfg_.max_tok, w, e, *file_, r->mover, (rad_weight)i)) continue;\n",
-                guard=r"if \(bc_moe_remote_publish_placeholder\(cfg_\.max_tok, w, e, \*file_, r->mover, \(rad_weight\)i\)\) continue;",
+                text="            if (bc_moe_remote_publish_placeholder(bc_moe_remote_lookup(rad_build_slot(&r->program.ctx)), cfg_.max_tok, w, e, *file_, r->mover, (rad_weight)i)) continue;\n",
+                guard=r"if \(bc_moe_remote_publish_placeholder\(bc_moe_remote_lookup\(rad_build_slot\(&r->program\.ctx\)\), cfg_\.max_tok, w, e, \*file_, r->mover, \(rad_weight\)i\)\) continue;",
                 expect_matches=1,
                 rationale="The single tier / stored-form check in the weight publish loop; a helper-owned placeholder is published before it, since nothing reads its bytes and its relayouted form would fail the check.",
+            ),
+            Edit(
+                id="bc-remote-open-generation",
+                anchor=r"^        reg_->set_tp_group\(base\);\n    \}$",
+                text=(
+                    "\n    /* The remote-MoE generation of this engine: opened through the factory of the already-loaded libr3moe plugin for the"
+                    "\n     * slots just claimed, before any declare, planner or bring-up step looks it up. Closed in the destructor. */"
+                    "\n    static_assert(RAD_MAX_SLOTS == BC_MOE_REMOTE_MAX_SLOTS, \"the remote-MoE slot table must cover every engine slot\");"
+                    "\n    {"
+                    "\n        const Plugin* bc_moe_plugin = reg_->plugin(\"libr3moe\");"
+                    "\n        RAD_TRY(bc_remote_admission_.open(bc_moe_plugin ? bc_moe_plugin->handle : nullptr, slot_base_, cfg_.tp,"
+                    "\n            (uint32_t)std::extent_v<decltype(rad::RouteSlot::staging)> + BcMoeRemoteAdmission::kIssueAheadDepth));"
+                    "\n    }"),
+                guard=r"bc_remote_admission_\.open\(bc_moe_plugin \? bc_moe_plugin->handle : nullptr, slot_base_, cfg_\.tp,",
+                expect_matches=1,
+                rationale="The engine's slots are claimed here; the generation must exist, bound to them, before the first consumer looks it up.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="core/runtime/ctx.h",
+        description="Carry the engine's remote-MoE generation and the parent's ticket in the rank's Ctx, not in a thread-local.",
+        edits=(
+            Edit(
+                id="include-bc-moe-remote-ctx-h",
+                anchor=r'^#include "wtab\.h"$',
+                text='\n#include "bc_moe_remote.h"',
+                guard=r'^#include "bc_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="wtab.h is the last of the context's unique local includes; the ticket value type lives in the extension ABI.",
+            ),
+            Edit(
+                id="bc-remote-ctx-issue",
+                anchor=r"^    void set_gen_lora_slot\(int32_t s\) \{ gen_lora_slot_ = s; \}$",
+                text=(
+                    "\n    /* The engine's remote-MoE generation (null: no hand-off) and this parent's immutable admission ticket; the rank thread"
+                    "\n     * sets both before it releases the rank for a pass, and Ctx::run_pass reads them. */"
+                    "\n    void bc_moe_remote_issue(BcMoeRemoteGeneration* g, BcMoeRemoteTicket t) { bc_remote_ = g; bc_remote_ticket_ = t; }"),
+                guard=r"void bc_moe_remote_issue\(BcMoeRemoteGeneration\* g, BcMoeRemoteTicket t\)",
+                expect_matches=1,
+                rationale="The other per-release setter the pass loop calls on the rank thread; unique line.",
+            ),
+            Edit(
+                id="bc-remote-ctx-state",
+                anchor=r"^    int32_t gen_lora_slot_ = -1;$",
+                text="\n    BcMoeRemoteGeneration* bc_remote_ = nullptr;\n    BcMoeRemoteTicket bc_remote_ticket_{};",
+                guard=r"^    BcMoeRemoteGeneration\* bc_remote_ = nullptr;$",
+                expect_matches=1,
+                rationale="Beside the other per-release pass state the rank thread sets; unique line.",
+            ),
+        ),
+    ),
+    FilePatch(
+        path="arch/common/rad_arch.h",
+        description="Hand each declaring instance the engine's remote-MoE generation, found once by its build slot.",
+        edits=(
+            Edit(
+                id="include-bc-moe-remote-arch",
+                anchor=r'^#include "rad_abi_layout\.h"$',
+                text='\n#include "bc_moe_remote.h"',
+                guard=r'^#include "bc_moe_remote\.h"$',
+                expect_matches=1,
+                rationale="rad_abi_layout.h is the last of the architecture header's unique local includes.",
+            ),
+            Edit(
+                id="bc-remote-geom-member",
+                anchor=r"^    int64_t n_layer    = 0;$",
+                mode="insert_before",
+                text="    BcMoeRemoteGeneration* bc_remote = nullptr;   /* this engine's remote-MoE generation (non-owning), null: no hand-off */\n",
+                guard=r"^    BcMoeRemoteGeneration\* bc_remote = nullptr;",
+                expect_matches=1,
+                rationale="Geom's first member line is unique; blocks reach the generation through the Geom they already hold.",
+            ),
+            Edit(
+                id="bc-remote-geom-lookup",
+                anchor=r"^    g\.n_layer   = m->n_layers;$",
+                mode="insert_before",
+                text="    g.bc_remote = bc_moe_remote_lookup(rad_build_slot(c));\n",
+                guard=r"g\.bc_remote = bc_moe_remote_lookup\(rad_build_slot\(c\)\);",
+                expect_matches=1,
+                rationale="The one init-time lookup of an architecture's declare: c is checked and its rank range-checked just above.",
             ),
         ),
     ),
@@ -966,22 +1156,14 @@ PATCHES = (
         description="Bind every trunk/draft/issued-ahead pass to its parent ticket before tape capture or replay.",
         edits=(
             Edit(
-                id="include-bc-moe-remote-ctx",
-                anchor=r'^#include "ctx\.h"$',
-                text='\n#include "bc_moe_remote.h"',
-                guard=r'^#include "bc_moe_remote\.h"$',
-                expect_matches=1,
-                rationale="The context's own unique include is the stable place for the ticket hook ABI.",
-            ),
-            Edit(
                 id="bc-remote-ticket-before-pass",
                 anchor=r"^        const int rc = run_pass\(b\);\n        if \(rc < 0 && step_status_ >= 0\) step_status_ = rc;$",
                 mode="replace",
                 text="""        /* The rank thread installed this parent's immutable admission
          * ticket before releasing this pass. Never derive it from b->step. */
-        const int rc = bc_moe_remote_before_pass(rank_, bc_moe_remote_current_ticket(), b->n_tok, stream_) < 0 ? RAD_E_STATE : run_pass(b);
+        const int rc = bc_moe_remote_before_pass(bc_remote_, rank_, bc_remote_ticket_, stream_) < 0 ? RAD_E_STATE : run_pass(b);
         if (rc < 0 && step_status_ >= 0) step_status_ = rc;""",
-                guard=r"const int rc = bc_moe_remote_before_pass\(rank_, bc_moe_remote_current_ticket\(\), b->n_tok, stream_\) < 0 \? RAD_E_STATE : run_pass\(b\);",
+                guard=r"const int rc = bc_moe_remote_before_pass\(bc_remote_, rank_, bc_remote_ticket_, stream_\) < 0 \? RAD_E_STATE : run_pass\(b\);",
                 expect_matches=1,
                 rationale="Only this call enters capture/replay; the setter goes on lane 0 before every pass, even the first live recording.",
             ),
@@ -1030,10 +1212,10 @@ PATCHES = (
                 id="bc-remote-rank-ticket",
                 anchor=r"^            int s = what == kIssueSampler \? RAD_OK : r\.ctx\.run_step\(b\);$",
                 mode="insert_before",
-                text="            bc_moe_remote_rank_ticket(bc_remote_admission_.issued_ticket());\n",
-                guard=r"bc_moe_remote_rank_ticket\(bc_remote_admission_\.issued_ticket\(\)\);",
+                text="            r.ctx.bc_moe_remote_issue(bc_remote_admission_.generation(), bc_remote_admission_.issued_ticket());\n",
+                guard=r"r\.ctx\.bc_moe_remote_issue\(bc_remote_admission_\.generation\(\), bc_remote_admission_\.issued_ticket\(\)\);",
                 expect_matches=1,
-                rationale="Explicit immutable ticket transfer before every rank model/draft release.",
+                rationale="Explicit immutable transfer of the engine's generation and the parent's ticket into the rank's Ctx before every rank model/draft release; no thread-local owner.",
             ),
             Edit(
                 id="bc-remote-ahead-try-admit",
@@ -1085,10 +1267,10 @@ PATCHES = (
             Edit(
                 id="bc-remote-fault-interrupt",
                 anchor=r"^int Engine::fail_loop\(int st\) \{$",
-                text="\n    bc_moe_remote_shutdown();",
-                guard=r"^int Engine::fail_loop\(int st\) \{\n    bc_moe_remote_shutdown\(\);$",
+                text="\n    bc_remote_admission_.fault();",
+                guard=r"^int Engine::fail_loop\(int st\) \{\n    bc_remote_admission_\.fault\(\);$",
                 expect_matches=1,
-                rationale="Fault shutdown interrupts the admission and completion waiters immediately.",
+                rationale="The fault stop interrupts the admission and completion waiters immediately.",
             ),
             Edit(
                 id="bc-remote-finish-issued-ahead",
@@ -1115,25 +1297,23 @@ PATCHES = (
                 mode="insert_before",
                 text="""    if (!gen_ && loop_status_.load(std::memory_order_acquire) >= 0 &&
         bc_remote_admission_.finish()) {
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(30);
-        while (!bc_remote_admission_.stepper_finished()) {
-            if (std::chrono::steady_clock::now() >= deadline) {
-                bc_moe_remote_shutdown();
-                fatal("model %s: remote MoE stepper did not finish within its shutdown deadline",
-                      cfg_.served_model_name.c_str());
-            }
-            std::this_thread::sleep_for(std::chrono::milliseconds(2));
+        const auto deadline = std::chrono::steady_clock::now() +
+                              std::chrono::milliseconds(bc_remote_admission_.stop_budget_ms());
+        if (!bc_remote_admission_.wait_stepper_finished(deadline)) {
+            bc_remote_admission_.fault();
+            fatal("model %s: remote MoE stepper did not finish within its shutdown deadline",
+                  cfg_.served_model_name.c_str());
         }
         const int stepper_status = loop_status_.load(std::memory_order_acquire);
         if (stepper_status < 0) return stepper_status;
         const auto remaining = std::chrono::duration_cast<std::chrono::milliseconds>(
             deadline - std::chrono::steady_clock::now()).count();
-        if (bc_moe_remote_wait_finished(std::max<int64_t>(0, remaining)) < 0)
+        if (bc_remote_admission_.wait_finished(std::max<int64_t>(0, remaining)) < 0)
             return fail_loop(RAD_E_STATE);
-        bc_moe_remote_engine_idle();
+        bc_remote_admission_.engine_idle();
     }
 """,
-                guard=r"bc_moe_remote_wait_finished\(std::max<int64_t>",
+                guard=r"bc_remote_admission_\.wait_finished\(std::max<int64_t>",
                 applies_if=r"front_->detach\(cfg_\.served_model_name",
                 expect_matches=1,
                 rationale="Use the bound parents' existing terminal proof before server and rank teardown.",
@@ -1142,24 +1322,25 @@ PATCHES = (
                 id="bc-remote-after-server-interrupt",
                 anchor=r"^    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);$",
                 mode="insert_before",
-                text="    bc_moe_remote_shutdown();\n",
-                guard=r"bc_moe_remote_shutdown\(\);\n    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);",
+                text="    if (!bc_remote_admission_.clean()) bc_remote_admission_.fault();\n",
+                guard=r"if \(!bc_remote_admission_\.clean\(\)\) bc_remote_admission_\.fault\(\);\n    stopping_\.store\(true, std::memory_order_release\);\n(?:    wake_hold\(\);\n)?    barrier_->abort\(\);",
                 expect_matches=1,
-                rationale="Wake remaining waits only after the clean server drain or error stop path.",
+                rationale="A clean stop (every bound ticket proven by wait_finished) never interrupts the ledger; anything else is a fault stop and wakes every remaining wait.",
             ),
             Edit(
-                id="include-bc-moe-remote-engine",
-                anchor=r'^#include "engine_priv\.h"$',
-                text='\n#include "bc_moe_remote.h"',
-                guard=r'^#include "bc_moe_remote\.h"$',
+                id="bc-remote-close-generation",
+                anchor=r"^    ranks_\.clear\(\);$",
+                mode="insert_after",
+                text="\n    bc_remote_admission_.close();",
+                guard=r"bc_remote_admission_\.close\(\);",
                 expect_matches=1,
-                rationale="engine_priv.h is engine.cpp's unique first include line.",
+                rationale="The ranks (and every consumer of the generation) are gone here and the plugin library is still loaded: the one place the generation can close.",
             ),
             Edit(
                 id="bc-remote-engine-idle",
                 anchor=r"^            step_batch_\.store\(nullptr, std::memory_order_release\);$",
-                text="\n            bc_moe_remote_engine_idle();",
-                guard=r"bc_moe_remote_engine_idle\(\);",
+                text="\n            bc_remote_admission_.engine_idle();",
+                guard=r"^            bc_remote_admission_\.engine_idle\(\);$",
                 expect_matches=1,
                 rationale="The engine loop's idle branch clears the step batch here when the scheduler has no step: every earlier step has joined, so a burst ends.",
             ),
@@ -1167,8 +1348,8 @@ PATCHES = (
                 id="bc-remote-engine-step",
                 anchor=r"^        idle = 0;$",
                 mode="insert_before",
-                text="        bc_moe_remote_engine_step();\n",
-                guard=r"bc_moe_remote_engine_step\(\);",
+                text="        bc_remote_admission_.engine_step();\n",
+                guard=r"bc_remote_admission_\.engine_step\(\);",
                 expect_matches=1,
                 rationale="The loop resets its idle backoff exactly when the scheduler returned a step, before the ranks are released or any recorded pass is replayed.",
             ),
@@ -1186,13 +1367,15 @@ PATCHES = (
 #include "bc_moe_remote.h"
 
 /* Architecture fixtures run without a remote helper or the engine core. */
-extern "C" int bc_moe_remote_wanted(int64_t) { return 0; }
-extern "C" int bc_moe_remote_wanted_upto(int64_t) { return 0; }
-extern "C" int bc_moe_remote_shadow(void) { return 0; }
-extern "C" int bc_moe_remote_mask_only(void) { return 0; }
-extern "C" void bc_moe_remote_layer_map(int, int, const int32_t*) {}
+extern "C" BcMoeRemoteGeneration* bc_moe_remote_lookup(int) { return nullptr; }
+extern "C" int bc_moe_remote_wanted(const BcMoeRemoteGeneration*, int64_t) { return 0; }
+extern "C" int bc_moe_remote_wanted_upto(const BcMoeRemoteGeneration*, int64_t) { return 0; }
+extern "C" uint64_t bc_moe_remote_owner(const BcMoeRemoteGeneration*) { return 0; }
+extern "C" int bc_moe_remote_shadow(const BcMoeRemoteGeneration*) { return 0; }
+extern "C" int bc_moe_remote_mask_only(const BcMoeRemoteGeneration*) { return 0; }
+extern "C" void bc_moe_remote_layer_map(BcMoeRemoteGeneration*, int, int, const int32_t*) {}
 ''',
-                guard=r'extern "C" int bc_moe_remote_wanted\(int64_t\)',
+                guard=r'extern "C" BcMoeRemoteGeneration\* bc_moe_remote_lookup\(int\)',
                 expect_matches=1,
                 rationale="Standalone architecture tests fake core entry points and declare no remote handoff.",
             ),

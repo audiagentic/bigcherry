@@ -1,15 +1,17 @@
 # RHP - live heat-driven expert placement roadmap
 
-## Next actions (reconciled 2026-11-10)
+## Current active work (reconciled 2026-11-22)
 
-1. RHP18/RHP19/RHP20: confirm visible policy state, calibration lifecycle and all card/layout eligibility.
-2. RHP22: settle forced-churn KLD quality breach before production default-on.
-3. RHP01/RHP02/RHP08: close histogram coverage and shared tail/engine feed, not a second collector.
-4. RHP21/RHP04/RHP09: first cold after docs, then measured-cost solver, enforcing RHP12.
-5. RHP13/RHP12: memory allocator and retained-session baselines; RHP10 is complete.
+These are the **active Planning MCP owners**, not a reissue of historical items:
 
-See [Flash-Next execution status](../../FLASHNEXT_EXECUTION_STATUS.md) for item states, evidence paths and tail sizes.
+1. [RHP20](RHP20.md) verifies remaining card/layout eligibility and live migration; [RHP22](../../completed/patching-radiance-heat-placement/RHP22.md) recorded the four-GPU forced-churn KL p99 **FAIL** (not waived). [RHP16](RHP16.md) still owns warmed-policy and mid-scoring numerical acceptance before a quality-qualified default-on claim.
+2. [RHP01](RHP01.md) and [RHP08](RHP08.md) own remaining histogram/coverage and tail-heat correctness; do **not** reopen the [deprecated RHP02 observer](../../completed/patching-radiance-heat-placement/RHP02.md) or create a second GPU collector.
+3. [RHP21](RHP21.md) covers first-cold adaptation; [RHP04](RHP04.md) and [RHP09](RHP09.md) own measured-cost placement, with [RHP12](RHP12.md) the no-regression baseline.
+4. [RHP13](RHP13.md) owns the remaining unified allocation/budget work. [RHP07](RHP07.md) owns controls, [RHP11](RHP11.md) active epoch integration, and [RHP16](RHP16.md) live policy/calibration validation.
 
+**Historical states:** [RHP18](../../completed/patching-radiance-heat-placement/RHP18.md) observability and [RHP19](../../completed/patching-radiance-heat-placement/RHP19.md) bounded calibration are **completed**. [RHP02](../../completed/patching-radiance-heat-placement/RHP02.md) and [RHP17](../../completed/patching-radiance-heat-placement/RHP17.md) are **deprecated**; RHP17's older device-speed solver proposal is not a separate live implementation. [RHP10](../../completed/patching-radiance-heat-placement/RHP10.md) is complete, and [RHP05](../../completed/patching-radiance-heat-placement/RHP05.md) is superseded. Keep their outcomes and negative evidence; do not re-register them.
+
+See [Flash-Next execution status](../../FLASHNEXT_EXECUTION_STATUS.md) and [live placement guide](../../../reference/engines/radiance/LIVE_PLACEMENT.md) for current native measurements, layouts and runtime policy status.
 
 ## Target
 
@@ -17,7 +19,7 @@ One canonical ownership map, one placement decision path, and one live activatio
 
 ## Implemented foundation
 
-Heat recording in pinned host memory (#500/#502), drift watch (#501), heat-ordered start-up placement in `worker_owners.h`, **live helper re-placement** (RHP11 slices C-G: epoch protocol, live slot migration, owner-map generations; #542 #557 #558 #572), the **live placement policy** (#597) and its **settings derived from calibration** (RHP16; #666 #693 #708) are done and measured (policy on vs off: filler TTFT -33%, RHP16.md). The policy is on only for a calibrated layout, and a layout's calibration record is orphaned by any change to the plan key inputs (#790 did this on 2026-11-09). How to check and restore: [live placement guide](../../../reference/engines/radiance/LIVE_PLACEMENT.md). Still open: [RHP02](RHP02.md)'s shared histogram feed (the pinned-memory histogram is the interim source), the cost-aware solver (RHP04 stage 3, RHP17) and the stages after it. RHP11, RHP04 and RHP16 carry delivered slices and read in_progress; RHP06, RHP02, RHP01 and RHP08 are reconciled as partially delivered with open acceptance gates (see the Next actions and linked status matrix).
+Heat recording in pinned host memory (#500/#502), drift watch (#501), heat-ordered start-up placement in `worker_owners.h`, **live helper re-placement** (RHP11 slices C-G: epoch protocol, live slot migration, owner-map generations; #542 #557 #558 #572), the **live placement policy** (#597) and its **settings derived from calibration** (RHP16; #666 #693 #708) are done and measured (policy on vs off: filler TTFT -33%, RHP16.md). The policy is on only for a calibrated layout, and a layout's calibration record is orphaned by any change to the plan key inputs (#790 did this on 2026-11-09). How to check and restore: [live placement guide](../../../reference/engines/radiance/LIVE_PLACEMENT.md). Remaining accepted work is the RHP01/RHP08 histogram/coverage path, RHP04/RHP09 measured-cost solver, RHP12 baselines and follow-on live placement/allocator gates. The original [RHP02](../../completed/patching-radiance-heat-placement/RHP02.md) observer and [RHP17](../../completed/patching-radiance-heat-placement/RHP17.md) independent solver are deprecated, **not pending dependencies**. RHP11, RHP04 and RHP16 retain delivered slices but remain in_progress for their own acceptance; RHP06, RHP01 and RHP08 retain bounded outstanding gates.
 
 ## Stages
 
@@ -25,7 +27,7 @@ Heat recording in pinned host memory (#500/#502), drift watch (#501), heat-order
 
 | Stage | Items | Done when | Depends on |
 | --- | --- | --- | --- |
-| **1. Live helper re-placement** | [RHP11](RHP11.md) protocol v23; [RHP06](RHP06.md) migration; [RHP04](RHP04.md) stage 1 policy; [RHP07](RHP07.md) controls; [RHP02](RHP02.md) feed | Async host-to-VRAM staging, step-boundary epoch flip, safe old-slot retirement; replay, mailbox/epoch and forced-churn tests prove no lost/duplicate/stale work; paired 8-session prefill, 6-stream decode, 42K step-time A/Bs and quality checks show no degradation | RHP02 evidence; RHP11+RHP06 together; RHP12 |
+| **1. Live helper re-placement** | [RHP11](RHP11.md) protocol v23; [RHP06](RHP06.md) migration; [RHP04](RHP04.md) stage 1 policy; [RHP07](RHP07.md) controls; [RHP01](RHP01.md)/[RHP08](RHP08.md) coverage (RHP02 deprecated) | Async host-to-VRAM staging, step-boundary epoch flip, safe old-slot retirement; replay, mailbox/epoch and forced-churn tests prove no lost/duplicate/stale work; paired 8-session prefill, 6-stream decode, 42K step-time A/Bs and quality checks show no degradation | RHP02 evidence; RHP11+RHP06 together; RHP12 |
 | **2. Discovery and default-on calibration** | [RHP09](RHP09.md), [RCS10](../build-radiance-components/RCS10.md) | Supported layouts discovered, shared calibration schema, validated costs, topology-keyed cache hit under 0.5 s; default-on with opt-out; 4 actual rows in a 24-row lane within ~3% of 4-row execution | Stage 1, RHP12 |
 | **3. Cost-aware solver** | RHP04 stage 3; RHP09 cost model | Disjoint budget-safe ownership with protected experts fixed; minimise layer critical-path max (not sum); bounded swaps, hysteresis and movement cost beat/match static-tail and heat-only A/Bs without quality loss | Stages 1-2, RHP12 |
 | **4. Unified allocator** | [RHP13](RHP13.md), managed Radiance `core/place` patch | One allocator budgets engine VRAM, host and helper residency; protected slots and epoch safety preserved; no competing placement planners | Stages 1-3, RHP12 |

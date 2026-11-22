@@ -13,6 +13,46 @@ priority: P2
 
 # AMD-STREAM-005: Protect concurrent-region join node from fusion
 
+## Description
+
+
+
+## Steps
+
+
+
+## Detailed Solution & Technical Design
+
+
+
+## Code Samples & Guidance
+
+
+
+## Files
+
+
+
+## Validation
+
+
+
+## Effort & Risk
+
+
+
+## Standards
+
+
+
+## Acceptance Criteria
+
+
+
+## Notes
+
+2026-11-22 owner handoff from decision-only BCOP175: Bounded action / terminal disposition. Source-bounded action/stop rule: First run host-only patch-composition, manifest-versus-legacy-metadata, contract-prerequisite scoping, marker-no-crossing, and synthetic join-skip fixtures. Reconcile stale implementation metadata only in a separate tested patch edit. If a native concurrent region is reachable at b11552 without 1215, run the existing control=validated BC vs subject=+1216 graph-opt-on producer with fixed model/device identity, full-vocab/MTP parity, >=20 multi-request/capture-replay safety runs and >=4 independent paired sessions/architecture with >=10 rounds, <=1% control regression. If no native region activates, close as dormant/no-op without benchmarking; if correctness or controls fail, retain default-off. Do not claim that a marker alone proves a prevented abort. See docs/planning/completed/patching-bc-optimizations/BCOP175.md for the complete source/shape/negative case and evidence. PRBE35 is the only active implementation owner; this handoff does not qualify a kernel, change a source pin or authorize extra dispatch code.
+
 ## Authoritative disposition — 2026-10-13, llama.cpp b11552
 
 **Pending; standalone correctness-only; opt-in/untested; no speedup claim.** This replaces the duplicated September implementation instructions, central-runner proposal, and 1215-dependent qualification procedure. Historical evidence and earlier designs remain available in Git history and `engines/llamacpp/patches/1216_rd43_concurrent_join_fusion_guard/README.md`. **1215/RD39–42 was rejected** in the later four-session b11126 qualification; do not reuse its earlier positive measurements or reactivate its implementation. PRBE112 owns 1215's remaining diagnostic; PRBE35 owns only 1216's native concurrent-region join safety.
@@ -55,3 +95,6 @@ priority: P2
 
 2026-10-13: 15/15 actual-source static assertions passed; 2/2 pinned patch anchors matched once; 6/6 synthetic host assertions passed (TOML nesting and marker non-causality). No repository pytest, patch application, HIP compilation, GPU execution or new performance benchmark ran. Historical details remain in Git history and patch README. This is a documentation-only reconciliation.
 
+## Change Log
+
+- 2026-11-22T05:21:59.569463+00:00 (updated-by): Updated: section:notes

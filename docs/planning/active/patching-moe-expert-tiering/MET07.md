@@ -66,6 +66,8 @@ Scope limit: the cache refuses the tensor split and multiple devices, so this do
 
 BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes keep the full history): PNRO08: Merge llama.cpp cache hit/eviction, immutable-generation, forced-miss, fidelity and PCIe traffic tests into MET07; retire the obsolete proposed 1262 duplicate, without claiming a tensor-split cache.
 
+2026-11-22 final BCOP authority reconciliation (BCOP26 BCOP39): For the existing current-upstream host expert cache, use merged #29943 scheduler-copy callback rather than a private scheduler-core copy hook. Keep one observation-only callback/control and immutable expert tensor/device identity; measure hits, upload bytes, fidelity, multi-request and MTP with upstream cache and 1338 current-pin qualification. Current R9700 x4 evidence rejects 2/4/8GiB pure LRU as default; only consider static-hot/hybrid after held-out >=20% fewer miss bytes/token at *equal* VRAM, and require no correctness/pre-fill regression. MET04 owns the EP comparison; no extra cache state/solver. Original source and reviewed decisions: docs/evidence/2026-11-22-bcop-final-disposition/README.md
+
 ## Change Log
 
 - 2026-10-06T14:52:56.714383+00:00 (created-by): Created by agent
@@ -76,3 +78,4 @@ BACKLOG TRIAGE 2026-11-04 absorbed items (superseded into this one; their notes 
 - chg_20261011_201458_bigcherry-now-builds-on-llama_8427
 - 2026-10-11T20:15:20.721396+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T04:12:04.489706+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T06:46:12.647625+00:00 (updated-by): Updated: section:notes
