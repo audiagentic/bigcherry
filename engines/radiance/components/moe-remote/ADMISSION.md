@@ -526,6 +526,8 @@ the per-route bitmap removal has not yet been measured.
 
 ## Slice D fix round 4: local-only admission, final reopen timeout, shared rank coordinator
 
+> Historical (pre-RUM06): the `R3_MOE_REMOTE_MIN_ROWS` / `MAX_ROWS` environment gates described in this section no longer exist. The row policy is the serving manifest's `remote_moe` settings, read once when the engine opens its generation.
+
 **Handoff-declared policy and admission.** The patch's
 `bc_moe_remote_wanted_upto` is the single source of truth about whether
 remote mailbox kernels can be declared. The host extension resolves that
