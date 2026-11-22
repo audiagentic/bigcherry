@@ -2,7 +2,7 @@
 id: MEN11
 order: 0
 plan: run-multi-engine
-state: pending
+state: superseded
 created-at: '2026-10-14T22:16:15.217144+00:00'
 breadth: ''
 skill: advanced
@@ -77,6 +77,8 @@ BACKLOG TRIAGE 2026-11-04 (MERGE into MEN17; revalidated against main 6eb31a708,
 
 REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) rejected the closure recorded above, which had been based on a lighter check. It stays open. Why: MEN11.md:60 documents successful helper ROWS A/B through the harness but explicitly lists unretired lab scripts, KLD-through-harness and component-setting promotion as remaining. MEN17.md:18-24 is post-bump acceptance and MEN26.md:18-28 patch-production release, neither specifies a component-setting lifecycle/promotion command or script migration.
 
+CONSOLIDATION 2026-11-22: The successful ROWS 0/1 helper A/B remains recorded as men11-fire-10171108 at c95d49e2, with 8/8 clean cells and helpers started/stopped; throughput differences do not prove new KLD parity or component setting promotion. Each unfinished requirement now has one existing owner: MEN20 (per-setting A/B evidence/staging, activation and optional verified promotion), MEN14 (current lab launcher inventory, replacement disposition and single patch-to-release workflow), RAD08 (native KLD JSON, role-aware text+assistant split and helper layout reanalysis), and RAD07 (release-correct model pages, reference figures and RAD08 result publication). Historical fn-r9700-engine.sh, fn-bench-once.py and fn-helper-gate.sh are absent from the current tools/lab/radiance tree; MEN14 records verified replacements instead of deleting nonexistent files. MEN17 and MEN26 remain distinct hardware/release gates, not replacements. MEN11 is superseded to avoid duplicate execution ownership, not completed as a new quality or GPU acceptance pass.
+
 ## Change Log
 
 - 2026-10-14T22:16:15.217144+00:00 (created-by): Created by agent
@@ -92,3 +94,9 @@ REOPENED 2026-11-04: an independent revalidation (against main 6eb31a708) reject
 - 2026-11-04T03:46:52.266539+00:00 (state-transition): State: pending → superseded
 - 2026-11-04T04:44:48.643712+00:00 (updated-by): Updated: section:notes
 - 2026-11-04T04:44:53.074597+00:00 (state-transition): State: superseded → pending
+
+## Reviews
+
+- RV4467
+- 2026-11-22T09:21:49.517583+00:00 (updated-by): Updated: section:notes
+- 2026-11-22T09:22:45.864790+00:00 (state-transition): State: pending → superseded

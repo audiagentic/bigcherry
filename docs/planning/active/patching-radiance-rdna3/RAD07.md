@@ -19,10 +19,10 @@ docs/archive/radiance/LAB_HISTORY.md is a 1,144-line dated lab log mixing models
 
 ## Steps
 
-1. Move RADIANCE_PLATFORM_DESIGN/PARITY/RUNBOOK under docs/reference/engines/radiance/ (update every link).
-2. Per-model page sections: container and quantisation; reference quality vs the full model (Flash-Next owner table: mean KL 0.0789 all / 0.0239 text+assistant, median 0.0037/0.0029, P99 1.65/0.32, P99.9 5.33/1.03, top-1 92.85%/94.57%); layouts tried with best prefill/decode and run IDs; patches and settings on, and why; tried and shelved, with reason; open levers linked to plan items.
-3. Keep docs/archive/radiance/LAB_HISTORY.md as the dated lab log; each entry links to its model page.
-4. Doc rule: every measurement or decision updates the model page in the same change.
+1. Reconcile the Radiance overview and each per-model page to the current pinned/released engine, quantisation, hardware layout and best source-backed runs; distinguish current release facts from historical measurements.
+2. Record enabled/default-off/shelved patches and settings with reasons and source links. Keep the lab history as an archive, not a second current-state document.
+3. Consume RAD08's role-aware helper-layout KLD table and report reference vs measured overall/text+assistant metrics without implementing another KLD parser.
+4. Verify links and update the affected model page in the same change as each new measurement or promotion.
 
 ## Detailed Solution & Technical Design
 
@@ -38,7 +38,7 @@ docs/archive/radiance/LAB_HISTORY.md is a 1,144-line dated lab log mixing models
 
 ## Validation
 
-Links resolve; each model page states current best layout and numbers that match the latest recorded runs.
+Document link check, pin/version consistency against the current engine manifest and release records, and source/run identity verification for every displayed best/quality figure.
 
 ## Effort & Risk
 
@@ -50,7 +50,10 @@ Links resolve; each model page states current best layout and numbers that match
 
 ## Acceptance Criteria
 
-
+1. Current Flash-Next and 27B model pages agree with the installed/pinned Radiance manifest and clearly identify historical results by source pin, run and layout.
+2. Each page contains reference/best measured throughput and quality, enabled/shelved settings with rationale, and linked unfinished owner items; no unsupported claim of parity or current production support.
+3. The Flash-Next page includes RAD08's actual helper-layout overall and role-specific KLD metrics when accepted, with noncomparability explicitly recorded if a required source is unavailable.
+4. A link and pin-consistency check is reproducible, and each subsequent measurement or setting disposition updates its owning model page in the same change.
 
 ## Notes
 
@@ -59,6 +62,8 @@ Recording against model-specific docs is an owner requirement (2026-10-15).
 
 
 BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed disposition "SUPERSEDED by #251/#541-#553 docs refresh" was NOT applied; this item stays open. Why: PR #251 shipped model pages, but docs/reference/engines/radiance/README.md:3,11 and models/qwen3.8-flash-next.md:4 still claim v1.14.0 is the current pin. engines/radiance/CHANGELOG.md:8 and docs/releases/notes/bc-radiance-1160.0.0.md:3 confirm the present pin is v1.16.0; the continuing-current-doc acceptance is unmet. Active items that reference this one: RAD08, RHP03. Keep RAD07 open to update the per-model and overview pages for v1.16.0 and verify their current-run claims.
+
+CONSOLIDATION 2026-11-22: documentation/publishing owner for MEN11's outstanding helper-layout KLD comparison; RAD08 is the metrics producer and MEN20 produces component-setting A/B evidence. Do not duplicate their commands in RAD07.
 
 ## Change Log
 
@@ -69,3 +74,8 @@ BACKLOG TRIAGE 2026-11-04 (revalidated against main 6eb31a708): the proposed dis
 - chg_20261017_012852_each-radiance-model-now-has-on_1051
 - 2026-10-17T01:28:56.281155+00:00 (updated-by): Updated: section:ledger-events
 - 2026-11-04T04:23:38.248290+00:00 (updated-by): Updated: section:notes
+
+## Reviews
+
+- RV4471
+- 2026-11-22T09:19:47.029641+00:00 (updated-by): Updated: section:steps, section:validation, section:acceptance_criteria, section:notes
